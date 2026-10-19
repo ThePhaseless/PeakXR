@@ -27,5 +27,6 @@ public class VRRig : MonoBehaviour
     public Transform RightAim;
 
     public Transform Hand(bool left) => left ? LeftHand : RightHand;
+
     public Transform Aim(bool left) => left ? LeftAim : RightAim;
 }

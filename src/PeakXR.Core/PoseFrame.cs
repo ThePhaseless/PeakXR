@@ -52,18 +52,46 @@ namespace PeakXR.Core
         {
             t = Math.Clamp(t, 0f, 1f);
             var p = t < 0.5f ? a : b;
-            BlendPart(a.HasHead, b.HasHead, a.HeadPosition, b.HeadPosition, a.HeadRotation, b.HeadRotation, t,
-                out p.HeadPosition, out p.HeadRotation);
-            BlendPart(a.HasLeftHand, b.HasLeftHand, a.LeftHandPosition, b.LeftHandPosition, a.LeftHandRotation, b.LeftHandRotation, t,
-                out p.LeftHandPosition, out p.LeftHandRotation);
-            BlendPart(a.HasRightHand, b.HasRightHand, a.RightHandPosition, b.RightHandPosition, a.RightHandRotation, b.RightHandRotation, t,
-                out p.RightHandPosition, out p.RightHandRotation);
+            BlendPart(
+                a.HasHead,
+                b.HasHead,
+                a.HeadPosition,
+                b.HeadPosition,
+                a.HeadRotation,
+                b.HeadRotation,
+                t,
+                out p.HeadPosition,
+                out p.HeadRotation
+            );
+            BlendPart(
+                a.HasLeftHand,
+                b.HasLeftHand,
+                a.LeftHandPosition,
+                b.LeftHandPosition,
+                a.LeftHandRotation,
+                b.LeftHandRotation,
+                t,
+                out p.LeftHandPosition,
+                out p.LeftHandRotation
+            );
+            BlendPart(
+                a.HasRightHand,
+                b.HasRightHand,
+                a.RightHandPosition,
+                b.RightHandPosition,
+                a.RightHandRotation,
+                b.RightHandRotation,
+                t,
+                out p.RightHandPosition,
+                out p.RightHandRotation
+            );
             if (a.HasFingers && b.HasFingers)
             {
                 for (int i = 0; i < FingerCurls.Count; i++)
                 {
                     p.LeftFingers[i] = a.LeftFingers[i] + (b.LeftFingers[i] - a.LeftFingers[i]) * t;
-                    p.RightFingers[i] = a.RightFingers[i] + (b.RightFingers[i] - a.RightFingers[i]) * t;
+                    p.RightFingers[i] =
+                        a.RightFingers[i] + (b.RightFingers[i] - a.RightFingers[i]) * t;
                 }
             }
             else if (b.HasFingers)
@@ -79,8 +107,17 @@ namespace PeakXR.Core
             return p;
         }
 
-        static void BlendPart(bool hasA, bool hasB, Vector3 pa, Vector3 pb, Quaternion ra, Quaternion rb, float t,
-            out Vector3 pos, out Quaternion rot)
+        static void BlendPart(
+            bool hasA,
+            bool hasB,
+            Vector3 pa,
+            Vector3 pb,
+            Quaternion ra,
+            Quaternion rb,
+            float t,
+            out Vector3 pos,
+            out Quaternion rot
+        )
         {
             if (hasA && hasB)
             {
@@ -104,35 +141,82 @@ namespace PeakXR.Core
         /// different flags, a present part moved more than <paramref name="posEps"/> metres or turned more than
         /// <paramref name="rotEpsDeg"/> degrees, or a finger curl changed more than <paramref name="fingerEps"/>.
         /// </summary>
-        public static bool Differs(in PosePacket a, in PosePacket b, float posEps, float rotEpsDeg, float fingerEps)
+        public static bool Differs(
+            in PosePacket a,
+            in PosePacket b,
+            float posEps,
+            float rotEpsDeg,
+            float fingerEps
+        )
         {
             if (a.Flags != b.Flags)
                 return true;
             float minDot = MathF.Cos(rotEpsDeg * 0.5f * UnityQuat.Deg2Rad);
             float posEpsSq = posEps * posEps;
-            if (a.HasHead && PartDiffers(a.HeadPosition, b.HeadPosition, a.HeadRotation, b.HeadRotation, posEpsSq, minDot))
+            if (
+                a.HasHead
+                && PartDiffers(
+                    a.HeadPosition,
+                    b.HeadPosition,
+                    a.HeadRotation,
+                    b.HeadRotation,
+                    posEpsSq,
+                    minDot
+                )
+            )
                 return true;
-            if (a.HasLeftHand && PartDiffers(a.LeftHandPosition, b.LeftHandPosition, a.LeftHandRotation, b.LeftHandRotation, posEpsSq, minDot))
+            if (
+                a.HasLeftHand
+                && PartDiffers(
+                    a.LeftHandPosition,
+                    b.LeftHandPosition,
+                    a.LeftHandRotation,
+                    b.LeftHandRotation,
+                    posEpsSq,
+                    minDot
+                )
+            )
                 return true;
-            if (a.HasRightHand && PartDiffers(a.RightHandPosition, b.RightHandPosition, a.RightHandRotation, b.RightHandRotation, posEpsSq, minDot))
+            if (
+                a.HasRightHand
+                && PartDiffers(
+                    a.RightHandPosition,
+                    b.RightHandPosition,
+                    a.RightHandRotation,
+                    b.RightHandRotation,
+                    posEpsSq,
+                    minDot
+                )
+            )
                 return true;
             if (a.HasFingers)
             {
                 for (int i = 0; i < FingerCurls.Count; i++)
                 {
-                    if (MathF.Abs(a.LeftFingers[i] - b.LeftFingers[i]) > fingerEps
-                        || MathF.Abs(a.RightFingers[i] - b.RightFingers[i]) > fingerEps)
+                    if (
+                        MathF.Abs(a.LeftFingers[i] - b.LeftFingers[i]) > fingerEps
+                        || MathF.Abs(a.RightFingers[i] - b.RightFingers[i]) > fingerEps
+                    )
                         return true;
                 }
             }
             return false;
         }
 
-        static bool PartDiffers(Vector3 pa, Vector3 pb, Quaternion ra, Quaternion rb, float posEpsSq, float minDot)
+        static bool PartDiffers(
+            Vector3 pa,
+            Vector3 pb,
+            Quaternion ra,
+            Quaternion rb,
+            float posEpsSq,
+            float minDot
+        )
         {
             if (Vector3.DistanceSquared(pa, pb) > posEpsSq)
                 return true;
-            float dot = MathF.Abs(Quaternion.Dot(Quaternion.Normalize(ra), Quaternion.Normalize(rb)));
+            float dot = MathF.Abs(
+                Quaternion.Dot(Quaternion.Normalize(ra), Quaternion.Normalize(rb))
+            );
             return dot < minDot;
         }
     }

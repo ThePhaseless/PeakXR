@@ -4,7 +4,10 @@ internal static class TestUtil
 {
     public static void Near(Vector3 expected, Vector3 actual, float tol = 1e-4f)
     {
-        Assert.True(Vector3.Distance(expected, actual) <= tol, $"expected {expected}, got {actual}");
+        Assert.True(
+            Vector3.Distance(expected, actual) <= tol,
+            $"expected {expected}, got {actual}"
+        );
     }
 
     public static void Near(float expected, float actual, float tol = 1e-4f)

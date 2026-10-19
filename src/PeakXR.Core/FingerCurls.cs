@@ -7,7 +7,11 @@ namespace PeakXR.Core
     {
         public const int Count = 5;
 
-        public float Thumb, Index, Middle, Ring, Pinky;
+        public float Thumb,
+            Index,
+            Middle,
+            Ring,
+            Pinky;
 
         public FingerCurls(float thumb, float index, float middle, float ring, float pinky)
         {
@@ -25,24 +29,41 @@ namespace PeakXR.Core
             {
                 switch (finger)
                 {
-                    case 0: return Thumb;
-                    case 1: return Index;
-                    case 2: return Middle;
-                    case 3: return Ring;
-                    case 4: return Pinky;
-                    default: throw new ArgumentOutOfRangeException(nameof(finger));
+                    case 0:
+                        return Thumb;
+                    case 1:
+                        return Index;
+                    case 2:
+                        return Middle;
+                    case 3:
+                        return Ring;
+                    case 4:
+                        return Pinky;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(finger));
                 }
             }
             set
             {
                 switch (finger)
                 {
-                    case 0: Thumb = value; break;
-                    case 1: Index = value; break;
-                    case 2: Middle = value; break;
-                    case 3: Ring = value; break;
-                    case 4: Pinky = value; break;
-                    default: throw new ArgumentOutOfRangeException(nameof(finger));
+                    case 0:
+                        Thumb = value;
+                        break;
+                    case 1:
+                        Index = value;
+                        break;
+                    case 2:
+                        Middle = value;
+                        break;
+                    case 3:
+                        Ring = value;
+                        break;
+                    case 4:
+                        Pinky = value;
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(finger));
                 }
             }
         }
@@ -53,6 +74,7 @@ namespace PeakXR.Core
     {
         /// <summary>Index curl when the finger rests on the trigger without pulling it.</summary>
         public const float TriggerTouchCurl = 0.25f;
+
         /// <summary>Thumb curl when it rests on a face button or the stick.</summary>
         public const float ThumbTouchCurl = 0.75f;
 
@@ -60,14 +82,23 @@ namespace PeakXR.Core
         /// Trigger (+touch) drives the index, grip drives middle/ring/pinky, any thumb touch curls the thumb.
         /// When <paramref name="skeletal"/> has at least 5 entries (thumb..pinky), each non-NaN entry wins.
         /// </summary>
-        public static FingerCurls Map(float trigger, bool triggerTouch, float grip, bool thumbTouch, float[] skeletal = null)
+        public static FingerCurls Map(
+            float trigger,
+            bool triggerTouch,
+            float grip,
+            bool thumbTouch,
+            float[] skeletal = null
+        )
         {
             trigger = Clamp01(trigger);
             grip = Clamp01(grip);
             var c = new FingerCurls(
                 thumbTouch ? ThumbTouchCurl : 0f,
                 triggerTouch ? TriggerTouchCurl + (1f - TriggerTouchCurl) * trigger : trigger,
-                grip, grip, grip);
+                grip,
+                grip,
+                grip
+            );
 
             if (skeletal != null && skeletal.Length >= FingerCurls.Count)
             {

@@ -61,7 +61,10 @@ public sealed class MobEntry
         Style = style;
         Note = note;
         Known = known;
-        Label = style == SpawnStyle.Unsupported ? $"{name}  [{kind}, needs setup]" : $"{name}  [{kind}]";
+        Label =
+            style == SpawnStyle.Unsupported
+                ? $"{name}  [{kind}, needs setup]"
+                : $"{name}  [{kind}]";
     }
 }
 
@@ -78,18 +81,78 @@ public static class MobCatalog
     // name, kind, style, note (decompile reference)
     static readonly (string, EntityKind, SpawnStyle, string)[] Known =
     {
-        ("Character_Scoutmaster", EntityKind.Character, SpawnStyle.Room, "ScoutmasterSpawner.cs:24, master only"),
-        ("Tornado", EntityKind.Entity, SpawnStyle.Tornado, "TornadoSpawner.cs:45, needs a TornadoSpawner in the scene"),
-        ("BugfixOnYou", EntityKind.Entity, SpawnStyle.AttachToPlayer, "Bugfixer.cs:19, attaches to you"),
-        ("MushroomZombie", EntityKind.Character, SpawnStyle.Plain, "MushroomZombieSpawner.cs:65; the spawner link is left empty (assumed fine)"),
-        ("BeeSwarm", EntityKind.Entity, SpawnStyle.Plain, "Beehive.cs:51; spawned without a beehive (assumed fine)"),
-        ("RavenVoiceThief", EntityKind.Entity, SpawnStyle.Plain, "RavenPerch.cs:144; spawned without a perch (assumed fine)"),
-        ("tumbleweed", EntityKind.Entity, SpawnStyle.Plain, "name only seen in Resources; behaviour unchecked"),
-        ("ScoutmasterGhostOrbiter", EntityKind.Entity, SpawnStyle.Unsupported, "ScoutmasterSoulPillar.cs:178, needs SetOrbitCharacter"),
-        ("MushroomZombie_Player", EntityKind.Character, SpawnStyle.Unsupported, "Character.cs:811, needs a dying player (RPC_Arise)"),
-        ("PetrifiedScout", EntityKind.Entity, SpawnStyle.Unsupported, "Character.cs:785, needs a killed player"),
-        ("PlayerGhost", EntityKind.Entity, SpawnStyle.Unsupported, "MainCameraMovement.cs:146, spectate ghost"),
-        ("TiedBalloon", EntityKind.Entity, SpawnStyle.Unsupported, "CharacterBalloons.cs:101, needs Init from a balloon item"),
+        (
+            "Character_Scoutmaster",
+            EntityKind.Character,
+            SpawnStyle.Room,
+            "ScoutmasterSpawner.cs:24, master only"
+        ),
+        (
+            "Tornado",
+            EntityKind.Entity,
+            SpawnStyle.Tornado,
+            "TornadoSpawner.cs:45, needs a TornadoSpawner in the scene"
+        ),
+        (
+            "BugfixOnYou",
+            EntityKind.Entity,
+            SpawnStyle.AttachToPlayer,
+            "Bugfixer.cs:19, attaches to you"
+        ),
+        (
+            "MushroomZombie",
+            EntityKind.Character,
+            SpawnStyle.Plain,
+            "MushroomZombieSpawner.cs:65; the spawner link is left empty (assumed fine)"
+        ),
+        (
+            "BeeSwarm",
+            EntityKind.Entity,
+            SpawnStyle.Plain,
+            "Beehive.cs:51; spawned without a beehive (assumed fine)"
+        ),
+        (
+            "RavenVoiceThief",
+            EntityKind.Entity,
+            SpawnStyle.Plain,
+            "RavenPerch.cs:144; spawned without a perch (assumed fine)"
+        ),
+        (
+            "tumbleweed",
+            EntityKind.Entity,
+            SpawnStyle.Plain,
+            "name only seen in Resources; behaviour unchecked"
+        ),
+        (
+            "ScoutmasterGhostOrbiter",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "ScoutmasterSoulPillar.cs:178, needs SetOrbitCharacter"
+        ),
+        (
+            "MushroomZombie_Player",
+            EntityKind.Character,
+            SpawnStyle.Unsupported,
+            "Character.cs:811, needs a dying player (RPC_Arise)"
+        ),
+        (
+            "PetrifiedScout",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "Character.cs:785, needs a killed player"
+        ),
+        (
+            "PlayerGhost",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "MainCameraMovement.cs:146, spectate ghost"
+        ),
+        (
+            "TiedBalloon",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "CharacterBalloons.cs:101, needs Init from a balloon item"
+        ),
     };
 
     // Player prefabs: spawning these would add fake players.
@@ -147,7 +210,15 @@ public static class MobCatalog
             foreach (var item in db.Objects)
             {
                 if (item != null && item.GetComponent<Mob>() != null)
-                    Add(new MobEntry(item.name, EntityKind.Mob, SpawnStyle.ItemMob, "0_Items prefab with a Mob component (MobItem)", known: false));
+                    Add(
+                        new MobEntry(
+                            item.name,
+                            EntityKind.Mob,
+                            SpawnStyle.ItemMob,
+                            "0_Items prefab with a Mob component (MobItem)",
+                            known: false
+                        )
+                    );
             }
         }
 
@@ -162,7 +233,11 @@ public static class MobCatalog
             foreach (var go in Resources.LoadAll<GameObject>(""))
             {
                 // A prefab in a Resources subfolder cannot be loaded by bare name, so Photon could not spawn it.
-                if (go != null && !seen.Contains(go.name) && Resources.Load<GameObject>(go.name) == go)
+                if (
+                    go != null
+                    && !seen.Contains(go.name)
+                    && Resources.Load<GameObject>(go.name) == go
+                )
                     AddPrefab(go.name, go);
             }
         }
@@ -173,17 +248,30 @@ public static class MobCatalog
 
     static void AddPrefab(string path, GameObject prefab)
     {
-        if (prefab == null || path.StartsWith(ItemFolder, StringComparison.Ordinal) || seen.Contains(path))
+        if (
+            prefab == null
+            || path.StartsWith(ItemFolder, StringComparison.Ordinal)
+            || seen.Contains(path)
+        )
             return;
         if (Array.IndexOf(Excluded, path) >= 0 || prefab.GetComponent<PhotonView>() == null)
             return;
         if (prefab.GetComponent<Item>() != null || prefab.GetComponent<Player>() != null)
             return;
 
-        EntityKind kind = prefab.GetComponent<Mob>() != null ? EntityKind.Mob
+        EntityKind kind =
+            prefab.GetComponent<Mob>() != null ? EntityKind.Mob
             : prefab.GetComponent<Character>() != null ? EntityKind.Character
             : EntityKind.Entity;
-        Add(new MobEntry(path, kind, kind == EntityKind.Character ? SpawnStyle.Room : SpawnStyle.Plain, null, known: false));
+        Add(
+            new MobEntry(
+                path,
+                kind,
+                kind == EntityKind.Character ? SpawnStyle.Room : SpawnStyle.Plain,
+                null,
+                known: false
+            )
+        );
     }
 
     static void Add(MobEntry entry)

@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
 using ExitGames.Client.Photon;
-using Photon.Pun;
-using Photon.Realtime;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.VR;
+using Photon.Pun;
+using Photon.Realtime;
 using UnityEngine;
 using Hashtable = ExitGames.Client.Photon.Hashtable;
-using NVector3 = System.Numerics.Vector3;
 using NQuaternion = System.Numerics.Quaternion;
+using NVector3 = System.Numerics.Vector3;
 using PhotonPlayer = Photon.Realtime.Player;
 
 namespace PeakXR.Net;
@@ -40,7 +40,11 @@ namespace PeakXR.Net;
 /// 4 x 25 x 4 = 400 msg/s to the room, on top of vanilla's ~480 msg/s, which is why the rate tops out
 /// at 30 Hz and unchanged poses are not sent.
 /// </remarks>
-internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCallbacks, IMatchmakingCallbacks
+internal sealed class NetPoseSync
+    : MonoBehaviour,
+        IOnEventCallback,
+        IInRoomCallbacks,
+        IMatchmakingCallbacks
 {
     public const byte PoseEventCode = 151;
 
@@ -163,7 +167,12 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
 
     public void OnPlayerPropertiesUpdate(PhotonPlayer targetPlayer, Hashtable changedProps)
     {
-        if (targetPlayer == null || targetPlayer.IsLocal || changedProps == null || !changedProps.ContainsKey(Handshake.Key))
+        if (
+            targetPlayer == null
+            || targetPlayer.IsLocal
+            || changedProps == null
+            || !changedProps.ContainsKey(Handshake.Key)
+        )
             return;
         int actor = targetPlayer.ActorNumber;
         bool wasPeer = peers.IsPeer(actor);
@@ -176,11 +185,17 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
     }
 
     public void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged) { }
+
     public void OnMasterClientSwitched(PhotonPlayer newMasterClient) { }
+
     public void OnFriendListUpdate(List<FriendInfo> friendList) { }
+
     public void OnCreatedRoom() { }
+
     public void OnCreateRoomFailed(short returnCode, string message) { }
+
     public void OnJoinRoomFailed(short returnCode, string message) { }
+
     public void OnJoinRandomFailed(short returnCode, string message) { }
 
     // ---------------------------------------------------------------- send
@@ -205,7 +220,11 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
             if (localDriver == null)
                 return;
         }
-        if (!localDriver.HasFreshPose || IsRagdolled(character) || !TryGetFrame(character, out var root, out float yaw))
+        if (
+            !localDriver.HasFreshPose
+            || IsRagdolled(character)
+            || !TryGetFrame(character, out var root, out float yaw)
+        )
             return;
 
         var world = FromAvatarPose(localDriver.Pose);
@@ -291,8 +310,11 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
                 data = bytes;
                 length = bytes.Length;
                 break;
-            case ByteArraySlice slice when slice.Buffer != null && slice.Count <= receiveScratch.Length
-                                           && slice.Offset >= 0 && slice.Offset + slice.Count <= slice.Buffer.Length:
+            case ByteArraySlice slice
+                when slice.Buffer != null
+                    && slice.Count <= receiveScratch.Length
+                    && slice.Offset >= 0
+                    && slice.Offset + slice.Count <= slice.Buffer.Length:
                 Buffer.BlockCopy(slice.Buffer, slice.Offset, receiveScratch, 0, slice.Count);
                 data = receiveScratch;
                 length = slice.Count;
@@ -325,7 +347,11 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
                 continue;
 
             var character = Resolve(entry.Key, ref remote.Character);
-            if (character == null || IsRagdolled(character) || !TryGetFrame(character, out var root, out float yaw))
+            if (
+                character == null
+                || IsRagdolled(character)
+                || !TryGetFrame(character, out var root, out float yaw)
+            )
                 continue;
 
             remote.Stream.Buffer.Delay = delay;
@@ -339,21 +365,22 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
         }
     }
 
-    static AvatarPose ToAvatarPose(in PosePacket p) => new()
-    {
-        HasHead = p.HasHead,
-        HeadPosition = U(p.HeadPosition),
-        HeadRotation = U(p.HeadRotation),
-        HasLeftHand = p.HasLeftHand,
-        LeftHandPosition = U(p.LeftHandPosition),
-        LeftHandRotation = U(p.LeftHandRotation),
-        LeftFingers = p.LeftFingers,
-        HasRightHand = p.HasRightHand,
-        RightHandPosition = U(p.RightHandPosition),
-        RightHandRotation = U(p.RightHandRotation),
-        RightFingers = p.RightFingers,
-        Seated = p.Seated,
-    };
+    static AvatarPose ToAvatarPose(in PosePacket p) =>
+        new()
+        {
+            HasHead = p.HasHead,
+            HeadPosition = U(p.HeadPosition),
+            HeadRotation = U(p.HeadRotation),
+            HasLeftHand = p.HasLeftHand,
+            LeftHandPosition = U(p.LeftHandPosition),
+            LeftHandRotation = U(p.LeftHandRotation),
+            LeftFingers = p.LeftFingers,
+            HasRightHand = p.HasRightHand,
+            RightHandPosition = U(p.RightHandPosition),
+            RightHandRotation = U(p.RightHandRotation),
+            RightFingers = p.RightFingers,
+            Seated = p.Seated,
+        };
 
     /// <summary>
     /// The player character owned by <paramref name="actor"/>. Respawning registers a new Character and
@@ -362,14 +389,23 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
     /// </summary>
     static Character Resolve(int actor, ref Character cached)
     {
-        if (cached != null && cached.gameObject.activeInHierarchy && cached.photonView.OwnerActorNr == actor)
+        if (
+            cached != null
+            && cached.gameObject.activeInHierarchy
+            && cached.photonView.OwnerActorNr == actor
+        )
             return cached;
         cached = null;
         var all = Character.AllCharacters;
         for (int i = 0; i < all.Count; i++)
         {
             var c = all[i];
-            if (c != null && c.IsPlayerControlled && c.gameObject.activeInHierarchy && c.photonView.OwnerActorNr == actor)
+            if (
+                c != null
+                && c.IsPlayerControlled
+                && c.gameObject.activeInHierarchy
+                && c.photonView.OwnerActorNr == actor
+            )
             {
                 cached = c;
                 break;
@@ -385,7 +421,12 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
     static bool IsRagdolled(Character c)
     {
         var d = c.data;
-        return d == null || d.dead || d.passedOut || d.fullyPassedOut || d.fallSeconds > 0f || d.isCarried;
+        return d == null
+            || d.dead
+            || d.passedOut
+            || d.fullyPassedOut
+            || d.fallSeconds > 0f
+            || d.isCarried;
     }
 
     /// <summary>The wire frame (see <see cref="PoseFrame"/>): physical hip position and look yaw.</summary>
@@ -405,7 +446,10 @@ internal sealed class NetPoseSync : MonoBehaviour, IOnEventCallback, IInRoomCall
     }
 
     static NVector3 N(Vector3 v) => new(v.x, v.y, v.z);
+
     static NQuaternion N(Quaternion q) => new(q.x, q.y, q.z, q.w);
+
     static Vector3 U(NVector3 v) => new(v.X, v.Y, v.Z);
+
     static Quaternion U(NQuaternion q) => new(q.X, q.Y, q.Z, q.W);
 }

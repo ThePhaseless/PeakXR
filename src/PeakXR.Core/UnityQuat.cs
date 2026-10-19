@@ -39,9 +39,15 @@ namespace PeakXR.Core
         public static Vector3 ToEuler(Quaternion q)
         {
             q = Quaternion.Normalize(q);
-            float xx = q.X * q.X, yy = q.Y * q.Y, zz = q.Z * q.Z;
-            float xy = q.X * q.Y, xz = q.X * q.Z, yz = q.Y * q.Z;
-            float wx = q.W * q.X, wy = q.W * q.Y, wz = q.W * q.Z;
+            float xx = q.X * q.X,
+                yy = q.Y * q.Y,
+                zz = q.Z * q.Z;
+            float xy = q.X * q.Y,
+                xz = q.X * q.Z,
+                yz = q.Y * q.Z;
+            float wx = q.W * q.X,
+                wy = q.W * q.Y,
+                wz = q.W * q.Z;
 
             // Rotation matrix R = Ry * Rx * Rz, so R[1][2] = -sin(x) and |R[1][0..1]| = cos(x).
             float m12 = 2f * (yz - wx);
@@ -49,7 +55,8 @@ namespace PeakXR.Core
             float m11 = 1f - 2f * (xx + zz);
             float cx = MathF.Sqrt(m10 * m10 + m11 * m11);
             float x = MathF.Atan2(-m12, cx);
-            float y, z;
+            float y,
+                z;
             if (cx > 1e-4f)
             {
                 float m02 = 2f * (xz + wy);
@@ -80,7 +87,8 @@ namespace PeakXR.Core
         internal static float HeadingRadians(Quaternion q)
         {
             Vector3 f = Rotate(q, Forward);
-            float hx = f.X, hz = f.Z;
+            float hx = f.X,
+                hz = f.Z;
             if (hx * hx + hz * hz < 1e-6f)
             {
                 Vector3 u = Rotate(q, Up);
@@ -119,9 +127,15 @@ namespace PeakXR.Core
         /// <summary>Rotation whose columns are the orthonormal basis x, y, z.</summary>
         static Quaternion FromBasis(Vector3 x, Vector3 y, Vector3 z)
         {
-            float m00 = x.X, m01 = y.X, m02 = z.X;
-            float m10 = x.Y, m11 = y.Y, m12 = z.Y;
-            float m20 = x.Z, m21 = y.Z, m22 = z.Z;
+            float m00 = x.X,
+                m01 = y.X,
+                m02 = z.X;
+            float m10 = x.Y,
+                m11 = y.Y,
+                m12 = z.Y;
+            float m20 = x.Z,
+                m21 = y.Z,
+                m22 = z.Z;
             float trace = m00 + m11 + m22;
             Quaternion q;
             if (trace > 0f)

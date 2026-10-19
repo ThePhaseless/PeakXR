@@ -12,7 +12,10 @@ public class FingerCurlsTests
     [Fact]
     public void Map_TriggerDrivesIndex_TouchGivesPartialCurl()
     {
-        Assert.Equal(FingerCurlMapper.TriggerTouchCurl, FingerCurlMapper.Map(0f, true, 0f, false).Index);
+        Assert.Equal(
+            FingerCurlMapper.TriggerTouchCurl,
+            FingerCurlMapper.Map(0f, true, 0f, false).Index
+        );
         Assert.Equal(1f, FingerCurlMapper.Map(1f, true, 0f, false).Index);
         TestUtil.Near(0.5f, FingerCurlMapper.Map(0.5f, false, 0f, false).Index, 1e-6f);
         Assert.True(FingerCurlMapper.Map(0.5f, true, 0f, false).Index > 0.5f);
@@ -31,7 +34,10 @@ public class FingerCurlsTests
     [Fact]
     public void Map_ThumbTouchCurlsThumb()
     {
-        Assert.Equal(FingerCurlMapper.ThumbTouchCurl, FingerCurlMapper.Map(0f, false, 0f, true).Thumb);
+        Assert.Equal(
+            FingerCurlMapper.ThumbTouchCurl,
+            FingerCurlMapper.Map(0f, false, 0f, true).Thumb
+        );
     }
 
     [Fact]
@@ -70,7 +76,8 @@ public class FingerCurlsTests
         var target = new FingerCurls(1f, 1f, 1f, 1f, 1f);
         var c = s.Update(target, 0.1f);
         TestUtil.Near(1f - MathF.Exp(-1f), c.Index, 1e-4f);
-        for (int i = 0; i < 200; i++) c = s.Update(target, 0.1f);
+        for (int i = 0; i < 200; i++)
+            c = s.Update(target, 0.1f);
         TestUtil.Near(1f, c.Pinky, 1e-4f);
     }
 

@@ -4,16 +4,17 @@ namespace PeakXR.Core.Tests;
 
 public class PoseFrameTests
 {
-    static PosePacket WorldPose() => new()
-    {
-        Flags = PoseFlags.Head | PoseFlags.LeftHand | PoseFlags.RightHand,
-        HeadPosition = new Vector3(10.1f, 5.6f, -3f),
-        HeadRotation = UnityQuat.Euler(10f, 80f, 5f),
-        LeftHandPosition = new Vector3(9.8f, 5.1f, -2.7f),
-        LeftHandRotation = UnityQuat.Euler(-30f, 45f, 0f),
-        RightHandPosition = new Vector3(10.4f, 5.0f, -2.5f),
-        RightHandRotation = UnityQuat.Euler(0f, 120f, 90f),
-    };
+    static PosePacket WorldPose() =>
+        new()
+        {
+            Flags = PoseFlags.Head | PoseFlags.LeftHand | PoseFlags.RightHand,
+            HeadPosition = new Vector3(10.1f, 5.6f, -3f),
+            HeadRotation = UnityQuat.Euler(10f, 80f, 5f),
+            LeftHandPosition = new Vector3(9.8f, 5.1f, -2.7f),
+            LeftHandRotation = UnityQuat.Euler(-30f, 45f, 0f),
+            RightHandPosition = new Vector3(10.4f, 5.0f, -2.5f),
+            RightHandRotation = UnityQuat.Euler(0f, 120f, 90f),
+        };
 
     [Fact]
     public void ToLocal_ThenToWorld_RoundTrips()
@@ -34,7 +35,12 @@ public class PoseFrameTests
     {
         // Character faces +X (yaw 90). A hand half a metre in front of the hip is local +Z.
         var root = new Vector3(1f, 2f, 3f);
-        var world = new PosePacket { Flags = PoseFlags.RightHand, RightHandPosition = root + new Vector3(0.5f, 0f, 0f), RightHandRotation = UnityQuat.Euler(0f, 90f, 0f) };
+        var world = new PosePacket
+        {
+            Flags = PoseFlags.RightHand,
+            RightHandPosition = root + new Vector3(0.5f, 0f, 0f),
+            RightHandRotation = UnityQuat.Euler(0f, 90f, 0f),
+        };
         var local = PoseFrame.ToLocal(world, root, 90f);
         TestUtil.Near(new Vector3(0f, 0f, 0.5f), local.RightHandPosition);
         TestUtil.SameRotation(Quaternion.Identity, local.RightHandRotation);
@@ -44,7 +50,12 @@ public class PoseFrameTests
     public void ToWorld_FollowsTheReceiversRoot()
     {
         // The same local pose lands relative to wherever the receiver currently sees the character.
-        var local = new PosePacket { Flags = PoseFlags.LeftHand, LeftHandPosition = new Vector3(-0.2f, 0.3f, 0.4f), LeftHandRotation = Quaternion.Identity };
+        var local = new PosePacket
+        {
+            Flags = PoseFlags.LeftHand,
+            LeftHandPosition = new Vector3(-0.2f, 0.3f, 0.4f),
+            LeftHandRotation = Quaternion.Identity,
+        };
         var world = PoseFrame.ToWorld(local, new Vector3(100f, 0f, 0f), 180f);
         TestUtil.Near(new Vector3(100.2f, 0.3f, -0.4f), world.LeftHandPosition);
     }
@@ -68,8 +79,20 @@ public class PoseBlendTests
     [Fact]
     public void Lerp_InterpolatesPositionsRotationsAndFingers()
     {
-        var a = new PosePacket { Flags = PoseFlags.Head | PoseFlags.Fingers, HeadPosition = Vector3.Zero, HeadRotation = Quaternion.Identity, LeftFingers = new FingerCurls(0, 0, 0, 0, 0) };
-        var b = new PosePacket { Flags = PoseFlags.Head | PoseFlags.Fingers, HeadPosition = new Vector3(0, 0, 1), HeadRotation = UnityQuat.Euler(0, 90, 0), LeftFingers = new FingerCurls(1, 1, 1, 1, 1) };
+        var a = new PosePacket
+        {
+            Flags = PoseFlags.Head | PoseFlags.Fingers,
+            HeadPosition = Vector3.Zero,
+            HeadRotation = Quaternion.Identity,
+            LeftFingers = new FingerCurls(0, 0, 0, 0, 0),
+        };
+        var b = new PosePacket
+        {
+            Flags = PoseFlags.Head | PoseFlags.Fingers,
+            HeadPosition = new Vector3(0, 0, 1),
+            HeadRotation = UnityQuat.Euler(0, 90, 0),
+            LeftFingers = new FingerCurls(1, 1, 1, 1, 1),
+        };
         var m = PoseBlend.Lerp(a, b, 0.5f);
         TestUtil.Near(new Vector3(0, 0, 0.5f), m.HeadPosition);
         TestUtil.SameRotation(UnityQuat.Euler(0, 45, 0), m.HeadRotation, 0.01f);
@@ -79,8 +102,19 @@ public class PoseBlendTests
     [Fact]
     public void Lerp_PartPresentOnlyOnOneSide_UsesThatSide()
     {
-        var a = new PosePacket { Flags = PoseFlags.Head, HeadRotation = Quaternion.Identity, RightHandRotation = Quaternion.Identity };
-        var b = new PosePacket { Flags = PoseFlags.Head | PoseFlags.RightHand, HeadRotation = Quaternion.Identity, RightHandPosition = new Vector3(1, 1, 1), RightHandRotation = Quaternion.Identity };
+        var a = new PosePacket
+        {
+            Flags = PoseFlags.Head,
+            HeadRotation = Quaternion.Identity,
+            RightHandRotation = Quaternion.Identity,
+        };
+        var b = new PosePacket
+        {
+            Flags = PoseFlags.Head | PoseFlags.RightHand,
+            HeadRotation = Quaternion.Identity,
+            RightHandPosition = new Vector3(1, 1, 1),
+            RightHandRotation = Quaternion.Identity,
+        };
         var early = PoseBlend.Lerp(a, b, 0.2f);
         Assert.False(early.HasRightHand);
         var late = PoseBlend.Lerp(a, b, 0.8f);
@@ -91,7 +125,12 @@ public class PoseBlendTests
     [Fact]
     public void Differs_IgnoresTinyChanges()
     {
-        var a = new PosePacket { Flags = PoseFlags.RightHand, RightHandPosition = new Vector3(0, 1, 0), RightHandRotation = Quaternion.Identity };
+        var a = new PosePacket
+        {
+            Flags = PoseFlags.RightHand,
+            RightHandPosition = new Vector3(0, 1, 0),
+            RightHandRotation = Quaternion.Identity,
+        };
         var b = a;
         b.RightHandPosition += new Vector3(0.001f, 0, 0);
         b.RightHandRotation = UnityQuat.Euler(0.2f, 0, 0);
@@ -101,11 +140,20 @@ public class PoseBlendTests
     [Fact]
     public void Differs_DetectsMoveTurnFingersAndFlags()
     {
-        var a = new PosePacket { Flags = PoseFlags.RightHand | PoseFlags.Fingers, RightHandPosition = new Vector3(0, 1, 0), RightHandRotation = Quaternion.Identity };
-        var moved = a; moved.RightHandPosition += new Vector3(0.01f, 0, 0);
-        var turned = a; turned.RightHandRotation = UnityQuat.Euler(0, 3, 0);
-        var curled = a; curled.RightFingers.Index = 0.1f;
-        var flags = a; flags.Flags |= PoseFlags.Head;
+        var a = new PosePacket
+        {
+            Flags = PoseFlags.RightHand | PoseFlags.Fingers,
+            RightHandPosition = new Vector3(0, 1, 0),
+            RightHandRotation = Quaternion.Identity,
+        };
+        var moved = a;
+        moved.RightHandPosition += new Vector3(0.01f, 0, 0);
+        var turned = a;
+        turned.RightHandRotation = UnityQuat.Euler(0, 3, 0);
+        var curled = a;
+        curled.RightFingers.Index = 0.1f;
+        var flags = a;
+        flags.Flags |= PoseFlags.Head;
         Assert.True(PoseBlend.Differs(a, moved, 0.005f, 1f, 0.02f));
         Assert.True(PoseBlend.Differs(a, turned, 0.005f, 1f, 0.02f));
         Assert.True(PoseBlend.Differs(a, curled, 0.005f, 1f, 0.02f));
@@ -115,13 +163,14 @@ public class PoseBlendTests
 
 public class PoseBufferTests
 {
-    static PosePacket At(ushort seq, float z) => new()
-    {
-        Flags = PoseFlags.Head,
-        Sequence = seq,
-        HeadPosition = new Vector3(0, 0, z),
-        HeadRotation = Quaternion.Identity,
-    };
+    static PosePacket At(ushort seq, float z) =>
+        new()
+        {
+            Flags = PoseFlags.Head,
+            Sequence = seq,
+            HeadPosition = new Vector3(0, 0, z),
+            HeadRotation = Quaternion.Identity,
+        };
 
     [Fact]
     public void Sample_EmptyBuffer_ReturnsFalse()
@@ -262,14 +311,21 @@ public class TokenBucketTests
         bucket.TryTake(0.0);
         int taken = 0;
         for (int i = 0; i < 10; i++)
-            if (bucket.TryTake(100.0)) taken++;
+            if (bucket.TryTake(100.0))
+                taken++;
         Assert.Equal(2, taken);
     }
 }
 
 public class PoseSendGateTests
 {
-    static PosePacket Hand(float x) => new() { Flags = PoseFlags.RightHand, RightHandPosition = new Vector3(x, 0, 0), RightHandRotation = Quaternion.Identity };
+    static PosePacket Hand(float x) =>
+        new()
+        {
+            Flags = PoseFlags.RightHand,
+            RightHandPosition = new Vector3(x, 0, 0),
+            RightHandRotation = Quaternion.Identity,
+        };
 
     [Fact]
     public void FirstPose_Sends()
@@ -296,7 +352,11 @@ public class PoseSendGateTests
         {
             double t = frame / 90.0;
             var p = Hand(frame);
-            if (gate.ShouldSend(t, p)) { gate.MarkSent(t, p); sent++; }
+            if (gate.ShouldSend(t, p))
+            {
+                gate.MarkSent(t, p);
+                sent++;
+            }
         }
         Assert.InRange(sent, 245, 255);
     }
@@ -422,7 +482,13 @@ public class RemotePoseStreamTests
 {
     static byte[] Encoded(ushort seq, Vector3 hand)
     {
-        var p = new PosePacket { Flags = PoseFlags.RightHand | PoseFlags.VrActive, Sequence = seq, RightHandPosition = hand, RightHandRotation = Quaternion.Identity };
+        var p = new PosePacket
+        {
+            Flags = PoseFlags.RightHand | PoseFlags.VrActive,
+            Sequence = seq,
+            RightHandPosition = hand,
+            RightHandRotation = Quaternion.Identity,
+        };
         var buf = new byte[PoseCodec.MaxSize];
         int len = PoseCodec.Encode(p, buf);
         Array.Resize(ref buf, len);
@@ -470,15 +536,22 @@ public class RemotePoseStreamTests
     public void RateLimits_Flood()
     {
         var s = new RemotePoseStream();
-        int accepted = 0, limited = 0;
+        int accepted = 0,
+            limited = 0;
         for (int i = 0; i < 1000; i++)
         {
             var d = Encoded((ushort)(i + 1), Vector3.Zero);
             var r = s.Accept(d, d.Length, 1.0 + i * 0.001); // 1000 packets in one second
-            if (r == PoseAccept.Accepted) accepted++;
-            if (r == PoseAccept.RateLimited) limited++;
+            if (r == PoseAccept.Accepted)
+                accepted++;
+            if (r == PoseAccept.RateLimited)
+                limited++;
         }
-        Assert.InRange(accepted, 1, RemotePoseStream.MaxPacketsPerSecond + RemotePoseStream.Burst + 1);
+        Assert.InRange(
+            accepted,
+            1,
+            RemotePoseStream.MaxPacketsPerSecond + RemotePoseStream.Burst + 1
+        );
         Assert.True(limited > 900);
     }
 
@@ -491,7 +564,8 @@ public class RemotePoseStreamTests
         {
             var d = new byte[rng.Next(0, 80)];
             rng.NextBytes(d);
-            if (d.Length > 0) d[0] = PoseCodec.Version;
+            if (d.Length > 0)
+                d[0] = PoseCodec.Version;
             s.Accept(d, rng.Next(-5, d.Length + 5), i * 0.05);
         }
     }

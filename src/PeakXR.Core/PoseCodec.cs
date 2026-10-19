@@ -129,10 +129,14 @@ namespace PeakXR.Core
         public static int SizeFor(PoseFlags flags)
         {
             int size = HeaderSize;
-            if ((flags & PoseFlags.Head) != 0) size += PartSize;
-            if ((flags & PoseFlags.LeftHand) != 0) size += PartSize;
-            if ((flags & PoseFlags.RightHand) != 0) size += PartSize;
-            if ((flags & PoseFlags.Fingers) != 0) size += FingersSize;
+            if ((flags & PoseFlags.Head) != 0)
+                size += PartSize;
+            if ((flags & PoseFlags.LeftHand) != 0)
+                size += PartSize;
+            if ((flags & PoseFlags.RightHand) != 0)
+                size += PartSize;
+            if ((flags & PoseFlags.Fingers) != 0)
+                size += FingersSize;
             return size;
         }
 
@@ -150,7 +154,8 @@ namespace PeakXR.Core
             pos = new Vector3(
                 (short)ReadU16(b, o) * 0.001f,
                 (short)ReadU16(b, o + 2) * 0.001f,
-                (short)ReadU16(b, o + 4) * 0.001f);
+                (short)ReadU16(b, o + 4) * 0.001f
+            );
             rot = UnpackRotation(ReadU32(b, o + 6));
             return o + PartSize;
         }
@@ -190,21 +195,53 @@ namespace PeakXR.Core
             else
                 q = Quaternion.Normalize(q);
 
-            float x = q.X, y = q.Y, z = q.Z, w = q.W;
+            float x = q.X,
+                y = q.Y,
+                z = q.Z,
+                w = q.W;
             int largest = 0;
             float max = MathF.Abs(x);
-            if (MathF.Abs(y) > max) { largest = 1; max = MathF.Abs(y); }
-            if (MathF.Abs(z) > max) { largest = 2; max = MathF.Abs(z); }
-            if (MathF.Abs(w) > max) { largest = 3; }
+            if (MathF.Abs(y) > max)
+            {
+                largest = 1;
+                max = MathF.Abs(y);
+            }
+            if (MathF.Abs(z) > max)
+            {
+                largest = 2;
+                max = MathF.Abs(z);
+            }
+            if (MathF.Abs(w) > max)
+            {
+                largest = 3;
+            }
 
             float sign = Component(q, largest) < 0f ? -1f : 1f;
-            float a, b, c;
+            float a,
+                b,
+                c;
             switch (largest)
             {
-                case 0: a = y; b = z; c = w; break;
-                case 1: a = x; b = z; c = w; break;
-                case 2: a = x; b = y; c = w; break;
-                default: a = x; b = y; c = z; break;
+                case 0:
+                    a = y;
+                    b = z;
+                    c = w;
+                    break;
+                case 1:
+                    a = x;
+                    b = z;
+                    c = w;
+                    break;
+                case 2:
+                    a = x;
+                    b = y;
+                    c = w;
+                    break;
+                default:
+                    a = x;
+                    b = y;
+                    c = z;
+                    break;
             }
             return ((uint)largest << 30)
                 | (Quantize(a * sign) << 20)
@@ -222,15 +259,27 @@ namespace PeakXR.Core
             Quaternion q;
             switch (largest)
             {
-                case 0: q = new Quaternion(d, a, b, c); break;
-                case 1: q = new Quaternion(a, d, b, c); break;
-                case 2: q = new Quaternion(a, b, d, c); break;
-                default: q = new Quaternion(a, b, c, d); break;
+                case 0:
+                    q = new Quaternion(d, a, b, c);
+                    break;
+                case 1:
+                    q = new Quaternion(a, d, b, c);
+                    break;
+                case 2:
+                    q = new Quaternion(a, b, d, c);
+                    break;
+                default:
+                    q = new Quaternion(a, b, c, d);
+                    break;
             }
             return Quaternion.Normalize(q);
         }
 
-        static float Component(Quaternion q, int i) => i == 0 ? q.X : i == 1 ? q.Y : i == 2 ? q.Z : q.W;
+        static float Component(Quaternion q, int i) =>
+            i == 0 ? q.X
+            : i == 1 ? q.Y
+            : i == 2 ? q.Z
+            : q.W;
 
         static uint Quantize(float v)
         {

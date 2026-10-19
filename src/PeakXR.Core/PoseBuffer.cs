@@ -20,7 +20,8 @@ namespace PeakXR.Core
 
         readonly PosePacket[] poses = new PosePacket[Capacity];
         readonly double[] times = new double[Capacity];
-        int start, count;
+        int start,
+            count;
 
         bool hasLast;
         ushort lastSequence;
@@ -86,7 +87,8 @@ namespace PeakXR.Core
                 return true;
             }
 
-            double t0 = TimeAt(0), t1 = TimeAt(1);
+            double t0 = TimeAt(0),
+                t1 = TimeAt(1);
             float f = (float)((t - t0) / (t1 - t0));
             pose = PoseBlend.Lerp(PoseAt(0), PoseAt(1), f);
             return true;

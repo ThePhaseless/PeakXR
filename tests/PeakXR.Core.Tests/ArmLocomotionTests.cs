@@ -6,7 +6,10 @@ public class ArmLocomotionTests
     public void GrabStartFrame_DoesNotMove()
     {
         var a = new ArmLocomotion();
-        Assert.Equal(Vector3.Zero, a.Update(true, new Vector3(0, 1, 0), false, Vector3.Zero, 0.01f));
+        Assert.Equal(
+            Vector3.Zero,
+            a.Update(true, new Vector3(0, 1, 0), false, Vector3.Zero, 0.01f)
+        );
     }
 
     [Fact]
@@ -41,8 +44,14 @@ public class ArmLocomotionTests
     {
         var a = new ArmLocomotion();
         a.Update(true, Vector3.Zero, false, Vector3.Zero, 0.01f);
-        Assert.Equal(Vector3.Zero, a.Update(false, new Vector3(0, -1, 0), false, Vector3.Zero, 0.01f));
-        Assert.Equal(Vector3.Zero, a.Update(true, new Vector3(0, -2, 0), false, Vector3.Zero, 0.01f));
+        Assert.Equal(
+            Vector3.Zero,
+            a.Update(false, new Vector3(0, -1, 0), false, Vector3.Zero, 0.01f)
+        );
+        Assert.Equal(
+            Vector3.Zero,
+            a.Update(true, new Vector3(0, -2, 0), false, Vector3.Zero, 0.01f)
+        );
     }
 
     [Fact]

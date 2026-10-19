@@ -12,19 +12,25 @@ public static class FeatureManager
 
     public static IReadOnlyList<Feature> Features => features;
 
-    public static T Get<T>() where T : Feature => features.OfType<T>().FirstOrDefault();
+    public static T Get<T>()
+        where T : Feature => features.OfType<T>().FirstOrDefault();
 
-    public static bool IsActive<T>() where T : Feature => Get<T>()?.State == FeatureState.Active;
+    public static bool IsActive<T>()
+        where T : Feature => Get<T>()?.State == FeatureState.Active;
 
     internal static void InstallAll(bool vrEnabled)
     {
-        var types = Assembly.GetExecutingAssembly().GetTypes()
+        var types = Assembly
+            .GetExecutingAssembly()
+            .GetTypes()
             .Where(t => !t.IsAbstract && typeof(Feature).IsAssignableFrom(t));
 
         foreach (var type in types)
             features.Add((Feature)Activator.CreateInstance(type));
 
-        foreach (var feature in features.OrderBy(f => f.Order).ThenBy(f => f.Id, StringComparer.Ordinal))
+        foreach (
+            var feature in features.OrderBy(f => f.Order).ThenBy(f => f.Id, StringComparer.Ordinal)
+        )
         {
             if (feature.VROnly && !vrEnabled)
             {
@@ -56,7 +62,7 @@ public static class FeatureManager
         foreach (var f in features.OrderBy(f => f.Order).ThenBy(f => f.Id, StringComparer.Ordinal))
         {
             var reason = f.FailureReason == null ? "" : $" ({f.FailureReason})";
-            Plugin.Log.LogInfo($"[compat] {f.Id,-24} {f.State}{reason}");
+            Plugin.Log.LogInfo($"[compat] {f.Id, -24} {f.State}{reason}");
         }
     }
 }

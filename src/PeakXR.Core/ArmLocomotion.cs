@@ -12,10 +12,18 @@ namespace PeakXR.Core
         /// <summary>Maximum body speed, m/s.</summary>
         public float MaxSpeed = 6f;
 
-        bool _leftWas, _rightWas;
-        Vector3 _leftLast, _rightLast;
+        bool _leftWas,
+            _rightWas;
+        Vector3 _leftLast,
+            _rightLast;
 
-        public Vector3 Update(bool leftGrab, Vector3 leftPos, bool rightGrab, Vector3 rightPos, float dt)
+        public Vector3 Update(
+            bool leftGrab,
+            Vector3 leftPos,
+            bool rightGrab,
+            Vector3 rightPos,
+            float dt
+        )
         {
             Vector3 sum = Vector3.Zero;
             int n = 0;

@@ -60,7 +60,9 @@ public sealed class RuntimeInstaller
             activeManifest = Install(mode);
             if (activeManifest == null)
             {
-                _log.LogError($"{mode} runtime files are missing or incomplete; starting without VR");
+                _log.LogError(
+                    $"{mode} runtime files are missing or incomplete; starting without VR"
+                );
                 mode = RuntimeMode.Disabled;
             }
         }
@@ -68,8 +70,10 @@ public sealed class RuntimeInstaller
         // Disabled, or switched runtime: drop every manifest PeakXR wrote except the active one.
         foreach (var rel in _state.Keys.ToList())
         {
-            if (rel.StartsWith(SubsystemsFolder + "/", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase))
+            if (
+                rel.StartsWith(SubsystemsFolder + "/", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase)
+            )
                 RemoveTracked(rel);
         }
 
@@ -97,9 +101,19 @@ public sealed class RuntimeInstaller
         }
 
         var dlls = Directory.GetFiles(src, "*.dll");
-        if (!dlls.Any(d => string.Equals(Path.GetFileNameWithoutExtension(d), libraryName, StringComparison.OrdinalIgnoreCase)))
+        if (
+            !dlls.Any(d =>
+                string.Equals(
+                    Path.GetFileNameWithoutExtension(d),
+                    libraryName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+        )
         {
-            _log.LogError($"Manifest names native library '{libraryName}', but {src} has no {libraryName}.dll");
+            _log.LogError(
+                $"Manifest names native library '{libraryName}', but {src} has no {libraryName}.dll"
+            );
             return null;
         }
 
@@ -137,8 +151,10 @@ public sealed class RuntimeInstaller
             {
                 // Not ours (game, other mod or user edit): leave it alone.
                 _state.Remove(rel);
-                _log.LogWarning($"{rel} exists but was not written by PeakXR (or was changed since); leaving it as is. " +
-                                "If VR fails to start, remove it or the mod that installed it.");
+                _log.LogWarning(
+                    $"{rel} exists but was not written by PeakXR (or was changed since); leaving it as is. "
+                        + "If VR fails to start, remove it or the mod that installed it."
+                );
                 return;
             }
             _log.LogInfo($"Updating {rel}");
@@ -176,7 +192,11 @@ public sealed class RuntimeInstaller
 
         // Remove the folders we may have created, but only when empty.
         var subsystemsRoot = Full(SubsystemsFolder);
-        for (var dir = Path.GetDirectoryName(path); dir != null && dir.Length >= subsystemsRoot.Length; dir = Path.GetDirectoryName(dir))
+        for (
+            var dir = Path.GetDirectoryName(path);
+            dir != null && dir.Length >= subsystemsRoot.Length;
+            dir = Path.GetDirectoryName(dir)
+        )
         {
             if (!Directory.Exists(dir) || Directory.EnumerateFileSystemEntries(dir).Any())
                 break;
@@ -190,12 +210,19 @@ public sealed class RuntimeInstaller
         var root = Full(SubsystemsFolder);
         if (!Directory.Exists(root))
             return;
-        foreach (var file in Directory.GetFiles(root, ManifestFileName, SearchOption.AllDirectories))
+        foreach (
+            var file in Directory.GetFiles(root, ManifestFileName, SearchOption.AllDirectories)
+        )
         {
             var rel = Rel(file);
-            if (_state.ContainsKey(rel) || string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase))
+            if (
+                _state.ContainsKey(rel)
+                || string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase)
+            )
                 continue;
-            _log.LogWarning($"Found XR manifest not written by PeakXR: {rel}. Another VR mod may be installed; it can conflict with PeakXR.");
+            _log.LogWarning(
+                $"Found XR manifest not written by PeakXR: {rel}. Another VR mod may be installed; it can conflict with PeakXR."
+            );
         }
     }
 
@@ -230,17 +257,22 @@ public sealed class RuntimeInstaller
         }
 
         var sb = new StringBuilder();
-        sb.Append("# Files written by the PeakXR preloader (sha256<TAB>path relative to this folder).\n");
+        sb.Append(
+            "# Files written by the PeakXR preloader (sha256<TAB>path relative to this folder).\n"
+        );
         sb.Append("# PeakXR only updates or deletes files listed here whose hash still matches.\n");
         foreach (var pair in _state.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
             sb.Append(pair.Value).Append('\t').Append(pair.Key).Append('\n');
         File.WriteAllText(_statePath, sb.ToString());
     }
 
-    private string Full(string rel) => Path.Combine(_dataDir, rel.Replace('/', Path.DirectorySeparatorChar));
+    private string Full(string rel) =>
+        Path.Combine(_dataDir, rel.Replace('/', Path.DirectorySeparatorChar));
 
     private string Rel(string full) =>
-        full.Substring(_dataDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
+        full.Substring(_dataDir.Length)
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Replace('\\', '/');
 
     private static string Sha256(string path)
     {

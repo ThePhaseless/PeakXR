@@ -60,7 +60,10 @@ internal sealed class SandboxWindow
 
         if (!SandboxActions.Active)
         {
-            GUI.Label(new Rect(Pad, y, w, 22f), "Inactive: enable Sandbox.Enabled; works offline or as host only.");
+            GUI.Label(
+                new Rect(Pad, y, w, 22f),
+                "Inactive: enable Sandbox.Enabled; works offline or as host only."
+            );
             y += 24f;
         }
 
@@ -87,7 +90,11 @@ internal sealed class SandboxWindow
     {
         var items = SandboxActions.Items;
         y = DrawSearch(y, w);
-        giveToHand = GUI.Toggle(new Rect(Pad, y, w, 22f), giveToHand, "Click gives item to hand (off: drops ahead)");
+        giveToHand = GUI.Toggle(
+            new Rect(Pad, y, w, 22f),
+            giveToHand,
+            "Click gives item to hand (off: drops ahead)"
+        );
         y += 26f;
 
         Refilter(0, SandboxActions.ItemsVersion, items.Count, null, items);
@@ -103,7 +110,12 @@ internal sealed class SandboxWindow
         }
 
         y += listHeight + 4f;
-        if (GUI.Button(new Rect(Pad, y, w, 24f), "Spawn test line (every item, in rows ahead of you)"))
+        if (
+            GUI.Button(
+                new Rect(Pad, y, w, 24f),
+                "Spawn test line (every item, in rows ahead of you)"
+            )
+        )
             SandboxActions.SpawnTestLine();
     }
 
@@ -132,7 +144,11 @@ internal sealed class SandboxWindow
 
     static void DrawPlayer(float y, float w)
     {
-        bool god = GUI.Toggle(new Rect(Pad, y, w, 24f), SandboxActions.GodMode, "God mode (infinite stamina, no afflictions, no fall damage)");
+        bool god = GUI.Toggle(
+            new Rect(Pad, y, w, 24f),
+            SandboxActions.GodMode,
+            "God mode (infinite stamina, no afflictions, no fall damage)"
+        );
         if (god != SandboxActions.GodMode)
             SandboxActions.SetGodMode(god);
         y += 30f;
@@ -144,7 +160,11 @@ internal sealed class SandboxWindow
             SandboxActions.WarpToSpawn();
         y += 32f;
 
-        bool cam = GUI.Toggle(new Rect(Pad, y, w, 24f), SandboxActions.FreeCamActive, "Free camera (flat only)");
+        bool cam = GUI.Toggle(
+            new Rect(Pad, y, w, 24f),
+            SandboxActions.FreeCamActive,
+            "Free camera (flat only)"
+        );
         if (cam != SandboxActions.FreeCamActive)
             SandboxActions.ToggleFreeCam();
         y += 32f;
@@ -178,7 +198,13 @@ internal sealed class SandboxWindow
     }
 
     /// <summary>Rebuild <see cref="filtered"/> only when the tab, the source list or the query changed.</summary>
-    void Refilter(int forTab, int version, int count, IReadOnlyList<MobEntry> mobs, IReadOnlyList<Item> items)
+    void Refilter(
+        int forTab,
+        int version,
+        int count,
+        IReadOnlyList<MobEntry> mobs,
+        IReadOnlyList<Item> items
+    )
     {
         if (filterTab == forTab && filterVersion == version && filterQuery == query)
             return;
@@ -196,7 +222,12 @@ internal sealed class SandboxWindow
     }
 
     /// <summary>Draw the visible rows of <see cref="filtered"/>; returns the clicked source index or -1.</summary>
-    int DrawRows(Rect view, ref Vector2 scroll, IReadOnlyList<Item> items, IReadOnlyList<MobEntry> mobs)
+    int DrawRows(
+        Rect view,
+        ref Vector2 scroll,
+        IReadOnlyList<Item> items,
+        IReadOnlyList<MobEntry> mobs
+    )
     {
         int clicked = -1;
         int count = filtered.Count;

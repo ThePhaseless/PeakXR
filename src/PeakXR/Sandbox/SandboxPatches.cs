@@ -16,7 +16,8 @@ static class FallDamagePatch
 {
     internal static AccessTools.FieldRef<CharacterMovement, Character> CharacterRef;
 
-    static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterMovement), "CheckFallDamage", System.Type.EmptyTypes);
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(CharacterMovement), "CheckFallDamage", System.Type.EmptyTypes);
 
     static bool Prefix(CharacterMovement __instance)
     {
@@ -35,7 +36,8 @@ static class FallDamagePatch
 [HarmonyPatch]
 static class WindowInputPatch
 {
-    static MethodBase TargetMethod() => GameMember.Method(typeof(Character), "CanDoInput", System.Type.EmptyTypes);
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(Character), "CanDoInput", System.Type.EmptyTypes);
 
     static void Postfix(Character __instance, ref bool __result)
     {
@@ -51,7 +53,8 @@ static class WindowInputPatch
 [HarmonyPatch]
 static class WindowCursorPatch
 {
-    static MethodBase TargetMethod() => GameMember.Method(typeof(CursorHandler), "Update", System.Type.EmptyTypes);
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(CursorHandler), "Update", System.Type.EmptyTypes);
 
     static void Postfix()
     {

@@ -74,7 +74,11 @@ public static class SandboxCommands
         if (list == null)
             return false;
 
-        foreach (var method in typeof(SandboxCommands).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
+        foreach (
+            var method in typeof(SandboxCommands).GetMethods(
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly
+            )
+        )
         {
             if (method.GetCustomAttribute<ConsoleCommandAttribute>() == null)
                 continue;
@@ -82,7 +86,10 @@ public static class SandboxCommands
             bool present = false;
             foreach (var existing in list)
             {
-                if (existing.MethodInfo.DeclaringType == method.DeclaringType && existing.MethodInfo.Name == method.Name)
+                if (
+                    existing.MethodInfo.DeclaringType == method.DeclaringType
+                    && existing.MethodInfo.Name == method.Name
+                )
                 {
                     present = true;
                     break;

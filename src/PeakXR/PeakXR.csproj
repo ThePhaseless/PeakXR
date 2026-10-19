@@ -21,7 +21,11 @@
 
   <!-- PeakXR.Core is compiled into this DLL so the mod ships as one plugin assembly. -->
   <ItemGroup>
-    <Compile Include="../PeakXR.Core/**/*.cs" Exclude="../PeakXR.Core/obj/**;../PeakXR.Core/bin/**" LinkBase="Core" />
+    <Compile
+      Include="../PeakXR.Core/**/*.cs"
+      Exclude="../PeakXR.Core/obj/**;../PeakXR.Core/bin/**"
+      LinkBase="Core"
+    />
   </ItemGroup>
 
   <Import Project="../XRDeps.props" Condition="Exists('../XRDeps.props')" />
@@ -36,7 +40,10 @@
     <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.InputSystem.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
-    <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll" Private="false" />
+    <Reference
+      Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll"
+      Private="false"
+    />
     <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
   </ItemGroup>
 </Project>

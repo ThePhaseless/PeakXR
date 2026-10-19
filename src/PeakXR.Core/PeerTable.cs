@@ -47,7 +47,10 @@ namespace PeakXR.Core
         /// <summary>Applies an actor's <see cref="Handshake.Key"/> property value (null when absent). Returns true when anything changed.</summary>
         public bool Set(int actor, object propertyValue)
         {
-            if (!Handshake.TryParse(propertyValue, out int protocol, out bool vr) || protocol != Handshake.Protocol)
+            if (
+                !Handshake.TryParse(propertyValue, out int protocol, out bool vr)
+                || protocol != Handshake.Protocol
+            )
                 return Remove(actor);
 
             if (peers.TryGetValue(actor, out bool oldVr))

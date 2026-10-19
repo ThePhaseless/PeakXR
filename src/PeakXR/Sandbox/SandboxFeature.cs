@@ -27,13 +27,32 @@ public sealed class SandboxFeature : Feature
 
     protected internal override void Install()
     {
-        EnabledEntry = Plugin.Settings.Bind("Sandbox", "Enabled", false, new ConfigDescription(
-            "Creative/test mode: unlocks the built-in console and adds spawners and god mode. " +
-            "Only active offline or when you are the host."));
-        WindowKeyEntry = Plugin.Settings.Bind("Sandbox", "WindowKey", KeyCode.F7, new ConfigDescription(
-            "Key that toggles the flat sandbox window. Avoid F1 (console), F5 and Insert (other mods)."));
-        SpawnDistanceEntry = Plugin.Settings.Bind("Sandbox", "SpawnDistance", 2f, new ConfigDescription(
-            "How far in front of you spawned items appear, in meters.", new AcceptableValueRange<float>(0.5f, 10f)));
+        EnabledEntry = Plugin.Settings.Bind(
+            "Sandbox",
+            "Enabled",
+            false,
+            new ConfigDescription(
+                "Creative/test mode: unlocks the built-in console and adds spawners and god mode. "
+                    + "Only active offline or when you are the host."
+            )
+        );
+        WindowKeyEntry = Plugin.Settings.Bind(
+            "Sandbox",
+            "WindowKey",
+            KeyCode.F7,
+            new ConfigDescription(
+                "Key that toggles the flat sandbox window. Avoid F1 (console), F5 and Insert (other mods)."
+            )
+        );
+        SpawnDistanceEntry = Plugin.Settings.Bind(
+            "Sandbox",
+            "SpawnDistance",
+            2f,
+            new ConfigDescription(
+                "How far in front of you spawned items appear, in meters.",
+                new AcceptableValueRange<float>(0.5f, 10f)
+            )
+        );
 
         // Required: without these the god mode and free camera would silently do nothing.
         FallDamagePatch.CharacterRef = GameMember.Field<CharacterMovement, Character>("character");
@@ -58,7 +77,9 @@ public sealed class SandboxFeature : Feature
         }
         catch (System.Exception e)
         {
-            Plugin.Log.LogWarning($"[sandbox] optional patch {patchClass.Name} skipped: {e.GetBaseException().Message}");
+            Plugin.Log.LogWarning(
+                $"[sandbox] optional patch {patchClass.Name} skipped: {e.GetBaseException().Message}"
+            );
         }
     }
 }

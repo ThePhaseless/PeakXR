@@ -2,17 +2,18 @@ namespace PeakXR.Core.Tests;
 
 public class ComfortVignetteTests
 {
-    static ComfortVignette Make() => new ComfortVignette
-    {
-        Enabled = true,
-        Strength = 1f,
-        LinearMin = 1f,
-        LinearMax = 3f,
-        AngularMin = 30f,
-        AngularMax = 90f,
-        AttackRate = 1000f,
-        ReleaseRate = 1000f,
-    };
+    static ComfortVignette Make() =>
+        new ComfortVignette
+        {
+            Enabled = true,
+            Strength = 1f,
+            LinearMin = 1f,
+            LinearMax = 3f,
+            AngularMin = 30f,
+            AngularMax = 90f,
+            AttackRate = 1000f,
+            ReleaseRate = 1000f,
+        };
 
     [Fact]
     public void BelowThresholds_IsZero()
@@ -53,7 +54,8 @@ public class ComfortVignetteTests
         v.ReleaseRate = 2f;
         float up = v.Update(10f, 0f, 0.1f);
         TestUtil.Near(1f - MathF.Exp(-1f), up, 1e-3f);
-        for (int i = 0; i < 100; i++) v.Update(10f, 0f, 0.1f);
+        for (int i = 0; i < 100; i++)
+            v.Update(10f, 0f, 0.1f);
         float down = v.Update(0f, 0f, 0.1f);
         TestUtil.Near(MathF.Exp(-0.2f), down, 1e-3f);
     }

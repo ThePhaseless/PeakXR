@@ -30,16 +30,40 @@ public sealed class NetPoseFeature : Feature
 
     protected internal override void Install()
     {
-        SendPose = Plugin.Settings.Bind("Multiplayer", "SendPose", true, new ConfigDescription(
-            "Send your tracked head, hands and fingers to other PeakXR players while in VR. Vanilla players never receive it."));
-        ShowRemotePoses = Plugin.Settings.Bind("Multiplayer", "ShowRemotePoses", true, new ConfigDescription(
-            "Show the tracked heads, hands and fingers of other PeakXR VR players."));
-        SendRate = Plugin.Settings.Bind("Multiplayer", "PoseSendRate", 25, new ConfigDescription(
-            "Pose packets per second. Only changed poses are sent; lower values save bandwidth.",
-            new AcceptableValueRange<int>(20, 30)));
-        InterpolationDelayMs = Plugin.Settings.Bind("Multiplayer", "PoseInterpolationDelayMs", 100, new ConfigDescription(
-            "How far behind real time remote hands are shown, in milliseconds. Higher is smoother on bad connections.",
-            new AcceptableValueRange<int>(50, 250)));
+        SendPose = Plugin.Settings.Bind(
+            "Multiplayer",
+            "SendPose",
+            true,
+            new ConfigDescription(
+                "Send your tracked head, hands and fingers to other PeakXR players while in VR. Vanilla players never receive it."
+            )
+        );
+        ShowRemotePoses = Plugin.Settings.Bind(
+            "Multiplayer",
+            "ShowRemotePoses",
+            true,
+            new ConfigDescription(
+                "Show the tracked heads, hands and fingers of other PeakXR VR players."
+            )
+        );
+        SendRate = Plugin.Settings.Bind(
+            "Multiplayer",
+            "PoseSendRate",
+            25,
+            new ConfigDescription(
+                "Pose packets per second. Only changed poses are sent; lower values save bandwidth.",
+                new AcceptableValueRange<int>(20, 30)
+            )
+        );
+        InterpolationDelayMs = Plugin.Settings.Bind(
+            "Multiplayer",
+            "PoseInterpolationDelayMs",
+            100,
+            new ConfigDescription(
+                "How far behind real time remote hands are shown, in milliseconds. Higher is smoother on bad connections.",
+                new AcceptableValueRange<int>(50, 250)
+            )
+        );
 
         var host = new GameObject("PeakXR.NetPose") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(host);

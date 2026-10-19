@@ -16,7 +16,8 @@ namespace PeakXR.Core
         public float FingerEpsilon = 0.02f;
 
         bool hasSent;
-        double lastSent, nextSend;
+        double lastSent,
+            nextSend;
         PosePacket last;
 
         public bool ShouldSend(double now, in PosePacket pose)
@@ -46,8 +47,10 @@ namespace PeakXR.Core
     /// <summary>Token bucket rate limiter: allows bursts up to the capacity, then a steady rate.</summary>
     public struct TokenBucket
     {
-        readonly double capacity, perSecond;
-        double tokens, lastTime;
+        readonly double capacity,
+            perSecond;
+        double tokens,
+            lastTime;
         bool started;
 
         public TokenBucket(float capacity, float perSecond)

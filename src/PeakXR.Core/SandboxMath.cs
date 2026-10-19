@@ -14,7 +14,13 @@ namespace PeakXR.Core
         /// <paramref name="perRow"/>, each row centered on the origin line; rows advance along
         /// <paramref name="forward"/> (flattened to the ground plane, so looking up or down is harmless).
         /// </summary>
-        public static void Grid(Vector3[] positions, Vector3 origin, Vector3 forward, float spacing, int perRow)
+        public static void Grid(
+            Vector3[] positions,
+            Vector3 origin,
+            Vector3 forward,
+            float spacing,
+            int perRow
+        )
         {
             if (perRow < 1)
                 perRow = 1;

@@ -2,9 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
-using Photon.Pun;
 using PeakXR.Core;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 using Zorro.Core;
 using Quaternion = UnityEngine.Quaternion;
@@ -26,7 +26,12 @@ public static class SandboxActions
     /// <summary>Segments the jump list offers (the game's enum also has <c>Void</c>).</summary>
     public static readonly Segment[] Segments =
     {
-        Segment.Beach, Segment.Tropics, Segment.Alpine, Segment.Caldera, Segment.TheKiln, Segment.Peak,
+        Segment.Beach,
+        Segment.Tropics,
+        Segment.Alpine,
+        Segment.Caldera,
+        Segment.TheKiln,
+        Segment.Peak,
     };
 
     /// <summary>Game-time presets, in hours (the day runs 0 to 24; sunrise 5, sunset 21).</summary>
@@ -34,11 +39,16 @@ public static class SandboxActions
 
     static readonly CharacterAfflictions.STATUSTYPE[] clearable =
     {
-        CharacterAfflictions.STATUSTYPE.Injury, CharacterAfflictions.STATUSTYPE.Hunger,
-        CharacterAfflictions.STATUSTYPE.Cold, CharacterAfflictions.STATUSTYPE.Poison,
-        CharacterAfflictions.STATUSTYPE.Curse, CharacterAfflictions.STATUSTYPE.Drowsy,
-        CharacterAfflictions.STATUSTYPE.Hot, CharacterAfflictions.STATUSTYPE.Spores,
-        CharacterAfflictions.STATUSTYPE.Web, CharacterAfflictions.STATUSTYPE.FlyTrap,
+        CharacterAfflictions.STATUSTYPE.Injury,
+        CharacterAfflictions.STATUSTYPE.Hunger,
+        CharacterAfflictions.STATUSTYPE.Cold,
+        CharacterAfflictions.STATUSTYPE.Poison,
+        CharacterAfflictions.STATUSTYPE.Curse,
+        CharacterAfflictions.STATUSTYPE.Drowsy,
+        CharacterAfflictions.STATUSTYPE.Hot,
+        CharacterAfflictions.STATUSTYPE.Spores,
+        CharacterAfflictions.STATUSTYPE.Web,
+        CharacterAfflictions.STATUSTYPE.FlyTrap,
         CharacterAfflictions.STATUSTYPE.Petrify,
     };
 
@@ -56,7 +66,8 @@ public static class SandboxActions
 
     /// <summary>True when the sandbox may act: enabled, and either offline or we are the master client.
     /// This keeps it out of other people's lobbies.</summary>
-    public static bool Active => Enabled && (PhotonNetwork.OfflineMode || PhotonNetwork.IsMasterClient);
+    public static bool Active =>
+        Enabled && (PhotonNetwork.OfflineMode || PhotonNetwork.IsMasterClient);
 
     public static bool GodMode { get; private set; }
 
@@ -115,7 +126,9 @@ public static class SandboxActions
                             items.Add(item);
                     }
                 }
-                items.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
+                items.Sort(
+                    (a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase)
+                );
                 ItemsVersion++;
             }
             return items;
@@ -150,7 +163,11 @@ public static class SandboxActions
             Say("Not in a room yet.");
             return false;
         }
-        var go = PhotonNetwork.InstantiateItemRoom(item.gameObject.name, position, Quaternion.identity);
+        var go = PhotonNetwork.InstantiateItemRoom(
+            item.gameObject.name,
+            position,
+            Quaternion.identity
+        );
         if (go == null)
         {
             Say($"Spawning {item.name} failed (see log).");
@@ -210,8 +227,13 @@ public static class SandboxActions
         var origin = Character.localCharacter.Center + flat.normalized * 3f;
 
         var positions = new System.Numerics.Vector3[list.Count];
-        SpawnLayout.Grid(positions, new System.Numerics.Vector3(origin.x, origin.y, origin.z),
-            new System.Numerics.Vector3(flat.x, 0f, flat.z), TestLineSpacing, TestLinePerRow);
+        SpawnLayout.Grid(
+            positions,
+            new System.Numerics.Vector3(origin.x, origin.y, origin.z),
+            new System.Numerics.Vector3(flat.x, 0f, flat.z),
+            TestLineSpacing,
+            TestLinePerRow
+        );
 
         testLineRunning = true;
         driver.StartCoroutine(TestLineRoutine(list, positions));
@@ -219,7 +241,10 @@ public static class SandboxActions
         return list.Count;
     }
 
-    static IEnumerator TestLineRoutine(IReadOnlyList<Item> list, System.Numerics.Vector3[] positions)
+    static IEnumerator TestLineRoutine(
+        IReadOnlyList<Item> list,
+        System.Numerics.Vector3[] positions
+    )
     {
         int spawned = 0;
         for (int i = 0; i < list.Count; i++)
@@ -229,11 +254,22 @@ public static class SandboxActions
 
             var p = new Vector3(positions[i].X, positions[i].Y, positions[i].Z);
             // Drop each item onto the terrain below its grid slot so slopes do not bury or float it.
-            var hit = HelperFunctions.LineCheck(p + Vector3.up * 8f, p + Vector3.down * 40f, HelperFunctions.LayerType.TerrainMap);
+            var hit = HelperFunctions.LineCheck(
+                p + Vector3.up * 8f,
+                p + Vector3.down * 40f,
+                HelperFunctions.LayerType.TerrainMap
+            );
             if (hit.transform != null)
                 p = hit.point + Vector3.up * 0.3f;
 
-            if (list[i] != null && PhotonNetwork.InstantiateItemRoom(list[i].gameObject.name, p, Quaternion.identity) != null)
+            if (
+                list[i] != null
+                && PhotonNetwork.InstantiateItemRoom(
+                    list[i].gameObject.name,
+                    p,
+                    Quaternion.identity
+                ) != null
+            )
                 spawned++;
 
             if ((i + 1) % TestLinePerFrame == 0)
@@ -273,7 +309,8 @@ public static class SandboxActions
         var ground = GroundPoint(6f);
         var toPlayer = Character.localCharacter.Center - ground;
         toPlayer.y = 0f;
-        var rotation = toPlayer.sqrMagnitude > 0.01f ? Quaternion.LookRotation(toPlayer) : Quaternion.identity;
+        var rotation =
+            toPlayer.sqrMagnitude > 0.01f ? Quaternion.LookRotation(toPlayer) : Quaternion.identity;
         return SpawnMobAt(entry, ground + Vector3.up * 0.5f, rotation);
     }
 
@@ -312,7 +349,12 @@ public static class SandboxActions
                     return false;
                 }
                 go = PhotonNetwork.Instantiate(entry.Name, position, rotation, 0);
-                go?.GetComponent<PhotonView>().RPC("RPCA_InitTornado", RpcTarget.All, spawner.GetComponent<PhotonView>().ViewID);
+                go?.GetComponent<PhotonView>()
+                    .RPC(
+                        "RPCA_InitTornado",
+                        RpcTarget.All,
+                        spawner.GetComponent<PhotonView>().ViewID
+                    );
                 break;
             }
 
@@ -509,7 +551,9 @@ public static class SandboxActions
         }
         bool on = !GodCamRef(cam);
         GodCamRef(cam) = on;
-        Say(on ? "Free camera on (WASD, Space/E up, Q/Ctrl down, Shift fast)." : "Free camera off.");
+        Say(
+            on ? "Free camera on (WASD, Space/E up, Q/Ctrl down, Shift fast)." : "Free camera off."
+        );
         return true;
     }
 
@@ -528,8 +572,10 @@ public static class SandboxActions
     // ---------------------------------------------------------------- geometry helpers
 
     /// <summary>The transform whose forward means "where the player looks" in both flat and VR.</summary>
-    static Transform AimTransform()
-        => MainCamera.instance != null ? MainCamera.instance.transform : Character.localCharacter.transform;
+    static Transform AimTransform() =>
+        MainCamera.instance != null
+            ? MainCamera.instance.transform
+            : Character.localCharacter.transform;
 
     /// <summary>A point <paramref name="distance"/> meters ahead of the player's eyes, flattened to chest height.</summary>
     public static Vector3 FrontPoint(float distance)
@@ -544,7 +590,11 @@ public static class SandboxActions
     static Vector3 GroundPoint(float distance)
     {
         var p = FrontPoint(distance);
-        var hit = HelperFunctions.LineCheck(p + Vector3.up * 10f, p + Vector3.down * 60f, HelperFunctions.LayerType.TerrainMap);
+        var hit = HelperFunctions.LineCheck(
+            p + Vector3.up * 10f,
+            p + Vector3.down * 60f,
+            HelperFunctions.LayerType.TerrainMap
+        );
         return hit.transform != null ? hit.point : p;
     }
 }
