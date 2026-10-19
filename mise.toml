@@ -1,6 +1,9 @@
 [tools]
-dotnet = "9"
+dotnet = "10"
 "dotnet:ilspycmd" = "9"
+"dotnet:csharpier" = "1.3.0"
+# Thunderstore CLI; only used for future publishing (see thunderstore.toml)
+"dotnet:tcli" = "0.2.4"
 # JSON parsing in tools/*.sh (Unity registry metadata, asmdefs)
 jq = "1.8"
 
@@ -25,6 +28,18 @@ run = "dotnet build PeakXR.sln -c Release"
 [tasks.test]
 description = "Run the unit tests (Release)"
 run = "dotnet test PeakXR.sln -c Release"
+
+[tasks.coverage]
+description = "Run the unit tests with coverlet coverage (cobertura XML in TestResults/)"
+run = 'dotnet test PeakXR.sln -c Release --coverlet --coverlet-output-format cobertura --coverlet-include "[PeakXR.Core]*"'
+
+[tasks.format]
+description = "Format all C# with CSharpier"
+run = "csharpier format ."
+
+[tasks.format-check]
+description = "Fail if any C# file is not CSharpier-formatted"
+run = "csharpier check ."
 
 [tasks.package]
 description = "Build the Thunderstore zip and an unpacked copy into dist/"
