@@ -1,0 +1,44 @@
+[tools]
+dotnet = "9"
+"dotnet:ilspycmd" = "9"
+# JSON parsing in tools/*.sh (Unity registry metadata, asmdefs)
+jq = "1.8"
+
+[env]
+# ilspycmd targets net8; let it run on the newer mise-managed runtime
+DOTNET_ROLL_FORWARD = "Major"
+PEAK_DIR = "{{env.HOME}}/.local/share/Steam/steamapps/common/PEAK"
+
+# ---------------------------------------------------------------------------------------------
+# Tasks. Scripts live in tools/; every task runs with the tools and env above.
+# ---------------------------------------------------------------------------------------------
+
+[tasks.deps]
+description = "Fetch, verify and build the XR runtime deps (OpenXR + OpenVR fallback) into deps/"
+run = "bash tools/fetch-xr-deps.sh"
+
+[tasks.build]
+description = "Build the solution (Release)"
+depends = ["deps"]
+run = "dotnet build PeakXR.sln -c Release"
+
+[tasks.test]
+description = "Run the unit tests (Release)"
+run = "dotnet test PeakXR.sln -c Release"
+
+[tasks.package]
+description = "Build the Thunderstore zip and an unpacked copy into dist/"
+depends = ["build"]
+run = "bash tools/package.sh"
+
+[tasks.deploy]
+description = "Copy dist/PeakXR/BepInEx into the game's BepInEx folder (run `mise run package` first)"
+run = "bash tools/deploy.sh"
+
+[tasks.decompile]
+description = "Re-decompile Assembly-CSharp and Zorro.* into decomp/ (after a game update)"
+run = "bash tools/decompile.sh"
+
+[tasks.compat-check]
+description = "Print game, Unity and XR deps versions; later: diff patch targets"
+run = "bash tools/compat-check.sh"

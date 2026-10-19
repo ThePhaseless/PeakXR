@@ -1,0 +1,8 @@
+decomp/
+lib/
+bin/
+obj/
+*.user
+.vs/
+deps/
+dist/

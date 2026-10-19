@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>PeakXR</AssemblyName>
+    <RootNamespace>PeakXR</RootNamespace>
+    <BepInExPluginGuid>com.thephaseless.peakxr</BepInExPluginGuid>
+    <BepInExPluginName>PeakXR</BepInExPluginName>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
+    <PeakManaged>$(PeakDir)/PEAK_Data/Managed</PeakManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+  </ItemGroup>
+
+  <!-- PeakXR.Core is compiled into this DLL so the mod ships as one plugin assembly. -->
+  <ItemGroup>
+    <Compile Include="../PeakXR.Core/**/*.cs" Exclude="../PeakXR.Core/obj/**;../PeakXR.Core/bin/**" LinkBase="Core" />
+  </ItemGroup>
+
+  <Import Project="../XRDeps.props" Condition="Exists('../XRDeps.props')" />
+
+  <!-- Game assemblies are referenced in place and never copied or committed. -->
+  <ItemGroup>
+    <Reference Include="$(PeakManaged)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Zorro.*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Photon*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.InputSystem.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
+  </ItemGroup>
+</Project>

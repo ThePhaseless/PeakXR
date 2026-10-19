@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    BepInEx 5 preloader patcher. Installs the native XR runtime (OpenXR or OpenVR) into the game's
+    data folder before Unity enumerates subsystems, and hands the chosen runtime to the plugin
+    through the PEAKXR_RUNTIME environment variable.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>PeakXR.Preloader</AssemblyName>
+    <RootNamespace>PeakXR.Preloader</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- BepInEx 5 ships Mono.Cecil 0.10.4; compile against that, not MonoMod's newer transitive one. -->
+    <NoWarn>$(NoWarn);NU1605</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Mono.Cecil" Version="0.10.4" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

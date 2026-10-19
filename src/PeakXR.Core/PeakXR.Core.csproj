@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>PeakXR.Core</AssemblyName>
+    <RootNamespace>PeakXR.Core</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Tests reach internals; production code must not rely on this (sources are linked into the plugin). -->
+    <InternalsVisibleTo Include="PeakXR.Core.Tests" />
+  </ItemGroup>
+</Project>

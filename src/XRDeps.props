@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    Compile-time references to the XR assemblies built by tools/fetch-xr-deps.sh (`mise run deps`).
+    Import from a project with <Import Project="../XRDeps.props" />. Each reference is added only
+    when the DLL exists, so projects still restore and build before the deps are fetched.
+    Private=false: the DLLs ship in BepInEx/plugins/PeakXR/RuntimeDeps/ via `mise run package`,
+    never next to the plugin assembly.
+  -->
+  <PropertyGroup>
+    <PeakXRDepsDir Condition="'$(PeakXRDepsDir)' == ''">$(MSBuildThisFileDirectory)../deps/</PeakXRDepsDir>
+    <PeakXRHasOpenXR Condition="Exists('$(PeakXRDepsDir)xr/managed/Unity.XR.OpenXR.dll')">true</PeakXRHasOpenXR>
+    <PeakXRHasOpenVR Condition="Exists('$(PeakXRDepsDir)openvr/managed/Unity.XR.OpenVR.dll')">true</PeakXRHasOpenVR>
+    <!-- Lets code compile with or without each backend: #if PEAKXR_OPENXR / #if PEAKXR_OPENVR. -->
+    <DefineConstants Condition="'$(PeakXRHasOpenXR)' == 'true'">$(DefineConstants);PEAKXR_OPENXR</DefineConstants>
+    <DefineConstants Condition="'$(PeakXRHasOpenVR)' == 'true'">$(DefineConstants);PEAKXR_OPENVR</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(PeakXRDepsDir)xr/managed/*.dll" Private="false" />
+    <Reference Include="$(PeakXRDepsDir)openvr/managed/*.dll" Private="false" />
+  </ItemGroup>
+</Project>
