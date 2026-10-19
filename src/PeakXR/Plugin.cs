@@ -22,8 +22,10 @@ public class Plugin : BaseUnityPlugin
         Log = Logger;
 
         VRSession.Requested = VRSession.ReadRequestedRuntime();
-        Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}, game {UnityEngine.Application.version}, " +
-                    $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}");
+        Log.LogInfo(
+            $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}, game {UnityEngine.Application.version}, "
+                + $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}"
+        );
 
         FeatureManager.InstallAll(VRSession.Requested != VRRuntime.Disabled);
     }

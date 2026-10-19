@@ -6,7 +6,12 @@ public class PoseCodecTests
     {
         return new PosePacket
         {
-            Flags = PoseFlags.Head | PoseFlags.LeftHand | PoseFlags.RightHand | PoseFlags.Fingers | PoseFlags.VrActive,
+            Flags =
+                PoseFlags.Head
+                | PoseFlags.LeftHand
+                | PoseFlags.RightHand
+                | PoseFlags.Fingers
+                | PoseFlags.VrActive,
             Sequence = (ushort)rng.Next(0, 65536),
             HeadPosition = RandPos(rng, 2f),
             HeadRotation = RandRot(rng),
@@ -14,16 +19,39 @@ public class PoseCodecTests
             LeftHandRotation = RandRot(rng),
             RightHandPosition = RandPos(rng, 2f),
             RightHandRotation = RandRot(rng),
-            LeftFingers = new FingerCurls(rng.NextSingle(), rng.NextSingle(), rng.NextSingle(), rng.NextSingle(), rng.NextSingle()),
-            RightFingers = new FingerCurls(rng.NextSingle(), rng.NextSingle(), rng.NextSingle(), rng.NextSingle(), rng.NextSingle()),
+            LeftFingers = new FingerCurls(
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle()
+            ),
+            RightFingers = new FingerCurls(
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle(),
+                rng.NextSingle()
+            ),
         };
     }
 
     static Vector3 RandPos(Random rng, float range) =>
-        new((rng.NextSingle() * 2 - 1) * range, (rng.NextSingle() * 2 - 1) * range, (rng.NextSingle() * 2 - 1) * range);
+        new(
+            (rng.NextSingle() * 2 - 1) * range,
+            (rng.NextSingle() * 2 - 1) * range,
+            (rng.NextSingle() * 2 - 1) * range
+        );
 
     static Quaternion RandRot(Random rng) =>
-        Quaternion.Normalize(new Quaternion(rng.NextSingle() * 2 - 1, rng.NextSingle() * 2 - 1, rng.NextSingle() * 2 - 1, rng.NextSingle() * 2 - 1));
+        Quaternion.Normalize(
+            new Quaternion(
+                rng.NextSingle() * 2 - 1,
+                rng.NextSingle() * 2 - 1,
+                rng.NextSingle() * 2 - 1,
+                rng.NextSingle() * 2 - 1
+            )
+        );
 
     [Fact]
     public void FullPacket_FitsIn48Bytes()
@@ -39,7 +67,9 @@ public class PoseCodecTests
     {
         var rng = new Random(7);
         var buf = new byte[PoseCodec.MaxSize];
-        float worstPos = 0f, worstRot = 0f, worstFinger = 0f;
+        float worstPos = 0f,
+            worstRot = 0f,
+            worstFinger = 0f;
         for (int i = 0; i < 1000; i++)
         {
             var p = Full(rng);
@@ -48,15 +78,33 @@ public class PoseCodecTests
             Assert.Equal(p.Flags, d.Flags);
             Assert.Equal(p.Sequence, d.Sequence);
             worstPos = MathF.Max(worstPos, Vector3.Distance(p.HeadPosition, d.HeadPosition));
-            worstPos = MathF.Max(worstPos, Vector3.Distance(p.LeftHandPosition, d.LeftHandPosition));
-            worstPos = MathF.Max(worstPos, Vector3.Distance(p.RightHandPosition, d.RightHandPosition));
+            worstPos = MathF.Max(
+                worstPos,
+                Vector3.Distance(p.LeftHandPosition, d.LeftHandPosition)
+            );
+            worstPos = MathF.Max(
+                worstPos,
+                Vector3.Distance(p.RightHandPosition, d.RightHandPosition)
+            );
             worstRot = MathF.Max(worstRot, TestUtil.AngleDeg(p.HeadRotation, d.HeadRotation));
-            worstRot = MathF.Max(worstRot, TestUtil.AngleDeg(p.LeftHandRotation, d.LeftHandRotation));
-            worstRot = MathF.Max(worstRot, TestUtil.AngleDeg(p.RightHandRotation, d.RightHandRotation));
+            worstRot = MathF.Max(
+                worstRot,
+                TestUtil.AngleDeg(p.LeftHandRotation, d.LeftHandRotation)
+            );
+            worstRot = MathF.Max(
+                worstRot,
+                TestUtil.AngleDeg(p.RightHandRotation, d.RightHandRotation)
+            );
             for (int f = 0; f < FingerCurls.Count; f++)
             {
-                worstFinger = MathF.Max(worstFinger, MathF.Abs(p.LeftFingers[f] - d.LeftFingers[f]));
-                worstFinger = MathF.Max(worstFinger, MathF.Abs(p.RightFingers[f] - d.RightFingers[f]));
+                worstFinger = MathF.Max(
+                    worstFinger,
+                    MathF.Abs(p.LeftFingers[f] - d.LeftFingers[f])
+                );
+                worstFinger = MathF.Max(
+                    worstFinger,
+                    MathF.Abs(p.RightFingers[f] - d.RightFingers[f])
+                );
             }
             TestUtil.Near(1f, d.HeadRotation.Length(), 1e-4f);
         }
@@ -68,7 +116,12 @@ public class PoseCodecTests
     [Fact]
     public void Positions_ClampTo32Metres()
     {
-        var p = new PosePacket { Flags = PoseFlags.Head, HeadPosition = new Vector3(100f, -100f, 5f), HeadRotation = Quaternion.Identity };
+        var p = new PosePacket
+        {
+            Flags = PoseFlags.Head,
+            HeadPosition = new Vector3(100f, -100f, 5f),
+            HeadRotation = Quaternion.Identity,
+        };
         var buf = new byte[PoseCodec.MaxSize];
         int len = PoseCodec.Encode(p, buf);
         Assert.True(PoseCodec.Decode(buf, len, out var d));
@@ -78,7 +131,13 @@ public class PoseCodecTests
     [Fact]
     public void AbsentParts_AreOmittedAndDecodeAsDefaults()
     {
-        var p = new PosePacket { Flags = PoseFlags.Head | PoseFlags.Seated, Sequence = 9, HeadPosition = new Vector3(0, 1.6f, 0), HeadRotation = Quaternion.Identity };
+        var p = new PosePacket
+        {
+            Flags = PoseFlags.Head | PoseFlags.Seated,
+            Sequence = 9,
+            HeadPosition = new Vector3(0, 1.6f, 0),
+            HeadRotation = Quaternion.Identity,
+        };
         var buf = new byte[PoseCodec.MaxSize];
         int len = PoseCodec.Encode(p, buf);
         Assert.Equal(4 + 10, len);
@@ -124,7 +183,8 @@ public class PoseCodecTests
         {
             var buf = new byte[rng.Next(0, 64)];
             rng.NextBytes(buf);
-            if (buf.Length > 0 && rng.Next(2) == 0) buf[0] = PoseCodec.Version;
+            if (buf.Length > 0 && rng.Next(2) == 0)
+                buf[0] = PoseCodec.Version;
             if (PoseCodec.Decode(buf, buf.Length, out var d))
             {
                 Assert.False(float.IsNaN(d.HeadRotation.W));

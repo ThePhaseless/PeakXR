@@ -43,8 +43,13 @@ public static class Preload
         {
             mode = ResolveMode();
             var dataDir = FindDataDir();
-            var patcherDir = Path.GetDirectoryName(typeof(Preload).Assembly.Location) ?? Paths.PatcherPluginPath;
-            installer = new RuntimeInstaller(dataDir, Path.Combine(patcherDir, RuntimeDepsFolder), Log);
+            var patcherDir =
+                Path.GetDirectoryName(typeof(Preload).Assembly.Location) ?? Paths.PatcherPluginPath;
+            installer = new RuntimeInstaller(
+                dataDir,
+                Path.Combine(patcherDir, RuntimeDepsFolder),
+                Log
+            );
             mode = installer.Apply(mode);
         }
         catch (Exception e)
@@ -81,12 +86,18 @@ public static class Preload
         try
         {
             var config = new ConfigFile(Path.Combine(Paths.ConfigPath, ConfigFileName), true);
-            mode = config.Bind("Runtime", "Mode", RuntimeMode.OpenXR,
-                "XR runtime to start the game with.\n" +
-                "OpenXR: the default; uses the system's active OpenXR runtime (SteamVR, Oculus, WMR, Monado, ...).\n" +
-                "OpenVR: SteamVR through Valve's OpenVR plugin; try it when OpenXR does not start.\n" +
-                "Disabled: play flat; PeakXR removes the XR manifests it installed.\n" +
-                "Launch options -peakxr-novr, -peakxr-openvr and -peakxr-openxr override this setting.").Value;
+            mode = config
+                .Bind(
+                    "Runtime",
+                    "Mode",
+                    RuntimeMode.OpenXR,
+                    "XR runtime to start the game with.\n"
+                        + "OpenXR: the default; uses the system's active OpenXR runtime (SteamVR, Oculus, WMR, Monado, ...).\n"
+                        + "OpenVR: SteamVR through Valve's OpenVR plugin; try it when OpenXR does not start.\n"
+                        + "Disabled: play flat; PeakXR removes the XR manifests it installed.\n"
+                        + "Launch options -peakxr-novr, -peakxr-openvr and -peakxr-openxr override this setting."
+                )
+                .Value;
             Log.LogInfo($"Config {ConfigFileName}: Mode = {mode}");
         }
         catch (Exception e)
@@ -133,8 +144,14 @@ public static class Preload
     /// <summary>Finds &lt;Game&gt;_Data without assuming the game's name.</summary>
     private static string FindDataDir()
     {
-        var managedParent = string.IsNullOrEmpty(Paths.ManagedPath) ? null : Directory.GetParent(Paths.ManagedPath)?.FullName;
-        if (managedParent != null && managedParent.EndsWith("_Data", StringComparison.OrdinalIgnoreCase) && Directory.Exists(managedParent))
+        var managedParent = string.IsNullOrEmpty(Paths.ManagedPath)
+            ? null
+            : Directory.GetParent(Paths.ManagedPath)?.FullName;
+        if (
+            managedParent != null
+            && managedParent.EndsWith("_Data", StringComparison.OrdinalIgnoreCase)
+            && Directory.Exists(managedParent)
+        )
             return managedParent;
 
         var root = Paths.GameRootPath;
@@ -142,12 +159,14 @@ public static class Preload
         if (Directory.Exists(Path.Combine(preferred, "Managed")))
             return preferred;
 
-        var candidates = Directory.GetDirectories(root, "*_Data")
+        var candidates = Directory
+            .GetDirectories(root, "*_Data")
             .Where(d => Directory.Exists(Path.Combine(d, "Managed")))
             .ToArray();
         if (candidates.Length == 1)
             return candidates[0];
         throw new DirectoryNotFoundException(
-            $"Could not find the game's *_Data folder (ManagedPath '{Paths.ManagedPath}', root '{root}', {candidates.Length} candidates)");
+            $"Could not find the game's *_Data folder (ManagedPath '{Paths.ManagedPath}', root '{root}', {candidates.Length} candidates)"
+        );
     }
 }

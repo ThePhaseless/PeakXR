@@ -9,7 +9,6 @@
     <AssemblyName>PeakXR.Preloader</AssemblyName>
     <RootNamespace>PeakXR.Preloader</RootNamespace>
     <Version>0.1.0</Version>
-    <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -18,7 +17,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" ExcludeAssets="runtime" />
-    <PackageReference Include="Mono.Cecil" Version="0.10.4" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference
+      Include="BepInEx.Core"
+      Version="5.4.21"
+      PrivateAssets="all"
+      ExcludeAssets="runtime"
+    />
+    <PackageReference
+      Include="Mono.Cecil"
+      Version="0.10.4"
+      PrivateAssets="all"
+      ExcludeAssets="runtime"
+    />
   </ItemGroup>
 </Project>

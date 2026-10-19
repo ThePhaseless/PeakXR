@@ -15,8 +15,15 @@ namespace PeakXR.Core
         /// <paramref name="radii"/> is given. Score = distance + angleWeight * (1 - cos(angle to hand forward)) / 2;
         /// lowest wins.
         /// </summary>
-        public static int Select(Vector3 handPos, Vector3 handForward, Vector3[] positions, float[] radii, int count,
-            float grabRadius, float angleWeight = DefaultAngleWeight)
+        public static int Select(
+            Vector3 handPos,
+            Vector3 handForward,
+            Vector3[] positions,
+            float[] radii,
+            int count,
+            float grabRadius,
+            float angleWeight = DefaultAngleWeight
+        )
         {
             if (positions == null)
                 return -1;

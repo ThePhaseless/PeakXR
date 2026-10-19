@@ -9,14 +9,21 @@ namespace PeakXR.Core
     public sealed class ComfortVignette
     {
         public bool Enabled = true;
+
         /// <summary>Maximum intensity, 0..1.</summary>
         public float Strength = 0.6f;
+
         /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength.</summary>
-        public float LinearMin = 1f, LinearMax = 4f;
+        public float LinearMin = 1f,
+            LinearMax = 4f;
+
         /// <summary>Angular speed (deg/s) where the vignette starts and where it reaches full strength.</summary>
-        public float AngularMin = 30f, AngularMax = 120f;
+        public float AngularMin = 30f,
+            AngularMax = 120f;
+
         /// <summary>Exponential smoothing rates (1/s) while closing and while opening.</summary>
-        public float AttackRate = 8f, ReleaseRate = 4f;
+        public float AttackRate = 8f,
+            ReleaseRate = 4f;
 
         /// <summary>0 = no vignette, 1 = fully closed.</summary>
         public float Intensity { get; private set; }
@@ -32,7 +39,10 @@ namespace PeakXR.Core
                 return 0f;
             }
 
-            float drive = MathF.Max(Ramp(linearSpeed, LinearMin, LinearMax), Ramp(MathF.Abs(angularSpeed), AngularMin, AngularMax));
+            float drive = MathF.Max(
+                Ramp(linearSpeed, LinearMin, LinearMax),
+                Ramp(MathF.Abs(angularSpeed), AngularMin, AngularMax)
+            );
             float target = Math.Clamp(Strength, 0f, 1f) * drive;
             float rate = target > Intensity ? AttackRate : ReleaseRate;
             float alpha = rate > 0f ? 1f - MathF.Exp(-rate * dt) : 1f;

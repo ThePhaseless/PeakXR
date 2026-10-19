@@ -10,6 +10,7 @@ namespace PeakXR.Core
     {
         /// <summary>Seconds of history, counted back from the newest sample, used for the fit.</summary>
         public float Window = 0.08f;
+
         /// <summary>Upper bound on the returned speed, m/s.</summary>
         public float MaxSpeed = 20f;
 

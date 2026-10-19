@@ -58,6 +58,13 @@ Shared contracts (written first, other features code against them):
 | `net.pose` | handshake via player property `PeakXR`; `RaiseEvent` pose stream (codec in Core); remote `AvatarPoseDriver`; `RPCA_StartReaching` for vanilla | runs in flat too |
 | `sandbox` | built-in console unlock, item, mob and segment spawner, god mode | opt-in, offline or host only |
 
+## Hands and items
+
+- Hands are independent. Each arm follows only its own controller, and any one-handed item works in either hand while the other hand stays free to climb, interact or point.
+- One held item at a time, like vanilla. The free hand can grip the held item's second grip but cannot pick up a second item.
+- Every item is classified `OneHanded`, `TwoHanded` or `OptionalTwoHand` in a data table, with a default inferred from the item's components so new items still work.
+- Custom procedural grip and hold poses are authored where vanilla has none that fits (finger presets per grip type, one-hand and two-hand holds, left-hand mirroring). Vanilla clients see the default hand.
+
 ## Comfort defaults
 
 Snap turn 30°, vignette on (medium), head-relative movement, no head bob, no shake, sprint without FOV change, fade when the game takes the camera (ragdoll, pass out, cutscene, spectate), seated mode off, height auto-calibrated on first frame with recenter on a long press of the menu button.

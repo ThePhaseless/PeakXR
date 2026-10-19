@@ -6,3 +6,5 @@ obj/
 .vs/
 deps/
 dist/
+.claude/
+TestResults/

@@ -22,8 +22,11 @@ namespace PeakXR.Core
 
         public bool Active { get; private set; }
 
-        public static Vector3 MouthPoint(Vector3 headPosition, Quaternion headRotation, Vector3 offset) =>
-            headPosition + UnityQuat.Rotate(headRotation, offset);
+        public static Vector3 MouthPoint(
+            Vector3 headPosition,
+            Quaternion headRotation,
+            Vector3 offset
+        ) => headPosition + UnityQuat.Rotate(headRotation, offset);
 
         public bool Update(Vector3 headPosition, Quaternion headRotation, Vector3 point, float dt)
         {

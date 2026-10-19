@@ -9,6 +9,7 @@ namespace PeakXR.Core
         public float Angle = 30f;
         public float ActivateThreshold = 0.7f;
         public float ReleaseThreshold = 0.3f;
+
         /// <summary>Seconds between repeated snaps while the stick stays deflected; 0 disables repeat.</summary>
         public float RepeatDelay;
 
@@ -55,7 +56,11 @@ namespace PeakXR.Core
     public static class SmoothTurn
     {
         /// <summary>Yaw delta in degrees: <paramref name="degPerSec"/> * shaped axis * dt.</summary>
-        public static float Delta(float stickX, float degPerSec, float dt, float deadzone = 0.15f) =>
-            Stick.Axis(stickX, deadzone, 1f) * degPerSec * dt;
+        public static float Delta(
+            float stickX,
+            float degPerSec,
+            float dt,
+            float deadzone = 0.15f
+        ) => Stick.Axis(stickX, deadzone, 1f) * degPerSec * dt;
     }
 }

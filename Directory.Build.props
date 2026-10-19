@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <!-- Pinned, not "latest": a future SDK must not silently move the language level (see docs/research/stack.md). -->
+    <LangVersion>14.0</LangVersion>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- CI-like builds (CI=true) turn every analyzer warning into an error. -->
+    <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Analyzers for every project except the test project. -->
+  <ItemGroup Condition="'$(IsTestProject)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.313" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Unity and Harmony analyzers only make sense for the plugin that talks to the game. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR'">
+    <PackageReference Include="Microsoft.Unity.Analyzers" Version="1.28.0" PrivateAssets="all" />
+    <PackageReference Include="BUTR.Harmony.Analyzer" Version="1.0.1.50" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Language polyfills for netstandard2.x (IsExternalInit, CallerArgumentExpression, ...), as internal source. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR' Or '$(MSBuildProjectName)' == 'PeakXR.Core' Or '$(MSBuildProjectName)' == 'PeakXR.Preloader'">
+    <PackageReference Include="PolySharp" Version="1.16.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
