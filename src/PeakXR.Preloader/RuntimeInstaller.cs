@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -25,7 +26,11 @@ public sealed class RuntimeInstaller
     private const string SubsystemsFolder = "UnitySubsystems";
     private const string PluginsFolder = "Plugins/x86_64";
 
-    private static readonly Regex LibraryNameRegex = new("\"libraryName\"\\s*:\\s*\"([^\"]+)\"", RegexOptions.Compiled);
+    private static readonly Regex LibraryNameRegex = new(
+        "\"libraryName\"\\s*:\\s*\"(?<name>[^\"]+)\"",
+        RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        TimeSpan.FromSeconds(1)
+    );
 
     private readonly string _dataDir;
     private readonly string _runtimeDepsDir;
@@ -110,7 +115,7 @@ public sealed class RuntimeInstaller
     private static string ReadLibraryName(string manifestPath)
     {
         var match = LibraryNameRegex.Match(File.ReadAllText(manifestPath));
-        return match.Success ? match.Groups[1].Value.Trim() : null;
+        return match.Success ? match.Groups["name"].Value.Trim() : null;
     }
 
     /// <summary>Copies <paramref name="src"/> to the data-relative path when missing or outdated.</summary>
@@ -244,7 +249,7 @@ public sealed class RuntimeInstaller
         var hash = sha.ComputeHash(stream);
         var sb = new StringBuilder(hash.Length * 2);
         foreach (var b in hash)
-            sb.Append(b.ToString("x2"));
+            sb.Append(b.ToString("x2", CultureInfo.InvariantCulture));
         return sb.ToString();
     }
 }

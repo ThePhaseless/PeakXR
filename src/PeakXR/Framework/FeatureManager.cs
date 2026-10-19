@@ -24,7 +24,7 @@ public static class FeatureManager
         foreach (var type in types)
             features.Add((Feature)Activator.CreateInstance(type));
 
-        foreach (var feature in features.OrderBy(f => f.Order).ThenBy(f => f.Id))
+        foreach (var feature in features.OrderBy(f => f.Order).ThenBy(f => f.Id, StringComparer.Ordinal))
         {
             if (feature.VROnly && !vrEnabled)
             {
@@ -53,7 +53,7 @@ public static class FeatureManager
 
     private static void LogReport()
     {
-        foreach (var f in features.OrderBy(f => f.Order).ThenBy(f => f.Id))
+        foreach (var f in features.OrderBy(f => f.Order).ThenBy(f => f.Id, StringComparer.Ordinal))
         {
             var reason = f.FailureReason == null ? "" : $" ({f.FailureReason})";
             Plugin.Log.LogInfo($"[compat] {f.Id,-24} {f.State}{reason}");

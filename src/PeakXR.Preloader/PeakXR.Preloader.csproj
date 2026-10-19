@@ -9,7 +9,6 @@
     <AssemblyName>PeakXR.Preloader</AssemblyName>
     <RootNamespace>PeakXR.Preloader</RootNamespace>
     <Version>0.1.0</Version>
-    <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

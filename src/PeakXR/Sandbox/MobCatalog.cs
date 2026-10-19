@@ -96,7 +96,7 @@ public static class MobCatalog
     static readonly string[] Excluded = { "Character", "Player" };
 
     static readonly List<MobEntry> entries = new();
-    static readonly HashSet<string> seen = new();
+    static readonly HashSet<string> seen = new(StringComparer.Ordinal);
     static bool built;
 
     /// <summary>Bumped whenever the list changes, so a UI can rebuild its filtered view.</summary>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using PeakXR.Core;
 using UnityEngine;
@@ -27,7 +28,7 @@ internal sealed class SandboxWindow
     Rect rect = new(24f, 24f, 480f, 640f);
     int tab;
     string query = "";
-    string[] terms = new string[0];
+    string[] terms = Array.Empty<string>();
     Vector2 itemsScroll;
     Vector2 mobsScroll;
     bool giveToHand;
@@ -129,7 +130,7 @@ internal sealed class SandboxWindow
 
     // ------------------------------------------------------------------ player
 
-    void DrawPlayer(float y, float w)
+    static void DrawPlayer(float y, float w)
     {
         bool god = GUI.Toggle(new Rect(Pad, y, w, 24f), SandboxActions.GodMode, "God mode (infinite stamina, no afflictions, no fall damage)");
         if (god != SandboxActions.GodMode)
@@ -216,7 +217,7 @@ internal sealed class SandboxWindow
     }
 
     /// <summary>A grid of buttons; <paramref name="clicked"/> is the index pressed this frame or -1.</summary>
-    float DrawGrid(float y, float w, string[] labels, int columns, out int clicked)
+    static float DrawGrid(float y, float w, string[] labels, int columns, out int clicked)
     {
         clicked = -1;
         float cell = (w - (columns - 1) * 4f) / columns;

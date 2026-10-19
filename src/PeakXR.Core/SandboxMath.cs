@@ -37,14 +37,15 @@ namespace PeakXR.Core
     /// <summary>Search box matching for the sandbox lists: every term must appear in the name, any case.</summary>
     public static class NameFilter
     {
-        static readonly string[] None = new string[0];
+        static readonly char[] SplitChars = { ' ', '\t' };
+        static readonly string[] None = Array.Empty<string>();
 
         /// <summary>Split a query once when it changes, so per-frame matching does not allocate.</summary>
         public static string[] Parse(string query)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return None;
-            return query.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            return query.Split(SplitChars, StringSplitOptions.RemoveEmptyEntries);
         }
 
         public static bool Matches(string name, string[] terms)

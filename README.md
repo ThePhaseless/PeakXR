@@ -17,6 +17,8 @@ Steam library; override it in `mise.local.toml` if yours is elsewhere.
 ```sh
 mise run build      # fetch XR deps into deps/, then dotnet build
 mise run test
+mise run coverage   # tests with coverlet, cobertura XML in TestResults/
+mise run format     # CSharpier; `format-check` verifies without writing
 mise run package    # dist/PeakXR-<version>.zip (Thunderstore layout) and dist/PeakXR/
 ```
 

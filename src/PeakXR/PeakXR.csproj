@@ -6,7 +6,6 @@
     <BepInExPluginGuid>com.thephaseless.peakxr</BepInExPluginGuid>
     <BepInExPluginName>PeakXR</BepInExPluginName>
     <Version>0.1.0</Version>
-    <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
