@@ -37,5 +37,6 @@
     <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.Mathematics.dll" Private="false" />
   </ItemGroup>
 </Project>
