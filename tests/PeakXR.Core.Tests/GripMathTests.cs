@@ -23,8 +23,14 @@ public class GripMathTests
     [Fact]
     public void Compose_AppliesParentThenChild()
     {
-        GripMath.Compose(new Vector3(1, 0, 0), UnityQuat.Euler(0, 90, 0), new Vector3(0, 0, 1), Quaternion.Identity,
-            out var p, out var r);
+        GripMath.Compose(
+            new Vector3(1, 0, 0),
+            UnityQuat.Euler(0, 90, 0),
+            new Vector3(0, 0, 1),
+            Quaternion.Identity,
+            out var p,
+            out var r
+        );
         TestUtil.Near(new Vector3(2, 0, 0), p);
         TestUtil.SameRotation(UnityQuat.Euler(0, 90, 0), r);
     }

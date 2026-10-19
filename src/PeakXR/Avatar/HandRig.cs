@@ -90,7 +90,12 @@ internal sealed class HandRig
         rot = tweak * handFromController;
     }
 
-    public void BoneFromController(Vector3 ctrlPos, Quaternion ctrlRot, out Vector3 pos, out Quaternion rot)
+    public void BoneFromController(
+        Vector3 ctrlPos,
+        Quaternion ctrlRot,
+        out Vector3 pos,
+        out Quaternion rot
+    )
     {
         ControllerToBone(out var lp, out var lr);
         pos = ctrlPos + ctrlRot * lp;
@@ -183,11 +188,14 @@ internal sealed class HandRig
         private static Matrix4x4 Matrix(Dictionary<Transform, Matrix4x4> bind, Transform t) =>
             bind != null && bind.TryGetValue(t, out var m) ? m : t.localToWorldMatrix;
 
-        public Vector3 PointInHand(Transform t) => handInv.MultiplyPoint3x4(Matrix(bind, t).GetColumn(3));
+        public Vector3 PointInHand(Transform t) =>
+            handInv.MultiplyPoint3x4(Matrix(bind, t).GetColumn(3));
 
         public Quaternion RotationInHand(Transform t) => (handInv * Matrix(bind, t)).rotation;
 
         public Quaternion LocalRotation(Transform t) =>
-            t.parent == null ? t.localRotation : (Matrix(bind, t.parent).inverse * Matrix(bind, t)).rotation;
+            t.parent == null
+                ? t.localRotation
+                : (Matrix(bind, t.parent).inverse * Matrix(bind, t)).rotation;
     }
 }

@@ -15,7 +15,11 @@ internal static class Haptics
         try
         {
             var device = InputDevices.GetDeviceAtXRNode(left ? XRNode.LeftHand : XRNode.RightHand);
-            if (!device.isValid || !device.TryGetHapticCapabilities(out var caps) || !caps.supportsImpulse)
+            if (
+                !device.isValid
+                || !device.TryGetHapticCapabilities(out var caps)
+                || !caps.supportsImpulse
+            )
                 return;
             float a = amplitude * cfg.HapticStrength;
             device.SendHapticImpulse(0, a > 1f ? 1f : a, seconds);

@@ -96,7 +96,14 @@ public class GripIntentTests
     [Fact]
     public void Release_FastWhileHolding_Throws()
     {
-        var r = GripIntent.OnRelease(thisHandHolds: true, canDrop: true, speed: 3f, throwSpeed: 2f, throwEnabled: true, releaseToDrop: false);
+        var r = GripIntent.OnRelease(
+            thisHandHolds: true,
+            canDrop: true,
+            speed: 3f,
+            throwSpeed: 2f,
+            throwEnabled: true,
+            releaseToDrop: false
+        );
         Assert.Equal(GripReleaseAction.Throw, r);
     }
 
@@ -117,7 +124,10 @@ public class GripIntentTests
     [Fact]
     public void Release_ThrowDisabled_FastIsNotThrow()
     {
-        Assert.Equal(GripReleaseAction.Keep, GripIntent.OnRelease(true, true, 9f, 2f, false, false));
+        Assert.Equal(
+            GripReleaseAction.Keep,
+            GripIntent.OnRelease(true, true, 9f, 2f, false, false)
+        );
     }
 
     [Fact]

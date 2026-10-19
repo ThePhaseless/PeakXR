@@ -5,8 +5,10 @@ namespace PeakXR.Core
     {
         /// <summary>Not touching the held item: fingers follow the controller.</summary>
         Free,
+
         /// <summary>The hand the item is attached to.</summary>
         Holding,
+
         /// <summary>The second hand of a two-hand hold.</summary>
         Support,
     }
@@ -32,10 +34,14 @@ namespace PeakXR.Core
         {
             switch (grip)
             {
-                case GripPreset.Pinch: return Pinch;
-                case GripPreset.FlatPalm: return FlatPalm;
-                case GripPreset.TwoHandPole: return Pole;
-                default: return Cylinder;
+                case GripPreset.Pinch:
+                    return Pinch;
+                case GripPreset.FlatPalm:
+                    return FlatPalm;
+                case GripPreset.TwoHandPole:
+                    return Pole;
+                default:
+                    return Cylinder;
             }
         }
 
@@ -48,7 +54,10 @@ namespace PeakXR.Core
         {
             if (role == HandRole.Free)
                 return controller;
-            var preset = role == HandRole.Support && grip != GripPreset.TwoHandPole ? Cylinder : Preset(grip);
+            var preset =
+                role == HandRole.Support && grip != GripPreset.TwoHandPole
+                    ? Cylinder
+                    : Preset(grip);
             if (controller.Index > preset.Index)
                 preset.Index = controller.Index;
             return preset;

@@ -10,14 +10,25 @@ namespace PeakXR.Core
     public static class GripMath
     {
         /// <summary>World pose of a child given its parent's pose and its local pose.</summary>
-        public static void Compose(Vector3 parentPos, Quaternion parentRot, Vector3 localPos, Quaternion localRot,
-            out Vector3 pos, out Quaternion rot)
+        public static void Compose(
+            Vector3 parentPos,
+            Quaternion parentRot,
+            Vector3 localPos,
+            Quaternion localRot,
+            out Vector3 pos,
+            out Quaternion rot
+        )
         {
             pos = parentPos + UnityQuat.Rotate(parentRot, localPos);
             rot = Quaternion.Normalize(UnityQuat.Mul(parentRot, localRot));
         }
 
-        public static void Inverse(Vector3 pos, Quaternion rot, out Vector3 invPos, out Quaternion invRot)
+        public static void Inverse(
+            Vector3 pos,
+            Quaternion rot,
+            out Vector3 invPos,
+            out Quaternion invRot
+        )
         {
             invRot = Quaternion.Inverse(rot);
             invPos = -UnityQuat.Rotate(invRot, pos);
@@ -27,8 +38,14 @@ namespace PeakXR.Core
         /// Where an item sits in a controller's frame so that its grip point (pose relative to the item) lands on the
         /// hand bone (pose relative to the controller): item = bone * grip⁻¹.
         /// </summary>
-        public static void ItemInHand(Vector3 gripPos, Quaternion gripRot, Vector3 bonePos, Quaternion boneRot,
-            out Vector3 itemPos, out Quaternion itemRot)
+        public static void ItemInHand(
+            Vector3 gripPos,
+            Quaternion gripRot,
+            Vector3 bonePos,
+            Quaternion boneRot,
+            out Vector3 itemPos,
+            out Quaternion itemRot
+        )
         {
             Inverse(gripPos, gripRot, out var ip, out var ir);
             Compose(bonePos, boneRot, ip, ir, out itemPos, out itemRot);
@@ -44,7 +61,8 @@ namespace PeakXR.Core
         /// <summary>Shortest rotation taking direction <paramref name="from"/> onto <paramref name="to"/>.</summary>
         public static Quaternion FromTo(Vector3 from, Vector3 to)
         {
-            float lf = from.Length(), lt = to.Length();
+            float lf = from.Length(),
+                lt = to.Length();
             if (lf < 1e-6f || lt < 1e-6f)
                 return Quaternion.Identity;
             from /= lf;
@@ -86,13 +104,19 @@ namespace PeakXR.Core
             return Slerp(Quaternion.Identity, q, maxDeg / angle);
         }
 
-        public static Quaternion Slerp(Quaternion a, Quaternion b, float t) => Quaternion.Slerp(a, b, t);
+        public static Quaternion Slerp(Quaternion a, Quaternion b, float t) =>
+            Quaternion.Slerp(a, b, t);
 
         /// <summary>
         /// Extra head rotation (world space, applied on top of the animated head) that turns the game's look
         /// direction (yaw/pitch, pitch positive up, no roll) into the tracked head rotation, limited in angle.
         /// </summary>
-        public static Quaternion HeadDelta(Quaternion hmdWorld, float yawDeg, float pitchDeg, float maxDeg)
+        public static Quaternion HeadDelta(
+            Quaternion hmdWorld,
+            float yawDeg,
+            float pitchDeg,
+            float maxDeg
+        )
         {
             var look = UnityQuat.Euler(-pitchDeg, yawDeg, 0f);
             var delta = UnityQuat.Mul(hmdWorld, Quaternion.Inverse(look));

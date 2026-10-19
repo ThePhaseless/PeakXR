@@ -14,7 +14,8 @@ internal static class InteractPatches
     [HarmonyPatch]
     internal static class Sample
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterInput), "Sample", new[] { typeof(bool) });
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterInput), "Sample", new[] { typeof(bool) });
 
         [HarmonyPriority(Priority.Low)]
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
@@ -48,7 +49,8 @@ internal static class InteractPatches
     [HarmonyPatch]
     internal static class Raycasts
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(Interaction), "DoInteractableRaycasts");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(Interaction), "DoInteractableRaycasts");
 
         private static void Prefix(out CameraState __state)
         {
@@ -69,7 +71,10 @@ internal static class InteractPatches
         private static void Postfix(ref IInteractible interactableResult, ref CameraState __state)
         {
             if (__state.Moved && MainCamera.instance != null)
-                MainCamera.instance.transform.SetLocalPositionAndRotation(__state.LocalPosition, __state.LocalRotation);
+                MainCamera.instance.transform.SetLocalPositionAndRotation(
+                    __state.LocalPosition,
+                    __state.LocalRotation
+                );
 
             var c = Character.localCharacter;
             if (c == null || !VRSession.Active)
@@ -81,8 +86,12 @@ internal static class InteractPatches
                 return;
             }
             // One held item at a time: the free hand's grip does not pick up a second item.
-            if (PhysicalInteraction.GripInteractActive && c.data.currentItem != null &&
-                interactableResult is Item other && other != c.data.currentItem)
+            if (
+                PhysicalInteraction.GripInteractActive
+                && c.data.currentItem != null
+                && interactableResult is Item other
+                && other != c.data.currentItem
+            )
                 interactableResult = null;
         }
     }
@@ -93,7 +102,8 @@ internal static class InteractPatches
     [HarmonyPatch]
     internal static class Dropping
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterItems), "DoDropping");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "DoDropping");
 
         private static void Prefix(CharacterItems __instance)
         {

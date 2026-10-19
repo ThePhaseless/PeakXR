@@ -20,8 +20,10 @@ public sealed class PhysicalInteractionFeature : Feature
     {
         InteractConfig.Bind(Plugin.Settings);
         PhysicalInteraction.StartWallClimb = GameMember.Delegate<PhysicalInteraction.TryStartClimb>(
-            typeof(CharacterClimbing), "TryToStartWallClimb",
-            new[] { typeof(bool), typeof(Vector3), typeof(bool), typeof(float) });
+            typeof(CharacterClimbing),
+            "TryToStartWallClimb",
+            new[] { typeof(bool), typeof(Vector3), typeof(bool), typeof(float) }
+        );
         Patch(typeof(InteractPatches.Sample));
         Patch(typeof(InteractPatches.Raycasts));
         Patch(typeof(InteractPatches.Dropping));

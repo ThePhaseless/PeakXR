@@ -49,7 +49,8 @@ public partial class AvatarPoseDriver
     /// <summary>True when the rig has finger bones that the driver can curl.</summary>
     public bool HasFingerBones => rigReady && (leftRig.HasFingers || rightRig.HasFingers);
 
-    private Character Owner => Character != null ? Character : (Character = GetComponent<Character>());
+    private Character Owner =>
+        Character != null ? Character : (Character = GetComponent<Character>());
 
     private bool EnsureRig()
     {
@@ -61,10 +62,15 @@ public partial class AvatarPoseDriver
         rigTried = true;
 
         var parts = c.refs.ragdoll.partDict;
-        if (!parts.TryGetValue(BodypartType.Hip, out hip) || !parts.TryGetValue(BodypartType.Hand_L, out var handL) ||
-            !parts.TryGetValue(BodypartType.Hand_R, out var handR))
+        if (
+            !parts.TryGetValue(BodypartType.Hip, out hip)
+            || !parts.TryGetValue(BodypartType.Hand_L, out var handL)
+            || !parts.TryGetValue(BodypartType.Hand_R, out var handR)
+        )
         {
-            Plugin.Log.LogWarning($"[avatar] {c.name}: no hip or hand bodyparts, pose driver disabled for it");
+            Plugin.Log.LogWarning(
+                $"[avatar] {c.name}: no hip or hand bodyparts, pose driver disabled for it"
+            );
             return false;
         }
         parts.TryGetValue(BodypartType.Head, out head);
@@ -110,12 +116,22 @@ public partial class AvatarPoseDriver
             var pose = Pose;
             if (pose.HasLeftHand)
             {
-                leftRig.BoneFromController(pose.LeftHandPosition, pose.LeftHandRotation, out var p, out var r);
+                leftRig.BoneFromController(
+                    pose.LeftHandPosition,
+                    pose.LeftHandRotation,
+                    out var p,
+                    out var r
+                );
                 refs.IKHandTargetLeft.SetPositionAndRotation(p + offset, r);
             }
             if (pose.HasRightHand)
             {
-                rightRig.BoneFromController(pose.RightHandPosition, pose.RightHandRotation, out var p, out var r);
+                rightRig.BoneFromController(
+                    pose.RightHandPosition,
+                    pose.RightHandRotation,
+                    out var p,
+                    out var r
+                );
                 refs.IKHandTargetRight.SetPositionAndRotation(p + offset, r);
             }
         }
@@ -174,7 +190,12 @@ public partial class AvatarPoseDriver
     /// </summary>
     internal bool AttachToHoldingHand(Item item)
     {
-        if (!HasFreshPose || !AvatarConfig.Instance.RetargetItems || !EnsureRig() || !hold.Bind(item))
+        if (
+            !HasFreshPose
+            || !AvatarConfig.Instance.RetargetItems
+            || !EnsureRig()
+            || !hold.Bind(item)
+        )
             return false;
         bool left = Pose.ItemInLeftHand;
         var rig = left ? leftRig : rightRig;
@@ -188,7 +209,11 @@ public partial class AvatarPoseDriver
         var ctrlRot = item.transform.rotation * invRot;
         rig.BoneFromController(ctrlPos, ctrlRot, out var bonePos, out var boneRot);
 
-        var handBody = Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
+        var handBody = Owner
+            .refs
+            .ragdoll
+            .partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R]
+            .Rig;
         handBody.transform.SetPositionAndRotation(bonePos, boneRot);
         DestroyItemJoint();
         itemJoint = handBody.gameObject.AddComponent<FixedJoint>();
@@ -211,7 +236,13 @@ public partial class AvatarPoseDriver
         rot = Quaternion.identity;
         var c = Owner;
         var item = c.data.currentItem;
-        if (!HasFreshPose || item == null || !AvatarConfig.Instance.RetargetItems || !EnsureRig() || !hold.Bind(item))
+        if (
+            !HasFreshPose
+            || item == null
+            || !AvatarConfig.Instance.RetargetItems
+            || !EnsureRig()
+            || !hold.Bind(item)
+        )
             return false;
 
         var pose = Pose;
@@ -250,7 +281,13 @@ public partial class AvatarPoseDriver
         Consider(hold.GripRight, item.transform, anchorLocal, ref axis, ref best);
         return axis;
 
-        static void Consider(Transform grip, Transform itemTransform, Vector3 anchorLocal, ref Vector3 axis, ref float best)
+        static void Consider(
+            Transform grip,
+            Transform itemTransform,
+            Vector3 anchorLocal,
+            ref Vector3 axis,
+            ref float best
+        )
         {
             if (grip == null)
                 return;

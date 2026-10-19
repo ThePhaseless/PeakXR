@@ -4,8 +4,10 @@ namespace PeakXR.Core
     public enum GrabCandidate
     {
         None,
+
         /// <summary>A world item that would go through the pickup path.</summary>
         Item,
+
         /// <summary>Any other interactible: rope, vine, piton handle, luggage...</summary>
         Interactible,
     }
@@ -15,11 +17,14 @@ namespace PeakXR.Core
         None,
         GrabItem,
         GrabInteractible,
+
         /// <summary>The free hand joins the held item: two-hand hold.</summary>
         SecondHand,
         Climb,
+
         /// <summary>The holding hand closes again on its own item (ready to throw).</summary>
         Regrip,
+
         /// <summary>Fallback: the game's normal interact on whatever the head or pointing hand aims at.</summary>
         Interact,
     }
@@ -38,10 +43,13 @@ namespace PeakXR.Core
         public bool PhysicalClimb;
         public GrabCandidate Candidate;
         public bool NearClimbable;
+
         /// <summary>The character holds an item (in either hand).</summary>
         public bool HoldingItem;
+
         /// <summary>This hand is the one holding it.</summary>
         public bool ThisHandHolds;
+
         /// <summary>This hand is within reach of the held item.</summary>
         public bool NearHeldItem;
         public Handedness HeldHandedness;
@@ -55,7 +63,12 @@ namespace PeakXR.Core
     {
         public static GripPressAction OnPress(in GripContext c)
         {
-            if (c.HoldingItem && !c.ThisHandHolds && c.NearHeldItem && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness))
+            if (
+                c.HoldingItem
+                && !c.ThisHandHolds
+                && c.NearHeldItem
+                && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
+            )
                 return GripPressAction.SecondHand;
 
             if (c.PhysicalGrab)
@@ -74,8 +87,14 @@ namespace PeakXR.Core
         }
 
         /// <summary>Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).</summary>
-        public static GripReleaseAction OnRelease(bool thisHandHolds, bool canDrop, float speed, float throwSpeed,
-            bool throwEnabled, bool releaseToDrop)
+        public static GripReleaseAction OnRelease(
+            bool thisHandHolds,
+            bool canDrop,
+            float speed,
+            float throwSpeed,
+            bool throwEnabled,
+            bool releaseToDrop
+        )
         {
             if (!thisHandHolds || !canDrop)
                 return GripReleaseAction.Keep;
@@ -85,6 +104,7 @@ namespace PeakXR.Core
         }
 
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
-        public static bool IsPointing(in FingerCurls c) => c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;
+        public static bool IsPointing(in FingerCurls c) =>
+            c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;
     }
 }

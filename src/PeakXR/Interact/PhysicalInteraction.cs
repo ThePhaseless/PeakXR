@@ -14,7 +14,13 @@ namespace PeakXR.Interact;
 /// </summary>
 internal static class PhysicalInteraction
 {
-    public delegate void TryStartClimb(CharacterClimbing self, bool forceAttempt, Vector3 overide, bool botGrab, float raycastDistance);
+    public delegate void TryStartClimb(
+        CharacterClimbing self,
+        bool forceAttempt,
+        Vector3 overide,
+        bool botGrab,
+        float raycastDistance
+    );
 
     /// <summary><c>CharacterClimbing.TryToStartWallClimb</c> (CharacterClimbing.cs:534, private), resolved in Install.</summary>
     public static TryStartClimb StartWallClimb;
@@ -56,8 +62,10 @@ internal static class PhysicalInteraction
 
     /// <summary>What a grabbing hand selected; the interaction raycast patch hands it to the game.</summary>
     public static IInteractible GrabTarget { get; private set; }
+
     /// <summary>A grip is acting as the interact button (nothing grabbable was in reach).</summary>
     public static bool GripInteractActive { get; private set; }
+
     /// <summary>Hand whose aim ray replaces the head for interaction this frame: -1 none, 0 left, 1 right.</summary>
     public static int AimHand { get; private set; } = -1;
     public static bool ThrowPending => Time.frameCount - throwFrame <= 2;
@@ -107,7 +115,15 @@ internal static class PhysicalInteraction
             hand.Action = GripPressAction.None;
     }
 
-    private static void UpdateHand(Hand hand, Character c, VRRig rig, InteractConfig cfg, bool active, float dt, float now)
+    private static void UpdateHand(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        InteractConfig cfg,
+        bool active,
+        float dt,
+        float now
+    )
     {
         ref var state = ref VRInput.Hand(hand.Left);
         hand.Grip.Update(state.Tracked ? state.Grip : 0f, dt);
@@ -127,7 +143,13 @@ internal static class PhysicalInteraction
         return item != null && Hold.Bind(item);
     }
 
-    private static void OnGripPress(Hand hand, Character c, VRRig rig, InteractConfig cfg, float now)
+    private static void OnGripPress(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        InteractConfig cfg,
+        float now
+    )
     {
         var t = rig.Hand(hand.Left);
         var pos = t.position;
@@ -142,8 +164,14 @@ internal static class PhysicalInteraction
             ThisHandHolds = thisHolds,
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, cfg.GrabRadius * 1.5f),
-            NearClimbable = cfg.PhysicalClimb &&
-                            Physics.CheckSphere(pos, cfg.ClimbRadius, HelperFunctions.terrainMapMask, QueryTriggerInteraction.Ignore),
+            NearClimbable =
+                cfg.PhysicalClimb
+                && Physics.CheckSphere(
+                    pos,
+                    cfg.ClimbRadius,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                ),
         };
         IInteractible target = null;
         if (cfg.PhysicalGrab)
@@ -199,8 +227,14 @@ internal static class PhysicalInteraction
                 if (!Holding(c, out var item) || LocalHold.ItemInLeftHand != hand.Left)
                     break;
                 var velocity = ReleaseVelocity(hand, c, rig);
-                var result = GripIntent.OnRelease(true, item.UIData.canDrop, velocity.magnitude, cfg.ThrowSpeed,
-                    cfg.PhysicalThrow, cfg.ReleaseToDrop);
+                var result = GripIntent.OnRelease(
+                    true,
+                    item.UIData.canDrop,
+                    velocity.magnitude,
+                    cfg.ThrowSpeed,
+                    cfg.PhysicalThrow,
+                    cfg.ReleaseToDrop
+                );
                 if (result == GripReleaseAction.Throw && !item.UIData.canThrow)
                     result = GripReleaseAction.Keep;
                 if (result == GripReleaseAction.Throw)
@@ -236,17 +270,32 @@ internal static class PhysicalInteraction
         float r2 = radius * radius;
         foreach (var col in item.colliders)
         {
-            if (col != null && col.enabled && (col.bounds.ClosestPoint(pos) - pos).sqrMagnitude <= r2)
+            if (
+                col != null
+                && col.enabled
+                && (col.bounds.ClosestPoint(pos) - pos).sqrMagnitude <= r2
+            )
                 return true;
         }
         return (item.Center() - pos).sqrMagnitude <= 4f * r2;
     }
 
-    private static GrabCandidate FindCandidate(Character c, Vector3 pos, Vector3 forward, float radius, out IInteractible target)
+    private static GrabCandidate FindCandidate(
+        Character c,
+        Vector3 pos,
+        Vector3 forward,
+        float radius,
+        out IInteractible target
+    )
     {
         target = null;
-        int hits = Physics.OverlapSphereNonAlloc(pos, radius, Overlap, HelperFunctions.AllPhysicalExceptCharacter,
-            QueryTriggerInteraction.Collide);
+        int hits = Physics.OverlapSphereNonAlloc(
+            pos,
+            radius,
+            Overlap,
+            HelperFunctions.AllPhysicalExceptCharacter,
+            QueryTriggerInteraction.Collide
+        );
         int count = 0;
         for (int i = 0; i < hits && count < Candidates.Length; i++)
         {
@@ -266,7 +315,14 @@ internal static class PhysicalInteraction
             count++;
         }
 
-        int best = GrabSelector.Select(pos.N(), forward.N(), CandidatePositions, null, count, radius);
+        int best = GrabSelector.Select(
+            pos.N(),
+            forward.N(),
+            CandidatePositions,
+            null,
+            count,
+            radius
+        );
         if (best >= 0)
             target = Candidates[best];
         for (int i = 0; i < count; i++)
@@ -288,7 +344,10 @@ internal static class PhysicalInteraction
             return false;
 
         // Vanilla casts from the camera along a direction; aim it through the gripping hand.
-        var from = MainCamera.instance != null ? MainCamera.instance.transform.position : rig.Head.position;
+        var from =
+            MainCamera.instance != null
+                ? MainCamera.instance.transform.position
+                : rig.Head.position;
         var dir = handPos - from;
         float dist = dir.magnitude;
         if (dist < 0.01f)
@@ -335,9 +394,18 @@ internal static class PhysicalInteraction
         var d = Arms.Update(l, VRInput.Left.Position.N(), r, VRInput.Right.Position.N(), dt).U();
         var world = (rig.Origin != null ? rig.Origin.TransformVector(d) : d) * cfg.ClimbGain;
         var climbing = c.refs.climbing;
-        var target = ClimbInput.FromBodyVelocity((world / dt).N(), c.data.climbNormal.N(),
-            climbing.climbSpeed * climbing.climbSpeedMod, 0.1f);
-        var smoothed = ClimbInput.Smooth(new System.Numerics.Vector2(climbInput.x, climbInput.y), target, 12f, dt);
+        var target = ClimbInput.FromBodyVelocity(
+            (world / dt).N(),
+            c.data.climbNormal.N(),
+            climbing.climbSpeed * climbing.climbSpeedMod,
+            0.1f
+        );
+        var smoothed = ClimbInput.Smooth(
+            new System.Numerics.Vector2(climbInput.x, climbInput.y),
+            target,
+            12f,
+            dt
+        );
         climbInput = new Vector2(smoothed.X, smoothed.Y);
     }
 
@@ -356,7 +424,13 @@ internal static class PhysicalInteraction
             AimHand = 0;
     }
 
-    private static void Inject(Character c, CharacterInput input, VRRig rig, InteractConfig cfg, float dt)
+    private static void Inject(
+        Character c,
+        CharacterInput input,
+        VRRig rig,
+        InteractConfig cfg,
+        float dt
+    )
     {
         // Interact: grabs and the grip fallback press the game's interact button while the grip stays closed.
         GrabTarget = null;
@@ -392,7 +466,12 @@ internal static class PhysicalInteraction
         if (cfg.EatAtMouth && holding && Hold.Edible && VRInput.HeadTracked && rig.Head != null)
         {
             bool was = Mouth.Active;
-            atMouth = Mouth.Update(rig.Head.position.N(), rig.Head.rotation.N(), item.Center().N(), dt);
+            atMouth = Mouth.Update(
+                rig.Head.position.N(),
+                rig.Head.rotation.N(),
+                item.Center().N(),
+                dt
+            );
             if (atMouth && !was)
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.05f);
         }
@@ -408,7 +487,11 @@ internal static class PhysicalInteraction
         if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand))
         {
             // Two-handed item held in one hand: carry only. Cancel a use that was in progress.
-            bool wasUsing = input.usePrimaryIsPressed || input.useSecondaryIsPressed || PrimaryEdge.Held || SecondaryEdge.Held;
+            bool wasUsing =
+                input.usePrimaryIsPressed
+                || input.useSecondaryIsPressed
+                || PrimaryEdge.Held
+                || SecondaryEdge.Held;
             input.usePrimaryWasPressed = input.usePrimaryIsPressed = false;
             input.useSecondaryWasPressed = input.useSecondaryIsPressed = false;
             input.usePrimaryWasReleased = input.useSecondaryWasReleased = !useBlocked && wasUsing;

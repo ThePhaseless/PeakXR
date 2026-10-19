@@ -31,7 +31,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class ConfigureIK
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterAnimations), "ConfigureIK");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterAnimations), "ConfigureIK");
 
         private static void Postfix(CharacterAnimations __instance) =>
             Driver(animationsCharacter(__instance))?.OnConfigureIK();
@@ -42,7 +43,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class HandleIK
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterAnimations), "HandleIK");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterAnimations), "HandleIK");
 
         private static void Postfix(CharacterAnimations __instance) =>
             Driver(animationsCharacter(__instance))?.OnHandleIK();
@@ -53,7 +55,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class SaveAdditional
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterRagdoll), "SaveAdditionalTransformPositions");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterRagdoll), "SaveAdditionalTransformPositions");
 
         private static void Postfix(CharacterRagdoll __instance) =>
             Driver(ragdollCharacter(__instance))?.OnSaveAdditional();
@@ -63,7 +66,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class HoldForward
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterItems), "GetItemHoldForward");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "GetItemHoldForward");
 
         private static void Postfix(CharacterItems __instance, ref Vector3 __result)
         {
@@ -78,7 +82,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class HoldUp
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterItems), "GetItemHoldUp");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "GetItemHoldUp");
 
         private static void Postfix(CharacterItems __instance, ref Vector3 __result)
         {
@@ -94,7 +99,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class AttachItem
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterItems), "AttachItem");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "AttachItem");
 
         private static bool Prefix(CharacterItems __instance, Item item)
         {
@@ -107,7 +113,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class UnAttachItem
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterItems), "UnAttachItem");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "UnAttachItem");
 
         private static void Postfix(CharacterItems __instance)
         {
@@ -122,7 +129,8 @@ internal static class AvatarPatches
     [HarmonyPatch]
     internal static class HideBody
     {
-        private static MethodBase TargetMethod() => GameMember.Method(typeof(HideTheBody), "Toggle");
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(HideTheBody), "Toggle");
 
         private static void Postfix(HideTheBody __instance, bool show)
         {
@@ -166,8 +174,11 @@ internal static class AvatarPatches
 
         private static void Postfix(Character __instance)
         {
-            if (VRSession.Requested != VRRuntime.Disabled && __instance.IsLocal &&
-                __instance.GetComponent<LocalAvatar>() == null)
+            if (
+                VRSession.Requested != VRRuntime.Disabled
+                && __instance.IsLocal
+                && __instance.GetComponent<LocalAvatar>() == null
+            )
                 __instance.gameObject.AddComponent<LocalAvatar>();
         }
     }

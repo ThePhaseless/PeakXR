@@ -14,6 +14,7 @@ internal sealed class ItemHoldInfo
 {
     public HoldProfile Profile;
     public bool Edible;
+
     /// <summary>Item children named <c>Hand_R</c>/<c>Hand_L</c>: where vanilla puts the hands
     /// (<c>CharacterItems.GetItemPosRight</c>, CharacterItems.cs:879).</summary>
     public Transform GripRight;
@@ -40,7 +41,10 @@ internal sealed class ItemHoldInfo
         if (!byId.TryGetValue(target.itemID, out var entry))
         {
             var traits = Traits(target, out entry.edible);
-            entry.profile = ItemHoldTable.Classify(target.UIData?.itemName + " " + target.name, traits);
+            entry.profile = ItemHoldTable.Classify(
+                target.UIData?.itemName + " " + target.name,
+                traits
+            );
             byId[target.itemID] = entry;
             Plugin.Log.LogDebug($"[avatar] hold profile {target.name}: {entry.profile} ({traits})");
         }
@@ -54,11 +58,16 @@ internal sealed class ItemHoldInfo
         var traits = ItemTraits.None;
         if (item.rightHandOnly)
             traits |= ItemTraits.RightHandOnly;
-        edible = item.GetComponent<Action_Consume>() != null || item.GetComponent<Action_RestoreHunger>() != null;
+        edible =
+            item.GetComponent<Action_Consume>() != null
+            || item.GetComponent<Action_RestoreHunger>() != null;
         if (edible)
             traits |= ItemTraits.Food;
-        if (item.GetComponent<RopeShooter>() != null || item.GetComponent<VineShooter>() != null ||
-            item.GetComponent<Action_RaycastDart>() != null)
+        if (
+            item.GetComponent<RopeShooter>() != null
+            || item.GetComponent<VineShooter>() != null
+            || item.GetComponent<Action_RaycastDart>() != null
+        )
             traits |= ItemTraits.Shooter;
         if (item is Backpack)
             traits |= ItemTraits.Backpack;
@@ -72,8 +81,13 @@ internal sealed class ItemHoldInfo
                 continue;
             var b = filter.sharedMesh.bounds;
             var scale = filter.transform.lossyScale;
-            var size = Vector3.Scale(b.size, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
-            var center = item.transform.InverseTransformPoint(filter.transform.TransformPoint(b.center));
+            var size = Vector3.Scale(
+                b.size,
+                new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z))
+            );
+            var center = item.transform.InverseTransformPoint(
+                filter.transform.TransformPoint(b.center)
+            );
             var local = new Bounds(center, size);
             if (any)
                 bounds.Encapsulate(local);

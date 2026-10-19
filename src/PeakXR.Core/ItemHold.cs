@@ -8,8 +8,10 @@ namespace PeakXR.Core
     {
         /// <summary>Held and used with either hand; the other hand stays free.</summary>
         OneHanded,
+
         /// <summary>Carried in one hand, but only usable while the second hand also grips it (long or heavy items).</summary>
         TwoHanded,
+
         /// <summary>Usable one-handed; a second hand steadies and aims it.</summary>
         OptionalTwoHand,
     }
@@ -32,10 +34,13 @@ namespace PeakXR.Core
         RightHandOnly = 1,
         Food = 2,
         Shooter = 4,
+
         /// <summary>Longest side of 0.9 m or more.</summary>
         Elongated = 8,
+
         /// <summary>Longest side under 0.15 m.</summary>
         Small = 16,
+
         /// <summary>Thin slab: a book, map or similar.</summary>
         Flat = 32,
         Backpack = 64,
@@ -52,12 +57,17 @@ namespace PeakXR.Core
             Grip = grip;
         }
 
-        public bool Equals(HoldProfile other) => Handedness == other.Handedness && Grip == other.Grip;
+        public bool Equals(HoldProfile other) =>
+            Handedness == other.Handedness && Grip == other.Grip;
+
         public override bool Equals(object obj) => obj is HoldProfile p && Equals(p);
+
         public override int GetHashCode() => ((int)Handedness * 16) + (int)Grip;
+
         public override string ToString() => $"{Handedness}/{Grip}";
 
         public static bool operator ==(HoldProfile a, HoldProfile b) => a.Equals(b);
+
         public static bool operator !=(HoldProfile a, HoldProfile b) => !a.Equals(b);
     }
 
@@ -138,7 +148,8 @@ namespace PeakXR.Core
             if (has(ItemTraits.Shooter))
                 return new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder);
 
-            var grip = has(ItemTraits.Flat) ? GripPreset.FlatPalm
+            var grip =
+                has(ItemTraits.Flat) ? GripPreset.FlatPalm
                 : has(ItemTraits.Small) ? GripPreset.Pinch
                 : GripPreset.Cylinder;
 
@@ -153,7 +164,8 @@ namespace PeakXR.Core
             handedness != Handedness.TwoHanded || secondHandOnItem;
 
         /// <summary>Whether the free hand gripping the held item becomes a two-hand hold.</summary>
-        public static bool AcceptsSecondHand(Handedness handedness) => handedness != Handedness.OneHanded;
+        public static bool AcceptsSecondHand(Handedness handedness) =>
+            handedness != Handedness.OneHanded;
 
         /// <summary>Lowercase letters and digits only, with a Unity "(Clone)" suffix removed.</summary>
         public static string Normalize(string name)

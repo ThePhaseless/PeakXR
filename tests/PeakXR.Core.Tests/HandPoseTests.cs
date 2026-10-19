@@ -54,7 +54,10 @@ public class HandPoseTests
             for (int joint = 0; joint < HandPose.JointsPerFinger; joint++)
             {
                 Assert.Equal(0f, HandPose.JointAngle(finger, joint, 0f));
-                Assert.Equal(HandPose.MaxJointAngle(finger, joint), HandPose.JointAngle(finger, joint, 1f));
+                Assert.Equal(
+                    HandPose.MaxJointAngle(finger, joint),
+                    HandPose.JointAngle(finger, joint, 1f)
+                );
                 Assert.True(HandPose.MaxJointAngle(finger, joint) > 0f);
             }
         }

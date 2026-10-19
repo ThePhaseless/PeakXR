@@ -8,7 +8,12 @@ public class ClimbInputTests
     [Fact]
     public void MovingUp_IsPositiveY()
     {
-        var input = ClimbInput.FromBodyVelocity(new Vector3(0, 1, 0), Normal, climbSpeed: 2f, deadzone: 0.05f);
+        var input = ClimbInput.FromBodyVelocity(
+            new Vector3(0, 1, 0),
+            Normal,
+            climbSpeed: 2f,
+            deadzone: 0.05f
+        );
         TestUtil.Near(0.5f, input.Y);
         TestUtil.Near(0f, input.X);
     }
@@ -38,13 +43,19 @@ public class ClimbInputTests
     [Fact]
     public void Slow_IsInsideDeadzone()
     {
-        Assert.Equal(Vector2.Zero, ClimbInput.FromBodyVelocity(new Vector3(0, 0.05f, 0), Normal, 2f, 0.1f));
+        Assert.Equal(
+            Vector2.Zero,
+            ClimbInput.FromBodyVelocity(new Vector3(0, 0.05f, 0), Normal, 2f, 0.1f)
+        );
     }
 
     [Fact]
     public void ZeroSpeed_GivesZero()
     {
-        Assert.Equal(Vector2.Zero, ClimbInput.FromBodyVelocity(new Vector3(0, 1, 0), Normal, 0f, 0.1f));
+        Assert.Equal(
+            Vector2.Zero,
+            ClimbInput.FromBodyVelocity(new Vector3(0, 1, 0), Normal, 0f, 0.1f)
+        );
     }
 
     [Fact]
@@ -52,6 +63,9 @@ public class ClimbInputTests
     {
         var v = ClimbInput.Smooth(Vector2.Zero, new Vector2(1, 0), rate: 10f, dt: 0.1f);
         Assert.InRange(v.X, 0.6f, 0.7f);
-        Assert.Equal(new Vector2(1, 0), ClimbInput.Smooth(Vector2.Zero, new Vector2(1, 0), 0f, 0.1f));
+        Assert.Equal(
+            new Vector2(1, 0),
+            ClimbInput.Smooth(Vector2.Zero, new Vector2(1, 0), 0f, 0.1f)
+        );
     }
 }

@@ -42,7 +42,11 @@ internal sealed class LocalAvatar : MonoBehaviour
         if (!active || rig == null || rig.Head == null)
             return;
 
-        var pose = new AvatarPose { ItemInLeftHand = LocalHold.ItemInLeftHand, TwoHandHold = LocalHold.TwoHand };
+        var pose = new AvatarPose
+        {
+            ItemInLeftHand = LocalHold.ItemInLeftHand,
+            TwoHandHold = LocalHold.TwoHand,
+        };
         if (VRInput.HeadTracked)
         {
             pose.HasHead = true;

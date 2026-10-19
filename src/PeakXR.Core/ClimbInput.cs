@@ -16,7 +16,12 @@ namespace PeakXR.Core
         /// <param name="wallNormal">Climb surface normal (points away from the wall).</param>
         /// <param name="climbSpeed">Game climb speed in m/s at full stick.</param>
         /// <param name="deadzone">Stick magnitude below which the result is zero.</param>
-        public static Vector2 FromBodyVelocity(Vector3 bodyVelocity, Vector3 wallNormal, float climbSpeed, float deadzone)
+        public static Vector2 FromBodyVelocity(
+            Vector3 bodyVelocity,
+            Vector3 wallNormal,
+            float climbSpeed,
+            float deadzone
+        )
         {
             if (climbSpeed <= 1e-5f || wallNormal.LengthSquared() < 1e-8f)
                 return Vector2.Zero;
@@ -27,7 +32,9 @@ namespace PeakXR.Core
             up = Vector3.Normalize(up);
             var right = -Vector3.Normalize(Vector3.Cross(up, n));
 
-            var input = new Vector2(Vector3.Dot(bodyVelocity, right), Vector3.Dot(bodyVelocity, up)) / climbSpeed;
+            var input =
+                new Vector2(Vector3.Dot(bodyVelocity, right), Vector3.Dot(bodyVelocity, up))
+                / climbSpeed;
             float len = input.Length();
             if (len < deadzone)
                 return Vector2.Zero;
