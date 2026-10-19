@@ -15,7 +15,12 @@ public class GrabSelectorTests
     [Fact]
     public void PicksNearestInRange()
     {
-        var pos = new[] { new Vector3(0, 0, 0.15f), new Vector3(0, 0, 0.05f), new Vector3(0, 0, 0.5f) };
+        var pos = new[]
+        {
+            new Vector3(0, 0, 0.15f),
+            new Vector3(0, 0, 0.05f),
+            new Vector3(0, 0, 0.5f),
+        };
         Assert.Equal(1, GrabSelector.Select(Vector3.Zero, Fwd, pos, null, pos.Length, 0.2f));
     }
 

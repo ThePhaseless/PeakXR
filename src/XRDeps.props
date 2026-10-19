@@ -7,12 +7,17 @@
     never next to the plugin assembly.
   -->
   <PropertyGroup>
-    <PeakXRDepsDir Condition="'$(PeakXRDepsDir)' == ''">$(MSBuildThisFileDirectory)../deps/</PeakXRDepsDir>
-    <PeakXRHasOpenXR Condition="Exists('$(PeakXRDepsDir)xr/managed/Unity.XR.OpenXR.dll')">true</PeakXRHasOpenXR>
-    <PeakXRHasOpenVR Condition="Exists('$(PeakXRDepsDir)openvr/managed/Unity.XR.OpenVR.dll')">true</PeakXRHasOpenVR>
+    <PeakXRDepsDir Condition="'$(PeakXRDepsDir)' == ''"
+      >$(MSBuildThisFileDirectory)../deps/</PeakXRDepsDir>
+    <PeakXRHasOpenXR Condition="Exists('$(PeakXRDepsDir)xr/managed/Unity.XR.OpenXR.dll')"
+      >true</PeakXRHasOpenXR>
+    <PeakXRHasOpenVR Condition="Exists('$(PeakXRDepsDir)openvr/managed/Unity.XR.OpenVR.dll')"
+      >true</PeakXRHasOpenVR>
     <!-- Lets code compile with or without each backend: #if PEAKXR_OPENXR / #if PEAKXR_OPENVR. -->
-    <DefineConstants Condition="'$(PeakXRHasOpenXR)' == 'true'">$(DefineConstants);PEAKXR_OPENXR</DefineConstants>
-    <DefineConstants Condition="'$(PeakXRHasOpenVR)' == 'true'">$(DefineConstants);PEAKXR_OPENVR</DefineConstants>
+    <DefineConstants Condition="'$(PeakXRHasOpenXR)' == 'true'"
+      >$(DefineConstants);PEAKXR_OPENXR</DefineConstants>
+    <DefineConstants Condition="'$(PeakXRHasOpenVR)' == 'true'"
+      >$(DefineConstants);PEAKXR_OPENVR</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

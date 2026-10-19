@@ -1,0 +1,49 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{csproj,props,targets,json,yml,yaml,toml}]
+indent_size = 2
+
+[*.cs]
+# Unity's Mono runtime (6000.3) must not run these; the compiler cannot block them, review does.
+# Banned: default interface methods (wrong-method/generic crashes on Mono) and [ModuleInitializer]
+# (Mono does not reliably run <Module>.cctor). Use abstract base classes and Feature.Install().
+
+# Analyzer severities. Everything below is suppressed (none) because it does not fit a Unity/BepInEx mod.
+
+# Public fields: Unity-facing state holders and hot-path structs use plain fields (no property call overhead, MonoBehaviour-style).
+dotnet_diagnostic.CA1051.severity = none
+# Static mutable fields are the shared contract surface (VRInput.*, config values); changing them to properties churns every consumer.
+dotnet_diagnostic.CA2211.severity = none
+dotnet_diagnostic.MA0069.severity = none
+# One file per type: small related types (enum + owner, Harmony patch classes) deliberately share a file.
+dotnet_diagnostic.MA0048.severity = none
+# Explicit enum value for 0: PoseFlags.None is the default and `0` reads clearer in the wire codec.
+dotnet_diagnostic.MA0099.severity = none
+# Struct layout: these are managed-only value types, never marshalled to native code.
+dotnet_diagnostic.MA0008.severity = none
+# Event handler shape: VR events are plain Action delegates, not EventHandler(sender, args), to stay allocation-free.
+dotnet_diagnostic.MA0046.severity = none
+# Naming: PoseFlags is a plain enum (not [Flags]) and RemotePoseStream is not a System.IO.Stream; both names are the domain terms.
+dotnet_diagnostic.CA1711.severity = none
+# Generic parameter names F/D mirror the game-member helper's field/delegate naming.
+dotnet_diagnostic.CA1715.severity = none
+# Underscores in generated BepInEx MyPluginInfo constants.
+dotnet_diagnostic.CA1707.severity = none
+# Harmony TargetMethod() must return MethodBase; a narrower return type does not help and breaks the convention.
+dotnet_diagnostic.CA1859.severity = none
+# string == is already ordinal in C#; rewriting every comparison as string.Equals adds noise only.
+dotnet_diagnostic.MA0006.severity = none
+# Method length: draw/setup methods in IMGUI code are linear; splitting hurts readability.
+dotnet_diagnostic.MA0051.severity = none
+
+[tests/**.cs]
+# Test data arrays are inline on purpose; static fields per case would obscure the arrange step.
+dotnet_diagnostic.CA1861.severity = none

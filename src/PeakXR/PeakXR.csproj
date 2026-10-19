@@ -6,7 +6,6 @@
     <BepInExPluginGuid>com.thephaseless.peakxr</BepInExPluginGuid>
     <BepInExPluginName>PeakXR</BepInExPluginName>
     <Version>0.1.0</Version>
-    <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -22,7 +21,11 @@
 
   <!-- PeakXR.Core is compiled into this DLL so the mod ships as one plugin assembly. -->
   <ItemGroup>
-    <Compile Include="../PeakXR.Core/**/*.cs" Exclude="../PeakXR.Core/obj/**;../PeakXR.Core/bin/**" LinkBase="Core" />
+    <Compile
+      Include="../PeakXR.Core/**/*.cs"
+      Exclude="../PeakXR.Core/obj/**;../PeakXR.Core/bin/**"
+      LinkBase="Core"
+    />
   </ItemGroup>
 
   <Import Project="../XRDeps.props" Condition="Exists('../XRDeps.props')" />
@@ -32,10 +35,15 @@
     <Reference Include="$(PeakManaged)/Assembly-CSharp.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Zorro.*.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Photon*.dll" Private="false" />
+    <!-- Base types of the game's ScriptableObject databases (ItemDatabase : SerializedScriptableObject). -->
+    <Reference Include="$(PeakManaged)/Sirenix.Serialization.dll" Private="false" />
     <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.InputSystem.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
-    <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll" Private="false" />
+    <Reference
+      Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll"
+      Private="false"
+    />
     <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.Mathematics.dll" Private="false" />
   </ItemGroup>

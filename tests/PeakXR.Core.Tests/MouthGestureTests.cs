@@ -7,7 +7,10 @@ public class MouthGestureTests
     [Fact]
     public void MouthPoint_IsHeadRotatedOffset()
     {
-        TestUtil.Near(new Vector3(0.08f, 1.53f, 0f), MouthGesture.MouthPoint(Head, UnityQuat.Euler(0, 90, 0), MouthGesture.DefaultOffset));
+        TestUtil.Near(
+            new Vector3(0.08f, 1.53f, 0f),
+            MouthGesture.MouthPoint(Head, UnityQuat.Euler(0, 90, 0), MouthGesture.DefaultOffset)
+        );
     }
 
     [Fact]
@@ -25,7 +28,9 @@ public class MouthGestureTests
     {
         var g = new MouthGesture();
         for (int i = 0; i < 10; i++)
-            Assert.False(g.Update(Head, Quaternion.Identity, Head + new Vector3(0, -0.5f, 0.3f), 0.1f));
+            Assert.False(
+                g.Update(Head, Quaternion.Identity, Head + new Vector3(0, -0.5f, 0.3f), 0.1f)
+            );
     }
 
     [Fact]
