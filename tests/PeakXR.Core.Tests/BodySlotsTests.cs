@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace PeakXR.Core.Tests;
 
 public class BodySlotsTests
