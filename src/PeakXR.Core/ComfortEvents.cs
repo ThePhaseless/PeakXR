@@ -329,7 +329,8 @@ namespace PeakXR.Core
         /// <summary>Seconds on the ground before the launch ends.</summary>
         public float SettleSeconds = 0.25f;
 
-        /// <summary>Upward speed gain within one update (m/s) that counts as a launch.</summary>
+        /// <summary>Upward speed gain within one update (m/s) that counts as a launch; the body must also rise at
+        /// least this fast, so a hard landing or a bounce (fall speed stopped in one step) is not one.</summary>
         public float DetectSpeed = 8f;
 
         float _elapsed;
@@ -355,7 +356,7 @@ namespace PeakXR.Core
         /// <summary>Returns <see cref="Active"/> after this frame.</summary>
         public bool Update(bool grounded, float upSpeed, float dt)
         {
-            if (_haveLast && !Active && upSpeed - _lastUp >= DetectSpeed)
+            if (_haveLast && !Active && upSpeed >= DetectSpeed && upSpeed - _lastUp >= DetectSpeed)
                 Start();
             _lastUp = upSpeed;
             _haveLast = true;

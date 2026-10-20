@@ -122,8 +122,16 @@ internal static class PortalPatch
 {
     private static MethodBase TargetMethod() => GameMember.Method(typeof(PeakGatePortal), "Update");
 
+    // The shake at L127 is run flow's while it drives the portal rumble.
+    private static void Prefix()
+    {
+        if (VRSession.Active && RunFlowFeature.Settings.PortalFade.Value)
+            RunFlowFeature.ShakeOwnedFrame = Time.frameCount;
+    }
+
     private static void Postfix(PeakGatePortal __instance, float ___progress, bool ___finished)
     {
+        RunFlowFeature.ShakeOwnedFrame = -1;
         if (!RunFlowRuntime.PortalProgress(___progress, ___finished))
             return;
         __instance.warpPost.weight = 0f;
@@ -145,11 +153,16 @@ internal static class RisingShakePatch
             GameMember.Method(typeof(GUIManager), nameof(GUIManager.TheGloomRises)),
         };
 
-    private static void Postfix() => RunFlowRuntime.Rumble(5f, 3f);
+    // The game adds the shake right after the banner (A/LavaRising.cs:186, :191), in the same frame.
+    private static void Postfix()
+    {
+        RunFlowFeature.ShakeOwnedFrame = Time.frameCount;
+        RunFlowRuntime.Rumble(5f, 3f);
+    }
 }
 
 /// <summary>Freed soul: <c>AddPerlinShake(6f, 6f)</c> 3 s into the break routine
-/// (A/Peak/ScoutmasterSoulPillar.cs:171-172). A/Peak/ScoutmasterSoulPillar.cs:148
+/// (A/Peak/ScoutmasterSoulPillar.cs:172-173). A/Peak/ScoutmasterSoulPillar.cs:148
 /// <c>private IEnumerator BreakTriggeredRoutine(PhotonView)</c>; the postfix runs when the routine starts.</summary>
 [HarmonyPatch]
 internal static class SoulShakePatch
@@ -158,6 +171,22 @@ internal static class SoulShakePatch
         GameMember.Method(typeof(ScoutmasterSoulPillar), "BreakTriggeredRoutine");
 
     private static void Postfix() => RunFlowRuntime.RumbleAfter(3f, 6f, 6f);
+}
+
+/// <summary>Marks the routine's shake (A/Peak/ScoutmasterSoulPillar.cs:173) as run flow's while each step of the
+/// routine runs, so comfort.events does not rumble it a second time. The MoveNext of the iterator behind
+/// A/Peak/ScoutmasterSoulPillar.cs:148 <c>private IEnumerator BreakTriggeredRoutine(PhotonView)</c>.</summary>
+[HarmonyPatch]
+internal static class SoulShakeOwnerPatch
+{
+    private static MethodBase TargetMethod() =>
+        AccessTools.EnumeratorMoveNext(
+            GameMember.Method(typeof(ScoutmasterSoulPillar), "BreakTriggeredRoutine")
+        );
+
+    private static void Prefix() => RunFlowFeature.ShakeOwnedFrame = Time.frameCount;
+
+    private static void Finalizer() => RunFlowFeature.ShakeOwnedFrame = -1;
 }
 
 /// <summary>Run-start wake-up on the beach: Fade mode holds black until the character is up, Skip

@@ -1,5 +1,6 @@
 using PeakXR.Framework;
 using PeakXR.UI.World;
+using UnityEngine;
 
 namespace PeakXR.UI.RunFlow;
 
@@ -22,6 +23,19 @@ public sealed class RunFlowFeature : Feature
     /// </summary>
     public static bool CutsceneViewHandled { get; set; }
 
+    /// <summary>Frame in which a camera shake that run flow rumbles itself (rising lava/gloom, freed soul,
+    /// portal) is being added, or -1. comfort.events skips its own rumble for that shake, so each source has one
+    /// owner and <c>ShakeHaptics</c> = 0 silences it.</summary>
+    internal static int ShakeOwnedFrame = -1;
+
+    /// <summary>True once if the shake being added right now is run flow's (see <see cref="ShakeOwnedFrame"/>).</summary>
+    internal static bool TakeShake()
+    {
+        bool owned = ShakeOwnedFrame == Time.frameCount;
+        ShakeOwnedFrame = -1;
+        return owned;
+    }
+
     internal static RunFlowSettings Settings { get; private set; }
 
     protected internal override void Install()
@@ -38,6 +52,7 @@ public sealed class RunFlowFeature : Feature
         Patch(typeof(PortalPatch));
         Patch(typeof(RisingShakePatch));
         Patch(typeof(SoulShakePatch));
+        Patch(typeof(SoulShakeOwnerPatch));
         Patch(typeof(BeachWakeupPatch));
         Patch(typeof(BeachFallPatch));
         Patch(typeof(EyeBlinkPatch));

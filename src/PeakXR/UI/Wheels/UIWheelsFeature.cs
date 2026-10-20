@@ -57,6 +57,11 @@ public sealed class UIWheelsFeature : Feature
         );
 
         MovementCharacter = GameMember.Field<CharacterMovement, Character>("character");
+        HeadLookWhileWheelOpenPatch.CameraLook =
+            GameMember.Delegate<System.Action<CharacterMovement>>(
+                typeof(CharacterMovement),
+                "CameraLook"
+            );
         Patch(typeof(HeadLookWhileWheelOpenPatch));
         Patch(typeof(EmoteWheelGamepadPatch));
         Patch(typeof(BackpackWheelGamepadPatch));

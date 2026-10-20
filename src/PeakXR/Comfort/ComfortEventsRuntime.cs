@@ -69,6 +69,9 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         if (instance == null || !VRSession.Active || amount <= 0.01f)
             return;
         var r = Resolve(ComfortEvent.Shake, amount / 10f);
+        // ui.runflow rumbles some world shakes itself (its ShakeHaptics); one rumble per shake.
+        if (RunFlowFeature.TakeShake())
+            r.Haptic = 0f;
         if (r.Haptic > 0f)
             r.HapticSeconds = Mathf.Clamp(duration, 0.05f, 0.5f);
         if (r.Any)
@@ -197,9 +200,14 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             launch.Cancel();
         }
 
+        var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
+        var v = hip != null ? hip.linearVelocity : Vector3.zero;
+
         // Teleports without a run transition (ui.runflow fades Character.WarpPlayer itself): reconnect spawns,
-        // scripted returns. The jump already happened, so the fade starts black.
-        if ((center - lastCenter).sqrMagnitude > TeleportDistance * TeleportDistance && !c.warping)
+        // scripted returns. The jump already happened, so the fade starts black. A long frame of a fast fall or
+        // flight also moves the body far: allow twice what its speed covers.
+        float jump = Mathf.Max(TeleportDistance, v.magnitude * dt * 2f);
+        if ((center - lastCenter).sqrMagnitude > jump * jump && !c.warping)
             Raise(ComfortEvent.Teleport, 1f);
         lastCenter = center;
 
@@ -210,11 +218,15 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         scriptedLook = look;
 
         // A launched body often tumbles too (cannon, mushroom); the chase view stays through it. Climbing ends
-        // a flight; spectating hands the view to rig.camera.
+        // a flight; spectating hands the view to rig.camera. A warp halts the body's velocity (HaltBodyVelocity,
+        // A/Character.cs:1909-1961, warping set :1866-1967), which must not read as a launch.
         bool over =
-            d.dead || d.fullyPassedOut || d.isClimbing || d.isRopeClimbing || d.isVineClimbing;
-        var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
-        var v = hip != null ? hip.linearVelocity : Vector3.zero;
+            d.dead
+            || d.fullyPassedOut
+            || d.isClimbing
+            || d.isRopeClimbing
+            || d.isVineClimbing
+            || c.warping;
         // A tumbling body rarely reports grounded: lying still counts as landed.
         bool landed = d.isGrounded || (d.fallSeconds > 0f && v.sqrMagnitude < 1.5f * 1.5f);
         if (over)

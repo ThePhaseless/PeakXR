@@ -7,7 +7,8 @@ namespace PeakXR.UI.Status;
 /// <summary>
 /// Head-locked glow at the edge of the view: a spherical band around the camera (see <see cref="RimMesh"/>)
 /// that is transparent within 35 degrees of the view centre, drawn over the world and UI but under the fade.
-/// One tint at a time; the vertex alpha shapes it, the material colour sets hue and strength.
+/// One tint at a time; the vertex alpha shapes it, the material colour sets hue and strength. Parented to the rig
+/// head, which is never deactivated (the game's camera is switched off by cutscenes and dies with its scene).
 /// </summary>
 internal sealed class PeripheralRim
 {
@@ -19,22 +20,16 @@ internal sealed class PeripheralRim
     private readonly Material material;
     private Color shown = Color.clear;
 
-    public PeripheralRim(Camera camera, Transform fallback)
+    public PeripheralRim(Transform head, float nearClip)
     {
         if (mesh == null)
             mesh = BuildMesh();
         material = UIMaterials.Create(Color.clear, drawOnTop: true, renderQueue: 4500);
-        go = UIMaterials.MeshObject(
-            "PeakXR_StatusRim",
-            mesh,
-            material,
-            camera != null ? camera.transform : fallback
-        );
+        go = UIMaterials.MeshObject("PeakXR_StatusRim", mesh, material, head);
         meshRenderer = go.GetComponent<MeshRenderer>();
         meshRenderer.sortingOrder = short.MaxValue - 1;
         meshRenderer.enabled = false;
-        var near = camera != null ? camera.nearClipPlane : 0.05f;
-        go.transform.localScale = Vector3.one * Mathf.Max(0.5f, near * 8f);
+        go.transform.localScale = Vector3.one * Mathf.Max(0.5f, nearClip * 8f);
     }
 
     public bool Alive => go != null;
