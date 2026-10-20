@@ -18,6 +18,14 @@ public static class VRSession
     /// <summary>True once an XR display subsystem is running and rendering to the headset.</summary>
     public static bool Active { get; internal set; }
 
+    /// <summary>Runtime that actually started (may differ from <see cref="Requested"/> after the
+    /// OpenXR to OpenVR fallback). Disabled while flat.</summary>
+    public static VRRuntime Running { get; internal set; }
+
+    /// <summary>False while the runtime holds input focus (dashboard open, headset off). Game input
+    /// is paused then, rendering continues.</summary>
+    public static bool HasFocus { get; internal set; } = true;
+
     public static event Action Started;
     public static event Action Stopped;
 

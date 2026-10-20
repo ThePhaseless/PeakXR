@@ -55,4 +55,22 @@ public class LookMathTests
         TestUtil.Near(60f, v.X, 0.05f);
         TestUtil.Near(-85f, v.Y, 1e-3f);
     }
+
+    [Theory]
+    [InlineData(170f, -170f, 190f)]
+    [InlineData(-170f, 170f, -190f)]
+    [InlineData(400f, 50f, 410f)]
+    [InlineData(10f, 20f, 20f)]
+    public void ContinueYaw_StaysContinuousAcrossTheSeam(float previous, float next, float expected)
+    {
+        TestUtil.Near(expected, LookMath.ContinueYaw(previous, next), 1e-3f);
+    }
+
+    [Fact]
+    public void ContinueYaw_WrapsOncePastTheLimit()
+    {
+        // One turn back at a time: a remote peer interpolating the synced value sees one spin, rarely.
+        TestUtil.Near(365f, LookMath.ContinueYaw(715f, 5f), 1e-3f);
+        TestUtil.Near(-365f, LookMath.ContinueYaw(-715f, -5f), 1e-3f);
+    }
 }

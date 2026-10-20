@@ -33,7 +33,14 @@ Other tasks: `mise run deploy` copies `dist/PeakXR/BepInEx` into the game, `mise
 
 The runtime is set in `BepInEx/config/PeakXR.Preloader.cfg` (`[Runtime] Mode = OpenXR | OpenVR |
 Disabled`). The launch options `-peakxr-openxr`, `-peakxr-openvr` and `-peakxr-novr` override it for one
-run.
+run. With `Mode = OpenXR` and `OpenVRFallback = true` (the default), the OpenVR plugin is installed too:
+if OpenXR does not start within `[XR] StartTimeoutSeconds`, the game tries OpenVR, and if that fails as
+well it runs flat. `BepInEx/LogOutput.log` shows the outcome on a line starting with
+`[xr.bootstrap] VR active` or `[xr.bootstrap] No XR runtime started`.
+
+In the headset, hold the menu button for a second to recenter your view and recalibrate eye height.
+Camera, render and comfort options are in `BepInEx/config/com.thephaseless.peakxr.cfg` under
+`[Camera]`, `[Render]` and `[XR]`.
 
 ### Linux (Proton)
 

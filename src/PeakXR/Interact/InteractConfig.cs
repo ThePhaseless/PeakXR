@@ -58,6 +58,10 @@ internal sealed class InteractConfig
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? 0.5f;
 
+    /// <summary>The configured drop button (<c>LeftPrimary</c> ... <c>RightStickClick</c>, or <c>None</c>), so the
+    /// locomotion layout can keep its own actions off it.</summary>
+    public string DropButton => dropButton?.Value ?? "RightSecondary";
+
     /// <summary>State of the configured drop/throw-charge button this frame.</summary>
     public bool DropButtonDown()
     {
