@@ -35,6 +35,7 @@ internal static class PhysicalInteraction
         public readonly ThrowEstimator Throw = new();
         public GripPressAction Action;
         public IInteractible Target;
+        public IGripExtension Extension;
 
         public Hand(bool left) => Left = left;
     }
@@ -88,6 +89,16 @@ internal static class PhysicalInteraction
     public static Vector3 ThrowVelocity { get; private set; }
 
     public static void ConsumeThrow() => throwFrame = -10;
+
+    /// <summary>
+    /// The next held item (within 3 s) belongs in this hand. For extensions that equip through the game's own path
+    /// (drawing from a body slot, taking from a backpack), so the item lands in the hand that reached for it.
+    /// </summary>
+    public static void ExpectItemIn(bool left)
+    {
+        pendingLeft = left;
+        pendingTime = Time.time;
+    }
 
     public static void Tick(Character c, CharacterInput input, bool active)
     {
@@ -210,8 +221,20 @@ internal static class PhysicalInteraction
             ctx.Candidate = FindCandidate(c, pos, t.forward, cfg.GrabRadius, out target);
 
         var action = GripIntent.OnPress(ctx);
+        IGripExtension extension = null;
+        var hook = new GripHookContext(c, hand.Left, pos, holding ? item : null, thisHolds);
+        if (action != GripPressAction.SecondHand)
+        {
+            extension = GripHooks.Claim(hook);
+            ctx.ExtensionClaim = extension != null;
+            action = GripIntent.OnPress(ctx);
+        }
         switch (action)
         {
+            case GripPressAction.Extension:
+                hand.Extension = extension;
+                extension.BeginPress(hook);
+                break;
             case GripPressAction.GrabItem:
                 hand.Target = target;
                 pendingLeft = hand.Left;
@@ -242,8 +265,10 @@ internal static class PhysicalInteraction
     private static void OnGripRelease(Hand hand, Character c, VRRig rig, InteractConfig cfg)
     {
         var action = hand.Action;
+        var extension = hand.Extension;
         hand.Action = GripPressAction.None;
         hand.Target = null;
+        hand.Extension = null;
 
         switch (action)
         {
@@ -255,9 +280,27 @@ internal static class PhysicalInteraction
                 if (Other(hand).Action != GripPressAction.Climb && cfg.ArmLunge && physicalClimb)
                     TryLunge(hand, c, rig, cfg);
                 break;
+            case GripPressAction.Extension:
             case GripPressAction.GrabItem:
             case GripPressAction.Regrip:
-                if (!Holding(c, out var item) || LocalHold.ItemInLeftHand != hand.Left)
+                bool holdingNow = Holding(c, out var item);
+                bool thisHolds = holdingNow && LocalHold.ItemInLeftHand == hand.Left;
+                var hook = new GripHookContext(
+                    c,
+                    hand.Left,
+                    rig.Hand(hand.Left) != null ? rig.Hand(hand.Left).position : Vector3.zero,
+                    holdingNow ? item : null,
+                    thisHolds
+                );
+                // An extension's own grip ends first; if it leaves the release alone and the hand now holds an
+                // item (drawn from a slot), the release counts as that hand letting go of its item.
+                if (
+                    action == GripPressAction.Extension
+                    && extension != null
+                    && extension.EndPress(hook)
+                )
+                    break;
+                if (!thisHolds)
                     break;
                 var velocity = ReleaseVelocity(hand, c, rig);
                 var result = GripIntent.OnRelease(
@@ -266,7 +309,8 @@ internal static class PhysicalInteraction
                     velocity.magnitude,
                     cfg.ThrowSpeed,
                     cfg.PhysicalThrow,
-                    cfg.ReleaseToDrop
+                    cfg.ReleaseToDrop,
+                    action != GripPressAction.Extension && GripHooks.HeldRelease(hook)
                 );
                 if (result == GripReleaseAction.Throw && !item.UIData.canThrow)
                     result = GripReleaseAction.Keep;
