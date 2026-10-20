@@ -88,6 +88,8 @@ internal sealed class RigDriver : MonoBehaviour
     private Character shownTarget;
     private Transform staticSource;
     private Vector3 staticPoint;
+    private Vector3 staticSourceLast;
+    private float staticSince;
     private bool haveSavedYaw;
     private float savedYaw;
 
@@ -417,6 +419,8 @@ internal sealed class RigDriver : MonoBehaviour
             shownTarget = target;
             staticSource = source;
             staticPoint = source != null ? source.position : anchor;
+            staticSourceLast = staticPoint;
+            staticSince = Time.unscaledTime;
             FaceStaticView(source);
             snap = true;
             if (pendingRecenter)
@@ -531,11 +535,19 @@ internal sealed class RigDriver : MonoBehaviour
                     return true;
                 }
                 // A still viewpoint: when the shot cuts or travels away, fade and re-place it.
-                if (
-                    staticSource != null
-                    && Vector3.Distance(staticSource.position, staticPoint) > 3f
-                )
-                    takeover.Blink();
+                if (staticSource != null)
+                {
+                    var p = staticSource.position;
+                    if (
+                        RigMath.ReplaceStillView(
+                            Vector3.Distance(p, staticSourceLast),
+                            Vector3.Distance(p, staticPoint),
+                            Time.unscaledTime - staticSince
+                        )
+                    )
+                        takeover.Blink();
+                    staticSourceLast = p;
+                }
                 goal = staticPoint;
                 snap = true;
                 return true;

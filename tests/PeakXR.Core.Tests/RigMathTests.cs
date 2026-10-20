@@ -165,4 +165,16 @@ public class RigMathTests
             1e-5f
         );
     }
+
+    [Fact]
+    public void ReplaceStillView_CutsAtOnce_DriftOnlyAfterTheDwell()
+    {
+        // A cut: the camera jumped this frame.
+        Assert.True(RigMath.ReplaceStillView(frameJump: 5f, drift: 5f, sinceSwitch: 0.1f));
+        // A moving shot that left the spot: not again within the dwell, so it cannot strobe.
+        Assert.False(RigMath.ReplaceStillView(frameJump: 0.1f, drift: 5f, sinceSwitch: 0.6f));
+        Assert.True(RigMath.ReplaceStillView(frameJump: 0.1f, drift: 5f, sinceSwitch: 3.5f));
+        // Still near the spot: never.
+        Assert.False(RigMath.ReplaceStillView(frameJump: 0.1f, drift: 1f, sinceSwitch: 10f));
+    }
 }

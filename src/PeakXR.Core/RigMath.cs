@@ -94,6 +94,14 @@ namespace PeakXR.Core
             + new Vector3(0f, height, 0f);
 
         /// <summary>
+        /// Whether a still cutscene viewpoint fades and re-places itself at the cutscene camera. A cut (the camera
+        /// jumped more than 3 m this frame) re-places at once; a shot that glided more than 3 m away re-places only
+        /// after a 3 s dwell, so a camera that keeps moving cannot strobe the view black.
+        /// </summary>
+        public static bool ReplaceStillView(float frameJump, float drift, float sinceSwitch) =>
+            frameJump > 3f || (drift > 3f && sinceSwitch >= 3f);
+
+        /// <summary>
         /// Frame-rate independent exponential follow with separate horizontal and vertical rates
         /// (1/s; 0 = hold, negative = snap), then clamped so the result never lags more than
         /// <paramref name="maxLag"/> metres behind the target.
