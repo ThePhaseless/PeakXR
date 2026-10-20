@@ -28,6 +28,9 @@ public struct HandState
     /// <summary>Per-finger curls from skeletal input or hand tracking when the runtime offers them,
     /// otherwise null and fingers are derived from the analog values.</summary>
     public float[] SkeletalCurls;
+
+    /// <summary>The controller accepts haptic impulses (<c>InputDevice.SendHapticImpulse</c>).</summary>
+    public bool Haptics;
 }
 
 /// <summary>Raw XR device state, sampled once per frame before game input is read.</summary>
@@ -39,6 +42,9 @@ public static class VRInput
     public static bool HeadTracked;
     public static Vector3 HeadPosition;
     public static Quaternion HeadRotation = Quaternion.identity;
+
+    /// <summary>The player chose the left hand as dominant (setting <c>Input.DominantHand</c>). Layouts mirror.</summary>
+    public static bool LeftHanded;
 
     public static ref HandState Hand(bool left) => ref left ? ref Left : ref Right;
 }

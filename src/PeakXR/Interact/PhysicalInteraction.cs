@@ -11,6 +11,8 @@ namespace PeakXR.Interact;
 /// (<c>CharacterInput.Sample</c> postfix). It turns grips, triggers and gestures into the game's own inputs, so
 /// every effect goes through vanilla paths and RPCs: interact (pickup), use, drop/throw and wall climbing.
 /// Hands are independent: each has its own grip state and action; only one item is held at a time.
+/// Grip climbing adds hand-checked holds with surface haptics, a hand-over-hand regrip grace, stamina and slide
+/// haptics, an arm lunge into the game's climb jump and a carry over ledges, all through the game's own inputs.
 /// </summary>
 internal static class PhysicalInteraction
 {
@@ -50,6 +52,14 @@ internal static class PhysicalInteraction
     private static readonly Collider[] Overlap = new Collider[32];
     private static readonly NVector3[] CandidatePositions = new NVector3[32];
     private static readonly IInteractible[] Candidates = new IInteractible[32];
+    private static readonly ClimbGrace Grace = new();
+    private static readonly StaminaHaptics StaminaBeat = new();
+
+    /// <summary>Seconds a lunge keeps the climb alive with no hand on the wall, so hands can catch it.</summary>
+    private const float LungeGrace = 0.6f;
+
+    /// <summary>Seconds a top-out keeps walking toward the ledge while a grip stays closed.</summary>
+    private const float MantleSeconds = 0.6f;
 
     private static Item lastItem;
     private static bool pendingLeft;
@@ -59,6 +69,12 @@ internal static class PhysicalInteraction
     private static bool dropPending;
     private static bool useBlocked;
     private static int throwFrame = -10;
+    private static bool lungePending;
+    private static Vector2 lungeInput;
+    private static bool hazardPulseLeft;
+    private static float hazardPulseTime = -10f;
+    private static float mantleUntil = -10f;
+    private static Vector3 mantleDir;
 
     /// <summary>What a grabbing hand selected; the interaction raycast patch hands it to the game.</summary>
     public static IInteractible GrabTarget { get; private set; }
@@ -79,6 +95,7 @@ internal static class PhysicalInteraction
         if (!VRSession.Active || rig == null || c != Character.localCharacter)
         {
             AimHand = -1;
+            lungePending = false;
             return;
         }
         var cfg = InteractConfig.Instance;
@@ -89,9 +106,16 @@ internal static class PhysicalInteraction
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
         UpdateAim(cfg);
-        UpdateClimb(c, rig, cfg, dt);
+        UpdateClimb(c, rig, cfg, dt, now);
+        if (hazardPulseTime > 0f && now >= hazardPulseTime)
+        {
+            hazardPulseTime = -10f;
+            Haptics.Pulse(hazardPulseLeft, 1f, 0.06f);
+        }
         if (active)
-            Inject(c, input, rig, cfg, dt);
+            Inject(c, input, rig, cfg, dt, now);
+        else
+            lungePending = false;
     }
 
     private static void TrackHeldItem(Character c, float now)
@@ -172,7 +196,15 @@ internal static class PhysicalInteraction
                     HelperFunctions.terrainMapMask,
                     QueryTriggerInteraction.Ignore
                 ),
+            BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
         };
+        var kind = HoldKind.Normal;
+        if (
+            ctx.NearClimbable
+            && !ProbeHold(rig, pos, t, cfg.ClimbRadius, out kind)
+            && !c.data.isClimbing
+        )
+            ctx.NearClimbable = false;
         IInteractible target = null;
         if (cfg.PhysicalGrab)
             ctx.Candidate = FindCandidate(c, pos, t.forward, cfg.GrabRadius, out target);
@@ -196,7 +228,7 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.Climb:
                 if (StartClimb(c, rig, pos, cfg))
-                    Haptics.Pulse(hand.Left, 0.8f, 0.06f);
+                    HoldPulse(hand.Left, kind);
                 else
                     action = GripPressAction.None;
                 break;
@@ -219,8 +251,9 @@ internal static class PhysicalInteraction
                 LocalHold.TwoHand = false;
                 break;
             case GripPressAction.Climb:
-                if (Other(hand).Action != GripPressAction.Climb)
-                    EndClimb(c);
+                // The climb itself ends in UpdateClimb once the regrip grace runs out with no hand on the wall.
+                if (Other(hand).Action != GripPressAction.Climb && cfg.ArmLunge && physicalClimb)
+                    TryLunge(hand, c, rig, cfg);
                 break;
             case GripPressAction.GrabItem:
             case GripPressAction.Regrip:
@@ -254,15 +287,21 @@ internal static class PhysicalInteraction
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
 
-    /// <summary>World release velocity: the tracked hand's fitted velocity, rotated from tracking space, plus the
-    /// body's own velocity.</summary>
+    /// <summary>World release velocity: the hand's velocity relative to the body plus the body's own velocity.</summary>
     private static Vector3 ReleaseVelocity(Hand hand, Character c, VRRig rig)
     {
-        var local = hand.Throw.GetReleaseVelocity().U();
-        var world = rig.Origin != null ? rig.Origin.TransformVector(local) : local;
+        var world = HandVelocity(hand, rig);
         if (c.refs.hip != null)
             world += c.refs.hip.Rig.linearVelocity;
         return world;
+    }
+
+    /// <summary>The tracked hand's fitted release velocity, rotated from tracking space to world: relative to the
+    /// body, since the rig moves with it.</summary>
+    private static Vector3 HandVelocity(Hand hand, VRRig rig)
+    {
+        var local = hand.Throw.GetReleaseVelocity().U();
+        return rig.Origin != null ? rig.Origin.TransformVector(local) : local;
     }
 
     private static bool NearItem(Item item, Vector3 pos, float radius)
@@ -359,11 +398,113 @@ internal static class PhysicalInteraction
         return true;
     }
 
+    /// <summary>
+    /// Looks for the hold under the hand: a short ray through the hand from the head, then along the hand.
+    /// Returns false for a surface the game would refuse to grab (CharacterClimbing.cs:511), so the grip falls
+    /// back to its other actions. A surface with a climb modifier may override its angle (internal always-climbable
+    /// range), so the game decides those itself. No clear surface: also left to the game's own start check.
+    /// </summary>
+    private static bool ProbeHold(
+        VRRig rig,
+        Vector3 handPos,
+        Transform hand,
+        float radius,
+        out HoldKind kind
+    )
+    {
+        kind = HoldKind.Normal;
+        var from =
+            MainCamera.instance != null
+                ? MainCamera.instance.transform.position
+                : rig.Head.position;
+        var dir = handPos - from;
+        dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : hand.forward;
+        if (
+            !Physics.Raycast(
+                handPos - dir * 0.15f,
+                dir,
+                out var hit,
+                0.3f + radius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            && !Physics.Raycast(
+                handPos - hand.forward * 0.1f,
+                hand.forward,
+                out hit,
+                0.2f + radius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return true;
+
+        // Same lookup as CharacterClimbing.SampleWall (CharacterClimbing.cs:445); only read at grip press.
+        var mod = hit.collider.GetComponent<ClimbModifierSurface>();
+        bool hasMod = mod != null;
+        kind = ClimbRules.Kind(
+            hasMod,
+            hasMod && mod.onlySlideDown,
+            hasMod && (mod.applyStatus || mod.applyPetrify),
+            hasMod ? mod.staminaUsageMultiplier : 1f
+        );
+        return hasMod || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up));
+    }
+
+    /// <summary>Grab feel by surface: soft for easy holds, a buzz for slippery ones, a strong double beat for hazards.</summary>
+    private static void HoldPulse(bool left, HoldKind kind)
+    {
+        switch (kind)
+        {
+            case HoldKind.Easy:
+                Haptics.Pulse(left, 0.4f, 0.04f);
+                break;
+            case HoldKind.Slippery:
+                Haptics.Pulse(left, 0.5f, 0.25f);
+                break;
+            case HoldKind.Hazard:
+                Haptics.Pulse(left, 1f, 0.06f);
+                hazardPulseLeft = left;
+                hazardPulseTime = Time.time + 0.12f;
+                break;
+            default:
+                Haptics.Pulse(left, 0.8f, 0.06f);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The last climbing hand thrown upward as it lets go: queue the game's climb jump in that direction. Mirrors the
+    /// vanilla gate (CharacterClimbing.cs:122) so a refused jump does not stretch the grace.
+    /// </summary>
+    private static void TryLunge(Hand hand, Character c, VRRig rig, InteractConfig cfg)
+    {
+        var d = c.data;
+        if (!d.isClimbing || d.sinceClimbJump <= 1f || d.outOfStaminaFor >= 0.5f)
+            return;
+        var stick = ClimbInput.Lunge(
+            HandVelocity(hand, rig).N(),
+            d.climbNormal.N(),
+            cfg.LungeSpeed
+        );
+        if (stick == System.Numerics.Vector2.Zero)
+            return;
+        lungeInput = new Vector2(stick.X, stick.Y);
+        lungePending = true;
+        Grace.Extend(LungeGrace);
+        Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+    }
+
     private static void BeginPhysicalClimb()
     {
         if (!physicalClimb)
+        {
             Arms.Reset();
+            Grace.Reset();
+            StaminaBeat.Reset();
+        }
         physicalClimb = true;
+        mantleUntil = -10f;
     }
 
     private static void EndClimb(Character c)
@@ -375,11 +516,13 @@ internal static class PhysicalInteraction
         Arms.Reset();
     }
 
-    private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt)
+    private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
         if (physicalClimb && !c.data.isClimbing)
         {
-            // The game ended the climb (jump, stamina, ragdoll): grips must close again to climb.
+            // The game ended the climb (top-out, jump, stamina, ragdoll): grips must close again to climb.
+            if (climbInput.y > 0.3f && c.data.sinceClimbJump > 0.5f && c.data.outOfStaminaFor <= 0f)
+                TryStartMantle(c, now);
             physicalClimb = false;
             climbInput = Vector2.zero;
             EndAction(LeftHand, GripPressAction.Climb);
@@ -389,8 +532,17 @@ internal static class PhysicalInteraction
         if (!physicalClimb || dt <= 0f)
             return;
 
-        bool l = LeftHand.Action == GripPressAction.Climb && VRInput.Left.Tracked;
-        bool r = RightHand.Action == GripPressAction.Climb && VRInput.Right.Tracked;
+        bool leftGrip = LeftHand.Action == GripPressAction.Climb;
+        bool rightGrip = RightHand.Action == GripPressAction.Climb;
+        Grace.Grace = cfg.ClimbRegripGrace;
+        if (!Grace.Update(leftGrip || rightGrip, dt))
+        {
+            EndClimb(c);
+            return;
+        }
+
+        bool l = leftGrip && VRInput.Left.Tracked;
+        bool r = rightGrip && VRInput.Right.Tracked;
         var d = Arms.Update(l, VRInput.Left.Position.N(), r, VRInput.Right.Position.N(), dt).U();
         var world = (rig.Origin != null ? rig.Origin.TransformVector(d) : d) * cfg.ClimbGain;
         var climbing = c.refs.climbing;
@@ -407,6 +559,59 @@ internal static class PhysicalInteraction
             dt
         );
         climbInput = new Vector2(smoothed.X, smoothed.Y);
+
+        // Slide-only surface or no stamina: the game slides the climber down (CharacterClimbing.cs:297, :301, :263).
+        // Upward pulls would only burn stamina (CharacterClimbing.cs:132), so they are dropped.
+        var mod = c.data.climbMod;
+        bool slideOnly = mod != null && mod.onlySlideDown;
+        bool outOfStamina = c.data.outOfStaminaFor > 0f;
+        if ((slideOnly || outOfStamina) && climbInput.y > 0f)
+            climbInput.y = 0f;
+
+        if (cfg.StaminaHaptics && (leftGrip || rightGrip))
+        {
+            float slide = ClimbRules.SlideSpeed(
+                climbing.playerSlide.y,
+                slideOnly,
+                mod != null ? mod.speedMultiplier : 1f,
+                climbing.climbSpeed * climbing.climbSpeedMod
+            );
+            float amplitude = StaminaBeat.Update(c.GetTotalStamina(), outOfStamina, slide, dt);
+            if (amplitude > 0f)
+            {
+                if (leftGrip)
+                    Haptics.Pulse(true, amplitude, 0.04f);
+                if (rightGrip)
+                    Haptics.Pulse(false, amplitude, 0.04f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The game has no mantle: a climber pushing up lets go of the wall when it samples the flat top
+    /// (CharacterClimbing.cs:470, then :269) and walks over the lip with the same held stick. An arm pull that
+    /// tops out onto a walkable ledge keeps walking toward it for a moment while a grip stays closed.
+    /// </summary>
+    private static void TryStartMantle(Character c, float now)
+    {
+        var into = -c.data.climbNormal;
+        into.y = 0f;
+        if (into.sqrMagnitude < 1e-4f)
+            return;
+        into.Normalize();
+        if (
+            !Physics.Raycast(
+                c.Center + Vector3.up + into * 0.5f,
+                Vector3.down,
+                out var hit,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            ) || !ClimbRules.IsLedgeTop(Vector3.Angle(hit.normal, Vector3.up))
+        )
+            return;
+        mantleDir = into;
+        mantleUntil = now + MantleSeconds;
     }
 
     private static void UpdateAim(InteractConfig cfg)
@@ -429,7 +634,8 @@ internal static class PhysicalInteraction
         CharacterInput input,
         VRRig rig,
         InteractConfig cfg,
-        float dt
+        float dt,
+        float now
     )
     {
         // Interact: grabs and the grip fallback press the game's interact button while the grip stays closed.
@@ -526,6 +732,37 @@ internal static class PhysicalInteraction
         {
             input.movementInput = Vector2.ClampMagnitude(input.movementInput + climbInput, 1f);
             input.usePrimaryWasReleased = false;
+        }
+
+        // Top-out: walk toward the ledge while a grip stays closed, as a held stick would.
+        if (now < mantleUntil && !c.data.isClimbing && (LeftHand.Grip.Held || RightHand.Grip.Held))
+        {
+            var walk = ClimbInput.WalkStick(
+                mantleDir.N(),
+                c.data.lookDirection.N(),
+                c.data.lookDirection_Right.N()
+            );
+            input.movementInput = Vector2.ClampMagnitude(
+                input.movementInput + new Vector2(walk.X, walk.Y),
+                1f
+            );
+        }
+        else
+        {
+            mantleUntil = -10f;
+        }
+
+        // Lunge: one frame of the game's sprint press with the throw direction, read by its climb jump
+        // (CharacterClimbing.cs:118-124, RPCA_ClimbJump at :238).
+        if (lungePending)
+        {
+            lungePending = false;
+            if (c.data.isClimbing)
+            {
+                input.sprintWasPressed = true;
+                input.sprintIsPressed = true;
+                input.movementInput = lungeInput;
+            }
         }
     }
 }

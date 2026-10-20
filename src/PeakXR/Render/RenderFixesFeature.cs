@@ -21,8 +21,8 @@ public enum VRAntialiasing
 /// (temporal, needs TAA), no TAA, MSAA and render scale from our settings, a dynamic
 /// <c>XRSettings.renderViewportScale</c>, and the game's FPS cap and VSync are ignored (the runtime paces
 /// frames). Screen-space passes are kept: MultiPass renders each eye as an ordinary camera pass with that
-/// eye's matrices, so HBAO, edge detection, the fog pass and the full-screen passes see a normal mono view;
-/// only the full-screen <c>CameraQuad</c> overlays, which size themselves from the mono frustum, are enlarged.
+/// eye's matrices, so HBAO, edge detection, the fog pass and the full-screen passes see a normal mono view.
+/// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
 /// </summary>
 public sealed class RenderFixesFeature : Feature
 {
@@ -123,7 +123,6 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.VSyncApply));
         Patch(typeof(RenderPatches.LimitFrameRateStart));
         Patch(typeof(RenderPatches.PostHandlerLateUpdate));
-        Patch(typeof(RenderPatches.CameraQuadLateUpdate));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);

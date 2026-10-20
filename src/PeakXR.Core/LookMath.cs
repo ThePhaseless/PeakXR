@@ -30,5 +30,21 @@ namespace PeakXR.Core
             float pitch = MathF.Asin(Math.Clamp(f.Y, -1f, 1f)) * UnityQuat.Rad2Deg;
             return new Vector2(yaw, Math.Clamp(pitch, -MaxPitch, MaxPitch));
         }
+
+        /// <summary>
+        /// <paramref name="next"/> unwrapped to the turn nearest <paramref name="previous"/>. Remote peers linearly
+        /// interpolate the synced yaw, so a jump from 179 to -179 would spin the avatar the long way round. The
+        /// value is pulled back by one turn only past <paramref name="limit"/>, which keeps the synced half-float
+        /// precise (0.5 degrees or better below 1024).
+        /// </summary>
+        public static float ContinueYaw(float previous, float next, float limit = 720f)
+        {
+            float yaw = previous + WrapDegrees(next - previous);
+            if (yaw > limit)
+                yaw -= 360f;
+            else if (yaw < -limit)
+                yaw += 360f;
+            return yaw;
+        }
     }
 }

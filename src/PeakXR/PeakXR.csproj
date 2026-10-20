@@ -46,5 +46,6 @@
       Private="false"
     />
     <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.Mathematics.dll" Private="false" />
   </ItemGroup>
 </Project>

@@ -11,10 +11,6 @@ namespace PeakXR.Render;
 /// <summary>Harmony patches of <see cref="RenderFixesFeature"/>; each one only acts while XR renders.</summary>
 internal static class RenderPatches
 {
-    /// <summary>Half-size multiplier of the CameraQuad overlays in VR, in units of their distance: 3 covers
-    /// about +-71 degrees around the centre eye, wider than any headset FOV plus the eye offset.</summary>
-    private const float QuadHalfSpan = 3f;
-
     /// <summary>EnumSetting&lt;OffOnMode&gt;.Value setter (Zorro.Settings EnumSetting.cs:12, protected).</summary>
     internal static MethodInfo OffOnValueSetter;
 
@@ -108,29 +104,6 @@ internal static class RenderPatches
             }
             if (cachedHbao != null)
                 cachedHbao.active = false;
-        }
-    }
-
-    /// <summary>
-    /// CameraQuad.LateUpdate (CameraQuad.cs:11, [DefaultExecutionOrder(100000)]) sizes full-screen status
-    /// overlays (injury, poison, cold, fog quad...) to the mono frustum of Camera.main, which leaves the outer
-    /// edge of each eye uncovered in a headset. Postfix: same placement, scaled to cover both eyes.
-    /// </summary>
-    [HarmonyPatch]
-    internal static class CameraQuadLateUpdate
-    {
-        private static MethodBase TargetMethod() =>
-            GameMember.Method(typeof(CameraQuad), "LateUpdate");
-
-        private static void Postfix(CameraQuad __instance)
-        {
-            if (!VRSession.Active)
-                return;
-            var cam = Camera.main;
-            if (cam == null)
-                return;
-            float span = 2f * QuadHalfSpan * (cam.nearClipPlane + __instance.distance);
-            __instance.transform.localScale = new Vector3(span, span, 1f);
         }
     }
 }

@@ -471,12 +471,18 @@ internal sealed class RigDriver : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var cam = cameraBuffer[i];
-            if (found == null && cam != fallbackCam && cam.targetTexture == null)
+            if (found == null && IsSceneScreenCamera(cam))
                 found = cam.transform;
             cameraBuffer[i] = null;
         }
         return found;
     }
+
+    /// <summary>A camera of the loaded level that renders to the screen (cutscene cameras). Cameras in
+    /// DontDestroyOnLoad or runtime scenes (build index -1) belong to PeakXR features (rig, loading space)
+    /// and are left alone.</summary>
+    private static bool IsSceneScreenCamera(Camera cam) =>
+        cam.targetTexture == null && cam.gameObject.scene.buildIndex >= 0;
 
     private void BindMainCamera()
     {
@@ -593,11 +599,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             var cam = cameraBuffer[i];
             cameraBuffer[i] = null;
-            if (
-                cam == fallbackCam
-                || cam.targetTexture != null
-                || cam.stereoTargetEye == StereoTargetEyeMask.None
-            )
+            if (!IsSceneScreenCamera(cam) || cam.stereoTargetEye == StereoTargetEyeMask.None)
                 continue;
             cam.stereoTargetEye = StereoTargetEyeMask.None;
             silencedCameras.Add(cam);
@@ -609,7 +611,7 @@ internal sealed class RigDriver : MonoBehaviour
         nextListenerScan = Time.unscaledTime + 0.5f;
         foreach (var l in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
         {
-            if (l == fallbackListener || !l.enabled)
+            if (!l.enabled || l.gameObject.scene.buildIndex < 0)
                 continue;
             l.enabled = false;
             mutedListeners.Add(l);
