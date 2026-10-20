@@ -25,6 +25,10 @@ namespace PeakXR.Core
 
         /// <summary>Voice push-to-talk. Only the game's Push To Talk and Push To Mute microphone modes read it.</summary>
         PushToTalk,
+
+        /// <summary>Spectate the next or previous teammate while dead or passed out.</summary>
+        SpectateNext,
+        SpectatePrevious,
     }
 
     /// <summary>
@@ -164,6 +168,18 @@ namespace PeakXR.Core
                 VRControl.Secondary,
                 PressKind.LongPress
             ),
+            new Binding(
+                VRAction.SpectateNext,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.SpectatePrevious,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
             new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
             // Every control already has a press; a long press of the move-stick click is the one gap. Its
@@ -223,7 +239,12 @@ namespace PeakXR.Core
             "RightStickClick",
         };
 
-        public static bool TryParse(string name, bool dominantLeft, out bool left, out VRControl control)
+        public static bool TryParse(
+            string name,
+            bool dominantLeft,
+            out bool left,
+            out VRControl control
+        )
         {
             left = false;
             control = default;
@@ -276,7 +297,7 @@ namespace PeakXR.Core
     public sealed class ActionMapper
     {
         const int ControlCount = 8;
-        const int ActionCount = (int)VRAction.PushToTalk + 1;
+        const int ActionCount = (int)VRAction.SpectatePrevious + 1;
 
         public float FlickActivate = 0.7f;
         public float FlickRelease = 0.4f;

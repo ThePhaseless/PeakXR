@@ -21,6 +21,10 @@ internal static class LookPatches
 
     private static readonly TurnInput Turn = new();
     private static readonly LookOverride Override = new();
+
+    /// <summary>How much a scripted look (frog tongue, rescue hook, scoutmaster) holds the heading, 0..1. Read by
+    /// comfort.events as its forced-look cue.</summary>
+    internal static float ScriptedLookWeight => Override.Weight;
     private static Character lastCharacter;
     private static int tickFrame = -10;
 

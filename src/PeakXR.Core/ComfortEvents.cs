@@ -163,7 +163,10 @@ namespace PeakXR.Core
             return r;
         }
 
-        static float Clamp01(float v) => v < 0f ? 0f : v > 1f ? 1f : v;
+        static float Clamp01(float v) =>
+            v < 0f ? 0f
+            : v > 1f ? 1f
+            : v;
     }
 
     /// <summary>
@@ -184,7 +187,6 @@ namespace PeakXR.Core
 
         readonly float[] _strength = new float[Slots];
         readonly float[] _left = new float[Slots];
-        float _release;
         float _fadeHold;
         bool _fadeRequested;
         float _detachLeft;
@@ -238,7 +240,10 @@ namespace PeakXR.Core
             if (peak >= Vignette)
                 Vignette = peak;
             else
-                Vignette = Math.Max(peak, Vignette - (VignetteRelease > 0f ? dt / VignetteRelease : 1f));
+                Vignette = Math.Max(
+                    peak,
+                    Vignette - (VignetteRelease > 0f ? dt / VignetteRelease : 1f)
+                );
 
             SnapBlack = false;
             if (_fadeRequested)
@@ -249,7 +254,7 @@ namespace PeakXR.Core
             }
             else if (_fadeHold > 0f)
             {
-                _fadeHold -= dt;
+                _fadeHold = Math.Max(0f, _fadeHold - dt);
             }
             else if (Fade > 0f)
             {
@@ -277,7 +282,16 @@ namespace PeakXR.Core
 
         void AddVignette(float strength, float seconds)
         {
-            // Reuse the weakest or an empty slot; a full table drops the weakest pulse.
+            // A pulse renewed every frame (a launch, a push zone) extends its own slot.
+            for (int i = 0; i < Slots; i++)
+            {
+                if (_left[i] > 0f && Math.Abs(_strength[i] - strength) < 1e-4f)
+                {
+                    _left[i] = Math.Max(_left[i], seconds);
+                    return;
+                }
+            }
+            // Otherwise an empty slot, or the weakest; a full table drops the weakest pulse.
             int pick = 0;
             for (int i = 0; i < Slots; i++)
             {
@@ -293,6 +307,65 @@ namespace PeakXR.Core
                 return;
             _strength[pick] = strength;
             _left[pick] = seconds;
+        }
+    }
+}
+
+namespace PeakXR.Core
+{
+    /// <summary>
+    /// Tracks one launch of the local body: active from the launch until it has landed and settled (or a cap),
+    /// so the detached view lasts the whole flight. Also detects launches no hook reports: a sudden jump in
+    /// upward speed (bounce pads, geysers built in prefabs) counts as a launch; a jump or a slow rise does not.
+    /// </summary>
+    public sealed class LaunchTracker
+    {
+        /// <summary>Shortest time a launch is shown, even if the body lands at once.</summary>
+        public float MinSeconds = 0.4f;
+
+        /// <summary>Longest flight before the view returns anyway.</summary>
+        public float MaxSeconds = 8f;
+
+        /// <summary>Seconds on the ground before the launch ends.</summary>
+        public float SettleSeconds = 0.25f;
+
+        /// <summary>Upward speed gain within one update (m/s) that counts as a launch.</summary>
+        public float DetectSpeed = 8f;
+
+        float _elapsed;
+        float _grounded;
+        float _lastUp;
+        bool _haveLast;
+
+        public bool Active { get; private set; }
+
+        public void Start()
+        {
+            Active = true;
+            _elapsed = 0f;
+            _grounded = 0f;
+        }
+
+        public void Cancel()
+        {
+            Active = false;
+            _haveLast = false;
+        }
+
+        /// <summary>Returns <see cref="Active"/> after this frame.</summary>
+        public bool Update(bool grounded, float upSpeed, float dt)
+        {
+            if (_haveLast && !Active && upSpeed - _lastUp >= DetectSpeed)
+                Start();
+            _lastUp = upSpeed;
+            _haveLast = true;
+            if (!Active)
+                return false;
+            _elapsed += dt;
+            _grounded = grounded ? _grounded + dt : 0f;
+            if (_elapsed >= MaxSeconds || (_elapsed >= MinSeconds && _grounded >= SettleSeconds))
+                Active = false;
+            return Active;
         }
     }
 }

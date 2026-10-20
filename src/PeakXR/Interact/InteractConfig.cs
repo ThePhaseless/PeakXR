@@ -223,10 +223,24 @@ internal sealed class InteractConfig
             ),
         };
         // Before hand roles existed the default was written to every config file as RightSecondary. That is the
-        // same button as DominantSecondary for a right-handed player, so move it to the role name and let it
-        // follow Input.DominantHand (a left-handed player who wants the right B button can pick it again).
+        // same button as DominantSecondary for a right-handed player, so move it to the role name once and let it
+        // follow Input.DominantHand. A player who picks RightSecondary again afterwards keeps it.
+        var migrated = file.Bind(
+            s,
+            "DropButtonRoles",
+            false,
+            new ConfigDescription(
+                "Internal: DropButton was moved to hand-role names.",
+                null,
+                UI.Settings.VRTab.HiddenTag
+            )
+        );
         var drop = Instance.dropButton;
-        if (drop.Value == "RightSecondary")
-            drop.Value = DefaultDropButton;
+        if (!migrated.Value)
+        {
+            if (drop.Value == "RightSecondary")
+                drop.Value = DefaultDropButton;
+            migrated.Value = true;
+        }
     }
 }

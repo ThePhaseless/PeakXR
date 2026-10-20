@@ -295,4 +295,22 @@ public class BindingTests
     [InlineData("LeftTrigger")]
     public void ButtonName_RejectsNoneAndUnknown(string name) =>
         Assert.False(ButtonName.TryParse(name, false, out _, out _));
+
+    [Theory]
+    [InlineData(false, 0.9f, VRAction.SpectateNext)]
+    [InlineData(false, -0.9f, VRAction.SpectatePrevious)]
+    [InlineData(true, 0.9f, VRAction.SpectateNext)]
+    public void Spectate_FlicksTheDominantStick(bool dominantLeft, float y, VRAction expected)
+    {
+        var m = new ActionMapper { DominantLeft = dominantLeft };
+        m.SetDisabled(VRAction.HotbarNext, true);
+        m.SetDisabled(VRAction.HotbarPrevious, true);
+        var flick = new ControllerInput { Stick = new Vector2(0f, y) };
+        if (dominantLeft)
+            m.Update(flick, Idle, Dt);
+        else
+            m.Update(Idle, flick, Dt);
+        Assert.True(m.Pressed(expected));
+        Assert.False(m.Pressed(VRAction.HotbarNext));
+    }
 }

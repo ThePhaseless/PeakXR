@@ -94,12 +94,18 @@ internal static class LocomotionInput
         Mapper.MenuHoldSeconds = CameraFeature.RecenterSeconds;
         // One stick, two meanings: items with a scroll function (rope spool, binoculars, guidebook, scout cannon)
         // take up/down as scroll, otherwise it cycles the hotbar.
-        bool scroll = item != null && WantsScroll(item);
-        Mapper.SetDisabled(VRAction.HotbarNext, scroll);
-        Mapper.SetDisabled(VRAction.HotbarPrevious, scroll);
+        // Dead or fully passed out, vanilla spectates a teammate (MainCameraMovement.cs:77) and the same flick
+        // picks the next or previous one instead.
+        bool spectating = c.data.dead || c.data.fullyPassedOut;
+        bool scroll = !spectating && item != null && WantsScroll(item);
+        Mapper.SetDisabled(VRAction.HotbarNext, scroll || spectating);
+        Mapper.SetDisabled(VRAction.HotbarPrevious, scroll || spectating);
         Mapper.SetDisabled(VRAction.ScrollForward, !scroll);
         Mapper.SetDisabled(VRAction.ScrollBackward, !scroll);
-        Mapper.Update(Controller(VRInput.Left), Controller(VRInput.Right), dt);
+        Mapper.SetDisabled(VRAction.SpectateNext, !spectating);
+        Mapper.SetDisabled(VRAction.SpectatePrevious, !spectating);
+        // Real time, like rig.camera's recenter hold, so the menu tap and hold share one clock at any timeScale.
+        Mapper.Update(Controller(VRInput.Left), Controller(VRInput.Right), Time.unscaledDeltaTime);
 
         // Vanilla samples these even while input is blocked (CharacterInput.cs:215-219, :262-264): the emote wheel
         // stays open only while Emote is held, and Pause must reach an open menu.
@@ -170,8 +176,8 @@ internal static class LocomotionInput
         input.scrollBackwardWasPressed |= Mapper.Pressed(VRAction.ScrollBackward);
         input.scrollBackwardIsPressed |= Mapper.Held(VRAction.ScrollBackward);
         // Spectating reads its own next/previous (CharacterInput.cs:254-255).
-        input.spectateRightWasPressed |= Mapper.Pressed(VRAction.HotbarNext);
-        input.spectateLeftWasPressed |= Mapper.Pressed(VRAction.HotbarPrevious);
+        input.spectateRightWasPressed |= Mapper.Pressed(VRAction.SpectateNext);
+        input.spectateLeftWasPressed |= Mapper.Pressed(VRAction.SpectatePrevious);
         input.unselectSlotWasPressed |= canSwitch && Mapper.Pressed(VRAction.PutAway);
         if (Mapper.Pressed(VRAction.Backpack))
         {

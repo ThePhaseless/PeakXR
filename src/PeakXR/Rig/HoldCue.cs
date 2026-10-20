@@ -105,6 +105,10 @@ internal sealed class HoldCue
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         // Above the comfort vignette (4000), below the VR fade.
-        material = UIMaterials.Create(new Color(1f, 1f, 1f, 0.85f), drawOnTop: true, renderQueue: 4001);
+        material = UIMaterials.Create(
+            new Color(1f, 1f, 1f, 0.85f),
+            drawOnTop: true,
+            renderQueue: 4001
+        );
     }
 }

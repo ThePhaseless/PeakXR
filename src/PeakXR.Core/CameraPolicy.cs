@@ -73,12 +73,17 @@ namespace PeakXR.Core
             return ragdoll ? CameraState.Ragdoll : CameraState.Body;
         }
 
+        /// <param name="eventDetach">comfort.events asked for the horizon-locked chase view (a launch): the own
+        /// body's views go third person whatever the preference; game-owned views keep their placement.</param>
         public static ViewKind View(
             CameraState state,
             TakeoverView preference,
-            bool detachOnRagdoll
+            bool detachOnRagdoll,
+            bool eventDetach = false
         )
         {
+            if (eventDetach && (state == CameraState.Body || state == CameraState.Ragdoll))
+                return ViewKind.ThirdPerson;
             switch (state)
             {
                 case CameraState.Ragdoll:
@@ -117,7 +122,10 @@ namespace PeakXR.Core
         public bool Fired { get; private set; }
 
         /// <summary>0..1 share of <see cref="Seconds"/> held so far; 0 while up.</summary>
-        public float Progress => !_down ? 0f : Seconds <= 0f ? 1f : System.Math.Min(1f, _held / Seconds);
+        public float Progress =>
+            !_down ? 0f
+            : Seconds <= 0f ? 1f
+            : System.Math.Min(1f, _held / Seconds);
 
         /// <summary>Seconds since the press frame while held, 0 while up.</summary>
         public float HeldSeconds => _down ? _held : 0f;

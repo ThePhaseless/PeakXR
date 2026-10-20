@@ -182,6 +182,21 @@ public class ComfortPulsesTests
     }
 
     [Fact]
+    public void RenewedPulse_DoesNotCrowdOutOthers()
+    {
+        var p = new ComfortPulses();
+        for (int i = 0; i < 20; i++)
+        {
+            p.Add(new ComfortResponse { Vignette = 0.5f, VignetteSeconds = 0.2f });
+            p.Update(Dt);
+        }
+        p.Add(new ComfortResponse { Vignette = 0.3f, VignetteSeconds = 1f });
+        p.Update(Dt);
+        Run(p, 0.6f);
+        TestUtil.Near(0.3f, p.Vignette);
+    }
+
+    [Fact]
     public void Fade_SnapsBlackHoldsThenFadesIn()
     {
         var p = new ComfortPulses { FadeInSeconds = 0.3f };
@@ -279,4 +294,76 @@ public class CameraPolicyEventDetachTests
         TakeoverView pref,
         ViewKind expected
     ) => Assert.Equal(expected, CameraPolicy.View(state, pref, false, eventDetach: true));
+}
+
+public class LaunchTrackerTests
+{
+    const float Dt = 1f / 90f;
+
+    [Fact]
+    public void Start_StaysAirborneUntilLandedForTheSettleTime()
+    {
+        var t = new LaunchTracker();
+        t.Start();
+        Assert.True(t.Update(grounded: true, upSpeed: 0f, Dt));
+        for (int i = 0; i < 45; i++)
+            Assert.True(t.Update(false, 5f, Dt));
+        // Landed: holds a little, then ends.
+        Assert.True(t.Update(true, 0f, Dt));
+        bool active = true;
+        for (int i = 0; i < 45 && active; i++)
+            active = t.Update(true, 0f, Dt);
+        Assert.False(active);
+    }
+
+    [Fact]
+    public void GroundedRightAfterStart_StillShowsTheMinimum()
+    {
+        var t = new LaunchTracker { MinSeconds = 0.4f };
+        t.Start();
+        int frames = 0;
+        while (t.Update(true, 0f, Dt) && frames < 1000)
+            frames++;
+        Assert.InRange(frames * Dt, 0.35f, 0.7f);
+    }
+
+    [Fact]
+    public void EndsAtTheCap()
+    {
+        var t = new LaunchTracker { MaxSeconds = 2f };
+        t.Start();
+        int frames = 0;
+        while (t.Update(false, 1f, Dt) && frames < 1000)
+            frames++;
+        Assert.InRange(frames * Dt, 1.9f, 2.1f);
+    }
+
+    [Fact]
+    public void Detect_SuddenUpwardSpeedIsALaunch()
+    {
+        var t = new LaunchTracker { DetectSpeed = 8f };
+        Assert.False(t.Update(true, 0f, Dt));
+        Assert.True(t.Update(false, 12f, Dt));
+    }
+
+    [Fact]
+    public void Detect_JumpsAndSteadyRisesAreNot()
+    {
+        var t = new LaunchTracker { DetectSpeed = 8f };
+        t.Update(true, 0f, Dt);
+        Assert.False(t.Update(false, 5f, Dt));
+        // Slow build-up (rope, wind): never a sudden jump.
+        for (float v = 5f; v < 20f; v += 0.05f)
+            Assert.False(t.Update(false, v, Dt));
+    }
+
+    [Fact]
+    public void Cancel_EndsAtOnce()
+    {
+        var t = new LaunchTracker();
+        t.Start();
+        t.Update(false, 5f, Dt);
+        t.Cancel();
+        Assert.False(t.Update(false, 5f, Dt));
+    }
 }
