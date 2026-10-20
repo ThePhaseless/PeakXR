@@ -30,11 +30,22 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Eye height above the torso until the first upright sample of the character.</summary>
     private const float DefaultEyeAboveCenter = 0.6f;
 
+    /// <summary>Follow rate (1/s) of the opt-in cutscene glide; slow, never a cut.</summary>
+    private const float CutsceneFollowRate = 1.5f;
+
     private static RigDriver instance;
+
+    /// <summary>comfort.events wants the horizon-locked chase view this frame (a launch).</summary>
+    internal static bool EventDetach;
+
+    /// <summary>comfort.events opted in to gliding after a moving cutscene camera instead of fading between
+    /// still viewpoints.</summary>
+    internal static bool FollowCutscene;
 
     private readonly TrackedDevices devices = new();
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
+    private readonly HoldCue holdCue = new();
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
@@ -64,6 +75,8 @@ internal sealed class RigDriver : MonoBehaviour
     private Character shownTarget;
     private Transform staticSource;
     private Vector3 staticPoint;
+    private bool haveSavedYaw;
+    private float savedYaw;
 
     private bool needInitialRecenter = true;
     private bool pendingRecenter;
@@ -134,6 +147,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
+        holdCue.Show(null, 0f, 0f);
         SetFallback(false);
         UnbindMainCamera();
         takeover.Reset(false);
@@ -143,6 +157,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnDestroy()
     {
+        holdCue.Destroy();
         if (instance == this)
             instance = null;
         if (VRRig.Instance == rig)
@@ -255,11 +270,10 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void HandleRecenterInput(Character c, float dt)
     {
-        recenterPress.Seconds = CameraFeature.RecenterHoldSeconds.Value;
-        if (
-            recenterPress.Update(VRInput.Left.Menu || VRInput.Right.Menu, dt)
-            || rig.RecenterRequested
-        )
+        recenterPress.Seconds = CameraFeature.RecenterSeconds;
+        bool fired = recenterPress.Update(VRInput.Left.Menu || VRInput.Right.Menu, dt);
+        holdCue.Show(rig.Head, recenterPress.HeldSeconds, recenterPress.Progress);
+        if (fired || rig.RecenterRequested)
         {
             rig.RecenterRequested = false;
             pendingRecenter = true;
@@ -314,6 +328,9 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void ResetTakeover()
     {
+        if (haveSavedYaw)
+            rig.Origin.rotation = Quaternion.Euler(0f, savedYaw, 0f);
+        haveSavedYaw = false;
         takeover.Reset(false);
         shownKind = ViewKind.FirstPerson;
         shownTarget = null;
@@ -348,7 +365,8 @@ internal sealed class RigDriver : MonoBehaviour
         var kind = CameraPolicy.View(
             state,
             CameraFeature.TakeoverViewEntry.Value,
-            CameraFeature.DetachOnRagdoll.Value
+            CameraFeature.DetachOnRagdoll.Value,
+            EventDetach
         );
         var target = c;
         if (state == CameraState.Spectate && MainCameraMovement.specCharacter != null)
@@ -376,6 +394,7 @@ internal sealed class RigDriver : MonoBehaviour
             shownTarget = target;
             staticSource = source;
             staticPoint = source != null ? source.position : anchor;
+            FaceStaticView(source);
             snap = true;
             if (pendingRecenter)
                 Recenter(c);
@@ -441,6 +460,14 @@ internal sealed class RigDriver : MonoBehaviour
                     takeover.Blink();
                 return true;
             default:
+                if (FollowCutscene && staticSource != null)
+                {
+                    goal = staticSource.position;
+                    rate = CutsceneFollowRate;
+                    maxLag = -1f;
+                    return true;
+                }
+                // A still viewpoint: when the shot cuts or travels away, fade and re-place it.
                 if (
                     staticSource != null
                     && Vector3.Distance(staticSource.position, staticPoint) > 3f
@@ -449,6 +476,39 @@ internal sealed class RigDriver : MonoBehaviour
                 goal = staticPoint;
                 snap = true;
                 return true;
+        }
+    }
+
+    /// <summary>
+    /// At black, turn the tracking space so the player faces where the cutscene camera looks (only yaw: the
+    /// horizon stays level), and turn it back when the view returns to the body, so the character's heading
+    /// is the same as before the shot.
+    /// </summary>
+    private void FaceStaticView(Transform source)
+    {
+        if (shownKind == ViewKind.Static && source != null)
+        {
+            if (!haveSavedYaw)
+            {
+                savedYaw = rig.Origin.eulerAngles.y;
+                haveSavedYaw = true;
+            }
+            var fwd = source.forward;
+            var hmd = rig.Head.localRotation * Vector3.forward;
+            if ((fwd.x * fwd.x + fwd.z * fwd.z) > 1e-4f && (hmd.x * hmd.x + hmd.z * hmd.z) > 1e-4f)
+            {
+                float yaw = RigMath.RecenterYaw(
+                    Mathf.Atan2(fwd.x, fwd.z) * Mathf.Rad2Deg,
+                    Mathf.Atan2(hmd.x, hmd.z) * Mathf.Rad2Deg
+                );
+                rig.Origin.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
+            return;
+        }
+        if (shownKind != ViewKind.Static && haveSavedYaw)
+        {
+            rig.Origin.rotation = Quaternion.Euler(0f, savedYaw, 0f);
+            haveSavedYaw = false;
         }
     }
 

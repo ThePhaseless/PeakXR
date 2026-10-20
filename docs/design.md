@@ -50,6 +50,7 @@ Shared contracts (written first, other features code against them):
 | `render.fixes` | disable motion blur, lens distortion, chromatic aberration, DoF and head bob; STP to linear upscaling; fix `CameraQuad` overlays; no-op FPS cap and VSync under XR | |
 | `player.look` | HMD to `lookValues` (vanilla-visible head), snap or smooth turn rotates the rig; scripted looks (frog tongue, rescue hook, scoutmaster) hold, then blend back | |
 | `player.locomotion` | controller to `CharacterInput` (layout in `docs/controls.md`); head- or hand-relative direction; room-scale walking; comfort vignette and presets; seated mode | grip, trigger and drop stay with `interact.physical` |
+| `comfort.events` | one policy table (Core `ComfortPolicy`) maps game events that move or flash the view (knockback, launch, tumble, scripted look, shake, status flash, post pulse, teleport, wind) to a vignette pulse, fade, rumble or the horizon-locked third-person view; cutscene view choice, cutscene jitter, mirrors and mirages, fade before hard cuts to Title | `new:comfort-events`, `new:cutscene-vr` rows |
 | `ui.world` | convert overlay canvases to world space; laser pointer input; HUD on wrist or body; VR fade | |
 | `ui.menu` | 3D title menu, pause menu panel, 3D loading space with live tracking | |
 | `ui.settings` | VR tab in the game's settings menu, generated from `Plugin.Settings`, plus the compat report | |

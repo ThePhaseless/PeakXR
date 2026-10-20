@@ -1,3 +1,4 @@
+using PeakXR.Comfort;
 using PeakXR.Core;
 using PeakXR.Look;
 using PeakXR.VR;
@@ -40,6 +41,9 @@ internal sealed class LocomotionDriver : MonoBehaviour
         if (!on)
             hadHead = false;
         float intensity = vignette.Update(speed, LookPatches.SmoothTurnRate, dt);
+        // comfort.events pulses (knockbacks, wind, launches) close the same ring, whatever the speed.
+        if (VRSession.Active && rig != null)
+            intensity = Mathf.Max(intensity, ComfortEventsRuntime.VignetteBoost);
         mesh.Show(rig != null ? rig.Head : null, intensity);
     }
 

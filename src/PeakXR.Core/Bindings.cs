@@ -25,6 +25,10 @@ namespace PeakXR.Core
 
         /// <summary>Voice push-to-talk. Only the game's Push To Talk and Push To Mute microphone modes read it.</summary>
         PushToTalk,
+
+        /// <summary>Spectate the next or previous teammate while dead or passed out.</summary>
+        SpectateNext,
+        SpectatePrevious,
     }
 
     /// <summary>
@@ -164,6 +168,18 @@ namespace PeakXR.Core
                 VRControl.Secondary,
                 PressKind.LongPress
             ),
+            new Binding(
+                VRAction.SpectateNext,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.SpectatePrevious,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
             new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
             // Every control already has a press; a long press of the move-stick click is the one gap. Its
@@ -199,6 +215,71 @@ namespace PeakXR.Core
         }
     }
 
+    /// <summary>
+    /// Parses button setting names such as <c>DominantSecondary</c>, <c>OffHandPrimary</c> or <c>RightStickClick</c>.
+    /// Hand-role names follow <c>Input.DominantHand</c>, so a left-handed player's drop button moves with the layout.
+    /// </summary>
+    public static class ButtonName
+    {
+        /// <summary>Hand-role names first (they follow the dominant hand), then fixed controllers.</summary>
+        public static readonly string[] All =
+        {
+            "None",
+            "DominantPrimary",
+            "DominantSecondary",
+            "DominantStickClick",
+            "OffHandPrimary",
+            "OffHandSecondary",
+            "OffHandStickClick",
+            "LeftPrimary",
+            "LeftSecondary",
+            "LeftStickClick",
+            "RightPrimary",
+            "RightSecondary",
+            "RightStickClick",
+        };
+
+        public static bool TryParse(
+            string name,
+            bool dominantLeft,
+            out bool left,
+            out VRControl control
+        )
+        {
+            left = false;
+            control = default;
+            if (string.IsNullOrEmpty(name))
+                return false;
+            BindingHand hand;
+            int skip;
+            if (name.StartsWith("Dominant", StringComparison.Ordinal))
+                (hand, skip) = (BindingHand.Dominant, 8);
+            else if (name.StartsWith("OffHand", StringComparison.Ordinal))
+                (hand, skip) = (BindingHand.OffHand, 7);
+            else if (name.StartsWith("Left", StringComparison.Ordinal))
+                (hand, skip) = (BindingHand.Left, 4);
+            else if (name.StartsWith("Right", StringComparison.Ordinal))
+                (hand, skip) = (BindingHand.Right, 5);
+            else
+                return false;
+            if (Rest(name, skip, "Primary"))
+                control = VRControl.Primary;
+            else if (Rest(name, skip, "Secondary"))
+                control = VRControl.Secondary;
+            else if (Rest(name, skip, "StickClick"))
+                control = VRControl.StickClick;
+            else
+                return false;
+            left = BindingTable.ResolveLeft(hand, dominantLeft, dominantLeft);
+            return true;
+        }
+
+        /// <summary>The name continues with exactly <paramref name="tail"/> (no allocation: parsed per frame).</summary>
+        static bool Rest(string name, int skip, string tail) =>
+            name.Length == skip + tail.Length
+            && string.CompareOrdinal(name, skip, tail, 0, tail.Length) == 0;
+    }
+
     /// <summary>Stick helpers shared by turning and the action layout.</summary>
     public static class StickAxes
     {
@@ -216,13 +297,19 @@ namespace PeakXR.Core
     public sealed class ActionMapper
     {
         const int ControlCount = 8;
-        const int ActionCount = (int)VRAction.PushToTalk + 1;
+        const int ActionCount = (int)VRAction.SpectatePrevious + 1;
 
         public float FlickActivate = 0.7f;
         public float FlickRelease = 0.4f;
 
         /// <summary>Seconds a control must stay down to count as a long press.</summary>
         public float LongPressSeconds = 0.5f;
+
+        /// <summary>
+        /// Tap limit for the menu button. rig.camera recenters on a menu hold of this length, so a release before
+        /// it pauses and no hold length does nothing. Set it from the recenter setting (one threshold).
+        /// </summary>
+        public float MenuHoldSeconds = 1f;
 
         public bool DominantLeft;
 
@@ -279,7 +366,7 @@ namespace PeakXR.Core
                     b.Control
                 );
                 if (!_reserved[c])
-                    _down[a] = IsDown(_controls[c], b.Press);
+                    _down[a] = IsDown(_controls[c], b.Press, b.Control);
             }
             for (int a = 0; a < ActionCount; a++)
                 _actions[a].Update(_down[a], dt);
@@ -295,12 +382,14 @@ namespace PeakXR.Core
                 a.Reset();
         }
 
-        bool IsDown(ButtonEdge control, PressKind press)
+        bool IsDown(ButtonEdge control, PressKind press, VRControl which)
         {
             switch (press)
             {
                 case PressKind.Tap:
-                    return control.Released && control.HeldTime < LongPressSeconds;
+                    return control.Released
+                        && control.HeldTime
+                            < (which == VRControl.Menu ? MenuHoldSeconds : LongPressSeconds);
                 case PressKind.LongPress:
                     return control.Held && control.HeldTime >= LongPressSeconds;
                 default:

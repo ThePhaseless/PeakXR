@@ -33,6 +33,10 @@ public sealed class CameraFeature : Feature
     internal static ConfigEntry<float> NearClip;
     internal static ConfigEntry<MirrorEye> Mirror;
 
+    /// <summary>The menu hold that recenters. Also the pause tap limit (player.locomotion), so the two never
+    /// overlap and no hold length is dead.</summary>
+    internal static float RecenterSeconds => RecenterHoldSeconds?.Value ?? 1f;
+
     public override string Id => "rig.camera";
 
     /// <summary>Right after xr.bootstrap, so the rig exists before features that read it subscribe.</summary>
@@ -111,7 +115,8 @@ public sealed class CameraFeature : Feature
             "RecenterHoldSeconds",
             1f,
             new ConfigDescription(
-                "Hold the menu button this long to recenter (position, heading and eye height).",
+                "Hold the menu button this long to recenter (position, heading and eye height). Shorter presses "
+                    + "pause.",
                 new AcceptableValueRange<float>(0.5f, 3f)
             )
         );

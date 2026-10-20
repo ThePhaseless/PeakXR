@@ -236,4 +236,81 @@ public class BindingTests
         Assert.Equal(0.8f, StickAxes.TurnX(new Vector2(0.8f, 0.3f)));
         Assert.Equal(0f, StickAxes.TurnX(new Vector2(0.5f, 0.8f)));
     }
+
+    static void HoldMenu(ActionMapper m, float seconds)
+    {
+        int frames = (int)MathF.Round(seconds / Dt);
+        for (int i = 0; i < frames; i++)
+            m.Update(Pressed(VRControl.Menu), Idle, Dt);
+        m.Update(Idle, Idle, Dt);
+    }
+
+    [Theory]
+    [InlineData(0.1f, true)]
+    [InlineData(0.7f, true)]
+    [InlineData(0.95f, true)]
+    [InlineData(1.2f, false)]
+    public void Pause_TapsUpToTheMenuHoldTime(float seconds, bool pauses)
+    {
+        var m = new ActionMapper { LongPressSeconds = 0.5f, MenuHoldSeconds = 1f };
+        HoldMenu(m, seconds);
+        Assert.Equal(pauses, m.Pressed(VRAction.Pause));
+    }
+
+    [Fact]
+    public void MenuHoldTime_LeavesOtherTapsAlone()
+    {
+        var m = new ActionMapper { LongPressSeconds = 0.5f, MenuHoldSeconds = 1f };
+        for (int i = 0; i < 63; i++)
+            m.Update(Pressed(VRControl.Secondary), Idle, Dt);
+        m.Update(Idle, Idle, Dt);
+        Assert.False(m.Pressed(VRAction.Ping));
+    }
+
+    [Theory]
+    [InlineData("RightSecondary", false, false, VRControl.Secondary)]
+    [InlineData("RightSecondary", true, false, VRControl.Secondary)]
+    [InlineData("LeftPrimary", false, true, VRControl.Primary)]
+    [InlineData("DominantSecondary", false, false, VRControl.Secondary)]
+    [InlineData("DominantSecondary", true, true, VRControl.Secondary)]
+    [InlineData("OffHandPrimary", false, true, VRControl.Primary)]
+    [InlineData("OffHandPrimary", true, false, VRControl.Primary)]
+    [InlineData("DominantStickClick", true, true, VRControl.StickClick)]
+    public void ButtonName_ResolvesHandRoles(
+        string name,
+        bool dominantLeft,
+        bool expectedLeft,
+        VRControl expected
+    )
+    {
+        Assert.True(ButtonName.TryParse(name, dominantLeft, out bool left, out var control));
+        Assert.Equal(expectedLeft, left);
+        Assert.Equal(expected, control);
+    }
+
+    [Theory]
+    [InlineData("None")]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("LeftTrigger")]
+    public void ButtonName_RejectsNoneAndUnknown(string name) =>
+        Assert.False(ButtonName.TryParse(name, false, out _, out _));
+
+    [Theory]
+    [InlineData(false, 0.9f, VRAction.SpectateNext)]
+    [InlineData(false, -0.9f, VRAction.SpectatePrevious)]
+    [InlineData(true, 0.9f, VRAction.SpectateNext)]
+    public void Spectate_FlicksTheDominantStick(bool dominantLeft, float y, VRAction expected)
+    {
+        var m = new ActionMapper { DominantLeft = dominantLeft };
+        m.SetDisabled(VRAction.HotbarNext, true);
+        m.SetDisabled(VRAction.HotbarPrevious, true);
+        var flick = new ControllerInput { Stick = new Vector2(0f, y) };
+        if (dominantLeft)
+            m.Update(flick, Idle, Dt);
+        else
+            m.Update(Idle, flick, Dt);
+        Assert.True(m.Pressed(expected));
+        Assert.False(m.Pressed(VRAction.HotbarNext));
+    }
 }
