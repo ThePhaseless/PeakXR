@@ -1,6 +1,6 @@
 using PeakXR.Core;
+using PeakXR.UI.Common;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace PeakXR.Locomotion;
 
@@ -8,7 +8,8 @@ namespace PeakXR.Locomotion;
 /// Comfort vignette as one head-locked ring mesh 1 m in front of the eyes: clear inside, a soft edge, black out to
 /// 89 degrees. Angles are from the view centre, so the ring covers the same part of the view on any headset FOV
 /// (a screen-space overlay would not). At 1 m the left/right eye parallax is under 2 degrees. Drawn last with depth
-/// test off, so it covers fog, glass and particles. Only vertex positions change, in a preallocated array.
+/// test off and below the VR fade (queue 5000), so it covers fog, glass and particles. Only vertex positions change,
+/// in a preallocated array.
 /// </summary>
 internal sealed class VignetteMesh
 {
@@ -77,14 +78,8 @@ internal sealed class VignetteMesh
         if (go != null)
             Object.Destroy(go);
         parent = head;
-        go = new GameObject("PeakXR.ComfortVignette");
+        go = UIMaterials.MeshObject("PeakXR.ComfortVignette", mesh, material, head);
         go.layer = head.gameObject.layer;
-        go.transform.SetParent(head, false);
-        go.AddComponent<MeshFilter>().sharedMesh = mesh;
-        var renderer = go.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = material;
-        renderer.shadowCastingMode = ShadowCastingMode.Off;
-        renderer.receiveShadows = false;
     }
 
     private void Build()
@@ -124,24 +119,7 @@ internal sealed class VignetteMesh
         mesh.SetColors(colors);
         mesh.SetTriangles(triangles, 0);
 
-        // Built-in shaders that ship with every player and multiply vertex colour; URP shaders may be stripped.
-        var shader = Shader.Find("Hidden/Internal-Colored");
-        if (shader == null)
-            shader = Shader.Find("UI/Default");
-        if (shader == null)
-            shader = Shader.Find("Sprites/Default");
-        material = new Material(shader)
-        {
-            name = "PeakXR.ComfortVignette",
-            color = Color.white,
-            renderQueue = 4000,
-            hideFlags = HideFlags.HideAndDontSave,
-        };
-        material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-        material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-        material.SetInt("_Cull", (int)CullMode.Off);
-        material.SetInt("_ZWrite", 0);
-        material.SetInt("_ZTest", (int)CompareFunction.Always);
-        material.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
+        // Vertex colour carries the black and the soft edge; the material is white.
+        material = UIMaterials.Create(Color.white, drawOnTop: true, renderQueue: 4000);
     }
 }
