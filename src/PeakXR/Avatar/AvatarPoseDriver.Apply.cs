@@ -110,7 +110,12 @@ public partial class AvatarPoseDriver
         var refs = Owner.refs;
         var cfg = AvatarConfig.Instance;
 
-        if (cfg.ArmIK && refs.IKHandTargetLeft != null && refs.IKHandTargetRight != null)
+        if (
+            cfg.ArmIK
+            && !ArmsSuspended
+            && refs.IKHandTargetLeft != null
+            && refs.IKHandTargetRight != null
+        )
         {
             var offset = AnimatedOffset();
             var pose = Pose;
@@ -150,7 +155,7 @@ public partial class AvatarPoseDriver
     /// <summary>After <c>CharacterAnimations.HandleIK</c>: arms follow their own controllers in every state.</summary>
     internal void OnHandleIK()
     {
-        if (!HasFreshPose || !AvatarConfig.Instance.ArmIK)
+        if (!HasFreshPose || !AvatarConfig.Instance.ArmIK || ArmsSuspended)
             return;
         var refs = Owner.refs;
         if (refs.ikRig == null || refs.ikLeft == null || refs.ikRight == null)
@@ -238,6 +243,7 @@ public partial class AvatarPoseDriver
         var item = c.data.currentItem;
         if (
             !HasFreshPose
+            || ArmsSuspended
             || item == null
             || !AvatarConfig.Instance.RetargetItems
             || !EnsureRig()

@@ -60,6 +60,9 @@ Shared contracts (written first, other features code against them):
 | `interact.binoculars` | zoomed view on a lens render texture; the HMD view and FOV are never overridden | panel fallback |
 | `interact.lights` | hand-held candle, lantern, flare, torch: light follows the hand, culling fix, strike-to-light gestures | button fallbacks |
 | `interact.ping` | ping aimed by a hand ray (finger-gun gesture or button), marker sized for stereo | |
+| `interact.social` | two-body actions by hand proximity: grip a friend to help up (vanilla reach), carry (both hands) or drop, open their pack from behind, cannibal hold; pluck thorns, arrows and stuck items; feed by holding an item at a friend's mouth; shake out of webs; grasp haptics; give-up guard while passed out | targets go into `Interaction.DoInteractableRaycasts`, actions through vanilla interact, reach and use-on-friend |
+| `inventory.vr` | body-anchored hotbar (hips, chest, shoulders) relative to tracked head height and body yaw, never head pitch; grip draws into the reaching hand, release over a slot holsters; backpack over either shoulder (open wheel, stash, take off with both hands, drop a carried friend); wheel pockets picked by hand movement; slot ghosts near the hand; overflow and hand-lock haptic cues | switches are injected hotbar key presses, so `DoSwitching` gates and `EquipSlot` RPCs apply |
+| `avatar.emotes` | emote playback on tracked avatars: tracked arms stay on unless the emote is full-body (configurable); fade during your own backflip | runs in flat too |
 | `net.pose` | handshake via player property `PeakXR`; `RaiseEvent` pose stream (codec in Core); remote `AvatarPoseDriver`; `RPCA_StartReaching` for vanilla | runs in flat too |
 | `sandbox` | built-in console unlock, item, mob and segment spawner, god mode | opt-in, offline or host only |
 
@@ -69,6 +72,7 @@ Shared contracts (written first, other features code against them):
 - One held item at a time, like vanilla. The free hand can grip the held item's second grip but cannot pick up a second item.
 - Every item is classified `OneHanded`, `TwoHanded` or `OptionalTwoHand` in a data table, with a default inferred from the item's components so new items still work.
 - Custom procedural grip and hold poses are authored where vanilla has none that fits (finger presets per grip type, one-hand and two-hand holds, left-hand mirroring). Vanilla clients see the default hand.
+- Grip priority (`GripIntent`): the free hand joining the held item, then grip extensions (`IGripExtension` in `src/PeakXR/Interact/GripHooks.cs`: `interact.social`, then `inventory.vr`), then grab, climb and the interact fallback. An extension may also claim the holding hand's release (holstering) ahead of throw and drop.
 
 ## Comfort defaults
 

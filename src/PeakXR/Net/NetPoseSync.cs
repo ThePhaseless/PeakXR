@@ -275,6 +275,12 @@ internal sealed class NetPoseSync
         }
         if (pose.Seated)
             p.Flags |= PoseFlags.Seated;
+        // Hold flags: which hand carries the item and whether the other hand supports it. Pure flag bits, so peers
+        // on an older build decode the same packet and ignore them (see PoseCodec remarks).
+        if (pose.ItemInLeftHand)
+            p.Flags |= PoseFlags.ItemInLeftHand;
+        if (pose.TwoHandHold)
+            p.Flags |= PoseFlags.TwoHandHold;
         return p;
     }
 
@@ -380,6 +386,8 @@ internal sealed class NetPoseSync
             RightHandRotation = U(p.RightHandRotation),
             RightFingers = p.RightFingers,
             Seated = p.Seated,
+            ItemInLeftHand = p.ItemInLeftHand,
+            TwoHandHold = p.TwoHandHold,
         };
 
     /// <summary>

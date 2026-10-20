@@ -41,7 +41,7 @@ public static class Preload
         RuntimeInstaller installer = null;
         try
         {
-            mode = ResolveMode();
+            mode = ResolveMode(out var openVRFallback);
             var dataDir = FindDataDir();
             var patcherDir =
                 Path.GetDirectoryName(typeof(Preload).Assembly.Location) ?? Paths.PatcherPluginPath;
@@ -50,7 +50,7 @@ public static class Preload
                 Path.Combine(patcherDir, RuntimeDepsFolder),
                 Log
             );
-            mode = installer.Apply(mode);
+            mode = installer.Apply(mode, openVRFallback);
         }
         catch (Exception e)
         {
@@ -80,9 +80,10 @@ public static class Preload
     }
 
     /// <summary>Config value, overridden by -peakxr-novr / -peakxr-openvr / -peakxr-openxr.</summary>
-    private static RuntimeMode ResolveMode()
+    private static RuntimeMode ResolveMode(out bool openVRFallback)
     {
         var mode = RuntimeMode.OpenXR;
+        openVRFallback = true;
         try
         {
             var config = new ConfigFile(Path.Combine(Paths.ConfigPath, ConfigFileName), true);
@@ -98,7 +99,18 @@ public static class Preload
                         + "Launch options -peakxr-novr, -peakxr-openvr and -peakxr-openxr override this setting."
                 )
                 .Value;
-            Log.LogInfo($"Config {ConfigFileName}: Mode = {mode}");
+            openVRFallback = config
+                .Bind(
+                    "Runtime",
+                    "OpenVRFallback",
+                    true,
+                    "With Mode = OpenXR, also install Valve's OpenVR plugin so the game can switch to it "
+                        + "when OpenXR does not start (plugin setting XR.FallbackToOpenVR)."
+                )
+                .Value;
+            Log.LogInfo(
+                $"Config {ConfigFileName}: Mode = {mode}, OpenVRFallback = {openVRFallback}"
+            );
         }
         catch (Exception e)
         {
