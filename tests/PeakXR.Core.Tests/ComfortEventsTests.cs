@@ -347,6 +347,18 @@ public class LaunchTrackerTests
     }
 
     [Fact]
+    public void Detect_LandingOrBounceFromAFallIsNot()
+    {
+        var t = new LaunchTracker { DetectSpeed = 8f };
+        t.Update(false, -15f, Dt);
+        // Hard landing: the fall speed stops in one step.
+        Assert.False(t.Update(true, 0f, Dt));
+        t.Update(false, -12f, Dt);
+        // Ragdoll bounce: a big gain, but only a small upward speed.
+        Assert.False(t.Update(false, 4f, Dt));
+    }
+
+    [Fact]
     public void Detect_JumpsAndSteadyRisesAreNot()
     {
         var t = new LaunchTracker { DetectSpeed = 8f };

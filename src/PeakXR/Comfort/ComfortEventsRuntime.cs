@@ -69,6 +69,9 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         if (instance == null || !VRSession.Active || amount <= 0.01f)
             return;
         var r = Resolve(ComfortEvent.Shake, amount / 10f);
+        // ui.runflow rumbles some world shakes itself (its ShakeHaptics); one rumble per shake.
+        if (RunFlowFeature.TakeShake())
+            r.Haptic = 0f;
         if (r.Haptic > 0f)
             r.HapticSeconds = Mathf.Clamp(duration, 0.05f, 0.5f);
         if (r.Any)
@@ -210,9 +213,15 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         scriptedLook = look;
 
         // A launched body often tumbles too (cannon, mushroom); the chase view stays through it. Climbing ends
-        // a flight; spectating hands the view to rig.camera.
+        // a flight; spectating hands the view to rig.camera. A warp halts the body's velocity (HaltBodyVelocity,
+        // A/Character.cs:1909-1961, warping set :1866-1967), which must not read as a launch.
         bool over =
-            d.dead || d.fullyPassedOut || d.isClimbing || d.isRopeClimbing || d.isVineClimbing;
+            d.dead
+            || d.fullyPassedOut
+            || d.isClimbing
+            || d.isRopeClimbing
+            || d.isVineClimbing
+            || c.warping;
         var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
         var v = hip != null ? hip.linearVelocity : Vector3.zero;
         // A tumbling body rarely reports grounded: lying still counts as landed.
