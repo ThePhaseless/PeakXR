@@ -38,12 +38,24 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
         Application.onBeforeRender += OnBeforeRender;
+        VRSession.Stopped += OnVRStopped;
     }
 
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         Application.onBeforeRender -= OnBeforeRender;
+        VRSession.Stopped -= OnVRStopped;
+    }
+
+    /// <summary>Drop every hold so a later VR restart does not come back to a black or loading headset.</summary>
+    private void OnVRStopped()
+    {
+        StopAllCoroutines();
+        loadRoutine = null;
+        VRFade.Clear(loadOwner);
+        VRFade.Clear(cutOwner);
+        space.Hide();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -81,6 +93,15 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         if (!VRSession.Active && !space.Shown)
             return;
         Restart(ExitLoading());
+    }
+
+    /// <summary>A kick, ban or disconnect destroys the loading screen mid-load (KickedState.DisplayModal,
+    /// A/KickedState.cs:13; NetworkConnector.cs:127,134). That kills its process coroutine, so the loading
+    /// routine never ends and <see cref="OnLoadingDone"/> never fires: leave the loading space here.</summary>
+    public void OnLoadingScreenKilled()
+    {
+        if (space.Shown || loadRoutine != null)
+            Restart(ExitLoading());
     }
 
     private void Restart(IEnumerator routine)

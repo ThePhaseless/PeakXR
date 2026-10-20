@@ -195,6 +195,26 @@ internal static class WorldCanvases
         t.Canvas.worldCamera = t.OriginalCamera;
         t.Rect.localScale = t.OriginalScale;
         t.Converted = false;
+        if (t.Kind == CanvasKind.Names)
+            ResetNameTags(t.Canvas);
+    }
+
+    /// <summary>PlayerNamePatch rotates and scales every tag; vanilla UpdateName writes only the position
+    /// (A/UIPlayerNames.cs:57), so flat play would keep the VR pose.</summary>
+    private static void ResetNameTags(Canvas canvas)
+    {
+        // shortcut: assumes the prefab tags use identity rotation and unit scale; save the originals if that changes.
+        var names =
+            canvas.GetComponentInParent<UIPlayerNames>(true)
+            ?? canvas.GetComponentInChildren<UIPlayerNames>(true);
+        if (names == null)
+            return;
+        foreach (var tag in names.playerNameText)
+            if (tag != null)
+            {
+                tag.transform.localRotation = Quaternion.identity;
+                tag.transform.localScale = Vector3.one;
+            }
     }
 
     /// <summary>Places every converted canvas for this frame. Returns whether an interactive panel is shown.</summary>

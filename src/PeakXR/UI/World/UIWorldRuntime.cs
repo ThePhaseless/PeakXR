@@ -12,7 +12,8 @@ namespace PeakXR.UI.World;
 [DefaultExecutionOrder(31000)]
 internal sealed class UIWorldRuntime : MonoBehaviour
 {
-    private const float RescanSeconds = 2f;
+    // Safety net only: the CanvasScaler/MenuWindow hooks and the scene-load scan catch new canvases.
+    private const float RescanSeconds = 10f;
 
     public static bool Ready { get; private set; }
 
@@ -80,6 +81,10 @@ internal sealed class UIWorldRuntime : MonoBehaviour
                 WorldCanvases.RevertAll();
                 pointer.Hide();
                 VRFade.Clear(fadeOwner);
+                // The game's shader transitions draw on the desktop again.
+                foreach (var renderer in transitionRenderers)
+                    if (renderer != null)
+                        renderer.forceRenderingOff = false;
             }
         }
         if (!Ready)
@@ -89,7 +94,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         {
             if (sphere != null)
                 Destroy(sphere.gameObject);
-            sphere = FadeSphere.Attach(rig.HeadCamera, rig.Head);
+            sphere = FadeSphere.Attach(rig.Head);
             sphereRig = rig;
         }
 

@@ -17,6 +17,8 @@ public sealed class UIMenuFeature : Feature
     protected internal override void Install()
     {
         var cfg = UIMenuSettings.Bind(Plugin.Settings);
+        // First, so a missing target leaves no runtime objects behind.
+        Patch(typeof(KillLoadingScreenPatch));
         var stage = new TitleStage(cfg);
         var space = LoadingSpace.Create();
         var runtime = UIMenuRuntime.Create(stage, space, cfg);
@@ -24,6 +26,7 @@ public sealed class UIMenuFeature : Feature
         // Public static events on the game's loading handler; a rename fails this feature here.
         LoadingScreenHandler.OnLoadingStart += runtime.OnLoadingStart;
         LoadingScreenHandler.OnLoadingDone += runtime.OnLoadingDone;
+        KillLoadingScreenPatch.Runtime = runtime;
 
         // Title menu canvas (MainMenu root holds MainMenuPageHandler) and every LoadingScreen prefab's canvas.
         CanvasRules.AddCustom("MainMenuPageHandler", stage);
