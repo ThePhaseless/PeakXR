@@ -19,6 +19,9 @@ public class VRRig : MonoBehaviour
     public Transform Head;
     public Camera HeadCamera;
 
+    /// <summary>While true, the camera feature leaves <see cref="Origin"/> alone (title stage places it).</summary>
+    public bool OriginOverride;
+
     /// <summary>Grip poses: where the palm holds things.</summary>
     public Transform LeftHand;
     public Transform RightHand;

@@ -1,0 +1,133 @@
+using PeakXR.Core;
+using PeakXR.UI.Common;
+using PeakXR.UI.World;
+using PeakXR.VR;
+using UnityEngine;
+
+namespace PeakXR.UI.Menu;
+
+/// <summary>
+/// Title scene: stands the player where the title camera looks out over the beach and floats the
+/// main menu in front of them. The pose comes from the title scene's <see cref="MainCamera"/> at load,
+/// before anything moves it; the research doc's (31.70, 4.63, -405.84), yaw -46.4 is only a sanity check.
+/// </summary>
+internal sealed class TitleStage : ICanvasPlacement
+{
+    private static readonly Vector3 ResearchPosition = new(31.70f, 4.63f, -405.84f);
+    private const float StandingEyeHeight = 1.65f;
+    private const float MenuTilt = 8f;
+
+    private readonly UIMenuSettings cfg;
+    private bool active;
+    private bool originFixed;
+    private Vector3 feet;
+    private float yaw;
+    private Vector3 originPosition;
+    private Quaternion originRotation = Quaternion.identity;
+    private VRRig overridden;
+
+    public TitleStage(UIMenuSettings cfg) => this.cfg = cfg;
+
+    public bool Interactive => true;
+
+    public bool Active => active;
+
+    /// <summary>Call on every scene load; arms the stage only when the title menu is present.</summary>
+    public void OnSceneLoaded()
+    {
+        active = false;
+        originFixed = false;
+        Release();
+        if (
+            !cfg.TitleOnBeach.Value
+            || Object.FindAnyObjectByType<MainMenu>() == null
+            || MainCamera.instance == null
+        )
+            return;
+
+        var cam = MainCamera.instance.transform;
+        var eye = cam.position;
+        yaw = cam.eulerAngles.y;
+        var ground = Physics.Raycast(
+            eye + Vector3.up * 0.2f,
+            Vector3.down,
+            out var hit,
+            30f,
+            ~0,
+            QueryTriggerInteraction.Ignore
+        )
+            ? hit.point.y
+            : float.NegativeInfinity;
+        var height = eye.y - ground;
+        feet = height is > 0.5f and < 3f
+            ? new Vector3(eye.x, ground, eye.z)
+            : eye - Vector3.up * StandingEyeHeight;
+        active = true;
+
+        var offDoc = Vector3.Distance(eye, ResearchPosition);
+        Plugin.Log.LogInfo(
+            $"[ui.menu] title stage at {feet} yaw {yaw:0.0} (camera {eye}, {offDoc:0.0} m from the researched pose)"
+        );
+    }
+
+    /// <summary>Places the rig origin so the player's head stands over <see cref="feet"/> facing the
+    /// title camera's direction. Fixed once the headset is tracked, so walking around still works.
+    /// Holds <see cref="VRRig.OriginOverride"/> while the stage is active so the camera feature keeps out.</summary>
+    public void ApplyOrigin(VRRig rig)
+    {
+        if (!active || rig == null || rig.Origin == null)
+        {
+            Release();
+            return;
+        }
+        if (overridden != rig)
+        {
+            Release();
+            rig.OriginOverride = true;
+            overridden = rig;
+        }
+        if (!originFixed)
+        {
+            var head = VRInput.HeadTracked ? VRInput.HeadPosition : Vector3.zero;
+            var headYaw = VRInput.HeadTracked
+                ? (VRInput.HeadRotation * Vector3.forward).HeadingDegrees()
+                : 0f;
+            originRotation = Quaternion.Euler(0f, yaw - headYaw, 0f);
+            originPosition = feet - originRotation * new Vector3(head.x, 0f, head.z);
+            originFixed = VRInput.HeadTracked;
+        }
+        rig.Origin.SetPositionAndRotation(originPosition, originRotation);
+    }
+
+    private void Release()
+    {
+        if (overridden != null)
+            overridden.OriginOverride = false;
+        overridden = null;
+    }
+
+    public PlacementResult Place(
+        Canvas canvas,
+        out Vector3 position,
+        out Quaternion rotation,
+        out float widthMeters
+    )
+    {
+        position = default;
+        rotation = Quaternion.identity;
+        widthMeters = 0f;
+        if (!active)
+            return PlacementResult.Default;
+
+        var eyeHeight = VRInput.HeadTracked
+            ? Mathf.Clamp(VRInput.HeadPosition.y, 0.8f, 2.2f)
+            : StandingEyeHeight;
+        var distance = cfg.TitleMenuDistance.Value;
+        rotation = Quaternion.Euler(0f, yaw, 0f);
+        var offset = PanelMath.InFront(0f, distance, MenuTilt).ToUnity();
+        position = feet + Vector3.up * eyeHeight + rotation * offset;
+        rotation = Quaternion.LookRotation(rotation * offset, Vector3.up);
+        widthMeters = distance * 0.85f;
+        return PlacementResult.Placed;
+    }
+}
