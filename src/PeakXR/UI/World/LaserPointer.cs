@@ -24,6 +24,10 @@ internal sealed class LaserPointer
 
     public static Camera EventCamera { get; private set; }
 
+    /// <summary>Clicks under this transform keep the current selection, so the VR keyboard can type into the
+    /// focused input field without the press deselecting it (which would end the edit).</summary>
+    public static Transform KeepSelectionRoot;
+
     private readonly PointerHands hands = new();
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;
@@ -194,7 +198,10 @@ internal sealed class LaserPointer
         if (over == null)
             return;
 
-        if (ExecuteEvents.GetEventHandler<ISelectHandler>(over) != system.currentSelectedGameObject)
+        if (
+            ExecuteEvents.GetEventHandler<ISelectHandler>(over) != system.currentSelectedGameObject
+            && (KeepSelectionRoot == null || !over.transform.IsChildOf(KeepSelectionRoot))
+        )
             system.SetSelectedGameObject(null, data);
 
         var pressed = ExecuteEvents.ExecuteHierarchy(over, data, ExecuteEvents.pointerDownHandler);
