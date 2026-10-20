@@ -1,6 +1,7 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Voice;
 using PeakXR.VR;
 using UnityEngine;
 using NVector2 = System.Numerics.Vector2;
@@ -118,6 +119,8 @@ internal static class LocomotionInput
         // stays open only while Emote is held, and Pause must reach an open menu.
         input.pauseWasPressed |= Mapper.Pressed(VRAction.Pause);
         input.emoteIsPressed |= Mapper.Held(VRAction.Emote);
+        // The voice feature merges this into pushToTalkPressed and handles blocked input itself.
+        VoiceInput.PushToTalkHeld = Mapper.Held(VRAction.PushToTalk);
         if (!owns)
         {
             input.interactWasPressed |= Mapper.Pressed(VRAction.Interact);
@@ -205,6 +208,7 @@ internal static class LocomotionInput
             VRFade.Clear(FadeOwner);
         }
         Mapper.Reset();
+        VoiceInput.PushToTalkHeld = false;
         Ramp.Reset();
         hadBody = false;
     }

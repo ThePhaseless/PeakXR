@@ -214,7 +214,10 @@ internal static class EyeBlinkPatch
 
     private static bool Prefix(EyeBlinkController __instance)
     {
-        if (!VRSession.Active || RunFlowFeature.Settings.BeachWakeup.Value == BeachWakeupMode.Vanilla)
+        if (
+            !VRSession.Active
+            || RunFlowFeature.Settings.BeachWakeup.Value == BeachWakeupMode.Vanilla
+        )
             return true;
         var f = feature(__instance);
         if (f != null && f.isActive)

@@ -94,11 +94,7 @@ internal sealed class PassportSettings
                 section,
                 "BookSide",
                 0.08f,
-                Range(
-                    "Sideways shift of an open book toward your free hand, in metres.",
-                    0f,
-                    0.25f
-                )
+                Range("Sideways shift of an open book toward your free hand, in metres.", 0f, 0.25f)
             ),
             SwipeToFlip = cfg.Bind(
                 section,

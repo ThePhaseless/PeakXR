@@ -446,9 +446,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     /// <summary>Character lies on the sand: passedOutOnTheBeach (3 s) and the Fall(7) ragdoll (Character.cs:2038-2039).</summary>
     private bool BeachFalling() =>
         beachCharacter != null
-        && (
-            beachCharacter.data.passedOutOnTheBeach > 0f || beachCharacter.data.fallSeconds > 0f
-        );
+        && (beachCharacter.data.passedOutOnTheBeach > 0f || beachCharacter.data.fallSeconds > 0f);
 
     // ---- resets ----
 

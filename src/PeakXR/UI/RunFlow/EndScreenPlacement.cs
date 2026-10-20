@@ -45,8 +45,7 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
 
         var gui = GUIManager.instance;
         var open = gui != null && gui.endScreen != null && gui.endScreen.isOpen;
-        var far =
-            (panelPosition - head.position).sqrMagnitude > ReplaceDistance * ReplaceDistance;
+        var far = (panelPosition - head.position).sqrMagnitude > ReplaceDistance * ReplaceDistance;
         if (open && (!wasOpen || far))
         {
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());

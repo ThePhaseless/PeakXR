@@ -22,6 +22,9 @@ namespace PeakXR.Core
         Ping,
         Emote,
         Pause,
+
+        /// <summary>Voice push-to-talk. Only the game's Push To Talk and Push To Mute microphone modes read it.</summary>
+        PushToTalk,
     }
 
     /// <summary>
@@ -163,6 +166,14 @@ namespace PeakXR.Core
             ),
             new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
+            // Every control already has a press; a long press of the move-stick click is the one gap. Its
+            // first frame still toggles sprint, which does nothing while standing still.
+            new Binding(
+                VRAction.PushToTalk,
+                BindingHand.OffHand,
+                VRControl.StickClick,
+                PressKind.LongPress
+            ),
         };
 
         /// <summary>True when <paramref name="role"/> means the left controller.</summary>
@@ -205,7 +216,7 @@ namespace PeakXR.Core
     public sealed class ActionMapper
     {
         const int ControlCount = 8;
-        const int ActionCount = (int)VRAction.Pause + 1;
+        const int ActionCount = (int)VRAction.PushToTalk + 1;
 
         public float FlickActivate = 0.7f;
         public float FlickRelease = 0.4f;

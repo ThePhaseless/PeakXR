@@ -84,7 +84,12 @@ internal static class HandBook
     }
 
     /// <summary>Reading pose above the book hand, facing the eyes.</summary>
-    internal static bool TryPose(VRRig rig, bool left, out Vector3 position, out Quaternion rotation)
+    internal static bool TryPose(
+        VRRig rig,
+        bool left,
+        out Vector3 position,
+        out Quaternion rotation
+    )
     {
         position = default;
         rotation = Quaternion.identity;
@@ -181,7 +186,12 @@ internal sealed class PassportPlacement : ICanvasPlacement
         if (
             !cfg.PassportAtHand.Value
             || !VRSession.Active
-            || !HandBook.TryPose(VRRig.Instance, HandBook.BookInLeftHand(), out position, out rotation)
+            || !HandBook.TryPose(
+                VRRig.Instance,
+                HandBook.BookInLeftHand(),
+                out position,
+                out rotation
+            )
         )
         {
             position = default;

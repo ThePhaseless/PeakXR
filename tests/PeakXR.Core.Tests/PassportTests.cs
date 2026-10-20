@@ -122,7 +122,14 @@ public class PageSwipeTests
         };
 
     /// <summary>Moves the hand from x0 to x1 at a constant speed in front of the page; returns every non-zero result.</summary>
-    static int Sweep(PageSwipe s, float x0, float x1, float speed, float z = -0.08f, bool blocked = false)
+    static int Sweep(
+        PageSwipe s,
+        float x0,
+        float x1,
+        float speed,
+        float z = -0.08f,
+        bool blocked = false
+    )
     {
         int frames = (int)MathF.Ceiling(MathF.Abs(x1 - x0) / speed / Dt);
         int result = 0;

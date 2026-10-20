@@ -131,7 +131,10 @@ internal sealed class SpeakingIndicators
         if (slot.Renderer.sprite != slot.Sprite)
             slot.Renderer.sprite = slot.Sprite;
         slot.Renderer.color = new Color(1f, 1f, 1f, alpha);
-        slot.Transform.SetPositionAndRotation(position, Quaternion.LookRotation(toIcon, Vector3.up));
+        slot.Transform.SetPositionAndRotation(
+            position,
+            Quaternion.LookRotation(toIcon, Vector3.up)
+        );
         var height = slot.Sprite.bounds.size.y;
         var scale = VoiceIndicator.WorldSize(distance, degrees) / (height > 1e-4f ? height : 1f);
         slot.Transform.localScale = new Vector3(scale, scale, scale);

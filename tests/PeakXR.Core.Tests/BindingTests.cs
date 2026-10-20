@@ -199,6 +199,31 @@ public class BindingTests
     }
 
     [Fact]
+    public void PushToTalk_LongPressOfMoveStickClick_KeepsSprintPress()
+    {
+        var m = new ActionMapper { LongPressSeconds = 0.5f };
+        m.Update(Pressed(VRControl.StickClick), Idle, Dt);
+        Assert.True(m.Pressed(VRAction.Sprint));
+        Assert.False(m.Held(VRAction.PushToTalk));
+        for (int i = 0; i < 50; i++)
+            m.Update(Pressed(VRControl.StickClick), Idle, Dt);
+        Assert.True(m.Held(VRAction.PushToTalk));
+        Assert.False(m.Held(VRAction.Crouch));
+
+        m.Update(Idle, Idle, Dt);
+        Assert.True(m.Released(VRAction.PushToTalk));
+    }
+
+    [Fact]
+    public void PushToTalk_FollowsTheMoveHandWhenLeftHanded()
+    {
+        var m = new ActionMapper { DominantLeft = true, LongPressSeconds = 0.5f };
+        for (int i = 0; i < 50; i++)
+            m.Update(Idle, Pressed(VRControl.StickClick), Dt);
+        Assert.True(m.Held(VRAction.PushToTalk));
+    }
+
+    [Fact]
     public void DefaultTable_EveryActionHasABinding()
     {
         foreach (var action in Enum.GetValues<VRAction>())

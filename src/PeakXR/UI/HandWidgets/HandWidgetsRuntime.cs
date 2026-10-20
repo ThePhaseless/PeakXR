@@ -58,7 +58,8 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
 
         var ready = UIWorldRuntime.Ready && rig != null && gui != null && gui.hudCanvas != null;
         var ringOnHand = ready && ringWidget != null && cfg.Ring.Value == RingPlacement.Hand;
-        var feedOnHand = ready && gui.friendProgressTF != null && cfg.Feed.Value != FeedPlacement.Hud;
+        var feedOnHand =
+            ready && gui.friendProgressTF != null && cfg.Feed.Value != FeedPlacement.Hud;
         Sync(ring, ringOnHand, ringOnHand ? ringWidget.transform : null, "PeakXR_HandRing");
         Sync(feed, feedOnHand, feedOnHand ? gui.friendProgressTF : null, "PeakXR_HandFeed");
 

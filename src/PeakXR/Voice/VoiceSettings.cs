@@ -19,10 +19,10 @@ internal sealed class VoiceSettings
             HandToMouthTalk = cfg.Bind(
                 section,
                 "HandToMouthTalk",
-                // On by default: every controller button already has a game action (docs/controls.md),
-                // and the gesture only matters in the game's push-to-talk modes.
+                // On by default next to the move-stick long press (docs/controls.md): it needs no free button
+                // and only matters in the game's push-to-talk modes.
                 true,
-                "Push-to-talk: hold a free hand at your mouth like a walkie-talkie. Only matters when the game's microphone mode is Push To Talk or Push To Mute."
+                "Push-to-talk also by holding a free hand at your mouth like a walkie-talkie, next to holding the move-stick click. Only matters when the game's microphone mode is Push To Talk or Push To Mute."
             ),
             PreferHeadsetMic = cfg.Bind(
                 section,
