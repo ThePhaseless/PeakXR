@@ -25,8 +25,15 @@ namespace PeakXR.Core
         /// (<paramref name="centerXZ"/> in tracking space) at <paramref name="eyeHeight"/> lands exactly on
         /// <paramref name="eyeAnchor"/>, with the tracking space turned by <paramref name="yawDeg"/>.
         /// </summary>
-        public static Vector3 OriginPosition(Vector3 eyeAnchor, float yawDeg, Vector2 centerXZ, float eyeHeight) =>
-            eyeAnchor - RotateYaw(yawDeg, new Vector3(centerXZ.X, 0f, centerXZ.Y)) - new Vector3(0f, eyeHeight, 0f);
+        public static Vector3 OriginPosition(
+            Vector3 eyeAnchor,
+            float yawDeg,
+            Vector2 centerXZ,
+            float eyeHeight
+        ) =>
+            eyeAnchor
+            - RotateYaw(yawDeg, new Vector3(centerXZ.X, 0f, centerXZ.Y))
+            - new Vector3(0f, eyeHeight, 0f);
 
         /// <summary>
         /// New calibrated spot after turning the rig by <paramref name="deltaYawDeg"/>, chosen so the
@@ -35,7 +42,10 @@ namespace PeakXR.Core
         /// </summary>
         public static Vector2 PivotCenter(Vector2 headXZ, Vector2 centerXZ, float deltaYawDeg)
         {
-            Vector3 offset = RotateYaw(-deltaYawDeg, new Vector3(headXZ.X - centerXZ.X, 0f, headXZ.Y - centerXZ.Y));
+            Vector3 offset = RotateYaw(
+                -deltaYawDeg,
+                new Vector3(headXZ.X - centerXZ.X, 0f, headXZ.Y - centerXZ.Y)
+            );
             return new Vector2(headXZ.X - offset.X, headXZ.Y - offset.Z);
         }
 
@@ -55,6 +65,33 @@ namespace PeakXR.Core
             const float reference = HeightCalibration.DefaultStandingEyeHeight;
             return reference - HeightCalibration.YOffset(mode, hmdTrackingY, reference);
         }
+
+        /// <summary>
+        /// <c>VRRig.HeightOffset</c> from a recenter: metres added to tracking-space Y so the measured eye
+        /// height (see <see cref="EyeHeight"/>) lands on the avatar's standing eye height.
+        /// </summary>
+        public static float HeightOffset(bool floorTracking, HeightMode mode, float hmdTrackingY) =>
+            HeightCalibration.DefaultStandingEyeHeight
+            - EyeHeight(floorTracking, mode, hmdTrackingY);
+
+        /// <summary>Tracking-space Y that maps onto the avatar's eyes for a given height offset.</summary>
+        public static float TrackedEyeHeight(float heightOffset) =>
+            HeightCalibration.DefaultStandingEyeHeight - heightOffset;
+
+        /// <summary>
+        /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
+        /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the
+        /// view does not rotate on its own.
+        /// </summary>
+        public static Vector3 ThirdPersonPoint(
+            Vector3 target,
+            float yawDeg,
+            float distance,
+            float height
+        ) =>
+            target
+            + RotateYaw(yawDeg, new Vector3(0f, 0f, -distance))
+            + new Vector3(0f, height, 0f);
 
         /// <summary>
         /// Frame-rate independent exponential follow with separate horizontal and vertical rates

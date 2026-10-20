@@ -62,7 +62,15 @@ sealed class OpenXRBackend : ManagedXRBackend
         var features = new List<OpenXRFeature>();
         var priority = 0;
         foreach (var (type, name, extension) in Profiles)
-            features.Add(MakeFeature(type, name, "com.thephaseless.peakxr." + type.Name, extension, priority++));
+            features.Add(
+                MakeFeature(
+                    type,
+                    name,
+                    "com.thephaseless.peakxr." + type.Name,
+                    extension,
+                    priority++
+                )
+            );
         features.Add(
             MakeFeature(
                 typeof(PeakXRSessionFeature),
@@ -89,12 +97,20 @@ sealed class OpenXRBackend : ManagedXRBackend
 
     static bool RefuseQuit()
     {
-        Plugin.Log.LogWarning("[xr.bootstrap] OpenXR runtime asked the game to quit; continuing without VR");
+        Plugin.Log.LogWarning(
+            "[xr.bootstrap] OpenXR runtime asked the game to quit; continuing without VR"
+        );
         XRSessionState.ExitRequested = true;
         return false;
     }
 
-    static OpenXRFeature MakeFeature(Type type, string name, string id, string extension, int priority)
+    static OpenXRFeature MakeFeature(
+        Type type,
+        string name,
+        string id,
+        string extension,
+        int priority
+    )
     {
         var feature = (OpenXRFeature)ScriptableObject.CreateInstance(type);
         SetInternal(feature, "nameUi", name);
@@ -152,7 +168,8 @@ sealed class PeakXRSessionFeature : OpenXRFeature
             XRSessionState.ExitRequested = true;
     }
 
-    protected override void OnInstanceLossPending(ulong xrInstance) => XRSessionState.ExitRequested = true;
+    protected override void OnInstanceLossPending(ulong xrInstance) =>
+        XRSessionState.ExitRequested = true;
 
     protected override void OnSessionBegin(ulong xrSession) => XRSessionState.ExitRequested = false;
 }

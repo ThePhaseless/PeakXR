@@ -57,7 +57,9 @@ static class XRBackends
 #if PEAKXR_OPENXR
         return new OpenXRBackend();
 #else
-        Plugin.Log.LogWarning("[xr.bootstrap] This build has no OpenXR backend (built without `mise run deps`)");
+        Plugin.Log.LogWarning(
+            "[xr.bootstrap] This build has no OpenXR backend (built without `mise run deps`)"
+        );
         return null;
 #endif
     }
@@ -68,7 +70,9 @@ static class XRBackends
 #if PEAKXR_OPENVR
         return new OpenVRBackend();
 #else
-        Plugin.Log.LogWarning("[xr.bootstrap] This build has no OpenVR backend (built without `mise run deps`)");
+        Plugin.Log.LogWarning(
+            "[xr.bootstrap] This build has no OpenVR backend (built without `mise run deps`)"
+        );
         return null;
 #endif
     }
@@ -95,9 +99,13 @@ static class XRSessionState
     /// <summary>Set when the runtime asked the app to quit or lost the instance.</summary>
     public static bool ExitRequested;
 
+    /// <summary>OpenVR: dashboard open or another app holds input focus.</summary>
+    public static bool OpenVRFocusLost;
+
     public static void Reset()
     {
         OpenXRState = 0;
         ExitRequested = false;
+        OpenVRFocusLost = false;
     }
 }

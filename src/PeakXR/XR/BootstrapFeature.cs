@@ -101,12 +101,18 @@ public sealed class BootstrapFeature : Feature
         // Optional: without it focus loss only dims the view.
         try
         {
-            FocusInputPatch.CanDoInput = GameMember.Method(typeof(Character), "CanDoInput", System.Type.EmptyTypes);
+            FocusInputPatch.CanDoInput = GameMember.Method(
+                typeof(Character),
+                "CanDoInput",
+                System.Type.EmptyTypes
+            );
             Patch(typeof(FocusInputPatch));
         }
         catch (System.Exception e)
         {
-            Plugin.Log.LogWarning($"[xr.bootstrap] Focus-loss input pause unavailable: {e.GetBaseException().Message}");
+            Plugin.Log.LogWarning(
+                $"[xr.bootstrap] Focus-loss input pause unavailable: {e.GetBaseException().Message}"
+            );
         }
 
         var go = new GameObject("PeakXR.XR") { hideFlags = HideFlags.HideAndDontSave };

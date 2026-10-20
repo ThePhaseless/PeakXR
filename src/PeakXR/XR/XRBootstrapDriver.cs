@@ -47,7 +47,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
             if (HasDescriptor("OpenVR Display"))
                 order.Add(VRRuntime.OpenVR);
             else
-                Plugin.Log.LogInfo($"{Tag} OpenVR fallback not registered by the preloader; no fallback after OpenXR");
+                Plugin.Log.LogInfo(
+                    $"{Tag} OpenVR fallback not registered by the preloader; no fallback after OpenXR"
+                );
         }
 
         foreach (var runtime in order)
@@ -113,7 +115,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
         catch (Exception e)
         {
             // TypeLoadException / FileNotFoundException when a RuntimeDeps DLL is missing or mismatched.
-            Plugin.Log.LogError($"{Tag} {runtime}: backend unavailable: {e.GetBaseException().Message}");
+            Plugin.Log.LogError(
+                $"{Tag} {runtime}: backend unavailable: {e.GetBaseException().Message}"
+            );
             return null;
         }
     }
@@ -132,11 +136,15 @@ sealed class XRBootstrapDriver : MonoBehaviour
                 Plugin.Log.LogInfo($"{Tag} {candidate.Runtime} loader initialized");
                 return true;
             }
-            Plugin.Log.LogError($"{Tag} {candidate.Runtime} loader failed to initialize (see the Unity log lines above)");
+            Plugin.Log.LogError(
+                $"{Tag} {candidate.Runtime} loader failed to initialize (see the Unity log lines above)"
+            );
         }
         catch (Exception e)
         {
-            Plugin.Log.LogError($"{Tag} {candidate.Runtime} loader threw during initialization: {e}");
+            Plugin.Log.LogError(
+                $"{Tag} {candidate.Runtime} loader threw during initialization: {e}"
+            );
         }
         return false;
     }
@@ -149,7 +157,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
         }
         catch (Exception e)
         {
-            Plugin.Log.LogWarning($"{Tag} {candidate.Runtime} shutdown threw: {e.GetBaseException().Message}");
+            Plugin.Log.LogWarning(
+                $"{Tag} {candidate.Runtime} shutdown threw: {e.GetBaseException().Message}"
+            );
         }
     }
 
@@ -187,10 +197,15 @@ sealed class XRBootstrapDriver : MonoBehaviour
             return;
         }
         var supported = input.GetSupportedTrackingOriginModes();
-        if ((supported & TrackingOriginModeFlags.Floor) != 0 && input.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor))
+        if (
+            (supported & TrackingOriginModeFlags.Floor) != 0
+            && input.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor)
+        )
             XRRuntimeInfo.FloorTracking = true;
         else
-            Plugin.Log.LogWarning($"{Tag} Floor tracking unavailable (supported: {supported}); eye height comes from the first recenter");
+            Plugin.Log.LogWarning(
+                $"{Tag} Floor tracking unavailable (supported: {supported}); eye height comes from the first recenter"
+            );
         Plugin.Log.LogInfo($"{Tag} Tracking origin mode: {input.GetTrackingOriginMode()}");
     }
 
@@ -250,8 +265,10 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
     static bool ComputeFocus()
     {
+        if (VRSession.Running == VRRuntime.OpenVR)
+            return !XRSessionState.OpenVRFocusLost;
         if (VRSession.Running != VRRuntime.OpenXR)
-            return true; // OpenVR focus events are not wired up (known gap).
+            return true;
         int state = XRSessionState.OpenXRState;
         // 5 = FOCUSED; 0 = not reported yet. VISIBLE (4) means the dashboard or another app has input.
         return state == 0 || state == 5;

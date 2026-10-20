@@ -26,8 +26,45 @@ sealed class OpenVRBackend : ManagedXRBackend
         settings.InitializationType = OpenVRSettings.InitializationTypes.Scene;
         settings.MirrorView = OpenVRSettings.MirrorViewModes.None;
         PushUserSettings(settings);
-        Plugin.Log.LogInfo("[xr.bootstrap] OpenVR settings: stereo=MultiPass, init=Scene, nativeMirror=None");
+        Plugin.Log.LogInfo(
+            "[xr.bootstrap] OpenVR settings: stereo=MultiPass, init=Scene, nativeMirror=None"
+        );
         return ScriptableObject.CreateInstance<OpenVRLoader>();
+    }
+
+    /// <summary>Dashboard and input-focus events drive <see cref="XRSessionState.OpenVRFocusLost"/>. The
+    /// plugin's own VREvent_Quit handler stays: SteamVR expects the app to exit when it quits.</summary>
+    public override void OnRunning()
+    {
+        try
+        {
+            OpenVREvents.AddListener(
+                Valve.VR.EVREventType.VREvent_DashboardActivated,
+                _ => XRSessionState.OpenVRFocusLost = true
+            );
+            OpenVREvents.AddListener(
+                Valve.VR.EVREventType.VREvent_DashboardDeactivated,
+                _ => XRSessionState.OpenVRFocusLost = false
+            );
+            OpenVREvents.AddListener(
+                Valve.VR.EVREventType.VREvent_InputFocusCaptured,
+                _ => XRSessionState.OpenVRFocusLost = true
+            );
+            OpenVREvents.AddListener(
+                Valve.VR.EVREventType.VREvent_InputFocusReleased,
+                _ => XRSessionState.OpenVRFocusLost = false
+            );
+            OpenVREvents.AddListener(
+                Valve.VR.EVREventType.VREvent_Quit,
+                _ => XRSessionState.ExitRequested = true
+            );
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning(
+                $"[xr.bootstrap] OpenVR focus events unavailable: {e.GetBaseException().Message}"
+            );
+        }
     }
 
     static void PushUserSettings(OpenVRSettings settings)
@@ -38,7 +75,10 @@ sealed class OpenVRBackend : ManagedXRBackend
                 typeof(OpenVRLoader).GetNestedType("UserDefinedSettings", BindingFlags.NonPublic)
                 ?? throw new MissingMemberException(nameof(OpenVRLoader), "UserDefinedSettings");
             var method =
-                typeof(OpenVRLoader).GetMethod("SetUserDefinedSettings", BindingFlags.NonPublic | BindingFlags.Static)
+                typeof(OpenVRLoader).GetMethod(
+                    "SetUserDefinedSettings",
+                    BindingFlags.NonPublic | BindingFlags.Static
+                )
                 ?? throw new MissingMethodException(nameof(OpenVRLoader), "SetUserDefinedSettings");
             object boxed = Activator.CreateInstance(structType);
             Set(structType, boxed, "stereoRenderingMode", settings.GetStereoRenderingMode());
@@ -52,12 +92,16 @@ sealed class OpenVRBackend : ManagedXRBackend
         catch (Exception e)
         {
             // Not fatal: the plugin falls back to its built-in defaults; a single-eye image would show it.
-            Plugin.Log.LogWarning($"[xr.bootstrap] Could not pass OpenVR settings to the native plugin: {e.GetBaseException().Message}");
+            Plugin.Log.LogWarning(
+                $"[xr.bootstrap] Could not pass OpenVR settings to the native plugin: {e.GetBaseException().Message}"
+            );
         }
     }
 
     static void Set(Type t, object boxed, string field, object value) =>
-        (t.GetField(field, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            ?? throw new MissingFieldException(t.FullName, field)).SetValue(boxed, value);
+        (
+            t.GetField(field, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new MissingFieldException(t.FullName, field)
+        ).SetValue(boxed, value);
 }
 #endif

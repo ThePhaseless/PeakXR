@@ -5,7 +5,12 @@ public class ViewportScalerTests
     [Fact]
     public void OverBudget_StepsDownAfterDelay_ToMin()
     {
-        var s = new ViewportScaler { Min = 0.7f, Step = 0.1f, DownSeconds = 0.2f };
+        var s = new ViewportScaler
+        {
+            Min = 0.7f,
+            Step = 0.1f,
+            DownSeconds = 0.2f,
+        };
         s.Update(12f, 11.1f, 0.1f);
         Assert.Equal(1f, s.Scale);
         s.Update(12f, 11.1f, 0.1f);
@@ -18,7 +23,12 @@ public class ViewportScalerTests
     [Fact]
     public void UnderBudget_StepsUpSlowly_ToMax()
     {
-        var s = new ViewportScaler { Min = 0.5f, Step = 0.1f, UpSeconds = 1f };
+        var s = new ViewportScaler
+        {
+            Min = 0.5f,
+            Step = 0.1f,
+            UpSeconds = 1f,
+        };
         s.SetScale(0.5f);
         s.Update(5f, 11.1f, 0.9f);
         TestUtil.Near(0.5f, s.Scale, 1e-5f);

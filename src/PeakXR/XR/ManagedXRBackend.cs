@@ -33,8 +33,10 @@ abstract class ManagedXRBackend : XRBackend
 
         loader = CreateLoader(options);
         var registeredField =
-            typeof(XRManagerSettings).GetField("m_RegisteredLoaders", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new MissingFieldException(nameof(XRManagerSettings), "m_RegisteredLoaders");
+            typeof(XRManagerSettings).GetField(
+                "m_RegisteredLoaders",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            ) ?? throw new MissingFieldException(nameof(XRManagerSettings), "m_RegisteredLoaders");
         ((HashSet<XRLoader>)registeredField.GetValue(manager)).Add(loader);
         if (!manager.TryAddLoader(loader))
             throw new InvalidOperationException("XRManagerSettings refused the loader");
@@ -71,7 +73,10 @@ abstract class ManagedXRBackend : XRBackend
     {
         for (var t = target.GetType(); t != null; t = t.BaseType)
         {
-            var f = t.GetField(field, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            var f = t.GetField(
+                field,
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+            );
             if (f != null)
             {
                 f.SetValue(target, value);

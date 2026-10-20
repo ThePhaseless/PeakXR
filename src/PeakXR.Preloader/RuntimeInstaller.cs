@@ -47,14 +47,18 @@ public sealed class RuntimeInstaller
     }
 
     /// <summary>Installs <paramref name="mode"/> and removes PeakXR manifests of any other runtime.
-    /// Returns the mode that is actually usable (Disabled when the runtime files are missing).</summary>
-    public RuntimeMode Apply(RuntimeMode mode)
+    /// With <paramref name="openVRFallback"/> and mode OpenXR, the OpenVR plugin is installed next to
+    /// it so the plugin can fall back to it when OpenXR does not start (it only registers subsystem
+    /// descriptors; nothing starts until a loader asks). Returns the mode that is actually usable
+    /// (Disabled when the runtime files are missing).</summary>
+    public RuntimeMode Apply(RuntimeMode mode, bool openVRFallback = false)
     {
         _log.LogInfo($"Game data folder: {_dataDir}");
         _log.LogInfo($"Runtime files: {_runtimeDepsDir}");
         LoadState();
 
         string activeManifest = null;
+        string fallbackManifest = null;
         if (mode != RuntimeMode.Disabled)
         {
             activeManifest = Install(mode);
@@ -66,6 +70,15 @@ public sealed class RuntimeInstaller
                 mode = RuntimeMode.Disabled;
             }
         }
+        if (mode == RuntimeMode.OpenXR && openVRFallback)
+        {
+            fallbackManifest = Install(RuntimeMode.OpenVR);
+            _log.LogInfo(
+                fallbackManifest == null
+                    ? "OpenVR fallback files not found; no fallback after OpenXR"
+                    : "OpenVR plugin installed as fallback"
+            );
+        }
 
         // Disabled, or switched runtime: drop every manifest PeakXR wrote except the active one.
         foreach (var rel in _state.Keys.ToList())
@@ -73,6 +86,7 @@ public sealed class RuntimeInstaller
             if (
                 rel.StartsWith(SubsystemsFolder + "/", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(rel, fallbackManifest, StringComparison.OrdinalIgnoreCase)
             )
                 RemoveTracked(rel);
         }

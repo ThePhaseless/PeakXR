@@ -22,7 +22,10 @@ static class XRAssemblyLoader
     static bool hooked;
 
     public static string DepsDir =>
-        depsDir ??= Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", "RuntimeDeps");
+        depsDir ??= Path.Combine(
+            Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".",
+            "RuntimeDeps"
+        );
 
     public static bool IsLoaded(string name) => loaded.ContainsKey(name);
 
@@ -40,7 +43,9 @@ static class XRAssemblyLoader
             if (string.Equals(asm.GetName().Name, name, StringComparison.OrdinalIgnoreCase))
             {
                 loaded[name] = asm;
-                Plugin.Log.LogInfo($"[xr.bootstrap] {name} already loaded from {SafeLocation(asm)}");
+                Plugin.Log.LogInfo(
+                    $"[xr.bootstrap] {name} already loaded from {SafeLocation(asm)}"
+                );
                 return true;
             }
         }
@@ -55,7 +60,9 @@ static class XRAssemblyLoader
         {
             var asm = Assembly.LoadFile(path);
             loaded[name] = asm;
-            Plugin.Log.LogInfo($"[xr.bootstrap] Loaded {name} {asm.GetName().Version} from RuntimeDeps");
+            Plugin.Log.LogInfo(
+                $"[xr.bootstrap] Loaded {name} {asm.GetName().Version} from RuntimeDeps"
+            );
             return true;
         }
         catch (Exception e)

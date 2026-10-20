@@ -6,9 +6,21 @@ public class RigMathTests
     public void RotateYaw_MatchesUnityConvention()
     {
         // Unity: Quaternion.Euler(0, 90, 0) * forward = right.
-        TestUtil.Near(new Vector3(1f, 0f, 0f), RigMath.RotateYaw(90f, new Vector3(0f, 0f, 1f)), 1e-5f);
-        TestUtil.Near(new Vector3(0f, 0f, -1f), RigMath.RotateYaw(90f, new Vector3(1f, 0f, 0f)), 1e-5f);
-        TestUtil.Near(new Vector3(0f, 2f, 0f), RigMath.RotateYaw(37f, new Vector3(0f, 2f, 0f)), 1e-5f);
+        TestUtil.Near(
+            new Vector3(1f, 0f, 0f),
+            RigMath.RotateYaw(90f, new Vector3(0f, 0f, 1f)),
+            1e-5f
+        );
+        TestUtil.Near(
+            new Vector3(0f, 0f, -1f),
+            RigMath.RotateYaw(90f, new Vector3(1f, 0f, 0f)),
+            1e-5f
+        );
+        TestUtil.Near(
+            new Vector3(0f, 2f, 0f),
+            RigMath.RotateYaw(37f, new Vector3(0f, 2f, 0f)),
+            1e-5f
+        );
     }
 
     [Fact]
@@ -37,7 +49,8 @@ public class RigMathTests
         const float delta = 30f;
 
         Vector3 Head(float y, Vector2 c) =>
-            RigMath.OriginPosition(anchor, y, c, eye) + RigMath.RotateYaw(y, new Vector3(head.X, eye, head.Y));
+            RigMath.OriginPosition(anchor, y, c, eye)
+            + RigMath.RotateYaw(y, new Vector3(head.X, eye, head.Y));
 
         Vector3 before = Head(yaw, center);
         Vector2 newCenter = RigMath.PivotCenter(head, center, delta);
@@ -115,5 +128,41 @@ public class RigMathTests
     {
         var target = new Vector3(3f, 4f, 5f);
         TestUtil.Near(target, RigMath.Follow(Vector3.Zero, target, 0.016f, -1f, -1f, 10f), 1e-6f);
+    }
+
+    [Fact]
+    public void HeightOffset_MapsMeasuredEyeToAvatarEye()
+    {
+        // Standing at 1.80 m with floor tracking: tracking Y 1.80 must land on the avatar's eyes.
+        float offset = RigMath.HeightOffset(true, HeightMode.Standing, 1.8f);
+        TestUtil.Near(1.8f, RigMath.TrackedEyeHeight(offset), 1e-5f);
+        TestUtil.Near(HeightCalibration.DefaultStandingEyeHeight - 1.8f, offset, 1e-5f);
+
+        // Seated at 1.15 m: the seated head height maps to the avatar's standing eyes.
+        TestUtil.Near(
+            1.15f,
+            RigMath.TrackedEyeHeight(RigMath.HeightOffset(true, HeightMode.Seated, 1.15f)),
+            1e-5f
+        );
+
+        // Device-relative tracking: whatever the head reports at recenter is the eye.
+        TestUtil.Near(
+            0.03f,
+            RigMath.TrackedEyeHeight(RigMath.HeightOffset(false, HeightMode.Standing, 0.03f)),
+            1e-5f
+        );
+    }
+
+    [Fact]
+    public void ThirdPersonPoint_BehindAndAboveAlongRigYaw()
+    {
+        var target = new Vector3(5f, 1f, 5f);
+        TestUtil.Near(new Vector3(5f, 2f, 3f), RigMath.ThirdPersonPoint(target, 0f, 2f, 1f), 1e-5f);
+        // Facing +X (yaw 90): behind is -X.
+        TestUtil.Near(
+            new Vector3(3f, 2f, 5f),
+            RigMath.ThirdPersonPoint(target, 90f, 2f, 1f),
+            1e-5f
+        );
     }
 }
