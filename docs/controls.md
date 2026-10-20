@@ -18,6 +18,9 @@ Notes:
 - Grip, trigger and the hand throw come from the physical interaction settings (`Interaction` section). There, `DropButton` picks the drop button. It stays on the right B button when you switch hands, so left-handed players should set it to `LeftSecondary`; until then the right B button only drops, with no ping or emote.
 - When you hold something with a scroll function (rope spool, binoculars, guidebook, scout cannon), stick up and down scroll it. Put the item away to change items.
 - Vive wands and WMR controllers have no A/B buttons: click the top of the trackpad for B/Y and the bottom for A/X. On a Vive wand the centre of the pad is the stick click.
+- Push to talk has no button, because every button already does something. Hold a free hand at your mouth, like a walkie-talkie, and you transmit for as long as it stays there. This only matters when the game's microphone mode is Push To Talk or Push To Mute. `Voice.HandToMouthTalk` turns the gesture off.
+- An open passport or guidebook sits above the hand that holds it. Turn pages by swiping your other hand across it, or point at the page buttons with the laser.
+- Menu panels at a kiosk (boarding pass, custom run options) and the end-of-run results take the laser like any other menu. At the end of a won run, any controller button skips the credits wait, the same as any key on a keyboard.
 
 ## Turning and comfort
 
