@@ -5,6 +5,7 @@ using System.Linq;
 using BepInEx.Configuration;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.VR;
 using UnityEngine;
 using Zorro.Settings;
 
@@ -13,7 +14,8 @@ namespace PeakXR.UI.Settings;
 /// <summary>
 /// Content of the "VR" settings tab, generated from <see cref="Plugin.Settings"/> every time the tab is
 /// shown, so a feature only binds config entries and never touches UI code. Rows are grouped by config
-/// section and end with a read-only compatibility report of every feature.
+/// section and end with a read-only compatibility report: the active runtime, then every feature with
+/// failed ones first.
 /// </summary>
 internal static class VRTab
 {
@@ -74,9 +76,19 @@ internal static class VRTab
         }
 
         result.Add(Header("PEAKXR_SECTION_COMPAT", "Compatibility"));
+        result.Add(
+            new InfoRow(
+                Loc.Set("PEAKXR_RUNTIME", "Runtime"),
+                RuntimeText(),
+                VRSession.Active ? Active : Muted,
+                false
+            )
+        );
+        // Failed features first, so a broken install is visible without scrolling.
         foreach (
             var feature in FeatureManager
-                .Features.OrderBy(f => f.Order)
+                .Features.OrderBy(f => f.State == FeatureState.Failed ? 0 : 1)
+                .ThenBy(f => f.Order)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
         )
         {
@@ -95,6 +107,19 @@ internal static class VRTab
             );
         }
         return result;
+    }
+
+    /// <summary>Requested runtime, whether it is rendering, and the XR device name when there is one.</summary>
+    private static string RuntimeText()
+    {
+        var requested = VRSession.Requested;
+        if (requested == VRRuntime.Disabled)
+            return "Flat (VR disabled)";
+        var device = UnityEngine.XR.XRSettings.loadedDeviceName;
+        var state = VRSession.Active ? "rendering" : "not rendering";
+        return string.IsNullOrEmpty(device)
+            ? $"{requested}, {state}"
+            : $"{requested} ({device}), {state}";
     }
 
     private static InfoRow Header(string key, string title) =>

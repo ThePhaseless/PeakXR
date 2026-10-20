@@ -53,7 +53,8 @@ internal sealed class UIWorldSettings
     public ConfigEntry<WristSide> WristHand;
     public ConfigEntry<ReticleMode> Reticle;
     public ConfigEntry<PointerHandMode> PointerHand;
-    public ConfigEntry<float> ScrollSpeed;
+    public ConfigEntry<float> ScrollSpeed,
+        HoverHaptics;
 
     public static UIWorldSettings Bind(ConfigFile cfg)
     {
@@ -162,6 +163,16 @@ internal sealed class UIWorldSettings
                     "Scroll speed with the thumbstick while pointing at a list, in pixels per second.",
                     100f,
                     3000f
+                )
+            ),
+            HoverHaptics = cfg.Bind(
+                pointer,
+                "HoverHaptics",
+                0.2f,
+                Range(
+                    "Strength of the controller tick when the laser moves onto a button. 0 turns it off.",
+                    0f,
+                    1f
                 )
             ),
         };

@@ -105,6 +105,7 @@ internal static class ShowSettingsPatch
         if (category != VRTab.Category)
             return;
         var cells = UISettingsFeature.CellsRef(__instance);
+        var first = true;
         foreach (var setting in VRTab.BuildRows())
         {
             var cell = Object
@@ -112,7 +113,13 @@ internal static class ShowSettingsPatch
                 .GetComponent<SettingsUICell>();
             cells.Add(cell);
             cell.Setup(setting);
+            // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
+            var sfx = cell.fadeInSFX;
+            if (!first)
+                cell.fadeInSFX = null;
             cell.FadeIn();
+            cell.fadeInSFX = sfx;
+            first = false;
         }
     }
 }

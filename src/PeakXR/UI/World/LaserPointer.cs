@@ -20,6 +20,7 @@ internal sealed class LaserPointer
     private const int PointerId = -7100;
     private const float DragAngle = 1.2f;
     private const float MissLength = 1.5f;
+    private const float TickSeconds = 0.015f;
 
     public static Camera EventCamera { get; private set; }
 
@@ -31,6 +32,8 @@ internal sealed class LaserPointer
     private EventSystem dataSystem;
     private Vector3 pressForward;
     private bool visible = true;
+    private GameObject hoverObject;
+    private Selectable hoverSelectable;
 
     public LaserPointer(Transform parent)
     {
@@ -79,6 +82,8 @@ internal sealed class LaserPointer
     {
         Cancel();
         SetVisible(false, false);
+        hoverObject = null;
+        hoverSelectable = null;
     }
 
     public void Process(bool show, UIWorldSettings cfg, VRRig rig, float dt)
@@ -115,6 +120,7 @@ internal sealed class LaserPointer
         var over = hit.gameObject;
 
         HandleEnterExit(over);
+        TickOnHover(over, cfg.HoverHaptics.Value);
         if (hands.Pressed)
             Press(system, over, aim);
         if (hands.Held)
@@ -144,6 +150,23 @@ internal sealed class LaserPointer
             cursor.localScale = Vector3.one * (0.008f * Mathf.Max(1f, distance / 1.5f));
         }
         SetVisible(true, over != null);
+    }
+
+    /// <summary>One tick when the laser lands on a new interactable control. The lookup runs only when
+    /// the hovered graphic changes, and moving between a button's own graphics does not tick again.</summary>
+    private void TickOnHover(GameObject over, float strength)
+    {
+        if (over == hoverObject)
+            return;
+        hoverObject = over;
+        var selectable = over != null ? over.GetComponentInParent<Selectable>() : null;
+        if (selectable != null && !selectable.IsInteractable())
+            selectable = null;
+        if (selectable == hoverSelectable)
+            return;
+        hoverSelectable = selectable;
+        if (selectable != null)
+            UIHaptics.Tick(hands.ActiveLeft, strength, TickSeconds);
     }
 
     private RaycastResult FirstOnWorldCanvas()
