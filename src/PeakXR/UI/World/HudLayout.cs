@@ -23,7 +23,10 @@ internal sealed class HudLayout
     public void Update(Transform head, UIWorldSettings cfg, float dt)
     {
         follow.Threshold = cfg.HudFollowAngle.Value;
-        var yaw = follow.Update(PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics()), dt);
+        var yaw = follow.Update(
+            PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics()),
+            dt
+        );
         var offset = PanelMath.InFront(yaw, cfg.HudDistance.Value, cfg.HudTilt.Value).ToUnity();
         Position = head.position + offset;
         Rotation = Quaternion.LookRotation(offset, Vector3.up);
@@ -52,8 +55,11 @@ internal sealed class HudSplit
 
     private readonly List<Moved> moved = new();
     private GUIManager gui;
-    private RectTransform hudRoot, reticleBox, wristBox;
-    private bool applied, appliedWrist;
+    private RectTransform hudRoot,
+        reticleBox,
+        wristBox;
+    private bool applied,
+        appliedWrist;
     private ReticleMode appliedReticle;
     private Vector2 wristCenter;
     private float wristSpan = 1f;
@@ -63,7 +69,10 @@ internal sealed class HudSplit
     {
         var list = new List<FieldInfo>();
         foreach (var f in typeof(GUIManager).GetFields(BindingFlags.Public | BindingFlags.Instance))
-            if (f.FieldType == typeof(GameObject) && f.Name.StartsWith("reticle", System.StringComparison.Ordinal))
+            if (
+                f.FieldType == typeof(GameObject)
+                && f.Name.StartsWith("reticle", System.StringComparison.Ordinal)
+            )
                 list.Add(f);
         reticleFields = list.ToArray();
     }
@@ -83,7 +92,9 @@ internal sealed class HudSplit
             return;
 
         var reticle = cfg.Reticle.Value;
-        var wrist = cfg.Hud.Value == HudMode.Wrist && rig.Hand(cfg.WristHand.Value == WristSide.Left) != null;
+        var wrist =
+            cfg.Hud.Value == HudMode.Wrist
+            && rig.Hand(cfg.WristHand.Value == WristSide.Left) != null;
         if (applied && reticle == appliedReticle && wrist == appliedWrist)
             return;
 
@@ -127,7 +138,11 @@ internal sealed class HudSplit
             wristBox = wristBox != null ? wristBox : Box("PeakXR_Wrist");
             wristBox.gameObject.SetActive(true);
             MoveGroup(gui.bar != null ? gui.bar.transform : null);
-            MoveGroup(gui.items != null && gui.items.Length > 0 && gui.items[0] != null ? gui.items[0].transform : null);
+            MoveGroup(
+                gui.items != null && gui.items.Length > 0 && gui.items[0] != null
+                    ? gui.items[0].transform
+                    : null
+            );
             MoveGroup(gui.backpack != null ? gui.backpack.transform : null);
             var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(wristBox);
             wristCenter = bounds.center;
@@ -152,7 +167,14 @@ internal sealed class HudSplit
     {
         if (item.parent == box)
             return;
-        moved.Add(new Moved { Item = item, Parent = item.parent, Sibling = item.GetSiblingIndex() });
+        moved.Add(
+            new Moved
+            {
+                Item = item,
+                Parent = item.parent,
+                Sibling = item.GetSiblingIndex(),
+            }
+        );
         item.SetParent(box, false);
     }
 
@@ -200,7 +222,10 @@ internal sealed class HudSplit
         var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
         var metersPerPixel = cfg.WristWidth.Value / wristSpan;
         SetScale(wristBox, metersPerPixel);
-        wristBox.SetPositionAndRotation(anchor - rotation * (wristCenter * metersPerPixel), rotation);
+        wristBox.SetPositionAndRotation(
+            anchor - rotation * (wristCenter * metersPerPixel),
+            rotation
+        );
     }
 
     /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>
@@ -209,7 +234,10 @@ internal sealed class HudSplit
         if (!applied || appliedReticle != ReticleMode.Head || reticleBox == null)
             return;
         SetScale(reticleBox, hud.MetersPerPixel * ReticleDistance / cfg.HudDistance.Value);
-        reticleBox.SetPositionAndRotation(head.position + head.forward * ReticleDistance, head.rotation);
+        reticleBox.SetPositionAndRotation(
+            head.position + head.forward * ReticleDistance,
+            head.rotation
+        );
     }
 
     private void SetScale(RectTransform box, float metersPerPixel)

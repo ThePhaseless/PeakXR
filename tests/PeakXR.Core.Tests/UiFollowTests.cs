@@ -2,7 +2,13 @@ namespace PeakXR.Core.Tests;
 
 public class LazyYawFollowTests
 {
-    static LazyYawFollow Make() => new LazyYawFollow { Threshold = 30f, Settle = 2f, Rate = 1000f };
+    static LazyYawFollow Make() =>
+        new LazyYawFollow
+        {
+            Threshold = 30f,
+            Settle = 2f,
+            Rate = 1000f,
+        };
 
     [Fact]
     public void FirstUpdate_SnapsToTarget()

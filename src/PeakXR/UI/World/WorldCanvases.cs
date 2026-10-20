@@ -65,8 +65,12 @@ internal static class WorldCanvases
 
     public static void Scan(bool includeInactive)
     {
-        pending.AddRange(Object.FindObjectsByType<Canvas>(
-            includeInactive ? FindObjectsInactive.Include : FindObjectsInactive.Exclude, FindObjectsSortMode.None));
+        pending.AddRange(
+            Object.FindObjectsByType<Canvas>(
+                includeInactive ? FindObjectsInactive.Include : FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None
+            )
+        );
     }
 
     /// <summary>Forget canvases that died with the old scene so their ids can be pruned.</summary>
@@ -123,9 +127,10 @@ internal static class WorldCanvases
 
         var rect = (RectTransform)root.transform;
         var scaler = root.GetComponent<CanvasScaler>();
-        var size = scaler != null && scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize
-            ? scaler.referenceResolution
-            : rect.sizeDelta;
+        var size =
+            scaler != null && scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize
+                ? scaler.referenceResolution
+                : rect.sizeDelta;
         if (size.x < 1f || size.y < 1f)
             size = new Vector2(1920f, 1080f);
 
@@ -137,11 +142,14 @@ internal static class WorldCanvases
             Kind = kind,
             Placement = placement,
             Windows = windows.ToArray(),
-            Modal = root.GetComponentInParent<Modal>(true) ?? root.GetComponentInChildren<Modal>(true),
+            Modal =
+                root.GetComponentInParent<Modal>(true) ?? root.GetComponentInChildren<Modal>(true),
             Size = size,
         };
         tracked.Add(t);
-        Plugin.Log.LogDebug($"[ui.world] canvas '{root.name}' ({root.renderMode}, sort {root.sortingOrder}) -> {kind}");
+        Plugin.Log.LogDebug(
+            $"[ui.world] canvas '{root.name}' ({root.renderMode}, sort {root.sortingOrder}) -> {kind}"
+        );
         if (converting)
             Convert(t);
     }
@@ -219,10 +227,20 @@ internal static class WorldCanvases
                     break;
                 case CanvasKind.Info:
                     // A little closer than the HUD so the two never z-fight.
-                    Apply(t, hud.Position - hud.Rotation * new Vector3(0f, 0f, 0.02f), hud.Rotation, hud.MetersPerPixel * t.Size.x);
+                    Apply(
+                        t,
+                        hud.Position - hud.Rotation * new Vector3(0f, 0f, 0.02f),
+                        hud.Rotation,
+                        hud.MetersPerPixel * t.Size.x
+                    );
                     break;
                 case CanvasKind.Custom:
-                    var result = t.Placement.Place(t.Canvas, out var pos, out var rot, out var width);
+                    var result = t.Placement.Place(
+                        t.Canvas,
+                        out var pos,
+                        out var rot,
+                        out var width
+                    );
                     if (result == PlacementResult.Placed)
                     {
                         Apply(t, pos, rot, width);
@@ -231,7 +249,8 @@ internal static class WorldCanvases
                     else if (result == PlacementResult.Hidden)
                         t.Rect.localScale = Vector3.zero;
                     else
-                        interactive |= PlaceMenu(t, head, cfg, ref openMenus) && t.Placement.Interactive;
+                        interactive |=
+                            PlaceMenu(t, head, cfg, ref openMenus) && t.Placement.Interactive;
                     break;
                 case CanvasKind.Menu:
                     interactive |= PlaceMenu(t, head, cfg, ref openMenus);
@@ -257,7 +276,12 @@ internal static class WorldCanvases
 
     /// <summary>World-locked menu: spawned in front of the head when it opens, re-spawned if the
     /// player ends up far away from it (teleport, respawn).</summary>
-    private static bool PlaceMenu(TrackedCanvas t, Transform head, UIWorldSettings cfg, ref int openMenus)
+    private static bool PlaceMenu(
+        TrackedCanvas t,
+        Transform head,
+        UIWorldSettings cfg,
+        ref int openMenus
+    )
     {
         if (!t.IsOpen)
         {
@@ -281,7 +305,12 @@ internal static class WorldCanvases
         return true;
     }
 
-    private static void Apply(TrackedCanvas t, Vector3 position, Quaternion rotation, float widthMeters)
+    private static void Apply(
+        TrackedCanvas t,
+        Vector3 position,
+        Quaternion rotation,
+        float widthMeters
+    )
     {
         var rect = t.Rect;
         rect.SetPositionAndRotation(position, rotation);

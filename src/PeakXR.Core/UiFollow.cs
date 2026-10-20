@@ -12,8 +12,10 @@ namespace PeakXR.Core
     {
         /// <summary>Degrees the head may turn away before the panel starts following.</summary>
         public float Threshold = 35f;
+
         /// <summary>Degrees from the head yaw at which following stops.</summary>
         public float Settle = 2f;
+
         /// <summary>Exponential catch-up rate (1/s).</summary>
         public float Rate = 4f;
 
@@ -75,7 +77,10 @@ namespace PeakXR.Core
             else
             {
                 float step = dt / Seconds;
-                Linear = Linear < target ? MathF.Min(target, Linear + step) : MathF.Max(target, Linear - step);
+                Linear =
+                    Linear < target
+                        ? MathF.Min(target, Linear + step)
+                        : MathF.Max(target, Linear - step);
             }
             return Alpha;
         }
@@ -91,7 +96,8 @@ namespace PeakXR.Core
         /// up vector says where the face points.</summary>
         public static float YawOf(Vector3 forward, Vector3 up)
         {
-            float x = forward.X, z = forward.Z;
+            float x = forward.X,
+                z = forward.Z;
             if (x * x + z * z < 1e-4f)
             {
                 float sign = forward.Y < 0f ? 1f : -1f;
@@ -105,14 +111,15 @@ namespace PeakXR.Core
         /// <paramref name="yaw"/>, dropped <paramref name="tiltDeg"/> degrees below eye level.</summary>
         public static Vector3 InFront(float yaw, float distance, float tiltDeg)
         {
-            float y = yaw / UnityQuat.Rad2Deg, t = tiltDeg / UnityQuat.Rad2Deg;
+            float y = yaw / UnityQuat.Rad2Deg,
+                t = tiltDeg / UnityQuat.Rad2Deg;
             float flat = distance * MathF.Cos(t);
             return new Vector3(MathF.Sin(y) * flat, -distance * MathF.Sin(t), MathF.Cos(y) * flat);
         }
 
         /// <summary>Scale that makes a canvas <paramref name="widthPixels"/> wide span
         /// <paramref name="widthMeters"/>. Falls back to 1 mm per pixel for an empty canvas.</summary>
-        public static float MetersPerPixel(float widthMeters, float widthPixels)
-            => widthPixels > 0f ? widthMeters / widthPixels : 0.001f;
+        public static float MetersPerPixel(float widthMeters, float widthPixels) =>
+            widthPixels > 0f ? widthMeters / widthPixels : 0.001f;
     }
 }

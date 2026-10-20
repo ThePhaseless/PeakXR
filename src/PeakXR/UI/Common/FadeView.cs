@@ -19,6 +19,9 @@ internal static class FadeView
     /// <summary>0 = clear, 1 = black.</summary>
     public static float Alpha => easer.Alpha;
 
+    /// <summary>Go black at once, for a scene cut that happened without warning.</summary>
+    public static void Snap(float alpha) => easer.Snap(alpha);
+
     public static void Tick()
     {
         if (lastFrame == Time.frameCount)

@@ -55,11 +55,19 @@ internal sealed class LaserPointer
         line.numCapVertices = 2;
         line.shadowCastingMode = ShadowCastingMode.Off;
         line.receiveShadows = false;
-        line.sharedMaterial = UIMaterials.Create(new Color(1f, 1f, 1f, 0.55f), drawOnTop: false, renderQueue: 3100);
+        line.sharedMaterial = UIMaterials.Create(
+            new Color(1f, 1f, 1f, 0.55f),
+            drawOnTop: false,
+            renderQueue: 3100
+        );
         line.sortingOrder = short.MaxValue;
 
-        var dot = UIMaterials.MeshObject("PeakXR_Cursor", UIMaterials.SphereMesh(),
-            UIMaterials.Create(new Color(1f, 1f, 1f, 0.95f), drawOnTop: true, renderQueue: 3200), parent);
+        var dot = UIMaterials.MeshObject(
+            "PeakXR_Cursor",
+            UIMaterials.SphereMesh(),
+            UIMaterials.Create(new Color(1f, 1f, 1f, 0.95f), drawOnTop: true, renderQueue: 3200),
+            parent
+        );
         dot.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
         cursor = dot.transform;
 
@@ -118,7 +126,11 @@ internal sealed class LaserPointer
         if (over != null && !hands.Held && Mathf.Abs(stick) > 0.2f)
         {
             data.scrollDelta = new Vector2(0f, stick * cfg.ScrollSpeed.Value * dt);
-            ExecuteEvents.ExecuteHierarchy(ExecuteEvents.GetEventHandler<IScrollHandler>(over), data, ExecuteEvents.scrollHandler);
+            ExecuteEvents.ExecuteHierarchy(
+                ExecuteEvents.GetEventHandler<IScrollHandler>(over),
+                data,
+                ExecuteEvents.scrollHandler
+            );
         }
 
         var origin = aim.position;
@@ -168,7 +180,8 @@ internal sealed class LaserPointer
             pressed = click;
 
         var now = Time.unscaledTime;
-        data.clickCount = pressed == data.lastPress && now - data.clickTime < 0.3f ? data.clickCount + 1 : 1;
+        data.clickCount =
+            pressed == data.lastPress && now - data.clickTime < 0.3f ? data.clickCount + 1 : 1;
         data.clickTime = now;
         data.pointerPress = pressed;
         data.rawPointerPress = over;
@@ -280,9 +293,9 @@ internal sealed class LaserPointer
         if (a == null || b == null)
             return null;
         for (var x = a.transform; x != null; x = x.parent)
-            for (var y = b.transform; y != null; y = y.parent)
-                if (x == y)
-                    return x;
+        for (var y = b.transform; y != null; y = y.parent)
+            if (x == y)
+                return x;
         return null;
     }
 

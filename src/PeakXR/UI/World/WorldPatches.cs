@@ -12,7 +12,8 @@ namespace PeakXR.UI.World;
 [HarmonyPatch(typeof(CanvasScaler), "OnEnable")]
 internal static class CanvasScalerEnablePatch
 {
-    private static void Postfix(CanvasScaler __instance) => WorldCanvases.Track(__instance.GetComponent<Canvas>());
+    private static void Postfix(CanvasScaler __instance) =>
+        WorldCanvases.Track(__instance.GetComponent<Canvas>());
 }
 
 /// <summary>Windows inside an always-active canvas (passport, boarding pass) re-spawn in front of the
@@ -22,7 +23,12 @@ internal static class MenuWindowOpenPatch
 {
     private static MethodBase TargetMethod() => GameMember.Method(typeof(MenuWindow), "Open");
 
-    private static void Postfix(MenuWindow __instance) => WorldCanvases.Reopen(__instance.GetComponentInParent<Canvas>());
+    // The window may sit on a parent of its canvas (PassportManager) or inside it (EndScreen).
+    private static void Postfix(MenuWindow __instance) =>
+        WorldCanvases.Reopen(
+            __instance.GetComponentInParent<Canvas>()
+                ?? __instance.GetComponentInChildren<Canvas>(true)
+        );
 }
 
 /// <summary>Nested canvases spawned at runtime (dropdown lists and their blockers) must raycast through
@@ -50,7 +56,11 @@ internal static class CameraQuadPatch
     {
         if (!UIWorldRuntime.Ready)
             return true;
-        StatusOverlays.Place(__instance.transform, VRRig.Instance, UIWorldFeature.Settings.StatusOverlays.Value);
+        StatusOverlays.Place(
+            __instance.transform,
+            VRRig.Instance,
+            UIWorldFeature.Settings.StatusOverlays.Value
+        );
         return false;
     }
 }
@@ -60,7 +70,8 @@ internal static class CameraQuadPatch
 [HarmonyPatch]
 internal static class PlayerNamePatch
 {
-    private static MethodBase TargetMethod() => GameMember.Method(typeof(UIPlayerNames), nameof(UIPlayerNames.UpdateName));
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(UIPlayerNames), nameof(UIPlayerNames.UpdateName));
 
     private static void Postfix(UIPlayerNames __instance, int index, Vector3 position)
     {

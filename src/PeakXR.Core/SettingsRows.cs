@@ -10,10 +10,13 @@ namespace PeakXR.Core
     {
         /// <summary>bool: Off/On dropdown.</summary>
         Toggle,
+
         /// <summary>Enum or a list of acceptable values: dropdown.</summary>
         Choice,
+
         /// <summary>Number with an acceptable range: slider.</summary>
         Slider,
+
         /// <summary>Anything else the config can parse from text: text field.</summary>
         Text,
         Unsupported,
@@ -42,10 +45,17 @@ namespace PeakXR.Core
         }
 
         public static bool IsIntegral(Type t) =>
-            t == typeof(int) || t == typeof(long) || t == typeof(short) || t == typeof(byte) ||
-            t == typeof(uint) || t == typeof(ulong) || t == typeof(ushort) || t == typeof(sbyte);
+            t == typeof(int)
+            || t == typeof(long)
+            || t == typeof(short)
+            || t == typeof(byte)
+            || t == typeof(uint)
+            || t == typeof(ulong)
+            || t == typeof(ushort)
+            || t == typeof(sbyte);
 
-        static bool IsNumeric(Type t) => IsIntegral(t) || t == typeof(float) || t == typeof(double) || t == typeof(decimal);
+        static bool IsNumeric(Type t) =>
+            IsIntegral(t) || t == typeof(float) || t == typeof(double) || t == typeof(decimal);
 
         /// <summary>"SnapTurnAngle" becomes "Snap turn angle"; acronyms such as HUD or VR stay upper case.</summary>
         public static string Prettify(string key)
@@ -58,13 +68,17 @@ namespace PeakXR.Core
             for (int i = 0; i < words.Count; i++)
             {
                 string w = words[i];
-                bool acronym = w.Length > 1 && string.Equals(w.ToUpperInvariant(), w, StringComparison.Ordinal) && char.IsLetter(w[0]);
+                bool acronym =
+                    w.Length > 1
+                    && string.Equals(w.ToUpperInvariant(), w, StringComparison.Ordinal)
+                    && char.IsLetter(w[0]);
                 if (i > 0)
                     sb.Append(' ');
                 if (acronym)
                     sb.Append(w);
                 else if (i == 0)
-                    sb.Append(char.ToUpperInvariant(w[0])).Append(w.Substring(1).ToLowerInvariant());
+                    sb.Append(char.ToUpperInvariant(w[0]))
+                        .Append(w.Substring(1).ToLowerInvariant());
                 else
                     sb.Append(w.ToLowerInvariant());
             }
@@ -76,12 +90,18 @@ namespace PeakXR.Core
             int start = 0;
             for (int i = 1; i < s.Length; i++)
             {
-                char prev = s[i - 1], c = s[i];
+                char prev = s[i - 1],
+                    c = s[i];
                 bool boundary =
-                    (char.IsLower(prev) && char.IsUpper(c)) ||
-                    (char.IsUpper(prev) && char.IsUpper(c) && i + 1 < s.Length && char.IsLower(s[i + 1])) ||
-                    (char.IsLetter(prev) && char.IsDigit(c)) ||
-                    (char.IsDigit(prev) && char.IsLetter(c));
+                    (char.IsLower(prev) && char.IsUpper(c))
+                    || (
+                        char.IsUpper(prev)
+                        && char.IsUpper(c)
+                        && i + 1 < s.Length
+                        && char.IsLower(s[i + 1])
+                    )
+                    || (char.IsLetter(prev) && char.IsDigit(c))
+                    || (char.IsDigit(prev) && char.IsLetter(c));
                 if (boundary)
                 {
                     words.Add(s.Substring(start, i - start));
@@ -96,7 +116,10 @@ namespace PeakXR.Core
         public static string Format(float value, bool integral, float min, float max)
         {
             float span = MathF.Abs(max - min);
-            string format = integral || span >= 100f ? "0" : span >= 10f ? "0.0" : "0.00";
+            string format =
+                integral || span >= 100f ? "0"
+                : span >= 10f ? "0.0"
+                : "0.00";
             return value.ToString(format, CultureInfo.InvariantCulture);
         }
     }

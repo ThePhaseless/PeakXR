@@ -128,7 +128,8 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         if (current != transitions)
         {
             transitions = current;
-            transitionList = current != null ? current.GetComponentsInChildren<Transition>(true) : noTransitions;
+            transitionList =
+                current != null ? current.GetComponentsInChildren<Transition>(true) : noTransitions;
             transitionGroups = new CanvasGroup[transitionList.Length];
             transitionRenderers = new MeshRenderer[transitionList.Length];
             for (int i = 0; i < transitionList.Length; i++)
@@ -152,7 +153,12 @@ internal sealed class UIWorldRuntime : MonoBehaviour
                 renderer.forceRenderingOff = true;
                 var material = renderer.sharedMaterial;
                 var progress = material.GetFloat(ProgressId);
-                alpha = Mathf.Max(alpha, material.GetInt(InId) == 1 ? shader.inCurve.Evaluate(progress) : shader.outCurve.Evaluate(progress));
+                alpha = Mathf.Max(
+                    alpha,
+                    material.GetInt(InId) == 1
+                        ? shader.inCurve.Evaluate(progress)
+                        : shader.outCurve.Evaluate(progress)
+                );
             }
         }
 

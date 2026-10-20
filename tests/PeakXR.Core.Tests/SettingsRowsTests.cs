@@ -2,10 +2,18 @@ namespace PeakXR.Core.Tests;
 
 public class SettingsRowsTests
 {
-    public enum Mode { A, B }
+    public enum Mode
+    {
+        A,
+        B,
+    }
 
     [Flags]
-    public enum Bits { None = 0, X = 1 }
+    public enum Bits
+    {
+        None = 0,
+        X = 1,
+    }
 
     [Theory]
     [InlineData(typeof(bool), false, false, true, RowKind.Toggle)]
