@@ -3,7 +3,6 @@ using System.Reflection;
 using BepInEx.Configuration;
 using HarmonyLib;
 using PeakXR.Framework;
-using PeakXR.UI.World;
 
 namespace PeakXR.UI.Keyboard;
 
@@ -18,17 +17,13 @@ public sealed class UIKeyboardFeature : Feature
 {
     public override string Id => "ui.keyboard";
 
-    public override int Order => 57;
+    public override int Order => 59;
 
     internal static ConfigEntry<float> Distance;
     internal static ConfigEntry<float> Width;
     internal static ConfigEntry<float> Tilt;
     internal static ConfigEntry<bool> Poke;
     internal static ConfigEntry<float> Haptics;
-
-    /// <summary>Room code length for the join dialog (Portningsbolaget Utilities.ROOM_NAME_LENGTH, read by
-    /// A/MainMenuJoinRoomPage.cs:32); Steam's own default of 20 when it cannot be read.</summary>
-    internal static int RoomCodeLength = 20;
 
     protected internal override void Install()
     {
@@ -37,7 +32,11 @@ public sealed class UIKeyboardFeature : Feature
             section,
             "KeyboardDistance",
             0.5f,
-            Range("Distance of the keyboard from your head, in metres. Within arm's reach you can poke the keys.", 0.3f, 1.5f)
+            Range(
+                "Distance of the keyboard from your head, in metres. Within arm's reach you can poke the keys.",
+                0.3f,
+                1.5f
+            )
         );
         Width = Plugin.Settings.Bind(
             section,
@@ -64,20 +63,8 @@ public sealed class UIKeyboardFeature : Feature
             Range("Strength of the tick when you poke a key. 0 turns it off.", 0f, 1f)
         );
 
-        RoomCodeLength = ReadRoomCodeLength() ?? RoomCodeLength;
-        CanvasRules.AddCustom(typeof(VRKeyboardPanel).FullName, KeyboardPlacement.Instance);
         Patch(typeof(PlatformDialogPatch));
         VRKeyboard.Create();
-    }
-
-    private static int? ReadRoomCodeLength()
-    {
-        var type = AccessTools.TypeByName("Portningsbolaget.Utilities.Utilities");
-        var field = type != null ? AccessTools.Field(type, "ROOM_NAME_LENGTH") : null;
-        if (field == null)
-            return null;
-        var value = field.IsLiteral ? field.GetRawConstantValue() : field.GetValue(null);
-        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static ConfigDescription Range(string text, float min, float max) =>
@@ -99,7 +86,10 @@ internal static class PlatformDialogPatch
 
     private static bool Prepare()
     {
+        // SteamRuntimeManager lives in SteamCommon.dll, which the plugin does not reference.
+#pragma warning disable BHA0003
         var type = AccessTools.TypeByName("SteamRuntimeManager");
+#pragma warning restore BHA0003
         target = type != null ? AccessTools.Method(type, "OpenDialog") : null;
         if (target == null)
             Plugin.Log.LogWarning(
@@ -119,9 +109,21 @@ internal static class PlatformDialogPatch
         var callback = __args[2] as Delegate;
         var limit =
             kind == "Chat" ? 200
-            : kind == "JoinRoom" ? UIKeyboardFeature.RoomCodeLength
+            : kind == "JoinRoom" ? JoinCodeLength()
             : 20;
         return !VRKeyboard.TryOpenDialog(title, limit, (text, ok) => Answer(callback, text, ok));
+    }
+
+    /// <summary>The join page caps its field at the room code length (A/MainMenuJoinRoomPage.cs:32), the same
+    /// cap Steam's dialog uses.</summary>
+    private static int JoinCodeLength()
+    {
+        var page = UnityEngine.Object.FindFirstObjectByType<MainMenuJoinRoomPage>(
+            UnityEngine.FindObjectsInactive.Include
+        );
+        return page != null && page.roomInput != null && page.roomInput.characterLimit > 0
+            ? page.roomInput.characterLimit
+            : 20;
     }
 
     private static void Answer(Delegate callback, string text, bool submitted)

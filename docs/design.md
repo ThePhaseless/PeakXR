@@ -54,6 +54,9 @@ Shared contracts (written first, other features code against them):
 | `ui.menu` | 3D title menu, pause menu panel, 3D loading space with live tracking | |
 | `ui.settings` | VR tab in the game's settings menu, generated from `Plugin.Settings`, plus the compat report | |
 | `ui.passport` | passport and guidebook as books held above the item's hand, page turns by hand swipe or laser; softer photobooth flash | `new:photo-passport` rows |
+| `ui.status` | stamina, status and dying bars stay on the HUD panel or wrist (`ui.world`); full-screen status flashes become a peripheral edge glow with an intensity setting, dying bar tint, controller pulses for bonus stamina and morale boosts | `new:status-hud` rows |
+| `ui.wheels` | emote and backpack wheels as small 3D radial menus at the opening hand; emote picked by hand travel or stick, backpack picked by `inventory.vr` (hand) or stick; head look keeps running while a wheel is open | opens from the `player.locomotion` Emote binding and the interact grip |
+| `ui.keyboard` | world-space laser/poke keyboard that opens when a TMP input field gains focus (room code, report reason) and types through the field's own key handling; Steam gamepad text dialogs open it too | `new:vr-text-input` rows |
 | `ui.lobby` | boarding pass and custom run options docked at the check-in kiosk; invite-kiosk note when the Steam overlay is off-headset | `new:lobby-flow` rows |
 | `ui.runflow` | warps, campfire segment swaps, run end, beach wake-up and credits as fade-out, black hold, fade-in; summit portal fade; shakes become rumble; end cutscene and credits on a world-locked screen; results panel; any button ends the credits | `new:run-flow` rows; builds on `VRFade`, generic camera takeover stays in `rig.camera` |
 | `ui.hand` | hold-to-use progress ring and friend item-use feed on the hands, with quarter-step haptics | IC-12, IN-04, MF-105 |

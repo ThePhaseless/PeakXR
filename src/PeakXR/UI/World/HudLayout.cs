@@ -131,6 +131,8 @@ internal sealed class HudSplit
                     : null
             );
             MoveGroup(gui.backpack != null ? gui.backpack.transform : null);
+            // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
+            MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
             var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(box);
             wristCenter = bounds.center;
             wristSpan = Mathf.Max(1f, bounds.size.x);

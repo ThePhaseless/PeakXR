@@ -17,7 +17,7 @@ public sealed class UIWheelsFeature : Feature
 {
     public override string Id => "ui.wheels";
 
-    public override int Order => 56;
+    public override int Order => 58;
 
     internal static ConfigEntry<float> Size;
     internal static ConfigEntry<float> FlickDistance;
