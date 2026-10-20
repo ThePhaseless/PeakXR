@@ -58,6 +58,36 @@ internal static class RenderPatches
         private static bool Prefix() => !VRSession.Active;
     }
 
+    /// <summary>ShadowDistanceSettings.ApplyValue (ShadowDistanceSettings.cs:17) writes the shared URP asset's
+    /// shadow distance and cascades; in VR render.fixes caps the distance instead. RenderDriver re-applies the
+    /// game value when VR stops.</summary>
+    [HarmonyPatch]
+    internal static class ShadowDistanceApply
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(ShadowDistanceSettings),
+                nameof(ShadowDistanceSettings.ApplyValue)
+            );
+
+        private static bool Prefix() => !VRSession.Active;
+    }
+
+    /// <summary>Volume.OnEnable (Unity.RenderPipelines.Core.Runtime, private): volumes spawned or switched on after
+    /// the scene loaded, such as the warp compass VFX (WarpCompassVFX.cs:7-9, toggled at :44-45), get the same
+    /// comfort pass as the scene's volumes.</summary>
+    [HarmonyPatch]
+    internal static class VolumeEnable
+    {
+        private static MethodBase TargetMethod() => GameMember.Method(typeof(Volume), "OnEnable");
+
+        private static void Postfix(Volume __instance)
+        {
+            if (VRSession.Active)
+                RenderDriver.OnVolumeEnabled(__instance);
+        }
+    }
+
     /// <summary>Peak.LimitFrameRate.Start (Peak/LimitFrameRate.cs:9) caps the game at 144 on scene start.</summary>
     [HarmonyPatch]
     internal static class LimitFrameRateStart

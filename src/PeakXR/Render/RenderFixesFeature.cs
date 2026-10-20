@@ -33,6 +33,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<float> DynamicResolutionMin;
     internal static ConfigEntry<bool> AmbientOcclusion;
     internal static ConfigEntry<bool> EdgeDetection;
+    internal static ConfigEntry<float> ShadowDistance;
     internal static ConfigEntry<bool> ComfortSettings;
 
     public override string Id => "render.fixes";
@@ -57,8 +58,8 @@ public sealed class RenderFixesFeature : Feature
             "MSAA",
             4,
             new ConfigDescription(
-                "Hardware anti-aliasing samples on the eye buffers in VR. URP ignores it while the game's renderer "
-                    + "is in Deferred mode; then Antialiasing below is what smooths edges.",
+                "Hardware anti-aliasing samples on the eye buffers in VR. Forced to 1 while the game's renderer is "
+                    + "in Deferred mode (URP cannot use MSAA there); then Antialiasing below is what smooths edges.",
                 new AcceptableValueList<int>(1, 2, 4, 8)
             )
         );
@@ -101,10 +102,20 @@ public sealed class RenderFixesFeature : Feature
         EdgeDetection = Plugin.Settings.Bind(
             section,
             "EdgeDetection",
-            true,
+            false,
             new ConfigDescription(
-                "Keep the game's outline (edge detection) pass in VR. It works per eye in MultiPass; turn it off "
-                    + "to save GPU time or if outlines shimmer between the eyes."
+                "Keep the game's outline (edge detection) pass in VR. Off by default: it runs full screen once per "
+                    + "eye. It works per eye in MultiPass; turn it on for the game's outlined look."
+            )
+        );
+        ShadowDistance = Plugin.Settings.Bind(
+            section,
+            "ShadowDistance",
+            60f,
+            new ConfigDescription(
+                "Furthest distance (m) that casts shadows in VR, capping the game's Shadow Distance setting (150 m on "
+                    + "Medium). Shadow maps render once per eye, so a shorter distance saves GPU time.",
+                new AcceptableValueRange<float>(0f, 200f)
             )
         );
         ComfortSettings = Plugin.Settings.Bind(
@@ -121,6 +132,8 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.RenderScaleApply));
         Patch(typeof(RenderPatches.FpsCapApply));
         Patch(typeof(RenderPatches.VSyncApply));
+        Patch(typeof(RenderPatches.ShadowDistanceApply));
+        Patch(typeof(RenderPatches.VolumeEnable));
         Patch(typeof(RenderPatches.LimitFrameRateStart));
         Patch(typeof(RenderPatches.PostHandlerLateUpdate));
 

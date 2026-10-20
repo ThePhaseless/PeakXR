@@ -21,6 +21,8 @@ internal sealed class RenderDriver : MonoBehaviour
 {
     private const string Tag = "[render.fixes]";
 
+    private static RenderDriver instance;
+
     private readonly ViewportScaler scaler = new();
     private readonly HashSet<VolumeComponent> disabledComponents = new();
     private readonly List<ScriptableRendererFeature> toggledFeatures = new();
@@ -32,6 +34,7 @@ internal sealed class RenderDriver : MonoBehaviour
     private float savedRenderScale;
     private UpscalingFilterSelection savedUpscaling;
     private int savedMsaa;
+    private float savedShadowDistance;
     private int savedTargetFrameRate;
     private int savedVSync;
 
@@ -42,12 +45,14 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void OnEnable()
     {
+        instance = this;
         VRSession.Started += Apply;
         VRSession.Stopped += Revert;
         SceneManager.sceneLoaded += OnSceneLoaded;
         RenderFixesFeature.RenderScale.SettingChanged += OnQualityChanged;
         RenderFixesFeature.Msaa.SettingChanged += OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged += OnQualityChanged;
+        RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
         if (VRSession.Active)
             Apply();
     }
@@ -60,6 +65,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.RenderScale.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.Msaa.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged -= OnQualityChanged;
+        RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
         Revert();
     }
 
@@ -80,6 +86,7 @@ internal sealed class RenderDriver : MonoBehaviour
             savedRenderScale = urp.renderScale;
             savedUpscaling = urp.upscalingFilter;
             savedMsaa = urp.msaaSampleCount;
+            savedShadowDistance = urp.shadowDistance;
         }
         else
         {
@@ -110,6 +117,7 @@ internal sealed class RenderDriver : MonoBehaviour
             urp.renderScale = savedRenderScale;
             urp.upscalingFilter = savedUpscaling;
             urp.msaaSampleCount = savedMsaa;
+            urp.shadowDistance = savedShadowDistance;
         }
         foreach (var c in disabledComponents)
             if (c != null)
@@ -119,7 +127,31 @@ internal sealed class RenderDriver : MonoBehaviour
         RestoreSettings();
         UnbindCamera();
         XRSettings.renderViewportScale = 1f;
+        ReapplyGameSettings();
         Plugin.Log.LogInfo($"{Tag} Reverted for flat play");
+    }
+
+    /// <summary>The settings whose ApplyValue is skipped in VR may have changed in the game menu meanwhile: apply
+    /// their current values now instead of the ones saved at Apply.</summary>
+    private static void ReapplyGameSettings()
+    {
+        var handler = GameHandler.Instance != null ? GameHandler.Instance.SettingsHandler : null;
+        if (handler == null)
+            return;
+        handler.GetSetting<RenderScaleSetting>()?.ApplyValue();
+        handler.GetSetting<FPSCapSetting>()?.ApplyValue();
+        handler.GetSetting<VSyncSetting>()?.ApplyValue();
+        handler.GetSetting<ShadowDistanceSettings>()?.ApplyValue();
+    }
+
+    /// <summary>A Volume enabled after the scene loaded (item VFX such as the warp compass, WarpCompassVFX.cs:7-9).</summary>
+    internal static void OnVolumeEnabled(Volume volume)
+    {
+        if (instance == null || !instance.applied)
+            return;
+        instance.DisableIn(volume.sharedProfile);
+        if (volume.HasInstantiatedProfile())
+            instance.DisableIn(volume.profile);
     }
 
     private void OnQualityChanged(object sender, System.EventArgs e)
@@ -135,14 +167,20 @@ internal sealed class RenderDriver : MonoBehaviour
     }
 
     /// <summary>URP asset and renderer features: render scale once (it reallocates eye buffers), MSAA,
-    /// linear upscaling (STP is temporal and needs TAA, which URP cannot combine with XR dynamic resolution).</summary>
+    /// linear upscaling (STP is temporal and needs TAA, which URP cannot combine with XR dynamic resolution),
+    /// and a shadow distance cap (the shadow maps render for each eye pass).</summary>
     private void ApplyQuality()
     {
         if (urp == null)
             return;
         urp.renderScale = RenderFixesFeature.RenderScale.Value;
         urp.upscalingFilter = UpscalingFilterSelection.Linear;
-        urp.msaaSampleCount = RenderFixesFeature.Msaa.Value;
+        // Deferred renders without MSAA, but XR would still allocate multisampled eye textures and resolve them.
+        urp.msaaSampleCount = IsDeferred(urp) ? 1 : RenderFixesFeature.Msaa.Value;
+        urp.shadowDistance = Mathf.Min(
+            savedShadowDistance,
+            RenderFixesFeature.ShadowDistance.Value
+        );
 
         RestoreFeatures();
         foreach (var data in urp.rendererDataList)
@@ -160,6 +198,17 @@ internal sealed class RenderDriver : MonoBehaviour
                 feature.SetActive(feature.isActive && RenderFixesFeature.EdgeDetection.Value);
             }
         }
+    }
+
+    private static bool IsDeferred(UniversalRenderPipelineAsset asset)
+    {
+        var list = asset.rendererDataList;
+        return list.Length > 0
+            && list[0]
+                is UniversalRendererData
+                {
+                    renderingMode: RenderingMode.Deferred or RenderingMode.DeferredPlus
+                };
     }
 
     private void RestoreFeatures()
@@ -181,7 +230,8 @@ internal sealed class RenderDriver : MonoBehaviour
     /// Turns off view effects that make VR users sick or break stereo, in every Volume profile of the loaded
     /// scenes (found by component type, never by object name): MotionBlur (Fall/PassOut volumes),
     /// LensDistortion and ChromaticAberration (warp, sugar rush, soul statue), DepthOfField (blur volume),
-    /// FilmGrain (cold), Vignette (base look; the comfort vignette replaces it).
+    /// FilmGrain (cold), Vignette (base look; the comfort vignette replaces it), ScreenSpaceLensFlare (a per-eye
+    /// pass whose flares differ between the eyes).
     /// </summary>
     private void DisableComfortEffects()
     {
@@ -221,6 +271,7 @@ internal sealed class RenderDriver : MonoBehaviour
                         or DepthOfField
                         or FilmGrain
                         or Vignette
+                        or ScreenSpaceLensFlare
             )
             {
                 c.active = false;
