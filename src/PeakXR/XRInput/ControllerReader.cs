@@ -19,6 +19,9 @@ internal sealed class ControllerReader
     private const float ThumbFullCurl = 120f;
     private const float FingerFullCurl = 240f;
 
+    // A firm trackpad squeeze, well above a resting thumb.
+    private const float PadMenuForce = 0.6f;
+
     private readonly bool left;
     private readonly InputDeviceCharacteristics side;
     private readonly List<InputFeatureUsage> scratch = new();
@@ -39,7 +42,8 @@ internal sealed class ControllerReader
     private bool hadPosition;
 
     private XRInputSampler.Usage<float> trigger,
-        grip;
+        grip,
+        padMenuForce;
     private XRInputSampler.Usage<bool> triggerButton,
         gripButton,
         triggerTouch,
@@ -51,6 +55,7 @@ internal sealed class ControllerReader
         stickTouch,
         menu,
         padClick,
+        padMenuClick,
         isTracked;
     private XRInputSampler.Usage<Vector2> stick,
         pad;
@@ -133,6 +138,14 @@ internal sealed class ControllerReader
         pad = padIsStick ? stick : secondaryPad;
         padClick = padIsStick ? stickClick : secondaryPadClick;
 
+        // SteamVR keeps the Index system button (the profile's MenuButton) for its dashboard, so an Index player
+        // would have no pause or recenter. A trackpad next to real face buttons is otherwise unbound: its click or
+        // firm squeeze is the menu button too.
+        padMenuClick = emulateFaceButtons || padIsStick ? default : secondaryPadClick;
+        padMenuForce = emulateFaceButtons
+            ? default
+            : XRInputSampler.Usage<float>.Find(n, "Secondary2DAxisForce");
+
         anyFingerUsage = false;
         for (int i = 0; i < fingerUsages.Length; i++)
             fingerUsages[i] = default;
@@ -179,7 +192,7 @@ internal sealed class ControllerReader
         s.TriggerTouch = Bool(triggerTouch) || s.Trigger > 0.05f;
         s.Stick = Vec2(stick);
         s.StickTouch = Bool(stickTouch);
-        s.Menu = Bool(menu);
+        s.Menu = Bool(menu) || Bool(padMenuClick) || Float(padMenuForce) > PadMenuForce;
         s.PrimaryTouch = Bool(primaryTouch);
         s.SecondaryTouch = Bool(secondaryTouch);
 

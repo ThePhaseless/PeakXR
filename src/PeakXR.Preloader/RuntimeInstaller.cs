@@ -157,6 +157,8 @@ public sealed class RuntimeInstaller
             var dstHash = Sha256(dst);
             if (dstHash == srcHash)
             {
+                // Same bytes as ours (state file lost, second profile): track it so Disabled removes it.
+                _state[rel] = srcHash;
                 _log.LogDebug($"Up to date: {rel}");
                 return;
             }

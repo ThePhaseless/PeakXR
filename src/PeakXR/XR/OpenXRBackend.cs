@@ -48,6 +48,17 @@ sealed class OpenXRBackend : ManagedXRBackend
 
     public override VRRuntime Runtime => VRRuntime.OpenXR;
 
+    public override void Shutdown()
+    {
+        base.Shutdown();
+        // OpenXR may have queued a delayed restart (restart or get-system loop) that later deinitializes whatever
+        // XRGeneralSettings.Manager is then, the OpenVR fallback included. Its coroutines die with their object
+        // (OpenXRRestarter.cs:87); the package recreates it on the next OpenXR start.
+        var restarter = GameObject.Find("~oxrestarter");
+        if (restarter != null)
+            UnityEngine.Object.Destroy(restarter);
+    }
+
     protected override XRLoader CreateLoader(XRStartOptions options)
     {
         // Awake of a new OpenXRSettings registers it as OpenXRSettings.Instance in a player build.
