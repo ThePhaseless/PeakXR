@@ -116,8 +116,10 @@ internal sealed class SocialHands : IGripExtension
         float small = reach * 0.5f;
         float bestSq = small * small;
         var all = Character.AllCharacters;
+        // ThornOnMe.IsInteractible (ThornOnMe.cs:123) refuses while stuck; its aim-angle part is what the hand replaces.
+        bool canPluck = !c.IsStuck();
 
-        for (int i = 0; i < all.Count; i++)
+        for (int i = 0; canPluck && i < all.Count; i++)
         {
             var ch = all[i];
             if (ch == null || !ch.gameObject.activeInHierarchy || ch.refs.afflictions == null)
@@ -143,7 +145,12 @@ internal sealed class SocialHands : IGripExtension
         for (int i = 0; i < stuck.Count; i++)
         {
             var s = stuck[i];
-            if (s == null || s.item == null || s.stuckToCharacter == null)
+            if (
+                s == null
+                || s.item == null
+                || s.stuckToCharacter == null
+                || !s.item.IsInteractible(c)
+            )
                 continue;
             float d = (s.item.Center() - pos).sqrMagnitude;
             if (d < bestSq)
@@ -197,7 +204,16 @@ internal sealed class SocialHands : IGripExtension
                 return true;
             }
         }
-        if (c.data.currentItem == null && CharacterGrabbing.TargetCanBeHelped(other, c))
+        // CharacterGrabbing.CanGrab gates (CharacterGrabbing.cs:319): no reach while on a wall, rope or vine, so a
+        // climbing hand near a friend still catches the wall.
+        var cd = c.data;
+        if (
+            cd.currentItem == null
+            && !cd.isClimbing
+            && !cd.isRopeClimbing
+            && !cd.isVineClimbing
+            && CharacterGrabbing.TargetCanBeHelped(other, c)
+        )
         {
             kind = Kind.Reach;
             return true;

@@ -26,12 +26,6 @@ internal static class AimPatches
 
     private static CameraSwap Held(Item item) => On ? HandAim.BeginHeld(item) : default;
 
-    private static Exception End(Exception exception, CameraSwap swap)
-    {
-        swap.End();
-        return exception;
-    }
-
     /// <summary>Recoil on the holding hand, and softer on the supporting hand of a two-hand hold.</summary>
     private static void Shot(Item item, float amplitude, float seconds)
     {
@@ -54,7 +48,7 @@ internal static class AimPatches
             __state = Held(__instance.item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>RopeShooter.WillAttach (RopeShooter.cs:122-138): camera ray at :133. Also drives the usability
@@ -73,7 +67,7 @@ internal static class AimPatches
             __state = Held(__instance.item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>RopeShooter.OnPrimaryFinishedCast (RopeShooter.cs:72, private): fire ray along the camera at
@@ -100,7 +94,7 @@ internal static class AimPatches
         }
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>VineShooter.WillAttach (VineShooter.cs:71-92): camera ray at :78, pitch gates from the camera
@@ -119,7 +113,7 @@ internal static class AimPatches
             __state = Held(__instance.item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>VineShooter.OnPrimaryFinishedCast (VineShooter.cs:36, private): vine start 1 m ahead of the
@@ -134,7 +128,7 @@ internal static class AimPatches
             __state = Held(__instance.item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>RescueHook.GetMiddleScreenRay (RescueHook.cs:261-269): ScreenPointToRay(screen centre) is the only
@@ -182,7 +176,7 @@ internal static class AimPatches
             __state = Held(__instance.item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>Action_RaycastDart.FireDart (Action_RaycastDart.cs:37, private): ray and sphere cast from the
@@ -198,7 +192,7 @@ internal static class AimPatches
         private static void Postfix(Item ___item) => Shot(___item, 0.4f, 0.06f);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>Peak.Action_RaycastSpawnSomething.FixedUpdate (Peak/Action_RaycastSpawnSomething.cs:26, private):
@@ -212,7 +206,7 @@ internal static class AimPatches
         private static void Prefix(Item ___item, out CameraSwap __state) => __state = Held(___item);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>Peak.Action_RaycastSpawnSomething.RunAction (Peak/Action_RaycastSpawnSomething.cs:35): spawn point
@@ -228,7 +222,7 @@ internal static class AimPatches
         private static void Postfix(Item ___item) => Shot(___item, 0.9f, 0.2f);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>Peak.Action_CloneSelectedItem.RunAction (Peak/Action_CloneSelectedItem.cs:22): target pick through
@@ -245,7 +239,7 @@ internal static class AimPatches
         private static void Postfix(Item ___item) => Shot(___item, 0.5f, 0.1f);
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>
@@ -279,7 +273,7 @@ internal static class AimPatches
         }
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            End(__exception, __state);
+            CameraSwap.Restore(__exception, __state);
 
         private static bool IsSpike(Item item)
         {

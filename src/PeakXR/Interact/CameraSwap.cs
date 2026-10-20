@@ -52,6 +52,14 @@ internal readonly struct CameraSwap
         return swap;
     }
 
+    /// <summary>Harmony finalizer body: restores the camera and passes any exception on. Static, because Harmony
+    /// flags a call on a non-ref <c>__state</c> as a lost write.</summary>
+    public static System.Exception Restore(System.Exception exception, CameraSwap swap)
+    {
+        swap.End();
+        return exception;
+    }
+
     public void End()
     {
         // Child-first restore of local poses works whether or not one camera is parented under the other.
