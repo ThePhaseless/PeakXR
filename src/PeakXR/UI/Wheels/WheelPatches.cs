@@ -53,8 +53,11 @@ internal static class HeadLookWhileWheelOpenPatch
 }
 
 /// <summary>
-/// In VR the wheel slice comes from <see cref="RadialWheels"/>; the gamepad path would read a resting stick
-/// every frame and dehover it again. A/EmoteWheel.cs:139 <c>protected override void TestSelectSliceGamepad(Vector2)</c>.
+/// In VR a wheel's <c>TestSelectSliceGamepad</c> is read in the wheel's plane by <see cref="RadialWheels"/>: the game
+/// compares the vector with each slice's world-space up, which only fits a wheel facing +Z, and a resting stick
+/// would dehover a slice picked by hand every frame. inventory.vr steers the backpack wheel through this same
+/// method (<c>BodyInventory.SelectWheelSlice</c>), so one selector serves both. Wheels not on a VR hand run the
+/// game's code. A/EmoteWheel.cs:120 <c>protected override void TestSelectSliceGamepad(Vector2)</c>.
 /// </summary>
 [HarmonyPatch]
 internal static class EmoteWheelGamepadPatch
@@ -62,10 +65,11 @@ internal static class EmoteWheelGamepadPatch
     private static MethodBase TargetMethod() =>
         GameMember.Method(typeof(EmoteWheel), "TestSelectSliceGamepad", new[] { typeof(Vector2) });
 
-    private static bool Prefix() => !VRSession.Active;
+    private static bool Prefix(EmoteWheel __instance, Vector2 gamepadVector) =>
+        !VRSession.Active || !RadialWheels.Steer(__instance, gamepadVector);
 }
 
-/// <summary>Same as <see cref="EmoteWheelGamepadPatch"/>. A/BackpackWheel.cs:269 <c>protected override void
+/// <summary>Same as <see cref="EmoteWheelGamepadPatch"/>. A/BackpackWheel.cs:253 <c>protected override void
 /// TestSelectSliceGamepad(Vector2)</c>.</summary>
 [HarmonyPatch]
 internal static class BackpackWheelGamepadPatch
@@ -77,5 +81,6 @@ internal static class BackpackWheelGamepadPatch
             new[] { typeof(Vector2) }
         );
 
-    private static bool Prefix() => !VRSession.Active;
+    private static bool Prefix(BackpackWheel __instance, Vector2 gamepadVector) =>
+        !VRSession.Active || !RadialWheels.Steer(__instance, gamepadVector);
 }

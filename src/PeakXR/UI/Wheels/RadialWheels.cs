@@ -14,12 +14,18 @@ namespace PeakXR.UI.Wheels;
 /// <see cref="HudBox"/> and pinned, facing you, where the opening hand was. Each frame the hand's travel from
 /// that spot (or the hand's stick) picks a slice through <see cref="RadialSelector"/>, and the slice's own
 /// Hover/Dehover run, so releasing the button resolves through the game's Choose exactly as with a gamepad.
+/// The emote wheel is picked by hand travel or the opening hand's stick. The backpack wheel is picked by
+/// inventory.vr (hand movement, <c>Inventory.WheelByHand</c>) through the game's own
+/// <c>TestSelectSliceGamepad</c>; here it only gets a place at the hand, plus its stick as an alternative.
+/// Both go through the TestSelectSliceGamepad patches (WheelPatches.cs), which read such a call in the wheel's own plane.
 /// </summary>
 [DefaultExecutionOrder(31050)]
 internal sealed class RadialWheels : MonoBehaviour
 {
-    private readonly WheelDriver emote = new("PeakXR_EmoteWheel", rehoverEachFrame: true);
-    private readonly WheelDriver backpack = new("PeakXR_BackpackWheel", rehoverEachFrame: false);
+    private static RadialWheels instance;
+
+    private readonly WheelDriver emote = new("PeakXR_EmoteWheel", handDriven: true);
+    private readonly WheelDriver backpack = new("PeakXR_BackpackWheel", handDriven: false);
     private GUIManager gui;
     private EmoteWheel emoteWheel;
 
@@ -28,6 +34,32 @@ internal sealed class RadialWheels : MonoBehaviour
         var go = new GameObject("PeakXR_RadialWheels");
         DontDestroyOnLoad(go);
         go.AddComponent<RadialWheels>();
+    }
+
+    private void Awake() => instance = this;
+
+    private void OnDestroy()
+    {
+        if (instance == this)
+            instance = null;
+    }
+
+    /// <summary>
+    /// A call to a wheel's <c>TestSelectSliceGamepad</c> while it is on a VR hand: <paramref name="direction"/> is
+    /// read in the wheel's plane (x right, y up) instead of the game's world axes, which only fit a wheel facing
+    /// +Z. Returns false when the wheel is not managed here and the game's own code should run.
+    /// </summary>
+    public static bool Steer(UIWheel wheel, Vector2 direction)
+    {
+        if (instance == null)
+            return false;
+        if (instance.emote.Owns(wheel))
+            instance.emote.Steer(new NVector2(direction.x, direction.y), authoritative: false);
+        else if (instance.backpack.Owns(wheel))
+            instance.backpack.Steer(new NVector2(direction.x, direction.y), authoritative: false);
+        else
+            return false;
+        return true;
     }
 
     private void LateUpdate()
@@ -95,7 +127,7 @@ internal sealed class WheelDriver
     private const float HoverTickSeconds = 0.02f;
 
     private readonly HudBox box;
-    private readonly bool rehoverEachFrame;
+    private readonly bool handDriven;
     private readonly RadialSelector selector = new();
     private UIWheel wheel;
     private RectTransform direct;
@@ -104,16 +136,24 @@ internal sealed class WheelDriver
     private bool[] enabled = System.Array.Empty<bool>();
     private bool open,
         left;
+    private int selected = -1;
     private Vector3 centerLocal;
     private Quaternion rotationLocal;
     private Vector2 boxCenter;
     private float span = 1f;
 
-    public WheelDriver(string name, bool rehoverEachFrame)
+    /// <param name="handDriven">The hand's travel from the wheel centre picks the slice (emote). Off: only the
+    /// stick does here, and another feature steers by hand (backpack, inventory.vr).</param>
+    public WheelDriver(string name, bool handDriven)
     {
         box = new HudBox(name);
-        this.rehoverEachFrame = rehoverEachFrame;
+        this.handDriven = handDriven;
     }
+
+    /// <summary>The wheel is open, on a VR hand, and is <paramref name="candidate"/>.</summary>
+    public bool Owns(UIWheel candidate) => open && wheel == candidate;
+
+    private RectTransform Plane => direct != null ? direct : box.Rect;
 
     public void Forget()
     {
@@ -121,12 +161,14 @@ internal sealed class WheelDriver
         open = false;
         wheel = null;
         direct = null;
+        selected = -1;
     }
 
     public void Restore()
     {
         box.Restore();
         open = false;
+        selected = -1;
     }
 
     /// <param name="root">The object the game shows and hides; it is what moves to the hand.</param>
@@ -139,6 +181,7 @@ internal sealed class WheelDriver
             if (open)
                 selector.Reset();
             open = false;
+            selected = -1;
             return;
         }
         if (!open || current != wheel)
@@ -156,7 +199,23 @@ internal sealed class WheelDriver
             PoseDirect(center, rotation, metersPerPixel);
         else
             box.Pose(center, rotation, boxCenter, metersPerPixel);
-        Select(rig, center, rotation);
+
+        var stick = VRInput.Hand(left).Stick;
+        var stickVector = new NVector2(stick.x, stick.y);
+        if (handDriven)
+        {
+            var hand = rig.Hand(left);
+            var travel = hand != null ? hand.position - center : Vector3.zero;
+            var handOffset = new NVector2(
+                Vector3.Dot(travel, rotation * Vector3.right),
+                Vector3.Dot(travel, rotation * Vector3.up)
+            );
+            selector.FlickDistance = UIWheelsFeature.FlickDistance.Value;
+            selector.Update(handOffset, stickVector, out var direction);
+            Steer(direction, authoritative: true);
+        }
+        else if (stickVector.LengthSquared() >= RadialSelector.StickThresholdSq)
+            Steer(stickVector, authoritative: true);
     }
 
     private bool Open(Transform root, UIWheel current, VRRig rig, bool handLeft)
@@ -167,6 +226,7 @@ internal sealed class WheelDriver
             return false;
         wheel = current;
         left = handLeft;
+        selected = -1;
         slices = CollectSlices(current);
         if (directions.Length != slices.Length)
         {
@@ -184,22 +244,21 @@ internal sealed class WheelDriver
 
         // Wheel geometry in container pixels: its centre and width come from the slices themselves, because the
         // wheel object may be a full-screen container.
-        var offset = Quaternion.Euler(0f, 0f, SliceOffsetDegrees);
         var bounds = new Bounds();
         bool first = true;
         for (int i = 0; i < slices.Length; i++)
         {
             if (slices[i] == null)
                 continue;
-            var slice = slices[i].transform;
-            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(rect, slice);
+            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(
+                rect,
+                slices[i].transform
+            );
             if (first)
                 bounds = b;
             else
                 bounds.Encapsulate(b);
             first = false;
-            var up = offset * rect.InverseTransformDirection(slice.up);
-            directions[i] = new NVector2(up.x, up.y);
         }
         boxCenter = first ? Vector2.zero : (Vector2)bounds.center;
         span = Mathf.Max(1f, first ? 500f : bounds.size.x);
@@ -227,7 +286,7 @@ internal sealed class WheelDriver
         );
     }
 
-    /// <summary>The slices the game's gamepad path considers (EmoteWheel.cs:139, BackpackWheel.cs:269).</summary>
+    /// <summary>The slices the game's gamepad path considers (EmoteWheel.cs:120, BackpackWheel.cs:253).</summary>
     private static UIWheelSlice[] CollectSlices(UIWheel current)
     {
         switch (current)
@@ -246,34 +305,39 @@ internal sealed class WheelDriver
         }
     }
 
-    private void Select(VRRig rig, Vector3 center, Quaternion rotation)
+    /// <summary>
+    /// Hovers the slice nearest <paramref name="input"/> (x right, y up in the wheel's plane), like the game's
+    /// gamepad path does. A zero or short input clears the choice only for the driver itself; another caller
+    /// (the game's resting stick) leaves it alone, so it cannot undo a choice made by hand.
+    /// </summary>
+    public void Steer(NVector2 input, bool authoritative)
     {
-        // Same candidates as the gamepad path: active slices; greyed ones are picked and then ignore the hover.
-        for (int i = 0; i < slices.Length; i++)
-            enabled[i] = slices[i] != null && slices[i].gameObject.activeSelf;
-
-        var hand = rig.Hand(left);
-        var travel = hand != null ? hand.position - center : Vector3.zero;
-        var handOffset = new NVector2(
-            Vector3.Dot(travel, rotation * Vector3.right),
-            Vector3.Dot(travel, rotation * Vector3.up)
-        );
-        var stick = VRInput.Hand(left).Stick;
-
-        int previous = selector.Selected;
-        selector.FlickDistance = UIWheelsFeature.FlickDistance.Value;
-        int next = selector.Update(
-            handOffset,
-            new NVector2(stick.x, stick.y),
-            directions,
-            enabled,
-            slices.Length
-        );
-
-        if (selector.Changed)
+        var plane = Plane;
+        if (plane == null || slices.Length == 0)
+            return;
+        int next = -1;
+        if (input.LengthSquared() >= RadialSelector.StickThresholdSq)
         {
-            if (previous >= 0 && previous < slices.Length)
-                Dehover(slices[previous]);
+            // Same candidates as the gamepad path: active slices; greyed ones are picked and then ignore the hover.
+            var offset = Quaternion.Euler(0f, 0f, SliceOffsetDegrees);
+            for (int i = 0; i < slices.Length; i++)
+            {
+                enabled[i] = slices[i] != null && slices[i].gameObject.activeSelf;
+                if (!enabled[i])
+                    continue;
+                var up = offset * plane.InverseTransformDirection(slices[i].transform.up);
+                directions[i] = new NVector2(up.x, up.y);
+            }
+            next = RadialSelector.Nearest(input, directions, enabled, slices.Length);
+        }
+        else if (!authoritative)
+            return;
+
+        if (next != selected)
+        {
+            if (selected >= 0 && selected < slices.Length)
+                Dehover(slices[selected]);
+            selected = next;
             var system = EventSystem.current;
             if (next >= 0)
             {
@@ -285,9 +349,9 @@ internal sealed class WheelDriver
             else if (system != null)
                 system.SetSelectedGameObject(null);
         }
-        else if (next >= 0 && rehoverEachFrame)
+        else if (next >= 0 && handDriven)
         {
-            // A page flip re-inits the emote slices and clears the choice (EmoteWheel.cs:62); hovering every
+            // A page flip re-inits the emote slices and clears the choice (EmoteWheel.cs:60); hovering every
             // frame like the gamepad path picks the new page's emote up.
             Hover(slices[next]);
         }
