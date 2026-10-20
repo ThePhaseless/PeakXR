@@ -3,60 +3,47 @@ using System.Numerics;
 namespace PeakXR.Core
 {
     /// <summary>
-    /// Picks a slice of a radial menu from a hand flick or a thumbstick. The game's gamepad wheel picks the
-    /// slice whose direction is closest to the stick (EmoteWheel/BackpackWheel.TestSelectSliceGamepad); this
-    /// does the same, and also accepts the hand moving away from where the wheel opened, so a wheel can be
-    /// used without touching the stick. The hand needs <see cref="FlickDistance"/> to select and keeps the
-    /// selection until it comes back past a fraction of that, so small tremors do not flicker the choice.
+    /// Radial-menu selection shared by every VR wheel. The game's gamepad wheels pick the slice whose direction is
+    /// closest to the stick (EmoteWheel/BackpackWheel.TestSelectSliceGamepad); <see cref="Nearest"/> is that pick,
+    /// done in the wheel's own plane so it also holds for a wheel turned in 3D. An instance turns a hand flick
+    /// away from the wheel centre, or a thumbstick, into such a direction: the hand needs
+    /// <see cref="FlickDistance"/> to start and keeps pointing until it comes back past
+    /// <see cref="KeepFraction"/> of that, so small tremors do not flicker the choice.
     /// </summary>
     public sealed class RadialSelector
     {
-        /// <summary>Share of <see cref="FlickDistance"/> below which a selection made by the hand is dropped.</summary>
+        /// <summary>Share of <see cref="FlickDistance"/> below which a hand selection is dropped.</summary>
         public const float KeepFraction = 0.6f;
 
-        /// <summary>Hand travel from the wheel centre, in metres, that selects a slice.</summary>
+        /// <summary>Squared stick deflection that counts, the game's own threshold (sqrMagnitude &gt;= 0.5).</summary>
+        public const float StickThresholdSq = 0.5f;
+
+        /// <summary>Hand travel from the wheel centre, in metres, that starts a selection.</summary>
         public float FlickDistance = 0.05f;
 
-        /// <summary>Squared stick deflection that counts, the game's own threshold (sqrMagnitude &gt;= 0.5).</summary>
-        public float StickThresholdSq = 0.5f;
+        /// <summary>True while the hand or stick points at a slice.</summary>
+        public bool Active { get; private set; }
 
-        public int Selected { get; private set; } = -1;
-
-        /// <summary>True when the last <see cref="Update"/> changed <see cref="Selected"/>.</summary>
-        public bool Changed { get; private set; }
-
-        public void Reset()
-        {
-            Selected = -1;
-            Changed = false;
-        }
+        public void Reset() => Active = false;
 
         /// <param name="handOffset">Hand travel from the wheel centre in the wheel plane, metres.</param>
         /// <param name="stick">Thumbstick of the wheel hand.</param>
-        /// <param name="directions">Slice directions in the same plane.</param>
-        /// <param name="enabled">Slices that may be picked.</param>
-        /// <param name="count">Number of valid entries in the arrays.</param>
-        public int Update(
-            Vector2 handOffset,
-            Vector2 stick,
-            Vector2[] directions,
-            bool[] enabled,
-            int count
-        )
+        /// <param name="direction">Direction to pick with, at least the game's stick threshold long; zero when none.</param>
+        /// <returns><see cref="Active"/>.</returns>
+        public bool Update(Vector2 handOffset, Vector2 stick, out Vector2 direction)
         {
-            int next = -1;
+            direction = Vector2.Zero;
             if (stick.LengthSquared() >= StickThresholdSq)
-                next = Nearest(stick, directions, enabled, count);
+                direction = stick;
             else
             {
                 float travel = handOffset.Length();
-                float needed = Selected >= 0 ? FlickDistance * KeepFraction : FlickDistance;
+                float needed = Active ? FlickDistance * KeepFraction : FlickDistance;
                 if (travel >= needed && travel > 1e-6f)
-                    next = Nearest(handOffset, directions, enabled, count);
+                    direction = handOffset / travel;
             }
-            Changed = next != Selected;
-            Selected = next;
-            return next;
+            Active = direction != Vector2.Zero;
+            return Active;
         }
 
         /// <summary>Index of the enabled direction with the smallest angle to <paramref name="input"/>, or -1.</summary>
