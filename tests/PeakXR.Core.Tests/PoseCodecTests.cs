@@ -149,6 +149,46 @@ public class PoseCodecTests
     }
 
     [Fact]
+    public void HoldFlags_RoundTripWithoutChangingTheLayout()
+    {
+        var p = Full(new Random(4));
+        var plain = new byte[PoseCodec.MaxSize];
+        int plainLen = PoseCodec.Encode(p, plain);
+
+        p.Flags |= PoseFlags.ItemInLeftHand | PoseFlags.TwoHandHold;
+        var buf = new byte[PoseCodec.MaxSize];
+        int len = PoseCodec.Encode(p, buf);
+
+        Assert.Equal(plainLen, len);
+        Assert.Equal(PoseCodec.SizeFor(PoseFlags.Head), PoseCodec.SizeFor(PoseFlags.Head | PoseFlags.ItemInLeftHand | PoseFlags.TwoHandHold));
+        // Only the flags byte differs, so a decoder that ignores bits 6 and 7 reads the same pose.
+        for (int i = 0; i < len; i++)
+            if (i != 1)
+                Assert.Equal(plain[i], buf[i]);
+        Assert.True(PoseCodec.Decode(buf, len, out var d));
+        Assert.True(d.ItemInLeftHand);
+        Assert.True(d.TwoHandHold);
+        TestUtil.Near(p.RightHandPosition, d.RightHandPosition, 0.001f);
+    }
+
+    [Fact]
+    public void HoldFlags_DefaultOff()
+    {
+        var buf = new byte[PoseCodec.MaxSize];
+        int len = PoseCodec.Encode(Full(new Random(5)), buf);
+        Assert.True(PoseCodec.Decode(buf, len, out var d));
+        Assert.False(d.ItemInLeftHand);
+        Assert.False(d.TwoHandHold);
+    }
+
+    [Fact]
+    public void HoldFlags_DoNotChangeTheProtocolVersion()
+    {
+        // Bits 6 and 7 are additive: version 1 peers keep interoperating (see PoseCodec remarks).
+        Assert.Equal(1, PoseCodec.Version);
+    }
+
+    [Fact]
     public void Encode_TooSmallBuffer_ReturnsZero()
     {
         Assert.Equal(0, PoseCodec.Encode(Full(new Random(1)), new byte[10]));

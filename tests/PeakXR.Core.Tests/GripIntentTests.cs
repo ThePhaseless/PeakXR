@@ -149,4 +149,50 @@ public class GripIntentTests
         Assert.False(GripIntent.IsPointing(new FingerCurls(0.7f, 0.8f, 0.9f, 0.9f, 0.9f)));
         Assert.False(GripIntent.IsPointing(new FingerCurls(0f, 0f, 0.1f, 0.1f, 0.1f)));
     }
+
+    [Fact]
+    public void ExtensionClaim_BeatsGrabClimbAndInteract()
+    {
+        var c = Empty();
+        c.Candidate = GrabCandidate.Item;
+        c.NearClimbable = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.Extension, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void SecondHand_BeatsExtensionClaim()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.NearHeldItem = true;
+        c.HeldHandedness = Handedness.TwoHanded;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ExtensionClaim_WorksWithPhysicalTogglesOff()
+    {
+        var c = new GripContext { ExtensionClaim = true };
+        Assert.Equal(GripPressAction.Extension, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void Release_ClaimedByExtension_BeatsThrowAndCanDrop()
+    {
+        Assert.Equal(
+            GripReleaseAction.Extension,
+            GripIntent.OnRelease(true, false, 9f, 2f, true, false, extensionClaims: true)
+        );
+    }
+
+    [Fact]
+    public void Release_ExtensionClaim_IgnoredForEmptyHand()
+    {
+        Assert.Equal(
+            GripReleaseAction.Keep,
+            GripIntent.OnRelease(false, true, 9f, 2f, true, true, extensionClaims: true)
+        );
+    }
 }
