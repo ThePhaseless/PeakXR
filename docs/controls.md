@@ -5,7 +5,7 @@ The default layout for a right-handed player. With `Input.DominantHand = Left` t
 | Control | Left controller | Right controller |
 |---|---|---|
 | Stick | Move | Left/right: turn. Up/down: next or previous item |
-| Stick click | Sprint | Crouch |
+| Stick click | Tap: sprint. Hold: push to talk | Crouch |
 | A / X (lower button) | Tap: put the item away or take it out again. Hold: take out the backpack | Jump |
 | B / Y (upper button) | Tap: ping. Hold: emote wheel | Drop. Hold to charge a throw |
 | Grip | Grab or interact | Grab or interact |
@@ -18,6 +18,9 @@ Notes:
 - Grip, trigger and the hand throw come from the physical interaction settings (`Interaction` section). There, `DropButton` picks the drop button. It stays on the right B button when you switch hands, so left-handed players should set it to `LeftSecondary`; until then the right B button only drops, with no ping or emote.
 - When you hold something with a scroll function (rope spool, binoculars, guidebook, scout cannon), stick up and down scroll it. Put the item away to change items.
 - Vive wands and WMR controllers have no A/B buttons: click the top of the trackpad for B/Y and the bottom for A/X. On a Vive wand the centre of the pad is the stick click.
+- Push to talk: hold the move-stick click for half a second and keep holding while you speak. The click itself still toggles sprint, which does nothing while you stand still. It only matters when the game's microphone mode is Push To Talk or Push To Mute. You can also hold a free hand at your mouth like a walkie-talkie; `Voice.HandToMouthTalk` turns that off.
+- An open passport or guidebook sits above the hand that holds it. Turn pages by swiping your other hand across it. The passport's tabs and page buttons also take the laser, and the guidebook also turns with stick up and down.
+- Menu panels at a kiosk (boarding pass, custom run options) and the end-of-run results take the laser like any other menu. At the end of a won run, any controller button skips the credits wait, the same as any key on a keyboard.
 
 ## Turning and comfort
 
