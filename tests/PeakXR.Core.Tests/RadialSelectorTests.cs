@@ -29,10 +29,7 @@ public class RadialSelectorTests
     [Fact]
     public void Nearest_NoneEnabled_ReturnsMinusOne()
     {
-        Assert.Equal(
-            -1,
-            RadialSelector.Nearest(new Vector2(1f, 0f), Dirs, new bool[4], 4)
-        );
+        Assert.Equal(-1, RadialSelector.Nearest(new Vector2(1f, 0f), Dirs, new bool[4], 4));
     }
 
     [Fact]

@@ -49,7 +49,8 @@ namespace PeakXR.Core
         /// <summary>Strength of the steady tint while passed out: grows as the death timer runs out, never a flash.</summary>
         public static float DyingWeight(float deathTimer)
         {
-            float t = deathTimer < 0f ? 0f
+            float t =
+                deathTimer < 0f ? 0f
                 : deathTimer > 1f ? 1f
                 : deathTimer;
             return 0.25f + 0.55f * t;

@@ -5,7 +5,16 @@ public class VRKeyboardTests
     [Fact]
     public void Layout_HasEverySpecialKeyOnce()
     {
-        foreach (var kind in new[] { KeyKind.Shift, KeyKind.Backspace, KeyKind.Space, KeyKind.Done, KeyKind.Cancel })
+        foreach (
+            var kind in new[]
+            {
+                KeyKind.Shift,
+                KeyKind.Backspace,
+                KeyKind.Space,
+                KeyKind.Done,
+                KeyKind.Cancel,
+            }
+        )
         {
             int count = 0;
             foreach (var row in KeyboardLayout.Rows)

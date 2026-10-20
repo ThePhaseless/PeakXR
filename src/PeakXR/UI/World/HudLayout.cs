@@ -36,9 +36,9 @@ internal sealed class HudLayout
 
 /// <summary>
 /// Moves parts of the converted HUD out of the body panel: the reticle to a head-locked spot and, in
-/// wrist mode, the stamina bar and hotbar to the wrist. The parts stay children of the HUD canvas (in
-/// containers the size of the HUD), so the game keeps driving them and they die with the scene; only
-/// the containers are posed each frame. Everything moved is put back when the mode changes or VR stops.
+/// wrist mode, the stamina bar (with its numb mushroom group) and hotbar to the wrist. The parts sit in
+/// <see cref="HudBox"/> containers under the HUD canvas, so the game keeps driving them; only the
+/// containers are posed each frame. Everything moved is put back when the mode changes or VR stops.
 /// </summary>
 internal sealed class HudSplit
 {
@@ -46,18 +46,10 @@ internal sealed class HudSplit
 
     private static FieldInfo[] reticleFields = System.Array.Empty<FieldInfo>();
 
-    private struct Moved
-    {
-        public Transform Item;
-        public Transform Parent;
-        public int Sibling;
-    }
-
-    private readonly List<Moved> moved = new();
+    private readonly HudBox reticleBox = new("PeakXR_Reticle");
+    private readonly HudBox wristBox = new("PeakXR_Wrist");
     private GUIManager gui;
-    private RectTransform hudRoot,
-        reticleBox,
-        wristBox;
+    private RectTransform hudRoot;
     private bool applied,
         appliedWrist;
     private ReticleMode appliedReticle;
@@ -83,8 +75,8 @@ internal sealed class HudSplit
         if (current != gui)
         {
             // The old HUD died with its scene, and the moved parts with it.
-            moved.Clear();
-            reticleBox = wristBox = null;
+            reticleBox.Forget();
+            wristBox.Forget();
             applied = false;
             gui = current;
         }
@@ -104,20 +96,8 @@ internal sealed class HudSplit
 
     public void Restore()
     {
-        for (int i = moved.Count - 1; i >= 0; i--)
-        {
-            var m = moved[i];
-            if (m.Item != null && m.Parent != null)
-            {
-                m.Item.SetParent(m.Parent, false);
-                m.Item.SetSiblingIndex(m.Sibling);
-            }
-        }
-        moved.Clear();
-        if (reticleBox != null)
-            reticleBox.gameObject.SetActive(false);
-        if (wristBox != null)
-            wristBox.gameObject.SetActive(false);
+        reticleBox.Restore();
+        wristBox.Restore();
         if (gui != null && gui.heroBG != null)
             gui.heroBG.enabled = true;
         applied = false;
@@ -132,25 +112,26 @@ internal sealed class HudSplit
             gui.heroBG.enabled = false;
         if (reticle != ReticleMode.Hud)
         {
-            reticleBox = reticleBox != null ? reticleBox : Box("PeakXR_Reticle");
-            reticleBox.gameObject.SetActive(reticle == ReticleMode.Head);
+            reticleBox.Ensure(hudRoot);
+            reticleBox.SetActive(reticle == ReticleMode.Head);
             foreach (var field in reticleFields)
                 if (field.GetValue(gui) is GameObject go && go != null)
-                    Move(go.transform, reticleBox);
+                    reticleBox.Move(go.transform);
         }
 
         if (wrist)
         {
-            wristBox = wristBox != null ? wristBox : Box("PeakXR_Wrist");
-            wristBox.gameObject.SetActive(true);
+            var box = wristBox.Ensure(hudRoot);
             MoveGroup(gui.bar != null ? gui.bar.transform : null);
+            // Numb swaps the stamina bar for a mushroom group (A/GUIManager.cs:1249); it belongs with the bar.
+            MoveGroup(gui.mushroomsCanvasGroup != null ? gui.mushroomsCanvasGroup.transform : null);
             MoveGroup(
                 gui.items != null && gui.items.Length > 0 && gui.items[0] != null
                     ? gui.items[0].transform
                     : null
             );
             MoveGroup(gui.backpack != null ? gui.backpack.transform : null);
-            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(wristBox);
+            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(box);
             wristCenter = bounds.center;
             wristSpan = Mathf.Max(1f, bounds.size.x);
         }
@@ -160,41 +141,16 @@ internal sealed class HudSplit
         appliedWrist = wrist;
     }
 
-    private RectTransform Box(string name)
-    {
-        var rect = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-        rect.SetParent(hudRoot, false);
-        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-        rect.sizeDelta = hudRoot.sizeDelta;
-        return rect;
-    }
-
-    private void Move(Transform item, Transform box)
-    {
-        if (item.parent == box)
-            return;
-        moved.Add(
-            new Moved
-            {
-                Item = item,
-                Parent = item.parent,
-                Sibling = item.GetSiblingIndex(),
-            }
-        );
-        item.SetParent(box, false);
-    }
-
     /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD
     /// root, or a smaller one when that ancestor is a full-screen container.</summary>
     private void MoveGroup(Transform target)
     {
         if (target == null)
             return;
+        var box = wristBox.Rect;
         var group = target;
-        while (group.parent != null && group.parent != hudRoot && group.parent != wristBox)
+        while (group.parent != null && group.parent != hudRoot && group.parent != box)
             group = group.parent;
-        if (group.parent == wristBox)
-            return;
         if (group.parent != hudRoot)
             return;
 
@@ -205,7 +161,7 @@ internal sealed class HudSplit
                 next = next.parent;
             group = next;
         }
-        Move(group, wristBox);
+        wristBox.Move(group);
     }
 
     private bool CoversHud(RectTransform r)
@@ -217,7 +173,7 @@ internal sealed class HudSplit
     /// <summary>Poses the wrist container. Called once per frame after the canvases are placed.</summary>
     public void PoseWrist(VRRig rig, UIWorldSettings cfg)
     {
-        if (!applied || !appliedWrist || wristBox == null)
+        if (!applied || !appliedWrist || wristBox.Rect == null)
             return;
         var hand = rig.Hand(cfg.WristHand.Value == WristSide.Left);
         if (hand == null)
@@ -226,30 +182,18 @@ internal sealed class HudSplit
         // Back of the wrist, facing up out of the forearm; text up toward the fingers. Needs in-headset tuning.
         var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
         var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
-        var metersPerPixel = cfg.WristWidth.Value / wristSpan;
-        SetScale(wristBox, metersPerPixel);
-        wristBox.SetPositionAndRotation(
-            anchor - rotation * (wristCenter * metersPerPixel),
-            rotation
-        );
+        wristBox.Pose(anchor, rotation, wristCenter, cfg.WristWidth.Value / wristSpan);
     }
 
     /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>
     public void PoseReticle(Transform head, HudLayout hud, UIWorldSettings cfg)
     {
-        if (!applied || appliedReticle != ReticleMode.Head || reticleBox == null)
+        if (!applied || appliedReticle != ReticleMode.Head || reticleBox.Rect == null)
             return;
-        SetScale(reticleBox, hud.MetersPerPixel * ReticleDistance / cfg.HudDistance.Value);
-        reticleBox.SetPositionAndRotation(
+        reticleBox.SetScale(hud.MetersPerPixel * ReticleDistance / cfg.HudDistance.Value);
+        reticleBox.Rect.SetPositionAndRotation(
             head.position + head.forward * ReticleDistance,
             head.rotation
         );
-    }
-
-    private void SetScale(RectTransform box, float metersPerPixel)
-    {
-        var parent = hudRoot.lossyScale.x;
-        var s = Mathf.Abs(parent) > 1e-6f ? metersPerPixel / parent : metersPerPixel;
-        box.localScale = new Vector3(s, s, s);
     }
 }

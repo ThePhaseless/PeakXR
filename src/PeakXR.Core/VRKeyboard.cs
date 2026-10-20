@@ -58,7 +58,10 @@ namespace PeakXR.Core
                 Row("1234567890", "!@#$%^&*()", KeyDef.Special(KeyKind.Backspace, "Back", 1.6f)),
                 Row("qwertyuiop", "QWERTYUIOP", null),
                 Row("asdfghjkl'", "ASDFGHJKL\"", null),
-                Concat(KeyDef.Special(KeyKind.Shift, "Shift", 1.6f), Row("zxcvbnm,.-", "ZXCVBNM?:_", null)),
+                Concat(
+                    KeyDef.Special(KeyKind.Shift, "Shift", 1.6f),
+                    Row("zxcvbnm,.-", "ZXCVBNM?:_", null)
+                ),
                 new[]
                 {
                     KeyDef.Special(KeyKind.Cancel, "Close", 2f),

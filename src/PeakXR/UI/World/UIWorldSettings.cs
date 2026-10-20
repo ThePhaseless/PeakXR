@@ -30,6 +30,10 @@ public enum ReticleMode
 
 public enum StatusOverlayMode
 {
+    /// <summary>The game's status flashes are hidden and shown as a soft coloured glow at the edge of the
+    /// view (ui.status). Falls back to <see cref="HeadLocked"/> when that feature is not running.</summary>
+    Peripheral,
+
     /// <summary>Status effect overlays drawn on a head-locked quad (correct in both eyes).</summary>
     HeadLocked,
     Off,
@@ -96,8 +100,8 @@ internal sealed class UIWorldSettings
             StatusOverlays = cfg.Bind(
                 ui,
                 "StatusOverlays",
-                StatusOverlayMode.HeadLocked,
-                "Full-screen status effects (poison, cold, injury...). HeadLocked draws them on a quad in front of your eyes."
+                StatusOverlayMode.Peripheral,
+                "Full-screen status effects (poison, cold, injury, spore warning...). Peripheral turns them into a soft glow at the edge of your view; HeadLocked draws the game's flashes on a quad in front of your eyes."
             ),
 
             Hud = cfg.Bind(

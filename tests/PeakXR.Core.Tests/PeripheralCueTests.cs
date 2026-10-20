@@ -62,7 +62,10 @@ public class PeripheralCueTests
     {
         Assert.True(PeripheralCue.ColorFor("injurySVFX").X > 0.7f);
         Assert.True(PeripheralCue.ColorFor("coldSVFX").Z > 0.9f);
-        Assert.Equal(PeripheralCue.ColorFor("petrifySVFX"), PeripheralCue.ColorFor("petrifySVFX2Full"));
+        Assert.Equal(
+            PeripheralCue.ColorFor("petrifySVFX"),
+            PeripheralCue.ColorFor("petrifySVFX2Full")
+        );
         Assert.NotEqual(PeripheralCue.ColorFor("hotSVFX"), PeripheralCue.ColorFor("heatSVFX"));
         Assert.Equal(PeripheralCue.ColorFor("sporesSVFX"), PeripheralCue.ColorFor("sporesWarning"));
         Assert.Equal(new Vector3(1f, 1f, 1f), PeripheralCue.ColorFor("somethingNew"));
