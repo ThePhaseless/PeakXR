@@ -53,6 +53,10 @@ namespace PeakXR.Core
         /// <summary>This hand is within reach of the held item.</summary>
         public bool NearHeldItem;
         public Handedness HeldHandedness;
+
+        /// <summary>The body is already on a wall or in the air: a wall in reach wins over a loose item, so a
+        /// hand reaching for a hold never picks up an item lying on the ledge instead.</summary>
+        public bool BodyClimbing;
     }
 
     /// <summary>
@@ -70,6 +74,14 @@ namespace PeakXR.Core
                 && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
             )
                 return GripPressAction.SecondHand;
+
+            if (
+                c.BodyClimbing
+                && c.PhysicalClimb
+                && c.NearClimbable
+                && c.Candidate != GrabCandidate.Interactible
+            )
+                return GripPressAction.Climb;
 
             if (c.PhysicalGrab)
             {

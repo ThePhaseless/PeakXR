@@ -49,5 +49,54 @@ namespace PeakXR.Core
             float a = 1f - MathF.Exp(-rate * dt);
             return current + (target - current) * a;
         }
+
+        /// <summary>
+        /// Climb lunge from a hand thrown upward as it lets go of the wall: the stick direction (wall right, wall
+        /// up; unit length) for the game's climb jump, or zero when the release was not fast enough upward.
+        /// </summary>
+        /// <param name="releaseVelocity">Hand velocity relative to the body at release, world space, m/s.</param>
+        /// <param name="wallNormal">Climb surface normal.</param>
+        /// <param name="minUpSpeed">Speed along the wall's up needed to count as a lunge.</param>
+        public static Vector2 Lunge(Vector3 releaseVelocity, Vector3 wallNormal, float minUpSpeed)
+        {
+            var stick = FromBodyVelocity(releaseVelocity, wallNormal, 1f, 0f);
+            float len = stick.Length();
+            if (len < 1e-5f)
+                return Vector2.Zero;
+            // FromBodyVelocity clamps to unit length; recover the raw up speed from the unclamped projection.
+            var n = Vector3.Normalize(wallNormal);
+            var up = WorldUp - n * Vector3.Dot(WorldUp, n);
+            if (up.LengthSquared() < 1e-8f)
+                return Vector2.Zero;
+            float upSpeed = Vector3.Dot(releaseVelocity, Vector3.Normalize(up));
+            if (upSpeed < minUpSpeed)
+                return Vector2.Zero;
+            return stick / len;
+        }
+
+        /// <summary>
+        /// Walking stick input that moves the character along <paramref name="worldDir"/> (flattened): the
+        /// inverse of <c>Character.CalculateWorldMovementDir</c> (Character.cs:1311), which walks along the flat
+        /// look direction times stick Y plus look-right times stick X. Zero for a vertical direction.
+        /// </summary>
+        public static Vector2 WalkStick(Vector3 worldDir, Vector3 lookForward, Vector3 lookRight)
+        {
+            var dir = new Vector3(worldDir.X, 0f, worldDir.Z);
+            var fwd = new Vector3(lookForward.X, 0f, lookForward.Z);
+            var right = new Vector3(lookRight.X, 0f, lookRight.Z);
+            if (
+                dir.LengthSquared() < 1e-8f
+                || fwd.LengthSquared() < 1e-8f
+                || right.LengthSquared() < 1e-8f
+            )
+                return Vector2.Zero;
+            dir = Vector3.Normalize(dir);
+            var stick = new Vector2(
+                Vector3.Dot(dir, Vector3.Normalize(right)),
+                Vector3.Dot(dir, Vector3.Normalize(fwd))
+            );
+            float len = stick.Length();
+            return len > 1f ? stick / len : stick;
+        }
     }
 }
