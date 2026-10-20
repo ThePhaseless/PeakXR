@@ -9,46 +9,29 @@ namespace PeakXR.UI.Wheels;
 /// <summary>
 /// The game skips CameraLook while a wheel is open (A/CharacterMovement.cs:201 via CanMoveCamera :174, which reads
 /// CharacterData.usingWheel :469). In VR that look is the headset, and freezing it would leave the character's
-/// head, aim and the view sent to peers stuck while your real head moves. The local character's wheel flags are
-/// cleared for the length of CharacterMovement.Update only and put back afterwards; input stays blocked because
-/// CharacterInput.Sample keys off GUIManager.wheelActive (A/Character.cs:1716), not these flags.
-/// Patched around Update rather than on CanMoveCamera, which is small enough for Mono to inline.
-/// A/CharacterMovement.cs:183 <c>private void Update()</c>.
+/// head, aim and the view sent to peers stuck while your real head moves. This postfix runs the skipped CameraLook
+/// for the local VR character, so LookPatches' hooks write the headset look as usual. Nothing in Update between the
+/// gate and the end sets the wheel flags (only GUIManager does, :550/:557/:568/:574), so look runs once a frame.
+/// The stick stays out: Sample zeroed lookInput (A/CharacterInput.cs:214, ResetInput :297) and LookPatches zeroes it
+/// again. The wheel flags stay untouched, so inventory.vr's Sample postfix reads the real backpack-wheel state.
+/// Patched on Update rather than on CanMoveCamera, which is small enough for Mono to inline.
+/// A/CharacterMovement.cs:183 <c>private void Update()</c>, :283 <c>private void CameraLook()</c>.
 /// </summary>
 [HarmonyPatch]
 internal static class HeadLookWhileWheelOpenPatch
 {
-    private const int Emote = 1,
-        Backpack = 2;
+    internal static System.Action<CharacterMovement> CameraLook;
 
     private static MethodBase TargetMethod() =>
         GameMember.Method(typeof(CharacterMovement), "Update");
 
-    private static void Prefix(CharacterMovement __instance, out int __state)
+    private static void Postfix(CharacterMovement __instance)
     {
-        __state = 0;
         if (!VRSession.Active)
             return;
         var c = UIWheelsFeature.MovementCharacter(__instance);
-        if (c == null || !c.IsLocal)
-            return;
-        var data = c.data;
-        if (data.usingEmoteWheel)
-            __state |= Emote;
-        if (data.usingBackpackWheel)
-            __state |= Backpack;
-        data.usingEmoteWheel = false;
-        data.usingBackpackWheel = false;
-    }
-
-    // A finalizer, so the flags come back even if Update throws; a lost flag would keep the wheel open.
-    private static void Finalizer(CharacterMovement __instance, int __state)
-    {
-        if (__state == 0)
-            return;
-        var data = UIWheelsFeature.MovementCharacter(__instance).data;
-        data.usingEmoteWheel = (__state & Emote) != 0;
-        data.usingBackpackWheel = (__state & Backpack) != 0;
+        if (c != null && c.IsLocal && c.data.usingWheel)
+            CameraLook(__instance);
     }
 }
 
