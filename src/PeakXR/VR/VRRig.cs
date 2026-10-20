@@ -34,10 +34,14 @@ public class VRRig : MonoBehaviour
     /// </summary>
     public System.Numerics.Vector2 RoomAnchor;
 
-    /// <summary>Metres added to tracking-space Y so the calibrated eye height matches the avatar's
-    /// (height calibration and seated mode, player.locomotion). The camera feature applies it when placing
+    /// <summary>Metres added to tracking-space Y so the calibrated eye height matches the avatar's. The camera
+    /// feature calibrates it (on recenter, honouring <see cref="SeatedMode"/>) and applies it when placing
     /// <see cref="Origin"/>.</summary>
     public float HeightOffset;
+
+    /// <summary>The player plays seated (setting <c>Comfort.SeatedMode</c>, written by player.locomotion): height
+    /// calibration maps the seated head height to the avatar's standing eye height.</summary>
+    public bool SeatedMode;
 
     /// <summary>
     /// Turns the player's view around the head by <paramref name="degrees"/> (positive = right). Used by snap and
@@ -48,7 +52,8 @@ public class VRRig : MonoBehaviour
     {
         if (Origin == null || degrees == 0f)
             return;
-        var headLocal = VRInput.HeadTracked ? VRInput.HeadPosition
+        var headLocal =
+            VRInput.HeadTracked ? VRInput.HeadPosition
             : Head != null ? Head.localPosition
             : Vector3.zero;
         Origin.RotateAround(Origin.TransformPoint(headLocal), Vector3.up, degrees);

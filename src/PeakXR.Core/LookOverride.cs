@@ -60,7 +60,9 @@ namespace PeakXR.Core
                 Weight <= 0f
                     ? new Vector2(LookMath.WrapDegrees(hmd.X), hmd.Y)
                     : new Vector2(
-                        LookMath.WrapDegrees(hmd.X + LookMath.WrapDegrees(_scripted.X - hmd.X) * Weight),
+                        LookMath.WrapDegrees(
+                            hmd.X + LookMath.WrapDegrees(_scripted.X - hmd.X) * Weight
+                        ),
                         hmd.Y + (_scripted.Y - hmd.Y) * Weight
                     );
             _last = result;

@@ -25,7 +25,9 @@ internal sealed class ControllerReader
     private readonly List<Bone> bones = new();
     private readonly NVector3[] joints = new NVector3[8];
     private readonly float[] curls = new float[FingerCurls.Count];
-    private readonly XRInputSampler.Usage<float>[] fingerUsages = new XRInputSampler.Usage<float>[FingerCurls.Count];
+    private readonly XRInputSampler.Usage<float>[] fingerUsages = new XRInputSampler.Usage<float>[
+        FingerCurls.Count
+    ];
 
     private InputDevice device;
     private InputDevice handDevice;
@@ -88,7 +90,11 @@ internal sealed class ControllerReader
             if (h.isValid)
             {
                 var names = XRInputSampler.UsageNames(h, scratch);
-                XRInputSampler.LogDevice(left ? "left hand tracking" : "right hand tracking", h, names);
+                XRInputSampler.LogDevice(
+                    left ? "left hand tracking" : "right hand tracking",
+                    h,
+                    names
+                );
                 handData = XRInputSampler.Usage<UnityEngine.XR.Hand>.Find(names, "HandData");
             }
         }
@@ -156,7 +162,9 @@ internal sealed class ControllerReader
         else
             s.Tracked = false;
         s.Rotation =
-            rotation.Has && device.TryGetFeatureValue(rotation.Value, out Quaternion q) ? q : Quaternion.identity;
+            rotation.Has && device.TryGetFeatureValue(rotation.Value, out Quaternion q)
+                ? q
+                : Quaternion.identity;
         if (velocity.Has && device.TryGetFeatureValue(velocity.Value, out Vector3 v))
             s.Velocity = v;
         else if (hadPosition && dt > 0f)
@@ -203,7 +211,10 @@ internal sealed class ControllerReader
             for (int i = 0; i < curls.Length; i++)
             {
                 curls[i] = float.NaN;
-                if (fingerUsages[i].Has && device.TryGetFeatureValue(fingerUsages[i].Value, out float c))
+                if (
+                    fingerUsages[i].Has
+                    && device.TryGetFeatureValue(fingerUsages[i].Value, out float c)
+                )
                 {
                     curls[i] = c;
                     any = true;

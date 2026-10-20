@@ -91,9 +91,17 @@ namespace PeakXR.Core
 
         static bool Matches(ComfortProfile a, ComfortProfile b)
         {
-            if (a.Turn != b.Turn || a.Vignette != b.Vignette || !Near(a.MoveSmoothing, b.MoveSmoothing))
+            if (
+                a.Turn != b.Turn
+                || a.Vignette != b.Vignette
+                || !Near(a.MoveSmoothing, b.MoveSmoothing)
+            )
                 return false;
-            if (a.Turn == TurnMode.Snap ? !Near(a.SnapAngle, b.SnapAngle) : !Near(a.SmoothTurnSpeed, b.SmoothTurnSpeed))
+            if (
+                a.Turn == TurnMode.Snap
+                    ? !Near(a.SnapAngle, b.SnapAngle)
+                    : !Near(a.SmoothTurnSpeed, b.SmoothTurnSpeed)
+            )
                 return false;
             return !a.Vignette || Near(a.VignetteStrength, b.VignetteStrength);
         }

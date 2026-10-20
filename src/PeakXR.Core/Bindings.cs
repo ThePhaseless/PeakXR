@@ -22,7 +22,6 @@ namespace PeakXR.Core
         Ping,
         Emote,
         Pause,
-        Recenter,
     }
 
     /// <summary>
@@ -93,31 +92,77 @@ namespace PeakXR.Core
         public Vector2 Stick;
     }
 
-    /// <summary>The default controller layout. docs/controls.md documents it for players; keep both in sync.</summary>
+    /// <summary>
+    /// The default controller layout. docs/controls.md documents it for players; keep both in sync. Menu long-press
+    /// is not here: rig.camera owns it (recenter).
+    /// </summary>
     public static class BindingTable
     {
         public static readonly Binding[] Default =
         {
             new Binding(VRAction.Jump, BindingHand.Dominant, VRControl.Primary, PressKind.Hold),
             new Binding(VRAction.Sprint, BindingHand.OffHand, VRControl.StickClick, PressKind.Hold),
-            new Binding(VRAction.Crouch, BindingHand.Dominant, VRControl.StickClick, PressKind.Hold),
+            new Binding(
+                VRAction.Crouch,
+                BindingHand.Dominant,
+                VRControl.StickClick,
+                PressKind.Hold
+            ),
             new Binding(VRAction.Interact, BindingHand.Left, VRControl.Grip, PressKind.Hold),
             new Binding(VRAction.Interact, BindingHand.Right, VRControl.Grip, PressKind.Hold),
-            new Binding(VRAction.UsePrimary, BindingHand.ItemHand, VRControl.Trigger, PressKind.Hold),
-            new Binding(VRAction.UseSecondary, BindingHand.OtherHand, VRControl.Trigger, PressKind.Hold),
+            new Binding(
+                VRAction.UsePrimary,
+                BindingHand.ItemHand,
+                VRControl.Trigger,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.UseSecondary,
+                BindingHand.OtherHand,
+                VRControl.Trigger,
+                PressKind.Hold
+            ),
             new Binding(VRAction.Drop, BindingHand.Dominant, VRControl.Secondary, PressKind.Hold),
-            new Binding(VRAction.HotbarNext, BindingHand.Dominant, VRControl.StickUp, PressKind.Hold),
-            new Binding(VRAction.HotbarPrevious, BindingHand.Dominant, VRControl.StickDown, PressKind.Hold),
-            new Binding(VRAction.ScrollForward, BindingHand.Dominant, VRControl.StickUp, PressKind.Hold),
-            new Binding(VRAction.ScrollBackward, BindingHand.Dominant, VRControl.StickDown, PressKind.Hold),
+            new Binding(
+                VRAction.HotbarNext,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.HotbarPrevious,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.ScrollForward,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.ScrollBackward,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
             new Binding(VRAction.PutAway, BindingHand.OffHand, VRControl.Primary, PressKind.Tap),
-            new Binding(VRAction.Backpack, BindingHand.OffHand, VRControl.Primary, PressKind.LongPress),
+            new Binding(
+                VRAction.Backpack,
+                BindingHand.OffHand,
+                VRControl.Primary,
+                PressKind.LongPress
+            ),
             new Binding(VRAction.Ping, BindingHand.OffHand, VRControl.Secondary, PressKind.Tap),
-            new Binding(VRAction.Emote, BindingHand.OffHand, VRControl.Secondary, PressKind.LongPress),
+            new Binding(
+                VRAction.Emote,
+                BindingHand.OffHand,
+                VRControl.Secondary,
+                PressKind.LongPress
+            ),
             new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
-            new Binding(VRAction.Recenter, BindingHand.Left, VRControl.Menu, PressKind.LongPress),
-            new Binding(VRAction.Recenter, BindingHand.Right, VRControl.Menu, PressKind.LongPress),
         };
 
         /// <summary>True when <paramref name="role"/> means the left controller.</summary>
@@ -160,7 +205,7 @@ namespace PeakXR.Core
     public sealed class ActionMapper
     {
         const int ControlCount = 8;
-        const int ActionCount = (int)VRAction.Recenter + 1;
+        const int ActionCount = (int)VRAction.Pause + 1;
 
         public float FlickActivate = 0.7f;
         public float FlickRelease = 0.4f;
@@ -201,7 +246,8 @@ namespace PeakXR.Core
 
         public bool Released(VRAction action) => _actions[(int)action].Released;
 
-        public void SetDisabled(VRAction action, bool disabled) => _disabled[(int)action] = disabled;
+        public void SetDisabled(VRAction action, bool disabled) =>
+            _disabled[(int)action] = disabled;
 
         public void SetReserved(bool left, VRControl control, bool reserved) =>
             _reserved[Index(left, control)] = reserved;
@@ -217,7 +263,10 @@ namespace PeakXR.Core
                 int a = (int)b.Action;
                 if (_disabled[a] || _down[a])
                     continue;
-                int c = Index(BindingTable.ResolveLeft(b.Hand, DominantLeft, ItemInLeft), b.Control);
+                int c = Index(
+                    BindingTable.ResolveLeft(b.Hand, DominantLeft, ItemInLeft),
+                    b.Control
+                );
                 if (!_reserved[c])
                     _down[a] = IsDown(_controls[c], b.Press);
             }
@@ -274,7 +323,6 @@ namespace PeakXR.Core
         void Set(bool left, VRControl control, bool down, float dt) =>
             _controls[Index(left, control)].Update(down, dt);
 
-        static int Index(bool left, VRControl control) =>
-            (left ? 0 : ControlCount) + (int)control;
+        static int Index(bool left, VRControl control) => (left ? 0 : ControlCount) + (int)control;
     }
 }

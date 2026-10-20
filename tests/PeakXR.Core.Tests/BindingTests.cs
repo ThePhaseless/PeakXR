@@ -31,7 +31,7 @@ public class BindingTests
         return c;
     }
 
-    static readonly ControllerInput Idle = default;
+    static ControllerInput Idle => default;
 
     [Theory]
     [InlineData(BindingHand.Left, false, false, true)]
@@ -201,7 +201,7 @@ public class BindingTests
     [Fact]
     public void DefaultTable_EveryActionHasABinding()
     {
-        foreach (VRAction action in Enum.GetValues(typeof(VRAction)))
+        foreach (var action in Enum.GetValues<VRAction>())
             Assert.Contains(BindingTable.Default, b => b.Action == action);
     }
 

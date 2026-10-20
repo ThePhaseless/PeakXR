@@ -40,7 +40,9 @@ internal static class XRInputSampler
         {
             if (systems[i].type != typeof(EarlyUpdate))
                 continue;
-            var subs = new List<PlayerLoopSystem>(systems[i].subSystemList ?? Array.Empty<PlayerLoopSystem>())
+            var subs = new List<PlayerLoopSystem>(
+                systems[i].subSystemList ?? Array.Empty<PlayerLoopSystem>()
+            )
             {
                 new() { type = typeof(XRInputSampler), updateDelegate = Sample },
             };
@@ -165,7 +167,8 @@ internal static class XRInputSampler
                 VRInput.HeadTracked = false;
                 return;
             }
-            bool tracked = !isTracked.Has || (device.TryGetFeatureValue(isTracked.Value, out bool t) && t);
+            bool tracked =
+                !isTracked.Has || (device.TryGetFeatureValue(isTracked.Value, out bool t) && t);
             if (position.Has && device.TryGetFeatureValue(position.Value, out Vector3 p))
                 VRInput.HeadPosition = p;
             else
@@ -188,7 +191,9 @@ internal static class XRInputSampler
         public static Usage<T> Find(string[] names, params string[] candidates)
         {
             var name = XRUsageNames.Find(names, candidates);
-            return name == null ? default : new Usage<T> { Has = true, Value = new InputFeatureUsage<T>(name) };
+            return name == null
+                ? default
+                : new Usage<T> { Has = true, Value = new InputFeatureUsage<T>(name) };
         }
     }
 

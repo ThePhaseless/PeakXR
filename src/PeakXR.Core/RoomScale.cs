@@ -86,4 +86,39 @@ namespace PeakXR.Core
         public static Vector2 AnchorAfterYaw(Vector2 anchor, Vector2 head, float degrees) =>
             head - YawMath.Rotate(head - anchor, -degrees);
     }
+
+    /// <summary>
+    /// Sequences a room-scale recenter under a fade, so the view never jumps in sight: the fade target goes black,
+    /// and after <see cref="FadeTime"/> <see cref="Update"/> returns true once (snap the anchor then) and the target
+    /// clears. A started fade always ends in a recenter.
+    /// </summary>
+    public sealed class RecenterFade
+    {
+        /// <summary>Seconds the screen gets to go dark before the snap.</summary>
+        public float FadeTime = 0.25f;
+
+        float _timer = -1f;
+
+        /// <summary>Fade request: 1 = black, 0 = clear.</summary>
+        public float Target => _timer >= 0f ? 1f : 0f;
+
+        /// <param name="needed">The offset is past the recenter distance.</param>
+        /// <returns>True on the frame to recenter.</returns>
+        public bool Update(bool needed, float dt)
+        {
+            if (_timer < 0f)
+            {
+                if (needed)
+                    _timer = 0f;
+                return false;
+            }
+            _timer += dt;
+            if (_timer < FadeTime)
+                return false;
+            _timer = -1f;
+            return true;
+        }
+
+        public void Reset() => _timer = -1f;
+    }
 }

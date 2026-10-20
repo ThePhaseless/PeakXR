@@ -99,4 +99,40 @@ public class RoomScaleTests
         TestUtil.Near(before.X, after.X);
         TestUtil.Near(before.Y, after.Y);
     }
+
+    [Fact]
+    public void RecenterFade_SnapsOnlyAfterTheFadeOut()
+    {
+        var f = new RecenterFade { FadeTime = 0.2f };
+        Assert.False(f.Update(false, 0.1f));
+        Assert.Equal(0f, f.Target);
+
+        Assert.False(f.Update(true, 0.1f));
+        Assert.Equal(1f, f.Target);
+        Assert.False(f.Update(true, 0.1f));
+        Assert.True(f.Update(true, 0.11f));
+        Assert.Equal(0f, f.Target);
+    }
+
+    [Fact]
+    public void RecenterFade_KeepsGoingWhenNoLongerNeeded()
+    {
+        // Once the screen is going dark the snap happens, so the fade never ends without a recenter.
+        var f = new RecenterFade { FadeTime = 0.2f };
+        f.Update(true, 0.01f);
+        Assert.False(f.Update(false, 0.1f));
+        Assert.True(f.Update(false, 0.15f));
+        Assert.False(f.Update(false, 0.1f));
+        Assert.Equal(0f, f.Target);
+    }
+
+    [Fact]
+    public void RecenterFade_ResetClearsAPendingFade()
+    {
+        var f = new RecenterFade();
+        f.Update(true, 0.01f);
+        f.Reset();
+        Assert.Equal(0f, f.Target);
+        Assert.False(f.Update(false, 1f));
+    }
 }
