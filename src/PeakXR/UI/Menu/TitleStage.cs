@@ -24,6 +24,7 @@ internal sealed class TitleStage : ICanvasPlacement
     private float yaw;
     private Vector3 originPosition;
     private Quaternion originRotation = Quaternion.identity;
+    private VRRig overridden;
 
     public TitleStage(UIMenuSettings cfg) => this.cfg = cfg;
 
@@ -36,6 +37,7 @@ internal sealed class TitleStage : ICanvasPlacement
     {
         active = false;
         originFixed = false;
+        Release();
         if (
             !cfg.TitleOnBeach.Value
             || Object.FindAnyObjectByType<MainMenu>() == null
@@ -69,11 +71,21 @@ internal sealed class TitleStage : ICanvasPlacement
     }
 
     /// <summary>Places the rig origin so the player's head stands over <see cref="feet"/> facing the
-    /// title camera's direction. Fixed once the headset is tracked, so walking around still works.</summary>
+    /// title camera's direction. Fixed once the headset is tracked, so walking around still works.
+    /// Holds <see cref="VRRig.OriginOverride"/> while the stage is active so the camera feature keeps out.</summary>
     public void ApplyOrigin(VRRig rig)
     {
         if (!active || rig == null || rig.Origin == null)
+        {
+            Release();
             return;
+        }
+        if (overridden != rig)
+        {
+            Release();
+            rig.OriginOverride = true;
+            overridden = rig;
+        }
         if (!originFixed)
         {
             var head = VRInput.HeadTracked ? VRInput.HeadPosition : Vector3.zero;
@@ -85,6 +97,13 @@ internal sealed class TitleStage : ICanvasPlacement
             originFixed = VRInput.HeadTracked;
         }
         rig.Origin.SetPositionAndRotation(originPosition, originRotation);
+    }
+
+    private void Release()
+    {
+        if (overridden != null)
+            overridden.OriginOverride = false;
+        overridden = null;
     }
 
     public PlacementResult Place(

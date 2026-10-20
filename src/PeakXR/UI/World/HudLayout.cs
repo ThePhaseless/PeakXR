@@ -118,12 +118,18 @@ internal sealed class HudSplit
             reticleBox.gameObject.SetActive(false);
         if (wristBox != null)
             wristBox.gameObject.SetActive(false);
+        if (gui != null && gui.heroBG != null)
+            gui.heroBG.enabled = true;
         applied = false;
     }
 
     private void Apply(ReticleMode reticle, bool wrist)
     {
         hudRoot = (RectTransform)gui.hudCanvas.transform;
+        // The biome title dims the whole screen (A/GUIManager.cs:511-512); on a floating panel that is
+        // just a dark rectangle, so the title text shows without it.
+        if (gui.heroBG != null)
+            gui.heroBG.enabled = false;
         if (reticle != ReticleMode.Hud)
         {
             reticleBox = reticleBox != null ? reticleBox : Box("PeakXR_Reticle");
