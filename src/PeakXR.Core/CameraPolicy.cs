@@ -101,27 +101,42 @@ namespace PeakXR.Core
         public static bool IsDetached(ViewKind kind) => kind != ViewKind.FirstPerson;
     }
 
-    /// <summary>Fires once per hold when a button stays down for <see cref="Seconds"/>.</summary>
+    /// <summary>
+    /// Fires once per hold when a button stays down for <see cref="Seconds"/>. Time counts from the press frame
+    /// (0 on it), the same clock as <see cref="ButtonEdge.HeldTime"/>, so a tap mapped by <see cref="ActionMapper"/>
+    /// with the same threshold never overlaps the long press.
+    /// </summary>
     public sealed class LongPress
     {
         public float Seconds = 1f;
 
         float _held;
-        bool _fired;
+        bool _down;
+
+        /// <summary>True from the frame the hold fired until the button is released.</summary>
+        public bool Fired { get; private set; }
+
+        /// <summary>0..1 share of <see cref="Seconds"/> held so far; 0 while up.</summary>
+        public float Progress => !_down ? 0f : Seconds <= 0f ? 1f : System.Math.Min(1f, _held / Seconds);
+
+        /// <summary>Seconds since the press frame while held, 0 while up.</summary>
+        public float HeldSeconds => _down ? _held : 0f;
 
         /// <summary>Returns true on the frame the hold time reaches <see cref="Seconds"/>.</summary>
         public bool Update(bool down, float dt)
         {
             if (!down)
             {
+                _down = false;
                 _held = 0f;
-                _fired = false;
+                Fired = false;
                 return false;
             }
-            _held += dt;
-            if (_fired || _held < Seconds)
+            _held = _down ? _held + dt : 0f;
+            _down = true;
+            if (Fired || _held < Seconds)
                 return false;
-            _fired = true;
+            Fired = true;
             return true;
         }
     }

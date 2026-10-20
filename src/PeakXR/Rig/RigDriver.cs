@@ -35,6 +35,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly TrackedDevices devices = new();
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
+    private readonly HoldCue holdCue = new();
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
@@ -134,6 +135,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
+        holdCue.Show(null, 0f, 0f);
         SetFallback(false);
         UnbindMainCamera();
         takeover.Reset(false);
@@ -143,6 +145,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnDestroy()
     {
+        holdCue.Destroy();
         if (instance == this)
             instance = null;
         if (VRRig.Instance == rig)
@@ -255,11 +258,10 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void HandleRecenterInput(Character c, float dt)
     {
-        recenterPress.Seconds = CameraFeature.RecenterHoldSeconds.Value;
-        if (
-            recenterPress.Update(VRInput.Left.Menu || VRInput.Right.Menu, dt)
-            || rig.RecenterRequested
-        )
+        recenterPress.Seconds = CameraFeature.RecenterSeconds;
+        bool fired = recenterPress.Update(VRInput.Left.Menu || VRInput.Right.Menu, dt);
+        holdCue.Show(rig.Head, recenterPress.HeldSeconds, recenterPress.Progress);
+        if (fired || rig.RecenterRequested)
         {
             rig.RecenterRequested = false;
             pendingRecenter = true;

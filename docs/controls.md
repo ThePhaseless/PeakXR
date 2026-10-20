@@ -10,12 +10,13 @@ The default layout for a right-handed player. With `Input.DominantHand = Left` t
 | B / Y (upper button) | Tap: ping. Hold: emote wheel | Drop. Hold to charge a throw |
 | Grip | Grab or interact | Grab or interact |
 | Trigger | Use (secondary) | Use (primary) |
-| Menu | Tap: pause. Hold: recenter | Same as left |
+| Menu | Release within 1 s: pause. Hold 1 s: recenter | Same as left |
 
 Notes:
 
 - Use follows the hand that holds the item: its trigger is the primary use and the other trigger is the secondary use. With empty hands the right trigger climbs and the left trigger reaches out to help a friend, like the game's mouse buttons.
-- Grip, trigger and the hand throw come from the physical interaction settings (`Interaction` section). There, `DropButton` picks the drop button. It stays on the right B button when you switch hands, so left-handed players should set it to `LeftSecondary`; until then the right B button only drops, with no ping or emote.
+- Grip, trigger and the hand throw come from the physical interaction settings (`Interaction` section). There, `DropButton` picks the drop button. The default, `DominantSecondary`, is B on your dominant hand, so it moves to the left controller with `Input.DominantHand = Left`. Names starting with `Left` or `Right` stay on that controller whichever hand is dominant.
+- Menu: one threshold, `Camera.RecenterHoldSeconds` (1 s by default), splits the two uses. Let go before it to pause; keep holding to recenter. A small ring below the centre of your view fills while you hold, so you can see which one you will get.
 - When you hold something with a scroll function (rope spool, binoculars, guidebook, scout cannon), stick up and down scroll it. Put the item away to change items.
 - Vive wands and WMR controllers have no A/B buttons: click the top of the trackpad for B/Y and the bottom for A/X. On a Vive wand the centre of the pad is the stick click.
 

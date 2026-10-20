@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using PeakXR.Core;
 using PeakXR.VR;
 
 namespace PeakXR.Interact;
@@ -6,17 +7,6 @@ namespace PeakXR.Interact;
 /// <summary>Physical interaction settings, bound by <see cref="PhysicalInteractionFeature"/>.</summary>
 internal sealed class InteractConfig
 {
-    private static readonly string[] Buttons =
-    {
-        "None",
-        "LeftPrimary",
-        "LeftSecondary",
-        "RightPrimary",
-        "RightSecondary",
-        "LeftStickClick",
-        "RightStickClick",
-    };
-
     public static InteractConfig Instance { get; private set; } = new();
 
     private ConfigEntry<bool> physicalGrab,
@@ -58,30 +48,25 @@ internal sealed class InteractConfig
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? 0.5f;
 
-    /// <summary>The configured drop button (<c>LeftPrimary</c> ... <c>RightStickClick</c>, or <c>None</c>), so the
-    /// locomotion layout can keep its own actions off it.</summary>
-    public string DropButton => dropButton?.Value ?? "RightSecondary";
+    /// <summary>The configured drop button (<c>DominantSecondary</c>, <c>LeftPrimary</c> ... or <c>None</c>), so the
+    /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.</summary>
+    public string DropButton => dropButton?.Value ?? DefaultDropButton;
+
+    private const string DefaultDropButton = "DominantSecondary";
 
     /// <summary>State of the configured drop/throw-charge button this frame.</summary>
     public bool DropButtonDown()
     {
-        switch (dropButton?.Value ?? "RightSecondary")
+        if (!ButtonName.TryParse(DropButton, VRInput.LeftHanded, out bool left, out var control))
+            return false;
+        ref var h = ref VRInput.Hand(left);
+        return control switch
         {
-            case "LeftPrimary":
-                return VRInput.Left.Primary;
-            case "LeftSecondary":
-                return VRInput.Left.Secondary;
-            case "RightPrimary":
-                return VRInput.Right.Primary;
-            case "RightSecondary":
-                return VRInput.Right.Secondary;
-            case "LeftStickClick":
-                return VRInput.Left.StickClick;
-            case "RightStickClick":
-                return VRInput.Right.StickClick;
-            default:
-                return false;
-        }
+            VRControl.Primary => h.Primary,
+            VRControl.Secondary => h.Secondary,
+            VRControl.StickClick => h.StickClick,
+            _ => false,
+        };
     }
 
     public static void Bind(ConfigFile file)
@@ -157,10 +142,11 @@ internal sealed class InteractConfig
             dropButton = file.Bind(
                 s,
                 "DropButton",
-                "RightSecondary",
+                DefaultDropButton,
                 new ConfigDescription(
-                    "Button fallback for the game's drop: hold to charge a throw, release to throw or drop.",
-                    new AcceptableValueList<string>(Buttons)
+                    "Button fallback for the game's drop: hold to charge a throw, release to throw or drop. "
+                        + "Dominant and OffHand follow Input.DominantHand; Left and Right stay on one controller.",
+                    new AcceptableValueList<string>(ButtonName.All)
                 )
             ),
             physicalClimb = file.Bind(
@@ -236,5 +222,11 @@ internal sealed class InteractConfig
                 )
             ),
         };
+        // Before hand roles existed the default was written to every config file as RightSecondary. That is the
+        // same button as DominantSecondary for a right-handed player, so move it to the role name and let it
+        // follow Input.DominantHand (a left-handed player who wants the right B button can pick it again).
+        var drop = Instance.dropButton;
+        if (drop.Value == "RightSecondary")
+            drop.Value = DefaultDropButton;
     }
 }

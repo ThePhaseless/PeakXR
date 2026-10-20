@@ -1,6 +1,7 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
 using NVector2 = System.Numerics.Vector2;
@@ -56,37 +57,21 @@ internal static class LocomotionInput
     public static bool IsBackpackSlot(int key) => key == BackpackSlot;
 
     /// <summary>Keeps layout actions off the button interact.physical uses for drop, so one press never drops and
-    /// pings (left-handed players with the default <c>RightSecondary</c>).</summary>
-    private static void ReserveDropButton(bool owns)
+    /// pings (e.g. a fixed <c>RightSecondary</c> for a left-handed player).</summary>
+    private static void ReserveDropButton(bool owns, bool dominantLeft)
     {
         if (hasReserved)
             Mapper.SetReserved(reservedLeft, reservedControl, false);
         hasReserved =
             owns
-            && ParseButton(
+            && ButtonName.TryParse(
                 InteractConfig.Instance.DropButton,
+                dominantLeft,
                 out reservedLeft,
                 out reservedControl
             );
         if (hasReserved)
             Mapper.SetReserved(reservedLeft, reservedControl, true);
-    }
-
-    private static bool ParseButton(string name, out bool left, out VRControl control)
-    {
-        left = name.StartsWith("Left", System.StringComparison.Ordinal);
-        if (name.EndsWith("Primary", System.StringComparison.Ordinal))
-            control = VRControl.Primary;
-        else if (name.EndsWith("Secondary", System.StringComparison.Ordinal))
-            control = VRControl.Secondary;
-        else if (name.EndsWith("StickClick", System.StringComparison.Ordinal))
-            control = VRControl.StickClick;
-        else
-        {
-            control = default;
-            return false;
-        }
-        return true;
     }
 
     /// <param name="active">The game's <c>playerMovementActive</c>: no menu window or wheel blocks input.</param>
@@ -104,7 +89,8 @@ internal static class LocomotionInput
         Mapper.SetDisabled(VRAction.UsePrimary, owns);
         Mapper.SetDisabled(VRAction.UseSecondary, owns);
         Mapper.SetDisabled(VRAction.Drop, owns);
-        ReserveDropButton(owns);
+        ReserveDropButton(owns, dominantLeft);
+        Mapper.MenuHoldSeconds = CameraFeature.RecenterSeconds;
         // One stick, two meanings: items with a scroll function (rope spool, binoculars, guidebook, scout cannon)
         // take up/down as scroll, otherwise it cycles the hotbar.
         bool scroll = item != null && WantsScroll(item);

@@ -80,6 +80,8 @@ public class LongPressTests
     {
         var lp = new LongPress { Seconds = 1f };
         Assert.Equal(0f, lp.Progress);
+        lp.Update(true, 0.1f);
+        Assert.Equal(0f, lp.Progress);
         lp.Update(true, 0.25f);
         TestUtil.Near(0.25f, lp.Progress);
         lp.Update(true, 1f);
@@ -88,5 +90,32 @@ public class LongPressTests
         lp.Update(false, 0.1f);
         Assert.Equal(0f, lp.Progress);
         Assert.False(lp.Fired);
+    }
+
+    /// <summary>The recenter hold and the pause tap read the same threshold with the same clock (time since the
+    /// press frame), so a release can never both pause and recenter.</summary>
+    [Theory]
+    [InlineData(85, false)]
+    [InlineData(89, null)]
+    [InlineData(90, null)]
+    [InlineData(91, null)]
+    [InlineData(95, true)]
+    public void SharesTheTapClockWithActionMapper(int frames, bool? recenters)
+    {
+        const float dt = 1f / 90f;
+        var lp = new LongPress { Seconds = 1f };
+        var m = new ActionMapper { MenuHoldSeconds = 1f };
+        bool fired = false;
+        var down = new ControllerInput { Menu = true };
+        for (int i = 0; i <= frames; i++)
+        {
+            fired |= lp.Update(true, dt);
+            m.Update(down, default, dt);
+        }
+        lp.Update(false, dt);
+        m.Update(default, default, dt);
+        if (recenters.HasValue)
+            Assert.Equal(recenters.Value, fired);
+        Assert.NotEqual(fired, m.Pressed(VRAction.Pause));
     }
 }
