@@ -26,12 +26,16 @@ internal sealed class InteractConfig
         physicalThrow,
         releaseToDrop,
         physicalClimb,
+        staminaHaptics,
+        armLunge,
         haptics;
     private ConfigEntry<float> grabRadius,
         throwSpeed,
         throwScale,
         climbRadius,
         climbGain,
+        regripGrace,
+        lungeSpeed,
         hapticStrength;
     private ConfigEntry<string> dropButton;
 
@@ -48,6 +52,10 @@ internal sealed class InteractConfig
     public float ThrowScale => throwScale?.Value ?? 1f;
     public float ClimbRadius => climbRadius?.Value ?? 0.1f;
     public float ClimbGain => climbGain?.Value ?? 1f;
+    public float ClimbRegripGrace => regripGrace?.Value ?? 0.25f;
+    public bool StaminaHaptics => staminaHaptics?.Value ?? true;
+    public bool ArmLunge => armLunge?.Value ?? true;
+    public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? 0.5f;
 
     /// <summary>The configured drop button (<c>LeftPrimary</c> ... <c>RightStickClick</c>, or <c>None</c>), so the
@@ -178,6 +186,38 @@ internal sealed class InteractConfig
                 new ConfigDescription(
                     "Body movement per metre of arm pull while climbing.",
                     new AcceptableValueRange<float>(0.5f, 2f)
+                )
+            ),
+            regripGrace = file.Bind(
+                s,
+                "ClimbRegripGrace",
+                0.25f,
+                new ConfigDescription(
+                    "Seconds a grip climb survives with no hand on the wall, so hand-over-hand regrips do not drop you. "
+                        + "0 ends the climb the moment both hands let go.",
+                    new AcceptableValueRange<float>(0f, 0.6f)
+                )
+            ),
+            staminaHaptics = file.Bind(
+                s,
+                "StaminaHaptics",
+                true,
+                "While climbing, the gripping hands pulse faster as stamina runs low, beat when it is gone and buzz while sliding."
+            ),
+            armLunge = file.Bind(
+                s,
+                "ArmLunge",
+                true,
+                "Throw your last climbing hand upward as you let go to do the game's climb jump (lunge) in that direction. "
+                    + "Sprint plus stick keeps working."
+            ),
+            lungeSpeed = file.Bind(
+                s,
+                "LungeSpeed",
+                2.5f,
+                new ConfigDescription(
+                    "Upward hand speed (m/s, relative to your body) at release that counts as a lunge.",
+                    new AcceptableValueRange<float>(1f, 6f)
                 )
             ),
             haptics = file.Bind(

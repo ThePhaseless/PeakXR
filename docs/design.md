@@ -54,7 +54,12 @@ Shared contracts (written first, other features code against them):
 | `ui.menu` | 3D title menu, pause menu panel, 3D loading space with live tracking | |
 | `ui.settings` | VR tab in the game's settings menu, generated from `Plugin.Settings`, plus the compat report | |
 | `avatar.local` | own arms IK to controllers, show arms (`HideTheBody`), finger curls | |
-| `interact.physical` | grab-to-pickup, hand-aimed use, eat-to-mouth, throw velocity, VR climbing with arm locomotion | button fallbacks |
+| `interact.physical` | grab-to-pickup, hand-aimed use, eat-to-mouth, throw velocity, VR climbing with arm locomotion; climb assist: wall-over-item grab priority, angle-checked grabs with surface haptics, regrip grace, stamina and slide haptics, arm lunge, ledge mantle | button fallbacks |
+| `interact.aim` | aimed tools and launchers (rope tie-off, rope and vine shooters, rescue hook, pitons, darts, antizooka, clone staff, constructables) aim from the holding hand, or along the two-hand axis; the camera pose is swapped only for the duration of each game call; aim line while aiming; shot haptics | `new:item-aim` rows |
+| `interact.tools` | wrist-twist and pull gestures for scroll input (rope payout, cannon angle), hammer strikes for pitons, hand-steered glider | button fallbacks |
+| `interact.binoculars` | zoomed view on a lens render texture; the HMD view and FOV are never overridden | panel fallback |
+| `interact.lights` | hand-held candle, lantern, flare, torch: light follows the hand, culling fix, strike-to-light gestures | button fallbacks |
+| `interact.ping` | ping aimed by a hand ray (finger-gun gesture or button), marker sized for stereo | |
 | `net.pose` | handshake via player property `PeakXR`; `RaiseEvent` pose stream (codec in Core); remote `AvatarPoseDriver`; `RPCA_StartReaching` for vanilla | runs in flat too |
 | `sandbox` | built-in console unlock, item, mob and segment spawner, god mode | opt-in, offline or host only |
 
