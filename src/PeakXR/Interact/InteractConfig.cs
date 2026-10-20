@@ -239,7 +239,13 @@ internal sealed class InteractConfig
         if (!migrated.Value)
         {
             if (drop.Value == "RightSecondary")
+            {
                 drop.Value = DefaultDropButton;
+                // A left-hander who chose RightSecondary on purpose now drops with the left hand: say so.
+                Plugin.Log.LogInfo(
+                    $"[interact] DropButton RightSecondary moved to {DefaultDropButton}; set it again to keep the right hand"
+                );
+            }
             migrated.Value = true;
         }
     }

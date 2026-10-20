@@ -103,10 +103,17 @@ internal static class ComfortEventsPatches
 
         private static void Postfix(Character __instance, Vector3 force)
         {
-            if (!VRSession.Active || inPushZone || !IsLocal(__instance))
+            if (!VRSession.Active || !IsLocal(__instance))
                 return;
             float size = Vector3.Magnitude(force);
-            if (size >= 50f)
+            // A wind zone's own push (see WindZone): sized by the force it really applies, which shelter, the
+            // intensity curve or low gravity can scale to 0. Its nominal 15 (WindChillZone.cs:52) gives 0.5.
+            if (inPushZone)
+            {
+                if (size > 0.5f)
+                    ComfortEventsRuntime.Raise(ComfortEvent.WindPush, Mathf.Min(size / 30f, 1f));
+            }
+            else if (size >= 50f)
                 ComfortEventsRuntime.Raise(ComfortEvent.Knockback, size / 800f);
         }
     }
@@ -226,12 +233,8 @@ internal static class ComfortEventsPatches
                 [typeof(Character), typeof(float)]
             );
 
-        private static void Prefix(Character character)
-        {
-            inPushZone = true;
-            if (VRSession.Active && IsLocal(character) && character.data.currentClimbHandle == null)
-                ComfortEventsRuntime.Raise(ComfortEvent.WindPush, 0.5f);
-        }
+        // The cue itself is raised by ForceAtPosition from the force this call really sends.
+        private static void Prefix() => inPushZone = true;
 
         private static void Finalizer() => inPushZone = false;
     }
@@ -367,8 +370,10 @@ internal static class ComfortEventsPatches
     /// <summary>
     /// Cutscene camera jitter: CutsceneShake.Update (CutsceneShake.cs:11) and CinematicScreenShake.Update
     /// (Peak/CinematicScreenShake.cs:13, fed by AddCinematicScreenShake.FixedUpdate) shake the cutscene camera's
-    /// position (ST-64, MF-51). In VR the camera keeps its smooth path without the jitter, and the jitter becomes a
-    /// shake cue (rumble by default). Presentation only: these components move nothing else.
+    /// position (ST-64, MF-51). In VR the camera keeps its smooth path without the jitter, and CinematicScreenShake's
+    /// jitter becomes a shake cue (rumble by default). CutsceneShake's is a constant prefab wobble (nothing writes
+    /// <c>shake</c>), so it gets no cue: it would rumble for the whole cutscene. Presentation only: these components
+    /// move nothing else.
     /// </summary>
     [HarmonyPatch]
     internal static class CutsceneJitter
@@ -387,7 +392,6 @@ internal static class ComfortEventsPatches
                     __instance.follow.position,
                     __instance.smooth * Time.deltaTime
                 );
-            ComfortEventsRuntime.RaiseShake(__instance.shake * 0.1f, 0.1f);
             return false;
         }
     }
@@ -428,19 +432,26 @@ internal static class ComfortEventsPatches
     [HarmonyPatch]
     internal static class MirrorRender
     {
+        // Only cameras this patch stopped are turned back on; one that ships disabled stays off.
+        private static readonly HashSet<Camera> stopped = new();
+
         private static MethodBase TargetMethod() => GameMember.Method(typeof(Mirror), "LateUpdate");
 
         private static bool Prefix(Mirror __instance)
         {
+            var cam = __instance.mirrorCamera;
             if (!VRSession.Active || ComfortEventsConfig.Mirrors)
             {
                 // Mirrors switched back on: the camera this patch stopped renders again.
-                if (__instance.mirrorCamera != null && !__instance.mirrorCamera.enabled)
-                    __instance.mirrorCamera.enabled = true;
+                if (stopped.Count > 0 && cam != null && stopped.Remove(cam))
+                    cam.enabled = true;
                 return true;
             }
-            if (__instance.mirrorCamera != null && __instance.mirrorCamera.enabled)
-                __instance.mirrorCamera.enabled = false;
+            if (cam != null && cam.enabled)
+            {
+                cam.enabled = false;
+                stopped.Add(cam);
+            }
             return false;
         }
     }

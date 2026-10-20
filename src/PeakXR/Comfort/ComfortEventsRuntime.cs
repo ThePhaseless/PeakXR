@@ -200,9 +200,14 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             launch.Cancel();
         }
 
+        var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
+        var v = hip != null ? hip.linearVelocity : Vector3.zero;
+
         // Teleports without a run transition (ui.runflow fades Character.WarpPlayer itself): reconnect spawns,
-        // scripted returns. The jump already happened, so the fade starts black.
-        if ((center - lastCenter).sqrMagnitude > TeleportDistance * TeleportDistance && !c.warping)
+        // scripted returns. The jump already happened, so the fade starts black. A long frame of a fast fall or
+        // flight also moves the body far: allow twice what its speed covers.
+        float jump = Mathf.Max(TeleportDistance, v.magnitude * dt * 2f);
+        if ((center - lastCenter).sqrMagnitude > jump * jump && !c.warping)
             Raise(ComfortEvent.Teleport, 1f);
         lastCenter = center;
 
@@ -222,8 +227,6 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             || d.isRopeClimbing
             || d.isVineClimbing
             || c.warping;
-        var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
-        var v = hip != null ? hip.linearVelocity : Vector3.zero;
         // A tumbling body rarely reports grounded: lying still counts as landed.
         bool landed = d.isGrounded || (d.fallSeconds > 0f && v.sqrMagnitude < 1.5f * 1.5f);
         if (over)

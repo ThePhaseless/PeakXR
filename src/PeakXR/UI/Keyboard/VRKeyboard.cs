@@ -313,8 +313,7 @@ internal sealed class VRKeyboard : MonoBehaviour
             return;
         }
 
-        if (dialogDone == null)
-            WatchFocus();
+        WatchFocus(dialogDone == null);
         if (!open)
             return;
 
@@ -332,8 +331,9 @@ internal sealed class VRKeyboard : MonoBehaviour
     }
 
     /// <summary>Opens when an input field gains focus, closes when it loses it. The selection is looked up
-    /// only when it changes.</summary>
-    private void WatchFocus()
+    /// only when it changes. While a platform dialog owns the keyboard (<paramref name="act"/> false) the focus is
+    /// still tracked, so the field that opened the dialog does not reopen the keyboard when it closes.</summary>
+    private void WatchFocus(bool act)
     {
         var system = EventSystem.current;
         var selected = system != null ? system.currentSelectedGameObject : null;
@@ -349,12 +349,12 @@ internal sealed class VRKeyboard : MonoBehaviour
             && candidate.interactable
             && !candidate.readOnly
             && candidate.isActiveAndEnabled;
-        if (!open)
+        if (act && !open)
         {
             if (focused && !wasFocused)
                 Open(candidate, FieldTitle(candidate));
         }
-        else if (field == null || !field.isActiveAndEnabled || !field.isFocused)
+        else if (act && (field == null || !field.isActiveAndEnabled || !field.isFocused))
             Close(submitted: false);
         wasFocused = focused;
     }
