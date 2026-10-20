@@ -76,7 +76,7 @@ public sealed class EmotesFeature : Feature
             var character = __instance.GetComponent<Character>();
             if (character == null)
                 return;
-            var driver = character.GetComponent<AvatarPoseDriver>();
+            var driver = AvatarPoseDriver.Of(character);
             bool suspend =
                 driver != null
                 && EmoteArms.SuspendArms(

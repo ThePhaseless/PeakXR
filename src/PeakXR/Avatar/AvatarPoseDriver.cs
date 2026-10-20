@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PeakXR.Avatar;
@@ -25,15 +26,32 @@ public partial class AvatarPoseDriver : MonoBehaviour
     /// </summary>
     public bool ArmsSuspended { get; set; }
 
+    /// <summary>Drivers by character, so the per-tick IK and hold patches skip a native component lookup for
+    /// every character (most never have a driver).</summary>
+    private static readonly Dictionary<Character, AvatarPoseDriver> ByCharacter = new();
+
     public static AvatarPoseDriver For(Character character)
     {
-        var driver = character.GetComponent<AvatarPoseDriver>();
+        var driver = Of(character);
         if (driver == null)
         {
             driver = character.gameObject.AddComponent<AvatarPoseDriver>();
             driver.Character = character;
+            ByCharacter[character] = driver;
         }
         return driver;
+    }
+
+    /// <summary>The character's driver, or null when it has none.</summary>
+    public static AvatarPoseDriver Of(Character character) =>
+        character is not null && ByCharacter.TryGetValue(character, out var d) && d != null
+            ? d
+            : null;
+
+    private void OnDestroy()
+    {
+        if (Character is not null)
+            ByCharacter.Remove(Character);
     }
 
     public void SetPose(in AvatarPose pose)

@@ -24,7 +24,7 @@ internal static class AvatarPatches
     }
 
     private static AvatarPoseDriver Driver(Character c) =>
-        c != null && c.TryGetComponent(out AvatarPoseDriver d) && d.HasFreshPose ? d : null;
+        AvatarPoseDriver.Of(c) is { HasFreshPose: true } d ? d : null;
 
     /// <summary>CharacterAnimations.ConfigureIK (CharacterAnimations.cs:390): runs in the physics tick right after
     /// the animated pose is evaluated (CharacterRagdoll.cs:166), for local and remote characters.</summary>
@@ -119,8 +119,7 @@ internal static class AvatarPatches
         private static void Postfix(CharacterItems __instance)
         {
             var c = itemsCharacter(__instance);
-            if (c != null && c.TryGetComponent(out AvatarPoseDriver d))
-                d.DestroyItemJoint();
+            AvatarPoseDriver.Of(c)?.DestroyItemJoint();
         }
     }
 
