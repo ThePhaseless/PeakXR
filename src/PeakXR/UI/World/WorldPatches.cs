@@ -36,12 +36,12 @@ internal static class MenuWindowOpenPatch
 [HarmonyPatch(typeof(GraphicRaycaster), nameof(GraphicRaycaster.eventCamera), MethodType.Getter)]
 internal static class EventCameraPatch
 {
-    private static void Postfix(GraphicRaycaster __instance, ref Camera __result)
+    // m_Canvas: the raycaster's own cached canvas, filled by the getter before this postfix runs.
+    private static void Postfix(Canvas ___m_Canvas, ref Camera __result)
     {
         if (!UIWorldRuntime.Ready || __result == LaserPointer.EventCamera)
             return;
-        var canvas = __instance.GetComponent<Canvas>();
-        if (canvas != null && WorldCanvases.IsConverted(canvas.rootCanvas))
+        if (___m_Canvas != null && WorldCanvases.IsConverted(___m_Canvas.rootCanvas))
             __result = LaserPointer.EventCamera;
     }
 }

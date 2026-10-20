@@ -16,7 +16,8 @@ internal static class PushToTalkSamplePatch
 {
     private static bool forced;
 
-    private static MethodBase TargetMethod() => GameMember.Method(typeof(CharacterInput), "Sample");
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(CharacterInput), "Sample", new[] { typeof(bool) });
 
     [HarmonyPriority(Priority.Low)]
     private static void Postfix(CharacterInput __instance, bool playerMovementActive)
