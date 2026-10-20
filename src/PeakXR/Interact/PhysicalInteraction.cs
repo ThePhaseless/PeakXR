@@ -388,7 +388,9 @@ internal static class PhysicalInteraction
         return (item.Center() - pos).sqrMagnitude <= 4f * r2;
     }
 
-    /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists.</summary>
+    /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists. While the head
+    /// is inside a wall, rig.camera keeps the camera on the body's side of it (RigDriver.CheckHeadInWall), so these
+    /// rays cannot start behind geometry.</summary>
     private static Vector3 Eye(VRRig rig) =>
         MainCamera.instance != null ? MainCamera.instance.transform.position : rig.Head.position;
 
