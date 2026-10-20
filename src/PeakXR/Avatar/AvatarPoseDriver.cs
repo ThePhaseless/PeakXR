@@ -19,6 +19,12 @@ public partial class AvatarPoseDriver : MonoBehaviour
 
     public bool HasFreshPose => Time.time - LastPoseTime < StaleAfter;
 
+    /// <summary>
+    /// While true the arms (and the held item's frame) follow the game's animation instead of the tracked hands;
+    /// head look and fingers still apply. Set by the emote feature for full-body emotes.
+    /// </summary>
+    public bool ArmsSuspended { get; set; }
+
     public static AvatarPoseDriver For(Character character)
     {
         var driver = character.GetComponent<AvatarPoseDriver>();

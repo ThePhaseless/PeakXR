@@ -13,6 +13,12 @@ namespace PeakXR.Core
         Fingers = 1 << 3,
         Seated = 1 << 4,
         VrActive = 1 << 5,
+
+        /// <summary>The held item sits in the left hand (mirrored hold). Pure flag: adds no payload bytes.</summary>
+        ItemInLeftHand = 1 << 6,
+
+        /// <summary>The free hand also grips the held item. Pure flag: adds no payload bytes.</summary>
+        TwoHandHold = 1 << 7,
     }
 
     /// <summary>
@@ -38,6 +44,8 @@ namespace PeakXR.Core
         public bool HasFingers => (Flags & PoseFlags.Fingers) != 0;
         public bool Seated => (Flags & PoseFlags.Seated) != 0;
         public bool VrActive => (Flags & PoseFlags.VrActive) != 0;
+        public bool ItemInLeftHand => (Flags & PoseFlags.ItemInLeftHand) != 0;
+        public bool TwoHandHold => (Flags & PoseFlags.TwoHandHold) != 0;
     }
 
     /// <summary>
@@ -46,6 +54,13 @@ namespace PeakXR.Core
     /// head, left hand, right hand (each: 3 x int16 millimetres + 4-byte smallest-three rotation),
     /// fingers (5 bytes left, 5 bytes right, 0..255). Full packet = 44 bytes.
     /// </summary>
+    /// <remarks>
+    /// <see cref="Version"/> stays 1 for the hold bits (<see cref="PoseFlags.ItemInLeftHand"/>,
+    /// <see cref="PoseFlags.TwoHandHold"/>): they are pure flags that add no payload, and <see cref="SizeFor"/>
+    /// only counts the part bits, so a version 1 decoder that predates them reads the same parts from the same
+    /// offsets and simply ignores bits 6 and 7. Bumping the version would make those peers drop every packet.
+    /// Bump it only when the byte layout changes.
+    /// </remarks>
     public static class PoseCodec
     {
         public const byte Version = 1;

@@ -1,3 +1,4 @@
+using System;
 using PeakXR.Core;
 using UnityEngine;
 
@@ -46,6 +47,12 @@ public class VRRig : MonoBehaviour
     /// calibration maps the seated head height to the avatar's standing eye height.</summary>
     public bool SeatedMode;
 
+    /// <summary>Raised after a recenter (first frame, menu long-press, <see cref="Recenter"/>).</summary>
+    public event Action Recentered;
+
+    /// <summary>Set by <see cref="Recenter"/>; the camera feature performs it under a short fade.</summary>
+    internal bool RecenterRequested;
+
     /// <summary>
     /// Turns the player's view around the head by <paramref name="degrees"/> (positive = right). Used by snap and
     /// smooth turning. Rotates <see cref="Origin"/> around the head and moves <see cref="RoomAnchor"/> so the head
@@ -66,6 +73,15 @@ public class VRRig : MonoBehaviour
             degrees
         );
     }
+
+    /// <summary>
+    /// Re-centres the player: the current head spot becomes <see cref="RoomAnchor"/>, the headset's heading
+    /// turns to the body's heading and the eye height is recalibrated. Performed by the camera feature on its
+    /// next frame, behind a short fade.
+    /// </summary>
+    public void Recenter() => RecenterRequested = true;
+
+    internal void RaiseRecentered() => Recentered?.Invoke();
 
     public Transform Hand(bool left) => left ? LeftHand : RightHand;
 

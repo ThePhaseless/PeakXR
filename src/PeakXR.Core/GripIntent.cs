@@ -27,6 +27,12 @@ namespace PeakXR.Core
 
         /// <summary>Fallback: the game's normal interact on whatever the head or pointing hand aims at.</summary>
         Interact,
+
+        /// <summary>
+        /// Another feature (body slots, social reach) claimed this grip through the extension hook; it runs the
+        /// action itself. Only the free hand joining the held item outranks a claim.
+        /// </summary>
+        Extension,
     }
 
     public enum GripReleaseAction
@@ -34,6 +40,9 @@ namespace PeakXR.Core
         Keep,
         Throw,
         Drop,
+
+        /// <summary>The release belongs to an extension, e.g. holstering the held item into a body slot.</summary>
+        Extension,
     }
 
     /// <summary>State of one hand and its surroundings at the moment its grip closes.</summary>
@@ -53,6 +62,12 @@ namespace PeakXR.Core
         /// <summary>This hand is within reach of the held item.</summary>
         public bool NearHeldItem;
         public Handedness HeldHandedness;
+
+        /// <summary>
+        /// An extension (inventory slot, social target) wants this press. Independent of the physical toggles,
+        /// since extensions have their own settings.
+        /// </summary>
+        public bool ExtensionClaim;
 
         /// <summary>The body is already on a wall or in the air: a wall in reach wins over a loose item, so a
         /// hand reaching for a hold never picks up an item lying on the ledge instead.</summary>
@@ -75,6 +90,8 @@ namespace PeakXR.Core
             )
                 return GripPressAction.SecondHand;
 
+            if (c.ExtensionClaim)
+                return GripPressAction.Extension;
             if (
                 c.BodyClimbing
                 && c.PhysicalClimb
@@ -98,17 +115,25 @@ namespace PeakXR.Core
             return GripPressAction.Interact;
         }
 
-        /// <summary>Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).</summary>
+        /// <summary>
+        /// Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).
+        /// An extension claim (holstering over a slot) wins over throw and drop for the holding hand.
+        /// </summary>
         public static GripReleaseAction OnRelease(
             bool thisHandHolds,
             bool canDrop,
             float speed,
             float throwSpeed,
             bool throwEnabled,
-            bool releaseToDrop
+            bool releaseToDrop,
+            bool extensionClaims = false
         )
         {
-            if (!thisHandHolds || !canDrop)
+            if (!thisHandHolds)
+                return GripReleaseAction.Keep;
+            if (extensionClaims)
+                return GripReleaseAction.Extension;
+            if (!canDrop)
                 return GripReleaseAction.Keep;
             if (throwEnabled && speed >= throwSpeed)
                 return GripReleaseAction.Throw;
