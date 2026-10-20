@@ -61,6 +61,30 @@ public class RoomScaleTests
     }
 
     [Fact]
+    public void GaitSway_DoesNotRatchetTheAnchor()
+    {
+        // Each step swings the body forward and back; only its net travel may reach the anchor.
+        var f = new RoomScaleFollow();
+        var head = new Vector2(0f, 0.5f);
+        for (int i = 0; i < 20; i++)
+        {
+            f.Update(head, new Vector2(0f, 0.03f), true);
+            f.Update(head, new Vector2(0f, -0.03f), true);
+        }
+        TestUtil.Near(0f, f.Anchor.Y);
+    }
+
+    [Fact]
+    public void BackSwing_NeverPullsTheAnchorBehindItsStart()
+    {
+        var f = new RoomScaleFollow();
+        var head = new Vector2(0f, 0.5f);
+        f.Update(head, new Vector2(0f, 0.1f), true);
+        f.Update(head, new Vector2(0f, -0.3f), true);
+        TestUtil.Near(0f, f.Anchor.Y);
+    }
+
+    [Fact]
     public void CannotFollow_NoRequestNoAbsorb()
     {
         var f = new RoomScaleFollow();

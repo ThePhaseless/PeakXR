@@ -13,7 +13,8 @@ namespace PeakXR.Rig;
 /// Runs <see cref="VRRig"/>: tracked head, hands and aim inside the tracking space, the tracking origin on
 /// the character (or on a comfort view while the game owns the camera), recentering, and the game's
 /// <c>MainCamera</c> as the stereo eye camera. Order 600: after MainCameraMovement (500) has run its side
-/// effects, before the avatar (1000) reads the rig.
+/// effects, before the avatar (1000) reads the rig. Unverified that Unity honours the order for a runtime-loaded
+/// type; if not, the camera still ends at the head (the MainCameraMovement postfix and OnBeforeRender).
 /// </summary>
 [DefaultExecutionOrder(600)]
 internal sealed class RigDriver : MonoBehaviour
@@ -30,6 +31,13 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Eye height above the torso until the first upright sample of the character.</summary>
     private const float DefaultEyeAboveCenter = 0.6f;
 
+    /// <summary>Vertical follow rate (1/s) on the ground: the torso is a driven rigidbody that bobs at step rate
+    /// (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls keep the full rate.</summary>
+    private const float GroundedVerticalRate = 5f;
+
+    /// <summary>The view stops this far (m) in front of a wall the head went into.</summary>
+    private const float WallMargin = 0.05f;
+
     /// <summary>Follow rate (1/s) of the opt-in cutscene glide; slow, never a cut.</summary>
     private const float CutsceneFollowRate = 1.5f;
 
@@ -42,6 +50,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// still viewpoints.</summary>
     internal static bool FollowCutscene;
 
+    /// <summary>The first-person eye anchor in world space, the point the view rides; null while the view is
+    /// elsewhere or jumped this frame. Room-scale following absorbs its movement.</summary>
+    internal static Vector3? BodyAnchor;
+
     private readonly TrackedDevices devices = new();
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
@@ -49,6 +61,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
+    private readonly object wallFadeOwner = new();
     private Camera[] cameraBuffer = new Camera[16];
 
     private VRRig rig;
@@ -82,6 +95,8 @@ internal sealed class RigDriver : MonoBehaviour
     private bool pendingRecenter;
     private bool pendingHeight;
     private bool lastSeated;
+    private bool headBlocked;
+    private Vector3 blockedEye;
 
     internal static void OnVRStarted()
     {
@@ -153,6 +168,9 @@ internal sealed class RigDriver : MonoBehaviour
         takeover.Reset(false);
         shownKind = ViewKind.FirstPerson;
         VRFade.Clear(this);
+        VRFade.Clear(wallFadeOwner);
+        headBlocked = false;
+        BodyAnchor = null;
     }
 
     private void OnDestroy()
@@ -184,11 +202,13 @@ internal sealed class RigDriver : MonoBehaviour
         UpdateEyeOffset(c, dt);
         HandleRecenterInput(c, dt);
 
+        BodyAnchor = null;
         if (rig.OriginOverride)
             ResetTakeover();
         else
             PlaceOrigin(c, dt);
 
+        CheckHeadInWall(c);
         DriveCamera();
     }
 
@@ -199,8 +219,10 @@ internal sealed class RigDriver : MonoBehaviour
             return;
         UpdateHead();
         if (!fallbackActive && boundCam != null)
-            boundCam.transform.SetPositionAndRotation(rig.Head.position, rig.Head.rotation);
+            boundCam.transform.SetPositionAndRotation(EyePosition(), rig.Head.rotation);
     }
+
+    private Vector3 EyePosition() => headBlocked ? blockedEye : rig.Head.position;
 
     private void UpdateHead()
     {
@@ -252,6 +274,7 @@ internal sealed class RigDriver : MonoBehaviour
             !d.fullyConscious
             || !d.isGrounded
             || d.isClimbingAnything
+            || d.isCrouching
             || d.fallSeconds > 0f
             || d.currentRagdollControll < 0.9f
         )
@@ -410,7 +433,15 @@ internal sealed class RigDriver : MonoBehaviour
         float yaw = rig.Origin.eulerAngles.y;
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
             return;
-        anchor = snap ? goal : RigMath.Follow(anchor.N(), goal.N(), dt, rate, rate, maxLag).U();
+        float verticalRate =
+            shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything
+                ? Mathf.Min(rate, GroundedVerticalRate)
+                : rate;
+        anchor = snap
+            ? goal
+            : RigMath.Follow(anchor.N(), goal.N(), dt, rate, verticalRate, maxLag).U();
+        if (shownKind == ViewKind.FirstPerson && !snap)
+            BodyAnchor = anchor;
         snap = false;
 
         var origin = RigMath.OriginPosition(
@@ -420,6 +451,38 @@ internal sealed class RigDriver : MonoBehaviour
             RigMath.TrackedEyeHeight(rig.HeightOffset)
         );
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
+    }
+
+    /// <summary>
+    /// The head can lean up to 1 m from a blocked body before room-scale recenters, so it can enter rock or a wall.
+    /// Then the view fades to black and the camera stays on the body's side of the surface; the game's interact,
+    /// thorn and climb-start rays start at the camera (Interaction.cs:204, :158, CharacterClimbing.cs:541), so a
+    /// VR player cannot see, grab or climb through geometry.
+    /// </summary>
+    private void CheckHeadInWall(Character c)
+    {
+        headBlocked = false;
+        if (c != null && !rig.OriginOverride && shownKind == ViewKind.FirstPerson && headTracked)
+        {
+            var from = c.Center;
+            if (
+                Physics.Linecast(
+                    from,
+                    rig.Head.position,
+                    out var hit,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                headBlocked = true;
+                blockedEye = Vector3.MoveTowards(hit.point, from, WallMargin);
+            }
+        }
+        if (headBlocked)
+            VRFade.Set(wallFadeOwner, 1f);
+        else
+            VRFade.Clear(wallFadeOwner);
     }
 
     /// <summary>Where the player's calibrated eyes go this frame, and how the anchor follows it.</summary>
@@ -580,7 +643,9 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void CopyToFallback(Camera src)
     {
-        fallbackCam.cullingMask = src.cullingMask;
+        // The loading space zeroes the game camera's mask while shown; keep the last real one (or Everything).
+        if (src.cullingMask != 0)
+            fallbackCam.cullingMask = src.cullingMask;
         fallbackCam.clearFlags = src.clearFlags;
         fallbackCam.backgroundColor = src.backgroundColor;
         fallbackCam.farClipPlane = src.farClipPlane;
@@ -604,7 +669,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             if (boundCam.nearClipPlane != near)
                 boundCam.nearClipPlane = near;
-            boundCam.transform.SetPositionAndRotation(rig.Head.position, rig.Head.rotation);
+            boundCam.transform.SetPositionAndRotation(EyePosition(), rig.Head.rotation);
             rig.HeadCamera = boundCam;
         }
         else

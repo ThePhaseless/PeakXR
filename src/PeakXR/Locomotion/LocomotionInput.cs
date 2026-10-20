@@ -242,21 +242,28 @@ internal static class LocomotionInput
     private static NVector2 RoomScale(Character c, bool stickIdle, float dt)
     {
         var rig = VRRig.Instance;
-        var body = c.refs.hip != null ? c.refs.hip.transform.position : c.Center;
+        // The smoothed eye anchor the view rides, not a raw body part: absorbing anything else moves the view.
+        // shortcut: the anchor is from the last LateUpdate, so about one frame of body travel (1 cm at walking
+        // speed) shows as view motion while the body starts or stops; absorb inside RigDriver if that is felt.
+        var anchor = RigDriver.BodyAnchor;
         if (rig == null || rig.Origin == null || !VRInput.HeadTracked)
         {
-            lastBody = body;
             hadBody = false;
             return NVector2.Zero;
         }
 
-        var delta = hadBody ? rig.Origin.InverseTransformVector(body - lastBody) : Vector3.zero;
-        lastBody = body;
-        hadBody = true;
+        var delta =
+            hadBody && anchor != null
+                ? rig.Origin.InverseTransformVector(anchor.Value - lastBody)
+                : Vector3.zero;
+        hadBody = anchor != null;
+        if (hadBody)
+            lastBody = anchor.Value;
 
         var data = c.data;
         bool canFollow =
-            LocomotionConfig.RoomScale
+            hadBody
+            && LocomotionConfig.RoomScale
             && stickIdle
             && data.isGrounded
             && data.fullyConscious

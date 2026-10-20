@@ -44,6 +44,8 @@ namespace PeakXR.Core
 
         public Vector2 Offset { get; private set; }
 
+        float _absorbed;
+
         public bool RecenterNeeded => Offset.Length() > RecenterDistance;
 
         /// <param name="head">HMD position in tracking space (x, z).</param>
@@ -57,15 +59,19 @@ namespace PeakXR.Core
             float dist = d.Length();
             if (canFollow && dist > 1e-5f)
             {
-                // Absorb only body motion toward the head, and never past it; pushes the other way still move the view.
+                // Absorb the body's net travel toward the head, never past it: a step's back-swing returns what its
+                // forward swing took, so gait sway cannot ratchet the anchor (and the view) toward the head. Below
+                // the start point, pushes away from the head still move the view.
                 var dir = d / dist;
-                float along = Vector2.Dot(bodyDelta, dir);
-                if (along > 0f)
-                    Anchor += dir * MathF.Min(along, dist);
+                float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
+                Anchor += dir * along;
+                _absorbed += along;
                 d = head - Anchor;
                 dist = d.Length();
             }
             Offset = d;
+            if (!canFollow)
+                _absorbed = 0f;
 
             if (!canFollow || dist <= LeanRadius)
                 return Vector2.Zero;
@@ -77,6 +83,7 @@ namespace PeakXR.Core
         {
             Anchor = head;
             Offset = Vector2.Zero;
+            _absorbed = 0f;
         }
 
         /// <summary>
