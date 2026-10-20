@@ -53,6 +53,11 @@ Shared contracts (written first, other features code against them):
 | `ui.world` | convert overlay canvases to world space; laser pointer input; HUD on wrist or body; VR fade | |
 | `ui.menu` | 3D title menu, pause menu panel, 3D loading space with live tracking | |
 | `ui.settings` | VR tab in the game's settings menu, generated from `Plugin.Settings`, plus the compat report | |
+| `ui.passport` | passport and guidebook as books held above the item's hand, page turns by hand swipe or laser; softer photobooth flash | `new:photo-passport` rows |
+| `ui.lobby` | boarding pass and custom run options docked at the check-in kiosk; invite-kiosk note when the Steam overlay is off-headset | `new:lobby-flow` rows |
+| `ui.runflow` | warps, campfire segment swaps, run end, beach wake-up and credits as fade-out, black hold, fade-in; summit portal fade; shakes become rumble; end cutscene and credits on a world-locked screen; results panel; any button ends the credits | `new:run-flow` rows; builds on `VRFade`, generic camera takeover stays in `rig.camera` |
+| `ui.hand` | hold-to-use progress ring and friend item-use feed on the hands, with quarter-step haptics | IC-12, IN-04, MF-105 |
+| `voice` | push to talk (binding table and hand-to-mouth), headset mic picked through the game's setting, speaking icons above remote players | `new:voice` rows |
 | `avatar.local` | own arms IK to controllers, show arms (`HideTheBody`), finger curls | |
 | `interact.physical` | grab-to-pickup, hand-aimed use, eat-to-mouth, throw velocity, VR climbing with arm locomotion; climb assist: wall-over-item grab priority, angle-checked grabs with surface haptics, regrip grace, stamina and slide haptics, arm lunge, ledge mantle | button fallbacks |
 | `interact.aim` | aimed tools and launchers (rope tie-off, rope and vine shooters, rescue hook, pitons, darts, antizooka, clone staff, constructables) aim from the holding hand, or along the two-hand axis; the camera pose is swapped only for the duration of each game call; aim line while aiming; shot haptics | `new:item-aim` rows |
