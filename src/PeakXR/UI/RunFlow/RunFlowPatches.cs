@@ -90,6 +90,7 @@ internal static class CreditsStartPatch
 internal static class CreditsAnyKeyPatch
 {
     private static InputAction anyKey;
+    private static bool resolved;
 
     private static MethodBase TargetMethod() =>
         GameMember.Method(typeof(InputAction), "WasPerformedThisFrame", Type.EmptyTypes);
@@ -98,9 +99,17 @@ internal static class CreditsAnyKeyPatch
     {
         if (__result || !RunFlowRuntime.CreditsWaiting || !VRSession.Active)
             return;
-        if (anyKey == null)
-            anyKey = InputSystem.actions != null ? InputSystem.actions.FindAction("AnyKey") : null;
-        if (__instance == anyKey && RunFlowRuntime.AnyButtonPressedThisFrame)
+        if (!resolved)
+        {
+            // Same lookup as the game; a rename would silently disable the VR skip, so say so once.
+            resolved = InputSystem.actions != null;
+            anyKey = resolved ? InputSystem.actions.FindAction("AnyKey") : null;
+            if (resolved && anyKey == null)
+                Plugin.Log.LogWarning(
+                    "[ui.runflow] input action 'AnyKey' not found; VR buttons cannot skip the credits"
+                );
+        }
+        if (anyKey != null && __instance == anyKey && RunFlowRuntime.AnyButtonPressedThisFrame)
             __result = true;
     }
 }

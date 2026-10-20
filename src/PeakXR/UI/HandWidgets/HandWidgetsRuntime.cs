@@ -190,7 +190,12 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
             root = hudRoot;
             if (box == null)
             {
-                box = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+                // Own (nested) Canvas: posing it every frame re-batches only this box, not the whole HUD.
+                box = new GameObject(
+                    name,
+                    typeof(RectTransform),
+                    typeof(Canvas)
+                ).GetComponent<RectTransform>();
                 box.SetParent(hudRoot, false);
                 box.anchorMin = box.anchorMax = box.pivot = new Vector2(0.5f, 0.5f);
                 box.sizeDelta = Vector2.zero;

@@ -371,14 +371,15 @@ public static class SandboxActions
             }
 
             case SpawnStyle.ItemMob:
-                EnsureMobManager();
+                if (!EnsureMobManager())
+                    return false;
                 go = PhotonNetwork.InstantiateItemRoom(entry.Name, position, rotation);
                 break;
 
             default:
                 // Mob.Start registers with MobManager.instance; maps without mobs have none.
-                if (entry.Kind == EntityKind.Mob)
-                    EnsureMobManager();
+                if (entry.Kind == EntityKind.Mob && !EnsureMobManager())
+                    return false;
                 go = PhotonNetwork.Instantiate(entry.Name, position, rotation, 0);
                 break;
         }
@@ -392,10 +393,20 @@ public static class SandboxActions
         return true;
     }
 
-    static void EnsureMobManager()
+    /// <summary>Mob.Start registers with MobManager.instance without a null check (Mob.cs:256). A local
+    /// stand-in works for us, but peers have none and would throw for every mob, so refuse with company.</summary>
+    static bool EnsureMobManager()
     {
-        if (MobManager.instance == null)
-            new GameObject("PeakXR.MobManager").AddComponent<MobManager>();
+        if (MobManager.instance != null)
+            return true;
+        // shortcut: a player who joins after the spawn still throws once; refuse online entirely if that matters.
+        if (PhotonNetwork.CurrentRoom != null && PhotonNetwork.CurrentRoom.PlayerCount > 1)
+        {
+            Say("This map has no mobs; spawn mobs here only while you are alone in the lobby.");
+            return false;
+        }
+        new GameObject("PeakXR.MobManager").AddComponent<MobManager>();
+        return true;
     }
 
     // ---------------------------------------------------------------- player

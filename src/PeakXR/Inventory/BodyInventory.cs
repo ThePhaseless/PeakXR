@@ -199,7 +199,13 @@ internal sealed class BodyInventory : IGripExtension
 
     private static int HandIndex(bool left) => left ? 0 : 1;
 
-    private bool Ready(Character c) => Valid && c == Character.localCharacter && c.player != null;
+    // The slot layout assumes hotbar 0-2 and the backpack at 3 (Player.cs:42-47); stay inert if the game changes that.
+    private bool Ready(Character c) =>
+        Valid
+        && c == Character.localCharacter
+        && c.player != null
+        && c.player.itemSlots.Length == PackSlot
+        && c.player.backpackSlot.itemSlotID == PackSlot;
 
     // ------------------------------------------------------------------ grip hooks
 
@@ -221,8 +227,9 @@ internal sealed class BodyInventory : IGripExtension
         }
         var look = Look(c, i);
         // Drawing needs a filled slot whose item is not already in a hand; reaching to an empty slot stays free for
-        // grabbing or climbing.
-        return look == SlotLook.Filled;
+        // grabbing or climbing. The game refuses switches while climbing (CharacterItems.cs:735), so a climbing
+        // hand over a slot catches the wall instead.
+        return look == SlotLook.Filled && !c.data.isClimbing;
     }
 
     public void BeginPress(in GripHookContext ctx)

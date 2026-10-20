@@ -3,8 +3,9 @@ using UnityEngine;
 namespace PeakXR.UI.Common;
 
 /// <summary>
-/// Head-locked fade: an inside-out sphere around a camera, drawn after everything (UI included) with
-/// depth testing off. A sphere instead of a quad so it covers any headset FOV in both eyes.
+/// Head-locked fade: an inside-out sphere around the eyes, drawn after everything (UI included) with
+/// depth testing off. A sphere instead of a quad so it covers any headset FOV in both eyes. Parented to a
+/// transform that is never deactivated (the rig head, not the game's camera, which cutscenes switch off).
 /// </summary>
 [DefaultExecutionOrder(32000)]
 internal sealed class FadeSphere : MonoBehaviour
@@ -13,17 +14,16 @@ internal sealed class FadeSphere : MonoBehaviour
     private Material material;
     private MeshRenderer meshRenderer;
 
-    public static FadeSphere Attach(Camera camera, Transform fallback)
+    public static FadeSphere Attach(Transform parent)
     {
-        var parent = camera != null ? camera.transform : fallback;
         if (mesh == null)
             mesh = UIMaterials.SphereMesh();
 
         var fadeMaterial = UIMaterials.Create(Color.clear, drawOnTop: true, renderQueue: 5000);
         var go = UIMaterials.MeshObject("PeakXR_Fade", mesh, fadeMaterial, parent);
         go.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
-        var near = camera != null ? camera.nearClipPlane : 0.05f;
-        go.transform.localScale = Vector3.one * Mathf.Max(0.6f, near * 6f);
+        // Radius 0.3 m: beyond every near plane in use (rig.camera NearClip is at most 0.1 m).
+        go.transform.localScale = Vector3.one * 0.6f;
 
         var sphere = go.AddComponent<FadeSphere>();
         sphere.material = fadeMaterial;

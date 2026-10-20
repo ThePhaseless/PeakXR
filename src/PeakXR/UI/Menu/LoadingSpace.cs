@@ -33,6 +33,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private RectTransform progressFill;
     private Transform progressBar;
     private Quaternion facing = Quaternion.identity;
+    private MainCamera hiddenMain;
+    private Camera hiddenCam;
+    private int hiddenMask;
 
     public bool Interactive => false;
 
@@ -58,12 +61,40 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         TrackHead();
         space.SetActive(true);
         Shown = true;
+        HideGameCamera();
     }
 
     public void Hide()
     {
         space.SetActive(false);
         Shown = false;
+        RestoreGameCamera();
+    }
+
+    /// <summary>The game's camera (old scene, then the new one) keeps rendering under the room until the load
+    /// ends, extra wait included (A/LoadingScreenHandler.cs:132). Cull everything so it costs almost nothing.
+    /// Not <c>enabled = false</c>: game code reads <c>Camera.main</c> every frame without a null check
+    /// (Zorro DistanceDisablerHandler.Update, SmallShadowHandler.Update).</summary>
+    private void HideGameCamera()
+    {
+        var main = MainCamera.instance;
+        if (main == hiddenMain)
+            return;
+        RestoreGameCamera();
+        hiddenMain = main;
+        hiddenCam = main != null ? main.GetComponent<Camera>() : null;
+        if (hiddenCam == null)
+            return;
+        hiddenMask = hiddenCam.cullingMask;
+        hiddenCam.cullingMask = 0;
+    }
+
+    private void RestoreGameCamera()
+    {
+        if (hiddenCam != null)
+            hiddenCam.cullingMask = hiddenMask;
+        hiddenMain = null;
+        hiddenCam = null;
     }
 
     public PlacementResult Place(
@@ -95,6 +126,8 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             return;
         TrackHead();
         UpdateProgress();
+        // Runs after RigDriver (order 600) has bound and copied a new scene's camera.
+        HideGameCamera();
     }
 
     private void TrackHead()
@@ -148,7 +181,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             && UniversalRenderPipeline.asset.rendererDataList.Length > 1
         )
             data.SetRenderer(1);
-        FadeSphere.Attach(cam, camGo.transform);
+        FadeSphere.Attach(camGo.transform);
 
         BuildFloor();
         BuildWalls();

@@ -11,12 +11,26 @@ internal sealed class SandboxDriver : MonoBehaviour
 {
     const float GodInterval = 0.25f;
 
-    readonly SandboxWindow window = new();
+    SandboxWindowHost host;
     bool wasActive;
     bool commandsRegistered;
     float nextGodTick;
 
+    void Awake()
+    {
+        host = gameObject.AddComponent<SandboxWindowHost>();
+        host.enabled = false;
+    }
+
     void Update()
+    {
+        Tick();
+        // A disabled behaviour gets no OnGUI calls, so IMGUI costs nothing while the window is closed.
+        if (host.enabled != SandboxWindow.IsOpen)
+            host.enabled = SandboxWindow.IsOpen;
+    }
+
+    void Tick()
     {
         if (!SandboxActions.Enabled && !wasActive)
             return;
@@ -49,6 +63,12 @@ internal sealed class SandboxDriver : MonoBehaviour
             SandboxActions.GodTick();
         }
     }
+}
+
+/// <summary>Draws the sandbox window; <see cref="SandboxDriver"/> enables it only while the window is open.</summary>
+internal sealed class SandboxWindowHost : MonoBehaviour
+{
+    readonly SandboxWindow window = new();
 
     void OnGUI()
     {

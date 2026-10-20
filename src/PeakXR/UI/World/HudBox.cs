@@ -33,7 +33,12 @@ internal sealed class HudBox
         {
             Forget();
             root = canvasRoot;
-            Rect = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            // Own (nested) Canvas: posing it every frame re-batches only this box, not the whole HUD canvas.
+            Rect = new GameObject(
+                name,
+                typeof(RectTransform),
+                typeof(Canvas)
+            ).GetComponent<RectTransform>();
             Rect.SetParent(canvasRoot, false);
             Rect.anchorMin = Rect.anchorMax = Rect.pivot = new Vector2(0.5f, 0.5f);
             Rect.sizeDelta = canvasRoot.sizeDelta;
