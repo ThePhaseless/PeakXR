@@ -27,6 +27,7 @@ public class Plugin : BaseUnityPlugin
                 + $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}"
         );
 
+        XR.XRAssemblyLoader.Hook();
         FeatureManager.InstallAll(VRSession.Requested != VRRuntime.Disabled);
     }
 }

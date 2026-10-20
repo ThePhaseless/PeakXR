@@ -40,6 +40,11 @@ public static class VRSession
     internal static VRRuntime ReadRequestedRuntime()
     {
         var value = Environment.GetEnvironmentVariable("PEAKXR_RUNTIME");
+        if (value == null)
+            Plugin.Log.LogWarning(
+                "PEAKXR_RUNTIME is not set: the PeakXR preloader (BepInEx/patchers/PeakXR) is missing, so VR stays "
+                    + "off. Install the whole mod, including the patchers folder."
+            );
         return Enum.TryParse(value, true, out VRRuntime runtime) ? runtime : VRRuntime.Disabled;
     }
 }

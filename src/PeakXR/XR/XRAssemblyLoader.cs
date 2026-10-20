@@ -72,7 +72,9 @@ static class XRAssemblyLoader
         }
     }
 
-    static void Hook()
+    /// <summary>Installs the resolve handler. Plugin.Awake calls it before feature discovery, whose
+    /// <c>GetTypes</c> already needs the XR assemblies for the backend types.</summary>
+    public static void Hook()
     {
         if (hooked)
             return;

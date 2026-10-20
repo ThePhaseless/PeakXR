@@ -16,6 +16,9 @@ public sealed class PlayerLookFeature : Feature
 
     protected internal override void Install()
     {
+        // Without the rig nothing would write the headset look, and the zeroed stick would freeze the view.
+        if (!FeatureManager.IsActive<Rig.CameraFeature>())
+            throw new InvalidOperationException("needs rig.camera");
         ComfortConfig.Bind(Plugin.Settings);
         LookPatches.Movement = GameMember.Field<CharacterMovement, Character>("character");
         LookPatches.Recalculate = GameMember.Delegate<Action<Character>>(

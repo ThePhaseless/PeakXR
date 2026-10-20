@@ -48,7 +48,7 @@ internal static class LookPatches
 
         private static void Prefix(CharacterMovement __instance)
         {
-            if (!VRSession.Active)
+            if (!VRSession.Active || VRRig.Instance == null)
                 return;
             var c = Movement(__instance);
             if (c != null && c.IsLocal)
