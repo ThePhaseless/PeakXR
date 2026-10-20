@@ -55,7 +55,12 @@ internal static class LocomotionInput
         return true;
     }
 
-    public static bool IsBackpackSlot(int key) => key == BackpackSlot;
+    public static bool IsBackpackSlot(int key)
+    {
+        // The game's own backpack slot id (Player.cs:47), so a changed hotbar size does not select the wrong slot.
+        var p = Player.localPlayer;
+        return key == (p != null ? p.backpackSlot.itemSlotID : BackpackSlot);
+    }
 
     /// <summary>Keeps layout actions off the button interact.physical uses for drop, so one press never drops and
     /// pings (e.g. a fixed <c>RightSecondary</c> for a left-handed player).</summary>

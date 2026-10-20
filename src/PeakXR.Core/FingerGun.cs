@@ -7,7 +7,10 @@ namespace PeakXR.Core
     /// </summary>
     public sealed class FingerGun
     {
-        public float Window = 0.35f;
+        /// <summary>Default <see cref="Window"/>; a pointing grip's interact waits this long for the squeeze.</summary>
+        public const float DefaultWindow = 0.35f;
+
+        public float Window = DefaultWindow;
 
         float _sincePoint = float.MaxValue;
 

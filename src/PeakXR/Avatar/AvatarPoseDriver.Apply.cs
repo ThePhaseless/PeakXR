@@ -42,6 +42,10 @@ public partial class AvatarPoseDriver
     private HandRig rightRig;
     private readonly ItemHoldInfo hold = new();
     private FixedJoint itemJoint;
+    private bool itemJointLeft;
+
+    /// <summary>The item whose vanilla two-hand weld was last checked for replacement; one try per item.</summary>
+    private Item vanillaWeldChecked;
 
     /// <summary>True while this tick's held-item frame comes from the tracked hand; read by the hold torque patch.</summary>
     internal bool ItemFrameOverridden { get; private set; }
@@ -181,6 +185,7 @@ public partial class AvatarPoseDriver
     internal void OnSaveAdditional()
     {
         ItemFrameOverridden = false;
+        ReconcileWeld();
         if (!TryGetItemWorldPose(out var itemPos, out var itemRot))
             return;
         var refs = Owner.refs;
@@ -197,6 +202,7 @@ public partial class AvatarPoseDriver
     {
         if (
             !HasFreshPose
+            || ArmsSuspended
             || !AvatarConfig.Instance.RetargetItems
             || !EnsureRig()
             || !hold.Bind(item)
@@ -221,9 +227,43 @@ public partial class AvatarPoseDriver
             .Rig;
         handBody.transform.SetPositionAndRotation(bonePos, boneRot);
         DestroyItemJoint();
+        DestroyHandJoint(BodypartType.Hand_L, item.rig);
+        DestroyHandJoint(BodypartType.Hand_R, item.rig);
         itemJoint = handBody.gameObject.AddComponent<FixedJoint>();
         itemJoint.connectedBody = item.rig;
+        itemJointLeft = left;
         return true;
+    }
+
+    /// <summary>
+    /// The weld is chosen once at attach (about four physics ticks after the equip RPC), from a pose that for a
+    /// remote player is ~100 ms old, so it can pick the wrong hand; vanilla's two-hand weld can also predate a fresh
+    /// pose (late join, entering VR while holding, an equip during a full-body emote). Re-weld when they disagree.
+    /// </summary>
+    private void ReconcileWeld()
+    {
+        var item = Owner.data.currentItem;
+        if (item == null || ArmsSuspended)
+            return;
+        if (itemJoint != null)
+        {
+            if (itemJointLeft != Pose.ItemInLeftHand)
+                AttachToHoldingHand(item);
+            return;
+        }
+        // No weld of ours: vanilla's, once its attach has settled (CharacterItems.cs:617, then :632).
+        if (vanillaWeldChecked != item && Owner.data.sinceItemAttach > 0.5f)
+        {
+            vanillaWeldChecked = item;
+            AttachToHoldingHand(item);
+        }
+    }
+
+    private void DestroyHandJoint(BodypartType part, Rigidbody itemRig)
+    {
+        var body = Owner.refs.ragdoll.partDict[part].Rig;
+        if (body.TryGetComponent(out FixedJoint joint) && joint.connectedBody == itemRig)
+            Destroy(joint);
     }
 
     /// <summary>After <c>CharacterItems.UnAttachItem</c>: vanilla only removes the right-hand joint when a

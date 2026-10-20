@@ -400,16 +400,18 @@ internal sealed class BinocularLens : MonoBehaviour
         {
             lensCam.nearClipPlane = LensNearClip;
         }
-        // Renderer index stays the pipeline default, as on the game's main camera.
+        // Renderer index stays the pipeline default, as on the game's main camera: its fog pass keeps the zoomed
+        // view as hazy as the eyes see it. A third shadow-map render and AA are not worth it for a small lens
+        // image, so this camera skips both. shortcut: renders every frame; render at half rate if profiling says so.
         var data = lensCam.GetUniversalAdditionalCameraData();
         data.renderType = CameraRenderType.Base;
         data.allowXRRendering = false;
         data.volumeTrigger = camObject.transform;
+        data.renderShadows = false;
+        data.antialiasing = AntialiasingMode.None;
         if (main != null && main.TryGetComponent(out UniversalAdditionalCameraData mainData))
         {
             data.renderPostProcessing = mainData.renderPostProcessing;
-            data.antialiasing = mainData.antialiasing;
-            data.renderShadows = mainData.renderShadows;
             data.volumeLayerMask = mainData.volumeLayerMask;
         }
 

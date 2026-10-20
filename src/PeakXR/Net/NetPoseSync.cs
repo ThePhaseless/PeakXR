@@ -305,7 +305,13 @@ internal sealed class NetPoseSync
     {
         int sender = photonEvent.Sender;
         var localPlayer = PhotonNetwork.LocalPlayer;
-        if (sender <= 0 || localPlayer == null || sender == localPlayer.ActorNumber)
+        // Only handshake peers in VR: a player who just left VR must not keep driving its avatar.
+        if (
+            sender <= 0
+            || localPlayer == null
+            || sender == localPlayer.ActorNumber
+            || !peers.IsVr(sender)
+        )
             return;
 
         byte[] data;
@@ -316,14 +322,20 @@ internal sealed class NetPoseSync
                 data = bytes;
                 length = bytes.Length;
                 break;
-            case ByteArraySlice slice
-                when slice.Buffer != null
+            case ByteArraySlice slice:
+                bool fits =
+                    slice.Buffer != null
                     && slice.Count <= receiveScratch.Length
                     && slice.Offset >= 0
-                    && slice.Offset + slice.Count <= slice.Buffer.Length:
-                Buffer.BlockCopy(slice.Buffer, slice.Offset, receiveScratch, 0, slice.Count);
-                data = receiveScratch;
+                    && slice.Offset + slice.Count <= slice.Buffer.Length;
+                if (fits)
+                    Buffer.BlockCopy(slice.Buffer, slice.Offset, receiveScratch, 0, slice.Count);
                 length = slice.Count;
+                // A pooled slice (UseByteArraySlicePoolForEvents) goes back to the pool once copied.
+                slice.Release();
+                if (!fits)
+                    return;
+                data = receiveScratch;
                 break;
             default:
                 return;

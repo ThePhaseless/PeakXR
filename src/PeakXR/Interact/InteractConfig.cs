@@ -129,7 +129,7 @@ internal sealed class InteractConfig
                 "ThrowVelocityScale",
                 1f,
                 new ConfigDescription(
-                    "Multiplier on the hand's release velocity.",
+                    "Multiplier on the hand's release velocity, capped at a full-charge throw of the game.",
                     new AcceptableValueRange<float>(0.5f, 2.5f)
                 )
             ),

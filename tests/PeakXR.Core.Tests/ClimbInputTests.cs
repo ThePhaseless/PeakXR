@@ -69,3 +69,31 @@ public class ClimbInputTests
         );
     }
 }
+
+public class ClimbInputSettleTests
+{
+    [Fact]
+    public void SmoothedResidue_BelowDeadzone_IsZero()
+    {
+        var input = ClimbInput.Settle(new Vector2(0.03f, 0.04f), Vector2.Zero);
+        Assert.Equal(Vector2.Zero, input);
+    }
+
+    [Fact]
+    public void Downward_IsDropped_UnlessTheArmsClearlyPullDown()
+    {
+        // The game climbs down at full speed for any negative stick y (CharacterClimbing.cs:303).
+        var residue = ClimbInput.Settle(new Vector2(0f, -0.2f), new Vector2(0f, -0.1f));
+        Assert.Equal(0f, residue.Y);
+        var pull = ClimbInput.Settle(new Vector2(0f, -0.2f), new Vector2(0f, -0.5f));
+        TestUtil.Near(-0.2f, pull.Y);
+    }
+
+    [Fact]
+    public void UpAndSideways_PassThrough()
+    {
+        var input = ClimbInput.Settle(new Vector2(-0.4f, 0.6f), new Vector2(-0.5f, 0.7f));
+        TestUtil.Near(-0.4f, input.X);
+        TestUtil.Near(0.6f, input.Y);
+    }
+}

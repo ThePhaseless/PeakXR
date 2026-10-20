@@ -37,6 +37,9 @@ internal static class PhysicalInteraction
         public IInteractible Target;
         public IGripExtension Extension;
 
+        /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact.</summary>
+        public float InteractAt;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -139,8 +142,9 @@ internal static class PhysicalInteraction
         EndAction(LeftHand, GripPressAction.SecondHand);
         EndAction(RightHand, GripPressAction.SecondHand);
         Mouth.Reset();
+        dropPending = false;
         if (item != null)
-            LocalHold.ItemInLeftHand = now - pendingTime < 3f && pendingLeft;
+            LocalHold.ItemInLeftHand = now - pendingTime < 3f ? pendingLeft : VRInput.LeftHanded;
         pendingTime = -10f;
     }
 
@@ -165,11 +169,18 @@ internal static class PhysicalInteraction
         hand.Trigger.Update(state.Tracked ? state.Trigger : 0f, dt);
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
+        // The trigger squeeze of a finger-gun ping cancels the pointing grip's pending interact.
+        if (
+            hand.Action == GripPressAction.Interact
+            && now < hand.InteractAt
+            && hand.Trigger.Pressed
+        )
+            hand.Action = GripPressAction.None;
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);
         else if (hand.Grip.Released)
-            OnGripRelease(hand, c, rig, cfg);
+            OnGripRelease(hand, c, rig, cfg, active);
     }
 
     private static bool Holding(Character c, out Item item)
@@ -218,7 +229,7 @@ internal static class PhysicalInteraction
             ctx.NearClimbable = false;
         IInteractible target = null;
         if (cfg.PhysicalGrab)
-            ctx.Candidate = FindCandidate(c, pos, t.forward, cfg.GrabRadius, out target);
+            ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
 
         var action = GripIntent.OnPress(ctx);
         IGripExtension extension = null;
@@ -258,11 +269,23 @@ internal static class PhysicalInteraction
             case GripPressAction.Regrip:
                 Haptics.Pulse(hand.Left, 0.2f, 0.03f);
                 break;
+            case GripPressAction.Interact:
+                // A pointing grip may be the start of a finger-gun ping: wait out its trigger window first.
+                hand.InteractAt = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left))
+                    ? now + FingerGun.DefaultWindow
+                    : now;
+                break;
         }
         hand.Action = action;
     }
 
-    private static void OnGripRelease(Hand hand, Character c, VRRig rig, InteractConfig cfg)
+    private static void OnGripRelease(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        InteractConfig cfg,
+        bool active
+    )
     {
         var action = hand.Action;
         var extension = hand.Extension;
@@ -300,13 +323,15 @@ internal static class PhysicalInteraction
                     && extension.EndPress(hook)
                 )
                     break;
-                if (!thisHolds)
+                // No drop or throw while a wheel or menu blocks input: Inject would fire it later, maybe on another item.
+                if (!thisHolds || !active)
                     break;
-                var velocity = ReleaseVelocity(hand, c, rig);
+                // Body-relative speed decides a throw, so walking or falling does not turn a release into one.
+                var handVelocity = HandVelocity(hand, rig);
                 var result = GripIntent.OnRelease(
                     true,
                     item.UIData.canDrop,
-                    velocity.magnitude,
+                    handVelocity.magnitude,
                     cfg.ThrowSpeed,
                     cfg.PhysicalThrow,
                     cfg.ReleaseToDrop,
@@ -316,7 +341,7 @@ internal static class PhysicalInteraction
                     result = GripReleaseAction.Keep;
                 if (result == GripReleaseAction.Throw)
                 {
-                    ThrowVelocity = velocity * cfg.ThrowScale;
+                    ThrowVelocity = ReleaseVelocity(handVelocity, c) * cfg.ThrowScale;
                     throwFrame = Time.frameCount;
                     dropPending = true;
                     Haptics.Pulse(hand.Left, 0.5f, 0.05f);
@@ -332,9 +357,9 @@ internal static class PhysicalInteraction
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
 
     /// <summary>World release velocity: the hand's velocity relative to the body plus the body's own velocity.</summary>
-    private static Vector3 ReleaseVelocity(Hand hand, Character c, VRRig rig)
+    private static Vector3 ReleaseVelocity(Vector3 handVelocity, Character c)
     {
-        var world = HandVelocity(hand, rig);
+        var world = handVelocity;
         if (c.refs.hip != null)
             world += c.refs.hip.Rig.linearVelocity;
         return world;
@@ -363,8 +388,13 @@ internal static class PhysicalInteraction
         return (item.Center() - pos).sqrMagnitude <= 4f * r2;
     }
 
+    /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists.</summary>
+    private static Vector3 Eye(VRRig rig) =>
+        MainCamera.instance != null ? MainCamera.instance.transform.position : rig.Head.position;
+
     private static GrabCandidate FindCandidate(
         Character c,
+        Vector3 eye,
         Vector3 pos,
         Vector3 forward,
         float radius,
@@ -393,8 +423,26 @@ internal static class PhysicalInteraction
                 continue;
             if (!it.IsInteractible(c))
                 continue;
+            // Line of sight like the game's interact ray (Interaction.cs:214): a hand pushed through a crate or a
+            // rock fin does not grab what lies behind it. Stops 5 cm short so a resting item's floor does not count;
+            // the target's own map-layer collider (luggage, kiosks) does not block it.
+            var point = col.bounds.ClosestPoint(pos);
+            var toPoint = point - eye;
+            float len = toPoint.magnitude;
+            if (len > 0.05f)
+            {
+                var block = HelperFunctions
+                    .LineCheck(
+                        eye,
+                        eye + toPoint * ((len - 0.05f) / len),
+                        HelperFunctions.LayerType.TerrainMap
+                    )
+                    .collider;
+                if (block != null && block.GetComponentInParent<IInteractible>() != it)
+                    continue;
+            }
             Candidates[count] = it;
-            CandidatePositions[count] = col.bounds.ClosestPoint(pos).N();
+            CandidatePositions[count] = point.N();
             count++;
         }
 
@@ -426,16 +474,19 @@ internal static class PhysicalInteraction
         if (StartWallClimb == null || !c.refs.climbing.CanClimb())
             return false;
 
-        // Vanilla casts from the camera along a direction; aim it through the gripping hand.
-        var from =
-            MainCamera.instance != null
-                ? MainCamera.instance.transform.position
-                : rig.Head.position;
-        var dir = handPos - from;
+        // Vanilla casts from the camera along a direction; aim it through the gripping hand, no farther than the
+        // game's own 1.25 m (CharacterClimbing.cs:534).
+        var dir = handPos - Eye(rig);
         float dist = dir.magnitude;
         if (dist < 0.01f)
             return false;
-        StartWallClimb(c.refs.climbing, true, dir / dist, false, dist + cfg.ClimbRadius + 0.15f);
+        StartWallClimb(
+            c.refs.climbing,
+            true,
+            dir / dist,
+            false,
+            Mathf.Min(dist + cfg.ClimbRadius + 0.15f, 1.25f)
+        );
         if (!c.data.isClimbing)
             return false;
         BeginPhysicalClimb();
@@ -457,11 +508,7 @@ internal static class PhysicalInteraction
     )
     {
         kind = HoldKind.Normal;
-        var from =
-            MainCamera.instance != null
-                ? MainCamera.instance.transform.position
-                : rig.Head.position;
-        var dir = handPos - from;
+        var dir = handPos - Eye(rig);
         dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : hand.forward;
         if (
             !Physics.Raycast(
@@ -602,6 +649,7 @@ internal static class PhysicalInteraction
             12f,
             dt
         );
+        smoothed = ClimbInput.Settle(smoothed, target);
         climbInput = new Vector2(smoothed.X, smoothed.Y);
 
         // Slide-only surface or no stamina: the game slides the climber down (CharacterClimbing.cs:297, :301, :263).
@@ -696,6 +744,8 @@ internal static class PhysicalInteraction
                     GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
+                    if (now < hand.InteractAt)
+                        break;
                     interactDown = true;
                     GripInteractActive = true;
                     break;

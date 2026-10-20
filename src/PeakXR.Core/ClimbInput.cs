@@ -51,6 +51,22 @@ namespace PeakXR.Core
         }
 
         /// <summary>
+        /// Cleans the smoothed arm input before the game reads it. Smoothing never decays exactly to zero, and the
+        /// game climbs down at full speed for any negative stick y (CharacterClimbing.cs:303), so a residue would
+        /// slide the climber down with the hands still. Tiny components become zero, and y goes negative only while
+        /// the arms clearly pull down (<paramref name="target"/> below -0.3).
+        /// </summary>
+        public static Vector2 Settle(Vector2 smoothed, Vector2 target)
+        {
+            const float deadzone = 0.05f;
+            float x = MathF.Abs(smoothed.X) < deadzone ? 0f : smoothed.X;
+            float y = MathF.Abs(smoothed.Y) < deadzone ? 0f : smoothed.Y;
+            if (y < 0f && target.Y > -0.3f)
+                y = 0f;
+            return new Vector2(x, y);
+        }
+
+        /// <summary>
         /// Climb lunge from a hand thrown upward as it lets go of the wall: the stick direction (wall right, wall
         /// up; unit length) for the game's climb jump, or zero when the release was not fast enough upward.
         /// </summary>
