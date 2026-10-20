@@ -22,12 +22,17 @@ public class Plugin : BaseUnityPlugin
         Log = Logger;
 
         VRSession.Requested = VRSession.ReadRequestedRuntime();
+        VRSession.CompatProbe =
+            System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-peakxr-compat") >= 0;
         Log.LogInfo(
             $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}, game {UnityEngine.Application.version}, "
                 + $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}"
+                + (VRSession.CompatProbe ? ", compat probe (XR is not started)" : "")
         );
 
         XR.XRAssemblyLoader.Hook();
-        FeatureManager.InstallAll(VRSession.Requested != VRRuntime.Disabled);
+        FeatureManager.InstallAll(
+            VRSession.Requested != VRRuntime.Disabled || VRSession.CompatProbe
+        );
     }
 }

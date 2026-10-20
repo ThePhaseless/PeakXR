@@ -19,7 +19,7 @@ PeakXR is a VR mod for PEAK (Unity 6000.3, Mono, URP, Photon PUN 2). It is a Bep
 4. Find objects by component type or by a reference the game already holds (`MainCamera.instance`, `Character.localCharacter`, `GUIManager.instance`). Never use hierarchy paths or scene indices. Scene names are allowed only as soft hints.
 5. Never change `Application.version`, `CharacterSyncData` layout or RPC signatures, and never add RPC names that vanilla doesn't have.
 6. No game-version lock. Log the game and Unity versions at startup.
-7. After a game update, run `mise run decompile` and `mise run compat-check`.
+7. After a game update, run `mise run decompile` and `mise run compat-check`, then launch the game with `-peakxr-novr -peakxr-compat`: every feature installs without starting XR, and the `[compat]` lines in `BepInEx/LogOutput.log` show which ones lost a patch target.
 
 ## Runtime architecture
 

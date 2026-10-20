@@ -82,6 +82,7 @@ Other options include head- or hand-relative movement, sprint and crouch as togg
 - Game starts flat: Check that the runtime was running first, then read `BepInEx/LogOutput.log` for the `[xr.bootstrap]` lines.
 - OpenXR does not start: By default PeakXR waits `XR.StartTimeoutSeconds`, then tries OpenVR, then runs flat. To force a runtime, set `Mode = OpenXR`, `OpenVR` or `Disabled` under `[Runtime]` in `BepInEx/config/PeakXR.Preloader.cfg`. The launch options `-peakxr-openxr`, `-peakxr-openvr` and `-peakxr-novr` override it for one run.
 - Play flat without uninstalling: Launch with `-peakxr-novr`.
+- Check compatibility after a game update: launch with `-peakxr-novr -peakxr-compat`. Every feature installs without starting VR, and each `[compat]` line in `BepInEx/LogOutput.log` says Active or Failed.
 - Something in the mod does not work: After a game update, a feature that cannot find its target is switched off. The compat list in the VR tab and the `[compat]` report in the log show which ones.
 
 ## License

@@ -115,6 +115,9 @@ public sealed class BootstrapFeature : Feature
             );
         }
 
+        if (VRSession.CompatProbe)
+            return;
+
         var go = new GameObject("PeakXR.XR") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);
         go.AddComponent<XRBootstrapDriver>();

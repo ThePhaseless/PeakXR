@@ -26,6 +26,10 @@ public static class VRSession
     /// is paused then, rendering continues.</summary>
     public static bool HasFocus { get; internal set; } = true;
 
+    /// <summary>Launch option <c>-peakxr-compat</c>: install every feature, never start XR. Checks that all
+    /// patch targets still resolve (after a game update) without a headset or SteamVR.</summary>
+    public static bool CompatProbe { get; internal set; }
+
     public static event Action Started;
     public static event Action Stopped;
 
