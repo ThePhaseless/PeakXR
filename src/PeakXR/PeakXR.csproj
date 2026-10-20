@@ -39,6 +39,7 @@
     <Reference Include="$(PeakManaged)/Sirenix.Serialization.dll" Private="false" />
     <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.InputSystem.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.Animation.Rigging.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
     <Reference
       Include="$(PeakManaged)/Unity.RenderPipelines.Universal.Runtime.dll"

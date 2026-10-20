@@ -25,4 +25,10 @@ public struct AvatarPose
     public FingerCurls RightFingers;
 
     public bool Seated;
+
+    /// <summary>The held item sits in the left hand (mirrored hold). False means the right hand, as in vanilla.</summary>
+    public bool ItemInLeftHand;
+
+    /// <summary>The free hand also grips the held item: the item is aimed between both hands.</summary>
+    public bool TwoHandHold;
 }

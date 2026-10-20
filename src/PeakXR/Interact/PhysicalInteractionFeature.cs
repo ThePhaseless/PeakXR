@@ -1,0 +1,31 @@
+using PeakXR.Framework;
+using UnityEngine;
+
+namespace PeakXR.Interact;
+
+/// <summary>
+/// <c>interact.physical</c>: grab-to-pickup, hand-aimed interaction, trigger use, eating at the mouth, hand
+/// throws and grip climbing with arm locomotion, plus haptics. Every action is fed into the game's own input
+/// fields so pickups, uses, drops and climbs run through vanilla code and RPCs. Each part has a setting and a
+/// button fallback.
+/// </summary>
+public sealed class PhysicalInteractionFeature : Feature
+{
+    public override string Id => "interact.physical";
+
+    // After avatar.local (order 0) so LocalHold is consumed by a bound driver; order otherwise irrelevant.
+    public override int Order => 10;
+
+    protected internal override void Install()
+    {
+        InteractConfig.Bind(Plugin.Settings);
+        PhysicalInteraction.StartWallClimb = GameMember.Delegate<PhysicalInteraction.TryStartClimb>(
+            typeof(CharacterClimbing),
+            "TryToStartWallClimb",
+            new[] { typeof(bool), typeof(Vector3), typeof(bool), typeof(float) }
+        );
+        Patch(typeof(InteractPatches.Sample));
+        Patch(typeof(InteractPatches.Raycasts));
+        Patch(typeof(InteractPatches.Dropping));
+    }
+}
