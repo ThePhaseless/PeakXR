@@ -74,4 +74,19 @@ public class LongPressTests
             Assert.False(lp.Update(false, 0.4f));
         }
     }
+
+    [Fact]
+    public void ProgressRisesWhileHeldAndClearsOnRelease()
+    {
+        var lp = new LongPress { Seconds = 1f };
+        Assert.Equal(0f, lp.Progress);
+        lp.Update(true, 0.25f);
+        TestUtil.Near(0.25f, lp.Progress);
+        lp.Update(true, 1f);
+        Assert.Equal(1f, lp.Progress);
+        Assert.True(lp.Fired);
+        lp.Update(false, 0.1f);
+        Assert.Equal(0f, lp.Progress);
+        Assert.False(lp.Fired);
+    }
 }
