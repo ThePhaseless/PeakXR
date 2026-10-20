@@ -1,0 +1,84 @@
+using BepInEx.Configuration;
+
+namespace PeakXR.Social;
+
+/// <summary>Player-to-player interaction settings, bound by <see cref="SocialFeature"/>.</summary>
+internal sealed class SocialConfig
+{
+    public static SocialConfig Instance { get; private set; } = new();
+
+    private ConfigEntry<bool> handInteract,
+        carryBothHands,
+        feedAtMouth,
+        struggle,
+        giveUpGuard,
+        graspHaptics;
+    private ConfigEntry<float> reach;
+
+    public bool HandInteract => handInteract?.Value ?? true;
+    public bool CarryBothHands => carryBothHands?.Value ?? true;
+    public bool FeedAtMouth => feedAtMouth?.Value ?? true;
+    public bool Struggle => struggle?.Value ?? true;
+    public bool GiveUpGuard => giveUpGuard?.Value ?? true;
+    public bool GraspHaptics => graspHaptics?.Value ?? true;
+    public float Reach => reach?.Value ?? 0.2f;
+
+    public static void Bind(ConfigFile file)
+    {
+        const string s = "Social";
+        Instance = new SocialConfig
+        {
+            handInteract = file.Bind(
+                s,
+                "HandInteract",
+                true,
+                "Close your grip on a friend to interact through the game's own actions: pull a stuck or climbing "
+                    + "friend up (empty hand), carry or drop a passed-out friend, open their backpack from behind, "
+                    + "pluck thorns and arrows (yours or theirs) and pull off stuck items. Hold the grip as long as "
+                    + "the game's hold time."
+            ),
+            reach = file.Bind(
+                s,
+                "HandReach",
+                0.2f,
+                new ConfigDescription(
+                    "How close (metres) a hand must be to a friend's body to grab it. Thorns and stuck items need "
+                        + "about half of this.",
+                    new AcceptableValueRange<float>(0.1f, 0.4f)
+                )
+            ),
+            carryBothHands = file.Bind(
+                s,
+                "CarryWithBothHands",
+                true,
+                "Lifting a passed-out friend needs both hands on their body. Off: one grip carries."
+            ),
+            feedAtMouth = file.Bind(
+                s,
+                "FeedAtMouth",
+                true,
+                "Hold food or medicine at a friend's mouth to feed it to them (the game's use-on-friend). "
+                    + "Your hand replaces the face-each-other check; items with their own angle rule keep it."
+            ),
+            struggle = file.Bind(
+                s,
+                "StruggleByShaking",
+                true,
+                "Shake or tear with your hands to struggle out of webs and fly traps. The jump button still works."
+            ),
+            giveUpGuard = file.Bind(
+                s,
+                "GiveUpGuard",
+                true,
+                "While passed out, holding interact makes you give up faster. With this on, a grip no longer "
+                    + "counts: hold both grips and both triggers to give up on purpose."
+            ),
+            graspHaptics = file.Bind(
+                s,
+                "GraspHaptics",
+                true,
+                "Vibrate when your reach catches a friend or a ledge's helping hand catches you."
+            ),
+        };
+    }
+}

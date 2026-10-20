@@ -294,7 +294,11 @@ internal static class PhysicalInteraction
                 );
                 // An extension's own grip ends first; if it leaves the release alone and the hand now holds an
                 // item (drawn from a slot), the release counts as that hand letting go of its item.
-                if (action == GripPressAction.Extension && extension != null && extension.EndPress(hook))
+                if (
+                    action == GripPressAction.Extension
+                    && extension != null
+                    && extension.EndPress(hook)
+                )
                     break;
                 if (!thisHolds)
                     break;

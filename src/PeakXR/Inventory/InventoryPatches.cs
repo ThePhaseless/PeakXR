@@ -36,7 +36,11 @@ internal static class InventoryPatches
     internal static class SelectSlot
     {
         private static MethodBase TargetMethod() =>
-            GameMember.Method(typeof(CharacterInput), "SelectSlotWasPressed", new[] { typeof(int) });
+            GameMember.Method(
+                typeof(CharacterInput),
+                "SelectSlotWasPressed",
+                new[] { typeof(int) }
+            );
 
         private static void Postfix(CharacterInput __instance, int key, ref bool __result)
         {

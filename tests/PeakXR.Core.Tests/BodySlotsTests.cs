@@ -69,10 +69,37 @@ public class BodySlotsTests
         for (int i = 0; i < slots.Length; i++)
             anchors[i] = BodySlotLayout.Anchor(NeckPos, 0f, slots[i]);
 
-        Assert.Equal(1, BodySlotLayout.Find(anchors[1] + new Vector3(0.05f, 0, 0), anchors, slots, slots.Length, 1f));
-        Assert.Equal(-1, BodySlotLayout.Find(anchors[1] + new Vector3(0.2f, 0, 0), anchors, slots, slots.Length, 1f));
+        Assert.Equal(
+            1,
+            BodySlotLayout.Find(
+                anchors[1] + new Vector3(0.05f, 0, 0),
+                anchors,
+                slots,
+                slots.Length,
+                1f
+            )
+        );
+        Assert.Equal(
+            -1,
+            BodySlotLayout.Find(
+                anchors[1] + new Vector3(0.2f, 0, 0),
+                anchors,
+                slots,
+                slots.Length,
+                1f
+            )
+        );
         // A larger scale (e.g. release) widens the catch radius.
-        Assert.Equal(1, BodySlotLayout.Find(anchors[1] + new Vector3(0.15f, 0, 0), anchors, slots, slots.Length, 2f));
+        Assert.Equal(
+            1,
+            BodySlotLayout.Find(
+                anchors[1] + new Vector3(0.15f, 0, 0),
+                anchors,
+                slots,
+                slots.Length,
+                2f
+            )
+        );
     }
 
     [Fact]

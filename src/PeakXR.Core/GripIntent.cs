@@ -68,6 +68,7 @@ namespace PeakXR.Core
         /// since extensions have their own settings.
         /// </summary>
         public bool ExtensionClaim;
+
         /// <summary>The body is already on a wall or in the air: a wall in reach wins over a loose item, so a
         /// hand reaching for a hold never picks up an item lying on the ledge instead.</summary>
         public bool BodyClimbing;

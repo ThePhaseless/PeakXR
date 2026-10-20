@@ -142,7 +142,11 @@ internal sealed class BodyInventory : IGripExtension
     {
         ref var state = ref VRInput.Hand(hand == 0);
         int near = state.Tracked ? Find(state.Position.N(), 1f) : -1;
-        if (near >= 0 && near != nearSlot[hand] && Look(c, near) is SlotLook.Filled or SlotLook.Full)
+        if (
+            near >= 0
+            && near != nearSlot[hand]
+            && Look(c, near) is SlotLook.Filled or SlotLook.Full
+        )
             Haptics.Pulse(hand == 0, 0.15f, 0.02f);
         nearSlot[hand] = near;
 

@@ -160,7 +160,10 @@ public class PoseCodecTests
         int len = PoseCodec.Encode(p, buf);
 
         Assert.Equal(plainLen, len);
-        Assert.Equal(PoseCodec.SizeFor(PoseFlags.Head), PoseCodec.SizeFor(PoseFlags.Head | PoseFlags.ItemInLeftHand | PoseFlags.TwoHandHold));
+        Assert.Equal(
+            PoseCodec.SizeFor(PoseFlags.Head),
+            PoseCodec.SizeFor(PoseFlags.Head | PoseFlags.ItemInLeftHand | PoseFlags.TwoHandHold)
+        );
         // Only the flags byte differs, so a decoder that ignores bits 6 and 7 reads the same pose.
         for (int i = 0; i < len; i++)
             if (i != 1)
@@ -246,5 +249,26 @@ public class PoseCodecTests
     public void IsNewer_HandlesWraparound(int a, int b, bool expected)
     {
         Assert.Equal(expected, PoseCodec.IsNewer((ushort)a, (ushort)b));
+    }
+}
+
+public class PoseHoldFlagTests
+{
+    [Fact]
+    public void Differs_WhenOnlyAHoldFlagChanges()
+    {
+        var a = new PosePacket { Flags = PoseFlags.Head | PoseFlags.VrActive };
+        var b = a;
+        b.Flags |= PoseFlags.TwoHandHold;
+        Assert.True(PoseBlend.Differs(a, b, 0.01f, 1f, 0.05f));
+    }
+
+    [Fact]
+    public void Lerp_CarriesTheNewerHoldFlags()
+    {
+        var a = new PosePacket { Flags = PoseFlags.Head };
+        var b = new PosePacket { Flags = PoseFlags.Head | PoseFlags.ItemInLeftHand };
+        Assert.False(PoseBlend.Lerp(a, b, 0.4f).ItemInLeftHand);
+        Assert.True(PoseBlend.Lerp(a, b, 0.6f).ItemInLeftHand);
     }
 }
