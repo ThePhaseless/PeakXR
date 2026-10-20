@@ -33,17 +33,19 @@ namespace PeakXR.Core
 
         /// <summary>
         /// <paramref name="next"/> unwrapped to the turn nearest <paramref name="previous"/>. Remote peers linearly
-        /// interpolate the synced yaw, so a jump from 179 to -179 would spin the avatar the long way round. The
-        /// value is pulled back by one turn only past <paramref name="limit"/>, which keeps the synced half-float
-        /// precise (0.5 degrees or better below 1024).
+        /// interpolate the synced yaw, so a jump from 179 to -179 would spin the avatar the long way round, and so
+        /// does any pull-back. Like vanilla mouse look the value accumulates; it is pulled back by five turns only
+        /// past 2048, where the synced half float drops from 1 to 2 degree steps (CharacterSyncData.cs:62).
         /// </summary>
-        public static float ContinueYaw(float previous, float next, float limit = 720f)
+        public static float ContinueYaw(float previous, float next)
         {
+            const float Limit = 2048f;
+            const float PullBack = 5 * 360f;
             float yaw = previous + WrapDegrees(next - previous);
-            if (yaw > limit)
-                yaw -= 360f;
-            else if (yaw < -limit)
-                yaw += 360f;
+            if (yaw > Limit)
+                yaw -= PullBack;
+            else if (yaw < -Limit)
+                yaw += PullBack;
             return yaw;
         }
     }

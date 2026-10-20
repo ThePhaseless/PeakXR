@@ -67,10 +67,19 @@ public class LookMathTests
     }
 
     [Fact]
-    public void ContinueYaw_WrapsOncePastTheLimit()
+    public void ContinueYaw_KeepsAccumulatingPastTwoTurns()
     {
-        // One turn back at a time: a remote peer interpolating the synced value sees one spin, rarely.
-        TestUtil.Near(365f, LookMath.ContinueYaw(715f, 5f), 1e-3f);
-        TestUtil.Near(-365f, LookMath.ContinueYaw(-715f, -5f), 1e-3f);
+        // Remote peers lerp the synced yaw, so every pull-back is a visible spin: none for normal play.
+        TestUtil.Near(725f, LookMath.ContinueYaw(715f, 5f), 1e-3f);
+        TestUtil.Near(-725f, LookMath.ContinueYaw(-715f, -5f), 1e-3f);
+    }
+
+    [Fact]
+    public void ContinueYaw_PullsBackFiveTurnsOnlyWhereHalfPrecisionDrops()
+    {
+        // Half floats step 1 degree up to 2048, 2 degrees above: wrap there, by five turns at once.
+        TestUtil.Near(2050f - 1800f, LookMath.ContinueYaw(2045f, 2050f - 1800f), 1e-3f);
+        TestUtil.Near(-250f, LookMath.ContinueYaw(-2045f, -250f), 1e-3f);
+        TestUtil.Near(2040f, LookMath.ContinueYaw(2035f, 2040f - 1800f), 1e-3f);
     }
 }
