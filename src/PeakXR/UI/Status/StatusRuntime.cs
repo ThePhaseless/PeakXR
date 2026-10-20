@@ -44,14 +44,18 @@ internal sealed class StatusRuntime : MonoBehaviour
         SetHidden(peripheral);
         if (!peripheral)
         {
-            rim?.Show(Color.clear);
+            if (rim != null && rim.Alive)
+                rim.Show(Color.clear);
             return;
         }
 
         if (rim == null || !rim.Alive || rimRig != rig)
         {
             rim?.Destroy();
-            rim = new PeripheralRim(rig.HeadCamera, rig.Head);
+            rim = new PeripheralRim(
+                rig.Head,
+                rig.HeadCamera != null ? rig.HeadCamera.nearClipPlane : 0.05f
+            );
             rimRig = rig;
         }
 
