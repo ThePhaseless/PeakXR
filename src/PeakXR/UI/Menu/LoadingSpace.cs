@@ -37,6 +37,14 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     private const float BlendSeconds = 1.2f;
 
+    // Floor half size, past the walls (25 m out): a smaller floor leaves a gap under the walls where the dark
+    // void shows as a black band just below the horizon.
+    private const float FloorHalf = 30f;
+
+    // World-space UI sorts by order, then by distance: the floor's centre is nearer the eye than anything on it,
+    // so without a lower order it is drawn over the progress bar and skip ring.
+    private const int RoomOrder = -100;
+
     // Gap between the screen's top-level layers, back to front, and the most any screen spreads.
     private const float LayerStep = 0.06f;
     private const float MaxLayerSpread = 0.36f;
@@ -57,6 +65,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private RawImage grid;
     private RawImage horizonFade;
     private Quaternion facing = Quaternion.identity;
+
+    // The head's floor point when the room opened: the panel is centred on the player, wherever they stand.
+    private Vector3 anchor;
     private MainCamera hiddenMain;
     private Camera hiddenCam;
     private int hiddenMask;
@@ -90,6 +101,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     public bool Shown { get; private set; }
 
+    /// <summary>A loading room is up: ui.runflow holds its beach wake-up fade until it is gone.</summary>
+    public static bool RoomUp { get; private set; }
+
     public static LoadingSpace Create()
     {
         var go = new GameObject("PeakXR_LoadingSpace");
@@ -108,6 +122,8 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             ? (VRInput.HeadRotation * Vector3.forward).HeadingDegrees()
             : 0f;
         facing = Quaternion.Euler(0f, yaw, 0f);
+        var head = VRInput.HeadTracked ? VRInput.HeadPosition : Vector3.zero;
+        anchor = new Vector3(head.x, 0f, head.z);
         PlaceProgress();
         progressBar.gameObject.SetActive(sceneCamera == null);
         skipRing.gameObject.SetActive(sceneCamera != null);
@@ -117,7 +133,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         blending = false;
         ApplyPalette(toPalette);
         space.SetActive(true);
-        Shown = true;
+        Shown = RoomUp = true;
         HideGameCamera();
         if (sceneCamera != splashCam)
         {
@@ -130,7 +146,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     public void Hide()
     {
         space.SetActive(false);
-        Shown = false;
+        Shown = RoomUp = false;
         RestoreGameCamera();
         CullSplash(null);
     }
@@ -322,12 +338,15 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     {
         position =
             origin.position
+            + anchor
             + Vector3.up * layout.CenterHeight
             + facing * new Vector3(0f, 0f, PanelDistance);
         rotation = facing;
     }
 
     private void OnEnable() => Application.onBeforeRender += TrackHead;
+
+    private void OnDestroy() => RoomUp = false;
 
     private void OnDisable() => Application.onBeforeRender -= TrackHead;
 
@@ -410,13 +429,15 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     private void BuildFloor()
     {
-        var floor = WorldCanvas("Floor", new Vector2(4000f, 4000f), 0.01f);
+        var floor = WorldCanvas("Floor", new Vector2(FloorHalf * 200f, FloorHalf * 200f), 0.01f);
+        floor.sortingOrder = RoomOrder;
         floor.transform.localPosition = Vector3.zero;
         floor.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
 
         grid = Image<RawImage>(floor.transform, "Grid");
         grid.texture = GridTexture();
-        grid.uvRect = new Rect(0f, 0f, 40f, 40f);
+        // One cell per metre.
+        grid.uvRect = new Rect(0f, 0f, FloorHalf * 2f, FloorHalf * 2f);
         Stretch(grid.rectTransform);
 
         horizonFade = Image<RawImage>(floor.transform, "HorizonFade");
@@ -431,6 +452,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         {
             var rotation = Quaternion.Euler(0f, 90f * i, 0f);
             var wall = WorldCanvas("Wall" + i, new Vector2(5000f, 3000f), 0.01f);
+            wall.sortingOrder = RoomOrder;
             wall.transform.SetLocalPositionAndRotation(
                 rotation * new Vector3(0f, 15f, 25f),
                 rotation
@@ -443,7 +465,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     private void BuildProgress()
     {
-        var bar = WorldCanvas("Progress", new Vector2(800f, 14f), 0.001f);
+        var bar = WorldCanvas("Progress", new Vector2(800f, 24f), 0.001f);
         progressBar = bar.transform;
         var back = Image<Image>(bar.transform, "Back");
         back.color = new Color(1f, 1f, 1f, 0.12f);
@@ -459,6 +481,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         var height = Mathf.Max(layout.ContentBottom - 0.1f, 0.15f);
         var position =
             origin.position
+            + anchor
             + Vector3.up * height
             + facing * new Vector3(0f, 0f, PanelDistance - 0.05f);
         progressBar.SetPositionAndRotation(position, facing);

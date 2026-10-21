@@ -134,6 +134,20 @@ public class ComfortPolicyTests
         );
         Assert.True(r.Vignette > 0f && r.Vignette <= 1f);
     }
+
+    [Fact]
+    public void FullViewWash_IsCappedSoTheWorldStaysVisible()
+    {
+        Assert.Equal(ComfortPolicy.MaxWashAlpha, ComfortPolicy.CapWash(1f));
+        Assert.True(ComfortPolicy.MaxWashAlpha <= 0.5f);
+    }
+
+    [Fact]
+    public void WeakWash_IsUntouched()
+    {
+        Assert.Equal(0.2f, ComfortPolicy.CapWash(0.2f));
+        Assert.Equal(0f, ComfortPolicy.CapWash(0f));
+    }
 }
 
 public class ComfortPulsesTests

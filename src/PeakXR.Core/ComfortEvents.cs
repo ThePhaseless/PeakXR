@@ -89,6 +89,10 @@ namespace PeakXR.Core
         public const float HapticSeconds = 0.12f;
         public const float DetachSeconds = 0.5f;
 
+        /// <summary>Most a full-view wash (the game's white BLIND overlay) may cover in VR: in a headset a
+        /// white-out glares and hides the world for seconds; at this cap the world still shows through.</summary>
+        public const float MaxWashAlpha = 0.4f;
+
         public static ComfortTreatment Default(ComfortEvent e)
         {
             switch (e)
@@ -162,6 +166,9 @@ namespace PeakXR.Core
             }
             return r;
         }
+
+        /// <summary>A full-view wash's alpha, capped at <see cref="MaxWashAlpha"/>.</summary>
+        public static float CapWash(float alpha) => alpha > MaxWashAlpha ? MaxWashAlpha : alpha;
 
         static float Clamp01(float v) =>
             v < 0f ? 0f

@@ -3,6 +3,7 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Common;
+using PeakXR.UI.RunFlow;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -235,6 +236,11 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         destination.Ended();
         space.ClearDestination();
+        // Lying on the sand at run start (ui.runflow Fade mode) would be black: the room stays up instead.
+        // ui.runflow ends BeachWaking within BeachWake.Budget; the deadline only guards a runtime gone missing.
+        var until = Time.unscaledTime + BeachWake.Budget;
+        while (space.Shown && RunFlowRuntime.BeachWaking && Time.unscaledTime < until)
+            yield return null;
         VRFade.Set(loadOwner, 1f);
         yield return WaitForBlack();
         space.Hide();

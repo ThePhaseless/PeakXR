@@ -113,6 +113,52 @@ public sealed class RunFlowFade
 }
 
 /// <summary>
+/// The run-start wake-up on the beach in Fade mode: hidden (loading room, then black) while the body lies on the
+/// sand. One <see cref="Budget"/> from the spawn covers the room and the black hold together, so a body that
+/// stays down never keeps the player out longer. A body resting off the ground ends it early: the game drains
+/// its fall timer at only 0.2x there (A/Character.cs:1166-1175), up to ~35 s for Fall(7).
+/// </summary>
+public sealed class BeachWake
+{
+    /// <summary>Seconds from the spawn the wake-up may stay hidden, room and black hold together.</summary>
+    public const float Budget = 12f;
+
+    /// <summary>Seconds a body must rest off the ground before the hold ends.</summary>
+    public const float SettleSeconds = 1f;
+
+    /// <summary>Body speed (m/s) below which it counts as resting.</summary>
+    public const float RestSpeed = 0.3f;
+
+    private float elapsed;
+    private float still;
+
+    public bool Active { get; private set; }
+
+    /// <summary>Budget left for whatever hides the wake-up next; 0 once it ended.</summary>
+    public float Remaining => Active ? MathF.Max(0f, Budget - elapsed) : 0f;
+
+    public void Start()
+    {
+        Active = true;
+        elapsed = still = 0f;
+    }
+
+    public void Stop() => Active = false;
+
+    /// <summary>Once per frame; returns whether the wake-up is still hidden.</summary>
+    public bool Update(float dt, bool lying, bool grounded, float speed)
+    {
+        if (!Active)
+            return false;
+        elapsed += MathF.Max(0f, dt);
+        still = !grounded && speed < RestSpeed ? still + dt : 0f;
+        if (!lying || elapsed >= Budget || still >= SettleSeconds)
+            Active = false;
+        return Active;
+    }
+}
+
+/// <summary>
 /// Controller rumble standing in for a game camera shake (the shake itself never reaches the
 /// headset). One linearly decaying pulse; a stronger pulse replaces a weaker one.
 /// </summary>

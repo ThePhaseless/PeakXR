@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Comfort;
+using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using Photon.Pun;
@@ -509,13 +510,16 @@ internal sealed partial class SelfTestRunner
         {
             lift = Mathf.Max(lift, c.Center.y - y0);
             vignette = Mathf.Max(vignette, ComfortEventsRuntime.VignetteBoost);
-            if (!shot)
+            // The test's own warps beside the tornado black the view for a moment (ui.runflow warp fade).
+            if (!shot && FadeView.Alpha < 0.01f)
             {
                 shot = true;
                 yield return Shot("05-mob-Tornado");
             }
             yield return null;
         }
+        if (caught && !shot)
+            yield return ShotWhenClear("05-mob-Tornado", 0f);
         var note =
             $"moved {moved:0.0} m in 4 s, caught {caught}, lifted {lift:0.0} m"
             + (VRSession.Active ? $", vignette peak {vignette:0.00}" : "");

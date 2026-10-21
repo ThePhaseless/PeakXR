@@ -7,7 +7,10 @@ using System.Text;
 using BepInEx;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Common;
+using PeakXR.UI.Menu;
 using PeakXR.UI.Settings;
+using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -414,7 +417,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (!stepOk)
             yield break;
         yield return Wait(8f);
-        yield return Shot(shot);
+        yield return ShotWhenClear(shot, 15f);
     }
 
     IEnumerator Mobs()
@@ -464,6 +467,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Wait(3f);
         if (go == null)
             stepNote = "gone within 3 s";
+        // A white frame here is the game's BLIND overlay (explosions, flash plants), capped in VR by comfort.events.
+        var c = Character.localCharacter;
+        if (c != null && c.data.isBlind)
+            Note("player blinded (BLIND overlay)");
         yield return Shot("05-mob-" + entry.Name);
     }
 
@@ -595,6 +602,21 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     // Realtime: the offline pause menu sets timeScale to 0 (PauseMenuHandler.cs:21).
     static WaitForSecondsRealtime Wait(float seconds) => new(seconds);
+
+    /// <summary>Shoots once no fade is drawn and no loading room is up, so a frame never shows a transition's
+    /// black (a warp, a takeover blink, the room's hand-off) instead of the scene. Notes it when the view never
+    /// cleared.</summary>
+    IEnumerator ShotWhenClear(string name, float seconds)
+    {
+        yield return WaitFor(() => !VRSession.Active || ViewClear, seconds);
+        if (VRSession.Active && !ViewClear)
+            Note(
+                $"view still faded ({FadeView.Alpha:0.00}, loading room {LoadingSpace.RoomUp}) at the shot"
+            );
+        yield return Shot(name);
+    }
+
+    static bool ViewClear => FadeView.Alpha < 0.01f && !LoadingSpace.RoomUp;
 
     IEnumerator Shot(string name)
     {

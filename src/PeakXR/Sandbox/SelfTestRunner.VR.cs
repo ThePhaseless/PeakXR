@@ -356,7 +356,8 @@ internal sealed partial class SelfTestRunner
                     else
                         loadOpenFrames++;
                 }
-                if (!loadShot && Now - shownAt > 1f)
+                // A level load runs ~15 s at a low frame rate; by 3 s the screen's own art has animated in.
+                if (!loadShot && Now - shownAt > 3f)
                 {
                     loadShot = true;
                     yield return Shot("vr-05-loading");
