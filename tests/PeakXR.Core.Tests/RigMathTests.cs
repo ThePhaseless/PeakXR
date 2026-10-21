@@ -177,4 +177,33 @@ public class RigMathTests
         // Still near the spot: never.
         Assert.False(RigMath.ReplaceStillView(frameJump: 0.1f, drift: 1f, sinceSwitch: 10f));
     }
+
+    [Fact]
+    public void EyeOffset_IsForwardAndUpInTheFacingFrame_IgnoringSideways()
+    {
+        var center = new Vector3(2f, 1f, -1f);
+        // Facing +X (yaw 90): an eye 0.15 m toward +X, 0.3 m up and 0.04 m to the side.
+        var eye = center + new Vector3(0.15f, 0.3f, -0.04f);
+
+        var offset = RigMath.EyeOffset(eye, center, 90f);
+        TestUtil.Near(0.15f, offset.X, 1e-5f);
+        TestUtil.Near(0.3f, offset.Y, 1e-5f);
+    }
+
+    [Fact]
+    public void EyeAnchor_PutsTheLearnedEyeInFrontOfTheTorsoAlongTheRigHeading()
+    {
+        var center = new Vector3(2f, 1f, -1f);
+        var offset = new Vector2(0.12f, 0.35f);
+
+        // Heading +Z: straight ahead, above the torso.
+        TestUtil.Near(new Vector3(2f, 1.35f, -0.88f), RigMath.EyeAnchor(center, 0f, offset), 1e-5f);
+        // Learned at one heading, applied at another: same point relative to the body.
+        var eye = center + RigMath.RotateYaw(-40f, new Vector3(0f, 0.35f, 0.12f));
+        TestUtil.Near(
+            eye,
+            RigMath.EyeAnchor(center, -40f, RigMath.EyeOffset(eye, center, -40f)),
+            1e-5f
+        );
+    }
 }

@@ -68,6 +68,18 @@ internal sealed class SlotGhosts : MonoBehaviour
         && BodyInventory.Instance.Valid
         && VRSession.HasFocus;
 
+    /// <summary>Self-test: slot <paramref name="i"/>'s ghost while it is drawn, else null.</summary>
+    internal static Transform Drawn(int i) =>
+        instance != null && i >= 0 && i < Max && instance.roots[i].gameObject.activeInHierarchy
+            ? instance.roots[i]
+            : null;
+
+    /// <summary>Self-test: the rings skip the depth test, so no body mesh can hide them.</summary>
+    internal static bool DrawnOnTop =>
+        instance != null
+        && instance.ringMats[0] != null
+        && instance.ringMats[0].GetInt("unity_GUIZTestMode") == (int)CompareFunction.Always;
+
     private void Awake()
     {
         var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -184,12 +196,14 @@ internal sealed class SlotGhosts : MonoBehaviour
         return true;
     }
 
-    /// <summary>Alpha-blended textured material on a shader every player build ships (as <c>CinemaScreen</c>).</summary>
+    /// <summary>Alpha-blended textured material on a shader every player build ships (as <c>CinemaScreen</c>). Drawn on
+    /// top: the belt rides in front of the belly, and the visible VR body (round torso, straps, backpack) would
+    /// otherwise hide the rings from the eyes, as it did in the headset.</summary>
     private static Material TexturedMaterial(Texture texture, int queue)
     {
         var shader = Shader.Find("UI/Default") ?? Shader.Find("Sprites/Default");
         var material = new Material(shader) { mainTexture = texture, renderQueue = queue };
-        material.SetInt("unity_GUIZTestMode", (int)CompareFunction.LessEqual);
+        material.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         return material;
     }
 

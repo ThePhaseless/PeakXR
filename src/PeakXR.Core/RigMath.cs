@@ -79,6 +79,24 @@ namespace PeakXR.Core
             HeightCalibration.DefaultStandingEyeHeight - heightOffset;
 
         /// <summary>
+        /// Where the avatar's eyes sit relative to its torso, in the body's facing frame (yaw
+        /// <paramref name="facingYawDeg"/>): X metres forward, Y metres up. Sideways is dropped (the eyes are centred).
+        /// </summary>
+        public static Vector2 EyeOffset(Vector3 eye, Vector3 center, float facingYawDeg)
+        {
+            Vector3 local = RotateYaw(-facingYawDeg, eye - center);
+            return new Vector2(local.Z, local.Y);
+        }
+
+        /// <summary>
+        /// First-person eye point: <paramref name="offset"/> (see <see cref="EyeOffset"/>) in front of and above the
+        /// torso along the rig heading <paramref name="yawDeg"/>. The rig heading, not the head's, because the
+        /// tracked head already carries its own swing about the neck.
+        /// </summary>
+        public static Vector3 EyeAnchor(Vector3 center, float yawDeg, Vector2 offset) =>
+            center + RotateYaw(yawDeg, new Vector3(0f, offset.Y, offset.X));
+
+        /// <summary>
         /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
         /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the
         /// view does not rotate on its own.

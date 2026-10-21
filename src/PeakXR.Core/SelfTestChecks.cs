@@ -36,6 +36,20 @@ namespace PeakXR.Core
                 && angle < MaxPanelAngle;
         }
 
+        /// <summary>Highest the eyes may sit above the shoulders (m); a human's are about 0.25 m above.</summary>
+        public const float MaxEyeAboveShoulders = 0.35f;
+
+        /// <summary>Degrees between the view direction <paramref name="forward"/> and the direction to
+        /// <paramref name="point"/>; 180 for degenerate input.</summary>
+        public static float AngleOff(Vector3 eye, Vector3 forward, Vector3 point)
+        {
+            var to = point - eye;
+            if (to.LengthSquared() < 1e-8f || forward.LengthSquared() < 1e-8f)
+                return 180f;
+            float cos = Vector3.Dot(Vector3.Normalize(to), Vector3.Normalize(forward));
+            return MathF.Acos(Math.Clamp(cos, -1f, 1f)) * 180f / MathF.PI;
+        }
+
         /// <summary>Signed heading change from <paramref name="from"/> to <paramref name="to"/> in degrees, in (-180, 180].</summary>
         public static float YawDelta(float from, float to)
         {
