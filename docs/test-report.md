@@ -31,7 +31,7 @@ The runs found one PeakXR bug, fixed in `698772c`. The VR settings tab threw and
 
 The two remaining exceptions, unchanged in the later runs, come from the game itself: a spawned Stone (`ItemOptimizer` deregisters before it registered) and held binoculars (`ItemRenderFeatureManager.setFeatureActive`). No exception in any run had a PeakXR frame outside the test harness.
 
-Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the tornado, the zombie and petrified player bodies, the spectate ghost, the scoutmaster orbiter and the tied balloon need an owner, a spawner or a dying player that a standalone spawn can't provide. The last skip is the segment the player is already in.
+Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the tornado, the zombie and petrified player bodies, the spectate ghost, the scoutmaster orbiter and the tied balloon need an owner, a spawner or a dying player that a standalone spawn can't provide. The last skip is the segment the player is already in. The VR runs from run 16 on test all of these in their game context (see "Entities that used to skip").
 
 ## VR
 
@@ -74,8 +74,16 @@ Setup: SteamVR with an ALVR virtual Index, Radeon 780M, Vulkan, OpenXR MultiPass
 | 10 | `0d3f4e3` | 286 | 3 | 13 |
 | 11 | `0693c34` | 287 | 2 | 13 |
 | 12 | `e33b231` | 288 | 1 | 13 |
+| 13 | `8f17d94` | 286 | 3 | 13 |
+| 14 | `20558b3` | 288 | 1 | 13 |
+| 15 | `17f510d` | 290 | 0 | 13 |
+| 16 | `ee9d73d` | 301 | 3 | 1 |
+| 17 | `e8ce873` | 303 | 1 | 1 |
+| 18 | `ad2932f` | 307 | 0 | 0 |
 
-The one failure left in run 12 is `vr.26` (light with flame). The game's hover lands on a nearby item instead of the campfire. A fix is in progress.
+Run 18 is the first run with no failure and no skip. The log holds only the two known vanilla exceptions.
+
+The one failure left in run 12 was `vr.26` (light with flame): the game's hover landed on a nearby item instead of the campfire. Runs 13 to 18 found the cause and four other bugs, listed below.
 
 New VR steps that pass in run 12:
 
@@ -102,6 +110,33 @@ New VR steps that pass in run 12:
 | `ui.03` world banner | sign clamped to 28.6 m by a raycast |
 | `ui.04` | rope gauge beside the spool |
 
+### Bugs found by runs 13 to 18
+
+All five are fixed.
+
+- Holding an item and pulling the trigger while the hand pointed at something sent a ping instead of using the item. `PingInput` armed the finger-gun ping on a hand that held an item. Now only an empty hand pings. The new step `vr.28-use-while-pointing` passes with "used True, pings 0".
+- The torch is lit like a lantern (`FlareActive`), and the self-test handed over an unlit torch. `vr.26` now lights it with the trigger, and the light hold starts on the campfire. A cue now shows when an unlit flame is held at an unlit fire.
+- The campfire light zone sat at the edge of physical reach. It is now 0.6 m wide, with a "too far" cue.
+- Snap turn slid the view 4.7 cm, because the torso catches up over several frames. The eye is now held level through that. `vr.16` measures 0.5 cm on a 30 degree snap.
+- The VR eye sat on top of the avatar's head. It now sits at the avatar's eyes: `vr.08` measures 0.02 m from them. Scouts have big heads, so the real avatar eyes are about 0.48 m above the shoulders.
+
+### Entities that used to skip
+
+The 13 skipped entities are now tested in their game context:
+
+- BingBong effects (5): the game never spawns these, so the test uses a stand-in target.
+- ChainShootable: fired at terrain, then climbed.
+- MushroomZombie_Player, PetrifiedScout and PlayerGhost: the local player dies through the game's own path with a test-only end-game hold, then is revived.
+- ScoutmasterGhostOrbiter: set up with `SetOrbitCharacter`.
+- TiedBalloon: spawned through the balloon item.
+- Tornado: the map of the day had no `TornadoSpawner`, so the run loads a Mesa level through the game's own level index offset and kiosk. The tornado moved 15.6 m in 4 s, caught the player and lifted them 8.7 m. The comfort vignette peaked at 0.63.
+- Beach segment: the player is already there, which now counts as a pass.
+
+### New features checked in VR
+
+- VR Guide in the VR settings tab (`vr.30`): the Grab and Climb demos play, with cue sounds beside their rows.
+- Offline practice in the solo airport (`vr.31`): the turn station passes and the exit leads back to the title.
+
 Headset visual checks, from MCP screenshots:
 
 - Arms now bend with the elbows down. Before, the elbows pointed sideways and the forearms looked like flat bands, because the game's elbow IK hint had weight 0.
@@ -125,7 +160,9 @@ The eat step still failed in the latest run because the test moved the wrong han
 
 ## Multiplayer
 
-`docs/multiplayer-compat.md` holds a static audit: no new RPCs, version gates untouched, pose event 151 sent only to PeakXR peers, adaptive pose rate. Parity fixes are merged: feed angle check, no remote yaw spin, reach clamp to the vanilla 2 m from the head, piton time never faster than vanilla, sandbox only offline. A live two-client test (one vanilla, one VR) has not been done. It needs a second Steam account; the plan is in `docs/multiplayer-compat.md`.
+`docs/multiplayer-compat.md` holds a static audit: no new RPCs, version gates untouched, pose event 151 sent only to PeakXR peers, adaptive pose rate. Parity fixes are merged: feed angle check, no remote yaw spin, reach clamp to the vanilla 2 m from the head, piton time never faster than vanilla, sandbox only offline. 
+
+An automated two-client harness now exists: `tools/MpObserver` is a read-only observer plugin for an unmodded client on a second Steam account in Flatpak Steam, PeakXR has a `-peakxr-mptest` mode, and `tools/mp-check.sh` runs the check. Client B is set up: an unmodded PEAK copied from the main install without PeakXR, with BepInEx core and the observer only. The live run is blocked. The second account has to accept PEAK's EULA in Steam first, and that needs the user. Until it runs, multiplayer compatibility rests on the static audit in `docs/multiplayer-compat.md`.
 
 ## REA
 
