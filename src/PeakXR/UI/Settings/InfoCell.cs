@@ -36,17 +36,28 @@ internal sealed class InfoCell : SettingInputUICell
     public override void Setup(Setting setting, ISettingHandler settingHandler)
     {
         gameObject.SetActive(true);
-        if (setting is not InfoRow row)
+        string value;
+        var color = Color.white;
+        var header = false;
+        if (setting is InfoRow row)
+        {
+            value = row.Text;
+            color = row.Color;
+            header = row.IsHeader;
+        }
+        else if (setting is TextRow textRow)
+            value = textRow.Value;
+        else
             return;
 
         var cell = GetComponentInParent<SettingsUICell>(true);
         var label = cell != null ? cell.m_text : null;
-        if (row.IsHeader && label != null)
+        if (header && label != null)
         {
             label.fontStyle |= FontStyles.Bold;
             label.color = HeaderColor;
         }
-        if (string.IsNullOrEmpty(row.Text))
+        if (string.IsNullOrEmpty(value))
             return;
 
         var go = new GameObject("Value", typeof(RectTransform));
@@ -62,8 +73,8 @@ internal sealed class InfoCell : SettingInputUICell
             text.font = label.font;
             text.fontSize = label.fontSize * 0.8f;
         }
-        text.text = row.Text;
-        text.color = row.Color;
+        text.text = value;
+        text.color = color;
         text.alignment = TextAlignmentOptions.MidlineRight;
         text.overflowMode = TextOverflowModes.Ellipsis;
         text.raycastTarget = false;

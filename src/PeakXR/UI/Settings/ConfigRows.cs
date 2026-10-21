@@ -231,6 +231,16 @@ internal sealed class TextRow : StringSetting, IExposedSetting, IConfigRow
     public string GetCategory() => VRTab.CategoryName;
 
     public void Refresh() => Value = Read();
+
+    /// <summary>
+    /// The game exposes no text setting, so its build may ship without a text cell; then the value shows read-only.
+    /// shortcut: no VR text editing for these rows, upgrade by wiring the VR keyboard to a custom cell.
+    /// </summary>
+    public override GameObject GetSettingUICell()
+    {
+        var cell = SingletonAsset<InputCellMapper>.Instance.StringSettingCell;
+        return cell != null ? cell : InfoCell.Template;
+    }
 }
 
 /// <summary>Read-only row: a section header or a compatibility line.</summary>

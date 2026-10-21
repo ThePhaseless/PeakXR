@@ -112,7 +112,18 @@ internal static class ShowSettingsPatch
                 .Instantiate(__instance.m_settingsCellPrefab, __instance.m_settingsContentParent)
                 .GetComponent<SettingsUICell>();
             cells.Add(cell);
-            cell.Setup(setting);
+            try
+            {
+                cell.Setup(setting);
+            }
+            catch (System.Exception e)
+            {
+                // One row the game can't draw (missing cell prefab in a future build) must not empty the tab.
+                Plugin.Log.LogWarning(
+                    $"[ui.settings] Row {setting.GetType().Name} failed: {e.GetBaseException().Message}"
+                );
+                continue;
+            }
             // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
             var sfx = cell.fadeInSFX;
             if (!first)
