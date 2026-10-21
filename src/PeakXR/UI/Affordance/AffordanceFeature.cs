@@ -7,8 +7,8 @@ namespace PeakXR.UI.Affordances;
 /// ui.affordance: in VR the hands make actions look possible that the game refuses or ignores (reach measured from
 /// the head, a wall too steep, no stamina, a two-handed item in one hand). On a flat screen the crosshair and prompt
 /// teach those rules; in VR the action would just fail silently. Features report each refusal through
-/// <see cref="Affordance"/>, which answers with a soft "denied" buzz, a red ring at the spot and a short reason by
-/// the hand or target. No patches: callers detect the refusal where they already make the attempt.
+/// <see cref="Affordance"/>, which answers with a soft "denied" buzz, a quiet spatial sound, a ring with a shape at
+/// the spot and, where it knows, a marked spot that would work (text only with <c>UI.ActionHintText</c>). No patches: callers detect the refusal where they already make the attempt.
 /// </summary>
 public sealed class AffordanceFeature : Feature
 {
@@ -21,6 +21,8 @@ public sealed class AffordanceFeature : Feature
 
     internal static ConfigEntry<bool> ReachRay { get; private set; }
 
+    internal static ConfigEntry<bool> ActionHintText { get; private set; }
+
     protected internal override void Install()
     {
         ActionHints = Plugin.Settings.Bind(
@@ -28,9 +30,9 @@ public sealed class AffordanceFeature : Feature
             "ActionHints",
             true,
             "When something you try does nothing (out of reach, wall too steep, no stamina, needs both hands...), "
-                + "the controller gives a soft triple tick and a short reason appears by your hand or the target. "
-                + "Aimed tools show a red end when the game would refuse. Uses the Interaction "
-                + "haptic strength."
+                + "the controller gives a soft triple tick, a quiet falling note plays there and a ring marks it "
+                + "(slash: no, bar: full, sweeping arc: wait). Where it would work gets a double ring, a rising note "
+                + "and a chevron moving toward it. Uses the Interaction haptic strength and the game's sound volume."
         );
         ReachRay = Plugin.Settings.Bind(
             "UI",
@@ -38,6 +40,13 @@ public sealed class AffordanceFeature : Feature
             true,
             "While a hand points to interact, a faint ray shows how far the game's interaction reaches from that "
                 + "hand, and something just past it gets a 'Too far' ring. Needs ActionHints."
+        );
+        ActionHintText = Plugin.Settings.Bind(
+            "UI",
+            "ActionHintText",
+            false,
+            "Also show a short text reason and next step by the hand or target. The rings, shapes, sounds and "
+                + "haptics already say what is wrong and what would work; this adds words. Needs ActionHints."
         );
         AffordanceRuntime.Create();
     }

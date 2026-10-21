@@ -35,12 +35,22 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     /// <summary>Labels that ride on a hand stay at least this far from the eye, a comfortable focus distance.</summary>
     private const float MinLabelDistance = 0.45f;
 
-    /// <summary>One cue in the world: refused spot, valid spot, the line between.</summary>
+    /// <summary>One cue in the world: refused spot (ring plus glyph), valid spot (double ring), the line between with a
+    /// chevron travelling toward the valid spot.</summary>
     private sealed class Cue
     {
         public LineRenderer Deny,
             Hint,
             Link;
+
+        /// <summary>Children of <see cref="Deny"/> (they share its pose): slash, bar or pin, and the wait arc.</summary>
+        public LineRenderer Mark,
+            Arc;
+
+        /// <summary>Child of <see cref="Hint"/>: the inner ring that makes it a double ring.</summary>
+        public LineRenderer Inner;
+        public LineRenderer Chevron;
+        public CueGlyph Glyph;
         public Vector3 Position;
         public DenyReason Reason;
         public DenyHint Spot;
@@ -56,6 +66,17 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     }
 
     private static AffordanceRuntime instance;
+    private const int ArcPoints = 9;
+    private const float WouldWorkDelay = 0.15f;
+    private const float HoverVolume = 0.6f;
+
+    /// <summary>Sounds for hovers, which start and stop at will: one per reason and hand per 0.9 s.</summary>
+    private readonly DenyGate hoverSounds = new();
+
+    // The would-work note follows the refused one by a moment, at the valid spot.
+    private float pendingAt = -1f;
+    private Vector3 pendingPos;
+    private float pendingVolume;
 
     private readonly HapticPatternPlayer leftBuzz = new();
     private readonly HapticPatternPlayer rightBuzz = new();
@@ -104,7 +125,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         else
             (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
         self.denied.Notice = notice;
+        self.denied.Glyph = DenyGlyph.For(reason);
         self.denied.Text = text;
+        self.PlayCue(notice, pos, hint, 1f);
         self.denied.Position = pos;
         self.denied.Reason = reason;
         self.denied.Spot = hint;
@@ -128,7 +151,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var h = self.hovers[left ? 0 : 1];
         var now = Time.unscaledTime;
         if (h.Reason != reason || h.Frame < Time.frameCount - 1)
+        {
             h.Since = now;
+            // A new hover sounds once, softer than a refusal; a hover that flickers on and off stays quiet.
+            if (self.hoverSounds.Allow(reason, left, now))
+                self.PlayCue(notice, pos, hint, HoverVolume);
+        }
+        h.Glyph = DenyGlyph.For(reason);
         h.Position = pos;
         h.Reason = reason;
         h.Spot = hint;
@@ -147,6 +176,28 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var now = Time.unscaledTime;
         Buzz(leftBuzz, true, now);
         Buzz(rightBuzz, false, now);
+        if (pendingAt >= 0f && now >= pendingAt)
+        {
+            pendingAt = -1f;
+            CueAudio.Play(CueSound.WouldWork, pendingPos, pendingVolume);
+        }
+    }
+
+    /// <summary>Refused (or notice) at the spot; if there is a valid spot, the would-work note there a moment later.</summary>
+    private void PlayCue(bool notice, Vector3 pos, DenyHint hint, float volume)
+    {
+        bool spot = hint.HasSpot && (hint.SpotNow - pos).sqrMagnitude > 1e-4f;
+        if (notice)
+        {
+            CueAudio.Play(CueSound.Notice, spot ? hint.SpotNow : pos, volume);
+            return;
+        }
+        CueAudio.Play(CueSound.Refused, pos, volume);
+        if (!spot)
+            return;
+        pendingAt = Time.unscaledTime + WouldWorkDelay;
+        pendingPos = hint.SpotNow;
+        pendingVolume = volume;
     }
 
     private static void Buzz(HapticPatternPlayer player, bool left, float now)
@@ -165,7 +216,14 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
         if (!built)
             Build();
-        EnsureFont();
+        // Text is optional (UI.ActionHintText): the label is built only when asked for.
+        bool text = AffordanceFeature.ActionHintText.Value;
+        if (text && labelRoot == null)
+            BuildLabel();
+        else if (!text && labelRoot != null && labelRoot.activeSelf)
+            labelRoot.SetActive(false);
+        if (text)
+            EnsureFont();
         UpdateRay(rig);
         Pose();
     }
@@ -296,7 +354,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private void PoseLabel(VRRig rig, Vector3 eye, float now, float denyAlpha)
     {
-        if (labelRoot == null)
+        if (labelRoot == null || !AffordanceFeature.ActionHintText.Value)
             return;
         float alpha;
         Vector3 anchor;
@@ -361,33 +419,113 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private static void PoseCue(Cue cue, Vector3 eye, float alpha)
     {
+        float now = Time.unscaledTime;
         var spot = cue.Spot.SpotNow;
         bool hint = cue.Spot.HasSpot && (spot - cue.Position).sqrMagnitude > 1e-4f;
-        // A notice has no refused spot: with no separate hint, its own spot is the teal one.
+        bool shown = alpha > 0.001f;
+        // A notice has no refused spot: with no separate hint, its own spot is the teal one (with a pin).
+        bool refusedRing = shown && !(cue.Notice && hint);
+        var color = cue.Notice ? Affordance.HintColor : Affordance.DenyColor;
+        PoseRing(cue.Deny, cue.Position, eye, refusedRing ? alpha : 0f, color, 1f);
+        PoseGlyph(cue, refusedRing, alpha, color, now);
         PoseRing(
-            cue.Deny,
-            cue.Position,
+            cue.Hint,
+            spot,
             eye,
-            cue.Notice && hint ? 0f : alpha,
-            cue.Notice ? Affordance.HintColor : Affordance.DenyColor
+            hint ? alpha : 0f,
+            Affordance.HintColor,
+            CueMotion.Breathe(now)
         );
-        PoseRing(cue.Hint, spot, eye, hint ? alpha : 0f, Affordance.HintColor);
+        cue.Inner.widthMultiplier = cue.Hint.widthMultiplier;
+        SetLine(cue.Inner, hint && shown, alpha, Affordance.HintColor);
         var link = cue.Link;
-        if (!hint || alpha <= 0.001f)
+        if (!hint || !shown)
         {
-            if (link.enabled)
-                link.enabled = false;
+            link.enabled = false;
+            cue.Chevron.enabled = false;
             return;
         }
         link.SetPosition(0, cue.Position);
         link.SetPosition(1, spot);
         link.widthMultiplier =
             SpatialMath.SpanMeters(Vector3.Distance(spot, eye), RingDegrees) * 0.08f;
-        var c = Affordance.HintColor;
-        c.a *= alpha * 0.7f;
-        link.sharedMaterial.color = c;
-        if (!link.enabled)
-            link.enabled = true;
+        SetLine(link, true, alpha * 0.6f, Affordance.HintColor);
+        PoseChevron(cue, spot, eye, alpha, now);
+    }
+
+    /// <summary>The refused ring's inner shape: a slash (no), a bar (full), a sweeping arc (wait) or a pin above it
+    /// (a notice: here it is). Shape carries the meaning, so colour is never needed.</summary>
+    private static void PoseGlyph(Cue cue, bool shown, float alpha, Color color, float now)
+    {
+        var glyph = cue.Glyph;
+        bool mark = shown && glyph != CueGlyph.Wait;
+        bool arc = shown && glyph == CueGlyph.Wait;
+        if (mark)
+        {
+            switch (glyph)
+            {
+                case CueGlyph.Bar:
+                    cue.Mark.SetPosition(0, new Vector3(-0.7f, 0f, 0f));
+                    cue.Mark.SetPosition(1, new Vector3(0.7f, 0f, 0f));
+                    break;
+                case CueGlyph.Pin:
+                    cue.Mark.SetPosition(0, new Vector3(0f, 1f, 0f));
+                    cue.Mark.SetPosition(1, new Vector3(0f, 2.4f, 0f));
+                    break;
+                default:
+                    cue.Mark.SetPosition(0, new Vector3(-0.7f, -0.7f, 0f));
+                    cue.Mark.SetPosition(1, new Vector3(0.7f, 0.7f, 0f));
+                    break;
+            }
+            cue.Mark.widthMultiplier = cue.Deny.widthMultiplier;
+        }
+        if (arc)
+        {
+            // A quarter turn of arc sweeping round inside the ring.
+            float start = CueMotion.Sweep(now) * Mathf.Deg2Rad;
+            for (int i = 0; i < ArcPoints; i++)
+            {
+                float a = start + i * (Mathf.PI * 0.5f) / (ArcPoints - 1);
+                cue.Arc.SetPosition(i, new Vector3(Mathf.Cos(a) * 0.6f, Mathf.Sin(a) * 0.6f, 0f));
+            }
+            cue.Arc.widthMultiplier = cue.Deny.widthMultiplier;
+        }
+        SetLine(cue.Mark, mark, alpha, color);
+        SetLine(cue.Arc, arc, alpha, color);
+    }
+
+    /// <summary>A small chevron moving from the refused spot to the valid one: which way, at a glance.</summary>
+    private static void PoseChevron(Cue cue, Vector3 spot, Vector3 eye, float alpha, float now)
+    {
+        var from = cue.Position;
+        var along = spot - from;
+        float length = along.magnitude;
+        if (length < 0.05f)
+        {
+            cue.Chevron.enabled = false;
+            return;
+        }
+        var dir = along / length;
+        var at = from + along * CueMotion.Travel(now);
+        float size = SpatialMath.SpanMeters(Vector3.Distance(at, eye), RingDegrees) * 0.5f;
+        var side = Vector3.Cross(dir, eye - at);
+        side = side.sqrMagnitude > 1e-8f ? side.normalized : Vector3.up;
+        cue.Chevron.SetPosition(0, at - dir * size + side * size * 0.8f);
+        cue.Chevron.SetPosition(1, at);
+        cue.Chevron.SetPosition(2, at - dir * size - side * size * 0.8f);
+        cue.Chevron.widthMultiplier = size * 0.18f;
+        SetLine(cue.Chevron, true, alpha, Affordance.HintColor);
+    }
+
+    private static void SetLine(LineRenderer line, bool on, float alpha, Color color)
+    {
+        if (on)
+        {
+            color.a *= alpha;
+            line.sharedMaterial.color = color;
+        }
+        if (line.enabled != on)
+            line.enabled = on;
     }
 
     private static void PoseRing(
@@ -395,7 +533,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         Vector3 pos,
         Vector3 eye,
         float alpha,
-        Color color
+        Color color,
+        float scale
     )
     {
         if (alpha <= 0.001f)
@@ -405,7 +544,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             return;
         }
         float d = Vector3.Distance(pos, eye);
-        float r = SpatialMath.SpanMeters(d, RingDegrees) * 0.5f;
+        float r = SpatialMath.SpanMeters(d, RingDegrees) * 0.5f * scale;
         // Depth-tested, so a ring behind a rock stays hidden (stereo-correct); lifted toward the eye off the surface it
         // marks so the surface does not cut it.
         if (d > 1e-3f)
@@ -458,7 +597,14 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     }
 
     private static void Hide(Cue cue) =>
-        cue.Deny.enabled = cue.Hint.enabled = cue.Link.enabled = false;
+        cue.Deny.enabled =
+            cue.Hint.enabled =
+            cue.Link.enabled =
+            cue.Mark.enabled =
+            cue.Arc.enabled =
+            cue.Inner.enabled =
+            cue.Chevron.enabled =
+                false;
 
     private void Build()
     {
@@ -466,20 +612,46 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         foreach (var cue in new[] { denied, hovers[0], hovers[1] })
         {
             cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, drawOnTop: false);
+            cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, false, cue.Deny.transform);
+            cue.Arc = Line(
+                "WaitArc",
+                ArcPoints,
+                false,
+                Affordance.DenyColor,
+                false,
+                cue.Deny.transform
+            );
             cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, drawOnTop: false);
+            cue.Inner = Line(
+                "HintInner",
+                RingPoints,
+                true,
+                Affordance.HintColor,
+                false,
+                cue.Hint.transform
+            );
+            cue.Inner.transform.localScale = new Vector3(0.55f, 0.55f, 0.55f);
             cue.Link = Line("HintLink", 2, false, Affordance.HintColor, drawOnTop: false);
             cue.Link.useWorldSpace = true;
+            cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, drawOnTop: false);
+            cue.Chevron.useWorldSpace = true;
         }
         ray = Line("PointRay", 2, false, RayColor, drawOnTop: false);
         ray.useWorldSpace = true;
         ray.widthMultiplier = RayWidth;
-        BuildLabel();
     }
 
-    private LineRenderer Line(string name, int points, bool ring, Color color, bool drawOnTop)
+    private LineRenderer Line(
+        string name,
+        int points,
+        bool ring,
+        Color color,
+        bool drawOnTop,
+        Transform parent = null
+    )
     {
         var go = new GameObject(name);
-        go.transform.SetParent(transform, false);
+        go.transform.SetParent(parent != null ? parent : transform, false);
         var line = go.AddComponent<LineRenderer>();
         line.useWorldSpace = false;
         line.loop = ring;
