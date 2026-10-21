@@ -894,7 +894,8 @@ internal static class PhysicalInteraction
             input.useSecondaryIsPressed |= SecondaryEdge.Held;
             input.useSecondaryWasReleased |= SecondaryEdge.Released;
         }
-        if (VRInput.TestOverride != null)
+        // Only the self-test's scripted hand steps, not its idle rest pose, so the trace budget lasts until the eat step.
+        if (VRInput.TestOverride is { } scripted && scripted != Sandbox.SelfTestRunner.IdleHands)
             TraceEat(c, input, rig, cfg, holding, mouthHand, atMouth, primaryDown);
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.

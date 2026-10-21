@@ -20,6 +20,7 @@ internal sealed class DesktopMirror
     // Static: one mirror per process, so the buffer lives as long as the game (no dispose owner needed).
     private static readonly CommandBuffer cmd = new() { name = "PeakXR desktop mirror" };
     private static Material blit;
+    private static bool blitLooked;
     private RenderTexture slice;
     private string lastPath;
     private bool hooked;
@@ -117,8 +118,12 @@ internal sealed class DesktopMirror
         float v0 = flip ? srcRect.yMax : srcRect.y;
         float v1 = flip ? srcRect.y : srcRect.yMax;
 
-        if (blit == null)
+        if (!blitLooked)
+        {
+            // Look once: a failed Shader.Find is a native search we must not repeat every frame.
+            blitLooked = true;
             blit = Shader.Find("Hidden/BlitCopy") is { } shader ? new Material(shader) : null;
+        }
         if (blit == null)
         {
             // No copy shader to draw a quad with: stretch over the whole window, upright at least.
