@@ -421,7 +421,7 @@ internal sealed partial class SelfTestRunner
     /// vr.07: a knockback through the game's RPC (<c>Character.RPCA_AddForceAtPosition</c>, decomp
     /// Assembly-CSharp/Character.cs:461, sent the way <c>AddForceAtPosition</c> :455 does) pulses comfort.events'
     /// vignette, which is open again within 2 s; then a warp (<c>MapHandler.JumpToSegment</c>, MapHandler.cs:805, to
-    /// the current segment) leaves <see cref="VRFade.Target"/> at 0.
+    /// a neighbouring segment) leaves <see cref="VRFade.Target"/> at 0.
     /// </summary>
     IEnumerator ComfortCheck()
     {
@@ -479,7 +479,9 @@ internal sealed partial class SelfTestRunner
             fails.Add("no MapHandler for the jump");
         else
         {
-            var segment = map.GetCurrentSegment();
+            // Warping to the current segment throws in vanilla SingleItemSpawner.TrySpawnItems, so go to a neighbour.
+            var segment =
+                map.GetCurrentSegment() == Segment.Beach ? Segment.Tropics : Segment.Beach;
             if (!SandboxActions.JumpToSegment(segment))
                 fails.Add(SandboxActions.LastMessage);
             else
