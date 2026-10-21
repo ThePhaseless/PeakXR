@@ -22,7 +22,47 @@ internal sealed partial class SelfTestRunner
         if (!Framework.FeatureManager.IsActive<GuideFeature>())
             yield break;
         yield return VRStep("vr.30-guide", 40f, GuideStep());
+        yield return Guard(TutorialCleanup(), Now + 100f, TutorialCleanupFailed);
         yield return VRStep("vr.31-practice", 300f, PracticeStep());
+        yield return Guard(TutorialCleanup(), Now + 100f, TutorialCleanupFailed);
+    }
+
+    static void TutorialCleanupFailed(System.Exception e) =>
+        Plugin.Log.LogWarning(
+            $"[selftest] tutorial cleanup: {(e == null ? "timeout" : e.Message)}"
+        );
+
+    /// <summary>
+    /// After each step, passed or not: the scripted hands let go, the comfort-first view is off, a practice still
+    /// running is stopped (it leaves to the title) and the title is back on its main page, so 01-airport starts clean.
+    /// </summary>
+    IEnumerator TutorialCleanup()
+    {
+        yield return HandsRelease();
+        EndHands();
+        GuideRows.ComfortFirst = false;
+        if (PracticeRun.Current != null)
+        {
+            PracticeRun.Current.Stop();
+            yield return WaitFor(() => !PracticeRun.Running, 60f);
+            if (PracticeRun.Current != null)
+            {
+                Plugin.Log.LogWarning("[selftest] practice did not end; destroying it");
+                Destroy(PracticeRun.Current.gameObject);
+            }
+        }
+        yield return WaitFor(
+            () =>
+                InScene(MainMenu.SceneName)
+                && !LoadingScreenHandler.loading
+                && FindAnyObjectByType<MainMenuPageHandler>() != null,
+            30f
+        );
+        var handler = FindAnyObjectByType<MainMenuPageHandler>();
+        // MainMenuSettingsPage.BackClicked (MainMenuSettingsPage.cs:17) goes back the same way.
+        if (handler != null && handler.currentPage is not MainMenuMainPage)
+            handler.TransistionToPage<MainMenuMainPage>();
+        yield return Wait(0.5f);
     }
 
     /// <summary>vr.30: the title's settings (MainMenuMainPage.cs:215), the VR tab, the demo list opened, and the Grab and

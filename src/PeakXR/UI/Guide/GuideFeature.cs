@@ -34,6 +34,7 @@ public sealed class GuideFeature : Feature
                 VRTab.HiddenTag
             )
         );
+        GuideScene.Install();
         var go = new GameObject("PeakXR_Guide");
         UnityEngine.Object.DontDestroyOnLoad(go);
         go.AddComponent<GuideStage>();
