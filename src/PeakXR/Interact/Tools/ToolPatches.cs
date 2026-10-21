@@ -35,7 +35,9 @@ internal static class ToolPatches
     /// (climbingSpikeTick &gt; 0) the game adds the frame time and places the spike at climbingSpikeHit once the
     /// timer reaches the slot prefab's usingTimePrimary (CharacterItems.cs:987-1004). The prefix sets the timer
     /// from the strikes landed so far, so only the last strike completes the cast; the button-held and range
-    /// checks before it stay vanilla.</summary>
+    /// checks before it stay vanilla. The postfix (camera still at the aiming hand: interact.aim restores it in a
+    /// finalizer) feeds <see cref="SpikeCue"/> the range cue, a refused press and a cast lost to range
+    /// (currentClimbingSpikeComponent, CharacterItems.cs:66).</summary>
     [HarmonyPatch]
     internal static class SpikeUse
     {
@@ -46,12 +48,33 @@ internal static class ToolPatches
             Character ___character,
             ref float ___climbingSpikeTick,
             ItemSlot ___currentClimbingSpikeItemSlot,
-            RaycastHit ___climbingSpikeHit
-        ) =>
+            RaycastHit ___climbingSpikeHit,
+            out float __state
+        )
+        {
             SpikeHammer.BeforeUpdate(
                 ___character,
                 ref ___climbingSpikeTick,
                 ___currentClimbingSpikeItemSlot,
+                in ___climbingSpikeHit
+            );
+            __state = ___climbingSpikeTick;
+        }
+
+        private static void Postfix(
+            Character ___character,
+            float ___climbingSpikeTick,
+            ItemSlot ___currentClimbingSpikeItemSlot,
+            ClimbingSpikeComponent ___currentClimbingSpikeComponent,
+            RaycastHit ___climbingSpikeHit,
+            float __state
+        ) =>
+            SpikeCue.After(
+                ___character,
+                __state,
+                ___climbingSpikeTick,
+                ___currentClimbingSpikeItemSlot != null,
+                ___currentClimbingSpikeComponent,
                 in ___climbingSpikeHit
             );
     }

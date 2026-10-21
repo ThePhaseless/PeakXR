@@ -36,6 +36,13 @@ internal sealed class AimReticle : MonoBehaviour
     private Item cachedItem;
     private float range;
     private float rangeDown;
+    private ClimbingSpikeComponent spike;
+    private Material material;
+    private bool red;
+
+    /// <summary>The held tool's usability comes from its aim (the shooters write overrideUsability from
+    /// WillAttach every frame, RopeShooter.cs:69, VineShooter.cs:33).</summary>
+    private bool aimUsability;
 
     private void LateUpdate()
     {
@@ -46,6 +53,22 @@ internal sealed class AimReticle : MonoBehaviour
         }
         if (!built && !Build())
             return;
+        // A piton aimed past its real range (SpikeCue): the line turns the ui.affordance "can't" colour.
+        bool outOfRange =
+            spike != null ? Tools.SpikeCue.OutOfRange : aimUsability && !cachedItem.CanUsePrimary();
+        if (outOfRange && spike == null)
+        {
+            // Before the press: the reason and, for a vine aimed too steep, the ring an accepted aim would hit.
+            var c = Character.localCharacter;
+            bool left = LocalHold.ItemInLeftHand;
+            var reason = UseDenial.Why(c, cachedItem, out var hint);
+            UI.Affordances.Affordance.Hover(left, end, reason, hint);
+        }
+        if (outOfRange != red)
+        {
+            red = outOfRange;
+            material.color = red ? UI.Affordances.Affordance.DenyColor : LineColor;
+        }
         line.SetPosition(0, start);
         line.SetPosition(1, end);
         dot.position = end;
@@ -78,6 +101,13 @@ internal sealed class AimReticle : MonoBehaviour
             return false;
         var dir = rotation * Vector3.forward;
         float max = dir.y < 0f ? rangeDown : range;
+        // The piton's start range depends on climbing (CharacterItems.cs:1074).
+        if (spike != null)
+            max = Usable(
+                c.data.isClimbingAnything
+                    ? spike.climbingSpikeStartDistance
+                    : spike.climbingSpikeStartDistanceGrounded
+            );
         end = Physics.Raycast(
             start,
             dir,
@@ -96,10 +126,18 @@ internal sealed class AimReticle : MonoBehaviour
     {
         range = 0f;
         rangeDown = 0f;
+        spike = null;
+        aimUsability = false;
         if (item.TryGetComponent<RopeShooter>(out var ropeShooter))
+        {
             range = ropeShooter.maxLength;
+            aimUsability = true;
+        }
         else if (item.TryGetComponent<VineShooter>(out var vineShooter))
+        {
             range = vineShooter.maxLength;
+            aimUsability = true;
+        }
         else if (item.TryGetComponent<RescueHook>(out var hook))
         {
             range = Usable(hook.range);
@@ -116,7 +154,7 @@ internal sealed class AimReticle : MonoBehaviour
             range = tier.maxAnchorGhostDistance;
         else if (item.TryGetComponent<Constructable>(out var constructable))
             range = constructable.maxConstructDistance;
-        else if (item.TryGetComponent<ClimbingSpikeComponent>(out var spike))
+        else if (item.TryGetComponent(out spike))
             range = Mathf.Max(
                 spike.climbingSpikeStartDistance,
                 spike.climbingSpikeStartDistanceGrounded
@@ -142,7 +180,7 @@ internal sealed class AimReticle : MonoBehaviour
             Plugin.Log.LogWarning("interact.aim: no unlit shader found, aim line disabled.");
             return false;
         }
-        var material = new Material(shader) { color = LineColor };
+        material = new Material(shader) { color = LineColor };
 
         var lineObject = new GameObject("PeakXR.AimLine");
         lineObject.transform.SetParent(transform, false);

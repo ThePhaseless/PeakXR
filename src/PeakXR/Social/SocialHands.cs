@@ -1,6 +1,7 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -48,6 +49,7 @@ internal sealed class SocialHands : IGripExtension
     private float feedTimer;
     private bool wasSticky;
     private float lastGraspPulse = -10f;
+    private readonly float[] carryAlone = new float[2];
     private bool vanillaInteract;
     private bool vanillaInteractPressed;
 
@@ -284,6 +286,8 @@ internal sealed class SocialHands : IGripExtension
         Validate(c, 1);
 
         IInteractible active = ActiveInteract(cfg, 0) ?? ActiveInteract(cfg, 1);
+        NudgeCarry(cfg, 0, dt);
+        NudgeCarry(cfg, 1, dt);
         bool reaching =
             c.data.currentItem == null && (kinds[0] == Kind.Reach || kinds[1] == Kind.Reach);
 
@@ -324,6 +328,26 @@ internal sealed class SocialHands : IGripExtension
         input.interactIsPressed = vanillaInteract || deliberate;
         input.interactWasPressed =
             vanillaInteractPressed || (deliberate && input.interactWasPressed);
+    }
+
+    /// <summary>
+    /// One hand on a passed-out friend does nothing with <c>CarryBothHands</c> (<see cref="ActiveInteract"/>): after a
+    /// moment, show where the other hand goes, on their body at the free hand's side.
+    /// </summary>
+    private void NudgeCarry(SocialConfig cfg, int h, float dt)
+    {
+        var who = characters[h];
+        bool alone =
+            kinds[h] == Kind.Carry
+            && cfg.CarryBothHands
+            && who != null
+            && !(kinds[1 - h] == Kind.Carry && characters[1 - h] == who);
+        carryAlone[h] = alone ? carryAlone[h] + dt : 0f;
+        var rig = VRRig.Instance;
+        if (carryAlone[h] < 0.6f || rig == null || rig.Head == null)
+            return;
+        var side = rig.Head.right * (h == 0 ? 0.22f : -0.22f);
+        Affordance.DenyAtHand(h == 0, DenyReason.NeedsTwoHands, DenyHint.At(who.Center + side));
     }
 
     private IInteractible ActiveInteract(SocialConfig cfg, int h)
