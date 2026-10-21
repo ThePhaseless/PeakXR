@@ -158,6 +158,7 @@ VR runs only:
 | `vr.18-emote-wheel` | beach | Holding the emote button (off hand, upper button) opens the game's emote wheel. Moving the hand up hovers a slice, and releasing closes the wheel and plays the emote; screenshot `vr-18-emote-wheel` |
 | `vr.19-laser` | beach | Pause menu open, both aim rays on its Resume button, a trigger pull: the menu closes; screenshot `vr-19-laser` |
 | `vr.20-holster` | beach | A held Apple taken to its body slot and let go goes into that hotbar slot; a grip there draws it back into the same hand; screenshot `vr-20-holster` |
+| `vr.29-ground-backpack` | beach | A grip on a spawned ground backpack opens its wheel, which stays open every frame while the grip is closed; opening the grip closes it and the move stick walks again; screenshot `vr-29-ground-backpack` |
 
 Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
 
@@ -240,8 +241,8 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `ping` (VR) | Finger-gun ping at the ground in front of B | `ReceivePoint_Rpc` with the point |
 | `board` | Walks to the kiosk and starts the run (the master loads the island) | scene change |
 | `regroup` (VR) | Walks back to B on the beach | position |
-| `luggage` (VR) | Opens up to four suitcases by lifting the lid by hand | `OpenLuggageRPC` |
-| `grab` (VR) | Picks up the nearest non-food item by hand | A's current item |
+| `luggage` (VR) | Lifts suitcase lids by hand until 2 foods and 1 other item lie within 40 m, trying up to six cases; a case it cannot walk to is passed over | `OpenLuggageRPC` |
+| `grab` (VR) | Picks up the nearest non-food item by hand (never a backpack, which opens its wheel) | A's current item |
 | `drop` (VR) | Taps the drop button; logs where the item came to rest | ground items of that kind near A |
 | `pickup` (VR) | Picks the same item up again | current item |
 | `throw` (VR) | Faces B and throws it; logs the landing point | ground items of that kind |

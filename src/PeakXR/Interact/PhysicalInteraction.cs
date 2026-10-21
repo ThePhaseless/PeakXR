@@ -157,7 +157,18 @@ internal static class PhysicalInteraction
         if (active)
             Inject(c, input, rig, cfg, dt, now);
         else
+        {
             lungePending = false;
+            // A grip on a ground backpack opens its wheel (Backpack.Interact, Backpack.cs:34), which makes CanDoInput
+            // false (Character.cs:1716) so Inject stops; the wheel then closes on interact up (BackpackWheel.cs:96)
+            // and the still-closed grip reopens it every other frame. Hold interact while that grip stays closed.
+            bool wheel = c.data.usingBackpackWheel;
+            if (
+                GripIntent.HoldsOpenWheel(LeftHand.Action, now >= LeftHand.InteractAt, wheel)
+                || GripIntent.HoldsOpenWheel(RightHand.Action, now >= RightHand.InteractAt, wheel)
+            )
+                input.interactIsPressed = true;
+        }
     }
 
     private static void TrackHeldItem(Character c, float now)
@@ -284,8 +295,10 @@ internal static class PhysicalInteraction
                 // With hints off the old success tick stays, as before.
                 if (!Affordance.Enabled)
                     Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+                // A ground backpack opens its wheel instead of a pickup (Backpack.cs:32-35), so a worn one
+                // (Player.HasEmptySlot, Player.cs:274) is no refusal.
                 else if (
-                    target is Item wanted
+                    target is Item wanted and not Backpack
                     && c.player != null
                     && !c.player.HasEmptySlot(wanted.itemID)
                 )

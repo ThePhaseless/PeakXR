@@ -50,6 +50,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.18-emote-wheel", 20f, EmoteStep());
         yield return HandStep("vr.19-laser", 20f, LaserStep());
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
+        yield return HandStep("vr.29-ground-backpack", 25f, GroundBackpackStep());
         yield return BodySteps();
         yield return ItemGestureSteps();
         yield return AffordanceSteps();
@@ -561,6 +562,91 @@ internal sealed partial class SelfTestRunner
         var note = $"walked {moved:0.00} m in 1 s";
         if (moved < 0.5f)
             Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.29: a grip on a ground backpack opens its wheel (<c>Backpack.Interact</c>, Backpack.cs:34) and the wheel stays
+    /// open every frame while the grip stays closed (it closes on interact up, BackpackWheel.cs:96); opening the grip
+    /// closes it, and the move stick walks again afterwards.
+    /// </summary>
+    IEnumerator GroundBackpackStep()
+    {
+        var c = Character.localCharacter;
+        Item prefab = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+                prefab = it;
+        }
+        if (prefab == null)
+        {
+            Fail("no Backpack item");
+            yield break;
+        }
+        var head = VRRig.Instance.Head;
+        var spot = Flat(head.forward) * 0.6f + head.position;
+        spot.y = c.Center.y;
+        if (!SandboxActions.SpawnItemAt(prefab, spot))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        var go = SandboxActions.LastSpawned;
+        spawned.Add(go);
+        var pack = go != null ? go.GetComponent<Item>() : null;
+        yield return Wait(0.6f);
+        if (pack == null)
+        {
+            Fail("spawned Backpack has no Item");
+            yield break;
+        }
+        bool left = !VRInput.LeftHanded;
+        var at = pack.Center();
+        yield return MoveTo(left, () => at, 0.5f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Until(() => c.data.usingBackpackWheel, 2f, "the backpack wheel did not open");
+        if (!stepOk)
+        {
+            stepNote =
+                $"grip {PhysicalInteraction.HandAction(left)} on {Label(PhysicalInteraction.HandTarget(left))}";
+            yield break;
+        }
+        // The hand stays still, so DriveWheel hovers no pocket and the release commits nothing.
+        int closed = 0;
+        for (float until = Now + 1f; Now < until; )
+        {
+            if (!c.data.usingBackpackWheel)
+                closed++;
+            yield return null;
+        }
+        yield return Shot("vr-29-ground-backpack");
+        yield return GripTo(left, 0f, 0.1f);
+        yield return Until(
+            () => !c.data.usingBackpackWheel,
+            1f,
+            "the wheel stayed open after the grip opened"
+        );
+        if (!stepOk)
+            yield break;
+        // Turn away first, so the walk does not run into the pack.
+        VRRig.Instance.RotateYaw(180f);
+        yield return Wait(0.3f);
+        bool hand = !VRInput.LeftHanded;
+        var from = c.Center;
+        Script(hand).Stick = Vector2.up;
+        yield return Wait(1f);
+        Script(hand).Stick = Vector2.zero;
+        yield return Wait(0.3f);
+        var to = c.Center;
+        float moved = Vector2.Distance(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
+        var note =
+            $"wheel closed on {closed} frame(s) of 1 s with the grip shut, walked {moved:0.00} m after";
+        if (closed > 0)
+            Fail("the wheel flickered: " + note);
+        else if (moved < 0.5f)
+            Fail("could not walk after the wheel: " + note);
         else
             stepNote = note;
     }
