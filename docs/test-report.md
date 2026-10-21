@@ -58,6 +58,19 @@ Three problems came up and were fixed:
 
 Launching PEAK from the Steam client while SteamVR runs opens a "VR Theater Screen" prompt that blocks Steam's launch queue. Launch it directly through Proton for VR tests instead.
 
+## Hand-driven checks
+
+The self-test also drives PeakXR's own input layer with scripted controller poses and buttons (steps vr.10 to vr.20), and another session drove the virtual Index controllers live through SteamVR while PEAK idled on the beach.
+
+Scripted hands, latest VR run (266 pass, 1 fail): grabbing with either hand, throwing (landed 2.8 to 3.0 m away at about 6 m/s, inside the vanilla clamp), two-hand holds, snap turn, stick walking, the emote wheel, clicking the pause menu with the laser, holstering to a body slot and drawing back, and climbing all pass. Climbing needed a fix: the game only moves a climber 2/7 of the requested step on a flat wall, so arm pulls were scaled against the wrong speed; a 0.4 m pull now lifts the body 0.39 m.
+
+Live controller input reached PeakXR within one frame for every action: thumbstick turn and walk, A jump, trigger use, grip interact, the emote wheel on B, the pause menu on a firm trackpad squeeze (SteamVR keeps the Index system button), arm tracking and finger touch. Two problems came up and are fixed but not yet re-run in the headset:
+
+- Pressing B also jumped, because PEAK ships its own "XR" input scheme that binds Jump, Use and Move to XR controllers. PeakXR now stops the game's input system from reading XR controllers while VR runs.
+- The pause menu was readable only with effort, because the whole 1920x1080 canvas was fitted to the panel width while the menu content filled a small part of it. Menus are now sized by what they draw.
+
+The eat step still failed in the latest run because the test moved the wrong hand to the mouth (it read which hand held the item one frame too early). The test is fixed; the next run should show it passing.
+
 ## Not tested yet
 
-The virtual headset has no moving controllers, so everything driven by hand motion is still untested: physical grab, eat, throw and climb, the laser pointer, wheels and the keyboard, finger tracking from real input, and VR multiplayer pose sync with a second client. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
+Still untested: the VR keyboard, eating confirmed end to end, finger curls from real hand tracking, and VR multiplayer pose sync with a second client. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
