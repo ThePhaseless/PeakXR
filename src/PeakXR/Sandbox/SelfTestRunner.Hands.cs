@@ -571,6 +571,68 @@ internal sealed partial class SelfTestRunner
     /// it (<c>CharacterAnimations.RPCA_PlayRemove</c> sets the private <c>emoting</c>, CharacterAnimations.cs:117/:432;
     /// Play Dead makes the character fall instead, :421).
     /// </summary>
+    /// <summary>
+    /// The open wheel as the pointer sees it: its dimmer ("BG") is off, and a ray from the head at the empty
+    /// centre or past a corner hits nothing of the wheel, while one at the middle of a slice's drawn wedge hits
+    /// that slice (PointerHitFilter, WheelSegment). Aims the laser's event camera, which LaserPointer re-poses
+    /// in its own LateUpdate. Returns null when all hold, else what failed.
+    /// </summary>
+    static string ProbeEmoteWheel(EmoteWheel wheel)
+    {
+        var bg = wheel.transform.Find("BG");
+        if (bg != null && bg.TryGetComponent<UnityEngine.UI.Graphic>(out var dim) && dim.enabled)
+            return "backdrop BG still drawn";
+        var slice = wheel.slices.Length > 0 ? wheel.slices[0] : null;
+        var cam = PeakXR.UI.World.LaserPointer.EventCamera;
+        var system = UnityEngine.EventSystems.EventSystem.current;
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (slice == null || cam == null || system == null || head == null)
+            return "no slice, laser camera, event system or head";
+        var rect = (RectTransform)slice.transform;
+        float w = rect.rect.width;
+        float a = WheelSegment.MidDegrees * Mathf.Deg2Rad;
+        var mid = rect.TransformPoint(
+            new Vector3(
+                -Mathf.Sin(a) * WheelSegment.MidFraction * w,
+                Mathf.Cos(a) * WheelSegment.MidFraction * w,
+                0f
+            )
+        );
+        // Past the outer edge on both in-plane axes: the empty corner of the slice rects.
+        float far = WheelSegment.OuterFraction * w * 1.2f;
+        var corner = rect.TransformPoint(new Vector3(far, far, 0f));
+
+        var results = new List<UnityEngine.EventSystems.RaycastResult>();
+        GameObject Hit(Vector3 point)
+        {
+            cam.transform.SetPositionAndRotation(
+                head.position,
+                Quaternion.LookRotation(point - head.position)
+            );
+            var data = new UnityEngine.EventSystems.PointerEventData(system)
+            {
+                position = new Vector2(cam.pixelWidth * 0.5f, cam.pixelHeight * 0.5f),
+            };
+            results.Clear();
+            system.RaycastAll(data, results);
+            foreach (var r in results)
+                if (r.gameObject != null && r.gameObject.transform.IsChildOf(wheel.transform))
+                    return r.gameObject;
+            return null;
+        }
+
+        var centreHit = Hit(rect.position);
+        if (centreHit != null)
+            return $"centre hit '{centreHit.name}'";
+        var cornerHit = Hit(corner);
+        if (cornerHit != null)
+            return $"corner hit '{cornerHit.name}'";
+        var midHit = Hit(mid);
+        if (midHit == null || midHit.GetComponentInParent<UIWheelSlice>() != slice)
+            return $"wedge middle hit '{(midHit != null ? midHit.name : "nothing")}', not {slice.name}";
+        return null;
+    }
+
     IEnumerator EmoteStep()
     {
         var c = Character.localCharacter;
@@ -587,12 +649,17 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return Wait(0.3f);
-        float travel = Mathf.Max(0.15f, UIWheelsFeature.FlickDistance.Value * 1.5f);
+        // To the middle of the drawn ring: the hand picks only over it (WheelSize is its outer diameter).
+        float travel =
+            UIWheelsFeature.Size.Value
+            * 0.5f
+            * (WheelSegment.MidFraction / WheelSegment.OuterFraction);
         yield return MoveTrack(hand, Script(hand).Position + Vector3.up * travel, 0.3f);
         yield return Wait(0.3f);
         var wheel = gui.emoteWheel.GetComponentInChildren<EmoteWheel>(true);
         string chosen =
             wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
+        var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
         yield return Shot("vr-18-emote-wheel");
         Script(hand).Secondary = false;
         yield return Until(
@@ -605,9 +672,11 @@ internal sealed partial class SelfTestRunner
             () => started = emoting(c.refs.animations) || c.data.fallSeconds > 0f,
             1.5f
         );
-        var note = $"hovered '{chosen}', emote started {started}";
+        var note = $"hovered '{chosen}', emote started {started}, pointer {pointer ?? "ok"}";
         if (string.IsNullOrEmpty(chosen))
             Fail("no slice hovered by the hand: " + note);
+        else if (pointer != null)
+            Fail(note);
         else if (!started)
             Fail(note);
         else

@@ -8,7 +8,8 @@ namespace PeakXR.Core
     /// done in the wheel's own plane so it also holds for a wheel turned in 3D. An instance turns a hand flick
     /// away from the wheel centre, or a thumbstick, into such a direction: the hand needs
     /// <see cref="FlickDistance"/> to start and keeps pointing until it comes back past
-    /// <see cref="KeepFraction"/> of that, so small tremors do not flicker the choice.
+    /// <see cref="KeepFraction"/> of that, so small tremors do not flicker the choice. Past <see cref="MaxDistance"/>
+    /// (the drawn outer edge) the hand is over empty space and picks nothing.
     /// </summary>
     public sealed class RadialSelector
     {
@@ -20,6 +21,12 @@ namespace PeakXR.Core
 
         /// <summary>Hand travel from the wheel centre, in metres, that starts a selection.</summary>
         public float FlickDistance = 0.05f;
+
+        /// <summary>Share of <see cref="MaxDistance"/> a held selection may overshoot before it is dropped.</summary>
+        public const float KeepOvershoot = 1.1f;
+
+        /// <summary>Hand travel past which the hand is beyond the drawn wheel and selects nothing.</summary>
+        public float MaxDistance = float.PositiveInfinity;
 
         /// <summary>True while the hand or stick points at a slice.</summary>
         public bool Active { get; private set; }
@@ -39,7 +46,8 @@ namespace PeakXR.Core
             {
                 float travel = handOffset.Length();
                 float needed = Active ? FlickDistance * KeepFraction : FlickDistance;
-                if (travel >= needed && travel > 1e-6f)
+                float limit = Active ? MaxDistance * KeepOvershoot : MaxDistance;
+                if (travel >= needed && travel <= limit && travel > 1e-6f)
                     direction = handOffset / travel;
             }
             Active = direction != Vector2.Zero;

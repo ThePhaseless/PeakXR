@@ -28,6 +28,9 @@ internal sealed class LaserPointer
     /// focused input field without the press deselecting it (which would end the edit).</summary>
     public static Transform KeepSelectionRoot;
 
+    /// <summary>Show the laser although no interactive panel is open (an open radial wheel on the HUD).</summary>
+    public static bool ForceShow;
+
     private readonly PointerHands hands = new();
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;

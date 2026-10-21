@@ -42,7 +42,7 @@ public sealed class UIWheelsFeature : Feature
             "FlickDistance",
             0.05f,
             new ConfigDescription(
-                "How far, in metres, you move the hand from the wheel centre to pick a slice. The stick of the same hand also works.",
+                "How far, in metres, you move the hand from the wheel centre to pick a slice. The hand picks only over the drawn ring, so the ring's inner edge is the least it takes, and past its outer edge it picks nothing. The stick of the same hand also works.",
                 new AcceptableValueRange<float>(0.02f, 0.15f)
             )
         );
