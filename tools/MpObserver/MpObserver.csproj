@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The vanilla peer's test plugin for the two-client multiplayer test (docs/testing.md, "Two-client multiplayer test").
+    It never references PeakXR: client B must stay a vanilla client. Built by `mise run build-observer`, not part of
+    the solution or of `mise run package`.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>MpObserver</AssemblyName>
+    <RootNamespace>MpObserver</RootNamespace>
+    <BepInExPluginGuid>com.thephaseless.mpobserver</BepInExPluginGuid>
+    <BepInExPluginName>MpObserver</BepInExPluginName>
+    <Version>0.1.0</Version>
+    <Nullable>disable</Nullable>
+    <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
+    <PeakManaged>$(PeakDir)/PEAK_Data/Managed</PeakManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+  </ItemGroup>
+
+  <!-- Pure JSON-line and shared-directory helpers; a source file, not a PeakXR reference. -->
+  <ItemGroup>
+    <Compile Include="../../src/PeakXR.Core/MpTestFiles.cs" Link="Shared/MpTestFiles.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="$(PeakManaged)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Zorro.*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Photon*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/com.rlabrecque.steamworks.net.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />
+    <Reference Include="$(PeakManaged)/Unity.TextMeshPro.dll" Private="false" />
+  </ItemGroup>
+</Project>

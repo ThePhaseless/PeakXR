@@ -35,6 +35,8 @@
     <Reference Include="$(PeakManaged)/Assembly-CSharp.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Zorro.*.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Photon*.dll" Private="false" />
+    <!-- Steam lobby ids for the -peakxr-mptest join (Sandbox/SelfTestRunner.MpTest.cs). -->
+    <Reference Include="$(PeakManaged)/com.rlabrecque.steamworks.net.dll" Private="false" />
     <!-- Base types of the game's ScriptableObject databases (ItemDatabase : SerializedScriptableObject). -->
     <Reference Include="$(PeakManaged)/Sirenix.Serialization.dll" Private="false" />
     <Reference Include="$(PeakManaged)/UnityEngine*.dll" Private="false" />

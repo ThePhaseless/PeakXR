@@ -171,6 +171,115 @@ Results:
 - `BepInEx/PeakXR-selftest/*.png`: screenshots named after the steps (`03-items-000.png`, `05-mob-BeeSwarm.png`) at the game window's resolution. Old screenshots are deleted when a new run starts.
 - `BepInEx/LogOutput.log` has the same step lines with a `[selftest]` prefix.
 
+## Two-client multiplayer test
+
+This run covers part of the live test plan in `docs/multiplayer-compat.md` without anyone at the keyboard. Client A is PeakXR in VR on the main Steam account. Its hands are scripted through `VRInput.TestOverride`, the same way as the self-test's `vr.*` steps. Client B is a second Steam account in Flatpak Steam, running vanilla PEAK plus one read-only plugin, `MpObserver`. The two accounts must be Steam friends.
+
+B hosts a lobby through the title menu's Host button and writes `lobby.json`. A joins that lobby through the game's own `SteamLobbyHandler.TryJoinLobby`, then plays a scripted sequence. After each step A appends a line to `a-checkpoints.jsonl`. B answers each line with its own snapshot of A's character under the same name. A sends nothing beyond what PeakXR always sends, and B sends no RPC or event and sets no property.
+
+### Shared directory
+
+Both clients use `~/.var/app/com.valvesoftware.Steam/peakxr-mp`. Flatpak Steam's sandbox has a private `/tmp` and hides the real home, but it mounts its own `~/.var/app/com.valvesoftware.Steam` at the same host path. Native Steam and a direct Proton launch see that path as well, so both sides read and write the same files. Both plugins use this directory when `-mpdir` is not given. They find the home from `$HOME`, or from Wine's `WINEHOMEDIR` when Wine hides `HOME`. The launch commands below still pass `-mpdir` so that nothing depends on that lookup. Each side deletes its own old files when it starts: A deletes `a-*`, and B deletes `b-*` and `lobby.json`.
+
+### Client B setup (once)
+
+The Flatpak copy is `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/PEAK`. It must be on the same build as A (`version.txt`). Give it the BepInEx loader and MpObserver only, never PeakXR or its preloader:
+
+```sh
+mise run build-observer
+SRC=~/.local/share/Steam/steamapps/common/PEAK            # A's copy, which has BepInExPack_PEAK
+B=~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/PEAK
+cp "$SRC"/{winhttp.dll,doorstop_config.ini,.doorstop_version} "$B"/
+mkdir -p "$B/BepInEx/plugins/MpObserver"
+cp -r "$SRC/BepInEx/core" "$B/BepInEx/"
+cp dist/MpObserver/MpObserver.dll "$B/BepInEx/plugins/MpObserver/"
+```
+
+BepInEx only loads under Proton when Wine prefers the native `winhttp.dll`. Pick one of these:
+
+- Launch options. In Flatpak Steam, open PEAK's Properties and set the launch options to `WINEDLLOVERRIDES="winhttp=n,b" %command% -mpobs -mpdir /home/<user>/.var/app/com.valvesoftware.Steam/peakxr-mp`. With the flags in the launch options, a plain `-applaunch` needs no arguments. MpObserver stays idle on any launch without `-mpobs`.
+- Prefix registry, as in the native setup. Launch PEAK once from Flatpak Steam so that the prefix exists, quit it, and then add `"winhttp"="native,builtin"` under `[Software\\Wine\\DllOverrides]` in `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/3527290/pfx/user.reg`. Edit the file only while the game is closed.
+
+Check the setup by launching B once. `BepInEx/LogOutput.log` in B's copy must list `MpObserver` and nothing from PeakXR.
+
+### Launch
+
+Start B first, before SteamVR, because Steam can block game launches while SteamVR runs (the VR Theater prompt):
+
+```sh
+flatpak run com.valvesoftware.Steam -applaunch 3527290 \
+  -mpobs -mpdir /home/<user>/.var/app/com.valvesoftware.Steam/peakxr-mp
+```
+
+Leave out the flags when they are already in the launch options. `steam://run/3527290` also works, but Steam asks for confirmation when that URL carries arguments, and nobody is there to click. B waits for the title, switches the lobby type to Friends (A joins by id), presses Host, and writes `lobby.json` once the Airport room is ready.
+
+Then start SteamVR with a headset (a virtual one works) and launch A directly through Proton, as in the VR self-test:
+
+```sh
+PEAK=~/.local/share/Steam/steamapps/common/PEAK
+cd "$PEAK" && \
+STEAM_COMPAT_DATA_PATH=~/.local/share/Steam/steamapps/compatdata/3527290 \
+STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.local/share/Steam \
+SteamAppId=3527290 SteamGameId=3527290 \
+WINEDLLOVERRIDES="winhttp=n,b" \
+"$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest-x86_64_v3/proton" run "$PEAK/PEAK.exe" \
+  -force-vulkan -peakxr-mptest -mpdir "$HOME/.var/app/com.valvesoftware.Steam/peakxr-mp"
+```
+
+Under the vr-test-mcp's SteamVR (ALVR on the Radeon), also set `VK_DRIVER_FILES` and `MESA_VK_DEVICE_SELECT` as in the self-test notes. `-peakxr-mptest` cannot be combined with `-peakxr-selftest`. A waits up to 4 minutes for a `lobby.json` written in the last 30 minutes. Without VR, the steps marked VR below are `SKIP`.
+
+A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes after hosting if nobody joined, or 15 minutes after A joined.
+
+### Steps
+
+| Checkpoint | A does | B records |
+| --- | --- | --- |
+| `join` | Joins by lobby id; checks the lobby's `PeakVersion` against its own, that it is in that Steam lobby, and that the Photon master is the host | A's arrival (`join` line) |
+| `walk-to-host` (VR) | Walks on the move stick to 1.5 m from B | A's position |
+| `emote` (VR) | Opens the emote wheel, flicks, plays an emote | `RPCA_PlayRemove` |
+| `ping` (VR) | Finger-gun ping at the ground in front of B | `ReceivePoint_Rpc` with the point |
+| `board` | Walks to the kiosk and starts the run (the master loads the island) | scene change |
+| `regroup` (VR) | Walks back to B on the beach | position |
+| `luggage` (VR) | Opens up to four suitcases by lifting the lid by hand | `OpenLuggageRPC` |
+| `grab` (VR) | Picks up the nearest non-food item by hand | A's current item |
+| `drop` (VR) | Taps the drop button; logs where the item came to rest | ground items of that kind near A |
+| `pickup` (VR) | Picks the same item up again | current item |
+| `throw` (VR) | Faces B and throws it; logs the landing point | ground items of that kind |
+| `eat` (VR) | Grabs food and holds it to the mouth until eaten | `Consume` |
+| `holster` (VR) | Holsters an item at the body slot and draws it back | `EquipSlotRpc` |
+| `climb` (VR) | Walks to the nearest climbable wall and starts climbing by grabbing it | `StartClimbRpc`, climbing flag |
+| `two-hand` (VR) | Holds a two-handed item with both hands | current item, hand IK targets |
+| `feed` (VR) | Holds food at B's head until B is fed | `SendFeedDataRPC`, `GetFedItemRPC`, B's own `lastConsumedItem` |
+
+A step that finds nothing to do (no wall or no food within 40 m) is `SKIP`.
+
+### Files
+
+All files are in the shared directory.
+
+- `lobby.json`: `{lobbyId, hostSteamId, time, room, peakVersion, game}` from B.
+- `a-checkpoints.jsonl`: one line per checkpoint with `status` (pass, fail or skip), `note`, A's `pos`, `head`, `look`, held item (`heldId`), `itemId`, `sent151`, and per step `landing`, `ping`, `landingToHost` or the join fields (`versionOk`, `inLobby`, `masterIsHost`, `lobbyVersion`, `localVersion`).
+- `a-mptest.log`: the self-test style step log. `a-done.json`: A's reason for ending, totals, and counts of the events it sent by code.
+- `b-observer.jsonl`: `start`, `lobby`, `join`, a `sample` of every remote character every 0.5 s (position, head, look, current item and its state, use flags, climbing, carrying, carried, passed out, fall time, hand IK targets, events received), `checkpoint` lines (a sample plus ground items and the RPCs since the previous checkpoint), every observed `rpc`, and `log` lines for exceptions, errors and unknown-event errors.
+- `b-summary.json`: end reason, received event counts by code (`event151` must be 0), RPC counts, exceptions with the first 20 messages, errors, and unknown-event errors.
+- `a-<checkpoint>.png` and `b-<checkpoint>.png`: each side's screen at the checkpoint. B turns its view toward A first.
+
+### Checking the result
+
+```sh
+tools/mp-check.sh [mp-dir]       # POS_TOL=1.0 and LAND_TOL=1.5 metres by default
+```
+
+It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 when any check fails:
+
+- B saw a remote player join.
+- A's version check passed: the lobby's version equals A's, A is in the lobby, and the master is the host.
+- For each checkpoint A passed: B logged it with A present, B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
+- B logged no exceptions and no unknown-event errors, and received no event 151.
+- A sent no event 151 (with a vanilla host, net.pose has no peers).
+
+The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and B's `rpc` lines in `b-observer.jsonl` for emote, ping, eat and feed.
+
 ## What the sandbox does not cover
 
 - A vanilla client or someone else's lobby: the sandbox is inactive there on purpose.

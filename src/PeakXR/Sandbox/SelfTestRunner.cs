@@ -83,6 +83,11 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     void Start()
     {
+        if (MpDirectory != null)
+        {
+            StartMp();
+            return;
+        }
         shotDir = Path.Combine(Paths.BepInExRootPath, "PeakXR-selftest");
         logPath = Path.Combine(Paths.BepInExRootPath, "PeakXR-selftest.log");
         try
