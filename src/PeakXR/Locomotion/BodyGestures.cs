@@ -1,6 +1,7 @@
 using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
@@ -109,14 +110,15 @@ internal static class BodyGestures
     }
 
     /// <summary>
-    /// The torso's drop below its learned upright height above the ground (<c>CharacterData.groundPos</c>, written
+    /// The hip's drop (the view root's height, <see cref="RigDriver.ViewRoot"/>) below its learned upright height above the ground (<c>CharacterData.groundPos</c>, written
     /// by CharacterMovement.cs:757) while a physical crouch holds; after it ends, the lift only shrinks as the torso
     /// rises, and in the air it fades out.
     /// </summary>
     private static void UpdateLift(Character c, VRRig rig, float dt)
     {
         var d = c.data;
-        float above = c.Center.y - d.groundPos.y;
+        // The hip, like the view anchor (RigDriver.ViewRoot): a lean lowers the torso a little and is not a crouch.
+        float above = RigDriver.ViewRoot(c).y - d.groundPos.y;
         bool upright =
             d.isGrounded
             && d.fullyConscious

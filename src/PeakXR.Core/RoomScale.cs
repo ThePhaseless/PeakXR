@@ -23,17 +23,27 @@ namespace PeakXR.Core
     /// Room-scale walking for a physics body that cannot be teleported. The camera feature keeps a tracking-space
     /// <see cref="Anchor"/> over the character, so physically walking moves the view exactly like the real head
     /// (no artificial camera motion). When the head leaves <see cref="LeanRadius"/> around the anchor, this asks
-    /// for stick input that walks the body after the head; as the body arrives, the anchor slides toward the head
-    /// by the same distance, so the view stays world-fixed while the body catches up underneath it. When the body
-    /// cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
+    /// for stick input that walks the body after the head until the head is back inside <see cref="StopRadius"/>; as
+    /// the body arrives, the anchor slides toward the head by the same distance, so the view stays world-fixed while
+    /// the body catches up underneath it. Inside the lean radius the avatar's upper body leans instead (avatar.local),
+    /// and the follow stops well inside it, so standing up after a lean or swaying after a step never walks the body
+    /// back and forth. Standing back up after a follow leaves the body ahead of the head, and it stays there: walking
+    /// it back is the forward-and-back motion players reported. Instead, once the head has been still for
+    /// <see cref="StillSeconds"/>, that stance eases into <see cref="Neutral"/>, which the avatar's lean treats as
+    /// upright; only the avatar's pose changes, never the body or the view. When the body cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
     /// out and calls <see cref="Recenter"/>.
     /// </summary>
     public sealed class RoomScaleFollow
     {
-        /// <summary>Head offset (m) the player can lean without moving the body.</summary>
-        public float LeanRadius = 0.2f;
+        /// <summary>Head offset (m) the player can lean without moving the body: about as far as a standing person
+        /// leans over a table. A smaller radius walked the character on every lean and back on standing up.</summary>
+        public float LeanRadius = 0.35f;
 
-        /// <summary>Distance past the lean radius (m) over which the requested input ramps to full.</summary>
+        /// <summary>A started follow walks until the head is this close (m) to the anchor: half the lean radius, so a
+        /// lean past the limit and back up stays inside it instead of walking the body back.</summary>
+        public float StopRadius => LeanRadius * 0.5f;
+
+        /// <summary>Distance past the stop radius (m) over which the requested input ramps to full.</summary>
         public float RampDistance = 0.3f;
 
         /// <summary>Offset (m) at which the anchor should be snapped back under a fade.</summary>
@@ -44,7 +54,23 @@ namespace PeakXR.Core
 
         public Vector2 Offset { get; private set; }
 
+        /// <summary>The head offset (tracking space) that counts as standing upright: zero, or after a follow the
+        /// stance the player stood back up into, against the follow's direction. Moves at most
+        /// <see cref="NeutralSpeed"/>.</summary>
+        public Vector2 Neutral { get; private set; }
+
+        /// <summary>Seconds the head must stay within 3 cm before its stance updates <see cref="Neutral"/>.</summary>
+        public float StillSeconds = 0.75f;
+
+        /// <summary>Speed (m/s) at which <see cref="Neutral"/> eases; the avatar straightens over about a second.</summary>
+        public float NeutralSpeed = 0.3f;
+
         float _absorbed;
+        bool _following;
+        Vector2 _followDir;
+        Vector2 _neutralGoal;
+        Vector2 _stillAt;
+        float _stillFor;
 
         public bool RecenterNeeded => Offset.Length() > RecenterDistance;
 
@@ -52,9 +78,17 @@ namespace PeakXR.Core
         /// <param name="bodyDelta">The body's horizontal movement since the last update, in tracking space.</param>
         /// <param name="canFollow">The body is free to walk: grounded, conscious, not climbing and the move stick
         /// idle. Otherwise the offset is kept and nothing is requested.</param>
+        /// <param name="dt">Seconds since the last update; 0 never eases <see cref="Neutral"/>.</param>
         /// <returns>Requested move input in tracking space, length 0..1.</returns>
-        public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow)
+        public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow, float dt = 0f)
         {
+            if (Vector2.Distance(head, _stillAt) > 0.03f)
+            {
+                _stillAt = head;
+                _stillFor = 0f;
+            }
+            else
+                _stillFor += dt;
             var d = head - Anchor;
             float dist = d.Length();
             if (canFollow && dist > 1e-5f)
@@ -73,9 +107,28 @@ namespace PeakXR.Core
             if (!canFollow)
                 _absorbed = 0f;
 
-            if (!canFollow || dist <= LeanRadius)
+            // Hysteresis: start past the lean radius, stop only well inside it.
+            _following = canFollow && (_following ? dist > StopRadius : dist > LeanRadius);
+            if (_following)
+            {
+                _followDir = d / dist;
+                _neutralGoal = Vector2.Zero;
+            }
+            else if (_stillFor >= StillSeconds)
+            {
+                // Only the part of a still stance that points back against the last follow: a lean held the
+                // follow's way (or with no follow at all) stays a lean.
+                float back = -Vector2.Dot(d, _followDir);
+                _neutralGoal = back > 0f ? -_followDir * back : Vector2.Zero;
+            }
+            var toGoal = _neutralGoal - Neutral;
+            float step = NeutralSpeed * dt;
+            Neutral =
+                toGoal.Length() <= step ? _neutralGoal : Neutral + Vector2.Normalize(toGoal) * step;
+
+            if (!_following)
                 return Vector2.Zero;
-            float amount = RampDistance > 0f ? (dist - LeanRadius) / RampDistance : 1f;
+            float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
             return d / dist * MathF.Min(amount, 1f);
         }
 
@@ -84,6 +137,10 @@ namespace PeakXR.Core
             Anchor = head;
             Offset = Vector2.Zero;
             _absorbed = 0f;
+            _following = false;
+            _followDir = Vector2.Zero;
+            _neutralGoal = Vector2.Zero;
+            Neutral = Vector2.Zero;
         }
 
         /// <summary>

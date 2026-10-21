@@ -1,5 +1,6 @@
 using PeakXR.Core;
 using UnityEngine;
+using UnityEngine.Animations.Rigging;
 
 namespace PeakXR.Avatar;
 
@@ -40,7 +41,32 @@ public partial class AvatarPoseDriver
     private Bodypart head;
     private Bodypart shoulderL;
     private Bodypart shoulderR;
+    private Bodypart spine;
+    private Bodypart torso;
     private Transform bodyFrame;
+
+    /// <summary>The eyes (CustomizationRefs.EyeRenderers) in the head bone's frame, learned from the rendered pose;
+    /// the lean aims this point at the tracked head.</summary>
+    private Vector3 eyeInHead;
+    private bool haveEyeInHead;
+    private float eyeLearnedFor;
+
+    /// <summary>Seconds the lean takes to fade in or out whenever a gate opens or closes, so the body never snaps.</summary>
+    private const float LeanFadeSeconds = 0.3f;
+
+    private float leanWeight;
+
+    /// <summary>How much of the lean is on (eased 0..1); rig.camera samples the eyes only at 0.</summary>
+    internal float LeanWeight => leanWeight;
+    private Quaternion lastSwing = Quaternion.identity;
+
+    /// <summary>How far this tick's lean moved the avatar's eyes (world metres, animated target). rig.camera only
+    /// calibrates the eye height while this is small, so a lean never enters the calibration.</summary>
+    internal Vector3 EyeLeanShift { get; private set; }
+
+    /// <summary>Seconds of rendered frames <see cref="eyeInHead"/> is averaged over; the eyes are fixed on the head,
+    /// so it stops reading renderer bounds after that.</summary>
+    private const float EyeLearnSeconds = 3f;
 
     /// <summary>The prefab's elbow hint weights (0 on the scout), put back when a hand stops being tracked.</summary>
     private float hintWeightL;
@@ -107,6 +133,10 @@ public partial class AvatarPoseDriver
         parts.TryGetValue(BodypartType.Head, out head);
         parts.TryGetValue(BodypartType.Arm_L, out shoulderL);
         parts.TryGetValue(BodypartType.Arm_R, out shoulderR);
+        parts.TryGetValue(BodypartType.Torso, out torso);
+        // Bend low in the back so the shoulders travel with the head; the scout's spine is Hip > Mid > Torso.
+        if (!parts.TryGetValue(BodypartType.Mid, out spine))
+            spine = torso;
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
         if (c.refs.ikLeft != null)
             hintWeightL = c.refs.ikLeft.data.hintWeight;
@@ -131,6 +161,7 @@ public partial class AvatarPoseDriver
             armBlend.Update(ArmsTracked(c), Time.deltaTime);
         else
             armBlend.Reset();
+        LearnEyes(c);
         // Animation only runs in FixedUpdate; refresh fingers every rendered frame so curls stay smooth at 90 Hz+.
         if (rigReady && HasFreshPose)
             ApplyFingers();
@@ -158,6 +189,9 @@ public partial class AvatarPoseDriver
     {
         if (!HasFreshPose)
         {
+            // Vanilla animation takes the whole body back (the arms snap back too), so the lean ends with it.
+            EyeLeanShift = Vector3.zero;
+            leanWeight = 0f;
             if (rigReady)
                 RestoreFingers();
             return;
@@ -168,6 +202,9 @@ public partial class AvatarPoseDriver
         var cfg = AvatarConfig.Instance;
 
         float w = armBlend.Weight;
+        var tipL = TipRotation(refs.ikLeft);
+        var tipR = TipRotation(refs.ikRight);
+        bool leaned = ApplyLean(w);
         if (
             cfg.ArmIK
             && !ArmsSuspended
@@ -200,6 +237,11 @@ public partial class AvatarPoseDriver
                 BlendTarget(refs.IKHandTargetRight, p + offset, r, w);
             }
             SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position, w);
+            // The IK solved this tick's arms on the unleaned shoulders; reach again from where the lean put them.
+            if (leaned && pose.HasLeftHand)
+                ReachAfterLean(refs.ikLeft, refs.IKHandTargetLeft, tipL, w);
+            if (leaned && pose.HasRightHand)
+                ReachAfterLean(refs.ikRight, refs.IKHandTargetRight, tipR, w);
         }
 
         // The local player's head is hidden and the camera hangs off it, so only other characters get head look.
@@ -211,6 +253,120 @@ public partial class AvatarPoseDriver
         }
 
         ApplyFingers();
+    }
+
+    /// <summary>
+    /// Bends the animated spine (<see cref="spine"/>, about its own joint) so the avatar's eyes swing toward the
+    /// tracked head within <see cref="BodyLean"/>'s limits; the head keeps its world rotation (the neck takes it).
+    /// Runs in the animated pose before <c>SaveAnimationData</c> (CharacterRagdoll.cs:166-169), so the ragdoll is
+    /// driven into the lean like any animation, for remote characters as well. Every gate fades the lean over
+    /// <see cref="LeanFadeSeconds"/> (the last swing is held while it fades): climbing, a piton or rope hang
+    /// (<c>currentClimbHandle</c>, set by <c>StartHang</c>), gliding, a full-body emote, the setting, the head below
+    /// the pivot, and for the local player an uncalibrated eye (rig.camera samples the unleaned eyes first).
+    /// </summary>
+    private bool ApplyLean(float w)
+    {
+        EyeLeanShift = Vector3.zero;
+        if (spine == null || torso == null || head == null || !haveEyeInHead)
+            return false;
+        var c = Owner;
+        var forward = bodyFrame.forward;
+        forward.y = 0f;
+        var eye = head.transform.TransformPoint(eyeInHead);
+        bool gate =
+            AvatarConfig.Instance.BodyLean
+            && Pose.HasHead
+            && !ArmsSuspended
+            && w > 0f
+            && forward.sqrMagnitude > 1e-4f
+            && Rig.RigDriver.Upright(c)
+            && (!c.IsLocal || Rig.RigDriver.EyeCalibrated);
+        bool allowed = false;
+        if (
+            gate
+            && BodyLean.TrySwing(
+                spine.transform.position.N(),
+                eye.N(),
+                (Pose.HeadPosition + AnimatedOffset()).N(),
+                forward.normalized.N(),
+                Vector3.up.N(),
+                out var swing
+            )
+        )
+        {
+            lastSwing = swing.U();
+            allowed = true;
+        }
+        leanWeight = Mathf.MoveTowards(
+            leanWeight,
+            allowed ? 1f : 0f,
+            Time.fixedDeltaTime / LeanFadeSeconds
+        );
+        float amount = leanWeight * w;
+        if (amount <= 0f)
+            return false;
+        var q = Quaternion.Slerp(Quaternion.identity, lastSwing, amount);
+        var headRot = head.transform.rotation;
+        spine.transform.rotation = q * spine.transform.rotation;
+        head.transform.rotation = headRot;
+        EyeLeanShift = head.transform.TransformPoint(eyeInHead) - eye;
+        return true;
+    }
+
+    private static Quaternion TipRotation(TwoBoneIKConstraint ik) =>
+        ik != null && ik.data.tip != null ? ik.data.tip.rotation : Quaternion.identity;
+
+    /// <summary>Re-solves one arm (the constraint's own root, mid and tip) onto its IK target after the lean moved
+    /// the shoulder, in the bend plane the IK left (<see cref="ArmMath.SolveTwoBone"/>), and puts the hand back to
+    /// its pre-lean world rotation.</summary>
+    private static void ReachAfterLean(
+        TwoBoneIKConstraint ik,
+        Transform target,
+        Quaternion tipRotation,
+        float w
+    )
+    {
+        if (ik == null)
+            return;
+        var root = ik.data.root;
+        var mid = ik.data.mid;
+        var tip = ik.data.tip;
+        if (root == null || mid == null || tip == null)
+            return;
+        var hint = ik.data.hint != null ? ik.data.hint.position : mid.position;
+        ArmMath.SolveTwoBone(
+            root.position.N(),
+            mid.position.N(),
+            tip.position.N(),
+            target.position.N(),
+            hint.N(),
+            out var upper,
+            out var lower
+        );
+        var midRot = mid.rotation;
+        root.rotation = Quaternion.Slerp(Quaternion.identity, upper.U(), w) * root.rotation;
+        mid.rotation = Quaternion.Slerp(Quaternion.identity, lower.U(), w) * midRot;
+        tip.rotation = tipRotation;
+    }
+
+    /// <summary>Learns <see cref="eyeInHead"/> as a slow average over rendered frames (the head and eyes are posed
+    /// from physics here, so both sides of the measurement agree).</summary>
+    private void LearnEyes(Character c)
+    {
+        if (
+            eyeLearnedFor >= EyeLearnSeconds
+            || !rigReady
+            || head == null
+            || c == null
+            || !Rig.RigDriver.TryEyeRenderers(c, out var eye)
+        )
+            return;
+        var local = head.transform.InverseTransformPoint(eye);
+        eyeInHead = haveEyeInHead
+            ? Vector3.Lerp(eyeInHead, local, 1f - Mathf.Exp(-Time.deltaTime))
+            : local;
+        haveEyeInHead = true;
+        eyeLearnedFor += Time.deltaTime;
     }
 
     /// <summary>Moves an IK target <paramref name="w"/> of the way from where vanilla (or the last tick) left it to

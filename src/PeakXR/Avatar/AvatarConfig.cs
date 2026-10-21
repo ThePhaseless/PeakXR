@@ -15,6 +15,7 @@ internal sealed class AvatarConfig
     private ConfigEntry<bool> armIK,
         fingers,
         headLook,
+        bodyLean,
         retargetItems;
     private ConfigEntry<string> ownBody;
     private ConfigEntry<float> wristBack,
@@ -27,6 +28,7 @@ internal sealed class AvatarConfig
     public bool ArmIK => armIK?.Value ?? true;
     public bool Fingers => fingers?.Value ?? true;
     public bool HeadLook => headLook?.Value ?? true;
+    public bool BodyLean => bodyLean?.Value ?? true;
     public bool RetargetItems => retargetItems?.Value ?? true;
     public string OwnBody => ownBody?.Value ?? ShowArms;
     public ConfigEntry<string> OwnBodyEntry => ownBody;
@@ -59,6 +61,13 @@ internal sealed class AvatarConfig
                 "HeadLook",
                 true,
                 "Other modded players' heads follow their headset, including tilt."
+            ),
+            bodyLean = file.Bind(
+                s,
+                "BodyLean",
+                true,
+                "The character's upper body leans toward your headset (yours and other modded players'), so its "
+                    + "shoulders and hands come along when you lean over something."
             ),
             retargetItems = file.Bind(
                 s,

@@ -256,6 +256,7 @@ internal static class LocomotionInput
         if (rig == null || rig.Origin == null || !VRInput.HeadTracked)
         {
             hadBody = false;
+            RigDriver.LeanNeutral = NVector2.Zero;
             return NVector2.Zero;
         }
 
@@ -281,10 +282,11 @@ internal static class LocomotionInput
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
-        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow);
+        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
         if (Fade.Update(Follow.RecenterNeeded, dt))
             Follow.Recenter(head);
         rig.RoomAnchor = Follow.Anchor;
+        RigDriver.LeanNeutral = LocomotionConfig.RoomScale ? Follow.Neutral : NVector2.Zero;
         if (Fade.Target > 0f)
             VRFade.Set(FadeOwner, Fade.Target);
         else

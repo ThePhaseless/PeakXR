@@ -239,3 +239,31 @@ namespace PeakXR.Core
         }
     }
 }
+
+namespace PeakXR.Core
+{
+    /// <summary>
+    /// Level mass centre of a ragdoll: the point the first-person view rides. Under control the game's body parts are
+    /// slippery and only pull on each other (drives with equal and opposite reactions) while drag damps each one, so
+    /// bending, leaning or swinging the arms cannot move this point; only walking, pushes and slopes do. A single
+    /// part does move: bending forward pushes the hips back and carries the torso forward.
+    /// </summary>
+    public struct MassCentre
+    {
+        Vector3 _sum;
+        float _mass;
+
+        public void Add(Vector3 position, float mass)
+        {
+            _sum += position * mass;
+            _mass += mass;
+        }
+
+        /// <summary>The mass centre's X and Z at <paramref name="height"/>; the origin's when nothing was added.</summary>
+        public readonly Vector3 Root(float height)
+        {
+            var c = _mass > 0f ? _sum / _mass : Vector3.Zero;
+            return new Vector3(c.X, height, c.Z);
+        }
+    }
+}
