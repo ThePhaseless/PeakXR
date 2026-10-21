@@ -548,15 +548,32 @@ internal sealed partial class SelfTestRunner
         }
         bool left = VRInput.LeftHanded;
         var hold = hit.point + hit.normal * 0.04f;
+        var rig = VRRig.Instance;
+        Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 3.5f;
         yield return MoveTo(left, () => hold, 0.5f);
         yield return GripTo(left, 1f, 0.1f);
-        yield return Until(
-            () => c.data.isClimbing,
-            2f,
-            $"climb did not start ({hit.distance:0.00} m to the wall)"
-        );
-        if (!stepOk)
+        yield return WaitFor(() => c.data.isClimbing, 2f);
+        Rig.RigDriver.TraceLeanUntil = 0f;
+        if (!c.data.isClimbing)
+        {
+            // Names the stage that refused: the grip's decision, the hand against the wall, the camera the game's
+            // climb ray starts from (CharacterClimbing.cs:541) against the torso, and the view root.
+            var handPos = rig.Hand(left).position;
+            var cam =
+                MainCamera.instance != null
+                    ? MainCamera.instance.transform.position
+                    : rig.Head.position;
+            var torso = c.Center;
+            var f = -Flat(hit.normal);
+            var r = Vector3.Cross(Vector3.up, f);
+            var root = Rig.RigDriver.ViewRoot(c);
+            Fail(
+                F(
+                    $"climb did not start ({hit.distance:0.00} m to the wall); hand {Vector3.Distance(handPos, hold):0.00} m off the hold, {Vector3.Dot(hit.point - handPos, f):0.00} m before the wall; camera from torso f{Vector3.Dot(cam - torso, f):0.00} r{Vector3.Dot(cam - torso, r):0.00} u{cam.y - torso.y:0.00}; view root from torso f{Vector3.Dot(root - torso, f):0.00} r{Vector3.Dot(root - torso, r):0.00}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                )
+            );
             yield break;
+        }
         yield return Wait(0.3f);
         float y0 = c.Center.y;
         yield return Shot("vr-15-climb");

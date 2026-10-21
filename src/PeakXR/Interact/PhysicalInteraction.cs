@@ -54,6 +54,9 @@ internal static class PhysicalInteraction
         public Hand(bool left) => Left = left;
     }
 
+    /// <summary>What the last grip press decided and why (self-test failure notes, e.g. vr.15).</summary>
+    internal static string LastGripNote = "";
+
     private static readonly Hand LeftHand = new(true);
     private static readonly Hand RightHand = new(false);
     private static readonly Hand[] Hands = { LeftHand, RightHand };
@@ -291,6 +294,9 @@ internal static class PhysicalInteraction
             ctx.ExtensionClaim = extension != null;
             action = GripIntent.OnPress(ctx);
         }
+        LastGripNote = System.FormattableString.Invariant(
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate}"
+        );
         switch (action)
         {
             case GripPressAction.Extension:
