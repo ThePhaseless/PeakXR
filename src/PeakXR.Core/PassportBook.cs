@@ -105,3 +105,20 @@ public static class PassportPaging
         return PassportFlip.None;
     }
 }
+
+/// <summary>
+/// Hand size for a held book whose game model is drawn oversized for the flat camera (PEAK's passport cover is
+/// 0.38 m long). In VR it sits in a real hand, so it shrinks about its grip to a size that fits the palm.
+/// </summary>
+public static class HeldBookSize
+{
+    /// <summary>Scale that brings a model <paramref name="longest"/> metres long down to
+    /// <paramref name="target"/>; 1 when it already fits or could not be measured.</summary>
+    public static float FitScale(float longest, float target) =>
+        longest > target && target > 0f ? target / longest : 1f;
+
+    /// <summary>Where <paramref name="point"/> lands when scaled by <paramref name="scale"/> about
+    /// <paramref name="pivot"/>, so the grip stays in the hand.</summary>
+    public static Vector3 ScaleAbout(Vector3 point, Vector3 pivot, float scale) =>
+        pivot + (point - pivot) * scale;
+}

@@ -232,6 +232,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
     private void LateUpdate()
     {
         var rig = VRRig.Instance;
+        HeldPassport.Update(VRSession.Active);
         if (!VRSession.Active || rig == null || rig.Head == null)
         {
             Forget();

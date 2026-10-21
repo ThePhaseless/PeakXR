@@ -293,3 +293,29 @@ public class PassportPagingTests
         );
     }
 }
+
+public class HeldBookSizeTests
+{
+    [Fact]
+    public void FitScale_OversizedModel_ShrinksToTargetLength()
+    {
+        // PEAK's passport cover is 0.38 m long.
+        TestUtil.Near(0.16f / 0.384f, HeldBookSize.FitScale(0.384f, 0.16f));
+    }
+
+    [Fact]
+    public void FitScale_SmallOrUnmeasuredModel_KeepsGameSize()
+    {
+        Assert.Equal(1f, HeldBookSize.FitScale(0.12f, 0.16f));
+        Assert.Equal(1f, HeldBookSize.FitScale(0f, 0.16f));
+        Assert.Equal(1f, HeldBookSize.FitScale(float.NaN, 0.16f));
+    }
+
+    [Fact]
+    public void ScaleAbout_KeepsPivotAndShrinksOffsets()
+    {
+        var pivot = new Vector3(0.2f, -0.18f, -0.09f);
+        TestUtil.Near(pivot, HeldBookSize.ScaleAbout(pivot, pivot, 0.4f));
+        TestUtil.Near(pivot * 0.6f, HeldBookSize.ScaleAbout(Vector3.Zero, pivot, 0.4f), 1e-6f);
+    }
+}

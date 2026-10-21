@@ -30,6 +30,9 @@ internal sealed class TrackedCanvas
 
     /// <summary>Menus: where the content centre sits. Other kinds: the canvas position.</summary>
     public Vector3 Position;
+
+    /// <summary>Menus: size factor from a wall that pulled the panel nearer, so it keeps its angular size.</summary>
+    public float Scale = 1f;
     public Vector2 ContentSize;
     public Vector2 ContentCenter;
     public float NextMeasure;
@@ -90,6 +93,20 @@ internal static class WorldCanvases
                 return t.Hidden.Count;
             }
         return 0;
+    }
+
+    /// <summary>Where an open menu's content centre sits (self-test). False when the canvas is not a placed menu.</summary>
+    public static bool TryMenuCentre(Canvas root, out Vector3 centre)
+    {
+        centre = default;
+        var id = root.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id && t.WasOpen)
+            {
+                centre = t.Position;
+                return true;
+            }
+        return false;
     }
 
     public static void Track(Canvas canvas)
@@ -403,11 +420,36 @@ internal static class WorldCanvases
 
         if (!t.WasOpen || (t.Position - head.position).sqrMagnitude > 16f)
         {
-            // Stack newer menus slightly closer so overlapping panels never z-fight.
-            var distance = Mathf.Max(0.5f, cfg.MenuDistance.Value - 0.04f * openMenus);
-            openMenus++;
+            var wanted = cfg.MenuDistance.Value;
+            var tilt = cfg.MenuTilt.Value;
+            var halfWidth = 0.5f * cfg.MenuWidth.Value;
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            var offset = PanelMath.InFront(yaw, distance, cfg.MenuTilt.Value).ToUnity();
+            // A wall nearer than the panel would hide it, or a side wall cut its edges: come forward to just in
+            // front of it. With a wall at your face, turn toward the first heading within 45 degrees that has room.
+            for (int i = 0; i < OpenYawSteps.Length; i++)
+            {
+                openDepths[i] = WallDepth(
+                    head.position,
+                    yaw + OpenYawSteps[i],
+                    wanted,
+                    tilt,
+                    halfWidth
+                );
+                if (openDepths[i] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
+                    continue;
+                for (int j = i + 1; j < OpenYawSteps.Length; j++)
+                    openDepths[j] = 0f;
+                break;
+            }
+            var pick = PanelMath.PickOpenYaw(openDepths);
+            if (pick != 0 || openDepths[0] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
+                LogOpenYaw(t, pick);
+            var clear = PanelMath.ClearDistance(wanted, openDepths[pick]);
+            t.Scale = clear / wanted;
+            // Stack newer menus slightly closer, after the wall clamp, so two menus pulled to one wall never z-fight.
+            var distance = Mathf.Max(0.5f, clear - 0.04f * openMenus);
+            openMenus++;
+            var offset = PanelMath.InFront(yaw + OpenYawSteps[pick], distance, tilt).ToUnity();
             t.Position = head.position + offset;
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
             t.WasOpen = true;
@@ -417,15 +459,89 @@ internal static class WorldCanvases
         MeasureIfDue(t);
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
-        var mpp = PanelMath.MenuMetersPerPixel(
-            t.ContentSize.x,
-            t.ContentSize.y,
-            cfg.MenuWidth.Value,
-            cfg.MenuDistance.Value
-        );
+        var mpp =
+            t.Scale
+            * PanelMath.MenuMetersPerPixel(
+                t.ContentSize.x,
+                t.ContentSize.y,
+                cfg.MenuWidth.Value,
+                cfg.MenuDistance.Value
+            );
         var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
+    }
+
+    /// <summary>
+    /// Walls a menu must stay in front of. The Airport scene puts its hall on Map, doors, stairs and the photo
+    /// booth on MirrorHidden, mirrors on MIrror and desks, seats and fences on Default (read from the scene with
+    /// UnityPy); Character is left out, and a hit with a rigidbody (held or dropped items, bodies) is skipped.
+    /// </summary>
+    private static readonly int WallMask = LayerMask.GetMask(
+        "Terrain",
+        "Map",
+        "Default",
+        "MirrorHidden",
+        "MIrror"
+    );
+    private static readonly RaycastHit[] wallHits = new RaycastHit[16];
+
+    // Headings a menu may open toward when a wall is at your face, in order of preference.
+    private static readonly float[] OpenYawSteps = { 0f, 15f, -15f, 30f, -30f, 45f, -45f };
+    private static readonly float[] openDepths = new float[OpenYawSteps.Length];
+
+    /// <summary>Nearest wall depth in front of a panel along <paramref name="yaw"/>: its centre and both edges.</summary>
+    private static float WallDepth(
+        Vector3 eye,
+        float yaw,
+        float distance,
+        float tilt,
+        float halfWidth
+    )
+    {
+        var offset = PanelMath.InFront(yaw, distance, tilt).ToUnity();
+        var right = Quaternion.LookRotation(offset, Vector3.up) * Vector3.right * halfWidth;
+        return Mathf.Min(
+            WallAlong(eye, offset),
+            Mathf.Min(
+                PanelMath.EdgeDepth(WallAlong(eye, offset + right), distance, halfWidth),
+                PanelMath.EdgeDepth(WallAlong(eye, offset - right), distance, halfWidth)
+            )
+        );
+    }
+
+    private static void LogOpenYaw(TrackedCanvas t, int pick)
+    {
+        var name = t.Canvas != null ? t.Canvas.name : "?";
+        if (openDepths[pick] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
+            Plugin.Log.LogWarning(
+                $"[ui.world] menu '{name}': walls within {openDepths[pick]:0.00} m on every heading within 45 deg, "
+                    + $"opened {OpenYawSteps[pick]:0} deg toward the most open one at {PanelMath.NearestMenuDistance:0.0} m"
+            );
+        else
+            Plugin.Log.LogInfo(
+                $"[ui.world] menu '{name}': wall {openDepths[0]:0.00} m ahead, opened {OpenYawSteps[pick]:0} deg toward open space"
+            );
+    }
+
+    /// <summary>Distance to the first static wall on the way from <paramref name="origin"/> to
+    /// <paramref name="origin"/> + <paramref name="toPoint"/>, or infinity. Placement only, never per frame.</summary>
+    private static float WallAlong(Vector3 origin, Vector3 toPoint)
+    {
+        var length = toPoint.magnitude;
+        int count = Physics.RaycastNonAlloc(
+            origin,
+            toPoint / length,
+            wallHits,
+            length,
+            WallMask,
+            QueryTriggerInteraction.Ignore
+        );
+        float nearest = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
+            if (wallHits[i].rigidbody == null && wallHits[i].distance < nearest)
+                nearest = wallHits[i].distance;
+        return nearest;
     }
 
     private static void MeasureIfDue(TrackedCanvas t)

@@ -169,6 +169,59 @@ public class PanelMathTests
     }
 
     [Fact]
+    public void ClearDistance_NoWall_KeepsWantedDistance()
+    {
+        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, float.PositiveInfinity));
+        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, 2.5f));
+    }
+
+    [Fact]
+    public void ClearDistance_WallCloser_StopsInFrontOfIt()
+    {
+        TestUtil.Near(1.0f - PanelMath.WallGap, PanelMath.ClearDistance(1.8f, 1.0f));
+    }
+
+    [Fact]
+    public void EdgeDepth_ProjectsAnEdgeRayHitOntoTheViewLine()
+    {
+        // Edge ray to (0.8, 0, 1.8): a hit 0.985 m along it lies 0.9 m ahead.
+        var length = MathF.Sqrt(1.8f * 1.8f + 0.8f * 0.8f);
+        TestUtil.Near(0.9f, PanelMath.EdgeDepth(length / 2f, 1.8f, 0.8f));
+        Assert.Equal(1.8f, PanelMath.EdgeDepth(1.8f, 1.8f, 0f));
+        Assert.True(
+            float.IsPositiveInfinity(PanelMath.EdgeDepth(float.PositiveInfinity, 1.8f, 0.8f))
+        );
+    }
+
+    [Fact]
+    public void PickOpenYaw_KeepsStraightAheadWhenItFits()
+    {
+        Assert.Equal(0, PanelMath.PickOpenYaw(new[] { 1.0f, 3f, 3f }));
+        Assert.Equal(0, PanelMath.PickOpenYaw(new[] { float.PositiveInfinity, 0.2f }));
+    }
+
+    [Fact]
+    public void PickOpenYaw_WallAtTheFace_TakesTheFirstOpenTurn()
+    {
+        // Ahead and the first turn are blocked within 0.7 m; the second turn has room.
+        Assert.Equal(2, PanelMath.PickOpenYaw(new[] { 0.3f, 0.5f, 0.9f, 3f }));
+    }
+
+    [Fact]
+    public void PickOpenYaw_BoxedIn_TakesTheMostOpen()
+    {
+        Assert.Equal(1, PanelMath.PickOpenYaw(new[] { 0.3f, 0.65f, 0.4f }));
+    }
+
+    [Fact]
+    public void ClearDistance_WallAtTheFace_KeepsNearestReadableDistance()
+    {
+        Assert.Equal(PanelMath.NearestMenuDistance, PanelMath.ClearDistance(1.8f, 0.2f));
+        // A wanted distance already nearer than the floor is never pushed out.
+        Assert.Equal(0.4f, PanelMath.ClearDistance(0.4f, 0.1f));
+    }
+
+    [Fact]
     public void MetersPerPixel_FitsWidth()
     {
         TestUtil.Near(0.001f, PanelMath.MetersPerPixel(1.92f, 1920f), 1e-7f);

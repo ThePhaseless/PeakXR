@@ -117,6 +117,50 @@ namespace PeakXR.Core
             return new Vector3(MathF.Sin(y) * flat, -distance * MathF.Sin(t), MathF.Cos(y) * flat);
         }
 
+        /// <summary>Space left between a menu and the wall that pulled it in, metres.</summary>
+        public const float WallGap = 0.1f;
+
+        /// <summary>A wall never pulls a menu nearer than this: still readable and inside laser and poke reach.</summary>
+        public const float NearestMenuDistance = 0.6f;
+
+        /// <summary>
+        /// Distance for a menu that wants to sit <paramref name="wanted"/> metres away when the first wall along
+        /// that line is <paramref name="wallDistance"/> away (infinity for none): just in front of the wall, so
+        /// the panel is not drawn inside it, but never nearer than <see cref="NearestMenuDistance"/>.
+        /// </summary>
+        public static float ClearDistance(float wanted, float wallDistance)
+        {
+            if (!(wallDistance - WallGap < wanted))
+                return wanted;
+            return MathF.Min(wanted, MathF.Max(NearestMenuDistance, wallDistance - WallGap));
+        }
+
+        /// <summary>
+        /// Which of several headings (ordered by preference, straight ahead first) a menu should open toward, given
+        /// the nearest wall depth along each: the first with room for the panel at
+        /// <see cref="NearestMenuDistance"/>, else the most open one. Keeps a menu out of a wall at your face.
+        /// </summary>
+        public static int PickOpenYaw(float[] wallDepths)
+        {
+            int best = 0;
+            for (int i = 0; i < wallDepths.Length; i++)
+            {
+                if (wallDepths[i] - WallGap >= NearestMenuDistance)
+                    return i;
+                if (wallDepths[i] > wallDepths[best])
+                    best = i;
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Depth along the view line of a wall hit <paramref name="hit"/> metres along the ray to a panel edge
+        /// <paramref name="halfWidth"/> to the side of a panel <paramref name="distance"/> away. The panel keeps its
+        /// angular size when pulled in, so its edge stays on that ray and this depth is what it must clear.
+        /// </summary>
+        public static float EdgeDepth(float hit, float distance, float halfWidth) =>
+            hit * distance / MathF.Sqrt(distance * distance + halfWidth * halfWidth);
+
         /// <summary>Scale that makes a canvas <paramref name="widthPixels"/> wide span
         /// <paramref name="widthMeters"/>. Falls back to 1 mm per pixel for an empty canvas.</summary>
         public static float MetersPerPixel(float widthMeters, float widthPixels) =>
