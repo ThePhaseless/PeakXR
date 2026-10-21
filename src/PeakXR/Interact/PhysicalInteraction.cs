@@ -728,6 +728,76 @@ internal static class PhysicalInteraction
             AimHand = 0;
     }
 
+    private static int eatTrace = -1;
+    private static int eatTraceLines;
+
+    /// <summary>Self-test diagnosis of eat-at-mouth (vr.12): one Debug line whenever a gate on the way from the grip
+    /// at the mouth to the game's primary use flips, at most 80 per held item. The item fields show the previous
+    /// frame's <c>CharacterItems.DoUsing</c> (CharacterItems.cs:196): its cancels (:209-216) zero castProgress.</summary>
+    private static void TraceEat(
+        Character c,
+        CharacterInput input,
+        VRRig rig,
+        InteractConfig cfg,
+        bool holding,
+        Transform mouthHand,
+        bool atMouth,
+        bool primaryDown
+    )
+    {
+        var item = c.data.currentItem;
+        if (!holding || item == null)
+        {
+            eatTrace = -1;
+            eatTraceLines = 0;
+            return;
+        }
+        float d =
+            rig.Head != null && mouthHand != null
+                ? NVector3.Distance(
+                    MouthGesture.MouthPoint(
+                        rig.Head.position.N(),
+                        rig.Head.rotation.N(),
+                        Mouth.MouthOffset
+                    ),
+                    mouthHand.position.N()
+                )
+                : -1f;
+        bool inside = d >= 0f && d <= Mouth.ExitRadius;
+        bool canUse = item.CanUsePrimary();
+        var gui = GUIManager.instance;
+        bool guiBlocks = gui != null && (gui.windowBlockingInput || gui.wheelActive);
+        int mask =
+            (cfg.EatAtMouth ? 1 : 0)
+            | (Hold.Edible ? 2 : 0)
+            | (VRInput.HeadTracked ? 4 : 0)
+            | (inside ? 8 : 0)
+            | (atMouth ? 16 : 0)
+            | (primaryDown ? 32 : 0)
+            | (PrimaryEdge.Held ? 64 : 0)
+            | (useBlocked ? 128 : 0)
+            | (input.usePrimaryIsPressed ? 256 : 0)
+            | (input.usePrimaryWasReleased ? 512 : 0)
+            | (input.useSecondaryIsPressed ? 1024 : 0)
+            | (input.useSecondaryWasReleased ? 2048 : 0)
+            | (item.isUsingPrimary ? 4096 : 0)
+            | (item.isUsingSecondary ? 8192 : 0)
+            | (canUse ? 16384 : 0)
+            | (guiBlocks ? 32768 : 0);
+        if (mask == eatTrace || eatTraceLines >= 80)
+            return;
+        eatTrace = mask;
+        eatTraceLines++;
+        Plugin.Log.LogDebug(
+            $"[interact.eat] f{Time.frameCount} {item.name}: eatAtMouth {cfg.EatAtMouth}, edible {Hold.Edible}, head tracked {VRInput.HeadTracked}, "
+                + $"grip {d:0.000} m from the mouth (inside {inside}), atMouth {atMouth}, trigger {primaryDown}, "
+                + $"edge pressed {PrimaryEdge.Pressed} held {PrimaryEdge.Held}, blocked {useBlocked}; input primary "
+                + $"{input.usePrimaryWasPressed}/{input.usePrimaryIsPressed}/{input.usePrimaryWasReleased} secondary "
+                + $"{input.useSecondaryWasPressed}/{input.useSecondaryIsPressed}/{input.useSecondaryWasReleased} (pressed/held/released); "
+                + $"item using {item.isUsingPrimary}/{item.isUsingSecondary} cast {item.castProgress:0.000} canUse {canUse}, gui blocks {guiBlocks}"
+        );
+    }
+
     private static void Inject(
         Character c,
         CharacterInput input,
@@ -824,6 +894,8 @@ internal static class PhysicalInteraction
             input.useSecondaryIsPressed |= SecondaryEdge.Held;
             input.useSecondaryWasReleased |= SecondaryEdge.Released;
         }
+        if (VRInput.TestOverride != null)
+            TraceEat(c, input, rig, cfg, holding, mouthHand, atMouth, primaryDown);
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.
         DropEdge.Update(cfg.DropButtonDown(), dt);

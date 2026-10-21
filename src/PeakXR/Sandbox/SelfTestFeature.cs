@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Core;
@@ -32,6 +33,7 @@ public sealed class SelfTestFeature : Feature
         if (!FeatureManager.IsActive<SandboxFeature>())
             throw new InvalidOperationException("the sandbox feature is not active");
         Patch(typeof(SelfTestInputPatch));
+        Patch(typeof(SelfTestUseProbe));
 
         SandboxActions.Forced = true;
         var go = new GameObject("PeakXR.SelfTest") { hideFlags = HideFlags.HideAndDontSave };
@@ -76,5 +78,50 @@ static class SelfTestInputPatch
             __instance.dropWasReleased = true;
             __instance.dropIsPressed = false;
         }
+    }
+}
+
+/// <summary>
+/// vr.12 diagnosis: while scripted hands run, logs (Debug, at most 120 lines per run) every
+/// <c>Item.StartUsePrimary</c> (Item.cs:849) and every cancel that zeroes a running primary cast:
+/// <c>CancelUsePrimary</c> (:918) and <c>CancelUseSecondary</c> (:1062, it resets castProgress too), with the caller.
+/// </summary>
+[HarmonyPatch]
+static class SelfTestUseProbe
+{
+    static int lines;
+
+    static IEnumerable<MethodBase> TargetMethods()
+    {
+        yield return GameMember.Method(typeof(Item), "StartUsePrimary");
+        yield return GameMember.Method(typeof(Item), "CancelUsePrimary");
+        yield return GameMember.Method(typeof(Item), "CancelUseSecondary");
+    }
+
+    static void Prefix(Item __instance, MethodBase __originalMethod)
+    {
+        if (VR.VRInput.TestOverride == null || lines >= 120)
+            return;
+        bool start = __originalMethod.Name == "StartUsePrimary";
+        if (!start && !__instance.isUsingPrimary)
+            return;
+        lines++;
+        Plugin.Log.LogDebug(
+            $"[selftest.use] f{Time.frameCount} {__originalMethod.Name} {__instance.name} using {__instance.isUsingPrimary} "
+                + $"cast {__instance.castProgress:0.000} from {Callers()}"
+        );
+    }
+
+    static string Callers()
+    {
+        var frames = new System.Diagnostics.StackTrace(2, false).GetFrames();
+        var names = new List<string>(3);
+        for (int i = 0; frames != null && i < frames.Length && names.Count < 3; i++)
+        {
+            var m = frames[i].GetMethod();
+            if (m != null)
+                names.Add(m.DeclaringType?.Name + "." + m.Name);
+        }
+        return string.Join(" < ", names);
     }
 }
