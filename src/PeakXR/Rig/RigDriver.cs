@@ -36,6 +36,9 @@ internal sealed class RigDriver : MonoBehaviour
     /// pitches with the look (Look Y), which would carry the eye renderers down and forward.</summary>
     private const float LevelLookY = 0.35f;
 
+    /// <summary>Eye-offset samples are skipped while the lean has moved the avatar's eyes further than this (m).</summary>
+    private const float MaxSampleLean = 0.05f;
+
     /// <summary>Vertical follow rate (1/s) on the ground: the torso is a driven rigidbody that bobs at step rate
     /// (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls keep the full rate.</summary>
     private const float GroundedVerticalRate = 5f;
@@ -325,8 +328,21 @@ internal sealed class RigDriver : MonoBehaviour
             return;
         if (!TryEyePoint(c, out var eye))
             return;
+        // Measure the unleaned body (avatar.local's lean bends the torso and eyes toward the headset): sampling the
+        // leaned eyes would carry the head's offset into the anchor and slide the view after the head.
+        var driver = AvatarPoseDriver.Of(c);
+        if (driver != null)
+        {
+            if (haveEyeOffset && driver.EyeLeanShift.sqrMagnitude > MaxSampleLean * MaxSampleLean)
+                return;
+            eye -= driver.EyeLeanShift;
+        }
         float facing = Mathf.Atan2(d.lookDirection_Flat.x, d.lookDirection_Flat.z) * Mathf.Rad2Deg;
-        var sample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
+        var sample = RigMath.EyeOffset(
+            eye.N(),
+            (c.Center - AvatarPoseDriver.LeanShiftOf(c)).N(),
+            facing
+        );
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
             return;
         // Snap only while the view is placed anyway (a new character, a recenter); otherwise glide, never jump.
@@ -778,8 +794,16 @@ internal sealed class RigDriver : MonoBehaviour
         }
     }
 
-    private Vector3 BodyEye(Character c, float yaw) =>
-        RigMath.EyeAnchor(c.VirtualCenter.N(), yaw, eyeOffset).U();
+    /// <summary>The avatar's calibrated eyes over its torso. For the local player the torso's lean is taken out
+    /// (<see cref="AvatarPoseDriver.LeanShift"/>): the lean follows the real head, so letting it move the anchor would
+    /// move the view after the head and lean the body further, a loop that slides the view.</summary>
+    private Vector3 BodyEye(Character c, float yaw)
+    {
+        var center = c.VirtualCenter;
+        if (c.IsLocal)
+            center -= AvatarPoseDriver.LeanShiftOf(c);
+        return RigMath.EyeAnchor(center.N(), yaw, eyeOffset).U();
+    }
 
     /// <summary>The camera the game renders its end cutscene with (any enabled screen camera but ours).</summary>
     private Transform FindCutsceneCamera()

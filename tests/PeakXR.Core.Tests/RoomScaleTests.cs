@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace PeakXR.Core.Tests;
 
 public class RoomScaleTests
@@ -31,12 +34,78 @@ public class RoomScaleTests
     [Fact]
     public void WalkingAway_RequestsMoveTowardHead()
     {
+        // The walk ramps from the stop radius (half the lean radius), so it keeps going until the head is well inside.
         var f = new RoomScaleFollow { LeanRadius = 0.2f, RampDistance = 0.3f };
         var move = f.Update(new Vector2(0f, 0.35f), Vector2.Zero, canFollow: true);
         TestUtil.Near(0f, move.X);
-        TestUtil.Near(0.5f, move.Y);
+        TestUtil.Near(0.25f / 0.3f, move.Y);
         move = f.Update(new Vector2(0f, 2f), Vector2.Zero, canFollow: true);
         TestUtil.Near(1f, move.Y);
+    }
+
+    /// <summary>
+    /// Runs the follow at 90 Hz against a body that walks after its request like the game's driven ragdoll (speed
+    /// eases toward input times 1.5 m/s with a 0.12 s time constant, CharacterMovement drag 0.85 per tick). Returns
+    /// the body's forward travel per frame.
+    /// </summary>
+    static List<float> Walk(RoomScaleFollow f, Func<float, Vector2> head, float seconds)
+    {
+        const float dt = 1f / 90f;
+        var travel = new List<float>();
+        float body = 0f;
+        var v = Vector2.Zero;
+        var delta = Vector2.Zero;
+        for (float t = 0f; t < seconds; t += dt)
+        {
+            var request = f.Update(head(t), delta, canFollow: true);
+            v += (request * 1.5f - v) * (1f - MathF.Exp(-dt / 0.12f));
+            delta = v * dt;
+            body += delta.Y;
+            travel.Add(body);
+        }
+        return travel;
+    }
+
+    static Func<float, Vector2> Lean(float from, float to, float start, float seconds) =>
+        t => new Vector2(0f, from + (to - from) * Math.Clamp((t - start) / seconds, 0f, 1f));
+
+    [Fact]
+    public void NaturalLean_DoesNotWalkTheBody()
+    {
+        // Leaning 0.3 m over a table and back up is upper-body work: the avatar bends, the character stays put.
+        var f = new RoomScaleFollow();
+        var forward = Walk(f, Lean(0f, 0.3f, 0.2f, 0.5f), 2f);
+        var back = Walk(f, Lean(0.3f, 0f, 0f, 0.5f), 2f);
+        Assert.True(
+            forward.Max(MathF.Abs) < 0.005f,
+            $"walked {forward.Max(MathF.Abs):0.000} m leaning"
+        );
+        Assert.True(
+            back.Max(MathF.Abs) < 0.005f,
+            $"walked {back.Max(MathF.Abs):0.000} m standing up"
+        );
+    }
+
+    [Fact]
+    public void LeanPastTheLimit_WalksOnceAndNotBackWhenStandingUp()
+    {
+        var f = new RoomScaleFollow();
+        var lean = Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
+        Assert.True(lean[^1] > 0.05f, $"walked only {lean[^1]:0.000} m after a 0.45 m lean");
+        var up = Walk(f, Lean(0.45f, 0f, 0f, 0.5f), 3f);
+        Assert.True(up.Min() > -0.005f, $"walked back {-up.Min():0.000} m standing up");
+    }
+
+    [Fact]
+    public void AfterAStep_HeadSwayDoesNotRockTheBody()
+    {
+        // The follow must stop well inside the lean radius: stopping on its edge let every breath of sway start
+        // another shuffle, and the character rocked forward and back while the player stood still.
+        var f = new RoomScaleFollow();
+        Walk(f, Lean(0f, 0.7f, 0f, 0.4f), 4f);
+        var sway = Walk(f, t => new Vector2(0f, 0.7f + 0.03f * MathF.Sin(MathF.PI * t)), 6f);
+        float peak = sway.Max() - sway.Min();
+        Assert.True(peak < 0.005f, $"body rocked {peak:0.000} m peak to peak");
     }
 
     [Fact]

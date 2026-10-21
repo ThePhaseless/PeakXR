@@ -23,17 +23,25 @@ namespace PeakXR.Core
     /// Room-scale walking for a physics body that cannot be teleported. The camera feature keeps a tracking-space
     /// <see cref="Anchor"/> over the character, so physically walking moves the view exactly like the real head
     /// (no artificial camera motion). When the head leaves <see cref="LeanRadius"/> around the anchor, this asks
-    /// for stick input that walks the body after the head; as the body arrives, the anchor slides toward the head
-    /// by the same distance, so the view stays world-fixed while the body catches up underneath it. When the body
+    /// for stick input that walks the body after the head until the head is back inside <see cref="StopRadius"/>; as
+    /// the body arrives, the anchor slides toward the head by the same distance, so the view stays world-fixed while
+    /// the body catches up underneath it. Inside the lean radius the avatar's upper body leans instead (avatar.local),
+    /// and the follow stops well inside it, so standing up after a lean or swaying after a step never walks the body
+    /// back and forth. When the body
     /// cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
     /// out and calls <see cref="Recenter"/>.
     /// </summary>
     public sealed class RoomScaleFollow
     {
-        /// <summary>Head offset (m) the player can lean without moving the body.</summary>
-        public float LeanRadius = 0.2f;
+        /// <summary>Head offset (m) the player can lean without moving the body: about as far as a standing person
+        /// leans over a table. A smaller radius walked the character on every lean and back on standing up.</summary>
+        public float LeanRadius = 0.35f;
 
-        /// <summary>Distance past the lean radius (m) over which the requested input ramps to full.</summary>
+        /// <summary>A started follow walks until the head is this close (m) to the anchor: half the lean radius, so a
+        /// lean past the limit and back up stays inside it instead of walking the body back.</summary>
+        public float StopRadius => LeanRadius * 0.5f;
+
+        /// <summary>Distance past the stop radius (m) over which the requested input ramps to full.</summary>
         public float RampDistance = 0.3f;
 
         /// <summary>Offset (m) at which the anchor should be snapped back under a fade.</summary>
@@ -45,6 +53,7 @@ namespace PeakXR.Core
         public Vector2 Offset { get; private set; }
 
         float _absorbed;
+        bool _following;
 
         public bool RecenterNeeded => Offset.Length() > RecenterDistance;
 
@@ -73,9 +82,11 @@ namespace PeakXR.Core
             if (!canFollow)
                 _absorbed = 0f;
 
-            if (!canFollow || dist <= LeanRadius)
+            // Hysteresis: start past the lean radius, stop only well inside it.
+            _following = canFollow && (_following ? dist > StopRadius : dist > LeanRadius);
+            if (!_following)
                 return Vector2.Zero;
-            float amount = RampDistance > 0f ? (dist - LeanRadius) / RampDistance : 1f;
+            float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
             return d / dist * MathF.Min(amount, 1f);
         }
 
@@ -84,6 +95,7 @@ namespace PeakXR.Core
             Anchor = head;
             Offset = Vector2.Zero;
             _absorbed = 0f;
+            _following = false;
         }
 
         /// <summary>

@@ -17,7 +17,7 @@ internal static class LocomotionConfig
     public static bool CrouchToggle => (crouchMode?.Value ?? "Toggle") == "Toggle";
     public static float Deadzone => deadzone?.Value ?? 0.15f;
     public static bool RoomScale => roomScale?.Value ?? true;
-    public static float LeanRadius => leanRadius?.Value ?? 0.2f;
+    public static float LeanRadius => leanRadius?.Value ?? 0.35f;
 
     public static void Bind(ConfigFile file)
     {
@@ -65,13 +65,15 @@ internal static class LocomotionConfig
             "Walking around your play space walks your character after you, without moving your view. Off: your "
                 + "view can drift from your character; past 1 m it fades and re-centres on the character."
         );
+        // A new key, not LeanDistance: its saved 0.2 m walked the character on every lean and back on standing up.
         leanRadius = file.Bind(
             s,
-            "LeanDistance",
-            0.2f,
+            "LeanLimit",
+            0.35f,
             new ConfigDescription(
-                "How far (metres) you can lean before your character steps after your head.",
-                new AcceptableValueRange<float>(0.05f, 0.5f)
+                "How far (metres) you can lean before your character steps after your head. Inside it the "
+                    + "character's upper body leans with you and its feet stay put.",
+                new AcceptableValueRange<float>(0.15f, 0.6f)
             )
         );
     }

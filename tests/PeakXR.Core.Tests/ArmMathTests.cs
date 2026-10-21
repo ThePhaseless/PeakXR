@@ -85,4 +85,86 @@ public class ArmMathTests
         );
         TestUtil.Near(Vector3.Zero, d);
     }
+
+    /// <summary>Applies a two-bone solution: the upper arm turns about the shoulder, the forearm takes its own
+    /// world rotation about the new elbow.</summary>
+    static (Vector3 Elbow, Vector3 Hand) Apply(
+        Vector3 s,
+        Vector3 e,
+        Vector3 h,
+        Quaternion upper,
+        Quaternion lower
+    )
+    {
+        var elbow = s + Vector3.Transform(e - s, upper);
+        return (elbow, elbow + Vector3.Transform(h - e, lower));
+    }
+
+    // A bent left arm hanging forward, elbow down and out, as the IK leaves it before the spine leans.
+    static readonly Vector3 S = new(-0.2f, 1.2f, 0f);
+    static readonly Vector3 E = new(-0.3f, 0.95f, 0.25f);
+    static readonly Vector3 H = new(-0.2f, 1.1f, 0.55f);
+    static readonly Vector3 Hint = new(-0.6f, 0.6f, 0.1f);
+
+    [Fact]
+    public void SolveTwoBone_HandOnTarget_ChangesNothing()
+    {
+        ArmMath.SolveTwoBone(S, E, H, H, Hint, out var upper, out var lower);
+        TestUtil.SameRotation(Quaternion.Identity, upper, 0.05f);
+        TestUtil.SameRotation(Quaternion.Identity, lower, 0.05f);
+    }
+
+    [Fact]
+    public void SolveTwoBone_ReachableTarget_PutsTheHandThereAndKeepsTheElbowSide()
+    {
+        // The spine leaned, so the shoulder came 0.15 m forward and down with the arm; the hand goes back on target.
+        var shift = new Vector3(0f, -0.05f, 0.15f);
+        ArmMath.SolveTwoBone(
+            S + shift,
+            E + shift,
+            H + shift,
+            H,
+            Hint,
+            out var upper,
+            out var lower
+        );
+        var (elbow, hand) = Apply(S + shift, E + shift, H + shift, upper, lower);
+        TestUtil.Near(H, hand, 1e-3f);
+        TestUtil.Near(Vector3.Distance(S, E), Vector3.Distance(S + shift, elbow), 1e-4f);
+        var before = ArmMath.BendDirection(S, E, H);
+        var after = ArmMath.BendDirection(S + shift, elbow, hand);
+        Assert.True(Vector3.Dot(before, after) > 0.8f, $"elbow flipped: {before} to {after}");
+    }
+
+    [Fact]
+    public void SolveTwoBone_OutOfReach_PointsTheStraightArmAtTheTarget()
+    {
+        var target = S + new Vector3(0f, 0f, 2f);
+        ArmMath.SolveTwoBone(S, E, H, target, Hint, out var upper, out var lower);
+        var (elbow, hand) = Apply(S, E, H, upper, lower);
+        var dir = Vector3.Normalize(target - S);
+        TestUtil.Near(dir, Vector3.Normalize(hand - S), 0.02f);
+        TestUtil.Near(dir, Vector3.Normalize(elbow - S), 0.02f);
+    }
+
+    [Fact]
+    public void SolveTwoBone_StraightArm_BendsTowardTheHint()
+    {
+        var s = Vector3.Zero;
+        var e = new Vector3(0f, 0f, 0.3f);
+        var h = new Vector3(0f, 0f, 0.6f);
+        var hint = new Vector3(0f, -0.5f, 0.3f);
+        ArmMath.SolveTwoBone(
+            s,
+            e,
+            h,
+            new Vector3(0f, 0f, 0.4f),
+            hint,
+            out var upper,
+            out var lower
+        );
+        var (elbow, hand) = Apply(s, e, h, upper, lower);
+        TestUtil.Near(new Vector3(0f, 0f, 0.4f), hand, 1e-3f);
+        Assert.True(elbow.Y < -0.1f, $"elbow went to y {elbow.Y:0.000}, away from the hint");
+    }
 }

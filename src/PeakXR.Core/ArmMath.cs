@@ -41,5 +41,49 @@ namespace PeakXR.Core
                 off -= axis * (Vector3.Dot(off, axis) / len2);
             return off.LengthSquared() > 1e-8f ? Vector3.Normalize(off) : Vector3.Zero;
         }
+
+        /// <summary>
+        /// Two-bone reach from the arm's current pose: the elbow opens or closes in the arm's own bend plane until the
+        /// shoulder-hand distance matches <paramref name="target"/> (straight when out of reach), then the whole arm
+        /// turns about the shoulder onto it. Returns world-space deltas: <paramref name="upper"/> for the upper arm,
+        /// <paramref name="lower"/> for the forearm (both turns). Keeping the current plane keeps the elbow on the
+        /// side the IK and its hint chose; only a straight arm takes the plane from <paramref name="hint"/>. Identity
+        /// when the hand is already on target.
+        /// </summary>
+        public static void SolveTwoBone(
+            Vector3 shoulder,
+            Vector3 elbow,
+            Vector3 hand,
+            Vector3 target,
+            Vector3 hint,
+            out Quaternion upper,
+            out Quaternion lower
+        )
+        {
+            upper = lower = Quaternion.Identity;
+            var u = elbow - shoulder;
+            var v = hand - elbow;
+            var st = target - shoulder;
+            float a = u.Length();
+            float b = v.Length();
+            float dist = st.Length();
+            if (a < 1e-5f || b < 1e-5f || dist < 1e-5f)
+                return;
+            var n = Vector3.Cross(u, v);
+            if (n.LengthSquared() < 1e-10f)
+                n = Vector3.Cross(hint - shoulder, st);
+            if (n.LengthSquared() < 1e-10f)
+                return;
+            n = Vector3.Normalize(n);
+            float reach = System.Math.Clamp(dist, System.MathF.Abs(a - b) + 1e-4f, a + b - 1e-4f);
+            float interior = System.MathF.Acos(
+                System.Math.Clamp((a * a + b * b - reach * reach) / (2f * a * b), -1f, 1f)
+            );
+            float bend = System.MathF.Acos(System.Math.Clamp(Vector3.Dot(u, v) / (a * b), -1f, 1f));
+            var open = Quaternion.CreateFromAxisAngle(n, System.MathF.PI - interior - bend);
+            var swing = BodyLean.FromTo(elbow + Vector3.Transform(v, open) - shoulder, st);
+            upper = swing;
+            lower = Quaternion.Multiply(swing, open);
+        }
     }
 }

@@ -116,7 +116,8 @@ internal static class BodyGestures
     private static void UpdateLift(Character c, VRRig rig, float dt)
     {
         var d = c.data;
-        float above = c.Center.y - d.groundPos.y;
+        // The unleaned torso, like the view anchor: a lean lowers the torso a little and is not a crouch.
+        float above = c.Center.y - AvatarPoseDriver.LeanShiftOf(c).y - d.groundPos.y;
         bool upright =
             d.isGrounded
             && d.fullyConscious
