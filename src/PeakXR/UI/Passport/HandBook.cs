@@ -5,6 +5,7 @@ using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace PeakXR.UI.Passport;
 
@@ -171,7 +172,11 @@ internal static class HandBook
 /// </summary>
 internal sealed class PassportPlacement : ICanvasPlacement
 {
+    private RectMask2D crop;
+
     public bool Interactive => true;
+
+    public PassportPlacement() => VRSession.Stopped += Uncrop;
 
     public PlacementResult Place(
         Canvas canvas,
@@ -194,11 +199,36 @@ internal sealed class PassportPlacement : ICanvasPlacement
             )
         )
         {
+            Uncrop();
             position = default;
             rotation = Quaternion.identity;
             return PlacementResult.Default;
         }
+        Crop(canvas);
         return PlacementResult.Placed;
+    }
+
+    /// <summary>
+    /// The booklet is 1225 units tall on a 720-unit canvas (PassportUI/Canvas/Panel/BG (3)): on a monitor the screen
+    /// edge crops its blank upper page, at the hand all of it showed. Crop to the canvas as the screen did. At rest
+    /// (Panel y 25, from the Airport scene) the lower page spans y -203..265, tabs, options, close and portrait all
+    /// inside -640..640 x -360..360; the PassportOpen slide-in (Panel y 824 to 25 over 0.25 s) is cropped as on a
+    /// monitor.
+    /// </summary>
+    private void Crop(Canvas canvas)
+    {
+        if (crop != null && crop.gameObject == canvas.gameObject)
+            return;
+        Uncrop();
+        if (!canvas.TryGetComponent(out RectMask2D _))
+            crop = canvas.gameObject.AddComponent<RectMask2D>();
+    }
+
+    private void Uncrop()
+    {
+        if (crop != null)
+            UnityEngine.Object.Destroy(crop);
+        crop = null;
     }
 }
 

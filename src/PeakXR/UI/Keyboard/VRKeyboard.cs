@@ -54,6 +54,9 @@ internal sealed class VRKeyboard : MonoBehaviour
     private const float FlashSeconds = 0.12f;
     private const int SortingOrder = 30000;
 
+    /// <summary>Degrees the keyboard leans back past square to the eye, so it lies like a desk.</summary>
+    internal const float DeskTilt = 30f;
+
     private static readonly Color KeyColor = new(0.2f, 0.22f, 0.27f, 1f);
     private static readonly Color SpecialColor = new(0.14f, 0.16f, 0.2f, 1f);
     private static readonly Color DoneColor = new(0.17f, 0.4f, 0.26f, 1f);
@@ -195,6 +198,15 @@ internal sealed class VRKeyboard : MonoBehaviour
             new Vector2(0f, size.y * 0.5f - Pad - 62f),
             new Vector2(size.x - Pad * 2f, 48f)
         );
+        // The input line itself: a thin rule under the typed text, so even an empty field shows where text goes.
+        var rule = Panel(
+            canvasRect,
+            "InputLine",
+            new Vector2(0f, size.y * 0.5f - Pad - 88f),
+            new Vector2(size.x - Pad * 2f, 3f),
+            new Color(1f, 1f, 1f, 0.5f)
+        );
+        rule.raycastTarget = false;
 
         var count = 0;
         foreach (var row in def)
@@ -397,11 +409,12 @@ internal sealed class VRKeyboard : MonoBehaviour
         var rig = VRRig.Instance;
         var head = rig.Head;
         var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-        var offset = PanelMath
-            .InFront(yaw, UIKeyboardFeature.Distance.Value, UIKeyboardFeature.Tilt.Value)
-            .ToUnity();
+        var tilt = UIKeyboardFeature.Tilt.Value;
+        var offset = PanelMath.InFront(yaw, UIKeyboardFeature.Distance.Value, tilt).ToUnity();
         PanelPosition = head.position + offset;
-        PanelRotation = Quaternion.LookRotation(offset, Vector3.up);
+        // Square to the sight line, then leaned back like a desk: hands resting below the sight line reach the
+        // near rows without covering them, and the typed line on the far edge stays in view.
+        PanelRotation = Quaternion.Euler(tilt + DeskTilt, yaw, 0f);
         HasPose = true;
 
         field = input;
@@ -573,9 +586,9 @@ internal sealed class VRKeyboard : MonoBehaviour
         if (ReferenceEquals(text, shown))
             return;
         shown = text;
-        preview.text =
+        preview.text = InputLine.Show(
+            text,
             field != null && field.inputType == TMP_InputField.InputType.Password
-                ? new string('*', text.Length)
-                : text;
+        );
     }
 }

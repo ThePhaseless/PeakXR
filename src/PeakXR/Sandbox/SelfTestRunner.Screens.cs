@@ -1,6 +1,7 @@
 using System.Collections;
 using PeakXR.UI.Keyboard;
 using PeakXR.UI.Passport;
+using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -42,8 +43,15 @@ internal sealed partial class SelfTestRunner
         var canvas = HandBook.PassportCanvas;
         stepNote =
             canvas != null ? $"passport canvas {canvas.renderMode}" : "passport canvas not placed";
+        // Aimed between the book and the hand under it, so the frame shows the book held, not floating.
+        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(HandBook.BookInLeftHand()) : null;
         yield return canvas != null
-            ? ShotAt("vr-70-passport", CentreOf(canvas.transform))
+            ? ShotAt(
+                "vr-70-passport",
+                hand != null
+                    ? Vector3.Lerp(CentreOf(canvas.transform), hand.position, 0.4f)
+                    : CentreOf(canvas.transform)
+            )
             : Shot("vr-70-passport");
         passport.ToggleOpen();
         yield return Until(() => !passport.isOpen, 2f, "passport did not close");
@@ -78,6 +86,33 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
     }
 
+    /// <summary>Both hands just past the keyboard's near edge (half its height is about 0.17 m), pointing along it.</summary>
+    static void KeyboardHands()
+    {
+        var origin = VRRig.Instance != null ? VRRig.Instance.Origin : null;
+        if (origin == null)
+            return;
+        var rotation = VRKeyboard.PanelRotation;
+        var edge = VRKeyboard.PanelPosition + rotation * new Vector3(0f, -0.22f, -0.03f);
+        var aim = Quaternion.Inverse(origin.rotation) * rotation;
+        VRInput.Left = KeyboardHand(
+            origin.InverseTransformPoint(edge + rotation * Vector3.left * 0.2f),
+            aim
+        );
+        VRInput.Right = KeyboardHand(
+            origin.InverseTransformPoint(edge + rotation * Vector3.right * 0.2f),
+            aim
+        );
+    }
+
+    static HandState KeyboardHand(Vector3 position, Quaternion rotation) =>
+        new()
+        {
+            Tracked = true,
+            Position = position,
+            Rotation = rotation,
+        };
+
     /// <summary>vr.72: the VR keyboard as a platform text dialog opens it (<see cref="VRKeyboard.TryOpenDialog"/>),
     /// then cancelled.</summary>
     IEnumerator KeyboardShot()
@@ -88,8 +123,13 @@ internal sealed partial class SelfTestRunner
             Fail("keyboard refused to open (ui.world not ready or no rig)");
             yield break;
         }
+        // The idle pose holds the hands up in front of the face for the other screenshots, right over the
+        // keyboard; a player about to type rests them at its near edge instead.
+        var idle = VRInput.TestOverride;
+        VRInput.TestOverride = KeyboardHands;
         yield return Wait(0.5f);
         yield return ShotAt("vr-72-keyboard", VRKeyboard.PanelPosition);
+        VRInput.TestOverride = idle;
         VRKeyboard.CancelDialog();
         yield return Until(() => closed, 1f, "keyboard dialog did not close");
     }

@@ -30,7 +30,25 @@ internal sealed class KioskDock : ICanvasPlacement
         public AirportCheckInKiosk Kiosk;
         public Vector3 Position;
         public Quaternion Rotation;
+
+        /// <summary>Width factor that makes the shown window's body text readable from where it docked.</summary>
+        public float Grow = 1f;
+
+        /// <summary>Which window <see cref="Grow"/> was measured for (the options or the pass), and whether it
+        /// is final: texts fading in at open are measured again until <see cref="SettleUntil"/>.</summary>
+        public bool MeasuredOptions,
+            Settled;
+        public float SettleUntil;
     }
+
+    /// <summary>BoardingPass.OnOpen fades the pass in over 0.5 s (A/BoardingPass.cs:147): measure until then.</summary>
+    private const float SettleSeconds = 0.6f;
+
+    /// <summary>Most a kiosk panel may grow past its width setting to make its text readable.</summary>
+    private const float MaxTextGrowth = 2f;
+
+    private readonly System.Collections.Generic.List<TMPro.TMP_Text> texts = new();
+    private readonly float[] textHeights = new float[64];
 
     private readonly UILobbySettings cfg;
     private readonly LobbyDockLimits limits = new();
@@ -101,15 +119,38 @@ internal sealed class KioskDock : ICanvasPlacement
         if (!slot.Docked)
             return PlacementResult.Default;
 
+        var width = optionsOpen ? cfg.OptionsWidth.Value : cfg.PassWidth.Value;
+        if (slot.MeasuredOptions != optionsOpen)
+        {
+            slot.MeasuredOptions = optionsOpen;
+            Unsettle(slot);
+        }
+        if (open && !slot.Settled)
+        {
+            slot.Settled = Time.unscaledTime >= slot.SettleUntil;
+            slot.Grow = TextGrowth(
+                canvas,
+                optionsOpen ? options.transform : pass.transform,
+                width,
+                Vector3.Distance(head, slot.Position),
+                slot.Settled
+            );
+        }
         position = slot.Position;
         rotation = slot.Rotation;
-        widthMeters = optionsOpen ? cfg.OptionsWidth.Value : cfg.PassWidth.Value;
+        widthMeters = width * slot.Grow;
         return PlacementResult.Placed;
     }
 
     /// <summary>The window may sit on the canvas, under it, or (like PassportManager) above it.</summary>
     private static bool Holds(Transform canvas, Transform window) =>
         window.IsChildOf(canvas) || canvas.IsChildOf(window);
+
+    private static void Unsettle(Slot slot)
+    {
+        slot.Settled = false;
+        slot.SettleUntil = Time.unscaledTime + SettleSeconds;
+    }
 
     private void Dock(Slot slot, AirportCheckInKiosk kiosk, Vector3 head, bool nudge)
     {
@@ -136,6 +177,36 @@ internal sealed class KioskDock : ICanvasPlacement
         slot.Rotation = Quaternion.LookRotation(forward, Vector3.up);
         slot.Kiosk = kiosk;
         slot.Docked = true;
+        Unsettle(slot);
+    }
+
+    /// <summary>Width factor that brings the median font size of <paramref name="window"/> to
+    /// <see cref="ReadableText.MinDegrees"/> at <paramref name="distance"/> when its canvas is
+    /// <paramref name="width"/> metres wide. Only while a window opens, never once it has settled.</summary>
+    private float TextGrowth(Canvas canvas, Transform window, float width, float distance, bool log)
+    {
+        var root = (RectTransform)canvas.transform;
+        var rootScale = Mathf.Abs(root.lossyScale.y);
+        if (root.rect.width <= 0f || rootScale < 1e-9f)
+            return 1f;
+        window.GetComponentsInChildren(false, texts);
+        int count = 0;
+        foreach (var text in texts)
+            if (text.isActiveAndEnabled && count < textHeights.Length)
+                textHeights[count++] =
+                    text.fontSize * Mathf.Abs(text.transform.lossyScale.y) / rootScale;
+        texts.Clear();
+        var metresPerUnit = width / root.rect.width;
+        var grow = ReadableText.Grow(
+            ReadableText.Median(textHeights, count) * metresPerUnit,
+            distance,
+            MaxTextGrowth
+        );
+        if (log)
+            Plugin.Log.LogInfo(
+                $"[ui.lobby] {window.name} docked {distance:0.00} m away, {count} text(s), width x{grow:0.00} to read"
+            );
+        return grow;
     }
 
     /// <summary>Kiosk centre and top from its mesh renderers (the meshes the game highlights on hover,

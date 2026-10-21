@@ -62,6 +62,15 @@ public class VRKeyboardTests
     }
 
     [Fact]
+    public void InputLine_ShowsTypedTextWithACaret()
+    {
+        Assert.Equal("ab|", InputLine.Show("ab", masked: false));
+        Assert.Equal("**|", InputLine.Show("ab", masked: true));
+        Assert.Equal("|", InputLine.Show(string.Empty, masked: false));
+        Assert.Equal("|", InputLine.Show(null, masked: true));
+    }
+
+    [Fact]
     public void TextEntry_RespectsLimit()
     {
         var t = new TextEntry { Limit = 3 };

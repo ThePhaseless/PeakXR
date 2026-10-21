@@ -90,6 +90,20 @@ namespace PeakXR.Core
         }
     }
 
+    /// <summary>The keyboard's input line: what has been typed (masked for passwords) and a caret, so an empty
+    /// field still shows where the text goes.</summary>
+    public static class InputLine
+    {
+        public const char Caret = '|';
+
+        public static string Show(string text, bool masked)
+        {
+            if (string.IsNullOrEmpty(text))
+                return "|";
+            return (masked ? new string('*', text.Length) : text) + Caret;
+        }
+    }
+
     /// <summary>Text typed into a platform text dialog that has no game input field behind it.</summary>
     public sealed class TextEntry
     {

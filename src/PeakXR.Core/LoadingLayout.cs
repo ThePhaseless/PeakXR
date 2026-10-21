@@ -27,18 +27,28 @@ public readonly struct LoadingLayout
     /// <summary>Height of the art's lowest point above the floor, in metres.</summary>
     public readonly float ContentBottom;
 
-    public LoadingLayout(float metersPerUnit, float centerHeight, float contentBottom)
+    /// <summary>Sideways shift of the canvas centre (metres, + to the viewer's right) that puts the art's middle
+    /// straight ahead.</summary>
+    public readonly float CenterX;
+
+    public LoadingLayout(
+        float metersPerUnit,
+        float centerHeight,
+        float contentBottom,
+        float centerX = 0f
+    )
     {
         MetersPerUnit = metersPerUnit;
         CenterHeight = centerHeight;
         ContentBottom = contentBottom;
+        CenterX = centerX;
     }
 
     /// <summary>
     /// Fits art spanning <paramref name="minX"/>..<paramref name="maxX"/>, <paramref name="minY"/>..
     /// <paramref name="maxY"/> (canvas units around the canvas centre). Never larger than the default scale
-    /// (<paramref name="defaultWidth"/> metres for <paramref name="canvasWidth"/> units); the art's centre goes to
-    /// eye height, then up if its bottom would sink below <see cref="FloorMargin"/>.
+    /// (<paramref name="defaultWidth"/> metres for <paramref name="canvasWidth"/> units); the art's centre goes
+    /// straight ahead at eye height, then up if its bottom would sink below <see cref="FloorMargin"/>.
     /// </summary>
     public static LoadingLayout Fit(
         float minX,
@@ -53,8 +63,9 @@ public readonly struct LoadingLayout
     {
         var mpu = canvasWidth > 0f ? defaultWidth / canvasWidth : 0.001f;
         var height = maxY - minY;
-        // The canvas centre stays straight ahead, so the wider side decides.
-        var halfWidth = MathF.Max(MathF.Abs(minX), MathF.Abs(maxX));
+        // The art's middle goes straight ahead (a screen composed off its canvas centre would sit to one side).
+        var halfWidth = (maxX - minX) * 0.5f;
+        var midX = (minX + maxX) * 0.5f;
         if (height <= 0f && halfWidth <= 0f)
             return new LoadingLayout(mpu, eyeHeight, eyeHeight);
 
@@ -72,7 +83,7 @@ public readonly struct LoadingLayout
             center += FloorMargin - bottom;
             bottom = FloorMargin;
         }
-        return new LoadingLayout(mpu, center, bottom);
+        return new LoadingLayout(mpu, center, bottom, -midX * mpu);
     }
 }
 

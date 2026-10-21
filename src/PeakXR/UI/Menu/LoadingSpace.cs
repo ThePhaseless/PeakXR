@@ -52,6 +52,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     // Skip ring: faint while the splash can be skipped, filling while a button is held.
     private const float SkipRingSize = 0.12f;
 
+    // Most a loading screen's text may grow: past this it would cover the art it labels.
+    private const float MaxTextGrowth = 3f;
+
     private GameObject space;
     private Transform origin;
     private Camera cam;
@@ -82,6 +85,8 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private readonly List<Color> inkedColors = new();
     private readonly List<Transform> layers = new();
     private readonly List<float> layerZ = new();
+    private readonly List<Transform> grown = new();
+    private readonly List<Vector3> grownScale = new();
     private readonly HashSet<int> seen = new();
     private static readonly Vector3[] Corners = new Vector3[4];
 
@@ -175,6 +180,11 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             }
         layers.Clear();
         layerZ.Clear();
+        for (int i = 0; i < grown.Count; i++)
+            if (grown[i] != null)
+                grown[i].localScale = grownScale[i];
+        grown.Clear();
+        grownScale.Clear();
     }
 
     /// <summary>The game's camera (old scene, then the new one) keeps rendering under the room until the load
@@ -248,7 +258,11 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         backing.Scan(canvas, fills, kept);
         var target = LoadingPalette.For(fills, destination);
         InkDarkArt(target);
+        // Fit once to know the scale, grow the text against it, then fit again so the grown text is inside the
+        // bounds (the second fit may shrink a little: the text then lands just under the minimum, never over the art).
         Fit((RectTransform)canvas.transform);
+        if (GrowText(canvas.transform))
+            Fit((RectTransform)canvas.transform);
         Spread(canvas);
         PlaceProgress();
         Plugin.Log.LogInfo(
@@ -257,6 +271,32 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
                 + $"art {layout.ContentBottom:0.00} m above the floor, palette horizon {target.Horizon} accent {target.Accent}"
         );
         BlendTo(target);
+    }
+
+    /// <summary>The fit shrinks the whole screen to a comfortable view, which leaves its text too small to read
+    /// (the plane screen's ring spells LOADING... five times round the globe by design, LoadingScreenAnimation.cs:29,
+    /// and reveals it with progress, :51). Each text grows about its own pivot to
+    /// <see cref="ReadableText.MinDegrees"/>; a ring (CircularTextMeshPro) stays a ring round the same centre.</summary>
+    private bool GrowText(Transform root)
+    {
+        var rootScale = Mathf.Abs(root.lossyScale.y);
+        if (rootScale < 1e-9f)
+            return false;
+        foreach (var g in kept)
+        {
+            if (g is not TMPro.TMP_Text text)
+                continue;
+            var t = text.transform;
+            var units = text.fontSize * Mathf.Abs(t.lossyScale.y) / rootScale;
+            var k = ReadableText.Grow(units * layout.MetersPerUnit, PanelDistance, MaxTextGrowth);
+            if (k <= 1.01f)
+                continue;
+            grown.Add(t);
+            grownScale.Add(t.localScale);
+            t.localScale *= k;
+            Plugin.Log.LogInfo($"[ui.menu] loading text '{t.name}' grown x{k:0.00}");
+        }
+        return grown.Count > 0;
     }
 
     private void InkDarkArt(LoadingPalette target)
@@ -340,7 +380,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             origin.position
             + anchor
             + Vector3.up * layout.CenterHeight
-            + facing * new Vector3(0f, 0f, PanelDistance);
+            + facing * new Vector3(layout.CenterX, 0f, PanelDistance);
         rotation = facing;
     }
 

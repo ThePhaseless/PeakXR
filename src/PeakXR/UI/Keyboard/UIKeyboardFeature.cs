@@ -31,13 +31,15 @@ public sealed class UIKeyboardFeature : Feature
         Distance = Plugin.Settings.Bind(
             section,
             "KeyboardDistance",
-            0.5f,
+            0.55f,
             Range(
                 "Distance of the keyboard from your head, in metres. Within arm's reach you can poke the keys.",
                 0.3f,
                 1.5f
             )
         );
+        // 0.5 m until the keyboard became a desk below the hands.
+        ConfigMigration.FromOldDefault(Distance, 0.5f);
         Width = Plugin.Settings.Bind(
             section,
             "KeyboardWidth",
@@ -47,9 +49,15 @@ public sealed class UIKeyboardFeature : Feature
         Tilt = Plugin.Settings.Bind(
             section,
             "KeyboardTilt",
-            30f,
-            Range("Degrees below eye level where the keyboard appears.", 0f, 60f)
+            40f,
+            Range(
+                "Degrees below eye level where the keyboard appears. It lies back like a desk, below where your hands point.",
+                0f,
+                60f
+            )
         );
+        // 30 degrees until the keyboard became a desk below the hands.
+        ConfigMigration.FromOldDefault(Tilt, 30f);
         Poke = Plugin.Settings.Bind(
             section,
             "PokeKeys",

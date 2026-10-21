@@ -82,6 +82,24 @@ public class LoadingLayoutTests
     }
 
     [Fact]
+    public void ArtOffTheCanvasCentreIsCentredInFrontOfTheEyes()
+    {
+        // Art drawn right of the canvas centre: the panel shifts left so the art's middle is straight ahead.
+        var l = Fit(200f, 1000f, -100f, 100f);
+        TestUtil.Near(-600f * l.MetersPerUnit, l.CenterX);
+        TestUtil.Near(2.4f / Width, l.MetersPerUnit);
+    }
+
+    [Fact]
+    public void LopsidedWideArtFitsByItsOwnWidth()
+    {
+        // 0..8000 is 8000 wide: centred, each half is 4000, not the 8000 a canvas-centred fit would see.
+        var l = Fit(0f, 8000f, -10f, 10f);
+        var halfAngle = MathF.Atan(4000f * l.MetersPerUnit / 3f) * 180f / MathF.PI;
+        TestUtil.Near(LoadingLayout.MaxHalfAngleH, halfAngle, 0.01f);
+    }
+
+    [Fact]
     public void EmptyContentUsesTheDefaults()
     {
         var l = Fit(0f, 0f, 0f, 0f);
