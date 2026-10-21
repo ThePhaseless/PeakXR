@@ -447,8 +447,8 @@ internal sealed class SpatialBox
     private static bool IsCopy(Material m) => copies.Contains(m);
 
     /// <summary>One shared copy per source material and halo shade that skips the depth test (uGUI and TMP shaders
-    /// read their ZTest from <c>unity_GUIZTestMode</c>). Text also gets <see cref="TextHalo"/>'s thin contrasting
-    /// outline unless the game already outlines it, so it reads on bright sand and snow without a panel.</summary>
+    /// read their ZTest from <c>unity_GUIZTestMode</c>). Text also gets <see cref="TextHalo"/>'s contrasting halo
+    /// unless the game already outlines it, so it reads on bright sand and snow without a panel.</summary>
     private static Material OnTop(Material source, bool light, bool halo)
     {
         var key = (source, halo && light);
@@ -457,7 +457,7 @@ internal sealed class SpatialBox
         copy = new Material(source) { name = source.name + " (PeakXR on top)" };
         copy.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         if (halo && source.HasProperty(OutlineWidth) && source.GetFloat(OutlineWidth) < 0.1f)
-            TextHalo.Outline(copy, light);
+            TextHalo.Halo(copy, light);
         onTop[key] = copy;
         copies.Add(copy);
         return copy;
