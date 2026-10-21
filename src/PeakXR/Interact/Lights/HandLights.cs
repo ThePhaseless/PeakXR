@@ -125,7 +125,7 @@ internal static class HandLights
 
     /// <summary>Flare, candle and lantern all keep their on state in the FlareActive item data
     /// (Flare.cs:57, Candle.cs:192, Lantern.cs:208); the torch has no on state.</summary>
-    private static bool IsLit(Item item) =>
+    internal static bool IsLit(Item item) =>
         item.HasData(DataEntryKey.FlareActive)
         && item.GetData<BoolItemData>(DataEntryKey.FlareActive).Value;
 
