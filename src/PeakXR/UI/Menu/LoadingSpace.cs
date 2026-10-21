@@ -258,8 +258,11 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         backing.Scan(canvas, fills, kept);
         var target = LoadingPalette.For(fills, destination);
         InkDarkArt(target);
+        // Fit once to know the scale, grow the text against it, then fit again so the grown text is inside the
+        // bounds (the second fit may shrink a little: the text then lands just under the minimum, never over the art).
         Fit((RectTransform)canvas.transform);
-        GrowText(canvas.transform);
+        if (GrowText(canvas.transform))
+            Fit((RectTransform)canvas.transform);
         Spread(canvas);
         PlaceProgress();
         Plugin.Log.LogInfo(
@@ -274,11 +277,11 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     /// (the plane screen's ring spells LOADING... five times round the globe by design, LoadingScreenAnimation.cs:29,
     /// and reveals it with progress, :51). Each text grows about its own pivot to
     /// <see cref="ReadableText.MinDegrees"/>; a ring (CircularTextMeshPro) stays a ring round the same centre.</summary>
-    private void GrowText(Transform root)
+    private bool GrowText(Transform root)
     {
         var rootScale = Mathf.Abs(root.lossyScale.y);
         if (rootScale < 1e-9f)
-            return;
+            return false;
         foreach (var g in kept)
         {
             if (g is not TMPro.TMP_Text text)
@@ -293,6 +296,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             t.localScale *= k;
             Plugin.Log.LogInfo($"[ui.menu] loading text '{t.name}' grown x{k:0.00}");
         }
+        return grown.Count > 0;
     }
 
     private void InkDarkArt(LoadingPalette target)

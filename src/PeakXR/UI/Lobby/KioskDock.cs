@@ -31,9 +31,18 @@ internal sealed class KioskDock : ICanvasPlacement
         public Vector3 Position;
         public Quaternion Rotation;
 
-        /// <summary>Width factor that makes the panel's body text readable from where it docked.</summary>
+        /// <summary>Width factor that makes the shown window's body text readable from where it docked.</summary>
         public float Grow = 1f;
+
+        /// <summary>Which window <see cref="Grow"/> was measured for (the options or the pass), and whether it
+        /// is final: texts fading in at open are measured again until <see cref="SettleUntil"/>.</summary>
+        public bool MeasuredOptions,
+            Settled;
+        public float SettleUntil;
     }
+
+    /// <summary>BoardingPass.OnOpen fades the pass in over 0.5 s (A/BoardingPass.cs:147): measure until then.</summary>
+    private const float SettleSeconds = 0.6f;
 
     /// <summary>Most a kiosk panel may grow past its width setting to make its text readable.</summary>
     private const float MaxTextGrowth = 2f;
@@ -105,14 +114,31 @@ internal sealed class KioskDock : ICanvasPlacement
                 || (slot.Position - head).sqrMagnitude > RedockDistanceSqr
             )
         )
-            Dock(slot, kiosk, head, nudge: !hasPass, canvas);
+            Dock(slot, kiosk, head, nudge: !hasPass);
         slot.WasOpen = open;
         if (!slot.Docked)
             return PlacementResult.Default;
 
+        var width = optionsOpen ? cfg.OptionsWidth.Value : cfg.PassWidth.Value;
+        if (slot.MeasuredOptions != optionsOpen)
+        {
+            slot.MeasuredOptions = optionsOpen;
+            Unsettle(slot);
+        }
+        if (open && !slot.Settled)
+        {
+            slot.Settled = Time.unscaledTime >= slot.SettleUntil;
+            slot.Grow = TextGrowth(
+                canvas,
+                optionsOpen ? options.transform : pass.transform,
+                width,
+                Vector3.Distance(head, slot.Position),
+                slot.Settled
+            );
+        }
         position = slot.Position;
         rotation = slot.Rotation;
-        widthMeters = (optionsOpen ? cfg.OptionsWidth.Value : cfg.PassWidth.Value) * slot.Grow;
+        widthMeters = width * slot.Grow;
         return PlacementResult.Placed;
     }
 
@@ -120,7 +146,13 @@ internal sealed class KioskDock : ICanvasPlacement
     private static bool Holds(Transform canvas, Transform window) =>
         window.IsChildOf(canvas) || canvas.IsChildOf(window);
 
-    private void Dock(Slot slot, AirportCheckInKiosk kiosk, Vector3 head, bool nudge, Canvas canvas)
+    private static void Unsettle(Slot slot)
+    {
+        slot.Settled = false;
+        slot.SettleUntil = Time.unscaledTime + SettleSeconds;
+    }
+
+    private void Dock(Slot slot, AirportCheckInKiosk kiosk, Vector3 head, bool nudge)
     {
         if (measured != kiosk)
         {
@@ -145,19 +177,19 @@ internal sealed class KioskDock : ICanvasPlacement
         slot.Rotation = Quaternion.LookRotation(forward, Vector3.up);
         slot.Kiosk = kiosk;
         slot.Docked = true;
-        var width = nudge ? cfg.OptionsWidth.Value : cfg.PassWidth.Value;
-        slot.Grow = TextGrowth(canvas, width, Vector3.Distance(head, position));
+        Unsettle(slot);
     }
 
-    /// <summary>Width factor that brings the canvas's median font size to <see cref="ReadableText.MinDegrees"/>
-    /// at <paramref name="distance"/> when the canvas is <paramref name="width"/> metres wide. Once per dock.</summary>
-    private float TextGrowth(Canvas canvas, float width, float distance)
+    /// <summary>Width factor that brings the median font size of <paramref name="window"/> to
+    /// <see cref="ReadableText.MinDegrees"/> at <paramref name="distance"/> when its canvas is
+    /// <paramref name="width"/> metres wide. Only while a window opens, never once it has settled.</summary>
+    private float TextGrowth(Canvas canvas, Transform window, float width, float distance, bool log)
     {
         var root = (RectTransform)canvas.transform;
         var rootScale = Mathf.Abs(root.lossyScale.y);
         if (root.rect.width <= 0f || rootScale < 1e-9f)
             return 1f;
-        canvas.GetComponentsInChildren(false, texts);
+        window.GetComponentsInChildren(false, texts);
         int count = 0;
         foreach (var text in texts)
             if (text.isActiveAndEnabled && count < textHeights.Length)
@@ -170,9 +202,10 @@ internal sealed class KioskDock : ICanvasPlacement
             distance,
             MaxTextGrowth
         );
-        Plugin.Log.LogInfo(
-            $"[ui.lobby] {canvas.name} docked {distance:0.00} m away, {count} text(s), width x{grow:0.00} to read"
-        );
+        if (log)
+            Plugin.Log.LogInfo(
+                $"[ui.lobby] {window.name} docked {distance:0.00} m away, {count} text(s), width x{grow:0.00} to read"
+            );
         return grow;
     }
 
