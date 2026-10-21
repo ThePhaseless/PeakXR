@@ -26,10 +26,13 @@ internal sealed class HeldGauges
     private Image fuelImage;
     private GUIManager spriteFrom;
     private float shownFuel = -1f;
-    private bool fuelVisible;
+    private bool fuelVisible,
+        ropeShown;
+    private int ropeCentre;
 
     public void Release()
     {
+        ropeShown = false;
         rope.Restore();
         throwBar.Restore();
         SetFuel(false);
@@ -37,6 +40,7 @@ internal sealed class HeldGauges
 
     public void Forget()
     {
+        ropeShown = false;
         rope.Forget();
         throwBar.Forget();
         spriteFrom = null;
@@ -53,6 +57,18 @@ internal sealed class HeldGauges
         {
             throwBar.Move(hudRoot, gui.throwGO.transform, Vector2.zero);
             throwBar.SetVisible(true);
+        }
+        // UI_Rope draws its coil and length text far from its rect's centre (they sat 0.6 m off, on the ground, while
+        // the rect was beside the spool): centre the drawn text on the box origin each time it shows, for a few
+        // frames while the game writes the length. Stack is idempotent once centred.
+        bool ropeOn = rope.Holding && rope.Item(0) != null && rope.Item(0).gameObject.activeSelf;
+        if (ropeOn && !ropeShown)
+            ropeCentre = 3;
+        ropeShown = ropeOn;
+        if (ropeOn && ropeCentre > 0)
+        {
+            ropeCentre--;
+            rope.Stack(0f);
         }
         if (spriteFrom != gui)
         {

@@ -34,14 +34,15 @@ internal sealed class TargetPrompt
     private const int RestackFrames = 3;
 
     private static readonly List<Renderer> renderers = new();
-    private static readonly List<TMPro.TMP_Text> texts = new();
     private static TargetPrompt current;
 
     private readonly SpatialBox box = new("PeakXR_TargetPrompt");
     private readonly GameObject[] parts = new GameObject[Parts];
     private readonly bool[] shown = new bool[Parts];
     private IInteractible target;
+    private Item heldItem;
     private float radius = 0.1f,
+        heldRadius,
         height;
     private bool anyShown,
         warned;
@@ -148,6 +149,13 @@ internal sealed class TargetPrompt
         if (resolvedFrame == Time.frameCount)
             return;
         resolvedFrame = Time.frameCount;
+        var c = Character.localCharacter;
+        var held = c != null ? c.data.currentItem : null;
+        if (held != heldItem)
+        {
+            heldItem = held;
+            heldRadius = held != null ? Radius(held) : 0f;
+        }
         var interaction = Interaction.instance;
         var hovered = interaction != null ? interaction.currentHovered : null;
         if (!hovered.UnityObjectExists())
@@ -157,7 +165,7 @@ internal sealed class TargetPrompt
         target = hovered;
         if (target == null)
             return;
-        radius = Radius(target);
+        radius = target is Component comp ? Radius(comp) : 0.1f;
         restack = RestackFrames;
         var aim = PhysicalInteraction.AimHand;
         if (aim >= 0)
@@ -171,12 +179,21 @@ internal sealed class TargetPrompt
         if (!target.UnityObjectExists())
             return false;
         var eye = rig.Head.position;
+        // Clear the label's lower edge, or the ring under it while a held interaction runs (TryRing).
+        var interaction = Interaction.instance;
+        var below = height * 0.5f * SpatialRuntime.DegreesPerPixel;
+        if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, target))
+            below += RingDegrees * 1.2f;
+        // Clear of the item in your hand too (food held over a fire), unless that item is the target.
+        bool avoid = heldItem != null && !ReferenceEquals(heldItem, target);
         position = SpatialMath
             .TargetLabel(
                 target.Center().ToNumerics(),
                 eye.ToNumerics(),
                 radius,
-                height * 0.5f * SpatialRuntime.DegreesPerPixel
+                below,
+                avoid ? heldItem.Center().ToNumerics() : default,
+                avoid ? heldRadius : 0f
             )
             .ToUnity();
         distance = Vector3.Distance(position, eye);
@@ -199,7 +216,7 @@ internal sealed class TargetPrompt
             if (parts[i] != null)
             {
                 box.Move(hudRoot, parts[i].transform, Vector2.zero);
-                Enlarge(parts[i].transform);
+                SpatialBox.Enlarge(parts[i].transform, MinFontPixels);
                 // Name and action prompts: the dark smudge behind the text is a monitor backing (and key art); the
                 // hold progress shows as ui.hand's ring under the label.
                 if (i <= 3)
@@ -221,27 +238,11 @@ internal sealed class TargetPrompt
         height = box.Stack(Spacing);
     }
 
-    /// <summary>Scales a part up until its largest text is <see cref="MinFontPixels"/>; the box restores the scale.</summary>
-    private static void Enlarge(Transform part)
+    /// <summary>Rough size of a target or held item from its renderers, measured once per change: half its largest
+    /// dimension. The box's half diagonal overstated a round item by up to 1.7 times, which lifted the label of an
+    /// Apple 0.8 m away 32 degrees, out of view.</summary>
+    private static float Radius(Component comp)
     {
-        part.GetComponentsInChildren(true, texts);
-        float size = 0f;
-        foreach (var t in texts)
-        {
-            // Hidden key glyphs do not count.
-            if (t.enabled)
-                size = Mathf.Max(size, t.fontSize);
-        }
-        texts.Clear();
-        if (size > 0f && size < MinFontPixels)
-            part.localScale *= MinFontPixels / size;
-    }
-
-    /// <summary>Rough size of the target from its renderers, measured once per new target.</summary>
-    private static float Radius(IInteractible target)
-    {
-        if (target is not Component comp)
-            return 0.1f;
         comp.GetComponentsInChildren(false, renderers);
         bool any = false;
         var bounds = default(Bounds);
@@ -256,6 +257,7 @@ internal sealed class TargetPrompt
             any = true;
         }
         renderers.Clear();
-        return any ? bounds.extents.magnitude : 0.1f;
+        var e = bounds.extents;
+        return any ? Mathf.Max(e.x, Mathf.Max(e.y, e.z)) : 0.1f;
     }
 }

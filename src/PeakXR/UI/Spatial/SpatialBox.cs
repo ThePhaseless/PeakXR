@@ -112,6 +112,24 @@ internal sealed class SpatialBox
             item.anchoredPosition = at;
     }
 
+    /// <summary>Scales a moved part up until its largest text is <paramref name="minPixels"/> box pixels: the game
+    /// sizes HUD text for a monitor, where it reads as specks out in the world. <see cref="Restore"/> puts the scale
+    /// back.</summary>
+    public static void Enlarge(Transform part, float minPixels)
+    {
+        part.GetComponentsInChildren(true, texts);
+        float size = 0f;
+        foreach (var t in texts)
+        {
+            // Hidden key glyphs do not count.
+            if (t.enabled)
+                size = Mathf.Max(size, t.fontSize);
+        }
+        texts.Clear();
+        if (size > 0f && size < minPixels)
+            part.localScale *= minPixels / size;
+    }
+
     /// <summary>Shifts every part so the centre of <paramref name="focus"/> (a part or a child of one) sits at the
     /// box origin, which is where <see cref="Pose"/> puts it.</summary>
     public void CenterOn(RectTransform focus)
