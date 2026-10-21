@@ -78,7 +78,7 @@ internal sealed partial class SelfTestRunner
         var left = default(ArmSample);
         var right = default(ArmSample);
         yield return SampleArms(c, driver, () => left, v => left = v, () => right, v => right = v);
-        yield return Shot("vr.08-arm-reach");
+        yield return ShotAt("vr.08-arm-reach", HandsMid());
 
         var parts = c.refs.ragdoll.partDict;
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
@@ -189,7 +189,8 @@ internal sealed partial class SelfTestRunner
             if (!shot && Now - start > 1f)
             {
                 shot = true;
-                yield return Shot("vr.33-ragdoll-arms");
+                // From 1.5 m in front of the chest: frames the limp arms whether or not the view has detached.
+                yield return ShotAt("vr.33-ragdoll-arms", torso.Rig.position, 1.5f);
                 continue;
             }
             yield return null;
@@ -230,6 +231,7 @@ internal sealed partial class SelfTestRunner
         var left = default(ArmSample);
         var right = default(ArmSample);
         yield return SampleArms(c, driver, () => left, v => left = v, () => right, v => right = v);
+        yield return ShotAt("vr.33-ragdoll-arms-after", HandsMid());
         bool idle = VRInput.TestOverride == IdleHands;
         notes.Add(idle ? "idle hands" : "live controllers, arms not judged");
         JudgeArm(c, "L", true, left, idle, fails, notes);
@@ -307,6 +309,7 @@ internal sealed partial class SelfTestRunner
         }
         if (checkedSlots == 0)
             fails.Add("no hotbar slots laid out");
+        yield return ShotAt("vr-09-belt-view", eye + down);
         Conclude(fails, notes);
     }
 

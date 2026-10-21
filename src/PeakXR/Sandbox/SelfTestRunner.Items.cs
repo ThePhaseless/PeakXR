@@ -134,6 +134,7 @@ internal sealed partial class SelfTestRunner
         float progress = 0f;
         float end = Now + item.usingTimePrimary + 4f;
         bool used = false;
+        bool shot = false;
         while (Now < end)
         {
             if (
@@ -146,6 +147,13 @@ internal sealed partial class SelfTestRunner
                 break;
             }
             progress = Mathf.Max(progress, item.castProgress);
+            if (!shot && progress > 0.3f)
+            {
+                // The hold ring sits above the acting hand, which is at the chest, under the view.
+                shot = true;
+                yield return ShotAt("vr-22-bandage", VRRig.Instance.Hand(left).position);
+                continue;
+            }
             yield return null;
         }
         var note = $"{prefab.name}: cast progress {progress:0.00}, used {used}";
@@ -646,7 +654,7 @@ internal sealed partial class SelfTestRunner
             if (!shot && progress > 0.3f)
             {
                 shot = true;
-                yield return Shot("vr-25-cook");
+                yield return ShotAt("vr-25-cook", food.Center());
                 continue;
             }
             yield return null;

@@ -177,7 +177,7 @@ internal sealed partial class SelfTestRunner
         var fails = new List<string>();
         if (LocalHold.ItemInLeftHand != left || pose.ItemInLeftHand != left)
             fails.Add($"item not in the {(left ? "left" : "right")} hand");
-        yield return Shot(left ? "vr-11-grab-left" : "vr-10-grab-right");
+        yield return ShotAt(left ? "vr-11-grab-left" : "vr-10-grab-right", HeldItem().Center());
 
         yield return GripTo(left, 0f, 0.4f);
         yield return Wait(1f);
@@ -245,7 +245,8 @@ internal sealed partial class SelfTestRunner
             if (!shot && progress > 0.3f)
             {
                 shot = true;
-                yield return Shot("vr-12-eat");
+                // The item is at the mouth, under the eye: back off to frame the hand and the item.
+                yield return ShotAt("vr-12-eat", item.Center(), 0.45f);
                 continue;
             }
             yield return null;
@@ -322,7 +323,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         yield return Wait(0.25f);
-        yield return Shot("vr-13-throw");
+        yield return ShotAt("vr-13-throw", thrown != null ? thrown.Center() : HandsMid());
         float still = 0f;
         float end = Now + 5f;
         while (thrown != null && Now < end && still < 0.3f)
@@ -429,7 +430,7 @@ internal sealed partial class SelfTestRunner
         yield return null;
         yield return null;
         bool posed = PoseOf(c).TwoHandHold;
-        yield return Shot("vr-14-two-hand");
+        yield return ShotAt("vr-14-two-hand", held != null ? held.Center() : HandsMid());
         yield return GripTo(free, 0f, 0.2f);
         yield return WaitFor(() => !LocalHold.TwoHand, 2f);
         var note =
@@ -633,7 +634,10 @@ internal sealed partial class SelfTestRunner
                 closed++;
             yield return null;
         }
-        yield return Shot("vr-29-ground-backpack");
+        yield return ShotAt(
+            "vr-29-ground-backpack",
+            CentreOf(GUIManager.instance.backpackWheel.transform)
+        );
         yield return GripTo(left, 0f, 0.1f);
         yield return Until(
             () => !c.data.usingBackpackWheel,
@@ -760,7 +764,7 @@ internal sealed partial class SelfTestRunner
             Fail("no wheel pocket offered the stash");
             yield break;
         }
-        yield return Shot("vr-32-shoulder-stash");
+        yield return ShotAt("vr-32-shoulder-stash", CentreOf(wheel.transform));
         yield return GripTo(reach, 0f, 0.1f);
         yield return Until(
             () => !c.data.usingBackpackWheel && HeldItem() == null,
@@ -815,7 +819,7 @@ internal sealed partial class SelfTestRunner
         string chosen =
             wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
         var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
-        yield return Shot("vr-18-emote-wheel");
+        yield return ShotAt("vr-18-emote-wheel", CentreOf(gui.emoteWheel.transform));
         Script(hand).Secondary = false;
         yield return Until(
             () => !gui.emoteWheel.activeInHierarchy,
@@ -1008,7 +1012,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var itemSlot = c.player.GetItemSlot(selected.Value);
         bool inSlot = itemSlot != null && !itemSlot.IsEmpty() && itemSlot.prefab.itemID == id;
-        yield return Shot("vr-20-holster");
+        yield return ShotAt("vr-20-holster", rig.Origin.TransformPoint(inv.Anchor(slot)));
         if (!inSlot)
         {
             Fail($"hotbar slot {selected.Value} does not hold the item");

@@ -163,6 +163,14 @@ internal sealed partial class SelfTestRunner
             && Affordance.LastLeft == left;
         while (Now < end && !Got())
             yield return null;
+        // Shot while the trigger is still held, so the red preview and the reason label are up, aimed at the denial.
+        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+        yield return ShotAt(
+            "vr-6x-deny-" + expected,
+            Affordance.Count > before ? Affordance.LastPosition
+                : hand != null ? hand.position
+                : HandsMid()
+        );
         Script(left).Trigger = 0f;
         Script(left).TriggerTouch = false;
         var note =
@@ -174,6 +182,5 @@ internal sealed partial class SelfTestRunner
             Fail($"expected {expected} on the {(left ? "left" : "right")} hand: {note}");
         else
             stepNote = note;
-        yield return Shot("vr-6x-deny-" + expected);
     }
 }
