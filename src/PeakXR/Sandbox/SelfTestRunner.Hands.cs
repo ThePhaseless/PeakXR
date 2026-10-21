@@ -835,6 +835,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return Until(() => Holding(item), 5f, "given item not in hand");
+        // As master the give equips synchronously, so Until can pass before CharacterInput.Sample's
+        // PhysicalInteraction.TrackHeldItem picks the holding hand: wait one Update so LocalHold.ItemInLeftHand is current.
+        yield return null;
         if (stepOk)
             spawned.Add(HeldItem().gameObject);
     }
