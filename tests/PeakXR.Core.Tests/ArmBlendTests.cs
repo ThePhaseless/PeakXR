@@ -26,9 +26,9 @@ public class ArmBlendTests
     {
         var b = new ArmBlend();
         Assert.Equal(0f, b.Weight);
-        Run(b, true, b.ReturnSeconds * 0.5f);
+        Run(b, true, ArmBlend.ReturnSeconds * 0.5f);
         Assert.InRange(b.Weight, 0.1f, 0.9f);
-        Run(b, true, b.ReturnSeconds);
+        Run(b, true, ArmBlend.ReturnSeconds);
         Assert.Equal(1f, b.Weight);
     }
 
@@ -37,7 +37,7 @@ public class ArmBlendTests
     {
         var b = new ArmBlend();
         Run(b, true, 1f);
-        Run(b, false, b.ReleaseSeconds + 0.02f);
+        Run(b, false, ArmBlend.ReleaseSeconds + 0.02f);
         Assert.Equal(0f, b.Weight);
     }
 
@@ -65,7 +65,7 @@ public class ArmBlendTests
                 last = b.Weight;
             }
         // Smoothstep's steepest slope is 1.5x the linear rate of the faster (release) fade.
-        Assert.True(maxStep <= 1.5f * dt / b.ReleaseSeconds + 1e-4f, $"step {maxStep}");
+        Assert.True(maxStep <= 1.5f * dt / ArmBlend.ReleaseSeconds + 1e-4f, $"step {maxStep}");
     }
 
     [Fact]

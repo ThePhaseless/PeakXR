@@ -25,6 +25,13 @@ internal sealed partial class SelfTestRunner
 {
     const float MaxArmStretch = 1.15f;
 
+    /// <summary>Seconds a step waits for the arms to be tracked (the beach spawn ragdoll included).</summary>
+    const float ArmTrackedWait = 12f;
+
+    /// <summary>Elbow bend component along the body's back that fails an idle arm. The elbow hint itself points
+    /// about 0.26 back (<see cref="ArmMath.ElbowHint"/>); an arm twisted behind the torso reads about 0.75.</summary>
+    const float MaxElbowBack = 0.5f;
+
     /// <summary>Mean wrist-to-target error that fails an idle, empty hand: each hand follows only its controller.</summary>
     const float MaxIdleTargetError = 0.15f;
     const int ArmSamples = 50;
@@ -54,18 +61,23 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool idle = VRInput.TestOverride == IdleHands;
+        // The beach spawn ragdolls the body (Fall(7f), Character.cs:2039) and the arms only take the tracked hands
+        // once the body is up again.
+        float waitStart = Now;
+        yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
+        notes.Add(F($"arms tracked after {Now - waitStart:0.0} s"));
+        if (driver.ArmWeight < 1f)
+        {
+            fails.Add(F($"arm weight {driver.ArmWeight:0.00} after {ArmTrackedWait:0} s"));
+            Conclude(fails, notes);
+            yield break;
+        }
         // Let the arms settle on the current hands before measuring.
         yield return Wait(1f);
 
-        var fixedWait = new WaitForFixedUpdate();
         var left = default(ArmSample);
         var right = default(ArmSample);
-        for (int i = 0; i < ArmSamples; i++)
-        {
-            yield return fixedWait;
-            SampleArm(c, driver, true, ref left);
-            SampleArm(c, driver, false, ref right);
-        }
+        yield return SampleArms(c, driver, () => left, v => left = v, () => right, v => right = v);
         yield return Shot("vr.08-arm-reach");
 
         var parts = c.refs.ragdoll.partDict;
@@ -121,7 +133,9 @@ internal sealed partial class SelfTestRunner
     /// animated pose, so tracked IK must let go: <see cref="AvatarPoseDriver.ArmWeight"/> reaches 0 within 1 s, the
     /// ragdoll hands stay within <see cref="MaxRagdollHandFromChest"/> of the chest, the tracked hand targets stay
     /// within <see cref="MaxHandTargetFromHip"/> of the hip even when the view detaches, and the arms are tracked
-    /// again within 6 s of the fall ending.
+    /// again within 6 s of the fall ending. With <c>Camera.TakeoverView</c> ThirdPerson and <c>DetachOnRagdoll</c> on,
+    /// the view must detach during the fall, so the held-hands path runs. Once tracked again, each arm is judged as in
+    /// vr.08: an arm left twisted behind the torso fails.
     /// </summary>
     IEnumerator RagdollArmsCheck()
     {
@@ -195,12 +209,31 @@ internal sealed partial class SelfTestRunner
             fails.Add(
                 F($"hand target {targetMax:0.00} m from the hip > {MaxHandTargetFromHip:0.00} m")
             );
+        bool expectDetach =
+            Rig.CameraFeature.DetachOnRagdoll.Value
+            && Rig.CameraFeature.TakeoverViewEntry.Value == TakeoverView.ThirdPerson;
+        if (expectDetach && !detached)
+            fails.Add("view never detached during the fall with DetachOnRagdoll on");
 
         float upAt = Now;
         yield return WaitFor(() => driver.ArmWeight >= 1f, 6f);
         notes.Add(F($"arms tracked again {Now - upAt:0.00} s after the fall"));
         if (driver.ArmWeight < 1f)
+        {
             fails.Add(F($"arm weight {driver.ArmWeight:0.00} 6 s after the fall"));
+            Conclude(fails, notes);
+            yield break;
+        }
+
+        // The arms are back on the tracked hands: none may stay twisted behind the torso.
+        yield return Wait(1f);
+        var left = default(ArmSample);
+        var right = default(ArmSample);
+        yield return SampleArms(c, driver, () => left, v => left = v, () => right, v => right = v);
+        bool idle = VRInput.TestOverride == IdleHands;
+        notes.Add(idle ? "idle hands" : "live controllers, arms not judged");
+        JudgeArm(c, "L", true, left, idle, fails, notes);
+        JudgeArm(c, "R", false, right, idle, fails, notes);
         Conclude(fails, notes);
     }
 
@@ -388,6 +421,31 @@ internal sealed partial class SelfTestRunner
             fails.Add(F($"{side} arm stretched x{s.MaxStretch:0.00} > x{MaxArmStretch:0.00}"));
         if (up > 0f)
             fails.Add(F($"{side} elbow points up ({up:0.00})"));
+        if (back > MaxElbowBack)
+            fails.Add(F($"{side} elbow points back ({back:0.00} > {MaxElbowBack:0.00})"));
+    }
+
+    /// <summary>Samples both arms for <see cref="ArmSamples"/> physics ticks.</summary>
+    static IEnumerator SampleArms(
+        Character c,
+        AvatarPoseDriver driver,
+        Func<ArmSample> getLeft,
+        Action<ArmSample> setLeft,
+        Func<ArmSample> getRight,
+        Action<ArmSample> setRight
+    )
+    {
+        var fixedWait = new WaitForFixedUpdate();
+        for (int i = 0; i < ArmSamples; i++)
+        {
+            yield return fixedWait;
+            var l = getLeft();
+            var r = getRight();
+            SampleArm(c, driver, true, ref l);
+            SampleArm(c, driver, false, ref r);
+            setLeft(l);
+            setRight(r);
+        }
     }
 
     /// <summary>What may hold a ragdoll hand off its target: welds on the hand body (an item joint, or one whose

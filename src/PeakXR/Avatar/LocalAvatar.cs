@@ -10,8 +10,8 @@ namespace PeakXR.Avatar;
 /// frame and feeds the character's <see cref="AvatarPoseDriver"/>. Runs late so the rig has its pose for this
 /// frame; the driver applies it on the next physics tick like any other character's pose.
 /// While the view is detached from the body (third person, spectate, cutscene) the controllers are near the view,
-/// metres from the body, so the hands hold their last tracked place on the body instead (for the local IK and for
-/// peers alike).
+/// metres from the body, so the head and hands hold their last tracked place on the body instead (for the local IK
+/// and for peers alike).
 /// </summary>
 [DefaultExecutionOrder(1000)]
 internal sealed class LocalAvatar : MonoBehaviour
@@ -24,15 +24,31 @@ internal sealed class LocalAvatar : MonoBehaviour
     private string lastBodyMode;
     private bool lastActive;
 
-    /// <summary>Last fully tracked hands in the body frame (physical hip, look yaw), held while the view is detached.</summary>
-    private BodyHand heldLeft;
-    private BodyHand heldRight;
+    /// <summary>Last fully tracked head and hands in the body frame (physical hip, look yaw), held while the view is
+    /// detached.</summary>
+    private BodyPoint heldHead;
+    private BodyPoint heldLeft;
+    private BodyPoint heldRight;
 
-    private struct BodyHand
+    private struct BodyPoint
     {
         public bool Valid;
         public Vector3 Position;
         public Quaternion Rotation;
+
+        public BodyPoint(bool valid, Vector3 p, Quaternion r, Vector3 root, Quaternion inv)
+        {
+            Valid = valid;
+            Position = inv * (p - root);
+            Rotation = inv * r;
+        }
+
+        public bool ToWorld(Vector3 root, Quaternion yaw, out Vector3 p, out Quaternion r)
+        {
+            p = root + yaw * Position;
+            r = yaw * Rotation;
+            return Valid;
+        }
     }
 
     /// <summary>Raw finger curls from a controller's analog and touch inputs (no grip presets).</summary>
@@ -97,8 +113,8 @@ internal sealed class LocalAvatar : MonoBehaviour
         driver.SetPose(pose);
     }
 
-    /// <summary>On the body: remember the hands in the body frame while the arms are fully tracked. Detached: put the
-    /// remembered hands back on the body where it is now.</summary>
+    /// <summary>On the body: remember the head and hands in the body frame while the arms are fully tracked.
+    /// Detached: put them back on the body where it is now.</summary>
     private void HoldHandsOnBody(ref AvatarPose pose)
     {
         var hip = character.refs.hip;
@@ -111,26 +127,36 @@ internal sealed class LocalAvatar : MonoBehaviour
             if (driver.ArmWeight < 1f)
                 return;
             var inv = Quaternion.Inverse(yaw);
-            heldLeft = new BodyHand
-            {
-                Valid = pose.HasLeftHand,
-                Position = inv * (pose.LeftHandPosition - root),
-                Rotation = inv * pose.LeftHandRotation,
-            };
-            heldRight = new BodyHand
-            {
-                Valid = pose.HasRightHand,
-                Position = inv * (pose.RightHandPosition - root),
-                Rotation = inv * pose.RightHandRotation,
-            };
+            heldHead = new(pose.HasHead, pose.HeadPosition, pose.HeadRotation, root, inv);
+            heldLeft = new(
+                pose.HasLeftHand,
+                pose.LeftHandPosition,
+                pose.LeftHandRotation,
+                root,
+                inv
+            );
+            heldRight = new(
+                pose.HasRightHand,
+                pose.RightHandPosition,
+                pose.RightHandRotation,
+                root,
+                inv
+            );
             return;
         }
-        pose.HasLeftHand = heldLeft.Valid;
-        pose.LeftHandPosition = root + yaw * heldLeft.Position;
-        pose.LeftHandRotation = yaw * heldLeft.Rotation;
-        pose.HasRightHand = heldRight.Valid;
-        pose.RightHandPosition = root + yaw * heldRight.Position;
-        pose.RightHandRotation = yaw * heldRight.Rotation;
+        pose.HasHead = heldHead.ToWorld(root, yaw, out pose.HeadPosition, out pose.HeadRotation);
+        pose.HasLeftHand = heldLeft.ToWorld(
+            root,
+            yaw,
+            out pose.LeftHandPosition,
+            out pose.LeftHandRotation
+        );
+        pose.HasRightHand = heldRight.ToWorld(
+            root,
+            yaw,
+            out pose.RightHandPosition,
+            out pose.RightHandRotation
+        );
     }
 
     private static HandRole Role(bool holding, bool left)

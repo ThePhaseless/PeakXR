@@ -438,19 +438,10 @@ internal sealed class NetPoseSync
     }
 
     /// <summary>
-    /// Dead, passed out, falling or carried characters are ragdolls (CharacterData.GetTargetRagdollControll,
+    /// Dead, passed out, falling, carried or low-control characters are ragdolls (CharacterData.GetTargetRagdollControll,
     /// CharacterData.cs:485); a tracked pose would fight the physics, so it is not applied or sent.
     /// </summary>
-    static bool IsRagdolled(Character c)
-    {
-        var d = c.data;
-        return d == null
-            || d.dead
-            || d.passedOut
-            || d.fullyPassedOut
-            || d.fallSeconds > 0f
-            || d.isCarried;
-    }
+    static bool IsRagdolled(Character c) => !AvatarPoseDriver.ArmsTracked(c);
 
     /// <summary>The wire frame (see <see cref="PoseFrame"/>): physical hip position and look yaw.</summary>
     static bool TryGetFrame(Character c, out NVector3 root, out float yawDeg)

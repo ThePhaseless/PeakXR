@@ -15,10 +15,10 @@ namespace PeakXR.Core
 
         /// <summary>Seconds to let go when the body starts to ragdoll. Shorter than the camera's enter delay plus its
         /// fade, so the arms are released before a detached view moves the hands away from the body.</summary>
-        public float ReleaseSeconds = 0.25f;
+        public const float ReleaseSeconds = 0.25f;
 
         /// <summary>Seconds to take the arms back once the body is under control again.</summary>
-        public float ReturnSeconds = 0.5f;
+        public const float ReturnSeconds = 0.5f;
 
         float _raw;
 
@@ -33,7 +33,7 @@ namespace PeakXR.Core
         public void Update(bool tracked, float dt)
         {
             float seconds = tracked ? ReturnSeconds : ReleaseSeconds;
-            float step = seconds <= 0f ? 1f : dt / seconds;
+            float step = dt / seconds;
             _raw = tracked ? System.Math.Min(1f, _raw + step) : System.Math.Max(0f, _raw - step);
         }
 

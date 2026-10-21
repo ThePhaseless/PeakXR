@@ -64,6 +64,19 @@ public partial class AvatarPoseDriver
     /// Read by the self-test.</summary>
     internal float ArmWeight => armBlend.Weight;
 
+    /// <summary>Whether tracked hands may drive <paramref name="c"/>'s arms: the game is not ragdolling the body
+    /// (<see cref="ArmBlend.Tracked"/>). net.pose also stops streaming poses while this is false.</summary>
+    internal static bool ArmsTracked(Character c)
+    {
+        var d = c.data;
+        return d != null
+            && ArmBlend.Tracked(
+                d.passedOut || d.fullyPassedOut || d.dead || d.isCarried,
+                d.fallSeconds,
+                d.currentRagdollControll
+            );
+    }
+
     /// <summary>True when the rig has finger bones that the driver can curl.</summary>
     public bool HasFingerBones => rigReady && (leftRig.HasFingers || rightRig.HasFingers);
 
@@ -115,18 +128,9 @@ public partial class AvatarPoseDriver
     {
         var c = Owner;
         if (HasFreshPose && c != null)
-        {
-            var d = c.data;
-            bool down = d.passedOut || d.fullyPassedOut || d.dead || d.isCarried;
-            armBlend.Update(
-                ArmBlend.Tracked(down, d.fallSeconds, d.currentRagdollControll),
-                Time.deltaTime
-            );
-        }
+            armBlend.Update(ArmsTracked(c), Time.deltaTime);
         else
-        {
             armBlend.Reset();
-        }
         // Animation only runs in FixedUpdate; refresh fingers every rendered frame so curls stay smooth at 90 Hz+.
         if (rigReady && HasFreshPose)
             ApplyFingers();
