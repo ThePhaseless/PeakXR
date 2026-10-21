@@ -49,6 +49,8 @@ internal static class MenuBackdrop
         image.raycastTarget = false;
         t.Backdrop = image;
         t.BackdropScale = 0f;
+        t.BackdropAlpha = Tint.a;
+        t.BackdropWasOpen = false;
         go.SetActive(false);
     }
 
@@ -76,8 +78,10 @@ internal static class MenuBackdrop
         var c = g.color;
         if (Mathf.Max(c.r, Mathf.Max(c.g, c.b)) > DimmerMaxChannel)
             return;
-        var index = t.Dimmers.IndexOf(g);
-        if (index < 0)
+        // A mask graphic culled at alpha 0 stops writing its stencil and would hide everything it masks.
+        if (g.TryGetComponent<Mask>(out _) || g.TryGetComponent<RectMask2D>(out _) || IsViewport(g))
+            return;
+        if (!t.Dimmers.Contains(g))
         {
             t.Dimmers.Add(g);
             t.DimmerAlphas.Add(g.canvasRenderer.GetAlpha());
@@ -87,19 +91,49 @@ internal static class MenuBackdrop
             g.canvasRenderer.SetAlpha(0f);
     }
 
-    /// <summary>Shows the backdrop with its menu and fits it around the measured content.</summary>
+    /// <summary>Forgets dimmers destroyed with their page.</summary>
+    public static void PruneDimmers(TrackedCanvas t)
+    {
+        for (int i = t.Dimmers.Count - 1; i >= 0; i--)
+            if (t.Dimmers[i] == null)
+            {
+                t.Dimmers.RemoveAt(i);
+                t.DimmerAlphas.RemoveAt(i);
+            }
+    }
+
+    private static bool IsViewport(Graphic g)
+    {
+        var scroll = g.GetComponentInParent<ScrollRect>(true);
+        return scroll != null && scroll.viewport == g.rectTransform;
+    }
+
+    /// <summary>Shows the backdrop with its menu once the page has settled, fades it with the page and fits
+    /// it around the measured content.</summary>
     public static void Sync(TrackedCanvas t)
     {
         var image = t.Backdrop;
-        if (image.gameObject.activeSelf != t.IsOpen)
-            image.gameObject.SetActive(t.IsOpen);
-        if (!t.IsOpen)
-            return;
-
         // Metres per canvas pixel as placed this frame.
         var mpp = t.Rect.lossyScale.x;
-        if (mpp < 1e-6f)
+        var show = t.IsOpen && t.Settled && mpp >= 1e-6f;
+        if (image.gameObject.activeSelf != show)
+            image.gameObject.SetActive(show);
+        if (!show)
             return;
+
+        // Follow the page's CanvasGroup fade (EndScreen, BoardingPass, Modal, ScaleOnEnable).
+        var probe = t.FadeProbe;
+        var fade =
+            probe != null && probe.isActiveAndEnabled
+                ? probe.canvasRenderer.GetInheritedAlpha()
+                : 1f;
+        var alpha = Tint.a * fade;
+        if (alpha != t.BackdropAlpha)
+        {
+            t.BackdropAlpha = alpha;
+            image.color = new Color(Tint.r, Tint.g, Tint.b, alpha);
+        }
+
         if (
             mpp == t.BackdropScale
             && t.ContentSize == t.BackdropSize
