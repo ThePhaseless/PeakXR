@@ -105,18 +105,18 @@ public static class CanvasRules
             }
         );
 
-    private static readonly HashSet<ICanvasPlacement> backdropPlacements = new();
+    private static readonly HashSet<ICanvasPlacement> menuPlacements = new();
 
-    /// <summary>Like <see cref="AddCustom(string, ICanvasPlacement)"/>, for a menu that should get the soft VR
-    /// backdrop default menus get, in place of the game's full-screen dimmers.</summary>
+    /// <summary>Like <see cref="AddCustom(string, ICanvasPlacement)"/>, for a menu that loses its flat-screen
+    /// backdrops (dimmers, framing panels) in VR the way default menus do.</summary>
     public static void AddCustomMenu(string componentType, ICanvasPlacement placement)
     {
         AddCustom(componentType, placement);
-        backdropPlacements.Add(placement);
+        menuPlacements.Add(placement);
     }
 
-    internal static bool WantsBackdrop(ICanvasPlacement placement) =>
-        placement != null && backdropPlacements.Contains(placement);
+    internal static bool StripsBackdrops(ICanvasPlacement placement) =>
+        placement != null && menuPlacements.Contains(placement);
 
     internal static CanvasKind Classify(
         Canvas canvas,

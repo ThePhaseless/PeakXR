@@ -45,7 +45,8 @@ public sealed class PassportFeature : Feature
         Patch(typeof(PhotoboothFlashPatch));
 
         // GAME/PassportManager/PassportUI/Canvas: PassportManager sits on a parent of its only canvas.
-        CanvasRules.AddCustom(nameof(PassportManager), new PassportPlacement());
+        // A menu: its page and dimmer backdrops come off in VR like every other menu.
+        CanvasRules.AddCustomMenu(nameof(PassportManager), new PassportPlacement());
         HandBookRuntime.Create();
     }
 }

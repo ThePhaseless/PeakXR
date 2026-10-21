@@ -335,6 +335,8 @@ internal sealed class PreviewStage : MonoBehaviour
             text.font = label.font;
             tagText.font = label.font;
         }
+        // No card behind the text: an outline keeps it readable against the world.
+        TextHalo.Apply(text);
         var def = entry.Definition;
         var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
         var note = SettingPreviewTable.ApplyNote(def.Section, def.Key);
@@ -360,10 +362,6 @@ internal sealed class PreviewStage : MonoBehaviour
         cardGroup = card.AddComponent<CanvasGroup>();
         cardGroup.interactable = false;
         cardGroup.blocksRaycasts = false;
-        var bg = card.AddComponent<Image>();
-        bg.color = new Color(0.07f, 0.08f, 0.1f, 0.92f);
-        bg.raycastTarget = false;
-
         var textGo = new GameObject("Text", typeof(RectTransform));
         textGo.transform.SetParent(card.transform, false);
         cardText = (RectTransform)textGo.transform;

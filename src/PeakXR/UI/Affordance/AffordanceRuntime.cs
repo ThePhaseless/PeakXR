@@ -85,7 +85,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private LineRenderer ray;
     private GameObject labelRoot;
     private TextMeshProUGUI label;
-    private Image plate;
     private GUIManager fontFrom;
     private Material fontClone;
     private bool built;
@@ -414,7 +413,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var tc = notice ? Affordance.HintColor : Affordance.DenyColor;
         tc.a = alpha;
         label.color = tc;
-        plate.color = new Color(0.06f, 0.05f, 0.05f, 0.7f * alpha);
     }
 
     private static void PoseCue(Cue cue, Vector3 eye, float alpha)
@@ -579,9 +577,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         if (label == null)
             return;
         label.text = text ?? DenyText.Compose(reason, dm * 0.1f);
-        label.ForceMeshUpdate();
-        var size = label.GetRenderedValues(false);
-        ((RectTransform)plate.transform).sizeDelta = new Vector2(size.x + 28f, size.y + 14f);
     }
 
     private void HideAll()
@@ -680,14 +675,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         labelRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
         ((RectTransform)labelRoot.transform).sizeDelta = new Vector2(480f, 100f);
 
-        var plateGo = new GameObject("Plate", typeof(RectTransform), typeof(Image));
-        plateGo.transform.SetParent(labelRoot.transform, false);
-        plate = plateGo.GetComponent<Image>();
-        plate.raycastTarget = false;
-        var plateMat = new Material(plate.material) { name = "PeakXR_DenyPlate" };
-        plateMat.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
-        plate.material = plateMat;
-
         var textGo = new GameObject("Text", typeof(RectTransform));
         textGo.transform.SetParent(labelRoot.transform, false);
         ((RectTransform)textGo.transform).sizeDelta = new Vector2(480f, 100f);
@@ -722,6 +709,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         {
             fontClone = new Material(mat) { name = "PeakXR_DenyLabel (on top)" };
             fontClone.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
+            // No plate behind the reason: a dark rim keeps the red and teal text readable on snow and sky.
+            TextHalo.Outline(fontClone, light: false);
             label.fontSharedMaterial = fontClone;
         }
         // Re-render the current text in the new font.

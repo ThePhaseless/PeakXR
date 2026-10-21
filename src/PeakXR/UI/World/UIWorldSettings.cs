@@ -51,6 +51,7 @@ internal sealed class UIWorldSettings
         MenuTilt,
         FadeSeconds,
         NameTagScale;
+    public ConfigEntry<bool> MenuPanels;
     public ConfigEntry<StatusOverlayMode> StatusOverlays;
     public ConfigEntry<HudMode> Hud;
     public ConfigEntry<float> HudDistance,
@@ -99,6 +100,14 @@ internal sealed class UIWorldSettings
                 "MenuTilt",
                 8f,
                 Range("Degrees below eye level where menus appear.", 0f, 30f)
+            ),
+            MenuPanels = cfg.Bind(
+                ui,
+                "MenuPanels",
+                false,
+                "Show the game's flat panel backgrounds behind menus (full-screen dimmers stay hidden). Off: "
+                    + "buttons, text and icons float in the world on their own, and text gets a thin outline to stay "
+                    + "readable."
             ),
             FadeSeconds = cfg.Bind(
                 ui,
