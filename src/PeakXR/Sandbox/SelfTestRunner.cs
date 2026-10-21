@@ -140,6 +140,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
+            yield return VRStep("vr.08-arm-reach", 15f, ArmReachCheck());
             if (hold)
             {
                 Finish();
@@ -157,6 +158,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     Skip("06-segment-" + segment, "already here");
                 else
                     yield return Run("06-segment-" + segment, 120f, Jump(segment));
+                if (segment == Segment.Tropics)
+                    yield return VineSteps();
             }
             foreach (var hours in Times)
             {

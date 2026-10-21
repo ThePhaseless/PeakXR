@@ -16,6 +16,9 @@ internal interface IConfigRow
 {
     /// <summary>The entry changed outside the row (another row, a feature, the file): update the UI.</summary>
     void Refresh();
+
+    /// <summary>The entry the row edits.</summary>
+    ConfigEntryBase Entry { get; }
 }
 
 /// <summary>
@@ -48,6 +51,7 @@ internal static class ConfigWriter
         }
         dirty = file;
         changedAt = Time.unscaledTime;
+        SettingPreviews.Changed(entry);
     }
 
     public static void Tick(bool force)
@@ -123,6 +127,8 @@ internal sealed class ChoiceRow
     public string GetCategory() => VRTab.CategoryName;
 
     public void Refresh() => OnSettingChangedExternal();
+
+    public ConfigEntryBase Entry => entry;
 }
 
 /// <summary>Number with an acceptable range: the game's slider cell. Integers snap to whole values.</summary>
@@ -183,6 +189,8 @@ internal sealed class SliderRow : FloatSetting, IExposedSetting, IConfigRow
         Value = Read();
         OnSettingChangedExternal();
     }
+
+    public ConfigEntryBase Entry => entry;
 }
 
 /// <summary>Anything else the config can parse from text: the game's text field cell.</summary>
@@ -231,6 +239,8 @@ internal sealed class TextRow : StringSetting, IExposedSetting, IConfigRow
     public string GetCategory() => VRTab.CategoryName;
 
     public void Refresh() => Value = Read();
+
+    public ConfigEntryBase Entry => entry;
 
     /// <summary>
     /// The game exposes no text setting, so its build may ship without a text cell; then the value shows read-only.

@@ -50,6 +50,8 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.18-emote-wheel", 20f, EmoteStep());
         yield return HandStep("vr.19-laser", 20f, LaserStep());
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
+        yield return BodySteps();
+        yield return ItemGestureSteps();
     }
 
     /// <summary>One scripted-hands step: a clean start (empty hands and hotbar), the body, then a guarded teardown

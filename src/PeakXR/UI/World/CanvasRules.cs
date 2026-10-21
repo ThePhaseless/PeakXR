@@ -105,6 +105,19 @@ public static class CanvasRules
             }
         );
 
+    private static readonly HashSet<ICanvasPlacement> backdropPlacements = new();
+
+    /// <summary>Like <see cref="AddCustom(string, ICanvasPlacement)"/>, for a menu that should get the soft VR
+    /// backdrop default menus get, in place of the game's full-screen dimmers.</summary>
+    public static void AddCustomMenu(string componentType, ICanvasPlacement placement)
+    {
+        AddCustom(componentType, placement);
+        backdropPlacements.Add(placement);
+    }
+
+    internal static bool WantsBackdrop(ICanvasPlacement placement) =>
+        placement != null && backdropPlacements.Contains(placement);
+
     internal static CanvasKind Classify(
         Canvas canvas,
         bool hasSelectables,

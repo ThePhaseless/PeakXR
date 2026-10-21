@@ -93,6 +93,12 @@ internal static class PhysicalInteraction
 
     public static void ConsumeThrow() => throwFrame = -10;
 
+    /// <summary>What this hand's grip is doing, for gesture features (lid lift, parasol runner).</summary>
+    public static GripPressAction HandAction(bool left) => (left ? LeftHand : RightHand).Action;
+
+    /// <summary>The interactible this hand's grip selected (grab), or null.</summary>
+    public static IInteractible HandTarget(bool left) => (left ? LeftHand : RightHand).Target;
+
     /// <summary>
     /// The next held item (within 3 s) belongs in this hand. For extensions that equip through the game's own path
     /// (drawing from a body slot, taking from a backpack), so the item lands in the hand that reached for it.
@@ -121,6 +127,7 @@ internal static class PhysicalInteraction
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
+        Climb.ClimbHands.Update(c, rig, cfg, active, dt);
         if (hazardPulseTime > 0f && now >= hazardPulseTime)
         {
             hazardPulseTime = -10f;
@@ -817,6 +824,10 @@ internal static class PhysicalInteraction
             {
                 case GripPressAction.GrabItem:
                 case GripPressAction.GrabInteractible:
+                    // Picked up: a grip still closed on it stops holding interact, so a cook or light gesture gets a
+                    // fresh press (Interaction.cs:116 only starts a hold after interact was up).
+                    if (hand.Target is Item grabbed && grabbed == c.data.currentItem)
+                        break;
                     interactDown = true;
                     GrabTarget ??= hand.Target;
                     break;
@@ -827,6 +838,12 @@ internal static class PhysicalInteraction
                     GripInteractActive = true;
                     break;
             }
+        }
+        if (Physical.GestureRequests.TryInteract(out var gestureTarget))
+        {
+            // An active cook or light gesture wins over a grip's target: it is what the held item is touching.
+            interactDown = true;
+            GrabTarget = gestureTarget;
         }
         InteractEdge.Update(interactDown, dt);
         input.interactWasPressed |= InteractEdge.Pressed;
@@ -866,7 +883,7 @@ internal static class PhysicalInteraction
         {
             Mouth.Reset();
         }
-        PrimaryEdge.Update(primaryDown || atMouth, dt);
+        PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
         SecondaryEdge.Update(secondaryDown, dt);
         if (PrimaryEdge.Pressed && holding)
             Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
@@ -917,6 +934,11 @@ internal static class PhysicalInteraction
             input.movementInput = Vector2.ClampMagnitude(input.movementInput + climbInput, 1f);
             input.usePrimaryWasReleased = false;
         }
+        // Rope and vine: arm pulls along the line become the game's rope or vine climb stick.
+        input.movementInput = Vector2.ClampMagnitude(
+            input.movementInput + Climb.ClimbHands.StickInput,
+            1f
+        );
 
         // Top-out: walk toward the ledge while a grip stays closed, as a held stick would.
         if (now < mantleUntil && !c.data.isClimbing && (LeftHand.Grip.Held || RightHand.Grip.Held))

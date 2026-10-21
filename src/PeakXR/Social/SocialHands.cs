@@ -352,7 +352,7 @@ internal sealed class SocialHands : IGripExtension
             Clear(h);
     }
 
-    /// <summary>Feed: a canUseOnFriend item held at another player's head for a moment.</summary>
+    /// <summary>Feed: a canUseOnFriend item held at another player's head (a healing item: at their torso) for a moment.</summary>
     private bool UpdateFeed(Character c, float dt)
     {
         var item = c.data.currentItem;
@@ -362,17 +362,24 @@ internal sealed class SocialHands : IGripExtension
             return false;
         }
         var point = item.Center();
+        // Healing items go on the body (interact.items PressToBody), food at the mouth.
+        var part =
+            Interact.Physical.ItemGestures.StatusItem
+            && Interact.Physical.ItemGesturesConfig.Instance.PressToBody
+                ? BodypartType.Torso
+                : BodypartType.Head;
+        float grow = part == BodypartType.Torso ? 0.08f : 0f;
         if (feedCandidate != null)
         {
             if (
                 !feedCandidate.gameObject.activeInHierarchy
-                || !NearHead(feedCandidate, point, FeedExitRadius)
+                || !NearPart(feedCandidate, part, point, FeedExitRadius + grow)
             )
                 ResetFeed();
         }
         if (feedCandidate == null)
         {
-            feedCandidate = NearestHead(c, point, FeedRadius);
+            feedCandidate = NearestPart(c, part, point, FeedRadius + grow);
             feedTimer = 0f;
             if (feedCandidate == null)
                 return false;
@@ -388,17 +395,19 @@ internal sealed class SocialHands : IGripExtension
         feedTimer = 0f;
     }
 
-    private static bool NearHead(Character ch, Vector3 point, float radius)
+    private static bool NearPart(Character ch, BodypartType part, Vector3 point, float radius)
     {
-        if (
-            ch.refs.ragdoll == null
-            || !ch.refs.ragdoll.partDict.TryGetValue(BodypartType.Head, out var head)
-        )
+        if (ch.refs.ragdoll == null || !ch.refs.ragdoll.partDict.TryGetValue(part, out var body))
             return false;
-        return (head.transform.position - point).sqrMagnitude <= radius * radius;
+        return (body.transform.position - point).sqrMagnitude <= radius * radius;
     }
 
-    private static Character NearestHead(Character self, Vector3 point, float radius)
+    private static Character NearestPart(
+        Character self,
+        BodypartType part,
+        Vector3 point,
+        float radius
+    )
     {
         Character best = null;
         float bestSq = radius * radius;
@@ -413,10 +422,10 @@ internal sealed class SocialHands : IGripExtension
                 || ch.data.dead
                 || !ch.gameObject.activeInHierarchy
                 || ch.refs.ragdoll == null
-                || !ch.refs.ragdoll.partDict.TryGetValue(BodypartType.Head, out var head)
+                || !ch.refs.ragdoll.partDict.TryGetValue(part, out var body)
             )
                 continue;
-            float d = (head.transform.position - point).sqrMagnitude;
+            float d = (body.transform.position - point).sqrMagnitude;
             if (d < bestSq)
             {
                 bestSq = d;

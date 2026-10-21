@@ -38,6 +38,15 @@ public partial class AvatarPoseDriver
     private bool rigReady;
     private Bodypart hip;
     private Bodypart head;
+    private Bodypart shoulderL;
+    private Bodypart shoulderR;
+    private Transform bodyFrame;
+
+    /// <summary>The prefab's elbow hint weights (0 on the scout), put back when a hand stops being tracked.</summary>
+    private float hintWeightL;
+    private float hintWeightR;
+    private bool hintOnL;
+    private bool hintOnR;
     private HandRig leftRig;
     private HandRig rightRig;
     private readonly ItemHoldInfo hold = new();
@@ -78,6 +87,13 @@ public partial class AvatarPoseDriver
             return false;
         }
         parts.TryGetValue(BodypartType.Head, out head);
+        parts.TryGetValue(BodypartType.Arm_L, out shoulderL);
+        parts.TryGetValue(BodypartType.Arm_R, out shoulderR);
+        bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
+        if (c.refs.ikLeft != null)
+            hintWeightL = c.refs.ikLeft.data.hintWeight;
+        if (c.refs.ikRight != null)
+            hintWeightR = c.refs.ikRight.data.hintWeight;
 
         var smr = c.refs.mainRenderer;
         leftRig = new HandRig(handL.transform, true, FingerNamesLeft, smr);
@@ -97,6 +113,13 @@ public partial class AvatarPoseDriver
             ApplyFingers();
         else if (rigReady)
             RestoreFingers();
+        if (
+            (hintOnL || hintOnR) && (!HasFreshPose || ArmsSuspended || !AvatarConfig.Instance.ArmIK)
+        )
+        {
+            SetHint(true, false, default);
+            SetHint(false, false, default);
+        }
     }
 
     /// <summary>After <c>CharacterAnimations.ConfigureIK</c>: bones are in the animated pose and IK targets were
@@ -133,6 +156,7 @@ public partial class AvatarPoseDriver
                 );
                 refs.IKHandTargetLeft.SetPositionAndRotation(p + offset, r);
             }
+            SetHint(true, pose.HasLeftHand, refs.IKHandTargetLeft.position);
             if (pose.HasRightHand)
             {
                 rightRig.BoneFromController(
@@ -143,6 +167,7 @@ public partial class AvatarPoseDriver
                 );
                 refs.IKHandTargetRight.SetPositionAndRotation(p + offset, r);
             }
+            SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position);
         }
 
         // The local player's head is hidden and the camera hangs off it, so only other characters get head look.
@@ -154,6 +179,58 @@ public partial class AvatarPoseDriver
         }
 
         ApplyFingers();
+    }
+
+    /// <summary>
+    /// Turns one arm's elbow hint on (pointed down, out and back from the shoulder toward
+    /// <paramref name="hand"/>, all in animated space) or back to the prefab weight. The scout's
+    /// <c>IK_Arm_Left/Right</c> constraints carry an <c>Elbow</c> hint at weight 0, so without this the solver keeps the
+    /// idle animation's bend plane (<c>AnimationRuntimeUtils.SolveTwoBoneIK</c>) and raised hands get sideways elbows.
+    /// </summary>
+    private void SetHint(bool left, bool on, Vector3 hand)
+    {
+        var ik = left ? Owner.refs.ikLeft : Owner.refs.ikRight;
+        var shoulder = left ? shoulderL : shoulderR;
+        if (ik == null || shoulder == null || ik.data.hint == null)
+            return;
+        ref var data = ref ik.data;
+        if (on)
+        {
+            data.hint.position = ArmMath
+                .ElbowHint(
+                    shoulder.transform.position.N(),
+                    hand.N(),
+                    bodyFrame.right.N(),
+                    bodyFrame.up.N(),
+                    bodyFrame.forward.N(),
+                    left
+                )
+                .U();
+            data.hintWeight = 1f;
+        }
+        else if (left ? hintOnL : hintOnR)
+            data.hintWeight = left ? hintWeightL : hintWeightR;
+        if (left)
+            hintOnL = on;
+        else
+            hintOnR = on;
+    }
+
+    /// <summary>The wrist bone pose a tracked hand asks for, in physics (world) space; false when the hand is not
+    /// tracked. The self-test compares it with where the ragdoll hand really is.</summary>
+    internal bool HandTarget(bool left, out Vector3 pos)
+    {
+        pos = default;
+        var pose = Pose;
+        if (!HasFreshPose || !EnsureRig() || (left ? !pose.HasLeftHand : !pose.HasRightHand))
+            return false;
+        (left ? leftRig : rightRig).BoneFromController(
+            left ? pose.LeftHandPosition : pose.RightHandPosition,
+            left ? pose.LeftHandRotation : pose.RightHandRotation,
+            out pos,
+            out _
+        );
+        return true;
     }
 
     /// <summary>After <c>CharacterAnimations.HandleIK</c>: arms follow their own controllers in every state.</summary>

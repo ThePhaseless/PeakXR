@@ -502,7 +502,7 @@ internal sealed class RigDriver : MonoBehaviour
             case ViewKind.FirstPerson:
                 if (c == null)
                     return false;
-                goal = BodyEye(c);
+                goal = BodyEye(c) + Vector3.up * rig.CrouchLift;
                 return true;
             case ViewKind.FollowFirstPerson:
                 if (target == null)
