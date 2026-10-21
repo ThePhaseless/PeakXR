@@ -35,7 +35,7 @@ Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the
 
 PeakXR runs in VR. Setup: SteamVR with an ALVR virtual headset (static head at 1.6 m, 1088x1216 per eye at 72 Hz) on the Radeon 780M, PEAK launched directly through Proton-CachyOS, OpenXR, MultiPass, `Render.RenderScale` 0.6.
 
-The full self-test ran inside the headset session, so the creative-mode coverage above was repeated in VR: 194 items spawned, 10 held and used, 31 entities spawned, all segments and times of day. Results: 254 pass, 2 fail, 13 skip (run VR1); 254 pass, 3 fail, 12 skip (run VR2). The VR-specific checks:
+The full self-test ran inside the headset session, so the creative-mode coverage above was repeated in VR: 194 items spawned, 10 held and used, 31 entities spawned, all segments and times of day. Results: 254 pass, 2 fail, 13 skip (run VR1); 254 pass, 3 fail, 12 skip (run VR2); after the fixes below, 256 pass, 0 fail, 13 skip (run VR3). The VR-specific checks, as of VR3:
 
 | Step | Result |
 |---|---|
@@ -43,7 +43,7 @@ The full self-test ran inside the headset session, so the creative-mode coverage
 | `vr.01-rig` | head tracked at (0, 1.60, 0), stereo camera on both eyes, audio listener at the head |
 | `vr.02-title-stage` | title menu is a world-space panel on the beach |
 | `vr.03-canvases` | every overlay canvas converted or deliberately left on the desktop |
-| `vr.04-settings-panel` | failed: the pause menu sat 51 m behind the player (fixed in `d75f6d4`, not yet re-run) |
+| `vr.04-settings-panel` | pause menu 1.80 m in front of the head, 8 degrees off the view (it sat 51 m behind the player before `d75f6d4`) |
 | `vr.05-loading-space` | the 3D loading room showed for 328 frames while the game camera was culled |
 | `vr.06-features` | 25 of 25 VR features active, avatar pose fresh, HUD in world space, no stuck fade |
 | `vr.07-comfort` | a knockback pulsed the comfort vignette to 0.28 and it reopened after 0.71 s; a warp faded to black and back |
@@ -53,7 +53,7 @@ Headset screenshots from the stream show correct stereo, the character's own arm
 Three problems came up and were fixed:
 
 - The first launch crashed inside SteamVR's client library one second after the session started. DXVK had picked the RTX 4070 while SteamVR ran on the Radeon. The game and SteamVR have to use the same GPU; for this setup that means `VK_DRIVER_FILES` limited to RADV and `MESA_VK_DEVICE_SELECT=1002:15bf!`.
-- The game image filled only the top-left part of each eye, with stale pixels around it. Under OpenXR MultiPass, `XRSettings.renderViewportScale` shrinks the rendered area but the runtime still receives the full image, so dynamic resolution now stays off under OpenXR (`07c8bcf`). A run with it off showed the full frame.
+- The game image filled only the top-left part of each eye, with stale pixels around it. Under OpenXR MultiPass, `XRSettings.renderViewportScale` shrinks the rendered area but the runtime still receives the full image, so dynamic resolution now stays off under OpenXR (`07c8bcf`). Run VR3 kept the setting on in the config and the headset showed the full frame.
 - The pause menu was never positioned, because a closed quit-confirm popup inside its canvas made the canvas count as closed (`d75f6d4`).
 
 Launching PEAK from the Steam client while SteamVR runs opens a "VR Theater Screen" prompt that blocks Steam's launch queue. Launch it directly through Proton for VR tests instead.
