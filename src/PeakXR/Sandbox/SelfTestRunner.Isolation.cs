@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Peak;
+using Peak.Island;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -51,6 +52,10 @@ internal sealed partial class SelfTestRunner
     /// the player (<c>Scoutmaster.currentTarget</c>, Scoutmaster.cs:61; <c>BeeSwarm.currentAggroCharacter</c>,
     /// BeeSwarm.cs:22; <c>MushroomZombie._currentTarget</c>, MushroomZombie.cs:30), it blinded the player, it grew
     /// (a vine), or it removed itself (an explosion). <see cref="SpawnOnly"/> names only have to spawn.
+    /// A level zombie sleeps until a player within 30 m looks at it (MushroomZombie.cs:517), gets up for 5 s
+    /// (MushroomZombie.cs:649) and idles 2 s before it picks a target (MushroomZombie.cs:590-596), so it gets 12 s.
+    /// A raven only steals the voice of a victim the gloom assigns, so the step assigns the player and starts the theft
+    /// as <c>GloomVoiceConfuser</c> does (GloomVoiceConfuser.cs:147, 345-348) and checks the theft took.
     /// </summary>
     IEnumerator MobBehaviour(MobEntry entry, GameObject go)
     {
@@ -66,11 +71,21 @@ internal sealed partial class SelfTestRunner
         var scout = go.GetComponentInChildren<Scoutmaster>();
         var swarm = go.GetComponentInChildren<BeeSwarm>();
         var zombie = go.GetComponentInChildren<MushroomZombie>();
+        var raven = go.GetComponentInChildren<VoiceThief>();
+        int actor = c.photonView.Owner.ActorNumber;
+        bool stole = false;
+        if (raven != null)
+        {
+            raven.AssignVictim(actor, 10f);
+            // SetActivelyStealing overrides the victim's voice transform (VoiceThief.cs:182).
+            if (c.GetComponentInChildren<CharacterVoiceTransformProvider>() != null)
+                raven.SetActivelyStealing(true);
+        }
         // BLIND (explosions, flash plants): in VR the view must never wash out (comfort.events, vr.34).
         var wash = PeakXR.VR.VRSession.Active ? BlindWashRenderer() : null;
         bool washed = false;
-        float end = Now + 3f;
-        while (Now < end && go != null)
+        float end = Now + (zombie != null ? 12f : 3f);
+        while (Now < end && go != null && !(zombie != null && targeted))
         {
             var p = go.transform.position;
             moved = Mathf.Max(moved, Vector3.Distance(p, start));
@@ -81,6 +96,11 @@ internal sealed partial class SelfTestRunner
                 || (swarm != null && swarm.currentAggroCharacter == c)
                 || (zombie != null && zombie._currentTarget == c);
             blinded |= c.data.isBlind;
+            stole |=
+                raven != null
+                && raven.CurrentlyStealing
+                && VoiceThief.Assignments.TryGetValue(actor, out var thief)
+                && thief == raven;
             if (wash != null && c.data.isBlind)
                 washed |= BlindWashedOut(wash);
             yield return null;
@@ -90,18 +110,26 @@ internal sealed partial class SelfTestRunner
             yield return Shot("05-mob-" + entry.Name);
         var note =
             $"moved {moved:0.00} m, closest {closest:0.0} m (from {near:0.0}), targeted {targeted}, "
-            + $"blinded the player {blinded}, grew {grew:0.00} m, gone {gone}";
+            + $"blinded the player {blinded}, grew {grew:0.00} m, gone {gone}"
+            + (zombie != null ? $", zombie {zombie.currentState}" : "")
+            + (raven != null ? $", stealing the player's voice {stole}" : "");
         bool spawnOnly = false;
         foreach (var s in SpawnOnly)
             spawnOnly |= entry.Name.Contains(s, System.StringComparison.Ordinal);
         bool alive =
-            moved > 0.3f || near - closest > 0.3f || targeted || blinded || grew > 0.2f || gone;
+            moved > 0.3f
+            || near - closest > 0.3f
+            || targeted
+            || blinded
+            || grew > 0.2f
+            || gone
+            || stole;
         if (washed)
             Fail("BLIND washed out the view: " + note);
         else if (spawnOnly)
             stepNote = "spawned only (nothing to observe); " + note;
         else if (!alive)
-            Fail("no sign of behaviour in 3 s: " + note);
+            Fail("no sign of behaviour: " + note);
         else
             stepNote = note;
     }
@@ -164,8 +192,9 @@ internal sealed partial class SelfTestRunner
             );
             view = $"eye {eyeGap:0.00} m from the head{(buried ? ", inside terrain" : "")}";
         }
+        // Height, fall speed and time in the air tell a spawn in open air from a body stuck in a pose.
         var note =
-            $"{view}, ground {(ground < 0f ? "none within 200 m" : ground.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m")} under the torso, grounded {c.data.isGrounded}";
+            $"{view}, torso at {c.Center.y:0.0} m moving {c.data.avarageVelocity.y:0.0} m/s up, {c.data.sinceGrounded:0.0} s off the ground, ground {(ground < 0f ? "none within 200 m" : ground.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m")} under the torso, grounded {c.data.isGrounded}";
         if (ground < 0f || ground > 2.5f)
             Fail("no ground under the player: " + note);
         else if (!c.data.isGrounded)

@@ -568,7 +568,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Wait(3f);
         Recover();
         var now = Singleton<MapHandler>.Instance.GetCurrentSegment();
-        if (now != segment)
+        // The game keeps the Peak in TheKiln's segment slot: JumpToSegmentLogic drops the index by one for Peak
+        // (MapHandler.cs:889-892) and warps to respawnThePeak (MapHandler.cs:958), so GetCurrentSegment says TheKiln.
+        var expected = segment == Segment.Peak ? Segment.TheKiln : segment;
+        if (now != expected)
             Fail("in " + now + " after the jump");
         yield return Shot(shot ?? "06-segment-" + segment);
         yield return Landing();

@@ -192,8 +192,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.12: the hand holding an Apple, steered to the mouth point (<see cref="MouthGesture.MouthPoint"/>),
     /// eats it: the game's <c>Item.Consume</c> RPC stamps <c>CharacterData.lastConsumedItem</c> (Item.cs:1096,
     /// CharacterData.cs:169). The gesture reads the tracked grip; the note also gives the physics item's closest
-    /// approach, which the holder's own head collider keeps away from the mouth. Food must also lower Hunger by its
-    /// <c>Action_RestoreHunger.restorationAmount</c> (Action_RestoreHunger.cs:7), so the step sets Hunger first.</summary>
+    /// approach, which the holder's own head collider keeps away from the mouth. Eating must also move the status the
+    /// item changes (<see cref="StatusEffect"/>) the right way, so the step sets that status first.</summary>
     IEnumerator EatStep()
     {
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
@@ -213,19 +213,20 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
 
         // God mode locks statuses (Character.statusesLocked blocks SubtractStatus, CharacterAfflictions.cs:886) and
-        // clears Hunger on its tick, so eating could not change anything: lift it and set Hunger the game's way
+        // clears statuses on its tick, so eating could not change anything: lift it and set the status the game's way
         // (SetStatus, CharacterAfflictions.cs:632). Run puts god mode back if the step ends early.
-        var restore = item.GetComponent<Action_RestoreHunger>();
+        var afflictions = c.refs.afflictions;
+        bool measured = StatusEffect(item, out var status, out float change);
         bool god = SandboxActions.GodMode;
-        float restores = restore != null ? restore.restorationAmount : 0f;
         string eaten = item.name;
-        if (restore != null)
+        if (measured)
         {
             if (god)
                 SandboxActions.SetGodMode(false);
-            c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Hunger, 0.5f);
+            // Room to move: a restore from the middle, an added status from zero.
+            afflictions.SetStatus(status, change < 0f ? 0.5f : 0f);
         }
-        float hunger = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Hunger);
+        float before = afflictions.GetCurrentStatus(status);
         float consumedBefore = c.data.lastConsumedItem;
         float useTime = item.usingTimePrimary;
         float end = Now + useTime + 6f;
@@ -266,23 +267,58 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         yield return Wait(0.5f);
-        float hungerAfter = c.refs.afflictions.GetCurrentStatus(
-            CharacterAfflictions.STATUSTYPE.Hunger
-        );
+        float after = afflictions.GetCurrentStatus(status);
         if (god)
             SandboxActions.SetGodMode(true);
+        float moved = (after - before) * Mathf.Sign(change);
+        // Room the status has in the change's direction (statuses stay within 0..1).
+        float room = change < 0f ? before : 1f - before;
         var note =
             $"grip closest {best:0.00} m to the mouth (item {bestItem:0.00} m), use progress {progress:0.00} of {useTime:0.0} s, "
-            + $"hunger {hunger:0.00} -> {hungerAfter:0.00} (restores {restores:0.00})";
+            + $"{status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
         if (c.data.lastConsumedItem == consumedBefore)
             Fail("not eaten: " + note);
-        else if (restore == null)
-            Fail($"{eaten} has no Action_RestoreHunger, nothing to measure: " + note);
-        // Half the amount: Hunger creeps up between the reads, and the 0.5 start caps a large restore.
-        else if (hunger - hungerAfter < Mathf.Min(restores, hunger) * 0.5f)
-            Fail("eaten but hunger did not drop: " + note);
+        else if (!measured)
+            Fail(
+                $"{eaten} carries no status action (Action_RestoreHunger, Action_ModifyStatus), nothing to measure: "
+                    + note
+            );
+        // Half the amount: statuses creep between the reads, and the start value caps a large change.
+        else if (moved < Mathf.Min(Mathf.Abs(change), room) * 0.5f)
+            Fail($"eaten but {status} did not change: " + note);
         else
             stepNote = "eaten; " + note;
+    }
+
+    /// <summary>The status eating <paramref name="item"/> changes and by how much: Hunger first (food runs
+    /// <c>Action_RestoreHunger</c>, Action_RestoreHunger.cs:7, or <c>Action_ModifyStatus</c> on Hunger, the game's
+    /// default food script, Item.cs:1138-1141), else the largest <c>Action_ModifyStatus</c> (Action_ModifyStatus.cs:12).
+    /// Skeleton-only changes are skipped. False when the item changes no status.</summary>
+    static bool StatusEffect(
+        Item item,
+        out CharacterAfflictions.STATUSTYPE status,
+        out float change
+    )
+    {
+        status = CharacterAfflictions.STATUSTYPE.Hunger;
+        change = 0f;
+        foreach (var r in item.GetComponents<Action_RestoreHunger>())
+            change -= r.restorationAmount;
+        var modifies = item.GetComponents<Action_ModifyStatus>();
+        foreach (var m in modifies)
+            if (!m.ifSkeleton && m.statusType == CharacterAfflictions.STATUSTYPE.Hunger)
+                change += m.changeAmount;
+        if (change != 0f)
+            return true;
+        foreach (var m in modifies)
+        {
+            if (!m.ifSkeleton && Mathf.Abs(m.changeAmount) > Mathf.Abs(change))
+            {
+                status = m.statusType;
+                change = m.changeAmount;
+            }
+        }
+        return change != 0f;
     }
 
     /// <summary>

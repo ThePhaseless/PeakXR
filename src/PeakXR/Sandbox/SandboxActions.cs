@@ -408,6 +408,11 @@ public static class SandboxActions
             Say($"Spawning {entry.Name} failed (see log).");
             return false;
         }
+        // A vine grows only once told how far (MagicBeanVine.cs:48), as a planted bean does (MagicBean.cs:38).
+        var vine = go.GetComponent<MagicBeanVine>();
+        if (vine != null)
+            go.GetComponent<PhotonView>()
+                .RPC("RPC_GrowVine", RpcTarget.All, vine.maxLength, (float)PhotonNetwork.Time);
         LastSpawned = go;
         Say($"Spawned {entry.Name}.");
         return true;

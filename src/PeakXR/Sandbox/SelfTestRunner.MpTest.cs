@@ -834,8 +834,11 @@ internal sealed partial class SelfTestRunner
         return host != null ? host.Center : Character.localCharacter.Center;
     }
 
-    /// <summary>Food restores hunger when eaten (<c>Action_RestoreHunger</c> on the item).</summary>
-    static bool IsFood(Item item) => item.GetComponent<Action_RestoreHunger>() != null;
+    /// <summary>Food lowers Hunger when eaten (<see cref="StatusEffect"/>).</summary>
+    static bool IsFood(Item item) =>
+        StatusEffect(item, out var status, out float change)
+        && status == CharacterAfflictions.STATUSTYPE.Hunger
+        && change < 0f;
 
     /// <summary>A ground item the hand can take. A ground backpack opens its wheel instead (Backpack.cs:32-35), so it is
     /// never a generic grab target; vr.29 covers it.</summary>
