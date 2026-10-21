@@ -121,6 +121,7 @@ internal static class PhysicalInteraction
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
+        Climb.ClimbHands.Update(c, rig, cfg, dt);
         if (hazardPulseTime > 0f && now >= hazardPulseTime)
         {
             hazardPulseTime = -10f;
@@ -917,6 +918,11 @@ internal static class PhysicalInteraction
             input.movementInput = Vector2.ClampMagnitude(input.movementInput + climbInput, 1f);
             input.usePrimaryWasReleased = false;
         }
+        // Rope and vine: arm pulls along the line become the game's rope or vine climb stick.
+        input.movementInput = Vector2.ClampMagnitude(
+            input.movementInput + Climb.ClimbHands.StickInput,
+            1f
+        );
 
         // Top-out: walk toward the ledge while a grip stays closed, as a held stick would.
         if (now < mantleUntil && !c.data.isClimbing && (LeftHand.Grip.Held || RightHand.Grip.Held))
