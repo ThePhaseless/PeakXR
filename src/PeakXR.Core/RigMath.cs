@@ -120,6 +120,14 @@ namespace PeakXR.Core
             moveInput > 0.1f ? rate * MathF.Min(moveInput, 1f) : 0f;
 
         /// <summary>
+        /// The shift that keeps the eye's level position while the body eye drifts from <paramref name="from"/> to
+        /// <paramref name="to"/>: after a turn the ragdoll torso swings onto its new heading over several frames, and
+        /// that swing must not move the view either. Height still follows the body.
+        /// </summary>
+        public static Vector3 HoldLevel(Vector3 shift, Vector3 from, Vector3 to) =>
+            new Vector3(shift.X + from.X - to.X, 0f, shift.Z + from.Z - to.Z);
+
+        /// <summary>
         /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
         /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the
         /// view does not rotate on its own.

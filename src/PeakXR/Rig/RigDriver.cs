@@ -52,6 +52,9 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Largest turn shift (m): twice the eye's forward offset, a 180 degree turn, with margin.</summary>
     private const float MaxTurnShift = 0.3f;
 
+    /// <summary>After a turn the eye is held this long (s) while the ragdoll settles onto the new heading.</summary>
+    private const float TurnHoldSeconds = 0.6f;
+
     private static RigDriver instance;
 
     /// <summary>comfort.events wants the horizon-locked chase view this frame (a launch).</summary>
@@ -96,6 +99,11 @@ internal sealed class RigDriver : MonoBehaviour
     private bool snap = true;
     private Vector3 turnShift;
     private float turnYaw;
+    private float turnHoldUntil;
+    private Vector3 lastBodyEye;
+
+    /// <summary>Self-test (vr.16): log the turn per frame while set.</summary>
+    internal static float TraceTurnsUntil;
 
     private ViewKind shownKind;
     private Character shownTarget;
@@ -225,6 +233,7 @@ internal sealed class RigDriver : MonoBehaviour
 
         CheckHeadInWall(c);
         DriveCamera();
+        TraceTurn(c);
     }
 
     /// <summary>Latest HMD pose right before rendering: the lowest-latency head tracking Unity offers.</summary>
@@ -296,6 +305,9 @@ internal sealed class RigDriver : MonoBehaviour
             || d.currentRagdollControll < 0.9f
             || Mathf.Abs(d.lookDirection.y) > LevelLookY
             || d.lookDirection_Flat.sqrMagnitude < 1e-4f
+            // Mid-turn the look heading is new but the ragdoll still faces the old one: a skewed sample.
+            || Time.unscaledTime < turnHoldUntil
+            || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
         )
             return;
         if (!TryEyePoint(c, out var eye))
@@ -541,18 +553,49 @@ internal sealed class RigDriver : MonoBehaviour
             // The view is being placed anyway (recenter, new view) or nothing is seen: start on the avatar's eyes.
             turnShift = Vector3.zero;
             turnYaw = yaw;
+            turnHoldUntil = 0f;
+            if (c != null)
+                lastBodyEye = BodyEye(c, yaw);
             return;
         }
+        var bodyEye = BodyEye(c, yaw);
+        float move = c.input.movementInput.magnitude;
         if (Mathf.Abs(Mathf.DeltaAngle(turnYaw, yaw)) > 0.01f)
         {
             turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, eyeOffset.X).U();
-            turnShift = Vector3.ClampMagnitude(turnShift, MaxTurnShift);
             turnYaw = yaw;
-            return;
+            turnHoldUntil = Time.unscaledTime + TurnHoldSeconds;
         }
-        float rate = RigMath.TurnSettleRate(c.input.movementInput.magnitude, TurnSettleRate);
-        if (rate > 0f)
-            turnShift = RigMath.Follow(turnShift.N(), default, dt, rate, rate, -1f).U();
+        else if (Time.unscaledTime < turnHoldUntil && move <= 0.1f)
+        {
+            // SetRotation turns the animated rig at once (Character.cs:1545); the ragdoll torso the eye hangs on
+            // follows over several frames and swings sideways. Hold the eye through that swing too.
+            turnShift = RigMath.HoldLevel(turnShift.N(), lastBodyEye.N(), bodyEye.N()).U();
+        }
+        else
+        {
+            float rate = RigMath.TurnSettleRate(move, TurnSettleRate);
+            if (rate > 0f)
+                turnShift = RigMath.Follow(turnShift.N(), default, dt, rate, rate, -1f).U();
+        }
+        turnShift = Vector3.ClampMagnitude(turnShift, MaxTurnShift);
+        lastBodyEye = bodyEye;
+    }
+
+    /// <summary>Self-test (vr.16): one line per frame of eye, rig and body yaw, torso and turn shift.</summary>
+    private void TraceTurn(Character c)
+    {
+        if (Time.unscaledTime >= TraceTurnsUntil || c == null)
+            return;
+        var eye = rig.Head.position;
+        var torso = c.Center;
+        float bodyYaw =
+            c.refs.rigCreator != null ? c.refs.rigCreator.transform.eulerAngles.y : float.NaN;
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"{Tag} turn f{Time.frameCount} eye ({eye.x:0.000},{eye.z:0.000}) rig {rig.Origin.eulerAngles.y:0.0} body {bodyYaw:0.0} torso ({torso.x:0.000},{torso.z:0.000}) shift ({turnShift.x:0.000},{turnShift.z:0.000}) offset {eyeOffset.X:0.000} hold {(Time.unscaledTime < turnHoldUntil ? 1 : 0)}"
+            )
+        );
     }
 
     /// <summary>
