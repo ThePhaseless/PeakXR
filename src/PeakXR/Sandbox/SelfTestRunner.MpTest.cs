@@ -264,6 +264,14 @@ internal sealed partial class SelfTestRunner
             yield return Wait(1f);
         }
         var host = JsonLine.ReadString(line, "hostSteamId");
+        // The host drops lobby chat from its own account (SteamLobbyHandler.cs:222-225), so the room ID would never come.
+        if (SteamUser.GetSteamID().m_SteamID.ToString(CultureInfo.InvariantCulture) == host)
+        {
+            Fail(
+                $"this client and the host share Steam account {host}; restart this side's Steam client"
+            );
+            yield break;
+        }
         var lobby = new CSteamID(lobbyId);
         var lobbies = GameHandler.GetService<SteamLobbyHandler>();
         lobbies.TryJoinLobby(lobby);
@@ -311,7 +319,8 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var host = Host();
         var rig = VRRig.Instance;
-        const bool left = false;
+        // Only an empty hand fires (PingInput.cs:42-52) and the Airport puts a passport in the right hand.
+        bool left = HeldItem() != null && !LocalHold.ItemInLeftHand;
         var aim = host.Center + Flat(c.Center - host.Center) * 1.5f;
         if (
             Physics.Raycast(
