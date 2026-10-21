@@ -7,7 +7,7 @@ namespace PeakXR.Comfort;
 /// scripted looks, shakes, status flashes, post pulses, teleports, wind) go through one policy table
 /// (<see cref="PeakXR.Core.ComfortPolicy"/>) to a VR treatment: vignette pulse, fade, rumble or the horizon-locked
 /// third-person view. Also the cutscene view choice (still viewpoint, opt-in glide, or ui.runflow's screen),
-/// cutscene camera jitter, mirrors and mirages, the BLIND white-out (capped) and the fade before a hard cut to
+/// cutscene camera jitter, mirrors and mirages, the BLIND white-out (a capped haze) and the fade before a hard cut to
 /// Title. Gameplay stays vanilla: hooks only observe, or swap a local presentation effect.
 /// </summary>
 public sealed class ComfortEventsFeature : Feature

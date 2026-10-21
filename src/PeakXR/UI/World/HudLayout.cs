@@ -70,6 +70,13 @@ internal sealed class HudSplit
     public static bool WristValid;
     public static Vector3 WristPosition;
     public static Quaternion WristRotation = Quaternion.identity;
+
+    /// <summary>Width of the posed wrist HUD in metres and how far (0..1) it is turned toward the eye.</summary>
+    public static float WristWidthMeters,
+        WristFacing;
+
+    /// <summary>The wrist container while the HUD is split onto the wrist (self-test).</summary>
+    public static RectTransform WristRoot { get; private set; }
     private int measuredMask;
 
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
@@ -274,12 +281,31 @@ internal sealed class HudSplit
         if (ShownMask(wristBox.Rect) != measuredMask)
             MeasureWrist(wristBox.Rect);
 
-        // Back of the wrist, facing up out of the forearm; text up toward the fingers. Needs in-headset tuning.
+        // Raised off the back of the wrist so the forearm never cuts through it; lying on it, facing up out of the
+        // forearm with text up toward the fingers. Seen from the eye that is edge-on, so it turns toward the eye
+        // (WristHud.Facing: halfway at rest, fully when looked at or on an alert) and keeps its angular size.
+        var anchor = hand.position + hand.rotation * new Vector3(0f, 0.07f, -0.12f);
         var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
-        var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
-        var width = cfg.WristWidth.Value * (1f + 0.15f * WristPulse);
+        var width = WristHud.Width(cfg.WristWidth.Value, WristHud.ReadDistance, WristPulse);
+        var head = rig.Head;
+        var toEye = head != null ? head.position - anchor : Vector3.zero;
+        float distance = toEye.magnitude;
+        if (distance > 0.01f)
+        {
+            float gaze = Vector3.Angle(head.forward, -toEye);
+            WristFacing = Mathf.MoveTowards(
+                WristFacing,
+                WristHud.Facing(gaze, WristPulse),
+                Time.unscaledDeltaTime * 4f
+            );
+            var face = Quaternion.LookRotation(-toEye, head.up);
+            rotation = Quaternion.Slerp(rotation, face, WristFacing);
+            width = WristHud.Width(cfg.WristWidth.Value, distance, WristPulse);
+        }
         wristBox.Pose(anchor, rotation, wristCenter, width / wristSpan);
         WristValid = true;
+        WristWidthMeters = width;
+        WristRoot = wristBox.Rect;
         WristPosition = anchor;
         WristRotation = rotation;
     }

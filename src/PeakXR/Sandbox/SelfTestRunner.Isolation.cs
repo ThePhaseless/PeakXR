@@ -66,6 +66,9 @@ internal sealed partial class SelfTestRunner
         var scout = go.GetComponentInChildren<Scoutmaster>();
         var swarm = go.GetComponentInChildren<BeeSwarm>();
         var zombie = go.GetComponentInChildren<MushroomZombie>();
+        // BLIND (explosions, flash plants): in VR the view must never wash out (comfort.events, vr.34).
+        var wash = PeakXR.VR.VRSession.Active ? BlindWashRenderer() : null;
+        bool washed = false;
         float end = Now + 3f;
         while (Now < end && go != null)
         {
@@ -78,6 +81,8 @@ internal sealed partial class SelfTestRunner
                 || (swarm != null && swarm.currentAggroCharacter == c)
                 || (zombie != null && zombie._currentTarget == c);
             blinded |= c.data.isBlind;
+            if (wash != null && c.data.isBlind)
+                washed |= BlindWashedOut(wash);
             yield return null;
         }
         bool gone = go == null;
@@ -91,7 +96,9 @@ internal sealed partial class SelfTestRunner
             spawnOnly |= entry.Name.Contains(s, System.StringComparison.Ordinal);
         bool alive =
             moved > 0.3f || near - closest > 0.3f || targeted || blinded || grew > 0.2f || gone;
-        if (spawnOnly)
+        if (washed)
+            Fail("BLIND washed out the view: " + note);
+        else if (spawnOnly)
             stepNote = "spawned only (nothing to observe); " + note;
         else if (!alive)
             Fail("no sign of behaviour in 3 s: " + note);

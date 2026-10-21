@@ -173,6 +173,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return Uses();
             yield return Mobs();
             yield return VRStep("vr.07-comfort", 100f, ComfortCheck());
+            yield return VRStep("vr.34-blind", 15f, BlindCheck());
             yield return HandSteps();
             yield return SpatialSteps();
             foreach (var segment in SandboxActions.Segments)
@@ -493,6 +494,64 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         var go = SandboxActions.LastSpawned;
         spawned.Add(go);
         yield return MobBehaviour(entry, go);
+    }
+
+    /// <summary>The level's BLIND overlay quad (Misc/BlindPost, IllegalScreenEffect.cs:20), found without the patch
+    /// under test; null when the scene has none.</summary>
+    static MeshRenderer BlindWashRenderer()
+    {
+        var effect = UnityEngine.Object.FindAnyObjectByType<IllegalScreenEffect>();
+        return effect != null ? effect.GetComponent<MeshRenderer>() : null;
+    }
+
+    /// <summary>Read after this frame's Updates, so it is what renders: the game's white-out quad is on and not held
+    /// off, or the haze replacing it went over <see cref="ComfortPolicy.MaxWashAlpha"/>.</summary>
+    static bool BlindWashedOut(MeshRenderer wash) =>
+        (wash != null && wash.enabled && !wash.forceRenderingOff)
+        || Comfort.ComfortEventsRuntime.HazeAlpha > ComfortPolicy.MaxWashAlpha + 0.001f;
+
+    /// <summary>
+    /// vr.34: BLIND (Character.illegalStatusAction, Character.cs:186, handled by IllegalScreenEffect.AddStatus
+    /// IllegalScreenEffect.cs:65) reads as blindness without washing the view out: the game's white quad is not
+    /// drawn and the haze that replaces it peaks above zero but at most at the cap.
+    /// </summary>
+    IEnumerator BlindCheck()
+    {
+        var c = Character.localCharacter;
+        if (c == null || c.illegalStatusAction == null)
+        {
+            Fail("no local character with an IllegalScreenEffect bound");
+            yield break;
+        }
+        var wash = BlindWashRenderer();
+        if (wash == null)
+        {
+            Fail("no BLIND overlay (IllegalScreenEffect) in the scene");
+            yield break;
+        }
+        c.illegalStatusAction("BLIND", 5f);
+        float peak = 0f;
+        float strength = 0f;
+        bool washed = false;
+        for (float until = Now + 3f; Now < until; )
+        {
+            peak = Mathf.Max(peak, Comfort.ComfortEventsRuntime.HazeAlpha);
+            strength = Mathf.Max(strength, Comfort.ComfortEventsPatches.BlindWash.Strength);
+            washed |= BlindWashedOut(wash);
+            yield return null;
+        }
+        bool blind = c.data.isBlind;
+        yield return Shot("vr-34-blind");
+        stepNote = F(
+            $"blind {blind}, game wash {strength:0.00}, haze peak {peak:0.00} (cap {ComfortPolicy.MaxWashAlpha:0.00})"
+        );
+        if (!blind)
+            Fail("BLIND did not apply");
+        else if (washed)
+            Fail("the view was washed out");
+        else if (peak < 0.1f)
+            Fail("no haze: blindness does not show");
+        yield return WaitFor(() => !c.data.isBlind, 4f);
     }
 
     IEnumerator Jump(Segment segment, string shot = null)

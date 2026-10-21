@@ -46,6 +46,20 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     private float nextHaptic;
     private float cutUntil = -1f;
 
+    /// <summary>Radius of the blind haze around the eyes: hands, held items and the wrist display nearer than
+    /// this stay clear (they write depth first), like the game's own depth fog.</summary>
+    private const float HazeRadius = 0.6f;
+
+    /// <summary>Haze opacity change per second: 0 to the full cap in about 0.4 s.</summary>
+    private const float HazeRate = 1f;
+
+    private GameObject haze;
+    private Material hazeMaterial;
+    private MeshRenderer hazeRenderer;
+
+    /// <summary>Opacity of the blind haze drawn this frame (self-test: never above ComfortPolicy.MaxWashAlpha).</summary>
+    internal static float HazeAlpha { get; private set; }
+
     internal static void Create()
     {
         var go = new GameObject("PeakXR.ComfortEvents") { hideFlags = HideFlags.HideAndDontSave };
@@ -173,6 +187,7 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         else
             VRFade.Clear(fadeOwner);
         RigDriver.EventDetach = pulses.Detached;
+        ShowHaze(ComfortPolicy.BlindHaze(ComfortEventsPatches.BlindWash.Strength));
         if (pulses.HapticAmplitude > 0f && Time.unscaledTime >= nextHaptic)
         {
             nextHaptic = Time.unscaledTime + HapticInterval;
@@ -239,8 +254,49 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             pulses.Add(launchHold);
     }
 
+    /// <summary>The BLIND white-out as a capped white haze around the head (see ComfortEventsPatches.BlindWash).</summary>
+    private void ShowHaze(float target)
+    {
+        // Eased, so a wash that starts at full strength fades in instead of flashing white in one frame.
+        float alpha = Mathf.MoveTowards(HazeAlpha, target, Time.unscaledDeltaTime * HazeRate);
+        HazeAlpha = alpha;
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (alpha <= 0.002f || head == null)
+        {
+            if (hazeRenderer != null && hazeRenderer.enabled)
+                hazeRenderer.enabled = false;
+            HazeAlpha = head == null ? 0f : alpha;
+            return;
+        }
+        if (haze == null)
+        {
+            hazeMaterial ??= UIMaterials.Create(Color.clear, drawOnTop: false, renderQueue: 3100);
+            haze = UIMaterials.MeshObject(
+                "PeakXR_BlindHaze",
+                UIMaterials.SphereMesh(),
+                hazeMaterial,
+                head
+            );
+            haze.transform.localScale = Vector3.one * (HazeRadius * 2f);
+            hazeRenderer = haze.GetComponent<MeshRenderer>();
+        }
+        else if (haze.transform.parent != head)
+            haze.transform.SetParent(head, false);
+        hazeMaterial.color = new Color(1f, 1f, 1f, alpha);
+        if (!hazeRenderer.enabled)
+            hazeRenderer.enabled = true;
+    }
+
     private void ClearOutputs()
     {
+        HazeAlpha = 0f;
+        if (haze != null)
+            Destroy(haze);
+        if (hazeMaterial != null)
+            Destroy(hazeMaterial);
+        haze = null;
+        hazeMaterial = null;
+        hazeRenderer = null;
         VignetteBoost = 0f;
         RigDriver.EventDetach = false;
         RigDriver.FollowCutscene = false;

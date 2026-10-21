@@ -43,6 +43,7 @@ internal static class ComfortEventsPatches
         MovementCharacter = GameMember.Field<CharacterMovement, Character>("character");
         ActionItem = GameMember.Field<ItemActionBase, Item>("item");
         BlindWash.Material = GameMember.Field<IllegalScreenEffect, Material>("mat");
+        BlindWash.Renderer = GameMember.Field<IllegalScreenEffect, MeshRenderer>("rend");
     }
 
     private static bool IsLocal(Character c) => c != null && c.IsLocal;
@@ -332,10 +333,14 @@ internal static class ComfortEventsPatches
 
     /// <summary>
     /// IllegalScreenEffect.Update (IllegalScreenEffect.cs:25): the BLIND status (Affliction_Blind.OnApplied,
-    /// Peak.Afflictions/Affliction_Blind.cs:21, applied by explosion and flash AOEs, AOE.cs:118) is a white overlay
-    /// over the whole view whose <c>_Alpha</c> stays near 1 until the last 3 s (IllegalScreenEffect.cs:44-53). In
-    /// a headset that is a glaring white-out for many seconds; in VR it is capped (Core ComfortPolicy.CapWash), so
-    /// the player still reads as blinded but sees the world. The status itself (isBlind) is untouched.
+    /// Peak.Afflictions/Affliction_Blind.cs:21, applied by explosion and flash AOEs, AOE.cs:118) shows Misc/BlindPost,
+    /// a quad whose BlindPost shader (Forward pass: Blend SrcAlpha OneMinusSrcAlpha, ZTest LEqual, no ZWrite) lays a
+    /// depth fog of HDR cyan (_Color1 (0, 3.1, 12), _Color2 (0, 6.1, 12)) over the view at <c>_Alpha</c>, which stays
+    /// near 1 until the last 3 s (IllegalScreenEffect.cs:44-53). Capping <c>_Alpha</c> cannot help: 0.4 of a colour
+    /// twelve times white still blows out after tonemapping. So in VR the game's quad is not drawn
+    /// (<c>forceRenderingOff</c>; the game keeps toggling <c>enabled</c>, :42, :45, :60) and its <c>_Alpha</c> ramp
+    /// becomes <see cref="Strength"/>, which drives a capped white haze (ComfortEventsRuntime, Core
+    /// ComfortPolicy.BlindHaze) and a white edge glow (ui.status). The status itself (isBlind) is untouched.
     /// </summary>
     [HarmonyPatch]
     internal static class BlindWash
@@ -343,21 +348,44 @@ internal static class ComfortEventsPatches
         /// <summary>IllegalScreenEffect.mat (IllegalScreenEffect.cs:16, private), its own material instance.</summary>
         internal static AccessTools.FieldRef<IllegalScreenEffect, Material> Material;
 
+        /// <summary>IllegalScreenEffect.rend (IllegalScreenEffect.cs:14, private).</summary>
+        internal static AccessTools.FieldRef<IllegalScreenEffect, MeshRenderer> Renderer;
+
+        private static float strength;
+        private static int frame = -10;
+
+        /// <summary>The game's wash strength 0..1 (its <c>_Alpha</c> while the overlay is on), 0 when not blind or
+        /// when no overlay updated in the last frame (scene change).</summary>
+        internal static float Strength => Time.frameCount - frame <= 1 ? strength : 0f;
+
+        /// <summary>The renderer this patch stopped drawing, given back when VR stops so flat play sees BLIND again.</summary>
+        private static MeshRenderer hidden;
+
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(IllegalScreenEffect), "Update", Type.EmptyTypes);
 
         private static void Postfix(IllegalScreenEffect __instance)
         {
+            var rend = Renderer(__instance);
             if (!VRSession.Active)
+            {
+                if (hidden != null && ReferenceEquals(rend, hidden))
+                {
+                    hidden.forceRenderingOff = false;
+                    hidden = null;
+                }
                 return;
+            }
             var mat = Material(__instance);
-            if (mat == null)
+            if (rend == null || mat == null)
                 return;
-            var name = __instance.shaderVarName;
-            var alpha = mat.GetFloat(name);
-            var capped = ComfortPolicy.CapWash(alpha);
-            if (capped < alpha)
-                mat.SetFloat(name, capped);
+            if (!rend.forceRenderingOff)
+            {
+                rend.forceRenderingOff = true;
+                hidden = rend;
+            }
+            strength = rend.enabled ? mat.GetFloat(__instance.shaderVarName) : 0f;
+            frame = Time.frameCount;
         }
     }
 

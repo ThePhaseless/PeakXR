@@ -136,17 +136,29 @@ public class ComfortPolicyTests
     }
 
     [Fact]
-    public void FullViewWash_IsCappedSoTheWorldStaysVisible()
+    public void BlindHaze_NeverWashesOutTheView()
     {
-        Assert.Equal(ComfortPolicy.MaxWashAlpha, ComfortPolicy.CapWash(1f));
         Assert.True(ComfortPolicy.MaxWashAlpha <= 0.5f);
+        Assert.Equal(ComfortPolicy.MaxWashAlpha, ComfortPolicy.BlindHaze(1f));
+        Assert.Equal(ComfortPolicy.MaxWashAlpha, ComfortPolicy.BlindHaze(5f));
+        Assert.Equal(ComfortPolicy.MaxWashAlpha, ComfortPolicy.BlindHaze(float.NaN));
     }
 
     [Fact]
-    public void WeakWash_IsUntouched()
+    public void BlindHaze_FollowsTheGamesOwnFade()
     {
-        Assert.Equal(0.2f, ComfortPolicy.CapWash(0.2f));
-        Assert.Equal(0f, ComfortPolicy.CapWash(0f));
+        Assert.Equal(ComfortPolicy.MaxWashAlpha * 0.5f, ComfortPolicy.BlindHaze(0.5f), 4);
+        Assert.Equal(0f, ComfortPolicy.BlindHaze(0f));
+        Assert.Equal(0f, ComfortPolicy.BlindHaze(-1f));
+    }
+
+    [Fact]
+    public void BlindRim_GlowsAtTheEdgeWhileBlind()
+    {
+        Assert.Equal(0f, ComfortPolicy.BlindRim(0f));
+        Assert.True(ComfortPolicy.BlindRim(1f) >= 0.5f);
+        Assert.True(ComfortPolicy.BlindRim(1f) <= 1f);
+        Assert.True(ComfortPolicy.BlindRim(0.5f) < ComfortPolicy.BlindRim(1f));
     }
 }
 
