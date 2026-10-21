@@ -51,6 +51,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     string logPath;
     bool stepOk;
     string stepNote;
+
+    /// <summary>Set by a step that cannot run because the level lacks what it needs; recorded as SKIP, not FAIL.</summary>
+    string stepSkip;
     bool finished;
 
     static float Now => Time.realtimeSinceStartup;
@@ -443,9 +446,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     {
         stepOk = true;
         stepNote = null;
+        stepSkip = null;
         report.Begin(id, Now);
         yield return Guard(body, Now + timeout, OnStepFailure);
-        report.End(stepOk, Now, stepNote);
+        if (stepOk && stepSkip != null)
+            report.Skip(id, stepSkip);
+        else
+            report.End(stepOk, Now, stepNote);
         Record(report.Steps.Count - 1);
     }
 

@@ -402,7 +402,7 @@ internal sealed partial class SelfTestRunner
     /// vr.15: at the nearest steep terrain face (rays on <c>HelperFunctions.terrainMapMask</c>, HelperFunctions.cs:27),
     /// a gripping hand on the surface starts the game's wall climb (<c>CharacterData.isClimbing</c>, CharacterData.cs:118),
     /// pulling it down lifts the body, and letting go ends the climb. Warps there with <c>Character.WarpPlayerRPC</c>
-    /// (Character.cs:1822) and back to spawn after.
+    /// (Character.cs:1822) and back to spawn after. Skips when no such face is within 40 m of the spawn or a ring of points around it.
     /// </summary>
     IEnumerator ClimbStep()
     {
@@ -410,7 +410,8 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         if (!FindWall(c, out var wall, out var stand))
         {
-            Fail("no climbable wall with walkable ground in front within 25 m");
+            stepSkip =
+                "no climbable wall with walkable ground in front within 40 m of spawn or 8 points around it";
             yield break;
         }
         var normal = Flat(wall.normal);
@@ -902,57 +903,73 @@ internal sealed partial class SelfTestRunner
         wall = default;
         stand = default;
         const int Rays = 24;
+        const float Range = 40f;
         float best = float.MaxValue;
-        var origin = c.Center + Vector3.up * 0.2f;
-        for (int i = 0; i < Rays; i++)
+        var home = c.Center;
+        // The beach spawn and the daily level vary, so also cast from a ring of points around the character and
+        // at three heights each; the wall nearest the character wins.
+        for (int o = 0; o < 9; o++)
         {
-            var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
-            if (
-                !Physics.Raycast(
-                    origin,
-                    dir,
-                    out var hit,
-                    25f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-                || hit.distance >= best
-            )
-                continue;
-            float angle = Vector3.Angle(hit.normal, Vector3.up);
-            if (angle < 65f || angle > 115f)
-                continue;
-            if (
-                !Physics.Raycast(
-                    origin + Vector3.up * 1.2f,
-                    dir,
-                    out var high,
-                    hit.distance + 1.5f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
-            )
-                continue;
-            var front = hit.point + Flat(hit.normal) * 0.6f;
-            if (
-                !Physics.Raycast(
-                    front + Vector3.up * 2f,
-                    Vector3.down,
-                    out var ground,
-                    6f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-                || Vector3.Angle(ground.normal, Vector3.up) > 40f
-            )
-                continue;
-            // Chest height over that ground still meets the wall: the face starts at the standing spot's level.
-            float rise = hit.point.y - ground.point.y;
-            if (rise < 0.3f || rise > 1.6f)
-                continue;
-            best = hit.distance;
-            wall = hit;
-            stand = ground.point + Vector3.up * 0.1f;
+            var spot =
+                o == 0
+                    ? home
+                    : home + Quaternion.Euler(0f, (o - 1) * 45f, 0f) * Vector3.forward * 15f;
+            foreach (float h in new[] { 0.2f, 2f, 5f })
+            {
+                var origin = spot + Vector3.up * h;
+                for (int i = 0; i < Rays; i++)
+                {
+                    var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
+                    if (
+                        !Physics.Raycast(
+                            origin,
+                            dir,
+                            out var hit,
+                            Range,
+                            HelperFunctions.terrainMapMask,
+                            QueryTriggerInteraction.Ignore
+                        )
+                    )
+                        continue;
+                    float away = Vector3.Distance(home, hit.point);
+                    if (away >= best)
+                        continue;
+                    float angle = Vector3.Angle(hit.normal, Vector3.up);
+                    if (angle < 65f || angle > 115f)
+                        continue;
+                    if (
+                        !Physics.Raycast(
+                            origin + Vector3.up * 1.2f,
+                            dir,
+                            out var high,
+                            hit.distance + 1.5f,
+                            HelperFunctions.terrainMapMask,
+                            QueryTriggerInteraction.Ignore
+                        ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+                    )
+                        continue;
+                    var front = hit.point + Flat(hit.normal) * 0.6f;
+                    if (
+                        !Physics.Raycast(
+                            front + Vector3.up * 2f,
+                            Vector3.down,
+                            out var ground,
+                            6f,
+                            HelperFunctions.terrainMapMask,
+                            QueryTriggerInteraction.Ignore
+                        )
+                        || Vector3.Angle(ground.normal, Vector3.up) > 40f
+                    )
+                        continue;
+                    // Chest height over that ground still meets the wall: the face starts at the standing spot's level.
+                    float rise = hit.point.y - ground.point.y;
+                    if (rise < 0.3f || rise > 1.6f)
+                        continue;
+                    best = away;
+                    wall = hit;
+                    stand = ground.point + Vector3.up * 0.1f;
+                }
+            }
         }
         return best < float.MaxValue;
     }
