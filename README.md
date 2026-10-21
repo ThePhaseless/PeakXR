@@ -47,8 +47,9 @@ Camera, render and comfort options are in `BepInEx/config/com.thephaseless.peakx
 Steam launch options:
 
 ```
-WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11
+WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan
 ```
 
-The DLL override lets BepInEx load under Proton. `-force-d3d11` makes the game use D3D11, which is the
-best-tested path through Proton's OpenXR bridge.
+The DLL override lets BepInEx load under Proton. `-force-vulkan` makes the game use Vulkan, the only
+graphics API tested in VR so far. On a Proton launch without Wine's VR registry keys, D3D12 and D3D11
+fail to create a device and the game falls back to Vulkan anyway.

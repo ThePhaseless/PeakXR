@@ -91,4 +91,4 @@ Snap turn 30°, vignette on (medium), head-relative movement, no head bob, no sh
 
 - `mise run test`: unit tests for `PeakXR.Core` (math, codec, comfort, gestures).
 - In game: `sandbox` feature plus PEAK_MX for flat checks; the SteamVR MCP for headset tests.
-- Linux launch options: `WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11`.
+- Linux launch options: `WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan`.
