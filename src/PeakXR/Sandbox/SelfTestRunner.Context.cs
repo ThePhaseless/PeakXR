@@ -192,7 +192,10 @@ internal sealed partial class SelfTestRunner
 
         var before = Ids<JungleVine>();
         SelfTestInputPatch.HoldPrimary = true;
-        yield return WaitFor(() => Fresh<JungleVine>(before) != null, item.usingTimePrimary + 3f);
+        yield return WaitFor(
+            () => Fresh<JungleVine>(before) != null,
+            GameTiming.Budget(GameTiming.UseSeconds(item), 1f)
+        );
         SelfTestInputPatch.HoldPrimary = false;
         var vine = Fresh<JungleVine>(before);
         if (vine == null)
@@ -295,7 +298,7 @@ internal sealed partial class SelfTestRunner
         SelfTestInputPatch.HoldPrimary = true;
         yield return WaitFor(
             () => Fresh<TiedBalloon>(before) != null,
-            HeldItem() != null ? HeldItem().usingTimePrimary + 3f : 3f
+            GameTiming.Budget(GameTiming.UseSeconds(HeldItem()), 1f)
         );
         SelfTestInputPatch.HoldPrimary = false;
         yield return Wait(1f);

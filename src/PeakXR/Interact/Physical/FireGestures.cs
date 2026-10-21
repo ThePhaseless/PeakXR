@@ -413,13 +413,7 @@ internal static class FireGestures
         var fire = ItemGestures.NearestCampfire(flame, 1.5f, litOnly: false, unlitOnly: true);
         if (fire != null && fire.state == Campfire.FireState.Off && Lightable(c, fire))
         {
-            float d = HeatZone.Distance(
-                flame.N(),
-                ItemGestures.FireBase(fire).N(),
-                CampfireLightRadius,
-                CampfireLightMinUp,
-                CampfireLightMaxUp
-            );
+            float d = LightZoneDistance(fire, flame);
             if (d < distance)
             {
                 distance = d;
@@ -428,6 +422,17 @@ internal static class FireGestures
         }
         return best;
     }
+
+    /// <summary>How far <paramref name="flame"/> is outside <paramref name="fire"/>'s light zone (0 inside); the
+    /// light starts within <c>TouchEnter</c> of it. The self-test holds a torch in it (vr.26).</summary>
+    internal static float LightZoneDistance(Campfire fire, Vector3 flame) =>
+        HeatZone.Distance(
+            flame.N(),
+            ItemGestures.FireBase(fire).N(),
+            CampfireLightRadius,
+            CampfireLightMinUp,
+            CampfireLightMaxUp
+        );
 
     private static bool Lightable(Character c, IInteractible it) =>
         it.IsInteractible(c)

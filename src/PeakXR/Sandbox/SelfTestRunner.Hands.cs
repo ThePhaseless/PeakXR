@@ -229,8 +229,9 @@ internal sealed partial class SelfTestRunner
         }
         float before = afflictions.GetCurrentStatus(status);
         float consumedBefore = c.data.lastConsumedItem;
-        float useTime = item.usingTimePrimary;
-        float end = Now + useTime + 6f;
+        // The item's own use time after up to 3 s bringing it to the mouth.
+        float useTime = GameTiming.UseSeconds(item);
+        float end = Now + GameTiming.Budget(useTime, 3f);
         float best = float.MaxValue;
         float bestItem = float.MaxValue;
         float progress = 0f;
@@ -694,7 +695,13 @@ internal sealed partial class SelfTestRunner
         var at = pack.Center();
         yield return MoveTo(left, () => at, 0.5f);
         yield return GripTo(left, 1f, 0.1f);
-        yield return Until(() => c.data.usingBackpackWheel, 2f, "the backpack wheel did not open");
+        // The pack's own hold before its wheel opens (openRadialMenuTime, Backpack.cs:14, :262).
+        float openTime = pack is Backpack bp ? bp.GetInteractTime(c) : 0f;
+        yield return Until(
+            () => c.data.usingBackpackWheel,
+            GameTiming.Budget(openTime, 1f),
+            "the backpack wheel did not open"
+        );
         if (!stepOk)
         {
             stepNote =

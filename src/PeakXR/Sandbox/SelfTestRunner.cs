@@ -340,7 +340,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Skip("use." + fragment, "no item name contains it");
                 continue;
             }
-            yield return Run("use." + item.name, 20f, UseItem(item));
+            // Setup (drop, give, settle) plus the item's own use time.
+            yield return Run(
+                "use." + item.name,
+                10f + GameTiming.Budget(GameTiming.UseSeconds(item)),
+                UseItem(item)
+            );
             SelfTestInputPatch.HoldPrimary = false;
             Safe("use.despawn", Despawn);
         }
@@ -377,11 +382,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         spawned.Add(held.gameObject);
         yield return Wait(0.5f);
         // Item.StartUsePrimary sets isUsingPrimary (Item.cs:849-855); an eaten or spent item leaves the hand.
+        // Held through the item's own use time, so a slow cast gets to finish (finishedCast, Item.cs:883).
         bool started = false;
         float progress = 0f;
+        float useTime = GameTiming.UseSeconds(held);
         SelfTestInputPatch.HoldPrimary = true;
-        float end = Now + 1.5f;
-        while (Now < end)
+        float end = Now + GameTiming.Budget(useTime);
+        while (Now < end && !held.finishedCast)
         {
             if (held == null || HeldItem() != held)
             {
@@ -396,7 +403,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Wait(1f);
         bool gone = held == null || HeldItem() != held;
         var note =
-            $"primary use started {started}, cast progress {progress:0.00}, left the hand {gone}";
+            $"primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
         if (!started)
             Fail("primary use never started: " + note);
         else
@@ -529,7 +536,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("no BLIND overlay (IllegalScreenEffect) in the scene");
             yield break;
         }
-        c.illegalStatusAction("BLIND", 5f);
+        const float blindFor = 5f;
+        float blindAt = Now;
+        c.illegalStatusAction("BLIND", blindFor);
         float peak = 0f;
         float strength = 0f;
         bool washed = false;
@@ -551,7 +560,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("the view was washed out");
         else if (peak < 0.1f)
             Fail("no haze: blindness does not show");
-        yield return WaitFor(() => !c.data.isBlind, 4f);
+        // The status runs the duration given above; wait out what is left of it.
+        yield return WaitFor(() => !c.data.isBlind, GameTiming.Budget(blindFor - (Now - blindAt)));
     }
 
     IEnumerator Jump(Segment segment, string shot = null)
@@ -573,6 +583,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         var expected = segment == Segment.Peak ? Segment.TheKiln : segment;
         if (now != expected)
             Fail("in " + now + " after the jump");
+        if (segment == Segment.Peak)
+            yield return PeakGround();
         yield return Shot(shot ?? "06-segment-" + segment);
         yield return Landing();
     }

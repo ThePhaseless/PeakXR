@@ -46,7 +46,12 @@ internal sealed partial class SelfTestRunner
                 Skip(id, "no item matching " + fragment);
             yield break;
         }
-        yield return HandStep(id, timeout, body(item));
+        // The scripted setup's budget plus the item's own use time.
+        yield return HandStep(
+            id,
+            timeout + GameTiming.Budget(GameTiming.UseSeconds(item)),
+            body(item)
+        );
     }
 
     /// <summary>vr.21: the holding hand at the mouth, tilted 30 degrees up, starts the toot
@@ -132,7 +137,8 @@ internal sealed partial class SelfTestRunner
         var chest = head + Vector3.down * 0.45f + forward * 0.08f + (left ? -right : right) * 0.05f;
         yield return MoveTrack(left, chest, 0.6f);
         float progress = 0f;
-        float end = Now + item.usingTimePrimary + 4f;
+        float useTime = GameTiming.UseSeconds(item);
+        float end = Now + GameTiming.Budget(useTime, 2f);
         bool used = false;
         bool shot = false;
         while (Now < end)
@@ -156,7 +162,7 @@ internal sealed partial class SelfTestRunner
             }
             yield return null;
         }
-        var note = $"{prefab.name}: cast progress {progress:0.00}, used {used}";
+        var note = $"{prefab.name}: cast progress {progress:0.00} of {useTime:0.0} s, used {used}";
         if (!used && progress < 0.2f)
             Fail("no use on the chest: " + note);
         else
@@ -181,6 +187,8 @@ internal sealed partial class SelfTestRunner
         bool free = !holdLeft;
         yield return GripTo(holdLeft, 1f, 0.1f);
         bool before = parasol.isOpen;
+        // Each stroke is one primary use of the parasol (Action_Parasol), so it takes the item's use time.
+        float toggleTime = GameTiming.Budget(GameTiming.UseSeconds(item), 1f);
         var last = item.Center();
         yield return MoveTo(
             free,
@@ -195,12 +203,12 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(free, 1f, 0.1f);
         var at = Script(free).Position;
         yield return MoveTrack(free, at + Vector3.up * 0.25f, 0.5f);
-        yield return WaitFor(() => parasol.isOpen != before, 2f);
+        yield return WaitFor(() => parasol.isOpen != before, toggleTime);
         bool toggled = parasol.isOpen != before;
         if (toggled)
             yield return Shot("vr-23-parasol");
         yield return MoveTrack(free, at - Vector3.up * 0.05f, 0.5f);
-        yield return WaitFor(() => parasol.isOpen == before, 2f);
+        yield return WaitFor(() => parasol.isOpen == before, toggleTime);
         bool back = parasol.isOpen == before;
         yield return GripTo(free, 0f, 0.1f);
         var note = $"{item.name}: open {before} -> push up {toggled} -> pull down back {back}";
@@ -411,6 +419,25 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>One frame of steering a carried item point that drifted out of its zone back toward
+    /// <paramref name="goal"/>, at 1.5 m/s and only while the hand leads the item by at most
+    /// <see cref="MaxCarryLead"/>. Unlike <see cref="CarryToward"/> it never jumps the hand to a remembered lead: that
+    /// stall reset re-armed on every swing of the torch and left it 1.25 m out, behind the body (vr25, light hold
+    /// 0.38 of 2 s).</summary>
+    void SteerBack(bool left, Vector3 part, Vector3 goal)
+    {
+        var rig = VRRig.Instance;
+        var hand = rig.Hand(left).position;
+        if ((hand - part).sqrMagnitude > MaxCarryLead * MaxCarryLead)
+            return;
+        SetHand(
+            left,
+            rig.Origin.InverseTransformPoint(
+                Vector3.MoveTowards(hand, goal + (hand - part), 1.5f * Time.unscaledDeltaTime)
+            )
+        );
+    }
+
     /// <summary>vr.24: a grip on the top of the nearest closed suitcase holds the open timer at the lid
     /// (<c>Interaction.constantInteractableProgress</c>, Interaction.cs:57) while the hand stays still, and lifting
     /// it opens the case (<c>Luggage.IsOpen</c>, Luggage.cs:37).</summary>
@@ -457,12 +484,15 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return Wait(1f);
+        // The lid's own open time (timeToOpen, Luggage.cs:214). Still long enough that a timer running without the
+        // lift would pass the 0.15 progress limit below twice over.
+        float openTime = GameTiming.InteractSeconds(lug, Character.localCharacter);
+        yield return Wait(Mathf.Max(1f, 0.3f * openTime));
         float still = interaction.constantInteractableProgress;
         yield return Shot("vr-24-lift-lid");
         var at = Script(left).Position;
-        float rate = LidGesture.LiftHeight * 1.4f / Mathf.Max(0.5f, lug.timeToOpen);
-        float end = Now + lug.timeToOpen + 3f;
+        float rate = LidGesture.LiftHeight * 1.4f / Mathf.Max(0.5f, openTime);
+        float end = Now + GameTiming.Budget(openTime, 1f);
         float lifted = 0f;
         while (!lug.IsOpen && Now < end)
         {
@@ -475,7 +505,7 @@ internal sealed partial class SelfTestRunner
         }
         yield return GripTo(left, 0f, 0.1f);
         var note =
-            $"{lug.name}: timeToOpen {lug.timeToOpen:0.0} s, progress with the hand still {still:0.00}, lifted {lifted:0.00} m, open {lug.IsOpen}";
+            $"{lug.name}: timeToOpen {openTime:0.0} s, progress with the hand still {still:0.00}, lifted {lifted:0.00} m, open {lug.IsOpen}";
         if (still > 0.15f)
             Fail("timer ran without a lift: " + note);
         else if (!lug.IsOpen)
@@ -546,18 +576,17 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
         // A torch is handed over unlit (a Lantern, FlareActive false; vr13): light it as a player does, with the
         // holding hand's trigger (its primary use, Lantern.cs:193).
+        float lightUse = GameTiming.Budget(GameTiming.UseSeconds(torch));
         if (!HandLights.IsLit(torch))
         {
             Script(left).Trigger = 1f;
-            yield return WaitFor(() => HandLights.IsLit(torch), torch.usingTimePrimary + 2f);
+            yield return WaitFor(() => HandLights.IsLit(torch), lightUse);
             Script(left).Trigger = 0f;
             yield return Wait(0.3f);
         }
         if (!HandLights.IsLit(torch))
         {
-            Fail(
-                $"{torch.name} did not light on its use (trigger held {torch.usingTimePrimary + 2f:0.0} s)"
-            );
+            Fail($"{torch.name} did not light on its use (trigger held {lightUse:0.0} s)");
             yield break;
         }
         var flame = FireGestures.FlamePoint(torch);
@@ -567,15 +596,34 @@ internal sealed partial class SelfTestRunner
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;
         float progress = 0f;
-        float holdTime = fire.GetInteractTime(c);
-        float end = Now + holdTime + 4f;
+        // The fire's own hold (GetInteractTime, Campfire.cs:429), after up to 3 s carrying the flame in.
+        float holdTime = GameTiming.InteractSeconds(fire, c);
+        float end = Now + GameTiming.Budget(holdTime, 3f);
         bool shot = false;
         string state = "";
+        bool entered = false;
+        int drifts = 0;
+        float worst = 0f;
+        bool wasOut = false;
         SelfTestCampfirePatch.Hold = true;
         BeginCarry();
         while (Now < end && !fire.Lit)
         {
-            CarryToward(left, flame.position, goal);
+            // Carry the flame in; from then on hold it there for the whole hold, steering back only on a drift.
+            float zone = FireGestures.LightZoneDistance(fire, flame.position);
+            entered |= zone <= 0f;
+            if (!entered)
+                CarryToward(left, flame.position, goal);
+            else
+            {
+                bool outNow = zone > 0f;
+                if (outNow && !wasOut)
+                    drifts++;
+                wasOut = outNow;
+                worst = Mathf.Max(worst, zone);
+                if (outNow)
+                    SteerBack(left, flame.position, goal);
+            }
             state = FireTrace("vr.26", flame.position, fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
                 progress = Mathf.Max(progress, interaction.constantInteractableProgress);
@@ -597,7 +645,8 @@ internal sealed partial class SelfTestRunner
         if (lit)
             yield return ShotAt("vr-26-lit", fireBase + Vector3.up * 0.3f, 1.5f);
         var note =
-            $"{torch.name} at {fire.name}: light hold progress {progress:0.00} of {holdTime:0.0} s, fire {fire.state}; at the end {state}";
+            $"{torch.name} at {fire.name}: light hold progress {progress:0.00} of {holdTime:0.0} s, fire {fire.state}; "
+            + $"flame reached the light zone {entered}, drifted out {drifts} times (worst {worst:0.00} m out); at the end {state}";
         if (progress <= 0f)
             Fail("flame did not start the light hold: " + note);
         else if (!lit)
@@ -650,7 +699,9 @@ internal sealed partial class SelfTestRunner
         float progress = 0f;
         bool shot = false;
         string state = "";
-        float end = Now + fire.cookTime + 4f;
+        // The fire's interact hold, cookTime (Campfire.cs:429), after up to 3 s carrying the food into the heat.
+        float cookTime = GameTiming.InteractSeconds(fire, c);
+        float end = Now + GameTiming.Budget(cookTime, 3f);
         BeginCarry();
         while (Now < end && food != null && Cooked(food) == before)
         {
@@ -668,7 +719,7 @@ internal sealed partial class SelfTestRunner
         }
         int after = food != null ? Cooked(food) : before;
         var note =
-            $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {fire.cookTime:0.0} s, cooked {before} -> {after}; at the end {state}";
+            $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {cookTime:0.0} s, cooked {before} -> {after}; at the end {state}";
         if (after <= before)
             Fail("not cooked: " + note);
         else

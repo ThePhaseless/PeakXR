@@ -120,4 +120,31 @@ public class SelfTestChecksTests
         // Degenerate input reads as out of view.
         TestUtil.Near(180f, SelfTestChecks.AngleOff(eye, down60, eye));
     }
+
+    [Fact]
+    public void WaitBudget_ScalesWithTheGameDuration()
+    {
+        // A slow item gets proportionally more time than a fast one, never less than the game's own duration.
+        float fast = SelfTestChecks.WaitBudget(1f);
+        float slow = SelfTestChecks.WaitBudget(6f);
+        Assert.True(fast > 1f);
+        Assert.True(slow > 6f);
+        Assert.True(slow - fast > 5f);
+        // The scripted lead-in adds on top; a broken (negative or NaN) duration counts as instant.
+        TestUtil.Near(SelfTestChecks.WaitBudget(1f) + 2f, SelfTestChecks.WaitBudget(1f, 2f));
+        TestUtil.Near(SelfTestChecks.WaitBudget(0f), SelfTestChecks.WaitBudget(-3f));
+        TestUtil.Near(SelfTestChecks.WaitBudget(0f), SelfTestChecks.WaitBudget(float.NaN));
+    }
+
+    [Fact]
+    public void FallSeconds_FreeFallThenTerminalSpeed()
+    {
+        // Under terminal speed it is free fall: 4.9 m at 9.8 m/s2 takes 1 s.
+        TestUtil.Near(1f, SelfTestChecks.FallSeconds(4.9f, 9.8f, 50f), 1e-3f);
+        // 430 m capped at 50 m/s: ~5.1 s to reach it (127.6 m), then ~6.05 s at 50 m/s.
+        float t = SelfTestChecks.FallSeconds(430f, 9.8f, 50f);
+        TestUtil.Near(50f / 9.8f + (430f - 50f * 50f / (2f * 9.8f)) / 50f, t, 1e-3f);
+        Assert.True(t > MathF.Sqrt(2f * 430f / 9.8f));
+        TestUtil.Near(0f, SelfTestChecks.FallSeconds(-1f, 9.8f, 50f));
+    }
 }
