@@ -14,6 +14,8 @@ The default layout for a right-handed player. With `Input.DominantHand = Left` t
 
 Notes:
 
+- Ropes and vines: grip one to grab it, then pull hand over hand to climb along it (`Interaction.RopeHandOverHand`). Open both hands for longer than `ClimbRegripGrace` to let go; jump and the stick still work.
+- Pitons and pickaxe handles: grip the handle to hang from it, and open the hand to let go (`Interaction.PitonGripHang`). With the setting off, interact again or jump to let go.
 - Use follows the hand that holds the item: its trigger is the primary use and the other trigger is the secondary use. With empty hands the right trigger climbs and the left trigger reaches out to help a friend, like the game's mouse buttons.
 - Grip, trigger and the hand throw come from the physical interaction settings (`Interaction` section). There, `DropButton` picks the drop button. The default, `DominantSecondary`, is B on your dominant hand, so it moves to the left controller with `Input.DominantHand = Left`. Names starting with `Left` or `Right` stay on that controller whichever hand is dominant.
 - The emote wheel opens at the hand that holds Y. Move that hand away from where the wheel opened, or push its stick, toward an emote and release Y to play it. Stick up and down on the right controller flips the page. The backpack wheel opens at the hand that grips the pack; move the hand toward a pocket and let go.
@@ -44,6 +46,8 @@ Settings live in the `Locomotion` section.
 
 - `MoveRelativeTo`: the move stick walks where you look (`Head`) or where the move hand points (`Hand`).
 - `SprintMode` and `CrouchMode`: `Toggle` (click once) or `Hold`.
+- `PhysicalCrouch` (on): crouch for real to crouch in game. It triggers when your head is about a third lower than the standing height measured at your last recenter, and lets go a little above that. Your view stays at your real head. Seated mode never triggers it, and the crouch click keeps working.
+- `ArmSwingSprint` (off): swing your arms like running while the move stick walks forward to sprint. The stick still decides where you go and how fast you walk; swinging alone never moves you. It stays off while you climb or hold an item with both hands.
 - Walking around your play space moves your character with you. Your view stays where your head is and the character steps after it once you lean further than `LeanDistance`. If the character cannot follow, for example against a wall or while climbing, and you get more than 1 m away from it, the view fades out and back in centred on the character. Turn `RoomScaleWalking` off to skip the stepping and keep only the fade.
 
 ## Game events
