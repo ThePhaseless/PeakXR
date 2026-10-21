@@ -28,8 +28,13 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Same cap as vanilla characterPovMaxDistance (MainCameraMovement.cs:21).</summary>
     private const float MaxBodyLag = 0.1f;
 
-    /// <summary>Eye height above the torso until the first upright sample of the character.</summary>
-    private const float DefaultEyeAboveCenter = 0.6f;
+    /// <summary>Eyes in front of (x) and above (y) the torso until the first upright sample of the character; a
+    /// rough guess, the first sample replaces it at once.</summary>
+    private static readonly System.Numerics.Vector2 DefaultEyeOffset = new(0.1f, 0.4f);
+
+    /// <summary>The eyes are sampled only while the look is within about 20 degrees of level: the animated head
+    /// pitches with the look (Look Y), which would carry the eye renderers down and forward.</summary>
+    private const float LevelLookY = 0.35f;
 
     /// <summary>Vertical follow rate (1/s) on the ground: the torso is a driven rigidbody that bobs at step rate
     /// (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls keep the full rate.</summary>
@@ -80,7 +85,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private Character boundCharacter;
     private bool haveEyeOffset;
-    private float eyeAboveCenter = DefaultEyeAboveCenter;
+    private System.Numerics.Vector2 eyeOffset = DefaultEyeOffset;
     private Vector3 anchor;
     private bool snap = true;
 
@@ -197,7 +202,7 @@ internal sealed class RigDriver : MonoBehaviour
             // New scene or respawned character: calibrate again once the head is tracked.
             boundCharacter = c;
             haveEyeOffset = false;
-            eyeAboveCenter = DefaultEyeAboveCenter;
+            eyeOffset = DefaultEyeOffset;
             needInitialRecenter = c != null;
             snap = true;
         }
@@ -263,10 +268,11 @@ internal sealed class RigDriver : MonoBehaviour
     }
 
     /// <summary>
-    /// Learns how far above the torso the character's eyes are, from the head bone while the body stands
-    /// upright (slow average, so walk bob does not reach the view). The vanilla eye point is
-    /// <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1358); only its height above the
-    /// head bone (the head's scale) is used, so head pitch from player.look cannot move the view.
+    /// Learns where the character's eyes are relative to the torso (forward and up in its facing frame) while the
+    /// body stands upright and looks level, as a slow average so walk bob does not reach the view. The eyes are the
+    /// face's eye renderers (CustomizationRefs.EyeRenderers, CharacterCustomization.cs:286). Not the vanilla camera
+    /// point <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1358): that sits on top of the head,
+    /// about 0.2 m above the eyes, and straight over the torso, so looking down showed the top of your own body.
     /// </summary>
     private void UpdateEyeOffset(Character c, float dt)
     {
@@ -280,18 +286,64 @@ internal sealed class RigDriver : MonoBehaviour
             || d.isCrouching
             || d.fallSeconds > 0f
             || d.currentRagdollControll < 0.9f
+            || Mathf.Abs(d.lookDirection.y) > LevelLookY
+            || d.lookDirection_Flat.sqrMagnitude < 1e-4f
         )
             return;
+        if (!TryEyePoint(c, out var eye))
+            return;
+        float facing = Mathf.Atan2(d.lookDirection_Flat.x, d.lookDirection_Flat.z) * Mathf.Rad2Deg;
+        var sample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
+        if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
+            return;
+        // Snap only while the view is placed anyway (a new character, a recenter); otherwise glide, never jump.
+        eyeOffset =
+            haveEyeOffset || !snap
+                ? System.Numerics.Vector2.Lerp(eyeOffset, sample, 1f - Mathf.Exp(-dt))
+                : sample;
+        if (!haveEyeOffset)
+            Plugin.Log.LogInfo(
+                $"{Tag} Eyes {sample.X:0.00} m ahead of and {sample.Y:0.00} m above the torso"
+            );
+        haveEyeOffset = true;
+    }
+
+    /// <summary>Middle of the face's eye renderers; without them, the old top-of-head point (no forward offset).</summary>
+    private static bool TryEyePoint(Character c, out Vector3 eye)
+    {
+        var custom = c.refs.customization;
+        var eyes = custom != null && custom.refs != null ? custom.refs.EyeRenderers : null;
+        eye = Vector3.zero;
+        int n = 0;
+        if (eyes != null)
+        {
+            for (int i = 0; i < eyes.Length; i++)
+            {
+                var r = eyes[i];
+                if (r == null)
+                    continue;
+                var b = r.bounds;
+                if (b.extents.sqrMagnitude <= 0f)
+                    continue;
+                eye += b.center;
+                n++;
+            }
+        }
+        if (n > 0)
+        {
+            eye /= n;
+            return true;
+        }
         var head = CameraPatches.GetBodypart(c, BodypartType.Head);
         if (head == null)
-            return;
-        float sample = head.transform.position.y + head.transform.lossyScale.y - c.Center.y;
-        if (!(sample > 0.1f && sample < 2f))
-            return;
-        eyeAboveCenter = haveEyeOffset
-            ? Mathf.Lerp(eyeAboveCenter, sample, 1f - Mathf.Exp(-dt))
-            : sample;
-        haveEyeOffset = true;
+            return false;
+        var center = c.Center;
+        eye = new Vector3(
+            center.x,
+            head.transform.position.y + head.transform.lossyScale.y,
+            center.z
+        );
+        return true;
     }
 
     private void HandleRecenterInput(Character c, float dt)
@@ -502,12 +554,12 @@ internal sealed class RigDriver : MonoBehaviour
             case ViewKind.FirstPerson:
                 if (c == null)
                     return false;
-                goal = BodyEye(c) + Vector3.up * rig.CrouchLift;
+                goal = BodyEye(c, yaw) + Vector3.up * rig.CrouchLift;
                 return true;
             case ViewKind.FollowFirstPerson:
                 if (target == null)
                     return false;
-                goal = BodyEye(target);
+                goal = BodyEye(target, yaw);
                 return true;
             case ViewKind.ThirdPerson:
                 if (target == null)
@@ -588,11 +640,8 @@ internal sealed class RigDriver : MonoBehaviour
         }
     }
 
-    private Vector3 BodyEye(Character c)
-    {
-        var center = c.VirtualCenter;
-        return new Vector3(center.x, center.y + eyeAboveCenter, center.z);
-    }
+    private Vector3 BodyEye(Character c, float yaw) =>
+        RigMath.EyeAnchor(c.VirtualCenter.N(), yaw, eyeOffset).U();
 
     /// <summary>The camera the game renders its end cutscene with (any enabled screen camera but ours).</summary>
     private Transform FindCutsceneCamera()

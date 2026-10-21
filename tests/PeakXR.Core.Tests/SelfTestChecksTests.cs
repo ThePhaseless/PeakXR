@@ -102,4 +102,22 @@ public class SelfTestChecksTests
         Assert.True(w.Settled);
         TestUtil.Near(2f, w.SettleSeconds);
     }
+
+    [Fact]
+    public void AngleOff_MeasuresFromTheViewDirection()
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        // Looking 60 degrees down, a point 60 degrees down ahead sits on the view axis.
+        var down60 = new Vector3(0f, -MathF.Sin(MathF.PI / 3f), MathF.Cos(MathF.PI / 3f));
+        TestUtil.Near(0f, SelfTestChecks.AngleOff(eye, down60, eye + down60 * 0.7f), 1e-3f);
+        // A point straight below is 30 degrees off it; one behind is far off.
+        TestUtil.Near(
+            30f,
+            SelfTestChecks.AngleOff(eye, down60, eye + new Vector3(0f, -0.7f, 0f)),
+            1e-3f
+        );
+        Assert.True(SelfTestChecks.AngleOff(eye, down60, eye + new Vector3(0f, 0f, -1f)) > 90f);
+        // Degenerate input reads as out of view.
+        TestUtil.Near(180f, SelfTestChecks.AngleOff(eye, down60, eye));
+    }
 }

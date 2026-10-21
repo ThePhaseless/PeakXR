@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Inventory;
 using PeakXR.VR;
 using UnityEngine;
 using Vector3 = UnityEngine.Vector3;
@@ -15,7 +16,8 @@ namespace PeakXR.Sandbox;
 /// chain's joints are locked (ConfigurableJoint x/y/zMotion 0 in the Character prefab), so a stretch ratio well
 /// above 1 means a force is tearing the hand off the forearm; a ratio near 1 with the hand on target means the IK
 /// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch or
-/// when an elbow points up; with real controllers (hold mode) it only reports.
+/// when an elbow points up; with real controllers (hold mode) it only reports. Either way it fails when the eye
+/// sits more than <see cref="SelfTestChecks.MaxEyeAboveShoulders"/> above the shoulders.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -71,11 +73,113 @@ internal sealed partial class SelfTestRunner
         {
             float drop = head.position.y - 0.5f * (sl.Rig.position.y + sr.Rig.position.y);
             notes.Add(F($"eye {drop:0.00} m above the shoulders"));
+            // Above that the view rides the top of the head: looking down shows the top of your own body.
+            if (drop > SelfTestChecks.MaxEyeAboveShoulders)
+                fails.Add(
+                    F(
+                        $"eye {drop:0.00} m above the shoulders > {SelfTestChecks.MaxEyeAboveShoulders:0.00} m"
+                    )
+                );
         }
         notes.Add(idle ? "idle hands" : "live controllers, not judged");
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
         Conclude(fails, notes);
+    }
+
+    /// <summary>Looking 60 degrees down, the belt slots must sit this close to the view axis (degrees): well inside
+    /// any headset's vertical field of view.</summary>
+    const float BeltViewHalfAngle = 40f;
+
+    /// <summary>
+    /// <c>vr.09-belt-view</c>: the hotbar ghosts on the belt can be seen from the eye. The headset's own pitch cannot
+    /// be scripted, so it is judged from poses: each hotbar ghost must be drawn, within
+    /// <see cref="BeltViewHalfAngle"/> of a view pitched 60 degrees down along the body's heading, and either drawn
+    /// on top or with no collider of the local body between the eye and the ghost. Body colliders on the line are
+    /// reported either way.
+    /// </summary>
+    IEnumerator BeltViewCheck()
+    {
+        var fails = new List<string>();
+        var notes = new List<string>();
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var cam = rig != null ? rig.HeadCamera : null;
+        if (!SlotGhosts.Showing)
+        {
+            stepSkip = "body slots or slot ghosts off";
+            yield break;
+        }
+        if (c == null || cam == null)
+        {
+            fails.Add("no local character or head camera");
+            Conclude(fails, notes);
+            yield break;
+        }
+        // Ghosts are placed in LateUpdate; let a frame pass with the current pose.
+        yield return null;
+
+        var eye = cam.transform.position;
+        var flat =
+            c.data.lookDirection_Flat.sqrMagnitude > 1e-4f
+                ? c.data.lookDirection_Flat.normalized
+                : Vector3.forward;
+        var down = Quaternion.AngleAxis(60f, Vector3.Cross(Vector3.up, flat)) * flat;
+        bool onTop = SlotGhosts.DrawnOnTop;
+        notes.Add(onTop ? "ghosts drawn on top" : "ghosts depth-tested");
+        var inv = BodyInventory.Instance;
+        int checkedSlots = 0;
+        for (int i = 0; i < inv.Count; i++)
+        {
+            if (inv.Slot(i).GameSlot >= BodySlotLayout.MaxHotbar)
+                continue;
+            checkedSlots++;
+            var ghost = SlotGhosts.Drawn(i);
+            if (ghost == null)
+            {
+                fails.Add(F($"slot {i} not drawn"));
+                continue;
+            }
+            var p = ghost.position;
+            float angle = SelfTestChecks.AngleOff(eye.N(), down.N(), p.N());
+            int blockers = BodyHits(c, eye, p);
+            notes.Add(
+                F(
+                    $"slot {i}: {Vector3.Distance(eye, p):0.00} m, {angle:0} deg off the down view, {blockers} body colliders"
+                )
+            );
+            if (angle > BeltViewHalfAngle)
+                fails.Add(
+                    F($"slot {i} {angle:0} deg off the down view > {BeltViewHalfAngle:0} deg")
+                );
+            if (blockers > 0 && !onTop)
+                fails.Add(F($"slot {i} hidden behind {blockers} body colliders"));
+        }
+        if (checkedSlots == 0)
+            fails.Add("no hotbar slots laid out");
+        Conclude(fails, notes);
+    }
+
+    /// <summary>Colliders of <paramref name="c"/> on the line from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    static int BodyHits(Character c, Vector3 from, Vector3 to)
+    {
+        var dir = to - from;
+        float length = dir.magnitude;
+        if (length < 1e-3f)
+            return 0;
+        int n = 0;
+        foreach (
+            var hit in Physics.RaycastAll(
+                from,
+                dir / length,
+                length,
+                ~0,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            if (hit.collider.GetComponentInParent<Character>() == c)
+                n++;
+        return n;
     }
 
     static void SampleArm(Character c, AvatarPoseDriver driver, bool left, ref ArmSample s)
