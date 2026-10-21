@@ -289,6 +289,10 @@ public static class DenyFade
         float a = 1f - (age - fadeAt) / Out;
         return a > 0f ? a : 0f;
     }
+
+    /// <summary>The refusal has run and faded out. Not at age 0: alpha is 0 in the frame the refusal is shown,
+    /// which must not end it (its red preview would be cleared before it was ever drawn).</summary>
+    public static bool Over(float age, float heldFor) => age > 0f && Alpha(age, heldFor) <= 0.001f;
 }
 
 /// <summary>Range check for a pre-emptive "can't" cue with hysteresis on the "can" side only: it never shows

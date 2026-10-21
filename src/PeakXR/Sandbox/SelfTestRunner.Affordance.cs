@@ -211,12 +211,18 @@ internal sealed partial class SelfTestRunner
     {
         if (tinted.Length == 0)
             return "no red preview while the attempt is held";
+        int drawn = 0;
         for (int i = 0; i < tinted.Length; i++)
         {
-            if (tinted[i] != null && !DenyTint.IsTinted(tinted[i], i))
-                return $"red preview missing on {tinted[i].name}";
+            var r = tinted[i];
+            // Only a renderer that draws counts: a red block on a hidden ghost or a stowed mesh shows nothing.
+            if (r == null || !r.enabled || !r.gameObject.activeInHierarchy)
+                continue;
+            if (!DenyTint.IsTinted(r, i))
+                return $"red preview missing on {r.name}";
+            drawn++;
         }
-        return null;
+        return drawn > 0 ? null : $"red preview on {tinted.Length} renderer(s), none drawn";
     }
 
     /// <summary>Null when the live refusal's ring is drawn, near the refused spot and big enough to read

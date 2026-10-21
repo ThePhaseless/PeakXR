@@ -60,6 +60,10 @@ internal sealed class TrackedCanvas
     public bool StripWasOpen;
     public UIPage LastPage;
     public bool Rescan;
+
+    /// <summary>Rescan again from this frame on (-1: none): content refilled this frame is laid out next to the cells
+    /// it replaces until their deferred Destroy, so only next frame's layout is the one drawn.</summary>
+    public int RescanFrame = -1;
     public int MeasuredFrame = -1;
     public readonly List<HiddenBackdrop> Hidden = new();
 
@@ -150,7 +154,9 @@ internal static class WorldCanvases
     }
 
     /// <summary>The game spawned new content into an open page without changing the page (a settings tab fills its
-    /// rows): hide its backdrops and halo its text before the rows fade in.</summary>
+    /// rows): hide its backdrops and halo its text before the rows fade in. Scanned this frame and again the next:
+    /// ShowSettings destroys the old rows with a deferred Destroy (SharedSettingsMenu.cs:46-49), so this frame the
+    /// layout stacks the new rows below the old ones, partly off the canvas, where the scan cannot measure them.</summary>
     public static void Restrip(Component inside)
     {
         if (inside == null)
@@ -161,7 +167,10 @@ internal static class WorldCanvases
         var id = canvas.rootCanvas.GetInstanceID();
         foreach (var t in tracked)
             if (t.Id == id && t.Strip)
+            {
                 t.Rescan = true;
+                t.RescanFrame = Time.frameCount + 1;
+            }
     }
 
     public static void Scan(bool includeInactive)
@@ -406,6 +415,11 @@ internal static class WorldCanvases
         var page = t.Pages != null ? t.Pages.currentPage : null;
         var opened = t.IsOpen && !t.StripWasOpen;
         t.StripWasOpen = t.IsOpen;
+        if (t.RescanFrame >= 0 && Time.frameCount >= t.RescanFrame)
+        {
+            t.RescanFrame = -1;
+            t.Rescan = true;
+        }
         if (!opened && !t.Rescan && page == t.LastPage)
             return;
         t.LastPage = page;

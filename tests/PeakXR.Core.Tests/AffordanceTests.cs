@@ -142,6 +142,17 @@ public class AffordanceTests
     }
 
     [Fact]
+    public void Fade_IsNotOverInTheFrameItStarts()
+    {
+        // Shown and posed in the same frame: alpha is still 0, but the refusal has only begun.
+        Assert.False(DenyFade.Over(0f, 0f));
+        Assert.False(DenyFade.Over(DenyFade.In, DenyFade.In));
+        Assert.False(DenyFade.Over(5f, 5f));
+        Assert.True(DenyFade.Over(DenyFade.Duration + 0.01f, 0f));
+        Assert.True(DenyFade.Over(5f + DenyFade.Out + 0.01f, 5f));
+    }
+
+    [Fact]
     public void NotLit_PointsAtTheTrigger()
     {
         Assert.Equal("Not lit", DenyText.Label(DenyReason.NotLit));

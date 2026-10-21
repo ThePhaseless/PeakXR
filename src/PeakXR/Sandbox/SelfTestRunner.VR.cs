@@ -335,6 +335,8 @@ internal sealed partial class SelfTestRunner
                 if (
                     image.enabled
                     && image.canvasRenderer.GetAlpha() > 0f
+                    // Scrolled out of the list's RectMask2D: not drawn.
+                    && !image.canvasRenderer.cull
                     && image.GetComponentInParent<Selectable>() == null
                     && image.rectTransform.rect.width >= 0.8f * width
                 )
