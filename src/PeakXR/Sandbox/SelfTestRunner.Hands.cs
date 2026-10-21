@@ -489,23 +489,37 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.16: the turn stick snaps the rig by <c>Comfort.SnapTurnAngle</c> (smooth turning: just turns).</summary>
+    /// <summary>vr.16: the turn stick snaps the rig by <c>Comfort.SnapTurnAngle</c> (smooth turning: just turns), and the eye
+    /// slides less than 2 cm sideways while it does.</summary>
     IEnumerator SnapTurnStep()
     {
         var rig = VRRig.Instance;
         bool hand = VRInput.LeftHanded;
         float before = rig.Origin.eulerAngles.y;
+        // Turns pivot on the eye (RigDriver.UpdateTurnShift): the view must not slide sideways.
+        var eye0 = rig.Head.position;
+        float slide = 0f;
         Script(hand).Stick = new Vector2(1f, 0f);
-        yield return Wait(0.3f);
+        float end = Now + 0.6f;
+        while (Now < end)
+        {
+            if (Now > end - 0.3f)
+                Script(hand).Stick = Vector2.zero;
+            var d = rig.Head.position - eye0;
+            slide = Mathf.Max(slide, new Vector2(d.x, d.z).magnitude);
+            yield return null;
+        }
         Script(hand).Stick = Vector2.zero;
-        yield return Wait(0.3f);
         yield return Shot("vr-16-snap-turn");
         float delta = SelfTestChecks.YawDelta(before, rig.Origin.eulerAngles.y);
         bool snap = ComfortConfig.Turn == TurnMode.Snap;
         float expected = ComfortConfig.SnapAngle;
-        var note = $"turned {delta:0.0} deg ({ComfortConfig.Turn}, snap angle {expected:0})";
+        var note =
+            $"turned {delta:0.0} deg ({ComfortConfig.Turn}, snap angle {expected:0}), eye slid {slide * 100f:0.0} cm";
         if (snap ? Mathf.Abs(delta - expected) > 1f : delta < 5f)
             Fail(note);
+        else if (slide >= 0.02f)
+            Fail("eye moved sideways in the turn: " + note);
         else
             stepNote = note;
     }

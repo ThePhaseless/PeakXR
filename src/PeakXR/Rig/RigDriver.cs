@@ -46,6 +46,12 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Follow rate (1/s) of the opt-in cutscene glide; slow, never a cut.</summary>
     private const float CutsceneFollowRate = 1.5f;
 
+    /// <summary>Glide rate (1/s) back onto the avatar's eyes at full move input.</summary>
+    private const float TurnSettleRate = 1.5f;
+
+    /// <summary>Largest turn shift (m): twice the eye's forward offset, a 180 degree turn, with margin.</summary>
+    private const float MaxTurnShift = 0.3f;
+
     private static RigDriver instance;
 
     /// <summary>comfort.events wants the horizon-locked chase view this frame (a launch).</summary>
@@ -88,6 +94,8 @@ internal sealed class RigDriver : MonoBehaviour
     private System.Numerics.Vector2 eyeOffset = DefaultEyeOffset;
     private Vector3 anchor;
     private bool snap = true;
+    private Vector3 turnShift;
+    private float turnYaw;
 
     private ViewKind shownKind;
     private Character shownTarget;
@@ -488,6 +496,7 @@ internal sealed class RigDriver : MonoBehaviour
             VRFade.Clear(this);
 
         float yaw = rig.Origin.eulerAngles.y;
+        UpdateTurnShift(c, yaw, dt);
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
             return;
         float verticalRate =
@@ -508,6 +517,35 @@ internal sealed class RigDriver : MonoBehaviour
             RigMath.TrackedEyeHeight(rig.HeightOffset)
         );
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
+    }
+
+    /// <summary>
+    /// Snap and smooth turns rotate the tracking space around the head (<see cref="VRRig.RotateYaw"/>), but the eye
+    /// anchor sits ahead of the torso and swings round it with the rig heading. <see cref="turnShift"/> cancels that
+    /// swing so the eye stays put while the body turns under it. The shift glides back onto the avatar's eyes only
+    /// while the player walks (their own motion masks it, <see cref="RigMath.TurnSettleRate"/>) and drops at once
+    /// behind a black fade; standing still it stays, capped at <see cref="MaxTurnShift"/>. Hands follow the view, so
+    /// they stay where the controllers are.
+    /// </summary>
+    private void UpdateTurnShift(Character c, float yaw, float dt)
+    {
+        if (snap || shownKind != ViewKind.FirstPerson || c == null || VRFade.Target >= 0.99f)
+        {
+            // The view is being placed anyway (recenter, new view) or nothing is seen: start on the avatar's eyes.
+            turnShift = Vector3.zero;
+            turnYaw = yaw;
+            return;
+        }
+        if (Mathf.Abs(Mathf.DeltaAngle(turnYaw, yaw)) > 0.01f)
+        {
+            turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, eyeOffset.X).U();
+            turnShift = Vector3.ClampMagnitude(turnShift, MaxTurnShift);
+            turnYaw = yaw;
+            return;
+        }
+        float rate = RigMath.TurnSettleRate(c.input.movementInput.magnitude, TurnSettleRate);
+        if (rate > 0f)
+            turnShift = RigMath.Follow(turnShift.N(), default, dt, rate, rate, -1f).U();
     }
 
     /// <summary>
@@ -554,7 +592,7 @@ internal sealed class RigDriver : MonoBehaviour
             case ViewKind.FirstPerson:
                 if (c == null)
                     return false;
-                goal = BodyEye(c, yaw) + Vector3.up * rig.CrouchLift;
+                goal = BodyEye(c, yaw) + turnShift + Vector3.up * rig.CrouchLift;
                 return true;
             case ViewKind.FollowFirstPerson:
                 if (target == null)
