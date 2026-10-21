@@ -127,6 +127,57 @@ namespace PeakXR.Core
         public static Vector3 HoldLevel(Vector3 shift, Vector3 from, Vector3 to) =>
             new Vector3(shift.X + from.X - to.X, 0f, shift.Z + from.Z - to.Z);
 
+        /// <summary>Clear space around a watched character's head and torso centres that the eye never enters.</summary>
+        public const float HeadClearance = 0.35f;
+        public const float TorsoClearance = 0.55f;
+
+        /// <summary>Ground further below the eye than this (or none) leaves a detached view floating over a void.</summary>
+        public const float FloorCueDrop = 8f;
+
+        /// <summary>
+        /// Moves <paramref name="eye"/> out of a watched character's body: the union of a sphere of
+        /// <see cref="HeadClearance"/> round <paramref name="head"/> and one of <see cref="TorsoClearance"/> round
+        /// <paramref name="torso"/>, pushed square to the torso-head line (along the offset it already has), so a
+        /// view that follows someone never has their head or body inside the eyes. Unchanged when already clear.
+        /// </summary>
+        public static Vector3 ClearOfBody(Vector3 eye, Vector3 head, Vector3 torso)
+        {
+            var axis = head - torso;
+            float len = axis.Length();
+            float t =
+                len > 1e-4f ? Math.Clamp(Vector3.Dot(eye - torso, axis) / (len * len), 0f, 1f) : 0f;
+            var closest = torso + axis * t;
+            float fromTorso = t * len;
+            float fromHead = (1f - t) * len;
+            // Distance from the line at which both spheres are cleared.
+            float r = MathF.Max(
+                MathF.Sqrt(MathF.Max(0f, TorsoClearance * TorsoClearance - fromTorso * fromTorso)),
+                MathF.Sqrt(MathF.Max(0f, HeadClearance * HeadClearance - fromHead * fromHead))
+            );
+            var off = eye - closest;
+            float d = off.Length();
+            if (d >= r)
+                return eye;
+            Vector3 dir;
+            if (d > 1e-4f)
+                dir = off / d;
+            else
+            {
+                // Dead centre: any direction square to the body.
+                var along = len > 1e-4f ? axis / len : Vector3.UnitY;
+                dir = Vector3.Cross(along, Vector3.UnitX);
+                if (dir.LengthSquared() < 1e-6f)
+                    dir = Vector3.Cross(along, Vector3.UnitZ);
+                dir = Vector3.Normalize(dir);
+            }
+            return closest + dir * r;
+        }
+
+        /// <summary>A detached view needs a floor cue: no ground within <see cref="FloorCueDrop"/> below the eye
+        /// (<paramref name="groundBelow"/> negative when the ray hit nothing).</summary>
+        public static bool NeedsFloorCue(float groundBelow) =>
+            groundBelow < 0f || groundBelow > FloorCueDrop;
+
         /// <summary>
         /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
         /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the

@@ -76,6 +76,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
     private readonly HoldCue holdCue = new();
+    private readonly SpectateFloor spectateFloor = new();
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
@@ -102,6 +103,11 @@ internal sealed class RigDriver : MonoBehaviour
     private Vector3 anchor;
     private bool snap = true;
     private Vector3 turnShift;
+
+    /// <summary>Eased push that keeps a spectate view out of the watched body (<see cref="RigMath.ClearOfBody"/>).</summary>
+    private Vector3 clearShift,
+        clearVelocity;
+    private const float ClearSmoothSeconds = 0.12f;
     private float turnYaw;
     private float turnHoldUntil;
     private Vector3 lastBodyEye;
@@ -190,6 +196,7 @@ internal sealed class RigDriver : MonoBehaviour
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
         holdCue.Show(null, 0f, 0f);
+        spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
         takeover.Reset(false);
@@ -203,6 +210,7 @@ internal sealed class RigDriver : MonoBehaviour
     private void OnDestroy()
     {
         holdCue.Destroy();
+        spectateFloor.Destroy();
         if (instance == this)
             instance = null;
         if (VRRig.Instance == rig)
@@ -438,6 +446,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void ResetTakeover()
     {
+        spectateFloor.Hide();
         if (haveSavedYaw)
             rig.Origin.rotation = Quaternion.Euler(0f, savedYaw, 0f);
         haveSavedYaw = false;
@@ -522,7 +531,10 @@ internal sealed class RigDriver : MonoBehaviour
         float yaw = rig.Origin.eulerAngles.y;
         UpdateTurnShift(c, yaw, dt);
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
+        {
+            spectateFloor.Hide();
             return;
+        }
         float verticalRate =
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything
                 ? Mathf.Min(rate, GroundedVerticalRate)
@@ -541,6 +553,39 @@ internal sealed class RigDriver : MonoBehaviour
             RigMath.TrackedEyeHeight(rig.HeightOffset)
         );
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
+
+        // Spectating: the watched player's head and body never fill the eyes (a lean or a slow follow can carry the
+        // view into them); a dead one is parked out of the world (Character.DeathPos, Character.cs:561), so skipped.
+        bool watching = state == CameraState.Spectate && shownKind != ViewKind.FirstPerson;
+        var push = Vector3.zero;
+        if (watching && shownTarget != null && shownTarget != c && !shownTarget.data.dead)
+        {
+            var eye = rig.Head.position;
+            push =
+                RigMath.ClearOfBody(eye.N(), shownTarget.Head.N(), shownTarget.Center.N()).U()
+                - eye;
+        }
+        if (!watching || takeover.SwitchedThisFrame)
+        {
+            // A new view starts behind a fade: no easing to carry over.
+            clearShift = push;
+            clearVelocity = Vector3.zero;
+        }
+        else
+        {
+            // Eased (critically damped), so the view does not shake 1:1 with the remote head's network jitter.
+            clearShift = Vector3.SmoothDamp(
+                clearShift,
+                push,
+                ref clearVelocity,
+                ClearSmoothSeconds,
+                float.PositiveInfinity,
+                dt
+            );
+        }
+        if (clearShift.sqrMagnitude > 1e-8f)
+            rig.Origin.position += clearShift;
+        spectateFloor.Tick(watching, rig);
     }
 
     /// <summary>

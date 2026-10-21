@@ -16,11 +16,16 @@ namespace PeakXR.UI.Spatial;
 /// a nameplate; their hotbar (<c>Player.itemSlots</c>, temporary slot and <c>backpackSlot</c>, A/Player.cs:17-21, the slots
 /// <c>GUIManager.UpdateItems</c> :1109 shows) becomes icons around their belt; the switch hint
 /// (<c>spectatingInputs</c>, :134, shown while dead at :614) becomes up/down arrows on the stick that switches.
-/// Your own dying bar stays on your wrist (ui.world).
+/// Your own dying bar stays on your wrist (ui.world). The name goes with its whole "spectating" block
+/// (<c>spectatingObject</c>, :132) minus the monitor pill behind it. Watching your own body (solo, or the last one
+/// alive) shows just that block, "spectating YOURSELF", over where you fell. A dead body is parked far out of the
+/// world (<c>Character.DeathPos</c>, A/Character.cs:561), so a dead player's plate sits over
+/// <c>Character.VirtualCenter</c> (:257) and gets no belt.
 /// </summary>
 internal sealed class SpectateView
 {
     private const float PlateLift = 0.45f;
+    private const float DeadPlateLift = 1.2f;
     private const float BeltRadius = 0.38f;
     private const float BeltSpacing = 32f;
     private const float IconDegrees = 4f;
@@ -48,6 +53,7 @@ internal sealed class SpectateView
     private Transform next,
         previous;
     private GameObject root;
+    private bool grabbedSelf;
 
     public void Release()
     {
@@ -67,14 +73,19 @@ internal sealed class SpectateView
 
     public void Tick(GUIManager gui, RectTransform hudRoot, VRRig rig)
     {
+        var spec = MainCameraMovement.specCharacter;
+        // Watching your own body: the label only; your status bar stays on your wrist.
+        bool self = spec != null && spec == Character.localCharacter;
+        if (plate.Holding && self != grabbedSelf)
+            Release();
         if (!plate.Holding)
-            Grab(gui, hudRoot);
+            Grab(gui, hudRoot, self);
         EnsureQuads();
         if (!root.activeSelf)
             root.SetActive(true);
 
-        var spec = MainCameraMovement.specCharacter;
-        var player = spec != null ? spec.player : null;
+        // A dead body is parked far out of the world (Character.DeathPos, Character.cs:561): no belt there.
+        var player = spec != null && !self && !spec.data.dead ? spec.player : null;
         for (int i = 0; i < Slots; i++)
         {
             var slot = player != null ? player.GetItemSlot(SlotIds[i]) : null;
@@ -89,7 +100,8 @@ internal sealed class SpectateView
                 icons[i].gameObject.SetActive(on);
         }
 
-        bool arrows = gui.spectatingInputs != null && gui.spectatingInputs.activeSelf;
+        // Your own body cannot be switched away from (MainCameraMovement.HandleSpecSelection, :189).
+        bool arrows = !self && gui.spectatingInputs != null && gui.spectatingInputs.activeSelf;
         if (next.gameObject.activeSelf != arrows)
         {
             next.gameObject.SetActive(arrows);
@@ -108,7 +120,10 @@ internal sealed class SpectateView
 
         if (plate.Holding)
         {
-            var p = spec.Head + Vector3.up * PlateLift;
+            // Dead: over where they fell (VirtualCenter, Character.cs:257), not the parked body.
+            var p = spec.data.dead
+                ? spec.VirtualCenter + Vector3.up * DeadPlateLift
+                : spec.Head + Vector3.up * PlateLift;
             plate.Pose(
                 p,
                 SpatialRuntime.FaceEye(p, eye),
@@ -176,39 +191,52 @@ internal sealed class SpectateView
         arrow.localScale = new Vector3(size, size, size);
     }
 
-    private void Grab(GUIManager gui, RectTransform hudRoot)
+    private void Grab(GUIManager gui, RectTransform hudRoot, bool self)
     {
-        var barGroup = gui.bar != null ? HudSplit.GroupOf(gui.bar.transform, hudRoot) : null;
-        var numbGroup =
-            gui.mushroomsCanvasGroup != null
-                ? HudSplit.GroupOf(gui.mushroomsCanvasGroup.transform, hudRoot)
-                : null;
-        // A group still inside another box (the wrist, when it shares the dying bar's group) stays with its owner.
-        if (barGroup != null && barGroup.parent != hudRoot)
-            barGroup = null;
-        if (numbGroup != null && numbGroup.parent != hudRoot)
-            numbGroup = null;
-        if (barGroup != null)
-            plate.Move(hudRoot, barGroup, Vector2.zero);
-        if (numbGroup != null && numbGroup != barGroup)
-            plate.Move(hudRoot, numbGroup, Vector2.zero);
-        if (gui.spectatingNameText != null)
-        {
-            var barHeight = barGroup is RectTransform r ? r.rect.height : 0f;
-            var nameHeight = gui.spectatingNameText.rectTransform.rect.height;
-            plate.Move(
-                hudRoot,
-                gui.spectatingNameText.transform,
-                new Vector2(0f, (barHeight + nameHeight) * 0.5f + 10f)
-            );
-        }
-        plate.SetVisible(true);
+        grabbedSelf = self;
         if (gui.spectatingInputs != null)
         {
-            // The game's hint shows keyboard or gamepad keys; the arrows on the stick replace it.
+            // The game's hint shows keyboard or gamepad keys; the arrows on the stick replace it. Taken first, so
+            // it is out of the label block below if it sits inside it.
             inputs.Move(hudRoot, gui.spectatingInputs.transform, Vector2.zero);
             inputs.SetVisible(false);
         }
+        Transform barGroup = null;
+        if (!self)
+        {
+            barGroup = gui.bar != null ? HudSplit.GroupOf(gui.bar.transform, hudRoot) : null;
+            var numbGroup =
+                gui.mushroomsCanvasGroup != null
+                    ? HudSplit.GroupOf(gui.mushroomsCanvasGroup.transform, hudRoot)
+                    : null;
+            // A group still inside another box (the wrist, when it shares the dying bar's group) stays with its owner.
+            if (barGroup != null && barGroup.parent != hudRoot)
+                barGroup = null;
+            if (numbGroup != null && numbGroup.parent != hudRoot)
+                numbGroup = null;
+            if (barGroup != null)
+                plate.Move(hudRoot, barGroup, Vector2.zero);
+            if (numbGroup != null && numbGroup != barGroup)
+                plate.Move(hudRoot, numbGroup, Vector2.zero);
+        }
+        // The whole "spectating NAME" block (spectatingObject, GUIManager.cs:132), without the dark pill it sat on
+        // on a monitor: outlined text over the player, its lower edge just above the status bar.
+        var label =
+            gui.spectatingObject != null ? gui.spectatingObject.transform
+            : gui.spectatingNameText != null ? gui.spectatingNameText.transform
+            : null;
+        if (label is RectTransform labelRect)
+        {
+            plate.Move(hudRoot, labelRect, Vector2.zero);
+            plate.HideBackings(labelRect);
+            var barTop = barGroup is RectTransform r ? r.rect.height * 0.5f : 0f;
+            var content = plate.ContentBounds(labelRect);
+            labelRect.anchoredPosition += new Vector2(
+                -content.center.x,
+                barTop + (barGroup != null ? 10f : 0f) - content.yMin
+            );
+        }
+        plate.SetVisible(true);
     }
 
     private void EnsureQuads()

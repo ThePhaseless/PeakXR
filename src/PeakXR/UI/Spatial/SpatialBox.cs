@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using PeakXR.Core;
+using PeakXR.UI.Common;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -10,8 +12,9 @@ namespace PeakXR.UI.Spatial;
 /// A small container under the converted HUD canvas that carries game HUD parts to a spot in the world (a target,
 /// a controller button, a distant sign, another player). The parts stay inside the game's canvas, so the game keeps
 /// writing their text (localised, runtime swaps included) and toggling them; only the container is posed. Moving a
-/// part also hides its keyboard or gamepad glyphs (<c>InputIcon</c>, wrong in VR) and makes it draw over the world,
-/// so it never vanishes into a wall. <see cref="Restore"/> puts every part back exactly as it was.
+/// part also hides its keyboard or gamepad glyphs (<c>InputIcon</c>, wrong in VR), outlines its text (nothing sits
+/// behind it out there) and makes it draw over the world, after smoke and other transparent effects too, so it never
+/// vanishes into a wall or a plume. <see cref="Restore"/> puts every part back exactly as it was.
 /// </summary>
 internal sealed class SpatialBox
 {
@@ -25,23 +28,38 @@ internal sealed class SpatialBox
             Pivot,
             Position,
             Size;
+        public Vector3 Scale;
     }
 
     private struct Swapped
     {
         public Graphic Graphic;
-        public Material Original;
+        public Material Original,
+            Copy;
     }
 
-    private static readonly Dictionary<Material, Material> onTop = new();
+    private struct Faded
+    {
+        public CanvasRenderer Renderer;
+        public float Alpha;
+        public bool Cull;
+    }
+
+    /// <summary>Above every world effect, below the VR keyboard (30000) and the fade sphere.</summary>
+    private const int SortingOrder = 29000;
+
+    private static readonly int OutlineWidth = Shader.PropertyToID("_OutlineWidth");
+    private static readonly Dictionary<(Material, bool), Material> onTop = new();
     private static readonly HashSet<Material> copies = new();
     private static readonly List<Graphic> graphics = new();
     private static readonly List<InputIcon> glyphs = new();
+    private static readonly List<TMP_Text> texts = new();
 
     private readonly string name;
     private readonly List<Moved> moved = new();
     private readonly List<Swapped> swapped = new();
     private readonly List<TMP_Text> hiddenGlyphs = new();
+    private readonly List<Faded> faded = new();
     private RectTransform root;
 
     public SpatialBox(string name) => this.name = name;
@@ -75,6 +93,7 @@ internal sealed class SpatialBox
                 Pivot = rect.pivot,
                 Position = rect.anchoredPosition,
                 Size = rect.sizeDelta,
+                Scale = rect.localScale,
             }
         );
         rect.SetParent(Rect, false);
@@ -128,6 +147,7 @@ internal sealed class SpatialBox
             m.Item.pivot = m.Pivot;
             m.Item.sizeDelta = m.Size;
             m.Item.anchoredPosition = m.Position;
+            m.Item.localScale = m.Scale;
         }
         moved.Clear();
         // Reverse order: a part nested in another part was swapped twice and must unwind last-in first-out.
@@ -135,17 +155,27 @@ internal sealed class SpatialBox
         {
             var s = swapped[i];
             // Only undo our own swap: a font change meanwhile (language switch) set a material we must keep.
-            if (s.Graphic == null || !onTop.TryGetValue(s.Original, out var copy))
+            if (s.Graphic == null || s.Copy == null)
                 continue;
             if (s.Graphic is TMP_Text text)
             {
-                if (text.fontSharedMaterial == copy)
+                if (text.fontSharedMaterial == s.Copy)
                     text.fontSharedMaterial = s.Original;
             }
-            else if (s.Graphic.material == copy)
+            else if (s.Graphic.material == s.Copy)
                 s.Graphic.material = s.Original;
         }
         swapped.Clear();
+        foreach (var f in faded)
+        {
+            if (f.Renderer == null)
+                continue;
+            // Only while still hidden: another system's later alpha write wins.
+            if (f.Renderer.GetAlpha() <= 0f)
+                f.Renderer.SetAlpha(f.Alpha);
+            f.Renderer.cullTransparentMesh = f.Cull;
+        }
+        faded.Clear();
         foreach (var t in hiddenGlyphs)
         {
             if (t != null)
@@ -161,6 +191,7 @@ internal sealed class SpatialBox
         moved.Clear();
         swapped.Clear();
         hiddenGlyphs.Clear();
+        faded.Clear();
         Rect = null;
         root = null;
     }
@@ -185,17 +216,26 @@ internal sealed class SpatialBox
             if (t != null && t.enabled)
                 t.enabled = false;
         }
+        // A game CrossFadeAlpha on a hidden backing would show it again.
+        for (int i = 0; i < faded.Count; i++)
+        {
+            var r = faded[i].Renderer;
+            if (r != null && r.GetAlpha() > 0f)
+                r.SetAlpha(0f);
+        }
     }
 
     /// <summary>Stacks the active parts top to bottom, in the order they were moved, centred on the box origin.
     /// Returns the stack height in box pixels.</summary>
+    /// <remarks>Stacks what is drawn (the text, else the rect), not the rects: a game prompt can be a tall rect with
+    /// its text at one end, which left the action half a screen below its name, out on the ground.</remarks>
     public float Stack(float spacing)
     {
         float height = 0f;
         foreach (var m in moved)
         {
             if (m.Item != null && m.Item.gameObject.activeSelf)
-                height += m.Item.rect.height + (height > 0f ? spacing : 0f);
+                height += ContentBounds(m.Item).height + (height > 0f ? spacing : 0f);
         }
         float y = height * 0.5f;
         bool first = true;
@@ -206,21 +246,99 @@ internal sealed class SpatialBox
             if (!first)
                 y -= spacing;
             first = false;
-            float h = m.Item.rect.height;
-            m.Item.anchoredPosition = new Vector2(0f, y - h * 0.5f);
-            y -= h;
+            var content = ContentBounds(m.Item);
+            m.Item.anchoredPosition += new Vector2(-content.center.x, y - content.yMax);
+            y -= content.height;
         }
         return height;
+    }
+
+    /// <summary>Box-local bounds (pixels) of the text <paramref name="item"/> draws, or of its rect when it shows no
+    /// text. Measured on a layout change or a new target, not per frame.</summary>
+    public Rect ContentBounds(RectTransform item)
+    {
+        bool any = false;
+        var min = Vector2.zero;
+        var max = Vector2.zero;
+        item.GetComponentsInChildren(false, texts);
+        foreach (var t in texts)
+        {
+            if (!t.enabled || string.IsNullOrEmpty(t.text))
+                continue;
+            if (t.havePropertiesChanged)
+                t.ForceMeshUpdate();
+            var b = t.textBounds;
+            Vector2 lo = b.min,
+                hi = b.max;
+            if (b.size.y < 1e-3f)
+            {
+                var r = t.rectTransform.rect;
+                lo = r.min;
+                hi = r.max;
+            }
+            Add(t.transform, lo, hi, ref any, ref min, ref max);
+        }
+        texts.Clear();
+        if (!any)
+        {
+            var r = item.rect;
+            Add(item, r.min, r.max, ref any, ref min, ref max);
+        }
+        return new Rect(min, max - min);
+    }
+
+    private void Add(
+        Transform from,
+        Vector2 lo,
+        Vector2 hi,
+        ref bool any,
+        ref Vector2 min,
+        ref Vector2 max
+    )
+    {
+        Vector2 a = Rect.InverseTransformPoint(from.TransformPoint(lo));
+        Vector2 b = Rect.InverseTransformPoint(from.TransformPoint(hi));
+        var l = Vector2.Min(a, b);
+        var h = Vector2.Max(a, b);
+        min = any ? Vector2.Min(min, l) : l;
+        max = any ? Vector2.Max(max, h) : h;
+        any = true;
+    }
+
+    /// <summary>Hides the flat-screen backings inside a moved part (every graphic that is not text) through the
+    /// renderer alpha, so the game's own colour writes still land; <see cref="Pose"/> re-asserts it and
+    /// <see cref="Restore"/> shows them again. <c>cullTransparentMesh</c> stays off meanwhile so raycasts stay vanilla
+    /// (the same pattern as ui.world's BackdropStrip and ScreenBacking).</summary>
+    public void HideBackings(Transform part)
+    {
+        part.GetComponentsInChildren(true, graphics);
+        foreach (var g in graphics)
+        {
+            if (g is TMP_Text)
+                continue;
+            var cr = g.canvasRenderer;
+            faded.Add(
+                new Faded
+                {
+                    Renderer = cr,
+                    Alpha = cr.GetAlpha(),
+                    Cull = cr.cullTransparentMesh,
+                }
+            );
+            cr.cullTransparentMesh = false;
+            cr.SetAlpha(0f);
+        }
+        graphics.Clear();
     }
 
     /// <summary>Destroys on-top copies whose source material died with its scene.</summary>
     public static void PruneMaterials()
     {
-        List<Material> dead = null;
+        List<(Material, bool)> dead = null;
         foreach (var pair in onTop)
         {
-            if (pair.Key == null)
-                (dead ??= new List<Material>()).Add(pair.Key);
+            if (pair.Key.Item1 == null)
+                (dead ??= new List<(Material, bool)>()).Add(pair.Key);
         }
         copies.RemoveWhere(m => m == null);
         if (dead == null)
@@ -269,6 +387,10 @@ internal sealed class SpatialBox
         Rect.SetParent(hudRoot, false);
         Rect.anchorMin = Rect.anchorMax = Rect.pivot = new Vector2(0.5f, 0.5f);
         Rect.sizeDelta = Vector2.zero;
+        // Its own sorting: drawn after smoke, fire and other transparent effects, which would otherwise cut the text.
+        var canvas = Rect.GetComponent<Canvas>();
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = SortingOrder;
     }
 
     private void HideGlyphs(RectTransform rect)
@@ -290,22 +412,33 @@ internal sealed class SpatialBox
         rect.GetComponentsInChildren(true, graphics);
         foreach (var g in graphics)
         {
+            Material original;
+            Material copy;
             if (g is TMP_Text text)
             {
-                var original = text.fontSharedMaterial;
+                original = text.fontSharedMaterial;
                 if (original == null || IsCopy(original))
                     continue;
-                text.fontSharedMaterial = OnTop(original);
-                swapped.Add(new Swapped { Graphic = g, Original = original });
+                var c = text.color;
+                copy = OnTop(original, BackdropRules.NeedsLightHalo(c.r, c.g, c.b), halo: true);
+                text.fontSharedMaterial = copy;
             }
             else
             {
-                var original = g.material;
+                original = g.material;
                 if (original == null || IsCopy(original))
                     continue;
-                g.material = OnTop(original);
-                swapped.Add(new Swapped { Graphic = g, Original = original });
+                copy = OnTop(original, light: false, halo: false);
+                g.material = copy;
             }
+            swapped.Add(
+                new Swapped
+                {
+                    Graphic = g,
+                    Original = original,
+                    Copy = copy,
+                }
+            );
         }
         graphics.Clear();
     }
@@ -313,15 +446,19 @@ internal sealed class SpatialBox
     /// <summary>Already drawn on top (a part nested in another moved part).</summary>
     private static bool IsCopy(Material m) => copies.Contains(m);
 
-    /// <summary>One shared copy per source material that skips the depth test (uGUI and TMP shaders read their
-    /// ZTest from <c>unity_GUIZTestMode</c>).</summary>
-    private static Material OnTop(Material source)
+    /// <summary>One shared copy per source material and halo shade that skips the depth test (uGUI and TMP shaders
+    /// read their ZTest from <c>unity_GUIZTestMode</c>). Text also gets <see cref="TextHalo"/>'s thin contrasting
+    /// outline unless the game already outlines it, so it reads on bright sand and snow without a panel.</summary>
+    private static Material OnTop(Material source, bool light, bool halo)
     {
-        if (onTop.TryGetValue(source, out var copy) && copy != null)
+        var key = (source, halo && light);
+        if (onTop.TryGetValue(key, out var copy) && copy != null)
             return copy;
         copy = new Material(source) { name = source.name + " (PeakXR on top)" };
         copy.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
-        onTop[source] = copy;
+        if (halo && source.HasProperty(OutlineWidth) && source.GetFloat(OutlineWidth) < 0.1f)
+            TextHalo.Outline(copy, light);
+        onTop[key] = copy;
         copies.Add(copy);
         return copy;
     }

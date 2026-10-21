@@ -26,22 +26,44 @@ namespace PeakXR.Core
         public static float DegreesPerPixel(float metersPerPixel, float distance) =>
             distance > 0f ? MathF.Atan(metersPerPixel / distance) / UnityQuat.Deg2Rad : 0f;
 
+        /// <summary>Gap between the target's silhouette and the label's lower edge, in degrees.</summary>
+        public const float LabelGapDegrees = 1.5f;
+
         /// <summary>
-        /// Where the label of an interact target goes: on the line from the eye to the target's centre, pulled toward
-        /// the eye past the object's <paramref name="radius"/> (capped at 0.6 m) so it floats in front of it, kept
-        /// within <see cref="TargetNear"/>..<see cref="TargetFar"/>, and lifted above the sight line.
+        /// Where the centre of an interact target's label goes: just above the target's silhouette as the eye sees it
+        /// (its bounding sphere of <paramref name="radius"/>, 0.05..1 m), so the text never crosses the object or the
+        /// hand reaching into it, at the depth of the object's front (never further than the target), kept within
+        /// <see cref="TargetNear"/>..<see cref="TargetFar"/>. <paramref name="halfHeightDegrees"/> is half the label's
+        /// angular height, so its lower edge, not its centre, clears the silhouette.
         /// </summary>
-        public static Vector3 TargetLabel(Vector3 center, Vector3 eye, float radius)
+        public static Vector3 TargetLabel(
+            Vector3 center,
+            Vector3 eye,
+            float radius,
+            float halfHeightDegrees
+        )
         {
-            float r = Math.Clamp(radius, 0.05f, 0.6f);
+            float r = Math.Clamp(radius, 0.05f, 1f);
             var to = center - eye;
             float dist = to.Length();
             if (dist < 1e-3f)
                 return center + Vector3.UnitY * (r + 0.05f);
-            // Never behind the target: for something closer than TargetNear the label stays just in front of it.
-            float d = MathF.Min(Math.Clamp(dist - r - 0.05f, TargetNear, TargetFar), dist * 0.9f);
-            float lift = (r * 0.5f + 0.08f) * d / dist;
-            return eye + to / dist * d + Vector3.UnitY * lift;
+            var dir = to / dist;
+            // "Up" as the eye sees it: world up square to the sight line; looking straight down, away from you.
+            var up = Vector3.UnitY - Vector3.Dot(Vector3.UnitY, dir) * dir;
+            if (up.LengthSquared() < 1e-6f)
+                up = Vector3.UnitZ - Vector3.Dot(Vector3.UnitZ, dir) * dir;
+            up = Vector3.Normalize(up);
+            // Silhouette capped so a target you stand inside still gets a label in view.
+            float silhouette = MathF.Min(
+                MathF.Asin(MathF.Min(1f, r / dist)),
+                45f * UnityQuat.Deg2Rad
+            );
+            float angle =
+                silhouette
+                + (LabelGapDegrees + MathF.Max(0f, halfHeightDegrees)) * UnityQuat.Deg2Rad;
+            float d = MathF.Min(Math.Clamp(dist - r, TargetNear, TargetFar), dist);
+            return eye + (dir * MathF.Cos(angle) + up * MathF.Sin(angle)) * d;
         }
 
         /// <summary>A distant sign <paramref name="distance"/> metres along <paramref name="yawDeg"/>, raised
