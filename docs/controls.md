@@ -26,6 +26,18 @@ Notes:
 - An open passport or guidebook sits above the hand that holds it. Turn pages by swiping your other hand across it. The passport's tabs and page buttons also take the laser, and the guidebook also turns with stick up and down.
 - Menu panels at a kiosk (boarding pass, custom run options) and the end-of-run results take the laser like any other menu. At the end of a won run, any controller button skips the credits wait, the same as any key on a keyboard.
 
+## Items and fires by hand
+
+Each of these has an on/off setting in the `Interaction` section. With a setting off, the grip and trigger work as before.
+
+- Cook (`CookOverFire`): hold food over a lit campfire. It cooks while it stays above the flames and stops when you pull it out. A soft buzz grows as it cooks.
+- Open a suitcase (`LiftLidToOpen`): grip the top of the case and lift. The game's open timer only runs as far as you have raised the lid, so lift slowly. A respawn chest needs both hands on the lid. Gripping the case low down holds it open the old way.
+- Bugle (`BugleAtMouth`): raise it to your mouth to play. Tilt the bell up for a higher note and down for a lower one. The trigger plays it too.
+- Light things (`LightWithFlame`): touch a lit torch, flare, candle or lantern to a cannon or rocket fuse, a ghost fire or an unlit campfire and keep it there until it catches.
+- Bandages and other healing items (`PressToBody`): press the item to your chest or your other forearm to use it. Press it to a friend's body to use it on them. Food still goes to your mouth.
+- Warm your hands (`WarmHandsAtFire`): hold open palms toward a lit campfire to feel a slow warm buzz. When you are cold, both controllers shiver faintly. This changes nothing in the game.
+- Parasol (`ParasolRunner`): grip the shaft with your free hand and push up to open it, or pull down to close it.
+
 ## Turning and comfort
 
 Settings live in the `Comfort` section. `Preset` sets several of them at once:
