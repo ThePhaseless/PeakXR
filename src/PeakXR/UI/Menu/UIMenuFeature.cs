@@ -31,5 +31,7 @@ public sealed class UIMenuFeature : Feature
         // Title menu canvas (MainMenu root holds MainMenuPageHandler) and every LoadingScreen prefab's canvas.
         CanvasRules.AddCustomMenu("MainMenuPageHandler", stage);
         CanvasRules.AddCustom("LoadingScreen", space);
+        // Boot splash canvas (Pretitle/Anim/Canvas, screen space camera), shown in the loading room.
+        CanvasRules.AddCustom("Pretitle", space);
     }
 }

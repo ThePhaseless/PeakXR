@@ -17,6 +17,9 @@ internal sealed class TitleStage : ICanvasPlacement
     private const float StandingEyeHeight = 1.65f;
     private const float MenuTilt = 8f;
 
+    // Darker full-canvas fills are ui.world's dimmers (MenuBackdrop); this takes only the light ones.
+    private const float LightFill = 0.35f;
+
     private readonly UIMenuSettings cfg;
     private bool active;
     private bool originFixed;
@@ -25,6 +28,7 @@ internal sealed class TitleStage : ICanvasPlacement
     private Vector3 originPosition;
     private Quaternion originRotation = Quaternion.identity;
     private VRRig overridden;
+    private readonly ScreenBacking backing = new();
 
     public TitleStage(UIMenuSettings cfg) => this.cfg = cfg;
 
@@ -99,6 +103,9 @@ internal sealed class TitleStage : ICanvasPlacement
         rig.Origin.SetPositionAndRotation(originPosition, originRotation);
     }
 
+    /// <summary>Gives the title canvas its light fills back (VR stopped).</summary>
+    public void RestoreBacking() => backing.Restore();
+
     private void Release()
     {
         if (overridden != null)
@@ -118,6 +125,13 @@ internal sealed class TitleStage : ICanvasPlacement
         widthMeters = 0f;
         if (!active)
             return PlacementResult.Default;
+
+        // The title's cream cover (MainPage/WhiteFade, shown while connecting and faded out by the TitleIn
+        // animation) is a cream card floating over the beach in VR; the first-time setup page has the same.
+        if (backing.Canvas != canvas)
+            backing.Scan(canvas, LightFill, null, null, "title");
+        else
+            backing.Reassert();
 
         var eyeHeight = VRInput.HeadTracked
             ? Mathf.Clamp(VRInput.HeadPosition.y, 0.8f, 2.2f)

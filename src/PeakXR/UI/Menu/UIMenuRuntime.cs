@@ -22,6 +22,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private LoadingSpace space;
     private UIMenuSettings cfg;
     private Coroutine loadRoutine;
+    private bool splash;
 
     public static UIMenuRuntime Create(TitleStage stage, LoadingSpace space, UIMenuSettings cfg)
     {
@@ -38,6 +39,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
         Application.onBeforeRender += OnBeforeRender;
+        VRSession.Started += OnVRStarted;
         VRSession.Stopped += OnVRStopped;
     }
 
@@ -45,8 +47,12 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         Application.onBeforeRender -= OnBeforeRender;
+        VRSession.Started -= OnVRStarted;
         VRSession.Stopped -= OnVRStopped;
     }
+
+    /// <summary>VR may come up while the boot splash is already playing.</summary>
+    private void OnVRStarted() => EnterSplash();
 
     /// <summary>Drop every hold so a later VR restart does not come back to a black or loading headset.</summary>
     private void OnVRStopped()
@@ -55,15 +61,40 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         loadRoutine = null;
         VRFade.Clear(loadOwner);
         VRFade.Clear(cutOwner);
+        splash = false;
         space.Hide();
+        space.Release();
+        stage.RestoreBacking();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         stage.OnSceneLoaded();
+        if (splash)
+        {
+            // Pretitle activates Title directly (Pretitle.cs:22); the cut-and-fade below covers the swap.
+            splash = false;
+            space.Hide();
+        }
+        EnterSplash();
         // Kick/disconnect paths load scenes directly, without a loading screen: go black, then fade in.
-        if (VRSession.Active && !LoadingScreenHandler.loading && loadRoutine == null)
+        if (VRSession.Active && !LoadingScreenHandler.loading && loadRoutine == null && !splash)
             StartCoroutine(FadeInAfterCut());
+    }
+
+    /// <summary>The boot splash (Pretitle scene, LandCrab logos) plays in the loading room: its camera draws
+    /// flat-screen-sized particle bursts and post effects (LogoCombineSequence.cs:46) that look wrong in a
+    /// headset, and its logos sit on a full-screen black card.</summary>
+    private void EnterSplash()
+    {
+        if (!VRSession.Active || splash || !cfg.LoadingSpace.Value)
+            return;
+        var pretitle = FindAnyObjectByType<Pretitle>();
+        if (pretitle == null)
+            return;
+        splash = true;
+        var cam = pretitle.GetComponentInChildren<Camera>(true);
+        space.Show(cam != null ? cam : Camera.main);
     }
 
     private void LateUpdate()
