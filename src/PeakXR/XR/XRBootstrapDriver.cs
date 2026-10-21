@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using PeakXR.Core;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -269,10 +270,16 @@ sealed class XRBootstrapDriver : MonoBehaviour
             return !XRSessionState.OpenVRFocusLost;
         if (VRSession.Running != VRRuntime.OpenXR)
             return true;
-        int state = XRSessionState.OpenXRState;
-        // 5 = FOCUSED; 0 = not reported yet. VISIBLE (4) means the dashboard or another app has input.
-        return state == 0 || state == 5;
+        // VISIBLE (4) means the dashboard or another app has input.
+        return XRFocus.Focused(XRSessionState.OpenXRState);
     }
+
+    /// <summary>Why focus is what it is, for the log and the self-test: the OpenXR session state, or OpenVR's flag.</summary>
+    internal static string FocusSource =>
+        VRSession.Running == VRRuntime.OpenXR ? "OpenXR " + XRFocus.Name(XRSessionState.OpenXRState)
+        : VRSession.Running == VRRuntime.OpenVR
+            ? (XRSessionState.OpenVRFocusLost ? "OpenVR: dashboard or another app" : "OpenVR")
+        : "no runtime";
 
     void SetFocus(bool focus)
     {
@@ -284,7 +291,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
             VRFade.Clear(this);
         else
             VRFade.Set(this, 0.6f);
-        Plugin.Log.LogInfo($"{Tag} Runtime focus {(focus ? "regained" : "lost: input paused")}");
+        Plugin.Log.LogInfo(
+            $"{Tag} Runtime focus {(focus ? "regained" : "lost: input paused")} ({FocusSource})"
+        );
     }
 
     static void OnDeviceConnected(InputDevice device) => XRDeviceDump.Dump(device);

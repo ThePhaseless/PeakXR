@@ -11,6 +11,7 @@ using PeakXR.UI.Common;
 using PeakXR.UI.Menu;
 using PeakXR.UI.World;
 using PeakXR.VR;
+using PeakXR.XR;
 using Photon.Pun;
 using UnityEngine;
 using UnityEngine.UI;
@@ -79,6 +80,13 @@ internal sealed partial class SelfTestRunner
             }
             yield return null;
         }
+        // Without focus xr.bootstrap pauses input and holds a 0.6 fade by design, so every input step would fail.
+        yield return WaitFor(() => VRSession.HasFocus, Mathf.Max(1f, end - Now));
+        if (!VRSession.HasFocus)
+            Fail(
+                $"runtime never gave the app input focus ({XRBootstrapDriver.FocusSource}): input paused, fade 0.6; "
+                    + "close the runtime's dashboard or put the headset on (presence)"
+            );
         InputDevices.GetDevices(xrDevices);
         var names = new StringBuilder();
         foreach (var d in xrDevices)
