@@ -140,23 +140,6 @@ namespace PeakXR.Core
             return releaseToDrop ? GripReleaseAction.Drop : GripReleaseAction.Keep;
         }
 
-        /// <summary>
-        /// An open backpack wheel blocks the game's input, so the grip that opened it (a grab or interact on a ground
-        /// backpack) must keep interact held itself: the wheel closes and commits the moment interact is up, and the
-        /// still-closed grip would reopen it next frame. Opening the grip lets go, as releasing the key does.
-        /// <paramref name="interactDue"/> is false while a pointing grip waits out its finger-gun window.
-        /// </summary>
-        public static bool HoldsOpenWheel(
-            GripPressAction action,
-            bool interactDue,
-            bool wheelOpen
-        ) =>
-            wheelOpen
-            && (
-                action is GripPressAction.GrabItem or GripPressAction.GrabInteractible
-                || (action == GripPressAction.Interact && interactDue)
-            );
-
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
         public static bool IsPointing(in FingerCurls c) =>
             c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;

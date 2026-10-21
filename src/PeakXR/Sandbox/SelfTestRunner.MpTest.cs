@@ -116,8 +116,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>One checkpoint: the step, then its line in a-checkpoints.jsonl, a screenshot, a short still hold and
-    /// the hands back at rest. A passed step keeps its grips, so a held item stays held; any other opens both, so a
-    /// grip left closed on a failure cannot hold the next step back.</summary>
+    /// the hands back at rest. A passed step keeps its grips, so a held item stays held; a failed or skipped one opens
+    /// both, so a grip left closed on a failure cannot hold the next step back.</summary>
     IEnumerator MpStep(string id, float timeout, bool vr, IEnumerator body)
     {
         cpExtra.Clear();
@@ -428,12 +428,14 @@ internal sealed partial class SelfTestRunner
             tried.Add(lug);
             // The SP step stands 0.8 m from the centre; online the case's own collider can stop the body farther out
             // than that, so the reach is measured from its solid surface.
+            var solid = SolidColliders(lug);
+            var centre = lug.Center();
             yield return WalkTo(
-                () => SolidPoint(lug, Character.localCharacter.Center),
+                () => SolidPoint(solid, centre, Character.localCharacter.Center),
                 0.5f,
                 false
             );
-            var near = SolidPoint(lug, c.Center) - c.Center;
+            var near = SolidPoint(solid, centre, c.Center) - c.Center;
             near.y = 0f;
             if (near.magnitude > 0.6f)
             {
@@ -881,15 +883,27 @@ internal sealed partial class SelfTestRunner
     /// <summary>Two foods (eat, feed) and one other item (grab, throw, holster).</summary>
     static bool EnoughItems() => CountNear(true) >= 2 && CountNear(false) >= 1;
 
-    /// <summary>The point of <paramref name="lug"/>'s solid collider bounds nearest <paramref name="from"/> (triggers
-    /// widen them, see <see cref="LidPoint"/>); its centre when it has none.</summary>
-    static Vector3 SolidPoint(Luggage lug, Vector3 from)
+    /// <summary>A case's enabled solid colliders; triggers widen its bounds (see <see cref="LidPoint"/>).</summary>
+    static List<Collider> SolidColliders(Luggage lug)
     {
-        var best = lug.Center();
-        float bestSq = float.MaxValue;
+        var solid = new List<Collider>();
         foreach (var col in lug.GetComponentsInChildren<Collider>())
         {
-            if (col.isTrigger || !col.enabled)
+            if (!col.isTrigger && col.enabled)
+                solid.Add(col);
+        }
+        return solid;
+    }
+
+    /// <summary>The point of the <paramref name="solid"/> colliders' bounds nearest <paramref name="from"/>;
+    /// <paramref name="fallback"/> when there are none (or all are gone).</summary>
+    static Vector3 SolidPoint(List<Collider> solid, Vector3 fallback, Vector3 from)
+    {
+        var best = fallback;
+        float bestSq = float.MaxValue;
+        foreach (var col in solid)
+        {
+            if (col == null)
                 continue;
             var p = col.bounds.ClosestPoint(from);
             float sq = (p - from).sqrMagnitude;

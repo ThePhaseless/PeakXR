@@ -195,34 +195,4 @@ public class GripIntentTests
             GripIntent.OnRelease(false, true, 9f, 2f, true, true, extensionClaims: true)
         );
     }
-
-    [Theory]
-    [InlineData(GripPressAction.GrabItem, true)]
-    [InlineData(GripPressAction.GrabInteractible, true)]
-    [InlineData(GripPressAction.Interact, true)]
-    [InlineData(GripPressAction.None, false)]
-    [InlineData(GripPressAction.Climb, false)]
-    [InlineData(GripPressAction.SecondHand, false)]
-    [InlineData(GripPressAction.Regrip, false)]
-    [InlineData(GripPressAction.Extension, false)]
-    public void OpenWheel_HeldOnlyByAGripThatPressesInteract(GripPressAction action, bool holds)
-    {
-        Assert.Equal(holds, GripIntent.HoldsOpenWheel(action, interactDue: true, wheelOpen: true));
-    }
-
-    [Fact]
-    public void OpenWheel_PointingGripStillInItsPingWindow_DoesNotHold()
-    {
-        Assert.False(
-            GripIntent.HoldsOpenWheel(GripPressAction.Interact, interactDue: false, wheelOpen: true)
-        );
-    }
-
-    [Fact]
-    public void ClosedWheel_NeverHeld()
-    {
-        Assert.False(
-            GripIntent.HoldsOpenWheel(GripPressAction.GrabItem, interactDue: true, wheelOpen: false)
-        );
-    }
 }

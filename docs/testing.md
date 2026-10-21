@@ -159,6 +159,7 @@ VR runs only:
 | `vr.19-laser` | beach | Pause menu open, both aim rays on its Resume button, a trigger pull: the menu closes; screenshot `vr-19-laser` |
 | `vr.20-holster` | beach | A held Apple taken to its body slot and let go goes into that hotbar slot; a grip there draws it back into the same hand; screenshot `vr-20-holster` |
 | `vr.29-ground-backpack` | beach | A grip on a spawned ground backpack opens its wheel, which stays open every frame while the grip is closed; opening the grip closes it and the move stick walks again; screenshot `vr-29-ground-backpack` |
+| `vr.32-shoulder-stash` | beach | With a pack worn and an Apple grabbed in one hand (grip kept closed), the other hand over the shoulder opens the pack wheel, hovers a pocket, and opening that grip stashes the Apple and closes the wheel; screenshot `vr-32-shoulder-stash` |
 
 Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
 
