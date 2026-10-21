@@ -113,6 +113,10 @@ A refused gesture never fails silently. Each refusal calls `ParityFeedback.Denie
 
 The shared affordance service (`src/PeakXR/UI/Affordance/`) is meant to take over this hook and add the red outline and the reason label.
 
+## Live single-client check (2026-10-21)
+
+PeakXR in VR (master `ad2932f`, Vulkan, SteamVR with the ALVR virtual headset) hosted a real online lobby on the main account, through the game's own host flow driven by the read-only `MpObserver` plugin. Steam lobby `109775241740456695`, Photon room `DBIPRX`. It advertised `peakVersion 2.6` and game `2.6.b`, the same values unmodded PEAK writes. It stayed online in the airport for over two minutes with no exceptions in the log. The only RPC seen was the game's own `EquipSlotRpc` for the passport, and nothing else went out, since no PeakXR peer was in the room. This shows what an unmodded player would see when browsing for or joining the lobby. It does not replace the two-client test below. That test is set up but waits on the second account accepting PEAK's EULA in Steam.
+
 ## What only a live two-client test can confirm
 
 1. Vanilla clients log nothing for the `PeakXR` property or event 151, and are never kicked.
