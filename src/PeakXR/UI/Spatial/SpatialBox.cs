@@ -46,7 +46,7 @@ internal sealed class SpatialBox
     }
 
     /// <summary>Above every world effect, below the VR keyboard (30000) and the fade sphere.</summary>
-    private const int SortingOrder = 29000;
+    private const int SortingOrder = DrawOrder.HandUi;
 
     private static readonly int OutlineWidth = Shader.PropertyToID("_OutlineWidth");
     private static readonly Dictionary<(Material, bool), Material> onTop = new();

@@ -52,7 +52,7 @@ internal sealed class VRKeyboard : MonoBehaviour
     private const float PokeTipForward = 0.04f;
     private const float PokeTickSeconds = 0.02f;
     private const float FlashSeconds = 0.12f;
-    private const int SortingOrder = 30000;
+    private const int SortingOrder = DrawOrder.Keyboard;
 
     /// <summary>Degrees the keyboard leans back past square to the eye, so it lies like a desk.</summary>
     internal const float DeskTilt = 30f;

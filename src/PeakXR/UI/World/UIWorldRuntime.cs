@@ -78,6 +78,8 @@ internal sealed class UIWorldRuntime : MonoBehaviour
             else
             {
                 split.Restore();
+                // Every hand UI is off VR now (or turns off this frame and rebuilds without them).
+                OnTop.DestroyClones();
                 WorldCanvases.RevertAll();
                 pointer.Hide();
                 VRFade.Clear(fadeOwner);

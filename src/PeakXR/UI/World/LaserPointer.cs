@@ -96,7 +96,7 @@ internal sealed class LaserPointer
         line.receiveShadows = false;
         beamMaterial = UIMaterials.Create(BeamColor, drawOnTop: false, renderQueue: 3100);
         line.sharedMaterial = beamMaterial;
-        line.sortingOrder = short.MaxValue;
+        line.sortingOrder = DrawOrder.LaserBeam;
 
         cursorMaterial = UIMaterials.Create(CursorColor, drawOnTop: true, renderQueue: 3200);
         var dot = UIMaterials.MeshObject(
@@ -105,7 +105,7 @@ internal sealed class LaserPointer
             cursorMaterial,
             parent
         );
-        dot.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
+        dot.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.LaserCursor;
         cursor = dot.transform;
         // Child of the dot, drawn first: the part outside the dot shows as a dark ring.
         var ring = UIMaterials.MeshObject(
@@ -114,7 +114,7 @@ internal sealed class LaserPointer
             UIMaterials.Create(RimColor, drawOnTop: true, renderQueue: 3199),
             cursor
         );
-        ring.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue - 1;
+        ring.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.LaserBeam;
         rim = ring.transform;
         rim.localScale = Vector3.one * RimScale;
 

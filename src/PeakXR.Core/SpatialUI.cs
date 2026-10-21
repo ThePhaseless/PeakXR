@@ -329,6 +329,15 @@ namespace PeakXR.Core
         Throw,
     }
 
+    /// <summary>One controller's capacitive touch sensors this frame (Index: trigger, A, B, stick).</summary>
+    public struct ControlTouch
+    {
+        public bool Trigger;
+        public bool Primary;
+        public bool Secondary;
+        public bool Stick;
+    }
+
     /// <summary>
     /// Where a label for a control sits on a controller, in grip-pose space (x right, y up, z forward along the
     /// controller), and which control each game prompt maps to in the PeakXR layout (docs/controls.md).
@@ -374,6 +383,78 @@ namespace PeakXR.Core
         }
 
         /// <summary>
+        /// Where <paramref name="control"/> itself is on the controller (a Valve Index, roughly right for others), in
+        /// grip-pose space, mirrored for the left controller: the end of a label's leader line.
+        /// </summary>
+        public static Vector3 Spot(VRControl control, bool left)
+        {
+            Vector3 v;
+            switch (control)
+            {
+                case VRControl.Trigger:
+                    v = new Vector3(0f, -0.015f, 0.05f);
+                    break;
+                case VRControl.Grip:
+                    v = new Vector3(0f, -0.05f, 0.02f);
+                    break;
+                case VRControl.Primary:
+                    v = new Vector3(0.01f, 0.035f, 0.005f);
+                    break;
+                case VRControl.Secondary:
+                    v = new Vector3(0.01f, 0.04f, 0.02f);
+                    break;
+                case VRControl.StickUp:
+                    v = new Vector3(-0.005f, 0.045f, 0.04f);
+                    break;
+                case VRControl.StickDown:
+                    v = new Vector3(-0.005f, 0.045f, 0.025f);
+                    break;
+                case VRControl.Menu:
+                    v = new Vector3(0f, 0.03f, -0.01f);
+                    break;
+                default:
+                    v = new Vector3(-0.005f, 0.045f, 0.032f);
+                    break;
+            }
+            if (left)
+                v.X = -v.X;
+            return v;
+        }
+
+        /// <summary>Short button name shown beside a label, as printed on an Index controller.</summary>
+        public static string Glyph(VRControl control) =>
+            control switch
+            {
+                VRControl.Trigger => "TRIGGER",
+                VRControl.Grip => "GRIP",
+                VRControl.Primary => "A",
+                VRControl.Secondary => "B",
+                VRControl.StickUp => "STICK UP",
+                VRControl.StickDown => "STICK DN",
+                VRControl.Menu => "MENU",
+                _ => "STICK",
+            };
+
+        /// <summary>The finger rests on <paramref name="control"/> (capacitive touch). Never the grip: the fingers wrap
+        /// it whenever an item is held.</summary>
+        public static bool Touched(VRControl control, ControlTouch touch) =>
+            control switch
+            {
+                VRControl.Trigger => touch.Trigger,
+                VRControl.Primary => touch.Primary,
+                VRControl.Secondary => touch.Secondary,
+                VRControl.StickClick or VRControl.StickUp or VRControl.StickDown => touch.Stick,
+                _ => false,
+            };
+
+        /// <summary>Opacity of a label: full while its button is touched, dimmed while another button on the same hand
+        /// is, a little under full otherwise.</summary>
+        public static float Emphasis(bool touched, bool anyOnHand) =>
+            touched ? 1f
+            : anyOnHand ? 0.4f
+            : 0.85f;
+
+        /// <summary>
         /// Control for a game item prompt: use on the item hand's trigger, secondary use on the other trigger, scroll
         /// beside the stick that scrolls, drop on the configured drop button, throw at the item hand's grip (release
         /// while swinging). False when the prompt has no control (drop button set to None).
@@ -390,11 +471,21 @@ namespace PeakXR.Core
             switch (prompt)
             {
                 case ItemPrompt.Main:
-                    (left, control) = (itemInLeft, VRControl.Trigger);
-                    return true;
+                    return ForAction(
+                        VRAction.UsePrimary,
+                        dominantLeft,
+                        itemInLeft,
+                        out left,
+                        out control
+                    );
                 case ItemPrompt.Secondary:
-                    (left, control) = (!itemInLeft, VRControl.Trigger);
-                    return true;
+                    return ForAction(
+                        VRAction.UseSecondary,
+                        dominantLeft,
+                        itemInLeft,
+                        out left,
+                        out control
+                    );
                 case ItemPrompt.Throw:
                     (left, control) = (itemInLeft, VRControl.Grip);
                     return true;

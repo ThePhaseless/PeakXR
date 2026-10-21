@@ -21,7 +21,7 @@ internal sealed class FadeSphere : MonoBehaviour
 
         var fadeMaterial = UIMaterials.Create(Color.clear, drawOnTop: true, renderQueue: 5000);
         var go = UIMaterials.MeshObject("PeakXR_Fade", mesh, fadeMaterial, parent);
-        go.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
+        go.GetComponent<MeshRenderer>().sortingOrder = PeakXR.Core.DrawOrder.Fade;
         // Radius 0.3 m: beyond every near plane in use (rig.camera NearClip is at most 0.1 m).
         go.transform.localScale = Vector3.one * 0.6f;
 

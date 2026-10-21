@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using BepInEx.Configuration;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Inventory;
 using PeakXR.Locomotion;
@@ -656,9 +657,9 @@ internal sealed class PreviewStage : MonoBehaviour
             Hide(outline);
             return;
         }
-        // shortcut: copies HudLayout.PoseWrist's anchor; update both if the wrist pose is retuned.
-        var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
-        var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
+        // The watch-face pose ui.world's wrist box rests in (before it turns toward the eye).
+        var rotation = WristHud.Rest(hand.rotation.N(), left).U();
+        var anchor = WristHud.Anchor(hand.position.N(), hand.rotation.N(), left).U();
         var w = SettingPreviews.Value(ref wristWidth, "UI.HUD", "WristWidth", 0.16f) * 0.5f;
         var h = w * 0.4f;
         outline.SetPosition(0, anchor + rotation * new Vector3(-w, -h, 0f));

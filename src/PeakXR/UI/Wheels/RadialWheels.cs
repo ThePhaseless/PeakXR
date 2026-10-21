@@ -14,7 +14,7 @@ namespace PeakXR.UI.Wheels;
 /// Drives the game's two wheels in VR. When the game opens a wheel (GUIManager.UpdateEmoteWheel A/GUIManager.cs:561
 /// on the Emote binding, OpenBackpackWheel :546 on interact), it is lifted out of the HUD panel into a
 /// <see cref="HudBox"/> and pinned, facing you, where the opening hand was: a few centimetres toward the eye on
-/// the eye-to-hand line (<see cref="WheelPlane"/>) and drawn without the depth test (<see cref="WheelOnTop"/>), so
+/// the eye-to-hand line (<see cref="WheelPlane"/>) and drawn without the depth test (<see cref="OnTop"/>), so
 /// the hand, forearm and a backpack under the hand never cover it; it is shrunk to look as big as a wheel at the
 /// hand. Each frame the hand's travel from that spot (or the hand's stick) picks a slice through <see cref="RadialSelector"/>, and the slice's own
 /// Hover/Dehover run, so releasing the button resolves through the game's Choose exactly as with a gamepad.
@@ -59,7 +59,7 @@ internal sealed class RadialWheels : MonoBehaviour
         LaserPointer.ForceShow = false;
         emote.Restore();
         backpack.Restore();
-        WheelOnTop.DestroyClones();
+        OnTop.DestroyClones();
     }
 
     /// <summary>Self-test: the drawn centre of <paramref name="wheel"/> while it is open on a VR hand.</summary>
@@ -222,7 +222,7 @@ internal sealed class WheelDriver
     public void Restore()
     {
         ShowBackdrops();
-        WheelOnTop.Set(drawn, false);
+        OnTop.Set(drawn, false);
         drawn = null;
         box.Restore();
         open = false;
@@ -239,7 +239,7 @@ internal sealed class WheelDriver
             if (open)
             {
                 selector.Reset();
-                WheelOnTop.Set(drawn, false);
+                OnTop.Set(drawn, false);
             }
             open = false;
             selected = -1;
@@ -294,7 +294,7 @@ internal sealed class WheelDriver
             return false;
         wheel = current;
         if (drawn != root)
-            WheelOnTop.Set(drawn, false);
+            OnTop.Set(drawn, false);
         drawn = root;
         left = handLeft;
         selected = -1;
@@ -313,6 +313,7 @@ internal sealed class WheelDriver
         if (direct == null)
         {
             box.Move(root);
+            OnTop.Sort(rect);
             // The box is a nested canvas: its graphics are raycast only by a raycaster of its own. With it the laser
             // reaches the emote wheel, and WheelRaycaster keeps slice hits to their drawn wedges. The backpack
             // wheel gets none: no laser shows over it, and a ray from the hidden laser's stale pose would hover its
@@ -339,7 +340,7 @@ internal sealed class WheelDriver
         boxCenter = count > 0 ? (Vector2)(sum / count) : Vector2.zero;
         span = width > 0f ? 2f * WheelSegment.OuterFraction * width : 500f;
         HideBackdrops(root, boxScale);
-        WheelOnTop.Set(root, true);
+        OnTop.Set(root, true);
 
         var eye = rig.Head.position.ToNumerics();
         var handAt = hand.position.ToNumerics();

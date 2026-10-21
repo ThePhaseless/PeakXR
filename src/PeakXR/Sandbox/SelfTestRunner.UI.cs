@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Avatar;
+using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
@@ -22,8 +23,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// ui.05: the wrist HUD (stamina bar and afflictions, moved by ui.world's HudSplit) raised like a watch faces the
-    /// eye at a readable size, and a fresh affliction (Cold) shows in it.
+    /// ui.05: the wrist HUD (stamina bar and afflictions, moved by ui.world's HudSplit) on a wrist raised like a watch
+    /// (fingers up, the back of the hand to the eye) lies on the back of the wrist facing the eye with its bar across
+    /// the wrist, turns to face the eye at a readable size, draws over the arm (OnTop), and a fresh affliction (Cold)
+    /// shows in it. Cold goes on through <c>AddStatus</c>, as the game adds it, which also holds off the body's own
+    /// warmth (CharacterHeatEmission.cs:23 waits 3 s after added cold; <c>SetStatus</c> does not reset that clock).
     /// </summary>
     IEnumerator WristHudStep()
     {
@@ -34,38 +38,85 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var c = Character.localCharacter;
-        var head = VRRig.Instance.Head;
-        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
+        var rig = VRRig.Instance;
+        var head = rig.Head;
+        bool left = cfg.WristLeft;
+        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
+        c.refs.afflictions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
         yield return MoveTo(
-            cfg.WristLeft,
-            () => head.position + Flat(head.forward) * 0.4f + Vector3.down * 0.12f,
+            left,
+            // The display sits 12 cm down the forearm from the grip: the hand a little above eye level puts it in
+            // the gaze (WristHud.LookDegrees), as a player looks at a watch.
+            () => head.position + Flat(head.forward) * 0.35f + Vector3.up * 0.05f,
             0.5f
+        );
+        // Raised like a watch: fingers up, the back of the hand (grip -x left, +x right) toward the eye.
+        var away = Flat(Script(left).Position - VRInput.HeadPosition);
+        Script(left).Rotation = Quaternion.LookRotation(
+            Vector3.up,
+            Vector3.Cross(away * (left ? -1f : 1f), Vector3.up)
         );
         yield return Wait(1f);
         var wrist = UI.World.HudSplit.WristPosition;
         var toWrist = wrist - head.position;
         float facing = Vector3.Angle(UI.World.HudSplit.WristRotation * Vector3.forward, toWrist);
+        var rest = UI.World.HudSplit.WristRest;
+        float restFacing = Vector3.Angle(rest * Vector3.forward, toWrist);
+        var hand = rig.Hand(left);
+        float across = hand != null ? Vector3.Angle(rest * Vector3.right, hand.forward) : 0f;
         float width = UI.World.HudSplit.WristWidthMeters;
         float degrees = 2f * Mathf.Atan2(width * 0.5f, toWrist.magnitude) * Mathf.Rad2Deg;
-        int afflictions = 0;
         var root = UI.World.HudSplit.WristRoot;
+        int afflictions = 0;
         if (root != null)
             foreach (var a in root.GetComponentsInChildren<BarAffliction>(false))
                 if (a.afflictionType == CharacterAfflictions.STATUSTYPE.Cold)
                     afflictions++;
+        bool onTop = UI.Common.OnTop.AllOnTop(root);
+        float cold = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold);
+        string where = afflictions > 0 ? "" : ColdSlotWhere(root);
         yield return ShotAt("ui-05-wrist-hud", wrist);
         c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), Cold slots {afflictions}"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
         else if (facing > 25f)
             Fail("wrist HUD does not face the eye");
+        else if (restFacing > 50f)
+            Fail("watch face is not on the side of the wrist that faces the eye");
+        else if (Mathf.Abs(across - 90f) > 15f)
+            Fail("wrist bar does not run across the wrist");
         else if (degrees < 12f)
             Fail("wrist HUD too small to read");
+        else if (!onTop)
+            Fail("wrist HUD is depth tested: the arm can cover it");
         else if (afflictions == 0)
             Fail("Cold affliction not shown on the wrist");
+    }
+
+    /// <summary>Where the stamina bar's Cold segment is when the wrist does not show it, for the step note.</summary>
+    static string ColdSlotWhere(Transform wristRoot)
+    {
+        var bar = GUIManager.instance != null ? GUIManager.instance.bar : null;
+        if (bar == null || bar.afflictions == null)
+            return "; no stamina bar";
+        foreach (var a in bar.afflictions)
+        {
+            if (a == null || a.afflictionType != CharacterAfflictions.STATUSTYPE.Cold)
+                continue;
+            var path = a.name;
+            for (
+                var t = a.transform.parent;
+                t != null && t.GetComponent<Canvas>() == null;
+                t = t.parent
+            )
+                path = t.name + "/" + path;
+            bool under = wristRoot != null && a.transform.IsChildOf(wristRoot);
+            return $"; Cold segment {path}, on wrist {under}, active {a.gameObject.activeInHierarchy} (self {a.gameObject.activeSelf})";
+        }
+        return "; no Cold segment in the bar";
     }
 
     /// <summary>ui.01: an Apple in front of the eyes becomes <c>Interaction.currentHovered</c> (Interaction.cs:15); its
@@ -194,7 +245,51 @@ internal sealed partial class SelfTestRunner
         var fails = new List<string>();
         if (d > 0.2f)
             fails.Add($"label {d:0.00} m from the holding hand");
-        Conclude(fails, new List<string> { $"'{prompt.text}' {d:0.000} m from the hand" });
+        bool onTop = UI.Common.OnTop.IsOnTop(prompt);
+        if (!onTop)
+            fails.Add("label is depth tested: the hand can cover it");
+        // The label names its button and a leader runs from that name to the button on the controller.
+        bool shown = ButtonLabels.TryShown(
+            ItemPrompt.Main,
+            out var glyph,
+            out _,
+            out var from,
+            out var to
+        );
+        float toHand = shown ? Vector3.Distance(to, hand.position) : -1f;
+        if (!shown)
+            fails.Add("no button name and leader on the use label");
+        else
+        {
+            if (glyph != ControllerLabels.Glyph(VRControl.Trigger))
+                fails.Add($"use label names '{glyph}', not the trigger");
+            if (toHand > 0.1f)
+                fails.Add($"leader ends {toHand:0.00} m from the hand, not on its trigger");
+        }
+        // A finger on the trigger lights the use label and dims the rest on that hand.
+        bool left = LocalHold.ItemInLeftHand;
+        Script(left).TriggerTouch = true;
+        yield return Wait(0.4f);
+        ButtonLabels.TryShown(ItemPrompt.Main, out _, out float lit, out _, out _);
+        bool throwShown = ButtonLabels.TryShown(
+            ItemPrompt.Throw,
+            out _,
+            out float dim,
+            out _,
+            out _
+        );
+        Script(left).TriggerTouch = false;
+        if (lit < 0.95f)
+            fails.Add($"touching the trigger left the use label at {lit:0.00}");
+        if (throwShown && dim > 0.6f)
+            fails.Add($"touching the trigger left the throw label at {dim:0.00}");
+        Conclude(
+            fails,
+            new List<string>
+            {
+                $"'{prompt.text}' {d:0.000} m from the hand, on top {onTop}, name '{glyph}', leader to {toHand:0.000} m from the grip, touched {lit:0.00} vs throw {(throwShown ? dim.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "hidden")}",
+            }
+        );
     }
 
     /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a sign ahead, 30 m out or
