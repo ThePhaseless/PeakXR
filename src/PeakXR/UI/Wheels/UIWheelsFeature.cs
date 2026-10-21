@@ -20,7 +20,7 @@ public sealed class UIWheelsFeature : Feature
     public override int Order => 58;
 
     internal static ConfigEntry<float> Size;
-    internal static ConfigEntry<float> FlickDistance;
+    internal static ConfigEntry<float> PickDepth;
     internal static ConfigEntry<float> Haptics;
 
     internal static AccessTools.FieldRef<CharacterMovement, Character> MovementCharacter;
@@ -37,13 +37,13 @@ public sealed class UIWheelsFeature : Feature
                 new AcceptableValueRange<float>(0.15f, 0.6f)
             )
         );
-        FlickDistance = Plugin.Settings.Bind(
+        PickDepth = Plugin.Settings.Bind(
             section,
-            "FlickDistance",
-            0.05f,
+            "PickDepth",
+            0.1f,
             new ConfigDescription(
-                "How far, in metres, you move the hand from the wheel centre to pick a slice. The stick of the same hand also works.",
-                new AcceptableValueRange<float>(0.02f, 0.15f)
+                "How far onto the emote wheel's ring you move the hand before it picks a slice: 0 at the ring's inner edge, 0.5 halfway across. The empty middle never picks, and past the outer edge nothing is picked. The stick of the same hand and the laser also work.",
+                new AcceptableValueRange<float>(0f, 0.5f)
             )
         );
         Haptics = Plugin.Settings.Bind(

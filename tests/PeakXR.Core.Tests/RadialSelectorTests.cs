@@ -71,6 +71,27 @@ public class RadialSelectorTests
     }
 
     [Fact]
+    public void HandPastOuterEdge_SelectsNothing()
+    {
+        var s = new RadialSelector { FlickDistance = 0.05f, MaxDistance = 0.15f };
+        // Straight past the drawn ring: empty space, no slice.
+        Assert.False(s.Update(new Vector2(0f, 0.2f), Vector2.Zero, out var dir));
+        Assert.Equal(Vector2.Zero, dir);
+        Assert.True(s.Update(new Vector2(0f, 0.1f), Vector2.Zero, out _));
+        // A small overshoot keeps the choice (tremor), a clear one drops it.
+        Assert.True(s.Update(new Vector2(0f, 0.155f), Vector2.Zero, out _));
+        Assert.False(s.Update(new Vector2(0f, 0.2f), Vector2.Zero, out _));
+    }
+
+    [Fact]
+    public void Stick_IgnoresMaxDistance()
+    {
+        var s = new RadialSelector { FlickDistance = 0.05f, MaxDistance = 0.15f };
+        Assert.True(s.Update(new Vector2(0f, 0.5f), new Vector2(0.9f, 0f), out var dir));
+        Assert.Equal(new Vector2(0.9f, 0f), dir);
+    }
+
+    [Fact]
     public void Reset_ClearsActive()
     {
         var s = new RadialSelector();

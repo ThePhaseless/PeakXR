@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using PeakXR.Core;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using NVector2 = System.Numerics.Vector2;
 
 namespace PeakXR.UI.Wheels;
@@ -14,7 +16,8 @@ namespace PeakXR.UI.Wheels;
 /// <see cref="HudBox"/> and pinned, facing you, where the opening hand was. Each frame the hand's travel from
 /// that spot (or the hand's stick) picks a slice through <see cref="RadialSelector"/>, and the slice's own
 /// Hover/Dehover run, so releasing the button resolves through the game's Choose exactly as with a gamepad.
-/// The emote wheel is picked by hand travel or the opening hand's stick. The backpack wheel is picked by
+/// The emote wheel is picked by the hand over its drawn ring, the opening hand's stick, or the laser (shown while it
+/// is open; the slices' own pointer enter/exit hover them). Its full-screen dimmer is hidden. The backpack wheel is picked by
 /// inventory.vr (hand movement, <c>Inventory.WheelByHand</c>) through the game's own
 /// <c>TestSelectSliceGamepad</c>; here it only gets a place at the hand, plus its stick as an alternative.
 /// Both go through the TestSelectSliceGamepad patches (WheelPatches.cs), which read such a call in the wheel's own plane.
@@ -80,6 +83,7 @@ internal sealed class RadialWheels : MonoBehaviour
         var rig = VRRig.Instance;
         if (!UIWorldRuntime.Ready || gui == null || rig == null || rig.Origin == null)
         {
+            LaserPointer.ForceShow = false;
             emote.Restore();
             backpack.Restore();
             return;
@@ -92,6 +96,10 @@ internal sealed class RadialWheels : MonoBehaviour
             rig,
             VRAction.Interact
         );
+        // The laser over the open emote wheel, so the pointer that hovers its slices is seen (UIWorldRuntime reads it).
+        // Hand travel has priority: while the hand is over the ring the laser is hidden, so the two never fight
+        // over the hovered slice.
+        LaserPointer.ForceShow = emote.IsOpen && !emote.HandPicking;
     }
 
     /// <summary>
@@ -126,9 +134,13 @@ internal sealed class WheelDriver
     private const float SliceOffsetDegrees = 22.5f;
     private const float HoverTickSeconds = 0.02f;
 
+    // A graphic this dark behind the wheel is a dimmer, not artwork (as MenuBackdrop's dimmer test).
+    private const float BackdropMaxChannel = 0.35f;
+
     private readonly HudBox box;
     private readonly bool handDriven;
     private readonly RadialSelector selector = new();
+    private readonly List<Graphic> hidden = new();
     private UIWheel wheel;
     private RectTransform direct;
     private UIWheelSlice[] slices = System.Array.Empty<UIWheelSlice>();
@@ -155,8 +167,14 @@ internal sealed class WheelDriver
 
     private RectTransform Plane => direct != null ? direct : box.Rect;
 
+    public bool IsOpen => open;
+
+    /// <summary>The hand is over the ring and its travel picks the slice; the laser stands down meanwhile.</summary>
+    public bool HandPicking => open && handDriven && selector.Active;
+
     public void Forget()
     {
+        hidden.Clear();
         box.Forget();
         open = false;
         wheel = null;
@@ -166,6 +184,7 @@ internal sealed class WheelDriver
 
     public void Restore()
     {
+        ShowBackdrops();
         box.Restore();
         open = false;
         selected = -1;
@@ -210,7 +229,11 @@ internal sealed class WheelDriver
                 Vector3.Dot(travel, rotation * Vector3.right),
                 Vector3.Dot(travel, rotation * Vector3.up)
             );
-            selector.FlickDistance = UIWheelsFeature.FlickDistance.Value;
+            // The hand picks only over the drawn ring: not in its centre hole, not past its outer edge. The wheel's
+            // drawn diameter is WheelSize (see Open), so the ring's radii follow from the wedge's measured shape.
+            float outer = UIWheelsFeature.Size.Value * 0.5f;
+            selector.FlickDistance = WheelSegment.PickStart(outer, UIWheelsFeature.PickDepth.Value);
+            selector.MaxDistance = outer;
             selector.Update(handOffset, stickVector, out var direction);
             Steer(direction, authoritative: true);
         }
@@ -240,28 +263,34 @@ internal sealed class WheelDriver
         direct = rootCanvas == root ? rootCanvas : null;
         var rect = direct != null ? direct : box.Ensure(rootCanvas);
         if (direct == null)
+        {
             box.Move(root);
+            // The box is a nested canvas: its graphics are raycast only by a raycaster of its own. With it the laser
+            // reaches the emote wheel, and WheelRaycaster keeps slice hits to their drawn wedges. The backpack
+            // wheel gets none: no laser shows over it, and a ray from the hidden laser's stale pose would hover its
+            // pockets behind inventory.vr's back.
+            if (handDriven && !rect.TryGetComponent<WheelRaycaster>(out _))
+                rect.gameObject.AddComponent<WheelRaycaster>();
+        }
 
-        // Wheel geometry in container pixels: its centre and width come from the slices themselves, because the
-        // wheel object may be a full-screen container.
-        var bounds = new Bounds();
-        bool first = true;
+        // Wheel geometry in container pixels, from the slice rects alone: each is centred on the wheel and draws
+        // its wedge out to WheelSegment.OuterFraction of its width. Their children (a 3000 px invisible raycast
+        // mask) and the wheel object (full screen) would make the wheel a few centimetres wide.
+        var sum = Vector3.zero;
+        int count = 0;
+        float width = 0f;
+        float boxScale = Mathf.Max(1e-9f, Mathf.Abs(rect.lossyScale.x));
         for (int i = 0; i < slices.Length; i++)
         {
-            if (slices[i] == null)
+            if (slices[i] == null || slices[i].transform is not RectTransform slice)
                 continue;
-            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(
-                rect,
-                slices[i].transform
-            );
-            if (first)
-                bounds = b;
-            else
-                bounds.Encapsulate(b);
-            first = false;
+            sum += rect.InverseTransformPoint(slice.position);
+            width = Mathf.Max(width, slice.rect.width * Mathf.Abs(slice.lossyScale.x) / boxScale);
+            count++;
         }
-        boxCenter = first ? Vector2.zero : (Vector2)bounds.center;
-        span = Mathf.Max(1f, first ? 500f : bounds.size.x);
+        boxCenter = count > 0 ? (Vector2)(sum / count) : Vector2.zero;
+        span = width > 0f ? 2f * WheelSegment.OuterFraction * width : 500f;
+        HideBackdrops(root, boxScale);
 
         var center = hand.position;
         var facing = center - rig.Head.position;
@@ -273,6 +302,48 @@ internal sealed class WheelDriver
             Quaternion.Inverse(origin.rotation) * Quaternion.LookRotation(facing, Vector3.up);
         selector.Reset();
         return true;
+    }
+
+    /// <summary>
+    /// The wheel's full-screen dimmer ("BG", a black 69% Image stretched over the canvas, first child of both
+    /// wheel prefabs) would float at the hand as a dark slab. EmoteWheel and BackpackWheel keep no reference to it
+    /// (fields A/EmoteWheel.cs:9-26, A/BackpackWheel.cs:9-25), so it is found by shape: an enabled dark Image or
+    /// RawImage outside every slice and button, larger than the wheel. Disabled, so it neither draws nor catches
+    /// the pointer; <see cref="Restore"/> turns it back on. Nothing found: nothing hidden.
+    /// </summary>
+    private void HideBackdrops(Transform root, float boxScale)
+    {
+        foreach (var g in root.GetComponentsInChildren<Graphic>(true))
+        {
+            if (
+                !g.enabled
+                || g is not (Image or RawImage)
+                || g.GetComponentInParent<UIWheelSlice>(true) != null
+                || g.GetComponentInParent<Selectable>(true) != null
+                || g.TryGetComponent<Mask>(out _)
+            )
+                continue;
+            var c = g.color;
+            var size =
+                g.rectTransform.rect.size * (Mathf.Abs(g.rectTransform.lossyScale.x) / boxScale);
+            if (
+                c.a <= 0f
+                || Mathf.Max(c.r, Mathf.Max(c.g, c.b)) > BackdropMaxChannel
+                || Mathf.Min(size.x, size.y) < span * 1.5f
+            )
+                continue;
+            g.enabled = false;
+            hidden.Add(g);
+            Plugin.Log.LogInfo($"[ui.wheels] hid wheel backdrop '{g.name}' under '{root.name}'");
+        }
+    }
+
+    private void ShowBackdrops()
+    {
+        foreach (var g in hidden)
+            if (g != null)
+                g.enabled = true;
+        hidden.Clear();
     }
 
     private void PoseDirect(Vector3 center, Quaternion rotation, float metersPerPixel)
