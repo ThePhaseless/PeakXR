@@ -3,6 +3,7 @@ using PeakXR.Core;
 using PeakXR.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
+using Zorro.UI;
 using Zorro.UI.Modal;
 
 namespace PeakXR.UI.World;
@@ -16,6 +17,7 @@ internal sealed class TrackedCanvas
     public ICanvasPlacement Placement;
     public MenuWindow[] Windows;
     public Modal Modal;
+    public UIPageHandler Pages;
     public Vector2 Size;
 
     public bool Converted;
@@ -144,6 +146,9 @@ internal static class WorldCanvases
             Windows = windows.ToArray(),
             Modal =
                 root.GetComponentInParent<Modal>(true) ?? root.GetComponentInChildren<Modal>(true),
+            Pages =
+                root.GetComponentInParent<UIPageHandler>(true)
+                ?? root.GetComponentInChildren<UIPageHandler>(true),
             Size = size,
         };
         tracked.Add(t);
@@ -286,6 +291,10 @@ internal static class WorldCanvases
             return false;
         if (t.Modal != null && !t.Modal.Visible)
             return false;
+        // A page handler (pause menu) is shown while it is active; its windows are popups such as the
+        // quit confirm (PauseMenuMainPage.cs:32), closed most of the time. Zorro OverlayUIHandler.IsOpen agrees.
+        if (t.Pages != null)
+            return t.Pages.isActiveAndEnabled;
         if (t.Windows.Length == 0)
             return true;
         foreach (var w in t.Windows)
