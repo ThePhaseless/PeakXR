@@ -87,40 +87,57 @@ public class RoomScaleTests
     }
 
     [Fact]
-    public void LeanPastTheLimit_WalksOnceAndNotBackWhenStandingUp()
+    public void LeanPastTheLimit_WalksOnceAndNeverBackAfterStandingUp()
     {
         var f = new RoomScaleFollow();
         var lean = Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
         Assert.True(lean[^1] > 0.05f, $"walked only {lean[^1]:0.000} m after a 0.45 m lean");
-        // Standing up leaves the body ahead of the head, inside the limit: no walk back while the head moves, then
-        // a slow settle under the head once it is still, so the avatar does not stay leaning back.
+        // Standing up leaves the body ahead of the head, inside the limit. It stays put: a walk back after standing
+        // up is the forward-and-back motion players reported.
         var up = Walk(f, Lean(0.45f, 0f, 0f, 0.5f), 5f);
-        int still = (int)(1.0f * 90f);
         Assert.True(
-            up.Take(still).Min() > -0.005f,
-            $"walked back {-up.Take(still).Min():0.000} m while standing up"
+            up.Max() - up.Min() < 0.005f,
+            $"body moved {up.Max() - up.Min():0.000} m standing up"
         );
-        for (int i = 1; i < up.Count; i++)
-            Assert.True(
-                up[i - 1] - up[i] < 0.4f / 90f,
-                $"settled faster than 0.4 m/s at frame {i}"
-            );
-        Assert.True(
-            f.Offset.Length() < 0.06f,
-            $"head still {f.Offset.Length():0.000} m off the body"
-        );
+        // Instead the avatar's own lean eases to neutral: the stance it stood back up into counts as upright.
+        TestUtil.Near(f.Offset.Y, f.Neutral.Y, 0.01f);
+        Assert.True(f.Offset.Y < -0.2f, $"offset {f.Offset.Y:0.000} m");
     }
 
     [Fact]
-    public void HeldLeanInsideTheLimit_NeverSettles()
+    public void Neutral_EasesNeverJumps_AndOnlyAgainstTheFollow()
     {
-        // Settling only undoes a follow the player stood back from; a lean held over a table stays a lean.
+        var f = new RoomScaleFollow();
+        Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
+        float last = 0f;
+        float steepest = 0f;
+        for (int i = 0; i < 450; i++)
+        {
+            float t = i / 90f;
+            f.Update(Lean(0.45f, 0f, 0f, 0.5f)(t), Vector2.Zero, true, 1f / 90f);
+            steepest = MathF.Max(steepest, MathF.Abs(f.Neutral.Y - last) * 90f);
+            last = f.Neutral.Y;
+        }
+        Assert.True(steepest < 1f, $"neutral moved {steepest:0.00} m/s");
+
+        // Back over the body: neutral returns to zero. A lean the follow's way stays a lean.
+        float over = f.Anchor.Y;
+        Walk(f, Lean(0f, over + 0.3f, 0f, 0.5f), 4f);
+        Assert.True(MathF.Abs(f.Neutral.Y) < 0.01f, $"neutral {f.Neutral.Y:0.000} m");
+        Assert.True(f.Offset.Y > 0.25f);
+    }
+
+    [Fact]
+    public void HeldLeanInsideTheLimit_StaysALean()
+    {
         var f = new RoomScaleFollow();
         var held = Walk(f, Lean(0f, -0.3f, 0f, 0.5f), 6f);
         Assert.True(held.Max(MathF.Abs) < 0.005f, $"walked {held.Max(MathF.Abs):0.000} m");
+        Assert.Equal(Vector2.Zero, f.Neutral);
         Walk(f, Lean(0f, 0.7f, 0f, 0.4f), 4f);
         var ahead = Walk(f, _ => new Vector2(0f, 0.7f), 4f);
-        Assert.True(ahead.Max() - ahead.Min() < 0.005f, "settled after a step ahead");
+        Assert.True(ahead.Max() - ahead.Min() < 0.005f, "moved after a step ahead");
+        Assert.True(f.Neutral.Length() < 1e-4f, "a stance ahead, the follow's way, became neutral");
     }
 
     [Fact]

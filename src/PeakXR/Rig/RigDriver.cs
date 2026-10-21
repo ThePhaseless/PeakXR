@@ -32,12 +32,15 @@ internal sealed class RigDriver : MonoBehaviour
     /// rough guess, the first sample replaces it at once.</summary>
     private static readonly System.Numerics.Vector2 DefaultEyeOffset = new(0.1f, 0.8f);
 
+    /// <summary>Eyes in front of and above the torso (the root while the body is pitched), same rough guess.</summary>
+    private static readonly System.Numerics.Vector2 DefaultTorsoEyeOffset = new(0.1f, 0.4f);
+
+    /// <summary>Seconds the view root takes to blend between the mass centre and the torso.</summary>
+    private const float RootBlendSeconds = 0.3f;
+
     /// <summary>The eyes are sampled only while the look is within about 20 degrees of level: the animated head
     /// pitches with the look (Look Y), which would carry the eye renderers down and forward.</summary>
     private const float LevelLookY = 0.35f;
-
-    /// <summary>Eye-offset samples are skipped while the lean has moved the avatar's eyes further than this (m).</summary>
-    private const float MaxSampleLean = 0.05f;
 
     /// <summary>Vertical follow rate (1/s) on the ground: the torso is a driven rigidbody that bobs at step rate
     /// (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls keep the full rate.</summary>
@@ -73,11 +76,17 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>World offset of the first-person view from the avatar's calibrated eyes that is not the player's head
     /// motion: follow lag, the turn shift and the crouch lift. avatar.local leans the body from the head minus this,
-    /// so stick walking or a snap turn does not lean the avatar. Zero while the view is elsewhere.</summary>
+    /// so stick walking or a snap turn does not lean the avatar; also <see cref="LeanNeutral"/>. Zero while the view
+    /// is elsewhere.</summary>
     internal static Vector3 ViewOffset;
 
+    /// <summary>Tracking-space head offset that counts as upright (<see cref="RoomScaleFollow.Neutral"/>, written by
+    /// player.locomotion): part of <see cref="ViewOffset"/>, so the avatar straightens after standing back up from a
+    /// follow without the body walking back.</summary>
+    internal static System.Numerics.Vector2 LeanNeutral;
+
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
-    internal static bool EyeCalibrated => instance != null && instance.haveEyeOffset;
+    internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
 
     /// <summary>The view rides the local body (first person). False while it is detached (third person, spectate,
     /// rocket, cutscene) or held by the title stage: the tracked hands are then near the view, not the body.</summary>
@@ -109,8 +118,19 @@ internal sealed class RigDriver : MonoBehaviour
     private float nextListenerScan;
 
     private Character boundCharacter;
-    private bool haveEyeOffset;
-    private System.Numerics.Vector2 eyeOffset = DefaultEyeOffset;
+
+    /// <summary>The eyes over the mass-centre root (upright) and over the torso (pitched bodies), learned together.</summary>
+    private readonly EyeCalibration massEyes = new(DefaultEyeOffset);
+    private readonly EyeCalibration torsoEyes = new(DefaultTorsoEyeOffset);
+
+    /// <summary>1: the view rides the mass centre (upright on foot, where the lean runs); 0: the torso, as before the
+    /// lean. On a pitched body (climbing, hanging, gliding, ragdolled) a root at the hip puts the eyes 0.8 (1 - cos
+    /// pitch) off, twice the torso's error, so the root blends over <see cref="RootBlendSeconds"/>, never in a frame.</summary>
+    private float rootBlend = 1f;
+
+    /// <summary>The eye offset the view uses now (forward is what a turn swings).</summary>
+    private System.Numerics.Vector2 EyeOffsetNow =>
+        System.Numerics.Vector2.Lerp(torsoEyes.Offset, massEyes.Offset, rootBlend);
     private Vector3 anchor;
     private bool snap = true;
     private Vector3 turnShift;
@@ -240,13 +260,15 @@ internal sealed class RigDriver : MonoBehaviour
         {
             // New scene or respawned character: calibrate again once the head is tracked.
             boundCharacter = c;
-            haveEyeOffset = false;
-            eyeOffset = DefaultEyeOffset;
+            massEyes.Reset();
+            torsoEyes.Reset();
             needInitialRecenter = c != null;
             snap = true;
         }
         UpdateEyeOffset(c, dt);
         HandleRecenterInput(c, dt);
+        float upright = c != null && Upright(c) ? 1f : 0f;
+        rootBlend = snap ? upright : Mathf.MoveTowards(rootBlend, upright, dt / RootBlendSeconds);
 
         BodyAnchor = null;
         ViewOffset = Vector3.zero;
@@ -335,27 +357,35 @@ internal sealed class RigDriver : MonoBehaviour
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
         )
             return;
-        // Only the unleaned eyes: avatar.local's lean swings them toward the headset, and sampling that would carry
-        // the head's offset into the anchor and slide the view after the head. The lean waits for the first sample.
+        // Only the unleaned eyes (EyeCalibration): any lean puts them on the headset, and sampling that would carry
+        // the head's offset into the anchor and slide the view after the head. The lean waits for convergence.
         var driver = AvatarPoseDriver.Of(c);
-        if (driver != null && driver.EyeLeanShift.sqrMagnitude > MaxSampleLean * MaxSampleLean)
-            return;
-        if (!TryEyePoint(c, out var eye))
+        bool leaning = driver != null && driver.LeanWeight > 0f;
+        if (leaning || !TryEyePoint(c, out var eye))
             return;
         float facing = Mathf.Atan2(d.lookDirection_Flat.x, d.lookDirection_Flat.z) * Mathf.Rad2Deg;
         var sample = RigMath.EyeOffset(eye.N(), ViewRoot(c).N(), facing);
+        var torsoSample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
             return;
+        bool first = !massEyes.Have;
         // Snap only while the view is placed anyway (a new character, a recenter); otherwise glide, never jump.
-        eyeOffset =
-            haveEyeOffset || !snap
-                ? System.Numerics.Vector2.Lerp(eyeOffset, sample, 1f - Mathf.Exp(-dt))
-                : sample;
-        if (!haveEyeOffset)
+        massEyes.Sample(sample, leaning, snap, dt);
+        torsoEyes.Sample(torsoSample, leaning, snap, dt);
+        if (first)
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip"
             );
-        haveEyeOffset = true;
+    }
+
+    /// <summary>On foot and under control: the view may ride the mass centre and avatar.local may lean.</summary>
+    internal static bool Upright(Character c)
+    {
+        var d = c.data;
+        return !d.isClimbingAnything
+            && d.currentClimbHandle == null
+            && !(d.currentItem != null && d.currentItem.gliderHold && !d.isGrounded)
+            && d.currentRagdollControll >= RagdollControlThreshold;
     }
 
     /// <summary>Middle of the face's eye renderers; without them, the old top-of-head point (no forward offset).</summary>
@@ -562,7 +592,12 @@ internal sealed class RigDriver : MonoBehaviour
         if (shownKind == ViewKind.FirstPerson && !snap)
             BodyAnchor = anchor;
         if (shownKind == ViewKind.FirstPerson)
-            ViewOffset = anchor - goal + turnShift + Vector3.up * rig.CrouchLift;
+            ViewOffset =
+                anchor
+                - goal
+                + turnShift
+                + Vector3.up * rig.CrouchLift
+                + rig.Origin.TransformVector(new Vector3(LeanNeutral.X, 0f, LeanNeutral.Y));
         snap = false;
 
         var origin = RigMath.OriginPosition(
@@ -631,7 +666,7 @@ internal sealed class RigDriver : MonoBehaviour
         float move = c.input.movementInput.magnitude;
         if (Mathf.Abs(Mathf.DeltaAngle(turnYaw, yaw)) > 0.01f)
         {
-            turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, eyeOffset.X).U();
+            turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, EyeOffsetNow.X).U();
             turnYaw = yaw;
             turnHoldUntil = Time.unscaledTime + TurnHoldSeconds;
         }
@@ -662,7 +697,7 @@ internal sealed class RigDriver : MonoBehaviour
             c.refs.rigCreator != null ? c.refs.rigCreator.transform.eulerAngles.y : float.NaN;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} turn f{Time.frameCount} eye ({eye.x:0.000},{eye.z:0.000}) rig {rig.Origin.eulerAngles.y:0.0} body {bodyYaw:0.0} torso ({torso.x:0.000},{torso.z:0.000}) shift ({turnShift.x:0.000},{turnShift.z:0.000}) offset {eyeOffset.X:0.000} hold {(Time.unscaledTime < turnHoldUntil ? 1 : 0)}"
+                $"{Tag} turn f{Time.frameCount} eye ({eye.x:0.000},{eye.z:0.000}) rig {rig.Origin.eulerAngles.y:0.0} body {bodyYaw:0.0} torso ({torso.x:0.000},{torso.z:0.000}) shift ({turnShift.x:0.000},{turnShift.z:0.000}) offset {EyeOffsetNow.X:0.000} hold {(Time.unscaledTime < turnHoldUntil ? 1 : 0)}"
             )
         );
     }
@@ -797,9 +832,20 @@ internal sealed class RigDriver : MonoBehaviour
         }
     }
 
-    /// <summary>The avatar's calibrated eyes over <see cref="ViewRoot"/>.</summary>
-    private Vector3 BodyEye(Character c, float yaw) =>
-        RigMath.EyeAnchor(ViewRoot(c).N(), yaw, eyeOffset).U();
+    /// <summary>The avatar's calibrated eyes: for the local player over <see cref="ViewRoot"/>, blended toward the
+    /// torso by <see cref="rootBlend"/>; for a watched player over the torso.</summary>
+    private Vector3 BodyEye(Character c, float yaw)
+    {
+        var torso = RigMath.EyeAnchor(c.VirtualCenter.N(), yaw, torsoEyes.Offset).U();
+        if (c != Character.localCharacter || rootBlend <= 0f)
+            return torso;
+        var mass = RigMath.EyeAnchor(ViewRoot(c).N(), yaw, massEyes.Offset).U();
+        return rootBlend >= 1f ? mass : Vector3.Lerp(torso, mass, rootBlend);
+    }
+
+    private static Character rootCharacter;
+    private static int rootFrame = -1;
+    private static Vector3 rootCached;
 
     /// <summary>
     /// The point the first-person view rides: the ragdoll's level mass centre at hip height (<see cref="MassCentre"/>).
@@ -808,10 +854,15 @@ internal sealed class RigDriver : MonoBehaviour
     /// avatar.local's lean) slides the hips back and the torso forward while this point stays: the view never moves
     /// unless the head or the whole body does. Height comes from the hip, which the stand force holds
     /// (CharacterMovement.cs:716-725). Dead or warping characters keep the game's stand-in point
-    /// (<c>Character.VirtualCenter</c>, Character.cs:257).
+    /// (<c>Character.VirtualCenter</c>, Character.cs:257). A held item welded to a hand (CharacterItems.cs:647-650,
+    /// or avatar.local's one-hand weld) is part of the same system and counts. Outside forces do move it, as they
+    /// should: walking, a push, or a wall or rock the body leans against; nothing here fights that contact.
+    /// Computed once per frame (cached for the last character asked).
     /// </summary>
     internal static Vector3 ViewRoot(Character c)
     {
+        if (c == rootCharacter && Time.frameCount == rootFrame)
+            return rootCached;
         var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partList : null;
         var hip = c.refs.hip;
         if (parts == null || hip == null)
@@ -821,11 +872,30 @@ internal sealed class RigDriver : MonoBehaviour
         {
             var part = parts[i];
             var body = part != null ? part.Rig : null;
+            // The interpolated pose, like everything the view shows; Rigidbody.worldCenterOfMass is the 50 Hz state.
             if (body != null)
-                centre.Add(part.transform.position.N(), body.mass);
+                centre.Add(body.transform.TransformPoint(body.centerOfMass).N(), body.mass);
         }
-        return centre.Root(hip.transform.position.y).U() + (c.VirtualCenter - c.Center);
+        var item = c.data.currentItem;
+        var itemBody = item != null ? item.rig : null;
+        if (
+            itemBody != null
+            && (
+                Welded(c, BodypartType.Hand_L, itemBody) || Welded(c, BodypartType.Hand_R, itemBody)
+            )
+        )
+            centre.Add(itemBody.transform.TransformPoint(itemBody.centerOfMass).N(), itemBody.mass);
+        rootCharacter = c;
+        rootFrame = Time.frameCount;
+        rootCached = centre.Root(hip.transform.position.y).U() + (c.VirtualCenter - c.Center);
+        return rootCached;
     }
+
+    private static bool Welded(Character c, BodypartType hand, Rigidbody item) =>
+        c.refs.ragdoll.partDict.TryGetValue(hand, out var part)
+        && part.Rig != null
+        && part.Rig.TryGetComponent(out FixedJoint joint)
+        && joint.connectedBody == item;
 
     /// <summary>The camera the game renders its end cutscene with (any enabled screen camera but ours).</summary>
     private Transform FindCutsceneCamera()

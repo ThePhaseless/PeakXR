@@ -27,9 +27,10 @@ namespace PeakXR.Core
     /// the body arrives, the anchor slides toward the head by the same distance, so the view stays world-fixed while
     /// the body catches up underneath it. Inside the lean radius the avatar's upper body leans instead (avatar.local),
     /// and the follow stops well inside it, so standing up after a lean or swaying after a step never walks the body
-    /// back and forth. Standing back up after a follow leaves the body ahead of the head; once the head has been still
-    /// for <see cref="SettleSeconds"/>, a slow walk (<see cref="SettleInput"/>) settles the body under it, so the
-    /// avatar does not stay leaning back. When the body cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
+    /// back and forth. Standing back up after a follow leaves the body ahead of the head, and it stays there: walking
+    /// it back is the forward-and-back motion players reported. Instead, once the head has been still for
+    /// <see cref="StillSeconds"/>, that stance eases into <see cref="Neutral"/>, which the avatar's lean treats as
+    /// upright; only the avatar's pose changes, never the body or the view. When the body cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
     /// out and calls <see cref="Recenter"/>.
     /// </summary>
     public sealed class RoomScaleFollow
@@ -53,19 +54,21 @@ namespace PeakXR.Core
 
         public Vector2 Offset { get; private set; }
 
-        /// <summary>A settle walk ends when the head is this close (m) to the anchor.</summary>
-        public float SettleRadius = 0.05f;
+        /// <summary>The head offset (tracking space) that counts as standing upright: zero, or after a follow the
+        /// stance the player stood back up into, against the follow's direction. Moves at most
+        /// <see cref="NeutralSpeed"/>.</summary>
+        public Vector2 Neutral { get; private set; }
 
-        /// <summary>Seconds the head must stay within 3 cm before a settle walk starts.</summary>
-        public float SettleSeconds = 0.75f;
+        /// <summary>Seconds the head must stay within 3 cm before its stance updates <see cref="Neutral"/>.</summary>
+        public float StillSeconds = 0.75f;
 
-        /// <summary>Largest settle input: about 0.3 m/s, a shuffle rather than a walk.</summary>
-        public float SettleInput = 0.2f;
+        /// <summary>Speed (m/s) at which <see cref="Neutral"/> eases; the avatar straightens over about a second.</summary>
+        public float NeutralSpeed = 0.3f;
 
         float _absorbed;
         bool _following;
-        bool _settling;
         Vector2 _followDir;
+        Vector2 _neutralGoal;
         Vector2 _stillAt;
         float _stillFor;
 
@@ -75,7 +78,7 @@ namespace PeakXR.Core
         /// <param name="bodyDelta">The body's horizontal movement since the last update, in tracking space.</param>
         /// <param name="canFollow">The body is free to walk: grounded, conscious, not climbing and the move stick
         /// idle. Otherwise the offset is kept and nothing is requested.</param>
-        /// <param name="dt">Seconds since the last update; 0 never settles.</param>
+        /// <param name="dt">Seconds since the last update; 0 never eases <see cref="Neutral"/>.</param>
         /// <returns>Requested move input in tracking space, length 0..1.</returns>
         public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow, float dt = 0f)
         {
@@ -102,37 +105,31 @@ namespace PeakXR.Core
             }
             Offset = d;
             if (!canFollow)
-            {
                 _absorbed = 0f;
-                _followDir = Vector2.Zero;
-            }
 
             // Hysteresis: start past the lean radius, stop only well inside it.
             _following = canFollow && (_following ? dist > StopRadius : dist > LeanRadius);
             if (_following)
             {
-                _settling = false;
                 _followDir = d / dist;
-                float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
-                return d / dist * MathF.Min(amount, 1f);
+                _neutralGoal = Vector2.Zero;
             }
-
-            // Settle only back toward a head that stood up from a follow: a lean held the follow's way stays a lean.
-            bool wasSettling = _settling;
-            _settling =
-                canFollow
-                && dist > SettleRadius
-                && Vector2.Dot(d, _followDir) < 0f
-                && (_settling || _stillFor >= SettleSeconds);
-            if (!_settling)
+            else if (_stillFor >= StillSeconds)
             {
-                if (wasSettling)
-                    _followDir = Vector2.Zero; // settled (or stopped): one settle per follow
-                return Vector2.Zero;
+                // Only the part of a still stance that points back against the last follow: a lean held the
+                // follow's way (or with no follow at all) stays a lean.
+                float back = -Vector2.Dot(d, _followDir);
+                _neutralGoal = back > 0f ? -_followDir * back : Vector2.Zero;
             }
-            float settle =
-                RampDistance > 0f ? (dist - 0.5f * SettleRadius) / RampDistance : SettleInput;
-            return d / dist * MathF.Min(settle, SettleInput);
+            var toGoal = _neutralGoal - Neutral;
+            float step = NeutralSpeed * dt;
+            Neutral =
+                toGoal.Length() <= step ? _neutralGoal : Neutral + Vector2.Normalize(toGoal) * step;
+
+            if (!_following)
+                return Vector2.Zero;
+            float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
+            return d / dist * MathF.Min(amount, 1f);
         }
 
         public void Recenter(Vector2 head)
@@ -141,8 +138,9 @@ namespace PeakXR.Core
             Offset = Vector2.Zero;
             _absorbed = 0f;
             _following = false;
-            _settling = false;
             _followDir = Vector2.Zero;
+            _neutralGoal = Vector2.Zero;
+            Neutral = Vector2.Zero;
         }
 
         /// <summary>

@@ -17,7 +17,7 @@ namespace PeakXR.Sandbox;
 /// the limit, the body or the rig origin (the view's offset from the scripted head) moves more than
 /// <see cref="MaxLeanDrift"/> peak to peak; the fast lean moves the rig origin more than
 /// <see cref="MaxFastViewDrift"/>; the far lean does not walk the body at least 0.1 m forward, moves the rig origin,
-/// or walks it back while the head stands up; or an arm fails the vr.08 judgement during a lean (hand more than
+/// or the body moves at all (beyond <see cref="MaxLeanDrift"/>) while the head stands up and for 3.5 s after; or an arm fails the vr.08 judgement during a lean (hand more than
 /// 0.15 m off its controller, stretched, or an elbow pointing up or back).
 /// </summary>
 internal sealed partial class SelfTestRunner
@@ -115,23 +115,22 @@ internal sealed partial class SelfTestRunner
         var start = RigDriver.ViewRoot(c);
         yield return Track(c, rig, forward * 0.5f + Vector3.down * 0.06f, 0.6f, 2.5f);
         float walked = Vector3.Dot(RigDriver.ViewRoot(c) - start, forward);
-        var leaned = RigDriver.ViewRoot(c);
+        // Standing up and the 3.5 s after it: the body stays put (no walk back, no shuffle), the view never moves.
+        leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
+        yield return Track(c, rig, Vector3.zero, 0.6f, 3.5f);
+        float back = leanRoot.size.magnitude;
         float origin = leanOrigin.size.magnitude;
-        yield return Track(c, rig, Vector3.zero, 0.6f, 0.5f);
-        float back = -Vector3.Dot(RigDriver.ViewRoot(c) - leaned, forward);
-        origin = Mathf.Max(origin, leanOrigin.size.magnitude);
         notes.Add(
             F(
-                $"far lean: walked {walked:0.000} m, back {back:0.000} m standing up, view {origin:0.000} m"
+                $"far lean: walked {walked:0.000} m, body {back:0.000} m while standing up and after, view {origin:0.000} m"
             )
         );
         if (walked < 0.1f)
             fails.Add(F($"far lean walked only {walked:0.000} m"));
         if (back > MaxLeanDrift)
-            fails.Add(F($"standing up walked back {back:0.000} m"));
+            fails.Add(F($"body moved {back:0.000} m after standing up"));
         if (origin > MaxLeanDrift)
             fails.Add(F($"far lean moved the view {origin:0.000} m"));
-        yield return Track(c, rig, Vector3.zero, 0f, 3f);
 
         VRInput.TestOverride = hands;
         var note = string.Join("; ", notes);

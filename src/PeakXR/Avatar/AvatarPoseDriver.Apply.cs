@@ -55,6 +55,9 @@ public partial class AvatarPoseDriver
     private const float LeanFadeSeconds = 0.3f;
 
     private float leanWeight;
+
+    /// <summary>How much of the lean is on (eased 0..1); rig.camera samples the eyes only at 0.</summary>
+    internal float LeanWeight => leanWeight;
     private Quaternion lastSwing = Quaternion.identity;
 
     /// <summary>How far this tick's lean moved the avatar's eyes (world metres, animated target). rig.camera only
@@ -267,7 +270,6 @@ public partial class AvatarPoseDriver
         if (spine == null || torso == null || head == null || !haveEyeInHead)
             return false;
         var c = Owner;
-        var d = c.data;
         var forward = bodyFrame.forward;
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
@@ -277,9 +279,7 @@ public partial class AvatarPoseDriver
             && !ArmsSuspended
             && w > 0f
             && forward.sqrMagnitude > 1e-4f
-            && !d.isClimbingAnything
-            && d.currentClimbHandle == null
-            && !(d.currentItem != null && d.currentItem.gliderHold && !d.isGrounded)
+            && Rig.RigDriver.Upright(c)
             && (!c.IsLocal || Rig.RigDriver.EyeCalibrated);
         bool allowed = false;
         if (
