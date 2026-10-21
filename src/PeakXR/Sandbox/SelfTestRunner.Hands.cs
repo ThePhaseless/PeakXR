@@ -430,17 +430,7 @@ internal sealed partial class SelfTestRunner
         rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -normal, Vector3.up));
         yield return Wait(0.6f);
 
-        var from = c.Center + Vector3.up * 0.1f;
-        if (
-            !Physics.Raycast(
-                from,
-                -normal,
-                out var hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!WallInFront(c, wall, 0.1f, out var hit))
         {
             Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
             yield break;
@@ -957,6 +947,43 @@ internal sealed partial class SelfTestRunner
     /// The nearest steep terrain face around the character with a walkable spot 0.6 m in front of it. A wall that is
     /// still there 1.2 m higher, so the climb has room to rise.
     /// </summary>
+    /// <summary>
+    /// The face <see cref="FindWall"/> picked, seen from the body after the warp: along -normal at
+    /// <paramref name="upFromCenter"/> above the body centre, then at the height FindWall found the face, then straight
+    /// at that point. FindWall only proves the face 0.3-1.6 m above the standing spot, so a low ledge can end below
+    /// the body centre: vr13 cast at 2.96 m (vr.15) and 3.15 m (vr.44) over faces found at 2.71 m and 2.68 m.
+    /// </summary>
+    static bool WallInFront(Character c, RaycastHit wall, float upFromCenter, out RaycastHit hit)
+    {
+        var normal = Flat(wall.normal);
+        var body = c.Center;
+        var atFace = new Vector3(body.x, wall.point.y, body.z);
+        return Physics.Raycast(
+                body + Vector3.up * upFromCenter,
+                -normal,
+                out hit,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            || Physics.Raycast(
+                atFace,
+                -normal,
+                out hit,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            || Physics.Raycast(
+                atFace,
+                (wall.point - atFace).normalized,
+                out hit,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
+    }
+
     static bool FindWall(Character c, out RaycastHit wall, out Vector3 stand)
     {
         wall = default;

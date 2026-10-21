@@ -144,7 +144,7 @@ internal static class FireGestures
         if (!cfg.LightWithFlame || item == null || !FlameLit(item))
         {
             if (cfg.LightWithFlame && item != null && flameKind != HeldLightKind.None)
-                TraceLight(item, item.Center(), null, -1f, false, lit: false);
+                WarnUnlit(c, item);
             Touch.Reset();
             touchTarget = null;
             return;
@@ -192,6 +192,23 @@ internal static class FireGestures
             nextCrackle = now + 0.05f + 0.1f * Random.value;
             Haptics.Pulse(ItemGestures.HoldLeft, 0.15f + 0.25f * Random.value, 0.03f);
         }
+    }
+
+    /// <summary>
+    /// An unlit torch, lantern, candle or flare held to something it would light: say so where the flame is, and show
+    /// what would work, the use trigger of the holding hand (a ring on that controller). Its own use lights it
+    /// (Action_LightLantern, Lantern.cs:193); the touch alone never does.
+    /// </summary>
+    private static void WarnUnlit(Character c, Item item)
+    {
+        var flame = flamePoint != null ? flamePoint.position : item.Center();
+        var target = FindLightable(c, flame, out float distance);
+        TraceLight(item, flame, target, distance, false, lit: false);
+        if (target == null || distance > LightHintRange)
+            return;
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(ItemGestures.HoldLeft) : null;
+        Affordance.Hover(ItemGestures.HoldLeft, flame, DenyReason.NotLit, DenyHint.On(hand));
     }
 
     private static Item lightTraceItem;
@@ -296,31 +313,44 @@ internal static class FireGestures
     private static void BindFlame(Item item)
     {
         flameItem = item;
-        flameKind = HeldLightKind.None;
-        flamePoint = null;
-        if (item == null)
-            return;
-        if (item.TryGetComponent(out Action_Torch torch))
-        {
-            flameKind = HeldLightKind.Torch;
-            flamePoint = torch.torchLight != null ? torch.torchLight.transform : null;
-        }
-        else if (item.TryGetComponent(out Candle candle))
-        {
-            flameKind = HeldLightKind.Candle;
-            flamePoint = candle.fireParticle != null ? candle.fireParticle.transform : null;
-        }
-        else if (item.TryGetComponent(out Flare _))
-        {
-            flameKind = HeldLightKind.Flare;
-        }
-        else if (item.TryGetComponent(out Lantern _))
-        {
-            flameKind = HeldLightKind.Lantern;
-        }
+        flameKind = Kind(item);
+        flamePoint = FlamePoint(item);
     }
 
-    /// <summary>The torch burns while held (Action_Torch.cs:3); the rest keep FlareActive (HandLights.IsLit).</summary>
+    /// <summary>Which held light <paramref name="item"/> is, in HandLights' order (HandLights.Bind). The torch item
+    /// carries a <c>Lantern</c> on its root (its <c>Action_Torch</c> is not there; vr13 traced "flame kind
+    /// Lantern"), so it is lit only after its use, like a lantern (FlareActive, Lantern.cs:193-208).</summary>
+    private static HeldLightKind Kind(Item item)
+    {
+        if (item == null)
+            return HeldLightKind.None;
+        if (item.TryGetComponent(out Flare _))
+            return HeldLightKind.Flare;
+        if (item.TryGetComponent(out Candle _))
+            return HeldLightKind.Candle;
+        if (item.TryGetComponent(out Lantern _))
+            return HeldLightKind.Lantern;
+        if (item.TryGetComponent(out Action_Torch _))
+            return HeldLightKind.Torch;
+        return HeldLightKind.None;
+    }
+
+    /// <summary>Where a held light's flame is: the candle's or lantern's fire particles (Candle.cs:25, Lantern.cs:31),
+    /// a torch light, else null (use the item's centre). The self-test carries the same point (vr.26).</summary>
+    internal static Transform FlamePoint(Item item)
+    {
+        if (item == null)
+            return null;
+        if (item.TryGetComponent(out Candle candle) && candle.fireParticle != null)
+            return candle.fireParticle.transform;
+        if (item.TryGetComponent(out Lantern lantern) && lantern.fireParticle != null)
+            return lantern.fireParticle.transform;
+        var torch = item.GetComponentInChildren<Action_Torch>();
+        return torch != null && torch.torchLight != null ? torch.torchLight.transform : null;
+    }
+
+    /// <summary>A bare torch light (Action_Torch.cs:3, no on state) burns while held; the rest keep FlareActive
+    /// (HandLights.IsLit).</summary>
     private static bool FlameLit(Item item) =>
         ReferenceEquals(item, flameItem)
         && flameKind switch

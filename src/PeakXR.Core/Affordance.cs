@@ -39,6 +39,9 @@ public enum DenyReason : byte
     /// <summary>A notice: the held item fell when a climb or carry started; marks where it lies.</summary>
     Dropped,
 
+    /// <summary>A held torch, lantern, candle or flare is not lit, so touching it to a fire or fuse does nothing.</summary>
+    NotLit,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
 }
@@ -77,6 +80,7 @@ public static class DenyText
             DenyReason.ItemWouldDrop => "Climbing drops it",
             DenyReason.Stowed => "Stowed on your belt",
             DenyReason.Dropped => "Your item fell here",
+            DenyReason.NotLit => "Not lit",
             _ => "",
         };
 
@@ -108,6 +112,7 @@ public static class DenyText
             DenyReason.NotWhileClimbing => "Stand on the ground",
             DenyReason.HandsFull => "Put your item away",
             DenyReason.TooSoon => "Wait a moment",
+            DenyReason.NotLit => "Pull trigger to light it",
             _ => "",
         };
 
