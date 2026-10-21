@@ -36,8 +36,8 @@ namespace PeakXR.Core
                 && angle < MaxPanelAngle;
         }
 
-        /// <summary>Highest the eyes may sit above the shoulders (m); a human's are about 0.25 m above.</summary>
-        public const float MaxEyeAboveShoulders = 0.35f;
+        /// <summary>Farthest the VR eye may sit from the avatar's own eyes (m).</summary>
+        public const float MaxEyeError = 0.08f;
 
         /// <summary>Degrees between the view direction <paramref name="forward"/> and the direction to
         /// <paramref name="point"/>; 180 for degenerate input.</summary>

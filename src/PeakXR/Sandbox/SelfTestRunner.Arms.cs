@@ -18,7 +18,7 @@ namespace PeakXR.Sandbox;
 /// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch,
 /// when an elbow points up, or when an empty hand sits more than 0.15 m off its target (each hand follows only its
 /// own controller); with real controllers (hold mode) it only reports. Either way it fails when the eye sits more
-/// than <see cref="SelfTestChecks.MaxEyeAboveShoulders"/> above the shoulders.
+/// than <see cref="SelfTestChecks.MaxEyeError"/> from the avatar's eye renderers (and says so when it has none).
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -77,13 +77,26 @@ internal sealed partial class SelfTestRunner
         {
             float drop = head.position.y - 0.5f * (sl.Rig.position.y + sr.Rig.position.y);
             notes.Add(F($"eye {drop:0.00} m above the shoulders"));
-            // Above that the view rides the top of the head: looking down shows the top of your own body.
-            if (drop > SelfTestChecks.MaxEyeAboveShoulders)
+        }
+        // The view must ride the avatar's own eyes (scouts have big heads, so no human eye-to-shoulder rule).
+        if (head != null && Rig.RigDriver.TryEyeRenderers(c, out var avatarEye))
+        {
+            var off = head.position - avatarEye;
+            notes.Add(
+                F(
+                    $"eye {off.magnitude:0.00} m from the avatar's eyes (up {off.y:0.00}, level {new Vector2(off.x, off.z).magnitude:0.00})"
+                )
+            );
+            if (off.magnitude > SelfTestChecks.MaxEyeError)
                 fails.Add(
                     F(
-                        $"eye {drop:0.00} m above the shoulders > {SelfTestChecks.MaxEyeAboveShoulders:0.00} m"
+                        $"eye {off.magnitude:0.00} m from the avatar's eyes > {SelfTestChecks.MaxEyeError:0.00} m"
                     )
                 );
+        }
+        else
+        {
+            notes.Add("avatar eye renderers not found, eye placement not judged");
         }
         notes.Add(idle ? "idle hands" : "live controllers, not judged");
         notes.Add(
