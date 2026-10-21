@@ -52,6 +52,9 @@ internal static class FireGestures
     private static float nextCrackle;
     private static float nextShiver;
 
+    /// <summary>Warm pulses sent so far; the self-test reads it (vr.27).</summary>
+    internal static int WarmPulses;
+
     private static Item flameItem;
     private static HeldLightKind flameKind;
     private static Transform flamePoint;
@@ -263,6 +266,7 @@ internal static class FireGestures
             if (now >= NextWarm[h])
             {
                 NextWarm[h] = now + 0.5f;
+                WarmPulses++;
                 Haptics.Pulse(left, 0.05f + 0.2f * warm, 0.3f);
             }
         }
