@@ -222,7 +222,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
         var positions = new System.Numerics.Vector3[RowSize];
         for (int start = 0, row = 0; start < all.Count; start += RowSize, row++)
         {
-            PlaceRow(positions);
+            Safe("items.place", () => PlaceRow(positions));
             for (int i = 0; i < RowSize && start + i < all.Count; i++)
             {
                 var item = all[start + i];
@@ -231,7 +231,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
             }
             yield return Wait(1.5f);
             yield return Shot("03-items-" + row.ToString("000", CultureInfo.InvariantCulture));
-            Despawn();
+            Safe("items.despawn", Despawn);
         }
 
         foreach (var fragment in UseItems)
@@ -337,8 +337,8 @@ internal sealed class SelfTestRunner : MonoBehaviour
                 continue;
             }
             yield return Run("mob." + entry.Name, 20f, Mob(entry));
-            Despawn();
-            Recover();
+            Safe("mob.despawn", Despawn);
+            Safe("mob.recover", Recover);
             yield return Wait(1f);
         }
     }
@@ -487,6 +487,22 @@ internal sealed class SelfTestRunner : MonoBehaviour
     {
         stepOk = false;
         stepNote ??= note;
+    }
+
+    /// <summary>Housekeeping between steps: an exception here becomes a failed step instead of aborting the run.</summary>
+    void Safe(string id, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e)
+        {
+            report.Begin(id, Now);
+            report.Exception($"{e.GetType().Name}: {e.Message} @ {FirstLine(e.StackTrace)}");
+            report.End(false, Now, "threw");
+            Record(report.Steps.Count - 1);
+        }
     }
 
     void Skip(string id, string note)
