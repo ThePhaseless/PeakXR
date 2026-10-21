@@ -205,7 +205,11 @@ internal sealed class LaserPointer
                 Vector3.one * LaserLook.CursorDiameter(Vector3.Distance(eye, end), hoverLook);
         }
         // A hand at the face would draw the beam across the view; the dot alone still shows the target.
-        SetVisible(true, landed, !LaserLook.CrossesFace(origin.N(), end.N(), eye.N()));
+        SetVisible(
+            true,
+            landed,
+            rig.Head == null || !LaserLook.CrossesFace(origin.N(), end.N(), eye.N())
+        );
         for (int i = 0; i < MaxCandidates; i++)
             candidates[i] = default;
     }

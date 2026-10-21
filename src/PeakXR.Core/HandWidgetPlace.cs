@@ -35,7 +35,8 @@ public static class HandWidgetPlace
 
     /// <summary>
     /// <paramref name="onHand"/> while the hand is clear of the face, else the parked spot
-    /// (<paramref name="parked"/> in head space, x mirrored for the left hand).
+    /// (<paramref name="parked"/> in the head's yaw frame, x mirrored for the left hand). Yaw only: looking down
+    /// at the food or tilting the head leaves the ring where it is in the world.
     /// </summary>
     public static Vector3 ClearOfFace(
         Vector3 onHand,
@@ -55,7 +56,16 @@ public static class HandWidgetPlace
             return onHand;
         if (left)
             parked.X = -parked.X;
-        var park = eye + Vector3.Transform(parked, head);
+        var park = eye + Vector3.Transform(parked, YawOnly(head));
         return Vector3.Lerp(park, onHand, t * t * (3f - 2f * t));
+    }
+
+    private static Quaternion YawOnly(Quaternion head)
+    {
+        var f = Vector3.Transform(Vector3.UnitZ, head);
+        // Looking straight up or down: the head's up vector points the way the face is turned.
+        if (f.X * f.X + f.Z * f.Z < 1e-4f)
+            f = Vector3.Transform(f.Y > 0f ? -Vector3.UnitY : Vector3.UnitY, head);
+        return Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan2(f.X, f.Z));
     }
 }

@@ -58,6 +58,18 @@ public class HandWidgetPlaceTests
     }
 
     [Fact]
+    public void Parked_IgnoresHeadPitchAndRoll()
+    {
+        // Looking down at the food, or tilting the head, must not drag the ring around: yaw only.
+        var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.6f);
+        var tilted =
+            yaw
+            * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.7f)
+            * Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.3f);
+        TestUtil.Near(Ring(Mouth, head: yaw), Ring(Mouth, head: tilted));
+    }
+
+    [Fact]
     public void BringingFoodToTheMouth_RingNeverComesCloseToTheEyes()
     {
         for (int i = 0; i <= 50; i++)
