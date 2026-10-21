@@ -167,8 +167,14 @@ namespace PeakXR.Core
             return r;
         }
 
-        /// <summary>A full-view wash's alpha, capped at <see cref="MaxWashAlpha"/>.</summary>
-        public static float CapWash(float alpha) => alpha > MaxWashAlpha ? MaxWashAlpha : alpha;
+        /// <summary>Opacity of the white haze drawn in place of the game's BLIND white-out, from the game's own
+        /// wash strength 0..1: it fades in and out with the game but never passes <see cref="MaxWashAlpha"/>.</summary>
+        public static float BlindHaze(float strength) =>
+            float.IsNaN(strength) ? MaxWashAlpha : MaxWashAlpha * Clamp01(strength);
+
+        /// <summary>Weight of the white edge glow while blind, so blindness reads clearly with the middle kept clear.</summary>
+        public static float BlindRim(float strength) =>
+            float.IsNaN(strength) ? 0.7f : 0.7f * Clamp01(strength);
 
         static float Clamp01(float v) =>
             v < 0f ? 0f

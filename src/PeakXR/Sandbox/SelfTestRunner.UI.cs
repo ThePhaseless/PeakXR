@@ -18,6 +18,54 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("ui.02-button-labels", 20f, ButtonLabelStep());
         yield return HandStep("ui.03-world-banner", 25f, BannerStep());
         yield return HandStep("ui.04-rope-gauge", 28f, RopeGaugeStep());
+        yield return HandStep("ui.05-wrist-hud", 15f, WristHudStep());
+    }
+
+    /// <summary>
+    /// ui.05: the wrist HUD (stamina bar and afflictions, moved by ui.world's HudSplit) raised like a watch faces the
+    /// eye at a readable size, and a fresh affliction (Cold) shows in it.
+    /// </summary>
+    IEnumerator WristHudStep()
+    {
+        var cfg = UI.World.UIWorldFeature.Settings;
+        if (cfg == null || cfg.Hud.Value != UI.World.HudMode.Wrist)
+        {
+            stepNote = "UI.HUD.HudMode is not Wrist";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        var head = VRRig.Instance.Head;
+        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
+        yield return MoveTo(
+            cfg.WristLeft,
+            () => head.position + Flat(head.forward) * 0.4f + Vector3.down * 0.12f,
+            0.5f
+        );
+        yield return Wait(1f);
+        var wrist = UI.World.HudSplit.WristPosition;
+        var toWrist = wrist - head.position;
+        float facing = Vector3.Angle(UI.World.HudSplit.WristRotation * Vector3.forward, toWrist);
+        float width = UI.World.HudSplit.WristWidthMeters;
+        float degrees = 2f * Mathf.Atan2(width * 0.5f, toWrist.magnitude) * Mathf.Rad2Deg;
+        int afflictions = 0;
+        var root = UI.World.HudSplit.WristRoot;
+        if (root != null)
+            foreach (var a in root.GetComponentsInChildren<BarAffliction>(false))
+                if (a.afflictionType == CharacterAfflictions.STATUSTYPE.Cold)
+                    afflictions++;
+        yield return ShotAt("ui-05-wrist-hud", wrist);
+        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
+        stepNote = F(
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), Cold slots {afflictions}"
+        );
+        if (!UI.World.HudSplit.WristValid)
+            Fail("wrist HUD not posed");
+        else if (facing > 25f)
+            Fail("wrist HUD does not face the eye");
+        else if (degrees < 12f)
+            Fail("wrist HUD too small to read");
+        else if (afflictions == 0)
+            Fail("Cold affliction not shown on the wrist");
     }
 
     /// <summary>ui.01: an Apple in front of the eyes becomes <c>Interaction.currentHovered</c> (Interaction.cs:15); its

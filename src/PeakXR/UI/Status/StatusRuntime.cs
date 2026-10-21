@@ -9,8 +9,8 @@ namespace PeakXR.UI.Status;
 
 /// <summary>
 /// Per-frame status cues. In Peripheral mode the game's ScreenVFX quads keep animating (so their timing and
-/// photosensitivity scaling stay vanilla) but are not drawn; their current intensity, plus the dying state,
-/// drives one <see cref="PeripheralRim"/> tint instead. Runs after ui.world has placed the HUD.
+/// photosensitivity scaling stay vanilla) but are not drawn; their current intensity, plus the dying and blind
+/// states, drives one <see cref="PeripheralRim"/> tint instead. Runs after ui.world has placed the HUD.
 /// </summary>
 [DefaultExecutionOrder(31100)]
 internal sealed class StatusRuntime : MonoBehaviour
@@ -71,6 +71,11 @@ internal sealed class StatusRuntime : MonoBehaviour
             cue.Add(colors[i], material.GetFloat(IntensityId));
         }
         AddDying();
+        // BLIND (comfort.events hides the game's white-out): a white glow at the edge reads as blinded.
+        cue.Add(
+            NVector3.One,
+            ComfortPolicy.BlindRim(Comfort.ComfortEventsPatches.BlindWash.Strength)
+        );
 
         var tint = cue.Color;
         rim.Show(new Color(tint.X, tint.Y, tint.Z, cue.Alpha(UIStatusFeature.Intensity.Value)));

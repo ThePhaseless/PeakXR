@@ -169,7 +169,11 @@ internal sealed class UIWorldSettings
                 hud,
                 "WristWidth",
                 0.16f,
-                Range("Width of the wrist HUD, in metres.", 0.08f, 0.35f)
+                Range(
+                    "Width of the wrist HUD in metres when the wrist is 40 cm from the eyes; it keeps that angular size nearer or farther.",
+                    0.08f,
+                    0.35f
+                )
             ),
             Reticle = cfg.Bind(
                 hud,
