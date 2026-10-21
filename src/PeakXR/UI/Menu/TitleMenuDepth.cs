@@ -44,13 +44,22 @@ internal sealed class TitleMenuDepth
             AppliedScale;
         public Quaternion BaseRotation,
             AppliedRotation;
+
+        /// <summary>0 for a group brought to hand; otherwise a text group left on the panel, scaled by this
+        /// about its pivot to stay readable from the eye.</summary>
+        public float Grow;
     }
+
+    // Most a text group on the panel may grow: past this it would cover the scene it sits in.
+    private const float MaxTextGrowth = 3f;
 
     private readonly List<Group> groups = new();
     private readonly List<Selectable> buttons = new();
     private readonly TitleSilhouettes silhouettes = new();
     private readonly List<Graphic> graphics = new();
     private readonly List<Selectable> selectables = new();
+    private readonly List<TMPro.TMP_Text> texts = new();
+    private readonly float[] textHeights = new float[32];
     private readonly Vector3[] corners = new Vector3[4];
     private readonly PokeButton[] pokes = { new(), new() };
     private readonly StringBuilder log = new();
@@ -72,7 +81,7 @@ internal sealed class TitleMenuDepth
     private Vector3 lastEye;
 
     /// <summary>Button groups brought to reach on the current page, for the self-test.</summary>
-    public int NearGroups => groups.Count;
+    public int NearGroups { get; private set; }
 
     /// <summary>Closest interactable near button to <paramref name="eye"/> in metres, or infinity.</summary>
     public float NearestButton(Vector3 eye)
@@ -122,6 +131,7 @@ internal sealed class TitleMenuDepth
         foreach (var g in groups)
             RestoreGroup(g);
         groups.Clear();
+        NearGroups = 0;
         buttons.Clear();
         silhouettes.Restore();
         if (ownFade && fade != null)
@@ -218,6 +228,7 @@ internal sealed class TitleMenuDepth
         foreach (var g in groups)
             RestoreGroup(g);
         groups.Clear();
+        NearGroups = 0;
         buttons.Clear();
         silhouettes.Apply(canvas);
         if (page == null || page.transform.parent == null)
@@ -246,20 +257,16 @@ internal sealed class TitleMenuDepth
             if (!near)
             {
                 kept.Append(' ').Append(child.name);
+                var grow = TextGrowth(child, eye);
+                if (grow > 1.01f)
+                {
+                    groups.Add(NewGroup(child, grow));
+                    kept.Append($" (text x{grow:0.0})");
+                }
                 continue;
             }
-            groups.Add(
-                new Group
-                {
-                    Rect = child,
-                    BasePosition = child.localPosition,
-                    BaseScale = child.localScale,
-                    BaseRotation = child.localRotation,
-                    AppliedPosition = child.localPosition,
-                    AppliedScale = child.localScale,
-                    AppliedRotation = child.localRotation,
-                }
-            );
+            groups.Add(NewGroup(child, 0f));
+            NearGroups++;
             buttons.AddRange(selectables);
             log.Append(' ').Append(child.name).Append($" ({w:0.00}x{h:0.00} m)");
         }
@@ -270,6 +277,43 @@ internal sealed class TitleMenuDepth
             .Append(", fade ")
             .Append(ownFade ? "on" : "off (game CanvasGroup)");
         Report(log.ToString());
+    }
+
+    private static Group NewGroup(RectTransform child, float grow) =>
+        new()
+        {
+            Rect = child,
+            BasePosition = child.localPosition,
+            BaseScale = child.localScale,
+            BaseRotation = child.localRotation,
+            AppliedPosition = child.localPosition,
+            AppliedScale = child.localScale,
+            AppliedRotation = child.localRotation,
+            Grow = grow,
+        };
+
+    /// <summary>Scale that brings a small text group left out in the scene (the NEW ITEMS timer, the merch speech
+    /// bubble) to <see cref="ReadableText.MinDegrees"/> from the eye, judged by its median font size; 1 for a
+    /// reading panel (settings), the logo or a group without text.</summary>
+    private float TextGrowth(RectTransform child, Vector3 eye)
+    {
+        child.GetComponentsInChildren(false, texts);
+        int count = 0;
+        var center = Vector3.zero;
+        foreach (var text in texts)
+        {
+            if (!text.isActiveAndEnabled || count == textHeights.Length)
+                continue;
+            textHeights[count++] = text.fontSize * Mathf.Abs(text.transform.lossyScale.y);
+            center += text.transform.position;
+        }
+        texts.Clear();
+        if (count == 0 || !Measure(child, out var w, out var h, out _))
+            return 1f;
+        var distance = Vector3.Distance(eye, center / count);
+        if (!TitleLayout.IsHandSized(w, h, distance))
+            return 1f;
+        return ReadableText.Grow(ReadableText.Median(textHeights, count), distance, MaxTextGrowth);
     }
 
     private void Report(string line)
@@ -322,6 +366,17 @@ internal sealed class TitleMenuDepth
             g.BaseScale = Rebase(g.BaseScale, rect.localScale, g.AppliedScale);
             if (rect.localRotation != g.AppliedRotation)
                 g.BaseRotation = rect.localRotation;
+
+            if (g.Grow > 0f)
+            {
+                var grown = g.BaseScale * g.Grow;
+                if (rect.localScale != grown)
+                    rect.localScale = grown;
+                g.AppliedPosition = rect.localPosition;
+                g.AppliedRotation = rect.localRotation;
+                g.AppliedScale = rect.localScale;
+                continue;
+            }
 
             var parent = rect.parent;
             var k = TitleLayout.PullFactor(

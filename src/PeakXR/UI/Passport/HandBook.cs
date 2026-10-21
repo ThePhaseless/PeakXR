@@ -171,6 +171,8 @@ internal static class HandBook
 /// </summary>
 internal sealed class PassportPlacement : ICanvasPlacement
 {
+    private Canvas cropped;
+
     public bool Interactive => true;
 
     public PlacementResult Place(
@@ -181,6 +183,14 @@ internal sealed class PassportPlacement : ICanvasPlacement
     )
     {
         HandBook.PassportCanvas = canvas;
+        // The booklet is 1225 units tall on a 720-unit canvas: on a monitor the screen edge crops its blank upper
+        // page, in the world all of it showed. Crop to the canvas as the screen did (a no-op on the flat overlay).
+        if (canvas != cropped && canvas != null)
+        {
+            cropped = canvas;
+            if (!canvas.TryGetComponent<UnityEngine.UI.RectMask2D>(out _))
+                canvas.gameObject.AddComponent<UnityEngine.UI.RectMask2D>();
+        }
         var cfg = PassportFeature.Settings;
         widthMeters = cfg.PassportWidth.Value;
         if (
