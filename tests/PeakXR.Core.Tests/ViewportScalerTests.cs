@@ -60,23 +60,23 @@ public class ViewportScalerTests
     }
 
     [Fact]
-    public void EnvelopeUv_CropsTheLongerSide()
+    public void FitRect_LetterboxesTheShorterSide()
     {
-        // Square eye into a 16:9 window: crop top and bottom.
-        Vector4 uv = MirrorMath.EnvelopeUv(1f, 16f / 9f);
-        TestUtil.Near(0f, uv.X, 1e-5f);
-        TestUtil.Near(1f, uv.Z, 1e-5f);
-        TestUtil.Near(9f / 16f, uv.W, 1e-5f);
-        TestUtil.Near((1f - 9f / 16f) / 2f, uv.Y, 1e-5f);
+        // Portrait eye (922x1032) into a 16:9 window: full height, bars left and right.
+        Vector4 r = MirrorMath.FitRect(922f / 1032f, 16f / 9f);
+        TestUtil.Near(0f, r.Y, 1e-5f);
+        TestUtil.Near(1f, r.W, 1e-5f);
+        TestUtil.Near(922f / 1032f / (16f / 9f), r.Z, 1e-5f);
+        TestUtil.Near((1f - r.Z) / 2f, r.X, 1e-5f);
 
-        // Wide source into a square window: crop the sides.
-        uv = MirrorMath.EnvelopeUv(2f, 1f);
-        TestUtil.Near(0.5f, uv.Z, 1e-5f);
-        TestUtil.Near(0.25f, uv.X, 1e-5f);
-        TestUtil.Near(1f, uv.W, 1e-5f);
+        // Wide source into a square window: full width, bars top and bottom.
+        r = MirrorMath.FitRect(2f, 1f);
+        TestUtil.Near(1f, r.Z, 1e-5f);
+        TestUtil.Near(0.5f, r.W, 1e-5f);
+        TestUtil.Near(0.25f, r.Y, 1e-5f);
 
-        // Degenerate sizes show the whole image.
-        uv = MirrorMath.EnvelopeUv(0f, 1f);
-        Assert.Equal(new Vector4(0f, 0f, 1f, 1f), uv);
+        // Degenerate sizes fill the window.
+        r = MirrorMath.FitRect(0f, 1f);
+        Assert.Equal(new Vector4(0f, 0f, 1f, 1f), r);
     }
 }
