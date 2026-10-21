@@ -86,7 +86,7 @@ internal static class BackdropStrip
         var halos = panels && t.Hidden.Count > 0 ? Halo(t) : 0;
         if (log.Length > 0 || halos > 0)
             Plugin.Log.LogInfo(
-                $"[ui.world] canvas '{t.Canvas.name}': hid {(log.Length > 0 ? log.ToString() : "nothing new")}; text outline on {halos} more"
+                $"[ui.world] canvas '{t.Canvas.name}': hid {(log.Length > 0 ? log.ToString() : "nothing new")}; text halo on {halos} more"
             );
     }
 
@@ -275,14 +275,15 @@ internal static class BackdropStrip
         return true;
     }
 
-    /// <summary>Text that sat on a panel now sits on the world: give it an outline. Returns how many changed.</summary>
+    /// <summary>Text that sat on a panel now sits on the world: give it a halo. Text on a backing that stays (a
+    /// button's ribbon, a row's plate) reads as it did and is left alone. Returns how many changed.</summary>
     private static int Halo(TrackedCanvas t)
     {
         int count = 0;
         t.Canvas.GetComponentsInChildren(true, texts);
         foreach (var text in texts)
         {
-            if (t.HaloTexts.Contains(text))
+            if (t.HaloTexts.Contains(text) || OnKeptBacking(t, text))
                 continue;
             var original = TextHalo.Apply(text);
             if (original == null)
@@ -293,6 +294,36 @@ internal static class BackdropStrip
         }
         texts.Clear();
         return count;
+    }
+
+    /// <summary>An image under the text (an ancestor, or the button's target graphic) is drawn and covers the text's
+    /// centre. Structural, so a closed page is judged the same as an open one.</summary>
+    private static bool OnKeptBacking(TrackedCanvas t, TMP_Text text)
+    {
+        var rt = text.rectTransform;
+        var centre = rt.TransformPoint(rt.rect.center);
+        for (var p = rt.parent; p != null && p != t.Rect; p = p.parent)
+        {
+            if (p.TryGetComponent<Image>(out var image) && Backs(image, centre))
+                return true;
+            if (
+                p.TryGetComponent<Selectable>(out var selectable)
+                && selectable.targetGraphic is Image target
+                && Backs(target, centre)
+            )
+                return true;
+        }
+        return false;
+    }
+
+    private static bool Backs(Image image, Vector3 centre)
+    {
+        if (!image.enabled || image.color.a < 0.5f || image.canvasRenderer.GetAlpha() < 0.5f)
+            return false;
+        if (image.TryGetComponent<Mask>(out var mask) && !mask.showMaskGraphic)
+            return false;
+        var r = image.rectTransform;
+        return r.rect.Contains(r.InverseTransformPoint(centre));
     }
 
     private static int IndexOf(TrackedCanvas t, Graphic g)

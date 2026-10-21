@@ -13,7 +13,8 @@ namespace PeakXR.UI.HandWidgets;
 /// Moves the progress ring (A/UI_UseItemProgress.cs:5) and the friend feed container
 /// (A/GUIManager.cs:56 <c>friendProgressTF</c>, filled at :458) into hand-posed boxes on the converted
 /// HUD canvas. The widgets stay on that canvas, so the game keeps driving them and they die with the
-/// scene; everything moved is put back when a setting returns to Hud or VR UI stops.
+/// scene; everything moved is put back when a setting returns to Hud or VR UI stops. A hand at the face
+/// parks them low in view (<see cref="HandWidgetPlace"/>) instead of in front of the eyes.
 /// </summary>
 [DefaultExecutionOrder(31100)]
 internal sealed class HandWidgetsRuntime : MonoBehaviour
@@ -115,10 +116,19 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 ring.Pose(atTarget, head.position, width);
             else if (hand != null)
             {
-                // Above the hand and a little toward the eyes, clear of the held item.
-                var pos = hand.position + Vector3.up * 0.08f;
-                pos += (head.position - pos).normalized * 0.03f;
-                ring.Pose(pos, head.position, cfg.RingSize.Value);
+                // Above the hand and a little toward the eyes, clear of the held item; parked low in view while
+                // the hand is at the face (eating), where above the hand is right in front of the eyes.
+                var eye = head.position.N();
+                var onHand = HandWidgetPlace.AboveHand(hand.position.N(), eye, 0.08f, 0.03f);
+                var pos = HandWidgetPlace.ClearOfFace(
+                    onHand,
+                    hand.position.N(),
+                    eye,
+                    head.rotation.N(),
+                    HandWidgetPlace.RingParked,
+                    ringLeft
+                );
+                ring.Pose(pos.U(), head.position, cfg.RingSize.Value);
             }
         }
         if (feed.Active)
@@ -130,6 +140,16 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 // Higher than the ring and to the outside, so both can show at once.
                 var side = Vector3.Cross(Vector3.up, hand.position - head.position).normalized;
                 var pos = hand.position + Vector3.up * 0.14f + side * (left ? -0.04f : 0.04f);
+                pos = HandWidgetPlace
+                    .ClearOfFace(
+                        pos.N(),
+                        hand.position.N(),
+                        head.position.N(),
+                        head.rotation.N(),
+                        HandWidgetPlace.FeedParked,
+                        left
+                    )
+                    .U();
                 feed.Pose(pos, head.position, cfg.FeedWidth.Value);
             }
         }

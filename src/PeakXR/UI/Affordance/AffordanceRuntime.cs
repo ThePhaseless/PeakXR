@@ -1,3 +1,4 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Common;
@@ -250,6 +251,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             || cam == null
             || !c.data.fullyConscious
             || (gui != null && (gui.windowBlockingInput || gui.wheelActive))
+            || UsingItemIn(c, hand == 0)
         )
         {
             ray.enabled = false;
@@ -295,7 +297,27 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             RayHits[i] = default;
         ray.SetPosition(0, origin);
         ray.SetPosition(1, origin + dir * length);
-        ray.enabled = length > 0.02f;
+        // A hand at the face (a bugle at the mouth) would draw the ray across the view.
+        ray.enabled =
+            length > 0.02f
+            && (
+                rig.Head == null
+                || !LaserLook.CrossesFace(
+                    origin.N(),
+                    (origin + dir * length).N(),
+                    rig.Head.position.N()
+                )
+            );
+    }
+
+    /// <summary>The hand holds the current item and is using it (a toot, a cast, eating): its index is off the
+    /// trigger by grip, not to point, so no reach ray.</summary>
+    private static bool UsingItemIn(Character c, bool left)
+    {
+        var item = c.data.currentItem;
+        return item != null
+            && LocalHold.ItemInLeftHand == left
+            && (item.isUsingPrimary || item.isUsingSecondary || item.progress > 0f);
     }
 
     /// <summary>The hits vanilla's interact ray considers (Interaction.cs:224).</summary>
@@ -710,7 +732,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             fontClone = new Material(mat) { name = "PeakXR_DenyLabel (on top)" };
             fontClone.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
             // No plate behind the reason: a dark rim keeps the red and teal text readable on snow and sky.
-            TextHalo.Outline(fontClone, light: false);
+            TextHalo.Halo(fontClone, light: false);
             label.fontSharedMaterial = fontClone;
         }
         // Re-render the current text in the new font.
