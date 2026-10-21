@@ -291,8 +291,17 @@ internal static class LocomotionInput
             VRFade.Set(FadeOwner, Fade.Target);
         else
             VRFade.Clear(FadeOwner);
-        return MoveInput.TrackingToStick(request, HeadYaw());
+        var stick = MoveInput.TrackingToStick(request, HeadYaw());
+        if (RigDriver.LeanTraceDue(ref nextLeanTrace))
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor ({Follow.Offset.X:0.000},{Follow.Offset.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} stick fwd {stick.Y:0.00} right {stick.X:0.00} neutral ({Follow.Neutral.X:0.000},{Follow.Neutral.Y:0.000})"
+                )
+            );
+        return stick;
     }
+
+    private static float nextLeanTrace;
 
     /// <summary>
     /// The held item reacts to scroll: the game's own scroll prompt flag (GUIManager.cs:1181) or a subscribed

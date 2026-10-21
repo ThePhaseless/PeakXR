@@ -137,6 +137,10 @@ public partial class AvatarPoseDriver
         // Bend low in the back so the shoulders travel with the head; the scout's spine is Hip > Mid > Torso.
         if (!parts.TryGetValue(BodypartType.Mid, out spine))
             spine = torso;
+        if (c.IsLocal)
+            Plugin.Log.LogInfo(
+                $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}"
+            );
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
         if (c.refs.ikLeft != null)
             hintWeightL = c.refs.ikLeft.data.hintWeight;
@@ -192,6 +196,7 @@ public partial class AvatarPoseDriver
             // Vanilla animation takes the whole body back (the arms snap back too), so the lean ends with it.
             EyeLeanShift = Vector3.zero;
             leanWeight = 0f;
+            LeanGate = "stale pose";
             if (rigReady)
                 RestoreFingers();
             return;
@@ -267,27 +272,28 @@ public partial class AvatarPoseDriver
     private bool ApplyLean(float w)
     {
         EyeLeanShift = Vector3.zero;
+        LeanDegrees = 0f;
+        LeanShoulderShift = Vector3.zero;
         if (spine == null || torso == null || head == null || !haveEyeInHead)
+        {
+            LeanGate =
+                head == null || torso == null ? "no head or torso bodypart" : "eyes not learned";
+            TraceLean(Vector3.zero, Vector3.zero);
             return false;
+        }
         var c = Owner;
         var forward = bodyFrame.forward;
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
-        bool gate =
-            AvatarConfig.Instance.BodyLean
-            && Pose.HasHead
-            && !ArmsSuspended
-            && w > 0f
-            && forward.sqrMagnitude > 1e-4f
-            && Rig.RigDriver.Upright(c)
-            && (!c.IsLocal || Rig.RigDriver.EyeCalibrated);
+        var target = Pose.HeadPosition + AnimatedOffset();
+        LeanGate = ClosedGate(c, w, forward);
         bool allowed = false;
         if (
-            gate
+            LeanGate == null
             && BodyLean.TrySwing(
                 spine.transform.position.N(),
                 eye.N(),
-                (Pose.HeadPosition + AnimatedOffset()).N(),
+                target.N(),
                 forward.normalized.N(),
                 Vector3.up.N(),
                 out var swing
@@ -297,6 +303,8 @@ public partial class AvatarPoseDriver
             lastSwing = swing.U();
             allowed = true;
         }
+        else
+            LeanGate ??= "eye or head not above the spine";
         leanWeight = Mathf.MoveTowards(
             leanWeight,
             allowed ? 1f : 0f,
@@ -304,13 +312,80 @@ public partial class AvatarPoseDriver
         );
         float amount = leanWeight * w;
         if (amount <= 0f)
+        {
+            TraceLean(target - eye, forward);
             return false;
+        }
         var q = Quaternion.Slerp(Quaternion.identity, lastSwing, amount);
         var headRot = head.transform.rotation;
+        var shoulders = ShoulderMid();
         spine.transform.rotation = q * spine.transform.rotation;
         head.transform.rotation = headRot;
         EyeLeanShift = head.transform.TransformPoint(eyeInHead) - eye;
+        LeanShoulderShift = ShoulderMid() - shoulders;
+        LeanDegrees = Quaternion.Angle(Quaternion.identity, q);
+        TraceLean(target - eye, forward);
         return true;
+    }
+
+    /// <summary>The first lean gate that is closed, or null when all are open (logged and read by vr.45).</summary>
+    private string ClosedGate(Character c, float w, Vector3 forward)
+    {
+        if (!AvatarConfig.Instance.BodyLean)
+            return "setting off";
+        if (!Pose.HasHead)
+            return "no head pose";
+        if (ArmsSuspended)
+            return "arms suspended";
+        if (w <= 0f)
+            return "arms not tracked";
+        if (forward.sqrMagnitude <= 1e-4f)
+            return "no body forward";
+        if (!Rig.RigDriver.Upright(c))
+            return "not upright";
+        if (c.IsLocal && !Rig.RigDriver.EyeCalibrated)
+            return "eyes not calibrated";
+        return null;
+    }
+
+    private Vector3 ShoulderMid() =>
+        shoulderL != null && shoulderR != null
+            ? (shoulderL.transform.position + shoulderR.transform.position) * 0.5f
+            : torso.transform.position;
+
+    /// <summary>Why the lean is off this tick, or null while it may run. Read by the self-test.</summary>
+    internal string LeanGate { get; private set; } = "not run";
+
+    /// <summary>Degrees of spine bend applied this tick (weighted), and how far it moved the animated shoulders
+    /// (world metres). Read by the self-test, which compares them with what the ragdoll does.</summary>
+    internal float LeanDegrees { get; private set; }
+
+    internal Vector3 LeanShoulderShift { get; private set; }
+
+    private float nextLeanTrace;
+
+    /// <summary>Lean trace, avatar side (local player only): the gate, the eased weight, what the head asks of the
+    /// animated eye (forward, right), the bend applied and how far it moved the animated eye and shoulders, and the
+    /// physical torso and shoulders against the physical hip. Proves whether the bend is made and whether the
+    /// ragdoll follows it.</summary>
+    private void TraceLean(Vector3 want, Vector3 forward)
+    {
+        var c = Owner;
+        if (!c.IsLocal || hip == null || !Rig.RigDriver.LeanTraceDue(ref nextLeanTrace))
+            return;
+        var f = forward.sqrMagnitude > 1e-4f ? forward.normalized : Vector3.forward;
+        var r = new Vector3(f.z, 0f, -f.x);
+        var hipPos = hip.Rig.position;
+        var torsoPhys = torso != null ? torso.Rig.position - hipPos : Vector3.zero;
+        var shoulderPhys =
+            shoulderL != null && shoulderR != null
+                ? (shoulderL.Rig.position + shoulderR.Rig.position) * 0.5f - hipPos
+                : torsoPhys;
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
+            )
+        );
     }
 
     private static Quaternion TipRotation(TwoBoneIKConstraint ik) =>

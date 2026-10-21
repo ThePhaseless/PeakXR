@@ -146,6 +146,24 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Self-test (vr.16): log the turn per frame while set.</summary>
     internal static float TraceTurnsUntil;
 
+    /// <summary>Self-test (vr.45, vr.15): while set, rig.camera, avatar.local and player.locomotion log the lean
+    /// chain every <see cref="LeanTraceEvery"/> s (unscaled), so a run shows which stage did not happen.</summary>
+    internal static float TraceLeanUntil;
+
+    internal const float LeanTraceEvery = 0.25f;
+
+    /// <summary>True on the ticks a lean trace line is due for <paramref name="next"/>; advances it.</summary>
+    internal static bool LeanTraceDue(ref float next)
+    {
+        float now = Time.unscaledTime;
+        if (now >= TraceLeanUntil || now < next)
+            return false;
+        next = now + LeanTraceEvery;
+        return true;
+    }
+
+    private float nextLeanTrace;
+
     private ViewKind shownKind;
     private Character shownTarget;
     private Transform staticSource;
@@ -281,6 +299,30 @@ internal sealed class RigDriver : MonoBehaviour
         CheckHeadInWall(c);
         DriveCamera();
         TraceTurn(c);
+        TraceLeanView(c);
+    }
+
+    /// <summary>Lean trace, view side: where the view root sits against the hip and torso (forward, right in the
+    /// look frame), the root blend, the view offset the lean ignores, the calibrated eyes, and the rig origin.</summary>
+    private void TraceLeanView(Character c)
+    {
+        if (c == null || c.refs.hip == null || !LeanTraceDue(ref nextLeanTrace))
+            return;
+        var f = c.data.lookDirection_Flat;
+        if (f.sqrMagnitude < 1e-4f)
+            return;
+        f.Normalize();
+        var r = new Vector3(f.z, 0f, -f.x);
+        var root = ViewRoot(c);
+        var hip = c.refs.hip.Rig.position;
+        var torso = c.Center;
+        var origin = rig.Origin.position;
+        var eyes = EyeOffsetNow;
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} neutral ({LeanNeutral.X:0.000},{LeanNeutral.Y:0.000}) eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) head-eye {Vector3.Distance(rig.Head.position, BodyEye(c, rig.Origin.eulerAngles.y)):0.000}"
+            )
+        );
     }
 
     /// <summary>Latest HMD pose right before rendering: the lowest-latency head tracking Unity offers.</summary>
