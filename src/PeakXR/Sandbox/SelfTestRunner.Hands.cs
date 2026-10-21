@@ -273,18 +273,7 @@ internal sealed partial class SelfTestRunner
         float hipSpeed = c.refs.hip != null ? c.refs.hip.Rig.linearVelocity.magnitude : 0f;
         float clamp = hipSpeed + 0.5f * c.refs.items.maxThrowForce * multiplier;
         var from = c.Center;
-        // Constant speed (no easing): 0.9 m in 0.15 s, the grip opening at 70 % while the hand still moves.
-        float start = Now;
-        while (true)
-        {
-            float t = Mathf.Clamp01((Now - start) / 0.15f);
-            SetHand(left, Vector3.Lerp(windup, release, t));
-            if (t >= 0.7f)
-                Script(left).Grip = 0f;
-            if (t >= 1f)
-                break;
-            yield return null;
-        }
+        yield return SwingRelease(left, windup, release);
         yield return Until(() => HeldItem() == null, 1.5f, "item still in hand after the swing");
         if (!stepOk)
             yield break;
@@ -336,6 +325,22 @@ internal sealed partial class SelfTestRunner
             Fail("throw beyond the vanilla clamp: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>Constant speed (no easing): 0.9 m in 0.15 s, the grip opening at 70 % while the hand still moves.</summary>
+    IEnumerator SwingRelease(bool left, Vector3 windup, Vector3 release)
+    {
+        float start = Now;
+        while (true)
+        {
+            float t = Mathf.Clamp01((Now - start) / 0.15f);
+            SetHand(left, Vector3.Lerp(windup, release, t));
+            if (t >= 0.7f)
+                Script(left).Grip = 0f;
+            if (t >= 1f)
+                yield break;
+            yield return null;
+        }
     }
 
     /// <summary>vr.14: the free hand gripping a held two-hand item sets <see cref="AvatarPose.TwoHandHold"/>; letting

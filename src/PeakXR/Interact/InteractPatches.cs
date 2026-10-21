@@ -1,7 +1,10 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Avatar;
+using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -161,7 +164,11 @@ internal static class InteractPatches
 
     /// <summary>CharacterItems.DoDropping (CharacterItems.cs:252, private): on a hand throw, give the held item the
     /// hand's velocity just before vanilla reads it into the DropItemRpc velocity argument (CharacterItems.cs:274),
-    /// with zero charge so the master adds no look-direction force. All clients see the throw through that RPC.</summary>
+    /// and send the charge a vanilla throw would need for that speed (<see cref="HandThrow"/>), never below a sticky
+    /// item's <c>throwChargeRequirement</c> (:277-289, which otherwise aborts the drop). The master adds that charge's
+    /// look-direction force (:391-395, :426), so the item's velocity is reduced by it first and leaves along the
+    /// hand. All clients see the throw through that RPC. A gentle release of a sticky item stays refused, as in
+    /// vanilla, with a ui.affordance cue.</summary>
     [HarmonyPatch]
     internal static class Dropping
     {
@@ -170,25 +177,52 @@ internal static class InteractPatches
 
         private static void Prefix(CharacterItems __instance)
         {
-            if (!PhysicalInteraction.ThrowPending)
-                return;
             var c = Character.localCharacter;
             if (c == null || c.refs.items != __instance || !c.input.dropWasReleased)
                 return;
+            var sticky = c.data.currentStickyItem;
+            if (!PhysicalInteraction.ThrowPending)
+            {
+                if (
+                    sticky != null
+                    && VRSession.Active
+                    && __instance.throwChargeLevel < sticky.throwChargeRequirement
+                )
+                    Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.StuckToHand);
+                return;
+            }
             PhysicalInteraction.ConsumeThrow();
             var item = c.data.currentItem;
             if (item == null || item.rig == null)
                 return;
             // No faster than a full-charge vanilla throw (CharacterItems.cs:394, :428): body speed plus half the
-            // max throw force times the item's multiplier. The master applies this velocity for everyone.
-            float max =
-                (c.refs.hip != null ? c.refs.hip.Rig.linearVelocity.magnitude : 0f)
-                + 0.5f * __instance.maxThrowForce * item.throwForceMultiplier;
-            item.rig.linearVelocity = Vector3.ClampMagnitude(
+            // max throw force times the item's multiplier.
+            var body = c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
+            float mult = item.throwForceMultiplier;
+            var velocity = Vector3.ClampMagnitude(
                 PhysicalInteraction.ThrowVelocity,
-                max
+                body.magnitude + 0.5f * __instance.maxThrowForce * mult
             );
-            __instance.throwChargeLevel = 0f;
+            float charge = HandThrow.Charge(
+                (velocity - body).magnitude,
+                __instance.minThrowForce,
+                __instance.maxThrowForce,
+                mult,
+                sticky != null ? sticky.throwChargeRequirement : 0f
+            );
+            // The master's look direction: HelperFunctions.LookToDirection(lookValues, forward) (HelperFunctions.cs:183-195).
+            var look = c.data.lookValues;
+            var lookDir = Quaternion.Euler(-look.y, look.x, 0f) * Vector3.forward;
+            item.rig.linearVelocity =
+                velocity
+                - lookDir
+                    * HandThrow.LookSpeed(
+                        charge,
+                        __instance.minThrowForce,
+                        __instance.maxThrowForce,
+                        mult
+                    );
+            __instance.throwChargeLevel = charge;
         }
     }
 }

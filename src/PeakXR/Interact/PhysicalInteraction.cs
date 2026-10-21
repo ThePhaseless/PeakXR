@@ -135,6 +135,7 @@ internal static class PhysicalInteraction
         TrackHeldItem(c, now);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
+        ClimbStow.Tick(c, rig, cfg);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
         Climb.ClimbHands.Update(c, rig, cfg, active, dt);

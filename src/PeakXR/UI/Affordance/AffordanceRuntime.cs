@@ -39,6 +39,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public Vector3 Position;
         public DenyReason Reason;
         public DenyHint Spot;
+        public bool Notice;
+
+        /// <summary>Label text in place of the reason's own (an item name), or null.</summary>
+        public string Text;
 
         // Hover bookkeeping.
         public int Frame = -10;
@@ -66,6 +70,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private int labelOwner = -1;
     private DenyReason labelReason;
     private int labelDecimeters;
+    private string labelText;
 
     public static void Create()
     {
@@ -74,22 +79,42 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         instance = go.AddComponent<AffordanceRuntime>();
     }
 
-    public static void Show(bool left, Vector3 pos, DenyReason reason, DenyHint hint)
+    /// <param name="notice">Information, not a refusal: no red ring, a single soft tick, the label in the hint colour.</param>
+    public static void Show(
+        bool left,
+        Vector3 pos,
+        DenyReason reason,
+        DenyHint hint,
+        bool notice = false,
+        string text = null
+    )
     {
         var self = instance;
         if (self == null)
             return;
         var now = Time.unscaledTime;
-        (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
+        if (notice)
+            Haptics.Pulse(left, 0.25f, 0.04f);
+        else
+            (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
+        self.denied.Notice = notice;
+        self.denied.Text = text;
         self.denied.Position = pos;
         self.denied.Reason = reason;
         self.denied.Spot = hint;
         self.denyLeft = left;
         self.denyAt = now;
-        self.SetLabel(-1, reason, hint.Meters);
+        self.SetLabel(-1, reason, hint.Meters, text);
     }
 
-    public static void Hover(bool left, Vector3 pos, DenyReason reason, DenyHint hint)
+    public static void Hover(
+        bool left,
+        Vector3 pos,
+        DenyReason reason,
+        DenyHint hint,
+        bool notice = false,
+        string text = null
+    )
     {
         var self = instance;
         if (self == null)
@@ -101,6 +126,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         h.Position = pos;
         h.Reason = reason;
         h.Spot = hint;
+        h.Notice = notice;
+        h.Text = text;
         h.Frame = Time.frameCount;
         h.SeenAt = now;
     }
@@ -212,7 +239,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             PoseCue(h, eye, alpha);
             // A steady hover earns the label too, unless a fresh denial owns it.
             if (alpha > 0f && now - h.Since >= HoverLabelAfter && denyAlpha <= 0f)
-                SetLabel(i, h.Reason, h.Spot.Meters);
+                SetLabel(i, h.Reason, h.Spot.Meters, h.Text);
         }
 
         PoseLabel(rig, eye, now, denyAlpha);
@@ -264,7 +291,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             SpatialRuntime.FaceEyeYaw(p, eye, rig.Head.forward)
         );
         labelRoot.transform.localScale = new Vector3(mpp, mpp, mpp);
-        var tc = Affordance.DenyColor;
+        bool notice = labelOwner < 0 ? denied.Notice : hovers[labelOwner].Notice;
+        var tc = notice ? Affordance.HintColor : Affordance.DenyColor;
         tc.a = alpha;
         label.color = tc;
         plate.color = new Color(0.06f, 0.05f, 0.05f, 0.7f * alpha);
@@ -272,9 +300,16 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private static void PoseCue(Cue cue, Vector3 eye, float alpha)
     {
-        PoseRing(cue.Deny, cue.Position, eye, alpha, Affordance.DenyColor);
         var spot = cue.Spot.SpotNow;
         bool hint = cue.Spot.HasSpot && (spot - cue.Position).sqrMagnitude > 1e-4f;
+        // A notice has no refused spot: with no separate hint, its own spot is the teal one.
+        PoseRing(
+            cue.Deny,
+            cue.Position,
+            eye,
+            cue.Notice && hint ? 0f : alpha,
+            cue.Notice ? Affordance.HintColor : Affordance.DenyColor
+        );
         PoseRing(cue.Hint, spot, eye, hint ? alpha : 0f, Affordance.HintColor);
         var link = cue.Link;
         if (!hint || alpha <= 0.001f)
@@ -321,17 +356,24 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     /// <summary>Sets the label text when its owner, reason or distance (in 10 cm steps) changes: a TMP text change
     /// re-meshes and the string allocates, so never per frame.</summary>
-    private void SetLabel(int owner, DenyReason reason, float meters)
+    private void SetLabel(int owner, DenyReason reason, float meters, string text)
     {
         int dm = Mathf.RoundToInt(Mathf.Max(0f, meters) * 10f);
-        if (owner == labelOwner && reason == labelReason && dm == labelDecimeters && owner >= 0)
+        if (
+            owner == labelOwner
+            && reason == labelReason
+            && dm == labelDecimeters
+            && ReferenceEquals(text, labelText)
+            && owner >= 0
+        )
             return;
         labelOwner = owner;
         labelReason = reason;
         labelDecimeters = dm;
+        labelText = text;
         if (label == null)
             return;
-        label.text = DenyText.Compose(reason, dm * 0.1f);
+        label.text = text ?? DenyText.Compose(reason, dm * 0.1f);
         label.ForceMeshUpdate();
         var size = label.GetRenderedValues(false);
         ((RectTransform)plate.transform).sizeDelta = new Vector2(size.x + 28f, size.y + 14f);
@@ -448,6 +490,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         // Re-render the current text in the new font.
         int owner = labelOwner;
         labelOwner = -2;
-        SetLabel(owner, labelReason, labelDecimeters * 0.1f);
+        SetLabel(owner, labelReason, labelDecimeters * 0.1f, labelText);
     }
 }
