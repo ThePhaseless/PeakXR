@@ -38,7 +38,17 @@ public static class VRSession
         if (Active == active)
             return;
         Active = active;
-        (active ? Started : Stopped)?.Invoke();
+        var handlers = active ? Started : Stopped;
+        if (handlers == null)
+            return;
+        // One handler at a time with a line before each, so a native crash in one is attributable.
+        foreach (Action handler in handlers.GetInvocationList())
+        {
+            Plugin.Log.LogDebug(
+                $"VRSession.{(active ? "Started" : "Stopped")} -> {handler.Method.DeclaringType?.FullName}.{handler.Method.Name}"
+            );
+            handler();
+        }
     }
 
     internal static VRRuntime ReadRequestedRuntime()

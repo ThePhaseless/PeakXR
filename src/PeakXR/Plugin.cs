@@ -21,9 +21,16 @@ public class Plugin : BaseUnityPlugin
         Instance = this;
         Log = Logger;
 
+        var args = System.Environment.GetCommandLineArgs();
+        if (System.Array.IndexOf(args, "-peakxr-selftest") >= 0)
+            BepInEx.Logging.Logger.Listeners.Add(
+                new FlushingLogListener(
+                    System.IO.Path.Combine(Paths.BepInExRootPath, "PeakXR-trace.log")
+                )
+            );
+
         VRSession.Requested = VRSession.ReadRequestedRuntime();
-        VRSession.CompatProbe =
-            System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-peakxr-compat") >= 0;
+        VRSession.CompatProbe = System.Array.IndexOf(args, "-peakxr-compat") >= 0;
         Log.LogInfo(
             $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}, game {UnityEngine.Application.version}, "
                 + $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}"
