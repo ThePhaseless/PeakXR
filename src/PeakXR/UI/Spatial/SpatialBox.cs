@@ -42,6 +42,7 @@ internal sealed class SpatialBox
     {
         public CanvasRenderer Renderer;
         public float Alpha;
+        public bool Cull;
     }
 
     /// <summary>Above every world effect, below the VR keyboard (30000) and the fade sphere.</summary>
@@ -167,8 +168,12 @@ internal sealed class SpatialBox
         swapped.Clear();
         foreach (var f in faded)
         {
-            if (f.Renderer != null)
+            if (f.Renderer == null)
+                continue;
+            // Only while still hidden: another system's later alpha write wins.
+            if (f.Renderer.GetAlpha() <= 0f)
                 f.Renderer.SetAlpha(f.Alpha);
+            f.Renderer.cullTransparentMesh = f.Cull;
         }
         faded.Clear();
         foreach (var t in hiddenGlyphs)
@@ -210,6 +215,13 @@ internal sealed class SpatialBox
             var t = hiddenGlyphs[i];
             if (t != null && t.enabled)
                 t.enabled = false;
+        }
+        // A game CrossFadeAlpha on a hidden backing would show it again.
+        for (int i = 0; i < faded.Count; i++)
+        {
+            var r = faded[i].Renderer;
+            if (r != null && r.GetAlpha() > 0f)
+                r.SetAlpha(0f);
         }
     }
 
@@ -294,7 +306,9 @@ internal sealed class SpatialBox
     }
 
     /// <summary>Hides the flat-screen backings inside a moved part (every graphic that is not text) through the
-    /// renderer alpha, so the game's own colour writes still land; <see cref="Restore"/> shows them again.</summary>
+    /// renderer alpha, so the game's own colour writes still land; <see cref="Pose"/> re-asserts it and
+    /// <see cref="Restore"/> shows them again. <c>cullTransparentMesh</c> stays off meanwhile so raycasts stay vanilla
+    /// (the same pattern as ui.world's BackdropStrip and ScreenBacking).</summary>
     public void HideBackings(Transform part)
     {
         part.GetComponentsInChildren(true, graphics);
@@ -303,7 +317,15 @@ internal sealed class SpatialBox
             if (g is TMP_Text)
                 continue;
             var cr = g.canvasRenderer;
-            faded.Add(new Faded { Renderer = cr, Alpha = cr.GetAlpha() });
+            faded.Add(
+                new Faded
+                {
+                    Renderer = cr,
+                    Alpha = cr.GetAlpha(),
+                    Cull = cr.cullTransparentMesh,
+                }
+            );
+            cr.cullTransparentMesh = false;
             cr.SetAlpha(0f);
         }
         graphics.Clear();

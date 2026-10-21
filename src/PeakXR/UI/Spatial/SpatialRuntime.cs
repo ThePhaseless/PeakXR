@@ -81,8 +81,14 @@ internal sealed class SpatialRuntime : MonoBehaviour
         wantLabels = ready && cfg.ButtonLabels.Value && observingSelf;
         wantBanners = ready && cfg.WorldBanners.Value;
         wantGauges = ready && cfg.HeldItemGauges.Value && observingSelf;
-        // Your own body too (solo, or the last one standing): its "spectating YOURSELF" label goes on it.
-        wantSpectate = ready && cfg.SpectateOnPlayer.Value && spec != null;
+        // Your own body too (solo, or the last one standing): its "spectating YOURSELF" label goes on it. Only while
+        // really spectating: a rocket ride also sets specCharacter to you (MainCameraMovement.cs:102).
+        wantSpectate =
+            ready
+            && cfg.SpectateOnPlayer.Value
+            && spec != null
+            && c != null
+            && (c.data.dead || c.data.fullyPassedOut);
         var friend = wantSpectate && spec != c;
         wantAlerts = ready && cfg.StatusAlerts.Value && observingSelf && c.data.fullyConscious;
         // Small status icons follow the status bar to the wrist; in Body mode they stay on the body panel.

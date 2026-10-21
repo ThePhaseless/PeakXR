@@ -103,6 +103,11 @@ internal sealed class RigDriver : MonoBehaviour
     private Vector3 anchor;
     private bool snap = true;
     private Vector3 turnShift;
+
+    /// <summary>Eased push that keeps a spectate view out of the watched body (<see cref="RigMath.ClearOfBody"/>).</summary>
+    private Vector3 clearShift,
+        clearVelocity;
+    private const float ClearSmoothSeconds = 0.12f;
     private float turnYaw;
     private float turnHoldUntil;
     private Vector3 lastBodyEye;
@@ -526,7 +531,10 @@ internal sealed class RigDriver : MonoBehaviour
         float yaw = rig.Origin.eulerAngles.y;
         UpdateTurnShift(c, yaw, dt);
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
+        {
+            spectateFloor.Hide();
             return;
+        }
         float verticalRate =
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything
                 ? Mathf.Min(rate, GroundedVerticalRate)
@@ -549,15 +557,34 @@ internal sealed class RigDriver : MonoBehaviour
         // Spectating: the watched player's head and body never fill the eyes (a lean or a slow follow can carry the
         // view into them); a dead one is parked out of the world (Character.DeathPos, Character.cs:561), so skipped.
         bool watching = state == CameraState.Spectate && shownKind != ViewKind.FirstPerson;
+        var push = Vector3.zero;
         if (watching && shownTarget != null && shownTarget != c && !shownTarget.data.dead)
         {
             var eye = rig.Head.position;
-            var clear = RigMath
-                .ClearOfBody(eye.N(), shownTarget.Head.N(), shownTarget.Center.N())
-                .U();
-            if ((clear - eye).sqrMagnitude > 1e-8f)
-                rig.Origin.position += clear - eye;
+            push =
+                RigMath.ClearOfBody(eye.N(), shownTarget.Head.N(), shownTarget.Center.N()).U()
+                - eye;
         }
+        if (!watching || takeover.SwitchedThisFrame)
+        {
+            // A new view starts behind a fade: no easing to carry over.
+            clearShift = push;
+            clearVelocity = Vector3.zero;
+        }
+        else
+        {
+            // Eased (critically damped), so the view does not shake 1:1 with the remote head's network jitter.
+            clearShift = Vector3.SmoothDamp(
+                clearShift,
+                push,
+                ref clearVelocity,
+                ClearSmoothSeconds,
+                float.PositiveInfinity,
+                dt
+            );
+        }
+        if (clearShift.sqrMagnitude > 1e-8f)
+            rig.Origin.position += clearShift;
         spectateFloor.Tick(watching, rig);
     }
 
