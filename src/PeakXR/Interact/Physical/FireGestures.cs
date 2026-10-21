@@ -143,6 +143,8 @@ internal static class FireGestures
             BindFlame(item);
         if (!cfg.LightWithFlame || item == null || !FlameLit(item))
         {
+            if (cfg.LightWithFlame && item != null && flameKind != HeldLightKind.None)
+                TraceLight(item, item.Center(), null, -1f, false, lit: false);
             Touch.Reset();
             touchTarget = null;
             return;
@@ -174,7 +176,9 @@ internal static class FireGestures
                     distance
                 )
             );
-        if (target == null || !Touch.Update(distance, dt))
+        bool touching = target != null && Touch.Update(distance, dt);
+        TraceLight(item, flame, target, distance, touching, lit: true);
+        if (!touching)
             return;
         if (target is Campfire campfire && campfire.state == Campfire.FireState.Off)
             WarnFriendsFar(campfire);
@@ -189,6 +193,63 @@ internal static class FireGestures
             Haptics.Pulse(ItemGestures.HoldLeft, 0.15f + 0.25f * Random.value, 0.03f);
         }
     }
+
+    private static Item lightTraceItem;
+    private static int lightTrace = -1;
+    private static int lightTraceLines;
+
+    /// <summary>Self-test diagnosis of the light gesture (vr.26): one Debug line whenever a gate on the way from a
+    /// held flame to the game's light hold flips, at most 80 per held item. Names the nearest listed campfire
+    /// (<c>Campfire.ALL_CAMPFIRES</c>, the list the gesture searches) so a fire missing from it shows.</summary>
+    private static void TraceLight(
+        Item item,
+        Vector3 flame,
+        IInteractible target,
+        float distance,
+        bool touching,
+        bool lit
+    )
+    {
+        if (!ReferenceEquals(item, lightTraceItem))
+        {
+            lightTraceItem = item;
+            lightTrace = -1;
+            lightTraceLines = 0;
+        }
+        var interaction = Interaction.instance;
+        var hovered = interaction != null ? interaction.currentHovered : null;
+        var held = interaction != null ? interaction.currentHeldInteractible : null;
+        var near = ItemGestures.NearestCampfire(flame, 2f, litOnly: false);
+        int mask =
+            (lit ? 1 : 0)
+            | (target != null ? 2 : 0)
+            | (target != null && distance <= TouchEnter ? 4 : 0)
+            | (touching ? 8 : 0)
+            | (hovered != null && ReferenceEquals(hovered, target) ? 16 : 0)
+            | (held != null && ReferenceEquals(held, target) ? 32 : 0)
+            | (near != null ? 64 : 0)
+            | (near != null && ReferenceEquals(near, target) ? 128 : 0);
+        if (mask == lightTrace || lightTraceLines >= 80)
+            return;
+        lightTrace = mask;
+        lightTraceLines++;
+        var all = ItemGestures.Campfires;
+        string nearText =
+            near != null
+                ? $"{near.name} ({near.state}, {(ItemGestures.FireBase(near) - flame).magnitude:0.00} m)"
+                : "none";
+        Plugin.Log.LogDebug(
+            $"[interact.light] f{Time.frameCount} {item.name}: lit {lit}, flame kind {flameKind}, target "
+                + $"{LightName(target)} at {distance:0.00} m (enter {TouchEnter:0.00}), touching {touching} "
+                + $"(interact requested {touching}); nearest listed campfire within 2 m {nearText} of "
+                + $"{(all != null ? all.Count : -1)} listed; hovered {LightName(hovered)}, hold on {LightName(held)}"
+        );
+    }
+
+    private static string LightName(IInteractible it) =>
+        it is Component comp && comp != null ? comp.name
+        : it == null ? "nothing"
+        : it.GetType().Name;
 
     /// <summary>
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it
@@ -319,7 +380,7 @@ internal static class FireGestures
 
         // Campfire logs: by distance to the light zone over the fire base, since the campfire is found through its
         // own list.
-        var fire = ItemGestures.NearestCampfire(flame, 1.5f, litOnly: false);
+        var fire = ItemGestures.NearestCampfire(flame, 1.5f, litOnly: false, unlitOnly: true);
         if (fire != null && fire.state == Campfire.FireState.Off && Lightable(c, fire))
         {
             float d = HeatZone.Distance(

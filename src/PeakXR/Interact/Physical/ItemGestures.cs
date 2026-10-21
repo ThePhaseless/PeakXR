@@ -85,8 +85,15 @@ internal static class ItemGestures
         return false;
     }
 
-    /// <summary>The nearest campfire whose <see cref="Campfire.Center"/> is within <paramref name="range"/>, or null.</summary>
-    public static Campfire NearestCampfire(Vector3 point, float range, bool litOnly)
+    /// <summary>The nearest campfire whose <see cref="FireBase"/> is within <paramref name="range"/>, or null; with
+    /// <paramref name="unlitOnly"/>, the nearest one still unlit (<c>FireState.Off</c>), so a lit or spent fire
+    /// nearby cannot hide it.</summary>
+    public static Campfire NearestCampfire(
+        Vector3 point,
+        float range,
+        bool litOnly,
+        bool unlitOnly = false
+    )
     {
         var all = Campfires;
         if (all == null)
@@ -96,7 +103,11 @@ internal static class ItemGestures
         for (int i = 0; i < all.Count; i++)
         {
             var fire = all[i];
-            if (fire == null || (litOnly && !fire.Lit))
+            if (
+                fire == null
+                || (litOnly && !fire.Lit)
+                || (unlitOnly && fire.state != Campfire.FireState.Off)
+            )
                 continue;
             float d = (FireBase(fire) - point).sqrMagnitude;
             if (d < bestSq)
