@@ -176,7 +176,6 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 if (segment == Segment.Tropics)
                     yield return VineSteps();
             }
-            TornadoNotFound();
             foreach (var hours in Times)
             {
                 var id = "07-time-" + ((int)hours).ToString("00", CultureInfo.InvariantCulture);
@@ -184,6 +183,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             }
             // Each kills the solo player and revives them, so nothing after can trip over a death.
             yield return DeathSteps();
+            // Loads another level when this one had no tornado spawner, so it goes last.
+            yield return TornadoTrip();
         }
         Finish();
     }
@@ -385,7 +386,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// pass calls (BoardingPass.cs:228); it RPCs <c>LoadIslandMaster</c> (:135) to the master (us, offline), which
     /// picks the level from <c>MapBaker</c> and loads it through <c>BeginIslandLoadRPC</c> (:152).
     /// </summary>
-    IEnumerator Level()
+    IEnumerator Level(string shot = "04-beach")
     {
         var kiosk = FindAnyObjectByType<AirportCheckInKiosk>();
         if (kiosk == null)
@@ -405,7 +406,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (!stepOk)
             yield break;
         yield return Wait(8f);
-        yield return Shot("04-beach");
+        yield return Shot(shot);
     }
 
     IEnumerator Mobs()
@@ -458,7 +459,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Shot("05-mob-" + entry.Name);
     }
 
-    IEnumerator Jump(Segment segment)
+    IEnumerator Jump(Segment segment, string shot = null)
     {
         if (!SandboxActions.JumpToSegment(segment))
         {
@@ -471,7 +472,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield break;
         yield return Wait(3f);
         Recover();
-        yield return Shot("06-segment-" + segment);
+        yield return Shot(shot ?? "06-segment-" + segment);
     }
 
     /// <summary>The segment the loop would jump to is the current one: assert it instead of jumping.</summary>

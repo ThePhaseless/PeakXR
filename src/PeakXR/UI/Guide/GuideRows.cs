@@ -126,7 +126,15 @@ internal static class GuideRows
     public static void Append(List<Setting> rows)
     {
         if (!Shown)
+        {
+            Plugin.Log.LogDebug(
+                $"[ui.guide] VR tab without the guide (VR {VRSession.Active}, stage {GuideStage.Instance != null})"
+            );
             return;
+        }
+        Plugin.Log.LogDebug(
+            $"[ui.guide] VR tab: guide section, demos {(expanded ? "listed" : "folded")}, practice {(PracticeRun.Running ? "running" : "idle")}"
+        );
         rows.Add(Header("PEAKXR_SECTION_GUIDE", "VR Guide"));
         rows.Add(
             new GuideRow(
@@ -164,6 +172,7 @@ internal static class GuideRows
     /// <summary>The comfort choices with their usual previews, then Start and Back.</summary>
     public static List<Setting> Comfort(System.Func<ConfigEntryBase, Setting> rowFor)
     {
+        Plugin.Log.LogDebug("[ui.guide] VR tab: comfort-first practice view");
         var rows = new List<Setting>
         {
             Header("PEAKXR_SECTION_PRACTICE", "Practice: comfort first"),
@@ -213,6 +222,7 @@ internal static class GuideRows
         if (row.ClickFrame == Time.frameCount)
             return;
         row.ClickFrame = Time.frameCount;
+        Plugin.Log.LogDebug($"[ui.guide] row clicked: {row.Action} {row.Topic}");
         switch (row.Action)
         {
             case GuideAction.Demo:
