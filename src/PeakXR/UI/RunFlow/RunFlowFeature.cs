@@ -60,6 +60,6 @@ public sealed class RunFlowFeature : Feature
         // Last, so a missing patch target above leaves no runtime object or canvas rule behind.
         RunFlowRuntime.Create(Settings);
         // Canvas_End holds only the EndScreen window and its children (popups, WaitingForPlayersUI).
-        CanvasRules.AddCustom("EndScreen", new EndScreenPlacement(Settings));
+        CanvasRules.AddCustomMenu("EndScreen", new EndScreenPlacement(Settings));
     }
 }

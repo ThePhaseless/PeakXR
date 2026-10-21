@@ -34,6 +34,27 @@ internal sealed class TrackedCanvas
     public Vector2 ContentCenter;
     public float NextMeasure;
     public Quaternion Rotation;
+
+    /// <summary>Menus get a soft backdrop in place of the game's full-canvas dimmers.</summary>
+    public bool WantsBackdrop;
+    public Image Backdrop;
+    public float BackdropScale;
+    public Vector2 BackdropSize;
+    public Vector2 BackdropCenter;
+    public float BackdropAlpha;
+
+    /// <summary>Largest content graphic: its inherited CanvasGroup alpha is the page's fade.</summary>
+    public Graphic FadeProbe;
+
+    /// <summary>False while a page may still be scaling in: measured every frame until the size holds.</summary>
+    public bool Settled = true;
+    public float SettleUntil;
+    public bool BackdropWasOpen;
+    public UIPage LastPage;
+    public bool Rescan;
+    public int MeasuredFrame = -1;
+    public readonly List<Graphic> Dimmers = new();
+    public readonly List<float> DimmerAlphas = new();
 }
 
 /// <summary>
@@ -55,6 +76,9 @@ internal static class WorldCanvases
     // Re-measure an open menu this often, so a page switch (pause -> settings) resizes it.
     private const float MeasureSeconds = 0.5f;
 
+    // Longest a page may take to scale in before its backdrop is shown anyway (ScaleOnEnable default 0.25 s).
+    private const float SettleSeconds = 0.6f;
+
     public static bool IsConverted(Canvas root) => convertedRoots.Contains(root.GetInstanceID());
 
     public static void Track(Canvas canvas)
@@ -72,7 +96,10 @@ internal static class WorldCanvases
         var id = canvas.rootCanvas.GetInstanceID();
         foreach (var t in tracked)
             if (t.Id == id)
+            {
                 t.WasOpen = false;
+                t.Rescan = true;
+            }
     }
 
     public static void Scan(bool includeInactive)
@@ -160,6 +187,7 @@ internal static class WorldCanvases
                 root.GetComponentInParent<UIPageHandler>(true)
                 ?? root.GetComponentInChildren<UIPageHandler>(true),
             Size = size,
+            WantsBackdrop = kind == CanvasKind.Menu || CanvasRules.WantsBackdrop(placement),
         };
         tracked.Add(t);
         Plugin.Log.LogDebug(
@@ -197,6 +225,12 @@ internal static class WorldCanvases
         t.Converted = true;
         t.WasOpen = false;
         convertedRoots.Add(t.Id);
+        if (t.WantsBackdrop)
+        {
+            MenuBackdrop.Attach(t);
+            HideDimmers(t);
+            t.NextMeasure = 0f;
+        }
         if (t.Kind == CanvasKind.Names)
             Apply(t, Vector3.zero, Quaternion.identity, 0.001f * t.Size.x);
     }
@@ -209,6 +243,7 @@ internal static class WorldCanvases
         t.Canvas.renderMode = t.OriginalMode;
         t.Canvas.worldCamera = t.OriginalCamera;
         t.Rect.localScale = t.OriginalScale;
+        MenuBackdrop.Detach(t);
         t.Converted = false;
         if (t.Kind == CanvasKind.Names)
             ResetNameTags(t.Canvas);
@@ -255,6 +290,8 @@ internal static class WorldCanvases
         {
             if (!t.Converted)
                 continue;
+            if (t.Backdrop != null)
+                WatchPages(t);
             switch (t.Kind)
             {
                 case CanvasKind.Hud:
@@ -291,8 +328,36 @@ internal static class WorldCanvases
                     interactive |= PlaceMenu(t, head, cfg, ref openMenus);
                     break;
             }
+            if (t.Backdrop != null)
+            {
+                // Placed custom menus (title) are not measured by PlaceMenu.
+                if (t.IsOpen)
+                    MeasureIfDue(t);
+                MenuBackdrop.Sync(t);
+            }
         }
         return interactive;
+    }
+
+    /// <summary>
+    /// A menu opened, a window popped up or the page changed: hide any new dimmer before this frame renders
+    /// and re-measure every frame until the page stops scaling in (ScaleOnEnable).
+    /// </summary>
+    private static void WatchPages(TrackedCanvas t)
+    {
+        var page = t.Pages != null ? t.Pages.currentPage : null;
+        var opened = t.IsOpen && !t.BackdropWasOpen;
+        t.BackdropWasOpen = t.IsOpen;
+        if (!opened && !t.Rescan && page == t.LastPage)
+            return;
+        t.LastPage = page;
+        t.Rescan = false;
+        if (!t.IsOpen)
+            return;
+        HideDimmers(t);
+        t.NextMeasure = 0f;
+        t.Settled = false;
+        t.SettleUntil = Time.unscaledTime + SettleSeconds;
     }
 
     private static bool IsOpen(TrackedCanvas t)
@@ -341,11 +406,7 @@ internal static class WorldCanvases
             t.NextMeasure = 0f;
         }
 
-        if (Time.unscaledTime >= t.NextMeasure)
-        {
-            t.NextMeasure = Time.unscaledTime + MeasureSeconds;
-            MeasureContent(t);
-        }
+        MeasureIfDue(t);
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
         var mpp = PanelMath.MenuMetersPerPixel(
@@ -359,34 +420,68 @@ internal static class WorldCanvases
         return true;
     }
 
+    private static void MeasureIfDue(TrackedCanvas t)
+    {
+        // Once per frame: a second measure in the same frame would always look settled.
+        if (
+            Time.unscaledTime < t.NextMeasure
+            || t.MeasuredFrame == Time.frameCount
+            || Degenerate(t)
+        )
+            return;
+        t.MeasuredFrame = Time.frameCount;
+        var size = t.ContentSize;
+        var center = t.ContentCenter;
+        MeasureContent(t);
+        if (!t.Settled)
+            t.Settled =
+                Time.unscaledTime >= t.SettleUntil
+                || (
+                    (t.ContentSize - size).sqrMagnitude < 1f
+                    && (t.ContentCenter - center).sqrMagnitude < 1f
+                );
+        t.NextMeasure = t.Settled ? Time.unscaledTime + MeasureSeconds : 0f;
+    }
+
+    /// <summary>A canvas scaled to nothing (Hidden placement) cannot map world corners back to pixels.</summary>
+    private static bool Degenerate(TrackedCanvas t) => Mathf.Abs(t.Rect.lossyScale.x) < 1e-6f;
+
     /// <summary>
     /// Bounds of the drawn graphics in canvas pixels (relative to the canvas pivot), clipped to the canvas and
-    /// skipping full-canvas backdrops. Nothing drawn means the whole canvas.
+    /// skipping full-canvas backdrops (dark ones are handed to <see cref="MenuBackdrop"/> to hide) and our own
+    /// backdrop. Nothing drawn means the whole canvas.
     /// </summary>
     private static void MeasureContent(TrackedCanvas t)
     {
         var bounds = t.Rect.rect;
-        var backdrop = bounds.size * 0.9f;
         var min = new Vector2(float.MaxValue, float.MaxValue);
         var max = new Vector2(float.MinValue, float.MinValue);
+        Graphic probe = null;
+        var probeArea = 0f;
         t.Canvas.GetComponentsInChildren(false, graphics);
         foreach (var g in graphics)
         {
-            if (!g.isActiveAndEnabled || g.color.a < 0.01f)
+            if (!g.isActiveAndEnabled || g.color.a < 0.01f || g == t.Backdrop)
                 continue;
-            g.rectTransform.GetWorldCorners(corners);
-            Vector2 a = t.Rect.InverseTransformPoint(corners[0]);
-            Vector2 b = t.Rect.InverseTransformPoint(corners[2]);
-            var lo = Vector2.Max(Vector2.Min(a, b), bounds.min);
-            var hi = Vector2.Min(Vector2.Max(a, b), bounds.max);
-            if (hi.x <= lo.x || hi.y <= lo.y)
+            if (!Clip(t, g, bounds, out var lo, out var hi))
                 continue;
-            if (hi.x - lo.x >= backdrop.x && hi.y - lo.y >= backdrop.y)
+            if (CoversCanvas(bounds, lo, hi))
+            {
+                if (t.Backdrop != null)
+                    MenuBackdrop.OnFullCanvasGraphic(t, g);
                 continue;
+            }
             min = Vector2.Min(min, lo);
             max = Vector2.Max(max, hi);
+            var area = (hi.x - lo.x) * (hi.y - lo.y);
+            if (area > probeArea)
+            {
+                probeArea = area;
+                probe = g;
+            }
         }
         graphics.Clear();
+        t.FadeProbe = probe;
         if (max.x <= min.x)
         {
             t.ContentSize = bounds.size;
@@ -396,6 +491,46 @@ internal static class WorldCanvases
         t.ContentSize = max - min;
         t.ContentCenter = (min + max) * 0.5f;
     }
+
+    /// <summary>Hides dimmers on pages that are still closed, so they never flash before the next measure.</summary>
+    private static void HideDimmers(TrackedCanvas t)
+    {
+        if (Degenerate(t))
+            return;
+        MenuBackdrop.PruneDimmers(t);
+        var bounds = t.Rect.rect;
+        t.Canvas.GetComponentsInChildren(true, graphics);
+        // Transparent ones too: a dimmer faded in later (color.a rising from 0) stays hidden.
+        foreach (var g in graphics)
+            if (
+                g != t.Backdrop
+                && Clip(t, g, bounds, out var lo, out var hi)
+                && CoversCanvas(bounds, lo, hi)
+            )
+                MenuBackdrop.OnFullCanvasGraphic(t, g);
+        graphics.Clear();
+    }
+
+    /// <summary>A graphic's rect in canvas pixels, clipped to the canvas. False when nothing is left.</summary>
+    private static bool Clip(
+        TrackedCanvas t,
+        Graphic g,
+        Rect bounds,
+        out Vector2 lo,
+        out Vector2 hi
+    )
+    {
+        g.rectTransform.GetWorldCorners(corners);
+        Vector2 a = t.Rect.InverseTransformPoint(corners[0]);
+        Vector2 b = t.Rect.InverseTransformPoint(corners[2]);
+        lo = Vector2.Max(Vector2.Min(a, b), bounds.min);
+        hi = Vector2.Min(Vector2.Max(a, b), bounds.max);
+        return hi.x > lo.x && hi.y > lo.y;
+    }
+
+    /// <summary>Full-canvas backdrops (dimmers, vignettes) span at least 90% of the canvas both ways.</summary>
+    private static bool CoversCanvas(Rect bounds, Vector2 lo, Vector2 hi) =>
+        hi.x - lo.x >= bounds.width * 0.9f && hi.y - lo.y >= bounds.height * 0.9f;
 
     private static void Apply(
         TrackedCanvas t,

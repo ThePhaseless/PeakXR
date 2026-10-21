@@ -26,8 +26,8 @@ public sealed class UILobbyFeature : Feature
         // Canvas_BoardingPass holds BoardingPass (A/BoardingPass.cs:12), Canvas_CustomOptionWindow holds
         // CustomOptionsWindow (A/CustomOptionsWindow.cs:5); both sit under GUIManager (R2 §2.1).
         var dock = new KioskDock(cfg);
-        CanvasRules.AddCustom("BoardingPass", dock);
-        CanvasRules.AddCustom("CustomOptionsWindow", dock);
+        CanvasRules.AddCustomMenu("BoardingPass", dock);
+        CanvasRules.AddCustomMenu("CustomOptionsWindow", dock);
 
         Note = InviteNote.Create(cfg);
     }
