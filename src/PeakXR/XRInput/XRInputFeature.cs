@@ -34,5 +34,6 @@ public sealed class XRInputFeature : Feature
         VRInput.LeftHanded = DominantHand.Value == "Left";
         DominantHand.SettingChanged += (_, _) => VRInput.LeftHanded = DominantHand.Value == "Left";
         XRInputSampler.Install();
+        GameInputIsolation.Install();
     }
 }
