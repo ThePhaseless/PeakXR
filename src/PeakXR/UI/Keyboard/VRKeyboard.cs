@@ -54,7 +54,6 @@ internal sealed class VRKeyboard : MonoBehaviour
     private const float FlashSeconds = 0.12f;
     private const int SortingOrder = 30000;
 
-    private static readonly Color PanelColor = new(0.06f, 0.07f, 0.09f, 0.96f);
     private static readonly Color KeyColor = new(0.2f, 0.22f, 0.27f, 1f);
     private static readonly Color SpecialColor = new(0.14f, 0.16f, 0.2f, 1f);
     private static readonly Color DoneColor = new(0.17f, 0.4f, 0.26f, 1f);
@@ -165,7 +164,9 @@ internal sealed class VRKeyboard : MonoBehaviour
         canvasRect = (RectTransform)go.transform;
 
         var font = LoadFont();
-        Panel(canvasRect, "Background", Vector2.zero, size, PanelColor);
+        // Invisible: the keys float on their own, but a ray between two keys still lands on the keyboard
+        // instead of clicking the menu behind it and dropping the input focus.
+        Panel(canvasRect, "Background", Vector2.zero, size, Color.clear);
         title = Label(
             canvasRect,
             "Title",
@@ -180,6 +181,9 @@ internal sealed class VRKeyboard : MonoBehaviour
             new Vector2(size.x - Pad * 2f, 36f)
         );
         preview = Label(canvasRect, "Preview", font, 34, TextAnchor.MiddleLeft, Color.white);
+        // Heading and typed text sit on nothing: a dark rim keeps them readable against the world.
+        title.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
+        preview.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
         Place(
             preview.rectTransform,
             new Vector2(0f, size.y * 0.5f - Pad - 62f),

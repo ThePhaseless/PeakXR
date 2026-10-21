@@ -84,7 +84,7 @@ No game UI stays fixed to the screen or the head in VR. Each element has a 3D an
 
 | Game UI (source) | Anchor in VR | Owner | Setting |
 |---|---|---|---|
-| Menus, pause, settings, modals, end screen | world-locked panel, placed in front of you when it opens | `ui.world`, `ui.menu`, `ui.runflow` | |
+| Menus, pause, settings, modals, end screen | world-locked, placed in front of you when it opens. Only the buttons, text, icons and art float there: full-canvas dimmers and the panels that framed content on a monitor are hidden (`BackdropStrip`, rules in Core `BackdropRules`), and text gets a thin contrasting outline | `ui.world`, `ui.menu`, `ui.runflow` | `UI.MenuPanels` |
 | Title, loading | 3D title stage, loading space | `ui.menu` | |
 | Kiosk boarding pass, run options | docked at the kiosk | `ui.lobby` | |
 | Interact name and prompts (`GUIManager.interactName`, `interactPrompt*`) | at the target, in front of `IInteractible.Center()`, level, facing you | `ui.spatial` | `UI.TargetPrompt` |

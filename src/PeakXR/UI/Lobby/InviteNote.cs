@@ -56,6 +56,8 @@ internal sealed class InviteNote : MonoBehaviour
 
         if (!fontSet)
             fontSet = TryGameFont();
+        // No panel behind the note: an outline keeps it readable against the airport.
+        TextHalo.Apply(text);
         text.text = Message();
 
         KioskDock.Measure(pressed.transform, out var center, out var top);
@@ -146,10 +148,6 @@ internal sealed class InviteNote : MonoBehaviour
         var rect = (RectTransform)panel.transform;
         rect.sizeDelta = Size;
         rect.localScale = Vector3.one * PanelMath.MetersPerPixel(WidthMeters, Size.x);
-
-        var back = Child<Image>(panel.transform, "Back");
-        back.color = new Color(0.05f, 0.06f, 0.08f, 0.85f);
-        Stretch(back.rectTransform, 0f);
 
         text = Child<TextMeshProUGUI>(panel.transform, "Text");
         text.fontSize = 34f;

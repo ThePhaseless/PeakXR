@@ -18,6 +18,7 @@ public sealed class UIWorldFeature : Feature
     protected internal override void Install()
     {
         Settings = UIWorldSettings.Bind(Plugin.Settings);
+        Settings.MenuPanels.SettingChanged += (_, _) => WorldCanvases.OnMenuPanelsChanged();
         HudSplit.Resolve();
 
         Patch(typeof(CanvasScalerEnablePatch));

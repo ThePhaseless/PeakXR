@@ -35,26 +35,19 @@ internal sealed class TrackedCanvas
     public float NextMeasure;
     public Quaternion Rotation;
 
-    /// <summary>Menus get a soft backdrop in place of the game's full-canvas dimmers.</summary>
-    public bool WantsBackdrop;
-    public Image Backdrop;
-    public float BackdropScale;
-    public Vector2 BackdropSize;
-    public Vector2 BackdropCenter;
-    public float BackdropAlpha;
-
-    /// <summary>Largest content graphic: its inherited CanvasGroup alpha is the page's fade.</summary>
-    public Graphic FadeProbe;
+    /// <summary>Menus lose their flat-screen backdrops in VR (<see cref="BackdropStrip"/>).</summary>
+    public bool Strip;
 
     /// <summary>False while a page may still be scaling in: measured every frame until the size holds.</summary>
     public bool Settled = true;
     public float SettleUntil;
-    public bool BackdropWasOpen;
+    public bool StripWasOpen;
     public UIPage LastPage;
     public bool Rescan;
     public int MeasuredFrame = -1;
-    public readonly List<Graphic> Dimmers = new();
-    public readonly List<float> DimmerAlphas = new();
+    public readonly List<HiddenBackdrop> Hidden = new();
+    public readonly List<TMPro.TMP_Text> HaloTexts = new();
+    public readonly List<Material> HaloOriginals = new();
 }
 
 /// <summary>
@@ -76,10 +69,20 @@ internal static class WorldCanvases
     // Re-measure an open menu this often, so a page switch (pause -> settings) resizes it.
     private const float MeasureSeconds = 0.5f;
 
-    // Longest a page may take to scale in before its backdrop is shown anyway (ScaleOnEnable default 0.25 s).
+    // Longest a page may take to scale in before its size counts as settled (ScaleOnEnable default 0.25 s).
     private const float SettleSeconds = 0.6f;
 
     public static bool IsConverted(Canvas root) => convertedRoots.Contains(root.GetInstanceID());
+
+    /// <summary>How many backdrops are hidden on a converted root canvas (self-test).</summary>
+    public static int HiddenBackdrops(Canvas root)
+    {
+        var id = root.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id)
+                return t.Hidden.Count;
+        return 0;
+    }
 
     public static void Track(Canvas canvas)
     {
@@ -187,7 +190,7 @@ internal static class WorldCanvases
                 root.GetComponentInParent<UIPageHandler>(true)
                 ?? root.GetComponentInChildren<UIPageHandler>(true),
             Size = size,
-            WantsBackdrop = kind == CanvasKind.Menu || CanvasRules.WantsBackdrop(placement),
+            Strip = kind == CanvasKind.Menu || CanvasRules.StripsBackdrops(placement),
         };
         tracked.Add(t);
         Plugin.Log.LogDebug(
@@ -225,10 +228,10 @@ internal static class WorldCanvases
         t.Converted = true;
         t.WasOpen = false;
         convertedRoots.Add(t.Id);
-        if (t.WantsBackdrop)
+        if (t.Strip)
         {
-            MenuBackdrop.Attach(t);
-            HideDimmers(t);
+            t.StripWasOpen = false;
+            Strip(t);
             t.NextMeasure = 0f;
         }
         if (t.Kind == CanvasKind.Names)
@@ -243,7 +246,7 @@ internal static class WorldCanvases
         t.Canvas.renderMode = t.OriginalMode;
         t.Canvas.worldCamera = t.OriginalCamera;
         t.Rect.localScale = t.OriginalScale;
-        MenuBackdrop.Detach(t);
+        BackdropStrip.Restore(t, panelsOnly: false);
         t.Converted = false;
         if (t.Kind == CanvasKind.Names)
             ResetNameTags(t.Canvas);
@@ -290,7 +293,7 @@ internal static class WorldCanvases
         {
             if (!t.Converted)
                 continue;
-            if (t.Backdrop != null)
+            if (t.Strip)
                 WatchPages(t);
             switch (t.Kind)
             {
@@ -328,33 +331,30 @@ internal static class WorldCanvases
                     interactive |= PlaceMenu(t, head, cfg, ref openMenus);
                     break;
             }
-            if (t.Backdrop != null)
-            {
-                // Placed custom menus (title) are not measured by PlaceMenu.
-                if (t.IsOpen)
-                    MeasureIfDue(t);
-                MenuBackdrop.Sync(t);
-            }
+            // Placed custom menus (title, boarding pass) are not measured by PlaceMenu.
+            if (t.Strip && t.IsOpen)
+                MeasureIfDue(t);
         }
         return interactive;
     }
 
     /// <summary>
-    /// A menu opened, a window popped up or the page changed: hide any new dimmer before this frame renders
+    /// A menu opened, a window popped up or the page changed: hide any new backdrop before this frame renders
     /// and re-measure every frame until the page stops scaling in (ScaleOnEnable).
     /// </summary>
     private static void WatchPages(TrackedCanvas t)
     {
         var page = t.Pages != null ? t.Pages.currentPage : null;
-        var opened = t.IsOpen && !t.BackdropWasOpen;
-        t.BackdropWasOpen = t.IsOpen;
+        var opened = t.IsOpen && !t.StripWasOpen;
+        t.StripWasOpen = t.IsOpen;
         if (!opened && !t.Rescan && page == t.LastPage)
             return;
         t.LastPage = page;
-        t.Rescan = false;
-        if (!t.IsOpen)
+        // Hidden placements scale the canvas to nothing: try again once it is placed.
+        t.Rescan = Degenerate(t);
+        if (!t.IsOpen || t.Rescan)
             return;
-        HideDimmers(t);
+        Strip(t);
         t.NextMeasure = 0f;
         t.Settled = false;
         t.SettleUntil = Time.unscaledTime + SettleSeconds;
@@ -433,6 +433,8 @@ internal static class WorldCanvases
         var size = t.ContentSize;
         var center = t.ContentCenter;
         MeasureContent(t);
+        if (t.Strip)
+            BackdropStrip.Reassert(t);
         if (!t.Settled)
             t.Settled =
                 Time.unscaledTime >= t.SettleUntil
@@ -448,40 +450,24 @@ internal static class WorldCanvases
 
     /// <summary>
     /// Bounds of the drawn graphics in canvas pixels (relative to the canvas pivot), clipped to the canvas and
-    /// skipping full-canvas backdrops (dark ones are handed to <see cref="MenuBackdrop"/> to hide) and our own
-    /// backdrop. Nothing drawn means the whole canvas.
+    /// skipping full-canvas ones (dimmers, vignettes). Nothing drawn means the whole canvas.
     /// </summary>
     private static void MeasureContent(TrackedCanvas t)
     {
         var bounds = t.Rect.rect;
         var min = new Vector2(float.MaxValue, float.MaxValue);
         var max = new Vector2(float.MinValue, float.MinValue);
-        Graphic probe = null;
-        var probeArea = 0f;
         t.Canvas.GetComponentsInChildren(false, graphics);
         foreach (var g in graphics)
         {
-            if (!g.isActiveAndEnabled || g.color.a < 0.01f || g == t.Backdrop)
+            if (!g.isActiveAndEnabled || g.color.a < 0.01f)
                 continue;
-            if (!Clip(t, g, bounds, out var lo, out var hi))
+            if (!Clip(t, g, bounds, out var lo, out var hi) || CoversCanvas(bounds, lo, hi))
                 continue;
-            if (CoversCanvas(bounds, lo, hi))
-            {
-                if (t.Backdrop != null)
-                    MenuBackdrop.OnFullCanvasGraphic(t, g);
-                continue;
-            }
             min = Vector2.Min(min, lo);
             max = Vector2.Max(max, hi);
-            var area = (hi.x - lo.x) * (hi.y - lo.y);
-            if (area > probeArea)
-            {
-                probeArea = area;
-                probe = g;
-            }
         }
         graphics.Clear();
-        t.FadeProbe = probe;
         if (max.x <= min.x)
         {
             t.ContentSize = bounds.size;
@@ -492,27 +478,29 @@ internal static class WorldCanvases
         t.ContentCenter = (min + max) * 0.5f;
     }
 
-    /// <summary>Hides dimmers on pages that are still closed, so they never flash before the next measure.</summary>
-    private static void HideDimmers(TrackedCanvas t)
+    /// <summary>Hides backdrops on the canvas, closed pages included, so they never flash before the next measure.
+    /// Transparent ones too: a dimmer faded in later (color.a rising from 0) stays hidden.</summary>
+    private static void Strip(TrackedCanvas t)
     {
         if (Degenerate(t))
-            return;
-        MenuBackdrop.PruneDimmers(t);
-        var bounds = t.Rect.rect;
-        t.Canvas.GetComponentsInChildren(true, graphics);
-        // Transparent ones too: a dimmer faded in later (color.a rising from 0) stays hidden.
-        foreach (var g in graphics)
-            if (
-                g != t.Backdrop
-                && Clip(t, g, bounds, out var lo, out var hi)
-                && CoversCanvas(bounds, lo, hi)
-            )
-                MenuBackdrop.OnFullCanvasGraphic(t, g);
-        graphics.Clear();
+            t.Rescan = true;
+        else
+            BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value);
+    }
+
+    /// <summary>UI.MenuPanels changed: show or hide the panels on every converted menu at once.</summary>
+    public static void OnMenuPanelsChanged()
+    {
+        foreach (var t in tracked)
+            if (t.Converted && t.Strip)
+            {
+                BackdropStrip.Restore(t, panelsOnly: true);
+                t.Rescan = true;
+            }
     }
 
     /// <summary>A graphic's rect in canvas pixels, clipped to the canvas. False when nothing is left.</summary>
-    private static bool Clip(
+    internal static bool Clip(
         TrackedCanvas t,
         Graphic g,
         Rect bounds,
@@ -528,9 +516,10 @@ internal static class WorldCanvases
         return hi.x > lo.x && hi.y > lo.y;
     }
 
-    /// <summary>Full-canvas backdrops (dimmers, vignettes) span at least 90% of the canvas both ways.</summary>
+    /// <summary>Full-canvas graphics (dimmers, vignettes) span most of the canvas both ways.</summary>
     private static bool CoversCanvas(Rect bounds, Vector2 lo, Vector2 hi) =>
-        hi.x - lo.x >= bounds.width * 0.9f && hi.y - lo.y >= bounds.height * 0.9f;
+        hi.x - lo.x >= bounds.width * BackdropRules.FullCanvas
+        && hi.y - lo.y >= bounds.height * BackdropRules.FullCanvas;
 
     private static void Apply(
         TrackedCanvas t,
