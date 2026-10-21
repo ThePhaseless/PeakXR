@@ -29,7 +29,7 @@ public sealed class UIMenuFeature : Feature
         KillLoadingScreenPatch.Runtime = runtime;
 
         // Title menu canvas (MainMenu root holds MainMenuPageHandler) and every LoadingScreen prefab's canvas.
-        CanvasRules.AddCustom("MainMenuPageHandler", stage);
+        CanvasRules.AddCustomMenu("MainMenuPageHandler", stage);
         CanvasRules.AddCustom("LoadingScreen", space);
     }
 }
