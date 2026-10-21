@@ -74,8 +74,9 @@ internal sealed class DesktopMirror
             if (desc.blitParamsCount > 0)
             {
                 desc.GetBlitParameter(0, out var p);
-                Blit(p.srcTex, p.srcTexArraySlice, p.srcRect);
-                Note("blit params");
+                // The provider's srcRect already crops the eye to the window's aspect; draw the whole eye instead.
+                Blit(p.srcTex, p.srcTexArraySlice, new Rect(0f, 0f, 1f, 1f));
+                Note("blit params", p.srcRect);
                 return;
             }
         }
@@ -88,13 +89,13 @@ internal sealed class DesktopMirror
     }
 
     /// <summary>Logs the mirror path once per change, so a log shows which one drew the window.</summary>
-    private void Note(string path)
+    private void Note(string path, Rect providerRect = default)
     {
         if (ReferenceEquals(path, lastPath))
             return;
         lastPath = path;
         Plugin.Log.LogInfo(
-            $"[rig.camera] desktop mirror via {path} (flip {SystemInfo.graphicsUVStartsAtTop}, copy shader {blit != null})"
+            $"[rig.camera] desktop mirror via {path} (flip {SystemInfo.graphicsUVStartsAtTop}, copy shader {blit != null}, provider rect {providerRect})"
         );
     }
 
