@@ -225,4 +225,14 @@ public class RigMathTests
             round = RigMath.TurnShift(round, 30f + 45f * i, 30f + 45f * (i + 1), offset.X);
         TestUtil.Near(shift, round, 1e-5f);
     }
+
+    [Fact]
+    public void TurnSettleRate_IsZeroStandingStill_AndScalesWithMoveInput()
+    {
+        // No input: the view never drifts on its own.
+        Assert.Equal(0f, RigMath.TurnSettleRate(0f, 1.5f));
+        Assert.Equal(0f, RigMath.TurnSettleRate(0.05f, 1.5f));
+        TestUtil.Near(0.75f, RigMath.TurnSettleRate(0.5f, 1.5f), 1e-6f);
+        TestUtil.Near(1.5f, RigMath.TurnSettleRate(3f, 1.5f), 1e-6f);
+    }
 }

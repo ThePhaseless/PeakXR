@@ -112,6 +112,14 @@ namespace PeakXR.Core
             + RotateYaw(fromYawDeg, new Vector3(0f, 0f, forward));
 
         /// <summary>
+        /// Rate (1/s) at which a <see cref="TurnShift"/> glides back onto the avatar's eyes: only while the player
+        /// moves (<paramref name="moveInput"/> 0..1, stick or room-scale walking), where their own motion masks it.
+        /// Standing still it is 0: a drift nobody asked for is vection.
+        /// </summary>
+        public static float TurnSettleRate(float moveInput, float rate) =>
+            moveInput > 0.1f ? rate * MathF.Min(moveInput, 1f) : 0f;
+
+        /// <summary>
         /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
         /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the
         /// view does not rotate on its own.
