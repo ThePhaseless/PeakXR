@@ -78,7 +78,8 @@ public sealed class RenderFixesFeature : Feature
             true,
             new ConfigDescription(
                 "Lower the rendered part of the eye buffers when the GPU misses the headset's frame time, and raise "
-                    + "it again slowly when there is headroom (XRSettings.renderViewportScale)."
+                    + "it again slowly when there is headroom (XRSettings.renderViewportScale). OpenVR only: under OpenXR it stays off, "
+                    + "because the runtime would show the unscaled frame."
             )
         );
         DynamicResolutionMin = Plugin.Settings.Bind(

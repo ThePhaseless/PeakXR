@@ -372,7 +372,9 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void UpdateDynamicResolution()
     {
-        if (!RenderFixesFeature.DynamicResolution.Value)
+        // OpenXR (MultiPass) renders the scaled viewport but submits the full image rect, so the headset showed the
+        // game in one corner of each eye over stale pixels (in-game VR run, 2026-10-21). Viewport scaling is OpenVR only.
+        if (!RenderFixesFeature.DynamicResolution.Value || VRSession.Running == VRRuntime.OpenXR)
         {
             if (XRSettings.renderViewportScale != 1f)
                 XRSettings.renderViewportScale = 1f;
