@@ -174,4 +174,39 @@ public class PanelMathTests
         TestUtil.Near(0.001f, PanelMath.MetersPerPixel(1.92f, 1920f), 1e-7f);
         Assert.Equal(0.001f, PanelMath.MetersPerPixel(1f, 0f));
     }
+
+    [Fact]
+    public void MenuScale_FullScreenContentKeepsMenuWidth()
+    {
+        // Content spanning the whole 1920x1080 canvas sizes exactly like the plain width fit.
+        TestUtil.Near(
+            PanelMath.MetersPerPixel(1.6f, 1920f),
+            PanelMath.MenuMetersPerPixel(1920f, 1080f, 1.6f, 1.8f),
+            1e-7f
+        );
+    }
+
+    [Fact]
+    public void MenuScale_SmallContentGrowsUpToTextCap()
+    {
+        // The pause menu (logo and five buttons, about 400x540 px) stops at the angular cap.
+        float s = PanelMath.MenuMetersPerPixel(400f, 540f, 1.6f, 1.8f);
+        TestUtil.Near(1.8f * MathF.Tan(PanelMath.MaxMenuDegreesPerPixel / 57.29578f), s, 1e-6f);
+        Assert.True(s > 2.5f * PanelMath.MetersPerPixel(1.6f, 1920f));
+        // 20 px body text then spans 1.4 degrees.
+        TestUtil.Near(1.4f, 2f * MathF.Atan(10f * s / 1.8f) * 57.29578f, 0.01f);
+    }
+
+    [Fact]
+    public void MenuScale_TallContentFitsHeight()
+    {
+        float s = PanelMath.MenuMetersPerPixel(600f, 1000f, 1.6f, 3f);
+        TestUtil.Near(1.6f * PanelMath.MenuHeightRatio / 1000f, s, 1e-7f);
+    }
+
+    [Fact]
+    public void MenuScale_EmptyContentFallsBackToWidthFit()
+    {
+        Assert.True(PanelMath.MenuMetersPerPixel(0f, 0f, 1.6f, 1.8f) > 0f);
+    }
 }

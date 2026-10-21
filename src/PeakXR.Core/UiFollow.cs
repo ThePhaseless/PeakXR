@@ -121,5 +121,33 @@ namespace PeakXR.Core
         /// <paramref name="widthMeters"/>. Falls back to 1 mm per pixel for an empty canvas.</summary>
         public static float MetersPerPixel(float widthMeters, float widthPixels) =>
             widthPixels > 0f ? widthMeters / widthPixels : 0.001f;
+
+        /// <summary>Angular size cap for one canvas pixel on a menu. PEAK's 1080p menus use about 18-24 px body
+        /// text; 0.07 degrees per pixel makes 20 px text 1.4 degrees tall (about 24 mm at 1 m), the usual VR
+        /// reading size, so small menus grow to it and no further.</summary>
+        public const float MaxMenuDegreesPerPixel = 0.07f;
+
+        /// <summary>Tallest menu content as a fraction of the menu width: 1.2 m at the 1.6 m default, about 37
+        /// degrees at 1.8 m, so a tall menu is read with the eyes and a small nod.</summary>
+        public const float MenuHeightRatio = 0.75f;
+
+        /// <summary>
+        /// Metres per canvas pixel for a menu whose visible content spans <paramref name="contentWidth"/> by
+        /// <paramref name="contentHeight"/> canvas pixels: the content fits <paramref name="maxWidthMeters"/> wide
+        /// (and <see cref="MenuHeightRatio"/> of that tall) but never exceeds the text-size cap at
+        /// <paramref name="distance"/>. Full-screen content sizes exactly like <see cref="MetersPerPixel"/>.
+        /// </summary>
+        public static float MenuMetersPerPixel(
+            float contentWidth,
+            float contentHeight,
+            float maxWidthMeters,
+            float distance
+        )
+        {
+            float fitWidth = maxWidthMeters / MathF.Max(contentWidth, 1f);
+            float fitHeight = maxWidthMeters * MenuHeightRatio / MathF.Max(contentHeight, 1f);
+            float cap = distance * MathF.Tan(MaxMenuDegreesPerPixel / UnityQuat.Rad2Deg);
+            return MathF.Min(cap, MathF.Min(fitWidth, fitHeight));
+        }
     }
 }

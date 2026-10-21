@@ -77,7 +77,12 @@ internal sealed class UIWorldSettings
                 ui,
                 "MenuWidth",
                 1.6f,
-                Range("Width of a full-screen menu panel, in metres.", 0.8f, 3f)
+                Range(
+                    "Width of a full-screen menu panel, in metres. Smaller menus (pause) grow until their text is "
+                        + "comfortable to read.",
+                    0.8f,
+                    3f
+                )
             ),
             MenuTilt = cfg.Bind(
                 ui,
