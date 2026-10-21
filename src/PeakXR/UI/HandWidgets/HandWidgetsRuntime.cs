@@ -110,7 +110,7 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
             // A held interaction's ring sits under the target's label (ui.spatial), where the action happens.
             if (
                 ringSource == ProgressSource.Interactable
-                && TargetPrompt.TryRing(out var atTarget, out var width)
+                && TargetPrompt.TryRing(rig, out var atTarget, out var width)
             )
                 ring.Pose(atTarget, head.position, width);
             else if (hand != null)

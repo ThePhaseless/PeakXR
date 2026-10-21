@@ -79,7 +79,7 @@ Shared contracts (written first, other features code against them):
 
 ## UI placement in VR
 
-No game UI stays fixed to the screen or the head in VR. Each element has a 3D anchor: the body (wrist, belt, follow panel), a hand, the held item or a controller, the target object, or another player. The only head-attached exception is perception effects, which stay a soft glow at the edge of the view.
+No game UI stays fixed to the screen or the head in VR. Each element has a 3D anchor: the body (wrist, belt), a hand, the held item or a controller, the target object, a world sign, or another player. The only head-attached exception is perception effects, which stay a soft glow at the edge of the view. The body follow panel remains only for `HudMode = Body`, as the fallback for a HUD part a feature could not move, and for unknown overlay canvases (`CanvasKind.Info`), each logged at startup as `[ui.world] canvas '<name>' ... -> Info`.
 
 | Game UI (source) | Anchor in VR | Owner | Setting |
 |---|---|---|---|
@@ -87,12 +87,15 @@ No game UI stays fixed to the screen or the head in VR. Each element has a 3D an
 | Title, loading | 3D title stage, loading space | `ui.menu` | |
 | Kiosk boarding pass, run options | docked at the kiosk | `ui.lobby` | |
 | Interact name and prompts (`GUIManager.interactName`, `interactPrompt*`) | at the target, in front of `IInteractible.Center()`, level, facing you | `ui.spatial` | `UI.TargetPrompt` |
+| Prompts without a target: piton (SETPITON), lunge (`interactPromptLunge`), web struggle (`strugglePrompt`) | above the acting hand, in the same label | `ui.spatial` | `UI.TargetPrompt` |
 | Hold ring (`UI_UseItemProgress`) | item use and pitons: above the acting hand; held interaction: under the target label | `ui.hand`, `ui.spatial` | `UI.Hand.ProgressRing` |
 | Item prompts (`itemPromptMain/Secondary/Scroll/Drop/Throw`) | beside the controller button that does it, shown for 3 s after a change and while you look at a hand | `ui.spatial` | `UI.ButtonLabels` |
 | Stamina bar, afflictions, numb mushrooms, dying bar | off-hand wrist (default); the body panel in `HudMode = Body` | `ui.world` | `UI.HUD.HudMode` |
 | Hotbar, backpack, temporary slot | belt of 3D slots; 2D cells hidden | `inventory.vr` | `Inventory.SlotGhosts` |
 | Rope length (`UI_Rope`), item fuel | next to the held spool; fuel arc beside the holding hand | `ui.spatial` | `UI.HeldItemGauges` |
-| Biome title (`heroObject`), fog, lava, gloom and ghost banners | world-locked sign 30 m ahead along your view at the moment it appears, above the horizon | `ui.spatial` | `UI.WorldBanners` |
+| Throw charge bar (`throwGO`, button fallback) | above the throwing hand | `ui.spatial` | `UI.HeldItemGauges` |
+| Biome title (`heroObject`), fog, lava, gloom and ghost banners, ascent title (`AscentUI`), endgame countdown, win and lose cards (`EndgameCounter`) | world-locked sign up to 30 m ahead along your view when it appears, above the horizon, brought closer by a cliff in the way at the same angular size; placed again if you turn or move far from it | `ui.spatial` | `UI.WorldBanners` |
+| Quicksave toast, mute icon, voice indicators | off-hand wrist, below the status bar (body panel in `HudMode = Body`) | `ui.spatial` | `UI.HUD.HudMode` |
 | Emote and backpack wheels | at the opening hand | `ui.wheels` | |
 | Friend item-use feed | on a hand | `ui.hand` | `UI.Hand.FriendFeed` |
 | Passport, guidebook | books held at the hand | `ui.passport` | |
@@ -102,7 +105,7 @@ No game UI stays fixed to the screen or the head in VR. Each element has a 3D an
 | Spectating: switch hint (`spectatingInputs`) | up and down arrows on the stick that switches | `ui.spatial` | `UI.SpectateOnPlayer` |
 | Spectating: your own dying or dead bar | your wrist | `ui.world` | `UI.HUD.HudMode` |
 | Reticle | hidden: you aim with your hand and the prompt shows at the target. `Head` pins it to the view on request | `ui.world` | `UI.HUD.Reticle` |
-| Throw charge bar, struggle prompt, lunge prompt, ascent, endgame counter, quicksave and other toasts, mute icon | body follow panel | `ui.world` | |
+| Unknown overlay canvases (`CanvasKind.Info`) | body follow panel, logged by name | `ui.world` | |
 | Binocular overlay | the binoculars' lens render texture | `interact.binoculars` | |
 | Screen transitions (`Transitions`) | head-locked VR fade | `ui.world` | |
 | Full-screen status flashes (cold, poison, injury, dying darkness, spores) | the one head exception: peripheral edge glow | `ui.status` | `UI.StatusOverlays` |

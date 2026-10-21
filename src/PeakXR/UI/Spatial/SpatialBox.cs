@@ -34,6 +34,7 @@ internal sealed class SpatialBox
     }
 
     private static readonly Dictionary<Material, Material> onTop = new();
+    private static readonly HashSet<Material> copies = new();
     private static readonly List<Graphic> graphics = new();
     private static readonly List<InputIcon> glyphs = new();
 
@@ -129,8 +130,10 @@ internal sealed class SpatialBox
             m.Item.anchoredPosition = m.Position;
         }
         moved.Clear();
-        foreach (var s in swapped)
+        // Reverse order: a part nested in another part was swapped twice and must unwind last-in first-out.
+        for (int i = swapped.Count - 1; i >= 0; i--)
         {
+            var s = swapped[i];
             // Only undo our own swap: a font change meanwhile (language switch) set a material we must keep.
             if (s.Graphic == null || !onTop.TryGetValue(s.Original, out var copy))
                 continue;
@@ -170,8 +173,64 @@ internal sealed class SpatialBox
             return;
         var parent = root != null ? root.lossyScale.x : 1f;
         var s = Mathf.Abs(parent) > 1e-6f ? metersPerPixel / parent : metersPerPixel;
-        Rect.localScale = new Vector3(s, s, s);
+        // A scale change re-meshes every text in the box; small ones (head bob) are not worth it.
+        var current = Rect.localScale.x;
+        if (current <= 0f || Mathf.Abs(s / current - 1f) > 0.015f)
+            Rect.localScale = new Vector3(s, s, s);
         Rect.SetPositionAndRotation(position, rotation);
+        // InputIcon turns its text back on when it is enabled again (OnEnable -> OnDeviceChange).
+        for (int i = 0; i < hiddenGlyphs.Count; i++)
+        {
+            var t = hiddenGlyphs[i];
+            if (t != null && t.enabled)
+                t.enabled = false;
+        }
+    }
+
+    /// <summary>Stacks the active parts top to bottom, in the order they were moved, centred on the box origin.
+    /// Returns the stack height in box pixels.</summary>
+    public float Stack(float spacing)
+    {
+        float height = 0f;
+        foreach (var m in moved)
+        {
+            if (m.Item != null && m.Item.gameObject.activeSelf)
+                height += m.Item.rect.height + (height > 0f ? spacing : 0f);
+        }
+        float y = height * 0.5f;
+        bool first = true;
+        foreach (var m in moved)
+        {
+            if (m.Item == null || !m.Item.gameObject.activeSelf)
+                continue;
+            if (!first)
+                y -= spacing;
+            first = false;
+            float h = m.Item.rect.height;
+            m.Item.anchoredPosition = new Vector2(0f, y - h * 0.5f);
+            y -= h;
+        }
+        return height;
+    }
+
+    /// <summary>Destroys on-top copies whose source material died with its scene.</summary>
+    public static void PruneMaterials()
+    {
+        List<Material> dead = null;
+        foreach (var pair in onTop)
+        {
+            if (pair.Key == null)
+                (dead ??= new List<Material>()).Add(pair.Key);
+        }
+        copies.RemoveWhere(m => m == null);
+        if (dead == null)
+            return;
+        foreach (var key in dead)
+        {
+            if (onTop.TryGetValue(key, out var copy) && copy != null)
+                Object.Destroy(copy);
+            onTop.Remove(key);
+        }
     }
 
     /// <summary>Box-local bounds (pixels) of the active parts' rects, for stacking and sizing.</summary>
@@ -234,7 +293,7 @@ internal sealed class SpatialBox
             if (g is TMP_Text text)
             {
                 var original = text.fontSharedMaterial;
-                if (original == null)
+                if (original == null || IsCopy(original))
                     continue;
                 text.fontSharedMaterial = OnTop(original);
                 swapped.Add(new Swapped { Graphic = g, Original = original });
@@ -242,12 +301,17 @@ internal sealed class SpatialBox
             else
             {
                 var original = g.material;
+                if (original == null || IsCopy(original))
+                    continue;
                 g.material = OnTop(original);
                 swapped.Add(new Swapped { Graphic = g, Original = original });
             }
         }
         graphics.Clear();
     }
+
+    /// <summary>Already drawn on top (a part nested in another moved part).</summary>
+    private static bool IsCopy(Material m) => copies.Contains(m);
 
     /// <summary>One shared copy per source material that skips the depth test (uGUI and TMP shaders read their
     /// ZTest from <c>unity_GUIZTestMode</c>).</summary>
@@ -258,6 +322,7 @@ internal sealed class SpatialBox
         copy = new Material(source) { name = source.name + " (PeakXR on top)" };
         copy.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         onTop[source] = copy;
+        copies.Add(copy);
         return copy;
     }
 }

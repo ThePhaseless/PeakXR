@@ -12,7 +12,8 @@ namespace PeakXR.UI.Spatial;
 /// <c>GUIManager.UpdateRope</c>, A/GUIManager.cs:635, while a <c>RopeSpool</c> is held) moves next to the spool, and
 /// the item's fuel (<c>DataEntryKey.UseRemainingPercentage</c>, the value the hotbar fuel bar reads in
 /// <c>InventoryItemUI.TrySetFuel</c>, A/InventoryItemUI.cs:159) shows as an arc by the holding hand. The arc reuses
-/// the progress ring's sprite (A/UI_UseItemProgress.cs:7) and is redrawn only when the value changes.
+/// the progress ring's sprite (A/UI_UseItemProgress.cs:7) and is redrawn only when the value changes. The throw
+/// charge bar (<c>throwGO</c>, A/GUIManager.cs:112, button fallback only) sits above the throwing hand.
 /// </summary>
 internal sealed class HeldGauges
 {
@@ -20,6 +21,7 @@ internal sealed class HeldGauges
     private const float FuelPixels = 100f;
 
     private readonly SpatialBox rope = new("PeakXR_RopeGauge");
+    private readonly SpatialBox throwBar = new("PeakXR_ThrowBar");
     private GameObject fuelRoot;
     private Image fuelImage;
     private GUIManager spriteFrom;
@@ -29,12 +31,14 @@ internal sealed class HeldGauges
     public void Release()
     {
         rope.Restore();
+        throwBar.Restore();
         SetFuel(false);
     }
 
     public void Forget()
     {
         rope.Forget();
+        throwBar.Forget();
         spriteFrom = null;
     }
 
@@ -44,6 +48,11 @@ internal sealed class HeldGauges
         {
             rope.Move(hudRoot, gui.ui_rope.transform, Vector2.zero);
             rope.SetVisible(true);
+        }
+        if (!throwBar.Holding && gui.throwGO != null)
+        {
+            throwBar.Move(hudRoot, gui.throwGO.transform, Vector2.zero);
+            throwBar.SetVisible(true);
         }
         if (spriteFrom != gui)
         {
@@ -81,6 +90,24 @@ internal sealed class HeldGauges
         if (item == null)
             return;
         var eye = rig.Head.position;
+        if (throwBar.Holding && throwBar.Item(0) != null && throwBar.Item(0).gameObject.activeSelf)
+        {
+            // The button-held throw charge (A/GUIManager.cs:656): just above the throwing hand.
+            var hand = rig.Hand(LocalHold.ItemInLeftHand);
+            if (hand != null)
+            {
+                var p = hand.position + Vector3.up * 0.1f;
+                p += (eye - p).normalized * 0.03f;
+                throwBar.Pose(
+                    p,
+                    SpatialRuntime.FaceEye(p, eye),
+                    SpatialMath.MetersPerPixel(
+                        Vector3.Distance(p, eye),
+                        SpatialRuntime.DegreesPerPixel * 0.8f
+                    )
+                );
+            }
+        }
         if (rope.Holding && rope.Item(0) != null && rope.Item(0).gameObject.activeSelf)
         {
             // Above the spool and a little toward you, clear of the rope that pays out of it.

@@ -13,7 +13,7 @@ namespace PeakXR.UI.Spatial;
 /// <c>Character.observedCharacter</c>, A/Character.cs:210), what the HUD says about them goes on them. Their name
 /// (<c>spectatingNameText</c>, A/GUIManager.cs:136, set in <c>UpdateSpectate</c> :599) and the status bar, which
 /// already shows the observed character (A/StaminaBar.cs:104-181, A/BarAffliction.cs:42), float above their head as
-/// a nameplate; their hotbar (<c>Player.itemSlots</c>/<c>backpackSlot</c>, A/Player.cs:17-21, the slots
+/// a nameplate; their hotbar (<c>Player.itemSlots</c>, temporary slot and <c>backpackSlot</c>, A/Player.cs:17-21, the slots
 /// <c>GUIManager.UpdateItems</c> :1109 shows) becomes icons around their belt; the switch hint
 /// (<c>spectatingInputs</c>, :134, shown while dead at :614) becomes up/down arrows on the stick that switches.
 /// Your own dying bar stays on your wrist (ui.world).
@@ -25,7 +25,11 @@ internal sealed class SpectateView
     private const float BeltSpacing = 32f;
     private const float IconDegrees = 4f;
     private const float ArrowDegrees = 2.2f;
-    private const int Slots = 4;
+    private const int Slots = 5;
+
+    /// <summary>Belt order, left to right as you see it: hotbar 0-2, the overflow slot, the backpack
+    /// (<c>Player.GetItemSlot</c>, A/Player.cs:246: 3 is the backpack, 250 the temporary slot).</summary>
+    private static readonly byte[] SlotIds = { 0, 1, 2, 250, 3 };
 
     /// <summary>The nameplate holds the status bar: ui.world's HUD split leaves it alone meanwhile.</summary>
     public static bool ClaimsStatus { get; set; }
@@ -73,11 +77,7 @@ internal sealed class SpectateView
         var player = spec != null ? spec.player : null;
         for (int i = 0; i < Slots; i++)
         {
-            ItemSlot slot =
-                player == null ? null
-                : i < player.itemSlots.Length ? player.itemSlots[i]
-                : i == Slots - 1 ? player.backpackSlot
-                : null;
+            var slot = player != null ? player.GetItemSlot(SlotIds[i]) : null;
             var item = slot != null && !slot.IsEmpty() ? slot.prefab : null;
             if (item != shownItems[i])
             {
@@ -127,7 +127,7 @@ internal sealed class SpectateView
                 continue;
             var p = hip + SpatialMath.ArcSlot(i, Slots, yaw, BeltRadius, BeltSpacing).ToUnity();
             var size = SpatialMath.SpanMeters(Vector3.Distance(p, eye), IconDegrees);
-            bool held = selected.IsSome && selected.Value == i;
+            bool held = selected.IsSome && selected.Value == SlotIds[i];
             if (held)
                 size *= 1.3f;
             icon.SetPositionAndRotation(p, SpatialRuntime.FaceEye(p, eye));

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Avatar;
+using PeakXR.Interact;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
@@ -40,14 +41,33 @@ internal sealed partial class SelfTestRunner
                 ? SandboxActions.LastSpawned.GetComponent<Item>()
                 : null;
         spawned.Add(SandboxActions.LastSpawned);
-        yield return Until(
-            () => world != null && ReferenceEquals(Interaction.instance.currentHovered, world),
-            5f,
-            "the Apple never became the hovered target"
-        );
-        if (!stepOk)
+        if (world == null)
+        {
+            Fail("spawned Apple has no Item");
             yield break;
-        yield return Wait(0.3f);
+        }
+        // Deterministic hover: the rest hands do not point, so the game's ray comes from the head (Interaction.cs:196);
+        // hold the Apple still on that ray, 0.8 m out, instead of letting it fall off it.
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        float until = Now + 5f;
+        while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            Fail(
+                $"the Apple never became the hovered target (aim hand {PhysicalInteraction.AimHand})"
+            );
+            yield break;
+        }
+        for (float t = Now + 0.3f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
         var label = GUIManager.instance.interactName.transform.parent;
         var fails = new List<string>();
         if (
@@ -73,6 +93,14 @@ internal sealed partial class SelfTestRunner
             fails,
             new List<string> { $"label at {(label != null ? label.position : Vector3.zero)}" }
         );
+    }
+
+    static void HoldOnHeadRay(Item item, Transform head)
+    {
+        if (item == null)
+            return;
+        var at = head.position + head.forward * 0.8f;
+        item.transform.position += at - item.Center();
     }
 
     /// <summary>ui.02: holding an Apple shows its use prompt (<c>itemPromptMain</c>, GUIManager.cs:102) beside the
@@ -119,6 +147,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var gui = GUIManager.instance;
+        // The title coroutine reads the day counter (GUIManager.cs:499).
+        if (DayNightManager.instance == null)
+        {
+            stepNote = "no DayNightManager here; skipped";
+            yield break;
+        }
         gui.SetHeroTitle("PEAKXR", null);
         yield return Until(() => gui.heroObject.activeSelf, 3f, "hero title never showed");
         if (!stepOk)

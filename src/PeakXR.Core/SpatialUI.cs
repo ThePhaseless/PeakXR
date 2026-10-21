@@ -114,15 +114,18 @@ namespace PeakXR.Core
         public float LowStamina = 0.2f;
         public float Rearm = 0.4f;
 
-        /// <summary>A status counts as present above this (statuses run 0..1 per segment).</summary>
+        /// <summary>A status becomes present above this (statuses run 0..1 per segment)...</summary>
         public float Present = 0.02f;
+
+        /// <summary>...and absent again only below this, so one hovering at the edge alerts once.</summary>
+        public float Absent = 0.005f;
         public float Cooldown = 1f;
         public float PulseSeconds = 0.6f;
 
         /// <summary>Index of a status that never alerts (one that comes and goes with routine actions), or -1.</summary>
         public int Ignore = -1;
 
-        private float[] last = Array.Empty<float>();
+        private bool[] present = Array.Empty<bool>();
         private bool primed,
             low,
             pending;
@@ -136,9 +139,9 @@ namespace PeakXR.Core
         public bool Update(float stamina, float[] statuses, float dt)
         {
             int n = statuses?.Length ?? 0;
-            if (last.Length != n)
+            if (present.Length != n)
             {
-                last = new float[n];
+                present = new bool[n];
                 primed = false;
             }
 
@@ -149,7 +152,7 @@ namespace PeakXR.Core
                     fire = true;
                 for (int i = 0; i < n; i++)
                 {
-                    if (i != Ignore && last[i] <= Present && statuses[i] > Present)
+                    if (i != Ignore && !present[i] && statuses[i] > Present)
                         fire = true;
                 }
             }
@@ -158,7 +161,12 @@ namespace PeakXR.Core
             else if (stamina > Rearm)
                 low = false;
             for (int i = 0; i < n; i++)
-                last[i] = statuses[i];
+            {
+                if (statuses[i] > Present)
+                    present[i] = true;
+                else if (statuses[i] < Absent)
+                    present[i] = false;
+            }
             primed = true;
 
             sinceAlert += dt;

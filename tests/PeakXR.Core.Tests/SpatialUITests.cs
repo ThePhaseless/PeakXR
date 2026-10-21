@@ -174,6 +174,18 @@ public class StatusAlertTests
     }
 
     [Fact]
+    public void Present_HasHysteresis()
+    {
+        var a = new StatusAlert { Present = 0.02f, Absent = 0.005f };
+        a.Update(1f, Statuses(), Dt);
+        Assert.True(a.Update(1f, Statuses(cold: 0.03f), 2f));
+        Assert.False(a.Update(1f, Statuses(cold: 0.015f), 2f));
+        Assert.False(a.Update(1f, Statuses(cold: 0.03f), 2f));
+        a.Update(1f, Statuses(cold: 0f), 2f);
+        Assert.True(a.Update(1f, Statuses(cold: 0.03f), 2f));
+    }
+
+    [Fact]
     public void IgnoredStatus_NeverAlerts()
     {
         var a = new StatusAlert { Ignore = 2 };

@@ -75,7 +75,7 @@ internal sealed class UIWorldSettings
         const string ui = "UI",
             hud = "UI.HUD",
             pointer = "UI.Pointer";
-        return new UIWorldSettings
+        var s = new UIWorldSettings
         {
             MenuDistance = cfg.Bind(
                 ui,
@@ -197,6 +197,35 @@ internal sealed class UIWorldSettings
                 )
             ),
         };
+        Migrate(cfg, s, hud);
+        return s;
+    }
+
+    /// <summary>
+    /// Layout 1 changed three defaults (HUD on the wrist, the off hand's wrist, no head-locked reticle). A config
+    /// saved before it still holds the old defaults, so move each entry that equals its old default, once.
+    /// </summary>
+    private static void Migrate(ConfigFile cfg, UIWorldSettings s, string section)
+    {
+        var version = cfg.Bind(
+            section,
+            "LayoutVersion",
+            0,
+            new ConfigDescription(
+                "Internal: the default layout this file was upgraded to.",
+                null,
+                UI.Settings.VRTab.HiddenTag
+            )
+        );
+        if (version.Value >= 1)
+            return;
+        if (s.Hud.Value == HudMode.Body)
+            s.Hud.Value = HudMode.Wrist;
+        if (s.WristHand.Value == WristSide.Left)
+            s.WristHand.Value = WristSide.OffHand;
+        if (s.Reticle.Value == ReticleMode.Head)
+            s.Reticle.Value = ReticleMode.Hidden;
+        version.Value = 1;
     }
 
     private static ConfigDescription Range(string text, float min, float max) =>

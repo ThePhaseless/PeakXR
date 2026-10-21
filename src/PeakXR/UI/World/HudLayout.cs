@@ -65,6 +65,13 @@ internal sealed class HudSplit
     /// <summary>0..1 bump that briefly grows the wrist HUD (ui.spatial status alerts).</summary>
     public static float WristPulse;
 
+    /// <summary>The wrist HUD was posed this frame, at <see cref="WristPosition"/> (centre of the status bar) and
+    /// <see cref="WristRotation"/> (up toward the fingers), so other wrist parts can sit beside it.</summary>
+    public static bool WristValid;
+    public static Vector3 WristPosition;
+    public static Quaternion WristRotation = Quaternion.identity;
+    private int measuredMask;
+
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
     {
@@ -97,7 +104,8 @@ internal sealed class HudSplit
         // While spectating the status bar rides on the friend's nameplate (ui.spatial), and with the body hotbar
         // (inventory.vr) the 2D hotbar stays hidden on the panel instead of filling the wrist.
         var plate = SpectateView.ClaimsStatus;
-        var bodyHotbar = SlotGhosts.Showing;
+        // Keyed on the settings, not on SlotGhosts.Showing, so focus loss (dashboard) does not re-lay the wrist.
+        var bodyHotbar = InventoryConfig.Instance.BodySlots && InventoryConfig.Instance.Ghosts;
         if (
             applied
             && reticle == appliedReticle
@@ -113,6 +121,7 @@ internal sealed class HudSplit
 
     public void Restore()
     {
+        WristValid = false;
         reticleBox.Restore();
         wristBox.Restore();
         if (gui != null && gui.heroBG != null)
@@ -158,26 +167,7 @@ internal sealed class HudSplit
             }
             // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
             MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
-            // Measure the moved groups only: the box itself is HUD-sized and would make the span the whole HUD.
-            bool any = false;
-            var bounds = default(Bounds);
-            for (int i = 0; i < box.childCount; i++)
-            {
-                var child = box.GetChild(i);
-                if (!child.gameObject.activeSelf)
-                    continue;
-                var b = RectTransformUtility.CalculateRelativeRectTransformBounds(box, child);
-                if (any)
-                    bounds.Encapsulate(b);
-                else
-                    bounds = b;
-                any = true;
-            }
-            if (any)
-            {
-                wristCenter = bounds.center;
-                wristSpan = Mathf.Max(1f, bounds.size.x);
-            }
+            MeasureWrist(box);
         }
 
         applied = true;
@@ -185,6 +175,44 @@ internal sealed class HudSplit
         appliedWrist = wrist;
         appliedPlate = plate;
         appliedBodyHotbar = bodyHotbar;
+    }
+
+    /// <summary>Measures the moved groups that are shown: the box itself is HUD-sized and would make the span the
+    /// whole HUD. Runs on apply and when a group shows or hides (the dying bar), not every frame.</summary>
+    private void MeasureWrist(RectTransform box)
+    {
+        measuredMask = ShownMask(box);
+        bool any = false;
+        var bounds = default(Bounds);
+        for (int i = 0; i < box.childCount; i++)
+        {
+            var child = box.GetChild(i);
+            if (!child.gameObject.activeSelf)
+                continue;
+            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(box, child);
+            if (any)
+                bounds.Encapsulate(b);
+            else
+                bounds = b;
+            any = true;
+        }
+        if (any)
+        {
+            wristCenter = bounds.center;
+            wristSpan = Mathf.Max(1f, bounds.size.x);
+        }
+    }
+
+    private static int ShownMask(RectTransform box)
+    {
+        int mask = 0;
+        int n = Mathf.Min(box.childCount, 31);
+        for (int i = 0; i < n; i++)
+        {
+            if (box.GetChild(i).gameObject.activeSelf)
+                mask |= 1 << i;
+        }
+        return mask;
     }
 
     /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD
@@ -237,17 +265,23 @@ internal sealed class HudSplit
     /// <summary>Poses the wrist container. Called once per frame after the canvases are placed.</summary>
     public void PoseWrist(VRRig rig, UIWorldSettings cfg)
     {
+        WristValid = false;
         if (!applied || !appliedWrist || wristBox.Rect == null)
             return;
         var hand = rig.Hand(cfg.WristLeft);
         if (hand == null)
             return;
+        if (ShownMask(wristBox.Rect) != measuredMask)
+            MeasureWrist(wristBox.Rect);
 
         // Back of the wrist, facing up out of the forearm; text up toward the fingers. Needs in-headset tuning.
         var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
         var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
         var width = cfg.WristWidth.Value * (1f + 0.15f * WristPulse);
         wristBox.Pose(anchor, rotation, wristCenter, width / wristSpan);
+        WristValid = true;
+        WristPosition = anchor;
+        WristRotation = rotation;
     }
 
     /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>

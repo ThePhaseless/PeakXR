@@ -25,6 +25,7 @@ internal sealed class SpatialRuntime : MonoBehaviour
     private readonly HeldGauges gauges = new();
     private readonly SpectateView spectate = new();
     private readonly StatusAlerts alerts = new();
+    private readonly WristExtras wristExtras = new();
     private GUIManager gui;
     private bool ready,
         wantTarget,
@@ -32,7 +33,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
         wantBanners,
         wantGauges,
         wantSpectate,
-        wantAlerts;
+        wantAlerts,
+        wantWrist;
 
     public static void Create()
     {
@@ -58,6 +60,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
             banners.Forget();
             gauges.Forget();
             spectate.Forget();
+            wristExtras.Forget();
+            SpatialBox.PruneMaterials();
             gui = current;
         }
 
@@ -79,6 +83,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
         wantGauges = ready && cfg.HeldItemGauges.Value && observingSelf;
         wantSpectate = ready && cfg.SpectateOnPlayer.Value && spec != null && spec != c;
         wantAlerts = ready && cfg.StatusAlerts.Value && observingSelf && c.data.fullyConscious;
+        // Small status icons follow the status bar to the wrist; in Body mode they stay on the body panel.
+        wantWrist = ready && UIWorldFeature.Settings.Hud.Value == HudMode.Wrist;
         SpectateView.ClaimsStatus = wantSpectate;
         SpectateView.BeltShowing = wantSpectate;
 
@@ -94,6 +100,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
             spectate.Release();
         if (!wantAlerts)
             alerts.Release();
+        if (!wantWrist)
+            wristExtras.Release();
 
         if (ready)
         {
@@ -131,6 +139,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
             spectate.Tick(gui, hudRoot, rig);
         if (wantAlerts)
             alerts.Tick(Character.localCharacter, dt);
+        if (wantWrist)
+            wristExtras.Tick(gui, hudRoot, rig);
     }
 
     private void OnBeforeRender()
@@ -148,6 +158,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
             gauges.Pose(rig);
         if (wantSpectate)
             spectate.Pose(rig);
+        if (wantWrist)
+            wristExtras.Pose(rig);
     }
 
     private void ReleaseAll()
@@ -158,6 +170,7 @@ internal sealed class SpatialRuntime : MonoBehaviour
         gauges.Release();
         spectate.Release();
         alerts.Release();
+        wristExtras.Release();
         SpectateView.ClaimsStatus = false;
         SpectateView.BeltShowing = false;
     }
