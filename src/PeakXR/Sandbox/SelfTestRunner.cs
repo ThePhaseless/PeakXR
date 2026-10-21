@@ -140,6 +140,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
+            yield return VRStep("vr.08-arm-reach", 15f, ArmReachCheck());
             if (hold)
             {
                 Finish();
