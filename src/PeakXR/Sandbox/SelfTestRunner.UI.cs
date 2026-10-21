@@ -244,8 +244,14 @@ internal sealed partial class SelfTestRunner
         var hero = GUIManager.instance.heroObject;
         yield return WaitFor(() => hero == null || !hero.activeInHierarchy, 8f);
         var box = rope.transform.parent;
-        float d = Vector3.Distance(rope.transform.position, HeldItem().Center());
-        yield return ShotAt("ui-04-rope-gauge", CentreOf(rope.transform));
+        // What is drawn, not the rect: UI_Rope's text and coil sit far from its rect's centre.
+        var text = rope.ropeLengthText;
+        var drawn =
+            text != null
+                ? text.transform.TransformPoint(text.textBounds.center)
+                : rope.transform.position;
+        float d = Vector3.Distance(drawn, HeldItem().Center());
+        yield return ShotAt("ui-04-rope-gauge", drawn);
         var fails = new List<string>();
         if (box == null || box.name != "PeakXR_RopeGauge")
             fails.Add($"rope gauge under '{(box != null ? box.name : "none")}'");

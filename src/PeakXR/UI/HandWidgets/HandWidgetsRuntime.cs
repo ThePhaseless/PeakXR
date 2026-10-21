@@ -22,7 +22,9 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
     private const float StepSeconds = 0.02f;
     private const float CompleteSeconds = 0.08f;
 
-    private readonly MovedWidget ring = new();
+    /// <summary>A <see cref="SpatialBox"/>, so the ring draws over the world like the labels: a held interaction's
+    /// ring under its target's label was hidden behind the food held over a fire and the flames.</summary>
+    private readonly SpatialBox ring = new("PeakXR_HandRing");
     private readonly MovedWidget feed = new();
     private readonly ProgressPulseTracker pulses = new();
     private GUIManager gui;
@@ -62,7 +64,13 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         var ringOnHand = ready && ringWidget != null && cfg.Ring.Value == RingPlacement.Hand;
         var feedOnHand =
             ready && gui.friendProgressTF != null && cfg.Feed.Value != FeedPlacement.Hud;
-        Sync(ring, ringOnHand, ringOnHand ? ringWidget.transform : null, "PeakXR_HandRing");
+        if (!ringOnHand)
+            ring.Restore();
+        else if (!ring.Holding)
+        {
+            ring.Move((RectTransform)gui.hudCanvas.transform, ringWidget.transform, Vector2.zero);
+            ring.SetVisible(true);
+        }
         Sync(feed, feedOnHand, feedOnHand ? gui.friendProgressTF : null, "PeakXR_HandFeed");
 
         var progress = 0f;
@@ -105,7 +113,7 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         var head = rig.Head;
         if (head == null)
             return;
-        if (ring.Active)
+        if (ring.Holding)
         {
             var hand = rig.Hand(ringLeft);
             // A held interaction's ring sits under the target's label (ui.spatial), where the action happens.
@@ -113,7 +121,7 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 ringSource == ProgressSource.Interactable
                 && TargetPrompt.TryRing(rig, out var atTarget, out var width)
             )
-                ring.Pose(atTarget, head.position, width);
+                PoseRing(atTarget, head.position, width);
             else if (hand != null)
             {
                 // Above the hand and a little toward the eyes, clear of the held item; parked low in view while
@@ -128,7 +136,7 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                     HandWidgetPlace.RingParked,
                     ringLeft
                 );
-                ring.Pose(pos.U(), head.position, cfg.RingSize.Value);
+                PoseRing(pos.U(), head.position, cfg.RingSize.Value);
             }
         }
         if (feed.Active)
@@ -153,6 +161,18 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 feed.Pose(pos, head.position, cfg.FeedWidth.Value);
             }
         }
+    }
+
+    /// <summary>Faces the ring toward the eye and scales it to <paramref name="widthMeters"/> wide.</summary>
+    private void PoseRing(Vector3 position, Vector3 eye, float widthMeters)
+    {
+        var item = ring.Item(0);
+        var to = position - eye;
+        if (item == null || to.sqrMagnitude < 1e-6f)
+            return;
+        // Layout containers can report zero width before their first row arrives.
+        var pixels = item.rect.width >= 8f ? item.rect.width : 200f;
+        ring.Pose(position, Quaternion.LookRotation(to, Vector3.up), widthMeters / pixels);
     }
 
     /// <summary>Same priority as A/UI_UseItemProgress.cs:31 <c>UpdateFillAmount</c>.</summary>

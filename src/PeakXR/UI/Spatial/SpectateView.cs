@@ -25,7 +25,13 @@ namespace PeakXR.UI.Spatial;
 internal sealed class SpectateView
 {
     private const float PlateLift = 0.45f;
-    private const float DeadPlateLift = 1.2f;
+
+    /// <summary>Rough radius of a body lying where it fell: its label goes just above that, as you see it.</summary>
+    private const float BodyRadius = 0.45f;
+
+    /// <summary>Smallest label text, in HUD pixels, as for a target label: the game's "spectating" line is sized
+    /// for a monitor and read as a speck a few metres out.</summary>
+    private const float MinFontPixels = 30f;
     private const float BeltRadius = 0.38f;
     private const float BeltSpacing = 32f;
     private const float IconDegrees = 4f;
@@ -54,6 +60,9 @@ internal sealed class SpectateView
         previous;
     private GameObject root;
     private bool grabbedSelf;
+
+    /// <summary>Box pixels from the plate's origin down to its lower edge (half the status bar, or 0).</summary>
+    private float plateBelow;
 
     public void Release()
     {
@@ -120,9 +129,18 @@ internal sealed class SpectateView
 
         if (plate.Holding)
         {
-            // Dead: over where they fell (VirtualCenter, Character.cs:257), not the parked body.
+            // Dead: over where they fell (VirtualCenter, Character.cs:257), not the parked body; just above the body
+            // as you see it and in front of it, like a target label, so it never lands on a wall behind it. A fixed
+            // 1.2 m lift put it on the wall 1.5 m above a body lying on the floor.
             var p = spec.data.dead
-                ? spec.VirtualCenter + Vector3.up * DeadPlateLift
+                ? SpatialMath
+                    .TargetLabel(
+                        spec.VirtualCenter.ToNumerics(),
+                        eye.ToNumerics(),
+                        BodyRadius,
+                        plateBelow * dpp
+                    )
+                    .ToUnity()
                 : spec.Head + Vector3.up * PlateLift;
             plate.Pose(
                 p,
@@ -194,6 +212,7 @@ internal sealed class SpectateView
     private void Grab(GUIManager gui, RectTransform hudRoot, bool self)
     {
         grabbedSelf = self;
+        plateBelow = 0f;
         if (gui.spectatingInputs != null)
         {
             // The game's hint shows keyboard or gamepad keys; the arrows on the stick replace it. Taken first, so
@@ -229,7 +248,9 @@ internal sealed class SpectateView
         {
             plate.Move(hudRoot, labelRect, Vector2.zero);
             plate.HideBackings(labelRect);
+            SpatialBox.Enlarge(labelRect, MinFontPixels);
             var barTop = barGroup is RectTransform r ? r.rect.height * 0.5f : 0f;
+            plateBelow = barTop;
             var content = plate.ContentBounds(labelRect);
             labelRect.anchoredPosition += new Vector2(
                 -content.center.x,

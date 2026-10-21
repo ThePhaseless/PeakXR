@@ -58,11 +58,69 @@ public class SpatialMathTests
         var center = new Vector3(x, y, z);
         const float halfHeight = 1.2f;
         var p = SpatialMath.TargetLabel(center, eye, radius, halfHeight);
-        // The label's lower edge clears the target's silhouette (its bounding sphere seen from the eye).
-        float silhouette =
-            MathF.Asin(MathF.Min(1f, radius / Vector3.Distance(eye, center))) * 180f / MathF.PI;
-        Assert.True(Degrees(p - eye, center - eye) - halfHeight >= silhouette);
+        // The label's lower edge clears the target's silhouette (its bounding sphere seen from the eye), up to the
+        // lift cap that keeps a target you are up against labelled next to it.
+        float silhouette = MathF.Min(
+            MathF.Asin(MathF.Min(1f, radius / Vector3.Distance(eye, center))) * 180f / MathF.PI,
+            SpatialMath.MaxSilhouetteDegrees
+        );
+        Assert.True(Degrees(p - eye, center - eye) - halfHeight >= silhouette - 1e-3f);
         Assert.False(float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsNaN(p.Z));
+    }
+
+    [Fact]
+    public void TargetLabel_CloseBigTarget_KeepsItsLabelNextToIt()
+    {
+        // An apple-sized target 0.5 m out fills 50 degrees of view: its label must not fly off 30 degrees above it.
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var center = new Vector3(0f, 1.4f, 0.5f);
+        const float halfHeight = 1.5f;
+        var p = SpatialMath.TargetLabel(center, eye, 0.22f, halfHeight);
+        float lift = Degrees(p - eye, center - eye);
+        Assert.True(
+            lift
+                <= SpatialMath.MaxSilhouetteDegrees
+                    + SpatialMath.LabelGapDegrees
+                    + halfHeight
+                    + 1e-3f
+        );
+        Assert.True(lift >= SpatialMath.MaxSilhouetteDegrees);
+    }
+
+    [Fact]
+    public void TargetLabel_ClearsAHeldItemInTheWay()
+    {
+        // Cooking: the food in your hand sits right where the fire's label would go.
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var fire = new Vector3(0f, 0.3f, 1.6f);
+        const float halfHeight = 1.5f;
+        var plain = SpatialMath.TargetLabel(fire, eye, 0.4f, halfHeight);
+        var food = eye + (plain - eye) * 0.45f;
+        const float foodRadius = 0.08f;
+        var p = SpatialMath.TargetLabel(fire, eye, 0.4f, halfHeight, food, foodRadius);
+        float foodSilhouette =
+            MathF.Asin(foodRadius / Vector3.Distance(eye, food)) * 180f / MathF.PI;
+        Assert.True(Degrees(p - eye, food - eye) - halfHeight >= foodSilhouette);
+        // Still above the fire, not flung away from it.
+        Assert.True(Degrees(p - eye, fire - eye) > Degrees(plain - eye, fire - eye));
+        Assert.True(Degrees(p - eye, fire - eye) < 45f);
+    }
+
+    [Fact]
+    public void TargetLabel_HeldItemOutOfTheWay_ChangesNothing()
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var fire = new Vector3(0f, 0.3f, 1.6f);
+        var plain = SpatialMath.TargetLabel(fire, eye, 0.4f, 1.5f);
+        var aside = SpatialMath.TargetLabel(
+            fire,
+            eye,
+            0.4f,
+            1.5f,
+            new Vector3(0.6f, 1.1f, 0.4f),
+            0.08f
+        );
+        TestUtil.Near(plain, aside, 1e-4f);
     }
 
     [Fact]
@@ -354,5 +412,68 @@ public class ControllerLabelTests
         );
         Assert.False(l);
         Assert.Equal(VRControl.StickDown, c);
+    }
+}
+
+public class HandLabelTests
+{
+    static float Degrees(Vector3 a, Vector3 b) =>
+        MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)), -1f, 1f))
+        * 180f
+        / MathF.PI;
+
+    [Fact]
+    public void StackRows_TopDownWithoutOverlap_CentredOnZero()
+    {
+        var heights = new[] { 1.2f, 0.8f, 1.6f };
+        var centres = new float[3];
+        SpatialMath.StackRows(heights, 3, 0.3f, centres);
+        Assert.True(centres[0] > centres[1] && centres[1] > centres[2]);
+        for (int i = 1; i < 3; i++)
+        {
+            float gap = (centres[i - 1] - heights[i - 1] * 0.5f) - (centres[i] + heights[i] * 0.5f);
+            TestUtil.Near(0.3f, gap, 1e-5f);
+        }
+        float top = centres[0] + heights[0] * 0.5f;
+        float bottom = centres[2] - heights[2] * 0.5f;
+        TestUtil.Near(0f, top + bottom, 1e-5f);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BesideHand_ClearsTheHandOnItsOuterSide(bool right)
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var hand = new Vector3(right ? 0.2f : -0.2f, 1.1f, 0.4f);
+        const float handRadius = 0.08f;
+        const float halfWidth = 2f;
+        var p = SpatialMath.BesideHand(eye, hand, handRadius, right, halfWidth, 0f);
+        // The label's near edge clears the hand's silhouette.
+        float silhouette = MathF.Asin(handRadius / Vector3.Distance(eye, hand)) * 180f / MathF.PI;
+        Assert.True(Degrees(p - eye, hand - eye) - halfWidth >= silhouette);
+        // On the outer side as you see it, at the hand's depth.
+        var dir = Vector3.Normalize(hand - eye);
+        var side = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, dir));
+        Assert.Equal(right, Vector3.Dot(p - hand, side) > 0f);
+        TestUtil.Near(Vector3.Distance(eye, hand), Vector3.Distance(eye, p), 1e-3f);
+    }
+
+    [Fact]
+    public void BesideHand_RowOffsetsMoveUpByThatAngle()
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var hand = new Vector3(0.2f, 1.1f, 0.4f);
+        var mid = SpatialMath.BesideHand(eye, hand, 0.08f, true, 2f, 0f);
+        var up = SpatialMath.BesideHand(eye, hand, 0.08f, true, 2f, 3f);
+        Assert.True(up.Y > mid.Y);
+        TestUtil.Near(3f, Degrees(up - eye, mid - eye), 0.05f);
+    }
+
+    [Fact]
+    public void BesideHand_HandAtTheEye_StaysFinite()
+    {
+        var p = SpatialMath.BesideHand(Vector3.One, Vector3.One, 0.08f, true, 2f, 1f);
+        Assert.False(float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsNaN(p.Z));
     }
 }

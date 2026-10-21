@@ -29,18 +29,43 @@ namespace PeakXR.Core
         /// <summary>Gap between the target's silhouette and the label's lower edge, in degrees.</summary>
         public const float LabelGapDegrees = 1.5f;
 
-        /// <summary>
-        /// Where the centre of an interact target's label goes: just above the target's silhouette as the eye sees it
-        /// (its bounding sphere of <paramref name="radius"/>, 0.05..1 m), so the text never crosses the object or the
-        /// hand reaching into it, at the depth of the object's front (never further than the target), kept within
-        /// <see cref="TargetNear"/>..<see cref="TargetFar"/>. <paramref name="halfHeightDegrees"/> is half the label's
-        /// angular height, so its lower edge, not its centre, clears the silhouette.
-        /// </summary>
+        /// <summary>Most a silhouette lifts a label, in degrees: a target you are up against fills half the view, and
+        /// a label above all of it would leave the view; past this it overlaps the target's top instead.</summary>
+        public const float MaxSilhouetteDegrees = 15f;
+
+        /// <summary>Most a held item in the way lifts a target label above the target, in degrees.</summary>
+        public const float MaxLiftDegrees = 40f;
+
+        /// <summary>Most a hand pushes its button labels aside, in degrees (a hand at the face).</summary>
+        public const float MaxHandClearDegrees = 30f;
+
+        private const float LiftStepDegrees = 0.5f;
+
+        /// <inheritdoc cref="TargetLabel(Vector3, Vector3, float, float, Vector3, float)"/>
         public static Vector3 TargetLabel(
             Vector3 center,
             Vector3 eye,
             float radius,
             float halfHeightDegrees
+        ) => TargetLabel(center, eye, radius, halfHeightDegrees, default, 0f);
+
+        /// <summary>
+        /// Where the centre of an interact target's label goes: just above the target's silhouette as the eye sees it
+        /// (its bounding sphere of <paramref name="radius"/>, 0.05..1 m, counted up to
+        /// <see cref="MaxSilhouetteDegrees"/>), so the text never crosses the object or the hand reaching into it, at
+        /// the depth of the object's front (never further than the target), kept within
+        /// <see cref="TargetNear"/>..<see cref="TargetFar"/>. <paramref name="halfHeightDegrees"/> is the angle from
+        /// the label's centre down to its lower edge, so the edge, not the centre, clears the silhouette. A sphere at
+        /// <paramref name="avoid"/> (the item in your hand: food over a fire) lifts the label further until it clears
+        /// that too, up to <see cref="MaxLiftDegrees"/>.
+        /// </summary>
+        public static Vector3 TargetLabel(
+            Vector3 center,
+            Vector3 eye,
+            float radius,
+            float halfHeightDegrees,
+            Vector3 avoid,
+            float avoidRadius
         )
         {
             float r = Math.Clamp(radius, 0.05f, 1f);
@@ -54,17 +79,93 @@ namespace PeakXR.Core
             if (up.LengthSquared() < 1e-6f)
                 up = Vector3.UnitZ - Vector3.Dot(Vector3.UnitZ, dir) * dir;
             up = Vector3.Normalize(up);
-            // Silhouette capped so a target you stand inside still gets a label in view.
-            float silhouette = MathF.Min(
-                MathF.Asin(MathF.Min(1f, r / dist)),
-                45f * UnityQuat.Deg2Rad
-            );
-            float angle =
-                silhouette
-                + (LabelGapDegrees + MathF.Max(0f, halfHeightDegrees)) * UnityQuat.Deg2Rad;
+            float clear = (LabelGapDegrees + MathF.Max(0f, halfHeightDegrees)) * UnityQuat.Deg2Rad;
+            float angle = Silhouette(r, dist) + clear;
+            if (avoidRadius > 0f)
+            {
+                var toAvoid = avoid - eye;
+                float avoidDist = toAvoid.Length();
+                if (avoidDist > 1e-3f)
+                {
+                    var avoidDir = toAvoid / avoidDist;
+                    float need = Silhouette(avoidRadius, avoidDist) + clear;
+                    float limit = MaxLiftDegrees * UnityQuat.Deg2Rad;
+                    float step = LiftStepDegrees * UnityQuat.Deg2Rad;
+                    while (angle < limit && Between(Tilt(dir, up, angle), avoidDir) < need)
+                        angle += step;
+                }
+            }
             float d = MathF.Min(Math.Clamp(dist - r, TargetNear, TargetFar), dist);
-            return eye + (dir * MathF.Cos(angle) + up * MathF.Sin(angle)) * d;
+            return eye + Tilt(dir, up, angle) * d;
         }
+
+        /// <summary>
+        /// A button label in a column beside a hand, as the eye sees it: pushed to the hand's outer side (the
+        /// viewer's right of a right hand) until its near edge clears the hand's silhouette, so it never lands on the
+        /// hand mesh, then raised <paramref name="rowDegrees"/> for its row, at the hand's depth.
+        /// <paramref name="halfWidthDegrees"/> is half the label's angular width.
+        /// </summary>
+        public static Vector3 BesideHand(
+            Vector3 eye,
+            Vector3 hand,
+            float handRadius,
+            bool right,
+            float halfWidthDegrees,
+            float rowDegrees
+        )
+        {
+            var to = hand - eye;
+            float dist = to.Length();
+            if (dist < 1e-3f)
+                return hand + (right ? Vector3.UnitX : -Vector3.UnitX) * (handRadius + 0.05f);
+            var dir = to / dist;
+            var side = Vector3.Cross(Vector3.UnitY, dir);
+            // Hand straight below the eye: any side will do.
+            side = side.LengthSquared() < 1e-6f ? Vector3.UnitX : Vector3.Normalize(side);
+            var up = Vector3.Cross(dir, side);
+            float h =
+                MathF.Min(
+                    MathF.Asin(MathF.Min(1f, MathF.Max(0f, handRadius) / dist)),
+                    MaxHandClearDegrees * UnityQuat.Deg2Rad
+                )
+                + (LabelGapDegrees + MathF.Max(0f, halfWidthDegrees)) * UnityQuat.Deg2Rad;
+            var flat = Tilt(dir, right ? side : -side, h);
+            return eye + Tilt(flat, up, rowDegrees * UnityQuat.Deg2Rad) * dist;
+        }
+
+        /// <summary>
+        /// Centres of <paramref name="count"/> rows of <paramref name="heights"/> stacked top to bottom with
+        /// <paramref name="gap"/> between them, the whole stack centred on 0 (positive is up). Writes into
+        /// <paramref name="centres"/>, so a caller per frame allocates nothing.
+        /// </summary>
+        public static void StackRows(float[] heights, int count, float gap, float[] centres)
+        {
+            float total = 0f;
+            for (int i = 0; i < count; i++)
+                total += heights[i] + (i > 0 ? gap : 0f);
+            float y = total * 0.5f;
+            for (int i = 0; i < count; i++)
+            {
+                centres[i] = y - heights[i] * 0.5f;
+                y -= heights[i] + gap;
+            }
+        }
+
+        /// <summary>Angular radius of a sphere seen from <paramref name="dist"/>, capped at
+        /// <see cref="MaxSilhouetteDegrees"/>.</summary>
+        private static float Silhouette(float radius, float dist) =>
+            MathF.Min(
+                MathF.Asin(MathF.Min(1f, radius / dist)),
+                MaxSilhouetteDegrees * UnityQuat.Deg2Rad
+            );
+
+        /// <summary><paramref name="dir"/> turned <paramref name="radians"/> toward the perpendicular
+        /// <paramref name="toward"/>.</summary>
+        private static Vector3 Tilt(Vector3 dir, Vector3 toward, float radians) =>
+            dir * MathF.Cos(radians) + toward * MathF.Sin(radians);
+
+        private static float Between(Vector3 a, Vector3 b) =>
+            MathF.Acos(Math.Clamp(Vector3.Dot(a, b), -1f, 1f));
 
         /// <summary>A distant sign <paramref name="distance"/> metres along <paramref name="yawDeg"/>, raised
         /// <paramref name="elevationDeg"/> above eye level.</summary>
