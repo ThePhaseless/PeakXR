@@ -2,23 +2,33 @@ using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
 
 /// <summary>
-/// <c>vr.45-lean</c>: leaning must bend the avatar, not walk it. A scripted head stands on the calibrated spot, then
-/// leans 0.3 m forward and later 0.25 m sideways (inside <c>Locomotion.LeanLimit</c>) with both hands reaching out
-/// in front. Fails when the body (hip) or the rig origin moves more than <see cref="MaxLeanDrift"/> peak to peak over
-/// <see cref="LeanWindow"/> seconds of standing or holding a lean (the old 0.2 m lean radius walked the body 0.1 m on
-/// a 0.3 m lean and back on standing up), or when an arm fails the vr.08 judgement: hand more than 0.15 m off its
-/// controller, stretched, or an elbow pointing up or back.
+/// <c>vr.45-lean</c>: leaning bends the avatar and never moves the view. A scripted head on the calibrated spot
+/// stands, leans 0.3 m forward and 0.25 m sideways (inside <c>Locomotion.LeanLimit</c>) with both hands reaching out,
+/// then makes a fast 0.15 s lean, and finally leans 0.5 m (past the limit) and stands back up. The body is the
+/// view's root (<see cref="RigDriver.ViewRoot"/>, the ragdoll's mass centre; the hip itself slides back when the
+/// upper body bends, which is only reported). Every frame, ramps and returns included, is tracked. Fails when: inside
+/// the limit, the body or the rig origin (the view's offset from the scripted head) moves more than
+/// <see cref="MaxLeanDrift"/> peak to peak; the fast lean moves the rig origin more than
+/// <see cref="MaxFastViewDrift"/>; the far lean does not walk the body at least 0.1 m forward, moves the rig origin,
+/// or walks it back while the head stands up; or an arm fails the vr.08 judgement during a lean (hand more than
+/// 0.15 m off its controller, stretched, or an elbow pointing up or back).
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
     const float MaxLeanDrift = 0.03f;
-    const float LeanWindow = 2f;
+    const float MaxFastViewDrift = 0.02f;
+
+    Vector3 leanOffset;
+    Bounds leanRoot;
+    Bounds leanOrigin;
+    Bounds leanHip;
 
     IEnumerator LeanStep()
     {
@@ -39,7 +49,7 @@ internal sealed partial class SelfTestRunner
             rig.RoomAnchor.Y
         );
         HeadFrame(out _, out var forward, out var right);
-        var lean = Vector3.zero;
+        leanOffset = Vector3.zero;
         var hands = applyHands;
         bodyRestore = () =>
         {
@@ -49,21 +59,20 @@ internal sealed partial class SelfTestRunner
         VRInput.TestOverride = () =>
         {
             hands();
-            VRInput.HeadPosition = home + lean;
-        };
-        void Reach()
-        {
-            var head = home + lean;
+            VRInput.HeadPosition = home + leanOffset;
+            var head = home + leanOffset;
             SetHand(true, head - right * 0.2f + Vector3.down * 0.3f + forward * 0.45f);
             SetHand(false, head + right * 0.2f + Vector3.down * 0.3f + forward * 0.45f);
-        }
-        Reach();
+        };
 
         var fails = new List<string>();
         var notes = new List<string>();
         yield return Wait(1f);
-        yield return Drift(c, rig, "standing", fails, notes);
 
+        // Inside the limit: tracked from here to the end of the fast lean.
+        StartTrack(c, rig);
+        yield return Track(c, rig, Vector3.zero, 0f, 2f);
+        Drift("standing", fails, notes);
         foreach (
             var (name, offset) in new[]
             {
@@ -72,18 +81,7 @@ internal sealed partial class SelfTestRunner
             }
         )
         {
-            var from = lean;
-            float start = Now;
-            while (Now - start < 0.6f)
-            {
-                lean = Vector3.Lerp(from, offset, Mathf.SmoothStep(0f, 1f, (Now - start) / 0.6f));
-                Reach();
-                yield return null;
-            }
-            lean = offset;
-            Reach();
-            yield return Wait(1f);
-            yield return Drift(c, rig, "lean " + name, fails, notes);
+            yield return Track(c, rig, offset, 0.6f, 1f);
             var left = default(ArmSample);
             var rightArm = default(ArmSample);
             yield return SampleArms(
@@ -99,10 +97,41 @@ internal sealed partial class SelfTestRunner
             notes.Add("lean " + name + ":");
             JudgeArm(c, "L", true, left, true, fails, notes);
             JudgeArm(c, "R", false, rightArm, true, fails, notes);
-            lean = Vector3.zero;
-            Reach();
-            yield return Wait(1f);
+            yield return Track(c, rig, Vector3.zero, 0.6f, 1f);
         }
+        Drift("leans", fails, notes);
+
+        // A fast lean: the view moves only with the scripted head, so the rig origin stays put.
+        leanOrigin = new Bounds(rig.Origin.position, Vector3.zero);
+        yield return Track(c, rig, forward * 0.3f + Vector3.down * 0.05f, 0.15f, 1f);
+        yield return Track(c, rig, Vector3.zero, 0.15f, 1f);
+        float fast = leanOrigin.size.magnitude;
+        notes.Add(F($"fast lean: view {fast:0.000} m off the head motion"));
+        if (fast > MaxFastViewDrift)
+            fails.Add(F($"fast lean moved the view {fast:0.000} m > {MaxFastViewDrift:0.00} m"));
+
+        // Past the limit: the body follows once, the view stays, and standing up does not walk it back.
+        StartTrack(c, rig);
+        var start = RigDriver.ViewRoot(c);
+        yield return Track(c, rig, forward * 0.5f + Vector3.down * 0.06f, 0.6f, 2.5f);
+        float walked = Vector3.Dot(RigDriver.ViewRoot(c) - start, forward);
+        var leaned = RigDriver.ViewRoot(c);
+        float origin = leanOrigin.size.magnitude;
+        yield return Track(c, rig, Vector3.zero, 0.6f, 0.5f);
+        float back = -Vector3.Dot(RigDriver.ViewRoot(c) - leaned, forward);
+        origin = Mathf.Max(origin, leanOrigin.size.magnitude);
+        notes.Add(
+            F(
+                $"far lean: walked {walked:0.000} m, back {back:0.000} m standing up, view {origin:0.000} m"
+            )
+        );
+        if (walked < 0.1f)
+            fails.Add(F($"far lean walked only {walked:0.000} m"));
+        if (back > MaxLeanDrift)
+            fails.Add(F($"standing up walked back {back:0.000} m"));
+        if (origin > MaxLeanDrift)
+            fails.Add(F($"far lean moved the view {origin:0.000} m"));
+        yield return Track(c, rig, Vector3.zero, 0f, 3f);
 
         VRInput.TestOverride = hands;
         var note = string.Join("; ", notes);
@@ -112,31 +141,43 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>Peak-to-peak travel of the hip and of the rig origin over <see cref="LeanWindow"/> seconds.</summary>
-    static IEnumerator Drift(
-        Character c,
-        VRRig rig,
-        string phase,
-        List<string> fails,
-        List<string> notes
-    )
+    void StartTrack(Character c, VRRig rig)
     {
-        var hip = c.refs.hip.Rig;
-        var body = new Bounds(hip.position, Vector3.zero);
-        var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
+        leanOrigin = new Bounds(rig.Origin.position, Vector3.zero);
+        leanHip = new Bounds(c.refs.hip.Rig.position, Vector3.zero);
+    }
+
+    /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
+    /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
+    IEnumerator Track(Character c, VRRig rig, Vector3 to, float seconds, float hold)
+    {
+        var from = leanOffset;
         float start = Now;
-        while (Now - start < LeanWindow)
+        while (Now - start < seconds + hold)
         {
+            float t = seconds > 0f ? Mathf.Clamp01((Now - start) / seconds) : 1f;
+            leanOffset = Vector3.Lerp(from, to, Mathf.SmoothStep(0f, 1f, t));
             yield return null;
-            body.Encapsulate(hip.position);
-            origin.Encapsulate(rig.Origin.position);
+            leanRoot.Encapsulate(RigDriver.ViewRoot(c));
+            leanOrigin.Encapsulate(rig.Origin.position);
+            leanHip.Encapsulate(c.refs.hip.Rig.position);
         }
-        float bodyP2P = body.size.magnitude;
-        float originP2P = origin.size.magnitude;
-        notes.Add(F($"{phase}: body {bodyP2P:0.000} m, rig {originP2P:0.000} m peak to peak"));
-        if (bodyP2P > MaxLeanDrift)
-            fails.Add(F($"{phase}: body moved {bodyP2P:0.000} m > {MaxLeanDrift:0.00} m"));
-        if (originP2P > MaxLeanDrift)
-            fails.Add(F($"{phase}: rig moved {originP2P:0.000} m > {MaxLeanDrift:0.00} m"));
+        leanOffset = to;
+    }
+
+    void Drift(string phase, List<string> fails, List<string> notes)
+    {
+        float body = leanRoot.size.magnitude;
+        float view = leanOrigin.size.magnitude;
+        notes.Add(
+            F(
+                $"{phase}: body {body:0.000} m, view {view:0.000} m, hip {leanHip.size.magnitude:0.000} m peak to peak"
+            )
+        );
+        if (body > MaxLeanDrift)
+            fails.Add(F($"{phase}: body moved {body:0.000} m > {MaxLeanDrift:0.00} m"));
+        if (view > MaxLeanDrift)
+            fails.Add(F($"{phase}: view moved {view:0.000} m > {MaxLeanDrift:0.00} m"));
     }
 }

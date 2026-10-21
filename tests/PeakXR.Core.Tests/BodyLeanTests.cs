@@ -73,3 +73,33 @@ public class BodyLeanTests
         Assert.True(moved.X > 0.25f);
     }
 }
+
+public class BodyLeanTryTests
+{
+    [Fact]
+    public void HeadBelowThePivot_CannotLean()
+    {
+        // Lying or a deep duck: no defined lean, so the driver fades the last one out instead of snapping it.
+        Assert.False(
+            BodyLean.TrySwing(
+                Vector3.Zero,
+                new Vector3(0f, 0.8f, 0f),
+                new Vector3(0f, -0.1f, 0.4f),
+                Vector3.UnitZ,
+                Vector3.UnitY,
+                out var q
+            )
+        );
+        TestUtil.SameRotation(Quaternion.Identity, q);
+        Assert.True(
+            BodyLean.TrySwing(
+                Vector3.Zero,
+                new Vector3(0f, 0.8f, 0f),
+                new Vector3(0f, 0.7f, 0.3f),
+                Vector3.UnitZ,
+                Vector3.UnitY,
+                out _
+            )
+        );
+    }
+}

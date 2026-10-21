@@ -281,7 +281,7 @@ internal static class LocomotionInput
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
-        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow);
+        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
         if (Fade.Update(Follow.RecenterNeeded, dt))
             Follow.Recenter(head);
         rig.RoomAnchor = Follow.Anchor;

@@ -57,7 +57,7 @@ public class RoomScaleTests
         var delta = Vector2.Zero;
         for (float t = 0f; t < seconds; t += dt)
         {
-            var request = f.Update(head(t), delta, canFollow: true);
+            var request = f.Update(head(t), delta, canFollow: true, dt);
             v += (request * 1.5f - v) * (1f - MathF.Exp(-dt / 0.12f));
             delta = v * dt;
             body += delta.Y;
@@ -92,8 +92,35 @@ public class RoomScaleTests
         var f = new RoomScaleFollow();
         var lean = Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
         Assert.True(lean[^1] > 0.05f, $"walked only {lean[^1]:0.000} m after a 0.45 m lean");
-        var up = Walk(f, Lean(0.45f, 0f, 0f, 0.5f), 3f);
-        Assert.True(up.Min() > -0.005f, $"walked back {-up.Min():0.000} m standing up");
+        // Standing up leaves the body ahead of the head, inside the limit: no walk back while the head moves, then
+        // a slow settle under the head once it is still, so the avatar does not stay leaning back.
+        var up = Walk(f, Lean(0.45f, 0f, 0f, 0.5f), 5f);
+        int still = (int)(1.0f * 90f);
+        Assert.True(
+            up.Take(still).Min() > -0.005f,
+            $"walked back {-up.Take(still).Min():0.000} m while standing up"
+        );
+        for (int i = 1; i < up.Count; i++)
+            Assert.True(
+                up[i - 1] - up[i] < 0.4f / 90f,
+                $"settled faster than 0.4 m/s at frame {i}"
+            );
+        Assert.True(
+            f.Offset.Length() < 0.06f,
+            $"head still {f.Offset.Length():0.000} m off the body"
+        );
+    }
+
+    [Fact]
+    public void HeldLeanInsideTheLimit_NeverSettles()
+    {
+        // Settling only undoes a follow the player stood back from; a lean held over a table stays a lean.
+        var f = new RoomScaleFollow();
+        var held = Walk(f, Lean(0f, -0.3f, 0f, 0.5f), 6f);
+        Assert.True(held.Max(MathF.Abs) < 0.005f, $"walked {held.Max(MathF.Abs):0.000} m");
+        Walk(f, Lean(0f, 0.7f, 0f, 0.4f), 4f);
+        var ahead = Walk(f, _ => new Vector2(0f, 0.7f), 4f);
+        Assert.True(ahead.Max() - ahead.Min() < 0.005f, "settled after a step ahead");
     }
 
     [Fact]

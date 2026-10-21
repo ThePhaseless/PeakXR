@@ -49,11 +49,21 @@ public partial class AvatarPoseDriver
     /// the lean aims this point at the tracked head.</summary>
     private Vector3 eyeInHead;
     private bool haveEyeInHead;
+    private float eyeLearnedFor;
 
-    /// <summary>How far this tick's lean moved the torso and the eyes (world metres). The physical body follows these
-    /// targets, so the camera subtracts them and keeps riding the unleaned body: a lean must never move the view.</summary>
-    internal Vector3 LeanShift { get; private set; }
+    /// <summary>Seconds the lean takes to fade in or out whenever a gate opens or closes, so the body never snaps.</summary>
+    private const float LeanFadeSeconds = 0.3f;
+
+    private float leanWeight;
+    private Quaternion lastSwing = Quaternion.identity;
+
+    /// <summary>How far this tick's lean moved the avatar's eyes (world metres, animated target). rig.camera only
+    /// calibrates the eye height while this is small, so a lean never enters the calibration.</summary>
     internal Vector3 EyeLeanShift { get; private set; }
+
+    /// <summary>Seconds of rendered frames <see cref="eyeInHead"/> is averaged over; the eyes are fixed on the head,
+    /// so it stops reading renderer bounds after that.</summary>
+    private const float EyeLearnSeconds = 3f;
 
     /// <summary>The prefab's elbow hint weights (0 on the scout), put back when a hand stops being tracked.</summary>
     private float hintWeightL;
@@ -176,6 +186,9 @@ public partial class AvatarPoseDriver
     {
         if (!HasFreshPose)
         {
+            // Vanilla animation takes the whole body back (the arms snap back too), so the lean ends with it.
+            EyeLeanShift = Vector3.zero;
+            leanWeight = 0f;
             if (rigReady)
                 RestoreFingers();
             return;
@@ -243,45 +256,59 @@ public partial class AvatarPoseDriver
     /// Bends the animated spine (<see cref="spine"/>, about its own joint) so the avatar's eyes swing toward the
     /// tracked head within <see cref="BodyLean"/>'s limits; the head keeps its world rotation (the neck takes it).
     /// Runs in the animated pose before <c>SaveAnimationData</c> (CharacterRagdoll.cs:166-169), so the ragdoll is
-    /// driven into the lean like any animation, for remote characters as well. Faded with the arms by
-    /// <paramref name="w"/>; off while climbing (the climb pose owns the body) and during full-body emotes.
+    /// driven into the lean like any animation, for remote characters as well. Every gate fades the lean over
+    /// <see cref="LeanFadeSeconds"/> (the last swing is held while it fades): climbing, a piton or rope hang
+    /// (<c>currentClimbHandle</c>, set by <c>StartHang</c>), gliding, a full-body emote, the setting, the head below
+    /// the pivot, and for the local player an uncalibrated eye (rig.camera samples the unleaned eyes first).
     /// </summary>
     private bool ApplyLean(float w)
     {
-        LeanShift = EyeLeanShift = Vector3.zero;
-        var c = Owner;
-        if (
-            !AvatarConfig.Instance.BodyLean
-            || !Pose.HasHead
-            || ArmsSuspended
-            || w <= 0f
-            || !haveEyeInHead
-            || spine == null
-            || torso == null
-            || head == null
-            || c.data.isClimbingAnything
-        )
+        EyeLeanShift = Vector3.zero;
+        if (spine == null || torso == null || head == null || !haveEyeInHead)
             return false;
+        var c = Owner;
+        var d = c.data;
         var forward = bodyFrame.forward;
         forward.y = 0f;
-        if (forward.sqrMagnitude < 1e-4f)
-            return false;
         var eye = head.transform.TransformPoint(eyeInHead);
-        var swing = BodyLean
-            .Swing(
+        bool gate =
+            AvatarConfig.Instance.BodyLean
+            && Pose.HasHead
+            && !ArmsSuspended
+            && w > 0f
+            && forward.sqrMagnitude > 1e-4f
+            && !d.isClimbingAnything
+            && d.currentClimbHandle == null
+            && !(d.currentItem != null && d.currentItem.gliderHold && !d.isGrounded)
+            && (!c.IsLocal || Rig.RigDriver.EyeCalibrated);
+        bool allowed = false;
+        if (
+            gate
+            && BodyLean.TrySwing(
                 spine.transform.position.N(),
                 eye.N(),
                 (Pose.HeadPosition + AnimatedOffset()).N(),
                 forward.normalized.N(),
-                Vector3.up.N()
+                Vector3.up.N(),
+                out var swing
             )
-            .U();
-        var q = Quaternion.Slerp(Quaternion.identity, swing, w);
+        )
+        {
+            lastSwing = swing.U();
+            allowed = true;
+        }
+        leanWeight = Mathf.MoveTowards(
+            leanWeight,
+            allowed ? 1f : 0f,
+            Time.fixedDeltaTime / LeanFadeSeconds
+        );
+        float amount = leanWeight * w;
+        if (amount <= 0f)
+            return false;
+        var q = Quaternion.Slerp(Quaternion.identity, lastSwing, amount);
         var headRot = head.transform.rotation;
-        var torsoPos = torso.transform.position;
         spine.transform.rotation = q * spine.transform.rotation;
         head.transform.rotation = headRot;
-        LeanShift = torso.transform.position - torsoPos;
         EyeLeanShift = head.transform.TransformPoint(eyeInHead) - eye;
         return true;
     }
@@ -327,7 +354,8 @@ public partial class AvatarPoseDriver
     private void LearnEyes(Character c)
     {
         if (
-            !rigReady
+            eyeLearnedFor >= EyeLearnSeconds
+            || !rigReady
             || head == null
             || c == null
             || !Rig.RigDriver.TryEyeRenderers(c, out var eye)
@@ -338,13 +366,7 @@ public partial class AvatarPoseDriver
             ? Vector3.Lerp(eyeInHead, local, 1f - Mathf.Exp(-Time.deltaTime))
             : local;
         haveEyeInHead = true;
-    }
-
-    /// <summary>World shift of <paramref name="c"/>'s torso from its lean this tick (zero without a driver).</summary>
-    internal static Vector3 LeanShiftOf(Character c)
-    {
-        var d = Of(c);
-        return d != null ? d.LeanShift : Vector3.zero;
+        eyeLearnedFor += Time.deltaTime;
     }
 
     /// <summary>Moves an IK target <paramref name="w"/> of the way from where vanilla (or the last tick) left it to

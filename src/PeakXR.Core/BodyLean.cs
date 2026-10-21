@@ -33,13 +33,31 @@ namespace PeakXR.Core
             Vector3 up
         )
         {
+            TrySwing(pivot, eye, head, forward, up, out var q);
+            return q;
+        }
+
+        /// <summary>
+        /// <see cref="Swing"/>, false (with identity) when the eye or the head is not above the pivot: lying down or a
+        /// deep duck has no lean, and the caller fades out the last one.
+        /// </summary>
+        public static bool TrySwing(
+            Vector3 pivot,
+            Vector3 eye,
+            Vector3 head,
+            Vector3 forward,
+            Vector3 up,
+            out Quaternion swing
+        )
+        {
+            swing = Quaternion.Identity;
             var right = Vector3.Cross(up, forward);
             var from = eye - pivot;
             var to = head - pivot;
             float fu = Vector3.Dot(from, up);
             float tu = Vector3.Dot(to, up);
             if (fu <= 1e-4f || tu <= 1e-4f)
-                return Quaternion.Identity;
+                return false;
             float pitch0 = MathF.Atan2(Vector3.Dot(from, forward), fu) * Rad2Deg;
             float roll0 = MathF.Atan2(Vector3.Dot(from, right), fu) * Rad2Deg;
             float pitch =
@@ -57,7 +75,8 @@ namespace PeakXR.Core
                     MaxSideDeg
                 );
             var dir = up + MathF.Tan(pitch * Deg2Rad) * forward + MathF.Tan(roll * Deg2Rad) * right;
-            return FromTo(from, dir);
+            swing = FromTo(from, dir);
+            return true;
         }
 
         /// <summary>Shortest rotation turning direction <paramref name="a"/> onto <paramref name="b"/>.</summary>

@@ -27,8 +27,9 @@ namespace PeakXR.Core
     /// the body arrives, the anchor slides toward the head by the same distance, so the view stays world-fixed while
     /// the body catches up underneath it. Inside the lean radius the avatar's upper body leans instead (avatar.local),
     /// and the follow stops well inside it, so standing up after a lean or swaying after a step never walks the body
-    /// back and forth. When the body
-    /// cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
+    /// back and forth. Standing back up after a follow leaves the body ahead of the head; once the head has been still
+    /// for <see cref="SettleSeconds"/>, a slow walk (<see cref="SettleInput"/>) settles the body under it, so the
+    /// avatar does not stay leaning back. When the body cannot follow (blocked, climbing) and the head drifts past <see cref="RecenterDistance"/>, the caller fades
     /// out and calls <see cref="Recenter"/>.
     /// </summary>
     public sealed class RoomScaleFollow
@@ -52,8 +53,21 @@ namespace PeakXR.Core
 
         public Vector2 Offset { get; private set; }
 
+        /// <summary>A settle walk ends when the head is this close (m) to the anchor.</summary>
+        public float SettleRadius = 0.05f;
+
+        /// <summary>Seconds the head must stay within 3 cm before a settle walk starts.</summary>
+        public float SettleSeconds = 0.75f;
+
+        /// <summary>Largest settle input: about 0.3 m/s, a shuffle rather than a walk.</summary>
+        public float SettleInput = 0.2f;
+
         float _absorbed;
         bool _following;
+        bool _settling;
+        Vector2 _followDir;
+        Vector2 _stillAt;
+        float _stillFor;
 
         public bool RecenterNeeded => Offset.Length() > RecenterDistance;
 
@@ -61,9 +75,17 @@ namespace PeakXR.Core
         /// <param name="bodyDelta">The body's horizontal movement since the last update, in tracking space.</param>
         /// <param name="canFollow">The body is free to walk: grounded, conscious, not climbing and the move stick
         /// idle. Otherwise the offset is kept and nothing is requested.</param>
+        /// <param name="dt">Seconds since the last update; 0 never settles.</param>
         /// <returns>Requested move input in tracking space, length 0..1.</returns>
-        public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow)
+        public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow, float dt = 0f)
         {
+            if (Vector2.Distance(head, _stillAt) > 0.03f)
+            {
+                _stillAt = head;
+                _stillFor = 0f;
+            }
+            else
+                _stillFor += dt;
             var d = head - Anchor;
             float dist = d.Length();
             if (canFollow && dist > 1e-5f)
@@ -80,14 +102,37 @@ namespace PeakXR.Core
             }
             Offset = d;
             if (!canFollow)
+            {
                 _absorbed = 0f;
+                _followDir = Vector2.Zero;
+            }
 
             // Hysteresis: start past the lean radius, stop only well inside it.
             _following = canFollow && (_following ? dist > StopRadius : dist > LeanRadius);
-            if (!_following)
+            if (_following)
+            {
+                _settling = false;
+                _followDir = d / dist;
+                float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
+                return d / dist * MathF.Min(amount, 1f);
+            }
+
+            // Settle only back toward a head that stood up from a follow: a lean held the follow's way stays a lean.
+            bool wasSettling = _settling;
+            _settling =
+                canFollow
+                && dist > SettleRadius
+                && Vector2.Dot(d, _followDir) < 0f
+                && (_settling || _stillFor >= SettleSeconds);
+            if (!_settling)
+            {
+                if (wasSettling)
+                    _followDir = Vector2.Zero; // settled (or stopped): one settle per follow
                 return Vector2.Zero;
-            float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
-            return d / dist * MathF.Min(amount, 1f);
+            }
+            float settle =
+                RampDistance > 0f ? (dist - 0.5f * SettleRadius) / RampDistance : SettleInput;
+            return d / dist * MathF.Min(settle, SettleInput);
         }
 
         public void Recenter(Vector2 head)
@@ -96,6 +141,8 @@ namespace PeakXR.Core
             Offset = Vector2.Zero;
             _absorbed = 0f;
             _following = false;
+            _settling = false;
+            _followDir = Vector2.Zero;
         }
 
         /// <summary>

@@ -81,7 +81,9 @@ internal sealed class LocalAvatar : MonoBehaviour
         if (VRInput.HeadTracked)
         {
             pose.HasHead = true;
-            pose.HeadPosition = rig.Head.position;
+            // The head as it stands over the body: without the view's follow lag, turn shift and crouch lift, which
+            // are not the player leaning (peers get the same lean).
+            pose.HeadPosition = rig.Head.position - RigDriver.ViewOffset;
             pose.HeadRotation = rig.Head.rotation;
         }
 
