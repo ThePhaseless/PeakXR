@@ -62,3 +62,35 @@ public class SettingsRowsTests
         Assert.Equal(expected, SettingsRows.Format(value, integral, min, max));
     }
 }
+
+public class SettingsPageTests
+{
+    [Fact]
+    public void ShortList_IsOnePage()
+    {
+        Assert.Equal(1, SettingsRows.PageCount(5, 12));
+        Assert.Equal(1, SettingsRows.PageCount(0, 12));
+        Assert.Equal(1, SettingsRows.PageCount(12, 12));
+    }
+
+    [Fact]
+    public void LongList_SplitsIntoPagesOfAtMostPageRows()
+    {
+        Assert.Equal(3, SettingsRows.PageCount(25, 12));
+        SettingsRows.PageSlice(25, 12, 0, out int start, out int count);
+        Assert.Equal((0, 12), (start, count));
+        SettingsRows.PageSlice(25, 12, 2, out start, out count);
+        Assert.Equal((24, 1), (start, count));
+    }
+
+    [Fact]
+    public void PageOutOfRange_IsClamped()
+    {
+        // The list shrank (demos folded) while a later page was open: show its last page.
+        SettingsRows.PageSlice(25, 12, 7, out int start, out int count);
+        Assert.Equal((24, 1), (start, count));
+        SettingsRows.PageSlice(25, 12, -3, out start, out count);
+        Assert.Equal((0, 12), (start, count));
+        Assert.Equal(2, SettingsRows.ClampPage(9, 25, 12));
+    }
+}

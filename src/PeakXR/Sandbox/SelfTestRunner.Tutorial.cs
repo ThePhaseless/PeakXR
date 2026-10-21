@@ -128,7 +128,8 @@ internal sealed partial class SelfTestRunner
     /// airport; the right stick flicks until the turn station passes; a hand rests in the exit orb; the title returns.</summary>
     IEnumerator PracticeStep()
     {
-        // vr.30's cleanup put the title back on its main page: open the VR tab again.
+        // vr.30's cleanup put the title back on its main page: open the VR tab again, on its first page (Practice).
+        VRTab.Page = 0;
         yield return OpenTitleGuide();
         if (!stepOk)
             yield break;

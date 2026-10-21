@@ -49,6 +49,9 @@ internal static class VRTab
 
     public static List<Setting> BuildRows()
     {
+        if (!Refilling)
+            Page = 0;
+        Refilling = false;
         Loc.Set(TabKey, "VR");
         if (Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
             return Guide.GuideRows.Comfort(RowFor);
@@ -109,7 +112,62 @@ internal static class VRTab
                 new InfoRow(Loc.Set("PEAKXR_FEATURE_" + feature.Id, feature.Id), text, color, false)
             );
         }
-        return result;
+        return VRSession.Active ? OnePage(result) : result;
+    }
+
+    /// <summary>Rows per page in VR: the settings window has no scroll view, and on a world panel the rows past the
+    /// screen's bottom edge hang below it into the scene instead of being cut off.</summary>
+    public const int PageRows = 12;
+
+    /// <summary>The VR tab page on show; kept while the tab is refilled (<see cref="Refilling"/>), clamped when the
+    /// list shrinks, and back to the first page whenever the tab is opened.</summary>
+    public static int Page;
+
+    /// <summary>Set by a refill of the open tab (page buttons, demo switch), so the page is kept.</summary>
+    public static bool Refilling;
+
+    /// <summary>The current page, its section header repeated when it starts mid-section, then the page buttons.</summary>
+    private static List<Setting> OnePage(List<Setting> all)
+    {
+        int pages = SettingsRows.PageCount(all.Count, PageRows);
+        if (pages == 1)
+            return all;
+        Page = SettingsRows.ClampPage(Page, all.Count, PageRows);
+        SettingsRows.PageSlice(all.Count, PageRows, Page, out int start, out int count);
+        var page = new List<Setting>(count + 3);
+        if (all[start] is not InfoRow { IsHeader: true })
+            for (int i = start - 1; i >= 0; i--)
+                if (all[i] is InfoRow { IsHeader: true } header)
+                {
+                    page.Add(header);
+                    break;
+                }
+        page.AddRange(all.GetRange(start, count));
+        // The demo switch stays in reach on every page while the demos are listed, so they can be folded anywhere.
+        if (Guide.GuideRows.Expanded)
+            for (int i = 0; i < all.Count; i++)
+                if (
+                    all[i] is Guide.GuideRow { Action: Guide.GuideAction.Expand } expand
+                    && (i < start || i >= start + count)
+                )
+                    page.Add(expand);
+        // The page count rides on the last button row, so every page says where it is.
+        bool last = Page == pages - 1;
+        var where = Loc.Set("PEAKXR_PAGE_OF", $"Page {Page + 1} of {pages}");
+        if (Page > 0)
+            page.Add(
+                new Guide.GuideRow(
+                    Guide.GuideAction.PagePrevious,
+                    GuideTopic.Count,
+                    last ? where : Loc.Set("PEAKXR_PAGE_PREVIOUS", "Previous page"),
+                    "Back"
+                )
+            );
+        if (!last)
+            page.Add(
+                new Guide.GuideRow(Guide.GuideAction.PageNext, GuideTopic.Count, where, "Next")
+            );
+        return page;
     }
 
     /// <summary>Requested runtime, whether it is rendering, and the XR device name when there is one.</summary>

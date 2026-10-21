@@ -194,6 +194,43 @@ public class PanelMathTests
     }
 
     [Fact]
+    public void PanelSample_CoversCornersEdgesAndCentre()
+    {
+        var seen = new System.Collections.Generic.List<Vector2>();
+        for (int i = 0; i < PanelMath.PanelSamples; i++)
+        {
+            var o = PanelMath.PanelSample(i, 0.8f, 0.5f);
+            Assert.InRange(MathF.Abs(o.X), 0f, 0.8f + 1e-5f);
+            Assert.InRange(MathF.Abs(o.Y), 0f, 0.5f + 1e-5f);
+            seen.Add(o);
+        }
+        // All four corners (a corner cut by a curved wall), both side edges and the centre.
+        foreach (
+            var want in new[]
+            {
+                new Vector2(-0.8f, -0.5f),
+                new Vector2(0.8f, -0.5f),
+                new Vector2(-0.8f, 0.5f),
+                new Vector2(0.8f, 0.5f),
+                new Vector2(-0.8f, 0f),
+                new Vector2(0.8f, 0f),
+                Vector2.Zero,
+            }
+        )
+            Assert.Contains(seen, o => Vector2.Distance(o, want) < 1e-4f);
+    }
+
+    [Fact]
+    public void PanelSample_IsDenseEnoughForAPillarBetweenSamples()
+    {
+        // Columns no further apart than a quarter of the width, rows a half of the height.
+        Assert.True(PanelMath.PanelSamples >= 15);
+        var a = PanelMath.PanelSample(0, 1f, 1f);
+        var b = PanelMath.PanelSample(1, 1f, 1f);
+        Assert.True(Vector2.Distance(a, b) <= 0.5f + 1e-5f);
+    }
+
+    [Fact]
     public void PickOpenYaw_KeepsStraightAheadWhenItFits()
     {
         Assert.Equal(0, PanelMath.PickOpenYaw(new[] { 1.0f, 3f, 3f }));

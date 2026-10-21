@@ -103,6 +103,9 @@ internal static class ShowSettingsPatch
 
     private static void Postfix(SharedSettingsMenu __instance, SettingsCategory category)
     {
+        // Every tab switch spawns new rows into the open page; their row backings would stay drawn until the
+        // next page change.
+        World.WorldCanvases.Restrip(__instance);
         if (category != VRTab.Category)
             return;
         Guide.GuideRows.Menu = __instance;

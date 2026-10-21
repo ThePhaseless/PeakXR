@@ -29,6 +29,12 @@ internal enum GuideAction : byte
 
     /// <summary>Leave the comfort-first view without practising.</summary>
     Back,
+
+    /// <summary>Show the VR tab's previous page (VR shows the long tab a page at a time).</summary>
+    PagePrevious,
+
+    /// <summary>Show the VR tab's next page.</summary>
+    PageNext,
 }
 
 /// <summary>A button row of the VR Guide section; the game's own button cell when this build has one.</summary>
@@ -113,6 +119,9 @@ internal static class GuideRows
     private static readonly string[] ComfortKeys = { "TurnMode", "VignetteStrength", "SeatedMode" };
 
     private static bool expanded;
+
+    /// <summary>The demo rows are listed.</summary>
+    public static bool Expanded => expanded;
 
     /// <summary>The tab shows only the comfort choices and Start / Back before a practice.</summary>
     public static bool ComfortFirst;
@@ -231,6 +240,16 @@ internal static class GuideRows
                 break;
             case GuideAction.Expand:
                 expanded = !expanded;
+                // The demo list starts on the first page, under its switch.
+                VRTab.Page = 0;
+                Rebuild();
+                break;
+            case GuideAction.PagePrevious:
+                VRTab.Page--;
+                Rebuild();
+                break;
+            case GuideAction.PageNext:
+                VRTab.Page++;
                 Rebuild();
                 break;
             case GuideAction.Practice:
@@ -269,7 +288,10 @@ internal static class GuideRows
     public static void Rebuild()
     {
         if (Menu != null && Menu.isActiveAndEnabled)
+        {
+            VRTab.Refilling = true;
             Menu.ShowSettings(VRTab.Category);
+        }
     }
 
     /// <summary>
