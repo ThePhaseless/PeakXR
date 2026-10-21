@@ -719,13 +719,29 @@ internal sealed partial class SelfTestRunner
         }
         spawned.Add(SandboxActions.LastSpawned);
         var world = SandboxActions.LastSpawned.GetComponent<Item>();
+        // The apple drops from chest height and, after vr.29's walk, can land on a slope and roll: let it settle
+        // (up to 2 s), then follow it every frame like GrabStep so the grip closes at the apple, not where it was.
         yield return Wait(0.4f);
-        var at = world.Center();
-        yield return MoveTo(hold, () => at, 0.5f);
+        for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
+        {
+            if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
+                break;
+            yield return null;
+        }
+        var at = world != null ? world.Center() : spot;
+        Vector3 Apple() => world != null ? at = world.Center() : at;
+        yield return MoveTo(hold, Apple, 0.5f);
         yield return GripTo(hold, 1f, 0.1f);
-        yield return Until(() => Holding(apple), 3f, "Apple not picked up");
-        if (!stepOk)
+        for (float pickEnd = Now + 3f; !Holding(apple) && Now < pickEnd; )
+            yield return null;
+        if (!Holding(apple))
+        {
+            var hand = VRRig.Instance.Hand(hold);
+            Fail(
+                $"Apple not picked up: hand {(hand != null ? Vector3.Distance(hand.position, Apple()) : -1f):0.00} m from it"
+            );
             yield break;
+        }
         HeadFrame(out var headPos, out var forward, out var right);
         yield return MoveTrack(hold, Rest(headPos, forward, hold ? -right : right).Position, 0.3f);
 
