@@ -117,6 +117,10 @@ The shared affordance service (`src/PeakXR/UI/Affordance/`) is meant to take ove
 
 PeakXR in VR (master `ad2932f`, Vulkan, SteamVR with the ALVR virtual headset) hosted a real online lobby on the main account, through the game's own host flow driven by the read-only `MpObserver` plugin. Steam lobby `109775241740456695`, Photon room `DBIPRX`. It advertised `peakVersion 2.6` and game `2.6.b`, the same values unmodded PEAK writes. It stayed online in the airport for over two minutes with no exceptions in the log. The only RPC seen was the game's own `EquipSlotRpc` for the passport, and nothing else went out, since no PeakXR peer was in the room. This shows what an unmodded player would see when browsing for or joining the lobby. It does not replace the two-client test below. That test is set up but waits on the second account accepting PEAK's EULA in Steam.
 
+### Two clients on one machine: blocked by Steam
+
+Client B, the unmodded PEAK on a second Steam account in Flatpak Steam with only `MpObserver`, started and hosted lobbies without problems, for example room `DCGFKT` advertising `peakVersion 2.6`. Client A, PeakXR on the main account, died three times about 28 s after launch, before joining. The Steam client library inside A raised `Assert( fatal stalled cross-thread pipe (pipe is disconnected). ):../common/pipes.cpp:900`. That happened whenever B's game was running, including after Flatpak Steam was given its own IPC namespace, a private `/dev/shm` and no `com.steampowered.*` D-Bus names, and after native Steam was restarted fresh. PeakXR runs fine alone with Flatpak Steam open, and the crash comes before any PeakXR multiplayer code runs. So two Steam accounts playing PEAK at the same time under one Linux user is a Steam limitation on this machine, not a PeakXR problem. The two-client test needs client B on another machine or under another Linux user. The harness supports both, given a shared `-mpdir`.
+
 ## What only a live two-client test can confirm
 
 1. Vanilla clients log nothing for the `PeakXR` property or event 151, and are never kicked.
