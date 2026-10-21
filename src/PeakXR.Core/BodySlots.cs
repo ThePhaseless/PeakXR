@@ -14,27 +14,40 @@ namespace PeakXR.Core
         public readonly Vector3 Offset;
         public readonly float Radius;
 
-        public BodySlot(byte gameSlot, Vector3 offset, float radius)
+        /// <summary>Body-frame heading (degrees, 0 straight ahead, positive right) the slot faces out along.</summary>
+        public readonly float Heading;
+
+        public BodySlot(byte gameSlot, Vector3 offset, float radius, float heading = 0f)
         {
             GameSlot = gameSlot;
             Offset = offset;
             Radius = radius;
+            Heading = heading;
         }
     }
 
     /// <summary>
-    /// Layouts and geometry of the body-anchored hotbar. Every layout has five anchors: the three hotbar slots
-    /// (game slots 0-2, left to right) followed by two back anchors over the left and right shoulder that both
+    /// Layouts and geometry of the body-anchored hotbar. A layout is the hotbar slots (game slots 0..n-1, left to
+    /// right) on an arc around the body, followed by two back anchors over the left and right shoulder that both
     /// map to the backpack slot (3), so either hand can reach the pack.
     /// </summary>
     public static class BodySlotLayout
     {
-        public const string Mixed = "Mixed";
-        public const string Hips = "Hips";
+        public const string Belt = "Belt";
         public const string Chest = "Chest";
 
-        /// <summary>Layout names for the settings list.</summary>
-        public static readonly string[] Names = { Mixed, Hips, Chest };
+        /// <summary>Layout names for the settings list. Belt is first: a stored value that is no longer listed
+        /// (the old Mixed and Hips layouts) is clamped to it.</summary>
+        public static readonly string[] Names = { Belt, Chest };
+
+        /// <summary>Hotbar keys the game reads: <c>CharacterItems.DoSwitching</c> polls 0-3 with 3 the backpack.</summary>
+        public const int MaxHotbar = 3;
+
+        /// <summary>Closest neighbour centres ever sit (metres): a hand reaching one slot clears the next.</summary>
+        public const float MinSpacing = 0.22f;
+
+        /// <summary>Widest angle between neighbours, so a large slot radius does not wrap the belt behind the hips.</summary>
+        const float MaxStepDeg = 70f;
 
         /// <summary>Head-local offset from the eyes to the neck pivot the head turns about (down and back).</summary>
         public static readonly Vector3 NeckFromHead = new Vector3(0f, -0.1f, -0.09f);
@@ -42,51 +55,54 @@ namespace PeakXR.Core
         /// <summary>Back anchors are larger than the hotbar slots: the hand reaches there blind.</summary>
         public const float BackRadius = 0.16f;
 
-        static readonly Vector3 HipLeft = new Vector3(-0.2f, -0.6f, 0.02f);
-        static readonly Vector3 HipRight = new Vector3(0.2f, -0.6f, 0.02f);
-        static readonly Vector3 BeltFront = new Vector3(0f, -0.55f, 0.16f);
-        static readonly Vector3 ChestLeft = new Vector3(-0.15f, -0.28f, 0.12f);
-        static readonly Vector3 ChestMid = new Vector3(0f, -0.3f, 0.15f);
-        static readonly Vector3 ChestRight = new Vector3(0.15f, -0.28f, 0.12f);
+        /// <summary>Belt arc axis (body frame, below and just behind the neck pivot) and radius: the front slot
+        /// rides a forearm's length out from the belly, where a glance down sees it.</summary>
+        public static readonly Vector3 BeltCenter = new Vector3(0f, -0.55f, -0.05f);
+        public const float BeltRadius = 0.32f;
+
+        static readonly Vector3 ChestCenter = new Vector3(0f, -0.3f, -0.05f);
+        const float ChestRadius = 0.28f;
+
         static readonly Vector3 BackLeft = new Vector3(-0.15f, 0.05f, -0.18f);
         static readonly Vector3 BackRight = new Vector3(0.15f, 0.05f, -0.18f);
 
         /// <summary>
-        /// Builds a layout by name (unknown names fall back to <see cref="Mixed"/>). <paramref name="heightOffset"/>
-        /// raises or lowers the hotbar slots only; the back anchors stay at the shoulders.
+        /// Builds a layout by name (unknown names fall back to <see cref="Belt"/>) for a hotbar of
+        /// <paramref name="hotbarCount"/> slots (capped at <see cref="MaxHotbar"/>). Neighbours sit at least
+        /// <see cref="MinSpacing"/> and two radii apart; when the arc cannot fit that, the radius shrinks instead,
+        /// so catch spheres never overlap. <paramref name="heightOffset"/> moves the hotbar slots only.
         /// </summary>
-        public static BodySlot[] Create(string name, float radius, float heightOffset)
+        public static BodySlot[] Create(
+            string name,
+            int hotbarCount,
+            float radius,
+            float heightOffset
+        )
         {
-            Vector3 a,
-                b,
-                c;
-            switch (name)
+            var center = name == Chest ? ChestCenter : BeltCenter;
+            float arc = name == Chest ? ChestRadius : BeltRadius;
+            int n = Math.Max(0, Math.Min(hotbarCount, MaxHotbar));
+
+            float spacing = Math.Max(MinSpacing, 2f * radius);
+            float step = 2f * MathF.Asin(Math.Min(1f, spacing / (2f * arc)));
+            float r = radius;
+            if (step > MaxStepDeg * UnityQuat.Deg2Rad)
             {
-                case Hips:
-                    a = HipLeft;
-                    b = BeltFront;
-                    c = HipRight;
-                    break;
-                case Chest:
-                    a = ChestLeft;
-                    b = ChestMid;
-                    c = ChestRight;
-                    break;
-                default:
-                    a = HipLeft;
-                    b = ChestMid;
-                    c = HipRight;
-                    break;
+                step = MaxStepDeg * UnityQuat.Deg2Rad;
+                r = Math.Min(radius, arc * MathF.Sin(step / 2f));
             }
-            var up = new Vector3(0f, heightOffset, 0f);
-            return new[]
+
+            var slots = new BodySlot[n + 2];
+            for (int i = 0; i < n; i++)
             {
-                new BodySlot(0, a + up, radius),
-                new BodySlot(1, b + up, radius),
-                new BodySlot(2, c + up, radius),
-                new BodySlot(3, BackLeft, BackRadius),
-                new BodySlot(3, BackRight, BackRadius),
-            };
+                float a = (i - (n - 1) / 2f) * step;
+                var offset =
+                    center + new Vector3(arc * MathF.Sin(a), heightOffset, arc * MathF.Cos(a));
+                slots[i] = new BodySlot((byte)i, offset, r, a * UnityQuat.Rad2Deg);
+            }
+            slots[n] = new BodySlot(MaxHotbar, BackLeft, BackRadius);
+            slots[n + 1] = new BodySlot(MaxHotbar, BackRight, BackRadius);
+            return slots;
         }
 
         /// <summary>Neck pivot from the head pose: the same point whatever the head pitch or roll.</summary>

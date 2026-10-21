@@ -10,12 +10,11 @@ public class BodySlotsTests
         NeckPos + UnityQuat.Rotate(headRot, -BodySlotLayout.NeckFromHead);
 
     [Theory]
-    [InlineData("Mixed")]
-    [InlineData("Hips")]
+    [InlineData("Belt")]
     [InlineData("Chest")]
-    public void Layouts_HaveThreeHotbarSlotsAndTwoBackAnchors(string name)
+    public void Layouts_HaveHotbarSlotsThenTwoBackAnchors(string name)
     {
-        var slots = BodySlotLayout.Create(name, 0.12f, 0f);
+        var slots = BodySlotLayout.Create(name, 3, 0.12f, 0f);
         Assert.Equal(5, slots.Length);
         Assert.Equal(new byte[] { 0, 1, 2, 3, 3 }, slots.Select(s => s.GameSlot).ToArray());
         Assert.All(slots.Take(3), s => Assert.Equal(0.12f, s.Radius));
@@ -24,19 +23,85 @@ public class BodySlotsTests
         Assert.True(slots[3].Offset.Y > slots[0].Offset.Y);
     }
 
-    [Fact]
-    public void UnknownLayout_FallsBackToMixed()
+    [Theory]
+    [InlineData(1, new byte[] { 0, 3, 3 })]
+    [InlineData(2, new byte[] { 0, 1, 3, 3 })]
+    [InlineData(5, new byte[] { 0, 1, 2, 3, 3 })]
+    public void HotbarCount_FollowsTheGameUpToThreeKeys(int count, byte[] expected)
     {
-        var a = BodySlotLayout.Create("nope", 0.1f, 0f);
-        var b = BodySlotLayout.Create("Mixed", 0.1f, 0f);
+        var slots = BodySlotLayout.Create(BodySlotLayout.Belt, count, 0.12f, 0f);
+        Assert.Equal(expected, slots.Select(s => s.GameSlot).ToArray());
+    }
+
+    [Theory]
+    [InlineData("nope")]
+    [InlineData("Mixed")]
+    [InlineData("Hips")]
+    public void UnknownOrOldLayout_FallsBackToBelt(string name)
+    {
+        var a = BodySlotLayout.Create(name, 3, 0.1f, 0f);
+        var b = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.1f, 0f);
         Assert.Equal(a.Select(s => s.Offset), b.Select(s => s.Offset));
+        Assert.Equal(BodySlotLayout.Belt, BodySlotLayout.Names[0]);
+    }
+
+    [Fact]
+    public void Belt_IsAnArcInFrontOfTheHips()
+    {
+        var slots = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.12f, 0f);
+        var center = BodySlotLayout.BeltCenter;
+        for (int i = 0; i < 3; i++)
+        {
+            var o = slots[i].Offset;
+            var flat = new Vector2(o.X - center.X, o.Z - center.Z);
+            TestUtil.Near(BodySlotLayout.BeltRadius, flat.Length());
+            TestUtil.Near(center.Y, o.Y);
+            // In front of the neck pivot, so they are seen when looking down and reached without twisting.
+            Assert.True(o.Z > 0.1f, $"slot {i} at z {o.Z}");
+            // Each slot faces straight out from the arc centre.
+            TestUtil.Near(MathF.Atan2(flat.X, flat.Y) * UnityQuat.Rad2Deg, slots[i].Heading, 0.01f);
+        }
+        // Left to right, the middle one straight ahead, mirrored sides.
+        Assert.True(slots[0].Offset.X < 0f && slots[2].Offset.X > 0f);
+        TestUtil.Near(0f, slots[1].Offset.X);
+        TestUtil.Near(-slots[0].Offset.X, slots[2].Offset.X);
+        TestUtil.Near(slots[0].Offset.Z, slots[2].Offset.Z);
+    }
+
+    [Theory]
+    [InlineData(0.06f)]
+    [InlineData(0.12f)]
+    [InlineData(0.25f)]
+    public void Neighbours_NeverOverlap(float radius)
+    {
+        foreach (var name in BodySlotLayout.Names)
+        {
+            var slots = BodySlotLayout.Create(name, 3, radius, 0f);
+            for (int i = 0; i < 2; i++)
+            {
+                float gap = Vector3.Distance(slots[i].Offset, slots[i + 1].Offset);
+                Assert.True(gap >= BodySlotLayout.MinSpacing - 1e-4f, $"{name} gap {gap}");
+                Assert.True(
+                    gap >= slots[i].Radius + slots[i + 1].Radius - 1e-4f,
+                    $"{name} gap {gap} radius {slots[i].Radius}"
+                );
+            }
+        }
+    }
+
+    [Fact]
+    public void Chest_SitsAboveBelt()
+    {
+        var belt = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.12f, 0f);
+        var chest = BodySlotLayout.Create(BodySlotLayout.Chest, 3, 0.12f, 0f);
+        Assert.True(chest[0].Offset.Y > belt[0].Offset.Y + 0.15f);
     }
 
     [Fact]
     public void HeightOffset_MovesHotbarSlotsOnly()
     {
-        var a = BodySlotLayout.Create("Mixed", 0.1f, 0f);
-        var b = BodySlotLayout.Create("Mixed", 0.1f, 0.1f);
+        var a = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.1f, 0f);
+        var b = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.1f, 0.1f);
         TestUtil.Near(a[0].Offset + new Vector3(0, 0.1f, 0), b[0].Offset);
         TestUtil.Near(a[3].Offset, b[3].Offset);
     }
@@ -64,7 +129,7 @@ public class BodySlotsTests
     [Fact]
     public void Find_ReturnsNearestSlotInsideItsRadius()
     {
-        var slots = BodySlotLayout.Create("Mixed", 0.1f, 0f);
+        var slots = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.1f, 0f);
         var anchors = new Vector3[slots.Length];
         for (int i = 0; i < slots.Length; i++)
             anchors[i] = BodySlotLayout.Anchor(NeckPos, 0f, slots[i]);
@@ -72,7 +137,7 @@ public class BodySlotsTests
         Assert.Equal(
             1,
             BodySlotLayout.Find(
-                anchors[1] + new Vector3(0.05f, 0, 0),
+                anchors[1] + new Vector3(0, 0.05f, 0),
                 anchors,
                 slots,
                 slots.Length,
@@ -82,7 +147,7 @@ public class BodySlotsTests
         Assert.Equal(
             -1,
             BodySlotLayout.Find(
-                anchors[1] + new Vector3(0.2f, 0, 0),
+                anchors[1] + new Vector3(0, 0.2f, 0),
                 anchors,
                 slots,
                 slots.Length,
@@ -93,7 +158,7 @@ public class BodySlotsTests
         Assert.Equal(
             1,
             BodySlotLayout.Find(
-                anchors[1] + new Vector3(0.15f, 0, 0),
+                anchors[1] + new Vector3(0, 0.15f, 0),
                 anchors,
                 slots,
                 slots.Length,
