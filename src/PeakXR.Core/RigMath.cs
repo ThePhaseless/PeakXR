@@ -97,6 +97,21 @@ namespace PeakXR.Core
             center + RotateYaw(yawDeg, new Vector3(0f, offset.Y, offset.X));
 
         /// <summary>
+        /// The shift added to <see cref="EyeAnchor"/> after the rig turns from <paramref name="fromYawDeg"/> to
+        /// <paramref name="toYawDeg"/>: a turn pivots on the eye, so the eye stays put while the body (and the eye's
+        /// <paramref name="forward"/> offset) swings under it. Horizontal only; a full circle returns the shift.
+        /// </summary>
+        public static Vector3 TurnShift(
+            Vector3 shift,
+            float fromYawDeg,
+            float toYawDeg,
+            float forward
+        ) =>
+            shift
+            - RotateYaw(toYawDeg, new Vector3(0f, 0f, forward))
+            + RotateYaw(fromYawDeg, new Vector3(0f, 0f, forward));
+
+        /// <summary>
         /// Chase-view point <paramref name="distance"/> metres behind <paramref name="target"/> along the rig's
         /// heading and <paramref name="height"/> metres above it. Uses the rig yaw, never the target's, so the
         /// view does not rotate on its own.

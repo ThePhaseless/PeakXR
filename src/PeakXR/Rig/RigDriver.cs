@@ -46,6 +46,12 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Follow rate (1/s) of the opt-in cutscene glide; slow, never a cut.</summary>
     private const float CutsceneFollowRate = 1.5f;
 
+    /// <summary>After a turn the view holds still this long (s) before it glides back onto the avatar's eyes.</summary>
+    private const float TurnSettleSeconds = 1f;
+
+    /// <summary>Glide rate (1/s) back onto the avatar's eyes after turning stopped; slow, like the body follow.</summary>
+    private const float TurnSettleRate = 1.5f;
+
     private static RigDriver instance;
 
     /// <summary>comfort.events wants the horizon-locked chase view this frame (a launch).</summary>
@@ -88,6 +94,9 @@ internal sealed class RigDriver : MonoBehaviour
     private System.Numerics.Vector2 eyeOffset = DefaultEyeOffset;
     private Vector3 anchor;
     private bool snap = true;
+    private Vector3 turnShift;
+    private float turnYaw;
+    private float lastTurnTime;
 
     private ViewKind shownKind;
     private Character shownTarget;
@@ -488,6 +497,7 @@ internal sealed class RigDriver : MonoBehaviour
             VRFade.Clear(this);
 
         float yaw = rig.Origin.eulerAngles.y;
+        UpdateTurnShift(yaw, dt);
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
             return;
         float verticalRate =
@@ -508,6 +518,35 @@ internal sealed class RigDriver : MonoBehaviour
             RigMath.TrackedEyeHeight(rig.HeightOffset)
         );
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
+    }
+
+    /// <summary>
+    /// Snap and smooth turns rotate the tracking space around the head (<see cref="VRRig.RotateYaw"/>), but the eye
+    /// anchor sits ahead of the torso and swings round it with the rig heading. <see cref="turnShift"/> cancels that
+    /// swing so the eye stays put while the body turns under it; once turning has stopped for
+    /// <see cref="TurnSettleSeconds"/>, the shift glides back to zero and the view rejoins the avatar's eyes.
+    /// </summary>
+    private void UpdateTurnShift(float yaw, float dt)
+    {
+        if (snap || shownKind != ViewKind.FirstPerson)
+        {
+            // The view is being placed anyway (recenter, new view): start on the avatar's eyes.
+            turnShift = Vector3.zero;
+            turnYaw = yaw;
+            return;
+        }
+        if (Mathf.Abs(Mathf.DeltaAngle(turnYaw, yaw)) > 0.01f)
+        {
+            turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, eyeOffset.X).U();
+            turnYaw = yaw;
+            lastTurnTime = Time.unscaledTime;
+        }
+        else if (Time.unscaledTime - lastTurnTime > TurnSettleSeconds)
+        {
+            turnShift = RigMath
+                .Follow(turnShift.N(), default, dt, TurnSettleRate, TurnSettleRate, -1f)
+                .U();
+        }
     }
 
     /// <summary>
@@ -554,7 +593,7 @@ internal sealed class RigDriver : MonoBehaviour
             case ViewKind.FirstPerson:
                 if (c == null)
                     return false;
-                goal = BodyEye(c, yaw) + Vector3.up * rig.CrouchLift;
+                goal = BodyEye(c, yaw) + turnShift + Vector3.up * rig.CrouchLift;
                 return true;
             case ViewKind.FollowFirstPerson:
                 if (target == null)

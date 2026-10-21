@@ -206,4 +206,23 @@ public class RigMathTests
             1e-5f
         );
     }
+
+    [Fact]
+    public void TurnShift_KeepsTheEyeWhereItWasWhileTheBodyTurnsUnderIt()
+    {
+        var center = new Vector3(2f, 1f, -1f);
+        var offset = new Vector2(0.12f, 0.35f);
+        var shift = new Vector3(0.01f, 0f, -0.02f);
+        var eyeBefore = RigMath.EyeAnchor(center, 30f, offset) + shift;
+
+        var after = RigMath.TurnShift(shift, 30f, 75f, offset.X);
+
+        TestUtil.Near(eyeBefore, RigMath.EyeAnchor(center, 75f, offset) + after, 1e-5f);
+        Assert.Equal(0f, after.Y);
+        // A full circle of turns gives the shift back.
+        var round = shift;
+        for (int i = 0; i < 8; i++)
+            round = RigMath.TurnShift(round, 30f + 45f * i, 30f + 45f * (i + 1), offset.X);
+        TestUtil.Near(shift, round, 1e-5f);
+    }
 }
