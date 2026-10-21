@@ -85,7 +85,7 @@ internal sealed class RunFlowSettings
                 Section,
                 "BeachWakeup",
                 BeachWakeupMode.Fade,
-                "Run start wake-up on the beach: Fade = black while you lie on the sand, then fade in; Skip = no fall; Vanilla = game eyelids."
+                "Run start wake-up on the beach: Fade = the loading room stays up while you lie on the sand (black without it), then fade in; Skip = no fall; Vanilla = game eyelids."
             ),
             ShakeHaptics = cfg.Bind(
                 Section,

@@ -3,6 +3,7 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Common;
+using PeakXR.UI.RunFlow;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -18,6 +19,9 @@ namespace PeakXR.UI.Menu;
 internal sealed class UIMenuRuntime : MonoBehaviour
 {
     private const float FadeTimeout = 2f;
+
+    // Longest the room waits for the run-start wake-up (ui.runflow's beach hold gives up at 10 s).
+    private const float BeachWaitTimeout = 10f;
 
     private readonly object loadOwner = new();
     private readonly object cutOwner = new();
@@ -235,6 +239,10 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         destination.Ended();
         space.ClearDestination();
+        // Lying on the sand at run start (ui.runflow Fade mode) would be black: the room stays up instead.
+        var until = Time.unscaledTime + BeachWaitTimeout;
+        while (space.Shown && RunFlowRuntime.BeachWaking && Time.unscaledTime < until)
+            yield return null;
         VRFade.Set(loadOwner, 1f);
         yield return WaitForBlack();
         space.Hide();

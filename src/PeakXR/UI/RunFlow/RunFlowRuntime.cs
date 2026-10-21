@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using PeakXR.Core;
 using PeakXR.UI.Common;
+using PeakXR.UI.Menu;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -187,6 +188,11 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         UpdateRumble(dt);
     }
 
+    /// <summary>The run-start wake-up waits to be shown (Fade mode) and the body still lies on the sand. ui.menu
+    /// keeps its loading room up meanwhile, so the room hands over straight to the scene instead of to black.</summary>
+    public static bool BeachWaking =>
+        instance != null && instance.beachPending && instance.BeachFalling();
+
     // ---- events reported by the patches ----
 
     /// <summary>Character.WarpPlayer on the local character (Character.cs:1847).</summary>
@@ -251,7 +257,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         if (instance == null || !VRSession.Active)
             return;
         instance.beachCharacter = character;
-        // Inside a loading screen ui.menu's loading space is showing: wait until it fades out.
+        // Inside a loading screen ui.menu's loading room is showing: it stays up while the body lies there.
         if (LoadingScreenHandler.loading)
             instance.beachPending = true;
         else
@@ -347,11 +353,12 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     private void UpdateBeach()
     {
-        if (!beachPending || LoadingScreenHandler.loading)
+        if (!beachPending || LoadingScreenHandler.loading || LoadingSpace.RoomUp)
             return;
         beachPending = false;
-        // ui.menu is fading out of the loading space right now, so no snap is needed.
-        if (beachCharacter != null)
+        // The room waited for the wake-up (BeachWaking); hold black only if it gave up first. ui.menu has just
+        // faded out of the room, so no snap is needed.
+        if (BeachFalling())
             Request(beach, snap: false);
     }
 

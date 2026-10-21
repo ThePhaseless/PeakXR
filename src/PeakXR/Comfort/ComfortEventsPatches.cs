@@ -42,6 +42,7 @@ internal static class ComfortEventsPatches
         );
         MovementCharacter = GameMember.Field<CharacterMovement, Character>("character");
         ActionItem = GameMember.Field<ItemActionBase, Item>("item");
+        BlindWash.Material = GameMember.Field<IllegalScreenEffect, Material>("mat");
     }
 
     private static bool IsLocal(Character c) => c != null && c.IsLocal;
@@ -326,6 +327,37 @@ internal static class ComfortEventsPatches
         {
             if (VRSession.Active)
                 ComfortEventsRuntime.Raise(ComfortEvent.StatusFlash, amount * 4f);
+        }
+    }
+
+    /// <summary>
+    /// IllegalScreenEffect.Update (IllegalScreenEffect.cs:25): the BLIND status (Affliction_Blind.OnApplied,
+    /// Peak.Afflictions/Affliction_Blind.cs:21, applied by explosion and flash AOEs, AOE.cs:118) is a white overlay
+    /// over the whole view whose <c>_Alpha</c> stays near 1 until the last 3 s (IllegalScreenEffect.cs:44-53). In
+    /// a headset that is a glaring white-out for many seconds; in VR it is capped (Core ComfortPolicy.CapWash), so
+    /// the player still reads as blinded but sees the world. The status itself (isBlind) is untouched.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class BlindWash
+    {
+        /// <summary>IllegalScreenEffect.mat (IllegalScreenEffect.cs:16, private), its own material instance.</summary>
+        internal static AccessTools.FieldRef<IllegalScreenEffect, Material> Material;
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(IllegalScreenEffect), "Update", Type.EmptyTypes);
+
+        private static void Postfix(IllegalScreenEffect __instance)
+        {
+            if (!VRSession.Active)
+                return;
+            var mat = Material(__instance);
+            if (mat == null)
+                return;
+            var name = __instance.shaderVarName;
+            var alpha = mat.GetFloat(name);
+            var capped = ComfortPolicy.CapWash(alpha);
+            if (capped < alpha)
+                mat.SetFloat(name, capped);
         }
     }
 
