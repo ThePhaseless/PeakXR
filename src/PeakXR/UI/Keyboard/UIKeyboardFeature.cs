@@ -38,6 +38,8 @@ public sealed class UIKeyboardFeature : Feature
                 1.5f
             )
         );
+        // 0.5 m until the keyboard became a desk below the hands.
+        ConfigMigration.FromOldDefault(Distance, 0.5f);
         Width = Plugin.Settings.Bind(
             section,
             "KeyboardWidth",
@@ -54,6 +56,8 @@ public sealed class UIKeyboardFeature : Feature
                 60f
             )
         );
+        // 30 degrees until the keyboard became a desk below the hands.
+        ConfigMigration.FromOldDefault(Tilt, 30f);
         Poke = Plugin.Settings.Bind(
             section,
             "PokeKeys",
