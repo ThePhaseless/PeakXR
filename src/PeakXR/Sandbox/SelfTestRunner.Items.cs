@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Interact;
 using PeakXR.Interact.Physical;
 using PeakXR.VR;
 using Photon.Pun;
@@ -238,8 +239,19 @@ internal sealed partial class SelfTestRunner
     IEnumerator WarpFacing(Vector3 target, float distance)
     {
         var c = Character.localCharacter;
+        yield return WarpTo(target + Flat(c.Center - target) * distance);
         var rig = VRRig.Instance;
-        var stand = target + Flat(c.Center - target) * distance;
+        rig.RotateYaw(
+            Vector3.SignedAngle(Flat(rig.Head.forward), Flat(target - c.Center), Vector3.up)
+        );
+        yield return Wait(0.6f);
+    }
+
+    /// <summary>Warps onto the ground under <paramref name="stand"/> and waits for the body to settle. Sets
+    /// <see cref="warpedForProp"/>, so the step's <see cref="WarpBack"/> returns to spawn.</summary>
+    IEnumerator WarpTo(Vector3 stand)
+    {
+        var c = Character.localCharacter;
         if (
             Physics.Raycast(
                 stand + Vector3.up * 3f,
@@ -256,18 +268,21 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);
-        rig.RotateYaw(
-            Vector3.SignedAngle(Flat(rig.Head.forward), Flat(target - c.Center), Vector3.up)
-        );
-        yield return Wait(0.6f);
     }
 
+    /// <summary>Farthest the scripted hand may lead the item point it carries. The held item hangs off the ragdoll
+    /// arm (0.6 m reach), so past that the item has stopped and the hand would chase it forever (4 m out in vr9).</summary>
+    const float MaxCarryLead = 0.8f;
+
     /// <summary>Moves the scripted hand toward the point where <paramref name="part"/> (an item point the hand
-    /// carries) reaches <paramref name="goal"/>; one frame of a 1.5 m/s approach.</summary>
+    /// carries) reaches <paramref name="goal"/>; one frame of a 1.5 m/s approach. Holds still once the item has
+    /// stopped following it (out of reach or blocked).</summary>
     void CarryToward(bool left, Vector3 part, Vector3 goal)
     {
         var rig = VRRig.Instance;
         var hand = rig.Hand(left).position;
+        if ((hand - part).sqrMagnitude > MaxCarryLead * MaxCarryLead)
+            return;
         var target = goal + (hand - part);
         SetHand(
             left,
@@ -300,13 +315,23 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(left, () => top, 0.5f);
         yield return GripTo(left, 1f, 0.1f);
         var interaction = Interaction.instance;
-        yield return Until(
-            () => interaction != null && ReferenceEquals(interaction.currentHeldInteractible, lug),
-            2f,
-            "grip did not hold the suitcase"
-        );
-        if (!stepOk)
+        if (interaction == null)
+        {
+            Fail("no Interaction instance");
             yield break;
+        }
+        yield return WaitFor(() => ReferenceEquals(interaction.currentHeldInteractible, lug), 2f);
+        if (!ReferenceEquals(interaction.currentHeldInteractible, lug))
+        {
+            var hand = VRRig.Instance.Hand(left).position;
+            Fail(
+                $"grip did not hold the suitcase: grip {PhysicalInteraction.HandAction(left)} on "
+                    + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(hand, lug):0.00} m from "
+                    + $"{lug.name} (lid point {top - lug.Center()} from its centre), hovered "
+                    + $"{Label(interaction.currentHovered)}, held {Label(interaction.currentHeldInteractible)}"
+            );
+            yield break;
+        }
         yield return Wait(1f);
         float still = interaction.constantInteractableProgress;
         yield return Shot("vr-24-lift-lid");
@@ -334,18 +359,40 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>Top centre of the suitcase's collider bounds, just under the lid surface and above its centre.</summary>
+    /// <summary>The lid surface straight above the suitcase's centre (<c>Luggage.Center</c>, its renderers,
+    /// Luggage.cs:147), just under it, from the case's own solid colliders. The bounds of all its colliders put the
+    /// hand 0.1 m above the eye and 1.27 m out in vr9 (a trigger or extra collider widens them), out of grab reach.</summary>
     static Vector3 LidPoint(Luggage lug)
     {
         var center = lug.Center();
-        var cols = lug.GetComponentsInChildren<Collider>();
-        if (cols.Length == 0)
-            return center + Vector3.up * 0.1f;
-        var b = cols[0].bounds;
-        for (int i = 1; i < cols.Length; i++)
-            b.Encapsulate(cols[i].bounds);
-        return new Vector3(b.center.x, Mathf.Max(b.max.y - 0.03f, center.y + 0.02f), b.center.z);
+        var down = new Ray(center + Vector3.up * 2f, Vector3.down);
+        float best = float.MaxValue;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (!col.isTrigger && col.Raycast(down, out var hit, 2f) && hit.distance < best)
+                best = hit.distance;
+        }
+        return best < float.MaxValue
+            ? down.GetPoint(best) + Vector3.down * 0.03f
+            : center + Vector3.up * 0.1f;
     }
+
+    /// <summary>Distance from <paramref name="point"/> to the nearest solid collider of <paramref name="lug"/>.</summary>
+    static float Gap(Vector3 point, Luggage lug)
+    {
+        float best = float.MaxValue;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (!col.isTrigger)
+                best = Mathf.Min(best, Vector3.Distance(col.ClosestPoint(point), point));
+        }
+        return best;
+    }
+
+    static string Label(IInteractible it) =>
+        it is Component comp && comp != null ? comp.name
+        : it == null ? "nothing"
+        : it.GetType().Name;
 
     /// <summary>vr.26: a held torch touched to an unlit campfire holds the game's light hold on it
     /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121); pulling away before the hold completes
@@ -364,7 +411,8 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.LightWithFlame is off";
             yield break;
         }
-        yield return WarpFacing(ItemGestures.FireBase(fire), 1.1f);
+        var fireBase = ItemGestures.FireBase(fire);
+        yield return WarpFacing(fireBase, FireStand);
         yield return GiveAndHold(torchPrefab);
         if (!stepOk)
             yield break;
@@ -376,13 +424,16 @@ internal sealed partial class SelfTestRunner
             action != null && action.torchLight != null
                 ? action.torchLight.transform
                 : torch.transform;
-        var goal = ItemGestures.FireBase(fire) + Vector3.up * 0.15f;
+        // The near side of the light zone (FireGestures: 0.35 m around the base, -0.1 to 0.4 m up), in arm's reach.
+        var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;
         float progress = 0f;
         float end = Now + 5f;
+        string state = "";
         while (Now < end && progress < 0.3f)
         {
             CarryToward(left, flame.position, goal);
+            state = FireTrace("vr.26", flame.position, fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
                 progress = interaction.constantInteractableProgress;
             yield return null;
@@ -397,7 +448,7 @@ internal sealed partial class SelfTestRunner
         );
         yield return Wait(0.5f);
         var note =
-            $"{torch.name} at {fire.name}: light hold progress {progress:0.00}, fire {fire.state} after pulling away";
+            $"{torch.name} at {fire.name}: light hold progress {progress:0.00}, fire {fire.state} after pulling away; at the end {state}";
         if (progress < 0.3f)
             Fail("flame did not hold the light: " + note);
         else if (fire.state != Campfire.FireState.Off)
@@ -423,7 +474,8 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.CookOverFire is off";
             yield break;
         }
-        yield return WarpFacing(ItemGestures.FireBase(fire), 1.2f);
+        var fireBase = ItemGestures.FireBase(fire);
+        yield return WarpFacing(fireBase, FireStand);
         if (!fire.Lit)
         {
             fire.LightWithoutReveal();
@@ -443,14 +495,17 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         int before = Cooked(food);
-        var goal = ItemGestures.FireBase(fire) + Vector3.up * 0.6f;
+        // The near side of the heat column (FireGestures: 0.6 m around the base, 0.2 to 1 m up), in arm's reach.
+        var goal = fireBase + Flat(c.Center - fireBase) * 0.35f + Vector3.up * 0.55f;
         var interaction = Interaction.instance;
         float progress = 0f;
         bool shot = false;
+        string state = "";
         float end = Now + fire.cookTime + 4f;
         while (Now < end && food != null && Cooked(food) == before)
         {
             CarryToward(left, food.Center(), goal);
+            state = FireTrace("vr.25", food.Center(), fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
                 progress = Mathf.Max(progress, interaction.constantInteractableProgress);
             if (!shot && progress > 0.3f)
@@ -463,13 +518,41 @@ internal sealed partial class SelfTestRunner
         }
         int after = food != null ? Cooked(food) : before;
         var note =
-            $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {fire.cookTime:0.0} s, cooked {before} -> {after}";
+            $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {fire.cookTime:0.0} s, cooked {before} -> {after}; at the end {state}";
         if (after <= before)
             Fail("not cooked: " + note);
         else
             stepNote = note;
 
         static string NameOf(Item it) => it != null ? it.name : "item (gone)";
+    }
+
+    /// <summary>Where the fire steps stand from the fire base. vr9 stood 1.1-1.2 m off: the item hangs off a 0.6 m
+    /// ragdoll arm, so it never reached the cook column or the logs and the gesture never pressed interact.</summary>
+    const float FireStand = 0.95f;
+
+    float nextFireTrace;
+    string fireTraceText = "";
+
+    /// <summary>A fire step's state: where the carried item point is against the fire base, how far the scripted
+    /// hand leads it, the body's distance, and the game's interact state. Logged at Debug twice a second.</summary>
+    string FireTrace(string id, Vector3 part, Vector3 fireBase, bool left)
+    {
+        if (Now < nextFireTrace)
+            return fireTraceText;
+        nextFireTrace = Now + 0.5f;
+        var c = Character.localCharacter;
+        var interaction = Interaction.instance;
+        var off = part - fireBase;
+        var body = c.Center - fireBase;
+        float lead = Vector3.Distance(VRRig.Instance.Hand(left).position, part);
+        fireTraceText =
+            $"item point {new Vector2(off.x, off.z).magnitude:0.00} m out and {off.y:0.00} m up from the fire base, "
+            + $"hand {lead:0.00} m ahead of it, body {new Vector2(body.x, body.z).magnitude:0.00} m out; interact "
+            + $"{c.input.interactIsPressed}, hovered {Label(interaction != null ? interaction.currentHovered : null)}, "
+            + $"held {Label(interaction != null ? interaction.currentHeldInteractible : null)}";
+        Plugin.Log.LogDebug($"[selftest.fire] {id}: {fireTraceText}");
+        return fireTraceText;
     }
 
     static int Cooked(Item item) => item.GetData<IntItemData>(DataEntryKey.CookedAmount).Value;

@@ -17,8 +17,8 @@ namespace PeakXR.UI.Spatial;
 /// </summary>
 internal sealed class WorldBanners
 {
-    private const float Distance = 30f;
-    private const float NearestDistance = 4f;
+    internal const float Distance = 30f;
+    internal const float NearestDistance = 4f;
 
     /// <summary>Re-place a shown sign once it is this far off your heading, in degrees...</summary>
     private const float ReplaceDegrees = 100f;

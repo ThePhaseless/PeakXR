@@ -138,7 +138,8 @@ internal sealed partial class SelfTestRunner
         Conclude(fails, new List<string> { $"'{prompt.text}' {d:0.000} m from the hand" });
     }
 
-    /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a sign far ahead.</summary>
+    /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a sign ahead, 30 m out or
+    /// nearer where terrain is in the way.</summary>
     IEnumerator BannerStep()
     {
         if (!SpatialFeature.Settings.WorldBanners.Value)
@@ -161,13 +162,35 @@ internal sealed partial class SelfTestRunner
         var sign = gui.heroObject.transform.parent;
         var head = VRRig.Instance.Head;
         float d = sign != null ? Vector3.Distance(sign.position, head.position) : 0f;
+        // The sign stands at the first solid hit along its direction, clamped to 4-30 m, else at 30 m
+        // (WorldBanners.Sign.Place): repeat that ray.
+        float expected = WorldBanners.Distance;
+        if (sign != null && d > 0.01f)
+        {
+            var dir = (sign.position - head.position) / d;
+            if (
+                Physics.Raycast(
+                    head.position + dir * 0.5f,
+                    dir,
+                    out var hit,
+                    WorldBanners.Distance,
+                    Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                expected = Mathf.Clamp(
+                    hit.distance,
+                    WorldBanners.NearestDistance,
+                    WorldBanners.Distance
+                );
+        }
         yield return Shot("ui-03-world-banner");
         var fails = new List<string>();
         if (sign == null || sign.name != "PeakXR_HeroSign")
             fails.Add($"hero title under '{(sign != null ? sign.name : "none")}'");
-        else if (d < 20f)
-            fails.Add($"sign only {d:0.0} m away");
-        Conclude(fails, new List<string> { $"sign {d:0.0} m away" });
+        else if (Mathf.Abs(d - expected) > 0.75f)
+            fails.Add($"sign {d:0.0} m away, its ray says {expected:0.0} m");
+        Conclude(fails, new List<string> { $"sign {d:0.0} m away (ray {expected:0.0} m)" });
     }
 
     /// <summary>ui.04: holding a rope spool shows <c>UI_Rope</c> (GUIManager.cs:635) next to the spool.</summary>

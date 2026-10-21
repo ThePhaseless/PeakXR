@@ -28,6 +28,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.40-physical-crouch", 15f, CrouchStep());
         yield return Restoring("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
+        yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
     }
 
@@ -161,19 +162,22 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var forward = Flat(rig.Head.forward);
-        var top = c.Center + forward * 0.7f + Vector3.up * 2.6f;
-        if (
-            Physics.Linecast(
-                c.Center,
-                top,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!RopeRoom(c.Center, forward))
         {
-            stepSkip = "no clear space above the spawn for a hanging rope";
-            yield break;
+            // The spawn is often under a wing or a palm: hang the rope under open sky nearby (WarpBack returns).
+            if (!OpenSkyNear(c.Center, forward, out var ground))
+            {
+                stepSkip = "no clear space for a hanging rope within 15 m of the spawn";
+                yield break;
+            }
+            yield return WarpTo(ground);
+            if (!RopeRoom(c.Center, forward))
+            {
+                stepSkip = $"no clear space for a hanging rope after warping to {ground}";
+                yield break;
+            }
         }
+        var top = c.Center + forward * 0.7f + Vector3.up * 2.6f;
         var go = PhotonNetwork.Instantiate(
             shooter.ropeAnchorWithRopePref.name,
             top,
@@ -241,6 +245,55 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
         yield return LetGoAll(c);
+    }
+
+    /// <summary>Nothing solid between the body centre and the rope's anchor point, 0.7 m ahead and 2.6 m up.</summary>
+    static bool RopeRoom(Vector3 center, Vector3 forward) =>
+        !Physics.Linecast(
+            center,
+            center + forward * 0.7f + Vector3.up * 2.6f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+
+    /// <summary>Flat open ground within 15 m (rings of 12 points every 3 m, nearest first) with room for a hanging
+    /// rope over a body standing on it; <paramref name="ground"/> is the point to warp to.</summary>
+    static bool OpenSkyNear(Vector3 center, Vector3 forward, out Vector3 ground)
+    {
+        for (float r = 3f; r <= 15f; r += 3f)
+        {
+            for (int i = 0; i < 12; i++)
+            {
+                var p = center + Quaternion.AngleAxis(i * 30f, Vector3.up) * forward * r;
+                // From 6 m up the first hit is the ground under open sky (an overhang would be hit first).
+                if (
+                    !Physics.Raycast(
+                        p + Vector3.up * 6f,
+                        Vector3.down,
+                        out var hit,
+                        12f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                    || hit.normal.y < 0.8f
+                )
+                    continue;
+                var body = hit.point + Vector3.up;
+                if (
+                    Physics.CheckSphere(
+                        body,
+                        0.4f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    ) || !RopeRoom(body, forward)
+                )
+                    continue;
+                ground = hit.point;
+                return true;
+            }
+        }
+        ground = default;
+        return false;
     }
 
     /// <summary>
