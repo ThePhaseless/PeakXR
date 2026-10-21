@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
@@ -47,5 +49,36 @@ internal static class LoadSceneProcessPatch
     {
         if (Runtime != null)
             Runtime.OnLoadDestination(sceneName);
+    }
+}
+
+/// <summary>Sees a load the game refuses because one is running (it only logs an error), so the destination
+/// built for it is dropped. A/LoadingScreenHandler.cs:87 <c>public void Load(LoadingScreen.LoadingScreenType type,
+/// Action runAfter, params IEnumerator[] processes)</c> and :100 <c>LoadWithoutDisablingQueue</c> (same parameters).</summary>
+[HarmonyPatch]
+internal static class LoadRejectedPatch
+{
+    internal static UIMenuRuntime Runtime;
+
+    private static IEnumerable<MethodBase> TargetMethods()
+    {
+        var parameters = new[]
+        {
+            typeof(LoadingScreen.LoadingScreenType),
+            typeof(Action),
+            typeof(IEnumerator[]),
+        };
+        yield return GameMember.Method(typeof(LoadingScreenHandler), "Load", parameters);
+        yield return GameMember.Method(
+            typeof(LoadingScreenHandler),
+            "LoadWithoutDisablingQueue",
+            parameters
+        );
+    }
+
+    private static void Prefix()
+    {
+        if (Runtime != null && LoadingScreenHandler.loading)
+            Runtime.OnLoadRejected();
     }
 }

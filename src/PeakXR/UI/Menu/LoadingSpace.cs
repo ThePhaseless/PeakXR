@@ -229,7 +229,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             var bg = splashCam.backgroundColor;
             fills.Add(new Rgba(bg.r, bg.g, bg.b));
         }
-        backing.Scan(canvas, 0f, fills, kept, "loading");
+        backing.Scan(canvas, fills, kept);
         var target = LoadingPalette.For(fills, destination);
         InkDarkArt(target);
         Fit((RectTransform)canvas.transform);
@@ -486,6 +486,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         if (backing.Canvas != null)
             BlendTo(LoadingPalette.For(fills, destination));
     }
+
+    /// <summary>Forgets the destination without touching the room (it is fading out or gone).</summary>
+    public void ClearDestination() => destination = null;
 
     private Rgba? DestinationKey(string scene)
     {

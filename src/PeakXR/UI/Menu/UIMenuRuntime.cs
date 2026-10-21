@@ -19,9 +19,6 @@ internal sealed class UIMenuRuntime : MonoBehaviour
 {
     private const float FadeTimeout = 2f;
 
-    // Darker full-canvas fills on the title are ui.world's dimmers (MenuBackdrop); this takes only light ones.
-    private const float LightFill = 0.35f;
-
     private readonly object loadOwner = new();
     private readonly object cutOwner = new();
     private TitleStage stage;
@@ -32,7 +29,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private Pretitle pretitle;
     private AccessTools.FieldRef<Pretitle, bool> skipSplash;
     private readonly HoldToConfirm skipHold = new();
-    private readonly ScreenBacking titleCover = new();
+    private readonly LoadDestination destination = new();
 
     public static UIMenuRuntime Create(
         TitleStage stage,
@@ -68,11 +65,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>VR may come up while the boot splash is already playing.</summary>
-    private void OnVRStarted()
-    {
-        EnterSplash();
-        HideTitleCover();
-    }
+    private void OnVRStarted() => EnterSplash();
 
     /// <summary>Drop every hold so a later VR restart does not come back to a black or loading headset.</summary>
     private void OnVRStopped()
@@ -84,7 +77,8 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         splash = false;
         space.Hide();
         space.Release();
-        titleCover.Restore();
+        space.ClearDestination();
+        destination.Clear();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -97,7 +91,6 @@ internal sealed class UIMenuRuntime : MonoBehaviour
             space.Hide();
         }
         EnterSplash();
-        HideTitleCover();
         // Kick/disconnect paths load scenes directly, without a loading screen: go black, then fade in.
         if (VRSession.Active && !LoadingScreenHandler.loading && loadRoutine == null && !splash)
             StartCoroutine(FadeInAfterCut());
@@ -152,29 +145,28 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         Haptics.Pulse(false, amplitude, seconds);
     }
 
-    /// <summary>The title's cream cover (MainPage/WhiteFade, shown while connecting and faded by the TitleIn
-    /// animation) and the first-time setup page's cream page are opaque cards over the beach in VR.</summary>
-    private void HideTitleCover()
-    {
-        if (!VRSession.Active)
-            return;
-        var menu = FindAnyObjectByType<MainMenuPageHandler>();
-        var canvas = menu != null ? menu.GetComponentInChildren<Canvas>(true) : null;
-        if (canvas == null && menu != null)
-            canvas = menu.GetComponentInParent<Canvas>(true);
-        if (canvas == null)
-        {
-            titleCover.Restore();
-            return;
-        }
-        titleCover.Scan(canvas.rootCanvas, LightFill, null, null, "title");
-    }
-
-    /// <summary>LoadingScreenHandler.LoadSceneProcess was built for <paramref name="sceneName"/>.</summary>
+    /// <summary>
+    /// LoadingScreenHandler.LoadSceneProcess was built for <paramref name="sceneName"/>. Every client builds it:
+    /// the load RPCs run on all (A/AirportCheckInKiosk.cs:151 BeginIslandLoadRPC, A/GameOverHandler.cs:44
+    /// BeginAirportLoadRPC). Built before a load starts, it is held until the load really starts
+    /// (<see cref="OnLoadingStart"/>); built inside a running load (solo play, A/MainMenu.cs:151) it applies at once,
+    /// unless a Load call rejects it as "already loading" in the same frame (<see cref="OnLoadRejected"/>).
+    /// </summary>
     public void OnLoadDestination(string sceneName)
     {
-        if (VRSession.Active)
-            space.SetDestination(sceneName);
+        if (
+            VRSession.Active
+            && destination.Built(sceneName, LoadingScreenHandler.loading, Time.frameCount)
+        )
+            space.SetDestination(destination.Current);
+    }
+
+    /// <summary>LoadingScreenHandler.Load refused to start (A/LoadingScreenHandler.cs:96, :109): the process
+    /// built for it never runs.</summary>
+    public void OnLoadRejected()
+    {
+        if (destination.Rejected(Time.frameCount))
+            space.SetDestination(destination.Current);
     }
 
     private void LateUpdate()
@@ -183,7 +175,6 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         if (!VRSession.Active)
             return;
         stage.ApplyOrigin(VRRig.Instance);
-        titleCover.Reassert();
         if (splash)
             UpdateSplashSkip();
     }
@@ -199,6 +190,8 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         if (!VRSession.Active)
             return;
+        destination.Started();
+        space.SetDestination(destination.Current);
         Restart(EnterLoading());
     }
 
@@ -240,10 +233,11 @@ internal sealed class UIMenuRuntime : MonoBehaviour
 
     private IEnumerator ExitLoading()
     {
+        destination.Ended();
+        space.ClearDestination();
         VRFade.Set(loadOwner, 1f);
         yield return WaitForBlack();
         space.Hide();
-        space.SetDestination(null);
         // Give the new scene's camera a frame to take over before revealing it.
         yield return null;
         yield return null;

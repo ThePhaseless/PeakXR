@@ -8,11 +8,12 @@ using UnityEngine.UI;
 namespace PeakXR.UI.Menu;
 
 /// <summary>
-/// The flat fills a full-screen game canvas draws behind (or over) its content: the loading screens' black,
-/// white and cream washes, the splash's black, the title's cream fade-in. On a world panel they read as an
-/// opaque card, so they are hidden through the canvas renderer alpha (the game's own colour and alpha writes
-/// still land, raycasts still block). Found by shape, not name: a plain, untextured fill covering the canvas.
-/// If nothing matches, nothing changes. Everything is restored on <see cref="Restore"/>.
+/// The flat fills a loading screen draws behind (or over) its content: the black, white and cream washes, the
+/// splash's black. On a world panel they read as an opaque card, so they are hidden through the canvas renderer
+/// alpha, the way ui.world's BackdropStrip hides menu backdrops: the game's own colour and alpha writes still land,
+/// and <c>cullTransparentMesh</c> is off while hidden so the alpha-0 mesh stays in the batch and keeps blocking
+/// raycasts. Found by shape, not name: a plain, untextured fill covering the canvas. If nothing matches, nothing
+/// changes. Only loading canvases (LoadingSpace) use it; menu canvases belong to ui.world.
 /// </summary>
 internal sealed class ScreenBacking
 {
@@ -25,24 +26,20 @@ internal sealed class ScreenBacking
 
     private readonly List<Graphic> hidden = new();
     private readonly List<float> alphas = new();
+    private readonly List<bool> culls = new();
 
     public Canvas Canvas { get; private set; }
 
     public int HiddenCount => hidden.Count;
 
     /// <summary>
-    /// Hides the backing fills of <paramref name="canvas"/> whose brightest channel is above
-    /// <paramref name="minMaxChannel"/> (0: all) and adds their colours to <paramref name="fills"/>. Logs every
-    /// graphic once per screen name. Graphics that are not a backing go to <paramref name="kept"/> if given.
+    /// Hides the backing fills of <paramref name="canvas"/> and adds their colours to <paramref name="fills"/>.
+    /// A fill another system already hid (renderer alpha 0) is left to it. Logs every graphic once per screen
+    /// name. Graphics that are not a backing go to <paramref name="kept"/>.
     /// </summary>
-    public void Scan(
-        Canvas canvas,
-        float minMaxChannel,
-        List<Rgba> fills,
-        List<Graphic> kept,
-        string tag
-    )
+    public void Scan(Canvas canvas, List<Rgba> fills, List<Graphic> kept)
     {
+        const string tag = "loading";
         Restore();
         Canvas = canvas;
         var root = (RectTransform)canvas.transform;
@@ -60,18 +57,22 @@ internal sealed class ScreenBacking
             var c = g.color;
             var color = new Rgba(c.r, c.g, c.b, c.a);
             var mask = g.TryGetComponent<Mask>(out _) || g.TryGetComponent<RectMask2D>(out _);
-            var backing =
-                LoadingPalette.IsBacking(coverX, coverY, IsPlain(g), mask)
-                && color.Max > minMaxChannel;
+            var backing = LoadingPalette.IsBacking(coverX, coverY, IsPlain(g), mask);
             if (backing)
             {
-                hidden.Add(g);
-                alphas.Add(g.canvasRenderer.GetAlpha());
-                g.canvasRenderer.SetAlpha(0f);
-                fills?.Add(color);
+                var renderer = g.canvasRenderer;
+                if (renderer.GetAlpha() > 0f)
+                {
+                    hidden.Add(g);
+                    alphas.Add(renderer.GetAlpha());
+                    culls.Add(renderer.cullTransparentMesh);
+                    renderer.cullTransparentMesh = false;
+                    renderer.SetAlpha(0f);
+                }
+                fills.Add(color);
             }
             else
-                kept?.Add(g);
+                kept.Add(g);
             if (log != null)
                 Describe(log, root, g, color, coverX, coverY, backing);
         }
@@ -93,11 +94,19 @@ internal sealed class ScreenBacking
 
     public void Restore()
     {
+        // Only what this hid, and an alpha only while it is still 0: another system's later write wins.
         for (int i = 0; i < hidden.Count; i++)
-            if (hidden[i] != null)
-                hidden[i].canvasRenderer.SetAlpha(alphas[i]);
+        {
+            var g = hidden[i];
+            if (g == null)
+                continue;
+            if (g.canvasRenderer.GetAlpha() <= 0f)
+                g.canvasRenderer.SetAlpha(alphas[i]);
+            g.canvasRenderer.cullTransparentMesh = culls[i];
+        }
         hidden.Clear();
         alphas.Clear();
+        culls.Clear();
         Canvas = null;
     }
 
