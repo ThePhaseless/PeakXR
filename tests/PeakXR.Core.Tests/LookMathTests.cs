@@ -75,11 +75,26 @@ public class LookMathTests
     }
 
     [Fact]
-    public void ContinueYaw_PullsBackFiveTurnsOnlyWhereHalfPrecisionDrops()
+    public void ContinueYaw_NeverPullsBackWhileObserved()
     {
-        // Half floats step 1 degree up to 2048, 2 degrees above: wrap there, by five turns at once.
-        TestUtil.Near(2050f - 1800f, LookMath.ContinueYaw(2045f, 2050f - 1800f), 1e-3f);
-        TestUtil.Near(-250f, LookMath.ContinueYaw(-2045f, -250f), 1e-3f);
-        TestUtil.Near(2040f, LookMath.ContinueYaw(2035f, 2040f - 1800f), 1e-3f);
+        // Remotes lerp lookValues (CharacterSyncer.cs:139-141): any jump of whole turns is a visible spin.
+        TestUtil.Near(2050f, LookMath.ContinueYaw(2045f, 2050f - 1800f), 1e-3f);
+        TestUtil.Near(-2050f, LookMath.ContinueYaw(-2045f, -250f), 1e-3f);
+        TestUtil.Near(5000f, LookMath.ContinueYaw(4995f, 5000f - 13 * 360f), 1e-3f);
+    }
+
+    [Fact]
+    public void ContinueYaw_RebasesToOneTurnWhenNobodyWatches()
+    {
+        TestUtil.Near(-110f, LookMath.ContinueYaw(2045f, -110f, rebase: true), 1e-3f);
+        TestUtil.Near(170f, LookMath.ContinueYaw(-190f, 170f, rebase: true), 1e-3f);
+    }
+
+    [Fact]
+    public void ContinueYaw_RebasesBeforeTheHalfFloatGetsCoarse()
+    {
+        // Safety net only: past the limit the synced half float steps 8 degrees or more (CharacterSyncData.cs:62).
+        float yaw = LookMath.ContinueYaw(LookMath.YawSafetyLimit - 1f, 10f);
+        Assert.InRange(yaw, -180f, 180f);
     }
 }

@@ -32,7 +32,9 @@ internal static class InteractPatches
     /// points, the camera transform is moved to that hand's aim pose for the duration of the call and restored
     /// in a finalizer. A hand grab replaces the result with the grabbed interactible, so the game's own DoInteraction
     /// calls Interact on it (item pickup = Item.RequestPickup RPC to the master). Other callers
-    /// (Action_CloneSelectedItem.cs:28) pass an override distance and are left alone.
+    /// (Action_CloneSelectedItem.cs:28) pass an override distance and are left alone. The ray from the hand is
+    /// shortened by the hand's offset from the head, so nothing it picks lies farther from the head than vanilla's
+    /// <c>Interaction.distance</c> (2 m, Interaction.cs:7, read at :204).
     /// </summary>
     [HarmonyPatch]
     internal static class Raycasts
@@ -40,19 +42,90 @@ internal static class InteractPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Interaction), "DoInteractableRaycasts");
 
-        private static void Prefix(float overrideDistance, out CameraSwap __state)
+        private readonly struct State
+        {
+            public readonly CameraSwap Swap;
+            public readonly float Distance;
+            public readonly bool Left;
+
+            public State(CameraSwap swap, float distance, bool left)
+            {
+                Swap = swap;
+                Distance = distance;
+                Left = left;
+            }
+
+            /// <summary>Finalizer body, static for the same reason as <see cref="CameraSwap.Restore"/>.</summary>
+            public static Exception Restore(
+                Interaction interaction,
+                Exception exception,
+                State state
+            )
+            {
+                if (state.Distance > 0f)
+                    interaction.distance = state.Distance;
+                return CameraSwap.Restore(exception, state.Swap);
+            }
+
+            /// <summary>Interact pressed with nothing picked: if the full-length hand ray would have found an
+            /// interactible beyond the shortened one, say "Too far" instead of failing silently.</summary>
+            public static void ReportTooFar(Interaction interaction, Character c, State state)
+            {
+                var mc = MainCamera.instance;
+                if (state.Distance <= 0f || !state.Swap.Active || mc == null)
+                    return;
+                var t = mc.transform; // still at the hand: the finalizer restores it
+                if (
+                    !Physics.Raycast(
+                        t.position,
+                        t.forward,
+                        out var hit,
+                        state.Distance,
+                        HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                        QueryTriggerInteraction.Collide
+                    )
+                    || hit.distance <= interaction.distance
+                )
+                    return;
+                var target = hit.collider.GetComponentInParent<IInteractible>();
+                if (target != null && target.IsInteractible(c))
+                    ParityFeedback.Denied(state.Left, hit.point, ParityFeedback.TooFar);
+            }
+        }
+
+        private static void Prefix(
+            Interaction __instance,
+            float overrideDistance,
+            out State __state
+        )
         {
             __state = default;
             int hand = PhysicalInteraction.AimHand;
             var rig = VRRig.Instance;
-            if (overrideDistance != -1f || hand < 0 || !VRSession.Active || rig == null)
+            var mc = MainCamera.instance;
+            if (
+                overrideDistance != -1f
+                || hand < 0
+                || !VRSession.Active
+                || rig == null
+                || mc == null
+            )
                 return;
             var aim = rig.Aim(hand == 0);
-            if (aim != null)
-                __state = CameraSwap.Begin(aim.position, aim.rotation);
+            if (aim == null)
+                return;
+            float reach = __instance.distance;
+            float offset = Vector3.Distance(mc.transform.position, aim.position);
+            __instance.distance = Mathf.Max(0f, reach - offset);
+            __state = new State(CameraSwap.Begin(aim.position, aim.rotation), reach, hand == 0);
         }
 
-        private static void Postfix(ref IInteractible interactableResult, float overrideDistance)
+        private static void Postfix(
+            Interaction __instance,
+            ref IInteractible interactableResult,
+            float overrideDistance,
+            State __state
+        )
         {
             var c = Character.localCharacter;
             if (overrideDistance != -1f || c == null || !VRSession.Active)
@@ -67,6 +140,8 @@ internal static class InteractPatches
                 interactableResult = target;
                 return;
             }
+            if (interactableResult == null && c.input.interactWasPressed)
+                State.ReportTooFar(__instance, c, __state);
             // One held item at a time: the free hand's grip does not pick up a second item.
             if (
                 PhysicalInteraction.GripInteractActive
@@ -77,8 +152,11 @@ internal static class InteractPatches
                 interactableResult = null;
         }
 
-        private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            CameraSwap.Restore(__exception, __state);
+        private static Exception Finalizer(
+            Interaction __instance,
+            Exception __exception,
+            State __state
+        ) => State.Restore(__instance, __exception, __state);
     }
 
     /// <summary>CharacterItems.DoDropping (CharacterItems.cs:252, private): on a hand throw, give the held item the

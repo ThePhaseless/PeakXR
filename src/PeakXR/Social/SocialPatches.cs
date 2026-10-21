@@ -1,6 +1,8 @@
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Avatar;
 using PeakXR.Framework;
+using PeakXR.Interact;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -66,7 +68,9 @@ internal static class SocialPatches
     /// Interaction.DoInteractableRaycasts (Interaction.cs:196): Interaction.LateUpdate derives the prompt,
     /// <c>bestCharacter</c> (feeding, Item.cs:986/1050) and <c>DoInteraction</c> from its result. Runs after
     /// <c>interact.physical</c>'s postfix; a hand-chosen social target replaces the head ray's pick. Other callers
-    /// (Action_CloneSelectedItem.cs:28) pass an override distance and are left alone.
+    /// (Action_CloneSelectedItem.cs:28) pass an override distance and are left alone. The target must pass the
+    /// game's own <c>IsInteractible</c> (CharacterInteractible.cs:126), as the ray's pick does (Interaction.cs:233),
+    /// so an item with <c>overrideFeedAngle</c> (CharacterInteractible.cs:167-172) keeps its vanilla feed window.
     /// </summary>
     [HarmonyPatch]
     internal static class Raycasts
@@ -77,11 +81,27 @@ internal static class SocialPatches
         [HarmonyPriority(Priority.LowerThanNormal)]
         private static void Postfix(ref IInteractible interactableResult, float overrideDistance)
         {
-            if (overrideDistance != -1f || !VRSession.Active)
+            var c = Character.localCharacter;
+            if (overrideDistance != -1f || c == null || !VRSession.Active)
                 return;
-            var target = SocialHands.Instance.RaycastTarget;
-            if (target is Object unityObject && unityObject != null)
+            var hands = SocialHands.Instance;
+            var target = hands.RaycastTarget;
+            if (target is not Object unityObject || unityObject == null)
+                return;
+            if (target.IsInteractible(c))
                 interactableResult = target;
+            else if (
+                hands.FeedReady
+                && target is CharacterInteractible friend
+                && friend == hands.FeedTarget
+                && c.data.currentItem != null
+                && c.data.currentItem.overrideFeedAngle
+            )
+                ParityFeedback.Denied(
+                    LocalHold.ItemInLeftHand,
+                    target.Center(),
+                    ParityFeedback.WrongAngle
+                );
         }
     }
 

@@ -57,6 +57,9 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>The friend a held item is being fed to; relaxes the face-each-other check.</summary>
     public CharacterInteractible FeedTarget { get; private set; }
 
+    /// <summary>The item has been held at <see cref="FeedTarget"/> for the dwell time: the player means to feed.</summary>
+    public bool FeedReady { get; private set; }
+
     private static bool Ready(Character c) =>
         VRSession.Active && SocialConfig.Instance.HandInteract && c == Character.localCharacter;
 
@@ -269,6 +272,7 @@ internal sealed class SocialHands : IGripExtension
     {
         RaycastTarget = null;
         FeedTarget = null;
+        FeedReady = false;
         if (!VRSession.Active || c != Character.localCharacter)
         {
             Clear(0);
@@ -290,6 +294,7 @@ internal sealed class SocialHands : IGripExtension
             ResetFeed();
 
         RaycastTarget = active ?? FeedTarget;
+        FeedReady = feeding;
 
         interactEdge.Update(active != null, dt);
         input.interactWasPressed |= interactEdge.Pressed;

@@ -59,8 +59,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     static float Now => Time.realtimeSinceStartup;
 
+    // Offline only: the script never drives a character in an online room.
     static bool Ready =>
-        !LoadingScreenHandler.loading && Character.localCharacter != null && PhotonNetwork.InRoom;
+        !LoadingScreenHandler.loading
+        && Character.localCharacter != null
+        && PhotonNetwork.InRoom
+        && PhotonNetwork.OfflineMode;
 
     void Awake()
     {
@@ -71,6 +75,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     void OnDestroy()
     {
         VR.VRInput.TestOverride = null;
+        SandboxActions.Forced = false;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
     }
@@ -614,6 +619,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             return;
         finished = true;
         SelfTestInputPatch.HoldPrimary = false;
+        // Hold mode keeps the offline sandbox for live-input tests; SandboxActions drops it once online.
+        if (!SelfTestFeature.Hold)
+            SandboxActions.Forced = false;
         VR.VRInput.TestOverride = null;
 
         int skipped = report.Steps.Count - report.Passed - report.Failed;

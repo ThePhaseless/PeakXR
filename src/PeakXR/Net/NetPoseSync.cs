@@ -230,7 +230,7 @@ internal sealed class NetPoseSync
         var world = FromAvatarPose(localDriver.Pose);
         var local = PoseFrame.ToLocal(world, root, yaw);
 
-        gate.Rate = NetPoseFeature.SendRate.Value;
+        gate.Rate = PoseRate.ForPeers(NetPoseFeature.SendRate.Value, peers.Count);
         if (!gate.ShouldSend(now, local))
             return;
 
@@ -355,7 +355,10 @@ internal sealed class NetPoseSync
     {
         if (!NetPoseFeature.ShowRemotePoses.Value)
             return;
-        double delay = NetPoseFeature.InterpolationDelayMs.Value * 0.001;
+        double delay = PoseRate.Delay(
+            NetPoseFeature.InterpolationDelayMs.Value * 0.001,
+            peers.Count
+        );
 
         foreach (var entry in remotes)
         {

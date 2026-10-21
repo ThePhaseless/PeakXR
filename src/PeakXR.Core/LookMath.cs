@@ -31,22 +31,21 @@ namespace PeakXR.Core
             return new Vector2(yaw, Math.Clamp(pitch, -MaxPitch, MaxPitch));
         }
 
+        /// <summary>Past this yaw the synced half float steps 8 degrees or more (CharacterSyncData.cs:62).</summary>
+        public const float YawSafetyLimit = 8192f;
+
         /// <summary>
         /// <paramref name="next"/> unwrapped to the turn nearest <paramref name="previous"/>. Remote peers linearly
-        /// interpolate the synced yaw, so a jump from 179 to -179 would spin the avatar the long way round, and so
-        /// does any pull-back. Like vanilla mouse look the value accumulates; it is pulled back by five turns only
-        /// past 2048, where the synced half float drops from 1 to 2 degree steps (CharacterSyncData.cs:62).
+        /// interpolate the synced yaw from its current value (CharacterSyncer.cs:93, :139-141), so a jump from 179 to
+        /// -179, or any pull-back by whole turns, spins the avatar on their screens. Like vanilla mouse look
+        /// (CharacterMovement.cs:286) the value accumulates. With <paramref name="rebase"/> (nobody can see the
+        /// avatar) it wraps to one turn; past <see cref="YawSafetyLimit"/> it wraps anyway, before the half float
+        /// gets coarse and long before it overflows.
         /// </summary>
-        public static float ContinueYaw(float previous, float next)
+        public static float ContinueYaw(float previous, float next, bool rebase = false)
         {
-            const float Limit = 2048f;
-            const float PullBack = 5 * 360f;
             float yaw = previous + WrapDegrees(next - previous);
-            if (yaw > Limit)
-                yaw -= PullBack;
-            else if (yaw < -Limit)
-                yaw += PullBack;
-            return yaw;
+            return rebase || Math.Abs(yaw) > YawSafetyLimit ? WrapDegrees(yaw) : yaw;
         }
     }
 }
