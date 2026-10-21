@@ -154,6 +154,58 @@ public class RigMathTests
     }
 
     [Fact]
+    public void ClearOfBody_LeavesAnEyeOutsideAlone()
+    {
+        var eye = new Vector3(0f, 2f, -3f);
+        TestUtil.Near(
+            eye,
+            RigMath.ClearOfBody(eye, new Vector3(0f, 1.6f, 0f), new Vector3(0f, 1f, 0f)),
+            1e-6f
+        );
+    }
+
+    [Fact]
+    public void ClearOfBody_PushesTheEyeOutOfTheHeadAlongItsOffset()
+    {
+        var head = new Vector3(0f, 1.6f, 0f);
+        var torso = new Vector3(0f, 1f, 0f);
+        // Following at the watched player's eyes: 10 cm behind their head centre.
+        var p = RigMath.ClearOfBody(new Vector3(0f, 1.6f, -0.1f), head, torso);
+        TestUtil.Near(RigMath.HeadClearance, Vector3.Distance(p, head), 1e-4f);
+        Assert.True(p.Z < -0.1f);
+        TestUtil.Near(1.6f, p.Y, 1e-4f);
+    }
+
+    [Fact]
+    public void ClearOfBody_EndsOutsideHeadAndTorso()
+    {
+        var head = new Vector3(0f, 1.6f, 0f);
+        var torso = new Vector3(0f, 1f, 0f);
+        foreach (
+            var eye in new[]
+            {
+                torso,
+                head,
+                new Vector3(0.1f, 1.3f, 0.05f),
+                new Vector3(-0.2f, 0.9f, -0.3f),
+            }
+        )
+        {
+            var p = RigMath.ClearOfBody(eye, head, torso);
+            Assert.True(Vector3.Distance(p, head) >= RigMath.HeadClearance - 1e-4f);
+            Assert.True(Vector3.Distance(p, torso) >= RigMath.TorsoClearance - 1e-4f);
+            Assert.False(float.IsNaN(p.X + p.Y + p.Z));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1f, true)]
+    [InlineData(12f, true)]
+    [InlineData(3f, false)]
+    public void NeedsFloorCue_OnlyOverAVoid(float groundBelow, bool expected) =>
+        Assert.Equal(expected, RigMath.NeedsFloorCue(groundBelow));
+
+    [Fact]
     public void ThirdPersonPoint_BehindAndAboveAlongRigYaw()
     {
         var target = new Vector3(5f, 1f, 5f);

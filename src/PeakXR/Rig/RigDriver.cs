@@ -76,6 +76,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
     private readonly HoldCue holdCue = new();
+    private readonly SpectateFloor spectateFloor = new();
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
@@ -190,6 +191,7 @@ internal sealed class RigDriver : MonoBehaviour
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
         holdCue.Show(null, 0f, 0f);
+        spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
         takeover.Reset(false);
@@ -203,6 +205,7 @@ internal sealed class RigDriver : MonoBehaviour
     private void OnDestroy()
     {
         holdCue.Destroy();
+        spectateFloor.Destroy();
         if (instance == this)
             instance = null;
         if (VRRig.Instance == rig)
@@ -438,6 +441,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void ResetTakeover()
     {
+        spectateFloor.Hide();
         if (haveSavedYaw)
             rig.Origin.rotation = Quaternion.Euler(0f, savedYaw, 0f);
         haveSavedYaw = false;
@@ -541,6 +545,20 @@ internal sealed class RigDriver : MonoBehaviour
             RigMath.TrackedEyeHeight(rig.HeightOffset)
         );
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
+
+        // Spectating: the watched player's head and body never fill the eyes (a lean or a slow follow can carry the
+        // view into them); a dead one is parked out of the world (Character.DeathPos, Character.cs:561), so skipped.
+        bool watching = state == CameraState.Spectate && shownKind != ViewKind.FirstPerson;
+        if (watching && shownTarget != null && shownTarget != c && !shownTarget.data.dead)
+        {
+            var eye = rig.Head.position;
+            var clear = RigMath
+                .ClearOfBody(eye.N(), shownTarget.Head.N(), shownTarget.Center.N())
+                .U();
+            if ((clear - eye).sqrMagnitude > 1e-8f)
+                rig.Origin.position += clear - eye;
+        }
+        spectateFloor.Tick(watching, rig);
     }
 
     /// <summary>

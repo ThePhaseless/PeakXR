@@ -46,7 +46,7 @@ Shared contracts (written first, other features code against them):
 |---|---|---|
 | `xr.bootstrap` | load managed XR assemblies, create the OpenXR (or OpenVR) loader, start subsystems, MultiPass | sets `VRSession.Active` |
 | `xr.input` | sample `UnityEngine.XR.InputDevices` into `VRInput` | provider-agnostic |
-| `rig.camera` | `VRRig`; drive `MainCamera.instance` from the HMD; skip `MainCameraMovement.LateUpdate` pose writes; neutralize FOV and shake; spectate, passed-out and cutscene states via fade or detached camera | |
+| `rig.camera` | `VRRig`; drive `MainCamera.instance` from the HMD; skip `MainCameraMovement.LateUpdate` pose writes; neutralize FOV and shake; spectate, passed-out and cutscene states via fade or detached camera; the spectate view stays out of the watched body and shows a faint floor grid over a void | |
 | `render.fixes` | disable motion blur, lens distortion, chromatic aberration, DoF and head bob; STP to linear upscaling; fix `CameraQuad` overlays; no-op FPS cap and VSync under XR | |
 | `player.look` | HMD to `lookValues` (vanilla-visible head), snap or smooth turn rotates the rig; scripted looks (frog tongue, rescue hook, scoutmaster) hold, then blend back | |
 | `player.locomotion` | controller to `CharacterInput` (layout in `docs/controls.md`); head- or hand-relative direction; room-scale walking; comfort vignette and presets; seated mode | grip, trigger and drop stay with `interact.physical` |
