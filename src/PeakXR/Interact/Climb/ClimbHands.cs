@@ -64,8 +64,8 @@ internal static class ClimbHands
     /// <summary>Arm-pulled stick input for the game's rope or vine climb this frame; zero otherwise.</summary>
     public static Vector2 StickInput => new(0f, stickY);
 
-    private static bool RopeHands => ropeHands?.Value ?? true;
-    private static bool HandleHands => handleHands?.Value ?? true;
+    internal static bool RopeHands => ropeHands?.Value ?? true;
+    internal static bool HandleHands => handleHands?.Value ?? true;
 
     public static void Bind(ConfigFile file)
     {
