@@ -35,6 +35,7 @@ public sealed class UISettingsFeature : Feature
         var saver = new GameObject("PeakXR_SettingsSaver");
         Object.DontDestroyOnLoad(saver);
         saver.AddComponent<ConfigSaver>();
+        saver.AddComponent<PreviewStage>();
     }
 }
 
@@ -124,6 +125,8 @@ internal static class ShowSettingsPatch
                 );
                 continue;
             }
+            if (setting is IConfigRow configRow)
+                SettingPreviews.Track(configRow.Entry, cell);
             // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
             var sfx = cell.fadeInSFX;
             if (!first)

@@ -42,6 +42,8 @@ internal sealed class RenderDriver : MonoBehaviour
     private UniversalAdditionalCameraData boundCameraData;
     private AntialiasingMode savedAntialiasing;
     private bool savedDynamicResolution;
+    private const float QualityDelay = 0.4f;
+    private float qualityDueAt = -1f;
 
     private void OnEnable()
     {
@@ -53,6 +55,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.Msaa.SettingChanged += OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
+        RenderFixesFeature.ComfortSettings.SettingChanged += OnComfortSettingsChanged;
         if (VRSession.Active)
             Apply();
     }
@@ -66,6 +69,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.Msaa.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
+        RenderFixesFeature.ComfortSettings.SettingChanged -= OnComfortSettingsChanged;
         Revert();
     }
 
@@ -154,11 +158,21 @@ internal sealed class RenderDriver : MonoBehaviour
             instance.DisableIn(volume.profile);
     }
 
-    private void OnQualityChanged(object sender, System.EventArgs e)
+    /// <summary>Applied otherwise only at XR start and scene load; the settings tab changes it live.</summary>
+    private void OnComfortSettingsChanged(object sender, System.EventArgs e)
     {
-        if (applied)
-            ApplyQuality();
+        if (!applied)
+            return;
+        if (RenderFixesFeature.ComfortSettings.Value)
+            ForceComfortSettings();
+        else
+            RestoreSettings();
     }
+
+    /// <summary>Debounced: a slider drag in the settings tab fires every tick, and each render scale change
+    /// reallocates the eye textures, so the value is applied once it has been still for a moment.</summary>
+    private void OnQualityChanged(object sender, System.EventArgs e) =>
+        qualityDueAt = Time.unscaledTime + QualityDelay;
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
@@ -322,6 +336,12 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void Update()
     {
+        if (qualityDueAt >= 0f && Time.unscaledTime >= qualityDueAt)
+        {
+            qualityDueAt = -1f;
+            if (applied)
+                ApplyQuality();
+        }
         if (!applied || !VRSession.Active)
             return;
         BindCamera();
