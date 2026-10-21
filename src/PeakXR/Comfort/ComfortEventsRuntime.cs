@@ -50,6 +50,9 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     /// this stay clear (they write depth first), like the game's own depth fog.</summary>
     private const float HazeRadius = 0.6f;
 
+    /// <summary>Haze opacity change per second: 0 to the full cap in about 0.4 s.</summary>
+    private const float HazeRate = 1f;
+
     private GameObject haze;
     private Material hazeMaterial;
     private MeshRenderer hazeRenderer;
@@ -252,15 +255,17 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     }
 
     /// <summary>The BLIND white-out as a capped white haze around the head (see ComfortEventsPatches.BlindWash).</summary>
-    private void ShowHaze(float alpha)
+    private void ShowHaze(float target)
     {
+        // Eased, so a wash that starts at full strength fades in instead of flashing white in one frame.
+        float alpha = Mathf.MoveTowards(HazeAlpha, target, Time.unscaledDeltaTime * HazeRate);
         HazeAlpha = alpha;
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
         if (alpha <= 0.002f || head == null)
         {
             if (hazeRenderer != null && hazeRenderer.enabled)
                 hazeRenderer.enabled = false;
-            HazeAlpha = 0f;
+            HazeAlpha = head == null ? 0f : alpha;
             return;
         }
         if (haze == null)
@@ -284,7 +289,14 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
 
     private void ClearOutputs()
     {
-        ShowHaze(0f);
+        HazeAlpha = 0f;
+        if (haze != null)
+            Destroy(haze);
+        if (hazeMaterial != null)
+            Destroy(hazeMaterial);
+        haze = null;
+        hazeMaterial = null;
+        hazeRenderer = null;
         VignetteBoost = 0f;
         RigDriver.EventDetach = false;
         RigDriver.FollowCutscene = false;

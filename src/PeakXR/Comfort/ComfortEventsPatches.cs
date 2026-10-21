@@ -358,23 +358,32 @@ internal static class ComfortEventsPatches
         /// when no overlay updated in the last frame (scene change).</summary>
         internal static float Strength => Time.frameCount - frame <= 1 ? strength : 0f;
 
-        /// <summary>The game's own white-out quad would draw this frame (self-test: never in VR).</summary>
-        internal static bool GameWashDrawn { get; private set; }
+        /// <summary>The renderer this patch stopped drawing, given back when VR stops so flat play sees BLIND again.</summary>
+        private static MeshRenderer hidden;
 
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(IllegalScreenEffect), "Update", Type.EmptyTypes);
 
         private static void Postfix(IllegalScreenEffect __instance)
         {
-            if (!VRSession.Active)
-                return;
             var rend = Renderer(__instance);
+            if (!VRSession.Active)
+            {
+                if (hidden != null && ReferenceEquals(rend, hidden))
+                {
+                    hidden.forceRenderingOff = false;
+                    hidden = null;
+                }
+                return;
+            }
             var mat = Material(__instance);
             if (rend == null || mat == null)
                 return;
             if (!rend.forceRenderingOff)
+            {
                 rend.forceRenderingOff = true;
-            GameWashDrawn = rend.enabled && !rend.forceRenderingOff;
+                hidden = rend;
+            }
             strength = rend.enabled ? mat.GetFloat(__instance.shaderVarName) : 0f;
             frame = Time.frameCount;
         }
