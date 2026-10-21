@@ -90,6 +90,27 @@ public class SelfTestReportTests
     }
 
     [Fact]
+    public void VanillaException_WithUnityCoroutineFrames_IsNotedButDoesNotFail()
+    {
+        // Verbatim shape of the stack Unity logged for the spawned stone in the first in-game run.
+        var r = new SelfTestReport();
+        r.Begin("item.Stone", 0f);
+        r.Exception(
+            "ArgumentNullException: Value cannot be null.",
+            "Peak.ItemOptimizer:OnDisable()\n"
+                + "Photon.Pun.PhotonNetwork:InstantiateItemRoom(String, Vector3, Quaternion, Boolean)\n"
+                + "PeakXR.Sandbox.SandboxActions:SpawnItemAt(Item, Vector3)\n"
+                + "PeakXR.Sandbox.<SpawnItem>d__24:MoveNext()\n"
+                + "PeakXR.Sandbox.<Guard>d__35:MoveNext()\n"
+                + "UnityEngine.SetupCoroutine:InvokeMoveNext(IEnumerator, IntPtr)"
+        );
+        r.End(true, 1f, null);
+
+        Assert.True(r.Steps[0].Passed);
+        Assert.Equal(1, r.VanillaExceptions);
+    }
+
+    [Fact]
     public void ExceptionWithOtherPeakXRFrame_StillFails()
     {
         var r = new SelfTestReport();

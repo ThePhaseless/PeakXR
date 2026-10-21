@@ -75,6 +75,8 @@ namespace PeakXR.Core
                     line.Contains("PeakXR.")
                     && !line.Contains("PeakXR.Sandbox.SandboxActions")
                     && !line.Contains("PeakXR.Sandbox.SelfTestRunner")
+                    // Unity prints the runner's coroutine state machines without the outer class.
+                    && !line.Contains("PeakXR.Sandbox.<")
                 )
                     return false;
             }
