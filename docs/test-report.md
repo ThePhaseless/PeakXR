@@ -33,14 +33,31 @@ Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the
 
 ## VR
 
-Not working yet. Tested once with SteamVR and an ALVR virtual headset (Radeon 780M), launching PEAK directly through Proton:
+PeakXR runs in VR. Setup: SteamVR with an ALVR virtual headset (static head at 1.6 m, 1088x1216 per eye at 72 Hz) on the Radeon 780M, PEAK launched directly through Proton-CachyOS, OpenXR, MultiPass, `Render.RenderScale` 0.6.
 
-- The preloader installed the OpenXR and OpenVR runtimes, `xr.bootstrap` started OpenXR with MultiPass, and SteamVR gave the game a session (`XR_SESSION_STATE_READY`).
-- About one second later the game exited with a native crash, before Unity created its first eye texture. The cause is still open. The leading suspect is the D3D11-to-Vulkan swapchain handoff in Proton's OpenXR bridge; the desktop mirror blit and the eye-buffer settings are the other two candidates.
-- Test runs now write `BepInEx/PeakXR-trace.log` with a flush after each line, so the next crash shows exactly where it stopped. The next session also compares OpenVR (`-peakxr-openvr`).
+The full self-test ran inside the headset session, so the creative-mode coverage above was repeated in VR: 194 items spawned, 10 held and used, 31 entities spawned, all segments and times of day. Results: 254 pass, 2 fail, 13 skip (run VR1); 254 pass, 3 fail, 12 skip (run VR2). The VR-specific checks:
+
+| Step | Result |
+|---|---|
+| `vr.00-session` | OpenXR session on SteamVR/OpenXR 2.17.10, eye texture 922x1032, MultiPass |
+| `vr.01-rig` | head tracked at (0, 1.60, 0), stereo camera on both eyes, audio listener at the head |
+| `vr.02-title-stage` | title menu is a world-space panel on the beach |
+| `vr.03-canvases` | every overlay canvas converted or deliberately left on the desktop |
+| `vr.04-settings-panel` | failed: the pause menu sat 51 m behind the player (fixed in `d75f6d4`, not yet re-run) |
+| `vr.05-loading-space` | the 3D loading room showed for 328 frames while the game camera was culled |
+| `vr.06-features` | 25 of 25 VR features active, avatar pose fresh, HUD in world space, no stuck fade |
+| `vr.07-comfort` | a knockback pulsed the comfort vignette to 0.28 and it reopened after 0.71 s; a warp faded to black and back |
+
+Headset screenshots from the stream show correct stereo, the character's own arms and posed fingers holding items, the world-space stamina bar, and the 3D loading room.
+
+Three problems came up and were fixed:
+
+- The first launch crashed inside SteamVR's client library one second after the session started. DXVK had picked the RTX 4070 while SteamVR ran on the Radeon. The game and SteamVR have to use the same GPU; for this setup that means `VK_DRIVER_FILES` limited to RADV and `MESA_VK_DEVICE_SELECT=1002:15bf!`.
+- The game image filled only the top-left part of each eye, with stale pixels around it. Under OpenXR MultiPass, `XRSettings.renderViewportScale` shrinks the rendered area but the runtime still receives the full image, so dynamic resolution now stays off under OpenXR (`07c8bcf`). A run with it off showed the full frame.
+- The pause menu was never positioned, because a closed quit-confirm popup inside its canvas made the canvas count as closed (`d75f6d4`).
 
 Launching PEAK from the Steam client while SteamVR runs opens a "VR Theater Screen" prompt that blocks Steam's launch queue. Launch it directly through Proton for VR tests instead.
 
 ## Not tested yet
 
-Everything that needs a running headset: tracked hands and fingers, physical grab, eat, throw and climb, the world-space menus and HUD, comfort options, and VR multiplayer pose sync.
+The virtual headset has no moving controllers, so everything driven by hand motion is still untested: physical grab, eat, throw and climb, the laser pointer, wheels and the keyboard, finger tracking from real input, and VR multiplayer pose sync with a second client. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
