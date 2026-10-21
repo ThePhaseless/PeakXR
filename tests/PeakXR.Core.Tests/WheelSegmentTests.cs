@@ -47,6 +47,18 @@ public class WheelSegmentTests
     }
 
     [Fact]
+    public void PickStart_RunsFromInnerEdgeAcrossTheRing()
+    {
+        float outer = 0.15f;
+        float inner = outer * WheelSegment.InnerFraction / WheelSegment.OuterFraction;
+        TestUtil.Near(inner, WheelSegment.PickStart(outer, 0f));
+        TestUtil.Near((inner + outer) * 0.5f, WheelSegment.PickStart(outer, 0.5f));
+        // Clamped: never inside the hole, never past the outer edge.
+        TestUtil.Near(inner, WheelSegment.PickStart(outer, -1f));
+        TestUtil.Near(outer, WheelSegment.PickStart(outer, 3f));
+    }
+
+    [Fact]
     public void Contains_ZeroWidth_IsFalse()
     {
         Assert.False(WheelSegment.Contains(1f, 1f, 0f));

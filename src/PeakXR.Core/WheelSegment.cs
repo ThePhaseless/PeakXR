@@ -21,6 +21,18 @@ public static class WheelSegment
     public const float MidDegrees = (StartDegrees + EndDegrees) * 0.5f;
     public const float MidFraction = (InnerFraction + OuterFraction) * 0.5f;
 
+    /// <summary>
+    /// Hand travel that starts a pick on a wheel whose drawn outer radius is <paramref name="outerRadius"/>:
+    /// <paramref name="depth"/> 0 is the ring's inner edge, 1 its outer edge (clamped), so the hand never picks
+    /// from the empty hole in the middle.
+    /// </summary>
+    public static float PickStart(float outerRadius, float depth)
+    {
+        float inner = outerRadius * (InnerFraction / OuterFraction);
+        float t = MathF.Min(MathF.Max(depth, 0f), 1f);
+        return inner + t * (outerRadius - inner);
+    }
+
     /// <summary>True when (<paramref name="x"/>, <paramref name="y"/>), in the slice rect's local space (origin at
     /// the wheel centre, y along the slice's up), lies on the drawn wedge of a slice <paramref name="width"/> wide.</summary>
     public static bool Contains(float x, float y, float width)

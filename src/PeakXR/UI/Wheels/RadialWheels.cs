@@ -97,7 +97,9 @@ internal sealed class RadialWheels : MonoBehaviour
             VRAction.Interact
         );
         // The laser over the open emote wheel, so the pointer that hovers its slices is seen (UIWorldRuntime reads it).
-        LaserPointer.ForceShow = emote.IsOpen;
+        // Hand travel has priority: while the hand is over the ring the laser is hidden, so the two never fight
+        // over the hovered slice.
+        LaserPointer.ForceShow = emote.IsOpen && !emote.HandPicking;
     }
 
     /// <summary>
@@ -167,6 +169,9 @@ internal sealed class WheelDriver
 
     public bool IsOpen => open;
 
+    /// <summary>The hand is over the ring and its travel picks the slice; the laser stands down meanwhile.</summary>
+    public bool HandPicking => open && handDriven && selector.Active;
+
     public void Forget()
     {
         hidden.Clear();
@@ -227,12 +232,7 @@ internal sealed class WheelDriver
             // The hand picks only over the drawn ring: not in its centre hole, not past its outer edge. The wheel's
             // drawn diameter is WheelSize (see Open), so the ring's radii follow from the wedge's measured shape.
             float outer = UIWheelsFeature.Size.Value * 0.5f;
-            float inner = outer * (WheelSegment.InnerFraction / WheelSegment.OuterFraction);
-            float mid = outer * (WheelSegment.MidFraction / WheelSegment.OuterFraction);
-            selector.FlickDistance = Mathf.Min(
-                Mathf.Max(UIWheelsFeature.FlickDistance.Value, inner),
-                mid
-            );
+            selector.FlickDistance = WheelSegment.PickStart(outer, UIWheelsFeature.PickDepth.Value);
             selector.MaxDistance = outer;
             selector.Update(handOffset, stickVector, out var direction);
             Steer(direction, authoritative: true);
@@ -266,11 +266,11 @@ internal sealed class WheelDriver
         {
             box.Move(root);
             // The box is a nested canvas: its graphics are raycast only by a raycaster of its own. With it the laser
-            // reaches the emote wheel, and PointerHitFilter keeps hits to the drawn slices and buttons. The backpack
+            // reaches the emote wheel, and WheelRaycaster keeps slice hits to their drawn wedges. The backpack
             // wheel gets none: no laser shows over it, and a ray from the hidden laser's stale pose would hover its
             // pockets behind inventory.vr's back.
-            if (handDriven && !rect.TryGetComponent<GraphicRaycaster>(out _))
-                rect.gameObject.AddComponent<GraphicRaycaster>();
+            if (handDriven && !rect.TryGetComponent<WheelRaycaster>(out _))
+                rect.gameObject.AddComponent<WheelRaycaster>();
         }
 
         // Wheel geometry in container pixels, from the slice rects alone: each is centred on the wheel and draws

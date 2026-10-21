@@ -23,7 +23,6 @@ public sealed class UIWorldFeature : Feature
         Patch(typeof(CanvasScalerEnablePatch));
         Patch(typeof(MenuWindowOpenPatch));
         Patch(typeof(EventCameraPatch));
-        Patch(typeof(PointerHitFilter));
         Patch(typeof(CameraQuadPatch));
         Patch(typeof(PlayerNamePatch));
 

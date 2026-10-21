@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using UnityEngine;
@@ -14,6 +15,9 @@ namespace PeakXR.UI.World;
 /// laser hit is always the centre of its "screen"; converted canvases use it as their event camera, so
 /// the game's own GraphicRaycasters, sliders, scroll views, dropdowns and input fields work unchanged.
 /// Events are dispatched here alongside the game's input module, the way PointerInputModule does it.
+/// Events go to the front hit, as in vanilla, but the beam and dot end on the first hit that is drawn or usable
+/// (<see cref="PointerPick"/>, <see cref="PointerHitRule"/>), so they pass through empty transparent areas; a control
+/// seen through an invisible blocker gets a red dot and the Blocked cue instead of a click that silently fails.
 /// </summary>
 internal sealed class LaserPointer
 {
@@ -21,6 +25,10 @@ internal sealed class LaserPointer
     private const float DragAngle = 1.2f;
     private const float MissLength = 1.5f;
     private const float TickSeconds = 0.015f;
+
+    // Hits looked at per ray for the beam; the first drawn or usable one usually is the first or second.
+    private const int MaxCandidates = 8;
+    private static readonly Color CursorColor = new(1f, 1f, 1f, 0.95f);
 
     public static Camera EventCamera { get; private set; }
 
@@ -35,6 +43,11 @@ internal sealed class LaserPointer
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;
     private readonly Transform cursor;
+    private readonly Material cursorMaterial;
+    private readonly RaycastResult[] candidates = new RaycastResult[MaxCandidates];
+    private readonly PointerPick.Hit[] kinds = new PointerPick.Hit[MaxCandidates];
+    private bool blocked;
+    private Vector3 visualPoint;
     private PointerEventData data;
     private EventSystem dataSystem;
     private Vector3 pressForward;
@@ -72,10 +85,11 @@ internal sealed class LaserPointer
         );
         line.sortingOrder = short.MaxValue;
 
+        cursorMaterial = UIMaterials.Create(CursorColor, drawOnTop: true, renderQueue: 3200);
         var dot = UIMaterials.MeshObject(
             "PeakXR_Cursor",
             UIMaterials.SphereMesh(),
-            UIMaterials.Create(new Color(1f, 1f, 1f, 0.95f), drawOnTop: true, renderQueue: 3200),
+            cursorMaterial,
             parent
         );
         dot.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
@@ -87,6 +101,7 @@ internal sealed class LaserPointer
     /// <summary>Hide the laser and release anything it was pressing.</summary>
     public void Hide()
     {
+        SetBlocked(false);
         Cancel();
         SetVisible(false, false);
         hoverObject = null;
@@ -121,10 +136,15 @@ internal sealed class LaserPointer
 
         results.Clear();
         system.RaycastAll(data, results);
-        var hit = FirstOnWorldCanvas();
+        var pick = PickOnWorldCanvases(out var hit);
         results.Clear();
         data.pointerCurrentRaycast = hit;
         var over = hit.gameObject;
+        var shown = pick.Visual >= 0 ? candidates[pick.Visual].worldPosition : Vector3.zero;
+        SetBlocked(pick.Blocked);
+        visualPoint = shown;
+        if (blocked)
+            Affordance.Hover(hands.ActiveLeft, shown, DenyReason.Blocked);
 
         HandleEnterExit(over);
         TickOnHover(over, cfg.HoverHaptics.Value);
@@ -147,16 +167,27 @@ internal sealed class LaserPointer
         }
 
         var origin = aim.position;
-        var end = over != null ? hit.worldPosition : origin + aim.forward * MissLength;
+        bool landed = pick.Visual >= 0;
+        var end = landed ? shown : origin + aim.forward * MissLength;
         line.SetPosition(0, origin);
         line.SetPosition(1, end);
-        if (over != null)
+        if (landed)
         {
             var distance = Vector3.Distance(origin, end);
             cursor.position = end - aim.forward * 0.002f;
             cursor.localScale = Vector3.one * (0.008f * Mathf.Max(1f, distance / 1.5f));
         }
-        SetVisible(true, over != null);
+        SetVisible(true, landed);
+        for (int i = 0; i < MaxCandidates; i++)
+            candidates[i] = default;
+    }
+
+    private void SetBlocked(bool value)
+    {
+        if (blocked == value)
+            return;
+        blocked = value;
+        cursorMaterial.color = value ? Affordance.DenyColor : CursorColor;
     }
 
     /// <summary>One tick when the laser lands on a new interactable control. The lookup runs only when
@@ -176,17 +207,27 @@ internal sealed class LaserPointer
             UIHaptics.Tick(hands.ActiveLeft, strength, TickSeconds);
     }
 
-    private RaycastResult FirstOnWorldCanvas()
+    /// <summary>
+    /// The hits on converted canvases, front first, up to the first drawn or usable one. <paramref name="routed"/>,
+    /// the front one, gets the events (vanilla blocking); the result says where the beam ends.
+    /// </summary>
+    private PointerPick.Result PickOnWorldCanvases(out RaycastResult routed)
     {
+        int count = 0;
         foreach (var r in results)
         {
             if (r.gameObject == null || r.module is not GraphicRaycaster raycaster)
                 continue;
             var canvas = raycaster.GetComponent<Canvas>();
-            if (canvas != null && WorldCanvases.IsConverted(canvas.rootCanvas))
-                return r;
+            if (canvas == null || !WorldCanvases.IsConverted(canvas.rootCanvas))
+                continue;
+            candidates[count] = r;
+            kinds[count] = PointerHitRule.Classify(r.gameObject);
+            if (kinds[count++] != PointerPick.Hit.None || count == MaxCandidates)
+                break;
         }
-        return default;
+        routed = count > 0 ? candidates[0] : default;
+        return PointerPick.Resolve(kinds, count);
     }
 
     private void Press(EventSystem system, GameObject over, Transform aim)
@@ -198,6 +239,9 @@ internal sealed class LaserPointer
         data.pressPosition = data.position;
         data.pointerPressRaycast = data.pointerCurrentRaycast;
         pressForward = aim.forward;
+        // The blocker in front takes the press, as in vanilla; say why the control behind does not react.
+        if (blocked)
+            Affordance.Deny(hands.ActiveLeft, visualPoint, DenyReason.Blocked);
         if (over == null)
             return;
 

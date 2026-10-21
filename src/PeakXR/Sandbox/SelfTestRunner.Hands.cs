@@ -571,10 +571,57 @@ internal sealed partial class SelfTestRunner
     /// it (<c>CharacterAnimations.RPCA_PlayRemove</c> sets the private <c>emoting</c>, CharacterAnimations.cs:117/:432;
     /// Play Dead makes the character fall instead, :421).
     /// </summary>
+    IEnumerator EmoteStep()
+    {
+        var c = Character.localCharacter;
+        var gui = GUIManager.instance;
+        if (gui == null || gui.emoteWheel == null)
+        {
+            Fail("no GUIManager emote wheel");
+            yield break;
+        }
+        var emoting = GameMember.Field<CharacterAnimations, bool>("emoting");
+        bool hand = !VRInput.LeftHanded;
+        Script(hand).Secondary = true;
+        yield return Until(() => gui.emoteWheel.activeInHierarchy, 2f, "emote wheel did not open");
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.3f);
+        // Most of the way across the drawn ring (WheelSize is its outer diameter): past any PickDepth, inside the edge.
+        float travel = UIWheelsFeature.Size.Value * 0.5f * 0.85f;
+        yield return MoveTrack(hand, Script(hand).Position + Vector3.up * travel, 0.3f);
+        yield return Wait(0.3f);
+        var wheel = gui.emoteWheel.GetComponentInChildren<EmoteWheel>(true);
+        string chosen =
+            wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
+        var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
+        yield return Shot("vr-18-emote-wheel");
+        Script(hand).Secondary = false;
+        yield return Until(
+            () => !gui.emoteWheel.activeInHierarchy,
+            1f,
+            "emote wheel did not close"
+        );
+        bool started = false;
+        yield return WaitFor(
+            () => started = emoting(c.refs.animations) || c.data.fallSeconds > 0f,
+            1.5f
+        );
+        var note = $"hovered '{chosen}', emote started {started}, pointer {pointer ?? "ok"}";
+        if (string.IsNullOrEmpty(chosen))
+            Fail("no slice hovered by the hand: " + note);
+        else if (pointer != null)
+            Fail(note);
+        else if (!started)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
     /// <summary>
     /// The open wheel as the pointer sees it: its dimmer ("BG") is off, and a ray from the head at the empty
-    /// centre or past a corner hits nothing of the wheel, while one at the middle of a slice's drawn wedge hits
-    /// that slice (PointerHitFilter, WheelSegment). Aims the laser's event camera, which LaserPointer re-poses
+    /// centre or past a corner hits no slice, while one at the middle of a slice's drawn wedge hits that slice
+    /// (WheelRaycaster, WheelSegment). Only slice hits count: the name label in the centre is not a slice. Aims the laser's event camera, which LaserPointer re-poses
     /// in its own LateUpdate. Returns null when all hold, else what failed.
     /// </summary>
     static string ProbeEmoteWheel(EmoteWheel wheel)
@@ -616,7 +663,10 @@ internal sealed partial class SelfTestRunner
             results.Clear();
             system.RaycastAll(data, results);
             foreach (var r in results)
-                if (r.gameObject != null && r.gameObject.transform.IsChildOf(wheel.transform))
+                if (
+                    r.gameObject != null
+                    && r.gameObject.GetComponentInParent<UIWheelSlice>() != null
+                )
                     return r.gameObject;
             return null;
         }
@@ -631,56 +681,6 @@ internal sealed partial class SelfTestRunner
         if (midHit == null || midHit.GetComponentInParent<UIWheelSlice>() != slice)
             return $"wedge middle hit '{(midHit != null ? midHit.name : "nothing")}', not {slice.name}";
         return null;
-    }
-
-    IEnumerator EmoteStep()
-    {
-        var c = Character.localCharacter;
-        var gui = GUIManager.instance;
-        if (gui == null || gui.emoteWheel == null)
-        {
-            Fail("no GUIManager emote wheel");
-            yield break;
-        }
-        var emoting = GameMember.Field<CharacterAnimations, bool>("emoting");
-        bool hand = !VRInput.LeftHanded;
-        Script(hand).Secondary = true;
-        yield return Until(() => gui.emoteWheel.activeInHierarchy, 2f, "emote wheel did not open");
-        if (!stepOk)
-            yield break;
-        yield return Wait(0.3f);
-        // To the middle of the drawn ring: the hand picks only over it (WheelSize is its outer diameter).
-        float travel =
-            UIWheelsFeature.Size.Value
-            * 0.5f
-            * (WheelSegment.MidFraction / WheelSegment.OuterFraction);
-        yield return MoveTrack(hand, Script(hand).Position + Vector3.up * travel, 0.3f);
-        yield return Wait(0.3f);
-        var wheel = gui.emoteWheel.GetComponentInChildren<EmoteWheel>(true);
-        string chosen =
-            wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
-        var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
-        yield return Shot("vr-18-emote-wheel");
-        Script(hand).Secondary = false;
-        yield return Until(
-            () => !gui.emoteWheel.activeInHierarchy,
-            1f,
-            "emote wheel did not close"
-        );
-        bool started = false;
-        yield return WaitFor(
-            () => started = emoting(c.refs.animations) || c.data.fallSeconds > 0f,
-            1.5f
-        );
-        var note = $"hovered '{chosen}', emote started {started}, pointer {pointer ?? "ok"}";
-        if (string.IsNullOrEmpty(chosen))
-            Fail("no slice hovered by the hand: " + note);
-        else if (pointer != null)
-            Fail(note);
-        else if (!started)
-            Fail(note);
-        else
-            stepNote = note;
     }
 
     /// <summary>vr.19: both aim rays on the pause menu's Resume button (<c>PauseMenuMainPage.resumeButton</c>,

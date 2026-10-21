@@ -150,6 +150,14 @@ public class AffordanceTests
     }
 
     [Fact]
+    public void Blocked_NamesTheWindowInFront()
+    {
+        Assert.Equal("Blocked", DenyText.Label(DenyReason.Blocked));
+        Assert.Contains("window", DenyText.Hint(DenyReason.Blocked));
+        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.Blocked));
+    }
+
+    [Fact]
     public void Hints_AreShort()
     {
         for (var r = DenyReason.None + 1; r < DenyReason.Count; r++)

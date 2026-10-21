@@ -45,6 +45,9 @@ public enum DenyReason : byte
     /// <summary>A held torch, lantern, candle or flare is not lit, so touching it to a fire or fuse does nothing.</summary>
     NotLit,
 
+    /// <summary>The laser shows a control through an invisible blocker in front (a window fading in) that takes the click.</summary>
+    Blocked,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
 }
@@ -85,6 +88,7 @@ public static class DenyText
             DenyReason.Stowed => "Stowed on your belt",
             DenyReason.Dropped => "Your item fell here",
             DenyReason.NotLit => "Not lit",
+            DenyReason.Blocked => "Blocked",
             _ => "",
         };
 
@@ -118,6 +122,7 @@ public static class DenyText
             DenyReason.HandsFull => "Put your item away",
             DenyReason.TooSoon => "Wait a moment",
             DenyReason.NotLit => "Pull trigger to light it",
+            DenyReason.Blocked => "Use the window in front",
             _ => "",
         };
 
