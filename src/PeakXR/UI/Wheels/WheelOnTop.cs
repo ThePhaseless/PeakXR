@@ -25,6 +25,8 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
     {
         if (root == null)
             return;
+        if (onTop)
+            PruneClones();
         Scratch.Clear();
         root.GetComponentsInChildren(true, Scratch);
         foreach (var g in Scratch)
@@ -42,6 +44,32 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
             g.SetMaterialDirty();
         }
         Scratch.Clear();
+    }
+
+    /// <summary>Destroys every clone; the graphics build fresh ones if a wheel opens again.</summary>
+    public static void DestroyClones()
+    {
+        foreach (var clone in Clones.Values)
+            if (clone != null)
+                Destroy(clone);
+        Clones.Clear();
+    }
+
+    // Mask stencil materials are rebuilt per open, so their clones go once the stencil material is destroyed.
+    private static void PruneClones()
+    {
+        List<Material> dead = null;
+        foreach (var pair in Clones)
+            if (pair.Key == null)
+                (dead ??= new List<Material>()).Add(pair.Key);
+        if (dead == null)
+            return;
+        foreach (var key in dead)
+        {
+            if (Clones[key] != null)
+                Destroy(Clones[key]);
+            Clones.Remove(key);
+        }
     }
 
     /// <summary>Self-test: <paramref name="g"/> currently renders with the depth test off.</summary>

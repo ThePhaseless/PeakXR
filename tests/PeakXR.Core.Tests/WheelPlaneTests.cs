@@ -37,59 +37,19 @@ public class WheelPlaneTests
     }
 
     [Fact]
-    public void HandOffset_OpeningHandIsTheWheelCentre()
+    public void DrawScale_WheelLooksAsBigAsOneAtTheHand()
     {
-        var eye = new Vector3(0f, 1.6f, 0f);
-        var hand = new Vector3(0.1f, 1.2f, 0.4f);
+        // Wheel 0.4 m from the eye, hand 0.46 m: drawn at 0.4 / 0.46 so it covers the same angle.
+        var eye = Vector3.Zero;
+        var hand = new Vector3(0f, 0f, 0.46f);
         var centre = WheelPlane.Centre(eye, hand, 0.06f);
-        var forward = Vector3.Normalize(centre - eye);
-        var right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
-        var up = Vector3.Cross(forward, right);
-
-        var offset = WheelPlane.HandOffset(eye, hand, centre, right, up);
-        Assert.True(offset.Length() < Eps);
+        Assert.Equal(0.4f / 0.46f, WheelPlane.DrawScale(eye, hand, centre), 4);
     }
 
     [Fact]
-    public void HandOffset_IsWhereTheEyeSeesTheHandOnThePlane()
+    public void DrawScale_HandAtTheEyeIsOne()
     {
-        // Wheel 0.4 m ahead, hand 6 cm behind it and 0.1 m right: seen at 0.1 * 0.4 / 0.46 on the wheel.
-        var offset = WheelPlane.HandOffset(
-            Vector3.Zero,
-            new Vector3(0.1f, 0f, 0.46f),
-            new Vector3(0f, 0f, 0.4f),
-            Vector3.UnitX,
-            Vector3.UnitY
-        );
-        Assert.Equal(0.1f * 0.4f / 0.46f, offset.X, 4);
-        Assert.Equal(0f, offset.Y, 4);
-    }
-
-    [Fact]
-    public void HandOffset_HandOnThePlaneIsItsOwnOffset()
-    {
-        var offset = WheelPlane.HandOffset(
-            Vector3.Zero,
-            new Vector3(-0.05f, 0.08f, 0.4f),
-            new Vector3(0f, 0f, 0.4f),
-            Vector3.UnitX,
-            Vector3.UnitY
-        );
-        Assert.Equal(-0.05f, offset.X, 4);
-        Assert.Equal(0.08f, offset.Y, 4);
-    }
-
-    [Fact]
-    public void HandOffset_HandBesideOrBehindTheEyeFallsBackToStraightProjection()
-    {
-        var offset = WheelPlane.HandOffset(
-            Vector3.Zero,
-            new Vector3(0.3f, 0.1f, -0.05f),
-            new Vector3(0f, 0f, 0.4f),
-            Vector3.UnitX,
-            Vector3.UnitY
-        );
-        Assert.Equal(0.3f, offset.X, 4);
-        Assert.Equal(0.1f, offset.Y, 4);
+        var p = new Vector3(1f, 2f, 3f);
+        Assert.Equal(1f, WheelPlane.DrawScale(p, p, p));
     }
 }
