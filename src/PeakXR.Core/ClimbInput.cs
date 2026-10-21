@@ -12,6 +12,15 @@ namespace PeakXR.Core
     {
         static readonly Vector3 WorldUp = new Vector3(0f, 1f, 0f);
 
+        /// <summary>
+        /// Wall speed at full stick, m/s, to pass as <c>climbSpeed</c> to <see cref="FromBodyVelocity"/>. The game asks
+        /// for <c>climbSpeed * multiplier</c> per second, but <c>SampleWall</c> casts from 0.4 m off the wall to 1 m
+        /// behind the requested point, so on a flat wall only 0.4/1.4 of each step lands (CharacterClimbing.cs:327, :412).
+        /// </summary>
+        /// <param name="multiplier">climbSpeedMod x staminaMod x surface speedMultiplier (CharacterClimbing.cs:309).</param>
+        public static float WallSpeed(float climbSpeed, float multiplier) =>
+            climbSpeed * multiplier * (0.4f / 1.4f);
+
         /// <param name="bodyVelocity">Wanted body velocity, world space, m/s.</param>
         /// <param name="wallNormal">Climb surface normal (points away from the wall).</param>
         /// <param name="climbSpeed">Game climb speed in m/s at full stick.</param>

@@ -639,10 +639,16 @@ internal static class PhysicalInteraction
         var d = Arms.Update(l, VRInput.Left.Position.N(), r, VRInput.Right.Position.N(), dt).U();
         var world = (rig.Origin != null ? rig.Origin.TransformVector(d) : d) * cfg.ClimbGain;
         var climbing = c.refs.climbing;
+        var mod = c.data.climbMod;
         var target = ClimbInput.FromBodyVelocity(
             (world / dt).N(),
             c.data.climbNormal.N(),
-            climbing.climbSpeed * climbing.climbSpeedMod,
+            ClimbInput.WallSpeed(
+                climbing.climbSpeed,
+                climbing.climbSpeedMod
+                    * c.data.staminaMod
+                    * (mod != null ? mod.speedMultiplier : 1f)
+            ),
             0.1f
         );
         var smoothed = ClimbInput.Smooth(
@@ -656,7 +662,6 @@ internal static class PhysicalInteraction
 
         // Slide-only surface or no stamina: the game slides the climber down (CharacterClimbing.cs:297, :301, :263).
         // Upward pulls would only burn stamina (CharacterClimbing.cs:132), so they are dropped.
-        var mod = c.data.climbMod;
         bool slideOnly = mod != null && mod.onlySlideDown;
         bool outOfStamina = c.data.outOfStaminaFor > 0f;
         if ((slideOnly || outOfStamina) && climbInput.y > 0f)

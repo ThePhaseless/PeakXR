@@ -27,6 +27,39 @@ public class ClimbInputTests
     }
 
     [Fact]
+    public void WallSpeed_IsTheSampledShareOfClimbSpeed()
+    {
+        // SampleWall casts from 0.4 m off the wall to 1 m behind the requested point: 0.4/1.4 of each step lands.
+        TestUtil.Near(4f * 1.5f * 0.4f / 1.4f, ClimbInput.WallSpeed(4f, 1.5f));
+    }
+
+    [Fact]
+    public void ArmPull_MovesTheClimberAsFarAsTheHand()
+    {
+        // Vanilla flat wall at z = 0 (CharacterClimbing.cs:286, :412): each fixed step requests
+        // climbPos + up * stick.y * climbSpeed * dt, then climbPos becomes where the line from
+        // climbPos + normal * 0.4 to requested - normal * 1 crosses the wall.
+        const float climbSpeed = 4f,
+            dt = 0.02f;
+        var pull = new Vector3(0, 0.5f, 0);
+        float y = 0f;
+        for (int i = 0; i < 40; i++)
+        {
+            var stick = ClimbInput.FromBodyVelocity(
+                pull,
+                Normal,
+                ClimbInput.WallSpeed(climbSpeed, 1f),
+                0.1f
+            );
+            var from = new Vector3(0, y, 0) + Normal * 0.4f;
+            var to = new Vector3(0, y + stick.Y * climbSpeed * dt, 0) - Normal;
+            float t = from.Z / (from.Z - to.Z);
+            y = from.Y + (to.Y - from.Y) * t;
+        }
+        TestUtil.Near(0.4f, y);
+    }
+
+    [Fact]
     public void MotionIntoTheWall_IsIgnored()
     {
         var input = ClimbInput.FromBodyVelocity(new Vector3(0, 0, 3), Normal, 2f, 0.05f);
