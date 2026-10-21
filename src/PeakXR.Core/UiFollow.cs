@@ -136,6 +136,24 @@ namespace PeakXR.Core
         }
 
         /// <summary>
+        /// Which of several headings (ordered by preference, straight ahead first) a menu should open toward, given
+        /// the nearest wall depth along each: the first with room for the panel at
+        /// <see cref="NearestMenuDistance"/>, else the most open one. Keeps a menu out of a wall at your face.
+        /// </summary>
+        public static int PickOpenYaw(float[] wallDepths)
+        {
+            int best = 0;
+            for (int i = 0; i < wallDepths.Length; i++)
+            {
+                if (wallDepths[i] - WallGap >= NearestMenuDistance)
+                    return i;
+                if (wallDepths[i] > wallDepths[best])
+                    best = i;
+            }
+            return best;
+        }
+
+        /// <summary>
         /// Depth along the view line of a wall hit <paramref name="hit"/> metres along the ray to a panel edge
         /// <paramref name="halfWidth"/> to the side of a panel <paramref name="distance"/> away. The panel keeps its
         /// angular size when pulled in, so its edge stays on that ray and this depth is what it must clear.

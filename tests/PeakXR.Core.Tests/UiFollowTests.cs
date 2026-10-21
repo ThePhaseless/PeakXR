@@ -194,6 +194,26 @@ public class PanelMathTests
     }
 
     [Fact]
+    public void PickOpenYaw_KeepsStraightAheadWhenItFits()
+    {
+        Assert.Equal(0, PanelMath.PickOpenYaw(new[] { 1.0f, 3f, 3f }));
+        Assert.Equal(0, PanelMath.PickOpenYaw(new[] { float.PositiveInfinity, 0.2f }));
+    }
+
+    [Fact]
+    public void PickOpenYaw_WallAtTheFace_TakesTheFirstOpenTurn()
+    {
+        // Ahead and the first turn are blocked within 0.7 m; the second turn has room.
+        Assert.Equal(2, PanelMath.PickOpenYaw(new[] { 0.3f, 0.5f, 0.9f, 3f }));
+    }
+
+    [Fact]
+    public void PickOpenYaw_BoxedIn_TakesTheMostOpen()
+    {
+        Assert.Equal(1, PanelMath.PickOpenYaw(new[] { 0.3f, 0.65f, 0.4f }));
+    }
+
+    [Fact]
     public void ClearDistance_WallAtTheFace_KeepsNearestReadableDistance()
     {
         Assert.Equal(PanelMath.NearestMenuDistance, PanelMath.ClearDistance(1.8f, 0.2f));
