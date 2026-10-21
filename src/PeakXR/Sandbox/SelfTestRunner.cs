@@ -144,6 +144,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             ClosePause();
             yield return VRStep("vr.04-settings-panel", 30f, SettingsPanel());
             ClosePause();
+            yield return AirportScreenSteps();
         }
 
         if (!hold)
@@ -239,7 +240,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return OpenVRTab();
         if (!stepOk)
             yield break;
-        yield return Shot("02-settings-vr");
+        var menu = RootCanvasOf(FindAnyObjectByType<PauseMenuHandler>());
+        yield return menu != null
+            ? ShotAt("02-settings-vr", CentreOf(menu.transform))
+            : Shot("02-settings-vr");
 
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");

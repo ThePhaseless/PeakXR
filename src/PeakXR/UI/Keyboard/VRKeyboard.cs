@@ -116,6 +116,14 @@ internal sealed class VRKeyboard : MonoBehaviour
         return true;
     }
 
+    /// <summary>Cancels a dialog opened by <see cref="TryOpenDialog"/>; its callback gets "not submitted". The
+    /// self-test closes the keyboard it opened for its screenshot this way.</summary>
+    internal static void CancelDialog()
+    {
+        if (instance != null)
+            instance.CloseDialogOnly();
+    }
+
     private void Awake()
     {
         instance = this;

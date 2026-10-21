@@ -16,7 +16,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("ui.01-target-prompt", 20f, TargetPromptStep());
         yield return HandStep("ui.02-button-labels", 20f, ButtonLabelStep());
         yield return HandStep("ui.03-world-banner", 15f, BannerStep());
-        yield return HandStep("ui.04-rope-gauge", 20f, RopeGaugeStep());
+        yield return HandStep("ui.04-rope-gauge", 28f, RopeGaugeStep());
     }
 
     /// <summary>ui.01: an Apple in front of the eyes becomes <c>Interaction.currentHovered</c> (Interaction.cs:15); its
@@ -131,7 +131,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var hand = VRRig.Instance.Hand(LocalHold.ItemInLeftHand);
         float d = Vector3.Distance(prompt.transform.parent.position, hand.position);
-        yield return Shot("ui-02-button-labels");
+        yield return ShotAt("ui-02-button-labels", CentreOf(prompt.transform.parent));
         var fails = new List<string>();
         if (d > 0.2f)
             fails.Add($"label {d:0.00} m from the holding hand");
@@ -209,9 +209,12 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return Wait(0.3f);
+        // ui.03's hero title runs about 6 s and its sign would stand in front of the gauge in the screenshot.
+        var hero = GUIManager.instance.heroObject;
+        yield return WaitFor(() => hero == null || !hero.activeInHierarchy, 8f);
         var box = rope.transform.parent;
         float d = Vector3.Distance(rope.transform.position, HeldItem().Center());
-        yield return Shot("ui-04-rope-gauge");
+        yield return ShotAt("ui-04-rope-gauge", CentreOf(rope.transform));
         var fails = new List<string>();
         if (box == null || box.name != "PeakXR_RopeGauge")
             fails.Add($"rope gauge under '{(box != null ? box.name : "none")}'");

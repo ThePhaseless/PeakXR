@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using BepInEx.Configuration;
+using HarmonyLib;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Settings;
 using PeakXR.VR;
@@ -115,7 +117,8 @@ internal sealed partial class SelfTestRunner
                 fails.Add($"{topic} played no cue sound in a loop");
             if (d > 0.6f)
                 fails.Add($"{topic} demo {d:0.00} m from its row's right edge");
-            yield return Shot("vr-30-guide-" + topic);
+            // Row and demo together: the ghost stands past the panel's right edge.
+            yield return ShotAt("vr-30-guide-" + topic, 0.5f * (edge + demo.Root.position));
         }
         GuideRows.Click(expand);
         Conclude(fails, notes);
@@ -149,7 +152,10 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return Shot("vr-31-comfort-first");
+        var beginCanvas = RootCanvasOf(begin.Cell);
+        yield return beginCanvas != null
+            ? ShotAt("vr-31-comfort-first", CentreOf(beginCanvas.transform))
+            : Shot("vr-31-comfort-first");
         GuideRows.Click(begin);
         yield return Until(() => PracticeRun.Running, 2f, "practice did not start");
         if (!stepOk)
@@ -169,7 +175,11 @@ internal sealed partial class SelfTestRunner
         }
         var run = PracticeRun.Current;
         yield return Wait(0.5f);
-        yield return Shot("vr-31-station");
+        var stationAt = PracticeStation(run);
+        yield return ShotAt(
+            "vr-31-station",
+            stationAt != null ? stationAt.position : run.ExitOrbPosition
+        );
 
         BeginHands();
         bool turnHand = VRInput.LeftHanded;
@@ -226,6 +236,22 @@ internal sealed partial class SelfTestRunner
     }
 
     readonly Vector3[] edgeCorners = new Vector3[4];
+
+    static AccessTools.FieldRef<PracticeRun, Transform> practiceStation;
+
+    /// <summary>The practice's station root (its demo), for aiming the screenshot; null when the field moved.</summary>
+    static Transform PracticeStation(PracticeRun run)
+    {
+        try
+        {
+            practiceStation ??= GameMember.Field<PracticeRun, Transform>("station");
+            return practiceStation(run);
+        }
+        catch (System.MissingFieldException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>The title's settings page (MainMenuMainPage.cs:215) on the VR tab, in its normal view.</summary>
     IEnumerator OpenTitleGuide()

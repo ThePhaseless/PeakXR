@@ -304,7 +304,9 @@ internal sealed partial class SelfTestRunner
             else
                 stepNote = note;
         }
-        yield return Shot("vr-04-settings");
+        yield return root != null
+            ? ShotAt("vr-04-settings", CentreOf(root.transform))
+            : Shot("vr-04-settings");
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
     }
@@ -477,20 +479,27 @@ internal sealed partial class SelfTestRunner
         var pulse = new PulseWatch();
         bool meshShown = false;
         bool shot = false;
+        float prevBoost = 0f;
         float start = Now;
         while (Now - start < 3f)
         {
-            pulse.Sample(ComfortEventsRuntime.VignetteBoost, Now - start);
+            float boost = ComfortEventsRuntime.VignetteBoost;
+            pulse.Sample(boost, Now - start);
             var mesh = Vignette();
-            meshShown |= mesh != null && mesh.gameObject.activeInHierarchy;
-            if (pulse.Rose && !shot)
+            bool ringUp = mesh != null && mesh.gameObject.activeInHierarchy;
+            meshShown |= ringUp;
+            // At the pulse's peak with the ring drawn: the first rising frame showed hardly any ring.
+            if (pulse.Rose && ringUp && boost < prevBoost && !shot)
             {
                 shot = true;
                 yield return Shot("vr-07-knockback");
                 continue;
             }
+            prevBoost = boost;
             yield return null;
         }
+        if (!shot)
+            yield return Shot("vr-07-knockback");
         notes.Add(
             $"knockback pulse peak {pulse.Peak:0.00}, open after {pulse.SettleSeconds:0.00} s, ring shown {meshShown}"
         );
