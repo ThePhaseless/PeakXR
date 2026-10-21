@@ -42,6 +42,7 @@ public sealed class SelfTestFeature : Feature
         InputEdgeLog.Install();
         Patch(typeof(SelfTestUseProbe));
         Patch(typeof(SelfTestEndGamePatch));
+        Patch(typeof(SelfTestCampfirePatch));
         SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
             "bingbong"
         );
@@ -56,6 +57,29 @@ public sealed class SelfTestFeature : Feature
         SandboxActions.Forced = true;
         var go = new GameObject("PeakXR.SelfTest") { hideFlags = HideFlags.HideAndDontSave };
         go.AddComponent<SelfTestRunner>();
+    }
+}
+
+/// <summary>
+/// Lets vr.26 finish a campfire light hold without the run moving on. A finished hold on an unlit campfire sends
+/// <c>Light_Rpc(true)</c> (decomp Assembly-CSharp/Campfire.cs:309-325), which advances the map segment and quicksaves
+/// (:478-486). While <see cref="Hold"/> is set the fire is lit the way <c>LightWithoutReveal</c> (:456) lights it
+/// instead, so the step still sees the game's own hold complete and the fire go <c>Lit</c>.
+/// </summary>
+[HarmonyPatch]
+static class SelfTestCampfirePatch
+{
+    internal static bool Hold;
+
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(Campfire), "Interact_CastFinished", new[] { typeof(Character) });
+
+    static bool Prefix(Campfire __instance)
+    {
+        if (!Hold || __instance.Lit)
+            return true;
+        __instance.LightWithoutReveal();
+        return false;
     }
 }
 

@@ -187,11 +187,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 yield return TornadoIfHere();
                 if (segment == Segment.Tropics)
                     yield return VineSteps();
-            }
-            foreach (var hours in Times)
-            {
-                var id = "07-time-" + ((int)hours).ToString("00", CultureInfo.InvariantCulture);
-                yield return Run(id, 15f, TimeOfDay(hours, id));
+                // Open desert with sky (TheKiln's spawn is indoors, so its frames all looked the same).
+                if (segment == Segment.Caldera)
+                    yield return TimeSteps();
             }
             // Each kills the solo player and revives them, so nothing after can trip over a death.
             yield return DeathSteps();
@@ -373,12 +371,34 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Until(() => Holding(item), 5f, "not in hand");
         if (!stepOk)
             yield break;
-        spawned.Add(HeldItem().gameObject);
+        var held = HeldItem();
+        spawned.Add(held.gameObject);
         yield return Wait(0.5f);
+        // Item.StartUsePrimary sets isUsingPrimary (Item.cs:849-855); an eaten or spent item leaves the hand.
+        bool started = false;
+        float progress = 0f;
         SelfTestInputPatch.HoldPrimary = true;
-        yield return Wait(1.5f);
+        float end = Now + 1.5f;
+        while (Now < end)
+        {
+            if (held == null || HeldItem() != held)
+            {
+                started = true;
+                break;
+            }
+            started |= held.isUsingPrimary || held.finishedCast;
+            progress = Mathf.Max(progress, held.castProgress);
+            yield return null;
+        }
         SelfTestInputPatch.HoldPrimary = false;
         yield return Wait(1f);
+        bool gone = held == null || HeldItem() != held;
+        var note =
+            $"primary use started {started}, cast progress {progress:0.00}, left the hand {gone}";
+        if (!started)
+            Fail("primary use never started: " + note);
+        else
+            stepNote = note;
         // Eaten or spent items leave the hand on their own.
         yield return DropHeld();
     }
@@ -441,12 +461,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     Skip("mob." + entry.Name, entry.Note);
                     continue;
                 }
-                yield return Run("mob." + entry.Name, 30f, body);
+                yield return Run("mob." + entry.Name, 30f, Isolated(body));
                 SelfTestInputPatch.HoldPrimary = false;
             }
             else
-                yield return Run("mob." + entry.Name, 20f, Mob(entry));
+                yield return Run("mob." + entry.Name, 20f, Isolated(Mob(entry)));
             Safe("mob.despawn", Despawn);
+            Safe("mob.leftovers", ClearLeftovers);
             Safe("mob.recover", Recover);
             yield return Wait(1f);
         }
@@ -470,14 +491,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         }
         var go = SandboxActions.LastSpawned;
         spawned.Add(go);
-        yield return Wait(3f);
-        if (go == null)
-            stepNote = "gone within 3 s";
-        // A white frame here is the game's BLIND overlay (explosions, flash plants), capped in VR by comfort.events.
-        var c = Character.localCharacter;
-        if (c != null && c.data.isBlind)
-            Note("player blinded (BLIND overlay)");
-        yield return Shot("05-mob-" + entry.Name);
+        yield return MobBehaviour(entry, go);
     }
 
     IEnumerator Jump(Segment segment, string shot = null)
@@ -493,26 +507,11 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield break;
         yield return Wait(3f);
         Recover();
+        var now = Singleton<MapHandler>.Instance.GetCurrentSegment();
+        if (now != segment)
+            Fail("in " + now + " after the jump");
         yield return Shot(shot ?? "06-segment-" + segment);
-        // Tells a sky-only frame (a summit, a ledge) from a view that lost the body.
-        var c = Character.localCharacter;
-        var rig = PeakXR.VR.VRRig.Instance;
-        if (c != null && rig != null && rig.Head != null)
-        {
-            var eye = rig.Head.position;
-            float ground = Physics.Raycast(
-                eye,
-                Vector3.down,
-                out var hit,
-                200f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-                ? hit.distance
-                : -1f;
-            stepNote =
-                $"eye {Vector3.Distance(eye, c.Head):0.00} m from the head, ground {ground:0.0} m below, grounded {c.data.isGrounded}";
-        }
+        yield return Landing();
     }
 
     /// <summary>The segment the loop would jump to is the current one: assert it instead of jumping.</summary>
@@ -524,10 +523,27 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("in " + current);
             yield break;
         }
-        stepNote = "already here";
         yield return Shot("06-segment-" + segment);
+        yield return Landing();
+        if (stepOk)
+            stepNote = "already here; " + stepNote;
     }
 
+    IEnumerator TimeSteps()
+    {
+        lastEarth = null;
+        foreach (var hours in Times)
+        {
+            var id = "07-time-" + ((int)hours).ToString("00", CultureInfo.InvariantCulture);
+            yield return Run(id, 15f, TimeOfDay(hours, id));
+        }
+    }
+
+    Quaternion? lastEarth;
+
+    /// <summary>07-time-*: <c>setTimeOfDay</c> (DayNightManager.cs:277) moves the clock, and <c>UpdateCycle</c>
+    /// (:382) turns the sun's <c>earth</c> pivot (:400) and sets sun and moon light. Each time must land near its
+    /// hour and turn the pivot away from the previous step's.</summary>
     IEnumerator TimeOfDay(float hours, string shot)
     {
         if (!SandboxActions.SetTimeOfDay(hours))
@@ -536,7 +552,29 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield break;
         }
         yield return Wait(2f);
-        yield return Shot(shot);
+        // Level ahead and 20 degrees up: horizon and sky in frame.
+        var cam = ViewCamera();
+        if (cam != null)
+        {
+            var ahead = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized;
+            yield return ShotAt(shot, cam.transform.position + ahead * 10f + Vector3.up * 3.6f);
+        }
+        else
+            yield return Shot(shot);
+        var dn = DayNightManager.instance;
+        var earth = dn.earth.rotation;
+        float turned = lastEarth.HasValue ? Quaternion.Angle(lastEarth.Value, earth) : -1f;
+        lastEarth = earth;
+        var note =
+            $"time {dn.timeOfDay:0.00} h, sun turned {turned:0} deg from the last step, "
+            + $"sun {(dn.sun.enabled ? "on" : "off")} {dn.sun.intensity:0.00}, moon {(dn.moon.enabled ? "on" : "off")} {dn.moon.intensity:0.00}";
+        // The clock runs a day per dayLengthInMinutes (10 min): 2 s is about 0.1 h.
+        if (Mathf.Abs(Mathf.DeltaAngle(dn.timeOfDay * 15f, hours * 15f)) > 0.5f * 15f)
+            Fail("clock not at the set hour: " + note);
+        else if (turned >= 0f && turned < 10f)
+            Fail("sun did not move from the last time step: " + note);
+        else
+            stepNote = note;
     }
 
     // ---------------------------------------------------------------- step machinery
@@ -548,7 +586,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         failNote = null;
         stepSkip = null;
         report.Begin(id, Now);
+        bool god = SandboxActions.GodMode;
         yield return Guard(body, Now + timeout, OnStepFailure);
+        // A step that lifts god mode or holds a campfire light (vr.12, vr.26) and ends early leaves both as they were.
+        if (god && !SandboxActions.GodMode)
+            SandboxActions.SetGodMode(true);
+        SelfTestCampfirePatch.Hold = false;
         if (stepOk && stepSkip != null)
             report.Skip(id, stepSkip);
         else if (stepOk)

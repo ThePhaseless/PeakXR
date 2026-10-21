@@ -192,7 +192,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.12: the hand holding an Apple, steered to the mouth point (<see cref="MouthGesture.MouthPoint"/>),
     /// eats it: the game's <c>Item.Consume</c> RPC stamps <c>CharacterData.lastConsumedItem</c> (Item.cs:1096,
     /// CharacterData.cs:169). The gesture reads the tracked grip; the note also gives the physics item's closest
-    /// approach, which the holder's own head collider keeps away from the mouth.</summary>
+    /// approach, which the holder's own head collider keeps away from the mouth. Food must also lower Hunger by its
+    /// <c>Action_RestoreHunger.restorationAmount</c> (Action_RestoreHunger.cs:7), so the step sets Hunger first.</summary>
     IEnumerator EatStep()
     {
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
@@ -211,6 +212,19 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
 
+        // God mode locks statuses (Character.statusesLocked blocks SubtractStatus, CharacterAfflictions.cs:886) and
+        // clears Hunger on its tick, so eating could not change anything: lift it and set Hunger the game's way
+        // (SetStatus, CharacterAfflictions.cs:632). Run puts god mode back if the step ends early.
+        var restore = item.GetComponent<Action_RestoreHunger>();
+        bool god = SandboxActions.GodMode;
+        float restores = restore != null ? restore.restorationAmount : 0f;
+        string eaten = item.name;
+        if (restore != null)
+        {
+            if (god)
+                SandboxActions.SetGodMode(false);
+            c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Hunger, 0.5f);
+        }
         float hunger = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Hunger);
         float consumedBefore = c.data.lastConsumedItem;
         float useTime = item.usingTimePrimary;
@@ -255,11 +269,18 @@ internal sealed partial class SelfTestRunner
         float hungerAfter = c.refs.afflictions.GetCurrentStatus(
             CharacterAfflictions.STATUSTYPE.Hunger
         );
+        if (god)
+            SandboxActions.SetGodMode(true);
         var note =
             $"grip closest {best:0.00} m to the mouth (item {bestItem:0.00} m), use progress {progress:0.00} of {useTime:0.0} s, "
-            + $"hunger {hunger:0.00} -> {hungerAfter:0.00}";
+            + $"hunger {hunger:0.00} -> {hungerAfter:0.00} (restores {restores:0.00})";
         if (c.data.lastConsumedItem == consumedBefore)
             Fail("not eaten: " + note);
+        else if (restore == null)
+            Fail($"{eaten} has no Action_RestoreHunger, nothing to measure: " + note);
+        // Half the amount: Hunger creeps up between the reads, and the 0.5 start caps a large restore.
+        else if (hunger - hungerAfter < Mathf.Min(restores, hunger) * 0.5f)
+            Fail("eaten but hunger did not drop: " + note);
         else
             stepNote = "eaten; " + note;
     }

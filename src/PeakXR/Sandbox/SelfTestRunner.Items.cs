@@ -26,11 +26,11 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.28-use-while-pointing", AppleFragment, 25f, UsePointingStep);
         yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
         yield return WarpBack();
-        // Light first: it needs the campfire unlit and stops short of lighting it; cooking then lights it.
+        // Light first: it needs the campfire unlit. Cooking then uses the fire it lit (or lights it when vr.26 failed).
         yield return ItemStep("vr.26-light-with-flame", "Torch", 40f, LightStep);
         yield return WarpBack();
         // The game has no way to put a campfire out again short of Extinguish_Rpc, which leaves it spent; and
-        // Light_Rpc is buffered. So the fire vr.25 lights stays lit for the rest of the run (vr.27 uses it).
+        // Light_Rpc is buffered. So the fire stays lit for the rest of the run (vr.27 uses it).
         yield return ItemStep("vr.25-cook-over-fire", AppleFragment, 40f, CookStep);
         yield return WarpBack();
         yield return HandStep("vr.27-warm-hands", 30f, WarmStep());
@@ -519,9 +519,9 @@ internal sealed partial class SelfTestRunner
         : it == null ? "nothing"
         : it.GetType().Name;
 
-    /// <summary>vr.26: a held torch, lit with its trigger, touched to an unlit campfire holds the game's light hold on it
-    /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121); pulling away before the hold completes
-    /// cancels it (Interaction.cs:109-112) and leaves the fire unlit, so vr.25 finds it as the level made it.</summary>
+    /// <summary>vr.26: a held torch, lit with its trigger, held to an unlit campfire runs the game's light hold on it
+    /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121) for its <c>GetInteractTime</c> (Campfire.cs:429)
+    /// until the fire is lit. <see cref="SelfTestCampfirePatch"/> lights it without the segment advance.</summary>
     IEnumerator LightStep(Item torchPrefab)
     {
         var c = Character.localCharacter;
@@ -567,34 +567,41 @@ internal sealed partial class SelfTestRunner
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;
         float progress = 0f;
-        float end = Now + 5f;
+        float holdTime = fire.GetInteractTime(c);
+        float end = Now + holdTime + 4f;
+        bool shot = false;
         string state = "";
+        SelfTestCampfirePatch.Hold = true;
         BeginCarry();
-        while (Now < end && progress < 0.3f)
+        while (Now < end && !fire.Lit)
         {
             CarryToward(left, flame.position, goal);
             state = FireTrace("vr.26", flame.position, fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
-                progress = interaction.constantInteractableProgress;
+                progress = Mathf.Max(progress, interaction.constantInteractableProgress);
+            if (!shot && progress > 0.5f)
+            {
+                shot = true;
+                // Between the flame and the fire base, backed off to frame torch, hand and logs.
+                yield return ShotAt(
+                    "vr-26-light",
+                    Vector3.Lerp(flame.position, fireBase, 0.5f),
+                    1.2f
+                );
+                continue;
+            }
             yield return null;
         }
-        if (progress >= 0.3f)
-            yield return Shot("vr-26-light");
-        // Torch raised to head height: the flame leaves the light zone (0.6 m up, plus the touch exit margin) even
-        // from as close as the body stands.
-        HeadFrame(out var head, out var forward, out var right);
-        yield return MoveTrack(
-            left,
-            head + (left ? -right : right) * 0.25f + Vector3.up * 0.1f + forward * 0.15f,
-            0.3f
-        );
-        yield return Wait(0.5f);
+        SelfTestCampfirePatch.Hold = false;
+        bool lit = fire.Lit;
+        if (lit)
+            yield return ShotAt("vr-26-lit", fireBase + Vector3.up * 0.3f, 1.5f);
         var note =
-            $"{torch.name} at {fire.name}: light hold progress {progress:0.00}, fire {fire.state} after pulling away; at the end {state}";
-        if (progress < 0.3f)
-            Fail("flame did not hold the light: " + note);
-        else if (fire.state != Campfire.FireState.Off)
-            Fail("hold did not cancel on pulling away: " + note);
+            $"{torch.name} at {fire.name}: light hold progress {progress:0.00} of {holdTime:0.0} s, fire {fire.state}; at the end {state}";
+        if (progress <= 0f)
+            Fail("flame did not start the light hold: " + note);
+        else if (!lit)
+            Fail("hold did not light the fire: " + note);
         else
             stepNote = note;
     }

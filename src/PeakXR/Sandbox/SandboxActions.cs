@@ -482,14 +482,36 @@ public static class SandboxActions
             }
         }
         if (dirty)
-        {
-            // Same sequence as the game's Afflictions.ClearAll console command.
-            c.data.SetPetrify(0);
-            afflictions.RemoveAllThorns();
-            afflictions.ClearAllStatus(excludeCurse: false, excludePetrify: false);
-        }
+            ClearStatuses(c);
         if (afflictions.afflictionList.Count > 0)
             afflictions.ClearAllAfflictions();
+    }
+
+    /// <summary>Same sequence as the game's Afflictions.ClearAll console command.</summary>
+    static void ClearStatuses(Character c)
+    {
+        c.data.SetPetrify(0);
+        c.refs.afflictions.RemoveAllThorns();
+        c.refs.afflictions.ClearAllStatus(excludeCurse: false, excludePetrify: false);
+    }
+
+    /// <summary>
+    /// Everything a status or affliction leaves on <paramref name="c"/>: statuses, afflictions, and the timed screen
+    /// statuses such as BLIND (<c>IllegalScreenEffect.AddStatus</c>, IllegalScreenEffect.cs:65, reached through
+    /// <c>Character.illegalStatusAction</c>, Character.cs:186), which ClearAll leaves running.
+    /// </summary>
+    internal static void ClearAll(Character c)
+    {
+        if (c == null || c.refs == null || c.refs.afflictions == null)
+            return;
+        ClearStatuses(c);
+        c.refs.afflictions.ClearAllAfflictions();
+        foreach (
+            var fx in UnityEngine.Object.FindObjectsByType<IllegalScreenEffect>(
+                FindObjectsSortMode.None
+            )
+        )
+            c.illegalStatusAction?.Invoke(fx.statusName, 0f);
     }
 
     /// <summary>Revive the local character at the spot they died (game command <c>Character.Revive</c>).</summary>
