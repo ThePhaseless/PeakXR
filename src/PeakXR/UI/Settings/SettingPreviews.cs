@@ -7,6 +7,7 @@ using PeakXR.UI.Common;
 using PeakXR.UI.Status;
 using PeakXR.UI.World;
 using PeakXR.VR;
+using PeakXR.XR;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -96,6 +97,9 @@ internal sealed class PreviewStage : MonoBehaviour
     private const float PreviewFade = 0.6f;
     private const float ReplaceDelay = 0.35f;
     private const float PulseInterval = 0.2f;
+    private const float VignetteRamp = 0.15f;
+    private const float HoverVignetteCap = 0.4f;
+    private static readonly float CrouchEnter = new PhysicalCrouch().EnterFraction;
     private static readonly Color Accent = new(0.45f, 0.85f, 1f, 1f);
     private static readonly Color StatusSample = new(0.35f, 0.85f, 0.2f, 1f);
     private static readonly Color DyingSample = new(0.85f, 0.1f, 0.1f, 1f);
@@ -116,6 +120,8 @@ internal sealed class PreviewStage : MonoBehaviour
 
     private float fadeUntil = -1f;
     private float lastPulse = -1f;
+    private float lastFade = -10f;
+    private ConfigEntryBase replaceEntry;
     private Canvas replaceCanvas;
     private float replaceAt = -1f;
 
@@ -140,9 +146,10 @@ internal sealed class PreviewStage : MonoBehaviour
         snapAngle,
         smoothSpeed,
         statusIntensity,
-        fadeSeconds,
         nameTagScale,
-        wristWidth;
+        wristWidth,
+        interactStrength;
+    private static ConfigEntry<bool> physicalCrouch;
     private static ConfigEntry<string> turnMode,
         moveRelativeTo;
     private static ConfigEntry<StatusOverlayMode> statusMode;
@@ -205,10 +212,18 @@ internal sealed class PreviewStage : MonoBehaviour
         if (clock.Tick(Time.unscaledDeltaTime) && hoverEntry != null)
             Begin(hoverEntry, change: false);
         var now = Time.unscaledTime;
-        if (replaceAt >= 0f && now >= replaceAt)
+        // Never mid-drag: wait for both triggers to be up, and skip it if the menu closed meanwhile.
+        if (replaceAt >= 0f && now >= replaceAt && !TriggerHeld())
         {
             replaceAt = -1f;
-            if (VRSession.Active && replaceCanvas != null)
+            var row = SettingPreviews.CellOf(replaceEntry);
+            if (
+                VRSession.Active
+                && replaceCanvas != null
+                && replaceCanvas.isActiveAndEnabled
+                && row != null
+                && row.gameObject.activeInHierarchy
+            )
                 WorldCanvases.Reopen(replaceCanvas);
         }
         if (fadeUntil >= 0f && now >= fadeUntil)
@@ -250,7 +265,7 @@ internal sealed class PreviewStage : MonoBehaviour
                 var amplitude = entry.BoxedValue switch
                 {
                     float f => Mathf.Clamp01(f),
-                    bool b => b ? 0.5f : 0f,
+                    bool b => b ? PairedStrength() : 0f,
                     _ => 0.5f,
                 };
                 UIHaptics.Tick(true, amplitude, 0.12f);
@@ -266,18 +281,40 @@ internal sealed class PreviewStage : MonoBehaviour
                 UIHaptics.Tick(left, 0.3f, 0.08f);
                 break;
             case PreviewKind.Fade:
-                // A partial dip, not a black flash: shows the speed and keeps the menu readable.
+                // A partial dip, not a black flash, at most once per preview so a slider drag does not pump it.
+                if (now - lastFade < PreviewClock.ChangeSeconds)
+                    break;
+                lastFade = now;
                 VRFade.Set(fadeOwner, PreviewFade);
-                fadeUntil =
-                    now + SettingPreviews.Value(ref fadeSeconds, "UI", "FadeSeconds", 0.3f) + 0.25f;
+                fadeUntil = now + (entry.BoxedValue is float seconds ? seconds : 0.3f) + 0.25f;
                 break;
             case PreviewKind.MenuPlacement:
                 // Re-placed once the slider rests, so the panel does not jump under the laser while dragging.
                 var canvas = cell.GetComponentInParent<Canvas>();
                 replaceCanvas = canvas != null ? canvas.rootCanvas : null;
+                replaceEntry = entry;
                 replaceAt = now + ReplaceDelay;
                 break;
         }
+    }
+
+    private static bool TriggerHeld() =>
+        VRInput.Left.Trigger > 0.2f || VRInput.Right.Trigger > 0.2f;
+
+    /// <summary>A bool haptics switch pulses at the strength slider it goes with, when there is one.</summary>
+    private float PairedStrength()
+    {
+        if (
+            Plugin.Settings.TryGetEntry<float>(
+                entry.Definition.Section,
+                "HapticStrength",
+                out var own
+            )
+        )
+            return Mathf.Clamp01(own.Value);
+        return Mathf.Clamp01(
+            SettingPreviews.Value(ref interactStrength, "Interaction", "HapticStrength", 0.5f)
+        );
     }
 
     private void EndFade()
@@ -299,15 +336,19 @@ internal sealed class PreviewStage : MonoBehaviour
             tagText.font = label.font;
         }
         var def = entry.Definition;
-        var value = TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType);
+        var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
         var note = SettingPreviewTable.ApplyNote(def.Section, def.Key);
         text.text =
             $"<b>{SettingsRows.Prettify(def.Key)}</b>   <color=#8fd8ff>{value}</color>\n"
-            + $"<size=80%>{entry.Description?.Description}</size>"
+            + $"<size=80%>{NoParse(entry.Description?.Description)}</size>"
             + (note != null ? $"\n<size=80%><color=#ffc880>{note}</color></size>" : "");
         // The turn dial takes the lower part of the card.
         cardText.offsetMin = new Vector2(24f, kind == PreviewKind.Turn ? CardHeight * 0.5f : 20f);
     }
+
+    /// <summary>Config text is shown as typed: a '&lt;' in a value or description is not a TMP tag.</summary>
+    private static string NoParse(string s) =>
+        string.IsNullOrEmpty(s) ? s : "<noparse>" + s.Replace("</noparse>", "") + "</noparse>";
 
     private void BuildCard()
     {
@@ -418,7 +459,10 @@ internal sealed class PreviewStage : MonoBehaviour
                     "VignetteStrength",
                     0.5f
                 );
-                vignette.Show(head, on ? strength * alpha : 0f);
+                // Eased in, and a hover never tunnels the view further than a medium vignette.
+                if (clock.FromHover)
+                    strength = Mathf.Min(strength, HoverVignetteCap);
+                vignette.Show(head, on ? strength * alpha * clock.RampIn(VignetteRamp) : 0f);
                 break;
             case PreviewKind.StatusGlow:
                 DrawStatus(rig, alpha);
@@ -428,6 +472,9 @@ internal sealed class PreviewStage : MonoBehaviour
                 break;
             case PreviewKind.MoveDirection:
                 DrawArrow(rig);
+                break;
+            case PreviewKind.Crouch:
+                DrawCrouchLine(rig);
                 break;
             case PreviewKind.Hud:
                 DrawHudOutline();
@@ -506,6 +553,40 @@ internal sealed class PreviewStage : MonoBehaviour
         Show(ring);
         Show(startNeedle);
         Show(needle);
+    }
+
+    /// <summary>
+    /// Ring around you at the head height where physical crouch starts (same rule as Core
+    /// <see cref="PhysicalCrouch"/>): dip your head below it to crouch. Hidden when the setting is off or seated.
+    /// </summary>
+    private void DrawCrouchLine(VRRig rig)
+    {
+        if (
+            !SettingPreviews.Value(ref physicalCrouch, "Locomotion", "PhysicalCrouch", true)
+            || rig.SeatedMode
+            || rig.Origin == null
+        )
+        {
+            Hide(ring);
+            return;
+        }
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float standing = XRRuntimeInfo.FloorTracking
+            ? eye
+            : HeightCalibration.DefaultStandingEyeHeight;
+        var center = VRInput.HeadPosition;
+        center.y = eye - CrouchEnter * standing;
+        for (int i = 0; i < 32; i++)
+        {
+            var a = i * Mathf.PI * 2f / 32f;
+            ring.SetPosition(
+                i,
+                rig.Origin.TransformPoint(
+                    center + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 0.35f
+                )
+            );
+        }
+        Show(ring);
     }
 
     /// <summary>Waist-high arrow where pushing the stick forward would walk you.</summary>

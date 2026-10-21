@@ -11,6 +11,7 @@ namespace PeakXR.Core
         Vignette,
         Turn,
         MoveDirection,
+        Crouch,
         Fade,
         Hud,
         Wrist,
@@ -45,7 +46,12 @@ namespace PeakXR.Core
                         _ => PreviewKind.Info,
                     };
                 case "Locomotion":
-                    return key == "MoveRelativeTo" ? PreviewKind.MoveDirection : PreviewKind.Info;
+                    return key switch
+                    {
+                        "MoveRelativeTo" => PreviewKind.MoveDirection,
+                        "PhysicalCrouch" => PreviewKind.Crouch,
+                        _ => PreviewKind.Info,
+                    };
                 case "UI":
                     return key switch
                     {
@@ -93,7 +99,8 @@ namespace PeakXR.Core
                 ("XR", _) => Restart,
                 ("Interaction.Binoculars", "LensResolution") => Restart,
                 ("UI", "TitleOnBeach") => "Applies the next time the title screen loads.",
-                ("Render", "RenderScale") => "Applied now. Higher is sharper but costs frame rate.",
+                ("Render", "RenderScale") =>
+                    "Applies once the slider rests for a moment. Higher is sharper but costs frame rate.",
                 _ => null,
             };
     }
@@ -125,6 +132,10 @@ namespace PeakXR.Core
             remaining <= 0f ? 0f
             : remaining >= FadeOut ? 1f
             : remaining / FadeOut;
+
+        /// <summary>0 at the start, 1 after <paramref name="seconds"/>: eases a sample in instead of popping it.</summary>
+        public float RampIn(float seconds) =>
+            seconds <= 0f ? 1f : MathF.Min(1f, MathF.Max(0f, Elapsed / seconds));
 
         public void Change()
         {

@@ -9,6 +9,9 @@ public class SettingPreviewTests
     [InlineData("Comfort", "SnapTurnAngle", PreviewKind.Turn)]
     [InlineData("Comfort", "SmoothTurnSpeed", PreviewKind.Turn)]
     [InlineData("Locomotion", "MoveRelativeTo", PreviewKind.MoveDirection)]
+    [InlineData("Locomotion", "PhysicalCrouch", PreviewKind.Crouch)]
+    [InlineData("Locomotion", "ArmSwingSprint", PreviewKind.Info)]
+    [InlineData("Interaction", "RopeHandOverHand", PreviewKind.Info)]
     [InlineData("UI", "FadeSeconds", PreviewKind.Fade)]
     [InlineData("Camera", "FadeSeconds", PreviewKind.Fade)]
     [InlineData("UI.HUD", "HudMode", PreviewKind.Hud)]
@@ -115,6 +118,18 @@ public class SettingPreviewTests
         clock.Tick(PreviewClock.ChangeSeconds - PreviewClock.FadeOut * 0.5f);
         Assert.InRange(clock.Alpha, 0.45f, 0.55f);
         Assert.InRange(clock.Elapsed, 1.5f, PreviewClock.ChangeSeconds);
+    }
+
+    [Fact]
+    public void Ramp_in_reaches_full_after_ramp_time()
+    {
+        var clock = new PreviewClock();
+        clock.Change();
+        Assert.Equal(0f, clock.RampIn(0.15f));
+        clock.Tick(0.075f);
+        Assert.InRange(clock.RampIn(0.15f), 0.45f, 0.55f);
+        clock.Tick(0.2f);
+        Assert.Equal(1f, clock.RampIn(0.15f));
     }
 
     [Fact]

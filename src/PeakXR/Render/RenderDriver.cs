@@ -42,6 +42,8 @@ internal sealed class RenderDriver : MonoBehaviour
     private UniversalAdditionalCameraData boundCameraData;
     private AntialiasingMode savedAntialiasing;
     private bool savedDynamicResolution;
+    private const float QualityDelay = 0.4f;
+    private float qualityDueAt = -1f;
 
     private void OnEnable()
     {
@@ -167,11 +169,10 @@ internal sealed class RenderDriver : MonoBehaviour
             RestoreSettings();
     }
 
-    private void OnQualityChanged(object sender, System.EventArgs e)
-    {
-        if (applied)
-            ApplyQuality();
-    }
+    /// <summary>Debounced: a slider drag in the settings tab fires every tick, and each render scale change
+    /// reallocates the eye textures, so the value is applied once it has been still for a moment.</summary>
+    private void OnQualityChanged(object sender, System.EventArgs e) =>
+        qualityDueAt = Time.unscaledTime + QualityDelay;
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
@@ -335,6 +336,12 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void Update()
     {
+        if (qualityDueAt >= 0f && Time.unscaledTime >= qualityDueAt)
+        {
+            qualityDueAt = -1f;
+            if (applied)
+                ApplyQuality();
+        }
         if (!applied || !VRSession.Active)
             return;
         BindCamera();
