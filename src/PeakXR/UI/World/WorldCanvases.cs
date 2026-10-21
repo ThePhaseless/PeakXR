@@ -27,7 +27,12 @@ internal sealed class TrackedCanvas
 
     public bool IsOpen;
     public bool WasOpen;
+
+    /// <summary>Menus: where the content centre sits. Other kinds: the canvas position.</summary>
     public Vector3 Position;
+    public Vector2 ContentSize;
+    public Vector2 ContentCenter;
+    public float NextMeasure;
     public Quaternion Rotation;
 }
 
@@ -43,7 +48,12 @@ internal static class WorldCanvases
     private static readonly HashSet<int> known = new();
     private static readonly List<Canvas> pending = new();
     private static readonly HashSet<int> convertedRoots = new();
+    private static readonly List<Graphic> graphics = new();
+    private static readonly Vector3[] corners = new Vector3[4];
     private static bool converting;
+
+    // Re-measure an open menu this often, so a page switch (pause -> settings) resizes it.
+    private const float MeasureSeconds = 0.5f;
 
     public static bool IsConverted(Canvas root) => convertedRoots.Contains(root.GetInstanceID());
 
@@ -328,10 +338,63 @@ internal static class WorldCanvases
             t.Position = head.position + offset;
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
             t.WasOpen = true;
+            t.NextMeasure = 0f;
         }
 
-        Apply(t, t.Position, t.Rotation, cfg.MenuWidth.Value);
+        if (Time.unscaledTime >= t.NextMeasure)
+        {
+            t.NextMeasure = Time.unscaledTime + MeasureSeconds;
+            MeasureContent(t);
+        }
+        // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
+        // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
+        var mpp = PanelMath.MenuMetersPerPixel(
+            t.ContentSize.x,
+            t.ContentSize.y,
+            cfg.MenuWidth.Value,
+            cfg.MenuDistance.Value
+        );
+        var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
+        Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
+    }
+
+    /// <summary>
+    /// Bounds of the drawn graphics in canvas pixels (relative to the canvas pivot), clipped to the canvas and
+    /// skipping full-canvas backdrops. Nothing drawn means the whole canvas.
+    /// </summary>
+    private static void MeasureContent(TrackedCanvas t)
+    {
+        var bounds = t.Rect.rect;
+        var backdrop = bounds.size * 0.9f;
+        var min = new Vector2(float.MaxValue, float.MaxValue);
+        var max = new Vector2(float.MinValue, float.MinValue);
+        t.Canvas.GetComponentsInChildren(false, graphics);
+        foreach (var g in graphics)
+        {
+            if (!g.isActiveAndEnabled || g.color.a < 0.01f)
+                continue;
+            g.rectTransform.GetWorldCorners(corners);
+            Vector2 a = t.Rect.InverseTransformPoint(corners[0]);
+            Vector2 b = t.Rect.InverseTransformPoint(corners[2]);
+            var lo = Vector2.Max(Vector2.Min(a, b), bounds.min);
+            var hi = Vector2.Min(Vector2.Max(a, b), bounds.max);
+            if (hi.x <= lo.x || hi.y <= lo.y)
+                continue;
+            if (hi.x - lo.x >= backdrop.x && hi.y - lo.y >= backdrop.y)
+                continue;
+            min = Vector2.Min(min, lo);
+            max = Vector2.Max(max, hi);
+        }
+        graphics.Clear();
+        if (max.x <= min.x)
+        {
+            t.ContentSize = bounds.size;
+            t.ContentCenter = bounds.center;
+            return;
+        }
+        t.ContentSize = max - min;
+        t.ContentCenter = (min + max) * 0.5f;
     }
 
     private static void Apply(
