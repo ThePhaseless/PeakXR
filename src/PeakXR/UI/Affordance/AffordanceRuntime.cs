@@ -469,7 +469,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         link.SetPosition(1, spot);
         link.widthMultiplier =
             SpatialMath.SpanMeters(Vector3.Distance(spot, eye), RingDegrees) * 0.08f;
-        SetLine(link, true, alpha * 0.6f, Affordance.HintColor);
+        // A cue at the hand (ClimbStow's hand-to-slot line) with the hand at the face: no bar across the view.
+        SetLine(
+            link,
+            !LaserLook.CrossesFace(cue.Position.N(), spot.N(), eye.N()),
+            alpha * 0.6f,
+            Affordance.HintColor
+        );
         PoseChevron(cue, spot, eye, alpha, now);
     }
 
