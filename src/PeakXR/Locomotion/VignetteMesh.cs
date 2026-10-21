@@ -80,7 +80,7 @@ internal sealed class VignetteMesh
         parent = head;
         go = UIMaterials.MeshObject("PeakXR.ComfortVignette", mesh, material, head);
         // URP sorts by sorting order before render queue: above world-space labels (SpatialBox, 29000) and the
-        // keyboard, below the peripheral rim (short.MaxValue - 1) and the fade sphere (short.MaxValue).
+        // keyboard, below the recenter cue, the peripheral rim and the fade sphere (DrawOrder).
         go.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.Vignette;
         go.layer = head.gameObject.layer;
     }

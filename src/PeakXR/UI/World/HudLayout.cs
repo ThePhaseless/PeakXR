@@ -243,10 +243,25 @@ internal sealed class HudSplit
         {
             if (a == null || a.transform.IsChildOf(wristBox.Rect))
                 continue;
-            // Segments in a container of their own move with it, keeping their layout.
-            var parent = a.transform.parent;
-            MoveGroup(parent != null && parent != bar.transform.parent ? parent : a.transform);
+            var group = AfflictionGroup(a, bar, hudRoot);
+            if (group != null)
+                wristBox.Move(group);
         }
+    }
+
+    /// <summary>The HUD group to move so affliction segment <paramref name="a"/> follows <paramref name="bar"/>:
+    /// segments in a container of their own move with it, keeping their layout (see <see cref="GroupOf"/>).</summary>
+    internal static Transform AfflictionGroup(
+        BarAffliction a,
+        StaminaBar bar,
+        RectTransform hudRoot
+    )
+    {
+        var parent = a.transform.parent;
+        return GroupOf(
+            parent != null && parent != bar.transform.parent ? parent : a.transform,
+            hudRoot
+        );
     }
 
     /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD

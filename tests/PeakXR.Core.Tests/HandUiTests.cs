@@ -7,12 +7,19 @@ public class DrawOrderTests
     {
         Assert.Equal(short.MaxValue, DrawOrder.Fade);
         Assert.True(DrawOrder.Rim < DrawOrder.Fade);
-        Assert.True(DrawOrder.Vignette < DrawOrder.Rim);
+        Assert.True(DrawOrder.RecenterCue < DrawOrder.Rim);
+        Assert.True(DrawOrder.Vignette < DrawOrder.RecenterCue);
         Assert.True(DrawOrder.LaserCursor < DrawOrder.Vignette);
         Assert.True(DrawOrder.LaserBeam < DrawOrder.LaserCursor);
         Assert.True(DrawOrder.Keyboard < DrawOrder.LaserBeam);
         Assert.True(DrawOrder.HandUi < DrawOrder.Keyboard);
         Assert.True(DrawOrder.HandUi > 0);
+    }
+
+    [Fact]
+    public void LoadingRoom_SortsBehindEverythingOnIt()
+    {
+        Assert.True(DrawOrder.LoadingRoom < 0);
     }
 }
 

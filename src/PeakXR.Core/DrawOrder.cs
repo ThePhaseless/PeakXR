@@ -13,14 +13,17 @@ namespace PeakXR.Core
         /// <summary>The peripheral status rim.</summary>
         public const short Rim = short.MaxValue - 1;
 
+        /// <summary>The head-locked recenter hold ring: over the vignette, so a narrowed view still shows it.</summary>
+        public const short RecenterCue = short.MaxValue - 2;
+
         /// <summary>The comfort vignette.</summary>
-        public const short Vignette = short.MaxValue - 2;
+        public const short Vignette = short.MaxValue - 3;
 
         /// <summary>The laser's cursor dot, over its own rim and beam.</summary>
-        public const short LaserCursor = short.MaxValue - 3;
+        public const short LaserCursor = short.MaxValue - 4;
 
         /// <summary>The laser beam and the cursor's dark rim.</summary>
-        public const short LaserBeam = short.MaxValue - 4;
+        public const short LaserBeam = short.MaxValue - 5;
 
         /// <summary>The VR keyboard canvas.</summary>
         public const short Keyboard = 30000;
@@ -28,5 +31,9 @@ namespace PeakXR.Core
         /// <summary>UI on or near a hand (labels, rings, wrist display, wheels, belt slots) and world labels: after
         /// smoke and other transparent effects, under the keyboard and every comfort overlay.</summary>
         public const short HandUi = 29000;
+
+        /// <summary>The loading space's floor and walls: world-space UI sorts by order before distance, and the floor's
+        /// centre is nearer the eye than the progress bar and skip ring on it.</summary>
+        public const short LoadingRoom = -100;
     }
 }
