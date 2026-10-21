@@ -108,6 +108,9 @@ internal static class PhysicalInteraction
     public static bool ThrowPending => Time.frameCount - throwFrame <= 2;
     public static Vector3 ThrowVelocity { get; private set; }
 
+    /// <summary>Hand throws since start; the VR practice counts its throw station with it.</summary>
+    public static int ThrowCount { get; private set; }
+
     public static void ConsumeThrow() => throwFrame = -10;
 
     /// <summary>What this hand's grip is doing, for gesture features (lid lift, parasol runner).</summary>
@@ -429,6 +432,7 @@ internal static class PhysicalInteraction
                 {
                     ThrowVelocity = ReleaseVelocity(handVelocity, c) * cfg.ThrowScale;
                     throwFrame = Time.frameCount;
+                    ThrowCount++;
                     dropPending = true;
                     Haptics.Pulse(hand.Left, 0.5f, 0.05f);
                 }

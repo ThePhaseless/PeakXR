@@ -1,0 +1,273 @@
+using System.Collections.Generic;
+using BepInEx.Configuration;
+using PeakXR.Core;
+using PeakXR.UI.Affordances;
+using PeakXR.UI.Common;
+using PeakXR.UI.Settings;
+using PeakXR.VR;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using Zorro.Core;
+using Zorro.Settings;
+using Zorro.Settings.DebugUI;
+
+namespace PeakXR.UI.Guide;
+
+internal enum GuideAction : byte
+{
+    /// <summary>Play the row's demo beside the panel.</summary>
+    Demo,
+
+    /// <summary>Open the comfort-first view, or stop a running practice.</summary>
+    Practice,
+
+    /// <summary>List the demo rows (they are folded away by default so the settings stay near the top).</summary>
+    Expand,
+
+    /// <summary>Comfort chosen: start the practice.</summary>
+    Begin,
+
+    /// <summary>Leave the comfort-first view without practising.</summary>
+    Back,
+}
+
+/// <summary>A button row of the VR Guide section; the game's own button cell when this build has one.</summary>
+internal sealed class GuideRow : ButtonSetting, IExposedSetting
+{
+    public readonly GuideAction Action;
+    public readonly GuideTopic Topic;
+    private readonly string nameKey;
+    private readonly string buttonText;
+
+    /// <summary>The spawned row, for placing the demo and the refusal cue; null until shown.</summary>
+    public SettingsUICell Cell;
+
+    public GuideRow(GuideAction action, GuideTopic topic, string nameKey, string buttonText)
+    {
+        Action = action;
+        Topic = topic;
+        this.nameKey = nameKey;
+        this.buttonText = buttonText;
+    }
+
+    public override void OnClicked(ISettingHandler settingHandler) => GuideRows.Click(this);
+
+    public override string GetButtonText() => buttonText;
+
+    /// <summary>The game ships no button setting, so its build may lack the cell: then the info cell shows the text and
+    /// a click anywhere on the row (<see cref="GuideRowHover"/>) does the same.</summary>
+    public override GameObject GetSettingUICell()
+    {
+        var cell = SingletonAsset<InputCellMapper>.Instance.ButtonSettingCell;
+        return cell != null ? cell : InfoCell.Template;
+    }
+
+    public string GetDisplayName() => nameKey;
+
+    public string GetCategory() => VRTab.CategoryName;
+}
+
+/// <summary>Laser rest plays a demo row; a click anywhere on any guide row acts like its button.</summary>
+internal sealed class GuideRowHover
+    : MonoBehaviour,
+        IPointerEnterHandler,
+        IPointerExitHandler,
+        IPointerClickHandler
+{
+    public GuideRow Row;
+
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (Row.Action == GuideAction.Demo && GuideStage.Instance != null)
+            GuideStage.Instance.Hover(Row, true);
+    }
+
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        if (GuideStage.Instance != null)
+            GuideStage.Instance.Hover(Row, false);
+    }
+
+    public void OnPointerClick(PointerEventData eventData) => GuideRows.Click(Row);
+}
+
+/// <summary>
+/// The VR Guide section of the VR tab (VR only; flat play keeps the tab as it was): a Practice row, a row that lists
+/// the demos, one row per mechanic, and the comfort-first view the practice starts with.
+/// </summary>
+internal static class GuideRows
+{
+    /// <summary>Loops a clicked or rested-on demo plays for.</summary>
+    public const int DemoLoops = 2;
+
+    private static readonly string[] ComfortKeys = { "TurnMode", "VignetteStrength", "SeatedMode" };
+
+    private static bool expanded;
+
+    /// <summary>The tab shows only the comfort choices and Start / Back before a practice.</summary>
+    public static bool ComfortFirst;
+
+    /// <summary>The settings menu the VR tab was last filled into.</summary>
+    public static SharedSettingsMenu Menu;
+
+    public static bool Shown => VRSession.Active && GuideStage.Instance != null;
+
+    /// <summary>Header, Practice, the demo list switch and, when listed, one row per mechanic.</summary>
+    public static void Append(List<Setting> rows)
+    {
+        if (!Shown)
+            return;
+        rows.Add(Header("PEAKXR_SECTION_GUIDE", "VR Guide"));
+        rows.Add(
+            new GuideRow(
+                GuideAction.Practice,
+                GuideTopic.Count,
+                Loc.Set("PEAKXR_GUIDE_PRACTICE", "Practice"),
+                PracticeRun.Running ? "Stop" : "Start"
+            )
+        );
+        rows.Add(
+            new GuideRow(
+                GuideAction.Expand,
+                GuideTopic.Count,
+                Loc.Set("PEAKXR_GUIDE_DEMOS", "Demos"),
+                expanded ? "Hide" : "Show"
+            )
+        );
+        if (!expanded)
+            return;
+        for (int i = 0; i < (int)GuideTopic.Count; i++)
+        {
+            var topic = (GuideTopic)i;
+            var demo = GuideTable.Get(topic);
+            rows.Add(
+                new GuideRow(
+                    GuideAction.Demo,
+                    topic,
+                    Loc.Set("PEAKXR_GUIDE_" + topic, demo.Name),
+                    "Play"
+                )
+            );
+        }
+    }
+
+    /// <summary>The comfort choices with their usual previews, then Start and Back.</summary>
+    public static List<Setting> Comfort(System.Func<ConfigEntryBase, Setting> rowFor)
+    {
+        var rows = new List<Setting>
+        {
+            Header("PEAKXR_SECTION_PRACTICE", "Practice: comfort first"),
+        };
+        foreach (var key in ComfortKeys)
+        {
+            var def = new ConfigDefinition("Comfort", key);
+            if (Plugin.Settings.ContainsKey(def) && rowFor(Plugin.Settings[def]) is { } row)
+                rows.Add(row);
+            else
+                Plugin.Log.LogWarning($"[ui.guide] no Comfort.{key} row for the practice");
+        }
+        rows.Add(
+            new GuideRow(
+                GuideAction.Begin,
+                GuideTopic.Count,
+                Loc.Set("PEAKXR_GUIDE_BEGIN", "Begin practice"),
+                "Start"
+            )
+        );
+        rows.Add(
+            new GuideRow(
+                GuideAction.Back,
+                GuideTopic.Count,
+                Loc.Set("PEAKXR_GUIDE_BACK", "Not now"),
+                "Back"
+            )
+        );
+        return rows;
+    }
+
+    private static InfoRow Header(string key, string title) =>
+        new(Loc.Set(key, title.ToUpperInvariant()), null, Color.white, true);
+
+    /// <summary>A guide row was spawned into <paramref name="cell"/>.</summary>
+    public static void Spawned(GuideRow row, SettingsUICell cell)
+    {
+        row.Cell = cell;
+        cell.gameObject.AddComponent<GuideRowHover>().Row = row;
+    }
+
+    public static void Click(GuideRow row)
+    {
+        switch (row.Action)
+        {
+            case GuideAction.Demo:
+                if (GuideStage.Instance != null)
+                    GuideStage.Instance.Play(row, DemoLoops);
+                break;
+            case GuideAction.Expand:
+                expanded = !expanded;
+                Rebuild();
+                break;
+            case GuideAction.Practice:
+                if (PracticeRun.Running)
+                {
+                    PracticeRun.Current.Stop();
+                    Rebuild();
+                }
+                else if (PracticeRun.Entry() == PracticeEntry.Refused)
+                    Refuse(row);
+                else
+                {
+                    ComfortFirst = true;
+                    Rebuild();
+                }
+                break;
+            case GuideAction.Begin:
+                var entry = PracticeRun.Entry();
+                if (entry == PracticeEntry.Refused || !PracticeRun.Begin(entry))
+                {
+                    Refuse(row);
+                    break;
+                }
+                ComfortFirst = false;
+                if (entry == PracticeEntry.InPlace)
+                    Rebuild();
+                break;
+            case GuideAction.Back:
+                ComfortFirst = false;
+                Rebuild();
+                break;
+        }
+    }
+
+    /// <summary>Re-fills the VR tab after a change of view.</summary>
+    public static void Rebuild()
+    {
+        if (Menu != null && Menu.isActiveAndEnabled)
+            Menu.ShowSettings(VRTab.Category);
+    }
+
+    /// <summary>
+    /// Practice cannot start here (online, in a run, loading): the refusal cue at the row, never a silent click.
+    /// With action hints off, the falling note and a tick still play.
+    /// </summary>
+    public static void Refuse(GuideRow row)
+    {
+        var at =
+            row.Cell != null
+                ? row.Cell.transform.position
+                : (
+                    VRRig.Instance != null && VRRig.Instance.Head != null
+                        ? VRRig.Instance.Head.position
+                        : Vector3.zero
+                );
+        bool left = VRInput.Left.Trigger > VRInput.Right.Trigger;
+        Plugin.Log.LogInfo(
+            "[ui.guide] practice refused: it runs offline, from the title or the solo airport"
+        );
+        if (!Affordance.Deny(left, at, DenyReason.NotHere))
+        {
+            CueAudio.Play(CueSound.Refused, at, 1f);
+            UIHaptics.Tick(left, 0.4f, 0.06f);
+        }
+    }
+}

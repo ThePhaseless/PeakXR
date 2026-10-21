@@ -144,6 +144,14 @@ namespace PeakXR.Core
             dwell = -1f;
         }
 
+        /// <summary>Shows for <paramref name="seconds"/>: a VR Guide demo runs for whole loops, longer than a preview.</summary>
+        public void Play(float seconds)
+        {
+            duration = remaining = seconds;
+            FromHover = false;
+            dwell = -1f;
+        }
+
         public void HoverEnter() => dwell = 0f;
 
         public void HoverExit() => dwell = -1f;

@@ -33,6 +33,9 @@ public enum DenyReason : byte
     StuckToHand,
     ItemWouldDrop,
 
+    /// <summary>The VR practice was started online or in a run; it runs only from the title or the solo airport.</summary>
+    NotHere,
+
     /// <summary>A notice, not a refusal: the held item went to its belt slot when a climb started.</summary>
     Stowed,
 
@@ -75,6 +78,7 @@ public static class DenyText
             DenyReason.PocketsFull => "Pockets full",
             DenyReason.StuckToHand => "Stuck to your hand",
             DenyReason.ItemWouldDrop => "Climbing drops it",
+            DenyReason.NotHere => "Not here",
             DenyReason.Stowed => "Stowed on your belt",
             DenyReason.Dropped => "Your item fell here",
             _ => "",
@@ -101,6 +105,7 @@ public static class DenyText
             DenyReason.PocketsFull => "Drop or stash an item",
             DenyReason.StuckToHand => "Swing hard to throw it",
             DenyReason.ItemWouldDrop => "Put it down first",
+            DenyReason.NotHere => "Start it from the title",
             DenyReason.Dropped => "Pick it up at the ring",
             DenyReason.WrongAngle => "Face them from the ring",
             DenyReason.KeepHolding => "Hold the trigger",

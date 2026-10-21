@@ -105,6 +105,7 @@ internal static class ShowSettingsPatch
     {
         if (category != VRTab.Category)
             return;
+        Guide.GuideRows.Menu = __instance;
         var cells = UISettingsFeature.CellsRef(__instance);
         var first = true;
         foreach (var setting in VRTab.BuildRows())
@@ -127,6 +128,8 @@ internal static class ShowSettingsPatch
             }
             if (setting is IConfigRow configRow)
                 SettingPreviews.Track(configRow.Entry, cell);
+            else if (setting is Guide.GuideRow guideRow)
+                Guide.GuideRows.Spawned(guideRow, cell);
             // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
             var sfx = cell.fadeInSFX;
             if (!first)

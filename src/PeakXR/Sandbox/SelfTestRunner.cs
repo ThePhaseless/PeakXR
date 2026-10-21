@@ -118,6 +118,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return Run("vr.00-session", 60f, Session());
         yield return VRStep("vr.01-rig", 20f, RigCheck());
         yield return VRStep("vr.02-title-stage", 20f, TitleStageCheck());
+        if (!hold)
+            yield return TutorialSteps();
         yield return Run("01-airport", 180f, Airport());
         if (!Ready)
         {

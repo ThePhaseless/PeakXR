@@ -29,6 +29,15 @@ Notes:
 - An open passport or guidebook sits above the hand that holds it. Turn pages by swiping your other hand across it. The passport's tabs and page buttons also take the laser, and the guidebook also turns with stick up and down.
 - Menu panels at a kiosk (boarding pass, custom run options) and the end-of-run results take the laser like any other menu. At the end of a won run, any controller button skips the credits wait, the same as any key on a keyboard.
 
+## VR Guide and practice
+
+In VR the VR tab of the settings (title or pause menu) starts with a VR Guide section. It covers only what PeakXR adds or changes in VR; PEAK's own rules and items are left to the game.
+
+- Demos: press Show to list one row per VR mechanic: grab and drop, two-hand hold, throw, eat, belt holster, backpack, wall climb, rope and vine, piton, cook, light a fire, open a suitcase, bugle, bandage, parasol, turning, walk and sprint, crouch, emote wheel, pause and recenter, menus and laser, wrist status and refused actions. Rest the laser on a row or click it and a small ghost of you acts it out beside the panel for two loops. Its controllers light the button it presses, the rings and notes are the same cues the game uses in play (a double ring and a rising note where an action works, a slashed ring and a falling note where it is refused), and the matching real controller ticks. With `UI.ActionHintText` on, a one-line caption sits under the ghost.
+- Practice: press Start. The tab first shows only the comfort choices (turn mode, vignette strength, seated mode) with their usual previews. Press Start again to go: from the title it plays solo offline and walks you through stations in the airport. In the solo airport it starts where you are. Each station shows its demo ahead of you and marks where to act with a double ring: turn, grab an apple, holster it on your belt, eat, throw, climb the nearest wall, open the emote wheel. When you do it, a rising note plays, both controllers pulse and a ring widens. Two orbs float at chest height on your off-hand side: rest a hand in the chevron orb to skip a station, or in the cross orb to leave. While it runs, the Practice row in the VR tab reads Stop. Finishing, leaving and stopping all end back at the title.
+- The practice never runs online. In an online lobby, or in a solo run in progress, Start plays the refused cue at the row (the "Not here, start it from the title" label with `UI.ActionHintText` on) and does nothing.
+- The first time you reach the title in VR, the settings open on that comfort-first practice view once. Not now closes it, and the Practice row stays in the guide for later.
+
 ## Items and fires by hand
 
 Each of these has an on/off setting in the `Interaction` section. With a setting off, the grip and trigger work as before.

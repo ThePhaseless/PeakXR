@@ -426,10 +426,8 @@ internal sealed class PreviewStage : MonoBehaviour
     /// <summary>Beside the row's right edge, in the menu's plane and pixel scale, so it reads like the menu.</summary>
     private void PlaceCard(RectTransform row, float alpha)
     {
-        row.GetWorldCorners(corners);
-        var right = (corners[3] - corners[0]).normalized;
+        RowRightEdge(row, corners, out var edge, out var right);
         var mpp = row.lossyScale.x;
-        var edge = (corners[2] + corners[3]) * 0.5f;
         var t = card.transform;
         t.SetPositionAndRotation(
             edge + right * (0.04f + CardWidth * 0.5f * mpp) - row.forward * 0.002f,
@@ -439,6 +437,20 @@ internal sealed class PreviewStage : MonoBehaviour
         cardGroup.alpha = alpha;
         if (!card.activeSelf)
             card.SetActive(true);
+    }
+
+    /// <summary>Middle of the row's right edge and the panel's rightward direction, in world space; shared with the
+    /// VR Guide demos so both stand beside the row the same way. <paramref name="corners"/> is scratch space.</summary>
+    internal static void RowRightEdge(
+        RectTransform row,
+        Vector3[] corners,
+        out Vector3 edge,
+        out Vector3 right
+    )
+    {
+        row.GetWorldCorners(corners);
+        right = (corners[3] - corners[0]).normalized;
+        edge = (corners[2] + corners[3]) * 0.5f;
     }
 
     // ---- per-frame samples ----

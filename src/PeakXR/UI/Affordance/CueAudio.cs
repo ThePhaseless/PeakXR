@@ -16,15 +16,18 @@ internal static class CueAudio
     private static readonly SFX_Instance[] Instances = new SFX_Instance[3];
     private static bool failed;
 
-    public static void Play(CueSound sound, Vector3 position, float volume)
+    /// <summary>Plays the cue; false when the game's SFX player is not up yet or the clips failed to build.</summary>
+    public static bool Play(CueSound sound, Vector3 position, float volume)
     {
         var player = SFX_Player.instance;
         // PlaySFX reads MainCamera for its range check (SFX_Player.cs:95).
         if (failed || player == null || MainCamera.instance == null)
-            return;
+            return false;
         var sfx = Instance(sound);
-        if (sfx != null)
-            player.PlaySFX(sfx, position, null, null, volume);
+        if (sfx == null)
+            return false;
+        player.PlaySFX(sfx, position, null, null, volume);
+        return true;
     }
 
     private static SFX_Instance Instance(CueSound sound)
