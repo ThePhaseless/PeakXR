@@ -20,7 +20,7 @@ internal static class StatusHaptics
         var cfg = UIWorldFeature.Settings;
         if (cfg != null && cfg.Hud.Value == HudMode.Wrist)
         {
-            UIHaptics.Tick(cfg.WristHand.Value == WristSide.Left, amplitude, seconds);
+            UIHaptics.Tick(cfg.WristLeft, amplitude, seconds);
             return;
         }
         UIHaptics.Tick(true, amplitude, seconds);

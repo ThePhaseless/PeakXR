@@ -61,6 +61,7 @@ Shared contracts (written first, other features code against them):
 | `ui.lobby` | boarding pass and custom run options docked at the check-in kiosk; invite-kiosk note when the Steam overlay is off-headset | `new:lobby-flow` rows |
 | `ui.runflow` | warps, campfire segment swaps, run end, beach wake-up and credits as fade-out, black hold, fade-in; summit portal fade; shakes become rumble; end cutscene and credits on a world-locked screen; results panel; any button ends the credits | `new:run-flow` rows; builds on `VRFade`, generic camera takeover stays in `rig.camera` |
 | `ui.hand` | hold-to-use progress ring and friend item-use feed on the hands, with quarter-step haptics | IC-12, IN-04, MF-105 |
+| `ui.spatial` | HUD parts that describe a place go to that place: interact prompt and held-interaction ring at the target, item prompts beside the controller buttons, biome title and "rises" banners as distant signs, rope length and fuel on the held item, spectated friend's name, status bar and items on them with switch arrows on your stick; status alerts pulse the wrist | moves the game's own widgets (`SpatialBox`), no patches; one `UI` switch each |
 | `voice` | push to talk (binding table and hand-to-mouth), headset mic picked through the game's setting, speaking icons above remote players | `new:voice` rows |
 | `avatar.local` | own arms IK to controllers, show arms (`HideTheBody`), finger curls | |
 | `interact.physical` | grab-to-pickup, hand-aimed use, eat-to-mouth, throw velocity, VR climbing with arm locomotion; climb assist: wall-over-item grab priority, angle-checked grabs with surface haptics, regrip grace, stamina and slide haptics, arm lunge, ledge mantle | button fallbacks |
@@ -74,6 +75,38 @@ Shared contracts (written first, other features code against them):
 | `avatar.emotes` | emote playback on tracked avatars: tracked arms stay on unless the emote is full-body (configurable); fade during your own backflip | runs in flat too |
 | `net.pose` | handshake via player property `PeakXR`; `RaiseEvent` pose stream (codec in Core); remote `AvatarPoseDriver`. Sends no RPC: vanilla peers see reaching because `interact.social` presses `useSecondary`, which vanilla `CharacterGrabbing` turns into `RPCA_StartReaching` | runs in flat too |
 | `sandbox` | built-in console unlock, item, mob and segment spawner, god mode | opt-in, offline or host only |
+
+## UI placement in VR
+
+No game UI stays fixed to the screen or the head in VR. Each element has a 3D anchor: the body (wrist, belt, follow panel), a hand, the held item or a controller, the target object, or another player. The only head-attached exception is perception effects, which stay a soft glow at the edge of the view.
+
+| Game UI (source) | Anchor in VR | Owner | Setting |
+|---|---|---|---|
+| Menus, pause, settings, modals, end screen | world-locked panel, placed in front of you when it opens | `ui.world`, `ui.menu`, `ui.runflow` | |
+| Title, loading | 3D title stage, loading space | `ui.menu` | |
+| Kiosk boarding pass, run options | docked at the kiosk | `ui.lobby` | |
+| Interact name and prompts (`GUIManager.interactName`, `interactPrompt*`) | at the target, in front of `IInteractible.Center()`, level, facing you | `ui.spatial` | `UI.TargetPrompt` |
+| Hold ring (`UI_UseItemProgress`) | item use and pitons: above the acting hand; held interaction: under the target label | `ui.hand`, `ui.spatial` | `UI.Hand.ProgressRing` |
+| Item prompts (`itemPromptMain/Secondary/Scroll/Drop/Throw`) | beside the controller button that does it, shown for 3 s after a change and while you look at a hand | `ui.spatial` | `UI.ButtonLabels` |
+| Stamina bar, afflictions, numb mushrooms, dying bar | off-hand wrist (default); the body panel in `HudMode = Body` | `ui.world` | `UI.HUD.HudMode` |
+| Hotbar, backpack, temporary slot | belt of 3D slots; 2D cells hidden | `inventory.vr` | `Inventory.SlotGhosts` |
+| Rope length (`UI_Rope`), item fuel | next to the held spool; fuel arc beside the holding hand | `ui.spatial` | `UI.HeldItemGauges` |
+| Biome title (`heroObject`), fog, lava, gloom and ghost banners | world-locked sign 30 m ahead along your view at the moment it appears, above the horizon | `ui.spatial` | `UI.WorldBanners` |
+| Emote and backpack wheels | at the opening hand | `ui.wheels` | |
+| Friend item-use feed | on a hand | `ui.hand` | `UI.Hand.FriendFeed` |
+| Passport, guidebook | books held at the hand | `ui.passport` | |
+| Player name tags, speaking icons | above each player | `ui.world`, `voice` | |
+| Spectating: friend's name, their status bar | nameplate above the friend's head | `ui.spatial` | `UI.SpectateOnPlayer` |
+| Spectating: friend's hotbar | item icons around the friend's belt; 2D hotbar hidden | `ui.spatial`, `inventory.vr` | `UI.SpectateOnPlayer` |
+| Spectating: switch hint (`spectatingInputs`) | up and down arrows on the stick that switches | `ui.spatial` | `UI.SpectateOnPlayer` |
+| Spectating: your own dying or dead bar | your wrist | `ui.world` | `UI.HUD.HudMode` |
+| Reticle | hidden: you aim with your hand and the prompt shows at the target. `Head` pins it to the view on request | `ui.world` | `UI.HUD.Reticle` |
+| Throw charge bar, struggle prompt, lunge prompt, ascent, endgame counter, quicksave and other toasts, mute icon | body follow panel | `ui.world` | |
+| Binocular overlay | the binoculars' lens render texture | `interact.binoculars` | |
+| Screen transitions (`Transitions`) | head-locked VR fade | `ui.world` | |
+| Full-screen status flashes (cold, poison, injury, dying darkness, spores) | the one head exception: peripheral edge glow | `ui.status` | `UI.StatusOverlays` |
+| Letterbox, version string, map debug | not shown in the headset (desktop mirror only) | `ui.world` | |
+| Hero title camera canvas (`Canvas_Hero`) | renders into a texture; the texture is on the sign | game | |
 
 ## Hands and items
 
