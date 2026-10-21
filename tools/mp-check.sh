@@ -2,12 +2,14 @@
 # Compare the two-client multiplayer test logs (docs/testing.md, "Two-client multiplayer test") and print one
 # PASS/FAIL/SKIP line per check. Exit status 1 when any check fails.
 #   tools/mp-check.sh [mp-dir]   (default: $HOME/.var/app/com.valvesoftware.Steam/peakxr-mp)
-# Tolerances: POS_TOL (m, default 1.0) for the player's position, LAND_TOL (m, default 1.5) for dropped/thrown items.
+# Tolerances: POS_TOL (m, default 1.0) for the player's position, LAND_TOL (m, default 1.5) for dropped/thrown items,
+# LAG_TOL (s, default 1.0) for B to see A's held item after the checkpoint.
 set -euo pipefail
 
 DIR="${1:-$HOME/.var/app/com.valvesoftware.Steam/peakxr-mp}"
 POS_TOL="${POS_TOL:-1.0}"
 LAND_TOL="${LAND_TOL:-1.5}"
+LAG_TOL="${LAG_TOL:-1.0}"
 A="$DIR/a-checkpoints.jsonl"
 B="$DIR/b-observer.jsonl"
 SUM="$DIR/b-summary.json"
@@ -20,10 +22,11 @@ done
 checks() {
 # A's checkpoints, each joined with B's checkpoint of the same name, become one result line per check.
 jq -nr --slurpfile a "$A" --slurpfile b "$B" --slurpfile s "$SUM" \
-    --argjson pos "$POS_TOL" --argjson land "$LAND_TOL" '
+    --argjson pos "$POS_TOL" --argjson land "$LAND_TOL" --argjson lag "$LAG_TOL" '
 def dist($p; $q): [range(0; 3) | ($p[.] - $q[.]) * ($p[.] - $q[.])] | add | sqrt;
 def r2: . * 100 | round / 100;
 ($b | map(select(.type == "checkpoint")) | map({key: .name, value: .}) | from_entries) as $bcp
+| ($b | map(select(.type == "sample"))) as $samples
 | ($s[0]) as $sum
 | ($a | map(select(.name == "join")) | first) as $join
 | [
@@ -43,7 +46,13 @@ def r2: . * 100 | round / 100;
          else dist($x.pos; $y.pos) as $d
            | "\(if $d <= $pos then "PASS" else "FAIL" end) \($x.name) position: \($d | r2) m apart" end),
         (if $x.heldId == $y.itemId then "PASS \($x.name) held item: \($y.item // "none")"
-         else "FAIL \($x.name) held item: A \($x.item // "none") (\($x.heldId)), B sees \($y.item // "none") (\($y.itemId))" end),
+         else
+           # B can write its checkpoint before the equip RPC from A arrives: accept the first matching B sample within LAG_TOL.
+           ([$samples[] | select(.t >= $y.t and .t <= $y.t + $lag and .itemId == $x.heldId)] | first) as $late
+           | if $late != null then
+               "PASS \($x.name) held item: \($late.item // "none") after \(($late.t - $y.t) | r2) s (network lag)"
+             else "FAIL \($x.name) held item: A \($x.item // "none") (\($x.heldId)), B sees \($y.item // "none") (\($y.itemId)) for \($lag) s" end
+         end),
         (if $x.landing == null then empty
          elif ($y.groundItems // []) == [] then "FAIL \($x.name) landing: B sees no item \($x.itemId) on the ground"
          else ([$y.groundItems[] | dist(.; $x.landing)] | min) as $d
