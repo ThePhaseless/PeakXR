@@ -23,6 +23,7 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.21-bugle", "Bugle", 25f, BugleStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
+        yield return ItemStep("vr.28-use-while-pointing", AppleFragment, 25f, UsePointingStep);
         yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
         yield return WarpBack();
         // Light first: it needs the campfire unlit and stops short of lighting it; cooking then lights it.
@@ -197,6 +198,77 @@ internal sealed partial class SelfTestRunner
         var note = $"{item.name}: open {before} -> push up {toggled} -> pull down back {back}";
         if (!toggled || !back)
             Fail("runner did not toggle: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>vr.28: the hand holding an Apple points (grip closed, index off the trigger) at another Apple, then
+    /// squeezes the trigger. That is the item's use (<c>Item.isUsingPrimary</c>), never a ping: a holding hand's
+    /// squeeze fired interact.ping's finger gun and swallowed the use (vr14, a held torch never lit).</summary>
+    IEnumerator UsePointingStep(Item prefab)
+    {
+        var c = Character.localCharacter;
+        var head = VRRig.Instance.Head;
+        var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
+        if (!SandboxActions.SpawnItemAt(prefab, spot) || SandboxActions.LastSpawned == null)
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var target = SandboxActions.LastSpawned.GetComponent<Item>();
+        if (target != null && target.rig != null)
+            target.rig.isKinematic = true;
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        // Point the holding hand at the other Apple: index straight, off the trigger.
+        HeadFrame(out var eye, out var forward, out var right);
+        SetHand(
+            left,
+            eye + (left ? -right : right) * 0.15f + Vector3.down * 0.25f + forward * 0.3f
+        );
+        Script(left).TriggerTouch = false;
+        float end = Now + 0.4f;
+        while (Now < end)
+        {
+            if (target != null)
+                Script(left).Rotation = Quaternion.LookRotation(
+                    VRRig.Instance.Origin.InverseTransformDirection(
+                        target.Center() - VRRig.Instance.Hand(left).position
+                    ),
+                    Vector3.up
+                );
+            yield return null;
+        }
+        var interaction = Interaction.instance;
+        bool hovered =
+            interaction != null
+            && target != null
+            && ReferenceEquals(interaction.currentHovered, target);
+        int pings = 0;
+        bool used = false;
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        end = Now + 0.8f;
+        while (Now < end && !used)
+        {
+            if (c.input.pingWasPressed)
+                pings++;
+            used = item == null || item.isUsingPrimary || item.castProgress > 0f;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        yield return Wait(0.3f);
+        var note =
+            $"{prefab.name} in hand, pointed at {(hovered ? "the hovered" : "an unhovered")} Apple: used {used}, pings {pings}";
+        if (pings > 0)
+            Fail("the holding hand's trigger pinged: " + note);
+        else if (!used)
+            Fail("the holding hand's trigger did not use the item: " + note);
         else
             stepNote = note;
     }

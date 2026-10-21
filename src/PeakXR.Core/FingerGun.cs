@@ -12,6 +12,13 @@ namespace PeakXR.Core
 
         public float Window = DefaultWindow;
 
+        /// <summary>
+        /// Only an empty hand pings. A hand that holds an item, or steadies a two-handed one, keeps its grip closed
+        /// and often its index off the trigger, which reads as pointing; its trigger squeeze is the item's use.
+        /// </summary>
+        public static bool HandMayFire(bool holdsItem, bool steadiesItem) =>
+            !holdsItem && !steadiesItem;
+
         float _sincePoint = float.MaxValue;
 
         /// <returns>True on the frame the gesture fires.</returns>
