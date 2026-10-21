@@ -48,6 +48,9 @@ internal static class PhysicalInteraction
         /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact.</summary>
         public float InteractAt;
 
+        /// <summary>This grip pressed the game's interact on the last frame <c>Inject</c> ran.</summary>
+        public bool Injected;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -55,6 +58,7 @@ internal static class PhysicalInteraction
     private static readonly Hand RightHand = new(false);
     private static readonly Hand[] Hands = { LeftHand, RightHand };
     private static readonly ButtonEdge InteractEdge = new();
+    private static readonly WheelGripLatch WheelHold = new();
     private static readonly ButtonEdge PrimaryEdge = new();
     private static readonly ButtonEdge SecondaryEdge = new();
     private static readonly ButtonEdge DropEdge = new();
@@ -142,6 +146,7 @@ internal static class PhysicalInteraction
         float dt = Time.deltaTime;
         float now = Time.time;
 
+        bool wheelAtStart = c.data.usingBackpackWheel;
         TrackHeldItem(c, now);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
@@ -154,10 +159,27 @@ internal static class PhysicalInteraction
             hazardPulseTime = -10f;
             Haptics.Pulse(hazardPulseLeft, 1f, 0.06f);
         }
+        // A grip on a ground backpack opens its wheel (Backpack.Interact, Backpack.cs:34), which makes CanDoInput
+        // false (Character.cs:1716) so Inject stops; the wheel then closes on interact up (BackpackWheel.cs:96) and
+        // the still-closed grip reopens it every other frame. The grip that opened it holds interact until it opens.
+        // A wheel opened during this frame's grips (the shoulder reach, BodyInventory) holds interact itself.
+        bool wheel = c.data.usingBackpackWheel;
+        WheelHold.Update(
+            wheel,
+            wheel && !wheelAtStart,
+            LeftHand.Injected,
+            RightHand.Injected,
+            LeftHand.Grip.Held,
+            RightHand.Grip.Held
+        );
         if (active)
             Inject(c, input, rig, cfg, dt, now);
         else
+        {
             lungePending = false;
+            if (WheelHold.Holds)
+                input.interactIsPressed = true;
+        }
     }
 
     private static void TrackHeldItem(Character c, float now)
@@ -284,8 +306,10 @@ internal static class PhysicalInteraction
                 // With hints off the old success tick stays, as before.
                 if (!Affordance.Enabled)
                     Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+                // A ground backpack opens its wheel instead of a pickup (Backpack.cs:32-35), so a worn one
+                // (Player.HasEmptySlot, Player.cs:274) is no refusal.
                 else if (
-                    target is Item wanted
+                    target is Item wanted and not Backpack
                     && c.player != null
                     && !c.player.HasEmptySlot(wanted.itemID)
                 )
@@ -915,6 +939,7 @@ internal static class PhysicalInteraction
         bool interactDown = false;
         foreach (var hand in Hands)
         {
+            hand.Injected = false;
             switch (hand.Action)
             {
                 case GripPressAction.GrabItem:
@@ -923,13 +948,13 @@ internal static class PhysicalInteraction
                     // fresh press (Interaction.cs:116 only starts a hold after interact was up).
                     if (hand.Target is Item grabbed && grabbed == c.data.currentItem)
                         break;
-                    interactDown = true;
+                    interactDown = hand.Injected = true;
                     GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
                     if (now < hand.InteractAt)
                         break;
-                    interactDown = true;
+                    interactDown = hand.Injected = true;
                     GripInteractActive = true;
                     break;
             }

@@ -102,7 +102,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MpStep("regroup", 60f, true, WalkTo(HostCenter, 1.5f, true));
-        yield return MpStep("luggage", 180f, true, OpenLuggage());
+        yield return MpStep("luggage", 300f, true, OpenLuggage());
         yield return MpStep("grab", 40f, true, GrabNearest(food: false));
         yield return MpStep("drop", 15f, true, DropByButton());
         yield return MpStep("pickup", 40f, true, PickUpAgain());
@@ -116,7 +116,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>One checkpoint: the step, then its line in a-checkpoints.jsonl, a screenshot, a short still hold and
-    /// the hands back at rest (grips stay as the step left them, so a held item stays held).</summary>
+    /// the hands back at rest. A passed step keeps its grips, so a held item stays held; a failed or skipped one opens
+    /// both, so a grip left closed on a failure cannot hold the next step back.</summary>
     IEnumerator MpStep(string id, float timeout, bool vr, IEnumerator body)
     {
         cpExtra.Clear();
@@ -139,7 +140,7 @@ internal sealed partial class SelfTestRunner
         yield return Shot("a-" + id);
         yield return Wait(CheckpointHold);
         if (VRInput.TestOverride == applyHands)
-            yield return Guard(MpRest(), Now + 3f, _ => { });
+            yield return Guard(r.Passed ? MpRest() : HandsRelease(), Now + 3f, _ => { });
     }
 
     void WriteCheckpoint(string id, string status, string note)
@@ -408,19 +409,39 @@ internal sealed partial class SelfTestRunner
         stepNote = "on " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
     }
 
-    /// <summary>Lifts suitcase lids (<see cref="LiftLid"/>) until enough food and other items lie around, at most four.</summary>
+    /// <summary>Lifts suitcase lids (<see cref="LiftLid"/>) until enough food and other items lie around, trying at
+    /// most six cases. A case the walk cannot reach (terrain, another case in the way) is passed over for the next.</summary>
     IEnumerator OpenLuggage()
     {
         var c = Character.localCharacter;
+        var tried = new HashSet<Luggage>();
         int opened = 0;
-        while (opened < 4 && !EnoughItems())
+        int unreached = 0;
+        while (tried.Count < 6 && !EnoughItems())
         {
-            var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
+            var lug = Nearest<Luggage>(
+                c.Center,
+                l => !l.IsOpen && l is not RespawnChest && !tried.Contains(l)
+            );
             if (lug == null || (lug.Center() - c.Center).sqrMagnitude > 80f * 80f)
                 break;
-            yield return WalkTo(() => lug.Center(), 0.9f, true);
-            if (!stepOk)
-                yield break;
+            tried.Add(lug);
+            // The SP step stands 0.8 m from the centre; online the case's own collider can stop the body farther out
+            // than that, so the reach is measured from its solid surface.
+            var solid = SolidColliders(lug);
+            var centre = lug.Center();
+            yield return WalkTo(
+                () => SolidPoint(solid, centre, Character.localCharacter.Center),
+                0.5f,
+                false
+            );
+            var near = SolidPoint(solid, centre, c.Center) - c.Center;
+            near.y = 0f;
+            if (near.magnitude > 0.6f)
+            {
+                unreached++;
+                continue;
+            }
             Face(lug.Center());
             yield return Wait(0.4f);
             yield return LiftLid(lug);
@@ -433,7 +454,7 @@ internal sealed partial class SelfTestRunner
         int food = CountNear(true);
         int other = CountNear(false);
         var note =
-            $"opened {opened} suitcase(s); {food} food and {other} other items within {NearItems:0} m";
+            $"opened {opened} suitcase(s), {unreached} out of reach; {food} food and {other} other items within {NearItems:0} m";
         if (food + other == 0)
             Fail(note);
         else
@@ -442,6 +463,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator GrabNearest(bool food)
     {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
         var item = NearestGround(i => IsFood(i) == food) ?? NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
@@ -484,7 +508,7 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator PickUpAgain()
     {
-        var item = mpItem != null ? mpItem : NearestGround(_ => true);
+        var item = OnGround(mpItem) ?? NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }
@@ -514,6 +538,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator Eat()
     {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
         var food = NearestGround(IsFood);
         if (food == null)
         {
@@ -529,7 +556,7 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator Holster()
     {
-        var item = HeldItem() == null ? (mpItem != null ? mpItem : NearestGround(_ => true)) : null;
+        var item = HeldItem() == null ? OnGround(mpItem) ?? NearestGround(_ => true) : null;
         if (item != null)
             yield return GrabWorld(item);
         if (!stepOk)
@@ -546,6 +573,8 @@ internal sealed partial class SelfTestRunner
     IEnumerator MpClimb()
     {
         yield return FreeHands();
+        if (!stepOk)
+            yield break;
         var c = Character.localCharacter;
         if (!FindWall(c, out var wall, out var stand))
         {
@@ -567,6 +596,8 @@ internal sealed partial class SelfTestRunner
     IEnumerator MpTwoHand()
     {
         yield return FreeHands();
+        if (!stepOk)
+            yield break;
         var info = new ItemHoldInfo();
         var item = NearestGround(i =>
             info.Bind(i) && info.Profile.Handedness != Handedness.OneHanded
@@ -590,6 +621,8 @@ internal sealed partial class SelfTestRunner
     IEnumerator Feed()
     {
         yield return FreeHands();
+        if (!stepOk)
+            yield break;
         var food = NearestGround(i => IsFood(i) && i.canUseOnFriend);
         if (food == null)
         {
@@ -742,12 +775,21 @@ internal sealed partial class SelfTestRunner
         yield return null;
     }
 
+    /// <summary>Drops what is in hand and opens both grips, so a grip an earlier step left closed (a two-hand hold,
+    /// a grab) does not start this one already closed.</summary>
     IEnumerator FreeHands()
     {
-        if (HeldItem() == null)
+        if (HeldItem() != null)
+        {
+            yield return TapDrop();
+            yield return WaitFor(() => HeldItem() == null, 2f);
+        }
+        if (HeldItem() != null)
+        {
+            Fail("could not drop " + HeldItem().name + " to free the hands");
             yield break;
-        yield return TapDrop();
-        yield return WaitFor(() => HeldItem() == null, 2f);
+        }
+        scriptLeft.Grip = scriptRight.Grip = 0f;
         yield return Wait(0.5f);
     }
 
@@ -795,7 +837,14 @@ internal sealed partial class SelfTestRunner
     /// <summary>Food restores hunger when eaten (<c>Action_RestoreHunger</c> on the item).</summary>
     static bool IsFood(Item item) => item.GetComponent<Action_RestoreHunger>() != null;
 
-    /// <summary>The nearest ground item (Item.cs:103 ALL_ITEMS, :286 itemState) within <see cref="NearItems"/> m.</summary>
+    /// <summary>A ground item the hand can take. A ground backpack opens its wheel instead (Backpack.cs:32-35), so it is
+    /// never a generic grab target; vr.29 covers it.</summary>
+    static bool Grabbable(Item item) =>
+        item != null && item.itemState == ItemState.Ground && item is not Backpack;
+
+    static Item OnGround(Item item) => Grabbable(item) ? item : null;
+
+    /// <summary>The nearest grabbable ground item (Item.cs:103 ALL_ITEMS, :286 itemState) within <see cref="NearItems"/> m.</summary>
     static Item NearestGround(Func<Item, bool> ok, Vector3? from = null)
     {
         var at = from ?? Character.localCharacter.Center;
@@ -803,7 +852,7 @@ internal sealed partial class SelfTestRunner
         float bestSq = NearItems * NearItems;
         foreach (var item in Item.ALL_ITEMS)
         {
-            if (item == null || item.itemState != ItemState.Ground || !ok(item))
+            if (!Grabbable(item) || !ok(item))
                 continue;
             float sq = (item.Center() - at).sqrMagnitude;
             if (sq < bestSq)
@@ -822,8 +871,7 @@ internal sealed partial class SelfTestRunner
         foreach (var item in Item.ALL_ITEMS)
         {
             if (
-                item != null
-                && item.itemState == ItemState.Ground
+                Grabbable(item)
                 && IsFood(item) == food
                 && (item.Center() - at).sqrMagnitude < NearItems * NearItems
             )
@@ -834,6 +882,39 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Two foods (eat, feed) and one other item (grab, throw, holster).</summary>
     static bool EnoughItems() => CountNear(true) >= 2 && CountNear(false) >= 1;
+
+    /// <summary>A case's enabled solid colliders; triggers widen its bounds (see <see cref="LidPoint"/>).</summary>
+    static List<Collider> SolidColliders(Luggage lug)
+    {
+        var solid = new List<Collider>();
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (!col.isTrigger && col.enabled)
+                solid.Add(col);
+        }
+        return solid;
+    }
+
+    /// <summary>The point of the <paramref name="solid"/> colliders' bounds nearest <paramref name="from"/>;
+    /// <paramref name="fallback"/> when there are none (or all are gone).</summary>
+    static Vector3 SolidPoint(List<Collider> solid, Vector3 fallback, Vector3 from)
+    {
+        var best = fallback;
+        float bestSq = float.MaxValue;
+        foreach (var col in solid)
+        {
+            if (col == null)
+                continue;
+            var p = col.bounds.ClosestPoint(from);
+            float sq = (p - from).sqrMagnitude;
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                best = p;
+            }
+        }
+        return best;
+    }
 
     static string ReadText(string path)
     {

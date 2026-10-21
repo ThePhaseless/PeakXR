@@ -53,6 +53,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     bool stepOk;
     string stepNote;
 
+    /// <summary>The step's first failure; it leads the recorded note, so a success note written earlier cannot hide it.</summary>
+    string failNote;
+
     /// <summary>Set by a step that cannot run because the level lacks what it needs; recorded as SKIP, not FAIL.</summary>
     string stepSkip;
     bool finished;
@@ -505,13 +508,20 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     {
         stepOk = true;
         stepNote = null;
+        failNote = null;
         stepSkip = null;
         report.Begin(id, Now);
         yield return Guard(body, Now + timeout, OnStepFailure);
         if (stepOk && stepSkip != null)
             report.Skip(id, stepSkip);
+        else if (stepOk)
+            report.End(true, Now, stepNote);
         else
-            report.End(stepOk, Now, stepNote);
+            report.End(
+                false,
+                Now,
+                stepNote == null || stepNote == failNote ? failNote : failNote + "; " + stepNote
+            );
         Record(report.Steps.Count - 1);
     }
 
@@ -594,8 +604,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     void Fail(string note)
     {
+        if (stepOk)
+            failNote = note;
         stepOk = false;
-        stepNote ??= note;
     }
 
     /// <summary>Housekeeping between steps: an exception here becomes a failed step instead of aborting the run.</summary>

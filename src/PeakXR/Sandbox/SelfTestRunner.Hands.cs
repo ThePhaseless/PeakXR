@@ -50,6 +50,19 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.18-emote-wheel", 20f, EmoteStep());
         yield return HandStep("vr.19-laser", 20f, LaserStep());
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
+        yield return HandStep("vr.29-ground-backpack", 25f, GroundBackpackStep());
+        yield return HandStep("vr.32-shoulder-stash", 30f, ShoulderStashStep());
+        // Later steps expect no worn pack (the over-the-shoulder slot would claim grips); Player.EmptySlot(3) takes
+        // it off (Player.cs:211, GetItemSlot :250).
+        Safe(
+            "hands.unwear",
+            () =>
+            {
+                var p = Character.localCharacter != null ? Character.localCharacter.player : null;
+                if (p != null && !p.backpackSlot.IsEmpty())
+                    p.EmptySlot(Optionable<byte>.Some(3));
+            }
+        );
         yield return BodySteps();
         yield return ItemGestureSteps();
         yield return AffordanceSteps();
@@ -563,6 +576,213 @@ internal sealed partial class SelfTestRunner
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.29: a grip on a ground backpack opens its wheel (<c>Backpack.Interact</c>, Backpack.cs:34) and the wheel stays
+    /// open every frame while the grip stays closed (it closes on interact up, BackpackWheel.cs:96); opening the grip
+    /// closes it, and the move stick walks again afterwards.
+    /// </summary>
+    IEnumerator GroundBackpackStep()
+    {
+        var c = Character.localCharacter;
+        Item prefab = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+                prefab = it;
+        }
+        if (prefab == null)
+        {
+            Fail("no Backpack item");
+            yield break;
+        }
+        var head = VRRig.Instance.Head;
+        var spot = Flat(head.forward) * 0.6f + head.position;
+        spot.y = c.Center.y;
+        if (!SandboxActions.SpawnItemAt(prefab, spot))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        var go = SandboxActions.LastSpawned;
+        spawned.Add(go);
+        var pack = go != null ? go.GetComponent<Item>() : null;
+        yield return Wait(0.6f);
+        if (pack == null)
+        {
+            Fail("spawned Backpack has no Item");
+            yield break;
+        }
+        bool left = !VRInput.LeftHanded;
+        var at = pack.Center();
+        yield return MoveTo(left, () => at, 0.5f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Until(() => c.data.usingBackpackWheel, 2f, "the backpack wheel did not open");
+        if (!stepOk)
+        {
+            stepNote =
+                $"grip {PhysicalInteraction.HandAction(left)} on {Label(PhysicalInteraction.HandTarget(left))}";
+            yield break;
+        }
+        // The hand stays still, so DriveWheel hovers no pocket and the release commits nothing.
+        int closed = 0;
+        for (float until = Now + 1f; Now < until; )
+        {
+            if (!c.data.usingBackpackWheel)
+                closed++;
+            yield return null;
+        }
+        yield return Shot("vr-29-ground-backpack");
+        yield return GripTo(left, 0f, 0.1f);
+        yield return Until(
+            () => !c.data.usingBackpackWheel,
+            1f,
+            "the wheel stayed open after the grip opened"
+        );
+        if (!stepOk)
+            yield break;
+        // Turn away first, so the walk does not run into the pack.
+        VRRig.Instance.RotateYaw(180f);
+        yield return Wait(0.3f);
+        bool hand = !VRInput.LeftHanded;
+        var from = c.Center;
+        Script(hand).Stick = Vector2.up;
+        yield return Wait(1f);
+        Script(hand).Stick = Vector2.zero;
+        yield return Wait(0.3f);
+        var to = c.Center;
+        float moved = Vector2.Distance(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
+        var note =
+            $"wheel closed on {closed} frame(s) of 1 s with the grip shut, walked {moved:0.00} m after";
+        if (closed > 0)
+            Fail("the wheel flickered: " + note);
+        else if (moved < 0.5f)
+            Fail("could not walk after the wheel: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.32: with a backpack worn and an Apple grabbed in one hand whose grip stays closed, the other hand's grip over
+    /// the shoulder opens the worn pack's wheel (BodyInventory.BeginShoulder), a hand move hovers a pocket, and opening
+    /// that grip commits the stash and closes the wheel (BackpackWheel.cs:96-99, TryStash :166). The closed item grip
+    /// must not keep the wheel open.
+    /// </summary>
+    IEnumerator ShoulderStashStep()
+    {
+        var c = Character.localCharacter;
+        var gui = GUIManager.instance;
+        var inv = BodyInventory.Instance;
+        var all = new List<Item>(SandboxActions.Items);
+        Item packPrefab = null;
+        foreach (var it in all)
+        {
+            if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+                packPrefab = it;
+        }
+        var apple = FindItem(all, AppleFragment);
+        if (packPrefab == null || apple == null || gui == null || !inv.Valid)
+        {
+            Fail($"needs a Backpack and an Apple item and body slots (valid {inv.Valid})");
+            yield break;
+        }
+        var head = VRRig.Instance.Head;
+        var spot = Flat(head.forward) * 0.45f + head.position;
+        spot.y = c.Center.y;
+
+        // Wear a pack: the wheel's Wear slice calls Backpack.Wear (BackpackWheel.cs:133), the plain pickup into
+        // Player.backpackSlot (Player.cs:274).
+        if (!SandboxActions.SpawnItemAt(packPrefab, spot))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var pack = SandboxActions.LastSpawned.GetComponent<Backpack>();
+        yield return Wait(0.5f);
+        pack.Wear(c);
+        yield return Until(() => !c.player.backpackSlot.IsEmpty(), 3f, "the backpack was not worn");
+        if (!stepOk)
+            yield break;
+
+        bool hold = !VRInput.LeftHanded;
+        bool reach = !hold;
+        if (!SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world = SandboxActions.LastSpawned.GetComponent<Item>();
+        yield return Wait(0.4f);
+        var at = world.Center();
+        yield return MoveTo(hold, () => at, 0.5f);
+        yield return GripTo(hold, 1f, 0.1f);
+        yield return Until(() => Holding(apple), 3f, "Apple not picked up");
+        if (!stepOk)
+            yield break;
+        HeadFrame(out var headPos, out var forward, out var right);
+        yield return MoveTrack(hold, Rest(headPos, forward, hold ? -right : right).Position, 0.3f);
+
+        int slot = -1;
+        for (int i = 0; i < inv.Count; i++)
+        {
+            if (inv.Slot(i).GameSlot == 3)
+                slot = i;
+        }
+        if (slot < 0)
+        {
+            Fail("no body slot for the backpack");
+            yield break;
+        }
+        var rig = VRRig.Instance;
+        yield return MoveTo(reach, () => rig.Origin.TransformPoint(inv.Anchor(slot)), 0.6f);
+        yield return GripTo(reach, 1f, 0.1f);
+        yield return Until(() => c.data.usingBackpackWheel, 2f, "the shoulder wheel did not open");
+        if (!stepOk)
+            yield break;
+
+        // Sweep the hand round the wheel (BodyInventory.DriveWheel reads it head-relative) until a pocket offers the stash.
+        var wheel = gui.backpackWheel;
+        var start = Script(reach).Position;
+        for (int deg = 0; deg < 360 && !Stashable(wheel); deg += 30)
+        {
+            float a = deg * Mathf.Deg2Rad;
+            SetHand(
+                reach,
+                start + VRInput.HeadRotation * new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.15f
+            );
+            yield return Wait(0.15f);
+        }
+        if (!Stashable(wheel))
+        {
+            Fail("no wheel pocket offered the stash");
+            yield break;
+        }
+        yield return Shot("vr-32-shoulder-stash");
+        yield return GripTo(reach, 0f, 0.1f);
+        yield return Until(
+            () => !c.data.usingBackpackWheel && HeldItem() == null,
+            2f,
+            "the wheel did not commit and close with the item grip still closed"
+        );
+        if (!stepOk)
+            yield break;
+        bool inPack = false;
+        foreach (var s in BackpackReference.GetFromEquippedBackpack(c).GetData().itemSlots)
+            inPack |= s != null && !s.IsEmpty() && s.prefab.itemID == apple.itemID;
+        var note =
+            $"stashed with the {(hold ? "left" : "right")} grip still closed, Apple in the pack {inPack}";
+        if (!inPack)
+            Fail("the Apple is not in the pack: " + note);
+        else
+            stepNote = note;
+
+        static bool Stashable(BackpackWheel w) =>
+            w.chosenSlice.IsSome
+            && !w.chosenSlice.Value.isBackpackWear
+            && !w.chosenSlice.Value.isJetpackFuelSlice;
     }
 
     /// <summary>
