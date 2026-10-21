@@ -135,6 +135,7 @@ internal static class PhysicalInteraction
         TrackHeldItem(c, now);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
+        ClimbStow.Tick(c);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
         Climb.ClimbHands.Update(c, rig, cfg, active, dt);
@@ -282,6 +283,15 @@ internal static class PhysicalInteraction
                     Haptics.Pulse(hand.Left, 0.6f, 0.05f);
                 break;
             case GripPressAction.GrabInteractible:
+                // A rope or vine grab puts the held item away like a wall climb (RopeSegment.cs:42, JungleVine.cs:113).
+                if (
+                    (target is RopeSegment || target is JungleVine)
+                    && !ClimbStow.Allow(c, hand.Left)
+                )
+                {
+                    action = GripPressAction.None;
+                    break;
+                }
                 hand.Target = target;
                 Haptics.Pulse(hand.Left, 0.6f, 0.05f);
                 break;
@@ -290,6 +300,11 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(hand.Left, 0.4f, 0.04f);
                 break;
             case GripPressAction.Climb:
+                if (!c.data.isClimbing && !ClimbStow.Allow(c, hand.Left))
+                {
+                    action = GripPressAction.None;
+                    break;
+                }
                 if (StartClimb(c, rig, pos, cfg))
                     HoldPulse(hand.Left, kind);
                 else

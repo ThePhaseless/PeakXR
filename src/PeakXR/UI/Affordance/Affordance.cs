@@ -110,6 +110,18 @@ internal static class Affordance
         return true;
     }
 
+    /// <summary>
+    /// Not a refusal but something the game did on its own that the hands did not show (the held item stowed when a
+    /// climb started): a single soft tick, a teal ring at <paramref name="hint"/>'s spot and the label. Same rate limit.
+    /// </summary>
+    public static bool Inform(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint)
+    {
+        if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
+            return false;
+        AffordanceRuntime.Show(left, worldPos, reason, hint, notice: true);
+        return true;
+    }
+
     /// <summary>Deny at the hand itself, for refusals with no spot in the world (two-handed use, a throw).</summary>
     public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint = default)
     {

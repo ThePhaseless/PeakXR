@@ -39,6 +39,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public Vector3 Position;
         public DenyReason Reason;
         public DenyHint Spot;
+        public bool Notice;
 
         // Hover bookkeeping.
         public int Frame = -10;
@@ -74,13 +75,24 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         instance = go.AddComponent<AffordanceRuntime>();
     }
 
-    public static void Show(bool left, Vector3 pos, DenyReason reason, DenyHint hint)
+    /// <param name="notice">Information, not a refusal: no red ring, a single soft tick, the label in the hint colour.</param>
+    public static void Show(
+        bool left,
+        Vector3 pos,
+        DenyReason reason,
+        DenyHint hint,
+        bool notice = false
+    )
     {
         var self = instance;
         if (self == null)
             return;
         var now = Time.unscaledTime;
-        (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
+        if (notice)
+            Haptics.Pulse(left, 0.25f, 0.04f);
+        else
+            (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
+        self.denied.Notice = notice;
         self.denied.Position = pos;
         self.denied.Reason = reason;
         self.denied.Spot = hint;
@@ -264,7 +276,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             SpatialRuntime.FaceEyeYaw(p, eye, rig.Head.forward)
         );
         labelRoot.transform.localScale = new Vector3(mpp, mpp, mpp);
-        var tc = Affordance.DenyColor;
+        var tc = labelOwner < 0 && denied.Notice ? Affordance.HintColor : Affordance.DenyColor;
         tc.a = alpha;
         label.color = tc;
         plate.color = new Color(0.06f, 0.05f, 0.05f, 0.7f * alpha);
@@ -272,7 +284,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private static void PoseCue(Cue cue, Vector3 eye, float alpha)
     {
-        PoseRing(cue.Deny, cue.Position, eye, alpha, Affordance.DenyColor);
+        PoseRing(cue.Deny, cue.Position, eye, cue.Notice ? 0f : alpha, Affordance.DenyColor);
         var spot = cue.Spot.SpotNow;
         bool hint = cue.Spot.HasSpot && (spot - cue.Position).sqrMagnitude > 1e-4f;
         PoseRing(cue.Hint, spot, eye, hint ? alpha : 0f, Affordance.HintColor);

@@ -95,6 +95,24 @@ internal sealed class BodyInventory : IGripExtension
     /// <summary>Anchor in tracking space (relative to <see cref="VRRig.Origin"/>).</summary>
     public Vector3 Anchor(int i) => anchors[i].U();
 
+    /// <summary>World position of the body slot that holds game slot <paramref name="gameSlot"/>, if the belt is
+    /// laid out.</summary>
+    public bool SlotWorld(byte gameSlot, out Vector3 world)
+    {
+        world = default;
+        var rig = VRRig.Instance;
+        if (!Valid || rig == null || rig.Origin == null)
+            return false;
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i].GameSlot != gameSlot)
+                continue;
+            world = rig.Origin.TransformPoint(Anchor(i));
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>Per-frame update from the <c>CharacterInput.Sample</c> postfix, after <c>interact.physical</c>.</summary>
     public void Tick(Character c, CharacterInput input, float dt)
     {
