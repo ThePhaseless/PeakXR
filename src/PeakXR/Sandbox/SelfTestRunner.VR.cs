@@ -420,8 +420,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.07: a knockback through the game's RPC (<c>Character.RPCA_AddForceAtPosition</c>, decomp
     /// Assembly-CSharp/Character.cs:461, sent the way <c>AddForceAtPosition</c> :455 does) pulses comfort.events'
-    /// vignette, which is open again within 2 s; then a warp (<c>MapHandler.JumpToSegment</c>, MapHandler.cs:805, to
-    /// a neighbouring segment) leaves <see cref="VRFade.Target"/> at 0.
+    /// vignette, which is open again within 2 s; then a warp to spawn (<c>Character.WarpToSpawn</c>) leaves <see cref="VRFade.Target"/> at 0.
     /// </summary>
     IEnumerator ComfortCheck()
     {
@@ -474,38 +473,31 @@ internal sealed partial class SelfTestRunner
         else if (!meshShown)
             fails.Add("vignette ring not shown");
 
-        var map = Singleton<MapHandler>.Instance;
-        if (map == null)
-            fails.Add("no MapHandler for the jump");
+        // A teleport inside the segment: a segment jump here would leave the later segment loop revisiting
+        // segments, which throws in vanilla SingleItemSpawner.TrySpawnItems.
+        if (!SandboxActions.WarpToSpawn())
+            fails.Add(SandboxActions.LastMessage);
         else
         {
-            // Warping to the current segment throws in vanilla SingleItemSpawner.TrySpawnItems, so go to a neighbour.
-            var segment =
-                map.GetCurrentSegment() == Segment.Beach ? Segment.Tropics : Segment.Beach;
-            if (!SandboxActions.JumpToSegment(segment))
-                fails.Add(SandboxActions.LastMessage);
-            else
+            var fade = new PulseWatch();
+            float warpAt = Now;
+            while (Now - warpAt < 3f)
             {
-                var fade = new PulseWatch();
-                float jumpAt = Now;
-                while (Now - jumpAt < 3f || (!Ready && Now - jumpAt < 60f))
-                {
-                    fade.Sample(VRFade.Target, Now - jumpAt);
-                    yield return null;
-                }
-                float readyAt = Now;
-                while (VRFade.Target > 0f && Now - readyAt < 10f)
-                {
-                    fade.Sample(VRFade.Target, Now - jumpAt);
-                    yield return null;
-                }
-                notes.Add(
-                    $"jump to {segment}: fade peak {fade.Peak:0.00}, target {VRFade.Target:0.00} {Now - readyAt:0.0} s after ready"
-                );
-                if (VRFade.Target > 0f)
-                    fails.Add("VRFade.Target stuck after the jump");
-                Recover();
+                fade.Sample(VRFade.Target, Now - warpAt);
+                yield return null;
             }
+            float settleAt = Now;
+            while (VRFade.Target > 0f && Now - settleAt < 10f)
+            {
+                fade.Sample(VRFade.Target, Now - warpAt);
+                yield return null;
+            }
+            notes.Add(
+                $"warp to spawn: fade peak {fade.Peak:0.00}, target {VRFade.Target:0.00} {Now - settleAt:0.0} s after"
+            );
+            if (VRFade.Target > 0f)
+                fails.Add("VRFade.Target stuck after the warp");
+            Recover();
         }
         Conclude(fails, notes);
     }
