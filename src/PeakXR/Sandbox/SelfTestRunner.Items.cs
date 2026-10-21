@@ -421,6 +421,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return WarpFacing(lug.Center(), 0.8f);
+        yield return LiftLid(lug);
+    }
+
+    /// <summary>The body of vr.24 once the character stands at <paramref name="lug"/>.</summary>
+    IEnumerator LiftLid(Luggage lug)
+    {
         var top = LidPoint(lug);
         bool left = VRInput.LeftHanded;
         yield return MoveTo(left, () => top, 0.5f);

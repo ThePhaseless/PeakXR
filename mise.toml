@@ -25,6 +25,15 @@ description = "Build the solution (Release)"
 depends = ["deps"]
 run = "dotnet build PeakXR.sln -c Release"
 
+[tasks.build-observer]
+description = "Build the vanilla peer's MpObserver plugin into dist/MpObserver/ (two-client test; not packaged)"
+run = """
+dotnet build tools/MpObserver/MpObserver.csproj -c Release
+mkdir -p dist/MpObserver
+cp tools/MpObserver/bin/Release/netstandard2.1/MpObserver.dll dist/MpObserver/
+echo "dist/MpObserver/MpObserver.dll"
+"""
+
 [tasks.test]
 description = "Run the unit tests (Release)"
 run = "dotnet test PeakXR.sln -c Release"

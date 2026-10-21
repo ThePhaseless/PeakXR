@@ -182,12 +182,18 @@ internal sealed partial class SelfTestRunner
     /// approach, which the holder's own head collider keeps away from the mouth.</summary>
     IEnumerator EatStep()
     {
-        var c = Character.localCharacter;
-        var rig = VRRig.Instance;
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
+        yield return EatHeld();
+    }
+
+    /// <summary>The body of vr.12 for the item already in hand (also the mp test's <c>eat</c>).</summary>
+    IEnumerator EatHeld()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
         var item = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
@@ -251,13 +257,23 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator ThrowStep()
     {
-        var c = Character.localCharacter;
-        var rig = VRRig.Instance;
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
+        yield return ThrowHeld();
+    }
+
+    /// <summary>Where the last <see cref="ThrowHeld"/> came to rest; null when it did not land.</summary>
+    Vector3? lastLanding;
+
+    /// <summary>The body of vr.13 for the item already in hand, thrown along the head's level forward.</summary>
+    IEnumerator ThrowHeld()
+    {
+        var c = Character.localCharacter;
+        lastLanding = null;
         var held = HeldItem();
+        ushort heldId = held.itemID;
         bool left = LocalHold.ItemInLeftHand;
         float multiplier = held.throwForceMultiplier;
         yield return GripTo(left, 1f, 0.1f);
@@ -279,10 +295,10 @@ internal sealed partial class SelfTestRunner
             yield break;
 
         Item thrown = null;
-        yield return WaitFor(() => (thrown = NewItem(apple.itemID)) != null, 1f);
+        yield return WaitFor(() => (thrown = NewItem(heldId)) != null, 1f);
         if (thrown == null)
         {
-            Fail("no thrown Apple in the world");
+            Fail("no thrown " + held.name + " in the world");
             yield break;
         }
         float launch = 0f;
@@ -308,6 +324,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var landed = thrown.Center();
+        lastLanding = landed;
         float distance = Vector2.Distance(
             new Vector2(from.x, from.z),
             new Vector2(landed.x, landed.z)
@@ -347,7 +364,6 @@ internal sealed partial class SelfTestRunner
     /// go clears it.</summary>
     IEnumerator TwoHandStep()
     {
-        var c = Character.localCharacter;
         var all = new List<Item>(SandboxActions.Items);
         Item pick = null;
         foreach (var fragment in TwoHandItems)
@@ -364,6 +380,13 @@ internal sealed partial class SelfTestRunner
         yield return GiveAndHold(pick);
         if (!stepOk)
             yield break;
+        yield return TwoHandHeld();
+    }
+
+    /// <summary>The body of vr.14 for the item already in hand.</summary>
+    IEnumerator TwoHandHeld()
+    {
+        var c = Character.localCharacter;
         var held = HeldItem();
         var info = new ItemHoldInfo();
         info.Bind(held);
@@ -429,10 +452,27 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1.5f);
         rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -normal, Vector3.up));
         yield return Wait(0.6f);
+        yield return ClimbWall(wall);
+        yield return Back();
 
+        IEnumerator Back()
+        {
+            Script(VRInput.LeftHanded).Grip = 0f;
+            yield return Wait(0.5f);
+            if (c.data.isClimbing)
+                c.refs.climbing.StopClimbing();
+            SandboxActions.WarpToSpawn();
+            yield return Wait(2f);
+        }
+    }
+
+    /// <summary>The body of vr.15 once the character stands facing <paramref name="wall"/>; ends with the grip open.</summary>
+    IEnumerator ClimbWall(RaycastHit wall)
+    {
+        var c = Character.localCharacter;
         if (!WallInFront(c, wall, 0.1f, out var hit))
         {
-            Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
+            Fail($"wall not in front (wall {wall.point}, body {c.Center})");
             yield break;
         }
         bool left = VRInput.LeftHanded;
@@ -445,10 +485,7 @@ internal sealed partial class SelfTestRunner
             $"climb did not start ({hit.distance:0.00} m to the wall)"
         );
         if (!stepOk)
-        {
-            yield return Back();
             yield break;
-        }
         yield return Wait(0.3f);
         float y0 = c.Center.y;
         yield return Shot("vr-15-climb");
@@ -466,17 +503,6 @@ internal sealed partial class SelfTestRunner
             Fail("climb did not stop: " + note);
         else
             stepNote = note;
-        yield return Back();
-
-        IEnumerator Back()
-        {
-            Script(left).Grip = 0f;
-            yield return Wait(0.5f);
-            if (c.data.isClimbing)
-                c.refs.climbing.StopClimbing();
-            SandboxActions.WarpToSpawn();
-            yield return Wait(2f);
-        }
     }
 
     /// <summary>vr.16: the turn stick snaps the rig by <c>Comfort.SnapTurnAngle</c> (smooth turning: just turns), and the eye
@@ -646,12 +672,20 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator HolsterStep()
     {
-        var c = Character.localCharacter;
-        var inv = BodyInventory.Instance;
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
+        yield return HolsterAndDraw();
+    }
+
+    /// <summary>The body of vr.20 for the item already in hand.</summary>
+    IEnumerator HolsterAndDraw()
+    {
+        var c = Character.localCharacter;
+        var inv = BodyInventory.Instance;
+        ushort id = HeldItem().itemID;
+        bool HoldingIt() => HeldItem() != null && HeldItem().itemID == id;
         var selected = c.refs.items.currentSelectedSlot;
         if (!inv.Valid || selected.IsNone || selected.Value > 2)
         {
@@ -684,17 +718,16 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var itemSlot = c.player.GetItemSlot(selected.Value);
-        bool inSlot =
-            itemSlot != null && !itemSlot.IsEmpty() && itemSlot.prefab.itemID == apple.itemID;
+        bool inSlot = itemSlot != null && !itemSlot.IsEmpty() && itemSlot.prefab.itemID == id;
         yield return Shot("vr-20-holster");
         if (!inSlot)
         {
-            Fail($"hotbar slot {selected.Value} does not hold the Apple");
+            Fail($"hotbar slot {selected.Value} does not hold the item");
             yield break;
         }
         yield return Wait(0.4f);
         yield return GripTo(left, 1f, 0.1f);
-        yield return Until(() => Holding(apple), 2f, "grip at the slot did not draw it");
+        yield return Until(HoldingIt, 2f, "grip at the slot did not draw it");
         if (!stepOk)
             yield break;
         stepNote =
