@@ -53,6 +53,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.Msaa.SettingChanged += OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
+        RenderFixesFeature.ComfortSettings.SettingChanged += OnComfortSettingsChanged;
         if (VRSession.Active)
             Apply();
     }
@@ -66,6 +67,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.Msaa.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
+        RenderFixesFeature.ComfortSettings.SettingChanged -= OnComfortSettingsChanged;
         Revert();
     }
 
@@ -152,6 +154,17 @@ internal sealed class RenderDriver : MonoBehaviour
         instance.DisableIn(volume.sharedProfile);
         if (volume.HasInstantiatedProfile())
             instance.DisableIn(volume.profile);
+    }
+
+    /// <summary>Applied otherwise only at XR start and scene load; the settings tab changes it live.</summary>
+    private void OnComfortSettingsChanged(object sender, System.EventArgs e)
+    {
+        if (!applied)
+            return;
+        if (RenderFixesFeature.ComfortSettings.Value)
+            ForceComfortSettings();
+        else
+            RestoreSettings();
     }
 
     private void OnQualityChanged(object sender, System.EventArgs e)
