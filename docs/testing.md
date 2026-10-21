@@ -93,7 +93,9 @@ With god mode on, repeat each in VR and then flat:
 
 The `sandbox.selftest` feature plays the procedure above by itself, for runs where nobody watches the screen. It runs only when the game starts with `-peakxr-selftest`. For that run it turns the sandbox and god mode on without touching `Sandbox.Enabled` in the config, and it quits the game when it is done.
 
-Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`). For VR, leave out `-peakxr-novr` and pick the runtime as usual.
+Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
+
+VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-d3d11 -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
 
 The script:
 
@@ -108,6 +110,21 @@ The script:
 | `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is filmed after 3 s, then removed. Entities that need a player or a death are `SKIP` |
 | `06-segment-<Segment>` | `Sandbox.Jump` to every segment |
 | `07-time-<hh>` | Time of day 06, 12 and 21 |
+
+VR runs only:
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.00-session` | after `00-title` | `VRSession.Active` within 60 s; the note has the running runtime, eye texture size, stereo mode and the XR device names |
+| `vr.01-rig` | title | `VRRig.Instance` and its tracked head (note says moving or static), `MainCamera` camera renders stereo to both eyes, an enabled `AudioListener` within 0.5 m of the head |
+| `vr.02-title-stage` | title | The title menu canvas is world space and the title stage holds `VRRig.OriginOverride` (when `UI.TitleOnBeach` is on); screenshot `vr-02-title` |
+| `vr.03-canvases` | airport | No active root canvas that ui.world converts is still screen space (its own Hidden and Fade rules are exempt); the note counts world and overlay canvases; screenshot `vr-03-airport` |
+| `vr.04-settings-panel` | airport | The pause menu with the VR tab is world space, 0.5 to 4 m from the head and under 60° off the view; screenshot `vr-04-settings` |
+| `vr.05-loading-space` | after `04-beach` | During that load the loading space was shown and the game camera's `cullingMask` was 0; screenshot `vr-05-loading` mid-load |
+| `vr.06-features` | beach | Every VR feature is `Active`, the local avatar driver has a fresh pose, the HUD canvas is world space, `VRFade.Target` is 0; records whether the vignette ring exists yet |
+| `vr.07-comfort` | beach, after the mobs | A knockback (`RPCA_AddForceAtPosition` on the local character) pulses the comfort vignette, which opens again within 2 s; a warp to the current segment leaves `VRFade.Target` at 0; screenshot `vr-07-knockback` |
+
+Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
 
 Each step has a timeout. A step fails when its action fails, when it times out, or when the game logs an exception while it runs. Errors the game logs are written next to the step but do not fail it.
 

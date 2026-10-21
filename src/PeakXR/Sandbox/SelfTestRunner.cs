@@ -22,7 +22,7 @@ namespace PeakXR.Sandbox;
 /// are attributed to the running step. Results go to <c>BepInEx/PeakXR-selftest.log</c> and screenshots to
 /// <c>BepInEx/PeakXR-selftest/</c>. Correctness matters more than frame cost here: it runs once, unattended.
 /// </summary>
-internal sealed class SelfTestRunner : MonoBehaviour
+internal sealed partial class SelfTestRunner : MonoBehaviour
 {
     const int RowSize = 8;
     const float ScriptMinutes = 90f;
@@ -58,9 +58,17 @@ internal sealed class SelfTestRunner : MonoBehaviour
     static bool Ready =>
         !LoadingScreenHandler.loading && Character.localCharacter != null && PhotonNetwork.InRoom;
 
-    void Awake() => Application.logMessageReceived += OnLog;
+    void Awake()
+    {
+        Application.logMessageReceived += OnLog;
+        BepInEx.Logging.Logger.Listeners.Add(bootstrapTail);
+    }
 
-    void OnDestroy() => Application.logMessageReceived -= OnLog;
+    void OnDestroy()
+    {
+        Application.logMessageReceived -= OnLog;
+        BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
+    }
 
     void Start()
     {
@@ -92,6 +100,10 @@ internal sealed class SelfTestRunner : MonoBehaviour
     IEnumerator Script()
     {
         yield return Run("00-title", 180f, Title());
+        if (VRRun)
+            yield return Run("vr.00-session", 60f, Session());
+        yield return VRStep("vr.01-rig", 20f, RigCheck());
+        yield return VRStep("vr.02-title-stage", 20f, TitleStageCheck());
         yield return Run("01-airport", 180f, Airport());
         if (!Ready)
         {
@@ -99,19 +111,26 @@ internal sealed class SelfTestRunner : MonoBehaviour
             yield break;
         }
         SandboxActions.SetGodMode(true);
+        yield return VRStep("vr.03-canvases", 20f, CanvasCheck());
 
         yield return Run("02-settings-vr", 30f, SettingsVR());
+        ClosePause();
+        yield return VRStep("vr.04-settings-panel", 30f, SettingsPanel());
         ClosePause();
 
         yield return Items();
 
+        StartLoadWatch();
         yield return Run("04-beach", 300f, Level());
+        yield return VRStep("vr.05-loading-space", 5f, LoadingCheck());
         if (Ready && Singleton<MapHandler>.Instance != null)
         {
             SandboxActions.SetGodMode(true);
+            yield return VRStep("vr.06-features", 15f, FeaturesCheck());
             // Use steps need run-only systems (achievements, item render features), so they run in the level.
             yield return Uses();
             yield return Mobs();
+            yield return VRStep("vr.07-comfort", 100f, ComfortCheck());
             foreach (var segment in SandboxActions.Segments)
             {
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
@@ -171,6 +190,18 @@ internal sealed class SelfTestRunner : MonoBehaviour
     /// </summary>
     IEnumerator SettingsVR()
     {
+        yield return OpenVRTab();
+        if (!stepOk)
+            yield break;
+        yield return Shot("02-settings-vr");
+
+        ClosePause();
+        yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
+    }
+
+    /// <summary>Opens the pause menu, its settings page and the VR tab; leaves it open.</summary>
+    IEnumerator OpenVRTab()
+    {
         var gui = GUIManager.instance;
         var c = Character.localCharacter;
         if (gui == null || c == null)
@@ -216,10 +247,6 @@ internal sealed class SelfTestRunner : MonoBehaviour
         }
         tabs.Select(vr);
         yield return Wait(1f);
-        yield return Shot("02-settings-vr");
-
-        ClosePause();
-        yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
     }
 
     /// <summary>Spawn every item in rows, one step each.</summary>
