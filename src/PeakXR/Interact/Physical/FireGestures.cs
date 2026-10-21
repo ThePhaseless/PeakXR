@@ -17,7 +17,8 @@ namespace PeakXR.Interact.Physical;
 /// <c>cookTime</c> (Campfire.cs:40, :309-320); pulling the item out releases interact, which is the vanilla
 /// <c>CancelCast</c> (Campfire.cs:328, Interaction.cs:109-112).</item>
 /// <item>Light (G6): a lit held flame touched to a scout cannon fuse (ScoutCannonFuse.cs:99), rocket fuse
-/// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:322) holds interact on it.</item>
+/// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:322; its own solid colliders, or the
+/// zone over its fire base) holds interact on it.</item>
 /// <item>Warm hands (G10): open palms toward a lit campfire give a slow warm pulse; cold (status Cold) a faint
 /// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:225).</item>
 /// </list>
@@ -265,11 +266,18 @@ internal static class FireGestures
                 if (LightableByCollider.Count >= 1024)
                     LightableByCollider.Clear();
                 it = col.GetComponentInParent<IInteractible>();
-                if (it is not (ScoutCannonFuse or RocketFuse or GhostFire))
+                // A campfire's own solid colliders (logs) count as touched: a torch pushed into the logs stops on
+                // them before the flame reaches the zone over the fire base (vr10: 0.56 m out, zone 0.47 m).
+                if (
+                    it is not (ScoutCannonFuse or RocketFuse or GhostFire)
+                    && (it is not Campfire || col.isTrigger)
+                )
                     it = null;
                 LightableByCollider[id] = it;
             }
             if (it == null || (it is Object unityObject && unityObject == null))
+                continue;
+            if (it is Campfire touched && touched.state != Campfire.FireState.Off)
                 continue;
             if (!Lightable(c, it))
                 continue;
