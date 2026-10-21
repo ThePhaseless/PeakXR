@@ -142,7 +142,7 @@ VR runs only:
 |---|---|---|
 | `vr.00-session` | after `00-title` | `VRSession.Active` within 60 s; the note has the running runtime, eye texture size, stereo mode and the XR device names |
 | `vr.01-rig` | title | `VRRig.Instance` and its tracked head (note says moving or static), `MainCamera` camera renders stereo to both eyes, an enabled `AudioListener` within 0.5 m of the head |
-| `vr.02-title-stage` | title | The title menu canvas is world space and the title stage holds `VRRig.OriginOverride` (when `UI.TitleOnBeach` is on); screenshot `vr-02-title` |
+| `vr.02-title-stage` | title | The title menu canvas is world space and the title stage holds `VRRig.OriginOverride` (when `UI.TitleOnBeach` is on), and at least one button group sits within `UI.TitleReach` (+0.25 m) of the stage eye; screenshot `vr-02-title` |
 | `vr.03-canvases` | airport | No active root canvas that ui.world converts is still screen space (its own Hidden and Fade rules are exempt); the note counts world and overlay canvases; screenshot `vr-03-airport` |
 | `vr.04-settings-panel` | airport | The pause menu with the VR tab is world space, 0.5 to 4 m from the head and under 60° off the view; screenshot `vr-04-settings` |
 | `vr.05-loading-space` | after `04-beach` | During that load the loading space was shown and the game camera's `cullingMask` was 0; screenshot `vr-05-loading` mid-load |
