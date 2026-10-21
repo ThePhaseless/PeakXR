@@ -24,13 +24,15 @@ namespace PeakXR.UI.Affordances;
 internal sealed class AffordanceRuntime : MonoBehaviour
 {
     private const int RingPoints = 24;
-    private const float RingDegrees = 1.8f;
     private const float LabelPixels = 30f;
     private const float HoverLabelAfter = 0.4f;
     private const float HoverFade = 0.15f;
     private const float RayWidth = 0.0025f;
 
     private static readonly Color RayColor = new(1f, 1f, 1f, 0.35f);
+
+    /// <summary>The disc behind a "can't" ring: dark and translucent, a contrast plate, not a flash.</summary>
+    private static readonly Color BackColor = new(0.08f, 0.05f, 0.05f, 0.5f);
     private static readonly RaycastHit[] RayHits = new RaycastHit[16];
 
     /// <summary>Labels that ride on a hand stay at least this far from the eye, a comfortable focus distance.</summary>
@@ -48,6 +50,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public LineRenderer Mark,
             Arc;
 
+        /// <summary>Child of <see cref="Deny"/>: a dark translucent disc behind the ring and glyph, so a red ring reads
+        /// on a red item, snow or sky.</summary>
+        public LineRenderer Back;
+
         /// <summary>Child of <see cref="Hint"/>: the inner ring that makes it a double ring.</summary>
         public LineRenderer Inner;
         public LineRenderer Chevron;
@@ -56,6 +62,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public DenyReason Reason;
         public DenyHint Spot;
         public bool Notice;
+
+        /// <summary>Angular diameter of its rings (<see cref="CueLayout"/>).</summary>
+        public float Degrees;
+
+        /// <summary>The refused spot was the hand itself (a held item): the cue rides above the hand, clear of it.</summary>
+        public bool AtHand;
 
         /// <summary>Label text in place of the reason's own (an item name), or null.</summary>
         public string Text;
@@ -93,6 +105,11 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private bool denyLeft;
     private float denyAt = -100f;
 
+    // The refused attempt is still held (the trigger, else the grip, that was down when it was refused): the cue stays.
+    private bool denyHolding;
+    private bool denyByTrigger;
+    private float denyHeldUntil = -100f;
+
     // What the label shows now: the denial (-1) or a hover (hand index), its reason and distance step.
     private int labelOwner = -1;
     private DenyReason labelReason;
@@ -128,12 +145,38 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         self.denied.Glyph = DenyGlyph.For(reason);
         self.denied.Text = text;
         self.PlayCue(notice, pos, hint, 1f);
+        // The same refusal repeated while its cue is up (a check every frame, rate-limited) keeps it lit: no ramp
+        // from zero, which would blink.
+        bool live =
+            self.denied.Reason == reason
+            && self.denyLeft == left
+            && DenyFade.Alpha(now - self.denyAt, self.denyHeldUntil - self.denyAt) > 0f;
+        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+        self.denied.AtHand = hand != null && CueLayout.AtHand(pos.N(), hand.position.N());
         self.denied.Position = pos;
         self.denied.Reason = reason;
         self.denied.Spot = hint;
         self.denyLeft = left;
-        self.denyAt = now;
+        self.denyAt = live ? now - DenyFade.In : now;
+        ref var input = ref VRInput.Hand(left);
+        self.denyByTrigger = input.Trigger > 0.5f;
+        self.denyHolding = !notice && (self.denyByTrigger || input.Grip > 0.5f);
+        self.denyHeldUntil = now;
         self.SetLabel(-1, reason, hint.Meters, text);
+    }
+
+    /// <summary>The live refusal's ring, for the self-test: false unless it is drawn and clearly visible.</summary>
+    public static bool DeniedRing(out Vector3 center, out float radius)
+    {
+        center = default;
+        radius = 0f;
+        var self = instance;
+        if (self == null || !self.built || !self.denied.Deny.enabled)
+            return false;
+        var t = self.denied.Deny.transform;
+        center = t.position;
+        radius = t.localScale.x;
+        return self.denied.Deny.sharedMaterial.color.a > 0.3f;
     }
 
     public static void Hover(
@@ -346,13 +389,27 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var eye = rig.Head.position;
         var now = Time.unscaledTime;
 
-        float denyAlpha = DenyFade.Alpha(now - denyAt);
+        if (denyHolding)
+        {
+            ref var input = ref VRInput.Hand(denyLeft);
+            if (denyByTrigger ? input.Trigger > 0.5f : input.Grip > 0.5f)
+                denyHeldUntil = now;
+            else
+                denyHolding = false;
+        }
+        float denyAlpha = DenyFade.Alpha(now - denyAt, denyHeldUntil - denyAt);
+        var denyHand = rig.Hand(denyLeft);
+        if (denied.AtHand && denyHand != null)
+            denied.Position = CueLayout.HandAnchor(denyHand.position.N(), eye.N()).U();
         PoseCue(denied, eye, denyAlpha);
 
         for (int i = 0; i < 2; i++)
         {
             var h = hovers[i];
             float alpha = HoverAlpha(h, now);
+            // The live refusal of this hand already says it, bigger: no second ring inside it.
+            if (denyAlpha > 0f && denyLeft == (i == 0) && h.Reason == denied.Reason)
+                alpha = 0f;
             PoseCue(h, eye, alpha);
             // A steady hover earns the label, but only once the current owner's label is gone (or it is the owner):
             // one label at a time, no swapping between hands.
@@ -409,7 +466,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             + Vector3.up
                 * (
                     reason == DenyReason.Overhang ? -0.12f
-                    : atHand ? 0.13f
+                    : atHand ? CueLayout.AboveHand + 0.07f
                     : 0.1f
                 );
         // Toward the eye, off the surface it is about (more for far spots), and never closer than a comfortable focus.
@@ -446,7 +503,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         // A notice has no refused spot: with no separate hint, its own spot is the teal one (with a pin).
         bool refusedRing = shown && !(cue.Notice && hint);
         var color = cue.Notice ? Affordance.HintColor : Affordance.DenyColor;
-        PoseRing(cue.Deny, cue.Position, eye, refusedRing ? alpha : 0f, color, 1f);
+        PoseRing(cue.Deny, cue.Position, eye, refusedRing ? alpha : 0f, color, cue.Degrees);
+        cue.Back.widthMultiplier = cue.Deny.transform.localScale.x * 1.15f;
+        SetLine(cue.Back, refusedRing, alpha, BackColor);
         PoseGlyph(cue, refusedRing, alpha, color, now);
         PoseRing(
             cue.Hint,
@@ -454,7 +513,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             eye,
             hint ? alpha : 0f,
             Affordance.HintColor,
-            CueMotion.Breathe(now)
+            cue.Degrees * CueMotion.Breathe(now)
         );
         cue.Inner.widthMultiplier = cue.Hint.widthMultiplier;
         SetLine(cue.Inner, hint && shown, alpha, Affordance.HintColor);
@@ -468,7 +527,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         link.SetPosition(0, cue.Position);
         link.SetPosition(1, spot);
         link.widthMultiplier =
-            SpatialMath.SpanMeters(Vector3.Distance(spot, eye), RingDegrees) * 0.08f;
+            SpatialMath.SpanMeters(Vector3.Distance(spot, eye), cue.Degrees) * 0.06f;
         // A cue at the hand (ClimbStow's hand-to-slot line) with the hand at the face: no bar across the view.
         SetLine(
             link,
@@ -533,7 +592,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
         var dir = along / length;
         var at = from + along * CueMotion.Travel(now);
-        float size = SpatialMath.SpanMeters(Vector3.Distance(at, eye), RingDegrees) * 0.5f;
+        float size = SpatialMath.SpanMeters(Vector3.Distance(at, eye), cue.Degrees) * 0.4f;
         var side = Vector3.Cross(dir, eye - at);
         side = side.sqrMagnitude > 1e-8f ? side.normalized : Vector3.up;
         cue.Chevron.SetPosition(0, at - dir * size + side * size * 0.8f);
@@ -560,7 +619,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         Vector3 eye,
         float alpha,
         Color color,
-        float scale
+        float degrees
     )
     {
         if (alpha <= 0.001f)
@@ -570,7 +629,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             return;
         }
         float d = Vector3.Distance(pos, eye);
-        float r = SpatialMath.SpanMeters(d, RingDegrees) * 0.5f * scale;
+        float r = SpatialMath.SpanMeters(d, degrees) * 0.5f;
         // Depth-tested, so a ring behind a rock stays hidden (stereo-correct); lifted toward the eye off the surface it
         // marks so the surface does not cut it.
         if (d > 1e-3f)
@@ -625,6 +684,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             cue.Link.enabled =
             cue.Mark.enabled =
             cue.Arc.enabled =
+            cue.Back.enabled =
             cue.Inner.enabled =
             cue.Chevron.enabled =
                 false;
@@ -634,29 +694,37 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         built = true;
         foreach (var cue in new[] { denied, hovers[0], hovers[1] })
         {
-            cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, drawOnTop: false);
-            cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, false, cue.Deny.transform);
+            // A refused attempt draws over the world: the hand that tried, the item it holds or a rock would hide it.
+            // Hovers stay depth-tested, so a "can't" ring behind a rock stays behind it.
+            bool top = cue == denied;
+            cue.Degrees = top ? CueLayout.DenyDegrees : CueLayout.HoverDegrees;
+            cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, top);
+            cue.Back = Line("Backing", RingPoints, true, BackColor, top, cue.Deny.transform, 3190);
+            // Unit-circle ring at radius 0.55 with a 1.15 r width: a disc from the centre to just past the ring.
+            for (int i = 0; i < RingPoints; i++)
+                cue.Back.SetPosition(i, cue.Back.GetPosition(i) * 0.55f);
+            cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, top, cue.Deny.transform);
             cue.Arc = Line(
                 "WaitArc",
                 ArcPoints,
                 false,
                 Affordance.DenyColor,
-                false,
+                top,
                 cue.Deny.transform
             );
-            cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, drawOnTop: false);
+            cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, top);
             cue.Inner = Line(
                 "HintInner",
                 RingPoints,
                 true,
                 Affordance.HintColor,
-                false,
+                top,
                 cue.Hint.transform
             );
             cue.Inner.transform.localScale = new Vector3(0.55f, 0.55f, 0.55f);
-            cue.Link = Line("HintLink", 2, false, Affordance.HintColor, drawOnTop: false);
+            cue.Link = Line("HintLink", 2, false, Affordance.HintColor, top);
             cue.Link.useWorldSpace = true;
-            cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, drawOnTop: false);
+            cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, top);
             cue.Chevron.useWorldSpace = true;
         }
         ray = Line("PointRay", 2, false, RayColor, drawOnTop: false);
@@ -670,7 +738,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         bool ring,
         Color color,
         bool drawOnTop,
-        Transform parent = null
+        Transform parent = null,
+        int renderQueue = 3200
     )
     {
         var go = new GameObject(name);
@@ -690,7 +759,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         line.numCapVertices = 0;
         line.shadowCastingMode = ShadowCastingMode.Off;
         line.receiveShadows = false;
-        line.sharedMaterial = UIMaterials.Create(color, drawOnTop, renderQueue: 3200);
+        line.sharedMaterial = UIMaterials.Create(color, drawOnTop, renderQueue);
         line.startColor = line.endColor = Color.white;
         line.enabled = false;
         return line;

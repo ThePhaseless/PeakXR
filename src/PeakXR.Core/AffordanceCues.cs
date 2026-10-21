@@ -1,3 +1,6 @@
+using System;
+using System.Numerics;
+
 namespace PeakXR.Core;
 
 /// <summary>
@@ -91,6 +94,87 @@ public static class CueTones
             samples[i] = Peak * env * s / 1.3f;
         }
         return samples;
+    }
+}
+
+/// <summary>
+/// Size and place of a refusal's cue. A ring of under 2 degrees at a laser tip, or one inside the hand and the held
+/// item, went unseen; a refused attempt gets a ring big enough to read at a glance, lifted clear of the hand that
+/// tried, near where the player is already looking.
+/// </summary>
+public static class CueLayout
+{
+    /// <summary>Angular diameter of a refused attempt's ring (about 4 cm at the hand, 22 cm at 2.5 m).</summary>
+    public const float DenyDegrees = 5f;
+
+    /// <summary>Angular diameter of a pre-emptive "can't" ring: quieter than a refusal, it shows while aiming.</summary>
+    public const float HoverDegrees = 2.5f;
+
+    /// <summary>The self-test's floor for a denial cue's angular diameter.</summary>
+    public const float MinDegrees = 3.5f;
+
+    /// <summary>The self-test's limit for how far off the action's direction the cue may sit, in degrees.</summary>
+    public const float MaxOffDegrees = 25f;
+
+    /// <summary>A refused spot this close to the hand is about the hand (a held item), so the cue rides it.</summary>
+    public const float NearHand = 0.35f;
+
+    /// <summary>Height of a hand cue above the wrist: clear of the hand model and most held items.</summary>
+    public const float AboveHand = 0.1f;
+
+    /// <summary>Nearest a cue sits to the eye: a comfortable focus distance.</summary>
+    public const float MinEyeDistance = 0.35f;
+
+    public static bool AtHand(Vector3 spot, Vector3 hand) =>
+        Vector3.DistanceSquared(spot, hand) < NearHand * NearHand;
+
+    /// <summary>Where a cue about the hand goes: above it, a little toward the eye, never closer than
+    /// <see cref="MinEyeDistance"/>.</summary>
+    public static Vector3 HandAnchor(Vector3 hand, Vector3 eye)
+    {
+        var p = hand + Vector3.UnitY * AboveHand;
+        var toEye = eye - p;
+        float d = toEye.Length();
+        if (d > 1e-4f)
+            p += toEye / d * MathF.Min(0.04f, d * 0.25f);
+        var fromEye = p - eye;
+        if (fromEye.Length() < MinEyeDistance)
+        {
+            // A hand at the face: keep the height, push out level, on the hand's side (straight ahead if none).
+            float dy = fromEye.Y;
+            var flat = new Vector3(hand.X - eye.X, 0f, hand.Z - eye.Z);
+            float len = flat.Length();
+            flat = len > 1e-3f ? flat / len : Vector3.UnitZ;
+            float h = MathF.Sqrt(MathF.Max(0f, MinEyeDistance * MinEyeDistance - dy * dy));
+            p = new Vector3(eye.X, p.Y, eye.Z) + flat * h;
+        }
+        return p;
+    }
+
+    /// <summary>Angular diameter in degrees of a ring of <paramref name="radius"/> at <paramref name="distance"/>.</summary>
+    public static float AngularDegrees(float radius, float distance) =>
+        distance > 1e-4f ? 2f * MathF.Atan(radius / distance) / UnityQuat.Deg2Rad : 0f;
+
+    /// <summary>
+    /// The self-test's rule for a denial cue: seen from <paramref name="eye"/> looking at <paramref name="action"/>
+    /// (the refused spot or hand), a ring at <paramref name="center"/> of <paramref name="radius"/> lies within
+    /// <see cref="MaxOffDegrees"/> of that view and spans at least <see cref="MinDegrees"/>.
+    /// </summary>
+    public static bool Readable(
+        Vector3 eye,
+        Vector3 action,
+        Vector3 center,
+        float radius,
+        out string why
+    )
+    {
+        float off = SelfTestChecks.AngleOff(eye, action - eye, center);
+        float size = AngularDegrees(radius, Vector3.Distance(center, eye));
+        why =
+            off > MaxOffDegrees ? $"cue {off:0} deg off the action (max {MaxOffDegrees:0})"
+            : size < MinDegrees ? $"cue too small: {size:0.0} deg (min {MinDegrees:0.0})"
+            : $"cue {size:0.0} deg, {off:0} deg off the action";
+        return off <= MaxOffDegrees && size >= MinDegrees;
     }
 }
 

@@ -261,6 +261,24 @@ public static class DenyFade
             return 1f;
         return 1f - (age - In - Hold) / Out;
     }
+
+    /// <summary>
+    /// As <see cref="Alpha(float)"/>, but the attempt that was refused stayed held for <paramref name="heldFor"/>
+    /// seconds after it (equal to <paramref name="age"/> while still held): the cue holds at full until the release,
+    /// then fades, so a player holding the trigger never watches the reason vanish mid-attempt.
+    /// </summary>
+    public static float Alpha(float age, float heldFor)
+    {
+        if (age <= 0f)
+            return 0f;
+        if (age < In)
+            return age / In;
+        float fadeAt = System.MathF.Max(In + Hold, heldFor);
+        if (age < fadeAt)
+            return 1f;
+        float a = 1f - (age - fadeAt) / Out;
+        return a > 0f ? a : 0f;
+    }
 }
 
 /// <summary>Range check for a pre-emptive "can't" cue with hysteresis on the "can" side only: it never shows
