@@ -133,7 +133,7 @@ Entities made in their game context:
 | `mob.ChainShootable` | The chain shooter turns until its own `WillAttach` accepts the terrain ahead, fires, and the chain must have colliders; `JungleVine.Interact` must start a vine climb |
 | `mob.ScoutmasterGhostOrbiter` | Spawned 4 m away with `SetOrbitCharacter(local)`, the soul pillar's call; it must reach the player within 2 s |
 | `mob.TiedBalloon` | A balloon item used from the hand ties a balloon (`CharacterBalloons.TieNewBalloon`); popping it unties it |
-| `mob.Tornado` | After the first segment jump that reaches a running `TornadoSpawner`: its own `SpawnTornado`; the tornado must move and catch the player warped beside it (VR: the comfort vignette pulses). `SKIP` when no segment has one |
+| `mob.Tornado` | After the first segment jump that reaches a running `TornadoSpawner`: its own `SpawnTornado`; the tornado must move and catch the player warped beside it (VR: the comfort vignette pulses). When today's map has none, the very last steps go back to the airport, pick a Mesa level with the game's `MapDebugUI.SetMapNumber` (`08-mesa-level`), jump its segments (`08-mesa-<Segment>`) and try there; the run ends on that level. `SKIP` when no level has one |
 | `mob.MushroomZombie_Player`, `mob.PetrifiedScout`, `mob.PlayerGhost` | Last in the run. `Character.Zombify`, petrify 100 plus `Character.Die`, and `Character.Die`; the zombie, statue or ghost must appear, then `RPCA_ReviveAtPosition` revives the player where they stood, which must remove the zombie and the ghost (VR: the fade clears, no spectate nameplate for your own body). The solo game over (`Character.CheckEndGame`) is held back meanwhile |
 
 VR runs only:

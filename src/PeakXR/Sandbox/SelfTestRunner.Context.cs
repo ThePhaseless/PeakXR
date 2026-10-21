@@ -8,6 +8,7 @@ using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
+using Zorro.Core;
 using Vector3 = UnityEngine.Vector3;
 
 namespace PeakXR.Sandbox;
@@ -124,7 +125,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         float moved = Vector3.Dot(c.Center - start, push);
-        stepNote =
+        var note =
             $"{type}: followed {followed}, peak speed along the force {best:0.00} m/s, moved {moved:0.00} m, fall {fell}, "
             + $"removed {go == null} (not spawned by the game: BingBongPhysics.DoEffect is empty)";
         if (go != null)
@@ -133,6 +134,7 @@ internal sealed partial class SelfTestRunner
             Fail("did not follow its bingbong transform");
         if (push != Vector3.zero && best < 0.2f && !fell)
             Fail("no force on the body");
+        Note(note);
     }
 
     // ---------------------------------------------------------------- chain shooter
@@ -212,12 +214,13 @@ internal sealed partial class SelfTestRunner
         yield return DropHeld();
         EmptyHotbar(c);
 
-        stepNote =
+        var note =
             $"{vine.name} {hit.distance:0.0} m to {hit.collider.name}, {colliders} colliders, climbing {climbing}";
         if (colliders == 0)
             Fail("chain built no colliders (JungleVine.ForceBuildVine, JungleVine.cs:256)");
         if (!climbing)
             Fail("grabbing the chain did not start a vine climb");
+        Note(note);
     }
 
     /// <summary>Turns the view: the rig in VR, the look values in flat play (CharacterMovement.cs:286-288).</summary>
@@ -264,9 +267,9 @@ internal sealed partial class SelfTestRunner
         yield return Wait(2f);
         float to = Vector3.Distance(go.transform.position, c.Center);
         yield return Shot("05-mob-ScoutmasterGhostOrbiter");
-        stepNote = $"distance to the player {from:0.0} m, after 2 s {to:0.00} m";
         if (to > 1f)
             Fail("did not follow the character");
+        Note($"distance to the player {from:0.0} m, after 2 s {to:0.00} m");
     }
 
     /// <summary>
@@ -298,7 +301,9 @@ internal sealed partial class SelfTestRunner
         var balloons = c.refs.balloons;
         int tied = balloons.currentBalloonCount - balloons.heldBalloonCount;
         var first = Fresh<TiedBalloon>(before);
-        float distance = first != null ? Vector3.Distance(first.transform.position, c.Center) : -1f;
+        // Captured before popping: Pop destroys the balloon, after which `first == null` is true.
+        bool found = first != null;
+        float distance = found ? Vector3.Distance(first.transform.position, c.Center) : -1f;
         yield return Shot("05-mob-TiedBalloon");
         foreach (var b in FindObjectsByType<TiedBalloon>(FindObjectsSortMode.None))
         {
@@ -310,12 +315,13 @@ internal sealed partial class SelfTestRunner
         }
         yield return Wait(0.5f);
         int left = balloons.currentBalloonCount - balloons.heldBalloonCount;
-        stepNote =
-            $"{prefab.name}: {tied} tied, first {distance:0.0} m from the body, {left} after popping";
-        if (first == null || tied < 1)
+        if (!found || tied < 1)
             Fail("no balloon tied to the character");
         else if (left > 0)
             Fail("popped balloons still counted");
+        Note(
+            $"{prefab.name}: {tied} tied, first {distance:0.0} m from the body, {left} after popping"
+        );
         yield return DropHeld();
     }
 
@@ -362,8 +368,8 @@ internal sealed partial class SelfTestRunner
         warpedForProp = false;
     }
 
-    /// <summary>Called after the segment loop: no segment had a running spawner.</summary>
-    void TornadoNotFound()
+    /// <summary>Records mob.Tornado as SKIP when no segment had a running spawner.</summary>
+    void TornadoNotFound(string where)
     {
         if (!tornadoPending)
             return;
@@ -372,8 +378,81 @@ internal sealed partial class SelfTestRunner
             "mob.Tornado",
             tornadoSpawnerOff
                 ? "the TornadoSpawner is disabled (RunSettings Hazard_Tornado 0, TornadoSpawner.cs:25)"
-                : "no segment of this map has a TornadoSpawner, the only spawn path (TornadoSpawner.cs:43-46)"
+                : $"no segment of {where} has a TornadoSpawner, the only spawn path (TornadoSpawner.cs:43-46)"
         );
+    }
+
+    /// <summary>
+    /// mob.Tornado when today's map had no spawner: a Mesa level (biome id letter 'M', TodaysBiomes.cs:58) is loaded
+    /// the game's way, back to the airport as after the peak (MapHandler.cs:560-562), the console map picker
+    /// <c>MapDebugUI.SetMapNumber</c> (MapDebugUI.cs:131-135, read by the kiosk at AirportCheckInKiosk.cs:142) and
+    /// the kiosk. Then the segments are jumped until one has a running spawner. Last in the script: the run ends
+    /// on that level, so nothing needs the old map back; the level offset is restored.
+    /// </summary>
+    IEnumerator TornadoTrip()
+    {
+        if (!tornadoPending || tornadoSpawnerOff)
+        {
+            TornadoNotFound("this map");
+            yield break;
+        }
+        var baker = SingletonAsset<MapBaker>.Instance;
+        var service = GameHandler.GetService<NextLevelService>();
+        int count = baker != null ? baker.ScenePaths.Length : 0;
+        int current =
+            count > 0
+                ? (service.NextLevelIndexOrFallback + NextLevelService.debugLevelIndexOffset)
+                    % count
+                : -1;
+        int level = -1;
+        for (int i = 0; i < count && i < baker.BiomeIDs.Count && level < 0; i++)
+        {
+            if (i != current && baker.BiomeIDs[i].Contains('M', StringComparison.Ordinal))
+                level = i;
+        }
+        if (level < 0)
+        {
+            TornadoNotFound("this map, and no other level has the Mesa biome (MapBaker.BiomeIDs)");
+            yield break;
+        }
+        var where = $"Mesa level {level} {baker.GetLevel(level)} ({baker.BiomeIDs[level]})";
+        int offset = NextLevelService.debugLevelIndexOffset;
+        yield return Run("08-mesa-level", 480f, MesaLevel(level, where));
+        NextLevelService.debugLevelIndexOffset = offset;
+        if (!Ready || Singleton<MapHandler>.Instance == null)
+        {
+            TornadoNotFound(where + " (it did not load)");
+            yield break;
+        }
+        SandboxActions.SetGodMode(true);
+        // Mesa takes Alpine's place; try that segment first.
+        foreach (var segment in new[] { Segment.Alpine, Segment.Tropics, Segment.Caldera })
+        {
+            if (Singleton<MapHandler>.Instance.GetCurrentSegment() != segment)
+                yield return Run("08-mesa-" + segment, 120f, Jump(segment, "08-mesa-" + segment));
+            yield return TornadoIfHere();
+            if (!tornadoPending)
+                yield break;
+        }
+        TornadoNotFound(where);
+    }
+
+    IEnumerator MesaLevel(int level, string where)
+    {
+        GameHandler.AddStatus<SceneSwitchingStatus>(new SceneSwitchingStatus());
+        var loading = RetrievableResourceSingleton<LoadingScreenHandler>.Instance;
+        loading.Load(
+            LoadingScreen.LoadingScreenType.Basic,
+            null,
+            loading.LoadSceneProcess("Airport", networked: true, yieldForCharacterSpawn: true, 1f)
+        );
+        yield return Until(() => InScene("Airport") && Ready, 170f, "airport not ready");
+        if (!stepOk)
+            yield break;
+        yield return Wait(4f);
+        MapDebugUI.SetMapNumber(level);
+        yield return Level("08-mesa-level");
+        Note(where);
     }
 
     /// <summary>
@@ -437,7 +516,7 @@ internal sealed partial class SelfTestRunner
             }
             yield return null;
         }
-        stepNote =
+        var note =
             $"moved {moved:0.0} m in 4 s, caught {caught}, lifted {lift:0.0} m"
             + (VRSession.Active ? $", vignette peak {vignette:0.00}" : "");
         if (moved < 1f)
@@ -446,6 +525,7 @@ internal sealed partial class SelfTestRunner
             Fail("never caught the player");
         else if (VRSession.Active && vignette <= 0f)
             Fail("no comfort vignette while caught");
+        Note(note);
     }
 
     // ---------------------------------------------------------------- deaths
@@ -519,7 +599,7 @@ internal sealed partial class SelfTestRunner
             5f,
             "the revived player's zombie was not removed"
         );
-        stepNote = $"{(zombie == null ? "zombie removed" : "zombie still there")} after the revive";
+        Note($"{(zombie == null ? "zombie removed" : "zombie still there")} after the revive");
     }
 
     /// <summary>
@@ -550,8 +630,7 @@ internal sealed partial class SelfTestRunner
             5f,
             "the player not revived and un-petrified"
         );
-        stepNote =
-            $"statue {statue.name} at {Vector3.Distance(statue.transform.position, home):0.0} m";
+        Note($"statue {statue.name} at {Vector3.Distance(statue.transform.position, home):0.0} m");
     }
 
     /// <summary>
@@ -598,10 +677,11 @@ internal sealed partial class SelfTestRunner
             if (plate != (spec != null && spec != c))
                 Fail("spectate nameplate shown for the player's own body");
         }
-        stepNote =
-            $"spectating {spectating} {(spec == c ? "self" : spec != null ? spec.name : "nobody")}{vr}";
         if (!spectating)
             Fail("not spectating while dead");
+        Note(
+            $"spectating {spectating} {(spec == c ? "self" : spec != null ? spec.name : "nobody")}{vr}"
+        );
     }
 
     static IEnumerator ReviveIfDead(Vector3 home)
@@ -622,6 +702,9 @@ internal sealed partial class SelfTestRunner
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /// <summary>The step's details, set after its verdict: appended to a failure reason instead of replacing it.</summary>
+    void Note(string note) => stepNote = stepOk || stepNote == null ? note : stepNote + ": " + note;
 
     static HashSet<int> Ids<T>()
         where T : Component
