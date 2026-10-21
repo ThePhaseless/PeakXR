@@ -421,16 +421,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1.5f);
         rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -normal, Vector3.up));
         yield return Wait(0.6f);
-        if (
-            !Physics.Raycast(
-                c.Center + Vector3.up * 0.4f,
-                -normal,
-                out var hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!WallInFront(c, wall, 0.4f, out var hit))
         {
             Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
             yield return LetGoAll(c);

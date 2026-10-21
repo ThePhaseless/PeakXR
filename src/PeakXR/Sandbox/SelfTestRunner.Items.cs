@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.VR;
 using Photon.Pun;
@@ -432,7 +433,7 @@ internal sealed partial class SelfTestRunner
         : it == null ? "nothing"
         : it.GetType().Name;
 
-    /// <summary>vr.26: a held torch touched to an unlit campfire holds the game's light hold on it
+    /// <summary>vr.26: a held torch, lit with its trigger, touched to an unlit campfire holds the game's light hold on it
     /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121); pulling away before the hold completes
     /// cancels it (Interaction.cs:109-112) and leaves the fire unlit, so vr.25 finds it as the level made it.</summary>
     IEnumerator LightStep(Item torchPrefab)
@@ -457,11 +458,25 @@ internal sealed partial class SelfTestRunner
         var torch = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
-        var action = torch.GetComponent<Action_Torch>();
-        var flame =
-            action != null && action.torchLight != null
-                ? action.torchLight.transform
-                : torch.transform;
+        // A torch is handed over unlit (a Lantern, FlareActive false; vr13): light it as a player does, with the
+        // holding hand's trigger (its primary use, Lantern.cs:193).
+        if (!HandLights.IsLit(torch))
+        {
+            Script(left).Trigger = 1f;
+            yield return WaitFor(() => HandLights.IsLit(torch), torch.usingTimePrimary + 2f);
+            Script(left).Trigger = 0f;
+            yield return Wait(0.3f);
+        }
+        if (!HandLights.IsLit(torch))
+        {
+            Fail(
+                $"{torch.name} did not light on its use (trigger held {torch.usingTimePrimary + 2f:0.0} s)"
+            );
+            yield break;
+        }
+        var flame = FireGestures.FlamePoint(torch);
+        if (flame == null)
+            flame = torch.transform;
         // The near side of the light zone (FireGestures: 0.6 m around the base, -0.1 to 0.6 m up), in arm's reach.
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;

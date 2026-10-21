@@ -142,6 +142,14 @@ public class AffordanceTests
     }
 
     [Fact]
+    public void NotLit_PointsAtTheTrigger()
+    {
+        Assert.Equal("Not lit", DenyText.Label(DenyReason.NotLit));
+        Assert.Contains("trigger", DenyText.Hint(DenyReason.NotLit));
+        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.NotLit));
+    }
+
+    [Fact]
     public void Hints_AreShort()
     {
         for (var r = DenyReason.None + 1; r < DenyReason.Count; r++)
