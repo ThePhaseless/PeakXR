@@ -1,4 +1,5 @@
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -8,6 +9,9 @@ namespace PeakXR.Avatar;
 /// Builds the local VR player's <see cref="AvatarPose"/> from <see cref="VRRig"/> and <see cref="VRInput"/> every
 /// frame and feeds the character's <see cref="AvatarPoseDriver"/>. Runs late so the rig has its pose for this
 /// frame; the driver applies it on the next physics tick like any other character's pose.
+/// While the view is detached from the body (third person, spectate, cutscene) the controllers are near the view,
+/// metres from the body, so the hands hold their last tracked place on the body instead (for the local IK and for
+/// peers alike).
 /// </summary>
 [DefaultExecutionOrder(1000)]
 internal sealed class LocalAvatar : MonoBehaviour
@@ -19,6 +23,17 @@ internal sealed class LocalAvatar : MonoBehaviour
     private readonly ItemHoldInfo hold = new();
     private string lastBodyMode;
     private bool lastActive;
+
+    /// <summary>Last fully tracked hands in the body frame (physical hip, look yaw), held while the view is detached.</summary>
+    private BodyHand heldLeft;
+    private BodyHand heldRight;
+
+    private struct BodyHand
+    {
+        public bool Valid;
+        public Vector3 Position;
+        public Quaternion Rotation;
+    }
 
     /// <summary>Raw finger curls from a controller's analog and touch inputs (no grip presets).</summary>
     public static FingerCurls ControllerCurls(bool left)
@@ -78,7 +93,44 @@ internal sealed class LocalAvatar : MonoBehaviour
 
         if (!holding)
             pose.ItemInLeftHand = pose.TwoHandHold = false;
+        HoldHandsOnBody(ref pose);
         driver.SetPose(pose);
+    }
+
+    /// <summary>On the body: remember the hands in the body frame while the arms are fully tracked. Detached: put the
+    /// remembered hands back on the body where it is now.</summary>
+    private void HoldHandsOnBody(ref AvatarPose pose)
+    {
+        var hip = character.refs.hip;
+        if (hip == null || hip.Rig == null)
+            return;
+        var root = hip.Rig.position;
+        var yaw = Quaternion.Euler(0f, character.data.lookValues.x, 0f);
+        if (RigDriver.ViewOnBody)
+        {
+            if (driver.ArmWeight < 1f)
+                return;
+            var inv = Quaternion.Inverse(yaw);
+            heldLeft = new BodyHand
+            {
+                Valid = pose.HasLeftHand,
+                Position = inv * (pose.LeftHandPosition - root),
+                Rotation = inv * pose.LeftHandRotation,
+            };
+            heldRight = new BodyHand
+            {
+                Valid = pose.HasRightHand,
+                Position = inv * (pose.RightHandPosition - root),
+                Rotation = inv * pose.RightHandRotation,
+            };
+            return;
+        }
+        pose.HasLeftHand = heldLeft.Valid;
+        pose.LeftHandPosition = root + yaw * heldLeft.Position;
+        pose.LeftHandRotation = yaw * heldLeft.Rotation;
+        pose.HasRightHand = heldRight.Valid;
+        pose.RightHandPosition = root + yaw * heldRight.Position;
+        pose.RightHandRotation = yaw * heldRight.Rotation;
     }
 
     private static HandRole Role(bool holding, bool left)

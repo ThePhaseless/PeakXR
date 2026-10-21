@@ -68,6 +68,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// elsewhere or jumped this frame. Room-scale following absorbs its movement.</summary>
     internal static Vector3? BodyAnchor;
 
+    /// <summary>The view rides the local body (first person). False while it is detached (third person, spectate,
+    /// rocket, cutscene) or held by the title stage: the tracked hands are then near the view, not the body.</summary>
+    internal static bool ViewOnBody = true;
+
     private readonly TrackedDevices devices = new();
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
@@ -230,6 +234,7 @@ internal sealed class RigDriver : MonoBehaviour
             ResetTakeover();
         else
             PlaceOrigin(c, dt);
+        ViewOnBody = !rig.OriginOverride && shownKind == ViewKind.FirstPerson;
 
         CheckHeadInWall(c);
         DriveCamera();
