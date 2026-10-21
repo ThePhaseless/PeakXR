@@ -7,7 +7,6 @@ using PeakXR.UI.Settings;
 using PeakXR.VR;
 using TMPro;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using Zorro.UI;
 
 namespace PeakXR.UI.Guide;
@@ -16,7 +15,7 @@ namespace PeakXR.UI.Guide;
 /// Plays VR Guide demos beside the settings panel, with the settings previews' timing (<see cref="PreviewClock"/>:
 /// a rest of the laser on a row starts it, a click restarts it) and placement (beside the row's right edge, see
 /// <see cref="PreviewStage.RowRightEdge"/>). The ghost and its caption are built when a demo starts and destroyed
-/// when it ends or the tab closes. Also offers the practice once, on the first VR visit to the title.
+/// when it ends or the tab closes. Also offers the practice once, beside the title panel on the first VR visit.
 /// </summary>
 internal sealed class GuideStage : MonoBehaviour
 {
@@ -35,6 +34,13 @@ internal sealed class GuideStage : MonoBehaviour
     private float nextOfferCheck;
     private float titleSince = -1f;
     private bool offerTried;
+    private GhostDemo offerDemo;
+    private TouchOrb offerYes,
+        offerNo;
+    private GameObject offerCaption;
+    private MainMenuPageHandler offerHandler;
+    private static readonly Color OfferYes = new(0.45f, 0.9f, 0.82f, 0.8f);
+    private static readonly Color OfferNo = new(1f, 0.42f, 0.36f, 0.8f);
 
     /// <summary>The demo on show, for the self-test; null when none.</summary>
     public GhostDemo Demo => demo;
@@ -44,6 +50,7 @@ internal sealed class GuideStage : MonoBehaviour
     private void OnDestroy()
     {
         End();
+        HideOffer();
         if (Instance == this)
             Instance = null;
     }
@@ -82,6 +89,7 @@ internal sealed class GuideStage : MonoBehaviour
         if (clock.Tick(Time.unscaledDeltaTime) && hoverRow != null)
             Play(hoverRow, GuideRows.DemoLoops);
         CheckOffer();
+        TickOffer(Time.unscaledDeltaTime);
         // The comfort-first view lasts while its menu is open; closing the settings returns the tab to normal.
         if (
             GuideRows.ComfortFirst && (GuideRows.Menu == null || !GuideRows.Menu.isActiveAndEnabled)
@@ -160,9 +168,8 @@ internal sealed class GuideStage : MonoBehaviour
 
     // ---- the once-only offer ----
 
-    /// <summary>Once a second while not yet offered: the first time VR reaches the title's main page and it has been
-    /// up a moment, open the settings on the comfort-first practice view. "Not now" there leaves the guide's Practice
-    /// row for later.</summary>
+    /// <summary>Once a second while not yet offered: the first time VR reaches the title's main page and it has stayed
+    /// a moment, show the offer. It is marked offered as soon as it shows.</summary>
     private void CheckOffer()
     {
         if (offerTried || Time.unscaledTime < nextOfferCheck)
@@ -191,27 +198,138 @@ internal sealed class GuideStage : MonoBehaviour
         if (Time.unscaledTime - titleSince < OfferSettleSeconds)
             return;
         offerTried = true;
-        StartCoroutine(Offer(handler));
+        ShowOffer(handler);
     }
 
     private static MainMenuPageHandler MainPage()
     {
-        if (
-            SceneManager.GetActiveScene().name != MainMenu.SceneName
-            || LoadingScreenHandler.loading
-        )
+        if (!GuideScene.Title || LoadingScreenHandler.loading)
             return null;
         var handler = FindAnyObjectByType<MainMenuPageHandler>();
-        return
-            handler != null
-            && handler.currentPage is MainMenuMainPage page
-            && page.gameObject.activeInHierarchy
-            ? handler
-            : null;
+        return IsMainPage(handler) ? handler : null;
     }
 
-    private static IEnumerator Offer(MainMenuPageHandler handler)
+    private static bool IsMainPage(MainMenuPageHandler handler) =>
+        handler != null
+        && handler.currentPage is MainMenuMainPage page
+        && page.gameObject.activeInHierarchy;
+
+    /// <summary>
+    /// A small spatial offer beside the title panel, never taking over the menu: a ghost reaching for an apple, and
+    /// two orbs within reach on the same side, a chevron to practise and a cross to dismiss. A soft bell announces it.
+    /// The caption shows only with <c>UI.ActionHintText</c>.
+    /// </summary>
+    private void ShowOffer(MainMenuPageHandler handler)
     {
+        var rig = VRRig.Instance;
+        if (rig == null || rig.Head == null)
+        {
+            offerTried = false;
+            return;
+        }
+        GuideFeature.Offered.Value = true;
+        offerHandler = handler;
+        var canvas = handler.GetComponentInParent<Canvas>();
+        var panel = canvas != null ? (RectTransform)canvas.rootCanvas.transform : null;
+        Vector3 edge,
+            right;
+        if (panel != null)
+            PreviewStage.RowRightEdge(panel, corners, out edge, out right);
+        else
+        {
+            edge = handler.transform.position;
+            right = handler.transform.right;
+        }
+        right = Vector3.ProjectOnPlane(right, Vector3.up).normalized;
+        var facing = Vector3.Cross(right, Vector3.up);
+        var head = rig.Head;
+        var toPanel = Vector3.ProjectOnPlane(edge - head.position, Vector3.up);
+        if (Vector3.Dot(facing, toPanel) < 0f)
+            facing = -facing;
+        var rotation = Quaternion.LookRotation(facing, Vector3.up);
+
+        offerDemo = new GhostDemo("PeakXR_GuideOffer", transform);
+        offerDemo.Play(GuideTopic.Grab);
+        offerDemo.Root.SetPositionAndRotation(edge + right * 0.3f + Vector3.up * 0.15f, rotation);
+        var orbs = head.position + facing * 0.4f + Vector3.down * 0.12f;
+        offerYes = new TouchOrb("PeakXR_OfferPractice", OfferYes, cross: false, seconds: 0.6f);
+        offerNo = new TouchOrb("PeakXR_OfferDismiss", OfferNo, cross: true, seconds: 0.6f);
+        offerYes.Place(orbs + right * 0.28f, rotation);
+        offerNo.Place(orbs + right * 0.42f, rotation);
+        if (AffordanceFeature.ActionHintText != null && AffordanceFeature.ActionHintText.Value)
+        {
+            offerCaption = new GameObject("PeakXR_OfferCaption", typeof(RectTransform));
+            offerCaption.transform.SetParent(transform, false);
+            offerCaption.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            ((RectTransform)offerCaption.transform).sizeDelta = new Vector2(420f, 60f);
+            offerCaption.transform.SetPositionAndRotation(
+                orbs + right * 0.35f + Vector3.up * 0.08f,
+                rotation
+            );
+            offerCaption.transform.localScale = Vector3.one * 0.0008f;
+            var text = offerCaption.AddComponent<TextMeshProUGUI>();
+            text.text = "Practise the VR controls?";
+            text.fontSize = 30f;
+            text.alignment = TextAlignmentOptions.Center;
+            text.raycastTarget = false;
+        }
+        CueAudio.Play(CueSound.Notice, offerDemo.Root.position, 1f);
+        Plugin.Log.LogInfo("[ui.guide] offered the VR practice (first VR launch)");
+    }
+
+    private void TickOffer(float dt)
+    {
+        if (offerDemo == null)
+            return;
+        var rig = VRRig.Instance;
+        // Gone as soon as the player moves on: another page, a load, or leaving the title.
+        if (
+            rig == null
+            || rig.Head == null
+            || !VRSession.Active
+            || !GuideScene.Title
+            || LoadingScreenHandler.loading
+            || !IsMainPage(offerHandler)
+        )
+        {
+            HideOffer();
+            return;
+        }
+        offerDemo.Tick(dt, 1f, rig.Head);
+        if (offerNo.Tick(rig, dt))
+        {
+            CueAudio.Play(CueSound.Notice, offerNo.Position, 0.6f);
+            Plugin.Log.LogInfo("[ui.guide] practice offer dismissed");
+            HideOffer();
+            return;
+        }
+        if (!offerYes.Tick(rig, dt))
+            return;
+        CueAudio.Play(CueSound.WouldWork, offerYes.Position, 1f);
+        var handler = offerHandler;
+        HideOffer();
+        StartCoroutine(OpenPractice(handler));
+    }
+
+    private void HideOffer()
+    {
+        offerDemo?.Destroy();
+        offerDemo = null;
+        offerYes?.Destroy();
+        offerYes = null;
+        offerNo?.Destroy();
+        offerNo = null;
+        if (offerCaption != null)
+            Destroy(offerCaption);
+        offerCaption = null;
+        offerHandler = null;
+    }
+
+    /// <summary>Accepted: the title settings on the VR tab's comfort-first practice view, as the Practice row opens it.</summary>
+    private static IEnumerator OpenPractice(MainMenuPageHandler handler)
+    {
+        if (handler == null)
+            yield break;
         // MainMenuMainPage.SettingsClicked (MainMenuMainPage.cs:215) does the same transition.
         var page = handler.TransistionToPage<MainMenuSettingsPage>(new SetActivePageTransistion());
         yield return null;
@@ -219,11 +337,8 @@ internal sealed class GuideStage : MonoBehaviour
         if (!OpenVRTab(page != null ? page.SharedSettingsMenu : null))
         {
             GuideRows.ComfortFirst = false;
-            Plugin.Log.LogWarning("[ui.guide] could not open the VR tab to offer the practice");
-            yield break;
+            Plugin.Log.LogWarning("[ui.guide] could not open the VR tab for the practice");
         }
-        GuideFeature.Offered.Value = true;
-        Plugin.Log.LogInfo("[ui.guide] offered the VR practice (first VR launch)");
     }
 
     /// <summary>Selects the VR tab of <paramref name="menu"/> and fills it again in the current view.</summary>

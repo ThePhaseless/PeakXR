@@ -42,6 +42,9 @@ internal sealed class GuideRow : ButtonSetting, IExposedSetting
     /// <summary>The spawned row, for placing the demo and the refusal cue; null until shown.</summary>
     public SettingsUICell Cell;
 
+    /// <summary>Frame of the last click, so a click is never handled twice.</summary>
+    public int ClickFrame = -1;
+
     public GuideRow(GuideAction action, GuideTopic topic, string nameKey, string buttonText)
     {
         Action = action;
@@ -76,6 +79,9 @@ internal sealed class GuideRowHover
 {
     public GuideRow Row;
 
+    /// <summary>Only on the info-cell fallback: a row with the game's button cell clicks through its button.</summary>
+    public bool ClicksRow;
+
     public void OnPointerEnter(PointerEventData eventData)
     {
         if (Row.Action == GuideAction.Demo && GuideStage.Instance != null)
@@ -88,7 +94,11 @@ internal sealed class GuideRowHover
             GuideStage.Instance.Hover(Row, false);
     }
 
-    public void OnPointerClick(PointerEventData eventData) => GuideRows.Click(Row);
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (ClicksRow)
+            GuideRows.Click(Row);
+    }
 }
 
 /// <summary>
@@ -192,11 +202,17 @@ internal static class GuideRows
     public static void Spawned(GuideRow row, SettingsUICell cell)
     {
         row.Cell = cell;
-        cell.gameObject.AddComponent<GuideRowHover>().Row = row;
+        var hover = cell.gameObject.AddComponent<GuideRowHover>();
+        hover.Row = row;
+        hover.ClicksRow = cell.GetComponentInChildren<UnityEngine.UI.Button>(true) == null;
     }
 
     public static void Click(GuideRow row)
     {
+        // One click is one action, however many handlers the event reaches in a frame.
+        if (row.ClickFrame == Time.frameCount)
+            return;
+        row.ClickFrame = Time.frameCount;
         switch (row.Action)
         {
             case GuideAction.Demo:

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Peak.Network;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
@@ -24,10 +25,7 @@ namespace PeakXR.UI.Guide;
 internal sealed class PracticeRun : MonoBehaviour
 {
     private const float LoadTimeout = 120f;
-    private const float LeaveTimeout = 30f;
     private const float ArrivalSettle = 2f;
-    private const float OrbRadius = 0.045f;
-    private const float TouchRadius = 0.09f;
     private const float TurnGoal = 25f;
     private const float ClimbHold = 0.3f;
     private const float ReplaceDistance = 1.5f;
@@ -41,15 +39,13 @@ internal sealed class PracticeRun : MonoBehaviour
 
     public readonly PracticeFlow Flow = new();
 
-    private readonly DwellButton skip = new(0.6f);
-    private readonly DwellButton exit = new(0.8f);
     private readonly TurnTracker turn = new();
     private readonly List<Object> owned = new();
     private readonly string[] appleTerms = NameFilter.Parse("Apple");
 
     private GhostDemo demo;
     private Transform station;
-    private Transform skipOrb,
+    private TouchOrb skipOrb,
         exitOrb;
     private LineRenderer goalInner,
         goalOuter;
@@ -60,6 +56,7 @@ internal sealed class PracticeRun : MonoBehaviour
     private float arrivedFor;
     private float deadline;
     private bool leaving;
+    private bool quitSent;
 
     // Station state, set on entry.
     private Item apple;
@@ -75,23 +72,19 @@ internal sealed class PracticeRun : MonoBehaviour
     private Vector3 confirmAt;
 
     /// <summary>Where the skip and exit orbs are, for the self-test's scripted hands.</summary>
-    public Vector3 SkipOrbPosition => skipOrb != null ? skipOrb.position : Vector3.zero;
+    public Vector3 SkipOrbPosition => skipOrb != null ? skipOrb.Position : Vector3.zero;
 
-    public Vector3 ExitOrbPosition => exitOrb != null ? exitOrb.position : Vector3.zero;
+    public Vector3 ExitOrbPosition => exitOrb != null ? exitOrb.Position : Vector3.zero;
 
     /// <summary>Where the practice could start now (<see cref="PracticeStart.Decide"/>).</summary>
-    public static PracticeEntry Entry()
-    {
-        var scene = SceneManager.GetActiveScene().name;
-        return PracticeStart.Decide(
+    public static PracticeEntry Entry() =>
+        PracticeStart.Decide(
             PhotonNetwork.InRoom,
             PhotonNetwork.OfflineMode,
-            scene == MainMenu.SceneName,
-            scene.Contains("Airport", System.StringComparison.Ordinal)
-                && Character.localCharacter != null,
-            LoadingScreenHandler.loading
+            GuideScene.Title,
+            GuideScene.Airport && Character.localCharacter != null,
+            LoadingScreenHandler.loading || NetworkingUtilities.EnteringRoom
         );
-    }
 
     /// <summary>Starts the practice; false when it cannot (the caller plays the refusal cue).</summary>
     public static bool Begin(PracticeEntry entry)
@@ -109,7 +102,15 @@ internal sealed class PracticeRun : MonoBehaviour
                 return false;
             }
             // The Play Solo button (MainMenu.cs:43 -> StartSoloSession, :131): offline mode, then the Airport.
+            // StartSoloSession sets EnteringRoom and starts the load at once; without that, nothing is coming.
             menu.playSoloButton.onClick.Invoke();
+            if (!NetworkingUtilities.EnteringRoom && !LoadingScreenHandler.loading)
+            {
+                Plugin.Log.LogWarning(
+                    "[ui.guide] Play Solo did not start a load; practice not started"
+                );
+                return false;
+            }
         }
         var go = new GameObject("PeakXR_Practice");
         DontDestroyOnLoad(go);
@@ -130,16 +131,26 @@ internal sealed class PracticeRun : MonoBehaviour
 
     private void OnDestroy()
     {
-        Despawn();
+        GuideRows.ComfortFirst = false;
+        if (Current == this)
+            Current = null;
         demo?.Destroy();
+        skipOrb?.Destroy();
+        exitOrb?.Destroy();
         foreach (var o in owned)
             if (o != null)
                 Destroy(o);
         if (station != null)
             Destroy(station.gameObject);
-        GuideRows.ComfortFirst = false;
-        if (Current == this)
-            Current = null;
+        // Last, and guarded: the scene may be half torn down, and everything above must be gone regardless.
+        try
+        {
+            Despawn();
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning($"[ui.guide] practice cleanup: {e.Message}");
+        }
     }
 
     private void Update()
@@ -164,10 +175,17 @@ internal sealed class PracticeRun : MonoBehaviour
         }
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
-        if (c == null || rig == null || rig.Head == null || !VRSession.Active || InTitle())
+        if (
+            c == null
+            || rig == null
+            || rig.Head == null
+            || !VRSession.Active
+            || !GuideScene.Airport
+        )
         {
-            // Left by other means (the pause menu's quit): nothing to clean up in the scene any more.
-            Plugin.Log.LogInfo("[ui.guide] practice ended: left the session");
+            // Left by other means (the pause menu's quit, or boarding the plane into a real run): end quietly,
+            // never quitting a run the player started.
+            Plugin.Log.LogInfo("[ui.guide] practice ended: left the airport");
             Destroy(gameObject);
             return;
         }
@@ -196,9 +214,7 @@ internal sealed class PracticeRun : MonoBehaviour
             && Character.localCharacter != null
             && PhotonNetwork.InRoom
             && PhotonNetwork.OfflineMode
-            && SceneManager
-                .GetActiveScene()
-                .name.Contains("Airport", System.StringComparison.Ordinal)
+            && GuideScene.Airport
             && VRRig.Instance != null;
         arrivedFor = ready ? arrivedFor + dt : 0f;
         if (arrivedFor >= ArrivalSettle)
@@ -223,16 +239,25 @@ internal sealed class PracticeRun : MonoBehaviour
     }
 
     /// <summary>The pause menu's own quit (PauseMenuMainPage.cs:199): disconnecting state, then leave the room, which
-    /// loads the title (NetworkConnector.cs:217). comfort.events fades that cut.</summary>
+    /// loads the title (NetworkConnector.cs:217). comfort.events fades that cut. Outside a room (a load that broke half
+    /// way) the title loads directly, as the game's own error paths do (NetworkConnector.cs:260).</summary>
     private void Leave()
     {
         if (!leaving)
         {
             leaving = true;
-            deadline = Time.unscaledTime + LeaveTimeout;
+            // A stop during the Play Solo load waits for the airport, then quits from there.
+            deadline = Time.unscaledTime + LoadTimeout;
             HideStation();
             Despawn();
-            if (!InTitle() && PhotonNetwork.InRoom)
+            Plugin.Log.LogInfo(
+                $"[ui.guide] practice over: {Flow.Completed} done, {Flow.Skipped} skipped; back to the title"
+            );
+        }
+        if (!quitSent && !GuideScene.Title && !LoadingScreenHandler.loading)
+        {
+            quitSent = true;
+            if (PhotonNetwork.InRoom)
             {
                 ClosePause();
                 GameHandler
@@ -240,15 +265,21 @@ internal sealed class PracticeRun : MonoBehaviour
                     .StateMachine.SwitchState<DisconnectingState>();
                 NetworkConnector.LeaveRoom();
             }
-            Plugin.Log.LogInfo(
-                $"[ui.guide] practice over: {Flow.Completed} done, {Flow.Skipped} skipped; back to the title"
-            );
+            else
+            {
+                NetworkingUtilities.EnteringRoom = false;
+                SceneManager.LoadScene(MainMenu.SceneName);
+            }
         }
-        if ((InTitle() && !LoadingScreenHandler.loading) || Time.unscaledTime > deadline)
+        bool home =
+            GuideScene.Title && !LoadingScreenHandler.loading && !NetworkingUtilities.EnteringRoom;
+        if (home || Time.unscaledTime > deadline)
+        {
+            if (!home)
+                Plugin.Log.LogWarning("[ui.guide] the title did not come back in time");
             Destroy(gameObject);
+        }
     }
-
-    private static bool InTitle() => SceneManager.GetActiveScene().name == MainMenu.SceneName;
 
     private static void ClosePause()
     {
@@ -277,8 +308,8 @@ internal sealed class PracticeRun : MonoBehaviour
         {
             case PracticePhase.Station when newStation:
                 Despawn();
-                skip.Reset();
-                exit.Reset();
+                skipOrb.Reset();
+                exitOrb.Reset();
                 PlaceStation(rig.Head, true);
                 EnterStation(c, rig);
                 break;
@@ -458,14 +489,20 @@ internal sealed class PracticeRun : MonoBehaviour
             GameUtils.instance.InstantiateAndGrab(apple, c);
     }
 
+    /// <summary>Removes the station's Apple only while it lies in the world (<c>Item.itemState</c> Ground,
+    /// Item.cs:286). One in a hand or a slot stays; the offline room is discarded on the way out anyway.</summary>
     private void Despawn()
     {
-        if (spawned == null)
-            return;
-        var view = spawned.GetComponent<PhotonView>();
-        if (view != null && (view.IsMine || PhotonNetwork.IsMasterClient))
-            PhotonNetwork.Destroy(spawned);
+        var go = spawned;
         spawned = null;
+        if (go == null)
+            return;
+        var item = go.GetComponent<Item>();
+        if (item == null || item.itemState != ItemState.Ground)
+            return;
+        var view = go.GetComponent<PhotonView>();
+        if (view != null && (view.IsMine || PhotonNetwork.IsMasterClient))
+            PhotonNetwork.Destroy(go);
     }
 
     /// <summary>The nearest steep face within 12 m at chest height, so the climb station can mark it.</summary>
@@ -504,33 +541,12 @@ internal sealed class PracticeRun : MonoBehaviour
     {
         station = new GameObject("PeakXR_PracticeStation").transform;
         DontDestroyOnLoad(station.gameObject);
-        var skipMat = Own(UIMaterials.Create(SkipColor, drawOnTop: false, renderQueue: 3100));
-        var exitMat = Own(UIMaterials.Create(ExitColor, drawOnTop: false, renderQueue: 3100));
         var hintMat = Own(
             UIMaterials.Create(Affordance.HintColor, drawOnTop: false, renderQueue: 3120)
         );
-        skipOrb = Orb("Skip", skipMat);
-        exitOrb = Orb("Exit", exitMat);
         // Chevron on skip, cross on exit: the shapes say which is which without text.
-        Glyph(
-            skipOrb,
-            skipMat,
-            new Vector3(-0.4f, 0.5f, -1.1f),
-            new Vector3(0.4f, 0f, -1.1f),
-            new Vector3(-0.4f, -0.5f, -1.1f)
-        );
-        Glyph(
-            exitOrb,
-            exitMat,
-            new Vector3(-0.45f, 0.45f, -1.1f),
-            new Vector3(0.45f, -0.45f, -1.1f)
-        );
-        Glyph(
-            exitOrb,
-            exitMat,
-            new Vector3(0.45f, 0.45f, -1.1f),
-            new Vector3(-0.45f, -0.45f, -1.1f)
-        );
+        skipOrb = new TouchOrb("PeakXR_PracticeSkip", SkipColor, cross: false, seconds: 0.6f);
+        exitOrb = new TouchOrb("PeakXR_PracticeExit", ExitColor, cross: true, seconds: 0.8f);
         goalInner = Ring("GoalInner", hintMat);
         goalOuter = Ring("GoalOuter", hintMat);
 
@@ -553,30 +569,6 @@ internal sealed class PracticeRun : MonoBehaviour
             if (font != null)
                 caption.font = font.font;
         }
-    }
-
-    private Transform Orb(string name, Material material)
-    {
-        var t = UIMaterials
-            .MeshObject("PeakXR_Practice" + name, UIMaterials.SphereMesh(), material, null)
-            .transform;
-        DontDestroyOnLoad(t.gameObject);
-        t.localScale = Vector3.one * (OrbRadius * 2f);
-        owned.Add(t.gameObject);
-        return t;
-    }
-
-    private static void Glyph(Transform orb, Material material, params Vector3[] points)
-    {
-        var go = new GameObject("Glyph");
-        go.transform.SetParent(orb, false);
-        var line = go.AddComponent<LineRenderer>();
-        line.useWorldSpace = false;
-        line.positionCount = points.Length;
-        line.SetPositions(points);
-        line.startWidth = line.endWidth = 0.004f;
-        line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        line.sharedMaterial = material;
     }
 
     private LineRenderer Ring(string name, Material material)
@@ -632,40 +624,25 @@ internal sealed class PracticeRun : MonoBehaviour
         );
         // Chest high, above where an idle hand rests, so a resting hand never skips by accident.
         var orbs = head.position + forward * 0.4f + Vector3.down * 0.12f;
-        skipOrb.SetPositionAndRotation(orbs + offSide * 0.28f, rotation);
-        exitOrb.SetPositionAndRotation(orbs + offSide * 0.42f, rotation);
+        skipOrb.Place(orbs + offSide * 0.28f, rotation);
+        exitOrb.Place(orbs + offSide * 0.42f, rotation);
     }
 
     private void TickOrbs(VRRig rig, float dt)
     {
         if (Flow.Phase is not (PracticePhase.Station or PracticePhase.Confirm))
             return;
-        if (Touch(rig, skipOrb, skip, dt))
+        if (skipOrb.Tick(rig, dt))
         {
-            CueAudio.Play(CueSound.Notice, skipOrb.position, 1f);
+            CueAudio.Play(CueSound.Notice, skipOrb.Position, 1f);
             Plugin.Log.LogInfo($"[ui.guide] practice station {Flow.Current} skipped");
             Flow.Skip();
         }
-        if (Touch(rig, exitOrb, exit, dt))
+        if (exitOrb.Tick(rig, dt))
         {
-            CueAudio.Play(CueSound.Notice, exitOrb.position, 1f);
+            CueAudio.Play(CueSound.Notice, exitOrb.Position, 1f);
             Stop();
         }
-    }
-
-    /// <summary>Either hand inside the orb fills it; it grows while filling and fires once.</summary>
-    private static bool Touch(VRRig rig, Transform orb, DwellButton button, float dt)
-    {
-        var l = rig.Hand(true);
-        var r = rig.Hand(false);
-        bool inLeft = l != null && Vector3.Distance(l.position, orb.position) < TouchRadius;
-        bool inRight = r != null && Vector3.Distance(r.position, orb.position) < TouchRadius;
-        bool wasEmpty = button.Progress <= 0f;
-        bool fired = button.Tick(inLeft || inRight, dt);
-        if (wasEmpty && button.Progress > 0f)
-            UIHaptics.Tick(inLeft, 0.15f, 0.02f);
-        orb.localScale = Vector3.one * (OrbRadius * 2f * (1f + 0.4f * button.Progress));
-        return fired;
     }
 
     private void PoseGoal(Transform eye)
@@ -714,9 +691,7 @@ internal sealed class PracticeRun : MonoBehaviour
         hasGoal = false;
         if (station != null)
             station.gameObject.SetActive(false);
-        if (skipOrb != null)
-            skipOrb.gameObject.SetActive(false);
-        if (exitOrb != null)
-            exitOrb.gameObject.SetActive(false);
+        skipOrb?.SetActive(false);
+        exitOrb?.SetActive(false);
     }
 }
