@@ -61,8 +61,14 @@ public static class SandboxActions
 
     // ---------------------------------------------------------------- state
 
-    /// <summary>Config switch <c>Sandbox.Enabled</c>.</summary>
-    public static bool Enabled => SandboxFeature.EnabledEntry?.Value == true;
+    /// <summary>Config switch <c>Sandbox.Enabled</c>, or forced on for this run by the self-test.</summary>
+    public static bool Enabled => Forced || SandboxFeature.EnabledEntry?.Value == true;
+
+    /// <summary>Set by <c>sandbox.selftest</c>; never written to the config file.</summary>
+    internal static bool Forced;
+
+    /// <summary>The object the last successful item or entity spawn created, so the self-test can check and remove it.</summary>
+    internal static GameObject LastSpawned { get; private set; }
 
     /// <summary>True when the sandbox may act: enabled, and either offline or we are the master client.
     /// This keeps it out of other people's lobbies.</summary>
@@ -173,6 +179,7 @@ public static class SandboxActions
             Say($"Spawning {item.name} failed (see log).");
             return false;
         }
+        LastSpawned = go;
         Say($"Spawned {item.name}.");
         return true;
     }
@@ -389,6 +396,7 @@ public static class SandboxActions
             Say($"Spawning {entry.Name} failed (see log).");
             return false;
         }
+        LastSpawned = go;
         Say($"Spawned {entry.Name}.");
         return true;
     }

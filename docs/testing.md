@@ -89,6 +89,34 @@ With god mode on, repeat each in VR and then flat:
 - `Sandbox.SetTime` at 0, 12, 21: lighting and fog render correctly in both eyes.
 - Multiplayer smoke test: host with the sandbox, a second client without it; spawned items and mobs show up for the client, nothing desyncs.
 
+## Unattended self-test
+
+The `sandbox.selftest` feature plays the procedure above by itself, for runs where nobody watches the screen. It runs only when the game starts with `-peakxr-selftest`. For that run it turns the sandbox and god mode on without touching `Sandbox.Enabled` in the config, and it quits the game when it is done.
+
+Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`). For VR, leave out `-peakxr-novr` and pick the runtime as usual.
+
+The script:
+
+| Step id | Checks |
+|---|---|
+| `00-title` | The Title scene and `MainMenu` load |
+| `01-airport` | Play Solo goes offline and loads the Airport with a local character |
+| `02-settings-vr` | The pause menu opens, its settings page shows the VR tab, and the menu closes again |
+| `item.<name>` | Every `ItemDatabase` item spawns and still exists two frames later, in rows of 8 |
+| `use.<name>` | One item per category (food, tools, rope, lights, launchers) reaches the hand, is used for 1.5 s, then dropped |
+| `04-beach` | The airport kiosk loads the first level with a local character |
+| `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is filmed after 3 s, then removed. Entities that need a player or a death are `SKIP` |
+| `06-segment-<Segment>` | `Sandbox.Jump` to every segment |
+| `07-time-<hh>` | Time of day 06, 12 and 21 |
+
+Each step has a timeout. A step fails when its action fails, when it times out, or when the game logs an exception while it runs. Errors the game logs are written next to the step but do not fail it.
+
+Results:
+
+- `BepInEx/PeakXR-selftest.log`: one line per step (`id PASS|FAIL|SKIP 1.23s note | first logged error`), then the totals and the `[compat]` feature states. Lines are appended as steps finish, so a crash still leaves the steps run so far.
+- `BepInEx/PeakXR-selftest/*.png`: screenshots named after the steps (`03-items-000.png`, `05-mob-BeeSwarm.png`) at the game window's resolution. Old screenshots are deleted when a new run starts.
+- `BepInEx/LogOutput.log` has the same step lines with a `[selftest]` prefix.
+
 ## What the sandbox does not cover
 
 - A vanilla client or someone else's lobby: the sandbox is inactive there on purpose.

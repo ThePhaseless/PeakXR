@@ -51,6 +51,12 @@ public static class FeatureManager
                 feature.FailureReason = "VR disabled";
                 continue;
             }
+            if (!feature.Requested)
+            {
+                feature.State = FeatureState.Skipped;
+                feature.FailureReason = "not requested";
+                continue;
+            }
 
             feature.Harmony = new Harmony($"{MyPluginInfo.PLUGIN_GUID}.{feature.Id}");
             try

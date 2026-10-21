@@ -29,6 +29,9 @@ public abstract class Feature
     /// players (pose receiving, sandbox) return false.</summary>
     public virtual bool VROnly => true;
 
+    /// <summary>False skips the feature for this run, for opt-in tools such as the launch-flag self-test.</summary>
+    public virtual bool Requested => true;
+
     public FeatureState State { get; internal set; } = FeatureState.Pending;
     public string FailureReason { get; internal set; }
 
