@@ -5,6 +5,7 @@ using PeakXR.Interact;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
+using Zorro.Core;
 
 namespace PeakXR.Sandbox;
 
@@ -15,12 +16,12 @@ internal sealed partial class SelfTestRunner
     {
         yield return HandStep("ui.01-target-prompt", 20f, TargetPromptStep());
         yield return HandStep("ui.02-button-labels", 20f, ButtonLabelStep());
-        yield return HandStep("ui.03-world-banner", 15f, BannerStep());
+        yield return HandStep("ui.03-world-banner", 25f, BannerStep());
         yield return HandStep("ui.04-rope-gauge", 28f, RopeGaugeStep());
     }
 
     /// <summary>ui.01: an Apple in front of the eyes becomes <c>Interaction.currentHovered</c> (Interaction.cs:15); its
-    /// name group (<c>GUIManager.interactName</c>, GUIManager.cs:84) leaves the HUD for a label between you and it.</summary>
+    /// name group (<c>GUIManager.interactName</c>, GUIManager.cs:84) leaves the HUD for a label just above it as you see it.</summary>
     IEnumerator TargetPromptStep()
     {
         if (!SpatialFeature.Settings.TargetPrompt.Value)
@@ -70,6 +71,7 @@ internal sealed partial class SelfTestRunner
         }
         var label = GUIManager.instance.interactName.transform.parent;
         var fails = new List<string>();
+        float above = 0f;
         if (
             label == null
             || label.name != "PeakXR_TargetPrompt"
@@ -87,11 +89,20 @@ internal sealed partial class SelfTestRunner
                 fails.Add(
                     $"label {toItem:0.00} m from the Apple, {eyeToLabel:0.00} m vs {eyeToItem:0.00} m from the eye"
                 );
+            // Above the Apple as you see it (SpatialMath.TargetLabel), not across it.
+            above = Vector3.Angle(label.position - head.position, world.Center() - head.position);
+            if (above < 3f || label.position.y <= world.Center().y)
+                fails.Add(
+                    $"label only {above:0.0} deg off the Apple's centre: it crosses the Apple"
+                );
         }
         yield return Shot("ui-01-target-prompt");
         Conclude(
             fails,
-            new List<string> { $"label at {(label != null ? label.position : Vector3.zero)}" }
+            new List<string>
+            {
+                $"label at {(label != null ? label.position : Vector3.zero)}, {above:0.0} deg above the Apple",
+            }
         );
     }
 
@@ -154,7 +165,16 @@ internal sealed partial class SelfTestRunner
             stepNote = "no DayNightManager here; skipped";
             yield break;
         }
-        gui.SetHeroTitle("PEAKXR", null);
+        // The title the game shows on reaching this biome (MountainProgressHandler.cs:105), not a made-up one.
+        var progress = Singleton<MountainProgressHandler>.Instance;
+        var points = progress != null ? progress.progressPoints : null;
+        var map = Singleton<MapHandler>.Instance;
+        int segment = map != null ? (int)map.GetCurrentSegment() : 0;
+        string title =
+            points != null && points.Length > 0
+                ? points[Mathf.Clamp(segment, 0, points.Length - 1)].localizedTitle
+                : "PEAKXR";
+        gui.SetHeroTitle(title, null);
         yield return Until(() => gui.heroObject.activeSelf, 3f, "hero title never showed");
         if (!stepOk)
             yield break;
@@ -190,7 +210,18 @@ internal sealed partial class SelfTestRunner
             fails.Add($"hero title under '{(sign != null ? sign.name : "none")}'");
         else if (Mathf.Abs(d - expected) > 0.75f)
             fails.Add($"sign {d:0.0} m away, its ray says {expected:0.0} m");
-        Conclude(fails, new List<string> { $"sign {d:0.0} m away (ray {expected:0.0} m)" });
+        // The title types out and fades over about 6 s (GUIManager.cs:496-542); later steps' frames must not show it.
+        float shown = Now;
+        yield return WaitFor(() => !gui.heroObject.activeSelf, 12f);
+        if (gui.heroObject.activeSelf)
+            fails.Add("hero title still up after 12 s");
+        Conclude(
+            fails,
+            new List<string>
+            {
+                $"'{title}' sign {d:0.0} m away (ray {expected:0.0} m), gone {Now - shown + 1.5f:0.0} s after it showed",
+            }
+        );
     }
 
     /// <summary>ui.04: holding a rope spool shows <c>UI_Rope</c> (GUIManager.cs:635) next to the spool.</summary>

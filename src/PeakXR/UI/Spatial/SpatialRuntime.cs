@@ -81,12 +81,15 @@ internal sealed class SpatialRuntime : MonoBehaviour
         wantLabels = ready && cfg.ButtonLabels.Value && observingSelf;
         wantBanners = ready && cfg.WorldBanners.Value;
         wantGauges = ready && cfg.HeldItemGauges.Value && observingSelf;
-        wantSpectate = ready && cfg.SpectateOnPlayer.Value && spec != null && spec != c;
+        // Your own body too (solo, or the last one standing): its "spectating YOURSELF" label goes on it.
+        wantSpectate = ready && cfg.SpectateOnPlayer.Value && spec != null;
+        var friend = wantSpectate && spec != c;
         wantAlerts = ready && cfg.StatusAlerts.Value && observingSelf && c.data.fullyConscious;
         // Small status icons follow the status bar to the wrist; in Body mode they stay on the body panel.
         wantWrist = ready && UIWorldFeature.Settings.Hud.Value == HudMode.Wrist;
-        SpectateView.ClaimsStatus = wantSpectate;
-        SpectateView.BeltShowing = wantSpectate;
+        // Your own status bar stays on your wrist; only a friend's goes on their nameplate.
+        SpectateView.ClaimsStatus = friend;
+        SpectateView.BeltShowing = friend;
 
         if (!wantTarget)
             target.Release();

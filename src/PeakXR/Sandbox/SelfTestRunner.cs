@@ -176,6 +176,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return SpatialSteps();
             foreach (var segment in SandboxActions.Segments)
             {
+                // The summit spawn looks level over the cloud sea with no ground in frame, so the time-of-day and
+                // death (spectate) frames are taken a segment lower, where ground and props show the view.
+                if (segment == Segment.Peak)
+                    continue;
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
                     yield return Run("06-segment-" + segment, 5f, AlreadyIn(segment));
                 else
@@ -191,6 +195,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             }
             // Each kills the solo player and revives them, so nothing after can trip over a death.
             yield return DeathSteps();
+            if (System.Array.IndexOf(SandboxActions.Segments, Segment.Peak) >= 0)
+                yield return Run("06-segment-Peak", 120f, Jump(Segment.Peak));
             // Loads another level when this one had no tornado spawner, so it goes last.
             yield return TornadoTrip();
         }
@@ -488,6 +494,25 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Wait(3f);
         Recover();
         yield return Shot(shot ?? "06-segment-" + segment);
+        // Tells a sky-only frame (a summit, a ledge) from a view that lost the body.
+        var c = Character.localCharacter;
+        var rig = PeakXR.VR.VRRig.Instance;
+        if (c != null && rig != null && rig.Head != null)
+        {
+            var eye = rig.Head.position;
+            float ground = Physics.Raycast(
+                eye,
+                Vector3.down,
+                out var hit,
+                200f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? hit.distance
+                : -1f;
+            stepNote =
+                $"eye {Vector3.Distance(eye, c.Head):0.00} m from the head, ground {ground:0.0} m below, grounded {c.data.isGrounded}";
+        }
     }
 
     /// <summary>The segment the loop would jump to is the current one: assert it instead of jumping.</summary>

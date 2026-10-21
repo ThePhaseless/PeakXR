@@ -663,6 +663,28 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         yield return Shot("05-mob-PlayerGhost");
+        // Where the spectate view stands: near where the body fell, never out at the parked body (Character.DeathPos).
+        string view = "";
+        bool onBody = false;
+        for (
+            var t =
+                GUIManager.instance != null && GUIManager.instance.spectatingNameText != null
+                    ? GUIManager.instance.spectatingNameText.transform
+                    : null;
+            t != null && !onBody;
+            t = t.parent
+        )
+            onBody = t.name == "PeakXR_SpectatePlate";
+        if (VRSession.Active && VRRig.Instance != null && VRRig.Instance.Head != null)
+        {
+            var eye = VRRig.Instance.Head.position;
+            float fromFall = Vector3.Distance(eye, c.VirtualCenter);
+            view = $", eye {fromFall:0.0} m from where the body fell, label on the body {onBody}";
+            if (fromFall > 8f)
+                Fail($"spectate view {fromFall:0.0} m from where the body fell");
+            if (spectating && SpatialFeature.Settings.SpectateOnPlayer.Value && !onBody)
+                Fail("'spectating' label still on the HUD, not over the body");
+        }
         var ghost = c.Ghost;
         ReviveAt(c, home);
         yield return Until(
@@ -679,12 +701,12 @@ internal sealed partial class SelfTestRunner
             if (VRFade.Target > 0f)
                 Fail("VRFade.Target stuck after the revive");
             if (plate != (spec != null && spec != c))
-                Fail("spectate nameplate shown for the player's own body");
+                Fail("your own status bar taken onto your own body's nameplate");
         }
         if (!spectating)
             Fail("not spectating while dead");
         Note(
-            $"spectating {spectating} {(spec == c ? "self" : spec != null ? spec.name : "nobody")}{vr}"
+            $"spectating {spectating} {(spec == c ? "self" : spec != null ? spec.name : "nobody")}{view}{vr}"
         );
     }
 

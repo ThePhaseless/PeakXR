@@ -11,8 +11,10 @@ namespace PeakXR.UI.Spatial;
 /// <summary>
 /// U1: the interact prompt at the thing it is about. <c>GUIManager.RefreshInteractablePrompt</c> (A/GUIManager.cs:1045)
 /// fills <c>interactName</c> and <c>interactPromptPrimary/Secondary/Hold</c> (A/GUIManager.cs:84-92) for
-/// <c>Interaction.currentHovered</c> (A/Interaction.cs:15); those groups move into a box posed in front of
-/// <c>IInteractible.Center()</c> (A/IInteractible.cs:13), level, facing you, at a constant angular size. Prompts
+/// <c>Interaction.currentHovered</c> (A/Interaction.cs:15); those groups move into a box posed just above the
+/// silhouette of <c>IInteractible.Center()</c> (A/IInteractible.cs:13) as you see it, at the depth of its front
+/// (<see cref="SpatialMath.TargetLabel"/>), so the text never crosses the object or a hand reaching into it; level,
+/// facing you, at a constant angular size, its small action prompts scaled up and their monitor backings hidden. Prompts
 /// that have no target sit above the acting hand instead: the piton prompt while climbing (SETPITON,
 /// A/GUIManager.cs:1080-1084), the lunge prompt (<c>interactPromptLunge</c>, :94, set at :371) and the web
 /// struggle prompt (<c>strugglePrompt</c>, :100, shown from A/CharacterAfflictions.cs:803). The hold ring of a held
@@ -24,7 +26,15 @@ internal sealed class TargetPrompt
     private const float RingDegrees = 3.5f;
     private const int Parts = 6;
 
+    /// <summary>Smallest text, in HUD pixels (1.35 degrees at the floor <see cref="SpatialRuntime.DegreesPerPixel"/>):
+    /// the game's action prompts are sized for a monitor and read as specks at a target.</summary>
+    private const float MinFontPixels = 30f;
+
+    /// <summary>Frames to keep measuring after a target change: the game writes the new name a frame later.</summary>
+    private const int RestackFrames = 3;
+
     private static readonly List<Renderer> renderers = new();
+    private static readonly List<TMPro.TMP_Text> texts = new();
     private static TargetPrompt current;
 
     private readonly SpatialBox box = new("PeakXR_TargetPrompt");
@@ -35,7 +45,8 @@ internal sealed class TargetPrompt
         height;
     private bool anyShown,
         warned;
-    private int resolvedFrame = -1;
+    private int resolvedFrame = -1,
+        restack;
 
     /// <summary>
     /// Where ui.hand puts the progress ring of a held interaction: under the target's label. Computed on demand from
@@ -95,8 +106,11 @@ internal sealed class TargetPrompt
                 changed = true;
             }
         }
-        if (changed)
+        if (changed || restack > 0)
+        {
             height = box.Stack(Spacing);
+            restack = changed ? RestackFrames : restack - 1;
+        }
 
         box.SetVisible(target != null || anyShown);
         Pose(rig);
@@ -144,6 +158,7 @@ internal sealed class TargetPrompt
         if (target == null)
             return;
         radius = Radius(target);
+        restack = RestackFrames;
         var aim = PhysicalInteraction.AimHand;
         if (aim >= 0)
             UIHaptics.Tick(aim == 0, 0.12f, 0.015f);
@@ -157,7 +172,12 @@ internal sealed class TargetPrompt
             return false;
         var eye = rig.Head.position;
         position = SpatialMath
-            .TargetLabel(target.Center().ToNumerics(), eye.ToNumerics(), radius)
+            .TargetLabel(
+                target.Center().ToNumerics(),
+                eye.ToNumerics(),
+                radius,
+                height * 0.5f * SpatialRuntime.DegreesPerPixel
+            )
             .ToUnity();
         distance = Vector3.Distance(position, eye);
         mpp = SpatialMath.MetersPerPixel(distance, SpatialRuntime.DegreesPerPixel);
@@ -177,7 +197,14 @@ internal sealed class TargetPrompt
         {
             shown[i] = parts[i] != null && parts[i].activeSelf;
             if (parts[i] != null)
+            {
                 box.Move(hudRoot, parts[i].transform, Vector2.zero);
+                Enlarge(parts[i].transform);
+                // Name and action prompts: the dark smudge behind the text is a monitor backing (and key art); the
+                // hold progress shows as ui.hand's ring under the label.
+                if (i <= 3)
+                    box.HideBackings(parts[i].transform);
+            }
         }
         if (
             !warned
@@ -192,6 +219,22 @@ internal sealed class TargetPrompt
             );
         }
         height = box.Stack(Spacing);
+    }
+
+    /// <summary>Scales a part up until its largest text is <see cref="MinFontPixels"/>; the box restores the scale.</summary>
+    private static void Enlarge(Transform part)
+    {
+        part.GetComponentsInChildren(true, texts);
+        float size = 0f;
+        foreach (var t in texts)
+        {
+            // Hidden key glyphs do not count.
+            if (t.enabled)
+                size = Mathf.Max(size, t.fontSize);
+        }
+        texts.Clear();
+        if (size > 0f && size < MinFontPixels)
+            part.localScale *= MinFontPixels / size;
     }
 
     /// <summary>Rough size of the target from its renderers, measured once per new target.</summary>

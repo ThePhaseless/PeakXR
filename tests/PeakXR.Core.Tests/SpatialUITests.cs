@@ -28,39 +28,80 @@ public class SpatialMathTests
         Assert.Equal(0f, SpatialMath.DegreesPerPixel(0.001f, 0f));
     }
 
+    static float Degrees(Vector3 a, Vector3 b) =>
+        MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)), -1f, 1f))
+        * 180f
+        / MathF.PI;
+
     [Fact]
     public void TargetLabel_SitsInFrontOfTheTargetAndAboveTheSightLine()
     {
         var eye = new Vector3(0f, 1.6f, 0f);
         var center = new Vector3(0f, 1.0f, 1.5f);
-        var p = SpatialMath.TargetLabel(center, eye, 0.2f);
-        // Pulled toward the eye by radius plus margin, so it never sits inside the object.
-        Assert.True(Vector3.Distance(eye, p) < Vector3.Distance(eye, center) - 0.2f);
+        var p = SpatialMath.TargetLabel(center, eye, 0.2f, 1f);
+        // Pulled toward the eye by the radius, so its depth is never inside the object.
+        Assert.True(Vector3.Distance(eye, p) <= Vector3.Distance(eye, center) - 0.2f + 1e-4f);
         // Above the straight line from the eye to the target centre.
         var along = Vector3.Normalize(center - eye);
         var onLine = eye + along * Vector3.Dot(p - eye, along);
         Assert.True(p.Y > onLine.Y);
     }
 
+    [Theory]
+    // An item on the floor seen from above, a big case at arm's length, a small item across the room.
+    [InlineData(0f, 0.05f, 0.5f, 0.12f)]
+    [InlineData(0f, 0.6f, 0.9f, 0.6f)]
+    [InlineData(1f, 1.2f, 4f, 0.1f)]
+    public void TargetLabel_NeverCrossesTheTargetInView(float x, float y, float z, float radius)
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var center = new Vector3(x, y, z);
+        const float halfHeight = 1.2f;
+        var p = SpatialMath.TargetLabel(center, eye, radius, halfHeight);
+        // The label's lower edge clears the target's silhouette (its bounding sphere seen from the eye).
+        float silhouette =
+            MathF.Asin(MathF.Min(1f, radius / Vector3.Distance(eye, center))) * 180f / MathF.PI;
+        Assert.True(Degrees(p - eye, center - eye) - halfHeight >= silhouette);
+        Assert.False(float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsNaN(p.Z));
+    }
+
+    [Fact]
+    public void TargetLabel_TallerLabelSitsHigher()
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var center = new Vector3(0f, 1f, 1.5f);
+        var low = SpatialMath.TargetLabel(center, eye, 0.2f, 0.5f);
+        var high = SpatialMath.TargetLabel(center, eye, 0.2f, 2f);
+        Assert.True(Degrees(high - eye, center - eye) > Degrees(low - eye, center - eye) + 1f);
+    }
+
     [Fact]
     public void TargetLabel_ClampsToComfortableRange()
     {
         var eye = Vector3.Zero;
-        var near = SpatialMath.TargetLabel(new Vector3(0f, 0f, 0.6f), eye, 0.05f);
-        Assert.True(near.Z >= SpatialMath.TargetNear - 1e-4f);
-        // Closer than the comfort range: still in front of the target, never behind it.
-        var close = SpatialMath.TargetLabel(new Vector3(0f, 0f, 0.3f), eye, 0.05f);
-        Assert.True(close.Z < 0.3f);
-        var far = SpatialMath.TargetLabel(new Vector3(0f, 0f, 10f), eye, 0.05f);
-        Assert.True(far.Length() <= SpatialMath.TargetFar + 0.2f);
-        Assert.True(far.Z <= SpatialMath.TargetFar + 1e-4f);
+        var near = SpatialMath.TargetLabel(new Vector3(0f, 0f, 0.6f), eye, 0.05f, 1f);
+        Assert.True(near.Length() >= SpatialMath.TargetNear - 1e-4f);
+        // Closer than the comfort range: never further than the target itself.
+        var close = SpatialMath.TargetLabel(new Vector3(0f, 0f, 0.3f), eye, 0.05f, 1f);
+        Assert.True(close.Length() <= 0.3f + 1e-4f);
+        var far = SpatialMath.TargetLabel(new Vector3(0f, 0f, 10f), eye, 0.05f, 1f);
+        TestUtil.Near(SpatialMath.TargetFar, far.Length(), 1e-3f);
     }
 
     [Fact]
     public void TargetLabel_OnTheEye_GoesAbove()
     {
-        var p = SpatialMath.TargetLabel(Vector3.One, Vector3.One, 0.1f);
+        var p = SpatialMath.TargetLabel(Vector3.One, Vector3.One, 0.1f, 1f);
         Assert.True(p.Y > 1f);
+    }
+
+    [Fact]
+    public void TargetLabel_LookingStraightDown_StaysFinite()
+    {
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var p = SpatialMath.TargetLabel(Vector3.Zero, eye, 0.1f, 1f);
+        Assert.False(float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsNaN(p.Z));
+        Assert.True(Degrees(p - eye, -Vector3.UnitY) > 4f);
     }
 
     [Fact]

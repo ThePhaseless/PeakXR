@@ -87,7 +87,7 @@ No game UI stays fixed to the screen or the head in VR. Each element has a 3D an
 | Menus, pause, settings, modals, end screen | world-locked, placed in front of you when it opens. Only the buttons, text, icons and art float there: full-canvas dimmers and the panels that framed content on a monitor are hidden (`BackdropStrip`, rules in Core `BackdropRules`), and text gets a thin contrasting outline | `ui.world`, `ui.menu`, `ui.runflow` | `UI.MenuPanels` |
 | Title, loading | 3D title stage, loading space | `ui.menu` | |
 | Kiosk boarding pass, run options | docked at the kiosk | `ui.lobby` | |
-| Interact name and prompts (`GUIManager.interactName`, `interactPrompt*`) | at the target, in front of `IInteractible.Center()`, level, facing you | `ui.spatial` | `UI.TargetPrompt` |
+| Interact name and prompts (`GUIManager.interactName`, `interactPrompt*`) | at the target: just above its silhouette as you see it (never across it, so a hand reaching into it stays clear), at the depth of its front, level, facing you; outlined text drawn over smoke and walls, at least 30 HUD px, no backing | `ui.spatial` | `UI.TargetPrompt` |
 | Prompts without a target: piton (SETPITON), lunge (`interactPromptLunge`), web struggle (`strugglePrompt`) | above the acting hand, in the same label | `ui.spatial` | `UI.TargetPrompt` |
 | Hold ring (`UI_UseItemProgress`) | item use and pitons: above the acting hand; held interaction: under the target label | `ui.hand`, `ui.spatial` | `UI.Hand.ProgressRing` |
 | Item prompts (`itemPromptMain/Secondary/Scroll/Drop/Throw`) | beside the controller button that does it, shown for 3 s after a change and while you look at a hand | `ui.spatial` | `UI.ButtonLabels` |
@@ -101,7 +101,7 @@ No game UI stays fixed to the screen or the head in VR. Each element has a 3D an
 | Friend item-use feed | on a hand | `ui.hand` | `UI.Hand.FriendFeed` |
 | Passport, guidebook | books held at the hand | `ui.passport` | |
 | Player name tags, speaking icons | above each player | `ui.world`, `voice` | |
-| Spectating: friend's name, their status bar | nameplate above the friend's head | `ui.spatial` | `UI.SpectateOnPlayer` |
+| Spectating: friend's name, their status bar; "spectating YOURSELF" | nameplate above the friend's head (above where a dead body fell); your own label without the status bar; outlined text, no pill | `ui.spatial` | `UI.SpectateOnPlayer` |
 | Spectating: friend's hotbar | item icons around the friend's belt; 2D hotbar hidden | `ui.spatial`, `inventory.vr` | `UI.SpectateOnPlayer` |
 | Spectating: switch hint (`spectatingInputs`) | up and down arrows on the stick that switches | `ui.spatial` | `UI.SpectateOnPlayer` |
 | Spectating: your own dying or dead bar | your wrist | `ui.world` | `UI.HUD.HudMode` |
