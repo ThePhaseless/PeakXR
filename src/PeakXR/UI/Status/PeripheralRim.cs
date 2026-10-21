@@ -27,7 +27,7 @@ internal sealed class PeripheralRim
         material = UIMaterials.Create(Color.clear, drawOnTop: true, renderQueue: 4500);
         go = UIMaterials.MeshObject("PeakXR_StatusRim", mesh, material, head);
         meshRenderer = go.GetComponent<MeshRenderer>();
-        meshRenderer.sortingOrder = short.MaxValue - 1;
+        meshRenderer.sortingOrder = DrawOrder.Rim;
         meshRenderer.enabled = false;
         go.transform.localScale = Vector3.one * Mathf.Max(0.5f, nearClip * 8f);
     }

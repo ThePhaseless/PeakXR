@@ -832,6 +832,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         line.shadowCastingMode = ShadowCastingMode.Off;
         line.receiveShadows = false;
         line.sharedMaterial = UIMaterials.Create(color, drawOnTop, renderQueue);
+        // A refusal drawn on top sorts like other hand UI: after smoke, under the comfort overlays.
+        if (drawOnTop)
+            line.sortingOrder = DrawOrder.HandUi;
         line.startColor = line.endColor = Color.white;
         line.enabled = false;
         return line;
@@ -841,7 +844,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     {
         labelRoot = new GameObject("PeakXR_DenyLabel", typeof(RectTransform), typeof(Canvas));
         labelRoot.transform.SetParent(transform, false);
-        labelRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        var labelCanvas = labelRoot.GetComponent<Canvas>();
+        labelCanvas.renderMode = RenderMode.WorldSpace;
+        labelCanvas.sortingOrder = DrawOrder.HandUi;
         ((RectTransform)labelRoot.transform).sizeDelta = new Vector2(480f, 100f);
 
         var textGo = new GameObject("Text", typeof(RectTransform));

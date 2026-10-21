@@ -1,18 +1,20 @@
 using System.Collections.Generic;
+using PeakXR.Core;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
 
-namespace PeakXR.UI.Wheels;
+namespace PeakXR.UI.Common;
 
 /// <summary>
-/// Draws one wheel graphic without the depth test while the wheel is open at a hand. The wheel sits where the
-/// hand reaches, so the player's own hand, forearm and whatever the hand is in (a backpack on the ground) would
-/// otherwise cover it, as in the headset self-test. A material modifier rather than a swapped material: the
-/// game keeps owning the graphic's material, the mask stencil (applied before this) is kept, and TMP text runs
-/// it too (TMP_MaterialManager.GetMaterialForRendering calls every IMaterialModifier).
+/// The rule for UI at the player's own hands (wheels, wrist display, friend feed): draw it without the depth test, so
+/// the hand, forearm and held item it belongs to never cover or cut it, and sort it at <see cref="DrawOrder.HandUi"/>,
+/// after smoke but under the comfort overlays. Small hand UI showing through a wall the hand is pressed against is
+/// the accepted cost. A material modifier rather than a swapped material: the game keeps owning the graphic's
+/// material, the mask stencil (applied before this) is kept, and TMP text runs it too
+/// (TMP_MaterialManager.GetMaterialForRendering calls every IMaterialModifier).
 /// </summary>
-internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
+internal sealed class OnTop : MonoBehaviour, IMaterialModifier
 {
     private static readonly Dictionary<Material, Material> Clones = new();
     private static readonly List<Graphic> Scratch = new();
@@ -20,7 +22,8 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
     private Graphic graphic;
     private bool on;
 
-    /// <summary>Turns drawing on top on or off for every graphic under <paramref name="root"/>.</summary>
+    /// <summary>Turns drawing on top on or off for every graphic under <paramref name="root"/>, inactive ones
+    /// included. Call again after the game adds children (a new feed row).</summary>
     public static void Set(Transform root, bool onTop)
     {
         if (root == null)
@@ -31,11 +34,11 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
         root.GetComponentsInChildren(true, Scratch);
         foreach (var g in Scratch)
         {
-            if (!g.TryGetComponent<WheelOnTop>(out var m))
+            if (!g.TryGetComponent<OnTop>(out var m))
             {
                 if (!onTop)
                     continue;
-                m = g.gameObject.AddComponent<WheelOnTop>();
+                m = g.gameObject.AddComponent<OnTop>();
             }
             m.graphic = g;
             if (m.on == onTop)
@@ -46,7 +49,16 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
         Scratch.Clear();
     }
 
-    /// <summary>Destroys every clone; the graphics build fresh ones if a wheel opens again.</summary>
+    /// <summary>Gives <paramref name="box"/>'s own (nested) canvas the hand-UI sorting order.</summary>
+    public static void Sort(Component box)
+    {
+        if (box == null || !box.TryGetComponent<Canvas>(out var canvas))
+            return;
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = DrawOrder.HandUi;
+    }
+
+    /// <summary>Destroys every clone (VR stopped); graphics still on top build fresh ones on their next rebuild.</summary>
     public static void DestroyClones()
     {
         foreach (var clone in Clones.Values)
@@ -77,6 +89,27 @@ internal sealed class WheelOnTop : MonoBehaviour, IMaterialModifier
     {
         var m = g != null ? g.materialForRendering : null;
         return m != null && m.GetInt("unity_GUIZTestMode") == (int)CompareFunction.Always;
+    }
+
+    /// <summary>Self-test: every active graphic under <paramref name="root"/> skips the depth test (false when
+    /// there is none).</summary>
+    public static bool AllOnTop(Transform root)
+    {
+        if (root == null)
+            return false;
+        Scratch.Clear();
+        root.GetComponentsInChildren(false, Scratch);
+        bool any = false,
+            all = true;
+        foreach (var g in Scratch)
+        {
+            if (!g.enabled)
+                continue;
+            any = true;
+            all &= IsOnTop(g);
+        }
+        Scratch.Clear();
+        return any && all;
     }
 
     public Material GetModifiedMaterial(Material baseMaterial)

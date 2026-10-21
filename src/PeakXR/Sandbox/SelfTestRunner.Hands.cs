@@ -7,6 +7,7 @@ using PeakXR.Framework;
 using PeakXR.Interact;
 using PeakXR.Inventory;
 using PeakXR.Locomotion;
+using PeakXR.UI.Common;
 using PeakXR.UI.Wheels;
 using PeakXR.VR;
 using Photon.Pun;
@@ -945,7 +946,7 @@ internal sealed partial class SelfTestRunner
         RadialWheels.TryDrawnCentre(wheel, out var centre) ? centre : CentreOf(wheel.transform);
 
     /// <summary>
-    /// Null when the open wheel's slices draw without the depth test (WheelOnTop), so the hand, forearm and a
+    /// Null when the open wheel's slices draw without the depth test (OnTop), so the hand, forearm and a
     /// backpack under the hand cannot cover it; else what is wrong.
     /// </summary>
     static string WheelCovered(UIWheel wheel)
@@ -954,7 +955,7 @@ internal sealed partial class SelfTestRunner
         var graphic = slice != null ? slice.GetComponentInChildren<UnityEngine.UI.Graphic>() : null;
         if (graphic == null)
             return "no wheel slice graphic";
-        return WheelOnTop.IsOnTop(graphic) ? null : "wheel slices are depth tested";
+        return OnTop.IsOnTop(graphic) ? null : "wheel slices are depth tested";
     }
 
     /// <summary>

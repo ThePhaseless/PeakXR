@@ -102,6 +102,8 @@ internal sealed class SlotGhosts : MonoBehaviour
             icon.transform.localPosition = new Vector3(0f, 0f, -0.02f);
             icon.transform.localScale = new Vector3(IconSize, IconSize, 1f);
             icons[i] = icon.GetComponent<Renderer>();
+            // Hand-UI order (OnTop's rule): after smoke, under the comfort overlays.
+            rings[i].sortingOrder = icons[i].sortingOrder = DrawOrder.HandUi;
             root.gameObject.SetActive(false);
         }
     }

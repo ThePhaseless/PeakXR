@@ -43,7 +43,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     // World-space UI sorts by order, then by distance: the floor's centre is nearer the eye than anything on it,
     // so without a lower order it is drawn over the progress bar and skip ring.
-    private const int RoomOrder = -100;
+    private const int RoomOrder = DrawOrder.LoadingRoom;
 
     // Gap between the screen's top-level layers, back to front, and the most any screen spreads.
     private const float LayerStep = 0.06f;

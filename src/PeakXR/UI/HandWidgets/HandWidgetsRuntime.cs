@@ -228,6 +228,10 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         private RectTransform box;
         private RectTransform root;
 
+        /// <summary>Rows when the feed was last drawn on top: the game adds a row per friend action
+        /// (A/GUIManager.cs:458), and each new one needs the modifier too.</summary>
+        private int rows = -1;
+
         public bool Active => item != null && box != null && item.parent == box;
 
         public void MoveInto(Transform target, RectTransform hudRoot, string name)
@@ -246,6 +250,7 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 box.SetParent(hudRoot, false);
                 box.anchorMin = box.anchorMax = box.pivot = new Vector2(0.5f, 0.5f);
                 box.sizeDelta = Vector2.zero;
+                OnTop.Sort(box);
             }
             box.gameObject.SetActive(true);
             item = rect;
@@ -257,12 +262,14 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
             rect.SetParent(box, false);
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero;
+            rows = -1;
         }
 
         public void Restore()
         {
             if (item != null && parent != null && item.parent == box)
             {
+                OnTop.Set(item, false);
                 item.SetParent(parent, false);
                 item.SetSiblingIndex(sibling);
                 item.anchorMin = anchorMin;
@@ -294,6 +301,12 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
             if (Mathf.Abs(parentScale) > 1e-6f)
                 s /= parentScale;
             box.localScale = new Vector3(s, s, s);
+            // Hand UI: the hand and held item under it never cover it.
+            if (item.childCount != rows)
+            {
+                rows = item.childCount;
+                OnTop.Set(item, true);
+            }
             box.SetPositionAndRotation(position, Quaternion.LookRotation(toBox, Vector3.up));
         }
     }

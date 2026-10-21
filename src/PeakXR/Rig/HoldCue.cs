@@ -81,8 +81,8 @@ internal sealed class HoldCue
             Object.Destroy(go);
         parent = head;
         go = UIMaterials.MeshObject("PeakXR.RecenterCue", mesh, material, head);
-        // Same sorting slot as the comfort vignette (VignetteMesh): over world-space labels, under rim and fade.
-        go.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue - 2;
+        // Over world-space labels and the comfort vignette, under the rim and the fade.
+        go.GetComponent<MeshRenderer>().sortingOrder = PeakXR.Core.DrawOrder.RecenterCue;
         go.transform.localPosition = new Vector3(0f, -0.08f, Distance);
         go.layer = head.gameObject.layer;
     }

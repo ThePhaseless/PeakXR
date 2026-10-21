@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Inventory;
 using PeakXR.UI.Common;
@@ -71,6 +72,9 @@ internal sealed class HudSplit
     public static Vector3 WristPosition;
     public static Quaternion WristRotation = Quaternion.identity;
 
+    /// <summary>The watch-face rotation on the wrist before the turn toward the eye (self-test).</summary>
+    public static Quaternion WristRest = Quaternion.identity;
+
     /// <summary>Width of the posed wrist HUD in metres and how far (0..1) it is turned toward the eye.</summary>
     public static float WristWidthMeters,
         WristFacing;
@@ -130,6 +134,8 @@ internal sealed class HudSplit
     {
         WristValid = false;
         reticleBox.Restore();
+        if (wristBox.Rect != null)
+            OnTop.Set(wristBox.Rect, false);
         wristBox.Restore();
         if (gui != null && gui.heroBG != null)
             gui.heroBG.enabled = true;
@@ -158,6 +164,7 @@ internal sealed class HudSplit
             if (!plate)
             {
                 MoveGroup(gui.bar != null ? gui.bar.transform : null);
+                MoveAfflictions(gui.bar);
                 // Numb swaps the stamina bar for a mushroom group (A/GUIManager.cs:1249); it belongs with the bar.
                 MoveGroup(
                     gui.mushroomsCanvasGroup != null ? gui.mushroomsCanvasGroup.transform : null
@@ -175,6 +182,9 @@ internal sealed class HudSplit
             // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
             MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
             MeasureWrist(box);
+            // Hand UI: the forearm and hand it rides on never cover it.
+            OnTop.Sort(box);
+            OnTop.Set(box, true);
         }
 
         applied = true;
@@ -220,6 +230,38 @@ internal sealed class HudSplit
                 mask |= 1 << i;
         }
         return mask;
+    }
+
+    /// <summary>The stamina bar finds its affliction segments anywhere under its parent (A/StaminaBar.cs:85), not
+    /// only under itself, so moving the bar's group can leave them on the body panel, where the wrist never showed
+    /// the Cold segment (VR run 25). Moves their own group too, after the bar's.</summary>
+    private void MoveAfflictions(StaminaBar bar)
+    {
+        if (bar == null || bar.afflictions == null || wristBox.Rect == null)
+            return;
+        foreach (var a in bar.afflictions)
+        {
+            if (a == null || a.transform.IsChildOf(wristBox.Rect))
+                continue;
+            var group = AfflictionGroup(a, bar, hudRoot);
+            if (group != null)
+                wristBox.Move(group);
+        }
+    }
+
+    /// <summary>The HUD group to move so affliction segment <paramref name="a"/> follows <paramref name="bar"/>:
+    /// segments in a container of their own move with it, keeping their layout (see <see cref="GroupOf"/>).</summary>
+    internal static Transform AfflictionGroup(
+        BarAffliction a,
+        StaminaBar bar,
+        RectTransform hudRoot
+    )
+    {
+        var parent = a.transform.parent;
+        return GroupOf(
+            parent != null && parent != bar.transform.parent ? parent : a.transform,
+            hudRoot
+        );
     }
 
     /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD
@@ -279,13 +321,20 @@ internal sealed class HudSplit
         if (hand == null)
             return;
         if (ShownMask(wristBox.Rect) != measuredMask)
+        {
             MeasureWrist(wristBox.Rect);
+            // A part the game showed for the first time may carry a graphic not yet drawn on top.
+            OnTop.Set(wristBox.Rect, true);
+        }
 
-        // Raised off the back of the wrist so the forearm never cuts through it; lying on it, facing up out of the
-        // forearm with text up toward the fingers. Seen from the eye that is edge-on, so it turns toward the eye
-        // (WristHud.Facing: halfway at rest, fully when looked at or on an alert) and keeps its angular size.
-        var anchor = hand.position + hand.rotation * new Vector3(0f, 0.07f, -0.12f);
-        var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
+        // Like a watch face: on the back of the wrist, the side that faces the eye when the wrist is raised to read
+        // it, the bar across the wrist and text up toward the fingers (WristHud.Rest, mirrored per hand). Raised off
+        // the arm and drawn on top, so the forearm never cuts it. It turns toward the eye (WristHud.Facing: halfway
+        // at rest, fully when looked at or on an alert) and keeps its angular size.
+        bool left = cfg.WristLeft;
+        var anchor = WristHud.Anchor(hand.position.N(), hand.rotation.N(), left).U();
+        var rotation = WristHud.Rest(hand.rotation.N(), left).U();
+        WristRest = rotation;
         var width = WristHud.Width(cfg.WristWidth.Value, WristHud.ReadDistance, WristPulse);
         var head = rig.Head;
         var toEye = head != null ? head.position - anchor : Vector3.zero;

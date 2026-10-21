@@ -234,7 +234,11 @@ internal sealed class SpectateView
             if (numbGroup != null && numbGroup.parent != hudRoot)
                 numbGroup = null;
             if (barGroup != null)
+            {
+                var barCentre = CentreIn(hudRoot, barGroup);
                 plate.Move(hudRoot, barGroup, Vector2.zero);
+                MoveAfflictions(gui.bar, hudRoot, barCentre);
+            }
             if (numbGroup != null && numbGroup != barGroup)
                 plate.Move(hudRoot, numbGroup, Vector2.zero);
         }
@@ -259,6 +263,31 @@ internal sealed class SpectateView
         }
         plate.SetVisible(true);
     }
+
+    /// <summary>The stamina bar finds its affliction segments anywhere under its parent (A/StaminaBar.cs:85), so
+    /// moving the bar's group can leave them on the panel. Moves their groups onto the plate at the same offset from
+    /// the bar as on the HUD (the bar's group sits at the plate origin). Groups on the wrist stay with it.</summary>
+    private void MoveAfflictions(StaminaBar bar, RectTransform hudRoot, Vector2 barCentre)
+    {
+        if (bar.afflictions == null)
+            return;
+        var wrist = HudSplit.WristRoot;
+        foreach (var a in bar.afflictions)
+        {
+            if (a == null || (plate.Rect != null && a.transform.IsChildOf(plate.Rect)))
+                continue;
+            var group = HudSplit.AfflictionGroup(a, bar, hudRoot);
+            if (group == null || (wrist != null && group.IsChildOf(wrist)))
+                continue;
+            plate.Move(hudRoot, group, CentreIn(hudRoot, group) - barCentre);
+        }
+    }
+
+    /// <summary>Centre of <paramref name="t"/>'s rect in <paramref name="hudRoot"/> pixels.</summary>
+    private static Vector2 CentreIn(RectTransform hudRoot, Transform t) =>
+        t is RectTransform r
+            ? (Vector2)hudRoot.InverseTransformPoint(r.TransformPoint(r.rect.center))
+            : Vector2.zero;
 
     private void EnsureQuads()
     {

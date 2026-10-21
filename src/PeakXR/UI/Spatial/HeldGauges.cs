@@ -175,7 +175,10 @@ internal sealed class HeldGauges
         {
             fuelRoot = new GameObject("PeakXR_FuelArc", typeof(RectTransform), typeof(Canvas));
             Object.DontDestroyOnLoad(fuelRoot);
-            fuelRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            var fuelCanvas = fuelRoot.GetComponent<Canvas>();
+            fuelCanvas.renderMode = RenderMode.WorldSpace;
+            // Hand UI (OnTop's rule): no depth test below, sorted after smoke and under the comfort overlays.
+            fuelCanvas.sortingOrder = DrawOrder.HandUi;
             ((RectTransform)fuelRoot.transform).sizeDelta = new Vector2(FuelPixels, FuelPixels);
             var go = new GameObject("Arc", typeof(RectTransform), typeof(Image));
             go.transform.SetParent(fuelRoot.transform, false);
