@@ -36,6 +36,9 @@ public enum DenyReason : byte
     /// <summary>A notice, not a refusal: the held item went to its belt slot when a climb started.</summary>
     Stowed,
 
+    /// <summary>A notice: the held item fell when a climb or carry started; marks where it lies.</summary>
+    Dropped,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
 }
@@ -71,8 +74,9 @@ public static class DenyText
             DenyReason.FriendsFar => "Friends too far",
             DenyReason.PocketsFull => "Pockets full",
             DenyReason.StuckToHand => "Stuck to your hand",
-            DenyReason.ItemWouldDrop => "Would drop your item",
+            DenyReason.ItemWouldDrop => "Climbing drops it",
             DenyReason.Stowed => "Stowed on your belt",
+            DenyReason.Dropped => "Your item fell here",
             _ => "",
         };
 
@@ -96,7 +100,8 @@ public static class DenyText
             DenyReason.FriendsFar => "Gather everyone here",
             DenyReason.PocketsFull => "Drop or stash an item",
             DenyReason.StuckToHand => "Swing hard to throw it",
-            DenyReason.ItemWouldDrop => "Grip again to climb",
+            DenyReason.ItemWouldDrop => "Put it down first",
+            DenyReason.Dropped => "Pick it up at the ring",
             DenyReason.WrongAngle => "Face them from the ring",
             DenyReason.KeepHolding => "Hold the trigger",
             DenyReason.MovedAway => "Stay by the piton",

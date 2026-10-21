@@ -1,84 +1,201 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Inventory;
 using PeakXR.UI.Affordances;
+using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Interact;
 
 /// <summary>
-/// Starting a wall climb, a rope or a vine puts the held item away for everyone: <c>EquipSlot(None)</c>
-/// (CharacterClimbing.cs:569, RopeSegment.cs:42, JungleVine.cs:113). An item that cannot be pocketed, or one in the
-/// overflow slot, is dropped instead (CharacterItems.cs:498). Keeping it in the other hand would differ from what
-/// vanilla peers see, so VR makes it predictable instead: a grip that would drop the item is refused once with
-/// "Would drop your item / Grip again to climb" (a second grip within <see cref="ConfirmSeconds"/> climbs), and an
-/// item that goes to the belt gets a teal ring on its belt slot with "Stowed on your belt".
+/// Starting a wall climb, a rope, a vine or a carry puts the held item away for everyone: <c>EquipSlot(None)</c>
+/// (CharacterClimbing.cs:569, RopeSegment.cs:42, JungleVine.cs:113, CharacterCarrying.cs:51). An item that cannot be
+/// pocketed, or one in the overflow slot, is dropped instead (CharacterItems.cs:498). Keeping it in the other hand
+/// would differ from what vanilla peers see, and a climb grip is never held back (a falling player must catch the
+/// wall), so VR makes it predictable instead: while the free hand is in grip range of a climbable wall and the held
+/// item would drop, the item gets a red ring and "Climbing drops &lt;item&gt;"; once it fell, a teal ring marks it
+/// on the ground for <see cref="MarkSeconds"/>; an item that went to the belt gets a teal line to its slot. Works from
+/// the state change alone, so any path into a climb or carry is covered.
 /// </summary>
 internal static class ClimbStow
 {
-    private const float ConfirmSeconds = 3f;
-    private const float WatchSeconds = 1f;
+    private const float MarkSeconds = 5f;
+    private const float ResolveSeconds = 1f;
+    private const float FindSeconds = 1.5f;
 
-    private static float confirmUntil = -10f;
-    private static Item confirmItem;
-    private static float watchUntil = -10f;
-    private static byte watchSlot;
-    private static bool watchLeft;
+    // The held item as of last frame.
+    private static Item held;
+    private static string wouldDropText,
+        droppedText;
+    private static bool heldDrops,
+        heldLeft,
+        heldSlotSome;
+    private static byte heldSlot;
+    private static Vector3 heldPos;
+    private static bool wasBusy;
 
-    /// <summary>
-    /// Before a climb, rope or vine grab by the <paramref name="left"/> hand. False: hold off, the item would drop
-    /// and the player has not confirmed yet.
-    /// </summary>
-    public static bool Allow(Character c, bool left)
+    // A climb or carry just took it: resolved once the hand is empty.
+    private static float pendingUntil = -10f;
+    private static bool pendingDrops,
+        pendingLeft,
+        pendingSlotSome;
+    private static byte pendingSlot;
+    private static ushort pendingId;
+    private static Vector3 pendingPos;
+    private static string pendingText;
+
+    // The dropped item, looked for, then marked.
+    private static float findUntil = -10f;
+    private static Item marked;
+    private static float markUntil = -10f;
+
+    public static void Tick(Character c, VRRig rig, InteractConfig cfg)
     {
-        var item = c.data.currentItem;
-        if (item == null || !Affordance.Enabled)
-            return true;
+        var d = c.data;
+        float now = Time.time;
+        bool busy = d.isClimbing || d.isRopeClimbing || d.isVineClimbing || d.carriedPlayer != null;
+        if (busy && !wasBusy && held != null)
+        {
+            pendingUntil = now + ResolveSeconds;
+            pendingDrops = heldDrops;
+            pendingLeft = heldLeft;
+            pendingSlotSome = heldSlotSome;
+            pendingSlot = heldSlot;
+            pendingId = held.itemID;
+            pendingPos = heldPos;
+            pendingText = droppedText;
+        }
+        wasBusy = busy;
+        if (pendingUntil > now && d.currentItem == null)
+        {
+            pendingUntil = -10f;
+            Resolve(rig, now);
+        }
+
+        Snapshot(c, d.currentItem);
+        if (held != null && heldDrops && !busy)
+            WarnNearWall(c, rig, cfg);
+        FindDropped(now);
+        if (marked != null)
+            MarkDropped(now);
+    }
+
+    private static void Resolve(VRRig rig, float now)
+    {
+        if (pendingDrops)
+        {
+            findUntil = now + FindSeconds;
+            marked = null;
+            return;
+        }
+        var hand = rig.Hand(pendingLeft);
+        // From the hand that held it to its slot: a teal line and ring show where it went.
+        if (
+            pendingSlotSome
+            && hand != null
+            && BodyInventory.Instance.SlotWorld(pendingSlot, out var slot)
+        )
+            Affordance.Inform(pendingLeft, hand.position, DenyReason.Stowed, DenyHint.At(slot));
+    }
+
+    private static void Snapshot(Character c, Item item)
+    {
+        if (item != held)
+        {
+            held = item;
+            if (item != null)
+            {
+                // Once per held item: the label strings allocate.
+                var name = item.GetItemName();
+                wouldDropText = "Climbing drops " + name;
+                droppedText = name + " fell here";
+            }
+        }
+        if (item == null)
+            return;
         var selected = c.refs.items.currentSelectedSlot;
-        bool drops =
+        heldSlotSome = selected.IsSome;
+        heldSlot = selected.IsSome ? selected.Value : (byte)0;
+        heldDrops =
             !item.UIData.canPocket
             || (selected.IsSome && selected.Value == 250 && !c.player.GetItemSlot(250).IsEmpty());
-        float now = Time.time;
-        if (!drops)
-        {
-            if (selected.IsSome)
-            {
-                watchSlot = selected.Value;
-                watchUntil = now + WatchSeconds;
-                watchLeft = LocalHoldLeft();
-            }
-            return true;
-        }
-        if (now < confirmUntil && confirmItem == item)
-        {
-            confirmUntil = -10f;
-            return true;
-        }
-        confirmUntil = now + ConfirmSeconds;
-        confirmItem = item;
-        Affordance.Deny(LocalHoldLeft(), item.Center(), DenyReason.ItemWouldDrop);
-        return false;
+        heldLeft = LocalHold.ItemInLeftHand;
+        heldPos = item.Center();
     }
 
-    /// <summary>Per frame: once the climb took the item, show where it went.</summary>
-    public static void Tick(Character c)
+    /// <summary>The free hand is where a grab would start a climb: rock in reach at an angle the game grabs
+    /// (CharacterClimbing.cs:511-532), probed like interact.physical's ProbeHold.</summary>
+    private static void WarnNearWall(Character c, VRRig rig, InteractConfig cfg)
     {
-        if (watchUntil < 0f)
+        if (!cfg.PhysicalClimb || !VRInput.Hand(!heldLeft).Tracked)
             return;
-        if (Time.time > watchUntil)
-        {
-            watchUntil = -10f;
+        var hand = rig.Hand(!heldLeft);
+        var cam = MainCamera.instance;
+        if (hand == null || cam == null)
             return;
-        }
-        var d = c.data;
-        if (d.currentItem != null || !(d.isClimbing || d.isRopeClimbing || d.isVineClimbing))
+        var pos = hand.position;
+        if (
+            !Physics.CheckSphere(
+                pos,
+                cfg.ClimbRadius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
             return;
-        watchUntil = -10f;
-        var rig = VR.VRRig.Instance;
-        var hand = rig != null ? rig.Hand(watchLeft) : null;
-        // From the hand that held it to its slot: a teal line and ring show where it went.
-        if (hand != null && BodyInventory.Instance.SlotWorld(watchSlot, out var slot))
-            Affordance.Inform(watchLeft, hand.position, DenyReason.Stowed, DenyHint.At(slot));
+        var dir = pos - cam.transform.position;
+        if (dir.sqrMagnitude < 1e-4f)
+            return;
+        dir.Normalize();
+        if (
+            !Physics.Raycast(
+                pos - dir * 0.15f,
+                dir,
+                out var hit,
+                0.3f + cfg.ClimbRadius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            ) || !ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up))
+        )
+            return;
+        Affordance.Hover(
+            !heldLeft,
+            held.Center(),
+            DenyReason.ItemWouldDrop,
+            default,
+            wouldDropText
+        );
     }
 
-    private static bool LocalHoldLeft() => Avatar.LocalHold.ItemInLeftHand;
+    private static void FindDropped(float now)
+    {
+        if (findUntil < now || marked != null)
+            return;
+        foreach (var item in Item.ALL_ITEMS)
+        {
+            if (
+                item != null
+                && item.itemID == pendingId
+                && item.itemState == ItemState.Ground
+                && (item.Center() - pendingPos).sqrMagnitude < 4f
+            )
+            {
+                marked = item;
+                markUntil = now + MarkSeconds;
+                findUntil = -10f;
+                return;
+            }
+        }
+    }
+
+    /// <summary>A teal ring on the fallen item, with its name, until it is picked up or the time runs out.</summary>
+    private static void MarkDropped(float now)
+    {
+        if (marked == null || marked.itemState != ItemState.Ground || now > markUntil)
+        {
+            marked = null;
+            return;
+        }
+        Affordance.Mark(pendingLeft, marked.Center(), DenyReason.Dropped, default, pendingText);
+    }
 }

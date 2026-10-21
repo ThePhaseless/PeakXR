@@ -114,11 +114,17 @@ internal static class Affordance
     /// Not a refusal but something the game did on its own that the hands did not show (the held item stowed when a
     /// climb started): a single soft tick, a teal ring at <paramref name="hint"/>'s spot and the label. Same rate limit.
     /// </summary>
-    public static bool Inform(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint)
+    public static bool Inform(
+        bool left,
+        Vector3 worldPos,
+        DenyReason reason,
+        DenyHint hint,
+        string text = null
+    )
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
-        AffordanceRuntime.Show(left, worldPos, reason, hint, notice: true);
+        AffordanceRuntime.Show(left, worldPos, reason, hint, notice: true, text);
         return true;
     }
 
@@ -138,11 +144,26 @@ internal static class Affordance
         bool left,
         Vector3 worldPos,
         DenyReason reason,
-        DenyHint hint = default
+        DenyHint hint = default,
+        string text = null
     )
     {
         if (Enabled)
-            AffordanceRuntime.Hover(left, worldPos, reason, hint);
+            AffordanceRuntime.Hover(left, worldPos, reason, hint, notice: false, text);
+    }
+
+    /// <summary>A lasting notice while called every frame (where a dropped item lies): teal ring at the hint's spot,
+    /// no red ring, no haptic; <paramref name="text"/> replaces the reason's label when set.</summary>
+    public static void Mark(
+        bool left,
+        Vector3 worldPos,
+        DenyReason reason,
+        DenyHint hint,
+        string text = null
+    )
+    {
+        if (Enabled)
+            AffordanceRuntime.Hover(left, worldPos, reason, hint, notice: true, text);
     }
 
     /// <summary>Colour of the "this would work" part of a cue (the valid spot, the end of the real range).</summary>
