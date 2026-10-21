@@ -18,13 +18,18 @@ internal static class HotbarHider
     /// <summary>The current HUD's hotbar is hidden.</summary>
     public static bool Active => hidden != null && hidden == GUIManager.instance;
 
-    /// <summary>Hides or restores to match <paramref name="hide"/>; cheap to call every frame.</summary>
+    private static bool loggedOwnGroup;
+
+    /// <summary>Hides or restores to match <paramref name="hide"/>; cheap to call every frame. While spectating the
+    /// 2D hotbar shows the friend's items (A/GUIManager.cs:1126), which the body slots do not, so it stays.</summary>
     public static void Sync(bool hide)
     {
         var gui = GUIManager.instance;
-        if (hidden != null && (!hide || hidden != gui))
+        hide &= Character.observedCharacter == Character.localCharacter;
+        // (object) check: a GUIManager destroyed with its scene is Unity-null but its groups still need clearing.
+        if ((object)hidden != null && (!hide || hidden != gui))
             Restore();
-        if (hide && hidden == null && gui != null)
+        if (hide && (object)hidden == null && gui != null)
             Hide(gui);
     }
 
@@ -69,8 +74,17 @@ internal static class HotbarHider
         if (target.TryGetComponent(out CanvasGroup existing) && !added.Contains(existing))
             target = cell.transform;
         // Already hidden through another cell of the row, or the cell has a group of its own.
-        if (target.TryGetComponent(out CanvasGroup _))
+        if (target.TryGetComponent(out CanvasGroup own))
+        {
+            if (!added.Contains(own) && !loggedOwnGroup)
+            {
+                loggedOwnGroup = true;
+                Plugin.Log.LogInfo(
+                    $"[inventory] {cell.name} has its own CanvasGroup; left visible"
+                );
+            }
             return;
+        }
         var group = target.gameObject.AddComponent<CanvasGroup>();
         group.alpha = 0f;
         group.interactable = false;

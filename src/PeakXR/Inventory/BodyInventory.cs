@@ -114,7 +114,7 @@ internal sealed class BodyInventory : IGripExtension
         {
             wheelHand = -1;
             shoulderGrip[0] = shoulderGrip[1] = false;
-            drawSlot[0] = drawSlot[1] = -1;
+            drawSlot[0] = drawSlot[1] = nearSlot[0] = nearSlot[1] = -1;
             bodyYaw.Reset();
             return;
         }
@@ -144,6 +144,8 @@ internal sealed class BodyInventory : IGripExtension
             revision = cfg.Revision;
             hotbarCount = hotbar;
             slots = BodySlotLayout.Create(cfg.Layout, hotbar, cfg.Radius, cfg.Height);
+            // Indices into the old array mean nothing now.
+            nearSlot[0] = nearSlot[1] = drawSlot[0] = drawSlot[1] = -1;
         }
         var headPos = VRInput.HeadPosition.N();
         var headRot = VRInput.HeadRotation.N();
@@ -160,7 +162,17 @@ internal sealed class BodyInventory : IGripExtension
     private void UpdateHand(Character c, int hand)
     {
         ref var state = ref VRInput.Hand(hand == 0);
-        int near = state.Tracked ? Find(state.Position.N(), 1f) : -1;
+        int near = -1;
+        if (state.Tracked)
+        {
+            // Hysteresis: the slot a hand is in lets go only 10% past its radius, so an edge does not flicker.
+            int was = nearSlot[hand];
+            float r = was >= 0 ? slots[was].Radius * 1.1f : 0f;
+            near =
+                was >= 0 && NVector3.DistanceSquared(state.Position.N(), anchors[was]) <= r * r
+                    ? was
+                    : Find(state.Position.N(), 1f);
+        }
         if (near >= 0 && near != nearSlot[hand])
         {
             // Tick on entering a slot this hand can use: a filled one to draw, any one to put the held item in.

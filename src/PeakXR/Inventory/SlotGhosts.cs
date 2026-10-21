@@ -60,9 +60,13 @@ internal sealed class SlotGhosts : MonoBehaviour
         instance = go.AddComponent<SlotGhosts>();
     }
 
-    /// <summary>The body hotbar is drawn this frame, so the 2D one can go.</summary>
+    /// <summary>The body hotbar is drawn this frame (settings on, slots built, anchors tracked), so the 2D one can go.</summary>
     public static bool Showing =>
-        InventoryConfig.Instance.BodySlots && InventoryConfig.Instance.Ghosts;
+        InventoryConfig.Instance.BodySlots
+        && InventoryConfig.Instance.Ghosts
+        && instance != null
+        && BodyInventory.Instance.Valid
+        && VRSession.HasFocus;
 
     private void Awake()
     {
@@ -157,7 +161,8 @@ internal sealed class SlotGhosts : MonoBehaviour
         color.a = Mathf.Min(1f, alpha);
         ringMats[i].color = color;
 
-        if (shown[i] != item)
+        // GetIcon reads GUIManager settings (Item.cs:83); without a HUD, retry next frame.
+        if (shown[i] != item && (item == null || GUIManager.instance != null))
         {
             shown[i] = item;
             iconMats[i].mainTexture = item != null ? item.UIData.GetIcon() : null;
