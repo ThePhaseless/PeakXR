@@ -65,39 +65,4 @@ public class TitleLayoutTests
         Assert.Equal(1f, TitleLayout.Entrance(0f, 0f));
         Assert.True(TitleLayout.Entrance(0.1f, 0.4f) < TitleLayout.Entrance(0.3f, 0.4f));
     }
-
-    [Fact]
-    public void IsBacking_FullCanvasGraphicIsAlwaysABacking()
-    {
-        // WhiteFade, Darken, the settings and first-launch page backgrounds.
-        Assert.True(TitleLayout.IsBacking(1f, 1f, flatFill: false, holdsText: false));
-        Assert.True(TitleLayout.IsBacking(0.95f, 0.92f, flatFill: true, holdsText: true));
-    }
-
-    [Fact]
-    public void IsBacking_LargeFlatFillBehindTextIsABacking()
-    {
-        // The credits strip: a sprite-less black rect a quarter of the canvas wide, full height, holding the names.
-        Assert.True(TitleLayout.IsBacking(0.25f, 1f, flatFill: true, holdsText: true));
-    }
-
-    [Fact]
-    public void IsBacking_KeepsArtSmallFillsAndEmptyFills()
-    {
-        // A sprite panel (the timer's wooden tag) is art.
-        Assert.False(TitleLayout.IsBacking(0.3f, 0.9f, flatFill: false, holdsText: true));
-        // A small flat fill (a checkmark, a field) stays.
-        Assert.False(TitleLayout.IsBacking(0.1f, 0.05f, flatFill: true, holdsText: true));
-        // A big fill with no text in it is not a backing behind text.
-        Assert.False(TitleLayout.IsBacking(0.3f, 0.9f, flatFill: true, holdsText: false));
-    }
-
-    [Fact]
-    public void LightOutline_ContrastsWithTheTextColour()
-    {
-        Assert.False(TitleLayout.LightOutline(1f, 1f, 1f));
-        Assert.False(TitleLayout.LightOutline(0.87f, 0.86f, 0.76f));
-        Assert.True(TitleLayout.LightOutline(0.2f, 0.15f, 0.1f));
-        Assert.True(TitleLayout.LightOutline(0f, 0f, 1f));
-    }
 }

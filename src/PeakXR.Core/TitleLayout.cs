@@ -36,35 +36,6 @@ namespace PeakXR.Core
             return degrees <= HandSizedDegrees;
         }
 
-        /// <summary>A graphic covering this fraction of the canvas both ways is a screen effect or page backing.</summary>
-        public const float FullCanvas = 0.9f;
-
-        /// <summary>A flat fill behind text covering at least this fraction of the canvas area is a backing.</summary>
-        public const float BackingArea = 0.2f;
-
-        /// <summary>
-        /// Whether a graphic exists only to sit behind content on a flat screen: anything covering the whole canvas
-        /// (fades, dimmers, page backgrounds), or a large flat colour fill (no sprite) holding text, like the credits
-        /// strip. Sprite art and small fills are kept.
-        /// </summary>
-        /// <param name="widthFraction">Graphic width as a fraction of the canvas width.</param>
-        /// <param name="heightFraction">Graphic height as a fraction of the canvas height.</param>
-        /// <param name="flatFill">Plain colour, no sprite or texture.</param>
-        /// <param name="holdsText">Text is drawn inside it (a child).</param>
-        public static bool IsBacking(
-            float widthFraction,
-            float heightFraction,
-            bool flatFill,
-            bool holdsText
-        ) =>
-            (widthFraction >= FullCanvas && heightFraction >= FullCanvas)
-            || (flatFill && holdsText && widthFraction * heightFraction >= BackingArea);
-
-        /// <summary>Whether text of this colour needs a light outline to read over the scene (dark text) rather than
-        /// a dark one (light text). Rec. 709 luminance.</summary>
-        public static bool LightOutline(float r, float g, float b) =>
-            0.2126f * r + 0.7152f * g + 0.0722f * b < 0.5f;
-
         /// <summary>Alpha of an entrance fade <paramref name="elapsed"/> seconds in, eased (smoothstep) over
         /// <paramref name="seconds"/>.</summary>
         public static float Entrance(float elapsed, float seconds)

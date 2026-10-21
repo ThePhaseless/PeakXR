@@ -19,8 +19,9 @@ namespace PeakXR.UI.Menu;
 /// holds a <see cref="Selectable"/> and is hand-sized (<see cref="TitleLayout.IsHandSized"/>) slides along its sight
 /// line to arm's reach and turns to face the eye: the signpost and the studio logos come to hand, the logo, timer and
 /// credits stay out in the scene, and big pages (settings) stay a reading panel.</item>
-/// <item>Flat-screen backings and the logo's black reveal copy are hidden and text gets an outline instead
-/// (<see cref="TitleBackings"/>): no backdrop on any page.</item>
+/// <item>No backdrop on any page: ui.world's BackdropStrip hides the flat-screen backings (registered through
+/// <see cref="CanvasRules.AddCustomMenu"/>) and outlines the text; <see cref="TitleSilhouettes"/> hides the logo's black
+/// reveal copy, which the strip keeps as art.</item>
 /// <item>The canvas Animator (TitleIn slides <c>MainPage/Menu</c> up from below the screen edge) is run to the end of
 /// each non-looping state, and the canvas fades in at its final spot instead; pages fade in when they switch.</item>
 /// <item>A fingertip press on a near button clicks it, next to the laser.</item>
@@ -47,7 +48,7 @@ internal sealed class TitleMenuDepth
 
     private readonly List<Group> groups = new();
     private readonly List<Selectable> buttons = new();
-    private readonly TitleBackings backings = new();
+    private readonly TitleSilhouettes silhouettes = new();
     private readonly List<Graphic> graphics = new();
     private readonly List<Selectable> selectables = new();
     private readonly Vector3[] corners = new Vector3[4];
@@ -68,6 +69,7 @@ internal sealed class TitleMenuDepth
     private string lastLog;
     private PointerEventData pokeData;
     private EventSystem pokeSystem;
+    private Vector3 lastEye;
 
     /// <summary>Button groups brought to reach on the current page, for the self-test.</summary>
     public int NearGroups => groups.Count;
@@ -108,6 +110,7 @@ internal sealed class TitleMenuDepth
             page = current;
             Scan(eye);
         }
+        lastEye = eye;
         ApplyGroups(eye, reach);
         UpdateFade();
         Poke();
@@ -120,7 +123,7 @@ internal sealed class TitleMenuDepth
             RestoreGroup(g);
         groups.Clear();
         buttons.Clear();
-        backings.Restore();
+        silhouettes.Restore();
         if (ownFade && fade != null)
             Object.Destroy(fade);
         fade = null;
@@ -216,7 +219,7 @@ internal sealed class TitleMenuDepth
             RestoreGroup(g);
         groups.Clear();
         buttons.Clear();
-        backings.Apply(canvas);
+        silhouettes.Apply(canvas);
         if (page == null || page.transform.parent == null)
         {
             Report("no UIPage on the title canvas: plain panel");
@@ -262,10 +265,8 @@ internal sealed class TitleMenuDepth
         }
         selectables.Clear();
         log.Append(kept)
-            .Append(" | backings hidden ")
-            .Append(backings.Hidden)
-            .Append(", texts outlined ")
-            .Append(backings.Outlined)
+            .Append(" | silhouettes hidden ")
+            .Append(silhouettes.Hidden)
             .Append(", fade ")
             .Append(ownFade ? "on" : "off (game CanvasGroup)");
         Report(log.ToString());
@@ -380,7 +381,8 @@ internal sealed class TitleMenuDepth
     }
 
     /// <summary>A fingertip pushed into a near button clicks it (VRKeyboard's poke: arm in front, press through).
-    /// A disabled button answers with a soft, longer buzz instead of doing nothing.</summary>
+    /// A disabled button, or one an invisible blocker covers as it would the laser's click (the hidden intro cover
+    /// while connecting), answers with a soft, longer buzz instead of doing nothing.</summary>
     private void Poke(VRRig rig, bool left)
     {
         var poke = pokes[left ? 0 : 1];
@@ -411,7 +413,7 @@ internal sealed class TitleMenuDepth
         }
         if (hit == null || !poke.Update(front, inside: true))
             return;
-        if (!hit.IsInteractable())
+        if (!hit.IsInteractable() || Blocked(hit, tip))
         {
             UIHaptics.Tick(left, 0.25f, 0.12f);
             return;
@@ -428,5 +430,40 @@ internal sealed class TitleMenuDepth
         pokeData.button = PointerEventData.InputButton.Left;
         ExecuteEvents.Execute(hit.gameObject, pokeData, ExecuteEvents.pointerClickHandler);
         UIHaptics.Tick(left, 0.6f, 0.02f);
+    }
+
+    /// <summary>
+    /// Vanilla blocking for a poke: a raycast target drawn after the button (higher <see cref="Graphic.depth"/>, not
+    /// part of the button) on the sight line from the eye through the fingertip takes the click, as GraphicRaycaster
+    /// would give it the laser's. Runs only on a press.
+    /// </summary>
+    private bool Blocked(Selectable button, Vector3 tip)
+    {
+        var target = button.targetGraphic;
+        if (target == null || canvas == null)
+            return false;
+        var ray = new Ray(lastEye, tip - lastEye);
+        var list = GraphicRegistry.GetRaycastableGraphicsForCanvas(canvas);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var g = list[i];
+            if (
+                g.depth <= target.depth
+                || !g.raycastTarget
+                || g.canvasRenderer.cull
+                || !g.isActiveAndEnabled
+                || g.transform.IsChildOf(button.transform)
+                // Another control drawn over it is a neighbour, not an invisible blocker.
+                || g.GetComponentInParent<Selectable>() != null
+            )
+                continue;
+            var rect = g.rectTransform;
+            var plane = new Plane(rect.forward, rect.position);
+            if (!plane.Raycast(ray, out var enter))
+                continue;
+            if (rect.rect.Contains((Vector2)rect.InverseTransformPoint(ray.GetPoint(enter))))
+                return true;
+        }
+        return false;
     }
 }
