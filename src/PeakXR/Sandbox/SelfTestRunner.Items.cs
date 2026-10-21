@@ -281,13 +281,44 @@ internal sealed partial class SelfTestRunner
     /// arm (0.6 m reach), so past that the item has stopped and the hand would chase it forever (4 m out in vr9).</summary>
     const float MaxCarryLead = 0.8f;
 
+    /// <summary>Seconds without the item point getting closer to the goal that count as a stall.</summary>
+    const float CarryStallSeconds = 0.4f;
+
+    float carryBest;
+    float carryBestAt;
+    Vector3 carryLead;
+
+    /// <summary>Starts a <see cref="CarryToward"/> run.</summary>
+    void BeginCarry()
+    {
+        carryBest = float.MaxValue;
+        carryBestAt = Now;
+        carryLead = Vector3.zero;
+    }
+
     /// <summary>Moves the scripted hand toward the point where <paramref name="part"/> (an item point the hand
-    /// carries) reaches <paramref name="goal"/>; one frame of a 1.5 m/s approach. Holds still once the item has
-    /// stopped following it (out of reach or blocked).</summary>
+    /// carries) reaches <paramref name="goal"/>; one frame of a 1.5 m/s approach. Once the item stops getting closer
+    /// (out of reach or blocked) the hand goes back to where it held the item then and stays, as a player stops
+    /// pushing; a hand that kept pushing shoved the body back from the fire (vr11, 0.95 to 1.12 m).</summary>
     void CarryToward(bool left, Vector3 part, Vector3 goal)
     {
         var rig = VRRig.Instance;
         var hand = rig.Hand(left).position;
+        float d = Vector3.Distance(part, goal);
+        if (d < carryBest - 0.01f)
+        {
+            carryBest = d;
+            carryBestAt = Now;
+            carryLead = hand - part;
+        }
+        else if (Now - carryBestAt > CarryStallSeconds)
+        {
+            // Once: re-placing it relative to a sagging item every frame would walk the hand down.
+            if (carryLead != Vector3.zero)
+                SetHand(left, rig.Origin.InverseTransformPoint(part + carryLead));
+            carryLead = Vector3.zero;
+            return;
+        }
         if ((hand - part).sqrMagnitude > MaxCarryLead * MaxCarryLead)
             return;
         var target = goal + (hand - part);
@@ -431,12 +462,13 @@ internal sealed partial class SelfTestRunner
             action != null && action.torchLight != null
                 ? action.torchLight.transform
                 : torch.transform;
-        // The near side of the light zone (FireGestures: 0.35 m around the base, -0.1 to 0.4 m up), in arm's reach.
+        // The near side of the light zone (FireGestures: 0.6 m around the base, -0.1 to 0.6 m up), in arm's reach.
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;
         float progress = 0f;
         float end = Now + 5f;
         string state = "";
+        BeginCarry();
         while (Now < end && progress < 0.3f)
         {
             CarryToward(left, flame.position, goal);
@@ -447,10 +479,12 @@ internal sealed partial class SelfTestRunner
         }
         if (progress >= 0.3f)
             yield return Shot("vr-26-light");
+        // Torch raised to head height: the flame leaves the light zone (0.6 m up, plus the touch exit margin) even
+        // from as close as the body stands.
         HeadFrame(out var head, out var forward, out var right);
         yield return MoveTrack(
             left,
-            head + (left ? -right : right) * 0.25f + Vector3.down * 0.35f + forward * 0.2f,
+            head + (left ? -right : right) * 0.25f + Vector3.up * 0.1f + forward * 0.15f,
             0.3f
         );
         yield return Wait(0.5f);
@@ -509,6 +543,7 @@ internal sealed partial class SelfTestRunner
         bool shot = false;
         string state = "";
         float end = Now + fire.cookTime + 4f;
+        BeginCarry();
         while (Now < end && food != null && Cooked(food) == before)
         {
             CarryToward(left, food.Center(), goal);
