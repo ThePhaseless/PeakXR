@@ -116,17 +116,11 @@ public static class CueLayout
     /// <summary>The self-test's limit for how far off the action's direction the cue may sit, in degrees.</summary>
     public const float MaxOffDegrees = 25f;
 
-    /// <summary>A refused spot this close to the hand is about the hand (a held item), so the cue rides it.</summary>
-    public const float NearHand = 0.35f;
-
     /// <summary>Height of a hand cue above the wrist: clear of the hand model and most held items.</summary>
     public const float AboveHand = 0.1f;
 
     /// <summary>Nearest a cue sits to the eye: a comfortable focus distance.</summary>
     public const float MinEyeDistance = 0.35f;
-
-    public static bool AtHand(Vector3 spot, Vector3 hand) =>
-        Vector3.DistanceSquared(spot, hand) < NearHand * NearHand;
 
     /// <summary>Where a cue about the hand goes: above it, a little toward the eye, never closer than
     /// <see cref="MinEyeDistance"/>.</summary>
@@ -216,4 +210,20 @@ public static class DenyTintMath
     public static bool IsTinted(Vector4 baseTint, Vector4 now) =>
         Vector4.Distance(now, Tint(baseTint, 1f)) < 0.02f
         && Vector4.Distance(now, baseTint) > 0.02f;
+
+    /// <summary>
+    /// A placement ghost's colour (<c>_Color0</c> of the game's <c>Scouts/ItemPreview</c>, an HDR blue) turned red at
+    /// <paramref name="strength"/>: same glow strength and alpha, so it reads as the game's preview, refused.
+    /// </summary>
+    public static Vector4 Preview(Vector4 baseColor, float strength)
+    {
+        float glow = MathF.Max(1f, new Vector3(baseColor.X, baseColor.Y, baseColor.Z).Length());
+        var red = new Vector4(glow * 0.99f, glow * 0.1f, glow * 0.08f, baseColor.W);
+        return Vector4.Lerp(baseColor, red, Math.Clamp(strength, 0f, 1f));
+    }
+
+    /// <summary>The ghost colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
+    public static bool IsPreview(Vector4 baseColor, Vector4 now) =>
+        Vector4.Distance(now, Preview(baseColor, 1f)) < 0.05f
+        && Vector4.Distance(now, baseColor) > 0.05f;
 }

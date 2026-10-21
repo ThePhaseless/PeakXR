@@ -9,15 +9,20 @@ namespace PeakXR.UI.Affordances;
 /// the game's own highlight path (<c>Item.HoverEnter</c>, Item.cs:1145-1153: a <see cref="MaterialPropertyBlock"/>
 /// with <c>_Interactable</c> on <c>mainRenderer</c> and <c>addtlRenderers</c>) with its <c>_Tint</c> (ItemCooking.cs:96)
 /// pulled to red; the end restores the item's own block, exactly what the game last set. A refused placement (a
-/// piton where no wall is) gets a local ghost of the game's preview prefab. Property blocks and the ghost are
+/// piton where no wall is) gets a local ghost of the game's preview prefab (ClimbingSpikePreview: shader
+/// <c>Scouts/ItemPreview</c>, no <c>_Tint</c>; its HDR blue <c>_Color0</c> turns red). Property blocks and the ghost are
 /// client-side only: other players never see them.
 /// </summary>
 internal static class DenyTint
 {
     private static readonly int TintId = Shader.PropertyToID("_Tint");
+    private static readonly int PreviewColorId = Shader.PropertyToID("_Color0");
 
     private static readonly List<Renderer> Targets = new(16);
     private static readonly List<System.Numerics.Vector4> Bases = new(16);
+
+    /// <summary>Per target: the colour it is tinted through, <c>_Tint</c> (items) or <c>_Color0</c> (a preview ghost).</summary>
+    private static readonly List<int> Props = new(16);
     private static MaterialPropertyBlock block;
 
     /// <summary>Item.mpb (Item.cs:207), resolved by <see cref="AffordanceFeature"/>.</summary>
@@ -53,7 +58,8 @@ internal static class DenyTint
         Clear();
         if (prefab == null)
             return;
-        if (ghostPrefab != prefab)
+        // The ghost dies with its scene while the prefab (an asset) stays the same: re-create it then too.
+        if (ghost == null || ghostPrefab != prefab)
         {
             if (ghost != null)
                 Object.Destroy(ghost);
@@ -81,8 +87,12 @@ internal static class DenyTint
                 continue;
             r.GetPropertyBlock(block);
             block.SetFloat(global::Item.PROPERTY_INTERACTABLE, 1f);
-            var c = DenyTintMath.Tint(Bases[i], strength);
-            block.SetColor(TintId, new Color(c.X, c.Y, c.Z, c.W));
+            int prop = Props[i];
+            var c =
+                prop == TintId
+                    ? DenyTintMath.Tint(Bases[i], strength)
+                    : DenyTintMath.Preview(Bases[i], strength);
+            block.SetColor(prop, new Color(c.X, c.Y, c.Z, c.W));
             r.SetPropertyBlock(block);
         }
     }
@@ -104,6 +114,18 @@ internal static class DenyTint
             ghost.SetActive(false);
         Targets.Clear();
         Bases.Clear();
+        Props.Clear();
+    }
+
+    /// <summary>Clears the tint and destroys the ghost (scene unload, VR stop).</summary>
+    public static void Dispose()
+    {
+        if (Active)
+            Clear();
+        if (ghost != null)
+            Object.Destroy(ghost);
+        ghost = null;
+        ghostPrefab = null;
     }
 
     /// <summary>The renderer carries the full red tint now.</summary>
@@ -113,9 +135,13 @@ internal static class DenyTint
             return false;
         block ??= new MaterialPropertyBlock();
         r.GetPropertyBlock(block);
-        var c = block.GetColor(TintId);
+        int prop = Props[index];
+        var c = block.GetColor(prop);
+        var now = new System.Numerics.Vector4(c.r, c.g, c.b, c.a);
+        if (prop != TintId)
+            return DenyTintMath.IsPreview(Bases[index], now);
         return block.GetFloat(global::Item.PROPERTY_INTERACTABLE) > 0.5f
-            && DenyTintMath.IsTinted(Bases[index], new System.Numerics.Vector4(c.r, c.g, c.b, c.a));
+            && DenyTintMath.IsTinted(Bases[index], now);
     }
 
     /// <summary>The renderer shows no red tint: gone, hidden, or its block holds no <c>_Tint</c> override.</summary>
@@ -133,8 +159,14 @@ internal static class DenyTint
         if (r == null)
             return;
         var m = r.sharedMaterial;
-        var c = m != null && m.HasProperty(TintId) ? m.GetColor(TintId) : Color.white;
+        // _Tint where the shader has it (W/Peak_Standard, W/Character); else the preview shader's _Color0.
+        int prop =
+            m == null || m.HasProperty(TintId) || !m.HasProperty(PreviewColorId)
+                ? TintId
+                : PreviewColorId;
+        var c = m != null && m.HasProperty(prop) ? m.GetColor(prop) : Color.white;
         Targets.Add(r);
+        Props.Add(prop);
         Bases.Add(new System.Numerics.Vector4(c.r, c.g, c.b, c.a));
     }
 }

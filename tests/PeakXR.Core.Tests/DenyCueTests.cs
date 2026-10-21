@@ -51,11 +51,15 @@ public class DenyCueTests
     }
 
     [Fact]
-    public void AtHand_NearSpotsRideTheHand_FarSpotsStay()
+    public void HoldCap_TriggerOrEmptyGripHolds_ACarryingGripIsCapped()
     {
-        var hand = new Vector3(0.2f, 1.2f, 0.35f);
-        Assert.True(CueLayout.AtHand(hand + new Vector3(0f, 0.05f, 0.1f), hand));
-        Assert.False(CueLayout.AtHand(hand + new Vector3(0f, 0f, 2f), hand));
+        Assert.Equal(float.PositiveInfinity, DenyFade.HoldCap(byTrigger: true, carrying: true));
+        Assert.Equal(float.PositiveInfinity, DenyFade.HoldCap(byTrigger: false, carrying: false));
+        float cap = DenyFade.HoldCap(byTrigger: false, carrying: true);
+        Assert.InRange(cap, DenyFade.In + DenyFade.Hold, 2f);
+        // Capped hold: full until the cap, then the normal fade, though the grip stays down for the whole carry.
+        Assert.Equal(1f, DenyFade.Alpha(cap - 0.01f, cap));
+        Assert.Equal(0f, DenyFade.Alpha(cap + DenyFade.Out + 0.01f, cap));
     }
 
     [Theory]
@@ -113,5 +117,19 @@ public class DenyCueTests
         Assert.True(DenyTintMath.IsTinted(b, DenyTintMath.Tint(b, 1f)));
         Assert.False(DenyTintMath.IsTinted(b, b));
         Assert.False(DenyTintMath.IsTinted(b, DenyTintMath.Tint(b, 0.2f)));
+    }
+
+    [Fact]
+    public void PreviewTint_TurnsTheGamesBluePlacementGhostRed()
+    {
+        // Scouts/ItemPreview's _Color0 on ItemPreviewValid: an HDR blue with alpha 0.
+        var blue = new Vector4(0f, 2.06f, 10.681f, 0f);
+        var red = DenyTintMath.Preview(blue, 1f);
+        Assert.True(red.X > 5f * red.Y && red.X > 5f * red.Z, red.ToString());
+        Assert.True(red.Length() > 0.8f * blue.Length(), "keeps the HDR glow strength");
+        Assert.Equal(blue.W, red.W);
+        Assert.Equal(blue, DenyTintMath.Preview(blue, 0f));
+        Assert.True(DenyTintMath.IsPreview(blue, red));
+        Assert.False(DenyTintMath.IsPreview(blue, blue));
     }
 }

@@ -113,6 +113,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private bool denyHolding;
     private bool denyByTrigger;
     private float denyHeldUntil = -100f;
+    private float denyHoldCap;
 
     // What the label shows now: the denial (-1) or a hover (hand index), its reason and distance step.
     private int labelOwner = -1;
@@ -134,7 +135,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         DenyReason reason,
         DenyHint hint,
         bool notice = false,
-        string text = null
+        string text = null,
+        bool atHand = false
     )
     {
         var self = instance;
@@ -155,12 +157,14 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             self.denied.Reason == reason
             && self.denyLeft == left
             && DenyFade.Alpha(now - self.denyAt, self.denyHeldUntil - self.denyAt) > 0f;
-        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
-        self.denied.AtHand = hand != null && CueLayout.AtHand(pos.N(), hand.position.N());
-        // The red preview: a refusal at the hand is about the item in it. A placement ghost comes from the caller.
+        // The source decides, not distance: a refusal of the hand's own action (Affordance.DenyAtHand) rides the hand
+        // and is about the item in it; a world target 30 cm away stays a world cue.
+        self.denied.AtHand = atHand;
         var held =
             Character.localCharacter != null ? Character.localCharacter.data.currentItem : null;
-        if (!notice && self.denied.AtHand && held != null && LocalHold.ItemInLeftHand == left)
+        bool carrying = held != null && LocalHold.ItemInLeftHand == left;
+        // The red preview: the held item. A placement ghost comes from the caller (Affordance.Preview).
+        if (!notice && atHand && carrying)
             DenyTint.HeldItem(held);
         else
             DenyTint.Clear();
@@ -172,6 +176,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         ref var input = ref VRInput.Hand(left);
         self.denyByTrigger = input.Trigger > 0.5f;
         self.denyHolding = !notice && (self.denyByTrigger || input.Grip > 0.5f);
+        self.denyHoldCap = DenyFade.HoldCap(self.denyByTrigger, carrying);
         self.denyHeldUntil = now;
         self.SetLabel(-1, reason, hint.Meters, text);
     }
@@ -221,9 +226,19 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         h.SeenAt = now;
     }
 
-    private void OnEnable() => Application.onBeforeRender += Pose;
+    private void OnEnable()
+    {
+        Application.onBeforeRender += Pose;
+        UnityEngine.SceneManagement.SceneManager.sceneUnloaded += SceneUnloaded;
+    }
 
-    private void OnDisable() => Application.onBeforeRender -= Pose;
+    private void OnDisable()
+    {
+        Application.onBeforeRender -= Pose;
+        UnityEngine.SceneManagement.SceneManager.sceneUnloaded -= SceneUnloaded;
+    }
+
+    private static void SceneUnloaded(UnityEngine.SceneManagement.Scene _) => DenyTint.Dispose();
 
     private void Update()
     {
@@ -403,7 +418,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         if (denyHolding)
         {
             ref var input = ref VRInput.Hand(denyLeft);
-            if (denyByTrigger ? input.Trigger > 0.5f : input.Grip > 0.5f)
+            if (
+                (denyByTrigger ? input.Trigger > 0.5f : input.Grip > 0.5f)
+                && now - denyAt < denyHoldCap
+            )
                 denyHeldUntil = now;
             else
                 denyHolding = false;
@@ -465,8 +483,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         {
             alpha = denyAlpha;
             var hand = rig.Hand(denyLeft);
-            // Near the hand: ride above it. Farther (a target, a wall): sit above the spot.
-            atHand = hand != null && (hand.position - denied.Position).sqrMagnitude < 0.35f * 0.35f;
+            // A refusal of the hand's own action: ride above the hand. A world target or wall: sit above the spot.
+            atHand = hand != null && denied.AtHand;
             anchor = atHand ? hand.position : denied.Position;
         }
         if (alpha <= 0.001f)
@@ -703,8 +721,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     {
         if (!built)
             return;
-        if (DenyTint.Active)
-            DenyTint.Clear();
+        // VR stopped or hints off: the tint goes and the ghost is destroyed, not just hidden.
+        DenyTint.Dispose();
         Hide(denied);
         Hide(hovers[0]);
         Hide(hovers[1]);

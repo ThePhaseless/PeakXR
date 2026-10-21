@@ -267,6 +267,16 @@ public static class DenyFade
     /// seconds after it (equal to <paramref name="age"/> while still held): the cue holds at full until the release,
     /// then fades, so a player holding the trigger never watches the reason vanish mid-attempt.
     /// </summary>
+    /// <summary>A refusal held by a grip that is also carrying an item would stay up for the whole carry: cap it.</summary>
+    public const float CarryCap = 1.5f;
+
+    /// <summary>
+    /// Longest an attempt's hold keeps its cue up: unlimited while the refused trigger, or a grip on nothing, is held;
+    /// <see cref="CarryCap"/> for a grip that also carries an item.
+    /// </summary>
+    public static float HoldCap(bool byTrigger, bool carrying) =>
+        byTrigger || !carrying ? float.PositiveInfinity : CarryCap;
+
     public static float Alpha(float age, float heldFor)
     {
         if (age <= 0f)

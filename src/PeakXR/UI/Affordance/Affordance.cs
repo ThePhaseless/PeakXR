@@ -95,7 +95,16 @@ internal static class Affordance
         Deny(left, worldPos, reason, default);
 
     /// <summary>As above, with what would work instead (<see cref="DenyHint"/>).</summary>
-    public static bool Deny(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint)
+    public static bool Deny(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint) =>
+        Deny(left, worldPos, reason, hint, atHand: false);
+
+    private static bool Deny(
+        bool left,
+        Vector3 worldPos,
+        DenyReason reason,
+        DenyHint hint,
+        bool atHand
+    )
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
@@ -106,7 +115,7 @@ internal static class Affordance
         Plugin.Log.LogDebug(
             $"[ui.affordance] denied {reason} ({(left ? "left" : "right")} hand) at {worldPos}"
         );
-        AffordanceRuntime.Show(left, worldPos, reason, hint);
+        AffordanceRuntime.Show(left, worldPos, reason, hint, atHand: atHand);
         return true;
     }
 
@@ -143,7 +152,7 @@ internal static class Affordance
     {
         var rig = VRRig.Instance;
         var hand = rig != null ? rig.Hand(left) : null;
-        return hand != null && Deny(left, hand.position, reason, hint);
+        return hand != null && Deny(left, hand.position, reason, hint, atHand: true);
     }
 
     /// <summary>
