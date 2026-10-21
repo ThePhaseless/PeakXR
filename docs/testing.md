@@ -123,8 +123,20 @@ VR runs only:
 | `vr.05-loading-space` | after `04-beach` | During that load the loading space was shown and the game camera's `cullingMask` was 0; screenshot `vr-05-loading` mid-load |
 | `vr.06-features` | beach | Every VR feature is `Active`, the local avatar driver has a fresh pose, the HUD canvas is world space, `VRFade.Target` is 0; records whether the vignette ring exists yet |
 | `vr.07-comfort` | beach, after the mobs | A knockback (`RPCA_AddForceAtPosition` on the local character) pulses the comfort vignette, which opens again within 2 s; a warp to the current segment leaves `VRFade.Target` at 0; screenshot `vr-07-knockback` |
+| `vr.10-grab-right`, `vr.11-grab-left` | beach, after `vr.07` | An Apple spawned 0.45 m ahead at chest height; that hand reaches it in 0.5 s and grips. The character holds it within 3 s, in that hand (`LocalHold` and the avatar pose). A slow release keeps it, or drops it with `Interaction.ReleaseToDrop`; screenshot `vr-10-grab-right` / `vr-11-grab-left` |
+| `vr.12-eat` | beach | A given Apple steered to the mouth point is eaten: the game's `Consume` RPC stamps `CharacterData.lastConsumedItem` within the use time plus 6 s. The note has the closest approach, the use progress and hunger before and after; screenshot `vr-12-eat` |
+| `vr.13-throw` | beach | A held Apple swung forward at 6 m/s and let go mid-swing leaves the hand and lands 2 m or more away. Its launch speed is within the throw clamp (hip speed plus half `maxThrowForce`) and its range within what that speed allows; screenshot `vr-13-throw` in flight |
+| `vr.14-two-hand` | beach | A two-hand item (`RopeSpool`, else `Binoculars` or `RopeShooter`) in one hand; the free hand grips it and `AvatarPose.TwoHandHold` turns on, and off again on release; screenshot `vr-14-two-hand` |
+| `vr.15-climb` | beach | Warps to the nearest steep terrain face within 25 m and faces it. A gripping hand on the surface starts the climb (`CharacterData.isClimbing`), pulling the hand down 0.4 m lifts the body at least 0.1 m, and letting go ends the climb. Then a warp back to spawn; screenshot `vr-15-climb` |
+| `vr.16-snap-turn` | beach | Turn stick right, then centred: the rig turns by `Comfort.SnapTurnAngle` (with smooth turning, by more than 5°); screenshot `vr-16-snap-turn` |
+| `vr.17-move` | beach | Move stick forward for 1 s walks the character at least 0.5 m; screenshot `vr-17-move` |
+| `vr.18-emote-wheel` | beach | Holding the emote button (off hand, upper button) opens the game's emote wheel. Moving the hand up hovers a slice, and releasing closes the wheel and plays the emote; screenshot `vr-18-emote-wheel` |
+| `vr.19-laser` | beach | Pause menu open, both aim rays on its Resume button, a trigger pull: the menu closes; screenshot `vr-19-laser` |
+| `vr.20-holster` | beach | A held Apple taken to its body slot and let go goes into that hotbar slot; a grip there draws it back into the same hand; screenshot `vr-20-holster` |
 
 Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
+
+Steps `vr.10` to `vr.20` need no one at the controllers. While each one runs, `VRInput.TestOverride` replaces both controllers right after the sampler with scripted hands, which rest tracked in front of the chest with a finger on the trigger. The step moves a hand, closes a grip or pushes a stick, and the rest of the mod treats that as real controller input. Each step starts with empty hands and an empty hotbar. When it ends, the grips open, the override is cleared and anything the step dropped or threw is removed, so a failed step leaves nothing behind for the next one.
 
 Each step has a timeout. A step fails when its action fails, when it times out, or when the game logs an exception while it runs. Errors the game logs are written next to the step but do not fail it.
 

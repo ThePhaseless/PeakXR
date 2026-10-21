@@ -35,6 +35,24 @@ namespace PeakXR.Core
                 && distance <= MaxPanelDistance
                 && angle < MaxPanelAngle;
         }
+
+        /// <summary>Signed heading change from <paramref name="from"/> to <paramref name="to"/> in degrees, in (-180, 180].</summary>
+        public static float YawDelta(float from, float to)
+        {
+            float d = (to - from) % 360f;
+            if (d > 180f)
+                d -= 360f;
+            else if (d <= -180f)
+                d += 360f;
+            return d;
+        }
+
+        /// <summary>
+        /// Farthest a throw at <paramref name="speed"/> from <paramref name="height"/> above the landing spot can carry
+        /// without drag, at its best angle: v/g * sqrt(v^2 + 2gh). An upper bound for a landed throw.
+        /// </summary>
+        public static float MaxThrowRange(float speed, float height, float gravity) =>
+            speed / gravity * MathF.Sqrt(speed * speed + 2f * gravity * MathF.Max(0f, height));
     }
 
     /// <summary>
@@ -70,6 +88,29 @@ namespace PeakXR.Core
             }
             else if (Rose && !Settled)
                 settleAt = time;
+        }
+    }
+
+    /// <summary>
+    /// Scripted controller motion for the self-test's hand steps: eased moves between poses and a capped-speed
+    /// follow for targets that move (a falling item, a held item steered to the mouth).
+    /// </summary>
+    public static class HandScript
+    {
+        /// <summary>Point at time <paramref name="t"/> (0..1, clamped) of a smoothstep move from <paramref name="from"/> to <paramref name="to"/>.</summary>
+        public static Vector3 Along(Vector3 from, Vector3 to, float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+            return Vector3.Lerp(from, to, t * t * (3f - 2f * t));
+        }
+
+        /// <summary>One frame of moving <paramref name="current"/> toward <paramref name="target"/> at no more than <paramref name="speed"/> m/s.</summary>
+        public static Vector3 Approach(Vector3 current, Vector3 target, float speed, float dt)
+        {
+            var to = target - current;
+            float step = speed * dt;
+            float d = to.Length();
+            return d <= step || d < 1e-6f ? target : current + to * (step / d);
         }
     }
 }

@@ -255,7 +255,8 @@ internal sealed class RigDriver : MonoBehaviour
         ref var h = ref VRInput.Hand(left);
         if (h.Tracked)
             grip.SetLocalPositionAndRotation(h.Position, h.Rotation);
-        if (devices.TryGetAim(left, out var p, out var r))
+        // Scripted self-test hands have no aim pose of their own: aim along the grip pose like a runtime without one.
+        if (VRInput.TestOverride == null && devices.TryGetAim(left, out var p, out var r))
             aim.SetLocalPositionAndRotation(p, r);
         else if (h.Tracked)
             aim.SetLocalPositionAndRotation(h.Position, h.Rotation);

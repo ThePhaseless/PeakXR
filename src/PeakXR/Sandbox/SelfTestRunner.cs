@@ -66,6 +66,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     void OnDestroy()
     {
+        VR.VRInput.TestOverride = null;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
     }
@@ -131,6 +132,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return Uses();
             yield return Mobs();
             yield return VRStep("vr.07-comfort", 100f, ComfortCheck());
+            yield return HandSteps();
             foreach (var segment in SandboxActions.Segments)
             {
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
@@ -587,6 +589,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             return;
         finished = true;
         SelfTestInputPatch.HoldPrimary = false;
+        VR.VRInput.TestOverride = null;
 
         int skipped = report.Steps.Count - report.Passed - report.Failed;
         var sb = new StringBuilder(Header()).Append('\n');

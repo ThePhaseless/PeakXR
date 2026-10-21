@@ -91,6 +91,7 @@ internal static class XRInputSampler
             VRInput.Left.Tracked = VRInput.Right.Tracked = VRInput.HeadTracked = false;
             dirty = true;
         }
+        VRInput.TestOverride?.Invoke();
     }
 
     internal static string[] UsageNames(InputDevice device, List<InputFeatureUsage> scratch)
