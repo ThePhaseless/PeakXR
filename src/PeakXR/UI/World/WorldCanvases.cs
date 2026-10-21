@@ -30,6 +30,9 @@ internal sealed class TrackedCanvas
 
     /// <summary>Menus: where the content centre sits. Other kinds: the canvas position.</summary>
     public Vector3 Position;
+
+    /// <summary>Menus: size factor from a wall that pulled the panel nearer, so it keeps its angular size.</summary>
+    public float Scale = 1f;
     public Vector2 ContentSize;
     public Vector2 ContentCenter;
     public float NextMeasure;
@@ -90,6 +93,20 @@ internal static class WorldCanvases
                 return t.Hidden.Count;
             }
         return 0;
+    }
+
+    /// <summary>Where an open menu's content centre sits (self-test). False when the canvas is not a placed menu.</summary>
+    public static bool TryMenuCentre(Canvas root, out Vector3 centre)
+    {
+        centre = default;
+        var id = root.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id && t.WasOpen)
+            {
+                centre = t.Position;
+                return true;
+            }
+        return false;
     }
 
     public static void Track(Canvas canvas)
@@ -408,6 +425,20 @@ internal static class WorldCanvases
             openMenus++;
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
             var offset = PanelMath.InFront(yaw, distance, cfg.MenuTilt.Value).ToUnity();
+            // A wall nearer than the panel would hide it: come forward to just in front of the wall. Terrain and
+            // map only (the game's wall test, CharacterItems.cs:525), so held items and bodies never count.
+            var wall = Physics.Raycast(
+                head.position,
+                offset.normalized,
+                out var hit,
+                distance,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? hit.distance
+                : float.PositiveInfinity;
+            t.Scale = PanelMath.ClearDistance(distance, wall) / distance;
+            offset *= t.Scale;
             t.Position = head.position + offset;
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
             t.WasOpen = true;
@@ -417,12 +448,14 @@ internal static class WorldCanvases
         MeasureIfDue(t);
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
-        var mpp = PanelMath.MenuMetersPerPixel(
-            t.ContentSize.x,
-            t.ContentSize.y,
-            cfg.MenuWidth.Value,
-            cfg.MenuDistance.Value
-        );
+        var mpp =
+            t.Scale
+            * PanelMath.MenuMetersPerPixel(
+                t.ContentSize.x,
+                t.ContentSize.y,
+                cfg.MenuWidth.Value,
+                cfg.MenuDistance.Value
+            );
         var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;

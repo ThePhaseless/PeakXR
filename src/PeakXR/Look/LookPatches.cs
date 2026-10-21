@@ -4,6 +4,7 @@ using HarmonyLib;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Locomotion;
+using PeakXR.UI.Common;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
@@ -27,6 +28,7 @@ internal static class LookPatches
     /// comfort.events as its forced-look cue.</summary>
     internal static float ScriptedLookWeight => Override.Weight;
     private static Character lastCharacter;
+    private static bool faceSpawnLook;
     private static int tickFrame = -10;
 
     /// <summary>Smooth turning speed (deg/s) from this or the previous frame, for the comfort vignette (its update
@@ -76,6 +78,7 @@ internal static class LookPatches
             lastCharacter = c;
             Override.Reset();
             Turn.Reset();
+            faceSpawnLook = true;
         }
         float dt = Time.deltaTime;
         tickFrame = Time.frameCount;
@@ -95,8 +98,18 @@ internal static class LookPatches
 
         if (!VRInput.HeadTracked)
             return;
-        var head = (rig.Origin.rotation * VRInput.HeadRotation).N();
         var current = c.data.lookValues;
+        if (faceSpawnLook && !rig.OriginOverride)
+        {
+            // A new body starts with the game's spawn look: nothing sets lookValues at spawn
+            // (CharacterSpawner.cs:243), so flat players face +Z. The first write below would otherwise hand it
+            // whatever yaw the tracking space kept from the title stage or loading room, and rig.camera's
+            // recenter then keeps that yaw (it reads the look this write produced).
+            faceSpawnLook = false;
+            var hmdYaw = (VRInput.HeadRotation * Vector3.forward).HeadingDegrees();
+            rig.Origin.rotation = Quaternion.Euler(0f, RigMath.RecenterYaw(current.x, hmdYaw), 0f);
+        }
+        var head = (rig.Origin.rotation * VRInput.HeadRotation).N();
         var look = Override.Update(
             new NVector2(current.x, current.y),
             LookMath.ToLookValues(head),

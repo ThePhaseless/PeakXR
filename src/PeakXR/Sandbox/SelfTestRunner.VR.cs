@@ -280,10 +280,13 @@ internal sealed partial class SelfTestRunner
         else
         {
             var head = rig.Head;
+            // The content centre, not the canvas pivot: a 1920x1080 canvas pivot sits far off its settings window.
+            if (!WorldCanvases.TryMenuCentre(root, out var centre))
+                centre = root.transform.position;
             bool front = SelfTestChecks.InFront(
                 head.position.ToNumerics(),
                 head.forward.ToNumerics(),
-                root.transform.position.ToNumerics(),
+                centre.ToNumerics(),
                 out float distance,
                 out float angle
             );

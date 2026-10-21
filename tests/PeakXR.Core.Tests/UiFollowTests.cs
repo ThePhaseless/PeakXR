@@ -169,6 +169,27 @@ public class PanelMathTests
     }
 
     [Fact]
+    public void ClearDistance_NoWall_KeepsWantedDistance()
+    {
+        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, float.PositiveInfinity));
+        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, 2.5f));
+    }
+
+    [Fact]
+    public void ClearDistance_WallCloser_StopsInFrontOfIt()
+    {
+        TestUtil.Near(1.0f - PanelMath.WallGap, PanelMath.ClearDistance(1.8f, 1.0f));
+    }
+
+    [Fact]
+    public void ClearDistance_WallAtTheFace_KeepsNearestReadableDistance()
+    {
+        Assert.Equal(PanelMath.NearestMenuDistance, PanelMath.ClearDistance(1.8f, 0.2f));
+        // A wanted distance already nearer than the floor is never pushed out.
+        Assert.Equal(0.4f, PanelMath.ClearDistance(0.4f, 0.1f));
+    }
+
+    [Fact]
     public void MetersPerPixel_FitsWidth()
     {
         TestUtil.Near(0.001f, PanelMath.MetersPerPixel(1.92f, 1920f), 1e-7f);
