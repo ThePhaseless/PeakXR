@@ -759,19 +759,29 @@ internal static class PhysicalInteraction
         input.interactWasReleased |= InteractEdge.Released;
 
         // Use: the holding hand's trigger (right when empty-handed) is primary, the other trigger secondary.
-        bool holding = Holding(c, out var item);
+        bool holding = Holding(c, out _);
         var primaryHand = holding && LocalHold.ItemInLeftHand ? LeftHand : RightHand;
         bool primaryDown = cfg.TriggerUse && primaryHand.Trigger.Held;
         bool secondaryDown = cfg.TriggerUse && Other(primaryHand).Trigger.Held;
 
         bool atMouth = false;
-        if (cfg.EatAtMouth && holding && Hold.Edible && VRInput.HeadTracked && rig.Head != null)
+        var mouthHand = rig.Hand(primaryHand.Left);
+        if (
+            cfg.EatAtMouth
+            && holding
+            && Hold.Edible
+            && VRInput.HeadTracked
+            && rig.Head != null
+            && mouthHand != null
+        )
         {
             bool was = Mouth.Active;
+            // The tracked grip, not the physics item: the eye sits inside the holder's own head collider (a 0.38 m
+            // sphere on the Character layer, which held items collide with), so the item never gets near the mouth.
             atMouth = Mouth.Update(
                 rig.Head.position.N(),
                 rig.Head.rotation.N(),
-                item.Center().N(),
+                mouthHand.position.N(),
                 dt
             );
             if (atMouth && !was)
