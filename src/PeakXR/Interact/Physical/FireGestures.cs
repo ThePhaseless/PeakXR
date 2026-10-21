@@ -164,7 +164,7 @@ internal static class FireGestures
     /// <summary>
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it
     /// (Campfire.cs:322, EveryoneInRange :375-386, distances from the fire to <c>Center</c> :364); otherwise the
-    /// whole hold ends in nothing. The farthest missing friend gets the teal ring, joined to the fire.
+    /// whole hold ends in nothing. The farthest missing friend gets the teal ring, joined to the fire, if in sight.
     /// </summary>
     private static void WarnFriendsFar(Campfire fire)
     {
@@ -183,13 +183,24 @@ internal static class FireGestures
                 far = ch;
             }
         }
-        if (far != null)
-            Affordance.Deny(
-                ItemGestures.HoldLeft,
-                ItemGestures.FireBase(fire),
-                DenyReason.FriendsFar,
-                DenyHint.At(far.Center)
+        if (far == null)
+            return;
+        // The friend's ring only when you can see them: a ring through a cliff would read as the wrong place.
+        var cam = MainCamera.instance;
+        bool seen =
+            cam != null
+            && !Physics.Linecast(
+                cam.transform.position,
+                far.Center,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
             );
+        Affordance.Deny(
+            ItemGestures.HoldLeft,
+            ItemGestures.FireBase(fire),
+            DenyReason.FriendsFar,
+            seen ? DenyHint.At(far.Center) : default
+        );
     }
 
     private static void BindFlame(Item item)

@@ -10,7 +10,7 @@ namespace PeakXR.Interact;
 /// Tells the VR player why a gesture did nothing when PeakXR holds it to what a vanilla player could do (reach,
 /// feed angle, piton time). A clamp must never fail silently. Forwards to the shared affordance service
 /// (<see cref="Affordance"/>: denied haptic, red ring, reason label) with what would work instead: the end of the
-/// real reach, or where to stand to feed. Only if ui.affordance did not install does it fall back to a bare haptic.
+/// real reach, or where to stand to feed. With UI.ActionHints off or ui.affordance not installed it falls back to a bare haptic, so a clamp never fails silently.
 /// Callers may call it every frame while the refusal holds; the service rate-limits it.
 /// </summary>
 internal static class ParityFeedback
@@ -30,7 +30,7 @@ internal static class ParityFeedback
     /// <summary>A refusal at <paramref name="worldPos"/> for the hand that attempted it.</summary>
     public static void Denied(bool left, Vector3 worldPos, string reason)
     {
-        if (!Affordance.Installed)
+        if (!Affordance.Enabled)
         {
             float now = Time.unscaledTime;
             if (now - fallbackAt < Repeat)

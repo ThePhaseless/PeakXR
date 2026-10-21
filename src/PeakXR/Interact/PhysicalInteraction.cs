@@ -28,6 +28,13 @@ internal static class PhysicalInteraction
     /// <summary><c>CharacterClimbing.TryToStartWallClimb</c> (CharacterClimbing.cs:534, private), resolved in Install.</summary>
     public static TryStartClimb StartWallClimb;
 
+    /// <summary><c>CharacterClimbing.sinceLastClimbStarted</c> (CharacterClimbing.cs:52, private), resolved in Install.</summary>
+    public static HarmonyLib.AccessTools.FieldRef<CharacterClimbing, float> SinceLastClimbStarted;
+
+    /// <summary>Slack for the climb start's thickened LineCheck retries (CharacterClimbing.cs:556-560, radius up to
+    /// 0.1): a wall this much past 1.25 m may still be caught, so it gets no "Too far".</summary>
+    private const float ClimbReachSlack = 0.1f;
+
     private sealed class Hand
     {
         public readonly bool Left;
@@ -271,7 +278,10 @@ internal static class PhysicalInteraction
                 pendingTime = now;
                 // Item.Interact (Item.cs:578-587) ignores a pickup with no free slot, and drops a non-pocketable item
                 // grabbed while climbing: say so instead of the success tick.
-                if (
+                // With hints off the old success tick stays, as before.
+                if (!Affordance.Enabled)
+                    Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+                else if (
                     target is Item wanted
                     && c.player != null
                     && !c.player.HasEmptySlot(wanted.itemID)
@@ -335,11 +345,21 @@ internal static class PhysicalInteraction
             return;
         var eye = Eye(rig);
         var wall = probeHit ? probePoint : handPos;
-        if (Vector3.Distance(eye, wall) > 1.25f)
+        float distance = Vector3.Distance(eye, wall);
+        if (distance > 1.25f + ClimbReachSlack)
             Affordance.Deny(left, wall, DenyReason.OutOfReach, DenyHint.Range(eye, wall, 1.25f));
-        else if (c.data.outOfStaminaFor > 0f)
+        else if (
+            distance <= 1.25f
+            && SinceLastClimbStarted != null
+            && SinceLastClimbStarted(c.refs.climbing) <= 1f
+            && OutOfStamina(c)
+        )
             Affordance.Deny(left, wall, DenyReason.NoStamina, DenyHint.Wrist());
     }
+
+    /// <summary><c>Character.OutOfStamina</c> (Character.cs:1683-1693, internal): no stamina and no bonus stamina.</summary>
+    private static bool OutOfStamina(Character c) =>
+        !c.infiniteStam && c.data.currentStamina < 0.005f && c.data.extraStamina < 0.001f;
 
     private static void OnGripRelease(
         Hand hand,

@@ -22,8 +22,11 @@ internal static class SpikeCue
 
     private static bool within = true;
 
-    /// <summary>The aimed wall is out of range this frame (for the aim line's colour).</summary>
-    public static bool OutOfRange { get; private set; }
+    private static int outOfRangeFrame = -10;
+
+    /// <summary>The aimed wall is out of range this frame or the last (for the aim line's colour). Goes stale on its
+    /// own when the spike patch stops running (item changed, no spikes left, not local).</summary>
+    public static bool OutOfRange => Time.frameCount - outOfRangeFrame <= 1;
 
     public static void After(
         Character c,
@@ -34,7 +37,7 @@ internal static class SpikeCue
         in RaycastHit preview
     )
     {
-        OutOfRange = false;
+        outOfRangeFrame = -10;
         var cam = MainCamera.instance;
         if (
             c == null
@@ -87,7 +90,10 @@ internal static class SpikeCue
             (input.usePrimaryWasPressed && !climbing && heldSpike)
             || (input.useSecondaryWasPressed && (heldSpike || climbing));
         ref var hand = ref VRInput.Hand(left);
-        if (!attempt && !hand.TriggerTouch && hand.Trigger <= 0.05f)
+        // Trying to place: a finger on a held spike's trigger, or a real pull for a pocketed one (a resting finger
+        // on an empty hand's trigger means nothing).
+        bool trying = heldSpike ? hand.TriggerTouch || hand.Trigger > 0.05f : hand.Trigger > 0.5f;
+        if (!attempt && !trying)
         {
             within = true;
             return;
@@ -102,12 +108,13 @@ internal static class SpikeCue
             range + LookPast,
             HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
         );
-        // The hover cue has hysteresis so it does not flicker at the edge; a press the game just refused (it would
-        // have started the cast above) is denied whatever the cue showed.
+        // The hover cue never says "can't" inside the range (hysteresis only past it); a press the game just
+        // refused (it would have started the cast above) is checked against the exact range.
         within = hit && DenyRange.Within(wall.distance, range, within, 0.1f);
         if (attempt ? hit && wall.distance <= range : within)
             return;
-        OutOfRange = !within;
+        if (!within)
+            outOfRangeFrame = Time.frameCount;
         var end = origin + dir * range;
         var spot = hit && wall.distance > range ? wall.point : end;
         var hint =

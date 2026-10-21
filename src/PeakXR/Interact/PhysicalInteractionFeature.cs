@@ -26,6 +26,9 @@ public sealed class PhysicalInteractionFeature : Feature
             "TryToStartWallClimb",
             new[] { typeof(bool), typeof(Vector3), typeof(bool), typeof(float) }
         );
+        PhysicalInteraction.SinceLastClimbStarted = GameMember.Field<CharacterClimbing, float>(
+            "sinceLastClimbStarted"
+        );
         Patch(typeof(InteractPatches.Sample));
         Patch(typeof(InteractPatches.Raycasts));
         Patch(typeof(InteractPatches.Dropping));

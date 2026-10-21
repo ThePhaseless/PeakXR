@@ -332,7 +332,7 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>
     /// One hand on a passed-out friend does nothing with <c>CarryBothHands</c> (<see cref="ActiveInteract"/>): after a
-    /// moment, show where the other hand goes, on their body at the free hand's side.
+    /// moment, show once where the other hand goes, on their body at the free hand's side.
     /// </summary>
     private void NudgeCarry(SocialConfig cfg, int h, float dt)
     {
@@ -348,6 +348,8 @@ internal sealed class SocialHands : IGripExtension
             return;
         var side = rig.Head.right * (h == 0 ? 0.22f : -0.22f);
         Affordance.DenyAtHand(h == 0, DenyReason.NeedsTwoHands, DenyHint.At(who.Center + side));
+        // Once per grip: latched until this hand stops being the only one on them.
+        carryAlone[h] = float.NegativeInfinity;
     }
 
     private IInteractible ActiveInteract(SocialConfig cfg, int h)

@@ -63,9 +63,23 @@ internal static class UseDenial
         float up = Vector3.Dot(Vector3.up, (hit.point - origin).normalized);
         if (up <= 0.5f && up >= -0.7f)
             return DenyReason.CantUse;
-        // An aim the window accepts, same heading, at the same distance: the ring to aim at.
+        // An aim the window accepts, same heading: the ring goes where that aim would attach, and only if it would
+        // (terrain within range, still inside the window measured to the new hit).
         var ok = DenyRange.ClampElevation(dir.N(), VineMinUp, VineMaxUp).U();
-        hint = DenyHint.At(origin + ok * Mathf.Min(hit.distance, 6f));
+        if (
+            Physics.Raycast(
+                origin,
+                ok,
+                out var okHit,
+                max,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+        )
+        {
+            float okUp = Vector3.Dot(Vector3.up, (okHit.point - origin).normalized);
+            if (okUp <= 0.5f && okUp >= -0.7f)
+                hint = DenyHint.At(okHit.point);
+        }
         return up > 0.5f ? DenyReason.AimLower : DenyReason.AimHigher;
     }
 }

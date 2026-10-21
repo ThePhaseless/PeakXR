@@ -19,6 +19,8 @@ public sealed class AffordanceFeature : Feature
 
     internal static ConfigEntry<bool> ActionHints { get; private set; }
 
+    internal static ConfigEntry<bool> ReachRay { get; private set; }
+
     protected internal override void Install()
     {
         ActionHints = Plugin.Settings.Bind(
@@ -27,8 +29,15 @@ public sealed class AffordanceFeature : Feature
             true,
             "When something you try does nothing (out of reach, wall too steep, no stamina, needs both hands...), "
                 + "the controller gives a soft triple tick and a short reason appears by your hand or the target. "
-                + "Aimed tools and a pointing hand show a red end when the game would refuse. Uses the Interaction "
+                + "Aimed tools show a red end when the game would refuse. Uses the Interaction "
                 + "haptic strength."
+        );
+        ReachRay = Plugin.Settings.Bind(
+            "UI",
+            "ReachRay",
+            true,
+            "While a hand points to interact, a faint ray shows how far the game's interaction reaches from that "
+                + "hand, and something just past it gets a 'Too far' ring. Needs ActionHints."
         );
         AffordanceRuntime.Create();
     }

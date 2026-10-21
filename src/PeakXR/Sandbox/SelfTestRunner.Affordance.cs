@@ -40,11 +40,43 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         bool left = LocalHold.ItemInLeftHand;
-        // Straight up from the shoulder: nothing to hit on the beach.
-        HeadFrame(out var head, out var forward, out _);
+        var rig = VRRig.Instance;
+        HeadFrame(out var head, out var forward, out var right);
         SetHand(left, head + forward * 0.25f + Vector3.up * 0.2f);
-        Script(left).Rotation = Quaternion.LookRotation(Vector3.up, -forward);
-        yield return Wait(0.3f);
+        // A direction proven empty: the hand's real aim ray finds no terrain within 60 m (far past any spike range).
+        var tries = new[]
+        {
+            Vector3.up,
+            Vector3.up + forward,
+            Vector3.up - forward,
+            Vector3.up + right,
+            Vector3.up - right,
+        };
+        bool clear = false;
+        foreach (var t in tries)
+        {
+            Script(left).Rotation = Quaternion.LookRotation(t.normalized, -forward);
+            yield return Wait(0.15f);
+            var aim = rig.Aim(left);
+            if (
+                aim != null
+                && !Physics.Raycast(
+                    aim.position,
+                    aim.forward,
+                    60f,
+                    HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+                )
+            )
+            {
+                clear = true;
+                break;
+            }
+        }
+        if (!clear)
+        {
+            stepSkip = "no aim direction free of terrain within 60 m";
+            yield break;
+        }
         yield return PressAndExpect(left, DenyReason.NoWall);
     }
 
@@ -112,7 +144,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for a denial with
-    /// <paramref name="expected"/>.</summary>
+    /// <paramref name="expected"/> on that hand; other denials meanwhile do not end the wait.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected)
     {
         if (!Affordance.Enabled)
@@ -125,7 +157,11 @@ internal sealed partial class SelfTestRunner
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
         float end = Now + 1f;
-        while (Now < end && Affordance.Count == before)
+        bool Got() =>
+            Affordance.Count > before
+            && Affordance.LastReason == expected
+            && Affordance.LastLeft == left;
+        while (Now < end && !Got())
             yield return null;
         Script(left).Trigger = 0f;
         Script(left).TriggerTouch = false;
@@ -134,7 +170,7 @@ internal sealed partial class SelfTestRunner
             + $"({(Affordance.LastLeft ? "left" : "right")}) at {Affordance.LastPosition}";
         if (Affordance.Count == before)
             Fail($"no denial for {expected}: {note}");
-        else if (Affordance.LastReason != expected || Affordance.LastLeft != left)
+        else if (!Got())
             Fail($"expected {expected} on the {(left ? "left" : "right")} hand: {note}");
         else
             stepNote = note;
