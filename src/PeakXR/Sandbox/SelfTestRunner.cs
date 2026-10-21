@@ -461,12 +461,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     Skip("mob." + entry.Name, entry.Note);
                     continue;
                 }
-                yield return Run("mob." + entry.Name, 30f, body);
+                yield return Run("mob." + entry.Name, 30f, Isolated(body));
                 SelfTestInputPatch.HoldPrimary = false;
             }
             else
-                yield return Run("mob." + entry.Name, 20f, Mob(entry));
+                yield return Run("mob." + entry.Name, 20f, Isolated(Mob(entry)));
             Safe("mob.despawn", Despawn);
+            Safe("mob.leftovers", ClearLeftovers);
             Safe("mob.recover", Recover);
             yield return Wait(1f);
         }
@@ -490,14 +491,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         }
         var go = SandboxActions.LastSpawned;
         spawned.Add(go);
-        yield return Wait(3f);
-        if (go == null)
-            stepNote = "gone within 3 s";
-        // A white frame here is the game's BLIND overlay (explosions, flash plants), capped in VR by comfort.events.
-        var c = Character.localCharacter;
-        if (c != null && c.data.isBlind)
-            Note("player blinded (BLIND overlay)");
-        yield return Shot("05-mob-" + entry.Name);
+        yield return MobBehaviour(entry, go);
     }
 
     IEnumerator Jump(Segment segment, string shot = null)
@@ -517,25 +511,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (now != segment)
             Fail("in " + now + " after the jump");
         yield return Shot(shot ?? "06-segment-" + segment);
-        // Tells a sky-only frame (a summit, a ledge) from a view that lost the body.
-        var c = Character.localCharacter;
-        var rig = PeakXR.VR.VRRig.Instance;
-        if (c != null && rig != null && rig.Head != null)
-        {
-            var eye = rig.Head.position;
-            float ground = Physics.Raycast(
-                eye,
-                Vector3.down,
-                out var hit,
-                200f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-                ? hit.distance
-                : -1f;
-            stepNote =
-                $"eye {Vector3.Distance(eye, c.Head):0.00} m from the head, ground {ground:0.0} m below, grounded {c.data.isGrounded}";
-        }
+        yield return Landing();
     }
 
     /// <summary>The segment the loop would jump to is the current one: assert it instead of jumping.</summary>
@@ -547,8 +523,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("in " + current);
             yield break;
         }
-        stepNote = "already here";
         yield return Shot("06-segment-" + segment);
+        yield return Landing();
+        if (stepOk)
+            stepNote = "already here; " + stepNote;
     }
 
     IEnumerator TimeSteps()

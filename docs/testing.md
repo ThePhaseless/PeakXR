@@ -121,8 +121,8 @@ The script:
 | `item.<name>` | Every `ItemDatabase` item spawns and still exists two frames later, in rows of 8 |
 | `use.<name>` | One item per category (food, tools, rope, lights, launchers) reaches the hand and is used for 1.5 s: the game must start its primary use (`Item.isUsingPrimary`) or take it from the hand. Then dropped |
 | `04-beach` | The airport kiosk loads the first level with a local character |
-| `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is filmed after 3 s, then removed. Entities that cannot be spawned alone are made in their game context instead (below) |
-| `06-segment-<Segment>` | `Sandbox.Jump` to every segment; the segment the player is already in passes when it is the current one. After a jump `MapHandler` must report the target segment |
+| `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is watched for 3 s and filmed, then removed. Before each step the player's statuses, afflictions and screen statuses (BLIND) are cleared, and the step fails if the player is still blinded. Afterwards new AOEs, ghost ball fields and items are removed. A plain spawn must show a sign of life: it moved or came 0.3 m closer, targeted the player, blinded them, grew, or removed itself. Names with `Flag_`, `Rope` or `_Placed` only have to spawn. Entities that cannot be spawned alone are made in their game context instead (below) |
+| `06-segment-<Segment>` | `Sandbox.Jump` to every segment; the segment the player is already in passes when it is the current one. After a jump `MapHandler` must report the target segment. The landing must have terrain within 2.5 m under the torso and be grounded within 4 s. The VR view must sit within 0.8 m of the avatar's head and outside terrain |
 | `07-time-<hh>` | Time of day 06, 12 and 21, run outdoors in Caldera with the shot aimed 20 degrees up at the sky. The clock must sit within 0.5 h of the hour and the sun pivot (`DayNightManager.earth`) must turn 10 degrees or more from the previous time |
 
 Entities made in their game context:
