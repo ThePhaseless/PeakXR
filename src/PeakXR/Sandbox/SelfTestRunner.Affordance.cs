@@ -22,6 +22,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.60-deny-piton-range", 20f, DenyPitonStep());
         yield return HandStep("vr.61-deny-two-hands", 20f, DenyTwoHandStep());
         yield return HandStep("vr.62-deny-unusable", 20f, DenyUnusableStep());
+        yield return HandStep("vr.63-sticky-throw", 20f, StickyThrowStep());
     }
 
     /// <summary>vr.60: a held climbing spike aimed at the open sky. The trigger press reaches
@@ -78,6 +79,36 @@ internal sealed partial class SelfTestRunner
         yield return PressAndExpect(LocalHold.ItemInLeftHand, DenyReason.CantUse);
         if (HeldItem() != null)
             usability(HeldItem()) = Optionable<bool>.None;
+    }
+
+    /// <summary>vr.63: a sticky item (cactus ball, <c>StickyItemComponent</c>) thrown by a hand swing leaves the hand.
+    /// DoDropping aborts any drop below its <c>throwChargeRequirement</c> (CharacterItems.cs:277-289), so this proves
+    /// the hand throw sends a real charge.</summary>
+    IEnumerator StickyThrowStep()
+    {
+        var sticky = FindItemComponent<StickyItemComponent>();
+        if (sticky == null)
+        {
+            stepSkip = "no sticky item";
+            yield break;
+        }
+        yield return GiveAndHold(sticky.GetComponent<Item>());
+        if (!stepOk)
+            yield break;
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out var right);
+        var windup = head + (left ? -right : right) * 0.25f + Vector3.down * 0.15f;
+        yield return MoveTrack(left, windup, 0.4f);
+        yield return Wait(0.3f);
+        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        yield return Until(
+            () => HeldItem() == null,
+            1.5f,
+            "sticky item still in hand after the swing"
+        );
+        if (stepOk)
+            stepNote = $"released (charge requirement {sticky.throwChargeRequirement:0.00})";
     }
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for a denial with

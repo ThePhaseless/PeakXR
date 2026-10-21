@@ -30,6 +30,11 @@ public enum DenyReason : byte
     AimHigher,
     FriendsFar,
     PocketsFull,
+    StuckToHand,
+    ItemWouldDrop,
+
+    /// <summary>A notice, not a refusal: the held item went to its belt slot when a climb started.</summary>
+    Stowed,
 
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
@@ -65,6 +70,9 @@ public static class DenyText
             DenyReason.AimHigher => "Too steep down",
             DenyReason.FriendsFar => "Friends too far",
             DenyReason.PocketsFull => "Pockets full",
+            DenyReason.StuckToHand => "Stuck to your hand",
+            DenyReason.ItemWouldDrop => "Would drop your item",
+            DenyReason.Stowed => "Stowed on your belt",
             _ => "",
         };
 
@@ -87,6 +95,8 @@ public static class DenyText
             DenyReason.AimHigher => "Aim at the ring",
             DenyReason.FriendsFar => "Gather everyone here",
             DenyReason.PocketsFull => "Drop or stash an item",
+            DenyReason.StuckToHand => "Swing hard to throw it",
+            DenyReason.ItemWouldDrop => "Grip again to climb",
             DenyReason.WrongAngle => "Face them from the ring",
             DenyReason.KeepHolding => "Hold the trigger",
             DenyReason.MovedAway => "Stay by the piton",
