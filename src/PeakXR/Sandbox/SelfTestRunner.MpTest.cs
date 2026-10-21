@@ -643,7 +643,8 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
-        float end = Now + item.usingTimePrimary + 8f;
+        // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head.
+        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 6f);
         float best = float.MaxValue;
         while (item != null && HeldItem() == item && Now < end && host != null)
         {

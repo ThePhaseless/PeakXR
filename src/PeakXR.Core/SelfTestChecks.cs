@@ -67,6 +67,30 @@ namespace PeakXR.Core
         /// </summary>
         public static float MaxThrowRange(float speed, float height, float gravity) =>
             speed / gravity * MathF.Sqrt(speed * speed + 2f * gravity * MathF.Max(0f, height));
+
+        /// <summary>Fixed slack on every game duration (s): frame hitches, a network round trip, the step's own polls.</summary>
+        public const float GameMargin = 1f;
+
+        /// <summary>
+        /// Seconds a self-test wait gets for a game duration of <paramref name="gameSeconds"/> (an item's use time,
+        /// an interact hold, a fuse) after <paramref name="leadIn"/> seconds of scripted setup (the hand reaching
+        /// the spot): a quarter on top plus <see cref="GameMargin"/>, so a slow item never runs out of a budget
+        /// sized for a fast one. A negative or NaN duration counts as instant.
+        /// </summary>
+        public static float WaitBudget(float gameSeconds, float leadIn = 0f) =>
+            (gameSeconds > 0f ? gameSeconds * 1.25f : 0f) + MathF.Max(0f, leadIn) + GameMargin;
+
+        /// <summary>Seconds to fall <paramref name="height"/> from rest: free fall up to
+        /// <paramref name="terminalSpeed"/>, then at that speed.</summary>
+        public static float FallSeconds(float height, float gravity, float terminalSpeed)
+        {
+            if (height <= 0f)
+                return 0f;
+            float speedUpDistance = terminalSpeed * terminalSpeed / (2f * gravity);
+            return height <= speedUpDistance
+                ? MathF.Sqrt(2f * height / gravity)
+                : terminalSpeed / gravity + (height - speedUpDistance) / terminalSpeed;
+        }
     }
 
     /// <summary>
