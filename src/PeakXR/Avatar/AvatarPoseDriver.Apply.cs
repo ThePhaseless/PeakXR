@@ -50,6 +50,7 @@ public partial class AvatarPoseDriver
     private HandRig leftRig;
     private HandRig rightRig;
     private readonly ItemHoldInfo hold = new();
+    private readonly ArmBlend armBlend = new();
     private FixedJoint itemJoint;
     private bool itemJointLeft;
 
@@ -58,6 +59,23 @@ public partial class AvatarPoseDriver
 
     /// <summary>True while this tick's held-item frame comes from the tracked hand; read by the hold torque patch.</summary>
     internal bool ItemFrameOverridden { get; private set; }
+
+    /// <summary>How much the tracked hands drive the arms now (0 while the game ragdolls the body, eased back in).
+    /// Read by the self-test.</summary>
+    internal float ArmWeight => armBlend.Weight;
+
+    /// <summary>Whether tracked hands may drive <paramref name="c"/>'s arms: the game is not ragdolling the body
+    /// (<see cref="ArmBlend.Tracked"/>). net.pose also stops streaming poses while this is false.</summary>
+    internal static bool ArmsTracked(Character c)
+    {
+        var d = c.data;
+        return d != null
+            && ArmBlend.Tracked(
+                d.passedOut || d.fullyPassedOut || d.dead || d.isCarried,
+                d.fallSeconds,
+                d.currentRagdollControll
+            );
+    }
 
     /// <summary>True when the rig has finger bones that the driver can curl.</summary>
     public bool HasFingerBones => rigReady && (leftRig.HasFingers || rightRig.HasFingers);
@@ -108,22 +126,34 @@ public partial class AvatarPoseDriver
 
     private void LateUpdate()
     {
+        var c = Owner;
+        if (HasFreshPose && c != null)
+            armBlend.Update(ArmsTracked(c), Time.deltaTime);
+        else
+            armBlend.Reset();
         // Animation only runs in FixedUpdate; refresh fingers every rendered frame so curls stay smooth at 90 Hz+.
         if (rigReady && HasFreshPose)
             ApplyFingers();
         else if (rigReady)
             RestoreFingers();
         if (
-            (hintOnL || hintOnR) && (!HasFreshPose || ArmsSuspended || !AvatarConfig.Instance.ArmIK)
+            (hintOnL || hintOnR)
+            && (
+                !HasFreshPose
+                || ArmsSuspended
+                || !AvatarConfig.Instance.ArmIK
+                || armBlend.Weight <= 0f
+            )
         )
         {
-            SetHint(true, false, default);
-            SetHint(false, false, default);
+            SetHint(true, false, default, 0f);
+            SetHint(false, false, default, 0f);
         }
     }
 
     /// <summary>After <c>CharacterAnimations.ConfigureIK</c>: bones are in the animated pose and IK targets were
-    /// just written by vanilla. Overwrite the hand targets, add head look, curl fingers.</summary>
+    /// just written by vanilla. Blend the hand targets toward the tracked hands by <see cref="ArmWeight"/>, add head
+    /// look, curl fingers.</summary>
     internal void OnConfigureIK()
     {
         if (!HasFreshPose)
@@ -137,9 +167,11 @@ public partial class AvatarPoseDriver
         var refs = Owner.refs;
         var cfg = AvatarConfig.Instance;
 
+        float w = armBlend.Weight;
         if (
             cfg.ArmIK
             && !ArmsSuspended
+            && w > 0f
             && refs.IKHandTargetLeft != null
             && refs.IKHandTargetRight != null
         )
@@ -154,9 +186,9 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
-                refs.IKHandTargetLeft.SetPositionAndRotation(p + offset, r);
+                BlendTarget(refs.IKHandTargetLeft, p + offset, r, w);
             }
-            SetHint(true, pose.HasLeftHand, refs.IKHandTargetLeft.position);
+            SetHint(true, pose.HasLeftHand, refs.IKHandTargetLeft.position, w);
             if (pose.HasRightHand)
             {
                 rightRig.BoneFromController(
@@ -165,9 +197,9 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
-                refs.IKHandTargetRight.SetPositionAndRotation(p + offset, r);
+                BlendTarget(refs.IKHandTargetRight, p + offset, r, w);
             }
-            SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position);
+            SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position, w);
         }
 
         // The local player's head is hidden and the camera hangs off it, so only other characters get head look.
@@ -181,13 +213,21 @@ public partial class AvatarPoseDriver
         ApplyFingers();
     }
 
+    /// <summary>Moves an IK target <paramref name="w"/> of the way from where vanilla (or the last tick) left it to
+    /// the tracked pose; at 1 it is the tracked pose.</summary>
+    private static void BlendTarget(Transform target, Vector3 pos, Quaternion rot, float w) =>
+        target.SetPositionAndRotation(
+            Vector3.Lerp(target.position, pos, w),
+            Quaternion.Slerp(target.rotation, rot, w)
+        );
+
     /// <summary>
     /// Turns one arm's elbow hint on (pointed down, out and back from the shoulder toward
     /// <paramref name="hand"/>, all in animated space) or back to the prefab weight. The scout's
     /// <c>IK_Arm_Left/Right</c> constraints carry an <c>Elbow</c> hint at weight 0, so without this the solver keeps the
     /// idle animation's bend plane (<c>AnimationRuntimeUtils.SolveTwoBoneIK</c>) and raised hands get sideways elbows.
     /// </summary>
-    private void SetHint(bool left, bool on, Vector3 hand)
+    private void SetHint(bool left, bool on, Vector3 hand, float w)
     {
         var ik = left ? Owner.refs.ikLeft : Owner.refs.ikRight;
         var shoulder = left ? shoulderL : shoulderR;
@@ -206,7 +246,7 @@ public partial class AvatarPoseDriver
                     left
                 )
                 .U();
-            data.hintWeight = 1f;
+            data.hintWeight = Mathf.Lerp(left ? hintWeightL : hintWeightR, 1f, w);
         }
         else if (left ? hintOnL : hintOnR)
             data.hintWeight = left ? hintWeightL : hintWeightR;
@@ -233,25 +273,29 @@ public partial class AvatarPoseDriver
         return true;
     }
 
-    /// <summary>After <c>CharacterAnimations.HandleIK</c>: arms follow their own controllers in every state.</summary>
+    /// <summary>After <c>CharacterAnimations.HandleIK</c>: arms follow their own controllers, blended with vanilla's
+    /// weights by <see cref="ArmWeight"/> so they go limp while the game ragdolls the body.</summary>
     internal void OnHandleIK()
     {
-        if (!HasFreshPose || !AvatarConfig.Instance.ArmIK || ArmsSuspended)
+        float w = armBlend.Weight;
+        if (!HasFreshPose || !AvatarConfig.Instance.ArmIK || ArmsSuspended || w <= 0f)
             return;
         var refs = Owner.refs;
         if (refs.ikRig == null || refs.ikLeft == null || refs.ikRight == null)
             return;
-        if (refs.ikRig.weight <= 0f)
+        bool vanillaOff = refs.ikRig.weight <= 0f;
+        if (vanillaOff)
         {
-            // Vanilla had IK off: the constraint weights are leftovers from the last held item.
+            // Vanilla had IK off: the constraint weights are leftovers from the last held item. The rig weight
+            // carries the blend instead.
             refs.ikLeft.weight = 0f;
             refs.ikRight.weight = 0f;
         }
-        refs.ikRig.weight = 1f;
+        refs.ikRig.weight = Mathf.Lerp(refs.ikRig.weight, 1f, w);
         if (Pose.HasLeftHand)
-            refs.ikLeft.weight = 1f;
+            refs.ikLeft.weight = vanillaOff ? 1f : Mathf.Lerp(refs.ikLeft.weight, 1f, w);
         if (Pose.HasRightHand)
-            refs.ikRight.weight = 1f;
+            refs.ikRight.weight = vanillaOff ? 1f : Mathf.Lerp(refs.ikRight.weight, 1f, w);
     }
 
     /// <summary>
@@ -263,11 +307,12 @@ public partial class AvatarPoseDriver
     {
         ItemFrameOverridden = false;
         ReconcileWeld();
-        if (!TryGetItemWorldPose(out var itemPos, out var itemRot))
+        float w = armBlend.Weight;
+        if (w <= 0f || !TryGetItemWorldPose(out var itemPos, out var itemRot))
             return;
         var refs = Owner.refs;
         var offset = refs.animationHipTransform.position - hip.Rig.position;
-        refs.animationItemTransform.SetPositionAndRotation(itemPos + offset, itemRot);
+        BlendTarget(refs.animationItemTransform, itemPos + offset, itemRot, w);
         ItemFrameOverridden = true;
     }
 
@@ -277,9 +322,11 @@ public partial class AvatarPoseDriver
     /// </summary>
     internal bool AttachToHoldingHand(Item item)
     {
+        // The weld snaps the hand body onto the tracked pose: never while the arms are (partly) released.
         if (
             !HasFreshPose
             || ArmsSuspended
+            || armBlend.Weight < 1f
             || !AvatarConfig.Instance.RetargetItems
             || !EnsureRig()
             || !hold.Bind(item)
@@ -320,7 +367,7 @@ public partial class AvatarPoseDriver
     private void ReconcileWeld()
     {
         var item = Owner.data.currentItem;
-        if (item == null || ArmsSuspended)
+        if (item == null || ArmsSuspended || armBlend.Weight < 1f)
             return;
         if (itemJoint != null)
         {
