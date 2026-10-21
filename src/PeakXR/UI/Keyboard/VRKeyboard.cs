@@ -72,12 +72,13 @@ internal sealed class VRKeyboard : MonoBehaviour
 
     private Canvas canvas;
     private RectTransform canvasRect;
-    private Text title;
-    private Text preview;
+    private TextMeshProUGUI title;
+    private TextMeshProUGUI preview;
     private KeyDef[] keys;
     private Rect[] keyBounds;
     private Image[] keyImages;
-    private Text[] keyLabels;
+    private TextMeshProUGUI[] keyLabels;
+    private TMP_FontAsset font;
     private Color[] keyColors;
 
     private GameObject lastSelected;
@@ -163,16 +164,16 @@ internal sealed class VRKeyboard : MonoBehaviour
         scaler.referenceResolution = size;
         canvasRect = (RectTransform)go.transform;
 
-        var font = LoadFont();
         // Invisible: the keys float on their own, but a ray between two keys still lands on the keyboard
-        // instead of clicking the menu behind it and dropping the input focus.
-        Panel(canvasRect, "Background", Vector2.zero, size, Color.clear);
+        // instead of clicking the menu behind it and dropping the input focus. Its mesh stays batched (no
+        // transparent culling) so GraphicRaycaster still sees it (depth != -1).
+        var background = Panel(canvasRect, "Background", Vector2.zero, size, Color.clear);
+        background.canvasRenderer.cullTransparentMesh = false;
         title = Label(
             canvasRect,
             "Title",
-            font,
             26,
-            TextAnchor.UpperLeft,
+            TextAlignmentOptions.TopLeft,
             new Color(1f, 1f, 1f, 0.6f)
         );
         Place(
@@ -180,10 +181,7 @@ internal sealed class VRKeyboard : MonoBehaviour
             new Vector2(0f, size.y * 0.5f - Pad - 18f),
             new Vector2(size.x - Pad * 2f, 36f)
         );
-        preview = Label(canvasRect, "Preview", font, 34, TextAnchor.MiddleLeft, Color.white);
-        // Heading and typed text sit on nothing: a dark rim keeps them readable against the world.
-        title.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
-        preview.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
+        preview = Label(canvasRect, "Preview", 34, TextAlignmentOptions.Left, Color.white);
         Place(
             preview.rectTransform,
             new Vector2(0f, size.y * 0.5f - Pad - 62f),
@@ -196,7 +194,7 @@ internal sealed class VRKeyboard : MonoBehaviour
         keys = new KeyDef[count];
         keyBounds = new Rect[count];
         keyImages = new Image[count];
-        keyLabels = new Text[count];
+        keyLabels = new TextMeshProUGUI[count];
         keyColors = new Color[count];
 
         int index = 0;
@@ -235,9 +233,8 @@ internal sealed class VRKeyboard : MonoBehaviour
                 var label = Label(
                     image.rectTransform,
                     "Label",
-                    font,
                     30,
-                    TextAnchor.MiddleCenter,
+                    TextAlignmentOptions.Center,
                     Color.white
                 );
                 label.raycastTarget = false;
@@ -255,10 +252,27 @@ internal sealed class VRKeyboard : MonoBehaviour
         WorldCanvases.Track(canvas);
     }
 
-    private static Font LoadFont()
+    /// <summary>
+    /// The game's own font, so the keys match its menus: the focused field's, else the HUD prompt's. The keyboard is
+    /// built at startup before any game UI exists, so the font is picked when it opens.
+    /// </summary>
+    private void UseGameFont(TMP_InputField input)
     {
-        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        return font != null ? font : Font.CreateDynamicFontFromOSFont("Arial", 32);
+        var source = input != null ? input.textComponent : null;
+        var gui = GUIManager.instance;
+        if (source == null && gui != null && gui.interactName != null)
+            source = gui.interactName.GetComponentInChildren<TMP_Text>(true);
+        var game = source != null ? source.font : null;
+        if (game == null || game == font)
+            return;
+        font = game;
+        title.font = game;
+        preview.font = game;
+        foreach (var label in keyLabels)
+            label.font = game;
+        // Heading and typed text sit on nothing: an outline keeps them readable against the world.
+        TextHalo.Apply(title);
+        TextHalo.Apply(preview);
     }
 
     private static Image Panel(
@@ -278,24 +292,24 @@ internal sealed class VRKeyboard : MonoBehaviour
         return image;
     }
 
-    private static Text Label(
+    private static TextMeshProUGUI Label(
         RectTransform parent,
         string name,
-        Font font,
-        int fontSize,
-        TextAnchor anchor,
+        float fontSize,
+        TextAlignmentOptions alignment,
         Color color
     )
     {
-        var go = new GameObject(name, typeof(RectTransform), typeof(Text));
+        var go = new GameObject(name, typeof(RectTransform));
         go.transform.SetParent(parent, false);
-        var text = go.GetComponent<Text>();
-        text.font = font;
+        var text = go.AddComponent<TextMeshProUGUI>();
         text.fontSize = fontSize;
-        text.alignment = anchor;
+        text.alignment = alignment;
         text.color = color;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        // Typed text is shown as typed: a '<' is not a tag.
+        text.richText = false;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = false;
         return text;
     }
@@ -383,6 +397,7 @@ internal sealed class VRKeyboard : MonoBehaviour
         HasPose = true;
 
         field = input;
+        UseGameFont(input);
         shift = false;
         shown = null;
         open = true;

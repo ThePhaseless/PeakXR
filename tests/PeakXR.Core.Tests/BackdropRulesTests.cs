@@ -137,6 +137,45 @@ public class BackdropRulesTests
     }
 
     [Fact]
+    public void FillGroupedWithAHiddenPanel_GoesWithIt()
+    {
+        // The ticket's dotted line, the end screen's hole-punch strip, a tooltip card that moves around: small,
+        // anywhere on screen, but in the same group as the paper that was hidden.
+        var t = Panel();
+        t.WidthFraction = 0.01f;
+        t.HeightFraction = 0.4f;
+        t.ContentAbove = 0;
+        t.InPanelGroup = true;
+        Assert.Equal(BackdropRole.Panel, BackdropRules.Classify(t));
+    }
+
+    [Fact]
+    public void PictureGroupedWithAHiddenPanel_Stays()
+    {
+        // The barcode or logo printed on the ticket.
+        var t = Panel();
+        t.Flat = false;
+        t.WidthFraction = 0.16f;
+        t.HeightFraction = 0.06f;
+        t.ContentAbove = 0;
+        t.InPanelGroup = true;
+        Assert.Equal(BackdropRole.Content, BackdropRules.Classify(t));
+    }
+
+    [Fact]
+    public void BannerGroupedWithAHiddenPanel_StaysEvenWithMarksOnIt()
+    {
+        // The end screen's "you peaked" banner with stars and a title on it, hanging off the hidden paper.
+        var t = Panel();
+        t.Flat = false;
+        t.WidthFraction = 0.3f;
+        t.HeightFraction = 0.2f;
+        t.ContentAbove = 9;
+        t.InPanelGroup = true;
+        Assert.Equal(BackdropRole.Content, BackdropRules.Classify(t));
+    }
+
+    [Fact]
     public void SmallArtOnAHiddenPanel_Stays()
     {
         // A barcode or logo printed on the ticket.

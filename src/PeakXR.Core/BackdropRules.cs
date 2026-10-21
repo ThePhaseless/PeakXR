@@ -38,6 +38,10 @@ public struct BackdropTraits
     /// <summary>A plain colour fill: no sprite, or a 9-sliced or tiled one (not a drawn picture).</summary>
     public bool Flat;
 
+    /// <summary>Under the same parent as an already hidden panel (its own children included): part of that card
+    /// wherever it sits on screen.</summary>
+    public bool InPanelGroup;
+
     /// <summary>Share of an already hidden panel's area it covers, its centre inside that panel; 0 when none.</summary>
     public float PanelShare;
 }
@@ -69,8 +73,11 @@ public static class BackdropRules
         if (t.WidthFraction >= FullCanvas && t.HeightFraction >= FullCanvas)
             return BackdropRole.Dimmer;
         bool framing = t.ContentAbove >= PanelContent;
-        // On a hidden panel: a flat fill, or anything content sits on, goes with it. A picture with nothing on it stays.
+        // On a hidden panel: a flat fill, or anything content sits on (a card's shadow), goes with it. Grouped with
+        // one but elsewhere on screen: only a flat fill; a picture hanging off the panel (a banner) stays.
         if (t.PanelShare >= PartShare && (t.Flat || framing))
+            return BackdropRole.Panel;
+        if (t.InPanelGroup && t.Flat)
             return BackdropRole.Panel;
         // Elsewhere only a plain fill counts: a drawn picture (banner, map) with marks on it is content.
         return t.Flat && framing && t.WidthFraction * t.HeightFraction >= PanelArea

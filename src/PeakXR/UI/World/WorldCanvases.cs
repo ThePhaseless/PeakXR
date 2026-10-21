@@ -46,6 +46,9 @@ internal sealed class TrackedCanvas
     public bool Rescan;
     public int MeasuredFrame = -1;
     public readonly List<HiddenBackdrop> Hidden = new();
+
+    /// <summary>Dimmers that were off at scan time: hidden once they switch on.</summary>
+    public readonly List<Graphic> PendingDimmers = new();
     public readonly List<TMPro.TMP_Text> HaloTexts = new();
     public readonly List<Material> HaloOriginals = new();
 }
@@ -74,13 +77,18 @@ internal static class WorldCanvases
 
     public static bool IsConverted(Canvas root) => convertedRoots.Contains(root.GetInstanceID());
 
-    /// <summary>How many backdrops are hidden on a converted root canvas (self-test).</summary>
-    public static int HiddenBackdrops(Canvas root)
+    /// <summary>How many backdrops are hidden on a converted root canvas, and how many of those GraphicRaycaster
+    /// would now skip (self-test).</summary>
+    public static int HiddenBackdrops(Canvas root, out int unraycastable)
     {
+        unraycastable = 0;
         var id = root.GetInstanceID();
         foreach (var t in tracked)
             if (t.Id == id)
+            {
+                unraycastable = BackdropStrip.Unraycastable(t);
                 return t.Hidden.Count;
+            }
         return 0;
     }
 

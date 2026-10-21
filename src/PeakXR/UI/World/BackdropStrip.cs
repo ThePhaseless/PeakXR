@@ -15,6 +15,9 @@ internal struct HiddenBackdrop
 
     /// <summary>The renderer alpha it had; negative for a mask graphic, hidden through <c>showMaskGraphic</c>.</summary>
     public float Alpha;
+
+    /// <summary>Its renderer's <c>cullTransparentMesh</c> before it was hidden.</summary>
+    public bool Cull;
     public bool Panel;
 }
 
@@ -22,21 +25,27 @@ internal struct HiddenBackdrop
 /// Takes the flat-screen backdrops off a world-space menu, so its buttons, text and icons float in the scene with
 /// depth: full-canvas dimmers become hard slabs on a world panel, and the panels behind content only framed it on a
 /// monitor. Which graphic is which is decided by <see cref="BackdropRules"/> from its role in the canvas, never from
-/// names or paths. Hidden through the canvas renderer alpha (or <c>showMaskGraphic</c> for a mask), so the game's
-/// raycasts, layout, masks and colour writes all behave as before. Runs when a page opens or changes, not per frame.
+/// names or paths. Hidden through the canvas renderer alpha (or <c>showMaskGraphic</c> for a mask), so layout, masks
+/// and the game's colour writes behave as before. Runs when a page opens or changes, not per frame.
 /// </summary>
+/// <remarks>
+/// Raycasts stay vanilla: GraphicRaycaster skips a graphic whose <c>depth</c> is -1 (UnityEngine.UI
+/// GraphicRaycaster.Raycast), and a renderer with <c>cullTransparentMesh</c> drops its alpha-0 mesh from the batch,
+/// so a hidden graphic keeps its mesh in the batch (fully transparent) for as long as it is hidden.
+/// </remarks>
 internal static class BackdropStrip
 {
     private static readonly List<Graphic> graphics = new();
     private static readonly List<Rect> rects = new();
     private static readonly List<Rect> panelRects = new();
+    private static readonly List<Transform> panelGroups = new();
     private static readonly List<TMP_Text> texts = new();
     private static readonly StringBuilder log = new();
 
     /// <summary>Hides every backdrop on the canvas not hidden yet, closed pages included so they never flash
     /// when they open. Panels and the text halo only when <paramref name="panels"/> is set. Two passes: dimmers and
-    /// panels first, then the fills that belonged to a hidden panel (header bands, frames, card shadows), wherever
-    /// they sit in the hierarchy.</summary>
+    /// panels first, then the fills that belonged to a hidden panel (header bands, frames, card shadows, a tooltip
+    /// card), wherever they sit in the hierarchy.</summary>
     public static void Scan(TrackedCanvas t, bool panels)
     {
         Prune(t);
@@ -56,15 +65,20 @@ internal static class BackdropStrip
         if (panels)
         {
             foreach (var h in t.Hidden)
-                if (
-                    h.Panel
-                    && h.Graphic != null
-                    && WorldCanvases.Clip(t, h.Graphic, bounds, out var lo, out var hi)
-                )
+            {
+                if (!h.Panel || h.Graphic == null)
+                    continue;
+                if (WorldCanvases.Clip(t, h.Graphic, bounds, out var lo, out var hi))
                     panelRects.Add(Rect.MinMaxRect(lo.x, lo.y, hi.x, hi.y));
-            if (panelRects.Count > 0)
+                // The panel's parent groups its card; the canvas root would group everything.
+                var group = h.Graphic.transform.parent;
+                if (group != null && group != t.Rect && !panelGroups.Contains(group))
+                    panelGroups.Add(group);
+            }
+            if (panelRects.Count > 0 || panelGroups.Count > 0)
                 Pass(t, bounds, panels, parts: true);
             panelRects.Clear();
+            panelGroups.Clear();
         }
         graphics.Clear();
         rects.Clear();
@@ -76,7 +90,10 @@ internal static class BackdropStrip
             );
     }
 
-    /// <summary>Keeps hidden graphics hidden when the game's own tweens reset their renderer alpha.</summary>
+    /// <summary>
+    /// Called by the slow re-measure (0.5 s), never a hierarchy scan: keeps hidden graphics hidden when the game's own
+    /// tweens reset their renderer alpha, and hides a dimmer that was off at scan time once it switches itself on.
+    /// </summary>
     public static void Reassert(TrackedCanvas t)
     {
         foreach (var h in t.Hidden)
@@ -91,9 +108,24 @@ internal static class BackdropStrip
             else if (h.Graphic.canvasRenderer.GetAlpha() > 0f)
                 h.Graphic.canvasRenderer.SetAlpha(0f);
         }
+        for (int i = t.PendingDimmers.Count - 1; i >= 0; i--)
+        {
+            var g = t.PendingDimmers[i];
+            if (g == null)
+                t.PendingDimmers.RemoveAt(i);
+            else if (g.isActiveAndEnabled && g.canvasRenderer.GetAlpha() > 0f)
+            {
+                t.PendingDimmers.RemoveAt(i);
+                if (IndexOf(t, g) < 0 && Hide(t, g, panel: false))
+                    Plugin.Log.LogInfo(
+                        $"[ui.world] canvas '{t.Canvas.name}': hid Dimmer '{g.name}' (switched on)"
+                    );
+            }
+        }
     }
 
-    /// <summary>Shows hidden graphics again (all, or only panels) and puts the text materials back.</summary>
+    /// <summary>Shows hidden graphics again (all, or only panels) and puts the text materials back. A value
+    /// another system changed since (its own hide or show) is left as that system set it.</summary>
     public static void Restore(TrackedCanvas t, bool panelsOnly)
     {
         for (int i = t.Hidden.Count - 1; i >= 0; i--)
@@ -101,15 +133,25 @@ internal static class BackdropStrip
             var h = t.Hidden[i];
             if (panelsOnly && !h.Panel)
                 continue;
-            if (h.Graphic != null)
+            var g = h.Graphic;
+            if (g != null)
             {
-                if (h.Alpha >= 0f)
-                    h.Graphic.canvasRenderer.SetAlpha(h.Alpha);
-                else if (h.Graphic.TryGetComponent<Mask>(out var mask))
-                    mask.showMaskGraphic = true;
+                if (h.Alpha < 0f)
+                {
+                    if (g.TryGetComponent<Mask>(out var mask) && !mask.showMaskGraphic)
+                        mask.showMaskGraphic = true;
+                }
+                else
+                {
+                    if (g.canvasRenderer.GetAlpha() <= 0f)
+                        g.canvasRenderer.SetAlpha(h.Alpha);
+                    g.canvasRenderer.cullTransparentMesh = h.Cull;
+                }
             }
             t.Hidden.RemoveAt(i);
         }
+        if (!panelsOnly)
+            t.PendingDimmers.Clear();
         for (int i = 0; i < t.HaloTexts.Count; i++)
             if (t.HaloTexts[i] != null)
                 t.HaloTexts[i].fontSharedMaterial = t.HaloOriginals[i];
@@ -122,21 +164,27 @@ internal static class BackdropStrip
         for (int i = 0; i < graphics.Count; i++)
         {
             var g = graphics[i];
-            // Switched off on its own (a selection highlight, a warning icon): state, not a backdrop.
-            if (
-                rects[i].width <= 0f
-                || !g.enabled
-                || !g.gameObject.activeSelf
-                || IndexOf(t, g) >= 0
-            )
+            if (rects[i].width <= 0f || IndexOf(t, g) >= 0)
                 continue;
             var traits = Traits(i, bounds);
             if (parts)
+            {
                 traits.PanelShare = PanelShare(rects[i]);
+                traits.InPanelGroup = InPanelGroup(g.transform);
+            }
             var role = BackdropRules.Classify(traits);
             if (role == BackdropRole.Content || (role == BackdropRole.Panel && !panels))
                 continue;
-            Hide(t, g, role == BackdropRole.Panel);
+            // Switched off on its own (a selection highlight), or already hidden by another system: state, not ours.
+            // A dimmer is watched instead, and hidden once it shows (Reassert).
+            if (!g.enabled || !g.gameObject.activeSelf || g.canvasRenderer.GetAlpha() <= 0f)
+            {
+                if (role == BackdropRole.Dimmer && !t.PendingDimmers.Contains(g))
+                    t.PendingDimmers.Add(g);
+                continue;
+            }
+            if (!Hide(t, g, role == BackdropRole.Panel))
+                continue;
             log.Append(log.Length == 0 ? "" : ", ")
                 .Append(role)
                 .Append(" '")
@@ -190,28 +238,41 @@ internal static class BackdropStrip
         return best;
     }
 
-    private static void Hide(TrackedCanvas t, Graphic g, bool panel)
+    private static bool InPanelGroup(Transform tr)
     {
-        float alpha;
+        if (panelGroups.Count == 0)
+            return false;
+        for (var p = tr.parent; p != null; p = p.parent)
+            if (panelGroups.Contains(p))
+                return true;
+        return false;
+    }
+
+    /// <summary>Hides one graphic. False when it was already hidden by someone else (nothing recorded).</summary>
+    private static bool Hide(TrackedCanvas t, Graphic g, bool panel)
+    {
+        var h = new HiddenBackdrop { Graphic = g, Panel = panel };
         // A mask graphic at alpha 0 stops writing its stencil and would hide everything it masks.
         if (g.TryGetComponent<Mask>(out var mask))
         {
-            alpha = -1f;
+            if (!mask.showMaskGraphic)
+                return false;
+            h.Alpha = -1f;
             mask.showMaskGraphic = false;
         }
         else
         {
-            alpha = g.canvasRenderer.GetAlpha();
-            g.canvasRenderer.SetAlpha(0f);
+            var cr = g.canvasRenderer;
+            h.Alpha = cr.GetAlpha();
+            if (h.Alpha <= 0f)
+                return false;
+            h.Cull = cr.cullTransparentMesh;
+            // Keeps the invisible mesh batched, so it keeps its depth and blocks or catches raycasts as before.
+            cr.cullTransparentMesh = false;
+            cr.SetAlpha(0f);
         }
-        t.Hidden.Add(
-            new HiddenBackdrop
-            {
-                Graphic = g,
-                Alpha = alpha,
-                Panel = panel,
-            }
-        );
+        t.Hidden.Add(h);
+        return true;
     }
 
     /// <summary>Text that sat on a panel now sits on the world: give it an outline. Returns how many changed.</summary>
@@ -240,6 +301,25 @@ internal static class BackdropStrip
             if (t.Hidden[i].Graphic == g)
                 return i;
         return -1;
+    }
+
+    /// <summary>Hidden graphics on shown pages that GraphicRaycaster would now skip (self-test: should be none).</summary>
+    public static int Unraycastable(TrackedCanvas t)
+    {
+        int count = 0;
+        foreach (var h in t.Hidden)
+        {
+            var g = h.Graphic;
+            if (
+                g != null
+                && h.Alpha >= 0f
+                && g.raycastTarget
+                && g.isActiveAndEnabled
+                && (g.canvasRenderer.cull || g.depth == -1)
+            )
+                count++;
+        }
+        return count;
     }
 
     /// <summary>Forgets graphics and texts destroyed with their page.</summary>

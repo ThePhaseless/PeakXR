@@ -269,16 +269,19 @@ internal sealed partial class SelfTestRunner
                 out float angle
             );
             // The pause menu's full-canvas BG dimmer is a backdrop whatever UI.MenuPanels says.
-            int hidden = WorldCanvases.HiddenBackdrops(root);
+            int hidden = WorldCanvases.HiddenBackdrops(root, out int unraycastable);
             var note =
                 $"canvas '{root.name}' {root.renderMode}, {distance:0.00} m, {angle:0} deg off the view, "
-                + $"{hidden} backdrops hidden";
+                + $"{hidden} backdrops hidden, {unraycastable} of them dropped from raycasts";
             if (root.renderMode != RenderMode.WorldSpace)
                 Fail("not world space: " + note);
             else if (!front)
                 Fail("not in front of the head: " + note);
             else if (hidden == 0)
                 Fail("flat-screen backdrop left on the menu: " + note);
+            // GraphicRaycaster skips depth -1 or culled graphics: a hidden dimmer must still block clicks behind it.
+            else if (unraycastable > 0)
+                Fail("hidden backdrop no longer takes raycasts: " + note);
             else
                 stepNote = note;
         }
