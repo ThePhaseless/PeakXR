@@ -1,6 +1,7 @@
 using System;
 using PeakXR.Framework;
 using PeakXR.Interact;
+using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Inventory;
@@ -8,7 +9,8 @@ namespace PeakXR.Inventory;
 /// <summary>
 /// <c>inventory.vr</c>: body-anchored hotbar (hips, chest, shoulders) with grip draw and release holster, the worn
 /// backpack over either shoulder (open, take, stash, take off), wheel pocket selection by hand movement and
-/// hand-lock haptics when the game refuses a switch. Every switch goes through the game's hotbar input, so
+/// hand-lock haptics when the game refuses a switch. In VR the hotbar is drawn on the body and the game's 2D hotbar
+/// is hidden. Every switch goes through the game's hotbar input, so
 /// vanilla gates, <c>EquipSlot</c> and its RPCs apply. Hotbar buttons keep working as the fallback.
 /// </summary>
 public sealed class InventoryFeature : Feature
@@ -37,5 +39,7 @@ public sealed class InventoryFeature : Feature
         Patch(typeof(InventoryPatches.Sample));
         Patch(typeof(InventoryPatches.SelectSlot));
         GripHooks.Register(BodyInventory.Instance);
+        // The 2D hotbar comes back as soon as VR stops; the Sample postfix only runs in VR.
+        VRSession.Stopped += HotbarHider.Restore;
     }
 }

@@ -95,11 +95,11 @@ The `sandbox.selftest` feature plays the procedure above by itself, for runs whe
 
 Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
 
-VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-d3d11 -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
+VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-vulkan -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
 
 ### Live input
 
-Launch with `-force-d3d11 -peakxr-selftest -peakxr-selftest-hold` (VR, SteamVR running). The script runs `00-title`, `vr.00` to `vr.03`, `01-airport`, `04-beach`, `vr.05` and `vr.06`, skips the settings, items, use, mob and segment steps, writes `PeakXR-selftest.log` and then leaves the game running on the beach. It quits 20 minutes later. Another session can now drive virtual Index controllers through SteamVR.
+Launch with `-force-vulkan -peakxr-selftest -peakxr-selftest-hold` (VR, SteamVR running). The script runs `00-title`, `vr.00` to `vr.03`, `01-airport`, `04-beach`, `vr.05` and `vr.06`, skips the settings, items, use, mob and segment steps, writes `PeakXR-selftest.log` and then leaves the game running on the beach. It quits 20 minutes later. Another session can now drive virtual Index controllers through SteamVR.
 
 With `-peakxr-selftest` (hold or not) every VR sample is diffed and changes are logged to `BepInEx/LogOutput.log` (flushed per line), one line per edge:
 

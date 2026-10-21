@@ -105,6 +105,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     IEnumerator Script()
     {
         bool hold = SelfTestFeature.Hold;
+        // Hold mode keeps the real controllers; otherwise idle hands stay in view until a hand step drives them.
+        if (VRRun && !hold)
+            VR.VRInput.TestOverride = IdleHands;
         yield return Run("00-title", 180f, Title());
         if (VRRun)
             yield return Run("vr.00-session", 60f, Session());

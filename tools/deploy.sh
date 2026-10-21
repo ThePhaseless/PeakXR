@@ -19,4 +19,4 @@ for d in plugins/PeakXR patchers/PeakXR; do
 done
 cp -r "$SRC"/. "$PEAK_DIR/BepInEx/"
 echo "[deploy] copied $(find "$SRC" -type f | wc -l) files into $PEAK_DIR/BepInEx"
-echo "[deploy] Steam launch options (Linux): WINEDLLOVERRIDES=\"winhttp=n,b\" %command% -force-d3d11"
+echo "[deploy] Steam launch options (Linux): WINEDLLOVERRIDES=\"winhttp=n,b\" %command% -force-vulkan"

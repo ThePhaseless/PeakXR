@@ -73,20 +73,21 @@ namespace PeakXR.Core
     public static class MirrorMath
     {
         /// <summary>
-        /// UV rect (x, y, width, height) that fills a window of aspect <paramref name="dstAspect"/> with an
-        /// image of aspect <paramref name="srcAspect"/> without distortion, cropping the longer side evenly.
+        /// Window rect (x, y, width, height, as fractions of the window) that shows all of an image of aspect
+        /// <paramref name="srcAspect"/> in a window of aspect <paramref name="dstAspect"/> without distortion,
+        /// centred with bars on the shorter side. The whole eye stays visible, hands at the bottom included.
         /// </summary>
-        public static Vector4 EnvelopeUv(float srcAspect, float dstAspect)
+        public static Vector4 FitRect(float srcAspect, float dstAspect)
         {
             if (!(srcAspect > 0f) || !(dstAspect > 0f))
                 return new Vector4(0f, 0f, 1f, 1f);
             if (srcAspect > dstAspect)
             {
-                float w = dstAspect / srcAspect;
-                return new Vector4((1f - w) * 0.5f, 0f, w, 1f);
+                float h = dstAspect / srcAspect;
+                return new Vector4(0f, (1f - h) * 0.5f, 1f, h);
             }
-            float h = srcAspect / dstAspect;
-            return new Vector4(0f, (1f - h) * 0.5f, 1f, h);
+            float w = srcAspect / dstAspect;
+            return new Vector4((1f - w) * 0.5f, 0f, w, 1f);
         }
     }
 }

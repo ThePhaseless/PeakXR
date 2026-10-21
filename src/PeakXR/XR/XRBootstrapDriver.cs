@@ -223,9 +223,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
     {
         var api = SystemInfo.graphicsDeviceType;
         Plugin.Log.LogInfo($"{Tag} Graphics API {api}");
-        if (api is GraphicsDeviceType.Direct3D12 or GraphicsDeviceType.Vulkan)
+        if (api != GraphicsDeviceType.Vulkan)
             Plugin.Log.LogWarning(
-                $"{Tag} {api} is the less tested XR path; add -force-d3d11 to the launch options for VR"
+                $"{Tag} {api} is untested in VR; add -force-vulkan to the launch options"
             );
     }
 

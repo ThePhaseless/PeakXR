@@ -2,33 +2,52 @@ using PeakXR.Core;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace PeakXR.Inventory;
 
 /// <summary>
-/// Faint spheres at the body slots, shown only while a hand comes near one so the view stays clear. Children of
-/// <see cref="VRRig.Origin"/>, placed at the tracking-space anchors of <see cref="BodyInventory"/>.
+/// The hotbar drawn on the body, replacing the game's 2D hotbar in VR (<see cref="HotbarHider"/>). Each belt slot
+/// is a ring with its item's icon on top, tilted up toward the eyes so it reads at a glance down; the ring lights
+/// up while a hand is in the slot. The shoulder (backpack) anchors show only while a hand comes near, since you
+/// cannot see them. Children of <see cref="VRRig.Origin"/>, placed at the tracking-space anchors of
+/// <see cref="BodyInventory"/>. Icons change only when a slot's item does.
 /// </summary>
 internal sealed class SlotGhosts : MonoBehaviour
 {
-    private static readonly Color EmptyColor = new(0.8f, 0.8f, 0.8f, 1f);
+    private static readonly Color EmptyColor = new(0.85f, 0.85f, 0.85f, 1f);
     private static readonly Color FilledColor = new(1f, 0.95f, 0.75f, 1f);
     private static readonly Color SelectedColor = new(0.45f, 0.85f, 1f, 1f);
     private static readonly Color FullColor = new(1f, 0.25f, 0.2f, 1f);
 
-    /// <summary>Peak opacity of a marker with a hand inside it.</summary>
-    private const float MaxAlpha = 0.35f;
+    /// <summary>Ring opacity at rest, and added while a hand is in the slot.</summary>
+    private const float RingAlpha = 0.3f;
+    private const float HoverAlpha = 0.45f;
 
-    /// <summary>Markers fade in from this many slot radii away.</summary>
+    /// <summary>Ring and icon size as a fraction of the slot's catch diameter: smaller than the catch area, so
+    /// neighbours keep a clear gap between them.</summary>
+    private const float RingSize = 0.65f;
+    private const float IconSize = 0.5f;
+    private const float HoverScale = 1.15f;
+
+    /// <summary>Faces tilt back from flat by this much (degrees), toward the eyes above and behind them.</summary>
+    private const float Tilt = 60f;
+
+    /// <summary>Shoulder markers fade in from this many slot radii away.</summary>
     private const float FadeRadii = 2.5f;
 
+    private const int Max = BodyInventory.MaxSlots;
     private static SlotGhosts instance;
+    private static Texture2D ringTexture;
 
-    private readonly Transform[] markers = new Transform[BodyInventory.SlotCount];
-    private readonly Renderer[] renderers = new Renderer[BodyInventory.SlotCount];
-    private readonly Material[] materials = new Material[BodyInventory.SlotCount];
+    private readonly Transform[] roots = new Transform[Max];
+    private readonly Renderer[] rings = new Renderer[Max];
+    private readonly Renderer[] icons = new Renderer[Max];
+    private readonly Material[] ringMats = new Material[Max];
+    private readonly Material[] iconMats = new Material[Max];
+    private readonly Item[] shown = new Item[Max];
 
-    /// <summary>Creates the markers under the rig origin once it exists; cheap to call every frame.</summary>
+    /// <summary>Creates the slots under the rig origin once it exists; cheap to call every frame.</summary>
     public static void Ensure()
     {
         if (instance != null)
@@ -41,25 +60,48 @@ internal sealed class SlotGhosts : MonoBehaviour
         instance = go.AddComponent<SlotGhosts>();
     }
 
+    /// <summary>The body hotbar is drawn this frame (settings on, slots built, anchors tracked), so the 2D one can go.</summary>
+    public static bool Showing =>
+        InventoryConfig.Instance.BodySlots
+        && InventoryConfig.Instance.Ghosts
+        && instance != null
+        && BodyInventory.Instance.Valid
+        && VRSession.HasFocus;
+
     private void Awake()
     {
-        var mesh = UIMaterials.SphereMesh();
-        for (int i = 0; i < markers.Length; i++)
+        var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        var mesh = quad.GetComponent<MeshFilter>().sharedMesh;
+        Destroy(quad);
+        if (ringTexture == null)
+            ringTexture = MakeRing(64);
+        for (int i = 0; i < Max; i++)
         {
-            materials[i] = UIMaterials.Create(EmptyColor, false, 3000);
-            var go = UIMaterials.MeshObject($"Slot{i}", mesh, materials[i], transform);
-            markers[i] = go.transform;
-            renderers[i] = go.GetComponent<Renderer>();
-            renderers[i].enabled = false;
+            var root = new GameObject($"Slot{i}").transform;
+            root.SetParent(transform, false);
+            roots[i] = root;
+            ringMats[i] = TexturedMaterial(ringTexture, 3000);
+            iconMats[i] = TexturedMaterial(null, 3001);
+            var ring = UIMaterials.MeshObject("Ring", mesh, ringMats[i], root);
+            ring.transform.localScale = new Vector3(RingSize, RingSize, 1f);
+            rings[i] = ring.GetComponent<Renderer>();
+            var icon = UIMaterials.MeshObject("Icon", mesh, iconMats[i], root);
+            // The viewer is on the quad's -Z side: lift the icon off the ring toward them.
+            icon.transform.localPosition = new Vector3(0f, 0f, -0.02f);
+            icon.transform.localScale = new Vector3(IconSize, IconSize, 1f);
+            icons[i] = icon.GetComponent<Renderer>();
+            root.gameObject.SetActive(false);
         }
     }
 
     private void OnDestroy()
     {
-        for (int i = 0; i < materials.Length; i++)
+        for (int i = 0; i < Max; i++)
         {
-            if (materials[i] != null)
-                Destroy(materials[i]);
+            if (ringMats[i] != null)
+                Destroy(ringMats[i]);
+            if (iconMats[i] != null)
+                Destroy(iconMats[i]);
         }
         if (instance == this)
             instance = null;
@@ -69,43 +111,115 @@ internal sealed class SlotGhosts : MonoBehaviour
     {
         var inv = BodyInventory.Instance;
         var c = Character.localCharacter;
-        bool show =
-            inv.Valid
-            && InventoryConfig.Instance.Ghosts
-            && VRSession.Active
-            && c != null
-            && c.data.fullyConscious;
-        for (int i = 0; i < markers.Length; i++)
+        bool show = inv.Valid && Showing && VRSession.Active && c != null && c.data.fullyConscious;
+        int count = show ? inv.Count : 0;
+        for (int i = 0; i < Max; i++)
         {
-            var look = show ? inv.Look(c, i) : SlotLook.Hidden;
-            if (look == SlotLook.Hidden)
+            var look = i < count ? inv.Look(c, i) : SlotLook.Hidden;
+            if (look == SlotLook.Hidden || !Pose(inv, c, i, look))
             {
-                renderers[i].enabled = false;
+                if (roots[i].gameObject.activeSelf)
+                    roots[i].gameObject.SetActive(false);
                 continue;
             }
-            var slot = inv.Slot(i);
-            float alpha = BodySlotLayout.GhostAlpha(
+            if (!roots[i].gameObject.activeSelf)
+                roots[i].gameObject.SetActive(true);
+        }
+    }
+
+    /// <summary>Places and colours one slot; false when it should not be drawn this frame.</summary>
+    private bool Pose(BodyInventory inv, Character c, int i, SlotLook look)
+    {
+        var slot = inv.Slot(i);
+        bool hovered = inv.Hovered(i);
+        float alpha = RingAlpha + (hovered ? HoverAlpha : 0f);
+        Item item = null;
+        if (slot.GameSlot == BodySlotLayout.MaxHotbar)
+        {
+            // Shoulder anchor: behind you, so only a fading hint while a hand is near.
+            alpha = BodySlotLayout.GhostAlpha(
                 inv.NearestHandDistance(i),
                 slot.Radius,
                 slot.Radius * FadeRadii
             );
             if (alpha <= 0f)
-            {
-                renderers[i].enabled = false;
-                continue;
-            }
-            var color = look switch
-            {
-                SlotLook.Filled => FilledColor,
-                SlotLook.Selected => SelectedColor,
-                SlotLook.Full => FullColor,
-                _ => EmptyColor,
-            };
-            color.a = alpha * MaxAlpha;
-            materials[i].color = color;
-            markers[i].localPosition = inv.Anchor(i);
-            markers[i].localScale = Vector3.one * slot.Radius;
-            renderers[i].enabled = true;
+                return false;
         }
+        else
+        {
+            var itemSlot = c.player.GetItemSlot(slot.GameSlot);
+            item = itemSlot != null && !itemSlot.IsEmpty() ? itemSlot.prefab : null;
+        }
+
+        var color = look switch
+        {
+            SlotLook.Filled => FilledColor,
+            SlotLook.Selected => SelectedColor,
+            SlotLook.Full => FullColor,
+            _ => EmptyColor,
+        };
+        color.a = Mathf.Min(1f, alpha);
+        ringMats[i].color = color;
+
+        // GetIcon reads GUIManager settings (Item.cs:83); without a HUD, retry next frame.
+        if (shown[i] != item && (item == null || GUIManager.instance != null))
+        {
+            shown[i] = item;
+            iconMats[i].mainTexture = item != null ? item.UIData.GetIcon() : null;
+        }
+        bool hasIcon = item != null && iconMats[i].mainTexture != null;
+        if (icons[i].enabled != hasIcon)
+            icons[i].enabled = hasIcon;
+        // The item that is out in a hand leaves a faded icon behind: its slot is still taken.
+        if (hasIcon)
+            iconMats[i].color = new Color(1f, 1f, 1f, look == SlotLook.Selected ? 0.35f : 0.95f);
+
+        float size = slot.Radius * 2f * (hovered ? HoverScale : 1f);
+        roots[i]
+            .SetLocalPositionAndRotation(
+                inv.Anchor(i),
+                inv.Facing(i) * Quaternion.Euler(Tilt, 0f, 0f)
+            );
+        roots[i].localScale = new Vector3(size, size, size);
+        return true;
+    }
+
+    /// <summary>Alpha-blended textured material on a shader every player build ships (as <c>CinemaScreen</c>).</summary>
+    private static Material TexturedMaterial(Texture texture, int queue)
+    {
+        var shader = Shader.Find("UI/Default") ?? Shader.Find("Sprites/Default");
+        var material = new Material(shader) { mainTexture = texture, renderQueue = queue };
+        material.SetInt("unity_GUIZTestMode", (int)CompareFunction.LessEqual);
+        return material;
+    }
+
+    /// <summary>White ring with a faint filled middle, alpha in the texture so the material colour tints it.</summary>
+    private static Texture2D MakeRing(int size)
+    {
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "PeakXR.SlotRing",
+            wrapMode = TextureWrapMode.Clamp,
+        };
+        var pixels = new Color32[size * size];
+        float half = size / 2f;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float d = new Vector2(x + 0.5f - half, y + 0.5f - half).magnitude / half;
+                float ring = Mathf.Clamp01(1f - Mathf.Abs(d - 0.88f) / 0.08f);
+                float fill = d < 0.82f ? 0.18f : 0f;
+                pixels[y * size + x] = new Color32(
+                    255,
+                    255,
+                    255,
+                    (byte)(255 * Mathf.Max(ring, fill))
+                );
+            }
+        }
+        tex.SetPixels32(pixels);
+        tex.Apply(false, true);
+        return tex;
     }
 }

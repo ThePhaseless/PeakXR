@@ -13,13 +13,16 @@ namespace PeakXR.Rig;
 /// <c>XRMirrorView</c> shader has no compiled code in the build (docs/research/stack.md section 4), so
 /// xr.bootstrap turns URP's mirror off and this copies the eye after all cameras have rendered. The
 /// provider's native blit is used when it offers one; otherwise the eye texture is copied (one array
-/// slice in MultiPass) and stretched to fill the window without distortion.
+/// slice in MultiPass) and drawn whole, upright and letterboxed into the window.
 /// </summary>
 internal sealed class DesktopMirror
 {
     // Static: one mirror per process, so the buffer lives as long as the game (no dispose owner needed).
     private static readonly CommandBuffer cmd = new() { name = "PeakXR desktop mirror" };
+    private static Material blit;
+    private static bool blitLooked;
     private RenderTexture slice;
+    private string lastPath;
     private bool hooked;
 
     public void Enable()
@@ -64,13 +67,16 @@ internal sealed class DesktopMirror
                 )
                 {
                     Graphics.ExecuteCommandBuffer(cmd);
+                    Note("provider native blit");
                     return;
                 }
             }
             if (desc.blitParamsCount > 0)
             {
                 desc.GetBlitParameter(0, out var p);
-                Blit(p.srcTex, p.srcTexArraySlice, p.srcRect);
+                // The provider's srcRect already crops the eye to the window's aspect; draw the whole eye instead.
+                Blit(p.srcTex, p.srcTexArraySlice, new Rect(0f, 0f, 1f, 1f));
+                Note("blit params", p.srcRect);
                 return;
             }
         }
@@ -79,6 +85,18 @@ internal sealed class DesktopMirror
         int pass = eye == MirrorEye.Right && display.GetRenderPassCount() > 1 ? 1 : 0;
         var rt = display.GetRenderTextureForRenderPass(pass);
         Blit(rt, rt != null && rt.volumeDepth > 1 ? pass : 0, new Rect(0f, 0f, 1f, 1f));
+        Note("render pass texture");
+    }
+
+    /// <summary>Logs the mirror path once per change, so a log shows which one drew the window.</summary>
+    private void Note(string path, Rect providerRect = default)
+    {
+        if (ReferenceEquals(path, lastPath))
+            return;
+        lastPath = path;
+        Plugin.Log.LogInfo(
+            $"[rig.camera] desktop mirror via {path} (flip {SystemInfo.graphicsUVStartsAtTop}, copy shader {blit != null}, provider rect {providerRect})"
+        );
     }
 
     private void Blit(RenderTexture src, int arraySlice, Rect srcRect)
@@ -95,13 +113,49 @@ internal sealed class DesktopMirror
 
         float srcAspect = srcRect.width * src.width / Mathf.Max(1f, srcRect.height * src.height);
         float dstAspect = Screen.width / (float)Mathf.Max(1, Screen.height);
-        var uv = MirrorMath.EnvelopeUv(srcAspect, dstAspect);
-        var scale = new Vector2(srcRect.width * uv.Z, srcRect.height * uv.W);
-        var offset = new Vector2(
-            srcRect.x + srcRect.width * uv.X,
-            srcRect.y + srcRect.height * uv.Y
-        );
-        Graphics.Blit(tex, (RenderTexture)null, scale, offset);
+        // XR eye textures are stored top row first, like the backbuffer, while Unity samples v = 0 as the bottom
+        // row; on D3D, Metal and Vulkan (UV starts at top) the eye has to be flipped to land upright on screen.
+        bool flip = SystemInfo.graphicsUVStartsAtTop;
+        float v0 = flip ? srcRect.yMax : srcRect.y;
+        float v1 = flip ? srcRect.y : srcRect.yMax;
+
+        if (!blitLooked)
+        {
+            // Look once: a failed Shader.Find is a native search we must not repeat every frame.
+            blitLooked = true;
+            blit = Shader.Find("Hidden/BlitCopy") is { } shader ? new Material(shader) : null;
+        }
+        if (blit == null)
+        {
+            // No copy shader to draw a quad with: stretch over the whole window, upright at least.
+            Graphics.Blit(
+                tex,
+                (RenderTexture)null,
+                new Vector2(srcRect.width, v1 - v0),
+                new Vector2(srcRect.x, v0)
+            );
+            return;
+        }
+
+        // Whole eye, aspect kept, black bars: the hands at the bottom of the eye stay in view.
+        var r = MirrorMath.FitRect(srcAspect, dstAspect);
+        RenderTexture.active = null;
+        GL.Clear(false, true, Color.black);
+        blit.mainTexture = tex;
+        blit.SetPass(0);
+        GL.PushMatrix();
+        GL.LoadOrtho();
+        GL.Begin(GL.QUADS);
+        GL.TexCoord2(srcRect.x, v0);
+        GL.Vertex3(r.X, r.Y, 0f);
+        GL.TexCoord2(srcRect.x, v1);
+        GL.Vertex3(r.X, r.Y + r.W, 0f);
+        GL.TexCoord2(srcRect.xMax, v1);
+        GL.Vertex3(r.X + r.Z, r.Y + r.W, 0f);
+        GL.TexCoord2(srcRect.xMax, v0);
+        GL.Vertex3(r.X + r.Z, r.Y, 0f);
+        GL.End();
+        GL.PopMatrix();
     }
 
     private void EnsureSlice(RenderTexture src)
