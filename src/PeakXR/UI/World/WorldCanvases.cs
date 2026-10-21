@@ -60,6 +60,16 @@ internal sealed class TrackedCanvas
     public bool StripWasOpen;
     public UIPage LastPage;
     public bool Rescan;
+
+    /// <summary>Rescan again from this frame on (-1: none): content refilled this frame is laid out next to the cells
+    /// it replaces until their deferred Destroy, so only next frame's layout is the one drawn.</summary>
+    public int RescanFrame = -1;
+
+    /// <summary>A list scrolled: rescan <see cref="ScrollContent"/> at this time (-1: none), so rows that were off the
+    /// canvas or outside the list's mask at the last scan lose their strips once they scroll into view.</summary>
+    public float ScrollScanAt = -1f;
+    public Transform ScrollContent;
+    public readonly HashSet<ScrollRect> HookedScrolls = new();
     public int MeasuredFrame = -1;
     public readonly List<HiddenBackdrop> Hidden = new();
 
@@ -82,6 +92,7 @@ internal static class WorldCanvases
     private static readonly List<Canvas> pending = new();
     private static readonly HashSet<int> convertedRoots = new();
     private static readonly List<Graphic> graphics = new();
+    private static readonly List<ScrollRect> scrolls = new();
     private static readonly Vector3[] corners = new Vector3[4];
     private static bool converting;
     private static int forcedFrame = -1;
@@ -91,6 +102,9 @@ internal static class WorldCanvases
 
     // Longest a page may take to scale in before its size counts as settled (ScaleOnEnable default 0.25 s).
     private const float SettleSeconds = 0.6f;
+
+    // A scrolled list is rescanned at most this often (a drag or fling reports every frame).
+    private const float ScrollScanSeconds = 0.15f;
 
     public static bool IsConverted(Canvas root) => convertedRoots.Contains(root.GetInstanceID());
 
@@ -150,7 +164,9 @@ internal static class WorldCanvases
     }
 
     /// <summary>The game spawned new content into an open page without changing the page (a settings tab fills its
-    /// rows): hide its backdrops and halo its text before the rows fade in.</summary>
+    /// rows): hide its backdrops and halo its text before the rows fade in. Scanned this frame and again the next:
+    /// ShowSettings destroys the old rows with a deferred Destroy (SharedSettingsMenu.cs:46-49), so this frame the
+    /// layout stacks the new rows below the old ones, partly off the canvas, where the scan cannot measure them.</summary>
     public static void Restrip(Component inside)
     {
         if (inside == null)
@@ -161,7 +177,10 @@ internal static class WorldCanvases
         var id = canvas.rootCanvas.GetInstanceID();
         foreach (var t in tracked)
             if (t.Id == id && t.Strip)
+            {
                 t.Rescan = true;
+                t.RescanFrame = Time.frameCount + 1;
+            }
     }
 
     public static void Scan(bool includeInactive)
@@ -406,8 +425,16 @@ internal static class WorldCanvases
         var page = t.Pages != null ? t.Pages.currentPage : null;
         var opened = t.IsOpen && !t.StripWasOpen;
         t.StripWasOpen = t.IsOpen;
+        if (t.RescanFrame >= 0 && Time.frameCount >= t.RescanFrame)
+        {
+            t.RescanFrame = -1;
+            t.Rescan = true;
+        }
         if (!opened && !t.Rescan && page == t.LastPage)
+        {
+            ScanScrolled(t);
             return;
+        }
         t.LastPage = page;
         // Hidden placements scale the canvas to nothing: try again once it is placed.
         t.Rescan = Degenerate(t);
@@ -745,7 +772,47 @@ internal static class WorldCanvases
                 Canvas.ForceUpdateCanvases();
             }
             BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value);
+            HookScrolls(t);
         }
+    }
+
+    /// <summary>Listens to every scroll list on the canvas, once each. Runs with <see cref="Strip"/>, not per
+    /// frame.</summary>
+    private static void HookScrolls(TrackedCanvas t)
+    {
+        t.Canvas.GetComponentsInChildren(true, scrolls);
+        foreach (var sr in scrolls)
+            if (t.HookedScrolls.Add(sr))
+            {
+                var list = sr;
+                list.onValueChanged.AddListener(_ => Scrolled(t, list));
+            }
+        scrolls.Clear();
+    }
+
+    private static void Scrolled(TrackedCanvas t, ScrollRect list)
+    {
+        if (!t.Converted || !t.Strip)
+            return;
+        var content = list.content != null ? list.content : list.transform;
+        if (t.ScrollScanAt < 0f)
+            t.ScrollScanAt = Time.unscaledTime + ScrollScanSeconds;
+        // Two lists scrolled within one wait: scan the whole canvas.
+        else if (t.ScrollContent != content)
+            content = null;
+        t.ScrollContent = content;
+    }
+
+    /// <summary>Throttled rescan of a scrolled list: graphics already hidden are skipped, so only rows that came into
+    /// view are judged. No layout pass and no wall retest: scrolling moves rows, it does not resize the menu.</summary>
+    private static void ScanScrolled(TrackedCanvas t)
+    {
+        if (t.ScrollScanAt < 0f || Time.unscaledTime < t.ScrollScanAt || !t.IsOpen || Degenerate(t))
+            return;
+        t.ScrollScanAt = -1f;
+        var content = t.ScrollContent;
+        t.ScrollContent = null;
+        BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value, content);
     }
 
     /// <summary>UI.MenuPanels changed: show or hide the panels on every converted menu at once.</summary>

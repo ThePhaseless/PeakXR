@@ -9,6 +9,7 @@ using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.UI.Common;
 using PeakXR.UI.Menu;
+using PeakXR.UI.Settings;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using PeakXR.XR;
@@ -17,6 +18,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
 using Zorro.Core;
+using Zorro.Settings;
 using Vector3 = UnityEngine.Vector3;
 
 namespace PeakXR.Sandbox;
@@ -319,8 +321,63 @@ internal sealed partial class SelfTestRunner
         yield return root != null
             ? ShotAt("vr-04-settings", CentreOf(root.transform))
             : Shot("vr-04-settings");
+        if (stepOk && root != null)
+            yield return ScrolledRows(root);
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
+    }
+
+    /// <summary>vr.04, second half: the longest game tab scrolled to its end. Rows that sat below the canvas or the
+    /// list's mask when the tab filled must lose their strips once they scroll into view (WorldCanvases.Scrolled).</summary>
+    IEnumerator ScrolledRows(Canvas root)
+    {
+        var menu = root.GetComponentInChildren<SharedSettingsMenu>();
+        var tabs = menu != null ? UISettingsFeature.TabsRef(menu) : null;
+        var list =
+            menu != null && menu.m_settingsContentParent != null
+                ? menu.m_settingsContentParent.GetComponentInParent<ScrollRect>()
+                : null;
+        var all =
+            GameHandler.Instance != null
+                ? GameHandler.Instance.SettingsHandler.GetSettingsThatImplements<IExposedSetting>()
+                : null;
+        if (tabs == null || list == null || all == null)
+        {
+            Fail("vr.04 scroll: no settings tabs, scroll list or settings");
+            yield break;
+        }
+        SettingsTABSButton longest = null;
+        int most = 0;
+        foreach (var b in tabs.buttons)
+        {
+            if (b == null || b.category == VRTab.Category)
+                continue;
+            int n = 0;
+            foreach (var s in all)
+                if (s.GetCategory() == b.category.ToString())
+                    n++;
+            if (n > most)
+            {
+                most = n;
+                longest = b;
+            }
+        }
+        if (longest == null)
+            yield break;
+        tabs.Select(longest);
+        yield return Wait(0.8f);
+        var viewport = list.viewport != null ? list.viewport : (RectTransform)list.transform;
+        bool scrolls = list.content != null && list.content.rect.height > viewport.rect.height + 1f;
+        list.verticalNormalizedPosition = 0f;
+        yield return Wait(0.5f);
+        int strips = VisibleRowStrips(root);
+        var note =
+            $"; {longest.category} tab ({most} rows{(scrolls ? "" : ", fits without scrolling")}) "
+            + $"scrolled to its end: {strips} row strips drawn";
+        if (strips > 0)
+            Fail("row strips drawn after scrolling" + note);
+        else
+            stepNote += note;
     }
 
     /// <summary>Settings rows on <paramref name="root"/> still drawing their own backing: a plain image across most of
@@ -335,6 +392,8 @@ internal sealed partial class SelfTestRunner
                 if (
                     image.enabled
                     && image.canvasRenderer.GetAlpha() > 0f
+                    // Scrolled out of the list's RectMask2D: not drawn.
+                    && !image.canvasRenderer.cull
                     && image.GetComponentInParent<Selectable>() == null
                     && image.rectTransform.rect.width >= 0.8f * width
                 )

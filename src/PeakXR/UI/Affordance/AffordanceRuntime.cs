@@ -433,10 +433,11 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         PoseCue(denied, eye, denyAlpha);
         if (DenyTint.Active)
         {
-            if (denyAlpha > 0.001f)
-                DenyTint.Apply(denyAlpha);
-            else
+            // Shown this frame (age 0, alpha 0): applied from the next pose on, never cleared here.
+            if (DenyFade.Over(now - denyAt, denyHeldUntil - denyAt))
                 DenyTint.Clear();
+            else if (denyAlpha > 0.001f)
+                DenyTint.Apply(denyAlpha);
         }
 
         for (int i = 0; i < 2; i++)
