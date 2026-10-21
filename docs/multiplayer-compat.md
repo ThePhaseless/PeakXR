@@ -124,6 +124,8 @@ The shared affordance service (`src/PeakXR/UI/Affordance/`) is meant to take ove
 
 ### Test plan
 
+Steps 1, 3, 5, 6 (feeding) and 9 (ping) also run unattended with A in VR and B hosting: see "Two-client multiplayer test" in `docs/testing.md`.
+
 Setup: client A is PeakXR in VR (SteamVR first, Proton launch options from the test notes) with `BepInEx/LogOutput.log` at Debug. Client B is a second Steam account on vanilla PEAK (no BepInEx), on the same build. Run each step twice: A hosts, then B hosts. Keep `Sandbox.Enabled=false`, no PEAK_MX, no `-peakxr-*` flags.
 
 1. Lobby. A hosts a private lobby; B joins by invite. Expect no version-mismatch modal and no kick. On A, the log shows `[net.pose]` with zero peers and no events sent. On B, `Player.log` has no new errors.

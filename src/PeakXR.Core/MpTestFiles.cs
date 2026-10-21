@@ -228,6 +228,23 @@ namespace PeakXR.Core
                 : home.TrimEnd('/') + "/" + DefaultUnderHome;
         }
 
+        /// <summary>
+        /// The Unix home: <c>$HOME</c> when it is a Unix path, else Wine's <c>WINEHOMEDIR</c> (<c>\??\Z:\home\u</c>),
+        /// since Wine may hide <c>HOME</c> from Windows processes. Null when neither gives one.
+        /// </summary>
+        public static string UnixHome(string home, string wineHomeDir)
+        {
+            if (!string.IsNullOrEmpty(home) && home.StartsWith('/'))
+                return home;
+            const string Prefix = @"\??\Z:";
+            if (
+                wineHomeDir == null
+                || !wineHomeDir.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            )
+                return null;
+            return wineHomeDir.Substring(Prefix.Length).Replace('\\', '/');
+        }
+
         /// <summary>Under Proton a Unix path is reached through Wine's <c>Z:</c> drive, which maps <c>/</c>.</summary>
         public static string ToNative(string path, bool windows) =>
             windows && path.StartsWith('/') ? "Z:" + path.Replace('/', '\\') : path;

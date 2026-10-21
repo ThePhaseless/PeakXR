@@ -46,7 +46,10 @@ public sealed class MpTestFeature : Feature
         var dir = MpDir.ToNative(
             MpDir.Resolve(
                 Environment.GetCommandLineArgs(),
-                Environment.GetEnvironmentVariable("HOME"),
+                MpDir.UnixHome(
+                    Environment.GetEnvironmentVariable("HOME"),
+                    Environment.GetEnvironmentVariable("WINEHOMEDIR")
+                ),
                 Path.Combine(Paths.BepInExRootPath, "peakxr-mp")
             ),
             Path.DirectorySeparatorChar == '\\'

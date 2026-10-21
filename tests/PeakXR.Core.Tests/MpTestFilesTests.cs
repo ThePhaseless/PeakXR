@@ -91,6 +91,16 @@ public class MpDirTests
     }
 
     [Fact]
+    public void UnixHomeComesFromHomeElseFromWinesHomeDir()
+    {
+        Assert.Equal("/home/u", MpDir.UnixHome("/home/u", @"\??\Z:\home\other"));
+        Assert.Equal("/home/u", MpDir.UnixHome(null, @"\??\Z:\home\u"));
+        Assert.Equal("/home/u", MpDir.UnixHome(@"C:\users\steamuser", @"\??\Z:\home\u"));
+        Assert.Null(MpDir.UnixHome(null, null));
+        Assert.Null(MpDir.UnixHome(null, @"C:\users\steamuser"));
+    }
+
+    [Fact]
     public void UnixPathMapsToWineZDriveOnWindowsOnly()
     {
         Assert.Equal(@"Z:\home\u\mp", MpDir.ToNative("/home/u/mp", windows: true));

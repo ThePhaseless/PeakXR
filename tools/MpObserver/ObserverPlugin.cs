@@ -35,7 +35,10 @@ public sealed class ObserverPlugin : BaseUnityPlugin
         var dir = MpDir.ToNative(
             MpDir.Resolve(
                 args,
-                Environment.GetEnvironmentVariable("HOME"),
+                MpDir.UnixHome(
+                    Environment.GetEnvironmentVariable("HOME"),
+                    Environment.GetEnvironmentVariable("WINEHOMEDIR")
+                ),
                 Path.Combine(Paths.BepInExRootPath, "peakxr-mp")
             ),
             Path.DirectorySeparatorChar == '\\'
