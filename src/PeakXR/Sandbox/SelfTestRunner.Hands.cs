@@ -497,6 +497,10 @@ internal sealed partial class SelfTestRunner
         bool hand = VRInput.LeftHanded;
         float before = rig.Origin.eulerAngles.y;
         // Turns pivot on the eye (RigDriver.UpdateTurnShift): the view must not slide sideways.
+        // Per-frame trace of eye, rig and body yaw, torso and turn shift, from a few frames before the turn.
+        Rig.RigDriver.TraceTurnsUntil = Time.unscaledTime + 1f;
+        yield return null;
+        yield return null;
         var eye0 = rig.Head.position;
         float slide = 0f;
         Script(hand).Stick = new Vector2(1f, 0f);

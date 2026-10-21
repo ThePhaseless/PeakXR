@@ -235,4 +235,19 @@ public class RigMathTests
         TestUtil.Near(0.75f, RigMath.TurnSettleRate(0.5f, 1.5f), 1e-6f);
         TestUtil.Near(1.5f, RigMath.TurnSettleRate(3f, 1.5f), 1e-6f);
     }
+
+    [Fact]
+    public void HoldLevel_AbsorbsTheBodysLevelDriftButNotItsHeight()
+    {
+        var shift = new Vector3(0.05f, 0f, 0f);
+        var before = new Vector3(1f, 1.6f, 2f);
+        var after = new Vector3(1.03f, 1.62f, 1.98f);
+
+        var held = RigMath.HoldLevel(shift, before, after);
+
+        // The eye goal (body eye + shift) keeps its level position; height still follows the body.
+        TestUtil.Near(before.X + shift.X, after.X + held.X, 1e-6f);
+        TestUtil.Near(before.Z + shift.Z, after.Z + held.Z, 1e-6f);
+        Assert.Equal(0f, held.Y);
+    }
 }
