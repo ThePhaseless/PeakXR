@@ -41,11 +41,37 @@ public sealed class SelfTestFeature : Feature
         Patch(typeof(InputEdgeCharacterPatch));
         InputEdgeLog.Install();
         Patch(typeof(SelfTestUseProbe));
+        Patch(typeof(SelfTestEndGamePatch));
+        SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
+            "bingbong"
+        );
+        SelfTestRunner.TornadoCaughtRef = GameMember.Field<Tornado, List<Character>>(
+            "caughtCharacters"
+        );
+        SelfTestRunner.SpawnTornadoMethod = GameMember.Method(
+            typeof(TornadoSpawner),
+            "SpawnTornado"
+        );
 
         SandboxActions.Forced = true;
         var go = new GameObject("PeakXR.SelfTest") { hideFlags = HideFlags.HideAndDontSave };
         go.AddComponent<SelfTestRunner>();
     }
+}
+
+/// <summary>
+/// Holds back the solo game over while a self-test death step runs. <c>Character.CheckEndGame</c> (decomp
+/// Assembly-CSharp/Character.cs:838) ends the run the moment every character is dead, which solo is the moment the
+/// step kills the player, and <c>RPCEndGame</c> (:893) then deletes the quicksave and opens the end screen for good.
+/// </summary>
+[HarmonyPatch]
+static class SelfTestEndGamePatch
+{
+    internal static bool Hold;
+
+    static MethodBase TargetMethod() => GameMember.Method(typeof(Character), "CheckEndGame");
+
+    static bool Prefix() => !Hold;
 }
 
 /// <summary>

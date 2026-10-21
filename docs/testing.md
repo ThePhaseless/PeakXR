@@ -69,7 +69,7 @@ Use the Entities tab (F7) or `Sandbox.Mob <name>`. Mobs that are item prefabs (B
 | Character_Scoutmaster | room object | Chases, grabs; assumed to need its spawner link, watch the log for NREs |
 | MushroomZombie | plain | Wakes near you, chases, spores status |
 | BeeSwarm | plain | Chases, poisons; assumed to run without a hive |
-| Tornado | needs a `TornadoSpawner` in the scene | Only spawns on a map that has one; pushes you; camera does not roll |
+| Tornado | needs a `TornadoSpawner` in the scene | Only spawns on a map that has one; pushes you; camera does not roll. The self-test triggers the spawner itself |
 | BugfixOnYou | attaches to you | Poison ticks on you |
 | RavenVoiceThief, tumbleweed | plain | Behaviour unchecked; note what it does |
 | Anything else from "Deep scan" | plain | Spawns, replicates, no log errors |
@@ -121,9 +121,20 @@ The script:
 | `item.<name>` | Every `ItemDatabase` item spawns and still exists two frames later, in rows of 8 |
 | `use.<name>` | One item per category (food, tools, rope, lights, launchers) reaches the hand, is used for 1.5 s, then dropped |
 | `04-beach` | The airport kiosk loads the first level with a local character |
-| `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is filmed after 3 s, then removed. Entities that need a player or a death are `SKIP` |
-| `06-segment-<Segment>` | `Sandbox.Jump` to every segment |
+| `05-mob-scan`, `mob.<name>` | Each entity from the deep scan spawns, is filmed after 3 s, then removed. Entities that cannot be spawned alone are made in their game context instead (below) |
+| `06-segment-<Segment>` | `Sandbox.Jump` to every segment; the segment the player is already in passes when it is the current one |
 | `07-time-<hh>` | Time of day 06, 12 and 21 |
+
+Entities made in their game context:
+
+| Step | How |
+|---|---|
+| `mob.Bingbong_*` | No game code spawns them (`BingBongPhysics.DoEffect` is empty). Spawned with their `bingbong` transform set 5 m behind the player, looking at them; the effect must follow it, push or pull the body, and remove itself after 2 s |
+| `mob.ChainShootable` | The chain shooter turns until its own `WillAttach` accepts the terrain ahead, fires, and the chain must have colliders; `JungleVine.Interact` must start a vine climb |
+| `mob.ScoutmasterGhostOrbiter` | Spawned 4 m away with `SetOrbitCharacter(local)`, the soul pillar's call; it must reach the player within 2 s |
+| `mob.TiedBalloon` | A balloon item used from the hand ties a balloon (`CharacterBalloons.TieNewBalloon`); popping it unties it |
+| `mob.Tornado` | After the first segment jump that reaches a running `TornadoSpawner`: its own `SpawnTornado`; the tornado must move and catch the player warped beside it (VR: the comfort vignette pulses). `SKIP` when no segment has one |
+| `mob.MushroomZombie_Player`, `mob.PetrifiedScout`, `mob.PlayerGhost` | Last in the run. `Character.Zombify`, petrify 100 plus `Character.Die`, and `Character.Die`; the zombie, statue or ghost must appear, then `RPCA_ReviveAtPosition` revives the player where they stood, which must remove the zombie and the ghost (VR: the fade clears, no spectate nameplate for your own body). The solo game over (`Character.CheckEndGame`) is held back meanwhile |
 
 VR runs only:
 

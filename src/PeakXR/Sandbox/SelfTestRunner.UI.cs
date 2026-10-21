@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace PeakXR.Sandbox;
 
-/// <summary>ui.spatial steps: HUD parts carried to the world (U1-U4). Spectating needs a death and is not scripted.</summary>
+/// <summary>ui.spatial steps: HUD parts carried to the world (U1-U4). Spectating is checked by mob.PlayerGhost (SelfTestRunner.Context).</summary>
 internal sealed partial class SelfTestRunner
 {
     IEnumerator SpatialSteps()

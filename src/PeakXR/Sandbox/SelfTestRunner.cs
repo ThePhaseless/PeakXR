@@ -76,6 +76,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     {
         VR.VRInput.TestOverride = null;
         SandboxActions.Forced = false;
+        SelfTestEndGamePatch.Hold = false;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
     }
@@ -163,17 +164,21 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             foreach (var segment in SandboxActions.Segments)
             {
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
-                    Skip("06-segment-" + segment, "already here");
+                    yield return Run("06-segment-" + segment, 5f, AlreadyIn(segment));
                 else
                     yield return Run("06-segment-" + segment, 120f, Jump(segment));
+                yield return TornadoIfHere();
                 if (segment == Segment.Tropics)
                     yield return VineSteps();
             }
+            TornadoNotFound();
             foreach (var hours in Times)
             {
                 var id = "07-time-" + ((int)hours).ToString("00", CultureInfo.InvariantCulture);
                 yield return Run(id, 15f, TimeOfDay(hours, id));
             }
+            // Each kills the solo player and revives them, so nothing after can trip over a death.
+            yield return DeathSteps();
         }
         Finish();
     }
@@ -405,10 +410,19 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             if (entry.Style == SpawnStyle.Unsupported)
             {
-                Skip("mob." + entry.Name, entry.Note);
-                continue;
+                if (Deferred(entry))
+                    continue;
+                var body = ContextStep(entry);
+                if (body == null)
+                {
+                    Skip("mob." + entry.Name, entry.Note);
+                    continue;
+                }
+                yield return Run("mob." + entry.Name, 30f, body);
+                SelfTestInputPatch.HoldPrimary = false;
             }
-            yield return Run("mob." + entry.Name, 20f, Mob(entry));
+            else
+                yield return Run("mob." + entry.Name, 20f, Mob(entry));
             Safe("mob.despawn", Despawn);
             Safe("mob.recover", Recover);
             yield return Wait(1f);
@@ -452,6 +466,19 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield break;
         yield return Wait(3f);
         Recover();
+        yield return Shot("06-segment-" + segment);
+    }
+
+    /// <summary>The segment the loop would jump to is the current one: assert it instead of jumping.</summary>
+    IEnumerator AlreadyIn(Segment segment)
+    {
+        var current = Singleton<MapHandler>.Instance.GetCurrentSegment();
+        if (current != segment)
+        {
+            Fail("in " + current);
+            yield break;
+        }
+        stepNote = "already here";
         yield return Shot("06-segment-" + segment);
     }
 
