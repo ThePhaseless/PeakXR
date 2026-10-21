@@ -1,3 +1,4 @@
+using System;
 using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
@@ -54,9 +55,13 @@ internal static class ClimbHands
     private static ConfigEntry<bool> handleHands;
 
     private static Mode mode;
-    private static Object held;
+    private static UnityEngine.Object held;
     private static bool engaged;
     private static float stickY;
+    private static float lastSign;
+
+    /// <summary>An exception was logged for the current rope, vine or handle; quiet until the next one.</summary>
+    private static bool faulted;
 
     /// <summary>The grip extension that claims grips on the held rope, vine or handle.</summary>
     public static readonly IGripExtension Extension = new Claimer();
@@ -86,11 +91,34 @@ internal static class ClimbHands
         );
     }
 
-    /// <summary>Per frame, from <c>PhysicalInteraction.Tick</c> after the hands have seen their grip edges.</summary>
-    public static void Update(Character c, VRRig rig, InteractConfig cfg, float dt)
+    /// <summary>
+    /// Per frame, from <c>PhysicalInteraction.Tick</c> after the hands have seen their grip edges. Runs inside the
+    /// game's input sampling, so a failure here must never reach the rest of the hand input: it is logged once per
+    /// rope, vine or handle and the arm input drops to zero.
+    /// </summary>
+    /// <param name="active">The game's <c>playerMovementActive</c>: no menu or wheel blocks input.</param>
+    public static void Update(Character c, VRRig rig, InteractConfig cfg, bool active, float dt)
     {
-        LeftHand.Grip.Update(VRInput.Left.Tracked ? VRInput.Left.Grip : 0f, dt);
-        RightHand.Grip.Update(VRInput.Right.Tracked ? VRInput.Right.Grip : 0f, dt);
+        try
+        {
+            Step(c, rig, cfg, active, dt);
+        }
+        catch (Exception e)
+        {
+            stickY = 0f;
+            if (!faulted)
+                Plugin.Log.LogWarning($"[interact.climb] {mode} hands stopped: {e}");
+            faulted = true;
+        }
+    }
+
+    private static void Step(Character c, VRRig rig, InteractConfig cfg, bool active, float dt)
+    {
+        // An untracked hand keeps its last grip: a tracking blink must not open it.
+        if (VRInput.Left.Tracked)
+            LeftHand.Grip.Update(VRInput.Left.Grip, dt);
+        if (VRInput.Right.Tracked)
+            RightHand.Grip.Update(VRInput.Right.Grip, dt);
 
         var now = Current(c, out var obj);
         if (now != mode || obj != held)
@@ -98,11 +126,17 @@ internal static class ClimbHands
         if (mode == Mode.None || dt <= 0f)
             return;
 
-        Release(LeftHand);
-        Release(RightHand);
+        // With a menu or wheel open, or a controller lost, the hands' state is frozen: nobody falls off a rope
+        // because a menu ate the grip or tracking blinked.
+        bool frozen = !active || !VRInput.Left.Tracked || !VRInput.Right.Tracked;
+        if (!frozen)
+        {
+            Release(LeftHand);
+            Release(RightHand);
+        }
         bool l = LeftHand.Anchored;
         bool r = RightHand.Anchored;
-        if (engaged)
+        if (engaged && !frozen)
         {
             Grace.Grace = cfg.ClimbRegripGrace;
             if (!Grace.Update(l || r, dt))
@@ -146,7 +180,7 @@ internal static class ClimbHands
         }
     }
 
-    private static Mode Current(Character c, out Object obj)
+    private static Mode Current(Character c, out UnityEngine.Object obj)
     {
         var d = c.data;
         obj = null;
@@ -172,12 +206,14 @@ internal static class ClimbHands
     /// The game put the player on a line or handle (or a different one). A hand whose grip is still closed near it
     /// made the grab, so it holds on: generous radius, since the body has already started moving to the line.
     /// </summary>
-    private static void Enter(Character c, VRRig rig, Mode next, Object obj)
+    private static void Enter(Character c, VRRig rig, Mode next, UnityEngine.Object obj)
     {
         mode = next;
         held = obj;
         engaged = false;
+        faulted = false;
         stickY = 0f;
+        lastSign = 0f;
         LeftHand.Anchored = RightHand.Anchored = false;
         Arms.Reset();
         Grace.Reset();
@@ -257,6 +293,11 @@ internal static class ClimbHands
         {
             var api = d.heldRope.climbingAPI;
             var rope = c.refs.ropeHandling;
+            // RopeClimbingAPI.GetPosition and UpMult index the segment list unchecked (RopeClimbingAPI.cs:77-83);
+            // a remote rope can have none yet.
+            var segments = d.heldRope.GetRopeSegments();
+            if (api == null || segments == null || segments.Count < 2)
+                return 0f;
             lo = Mathf.Clamp01(d.ropePercent - PercentProbe);
             hi = Mathf.Clamp01(d.ropePercent + PercentProbe);
             a = api.GetPosition(lo);
@@ -268,15 +309,25 @@ internal static class ClimbHands
         {
             var vine = d.heldVine;
             var climb = c.refs.vineClimbing;
+            // GetSign and GetPosition index colliderRoot's children unchecked (JungleVine.cs:428, :456-468).
+            var root = vine.colliderRoot;
+            if (
+                root == null
+                || root.childCount < 4
+                || vine.GetIndexFromPercentage(d.vinePercent) >= root.childCount
+            )
+                return 0f;
             lo = Mathf.Clamp01(d.vinePercent - PercentProbe);
             hi = Mathf.Clamp01(d.vinePercent + PercentProbe);
             a = vine.GetPosition(lo, 1, 1);
             b = vine.GetPosition(hi, 1, 1);
-            rate =
-                vine.LengthFactor()
-                * climb.climbSpeed
-                * climb.climbSpeedMod
-                * vine.GetSign(d.lookDirection_Flat, d.vinePercent);
+            float sign = vine.GetSign(d.lookDirection_Flat, d.vinePercent);
+            // Looking across the vine flips the game's stick meaning (CharacterVineClimbing.cs:67-68). Re-express the
+            // smoothed stick in the new sign so the body keeps moving the same way instead of blipping back.
+            if (lastSign != 0f && sign != lastSign)
+                stickY = -stickY;
+            lastSign = sign;
+            rate = vine.LengthFactor() * climb.climbSpeed * climb.climbSpeedMod * sign;
             negative = 1f;
         }
         if (hi - lo < 1e-4f)
@@ -304,6 +355,8 @@ internal static class ClimbHands
         if (mode == Mode.Rope)
         {
             var segments = c.data.heldRope.GetRopeSegments();
+            if (segments == null)
+                return false;
             for (int i = 1; i < segments.Count; i++)
             {
                 if (
@@ -346,11 +399,21 @@ internal static class ClimbHands
     {
         public bool ClaimPress(in GripHookContext ctx)
         {
-            var next = Current(ctx.Character, out var obj);
-            return next != Mode.None
-                && next == mode
-                && obj == held
-                && Near(ctx.Character, ctx.HandPosition, 1f);
+            try
+            {
+                var next = Current(ctx.Character, out var obj);
+                return next != Mode.None
+                    && next == mode
+                    && obj == held
+                    && Near(ctx.Character, ctx.HandPosition, 1f);
+            }
+            catch (Exception e)
+            {
+                if (!faulted)
+                    Plugin.Log.LogWarning($"[interact.climb] {mode} grip check failed: {e}");
+                faulted = true;
+                return false;
+            }
         }
 
         public void BeginPress(in GripHookContext ctx)
@@ -360,11 +423,8 @@ internal static class ClimbHands
                 Anchor(hand);
         }
 
-        public bool EndPress(in GripHookContext ctx)
-        {
-            (ctx.Left ? LeftHand : RightHand).Anchored = false;
-            return true;
-        }
+        /// <summary>Consumed; the hand itself lets go in <see cref="Step"/>, which ignores a lost controller.</summary>
+        public bool EndPress(in GripHookContext ctx) => true;
 
         public bool TryHeldRelease(in GripHookContext ctx) => false;
     }

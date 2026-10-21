@@ -25,6 +25,7 @@ internal static class BodyGestures
     private static ConfigEntry<bool> armSwingSprint;
     private static float standAbove;
     private static bool haveStand;
+    private static float uprightFor;
     private static float lift;
 
     internal static bool CrouchOn => physicalCrouch?.Value ?? true;
@@ -124,13 +125,18 @@ internal static class BodyGestures
             && d.currentRagdollControll >= 0.9f
             && above > 0.2f
             && above < 2f;
-        if (upright && !Crouch.Crouched)
+        // Learn only once the torso has been upright for a while: right after a crouch it is still rising, and a
+        // sample from then would pull the standing height down.
+        uprightFor = upright && !Crouch.Crouched ? uprightFor + dt : 0f;
+        if (uprightFor > 0.5f)
         {
             standAbove = haveStand ? Mathf.Lerp(standAbove, above, 1f - Mathf.Exp(-dt)) : above;
             haveStand = true;
         }
 
-        if (!haveStand || !d.isGrounded)
+        // In the air, or crouched by the button or toggle after the physical crouch ended: the game's own crouch
+        // should lower the view again, so the lift fades out instead of holding.
+        if (!haveStand || !d.isGrounded || (!Crouch.Crouched && d.isCrouching))
             lift *= Mathf.Exp(-6f * dt);
         else
         {
@@ -148,6 +154,7 @@ internal static class BodyGestures
         Crouch.Update(false, 0f, 0f, 0f);
         Swing.Reset();
         haveStand = false;
+        uprightFor = 0f;
         lift = 0f;
         if (VRRig.Instance != null)
             VRRig.Instance.CrouchLift = 0f;

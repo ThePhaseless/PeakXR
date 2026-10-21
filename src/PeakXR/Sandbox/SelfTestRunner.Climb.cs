@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using PeakXR.Core;
 using PeakXR.Interact.Climb;
@@ -18,12 +19,30 @@ namespace PeakXR.Sandbox;
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
+    /// <summary>Undoes what a body step changed (head dip, the user's ArmSwingSprint value). The step runner drops a
+    /// timed-out or failed step without disposing it, so a finally block would not run; this does, after the step.</summary>
+    Action bodyRestore;
+
     IEnumerator BodySteps()
     {
-        yield return HandStep("vr.40-physical-crouch", 15f, CrouchStep());
-        yield return HandStep("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
+        yield return Restoring("vr.40-physical-crouch", 15f, CrouchStep());
+        yield return Restoring("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
+    }
+
+    IEnumerator Restoring(string id, float timeout, IEnumerator body)
+    {
+        try
+        {
+            yield return HandStep(id, timeout, body);
+        }
+        finally
+        {
+            var restore = bodyRestore;
+            bodyRestore = null;
+            restore?.Invoke();
+        }
     }
 
     /// <summary>Run after the Tropics jump: the only biome with jungle vines.</summary>
@@ -49,6 +68,11 @@ internal sealed partial class SelfTestRunner
             : HeightCalibration.DefaultStandingEyeHeight;
         float low = eye - standing * 0.4f;
         var hands = applyHands;
+        bodyRestore = () =>
+        {
+            if (VRInput.TestOverride != hands && VRInput.TestOverride != IdleHands)
+                VRInput.TestOverride = finished ? null : IdleHands;
+        };
         VRInput.TestOverride = () =>
         {
             hands();
@@ -84,6 +108,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool was = setting.Value;
+        bodyRestore = () => setting.Value = was;
         setting.Value = true;
         bool moveLeft = !VRInput.LeftHanded;
         HeadFrame(out var head, out var forward, out var right);

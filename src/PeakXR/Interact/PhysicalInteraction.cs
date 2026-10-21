@@ -121,7 +121,7 @@ internal static class PhysicalInteraction
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
-        Climb.ClimbHands.Update(c, rig, cfg, dt);
+        Climb.ClimbHands.Update(c, rig, cfg, active, dt);
         if (hazardPulseTime > 0f && now >= hazardPulseTime)
         {
             hazardPulseTime = -10f;
