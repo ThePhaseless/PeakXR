@@ -29,6 +29,10 @@ internal sealed class GuideStage : MonoBehaviour
     private GhostDemo demo;
     private GuideRow row;
     private GuideRow hoverRow;
+
+    /// <summary>Seconds the laser has rested on <see cref="hoverRow"/>; below 0 when not counting. Kept apart from the
+    /// demo clock: a rest that ends without starting a demo must not shorten the one on show.</summary>
+    private float hoverDwell = -1f;
     private GameObject caption;
     private TextMeshProUGUI captionText;
     private float nextOfferCheck;
@@ -44,6 +48,9 @@ internal sealed class GuideStage : MonoBehaviour
 
     /// <summary>The demo on show, for the self-test; null when none.</summary>
     public GhostDemo Demo => demo;
+
+    /// <summary>Why the last demo ended or did not start, for the self-test note; null while none did.</summary>
+    public string LastStop { get; private set; }
 
     private void Awake() => Instance = this;
 
@@ -62,12 +69,12 @@ internal sealed class GuideStage : MonoBehaviour
         if (enter)
         {
             hoverRow = target;
-            clock.HoverEnter();
+            hoverDwell = 0f;
         }
         else if (hoverRow == target)
         {
             hoverRow = null;
-            clock.HoverExit();
+            hoverDwell = -1f;
         }
     }
 
@@ -75,19 +82,33 @@ internal sealed class GuideStage : MonoBehaviour
     public void Play(GuideRow target, int loops)
     {
         if (!VRSession.Active || target.Cell == null)
+        {
+            LastStop =
+                $"{target.Topic} not started (VR {VRSession.Active}, row shown {target.Cell != null})";
+            Plugin.Log.LogDebug("[ui.guide] demo " + LastStop);
             return;
+        }
+        hoverDwell = -1f;
         row = target;
         if (demo == null || !demo.Alive)
             demo = new GhostDemo("PeakXR_GuideDemo", transform);
         demo.Play(target.Topic);
-        clock.Play(GuideTable.Get(target.Topic).Loop * loops);
+        float seconds = GuideTable.Get(target.Topic).Loop * loops;
+        clock.Play(seconds);
         FillCaption(target);
+        Plugin.Log.LogDebug($"[ui.guide] demo {target.Topic} started for {seconds:0.0} s");
     }
 
     private void Update()
     {
-        if (clock.Tick(Time.unscaledDeltaTime) && hoverRow != null)
-            Play(hoverRow, GuideRows.DemoLoops);
+        clock.Tick(Time.unscaledDeltaTime);
+        if (hoverDwell >= 0f && (hoverDwell += Time.unscaledDeltaTime) >= PreviewClock.HoverDwell)
+        {
+            hoverDwell = -1f;
+            // Resting on the row already playing leaves it running.
+            if (hoverRow != null && (hoverRow != row || demo == null))
+                Play(hoverRow, GuideRows.DemoLoops);
+        }
         CheckOffer();
         TickOffer(Time.unscaledDeltaTime);
         // The comfort-first view lasts while its menu is open; closing the settings returns the tab to normal.
@@ -98,18 +119,20 @@ internal sealed class GuideStage : MonoBehaviour
 
         var rig = VRRig.Instance;
         var cell = row != null ? row.Cell : null;
-        if (
-            demo == null
-            || !clock.Active
-            || !VRSession.Active
-            || rig == null
-            || rig.Head == null
-            || cell == null
-            || !cell.gameObject.activeInHierarchy
-        )
+        if (demo == null)
+            return;
+        string stop =
+            !clock.Active ? "its loops ran out"
+            : !VRSession.Active ? "VR stopped"
+            : rig == null || rig.Head == null ? "no rig"
+            : cell == null ? "its row was removed"
+            : !cell.gameObject.activeInHierarchy ? "its row was hidden"
+            : null;
+        if (stop != null)
         {
-            if (demo != null)
-                End();
+            LastStop = $"{demo.Topic} ended: {stop}";
+            Plugin.Log.LogDebug("[ui.guide] demo " + LastStop);
+            End();
             return;
         }
         Place((RectTransform)cell.transform);

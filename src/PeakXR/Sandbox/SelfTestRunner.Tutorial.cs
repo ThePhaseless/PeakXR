@@ -69,20 +69,9 @@ internal sealed partial class SelfTestRunner
     /// Climb demos each played for a loop beside their row with their cue sounds.</summary>
     IEnumerator GuideStep()
     {
-        var handler = FindAnyObjectByType<MainMenuPageHandler>();
-        if (handler == null)
-        {
-            Fail("no MainMenuPageHandler on the title");
+        yield return OpenTitleGuide();
+        if (!stepOk)
             yield break;
-        }
-        var page = handler.TransistionToPage<MainMenuSettingsPage>(new SetActivePageTransistion());
-        yield return Wait(0.5f);
-        if (!GuideStage.OpenVRTab(page != null ? page.SharedSettingsMenu : null))
-        {
-            Fail("VR tab not found on the title settings page");
-            yield break;
-        }
-        yield return Wait(1f);
         var expand = GuideRowOf(GuideAction.Expand, GuideTopic.Count);
         if (expand == null)
         {
@@ -104,18 +93,28 @@ internal sealed partial class SelfTestRunner
             }
             GuideRows.Click(row);
             yield return Wait(GuideTable.Get(topic).Loop + 0.3f);
-            var demo = GuideStage.Instance != null ? GuideStage.Instance.Demo : null;
+            var stage = GuideStage.Instance;
+            var demo = stage != null ? stage.Demo : null;
             if (demo == null || !demo.Alive || demo.Topic != topic)
             {
-                fails.Add($"{topic} demo not showing");
+                fails.Add(
+                    $"{topic} demo not showing (showing {(demo != null ? demo.Topic.ToString() : "none")}, last stop: {(stage != null ? stage.LastStop : "no stage") ?? "none"})"
+                );
                 continue;
             }
-            float d = Vector3.Distance(demo.Root.position, row.Cell.transform.position);
-            notes.Add($"{topic}: {demo.SoundsPlayed} cue sounds, {d:0.00} m from its row");
+            // The ghost stands 0.3 m past the row's right edge, 0.15 m up and 0.08 m toward you (GuideStage.Place).
+            PreviewStage.RowRightEdge(
+                (RectTransform)row.Cell.transform,
+                edgeCorners,
+                out var edge,
+                out _
+            );
+            float d = Vector3.Distance(demo.Root.position, edge);
+            notes.Add($"{topic}: {demo.SoundsPlayed} cue sounds, {d:0.00} m past its row's edge");
             if (demo.SoundsPlayed < 1)
                 fails.Add($"{topic} played no cue sound in a loop");
-            if (d > 1.5f)
-                fails.Add($"{topic} demo {d:0.00} m from its row");
+            if (d > 0.6f)
+                fails.Add($"{topic} demo {d:0.00} m from its row's right edge");
             yield return Shot("vr-30-guide-" + topic);
         }
         GuideRows.Click(expand);
@@ -126,6 +125,10 @@ internal sealed partial class SelfTestRunner
     /// airport; the right stick flicks until the turn station passes; a hand rests in the exit orb; the title returns.</summary>
     IEnumerator PracticeStep()
     {
+        // vr.30's cleanup put the title back on its main page: open the VR tab again.
+        yield return OpenTitleGuide();
+        if (!stepOk)
+            yield break;
         var practice = GuideRowOf(GuideAction.Practice, GuideTopic.Count);
         if (practice == null)
         {
@@ -222,6 +225,32 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    readonly Vector3[] edgeCorners = new Vector3[4];
+
+    /// <summary>The title's settings page (MainMenuMainPage.cs:215) on the VR tab, in its normal view.</summary>
+    IEnumerator OpenTitleGuide()
+    {
+        var handler = FindAnyObjectByType<MainMenuPageHandler>();
+        if (handler == null)
+        {
+            Fail("no MainMenuPageHandler on the title");
+            yield break;
+        }
+        var page = handler.TransistionToPage<MainMenuSettingsPage>(new SetActivePageTransistion());
+        yield return Wait(0.5f);
+        GuideRows.ComfortFirst = false;
+        if (!GuideStage.OpenVRTab(page != null ? page.SharedSettingsMenu : null))
+        {
+            Fail("VR tab not found on the title settings page");
+            yield break;
+        }
+        yield return Wait(1f);
+        int rows = FindObjectsByType<GuideRowHover>(FindObjectsSortMode.None).Length;
+        Plugin.Log.LogInfo($"[selftest] title VR tab open, {rows} VR Guide rows");
+        if (rows == 0)
+            Fail("the VR tab has no VR Guide rows (see the [ui.guide] VR tab line)");
+    }
+
     static GuideRow GuideRowOf(GuideAction action, GuideTopic topic)
     {
         foreach (var hover in FindObjectsByType<GuideRowHover>(FindObjectsSortMode.None))
@@ -234,6 +263,7 @@ internal sealed partial class SelfTestRunner
             )
                 return row;
         }
+        Plugin.Log.LogInfo($"[selftest] no VR Guide row {action} {topic} on screen");
         return null;
     }
 }
