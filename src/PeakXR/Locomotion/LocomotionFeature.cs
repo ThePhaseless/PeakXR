@@ -20,6 +20,7 @@ public sealed class LocomotionFeature : Feature
     {
         ComfortConfig.Bind(Plugin.Settings);
         LocomotionConfig.Bind(Plugin.Settings);
+        BodyGestures.Bind(Plugin.Settings);
         LocomotionInput.PhysicalOwnsHands = FeatureManager.IsActive<PhysicalInteractionFeature>();
         Patch(typeof(LocomotionPatches.Sample));
         Patch(typeof(LocomotionPatches.HotbarKey));

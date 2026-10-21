@@ -156,6 +156,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     Skip("06-segment-" + segment, "already here");
                 else
                     yield return Run("06-segment-" + segment, 120f, Jump(segment));
+                if (segment == Segment.Tropics)
+                    yield return VineSteps();
             }
             foreach (var hours in Times)
             {
