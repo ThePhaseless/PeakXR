@@ -11,6 +11,7 @@ using PeakXR.UI.Common;
 using PeakXR.UI.Menu;
 using PeakXR.UI.Settings;
 using PeakXR.VR;
+using PeakXR.XR;
 using Photon.Pun;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -592,6 +593,15 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (god && !SandboxActions.GodMode)
             SandboxActions.SetGodMode(true);
         SelfTestCampfirePatch.Hold = false;
+        // Name the one cause a step cannot see: no runtime focus pauses input and holds the fade (vr.00).
+        if (VRSession.Active && !VRSession.HasFocus && (!stepOk || stepSkip != null))
+        {
+            var cause = $"runtime focus lost ({XRBootstrapDriver.FocusSource})";
+            if (stepOk)
+                stepSkip += "; " + cause;
+            else
+                failNote += "; " + cause;
+        }
         if (stepOk && stepSkip != null)
             report.Skip(id, stepSkip);
         else if (stepOk)
