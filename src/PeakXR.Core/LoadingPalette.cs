@@ -104,8 +104,18 @@ public readonly struct LoadingPalette : IEquatable<LoadingPalette>
     }
 
     /// <summary>The room for a screen whose hidden fills (and camera clear colour, if any) are <paramref name="fills"/>.</summary>
-    public static LoadingPalette For(IReadOnlyList<Rgba> fills) =>
-        TryPickKey(fills, out var key) ? FromKey(key) : Default;
+    public static LoadingPalette For(IReadOnlyList<Rgba> fills) => For(fills, null);
+
+    /// <summary>The screen's own colour first; a grey screen (black, white) takes the destination's colour
+    /// (an ascent's colour, the airport's), and the default room when that is grey or unknown too.</summary>
+    public static LoadingPalette For(IReadOnlyList<Rgba> fills, Rgba? destination)
+    {
+        if (TryPickKey(fills, out var key))
+            return FromKey(key);
+        return destination is { } d && d.A >= MinKeyAlpha && d.Chroma >= MinKeyChroma
+            ? FromKey(d)
+            : Default;
+    }
 
     /// <summary>The most colourful visible fill: the screen's own tone (the plane screen's cream wash
     /// over its black base). False when every fill is grey or invisible.</summary>

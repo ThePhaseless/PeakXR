@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.UI;
+using Zorro.Core;
 
 namespace PeakXR.UI.Menu;
 
@@ -40,12 +41,18 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private const float LayerStep = 0.06f;
     private const float MaxLayerSpread = 0.36f;
 
+    // Skip ring: faint while the splash can be skipped, filling while a button is held.
+    private const float SkipRingSize = 0.12f;
+
     private GameObject space;
     private Transform origin;
     private Camera cam;
     private RectTransform progressFill;
     private Transform progressBar;
     private Image progressImage;
+    private Transform skipRing;
+    private Image skipBack;
+    private Image skipFill;
     private readonly RawImage[] walls = new RawImage[4];
     private RawImage grid;
     private RawImage horizonFade;
@@ -65,6 +72,13 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private readonly List<Transform> layers = new();
     private readonly List<float> layerZ = new();
     private readonly HashSet<int> seen = new();
+    private static readonly Vector3[] Corners = new Vector3[4];
+
+    // Where the screen floats: scaled and lifted so its art fits the view and stays above the floor.
+    private LoadingLayout layout = new(PanelWidth / 1920f, EyeHeight, EyeHeight);
+    private float canvasWidth = 1920f;
+    private Rgba? destination;
+    private Rgba? airportKey;
 
     private LoadingPalette fromPalette = LoadingPalette.Default;
     private LoadingPalette toPalette = LoadingPalette.Default;
@@ -96,6 +110,8 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         facing = Quaternion.Euler(0f, yaw, 0f);
         PlaceProgress();
         progressBar.gameObject.SetActive(sceneCamera == null);
+        skipRing.gameObject.SetActive(sceneCamera != null);
+        SetSkipProgress(0f);
         TrackHead();
         // Shown from black: take the screen's colours at once, no visible blend.
         blending = false;
@@ -196,7 +212,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         if (seen.Add(canvas.GetInstanceID()))
             Adopt(canvas);
         PanelPose(out position, out rotation);
-        widthMeters = PanelWidth;
+        widthMeters = canvasWidth * layout.MetersPerUnit;
         return Shown ? PlacementResult.Placed : PlacementResult.Hidden;
     }
 
@@ -214,12 +230,15 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
             fills.Add(new Rgba(bg.r, bg.g, bg.b));
         }
         backing.Scan(canvas, 0f, fills, kept, "loading");
-        var target = LoadingPalette.For(fills);
+        var target = LoadingPalette.For(fills, destination);
         InkDarkArt(target);
+        Fit((RectTransform)canvas.transform);
         Spread(canvas);
+        PlaceProgress();
         Plugin.Log.LogInfo(
             $"[ui.menu] loading room for '{canvas.transform.root.name}': hid {backing.HiddenCount} fill(s), "
-                + $"inked {inked.Count}, {layers.Count} layer(s), palette horizon {target.Horizon} accent {target.Accent}"
+                + $"inked {inked.Count}, {layers.Count} layer(s), {canvasWidth * layout.MetersPerUnit:0.00} m wide, "
+                + $"art {layout.ContentBottom:0.00} m above the floor, palette horizon {target.Horizon} accent {target.Accent}"
         );
         BlendTo(target);
     }
@@ -247,9 +266,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         if (backing.HiddenCount == 0)
             return;
         var root = canvas.transform;
-        var unitsPerMeter = ((RectTransform)root).rect.width / PanelWidth;
-        if (unitsPerMeter <= 0f)
-            return;
+        var unitsPerMeter = 1f / layout.MetersPerUnit;
         for (int i = 0; i < root.childCount; i++)
         {
             var child = root.GetChild(i);
@@ -289,6 +306,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         horizonFade.color = horizon;
         grid.color = ToColor(p.GridLine);
         progressImage.color = ToColor(p.Accent);
+        skipFill.color = ToColor(p.Accent);
         var ink = ToColor(p.Ink);
         for (int i = 0; i < inked.Count; i++)
         {
@@ -303,7 +321,9 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
     private void PanelPose(out Vector3 position, out Quaternion rotation)
     {
         position =
-            origin.position + Vector3.up * EyeHeight + facing * new Vector3(0f, 0f, PanelDistance);
+            origin.position
+            + Vector3.up * layout.CenterHeight
+            + facing * new Vector3(0f, 0f, PanelDistance);
         rotation = facing;
     }
 
@@ -383,6 +403,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         BuildFloor();
         BuildWalls();
         BuildProgress();
+        BuildSkipRing();
         ApplyPalette(LoadingPalette.Default);
         space.SetActive(false);
     }
@@ -432,14 +453,173 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         progressFill.offsetMin = progressFill.offsetMax = Vector2.zero;
     }
 
+    /// <summary>Progress bar and skip ring just under the art, a little in front of it.</summary>
     private void PlaceProgress()
     {
-        PanelPose(out var panel, out var rotation);
-        var below = PanelWidth * 9f / 16f * 0.5f + 0.12f;
-        progressBar.SetPositionAndRotation(
-            panel + Vector3.down * below - rotation * new Vector3(0f, 0f, 0.05f),
-            rotation
+        var height = Mathf.Max(layout.ContentBottom - 0.1f, 0.15f);
+        var position =
+            origin.position
+            + Vector3.up * height
+            + facing * new Vector3(0f, 0f, PanelDistance - 0.05f);
+        progressBar.SetPositionAndRotation(position, facing);
+        skipRing.SetPositionAndRotation(position, facing);
+    }
+
+    /// <summary>Hold progress of the splash skip, 0..1.</summary>
+    public void SetSkipProgress(float progress)
+    {
+        skipFill.fillAmount = progress;
+        // Breathes while idle so it reads as something to act on; no motion, only alpha.
+        var idle = 0.3f + 0.15f * Mathf.Sin(Time.unscaledTime * 3f);
+        skipBack.color = new Color(1f, 1f, 1f, progress > 0f ? 0.45f : idle);
+    }
+
+    /// <summary>
+    /// The scene this load is heading to (LoadingScreenHandler.LoadSceneProcess, A/LoadingScreenHandler.cs:132).
+    /// A grey screen (black or white) takes its colour: an expedition takes the current ascent's colour
+    /// (AscentData.ascents[currentAscent + 2].color, as A/AscentUI.cs:17 and A/EndScreen.cs:626 index it), the
+    /// airport the plane screen's travel wash. Null clears it.
+    /// </summary>
+    public void SetDestination(string scene)
+    {
+        destination = DestinationKey(scene);
+        if (backing.Canvas != null)
+            BlendTo(LoadingPalette.For(fills, destination));
+    }
+
+    private Rgba? DestinationKey(string scene)
+    {
+        if (string.IsNullOrEmpty(scene) || scene is "Title" or "Pretitle")
+            return null;
+        if (scene == "Airport")
+            return airportKey ??= AirportKey();
+        var data = SingletonAsset<AscentData>.Instance;
+        var ascents = data != null ? data.ascents : null;
+        if (ascents == null || ascents.Count == 0)
+            return null;
+        var c = ascents[Mathf.Clamp(Ascents.currentAscent + 2, 0, ascents.Count - 1)].color;
+        return new Rgba(c.r, c.g, c.b, c.a);
+    }
+
+    /// <summary>The plane screen's own plain full-canvas washes (prefab LoadingScreen: Black, Color, Screen,
+    /// Fade), read from the prefab (A/LoadingScreenHandler.cs:20) without instantiating it.</summary>
+    private static Rgba AirportKey()
+    {
+        var handler = RetrievableResourceSingleton<LoadingScreenHandler>.Instance;
+        var prefab = handler != null ? handler.loadingScreenPrefabPlane : null;
+        var washes = new List<Rgba>();
+        if (prefab != null)
+            foreach (var image in prefab.GetComponentsInChildren<Image>(true))
+                if (
+                    image.sprite == null
+                    && image.rectTransform.anchorMin == Vector2.zero
+                    && image.rectTransform.anchorMax == Vector2.one
+                )
+                    washes.Add(
+                        new Rgba(image.color.r, image.color.g, image.color.b, image.color.a)
+                    );
+        return LoadingPalette.TryPickKey(washes, out var key) ? key : default;
+    }
+
+    /// <summary>Scales and lifts the panel so the kept art (not the canvas rect) fits the comfortable view
+    /// and stays above the floor; the plane screen's globe and grid hang far below the flat screen edge.</summary>
+    private void Fit(RectTransform root)
+    {
+        canvasWidth = root.rect.width > 0f ? root.rect.width : 1920f;
+        float minX = float.MaxValue,
+            minY = float.MaxValue,
+            maxX = float.MinValue,
+            maxY = float.MinValue;
+        foreach (var g in kept)
+        {
+            var rt = g.rectTransform;
+            var r = Drawn(g, rt.rect, rt.pivot);
+            Corners[0] = new Vector3(r.xMin, r.yMin);
+            Corners[1] = new Vector3(r.xMin, r.yMax);
+            Corners[2] = new Vector3(r.xMax, r.yMin);
+            Corners[3] = new Vector3(r.xMax, r.yMax);
+            for (int i = 0; i < 4; i++)
+            {
+                Vector2 p = root.InverseTransformPoint(rt.TransformPoint(Corners[i]));
+                minX = Mathf.Min(minX, p.x);
+                maxX = Mathf.Max(maxX, p.x);
+                minY = Mathf.Min(minY, p.y);
+                maxY = Mathf.Max(maxY, p.y);
+            }
+        }
+        if (minX > maxX)
+            minX = maxX = minY = maxY = 0f;
+        layout = LoadingLayout.Fit(
+            minX,
+            maxX,
+            minY,
+            maxY,
+            canvasWidth,
+            PanelWidth,
+            PanelDistance,
+            EyeHeight
         );
+    }
+
+    /// <summary>The part of the rect an aspect-preserving image really draws (the plane screen's grid rect is
+    /// 3439x8188 but draws a 3439 disc).</summary>
+    private static Rect Drawn(Graphic g, Rect r, Vector2 pivot)
+    {
+        if (
+            g is not Image { preserveAspect: true, sprite: { } sprite }
+            || sprite.rect.height <= 0f
+            || r.height <= 0f
+        )
+            return r;
+        var aspect = sprite.rect.width / sprite.rect.height;
+        if (aspect > r.width / r.height)
+        {
+            var h = r.width / aspect;
+            return new Rect(r.x, r.y + (r.height - h) * pivot.y, r.width, h);
+        }
+        var w = r.height * aspect;
+        return new Rect(r.x + (r.width - w) * pivot.x, r.y, w, r.height);
+    }
+
+    private void BuildSkipRing()
+    {
+        var ring = WorldCanvas("SkipRing", new Vector2(128f, 128f), SkipRingSize / 128f);
+        skipRing = ring.transform;
+        var sprite = RingSprite();
+        skipBack = Image<Image>(ring.transform, "Back");
+        skipBack.sprite = sprite;
+        Stretch(skipBack.rectTransform);
+        skipFill = Image<Image>(ring.transform, "Fill");
+        skipFill.sprite = sprite;
+        skipFill.type = UnityEngine.UI.Image.Type.Filled;
+        skipFill.fillMethod = UnityEngine.UI.Image.FillMethod.Radial360;
+        skipFill.fillOrigin = (int)UnityEngine.UI.Image.Origin360.Top;
+        skipFill.fillClockwise = true;
+        Stretch(skipFill.rectTransform);
+        ring.gameObject.SetActive(false);
+    }
+
+    /// <summary>A soft white ring, the hold-to-skip cue.</summary>
+    private static Sprite RingSprite()
+    {
+        const int size = 64;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+        {
+            wrapMode = TextureWrapMode.Clamp,
+        };
+        var pixels = new Color[size * size];
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            var dx = (x + 0.5f) / size * 2f - 1f;
+            var dy = (y + 0.5f) / size * 2f - 1f;
+            var d = Mathf.Sqrt(dx * dx + dy * dy);
+            var a = Mathf.Clamp01(1f - Mathf.Abs(d - 0.8f) / 0.14f);
+            pixels[y * size + x] = new Color(1f, 1f, 1f, a * a * (3f - 2f * a));
+        }
+        tex.SetPixels(pixels);
+        tex.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+        return Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f));
     }
 
     private Canvas WorldCanvas(string name, Vector2 size, float metersPerPixel)

@@ -1,4 +1,7 @@
 using System.Collections;
+using HarmonyLib;
+using PeakXR.Core;
+using PeakXR.Interact;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using UnityEngine;
@@ -16,6 +19,9 @@ internal sealed class UIMenuRuntime : MonoBehaviour
 {
     private const float FadeTimeout = 2f;
 
+    // Darker full-canvas fills on the title are ui.world's dimmers (MenuBackdrop); this takes only light ones.
+    private const float LightFill = 0.35f;
+
     private readonly object loadOwner = new();
     private readonly object cutOwner = new();
     private TitleStage stage;
@@ -23,8 +29,17 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private UIMenuSettings cfg;
     private Coroutine loadRoutine;
     private bool splash;
+    private Pretitle pretitle;
+    private AccessTools.FieldRef<Pretitle, bool> skipSplash;
+    private readonly HoldToConfirm skipHold = new();
+    private readonly ScreenBacking titleCover = new();
 
-    public static UIMenuRuntime Create(TitleStage stage, LoadingSpace space, UIMenuSettings cfg)
+    public static UIMenuRuntime Create(
+        TitleStage stage,
+        LoadingSpace space,
+        UIMenuSettings cfg,
+        AccessTools.FieldRef<Pretitle, bool> skipSplash
+    )
     {
         var go = new GameObject("PeakXR_MenuUI");
         DontDestroyOnLoad(go);
@@ -32,6 +47,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         runtime.stage = stage;
         runtime.space = space;
         runtime.cfg = cfg;
+        runtime.skipSplash = skipSplash;
         return runtime;
     }
 
@@ -52,7 +68,11 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>VR may come up while the boot splash is already playing.</summary>
-    private void OnVRStarted() => EnterSplash();
+    private void OnVRStarted()
+    {
+        EnterSplash();
+        HideTitleCover();
+    }
 
     /// <summary>Drop every hold so a later VR restart does not come back to a black or loading headset.</summary>
     private void OnVRStopped()
@@ -64,7 +84,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         splash = false;
         space.Hide();
         space.Release();
-        stage.RestoreBacking();
+        titleCover.Restore();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -77,6 +97,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
             space.Hide();
         }
         EnterSplash();
+        HideTitleCover();
         // Kick/disconnect paths load scenes directly, without a loading screen: go black, then fade in.
         if (VRSession.Active && !LoadingScreenHandler.loading && loadRoutine == null && !splash)
             StartCoroutine(FadeInAfterCut());
@@ -89,19 +110,82 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     {
         if (!VRSession.Active || splash || !cfg.LoadingSpace.Value)
             return;
-        var pretitle = FindAnyObjectByType<Pretitle>();
+        pretitle = FindAnyObjectByType<Pretitle>();
         if (pretitle == null)
             return;
         splash = true;
         var cam = pretitle.GetComponentInChildren<Camera>(true);
         space.Show(cam != null ? cam : Camera.main);
+        skipHold.Arm(SkipHeld());
+        // The cue that the controllers do something here: a light tap on both, with the ring under the logos.
+        Tap(0.15f, 0.04f);
+    }
+
+    /// <summary>Hold trigger or a face button to skip, as the game's skip keys do (Pretitle.Update sets the
+    /// same flag, A/Pretitle.cs:54). Those keys are keyboard or gamepad only, unreachable from XR. A hold, not
+    /// a press, so picking up a controller never skips.</summary>
+    private void UpdateSplashSkip()
+    {
+        if (pretitle == null)
+            return;
+        if (skipHold.Update(Time.unscaledDeltaTime, SkipHeld()))
+        {
+            skipSplash(pretitle) = true;
+            Tap(0.5f, 0.08f);
+            Plugin.Log.LogInfo("[ui.menu] splash skipped from the controllers");
+        }
+        space.SetSkipProgress(skipHold.Progress);
+    }
+
+    private static bool SkipHeld() =>
+        VRInput.Left.Trigger > 0.75f
+        || VRInput.Right.Trigger > 0.75f
+        || VRInput.Left.Primary
+        || VRInput.Right.Primary
+        || VRInput.Left.Secondary
+        || VRInput.Right.Secondary;
+
+    private static void Tap(float amplitude, float seconds)
+    {
+        // Follows the player's haptics setting (Interaction section); with it off the ring is the cue.
+        Haptics.Pulse(true, amplitude, seconds);
+        Haptics.Pulse(false, amplitude, seconds);
+    }
+
+    /// <summary>The title's cream cover (MainPage/WhiteFade, shown while connecting and faded by the TitleIn
+    /// animation) and the first-time setup page's cream page are opaque cards over the beach in VR.</summary>
+    private void HideTitleCover()
+    {
+        if (!VRSession.Active)
+            return;
+        var menu = FindAnyObjectByType<MainMenuPageHandler>();
+        var canvas = menu != null ? menu.GetComponentInChildren<Canvas>(true) : null;
+        if (canvas == null && menu != null)
+            canvas = menu.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+        {
+            titleCover.Restore();
+            return;
+        }
+        titleCover.Scan(canvas.rootCanvas, LightFill, null, null, "title");
+    }
+
+    /// <summary>LoadingScreenHandler.LoadSceneProcess was built for <paramref name="sceneName"/>.</summary>
+    public void OnLoadDestination(string sceneName)
+    {
+        if (VRSession.Active)
+            space.SetDestination(sceneName);
     }
 
     private void LateUpdate()
     {
         FadeView.Tick();
-        if (VRSession.Active)
-            stage.ApplyOrigin(VRRig.Instance);
+        if (!VRSession.Active)
+            return;
+        stage.ApplyOrigin(VRRig.Instance);
+        titleCover.Reassert();
+        if (splash)
+            UpdateSplashSkip();
     }
 
     private void OnBeforeRender()
@@ -159,6 +243,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         VRFade.Set(loadOwner, 1f);
         yield return WaitForBlack();
         space.Hide();
+        space.SetDestination(null);
         // Give the new scene's camera a frame to take over before revealing it.
         yield return null;
         yield return null;

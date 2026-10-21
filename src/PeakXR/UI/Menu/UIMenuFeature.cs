@@ -19,14 +19,18 @@ public sealed class UIMenuFeature : Feature
         var cfg = UIMenuSettings.Bind(Plugin.Settings);
         // First, so a missing target leaves no runtime objects behind.
         Patch(typeof(KillLoadingScreenPatch));
+        Patch(typeof(LoadSceneProcessPatch));
+        // The splash's own skip flag, set by its skip keys (A/Pretitle.cs:12, set at :54).
+        var skipSplash = GameMember.Field<Pretitle, bool>("allowedToSwitch");
         var stage = new TitleStage(cfg);
         var space = LoadingSpace.Create();
-        var runtime = UIMenuRuntime.Create(stage, space, cfg);
+        var runtime = UIMenuRuntime.Create(stage, space, cfg, skipSplash);
 
         // Public static events on the game's loading handler; a rename fails this feature here.
         LoadingScreenHandler.OnLoadingStart += runtime.OnLoadingStart;
         LoadingScreenHandler.OnLoadingDone += runtime.OnLoadingDone;
         KillLoadingScreenPatch.Runtime = runtime;
+        LoadSceneProcessPatch.Runtime = runtime;
 
         // Title menu canvas (MainMenu root holds MainMenuPageHandler) and every LoadingScreen prefab's canvas.
         CanvasRules.AddCustomMenu("MainMenuPageHandler", stage);
