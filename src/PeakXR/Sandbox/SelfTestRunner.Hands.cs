@@ -173,8 +173,10 @@ internal sealed partial class SelfTestRunner
         Conclude(fails, notes);
     }
 
-    /// <summary>vr.12: the held Apple steered to the mouth point (<see cref="MouthGesture.MouthPoint"/>) is eaten:
-    /// the game's <c>Item.Consume</c> RPC stamps <c>CharacterData.lastConsumedItem</c> (Item.cs:1096, CharacterData.cs:169).</summary>
+    /// <summary>vr.12: the hand holding an Apple, steered to the mouth point (<see cref="MouthGesture.MouthPoint"/>),
+    /// eats it: the game's <c>Item.Consume</c> RPC stamps <c>CharacterData.lastConsumedItem</c> (Item.cs:1096,
+    /// CharacterData.cs:169). The gesture reads the tracked grip; the note also gives the physics item's closest
+    /// approach, which the holder's own head collider keeps away from the mouth.</summary>
     IEnumerator EatStep()
     {
         var c = Character.localCharacter;
@@ -192,8 +194,16 @@ internal sealed partial class SelfTestRunner
         float useTime = item.usingTimePrimary;
         float end = Now + useTime + 6f;
         float best = float.MaxValue;
+        float bestItem = float.MaxValue;
         float progress = 0f;
         bool shot = false;
+        var goal = MouthGesture
+            .MouthPoint(
+                VRInput.HeadPosition.N(),
+                VRInput.HeadRotation.N(),
+                MouthGesture.DefaultOffset
+            )
+            .U();
         while (c.data.lastConsumedItem == consumedBefore && Now < end)
         {
             if (item == null || c.data.currentItem != item)
@@ -205,14 +215,10 @@ internal sealed partial class SelfTestRunner
                     MouthGesture.DefaultOffset
                 )
                 .U();
-            var error = mouth - item.Center();
-            best = Mathf.Min(best, error.magnitude);
+            best = Mathf.Min(best, Vector3.Distance(mouth, rig.Hand(left).position));
+            bestItem = Mathf.Min(bestItem, Vector3.Distance(mouth, item.Center()));
             var at = Script(left).Position;
-            var goal = at + rig.Origin.InverseTransformVector(error);
-            SetHand(
-                left,
-                ClampReach(HandScript.Approach(at.N(), goal.N(), 1.5f, Time.unscaledDeltaTime).U())
-            );
+            SetHand(left, HandScript.Approach(at.N(), goal.N(), 1.5f, Time.unscaledDeltaTime).U());
             progress = Mathf.Max(progress, item.castProgress);
             if (!shot && progress > 0.3f)
             {
@@ -227,7 +233,7 @@ internal sealed partial class SelfTestRunner
             CharacterAfflictions.STATUSTYPE.Hunger
         );
         var note =
-            $"closest {best:0.00} m to the mouth, use progress {progress:0.00} of {useTime:0.0} s, "
+            $"grip closest {best:0.00} m to the mouth (item {bestItem:0.00} m), use progress {progress:0.00} of {useTime:0.0} s, "
             + $"hunger {hunger:0.00} -> {hungerAfter:0.00}";
         if (c.data.lastConsumedItem == consumedBefore)
             Fail("not eaten: " + note);
@@ -804,13 +810,6 @@ internal sealed partial class SelfTestRunner
         head = VRInput.HeadPosition;
         forward = Flat(VRInput.HeadRotation * Vector3.forward);
         right = Vector3.Cross(Vector3.up, forward);
-    }
-
-    /// <summary>A scripted hand stays within arm's reach of the head.</summary>
-    static Vector3 ClampReach(Vector3 tracking)
-    {
-        var head = VRInput.HeadPosition;
-        return head + Vector3.ClampMagnitude(tracking - head, 0.8f);
     }
 
     static Vector3 Flat(Vector3 v)
