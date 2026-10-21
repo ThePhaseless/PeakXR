@@ -49,6 +49,9 @@ internal static class VRTab
 
     public static List<Setting> BuildRows()
     {
+        if (!Refilling)
+            Page = 0;
+        Refilling = false;
         Loc.Set(TabKey, "VR");
         if (Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
             return Guide.GuideRows.Comfort(RowFor);
@@ -116,8 +119,12 @@ internal static class VRTab
     /// screen's bottom edge hang below it into the scene instead of being cut off.</summary>
     public const int PageRows = 12;
 
-    /// <summary>The VR tab page on show; kept while the tab is refilled, clamped when the list shrinks.</summary>
+    /// <summary>The VR tab page on show; kept while the tab is refilled (<see cref="Refilling"/>), clamped when the
+    /// list shrinks, and back to the first page whenever the tab is opened.</summary>
     public static int Page;
+
+    /// <summary>Set by a refill of the open tab (page buttons, demo switch), so the page is kept.</summary>
+    public static bool Refilling;
 
     /// <summary>The current page, its section header repeated when it starts mid-section, then the page buttons.</summary>
     private static List<Setting> OnePage(List<Setting> all)
@@ -136,23 +143,29 @@ internal static class VRTab
                     break;
                 }
         page.AddRange(all.GetRange(start, count));
+        // The demo switch stays in reach on every page while the demos are listed, so they can be folded anywhere.
+        if (Guide.GuideRows.Expanded)
+            for (int i = 0; i < all.Count; i++)
+                if (
+                    all[i] is Guide.GuideRow { Action: Guide.GuideAction.Expand } expand
+                    && (i < start || i >= start + count)
+                )
+                    page.Add(expand);
+        // The page count rides on the last button row, so every page says where it is.
+        bool last = Page == pages - 1;
+        var where = Loc.Set("PEAKXR_PAGE_OF", $"Page {Page + 1} of {pages}");
         if (Page > 0)
             page.Add(
                 new Guide.GuideRow(
                     Guide.GuideAction.PagePrevious,
                     GuideTopic.Count,
-                    Loc.Set("PEAKXR_PAGE_PREVIOUS", "Previous page"),
+                    last ? where : Loc.Set("PEAKXR_PAGE_PREVIOUS", "Previous page"),
                     "Back"
                 )
             );
-        if (Page < pages - 1)
+        if (!last)
             page.Add(
-                new Guide.GuideRow(
-                    Guide.GuideAction.PageNext,
-                    GuideTopic.Count,
-                    Loc.Set("PEAKXR_PAGE_NEXT", $"Page {Page + 1} of {pages}"),
-                    "Next"
-                )
+                new Guide.GuideRow(Guide.GuideAction.PageNext, GuideTopic.Count, where, "Next")
             );
         return page;
     }

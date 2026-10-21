@@ -475,7 +475,7 @@ internal sealed class SpatialBox
         copy = new Material(source) { name = source.name + " (PeakXR on top)" };
         copy.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         if (halo && source.HasProperty(OutlineWidth) && source.GetFloat(OutlineWidth) < 0.1f)
-            TextHalo.Halo(copy, light);
+            TextHalo.Halo(copy, light, tight: true);
         onTop[key] = copy;
         copies.Add(copy);
         return copy;

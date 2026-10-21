@@ -44,12 +44,12 @@ internal sealed class TrackedCanvas
     public float Yaw;
     public float Stack;
 
-    /// <summary>Menus: the content the last wall test was made for.</summary>
-    public Vector2 CheckedSize,
-        CheckedCenter;
+    /// <summary>Menus: opened, page changed or rows refilled; the walls are tested again until the page settles.
+    /// Nothing else (a dropdown list opening) moves a placed panel, so it never shifts under the laser.</summary>
+    public bool Retest;
 
-    /// <summary>Menus: moved by a wall test while the page was still scaling in; logged once it settles.</summary>
-    public bool LogPending;
+    /// <summary>Menus: brought closer by a wall test since the last log line.</summary>
+    public bool Moved;
 
     /// <summary>Menus lose their flat-screen backdrops in VR (<see cref="BackdropStrip"/>).</summary>
     public bool Strip;
@@ -84,6 +84,7 @@ internal static class WorldCanvases
     private static readonly List<Graphic> graphics = new();
     private static readonly Vector3[] corners = new Vector3[4];
     private static bool converting;
+    private static int forcedFrame = -1;
 
     // Re-measure an open menu this often, so a page switch (pause -> settings) resizes it.
     private const float MeasureSeconds = 0.5f;
@@ -414,6 +415,7 @@ internal static class WorldCanvases
             return;
         Strip(t);
         t.NextMeasure = 0f;
+        t.Retest = true;
         t.Settled = false;
         t.SettleUntil = Time.unscaledTime + SettleSeconds;
     }
@@ -454,9 +456,13 @@ internal static class WorldCanvases
 
         if (!t.WasOpen || (t.Position - head.position).sqrMagnitude > 16f)
         {
-            // The walls are tested against what the menu draws, so measure it first.
-            t.NextMeasure = 0f;
-            MeasureIfDue(t);
+            // The walls are tested against what the menu draws, so measure it first, even when WatchPages already
+            // measured this frame (MeasureIfDue runs once a frame).
+            if (!Degenerate(t))
+            {
+                MeasureContent(t);
+                t.MeasuredFrame = Time.frameCount;
+            }
             t.Eye = head.position;
             // Stack newer menus slightly closer, after the wall clamp, so two menus pulled to one wall never z-fight.
             t.Stack = 0.04f * openMenus;
@@ -475,19 +481,18 @@ internal static class WorldCanvases
             var pick = PanelMath.PickOpenYaw(openDepths);
             t.Yaw = yaw + OpenYawSteps[pick];
             ClearWalls(t, cfg, OpenYawSteps[pick]);
+            t.Retest = true;
             t.WasOpen = true;
             t.NextMeasure = 0f;
         }
 
         MeasureIfDue(t);
-        // Grew or moved since the last wall test (a page switch, rows added): test the new outline.
-        if (
-            Mathf.Abs(t.ContentSize.x - t.CheckedSize.x) > RecheckPixels
-            || Mathf.Abs(t.ContentSize.y - t.CheckedSize.y) > RecheckPixels
-            || (t.ContentCenter - t.CheckedCenter).sqrMagnitude > RecheckPixels * RecheckPixels
-            || (t.LogPending && t.Settled)
-        )
+        // A page that just opened, switched or refilled is tested while it scales in, and once more when it settles.
+        if (t.Retest)
+        {
+            t.Retest = !t.Settled;
             ClearWalls(t, cfg, null);
+        }
 
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
@@ -496,9 +501,6 @@ internal static class WorldCanvases
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
     }
-
-    // Content that changes by more than this many canvas pixels is tested against the walls again.
-    private const float RecheckPixels = 8f;
 
     private static float MenuMpp(TrackedCanvas t, UIWorldSettings cfg) =>
         PanelMath.MenuMetersPerPixel(
@@ -511,30 +513,34 @@ internal static class WorldCanvases
     /// <summary>
     /// Places the menu along <see cref="TrackedCanvas.Yaw"/> as far as <c>UI.MenuDistance</c> allows: when a wall,
     /// floor or prop is nearer than any part of the panel, or stands between that part and the eye, the panel comes
-    /// toward the eye along the same sight lines (same angular size) to just in front of it. Logs each opening
-    /// (<paramref name="turned"/> set) and each later change, with what limited it.
+    /// toward the eye along the same sight lines (same angular size) to just in front of it. A retest after opening
+    /// (<paramref name="turned"/> null) only ever brings it closer, never back out. Logs each opening and, once the
+    /// page settles, any later move, with what limited it.
     /// </summary>
     private static void ClearWalls(TrackedCanvas t, UIWorldSettings cfg, float? turned)
     {
         var wanted = cfg.MenuDistance.Value;
         var depth = PanelDepth(t, t.Yaw, cfg);
-        t.CheckedSize = t.ContentSize;
-        t.CheckedCenter = t.ContentCenter;
         var clear = PanelMath.ClearDistance(wanted, depth);
+        if (turned == null)
+            clear = Mathf.Min(clear, t.Scale * wanted);
         var scale = clear / wanted;
-        bool settledNow = turned == null && t.LogPending && t.Settled;
-        if (turned == null && !settledNow && Mathf.Abs(scale - t.Scale) * wanted < 0.02f)
-            return;
-        t.Scale = scale;
-        var offset = PanelMath
-            .InFront(t.Yaw, Mathf.Max(0.5f, clear - t.Stack), cfg.MenuTilt.Value)
-            .ToUnity();
-        t.Position = t.Eye + offset;
-        t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
-        // A page scaling in is re-tested every frame; where it ends up is logged once it settles.
-        t.LogPending = turned == null && !t.Settled;
-        if (!t.LogPending)
+        bool moved = turned != null || (t.Scale - scale) * wanted >= 0.005f;
+        t.Moved = turned == null && (t.Moved || moved);
+        if (moved)
+        {
+            t.Scale = scale;
+            var offset = PanelMath
+                .InFront(t.Yaw, Mathf.Max(0.5f, clear - t.Stack), cfg.MenuTilt.Value)
+                .ToUnity();
+            t.Position = t.Eye + offset;
+            t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
+        }
+        if (turned != null || (!t.Retest && t.Moved))
+        {
+            t.Moved = false;
             LogPlacement(t, depth, clear, turned);
+        }
     }
 
     /// <summary>
@@ -697,7 +703,7 @@ internal static class WorldCanvases
         t.Canvas.GetComponentsInChildren(false, graphics);
         foreach (var g in graphics)
         {
-            if (!g.isActiveAndEnabled || g.color.a < 0.01f)
+            if (!g.isActiveAndEnabled || g.color.a < 0.01f || IsPopup(t, g))
                 continue;
             if (!Clip(t, g, bounds, out var lo, out var hi) || CoversCanvas(bounds, lo, hi))
                 continue;
@@ -715,6 +721,14 @@ internal static class WorldCanvases
         t.ContentCenter = (min + max) * 0.5f;
     }
 
+    /// <summary>A popup drawn over the menu in its own sorting canvas (a dropdown's open list): transient, so it never
+    /// resizes or moves the panel.</summary>
+    private static bool IsPopup(TrackedCanvas t, Graphic g)
+    {
+        var c = g.canvas;
+        return c != null && c != t.Canvas && c.overrideSorting;
+    }
+
     /// <summary>Hides backdrops on the canvas, closed pages included, so they never flash before the next measure.
     /// Transparent ones too: a dimmer faded in later (color.a rising from 0) stays hidden.</summary>
     private static void Strip(TrackedCanvas t)
@@ -725,7 +739,11 @@ internal static class WorldCanvases
         {
             // Rows spawned this frame (a settings tab) sit unlaid-out until the canvases rebuild; the rules judge
             // each graphic by its rect. Only on open, page change or rescan, never per frame.
-            Canvas.ForceUpdateCanvases();
+            if (forcedFrame != Time.frameCount)
+            {
+                forcedFrame = Time.frameCount;
+                Canvas.ForceUpdateCanvases();
+            }
             BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value);
         }
     }

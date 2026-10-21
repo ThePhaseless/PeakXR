@@ -25,6 +25,14 @@ internal static class TextHalo
     private const float Dilate = 0.45f;
     private const float Softness = 0.4f;
 
+    // Small or tightly set text (labels, prompts, keys): a narrower halo, so neighbouring glyphs keep their own halo
+    // instead of merging into a dark bar.
+    private const float TightDilate = 0.2f;
+    private const float TightSoftness = 0.3f;
+
+    // Below this TMP font size, or with negative character spacing, text counts as tight.
+    private const float TightFontSize = 24f;
+
     // Fallback: a thin feathered rim, the face grown by half of it so the rim does not eat into the glyphs.
     private const float RimWidth = 0.12f;
     private const float RimSoftness = 0.15f;
@@ -46,7 +54,7 @@ internal static class TextHalo
     private static readonly int UnderlayY = Shader.PropertyToID("_UnderlayOffsetY");
     private const string UnderlayOn = "UNDERLAY_ON";
     private const string OutlineOn = "OUTLINE_ON";
-    private static readonly Dictionary<(int, bool), Material> clones = new();
+    private static readonly Dictionary<(int, bool, bool), Material> clones = new();
 
     /// <summary>Gives <paramref name="text"/> a halo material. Returns the material it had, or null when
     /// nothing changed (no SDF underlay support, or already outlined or underlaid).</summary>
@@ -62,11 +70,12 @@ internal static class TextHalo
             return null;
         var c = text.color;
         var light = BackdropRules.NeedsLightHalo(c.r, c.g, c.b);
-        var key = (source.GetInstanceID(), light);
+        var tight = text.fontSize < TightFontSize || text.characterSpacing < 0f;
+        var key = (source.GetInstanceID(), light, tight);
         if (!clones.TryGetValue(key, out var halo) || halo == null)
         {
             halo = new Material(source) { name = source.name + " (PeakXR halo)" };
-            if (!Halo(halo, light))
+            if (!Halo(halo, light, tight))
             {
                 Object.Destroy(halo);
                 return null;
@@ -79,8 +88,8 @@ internal static class TextHalo
 
     /// <summary>Gives a material this mod owns the halo, in place: the underlay where the shader declares it, else
     /// the outline. False when the shader has neither. Set it before the material reaches a text, so TMP sizes the
-    /// glyph quads for the halo's padding.</summary>
-    public static bool Halo(Material m, bool light)
+    /// glyph quads for the halo's padding. <paramref name="tight"/> narrows it for small labels.</summary>
+    public static bool Halo(Material m, bool light, bool tight = false)
     {
         if (m == null || m.shader == null)
             return false;
@@ -89,8 +98,8 @@ internal static class TextHalo
         if (underlay.isValid && m.HasProperty(UnderlayColor))
         {
             m.SetColor(UnderlayColor, color);
-            m.SetFloat(UnderlayDilate, Dilate);
-            m.SetFloat(UnderlaySoftness, Softness);
+            m.SetFloat(UnderlayDilate, tight ? TightDilate : Dilate);
+            m.SetFloat(UnderlaySoftness, tight ? TightSoftness : Softness);
             m.SetFloat(UnderlayX, 0f);
             m.SetFloat(UnderlayY, 0f);
             m.SetKeyword(underlay, true);

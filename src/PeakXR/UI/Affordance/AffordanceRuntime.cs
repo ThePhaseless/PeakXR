@@ -738,7 +738,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             fontClone = new Material(mat) { name = "PeakXR_DenyLabel (on top)" };
             fontClone.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
             // No plate behind the reason: a dark rim keeps the red and teal text readable on snow and sky.
-            TextHalo.Halo(fontClone, light: false);
+            TextHalo.Halo(fontClone, light: false, tight: true);
             label.fontSharedMaterial = fontClone;
         }
         // Re-render the current text in the new font.

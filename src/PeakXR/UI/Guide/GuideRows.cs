@@ -120,6 +120,9 @@ internal static class GuideRows
 
     private static bool expanded;
 
+    /// <summary>The demo rows are listed.</summary>
+    public static bool Expanded => expanded;
+
     /// <summary>The tab shows only the comfort choices and Start / Back before a practice.</summary>
     public static bool ComfortFirst;
 
@@ -285,7 +288,10 @@ internal static class GuideRows
     public static void Rebuild()
     {
         if (Menu != null && Menu.isActiveAndEnabled)
+        {
+            VRTab.Refilling = true;
             Menu.ShowSettings(VRTab.Category);
+        }
     }
 
     /// <summary>
