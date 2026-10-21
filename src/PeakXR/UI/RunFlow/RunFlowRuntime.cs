@@ -68,6 +68,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     private bool creditsBlack;
     private Character beachCharacter;
     private bool beachPending;
+    private readonly BeachWake wake = new();
     private bool portalFading;
     private float nextRumblePulse;
     private int anyButtonFrame = -1;
@@ -145,7 +146,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
                 MaxHoldSeconds = 10f,
                 FadeInSeconds = 1.5f,
             },
-            BeachFalling
+            () => wake.Active
         );
         channels = new[] { warp, segment, runEnd, credits, beach };
         cinema = new CinemaScreen(cfg);
@@ -181,6 +182,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         var dt = Time.unscaledDeltaTime;
         UpdateButtons(dt);
         UpdateSegmentWatch();
+        UpdateWake(dt);
         UpdateBeach();
         UpdateCinema();
         foreach (var channel in channels)
@@ -191,7 +193,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     /// <summary>The run-start wake-up waits to be shown (Fade mode) and the body still lies on the sand. ui.menu
     /// keeps its loading room up meanwhile, so the room hands over straight to the scene instead of to black.</summary>
     public static bool BeachWaking =>
-        instance != null && instance.beachPending && instance.BeachFalling();
+        instance != null && instance.beachPending && instance.wake.Active;
 
     // ---- events reported by the patches ----
 
@@ -257,6 +259,9 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         if (instance == null || !VRSession.Active)
             return;
         instance.beachCharacter = character;
+        // One budget from the spawn for the room and the black hold together.
+        instance.wake.Start();
+        instance.beach.Fade.MaxHoldSeconds = BeachWake.Budget;
         // Inside a loading screen ui.menu's loading room is showing: it stays up while the body lies there.
         if (LoadingScreenHandler.loading)
             instance.beachPending = true;
@@ -356,10 +361,25 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         if (!beachPending || LoadingScreenHandler.loading || LoadingSpace.RoomUp)
             return;
         beachPending = false;
-        // The room waited for the wake-up (BeachWaking); hold black only if it gave up first. ui.menu has just
-        // faded out of the room, so no snap is needed.
-        if (BeachFalling())
-            Request(beach, snap: false);
+        // The room waited for the wake-up (BeachWaking): black only for what is left of the shared budget, if
+        // anything. ui.menu has just faded out of the room, so no snap is needed.
+        if (!wake.Active)
+            return;
+        beach.Fade.MaxHoldSeconds = wake.Remaining;
+        Request(beach, snap: false);
+    }
+
+    private void UpdateWake(float dt)
+    {
+        var c = beachCharacter;
+        if (c == null)
+        {
+            wake.Stop();
+            return;
+        }
+        var hip = c.refs.hip != null ? c.refs.hip.Rig : null;
+        var speed = hip != null ? hip.linearVelocity.magnitude : 0f;
+        wake.Update(dt, BeachFalling(), c.data.isGrounded, speed);
     }
 
     private void UpdateButtons(float dt)
@@ -465,6 +485,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         CreditsWaiting = false;
         beachPending = false;
         beachCharacter = null;
+        wake.Stop();
         rumble.Reset();
         StopCinema();
     }

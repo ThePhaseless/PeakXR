@@ -236,3 +236,75 @@ public class RunFlowRumbleTests
         TestUtil.Near(expected, RunFlowRumble.FromShake(amount, strength));
     }
 }
+
+public class BeachWakeTests
+{
+    const float Dt = 0.1f;
+
+    static BeachWake Started()
+    {
+        var w = new BeachWake();
+        w.Start();
+        return w;
+    }
+
+    [Fact]
+    public void IdleUntilStarted()
+    {
+        var w = new BeachWake();
+        Assert.False(w.Update(Dt, lying: true, grounded: true, speed: 0f));
+        Assert.Equal(0f, w.Remaining);
+    }
+
+    [Fact]
+    public void HoldsWhileLyingAndEndsWhenUp()
+    {
+        var w = Started();
+        Assert.True(w.Update(Dt, lying: true, grounded: true, speed: 0f));
+        Assert.False(w.Update(Dt, lying: false, grounded: true, speed: 0f));
+        Assert.False(w.Active);
+    }
+
+    [Fact]
+    public void OneBudgetSharedByTheRoomAndTheBlackHold()
+    {
+        var w = Started();
+        // The room holds part of the budget, the black hold may only use what is left.
+        for (int i = 0; i < 40; i++)
+            w.Update(Dt, lying: true, grounded: true, speed: 1f);
+        Assert.Equal(BeachWake.Budget - 4f, w.Remaining, 3);
+        float held = 4f;
+        while (w.Update(Dt, lying: true, grounded: true, speed: 1f))
+            held += Dt;
+        Assert.True(held <= BeachWake.Budget + Dt);
+        Assert.Equal(0f, w.Remaining);
+    }
+
+    [Fact]
+    public void BodyRestingUngroundedEndsTheHold()
+    {
+        // fallSeconds drains at 0.2x while not grounded (Character.cs:1166-1175): a body stuck on a slope.
+        var w = Started();
+        float t = 0f;
+        while (w.Update(Dt, lying: true, grounded: false, speed: 0.05f))
+            t += Dt;
+        Assert.True(t < BeachWake.SettleSeconds + 2 * Dt);
+    }
+
+    [Fact]
+    public void RestingOnTheGroundWaitsForTheGame()
+    {
+        // Grounded, fallSeconds drains at full rate: the body gets up on its own.
+        var w = Started();
+        for (int i = 0; i < 30; i++)
+            Assert.True(w.Update(Dt, lying: true, grounded: true, speed: 0f));
+    }
+
+    [Fact]
+    public void MovingUngroundedBodyKeepsHolding()
+    {
+        var w = Started();
+        for (int i = 0; i < 30; i++)
+            Assert.True(w.Update(Dt, lying: true, grounded: false, speed: 2f));
+    }
+}

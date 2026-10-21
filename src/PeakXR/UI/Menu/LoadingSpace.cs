@@ -346,6 +346,8 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
 
     private void OnEnable() => Application.onBeforeRender += TrackHead;
 
+    private void OnDestroy() => RoomUp = false;
+
     private void OnDisable() => Application.onBeforeRender -= TrackHead;
 
     private void LateUpdate()
