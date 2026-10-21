@@ -112,6 +112,32 @@ public class HeatZoneTests
             HeatZone.Distance(Fire + new Vector3(0.9f, 1.4f, 0f), Fire, 0.6f, 0.2f, 1f)
         );
     }
+
+    [Fact]
+    public void Nearest_Inside_IsThePointItself()
+    {
+        var p = Fire + new Vector3(0.3f, 0.5f, 0f);
+        Assert.Equal(p, HeatZone.Nearest(p, Fire, 0.6f, 0.2f, 1f));
+    }
+
+    [Fact]
+    public void Nearest_BesideAndAbove_IsOnTheRimAtTheTop()
+    {
+        var n = HeatZone.Nearest(Fire + new Vector3(0f, 1.4f, 1f), Fire, 0.6f, 0.2f, 1f);
+        TestUtil.Near(Fire.X, n.X);
+        TestUtil.Near(Fire.Y + 1f, n.Y);
+        TestUtil.Near(Fire.Z + 0.6f, n.Z);
+    }
+
+    [Fact]
+    public void Nearest_IsAsFarAsDistanceSays()
+    {
+        var p = Fire + new Vector3(0.9f, 0.05f, -0.4f);
+        TestUtil.Near(
+            HeatZone.Distance(p, Fire, 0.6f, 0.2f, 1f),
+            Vector3.Distance(p, HeatZone.Nearest(p, Fire, 0.6f, 0.2f, 1f))
+        );
+    }
 }
 
 public class BodyZonesTests

@@ -30,6 +30,16 @@ internal static class FireGestures
     private const float CookMinUp = 0.2f;
     private const float CookMaxUp = 1f;
 
+    /// <summary>Light zone over an unlit campfire's base: its log pile plus a reach margin. A torch held at full
+    /// reach from a body stopped by the fire ring got its flame to 0.47-0.49 m out, 0.24 m up (vr11); the old
+    /// 0.35 m zone sat at the edge of what an arm can reach.</summary>
+    private const float CampfireLightRadius = 0.6f;
+    private const float CampfireLightMinUp = -0.1f;
+    private const float CampfireLightMaxUp = 0.6f;
+
+    /// <summary>A flame this far outside the light zone gets the "closer" cue showing where the zone starts.</summary>
+    private const float LightHintRange = 0.4f;
+
     private const float TouchEnter = 0.12f;
     private const float TouchExit = 0.2f;
     private const float WarmRange = 1f;
@@ -146,6 +156,24 @@ internal static class FireGestures
             if (target != null)
                 Haptics.Pulse(ItemGestures.HoldLeft, 0.4f, 0.04f);
         }
+        if (target is Campfire near && distance > TouchEnter && distance <= LightHintRange)
+            Affordance.Hover(
+                ItemGestures.HoldLeft,
+                flame,
+                DenyReason.OutOfReach,
+                DenyHint.Closer(
+                    HeatZone
+                        .Nearest(
+                            flame.N(),
+                            ItemGestures.FireBase(near).N(),
+                            CampfireLightRadius,
+                            CampfireLightMinUp,
+                            CampfireLightMaxUp
+                        )
+                        .U(),
+                    distance
+                )
+            );
         if (target == null || !Touch.Update(distance, dt))
             return;
         if (target is Campfire campfire && campfire.state == Campfire.FireState.Off)
@@ -289,16 +317,17 @@ internal static class FireGestures
             }
         }
 
-        // Campfire logs: by distance to the fire base, since the campfire is found through its own list.
+        // Campfire logs: by distance to the light zone over the fire base, since the campfire is found through its
+        // own list.
         var fire = ItemGestures.NearestCampfire(flame, 1.5f, litOnly: false);
         if (fire != null && fire.state == Campfire.FireState.Off && Lightable(c, fire))
         {
             float d = HeatZone.Distance(
                 flame.N(),
                 ItemGestures.FireBase(fire).N(),
-                0.35f,
-                -0.1f,
-                0.4f
+                CampfireLightRadius,
+                CampfireLightMinUp,
+                CampfireLightMaxUp
             );
             if (d < distance)
             {

@@ -76,6 +76,22 @@ public static class HeatZone
         float vertical = MathF.Max(MathF.Max(minUp - d.Y, d.Y - maxUp), 0f);
         return MathF.Sqrt(radial * radial + vertical * vertical);
     }
+
+    /// <summary>The point of the cylinder nearest <paramref name="point"/> (itself when inside), for a cue showing
+    /// where the zone starts. Same parameters as <see cref="Distance"/>.</summary>
+    public static Vector3 Nearest(
+        Vector3 point,
+        Vector3 bottom,
+        float radius,
+        float minUp,
+        float maxUp
+    )
+    {
+        var d = point - bottom;
+        float flat = MathF.Sqrt(d.X * d.X + d.Z * d.Z);
+        float scale = flat > radius ? radius / flat : 1f;
+        return bottom + new Vector3(d.X * scale, Math.Clamp(d.Y, minUp, maxUp), d.Z * scale);
+    }
 }
 
 /// <summary>
