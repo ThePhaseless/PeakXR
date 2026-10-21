@@ -27,8 +27,11 @@ internal static class BodyGestures
     private static bool haveStand;
     private static float lift;
 
-    private static bool CrouchOn => physicalCrouch?.Value ?? true;
+    internal static bool CrouchOn => physicalCrouch?.Value ?? true;
     private static bool SwingOn => armSwingSprint?.Value ?? false;
+
+    /// <summary>The arm-swing setting, so the self-test can switch it on for its step.</summary>
+    internal static ConfigEntry<bool> ArmSwingSetting => armSwingSprint;
 
     public static void Bind(ConfigFile file)
     {
