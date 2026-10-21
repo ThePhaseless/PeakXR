@@ -128,6 +128,16 @@ internal static class Affordance
         return true;
     }
 
+    /// <summary>
+    /// The red preview of a refused placement: right after a <see cref="Deny"/> that returned true, a red ghost of
+    /// <paramref name="prefab"/> (the game's placement preview) at the refused spot, for as long as the refusal shows.
+    /// </summary>
+    public static void Preview(GameObject prefab, Vector3 position, Quaternion rotation)
+    {
+        if (Enabled)
+            DenyTint.Ghost(prefab, position, rotation);
+    }
+
     /// <summary>Deny at the hand itself, for refusals with no spot in the world (two-handed use, a throw).</summary>
     public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint = default)
     {

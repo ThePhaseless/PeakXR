@@ -48,6 +48,7 @@ public sealed class AffordanceFeature : Feature
             "Also show a short text reason and next step by the hand or target. The rings, shapes, sounds and "
                 + "haptics already say what is wrong and what would work; this adds words. Needs ActionHints."
         );
+        DenyTint.ItemBlock = GameMember.Field<Item, UnityEngine.MaterialPropertyBlock>("mpb");
         AffordanceRuntime.Create();
     }
 }

@@ -198,3 +198,22 @@ public static class CueMotion
     /// <summary>Start angle in degrees of the "wait" glyph's sweeping arc (one turn per 1.5 s).</summary>
     public static float Sweep(float time) => Travel(time * TravelSeconds / 1.5f) * 360f;
 }
+
+/// <summary>
+/// The red preview of a refused thing (the held item, a piton ghost): its own colour tint pulled toward red, so it
+/// still reads as that item. Colours are RGBA in a <see cref="Vector4"/>.
+/// </summary>
+public static class DenyTintMath
+{
+    /// <summary>Multiplier at full strength: keeps red, drops green and blue.</summary>
+    public static readonly Vector4 Red = new(1f, 0.3f, 0.26f, 1f);
+
+    /// <summary><paramref name="baseTint"/> pulled toward red by <paramref name="strength"/> (0..1, clamped).</summary>
+    public static Vector4 Tint(Vector4 baseTint, float strength) =>
+        Vector4.Lerp(baseTint, baseTint * Red, Math.Clamp(strength, 0f, 1f));
+
+    /// <summary>The colour <paramref name="now"/> is the full red tint of <paramref name="baseTint"/>.</summary>
+    public static bool IsTinted(Vector4 baseTint, Vector4 now) =>
+        Vector4.Distance(now, Tint(baseTint, 1f)) < 0.02f
+        && Vector4.Distance(now, baseTint) > 0.02f;
+}

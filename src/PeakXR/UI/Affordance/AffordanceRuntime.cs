@@ -29,10 +29,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private const float HoverFade = 0.15f;
     private const float RayWidth = 0.0025f;
 
+    /// <summary>A rim stroke's width over its coloured stroke's: a thin dark edge each side.</summary>
+    private const float RimWidth = 1.9f;
+
     private static readonly Color RayColor = new(1f, 1f, 1f, 0.35f);
 
-    /// <summary>The disc behind a "can't" ring: dark and translucent, a contrast plate, not a flash.</summary>
-    private static readonly Color BackColor = new(0.08f, 0.05f, 0.05f, 0.5f);
+    /// <summary>The thin dark edge on both sides of a "can't" stroke, so the red reads on red rock, snow and sky.</summary>
+    private static readonly Color RimColor = new(0.06f, 0.03f, 0.03f, 0.6f);
     private static readonly RaycastHit[] RayHits = new RaycastHit[16];
 
     /// <summary>Labels that ride on a hand stay at least this far from the eye, a comfortable focus distance.</summary>
@@ -50,9 +53,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public LineRenderer Mark,
             Arc;
 
-        /// <summary>Child of <see cref="Deny"/>: a dark translucent disc behind the ring and glyph, so a red ring reads
-        /// on a red item, snow or sky.</summary>
-        public LineRenderer Back;
+        /// <summary>Dark rims: a wider dark stroke drawn under the ring, the glyph and the wait arc.</summary>
+        public LineRenderer RingRim,
+            MarkRim,
+            ArcRim;
 
         /// <summary>Child of <see cref="Hint"/>: the inner ring that makes it a double ring.</summary>
         public LineRenderer Inner;
@@ -153,6 +157,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             && DenyFade.Alpha(now - self.denyAt, self.denyHeldUntil - self.denyAt) > 0f;
         var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
         self.denied.AtHand = hand != null && CueLayout.AtHand(pos.N(), hand.position.N());
+        // The red preview: a refusal at the hand is about the item in it. A placement ghost comes from the caller.
+        var held =
+            Character.localCharacter != null ? Character.localCharacter.data.currentItem : null;
+        if (!notice && self.denied.AtHand && held != null && LocalHold.ItemInLeftHand == left)
+            DenyTint.HeldItem(held);
+        else
+            DenyTint.Clear();
         self.denied.Position = pos;
         self.denied.Reason = reason;
         self.denied.Spot = hint;
@@ -402,6 +413,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         if (denied.AtHand && denyHand != null)
             denied.Position = CueLayout.HandAnchor(denyHand.position.N(), eye.N()).U();
         PoseCue(denied, eye, denyAlpha);
+        if (DenyTint.Active)
+        {
+            if (denyAlpha > 0.001f)
+                DenyTint.Apply(denyAlpha);
+            else
+                DenyTint.Clear();
+        }
 
         for (int i = 0; i < 2; i++)
         {
@@ -504,8 +522,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         bool refusedRing = shown && !(cue.Notice && hint);
         var color = cue.Notice ? Affordance.HintColor : Affordance.DenyColor;
         PoseRing(cue.Deny, cue.Position, eye, refusedRing ? alpha : 0f, color, cue.Degrees);
-        cue.Back.widthMultiplier = cue.Deny.transform.localScale.x * 1.15f;
-        SetLine(cue.Back, refusedRing, alpha, BackColor);
+        cue.RingRim.widthMultiplier = cue.Deny.widthMultiplier * RimWidth;
+        SetLine(cue.RingRim, refusedRing && cue.Deny.enabled, alpha, RimColor);
         PoseGlyph(cue, refusedRing, alpha, color, now);
         PoseRing(
             cue.Hint,
@@ -577,6 +595,21 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
         SetLine(cue.Mark, mark, alpha, color);
         SetLine(cue.Arc, arc, alpha, color);
+        if (mark)
+        {
+            // A touch longer than the stroke, so its ends get an edge too.
+            cue.MarkRim.SetPosition(0, cue.Mark.GetPosition(0) * 1.08f);
+            cue.MarkRim.SetPosition(1, cue.Mark.GetPosition(1) * 1.08f);
+            cue.MarkRim.widthMultiplier = cue.Mark.widthMultiplier * RimWidth;
+        }
+        if (arc)
+        {
+            for (int i = 0; i < ArcPoints; i++)
+                cue.ArcRim.SetPosition(i, cue.Arc.GetPosition(i));
+            cue.ArcRim.widthMultiplier = cue.Arc.widthMultiplier * RimWidth;
+        }
+        SetLine(cue.MarkRim, mark, alpha, RimColor);
+        SetLine(cue.ArcRim, arc, alpha, RimColor);
     }
 
     /// <summary>A small chevron moving from the refused spot to the valid one: which way, at a glance.</summary>
@@ -670,6 +703,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     {
         if (!built)
             return;
+        if (DenyTint.Active)
+            DenyTint.Clear();
         Hide(denied);
         Hide(hovers[0]);
         Hide(hovers[1]);
@@ -684,7 +719,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             cue.Link.enabled =
             cue.Mark.enabled =
             cue.Arc.enabled =
-            cue.Back.enabled =
+            cue.RingRim.enabled =
+            cue.MarkRim.enabled =
+            cue.ArcRim.enabled =
             cue.Inner.enabled =
             cue.Chevron.enabled =
                 false;
@@ -699,11 +736,27 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             bool top = cue == denied;
             cue.Degrees = top ? CueLayout.DenyDegrees : CueLayout.HoverDegrees;
             cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, top);
-            cue.Back = Line("Backing", RingPoints, true, BackColor, top, cue.Deny.transform, 3190);
-            // Unit-circle ring at radius 0.55 with a 1.15 r width: a disc from the centre to just past the ring.
-            for (int i = 0; i < RingPoints; i++)
-                cue.Back.SetPosition(i, cue.Back.GetPosition(i) * 0.55f);
+            // Rims render first (lower queue), so the coloured stroke lies on a dark edge, not on a plate.
+            cue.RingRim = Line(
+                "RingRim",
+                RingPoints,
+                true,
+                RimColor,
+                top,
+                cue.Deny.transform,
+                3190
+            );
             cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, top, cue.Deny.transform);
+            cue.MarkRim = Line("GlyphRim", 2, false, RimColor, top, cue.Deny.transform, 3190);
+            cue.ArcRim = Line(
+                "WaitArcRim",
+                ArcPoints,
+                false,
+                RimColor,
+                top,
+                cue.Deny.transform,
+                3190
+            );
             cue.Arc = Line(
                 "WaitArc",
                 ArcPoints,

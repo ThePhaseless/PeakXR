@@ -87,4 +87,31 @@ public class DenyCueTests
         Assert.False(CueLayout.Readable(Eye, action, off, big, out why));
         Assert.Contains("off", why);
     }
+
+    [Fact]
+    public void Tint_FullStrengthIsRed_ZeroIsTheOriginal()
+    {
+        var white = Vector4.One;
+        var full = DenyTintMath.Tint(white, 1f);
+        Assert.True(full.X > 0.9f && full.Y < 0.4f && full.Z < 0.4f, full.ToString());
+        Assert.Equal(white, DenyTintMath.Tint(white, 0f));
+        Assert.Equal(white, DenyTintMath.Tint(white, -1f));
+        Assert.Equal(full, DenyTintMath.Tint(white, 3f));
+        // The base (a cooked item's darker tint) is kept, only pulled to red; alpha untouched.
+        var cooked = new Vector4(0.6f, 0.5f, 0.4f, 1f);
+        var t = DenyTintMath.Tint(cooked, 1f);
+        Assert.Equal(cooked.X, t.X, 3);
+        Assert.Equal(1f, t.W);
+        var half = DenyTintMath.Tint(white, 0.5f);
+        Assert.InRange(half.Y, full.Y, 1f);
+    }
+
+    [Fact]
+    public void Tint_IsTinted_TellsTheRedFromTheOriginal()
+    {
+        var b = new Vector4(0.8f, 0.8f, 0.8f, 1f);
+        Assert.True(DenyTintMath.IsTinted(b, DenyTintMath.Tint(b, 1f)));
+        Assert.False(DenyTintMath.IsTinted(b, b));
+        Assert.False(DenyTintMath.IsTinted(b, DenyTintMath.Tint(b, 0.2f)));
+    }
 }
