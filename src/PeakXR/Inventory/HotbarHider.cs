@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PeakXR.UI.Spatial;
 using UnityEngine;
 
 namespace PeakXR.Inventory;
@@ -21,11 +22,13 @@ internal static class HotbarHider
     private static bool loggedOwnGroup;
 
     /// <summary>Hides or restores to match <paramref name="hide"/>; cheap to call every frame. While spectating the
-    /// 2D hotbar shows the friend's items (A/GUIManager.cs:1126), which the body slots do not, so it stays.</summary>
+    /// 2D hotbar shows the friend's items (A/GUIManager.cs:1126); it hides only while ui.spatial draws those items
+    /// around the friend's belt instead.</summary>
     public static void Sync(bool hide)
     {
         var gui = GUIManager.instance;
-        hide &= Character.observedCharacter == Character.localCharacter;
+        if (Character.observedCharacter != Character.localCharacter)
+            hide = SpectateView.BeltShowing;
         // (object) check: a GUIManager destroyed with its scene is Unity-null but its groups still need clearing.
         if ((object)hidden != null && (!hide || hidden != gui))
             Restore();

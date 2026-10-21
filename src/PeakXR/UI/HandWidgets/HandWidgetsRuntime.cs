@@ -2,6 +2,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Common;
+using PeakXR.UI.Spatial;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
@@ -106,7 +107,13 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         if (ring.Active)
         {
             var hand = rig.Hand(ringLeft);
-            if (hand != null)
+            // A held interaction's ring sits under the target's label (ui.spatial), where the action happens.
+            if (
+                ringSource == ProgressSource.Interactable
+                && TargetPrompt.TryRing(rig, out var atTarget, out var width)
+            )
+                ring.Pose(atTarget, head.position, width);
+            else if (hand != null)
             {
                 // Above the hand and a little toward the eyes, clear of the held item.
                 var pos = hand.position + Vector3.up * 0.08f;

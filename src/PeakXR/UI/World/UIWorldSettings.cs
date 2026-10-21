@@ -1,5 +1,6 @@
 using BepInEx.Configuration;
 using PeakXR.Core;
+using PeakXR.VR;
 
 namespace PeakXR.UI.World;
 
@@ -16,6 +17,9 @@ public enum WristSide
 {
     Left,
     Right,
+
+    /// <summary>The hand that is not dominant (<c>Input.DominantHand</c>), so it follows a left-handed layout.</summary>
+    OffHand,
 }
 
 public enum ReticleMode
@@ -55,6 +59,12 @@ internal sealed class UIWorldSettings
         HudFollowAngle,
         WristWidth;
     public ConfigEntry<WristSide> WristHand;
+
+    /// <summary>The wrist HUD is on the left controller.</summary>
+    public bool WristLeft =>
+        WristHand.Value == WristSide.OffHand
+            ? !VRInput.LeftHanded
+            : WristHand.Value == WristSide.Left;
     public ConfigEntry<ReticleMode> Reticle;
     public ConfigEntry<PointerHandMode> PointerHand;
     public ConfigEntry<float> ScrollSpeed,
@@ -65,7 +75,7 @@ internal sealed class UIWorldSettings
         const string ui = "UI",
             hud = "UI.HUD",
             pointer = "UI.Pointer";
-        return new UIWorldSettings
+        var s = new UIWorldSettings
         {
             MenuDistance = cfg.Bind(
                 ui,
@@ -112,8 +122,9 @@ internal sealed class UIWorldSettings
             Hud = cfg.Bind(
                 hud,
                 "HudMode",
-                HudMode.Body,
-                "Body: one HUD panel that follows you. Wrist: stamina and hotbar on your wrist."
+                HudMode.Wrist,
+                "Wrist: stamina, afflictions and the dying bar on your off-hand wrist, readable while your hands are "
+                    + "on a wall. Body: one HUD panel that follows you."
             ),
             HudDistance = cfg.Bind(
                 hud,
@@ -142,8 +153,8 @@ internal sealed class UIWorldSettings
             WristHand = cfg.Bind(
                 hud,
                 "WristHand",
-                WristSide.Left,
-                "Wrist that carries the stamina bar and hotbar in Wrist mode."
+                WristSide.OffHand,
+                "Wrist that carries the status bar in Wrist mode."
             ),
             WristWidth = cfg.Bind(
                 hud,
@@ -154,8 +165,9 @@ internal sealed class UIWorldSettings
             Reticle = cfg.Bind(
                 hud,
                 "Reticle",
-                ReticleMode.Head,
-                "Where the aiming reticle is shown."
+                ReticleMode.Hidden,
+                "Where the aiming reticle is shown. In VR you aim with your hand and the prompt shows at the target "
+                    + "(UI > TargetPrompt), so it is hidden by default; Head pins it to your view."
             ),
 
             PointerHand = cfg.Bind(
@@ -185,6 +197,35 @@ internal sealed class UIWorldSettings
                 )
             ),
         };
+        Migrate(cfg, s, hud);
+        return s;
+    }
+
+    /// <summary>
+    /// Layout 1 changed three defaults (HUD on the wrist, the off hand's wrist, no head-locked reticle). A config
+    /// saved before it still holds the old defaults, so move each entry that equals its old default, once.
+    /// </summary>
+    private static void Migrate(ConfigFile cfg, UIWorldSettings s, string section)
+    {
+        var version = cfg.Bind(
+            section,
+            "LayoutVersion",
+            0,
+            new ConfigDescription(
+                "Internal: the default layout this file was upgraded to.",
+                null,
+                UI.Settings.VRTab.HiddenTag
+            )
+        );
+        if (version.Value >= 1)
+            return;
+        if (s.Hud.Value == HudMode.Body)
+            s.Hud.Value = HudMode.Wrist;
+        if (s.WristHand.Value == WristSide.Left)
+            s.WristHand.Value = WristSide.OffHand;
+        if (s.Reticle.Value == ReticleMode.Head)
+            s.Reticle.Value = ReticleMode.Hidden;
+        version.Value = 1;
     }
 
     private static ConfigDescription Range(string text, float min, float max) =>

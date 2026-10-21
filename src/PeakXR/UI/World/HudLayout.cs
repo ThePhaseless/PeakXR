@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Reflection;
 using PeakXR.Core;
+using PeakXR.Inventory;
 using PeakXR.UI.Common;
+using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -51,10 +53,24 @@ internal sealed class HudSplit
     private GUIManager gui;
     private RectTransform hudRoot;
     private bool applied,
-        appliedWrist;
+        appliedWrist,
+        appliedPlate,
+        appliedBodyHotbar;
     private ReticleMode appliedReticle;
     private Vector2 wristCenter;
-    private float wristSpan = 1f;
+
+    // Until something is measured: about the width of the stamina bar, never 1 px (a screen-sized wrist).
+    private float wristSpan = 400f;
+
+    /// <summary>0..1 bump that briefly grows the wrist HUD (ui.spatial status alerts).</summary>
+    public static float WristPulse;
+
+    /// <summary>The wrist HUD was posed this frame, at <see cref="WristPosition"/> (centre of the status bar) and
+    /// <see cref="WristRotation"/> (up toward the fingers), so other wrist parts can sit beside it.</summary>
+    public static bool WristValid;
+    public static Vector3 WristPosition;
+    public static Quaternion WristRotation = Quaternion.identity;
+    private int measuredMask;
 
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
@@ -84,18 +100,28 @@ internal sealed class HudSplit
             return;
 
         var reticle = cfg.Reticle.Value;
-        var wrist =
-            cfg.Hud.Value == HudMode.Wrist
-            && rig.Hand(cfg.WristHand.Value == WristSide.Left) != null;
-        if (applied && reticle == appliedReticle && wrist == appliedWrist)
+        var wrist = cfg.Hud.Value == HudMode.Wrist && rig.Hand(cfg.WristLeft) != null;
+        // While spectating the status bar rides on the friend's nameplate (ui.spatial), and with the body hotbar
+        // (inventory.vr) the 2D hotbar stays hidden on the panel instead of filling the wrist.
+        var plate = SpectateView.ClaimsStatus;
+        // Keyed on the settings, not on SlotGhosts.Showing, so focus loss (dashboard) does not re-lay the wrist.
+        var bodyHotbar = InventoryConfig.Instance.BodySlots && InventoryConfig.Instance.Ghosts;
+        if (
+            applied
+            && reticle == appliedReticle
+            && wrist == appliedWrist
+            && plate == appliedPlate
+            && bodyHotbar == appliedBodyHotbar
+        )
             return;
 
         Restore();
-        Apply(reticle, wrist);
+        Apply(reticle, wrist, plate, bodyHotbar);
     }
 
     public void Restore()
     {
+        WristValid = false;
         reticleBox.Restore();
         wristBox.Restore();
         if (gui != null && gui.heroBG != null)
@@ -103,7 +129,7 @@ internal sealed class HudSplit
         applied = false;
     }
 
-    private void Apply(ReticleMode reticle, bool wrist)
+    private void Apply(ReticleMode reticle, bool wrist, bool plate, bool bodyHotbar)
     {
         hudRoot = (RectTransform)gui.hudCanvas.transform;
         // The biome title dims the whole screen (A/GUIManager.cs:511-512); on a floating panel that is
@@ -122,51 +148,115 @@ internal sealed class HudSplit
         if (wrist)
         {
             var box = wristBox.Ensure(hudRoot);
-            MoveGroup(gui.bar != null ? gui.bar.transform : null);
-            // Numb swaps the stamina bar for a mushroom group (A/GUIManager.cs:1249); it belongs with the bar.
-            MoveGroup(gui.mushroomsCanvasGroup != null ? gui.mushroomsCanvasGroup.transform : null);
-            MoveGroup(
-                gui.items != null && gui.items.Length > 0 && gui.items[0] != null
-                    ? gui.items[0].transform
-                    : null
-            );
-            MoveGroup(gui.backpack != null ? gui.backpack.transform : null);
+            if (!plate)
+            {
+                MoveGroup(gui.bar != null ? gui.bar.transform : null);
+                // Numb swaps the stamina bar for a mushroom group (A/GUIManager.cs:1249); it belongs with the bar.
+                MoveGroup(
+                    gui.mushroomsCanvasGroup != null ? gui.mushroomsCanvasGroup.transform : null
+                );
+            }
+            if (!bodyHotbar)
+            {
+                MoveGroup(
+                    gui.items != null && gui.items.Length > 0 && gui.items[0] != null
+                        ? gui.items[0].transform
+                        : null
+                );
+                MoveGroup(gui.backpack != null ? gui.backpack.transform : null);
+            }
             // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
             MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
-            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(box);
-            wristCenter = bounds.center;
-            wristSpan = Mathf.Max(1f, bounds.size.x);
+            MeasureWrist(box);
         }
 
         applied = true;
         appliedReticle = reticle;
         appliedWrist = wrist;
+        appliedPlate = plate;
+        appliedBodyHotbar = bodyHotbar;
+    }
+
+    /// <summary>Measures the moved groups that are shown: the box itself is HUD-sized and would make the span the
+    /// whole HUD. Runs on apply and when a group shows or hides (the dying bar), not every frame.</summary>
+    private void MeasureWrist(RectTransform box)
+    {
+        measuredMask = ShownMask(box);
+        bool any = false;
+        var bounds = default(Bounds);
+        for (int i = 0; i < box.childCount; i++)
+        {
+            var child = box.GetChild(i);
+            if (!child.gameObject.activeSelf)
+                continue;
+            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(box, child);
+            if (any)
+                bounds.Encapsulate(b);
+            else
+                bounds = b;
+            any = true;
+        }
+        if (any)
+        {
+            wristCenter = bounds.center;
+            wristSpan = Mathf.Max(1f, bounds.size.x);
+        }
+    }
+
+    private static int ShownMask(RectTransform box)
+    {
+        int mask = 0;
+        int n = Mathf.Min(box.childCount, 31);
+        for (int i = 0; i < n; i++)
+        {
+            if (box.GetChild(i).gameObject.activeSelf)
+                mask |= 1 << i;
+        }
+        return mask;
     }
 
     /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD
     /// root, or a smaller one when that ancestor is a full-screen container.</summary>
     private void MoveGroup(Transform target)
     {
-        if (target == null)
-            return;
-        var box = wristBox.Rect;
+        var group = GroupOf(target, hudRoot);
+        if (group != null)
+            wristBox.Move(group);
+    }
+
+    /// <summary>The HUD group holding <paramref name="target"/>: its ancestor directly under
+    /// <paramref name="hudRoot"/>, or a smaller one when that ancestor is a full-screen container. Inside a
+    /// full-HUD <see cref="HudBox"/> that is the box's child; null when the target is not in the HUD or sits in a
+    /// small PeakXR box (ui.spatial), whose owner keeps it.</summary>
+    internal static Transform GroupOf(Transform target, RectTransform hudRoot)
+    {
+        if (target == null || hudRoot == null)
+            return null;
         var group = target;
-        while (group.parent != null && group.parent != hudRoot && group.parent != box)
+        while (group.parent != null && group.parent != hudRoot)
             group = group.parent;
         if (group.parent != hudRoot)
-            return;
+            return null;
+        // Runs only when the layout is re-applied, so reading the name (it allocates) is fine.
+        if (
+            group != target
+            && group is RectTransform box
+            && !CoversHud(box, hudRoot)
+            && group.name.StartsWith("PeakXR_", System.StringComparison.Ordinal)
+        )
+            return null;
 
-        while (group != target && group is RectTransform r && CoversHud(r))
+        while (group != target && group is RectTransform r && CoversHud(r, hudRoot))
         {
             var next = target;
             while (next.parent != group)
                 next = next.parent;
             group = next;
         }
-        wristBox.Move(group);
+        return group;
     }
 
-    private bool CoversHud(RectTransform r)
+    private static bool CoversHud(RectTransform r, RectTransform hudRoot)
     {
         var hud = hudRoot.rect;
         return r.rect.width >= hud.width * 0.9f && r.rect.height >= hud.height * 0.9f;
@@ -175,16 +265,23 @@ internal sealed class HudSplit
     /// <summary>Poses the wrist container. Called once per frame after the canvases are placed.</summary>
     public void PoseWrist(VRRig rig, UIWorldSettings cfg)
     {
+        WristValid = false;
         if (!applied || !appliedWrist || wristBox.Rect == null)
             return;
-        var hand = rig.Hand(cfg.WristHand.Value == WristSide.Left);
+        var hand = rig.Hand(cfg.WristLeft);
         if (hand == null)
             return;
+        if (ShownMask(wristBox.Rect) != measuredMask)
+            MeasureWrist(wristBox.Rect);
 
         // Back of the wrist, facing up out of the forearm; text up toward the fingers. Needs in-headset tuning.
         var rotation = hand.rotation * Quaternion.Euler(90f, 0f, 0f);
         var anchor = hand.position + hand.rotation * new Vector3(0f, 0.04f, -0.12f);
-        wristBox.Pose(anchor, rotation, wristCenter, cfg.WristWidth.Value / wristSpan);
+        var width = cfg.WristWidth.Value * (1f + 0.15f * WristPulse);
+        wristBox.Pose(anchor, rotation, wristCenter, width / wristSpan);
+        WristValid = true;
+        WristPosition = anchor;
+        WristRotation = rotation;
     }
 
     /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>

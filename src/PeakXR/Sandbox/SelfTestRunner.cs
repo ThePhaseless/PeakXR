@@ -151,6 +151,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return Mobs();
             yield return VRStep("vr.07-comfort", 100f, ComfortCheck());
             yield return HandSteps();
+            yield return SpatialSteps();
             foreach (var segment in SandboxActions.Segments)
             {
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
