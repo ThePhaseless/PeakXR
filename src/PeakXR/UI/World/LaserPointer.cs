@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
@@ -30,6 +31,18 @@ internal sealed class LaserPointer
     private const int MaxCandidates = 8;
     private static readonly Color CursorColor = new(1f, 1f, 1f, 0.95f);
 
+    // Dark rim around the dot so it reads on white text and bright sky; the dot takes the hint colour on a control.
+    private static readonly Color RimColor = new(0f, 0f, 0f, 0.7f);
+    private static readonly Color HoverColor = new(
+        Affordance.HintColor.r,
+        Affordance.HintColor.g,
+        Affordance.HintColor.b,
+        0.95f
+    );
+    private const float RimScale = 1.6f;
+    private static readonly Color BeamColor = new(1f, 1f, 1f, 0.55f);
+    private static readonly Color BeamHoverColor = new(1f, 1f, 1f, 0.85f);
+
     public static Camera EventCamera { get; private set; }
 
     /// <summary>Clicks under this transform keep the current selection, so the VR keyboard can type into the
@@ -43,7 +56,10 @@ internal sealed class LaserPointer
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;
     private readonly Transform cursor;
+    private readonly Transform rim;
     private readonly Material cursorMaterial;
+    private readonly Material beamMaterial;
+    private bool hoverLook;
     private readonly RaycastResult[] candidates = new RaycastResult[MaxCandidates];
     private readonly PointerPick.Hit[] kinds = new PointerPick.Hit[MaxCandidates];
     private bool blocked;
@@ -78,11 +94,8 @@ internal sealed class LaserPointer
         line.numCapVertices = 2;
         line.shadowCastingMode = ShadowCastingMode.Off;
         line.receiveShadows = false;
-        line.sharedMaterial = UIMaterials.Create(
-            new Color(1f, 1f, 1f, 0.55f),
-            drawOnTop: false,
-            renderQueue: 3100
-        );
+        beamMaterial = UIMaterials.Create(BeamColor, drawOnTop: false, renderQueue: 3100);
+        line.sharedMaterial = beamMaterial;
         line.sortingOrder = short.MaxValue;
 
         cursorMaterial = UIMaterials.Create(CursorColor, drawOnTop: true, renderQueue: 3200);
@@ -94,6 +107,16 @@ internal sealed class LaserPointer
         );
         dot.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue;
         cursor = dot.transform;
+        // Child of the dot, drawn first: the part outside the dot shows as a dark ring.
+        var ring = UIMaterials.MeshObject(
+            "PeakXR_CursorRim",
+            UIMaterials.SphereMesh(),
+            UIMaterials.Create(RimColor, drawOnTop: true, renderQueue: 3199),
+            cursor
+        );
+        ring.GetComponent<MeshRenderer>().sortingOrder = short.MaxValue - 1;
+        rim = ring.transform;
+        rim.localScale = Vector3.one * RimScale;
 
         SetVisible(false, false);
     }
@@ -106,6 +129,7 @@ internal sealed class LaserPointer
         SetVisible(false, false);
         hoverObject = null;
         hoverSelectable = null;
+        SetHoverLook(false);
     }
 
     public void Process(bool show, UIWorldSettings cfg, VRRig rig, float dt)
@@ -148,6 +172,7 @@ internal sealed class LaserPointer
 
         HandleEnterExit(over);
         TickOnHover(over, cfg.HoverHaptics.Value);
+        SetHoverLook(hoverSelectable != null && !blocked);
         if (hands.Pressed)
             Press(system, over, aim);
         if (hands.Held)
@@ -171,13 +196,20 @@ internal sealed class LaserPointer
         var end = landed ? shown : origin + aim.forward * MissLength;
         line.SetPosition(0, origin);
         line.SetPosition(1, end);
+        var eye = rig.Head != null ? rig.Head.position : origin;
         if (landed)
         {
-            var distance = Vector3.Distance(origin, end);
+            // Constant angular size from the eye, a step bigger over a usable control.
             cursor.position = end - aim.forward * 0.002f;
-            cursor.localScale = Vector3.one * (0.008f * Mathf.Max(1f, distance / 1.5f));
+            cursor.localScale =
+                Vector3.one * LaserLook.CursorDiameter(Vector3.Distance(eye, end), hoverLook);
         }
-        SetVisible(true, landed);
+        // A hand at the face would draw the beam across the view; the dot alone still shows the target.
+        SetVisible(
+            true,
+            landed,
+            rig.Head == null || !LaserLook.CrossesFace(origin.N(), end.N(), eye.N())
+        );
         for (int i = 0; i < MaxCandidates; i++)
             candidates[i] = default;
     }
@@ -187,7 +219,26 @@ internal sealed class LaserPointer
         if (blocked == value)
             return;
         blocked = value;
-        cursorMaterial.color = value ? Affordance.DenyColor : CursorColor;
+        ApplyLook();
+    }
+
+    /// <summary>Over an interactable control: the dot takes the hint colour and the beam brightens, so the target
+    /// reads as live even where the game's own hover is subtle (the pause ribbons only grow by 15%).</summary>
+    private void SetHoverLook(bool value)
+    {
+        if (hoverLook == value)
+            return;
+        hoverLook = value;
+        ApplyLook();
+    }
+
+    private void ApplyLook()
+    {
+        cursorMaterial.color =
+            blocked ? Affordance.DenyColor
+            : hoverLook ? HoverColor
+            : CursorColor;
+        beamMaterial.color = hoverLook && !blocked ? BeamHoverColor : BeamColor;
     }
 
     /// <summary>One tick when the laser lands on a new interactable control. The lookup runs only when
@@ -379,13 +430,17 @@ internal sealed class LaserPointer
     /// <summary>The menu laser is drawn this frame (ui.affordance hides its reach ray meanwhile).</summary>
     public static bool Showing { get; private set; }
 
-    private void SetVisible(bool laser, bool dot)
+    private void SetVisible(bool laser, bool dot, bool beam = true)
     {
         Showing = laser;
-        if (visible == laser && cursor.gameObject.activeSelf == dot)
+        if (
+            visible == laser
+            && cursor.gameObject.activeSelf == dot
+            && line.enabled == (laser && beam)
+        )
             return;
         visible = laser;
-        line.enabled = laser;
+        line.enabled = laser && beam;
         cursor.gameObject.SetActive(dot);
     }
 }

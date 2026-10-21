@@ -1,4 +1,5 @@
 using PeakXR.Avatar;
+using PeakXR.Core;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -73,6 +74,11 @@ internal sealed class AimReticle : MonoBehaviour
         line.SetPosition(1, end);
         dot.position = end;
         Show(true);
+        // A tool held at the face would draw its line across the view; the dot still marks the aim.
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        bool beam = head == null || !LaserLook.CrossesFace(start.N(), end.N(), head.position.N());
+        if (line.enabled != beam)
+            line.enabled = beam;
     }
 
     private bool TryAim(out Vector3 start, out Vector3 end)
