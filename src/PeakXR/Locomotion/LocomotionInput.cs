@@ -130,6 +130,7 @@ internal static class LocomotionInput
 
         var move = active ? MoveStick(dominantLeft, dt) : Ramp.Update(NVector2.Zero, dt);
         var room = RoomScale(c, active && move.LengthSquared() < 0.0025f, dt);
+        BodyGestures.Apply(c, input, active, move.Y, dt);
 
         if (!active)
         {
@@ -208,6 +209,7 @@ internal static class LocomotionInput
         VoiceInput.PushToTalkHeld = false;
         Ramp.Reset();
         hadBody = false;
+        BodyGestures.Reset();
     }
 
     private static ControllerInput Controller(in HandState h) =>

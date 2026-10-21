@@ -47,6 +47,10 @@ public class VRRig : MonoBehaviour
     /// calibration maps the seated head height to the avatar's standing eye height.</summary>
     public bool SeatedMode;
 
+    /// <summary>Metres the first-person view rises above the body's eye point. player.locomotion sets it to the torso's
+    /// drop while a physical crouch lowers the body, so the view stays at the real head; 0 otherwise.</summary>
+    public float CrouchLift;
+
     /// <summary>Raised after a recenter (first frame, menu long-press, <see cref="Recenter"/>).</summary>
     public event Action Recentered;
 
