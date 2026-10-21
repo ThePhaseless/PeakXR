@@ -97,6 +97,20 @@ Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual
 
 VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-d3d11 -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
 
+### Live input
+
+Launch with `-force-d3d11 -peakxr-selftest -peakxr-selftest-hold` (VR, SteamVR running). The script runs `00-title`, `vr.00` to `vr.03`, `01-airport`, `04-beach`, `vr.05` and `vr.06`, skips the settings, items, use, mob and segment steps, writes `PeakXR-selftest.log` and then leaves the game running on the beach. It quits 20 minutes later. Another session can now drive virtual Index controllers through SteamVR.
+
+With `-peakxr-selftest` (hold or not) every VR sample is diffed and changes are logged to `BepInEx/LogOutput.log` (flushed per line), one line per edge:
+
+- `[input] L|R tracked|primary|secondary|menu|stickclick|triggertouch|primarytouch on|off`
+- `[input] L|R trigger|grip level N (0.62)`: N is 0 below 0.1, 1 below 0.5, 2 below 0.9, 3 from 0.9.
+- `[input] L|R stick-right|stick-left|stick-up|stick-down on|off (x,y)`: crossing 0.5.
+- `[input] L|R pos x y z`: at most once per second, after the hand moved more than 2 cm.
+- `[input] char jumpWasPressed|sprintIsPressed|usePrimaryIsPressed|useSecondaryIsPressed|interactIsPressed|dropIsPressed|emoteIsPressed|pingWasPressed|move-right|move-left|move-forward|move-back on|off`: the local `CharacterInput` after all bindings ran.
+
+Look for: each `L|R` line you drove has a matching `char` line in the same frame range (stick up gives `move-forward`, trigger level 3 gives `usePrimaryIsPressed` while holding an item). An `L|R` line with no `char` line means the binding dropped it; no `L|R` line means the sampler never saw it.
+
 The script:
 
 | Step id | Checks |

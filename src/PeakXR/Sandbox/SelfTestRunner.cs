@@ -26,6 +26,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 {
     const int RowSize = 8;
     const float ScriptMinutes = 90f;
+    const float HoldMinutes = 20f;
 
     // One name fragment per category to give to the hand and use: food, tools, rope, lights, launchers.
     static readonly string[] UseItems =
@@ -103,6 +104,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     IEnumerator Script()
     {
+        bool hold = SelfTestFeature.Hold;
         yield return Run("00-title", 180f, Title());
         if (VRRun)
             yield return Run("vr.00-session", 60f, Session());
@@ -117,12 +119,16 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         SandboxActions.SetGodMode(true);
         yield return VRStep("vr.03-canvases", 20f, CanvasCheck());
 
-        yield return Run("02-settings-vr", 30f, SettingsVR());
-        ClosePause();
-        yield return VRStep("vr.04-settings-panel", 30f, SettingsPanel());
-        ClosePause();
+        if (!hold)
+        {
+            yield return Run("02-settings-vr", 30f, SettingsVR());
+            ClosePause();
+            yield return VRStep("vr.04-settings-panel", 30f, SettingsPanel());
+            ClosePause();
+        }
 
-        yield return Items();
+        if (!hold)
+            yield return Items();
 
         StartLoadWatch();
         yield return Run("04-beach", 300f, Level());
@@ -131,6 +137,11 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
+            if (hold)
+            {
+                Finish();
+                yield break;
+            }
             // Use steps need run-only systems (achievements, item render features), so they run in the level.
             yield return Uses();
             yield return Mobs();
@@ -622,6 +633,23 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         Plugin.Log.LogInfo(
             $"[selftest] done: {report.Passed} pass, {report.Failed} fail, {skipped} skip; quitting"
         );
+        if (SelfTestFeature.Hold)
+        {
+            Plugin.Log.LogInfo($"[selftest] hold: game stays up, quits in {HoldMinutes:0} min");
+            StartCoroutine(HoldQuit());
+            return;
+        }
+        Quit();
+    }
+
+    static IEnumerator HoldQuit()
+    {
+        yield return new WaitForSecondsRealtime(HoldMinutes * 60f);
+        Quit();
+    }
+
+    static void Quit()
+    {
         Application.Quit();
         // Quit can hang under Proton after the summary is written; a plain thread still runs then.
         new System.Threading.Thread(() =>

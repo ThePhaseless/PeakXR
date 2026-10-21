@@ -17,6 +17,11 @@ public sealed class SelfTestFeature : Feature
 {
     public const string LaunchFlag = "-peakxr-selftest";
 
+    /// <summary>Stop the script after <c>04-beach</c> and keep the game running for live-input tests.</summary>
+    public const string HoldFlag = "-peakxr-selftest-hold";
+
+    internal static bool Hold => Array.IndexOf(Environment.GetCommandLineArgs(), HoldFlag) >= 0;
+
     public override string Id => "sandbox.selftest";
 
     // After sandbox (Order 0), which it drives.
@@ -32,6 +37,8 @@ public sealed class SelfTestFeature : Feature
         if (!FeatureManager.IsActive<SandboxFeature>())
             throw new InvalidOperationException("the sandbox feature is not active");
         Patch(typeof(SelfTestInputPatch));
+        Patch(typeof(InputEdgeCharacterPatch));
+        InputEdgeLog.Install();
 
         SandboxActions.Forced = true;
         var go = new GameObject("PeakXR.SelfTest") { hideFlags = HideFlags.HideAndDontSave };

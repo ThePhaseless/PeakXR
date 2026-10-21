@@ -28,6 +28,9 @@ internal static class XRInputSampler
     private static bool dirty = true;
     private static int lastFrame = -1;
 
+    /// <summary>Test hook run after each VR sample (the self-test input edge log).</summary>
+    internal static event Action AfterSample;
+
     public static void Install()
     {
         InputDevices.deviceConnected += MarkDirty;
@@ -92,6 +95,7 @@ internal static class XRInputSampler
             dirty = true;
         }
         VRInput.TestOverride?.Invoke();
+        AfterSample?.Invoke();
     }
 
     internal static string[] UsageNames(InputDevice device, List<InputFeatureUsage> scratch)
