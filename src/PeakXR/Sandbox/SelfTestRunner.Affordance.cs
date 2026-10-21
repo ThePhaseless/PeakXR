@@ -163,6 +163,12 @@ internal sealed partial class SelfTestRunner
             && Affordance.LastLeft == left;
         while (Now < end && !Got())
             yield return null;
+        // Keep holding past the one-shot fade: the cue must stay for as long as the attempt is held.
+        if (Got())
+            yield return Wait(DenyFade.Duration + 0.3f);
+        string cue = CueCheck();
+        var tinted = DenyTint.Tinted.ToArray();
+        cue ??= TintCheck(tinted);
         // Shot while the trigger is still held, so the red preview and the reason label are up, aimed at the denial.
         var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
         yield return ShotAt(
@@ -173,6 +179,19 @@ internal sealed partial class SelfTestRunner
         );
         Script(left).Trigger = 0f;
         Script(left).TriggerTouch = false;
+        // Released: the cue fades and the red preview goes, every renderer back to what the game set.
+        yield return Wait(DenyFade.Out + 0.3f);
+        if (cue == null)
+        {
+            foreach (var r in tinted)
+            {
+                if (!DenyTint.IsClean(r))
+                {
+                    cue = $"red tint left on {r.name} after release";
+                    break;
+                }
+            }
+        }
         var note =
             $"denials {Affordance.Count - before}, last {Affordance.LastReason} "
             + $"({(Affordance.LastLeft ? "left" : "right")}) at {Affordance.LastPosition}";
@@ -180,7 +199,43 @@ internal sealed partial class SelfTestRunner
             Fail($"no denial for {expected}: {note}");
         else if (!Got())
             Fail($"expected {expected} on the {(left ? "left" : "right")} hand: {note}");
+        else if (cue != null)
+            Fail($"{note}; {cue}");
         else
             stepNote = note;
+    }
+
+    /// <summary>Null when the red preview is up on every renderer it covers (the held item or a placement
+    /// ghost); else why not.</summary>
+    static string TintCheck(Renderer[] tinted)
+    {
+        if (tinted.Length == 0)
+            return "no red preview while the attempt is held";
+        for (int i = 0; i < tinted.Length; i++)
+        {
+            if (tinted[i] != null && !DenyTint.IsTinted(tinted[i], i))
+                return $"red preview missing on {tinted[i].name}";
+        }
+        return null;
+    }
+
+    /// <summary>Null when the live refusal's ring is drawn, near the refused spot and big enough to read
+    /// (<see cref="CueLayout.Readable"/>); else why not.</summary>
+    static string CueCheck()
+    {
+        var rig = VRRig.Instance;
+        if (rig == null || rig.Head == null)
+            return "no head";
+        if (!AffordanceRuntime.DeniedRing(out var center, out float radius))
+            return "deny cue not drawn while the attempt is held";
+        return CueLayout.Readable(
+            rig.Head.position.N(),
+            Affordance.LastPosition.N(),
+            center.N(),
+            radius,
+            out var why
+        )
+            ? null
+            : why;
     }
 }

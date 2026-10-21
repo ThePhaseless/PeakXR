@@ -95,7 +95,16 @@ internal static class Affordance
         Deny(left, worldPos, reason, default);
 
     /// <summary>As above, with what would work instead (<see cref="DenyHint"/>).</summary>
-    public static bool Deny(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint)
+    public static bool Deny(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint) =>
+        Deny(left, worldPos, reason, hint, atHand: false);
+
+    private static bool Deny(
+        bool left,
+        Vector3 worldPos,
+        DenyReason reason,
+        DenyHint hint,
+        bool atHand
+    )
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
@@ -106,7 +115,7 @@ internal static class Affordance
         Plugin.Log.LogDebug(
             $"[ui.affordance] denied {reason} ({(left ? "left" : "right")} hand) at {worldPos}"
         );
-        AffordanceRuntime.Show(left, worldPos, reason, hint);
+        AffordanceRuntime.Show(left, worldPos, reason, hint, atHand: atHand);
         return true;
     }
 
@@ -128,12 +137,22 @@ internal static class Affordance
         return true;
     }
 
+    /// <summary>
+    /// The red preview of a refused placement: right after a <see cref="Deny"/> that returned true, a red ghost of
+    /// <paramref name="prefab"/> (the game's placement preview) at the refused spot, for as long as the refusal shows.
+    /// </summary>
+    public static void Preview(GameObject prefab, Vector3 position, Quaternion rotation)
+    {
+        if (Enabled)
+            DenyTint.Ghost(prefab, position, rotation);
+    }
+
     /// <summary>Deny at the hand itself, for refusals with no spot in the world (two-handed use, a throw).</summary>
     public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint = default)
     {
         var rig = VRRig.Instance;
         var hand = rig != null ? rig.Hand(left) : null;
-        return hand != null && Deny(left, hand.position, reason, hint);
+        return hand != null && Deny(left, hand.position, reason, hint, atHand: true);
     }
 
     /// <summary>

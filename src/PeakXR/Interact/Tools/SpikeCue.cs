@@ -72,12 +72,22 @@ internal static class SpikeCue
             float max = climbing
                 ? spike.climbingSpikePreviewDisableDistance
                 : spike.climbingSpikePreviewDisableDistanceGrounded;
-            Affordance.Deny(
-                left,
-                preview.point,
-                DenyReason.MovedAway,
-                DenyHint.Range(origin, preview.point, max)
-            );
+            if (
+                Affordance.Deny(
+                    left,
+                    preview.point,
+                    DenyReason.MovedAway,
+                    DenyHint.Range(origin, preview.point, max)
+                )
+            )
+                Affordance.Preview(
+                    spike.climbingSpikePreviewPrefab,
+                    preview.point,
+                    Quaternion.LookRotation(
+                        preview.normal != Vector3.zero ? -preview.normal : dir,
+                        Vector3.up
+                    )
+                );
             return;
         }
         if (tickAfter > 0f)
@@ -119,8 +129,17 @@ internal static class SpikeCue
         var spot = hit && wall.distance > range ? wall.point : end;
         var hint =
             hit && wall.distance > range ? DenyHint.Closer(end, wall.distance - range) : default;
+        // The refused piton, red, where the press would have put it (the game's preview faces into the wall,
+        // CharacterItems.cs:1067-1068; with no wall, along the aim).
         if (attempt)
-            Affordance.Deny(left, spot, DenyReason.NoWall, hint);
+        {
+            if (Affordance.Deny(left, spot, DenyReason.NoWall, hint))
+                Affordance.Preview(
+                    spike.climbingSpikePreviewPrefab,
+                    spot,
+                    Quaternion.LookRotation(dir, Vector3.up)
+                );
+        }
         else
             Affordance.Hover(left, spot, DenyReason.NoWall, hint);
     }
