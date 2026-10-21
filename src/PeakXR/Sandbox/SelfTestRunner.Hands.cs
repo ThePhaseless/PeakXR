@@ -655,10 +655,9 @@ internal sealed partial class SelfTestRunner
                 closed++;
             yield return null;
         }
-        yield return ShotAt(
-            "vr-29-ground-backpack",
-            CentreOf(GUIManager.instance.backpackWheel.transform)
-        );
+        var groundWheel = GUIManager.instance.backpackWheel;
+        var covered = WheelCovered(groundWheel);
+        yield return ShotAt("vr-29-ground-backpack", WheelAim(groundWheel));
         yield return GripTo(left, 0f, 0.1f);
         yield return Until(
             () => !c.data.usingBackpackWheel,
@@ -682,6 +681,8 @@ internal sealed partial class SelfTestRunner
             $"wheel closed on {closed} frame(s) of 1 s with the grip shut, walked {moved:0.00} m after";
         if (closed > 0)
             Fail("the wheel flickered: " + note);
+        else if (covered != null)
+            Fail(covered + ": " + note);
         else if (moved < 0.5f)
             Fail("could not walk after the wheel: " + note);
         else
@@ -801,7 +802,8 @@ internal sealed partial class SelfTestRunner
             Fail("no wheel pocket offered the stash");
             yield break;
         }
-        yield return ShotAt("vr-32-shoulder-stash", CentreOf(wheel.transform));
+        var covered = WheelCovered(wheel);
+        yield return ShotAt("vr-32-shoulder-stash", WheelAim(wheel));
         yield return GripTo(reach, 0f, 0.1f);
         yield return Until(
             () => !c.data.usingBackpackWheel && HeldItem() == null,
@@ -817,6 +819,8 @@ internal sealed partial class SelfTestRunner
             $"stashed with the {(hold ? "left" : "right")} grip still closed, Apple in the pack {inPack}";
         if (!inPack)
             Fail("the Apple is not in the pack: " + note);
+        else if (covered != null)
+            Fail(covered + ": " + note);
         else
             stepNote = note;
 
@@ -856,7 +860,11 @@ internal sealed partial class SelfTestRunner
         string chosen =
             wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
         var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
-        yield return ShotAt("vr-18-emote-wheel", CentreOf(gui.emoteWheel.transform));
+        pointer ??= WheelCovered(wheel);
+        yield return ShotAt(
+            "vr-18-emote-wheel",
+            wheel != null ? WheelAim(wheel) : CentreOf(gui.emoteWheel.transform)
+        );
         Script(hand).Secondary = false;
         yield return Until(
             () => !gui.emoteWheel.activeInHierarchy,
@@ -877,6 +885,23 @@ internal sealed partial class SelfTestRunner
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>The open wheel's drawn centre (RadialWheels places it in front of the hand), for aimed shots.</summary>
+    static Vector3 WheelAim(UIWheel wheel) =>
+        RadialWheels.TryDrawnCentre(wheel, out var centre) ? centre : CentreOf(wheel.transform);
+
+    /// <summary>
+    /// Null when the open wheel's slices draw without the depth test (WheelOnTop), so the hand, forearm and a
+    /// backpack under the hand cannot cover it; else what is wrong.
+    /// </summary>
+    static string WheelCovered(UIWheel wheel)
+    {
+        var slice = wheel != null ? wheel.GetComponentInChildren<UIWheelSlice>() : null;
+        var graphic = slice != null ? slice.GetComponentInChildren<UnityEngine.UI.Graphic>() : null;
+        if (graphic == null)
+            return "no wheel slice graphic";
+        return WheelOnTop.IsOnTop(graphic) ? null : "wheel slices are depth tested";
     }
 
     /// <summary>

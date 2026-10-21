@@ -13,8 +13,10 @@ namespace PeakXR.UI.Wheels;
 /// <summary>
 /// Drives the game's two wheels in VR. When the game opens a wheel (GUIManager.UpdateEmoteWheel A/GUIManager.cs:561
 /// on the Emote binding, OpenBackpackWheel :546 on interact), it is lifted out of the HUD panel into a
-/// <see cref="HudBox"/> and pinned, facing you, where the opening hand was. Each frame the hand's travel from
-/// that spot (or the hand's stick) picks a slice through <see cref="RadialSelector"/>, and the slice's own
+/// <see cref="HudBox"/> and pinned, facing you, where the opening hand was: a few centimetres toward the eye on
+/// the eye-to-hand line (<see cref="WheelPlane"/>) and drawn without the depth test (<see cref="WheelOnTop"/>), so
+/// the hand, forearm and a backpack under the hand never cover it; it is shrunk to look as big as a wheel at the
+/// hand. Each frame the hand's travel from that spot (or the hand's stick) picks a slice through <see cref="RadialSelector"/>, and the slice's own
 /// Hover/Dehover run, so releasing the button resolves through the game's Choose exactly as with a gamepad.
 /// The emote wheel is picked by the hand over its drawn ring, the opening hand's stick, or the laser (shown while it
 /// is open; the slices' own pointer enter/exit hover them). Its full-screen dimmer is hidden. The backpack wheel is picked by
@@ -39,12 +41,41 @@ internal sealed class RadialWheels : MonoBehaviour
         go.AddComponent<RadialWheels>();
     }
 
-    private void Awake() => instance = this;
+    private void Awake()
+    {
+        instance = this;
+        VRSession.Stopped += OnVRStopped;
+    }
 
     private void OnDestroy()
     {
+        VRSession.Stopped -= OnVRStopped;
         if (instance == this)
             instance = null;
+    }
+
+    private void OnVRStopped()
+    {
+        LaserPointer.ForceShow = false;
+        emote.Restore();
+        backpack.Restore();
+        WheelOnTop.DestroyClones();
+    }
+
+    /// <summary>Self-test: the drawn centre of <paramref name="wheel"/> while it is open on a VR hand.</summary>
+    internal static bool TryDrawnCentre(UIWheel wheel, out Vector3 centre)
+    {
+        centre = default;
+        if (instance == null)
+            return false;
+        var driver =
+            instance.emote.Owns(wheel) ? instance.emote
+            : instance.backpack.Owns(wheel) ? instance.backpack
+            : null;
+        if (driver == null)
+            return false;
+        centre = driver.Centre;
+        return true;
     }
 
     /// <summary>
@@ -142,6 +173,7 @@ internal sealed class WheelDriver
     private readonly RadialSelector selector = new();
     private readonly List<Graphic> hidden = new();
     private UIWheel wheel;
+    private Transform drawn;
     private RectTransform direct;
     private UIWheelSlice[] slices = System.Array.Empty<UIWheelSlice>();
     private NVector2[] directions = System.Array.Empty<NVector2>();
@@ -153,6 +185,7 @@ internal sealed class WheelDriver
     private Quaternion rotationLocal;
     private Vector2 boxCenter;
     private float span = 1f;
+    private float drawScale = 1f;
 
     /// <param name="handDriven">The hand's travel from the wheel centre picks the slice (emote). Off: only the
     /// stick does here, and another feature steers by hand (backpack, inventory.vr).</param>
@@ -169,6 +202,9 @@ internal sealed class WheelDriver
 
     public bool IsOpen => open;
 
+    /// <summary>Where the wheel's centre is drawn this frame.</summary>
+    public Vector3 Centre { get; private set; }
+
     /// <summary>The hand is over the ring and its travel picks the slice; the laser stands down meanwhile.</summary>
     public bool HandPicking => open && handDriven && selector.Active;
 
@@ -178,6 +214,7 @@ internal sealed class WheelDriver
         box.Forget();
         open = false;
         wheel = null;
+        drawn = null;
         direct = null;
         selected = -1;
     }
@@ -185,6 +222,8 @@ internal sealed class WheelDriver
     public void Restore()
     {
         ShowBackdrops();
+        WheelOnTop.Set(drawn, false);
+        drawn = null;
         box.Restore();
         open = false;
         selected = -1;
@@ -198,7 +237,10 @@ internal sealed class WheelDriver
         if (!isOpen)
         {
             if (open)
+            {
                 selector.Reset();
+                WheelOnTop.Set(drawn, false);
+            }
             open = false;
             selected = -1;
             return;
@@ -213,7 +255,9 @@ internal sealed class WheelDriver
         var origin = rig.Origin;
         var center = origin.TransformPoint(centerLocal);
         var rotation = origin.rotation * rotationLocal;
-        var metersPerPixel = UIWheelsFeature.Size.Value / span;
+        Centre = center;
+        // WheelSize is the diameter as seen at the hand; the wheel drawn nearer the eye is shrunk to look the same.
+        var metersPerPixel = UIWheelsFeature.Size.Value * drawScale / span;
         if (direct != null)
             PoseDirect(center, rotation, metersPerPixel);
         else
@@ -224,6 +268,7 @@ internal sealed class WheelDriver
         if (handDriven)
         {
             var hand = rig.Hand(left);
+            // Travel in the wheel's plane; the eye-ward shift is along its normal, so it drops out here.
             var travel = hand != null ? hand.position - center : Vector3.zero;
             var handOffset = new NVector2(
                 Vector3.Dot(travel, rotation * Vector3.right),
@@ -248,6 +293,9 @@ internal sealed class WheelDriver
         if (hand == null || rig.Head == null || canvas == null)
             return false;
         wheel = current;
+        if (drawn != root)
+            WheelOnTop.Set(drawn, false);
+        drawn = root;
         left = handLeft;
         selected = -1;
         slices = CollectSlices(current);
@@ -291,8 +339,13 @@ internal sealed class WheelDriver
         boxCenter = count > 0 ? (Vector2)(sum / count) : Vector2.zero;
         span = width > 0f ? 2f * WheelSegment.OuterFraction * width : 500f;
         HideBackdrops(root, boxScale);
+        WheelOnTop.Set(root, true);
 
-        var center = hand.position;
+        var eye = rig.Head.position.ToNumerics();
+        var handAt = hand.position.ToNumerics();
+        var nearer = WheelPlane.Centre(eye, handAt, WheelPlane.EyeOffset);
+        drawScale = WheelPlane.DrawScale(eye, handAt, nearer);
+        var center = nearer.ToUnity();
         var facing = center - rig.Head.position;
         if (facing.sqrMagnitude < 1e-4f)
             facing = rig.Head.forward;
