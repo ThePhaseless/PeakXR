@@ -7,7 +7,8 @@ namespace PeakXR.Interact.Ping;
 
 /// <summary>
 /// Turns the finger-gun gesture or the fallback button into the game's ping press, and remembers which hand
-/// fired so <see cref="PingPatches.PingHit"/> casts the ping ray from it. The trigger squeeze that fires a
+/// fired so <see cref="PingPatches.PingHit"/> casts the ping ray from it. Only an empty hand fires the finger gun; a
+/// hand holding or steadying an item sends its trigger to the item's use. The trigger squeeze that fires a
 /// finger gun would also reach the game as a use press (interact.physical maps triggers to use), so that
 /// hand's use input is held off until its trigger is released.
 /// </summary>
@@ -38,10 +39,21 @@ internal static class PingInput
         float dt = Time.deltaTime;
         var handSetting = cfg.Hand;
         bool fingerGun = cfg.FingerGun && playerMovementActive;
+        // A holding hand's grip and straight index read as pointing, so its use squeeze fired a ping and the use
+        // was suppressed (vr14: a held torch never lit). Only an empty hand pings.
+        bool holding = c.data.currentItem != null;
+        bool leftFree = FingerGun.HandMayFire(
+            holding && LocalHold.ItemInLeftHand,
+            holding && LocalHold.TwoHand && !LocalHold.ItemInLeftHand
+        );
+        bool rightFree = FingerGun.HandMayFire(
+            holding && !LocalHold.ItemInLeftHand,
+            holding && LocalHold.TwoHand && LocalHold.ItemInLeftHand
+        );
 
-        bool fired = Update(LeftHand, fingerGun && handSetting != PingHand.Right, dt);
+        bool fired = Update(LeftHand, fingerGun && leftFree && handSetting != PingHand.Right, dt);
         bool firedLeft = fired;
-        if (Update(RightHand, fingerGun && handSetting != PingHand.Left, dt) && !fired)
+        if (Update(RightHand, fingerGun && rightFree && handSetting != PingHand.Left, dt) && !fired)
         {
             fired = true;
             firedLeft = false;

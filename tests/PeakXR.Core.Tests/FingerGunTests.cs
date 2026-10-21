@@ -2,6 +2,19 @@ namespace PeakXR.Core.Tests;
 
 public class FingerGunTests
 {
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void OnlyAnEmptyHandPings_AHoldingHandsTriggerIsUse(
+        bool holdsItem,
+        bool steadiesItem,
+        bool mayFire
+    )
+    {
+        Assert.Equal(mayFire, FingerGun.HandMayFire(holdsItem, steadiesItem));
+    }
+
     [Fact]
     public void PointThenSqueeze_Fires()
     {
