@@ -26,6 +26,7 @@ internal static class InventoryPatches
                 return;
             BodyInventory.Instance.Tick(c, __instance, Time.deltaTime);
             SlotGhosts.Ensure();
+            HotbarHider.Sync(SlotGhosts.Showing);
         }
     }
 

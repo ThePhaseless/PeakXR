@@ -44,15 +44,22 @@ internal sealed class BodyInventory : IGripExtension
     /// nearest a direction.</summary>
     public static Action<BackpackWheel, Vector2> SelectWheelSlice;
 
-    public const int SlotCount = 5;
+    /// <summary>Most anchors a layout has: the hotbar keys plus the two shoulder anchors.</summary>
+    public const int MaxSlots = BodySlotLayout.MaxHotbar + 2;
     private const byte PackSlot = 3;
     private const byte OverflowSlot = 250;
     private const float WheelDeadzone = 0.06f;
 
-    private BodySlot[] slots = BodySlotLayout.Create(BodySlotLayout.Mixed, 0.12f, 0f);
-    private readonly NVector3[] anchors = new NVector3[SlotCount];
+    private BodySlot[] slots = BodySlotLayout.Create(
+        BodySlotLayout.Belt,
+        BodySlotLayout.MaxHotbar,
+        0.12f,
+        0f
+    );
+    private readonly NVector3[] anchors = new NVector3[MaxSlots];
     private readonly BodyYaw bodyYaw = new();
     private int revision = -1;
+    private int hotbarCount = -1;
 
     private int pendingKey = -1;
     private int pendingFrame;
@@ -73,7 +80,16 @@ internal sealed class BodyInventory : IGripExtension
     /// <summary>Anchors are valid for this frame (VR active, head tracked, feature on).</summary>
     public bool Valid { get; private set; }
 
+    /// <summary>Anchors in the current layout: the game's hotbar slots, then the two shoulder anchors.</summary>
+    public int Count => slots.Length;
+
     public BodySlot Slot(int i) => slots[i];
+
+    /// <summary>A tracked hand is inside this slot.</summary>
+    public bool Hovered(int i) => nearSlot[0] == i || nearSlot[1] == i;
+
+    /// <summary>Tracking-space heading the slot faces out along: body yaw plus its place on the arc.</summary>
+    public Quaternion Facing(int i) => Quaternion.Euler(0f, bodyYaw.Yaw + slots[i].Heading, 0f);
 
     /// <summary>Anchor in tracking space (relative to <see cref="VRRig.Origin"/>).</summary>
     public Vector3 Anchor(int i) => anchors[i].U();
@@ -103,7 +119,7 @@ internal sealed class BodyInventory : IGripExtension
             return;
         }
 
-        UpdateAnchors(cfg, dt);
+        UpdateAnchors(c, cfg, dt);
         UpdateHand(c, 0);
         UpdateHand(c, 1);
 
@@ -119,12 +135,15 @@ internal sealed class BodyInventory : IGripExtension
         DriveWheel(c, cfg);
     }
 
-    private void UpdateAnchors(InventoryConfig cfg, float dt)
+    private void UpdateAnchors(Character c, InventoryConfig cfg, float dt)
     {
-        if (revision != cfg.Revision)
+        // One belt slot per game hotbar slot (Player.itemSlots, Player.cs:17), capped at the keys DoSwitching reads.
+        int hotbar = c.player != null ? c.player.itemSlots.Length : BodySlotLayout.MaxHotbar;
+        if (revision != cfg.Revision || hotbar != hotbarCount)
         {
             revision = cfg.Revision;
-            slots = BodySlotLayout.Create(cfg.Layout, cfg.Radius, cfg.Height);
+            hotbarCount = hotbar;
+            slots = BodySlotLayout.Create(cfg.Layout, hotbar, cfg.Radius, cfg.Height);
         }
         var headPos = VRInput.HeadPosition.N();
         var headRot = VRInput.HeadRotation.N();
@@ -134,7 +153,7 @@ internal sealed class BodyInventory : IGripExtension
             dt
         );
         var neck = BodySlotLayout.Neck(headPos, headRot);
-        for (int i = 0; i < SlotCount; i++)
+        for (int i = 0; i < slots.Length; i++)
             anchors[i] = BodySlotLayout.Anchor(neck, yaw, slots[i]);
     }
 
@@ -142,12 +161,14 @@ internal sealed class BodyInventory : IGripExtension
     {
         ref var state = ref VRInput.Hand(hand == 0);
         int near = state.Tracked ? Find(state.Position.N(), 1f) : -1;
-        if (
-            near >= 0
-            && near != nearSlot[hand]
-            && Look(c, near) is SlotLook.Filled or SlotLook.Full
-        )
-            Haptics.Pulse(hand == 0, 0.15f, 0.02f);
+        if (near >= 0 && near != nearSlot[hand])
+        {
+            // Tick on entering a slot this hand can use: a filled one to draw, any one to put the held item in.
+            var look = Look(c, near);
+            bool holds = c.data.currentItem != null && LocalHold.ItemInLeftHand == (hand == 0);
+            if (look is SlotLook.Filled or SlotLook.Full || (holds && look != SlotLook.Hidden))
+                Haptics.Pulse(hand == 0, 0.15f, 0.02f);
+        }
         nearSlot[hand] = near;
 
         // A drawn item may be holstered by the same grip only after the hand has left the slot once.
@@ -195,16 +216,15 @@ internal sealed class BodyInventory : IGripExtension
     }
 
     private int Find(NVector3 trackingPos, float scale) =>
-        BodySlotLayout.Find(trackingPos, anchors, slots, SlotCount, scale);
+        BodySlotLayout.Find(trackingPos, anchors, slots, slots.Length, scale);
 
     private static int HandIndex(bool left) => left ? 0 : 1;
 
-    // The slot layout assumes hotbar 0-2 and the backpack at 3 (Player.cs:42-47); stay inert if the game changes that.
+    // The hotbar keys put the backpack at 3 (Player.cs:47, CharacterItems.cs:794); stay inert if the game changes that.
     private bool Ready(Character c) =>
         Valid
         && c == Character.localCharacter
         && c.player != null
-        && c.player.itemSlots.Length == PackSlot
         && c.player.backpackSlot.itemSlotID == PackSlot;
 
     // ------------------------------------------------------------------ grip hooks

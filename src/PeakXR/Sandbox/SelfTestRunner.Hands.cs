@@ -624,8 +624,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.20: the holding hand opened over its body slot holsters the item into that hotbar slot
+    /// vr.20: the holding hand opened over its belt slot holsters the item into that hotbar slot
     /// (<c>Player.GetItemSlot</c>, Player.cs:246, <c>ItemSlot.prefab</c>), and a grip there draws it back into the same hand.
+    /// The game's 2D hotbar must be hidden meanwhile.
     /// </summary>
     IEnumerator HolsterStep()
     {
@@ -641,8 +642,13 @@ internal sealed partial class SelfTestRunner
             Fail($"body slots off or no hotbar slot selected (valid {inv.Valid})");
             yield break;
         }
+        if (!HotbarHider.Active)
+        {
+            Fail("the 2D hotbar is still on the HUD next to the body slots");
+            yield break;
+        }
         int slot = -1;
-        for (int i = 0; i < BodyInventory.SlotCount; i++)
+        for (int i = 0; i < inv.Count; i++)
         {
             if (inv.Slot(i).GameSlot == selected.Value)
                 slot = i;

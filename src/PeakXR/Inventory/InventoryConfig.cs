@@ -22,7 +22,7 @@ internal sealed class InventoryConfig
     public bool BackpackOverShoulder => backpackOverShoulder?.Value ?? true;
     public bool Ghosts => ghosts?.Value ?? true;
     public bool WheelByHand => wheelByHand?.Value ?? true;
-    public string Layout => layout?.Value ?? BodySlotLayout.Mixed;
+    public string Layout => layout?.Value ?? BodySlotLayout.Belt;
     public float Radius => radius?.Value ?? 0.12f;
     public float Height => height?.Value ?? 0f;
 
@@ -44,10 +44,10 @@ internal sealed class InventoryConfig
             layout = file.Bind(
                 s,
                 "SlotLayout",
-                BodySlotLayout.Mixed,
+                BodySlotLayout.Belt,
                 new ConfigDescription(
-                    "Where the three hotbar slots sit. Mixed: left hip, chest, right hip. Hips: left hip, belt front, "
-                        + "right hip. Chest: across the chest. The backpack is always over either shoulder.",
+                    "Where the hotbar slots sit: on a curved belt in front of your hips, or the same curve across "
+                        + "your chest. The backpack is always over either shoulder.",
                     new AcceptableValueList<string>(BodySlotLayout.Names)
                 )
             ),
@@ -56,7 +56,8 @@ internal sealed class InventoryConfig
                 "SlotRadius",
                 0.12f,
                 new ConfigDescription(
-                    "How close (metres) a hand must be to a hotbar slot to use it.",
+                    "How close (metres) a hand must be to a hotbar slot to use it. Slots spread out to at least "
+                        + "twice this apart, so a hand never catches the neighbour.",
                     new AcceptableValueRange<float>(0.06f, 0.25f)
                 )
             ),
@@ -94,7 +95,9 @@ internal sealed class InventoryConfig
                 s,
                 "SlotGhosts",
                 true,
-                "Show faint markers for the body slots while a hand is near one (red when the belt is full)."
+                "Show the hotbar on your body: each slot shows its item's icon, or a faint ring when empty, and lights "
+                    + "up while a hand is in it (red when the belt is full). The shoulder slots show only when a hand "
+                    + "is near."
             ),
         };
         cfg.layout.SettingChanged += (_, _) => cfg.Revision++;
