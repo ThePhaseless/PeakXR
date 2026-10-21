@@ -252,6 +252,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator WarpTo(Vector3 stand)
     {
         var c = Character.localCharacter;
+        string on = "no ground hit";
         if (
             Physics.Raycast(
                 stand + Vector3.up * 3f,
@@ -262,12 +263,18 @@ internal sealed partial class SelfTestRunner
                 QueryTriggerInteraction.Ignore
             )
         )
+        {
             stand = ground.point + Vector3.up * 0.1f;
+            on = "on " + ground.collider.name;
+        }
         warpedForProp = true;
         c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);
+        Plugin.Log.LogDebug(
+            $"[selftest] warp to {stand} ({on}): body settled {FlatDistance(c.Center, stand):0.00} m away"
+        );
     }
 
     /// <summary>Farthest the scripted hand may lead the item point it carries. The held item hangs off the ragdoll
@@ -412,7 +419,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
-        yield return WarpFacing(fireBase, FireStand);
+        yield return ApproachFire(fireBase);
         yield return GiveAndHold(torchPrefab);
         if (!stepOk)
             yield break;
@@ -475,7 +482,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
-        yield return WarpFacing(fireBase, FireStand);
+        yield return ApproachFire(fireBase);
         if (!fire.Lit)
         {
             fire.LightWithoutReveal();
@@ -527,15 +534,48 @@ internal sealed partial class SelfTestRunner
         static string NameOf(Item it) => it != null ? it.name : "item (gone)";
     }
 
-    /// <summary>Where the fire steps stand from the fire base. vr9 stood 1.1-1.2 m off: the item hangs off a 0.6 m
-    /// ragdoll arm, so it never reached the cook column or the logs and the gesture never pressed interact.</summary>
+    /// <summary>How close the fire steps' body gets to the fire base. The item hangs off a 0.6 m ragdoll arm: from
+    /// 1.1-1.2 m (vr9) or 1.8 m (vr10, warped to 0.95 m but ended there) it never reached the zone.</summary>
     const float FireStand = 0.95f;
+
+    /// <summary>Warps a step back from the fire, faces it, and walks in (move stick at half tilt) until the body
+    /// is <see cref="FireStand"/> out or stops getting closer: logs, stones or a bench in the way stop it, as they
+    /// stop a player. A warp straight to <see cref="FireStand"/> can land on the fire's props and be pushed off.</summary>
+    IEnumerator ApproachFire(Vector3 fireBase)
+    {
+        yield return WarpFacing(fireBase, FireStand + 0.8f);
+        var c = Character.localCharacter;
+        bool hand = !VRInput.LeftHanded;
+        float start = FlatDistance(c.Center, fireBase);
+        float best = start;
+        float bestAt = Now;
+        float end = Now + 4f;
+        Script(hand).Stick = new Vector2(0f, 0.5f);
+        while (Now < end && best > FireStand && Now - bestAt < 0.5f)
+        {
+            yield return null;
+            float d = FlatDistance(c.Center, fireBase);
+            if (d < best - 0.02f)
+            {
+                best = d;
+                bestAt = Now;
+            }
+        }
+        Script(hand).Stick = Vector2.zero;
+        yield return Wait(0.5f);
+        Plugin.Log.LogDebug(
+            $"[selftest.fire] warped {start:0.00} m out from the fire base, walked in to {FlatDistance(c.Center, fireBase):0.00} m"
+        );
+    }
+
+    static float FlatDistance(Vector3 a, Vector3 b) => new Vector2(a.x - b.x, a.z - b.z).magnitude;
 
     float nextFireTrace;
     string fireTraceText = "";
 
-    /// <summary>A fire step's state: where the carried item point is against the fire base, how far the scripted
-    /// hand leads it, the body's distance, and the game's interact state. Logged at Debug twice a second.</summary>
+    /// <summary>A fire step's state: the item in hand, where its carried point is against the fire base, how far the
+    /// scripted hand leads it, what it rests against, the body's distance, and the game's interact hold. Logged at
+    /// Debug twice a second.</summary>
     string FireTrace(string id, Vector3 part, Vector3 fireBase, bool left)
     {
         if (Now < nextFireTrace)
@@ -543,14 +583,28 @@ internal sealed partial class SelfTestRunner
         nextFireTrace = Now + 0.5f;
         var c = Character.localCharacter;
         var interaction = Interaction.instance;
+        var held = c.data.currentItem;
         var off = part - fireBase;
-        var body = c.Center - fireBase;
         float lead = Vector3.Distance(VRRig.Instance.Hand(left).position, part);
+        var touching = new List<string>();
+        foreach (
+            var col in Physics.OverlapSphere(
+                part,
+                0.15f,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            if (held == null || col.GetComponentInParent<Item>() != held)
+                touching.Add(col.name);
+        }
         fireTraceText =
-            $"item point {new Vector2(off.x, off.z).magnitude:0.00} m out and {off.y:0.00} m up from the fire base, "
-            + $"hand {lead:0.00} m ahead of it, body {new Vector2(body.x, body.z).magnitude:0.00} m out; interact "
+            $"in hand {(held != null ? held.name : "nothing")}, item point {new Vector2(off.x, off.z).magnitude:0.00} m "
+            + $"out and {off.y:0.00} m up from the fire base, hand {lead:0.00} m ahead of it, near "
+            + $"[{string.Join(", ", touching)}], body {FlatDistance(c.Center, fireBase):0.00} m out; interact "
             + $"{c.input.interactIsPressed}, hovered {Label(interaction != null ? interaction.currentHovered : null)}, "
-            + $"held {Label(interaction != null ? interaction.currentHeldInteractible : null)}";
+            + $"interact hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}";
         Plugin.Log.LogDebug($"[selftest.fire] {id}: {fireTraceText}");
         return fireTraceText;
     }
