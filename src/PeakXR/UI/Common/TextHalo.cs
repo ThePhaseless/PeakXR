@@ -20,9 +20,10 @@ namespace PeakXR.UI.Common;
 /// </remarks>
 internal static class TextHalo
 {
-    // SDF units: grown a little past the glyph edge and feathered, so it reads as a halo, not a stroke.
-    private const float Dilate = 0.35f;
-    private const float Softness = 0.45f;
+    // SDF units: grown past the glyph edge and feathered, so it reads as a halo, not a stroke; dense enough that white
+    // text holds over sunlit water and sand.
+    private const float Dilate = 0.45f;
+    private const float Softness = 0.4f;
 
     // Fallback: a thin feathered rim, the face grown by half of it so the rim does not eat into the glyphs.
     private const float RimWidth = 0.12f;
@@ -30,7 +31,7 @@ internal static class TextHalo
 
     // Already outlined at least this much by the game: left as it is.
     private const float OwnOutline = 0.1f;
-    private static readonly Color Dark = new(0f, 0f, 0f, 0.85f);
+    private static readonly Color Dark = new(0f, 0f, 0f, 1f);
 
     // Paper-white, so dark text keeps the look it had on the game's light panels.
     private static readonly Color Light = new(0.98f, 0.95f, 0.88f, 0.9f);

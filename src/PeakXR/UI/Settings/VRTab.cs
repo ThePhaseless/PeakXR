@@ -109,7 +109,52 @@ internal static class VRTab
                 new InfoRow(Loc.Set("PEAKXR_FEATURE_" + feature.Id, feature.Id), text, color, false)
             );
         }
-        return result;
+        return VRSession.Active ? OnePage(result) : result;
+    }
+
+    /// <summary>Rows per page in VR: the settings window has no scroll view, and on a world panel the rows past the
+    /// screen's bottom edge hang below it into the scene instead of being cut off.</summary>
+    public const int PageRows = 12;
+
+    /// <summary>The VR tab page on show; kept while the tab is refilled, clamped when the list shrinks.</summary>
+    public static int Page;
+
+    /// <summary>The current page, its section header repeated when it starts mid-section, then the page buttons.</summary>
+    private static List<Setting> OnePage(List<Setting> all)
+    {
+        int pages = SettingsRows.PageCount(all.Count, PageRows);
+        if (pages == 1)
+            return all;
+        Page = SettingsRows.ClampPage(Page, all.Count, PageRows);
+        SettingsRows.PageSlice(all.Count, PageRows, Page, out int start, out int count);
+        var page = new List<Setting>(count + 3);
+        if (all[start] is not InfoRow { IsHeader: true })
+            for (int i = start - 1; i >= 0; i--)
+                if (all[i] is InfoRow { IsHeader: true } header)
+                {
+                    page.Add(header);
+                    break;
+                }
+        page.AddRange(all.GetRange(start, count));
+        if (Page > 0)
+            page.Add(
+                new Guide.GuideRow(
+                    Guide.GuideAction.PagePrevious,
+                    GuideTopic.Count,
+                    Loc.Set("PEAKXR_PAGE_PREVIOUS", "Previous page"),
+                    "Back"
+                )
+            );
+        if (Page < pages - 1)
+            page.Add(
+                new Guide.GuideRow(
+                    Guide.GuideAction.PageNext,
+                    GuideTopic.Count,
+                    Loc.Set("PEAKXR_PAGE_NEXT", $"Page {Page + 1} of {pages}"),
+                    "Next"
+                )
+            );
+        return page;
     }
 
     /// <summary>Requested runtime, whether it is rendering, and the XR device name when there is one.</summary>

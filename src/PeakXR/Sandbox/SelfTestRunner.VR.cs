@@ -300,14 +300,15 @@ internal sealed partial class SelfTestRunner
             );
             // The pause menu's full-canvas BG dimmer is a backdrop whatever UI.MenuPanels says.
             int hidden = WorldCanvases.HiddenBackdrops(root, out int unraycastable);
+            int strips = VisibleRowStrips(root);
             var note =
                 $"canvas '{root.name}' {root.renderMode}, {distance:0.00} m, {angle:0} deg off the view, "
-                + $"{hidden} backdrops hidden, {unraycastable} of them dropped from raycasts";
+                + $"{hidden} backdrops hidden, {unraycastable} of them dropped from raycasts, {strips} row strips drawn";
             if (root.renderMode != RenderMode.WorldSpace)
                 Fail("not world space: " + note);
             else if (!front)
                 Fail("not in front of the head: " + note);
-            else if (hidden == 0)
+            else if (hidden == 0 || strips > 0)
                 Fail("flat-screen backdrop left on the menu: " + note);
             // GraphicRaycaster skips depth -1 or culled graphics: a hidden dimmer must still block clicks behind it.
             else if (unraycastable > 0)
@@ -320,6 +321,26 @@ internal sealed partial class SelfTestRunner
             : Shot("vr-04-settings");
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
+    }
+
+    /// <summary>Settings rows on <paramref name="root"/> still drawing their own backing: a plain image across most of
+    /// the row that is not a control (the game's SettingsCell strip).</summary>
+    static int VisibleRowStrips(Canvas root)
+    {
+        int count = 0;
+        foreach (var cell in root.GetComponentsInChildren<SettingsUICell>(false))
+        {
+            var width = ((RectTransform)cell.transform).rect.width;
+            foreach (var image in cell.GetComponentsInChildren<Image>(false))
+                if (
+                    image.enabled
+                    && image.canvasRenderer.GetAlpha() > 0f
+                    && image.GetComponentInParent<Selectable>() == null
+                    && image.rectTransform.rect.width >= 0.8f * width
+                )
+                    count++;
+        }
+        return count;
     }
 
     /// <summary>Samples the next level load in the background for vr.05; its own coroutine, so 04-beach is untouched.</summary>

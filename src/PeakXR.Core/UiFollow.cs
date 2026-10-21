@@ -161,6 +161,18 @@ namespace PeakXR.Core
         public static float EdgeDepth(float hit, float distance, float halfWidth) =>
             hit * distance / MathF.Sqrt(distance * distance + halfWidth * halfWidth);
 
+        /// <summary>Points of a panel face tested for walls: a 5 x 3 grid, so a curved wall that cuts only a
+        /// corner, a pillar between the centre and an edge, or a floor under the bottom row is seen.</summary>
+        public const int PanelSamples = 15;
+
+        /// <summary>
+        /// Offset of sample <paramref name="index"/> (0 to <see cref="PanelSamples"/> - 1) from the panel centre,
+        /// in the panel plane, for a panel <paramref name="halfWidth"/> by <paramref name="halfHeight"/> half
+        /// extents. Its length is the half width <see cref="EdgeDepth"/> takes for that sample's ray.
+        /// </summary>
+        public static Vector2 PanelSample(int index, float halfWidth, float halfHeight) =>
+            new((index % 5 - 2) * 0.5f * halfWidth, (index / 5 - 1) * halfHeight);
+
         /// <summary>Scale that makes a canvas <paramref name="widthPixels"/> wide span
         /// <paramref name="widthMeters"/>. Falls back to 1 mm per pixel for an empty canvas.</summary>
         public static float MetersPerPixel(float widthMeters, float widthPixels) =>

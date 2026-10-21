@@ -38,6 +38,19 @@ internal sealed class TrackedCanvas
     public float NextMeasure;
     public Quaternion Rotation;
 
+    /// <summary>Menus: eye point, heading and stacking offset the panel was opened with; the wall test keeps them
+    /// when the content changes, so the panel only slides along its sight lines.</summary>
+    public Vector3 Eye;
+    public float Yaw;
+    public float Stack;
+
+    /// <summary>Menus: the content the last wall test was made for.</summary>
+    public Vector2 CheckedSize,
+        CheckedCenter;
+
+    /// <summary>Menus: moved by a wall test while the page was still scaling in; logged once it settles.</summary>
+    public bool LogPending;
+
     /// <summary>Menus lose their flat-screen backdrops in VR (<see cref="BackdropStrip"/>).</summary>
     public bool Strip;
 
@@ -90,7 +103,12 @@ internal static class WorldCanvases
             if (t.Id == id)
             {
                 unraycastable = BackdropStrip.Unraycastable(t);
-                return t.Hidden.Count;
+                // Graphics destroyed with their rows (a tab switch) stay listed until the next scan prunes them.
+                int live = 0;
+                foreach (var h in t.Hidden)
+                    if (h.Graphic != null)
+                        live++;
+                return live;
             }
         return 0;
     }
@@ -128,6 +146,21 @@ internal static class WorldCanvases
                 t.WasOpen = false;
                 t.Rescan = true;
             }
+    }
+
+    /// <summary>The game spawned new content into an open page without changing the page (a settings tab fills its
+    /// rows): hide its backdrops and halo its text before the rows fade in.</summary>
+    public static void Restrip(Component inside)
+    {
+        if (inside == null)
+            return;
+        var canvas = inside.GetComponentInParent<Canvas>();
+        if (canvas == null)
+            return;
+        var id = canvas.rootCanvas.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id && t.Strip)
+                t.Rescan = true;
     }
 
     public static void Scan(bool includeInactive)
@@ -404,7 +437,8 @@ internal static class WorldCanvases
     }
 
     /// <summary>World-locked menu: spawned in front of the head when it opens, re-spawned if the
-    /// player ends up far away from it (teleport, respawn).</summary>
+    /// player ends up far away from it (teleport, respawn), and tested against walls again whenever what it draws
+    /// changes size (pause page to settings, a longer settings tab).</summary>
     private static bool PlaceMenu(
         TrackedCanvas t,
         Transform head,
@@ -420,21 +454,18 @@ internal static class WorldCanvases
 
         if (!t.WasOpen || (t.Position - head.position).sqrMagnitude > 16f)
         {
-            var wanted = cfg.MenuDistance.Value;
-            var tilt = cfg.MenuTilt.Value;
-            var halfWidth = 0.5f * cfg.MenuWidth.Value;
+            // The walls are tested against what the menu draws, so measure it first.
+            t.NextMeasure = 0f;
+            MeasureIfDue(t);
+            t.Eye = head.position;
+            // Stack newer menus slightly closer, after the wall clamp, so two menus pulled to one wall never z-fight.
+            t.Stack = 0.04f * openMenus;
+            openMenus++;
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            // A wall nearer than the panel would hide it, or a side wall cut its edges: come forward to just in
-            // front of it. With a wall at your face, turn toward the first heading within 45 degrees that has room.
+            // With a wall at your face, turn toward the first heading within 45 degrees that has room.
             for (int i = 0; i < OpenYawSteps.Length; i++)
             {
-                openDepths[i] = WallDepth(
-                    head.position,
-                    yaw + OpenYawSteps[i],
-                    wanted,
-                    tilt,
-                    halfWidth
-                );
+                openDepths[i] = PanelDepth(t, yaw + OpenYawSteps[i], cfg);
                 if (openDepths[i] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
                     continue;
                 for (int j = i + 1; j < OpenYawSteps.Length; j++)
@@ -442,40 +473,76 @@ internal static class WorldCanvases
                 break;
             }
             var pick = PanelMath.PickOpenYaw(openDepths);
-            if (pick != 0 || openDepths[0] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
-                LogOpenYaw(t, pick);
-            var clear = PanelMath.ClearDistance(wanted, openDepths[pick]);
-            t.Scale = clear / wanted;
-            // Stack newer menus slightly closer, after the wall clamp, so two menus pulled to one wall never z-fight.
-            var distance = Mathf.Max(0.5f, clear - 0.04f * openMenus);
-            openMenus++;
-            var offset = PanelMath.InFront(yaw + OpenYawSteps[pick], distance, tilt).ToUnity();
-            t.Position = head.position + offset;
-            t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
+            t.Yaw = yaw + OpenYawSteps[pick];
+            ClearWalls(t, cfg, OpenYawSteps[pick]);
             t.WasOpen = true;
             t.NextMeasure = 0f;
         }
 
         MeasureIfDue(t);
+        // Grew or moved since the last wall test (a page switch, rows added): test the new outline.
+        if (
+            Mathf.Abs(t.ContentSize.x - t.CheckedSize.x) > RecheckPixels
+            || Mathf.Abs(t.ContentSize.y - t.CheckedSize.y) > RecheckPixels
+            || (t.ContentCenter - t.CheckedCenter).sqrMagnitude > RecheckPixels * RecheckPixels
+            || (t.LogPending && t.Settled)
+        )
+            ClearWalls(t, cfg, null);
+
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
-        var mpp =
-            t.Scale
-            * PanelMath.MenuMetersPerPixel(
-                t.ContentSize.x,
-                t.ContentSize.y,
-                cfg.MenuWidth.Value,
-                cfg.MenuDistance.Value
-            );
+        var mpp = t.Scale * MenuMpp(t, cfg);
         var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
     }
 
+    // Content that changes by more than this many canvas pixels is tested against the walls again.
+    private const float RecheckPixels = 8f;
+
+    private static float MenuMpp(TrackedCanvas t, UIWorldSettings cfg) =>
+        PanelMath.MenuMetersPerPixel(
+            t.ContentSize.x,
+            t.ContentSize.y,
+            cfg.MenuWidth.Value,
+            cfg.MenuDistance.Value
+        );
+
+    /// <summary>
+    /// Places the menu along <see cref="TrackedCanvas.Yaw"/> as far as <c>UI.MenuDistance</c> allows: when a wall,
+    /// floor or prop is nearer than any part of the panel, or stands between that part and the eye, the panel comes
+    /// toward the eye along the same sight lines (same angular size) to just in front of it. Logs each opening
+    /// (<paramref name="turned"/> set) and each later change, with what limited it.
+    /// </summary>
+    private static void ClearWalls(TrackedCanvas t, UIWorldSettings cfg, float? turned)
+    {
+        var wanted = cfg.MenuDistance.Value;
+        var depth = PanelDepth(t, t.Yaw, cfg);
+        t.CheckedSize = t.ContentSize;
+        t.CheckedCenter = t.ContentCenter;
+        var clear = PanelMath.ClearDistance(wanted, depth);
+        var scale = clear / wanted;
+        bool settledNow = turned == null && t.LogPending && t.Settled;
+        if (turned == null && !settledNow && Mathf.Abs(scale - t.Scale) * wanted < 0.02f)
+            return;
+        t.Scale = scale;
+        var offset = PanelMath
+            .InFront(t.Yaw, Mathf.Max(0.5f, clear - t.Stack), cfg.MenuTilt.Value)
+            .ToUnity();
+        t.Position = t.Eye + offset;
+        t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
+        // A page scaling in is re-tested every frame; where it ends up is logged once it settles.
+        t.LogPending = turned == null && !t.Settled;
+        if (!t.LogPending)
+            LogPlacement(t, depth, clear, turned);
+    }
+
     /// <summary>
     /// Walls a menu must stay in front of. The Airport scene puts its hall on Map, doors, stairs and the photo
-    /// booth on MirrorHidden, mirrors on MIrror and desks, seats and fences on Default (read from the scene with
-    /// UnityPy); Character is left out, and a hit with a rigidbody (held or dropped items, bodies) is skipped.
+    /// booth on MirrorHidden, mirrors on MIrror and desks, seats and fences on Default; the beach plane wreck is
+    /// non-convex Map mesh colliders (all read from the scenes with UnityPy). Character is left out, and a hit with a
+    /// rigidbody (held or dropped items, bodies) is skipped. Back faces count: in the wreck's cabin every ray starts
+    /// inside its collider tube, and a default raycast passes through faces turned away from it.
     /// </summary>
     private static readonly int WallMask = LayerMask.GetMask(
         "Terrain",
@@ -489,44 +556,83 @@ internal static class WorldCanvases
     // Headings a menu may open toward when a wall is at your face, in order of preference.
     private static readonly float[] OpenYawSteps = { 0f, 15f, -15f, 30f, -30f, 45f, -45f };
     private static readonly float[] openDepths = new float[OpenYawSteps.Length];
-
-    /// <summary>Nearest wall depth in front of a panel along <paramref name="yaw"/>: its centre and both edges.</summary>
-    private static float WallDepth(
-        Vector3 eye,
-        float yaw,
-        float distance,
-        float tilt,
-        float halfWidth
-    )
+    private static readonly string[] SampleColumn =
     {
-        var offset = PanelMath.InFront(yaw, distance, tilt).ToUnity();
-        var right = Quaternion.LookRotation(offset, Vector3.up) * Vector3.right * halfWidth;
-        return Mathf.Min(
-            WallAlong(eye, offset),
-            Mathf.Min(
-                PanelMath.EdgeDepth(WallAlong(eye, offset + right), distance, halfWidth),
-                PanelMath.EdgeDepth(WallAlong(eye, offset - right), distance, halfWidth)
-            )
-        );
+        "left edge",
+        "left",
+        "middle",
+        "right",
+        "right edge",
+    };
+    private static readonly string[] SampleRow = { "bottom", "middle", "top" };
+    private static Collider limit;
+    private static int limitSample;
+
+    /// <summary>
+    /// How far ahead along <paramref name="yaw"/> the nearest wall stands in front of any part of the panel, as a
+    /// depth on its centre line (infinity for none): <see cref="PanelMath.PanelSamples"/> rays from the eye to points
+    /// across the panel as drawn at <c>UI.MenuDistance</c>. Placement only, never per frame.
+    /// </summary>
+    private static float PanelDepth(TrackedCanvas t, float yaw, UIWorldSettings cfg)
+    {
+        var wanted = cfg.MenuDistance.Value;
+        var size = t.ContentSize.x >= 1f && t.ContentSize.y >= 1f ? t.ContentSize : t.Size;
+        var half =
+            0.5f * PanelMath.MenuMetersPerPixel(size.x, size.y, cfg.MenuWidth.Value, wanted) * size;
+        var offset = PanelMath.InFront(yaw, wanted, cfg.MenuTilt.Value).ToUnity();
+        var rotation = Quaternion.LookRotation(offset, Vector3.up);
+        float depth = float.PositiveInfinity;
+        limit = null;
+        var backfaces = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        try
+        {
+            for (int i = 0; i < PanelMath.PanelSamples; i++)
+            {
+                var s = PanelMath.PanelSample(i, half.x, half.y);
+                var hit = WallAlong(
+                    t.Eye,
+                    offset + rotation * new Vector3(s.X, s.Y, 0f),
+                    out var c
+                );
+                var d = PanelMath.EdgeDepth(hit, wanted, s.Length());
+                if (d < depth)
+                {
+                    depth = d;
+                    limit = c;
+                    limitSample = i;
+                }
+            }
+        }
+        finally
+        {
+            Physics.queriesHitBackfaces = backfaces;
+        }
+        return depth;
     }
 
-    private static void LogOpenYaw(TrackedCanvas t, int pick)
+    private static void LogPlacement(TrackedCanvas t, float depth, float clear, float? turned)
     {
         var name = t.Canvas != null ? t.Canvas.name : "?";
-        if (openDepths[pick] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
+        var why =
+            limit != null
+                ? $"'{limit.name}' (layer {LayerMask.LayerToName(limit.gameObject.layer)}) {depth:0.00} m ahead at its "
+                    + $"{SampleRow[limitSample / 5]} {SampleColumn[limitSample % 5]}"
+                : "nothing in the way";
+        var turn = turned is { } deg && deg != 0f ? $", turned {deg:0} deg toward open space" : "";
+        var line =
+            $"[ui.world] menu '{name}' {(turned != null ? "opened" : "resized")} at {clear:0.00} m{turn}: {why}";
+        if (depth - PanelMath.WallGap < PanelMath.NearestMenuDistance)
             Plugin.Log.LogWarning(
-                $"[ui.world] menu '{name}': walls within {openDepths[pick]:0.00} m on every heading within 45 deg, "
-                    + $"opened {OpenYawSteps[pick]:0} deg toward the most open one at {PanelMath.NearestMenuDistance:0.0} m"
+                line + $"; held at the {PanelMath.NearestMenuDistance:0.0} m minimum"
             );
         else
-            Plugin.Log.LogInfo(
-                $"[ui.world] menu '{name}': wall {openDepths[0]:0.00} m ahead, opened {OpenYawSteps[pick]:0} deg toward open space"
-            );
+            Plugin.Log.LogInfo(line);
     }
 
-    /// <summary>Distance to the first static wall on the way from <paramref name="origin"/> to
+    /// <summary>Distance to the first wall on the way from <paramref name="origin"/> to
     /// <paramref name="origin"/> + <paramref name="toPoint"/>, or infinity. Placement only, never per frame.</summary>
-    private static float WallAlong(Vector3 origin, Vector3 toPoint)
+    private static float WallAlong(Vector3 origin, Vector3 toPoint, out Collider hitCollider)
     {
         var length = toPoint.magnitude;
         int count = Physics.RaycastNonAlloc(
@@ -538,9 +644,16 @@ internal static class WorldCanvases
             QueryTriggerInteraction.Ignore
         );
         float nearest = float.PositiveInfinity;
+        hitCollider = null;
         for (int i = 0; i < count; i++)
-            if (wallHits[i].rigidbody == null && wallHits[i].distance < nearest)
-                nearest = wallHits[i].distance;
+        {
+            var h = wallHits[i];
+            if (h.rigidbody == null && h.distance < nearest)
+            {
+                nearest = h.distance;
+                hitCollider = h.collider;
+            }
+        }
         return nearest;
     }
 
@@ -609,7 +722,12 @@ internal static class WorldCanvases
         if (Degenerate(t))
             t.Rescan = true;
         else
+        {
+            // Rows spawned this frame (a settings tab) sit unlaid-out until the canvases rebuild; the rules judge
+            // each graphic by its rect. Only on open, page change or rescan, never per frame.
+            Canvas.ForceUpdateCanvases();
             BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value);
+        }
     }
 
     /// <summary>UI.MenuPanels changed: show or hide the panels on every converted menu at once.</summary>

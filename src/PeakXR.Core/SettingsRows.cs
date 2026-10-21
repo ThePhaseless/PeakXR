@@ -112,6 +112,22 @@ namespace PeakXR.Core
                 words.Add(s.Substring(start));
         }
 
+        /// <summary>Pages a list of <paramref name="rows"/> takes at <paramref name="pageRows"/> each; at least one.
+        /// In VR a world panel has no screen edge to cut a long tab off, so it is shown a page at a time.</summary>
+        public static int PageCount(int rows, int pageRows) =>
+            rows <= 0 ? 1 : (rows + pageRows - 1) / pageRows;
+
+        /// <summary><paramref name="page"/> limited to the pages that exist (a list that shrank keeps its last page).</summary>
+        public static int ClampPage(int page, int rows, int pageRows) =>
+            Math.Max(0, Math.Min(page, PageCount(rows, pageRows) - 1));
+
+        /// <summary>First row and row count of <paramref name="page"/>, clamped.</summary>
+        public static void PageSlice(int rows, int pageRows, int page, out int start, out int count)
+        {
+            start = ClampPage(page, rows, pageRows) * pageRows;
+            count = Math.Max(0, Math.Min(pageRows, rows - start));
+        }
+
         /// <summary>Slider label: whole numbers for integers and wide ranges, more decimals for narrow ones.</summary>
         public static string Format(float value, bool integral, float min, float max)
         {

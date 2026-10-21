@@ -48,7 +48,25 @@ internal sealed class GhostDemo
         public Transform Mesh;
         public LineRenderer A,
             B;
+
+        /// <summary>A wall's ledges; null for other shapes.</summary>
+        public LineRenderer[] Ledges;
     }
+
+    // A wall is drawn as rough ledges, not a filled slab: a flat card read as a backdrop behind the ghost.
+    private const int WallLedges = 5;
+    private const int LedgePoints = 7;
+    private static readonly float[] LedgeBumps =
+    {
+        0f,
+        0.035f,
+        -0.025f,
+        0.045f,
+        -0.015f,
+        0.03f,
+        -0.04f,
+        0.02f,
+    };
 
     private readonly Transform root;
     private readonly List<Object> owned = new();
@@ -260,10 +278,13 @@ internal sealed class GhostDemo
                 view.Mesh.localScale =
                     Vector3.one * (p.Size * (1f + 0.12f * Mathf.Sin(elapsed * 9f)));
                 break;
+            case GuideShape.Wall:
+                view.Mesh.SetPositionAndRotation(world, rotation);
+                PoseLedges(view.Ledges, world, rotation, p.Size * root.lossyScale.x);
+                break;
             case GuideShape.Rod:
             case GuideShape.Ball:
             case GuideShape.Box:
-            case GuideShape.Wall:
             case GuideShape.Rope:
             case GuideShape.Panel:
                 view.Mesh.SetPositionAndRotation(world, rotation);
@@ -314,6 +335,26 @@ internal sealed class GhostDemo
                 Ring(view.A, center, normal, radius);
                 SetLine(view.B, center + up * radius, center + up * radius * 1.8f);
                 break;
+        }
+    }
+
+    /// <summary>Uneven ledges across a <paramref name="size"/> metre square wall face, bumps both up and out.</summary>
+    private static void PoseLedges(
+        LineRenderer[] ledges,
+        Vector3 center,
+        Quaternion rotation,
+        float size
+    )
+    {
+        for (int j = 0; j < ledges.Length; j++)
+        {
+            float y = (j / (float)(ledges.Length - 1) - 0.5f) * size;
+            for (int k = 0; k < LedgePoints; k++)
+            {
+                float x = (k / (float)(LedgePoints - 1) - 0.5f) * size;
+                float bump = LedgeBumps[(j * 3 + k) % LedgeBumps.Length] * size;
+                ledges[j].SetPosition(k, center + rotation * new Vector3(x, y + bump, bump));
+            }
         }
     }
 
@@ -386,7 +427,16 @@ internal sealed class GhostDemo
                 view.Mesh = MeshChild("Box", Cube(), prop, root, Vector3.one * s);
                 break;
             case GuideShape.Wall:
-                view.Mesh = MeshChild("Wall", Cube(), prop, root, new Vector3(s, s, 0.03f));
+                view.Mesh = new GameObject("Wall").transform;
+                view.Mesh.SetParent(root, false);
+                view.Ledges = new LineRenderer[WallLedges];
+                for (int i = 0; i < WallLedges; i++)
+                {
+                    var ledge = NewLine("Ledge", LedgePoints, false, prop);
+                    ledge.startWidth = ledge.endWidth = LineWidth * 2f;
+                    ledge.transform.SetParent(view.Mesh, false);
+                    view.Ledges[i] = ledge;
+                }
                 break;
             case GuideShape.Rope:
                 view.Mesh = MeshChild("Rope", Cube(), prop, root, new Vector3(0.025f, s, 0.025f));
