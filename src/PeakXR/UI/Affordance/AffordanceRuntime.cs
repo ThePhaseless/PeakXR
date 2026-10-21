@@ -2,6 +2,7 @@ using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
+using PeakXR.UI.World;
 using PeakXR.VR;
 using TMPro;
 using UnityEngine;
@@ -29,6 +30,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private const float RayWidth = 0.0025f;
 
     private static readonly Color RayColor = new(1f, 1f, 1f, 0.35f);
+    private static readonly RaycastHit[] RayHits = new RaycastHit[16];
+
+    /// <summary>Labels that ride on a hand stay at least this far from the eye, a comfortable focus distance.</summary>
+    private const float MinLabelDistance = 0.45f;
 
     /// <summary>One cue in the world: refused spot, valid spot, the line between.</summary>
     private sealed class Cue
@@ -61,6 +66,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private TextMeshProUGUI label;
     private Image plate;
     private GUIManager fontFrom;
+    private Material fontClone;
     private bool built;
 
     private bool denyLeft;
@@ -164,7 +170,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         Pose();
     }
 
-    /// <summary>The pointing hand's interact reach; an interactible just past it gets a cue with the reach's end.</summary>
+    /// <summary>
+    /// The pointing hand's interact reach. The game's own pass (Interaction.DoInteractableRaycasts, Interaction.cs:196,
+    /// run from the hand by interact.physical) has already picked a target, its sphere fallback (:239-262) included; only
+    /// when it found nothing does an interactible straight ahead past the reach get the "Too far" cue. The ray skips
+    /// what vanilla skips (:224): your own ragdoll, the held item and arrows stuck in you.
+    /// </summary>
     private void UpdateRay(VRRig rig)
     {
         int hand = PhysicalInteraction.AimHand;
@@ -175,6 +186,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var aim = hand >= 0 ? rig.Aim(hand == 0) : null;
         if (
             aim == null
+            || !AffordanceFeature.ReachRay.Value
+            || LaserPointer.Showing
             || c == null
             || interaction == null
             || cam == null
@@ -190,20 +203,26 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var origin = aim.position;
         var dir = aim.forward;
         float length = reach;
-        if (
-            Physics.Raycast(
-                origin,
-                dir,
-                out var hit,
-                full,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
-            )
-        )
+        int n = Physics.RaycastNonAlloc(
+            origin,
+            dir,
+            RayHits,
+            full,
+            HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+            QueryTriggerInteraction.Collide
+        );
+        int best = -1;
+        for (int i = 0; i < n; i++)
         {
+            if ((best < 0 || RayHits[i].distance < RayHits[best].distance) && Counts(c, RayHits[i]))
+                best = i;
+        }
+        if (best >= 0)
+        {
+            var hit = RayHits[best];
             if (hit.distance <= reach)
                 length = hit.distance;
-            else
+            else if (interaction.currentHovered == null)
             {
                 var target = hit.collider.GetComponentInParent<IInteractible>();
                 if (target != null && target.IsInteractible(c))
@@ -215,9 +234,28 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                     );
             }
         }
+        for (int i = 0; i < n; i++)
+            RayHits[i] = default;
         ray.SetPosition(0, origin);
         ray.SetPosition(1, origin + dir * length);
         ray.enabled = length > 0.02f;
+    }
+
+    /// <summary>The hits vanilla's interact ray considers (Interaction.cs:224).</summary>
+    private static bool Counts(Character c, in RaycastHit hit)
+    {
+        var col = hit.collider;
+        // Your own body: vanilla checks the ragdoll's collider list (internal); its parent Character is the same test.
+        if (col == null || col.GetComponentInParent<Character>() == c)
+            return false;
+        if (
+            Item.TryGetItemFromCollider(col, out var item)
+            && item != null
+            && item == c.data.currentItem
+        )
+            return false;
+        var parent = col.transform.parent;
+        return parent == null || !parent.TryGetComponent<global::Peak.ArrowOnMe>(out _);
     }
 
     /// <summary>Poses cues and the label; runs late and again right before rendering for the hand-following label.</summary>
@@ -237,8 +275,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             var h = hovers[i];
             float alpha = HoverAlpha(h, now);
             PoseCue(h, eye, alpha);
-            // A steady hover earns the label too, unless a fresh denial owns it.
-            if (alpha > 0f && now - h.Since >= HoverLabelAfter && denyAlpha <= 0f)
+            // A steady hover earns the label, but only once the current owner's label is gone (or it is the owner):
+            // one label at a time, no swapping between hands.
+            bool ownerLive =
+                labelOwner >= 0
+                    ? labelOwner != i && HoverAlpha(hovers[labelOwner], now) > 0f
+                    : denyAlpha > 0f;
+            if (alpha > 0f && now - h.Since >= HoverLabelAfter && !ownerLive)
                 SetLabel(i, h.Reason, h.Spot.Meters, h.Text);
         }
 
@@ -280,8 +323,26 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
         if (!labelRoot.activeSelf)
             labelRoot.SetActive(true);
-        var p = anchor + Vector3.up * (atHand ? 0.13f : 0.1f);
-        p += (eye - p).normalized * 0.04f;
+        // An overhang refusal is on a ceiling: its label hangs below it, not inside the rock.
+        var reason = labelOwner >= 0 ? hovers[labelOwner].Reason : denied.Reason;
+        var p =
+            anchor
+            + Vector3.up
+                * (
+                    reason == DenyReason.Overhang ? -0.12f
+                    : atHand ? 0.13f
+                    : 0.1f
+                );
+        // Toward the eye, off the surface it is about (more for far spots), and never closer than a comfortable focus.
+        var toEye = eye - p;
+        float d = toEye.magnitude;
+        if (d > 1e-3f)
+        {
+            p += toEye / d * Mathf.Min(d * 0.5f, atHand ? 0.04f : Mathf.Max(0.06f, d * 0.05f));
+            var fromEye = p - eye;
+            if (fromEye.magnitude < MinLabelDistance)
+                p = eye + fromEye.normalized * MinLabelDistance;
+        }
         float mpp = SpatialMath.MetersPerPixel(
             Vector3.Distance(p, eye),
             SpatialRuntime.DegreesPerPixel
@@ -343,7 +404,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 ring.enabled = false;
             return;
         }
-        float r = SpatialMath.SpanMeters(Vector3.Distance(pos, eye), RingDegrees) * 0.5f;
+        float d = Vector3.Distance(pos, eye);
+        float r = SpatialMath.SpanMeters(d, RingDegrees) * 0.5f;
+        // Depth-tested, so a ring behind a rock stays hidden (stereo-correct); lifted toward the eye off the surface it
+        // marks so the surface does not cut it.
+        if (d > 1e-3f)
+            pos += (eye - pos) / d * Mathf.Min(Mathf.Max(0.03f, r), d * 0.5f);
         var t = ring.transform;
         t.SetPositionAndRotation(pos, SpatialRuntime.FaceEye(pos, eye));
         t.localScale = new Vector3(r, r, r);
@@ -399,9 +465,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         built = true;
         foreach (var cue in new[] { denied, hovers[0], hovers[1] })
         {
-            cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor);
-            cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor);
-            cue.Link = Line("HintLink", 2, false, Affordance.HintColor);
+            cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, drawOnTop: false);
+            cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, drawOnTop: false);
+            cue.Link = Line("HintLink", 2, false, Affordance.HintColor, drawOnTop: false);
             cue.Link.useWorldSpace = true;
         }
         ray = Line("PointRay", 2, false, RayColor, drawOnTop: false);
@@ -410,13 +476,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         BuildLabel();
     }
 
-    private LineRenderer Line(
-        string name,
-        int points,
-        bool ring,
-        Color color,
-        bool drawOnTop = true
-    )
+    private LineRenderer Line(string name, int points, bool ring, Color color, bool drawOnTop)
     {
         var go = new GameObject(name);
         go.transform.SetParent(transform, false);
@@ -473,19 +533,24 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var gui = GUIManager.instance;
         if (gui == null || gui == fontFrom || label == null)
             return;
-        fontFrom = gui;
         var source =
             gui.interactName != null
                 ? gui.interactName.GetComponentInChildren<TMP_Text>(true)
                 : null;
-        if (source != null && source.font != null)
-            label.font = source.font;
+        // No prompt font yet: try again next frame.
+        if (source == null || source.font == null)
+            return;
+        fontFrom = gui;
+        label.font = source.font;
         var mat = label.fontSharedMaterial;
+        if (fontClone != null)
+            Destroy(fontClone);
+        fontClone = null;
         if (mat != null)
         {
-            var onTop = new Material(mat) { name = "PeakXR_DenyLabel (on top)" };
-            onTop.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
-            label.fontSharedMaterial = onTop;
+            fontClone = new Material(mat) { name = "PeakXR_DenyLabel (on top)" };
+            fontClone.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
+            label.fontSharedMaterial = fontClone;
         }
         // Re-render the current text in the new font.
         int owner = labelOwner;

@@ -13,12 +13,12 @@ public class AffordanceTests
     }
 
     [Fact]
-    public void Gate_AnyDenyBlocksBrieflyEvenForAnotherReason()
+    public void Gate_AnotherReasonOrHandIsNeverDropped()
     {
         var g = new DenyGate();
         Assert.True(g.Allow(DenyReason.OutOfReach, true, 10f));
-        Assert.False(g.Allow(DenyReason.NoStamina, false, 10.1f));
-        Assert.True(g.Allow(DenyReason.NoStamina, false, 10f + DenyGate.AnySeconds + 0.01f));
+        Assert.True(g.Allow(DenyReason.NoStamina, true, 10.01f));
+        Assert.True(g.Allow(DenyReason.OutOfReach, false, 10.02f));
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public class AffordanceTests
     {
         var g = new DenyGate();
         Assert.True(g.Allow(DenyReason.NeedsTwoHands, true, 10f));
-        Assert.True(g.Allow(DenyReason.NeedsTwoHands, false, 10f + DenyGate.AnySeconds + 0.01f));
+        Assert.True(g.Allow(DenyReason.NeedsTwoHands, false, 10.1f));
         Assert.False(g.Allow(DenyReason.NeedsTwoHands, true, 10.5f));
     }
 
@@ -189,12 +189,12 @@ public class AffordanceTests
     }
 
     [Theory]
-    // In range stays in range up to the limit itself, never past it.
-    [InlineData(true, 1.99f, true)]
-    [InlineData(true, 2.01f, false)]
-    // Out of range needs to come back past the margin, so the cue does not flicker at the edge.
-    [InlineData(false, 1.95f, false)]
-    [InlineData(false, 1.85f, true)]
-    public void Range_HasHysteresisInsideTheLimit(bool was, float distance, bool expected) =>
+    // Never "can't" inside the limit: out of range clears as soon as the limit is reached.
+    [InlineData(false, 1.99f, true)]
+    [InlineData(false, 2.01f, false)]
+    // In range turns out only past the margin, so the cue does not flicker at the edge.
+    [InlineData(true, 2.05f, true)]
+    [InlineData(true, 2.15f, false)]
+    public void Range_HysteresisOnlyOnTheCanSide(bool was, float distance, bool expected) =>
         Assert.Equal(expected, DenyRange.Within(distance, 2f, was, 0.1f));
 }

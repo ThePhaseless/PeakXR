@@ -329,8 +329,12 @@ internal sealed class LaserPointer
         return null;
     }
 
+    /// <summary>The menu laser is drawn this frame (ui.affordance hides its reach ray meanwhile).</summary>
+    public static bool Showing { get; private set; }
+
     private void SetVisible(bool laser, bool dot)
     {
+        Showing = laser;
         if (visible == laser && cursor.gameObject.activeSelf == dot)
             return;
         visible = laser;

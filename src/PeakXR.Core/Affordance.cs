@@ -95,8 +95,8 @@ public static class DenyText
             DenyReason.PackFull => "Free a pocket first",
             DenyReason.CantSwitch => "Finish what you're doing",
             DenyReason.NeedsGround => "Stand on solid ground",
-            DenyReason.AimLower => "Aim at the ring",
-            DenyReason.AimHigher => "Aim at the ring",
+            DenyReason.AimLower => "Aim lower",
+            DenyReason.AimHigher => "Aim higher",
             DenyReason.FriendsFar => "Gather everyone here",
             DenyReason.PocketsFull => "Drop or stash an item",
             DenyReason.StuckToHand => "Swing hard to throw it",
@@ -132,16 +132,14 @@ public static class DenyText
 }
 
 /// <summary>
-/// Rate limit for denials: one per reason and hand per <see cref="SameSeconds"/>, and none within
-/// <see cref="AnySeconds"/> of another, so a refusal checked every frame never spams buzzes or labels.
+/// Rate limit for denials: one per reason and hand per <see cref="SameSeconds"/>, so a refusal checked every frame
+/// never spams. Another reason or hand is never held back, so a one-shot denial is never lost.
 /// </summary>
 public sealed class DenyGate
 {
     public const float SameSeconds = 0.9f;
-    public const float AnySeconds = 0.35f;
 
     private readonly float[] last = new float[(int)DenyReason.Count * 2];
-    private float lastAny;
 
     public DenyGate() => Reset();
 
@@ -150,10 +148,9 @@ public sealed class DenyGate
         if (reason <= DenyReason.None || reason >= DenyReason.Count)
             return false;
         int i = (int)reason * 2 + (left ? 0 : 1);
-        if (now - lastAny < AnySeconds || now - last[i] < SameSeconds)
+        if (now - last[i] < SameSeconds)
             return false;
         last[i] = now;
-        lastAny = now;
         return true;
     }
 
@@ -161,7 +158,6 @@ public sealed class DenyGate
     {
         for (int i = 0; i < last.Length; i++)
             last[i] = float.NegativeInfinity;
-        lastAny = float.NegativeInfinity;
     }
 }
 
@@ -252,8 +248,9 @@ public static class DenyFade
     }
 }
 
-/// <summary>Range check for a pre-emptive "can't" cue with hysteresis inside the limit: it never shows "can" past
-/// the game's limit, and once out it needs <paramref name="margin"/> to come back, so the cue does not flicker.</summary>
+/// <summary>Range check for a pre-emptive "can't" cue with hysteresis on the "can" side only: it never shows
+/// "can't" inside the game's limit, and once in range it turns out only past <paramref name="margin"/>, so the cue
+/// does not flicker. A refused press is checked against the exact limit, not this.</summary>
 public static class DenyRange
 {
     /// <summary>The point <paramref name="max"/> along the line from <paramref name="origin"/> toward
@@ -292,5 +289,5 @@ public static class DenyRange
     }
 
     public static bool Within(float distance, float max, bool wasWithin, float margin) =>
-        wasWithin ? distance <= max : distance <= max - margin;
+        wasWithin ? distance <= max + margin : distance <= max;
 }
