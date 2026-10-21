@@ -49,7 +49,6 @@ internal static class ClimbHands
     private static readonly ArmLocomotion Arms = new();
     private static readonly ClimbGrace Grace = new();
     private static readonly StaminaHaptics StaminaBeat = new();
-    private static readonly Collider[] Overlap = new Collider[16];
 
     private static ConfigEntry<bool> ropeHands;
     private static ConfigEntry<bool> handleHands;
@@ -285,35 +284,58 @@ internal static class ClimbHands
         return RopeClimb.StickAlong(bodyVelocity, ((b - a) / (hi - lo)).N(), rate, negative, 0.1f);
     }
 
-    /// <summary>The hand is on the held rope or vine (its colliders) or at the held handle.</summary>
+    /// <summary>
+    /// The hand is within reach of the held rope's or vine's axis, or at the held handle. Geometry, not physics: vine
+    /// colliders are 0.25 m trigger capsules on layer 21 raised by <c>colliderOffset</c> above the drawn vine
+    /// (JungleVine.cs:286-297), so an overlap test would accept hands far off the vine and depends on the layer mask.
+    /// Rope axis: the segment transforms (Rope.cs:186); vine axis: the collider children lowered by the offset.
+    /// </summary>
     private static bool Near(Character c, Vector3 pos, float scale)
     {
         if (mode == Mode.Handle)
         {
             var handle = c.data.currentClimbHandle;
-            float r = HandleRadius * scale;
-            return handle != null && (handle.transform.position - pos).sqrMagnitude <= r * r;
+            float h = HandleRadius * scale;
+            return handle != null && (handle.transform.position - pos).sqrMagnitude <= h * h;
         }
-        int hits = Physics.OverlapSphereNonAlloc(
-            pos,
-            LineRadius * scale,
-            Overlap,
-            HelperFunctions.AllPhysicalExceptCharacter,
-            QueryTriggerInteraction.Collide
-        );
-        bool found = false;
-        for (int i = 0; i < hits; i++)
+        float r = LineRadius * scale;
+        float r2 = r * r;
+        var p = pos.N();
+        if (mode == Mode.Rope)
         {
-            var col = Overlap[i];
-            Overlap[i] = null;
-            if (found || col == null)
-                continue;
-            found =
-                mode == Mode.Rope
-                    ? col.GetComponentInParent<Rope>() == c.data.heldRope
-                    : col.GetComponentInParent<JungleVine>() == c.data.heldVine;
+            var segments = c.data.heldRope.GetRopeSegments();
+            for (int i = 1; i < segments.Count; i++)
+            {
+                if (
+                    segments[i - 1] != null
+                    && segments[i] != null
+                    && RopeClimb.SegmentDistanceSq(
+                        p,
+                        segments[i - 1].position.N(),
+                        segments[i].position.N()
+                    ) <= r2
+                )
+                    return true;
+            }
+            return false;
         }
-        return found;
+        var vine = c.data.heldVine;
+        var root = vine.colliderRoot;
+        if (root == null)
+            return false;
+        var down = Vector3.down * vine.colliderOffset;
+        for (int i = 1; i < root.childCount; i++)
+        {
+            if (
+                RopeClimb.SegmentDistanceSq(
+                    p,
+                    (root.GetChild(i - 1).position + down).N(),
+                    (root.GetChild(i).position + down).N()
+                ) <= r2
+            )
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

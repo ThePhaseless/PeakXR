@@ -82,4 +82,15 @@ public class RopeClimbTests
             RopeClimb.StickAlong(new Vector3(0, 1, 0), Vector3.Zero, RatePerStick, 3f, 0f)
         );
     }
+
+    [Fact]
+    public void SegmentDistance_MeasuresToTheClosestPointOnTheAxis()
+    {
+        var a = new Vector3(0, 0, 0);
+        var b = new Vector3(0, 2, 0);
+        TestUtil.Near(0.01f, RopeClimb.SegmentDistanceSq(new Vector3(0.1f, 1, 0), a, b));
+        TestUtil.Near(1f, RopeClimb.SegmentDistanceSq(new Vector3(0, 3, 0), a, b));
+        TestUtil.Near(0.25f, RopeClimb.SegmentDistanceSq(new Vector3(0, -0.5f, 0), a, b));
+        TestUtil.Near(4f, RopeClimb.SegmentDistanceSq(new Vector3(2, 0, 0), a, a));
+    }
 }

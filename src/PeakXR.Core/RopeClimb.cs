@@ -38,5 +38,19 @@ namespace PeakXR.Core
                 : y < -1f ? -1f
                 : y;
         }
+
+        /// <summary>Squared distance from <paramref name="p"/> to the segment a-b: the grip check against a rope or
+        /// vine axis, one segment at a time.</summary>
+        public static float SegmentDistanceSq(Vector3 p, Vector3 a, Vector3 b)
+        {
+            var ab = b - a;
+            float len = ab.LengthSquared();
+            float t = len > 1e-12f ? Vector3.Dot(p - a, ab) / len : 0f;
+            t =
+                t < 0f ? 0f
+                : t > 1f ? 1f
+                : t;
+            return Vector3.DistanceSquared(p, a + ab * t);
+        }
     }
 }
