@@ -109,9 +109,16 @@ internal sealed class SelfTestRunner : MonoBehaviour
         if (Ready && Singleton<MapHandler>.Instance != null)
         {
             SandboxActions.SetGodMode(true);
+            // Use steps need run-only systems (achievements, item render features), so they run in the level.
+            yield return Uses();
             yield return Mobs();
             foreach (var segment in SandboxActions.Segments)
-                yield return Run("06-segment-" + segment, 120f, Jump(segment));
+            {
+                if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
+                    Skip("06-segment-" + segment, "already here");
+                else
+                    yield return Run("06-segment-" + segment, 120f, Jump(segment));
+            }
             foreach (var hours in Times)
             {
                 var id = "07-time-" + ((int)hours).ToString("00", CultureInfo.InvariantCulture);
@@ -215,7 +222,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
     }
 
-    /// <summary>Spawn every item in rows, one step each, then hand-use one item per category.</summary>
+    /// <summary>Spawn every item in rows, one step each.</summary>
     IEnumerator Items()
     {
         var all = new List<Item>(SandboxActions.Items);
@@ -233,7 +240,12 @@ internal sealed class SelfTestRunner : MonoBehaviour
             yield return Shot("03-items-" + row.ToString("000", CultureInfo.InvariantCulture));
             Safe("items.despawn", Despawn);
         }
+    }
 
+    /// <summary>Hand-use one item per category, then despawn it so a dropped item does not keep logging.</summary>
+    IEnumerator Uses()
+    {
+        var all = new List<Item>(SandboxActions.Items);
         foreach (var fragment in UseItems)
         {
             var item = FindItem(all, fragment);
@@ -244,6 +256,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
             }
             yield return Run("use." + item.name, 20f, UseItem(item));
             SelfTestInputPatch.HoldPrimary = false;
+            Safe("use.despawn", Despawn);
         }
     }
 
@@ -274,6 +287,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
         yield return Until(() => Holding(item), 5f, "not in hand");
         if (!stepOk)
             yield break;
+        spawned.Add(HeldItem().gameObject);
         yield return Wait(0.5f);
         SelfTestInputPatch.HoldPrimary = true;
         yield return Wait(1.5f);
@@ -514,7 +528,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
     void OnLog(string condition, string stackTrace, LogType type)
     {
         if (type == LogType.Exception)
-            report.Exception(FirstLine(condition) + " @ " + FirstLine(stackTrace));
+            report.Exception(FirstLine(condition) + " @ " + FirstLine(stackTrace), stackTrace);
         else if (type is LogType.Error or LogType.Assert)
             report.Error(condition);
     }
@@ -554,6 +568,7 @@ internal sealed class SelfTestRunner : MonoBehaviour
         sb.Append(
             $"summary: {report.Passed} pass, {report.Failed} fail, {skipped} skip, {Now:0}s\n"
         );
+        sb.Append($"vanilla-exceptions: {report.VanillaExceptions}\n");
         foreach (var f in FeatureManager.Features)
         {
             var reason = f.FailureReason == null ? "" : $" ({f.FailureReason})";
@@ -571,6 +586,15 @@ internal sealed class SelfTestRunner : MonoBehaviour
             $"[selftest] done: {report.Passed} pass, {report.Failed} fail, {skipped} skip; quitting"
         );
         Application.Quit();
+        // Quit can hang under Proton after the summary is written; a plain thread still runs then.
+        new System.Threading.Thread(() =>
+        {
+            System.Threading.Thread.Sleep(5000);
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        })
+        {
+            IsBackground = true,
+        }.Start();
     }
 
     // ---------------------------------------------------------------- helpers

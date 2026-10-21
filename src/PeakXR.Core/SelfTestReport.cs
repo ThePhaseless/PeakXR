@@ -21,6 +21,7 @@ namespace PeakXR.Core
             public string Note;
             public string FirstLog;
             internal bool SawException;
+            internal string Vanilla;
         }
 
         readonly List<StepResult> steps = new List<StepResult>();
@@ -33,19 +34,59 @@ namespace PeakXR.Core
 
         public int Failed { get; private set; }
 
+        /// <summary>Exceptions logged while a step ran whose stack has no PeakXR frame beyond the harness.</summary>
+        public int VanillaExceptions { get; private set; }
+
         public void Begin(string id, float time)
         {
             current = new StepResult { Id = id };
             startTime = time;
         }
 
-        /// <summary>Attribute a logged exception to the running step; it fails the step.</summary>
-        public void Exception(string message)
+        /// <summary>
+        /// Attribute a logged exception to the running step; it fails the step, unless its
+        /// <paramref name="stackTrace"/> shows it came from the game (see <see cref="IsVanilla"/>).
+        /// </summary>
+        public void Exception(string message, string stackTrace = null)
         {
             if (current == null)
                 return;
+            if (IsVanilla(stackTrace))
+            {
+                VanillaExceptions++;
+                current.Vanilla ??= FirstLine(message);
+                return;
+            }
             current.SawException = true;
             Keep(message);
+        }
+
+        /// <summary>
+        /// True when the stack has frames but none from PeakXR other than the harness's own call path, so the
+        /// game threw it (vanilla bugs such as <c>ItemOptimizer</c> on a spawned stone). No stack: not vanilla.
+        /// </summary>
+        public static bool IsVanilla(string stackTrace)
+        {
+            if (string.IsNullOrWhiteSpace(stackTrace))
+                return false;
+            foreach (var line in stackTrace.Split('\n'))
+            {
+                if (
+                    line.Contains("PeakXR.")
+                    && !line.Contains("PeakXR.Sandbox.SandboxActions")
+                    && !line.Contains("PeakXR.Sandbox.SelfTestRunner")
+                )
+                    return false;
+            }
+            return true;
+        }
+
+        static string FirstLine(string text)
+        {
+            if (text == null)
+                return "";
+            int nl = text.IndexOf('\n');
+            return (nl >= 0 ? text.Substring(0, nl) : text).Trim();
         }
 
         /// <summary>Attribute a logged error to the running step; reported only.</summary>
@@ -106,6 +147,8 @@ namespace PeakXR.Core
                 .Append('s');
             if (!string.IsNullOrEmpty(s.Note))
                 sb.Append(' ').Append(s.Note);
+            if (s.Vanilla != null)
+                sb.Append(" vanilla: ").Append(s.Vanilla);
             if (s.FirstLog != null)
                 sb.Append(" | ").Append(s.FirstLog);
             return sb.ToString();

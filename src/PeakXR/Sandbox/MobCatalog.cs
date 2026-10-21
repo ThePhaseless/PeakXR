@@ -90,8 +90,44 @@ public static class MobCatalog
         (
             "Tornado",
             EntityKind.Entity,
-            SpawnStyle.Tornado,
+            SpawnStyle.Unsupported,
             "TornadoSpawner.cs:45, needs a TornadoSpawner in the scene"
+        ),
+        (
+            "Bingbong_Blow",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "BingBongForceAbilities.cs:35, tool effect; its bingbong transform is never set when spawned alone"
+        ),
+        (
+            "Bingbong_Grab",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "BingBongForceAbilities.cs:35, tool effect; its bingbong transform is never set when spawned alone"
+        ),
+        (
+            "Bingbong_Push",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "BingBongForceAbilities.cs:35, tool effect; its bingbong transform is never set when spawned alone"
+        ),
+        (
+            "Bingbong_Push_Gentle",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "BingBongForceAbilities.cs:35, tool effect; its bingbong transform is never set when spawned alone"
+        ),
+        (
+            "Bingbong_Suck",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "BingBongForceAbilities.cs:35, tool effect; its bingbong transform is never set when spawned alone"
+        ),
+        (
+            "ChainShootable",
+            EntityKind.Entity,
+            SpawnStyle.Unsupported,
+            "self-test run: Transform.GetChild out of bounds when spawned alone; needs the chain shooter"
         ),
         (
             "BugfixOnYou",

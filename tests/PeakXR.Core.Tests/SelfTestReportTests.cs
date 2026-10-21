@@ -72,4 +72,43 @@ public class SelfTestReportTests
         Assert.Equal("03-items-Cure-All_x", SelfTestReport.SafeName("03-items-Cure-All x"));
         Assert.Equal("a_b_c", SelfTestReport.SafeName("a/b:c"));
     }
+
+    [Fact]
+    public void VanillaException_IsNotedButDoesNotFail()
+    {
+        var r = new SelfTestReport();
+        r.Begin("item.Stone", 0f);
+        r.Exception(
+            "InvalidOperationException: boom",
+            "ItemOptimizationManager.DeregisterItem ()\nPeakXR.Sandbox.SandboxActions.SpawnItemAt ()\nPeakXR.Sandbox.SelfTestRunner+<SpawnItem>d__3.MoveNext ()"
+        );
+        r.End(true, 1f, null);
+
+        Assert.True(r.Steps[0].Passed);
+        Assert.Equal(1, r.VanillaExceptions);
+        Assert.Equal("item.Stone PASS 1.00s vanilla: InvalidOperationException: boom", r.Line(0));
+    }
+
+    [Fact]
+    public void ExceptionWithOtherPeakXRFrame_StillFails()
+    {
+        var r = new SelfTestReport();
+        r.Begin("item.Rope", 0f);
+        r.Exception("NullReferenceException", "PeakXR.Comfort.Vignette.Update ()");
+        r.End(true, 1f, null);
+
+        Assert.False(r.Steps[0].Passed);
+        Assert.Equal(0, r.VanillaExceptions);
+    }
+
+    [Fact]
+    public void ExceptionWithoutStack_StillFails()
+    {
+        var r = new SelfTestReport();
+        r.Begin("a", 0f);
+        r.Exception("boom", "");
+        r.End(true, 1f, null);
+
+        Assert.False(r.Steps[0].Passed);
+    }
 }
