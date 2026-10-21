@@ -135,6 +135,14 @@ namespace PeakXR.Core
             return MathF.Min(wanted, MathF.Max(NearestMenuDistance, wallDistance - WallGap));
         }
 
+        /// <summary>
+        /// Depth along the view line of a wall hit <paramref name="hit"/> metres along the ray to a panel edge
+        /// <paramref name="halfWidth"/> to the side of a panel <paramref name="distance"/> away. The panel keeps its
+        /// angular size when pulled in, so its edge stays on that ray and this depth is what it must clear.
+        /// </summary>
+        public static float EdgeDepth(float hit, float distance, float halfWidth) =>
+            hit * distance / MathF.Sqrt(distance * distance + halfWidth * halfWidth);
+
         /// <summary>Scale that makes a canvas <paramref name="widthPixels"/> wide span
         /// <paramref name="widthMeters"/>. Falls back to 1 mm per pixel for an empty canvas.</summary>
         public static float MetersPerPixel(float widthMeters, float widthPixels) =>

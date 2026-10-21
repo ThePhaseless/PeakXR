@@ -182,6 +182,18 @@ public class PanelMathTests
     }
 
     [Fact]
+    public void EdgeDepth_ProjectsAnEdgeRayHitOntoTheViewLine()
+    {
+        // Edge ray to (0.8, 0, 1.8): a hit 0.985 m along it lies 0.9 m ahead.
+        var length = MathF.Sqrt(1.8f * 1.8f + 0.8f * 0.8f);
+        TestUtil.Near(0.9f, PanelMath.EdgeDepth(length / 2f, 1.8f, 0.8f));
+        Assert.Equal(1.8f, PanelMath.EdgeDepth(1.8f, 1.8f, 0f));
+        Assert.True(
+            float.IsPositiveInfinity(PanelMath.EdgeDepth(float.PositiveInfinity, 1.8f, 0.8f))
+        );
+    }
+
+    [Fact]
     public void ClearDistance_WallAtTheFace_KeepsNearestReadableDistance()
     {
         Assert.Equal(PanelMath.NearestMenuDistance, PanelMath.ClearDistance(1.8f, 0.2f));

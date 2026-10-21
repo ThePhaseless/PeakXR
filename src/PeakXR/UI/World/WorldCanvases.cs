@@ -425,18 +425,25 @@ internal static class WorldCanvases
             openMenus++;
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
             var offset = PanelMath.InFront(yaw, distance, cfg.MenuTilt.Value).ToUnity();
-            // A wall nearer than the panel would hide it: come forward to just in front of the wall. Terrain and
-            // map only (the game's wall test, CharacterItems.cs:525), so held items and bodies never count.
-            var wall = Physics.Raycast(
-                head.position,
-                offset.normalized,
-                out var hit,
-                distance,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-                ? hit.distance
-                : float.PositiveInfinity;
+            // A wall nearer than the panel would hide it, or a side wall cut its edges: come forward to just in
+            // front of the nearest one, testing the centre and both edges at the widest the menu can be.
+            var halfWidth = 0.5f * cfg.MenuWidth.Value;
+            var right = Quaternion.LookRotation(offset, Vector3.up) * Vector3.right * halfWidth;
+            var wall = Mathf.Min(
+                WallAlong(head.position, offset),
+                Mathf.Min(
+                    PanelMath.EdgeDepth(
+                        WallAlong(head.position, offset + right),
+                        distance,
+                        halfWidth
+                    ),
+                    PanelMath.EdgeDepth(
+                        WallAlong(head.position, offset - right),
+                        distance,
+                        halfWidth
+                    )
+                )
+            );
             t.Scale = PanelMath.ClearDistance(distance, wall) / distance;
             offset *= t.Scale;
             t.Position = head.position + offset;
@@ -459,6 +466,40 @@ internal static class WorldCanvases
         var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
+    }
+
+    /// <summary>
+    /// Walls a menu must stay in front of. The Airport scene puts its hall on Map, doors, stairs and the photo
+    /// booth on MirrorHidden, mirrors on MIrror and desks, seats and fences on Default (read from the scene with
+    /// UnityPy); Character is left out, and a hit with a rigidbody (held or dropped items, bodies) is skipped.
+    /// </summary>
+    private static readonly int WallMask = LayerMask.GetMask(
+        "Terrain",
+        "Map",
+        "Default",
+        "MirrorHidden",
+        "MIrror"
+    );
+    private static readonly RaycastHit[] wallHits = new RaycastHit[16];
+
+    /// <summary>Distance to the first static wall on the way from <paramref name="origin"/> to
+    /// <paramref name="origin"/> + <paramref name="toPoint"/>, or infinity. Placement only, never per frame.</summary>
+    private static float WallAlong(Vector3 origin, Vector3 toPoint)
+    {
+        var length = toPoint.magnitude;
+        int count = Physics.RaycastNonAlloc(
+            origin,
+            toPoint / length,
+            wallHits,
+            length,
+            WallMask,
+            QueryTriggerInteraction.Ignore
+        );
+        float nearest = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
+            if (wallHits[i].rigidbody == null && wallHits[i].distance < nearest)
+                nearest = wallHits[i].distance;
+        return nearest;
     }
 
     private static void MeasureIfDue(TrackedCanvas t)
