@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 using NVector3 = System.Numerics.Vector3;
@@ -79,6 +80,15 @@ internal static class PhysicalInteraction
     private static float hazardPulseTime = -10f;
     private static float mantleUntil = -10f;
     private static Vector3 mantleDir;
+
+    /// <summary>Last grip press's hold probe (<see cref="ProbeHold"/>): a surface was found, and the game would refuse it.</summary>
+    private static bool probeHit,
+        probeRefused;
+    private static Vector3 probePoint;
+    private static float probeAngle;
+
+    /// <summary>Slopes flatter than this are ground, not a refused climb (the game refuses below 50).</summary>
+    private const float SlopeRefusedFrom = 30f;
 
     /// <summary>What a grabbing hand selected; the interaction raycast patch hands it to the game.</summary>
     public static IInteractible GrabTarget { get; private set; }
@@ -228,6 +238,7 @@ internal static class PhysicalInteraction
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
         };
         var kind = HoldKind.Normal;
+        probeHit = probeRefused = false;
         if (
             ctx.NearClimbable
             && !ProbeHold(rig, pos, t, cfg.ClimbRadius, out kind)
@@ -257,7 +268,18 @@ internal static class PhysicalInteraction
                 hand.Target = target;
                 pendingLeft = hand.Left;
                 pendingTime = now;
-                Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+                // Item.Interact (Item.cs:578-587) ignores a pickup with no free slot, and drops a non-pocketable item
+                // grabbed while climbing: say so instead of the success tick.
+                if (
+                    target is Item wanted
+                    && c.player != null
+                    && !c.player.HasEmptySlot(wanted.itemID)
+                )
+                    Affordance.Deny(hand.Left, wanted.Center(), DenyReason.PocketsFull);
+                else if (target is Item loose && c.data.isClimbing && !loose.UIData.canPocket)
+                    Affordance.Deny(hand.Left, loose.Center(), DenyReason.NotWhileClimbing);
+                else
+                    Haptics.Pulse(hand.Left, 0.6f, 0.05f);
                 break;
             case GripPressAction.GrabInteractible:
                 hand.Target = target;
@@ -271,7 +293,10 @@ internal static class PhysicalInteraction
                 if (StartClimb(c, rig, pos, cfg))
                     HoldPulse(hand.Left, kind);
                 else
+                {
                     action = GripPressAction.None;
+                    DenyClimb(c, rig, hand.Left, pos);
+                }
                 break;
             case GripPressAction.Regrip:
                 Haptics.Pulse(hand.Left, 0.2f, 0.03f);
@@ -284,6 +309,35 @@ internal static class PhysicalInteraction
                 break;
         }
         hand.Action = action;
+        // A wall-like surface the game will not grab, and nothing else took the grip: the hand slides off it.
+        if (
+            probeRefused
+            && action is GripPressAction.None or GripPressAction.Interact
+            && (Interaction.instance == null || Interaction.instance.currentHovered == null)
+        )
+            Affordance.Deny(
+                hand.Left,
+                probePoint,
+                probeAngle > 90f ? DenyReason.Overhang : DenyReason.TooFlat
+            );
+    }
+
+    /// <summary>
+    /// The grip touched climbable rock but the game's climb start refused it (CharacterClimbing.cs:534-560): its ray
+    /// runs from the camera, at most 1.25 m (:553), so a hand on the wall with the head farther back finds nothing;
+    /// and a climber out of stamina cannot grab again within 1 s of the last grab (:557). Says which, and for reach
+    /// marks where the head's reach ends.
+    /// </summary>
+    private static void DenyClimb(Character c, VRRig rig, bool left, Vector3 handPos)
+    {
+        if (!c.refs.climbing.CanClimb() || c.data.carrierCondor)
+            return;
+        var eye = Eye(rig);
+        var wall = probeHit ? probePoint : handPos;
+        if (Vector3.Distance(eye, wall) > 1.25f)
+            Affordance.Deny(left, wall, DenyReason.OutOfReach, DenyHint.Range(eye, wall, 1.25f));
+        else if (c.data.outOfStaminaFor > 0f)
+            Affordance.Deny(left, wall, DenyReason.NoStamina, DenyHint.Wrist());
     }
 
     private static void OnGripRelease(
@@ -345,7 +399,11 @@ internal static class PhysicalInteraction
                     action != GripPressAction.Extension && GripHooks.HeldRelease(hook)
                 );
                 if (result == GripReleaseAction.Throw && !item.UIData.canThrow)
+                {
+                    // Item.ItemUIData.canThrow (Item.cs:71; the flat game hides its throw prompt, GUIManager.cs:1183).
                     result = GripReleaseAction.Keep;
+                    Affordance.DenyAtHand(hand.Left, DenyReason.CantThrow);
+                }
                 if (result == GripReleaseAction.Throw)
                 {
                     ThrowVelocity = ReleaseVelocity(handVelocity, c) * cfg.ThrowScale;
@@ -548,7 +606,13 @@ internal static class PhysicalInteraction
             hasMod && (mod.applyStatus || mod.applyPetrify),
             hasMod ? mod.staminaUsageMultiplier : 1f
         );
-        return hasMod || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up));
+        probeHit = true;
+        probePoint = hit.point;
+        probeAngle = Vector3.Angle(hit.normal, Vector3.up);
+        bool ok = hasMod || ClimbRules.GrabAngleOk(probeAngle);
+        // Ground under the feet is not a climbing attempt: only steep slopes and ceilings count as refused.
+        probeRefused = !ok && probeAngle >= SlopeRefusedFrom;
+        return ok;
     }
 
     /// <summary>Grab feel by surface: soft for easy holds, a buzz for slippery ones, a strong double beat for hazards.</summary>
@@ -580,7 +644,7 @@ internal static class PhysicalInteraction
     private static void TryLunge(Hand hand, Character c, VRRig rig, InteractConfig cfg)
     {
         var d = c.data;
-        if (!d.isClimbing || d.sinceClimbJump <= 1f || d.outOfStaminaFor >= 0.5f)
+        if (!d.isClimbing || d.sinceClimbJump <= 1f)
             return;
         var stick = ClimbInput.Lunge(
             HandVelocity(hand, rig).N(),
@@ -589,6 +653,12 @@ internal static class PhysicalInteraction
         );
         if (stick == System.Numerics.Vector2.Zero)
             return;
+        if (d.outOfStaminaFor >= 0.5f)
+        {
+            // The throw was a lunge, but the game would refuse its climb jump without stamina.
+            Affordance.DenyAtHand(hand.Left, DenyReason.NoStamina, DenyHint.Wrist());
+            return;
+        }
         lungeInput = new Vector2(stick.X, stick.Y);
         lungePending = true;
         Grace.Extend(LungeGrace);
@@ -886,7 +956,24 @@ internal static class PhysicalInteraction
         PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
         SecondaryEdge.Update(secondaryDown, dt);
         if (PrimaryEdge.Pressed && holding)
-            Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
+        {
+            var held = c.data.currentItem;
+            bool handsOk = ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand);
+            // A press the game will not act on gets the denied cue instead of the success tick (a one-handed hold of
+            // a two-handed item is denied below).
+            if (!Affordance.Enabled)
+                Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
+            // Pitons are used through UpdateClimbingSpikeUse (CharacterItems.cs:981), which never reads
+            // CanUsePrimary; SpikeCue reports their refusals.
+            else if (
+                handsOk
+                && !held.CanUsePrimary()
+                && !held.TryGetComponent<ClimbingSpikeComponent>(out _)
+            )
+                UseDenial.Deny(c, held, primaryHand.Left);
+            else if (handsOk)
+                Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
+        }
 
         if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand))
         {
@@ -900,6 +987,17 @@ internal static class PhysicalInteraction
             input.useSecondaryWasPressed = input.useSecondaryIsPressed = false;
             input.usePrimaryWasReleased = input.useSecondaryWasReleased = !useBlocked && wasUsing;
             useBlocked = true;
+            // Show where the free hand goes: the item's own grip for it (Hand_L/Hand_R), else its centre.
+            if (PrimaryEdge.Pressed || SecondaryEdge.Pressed)
+            {
+                bool left = LocalHold.ItemInLeftHand;
+                var grip = left ? Hold.GripRight : Hold.GripLeft;
+                Affordance.DenyAtHand(
+                    left,
+                    DenyReason.NeedsTwoHands,
+                    grip != null ? DenyHint.On(grip) : DenyHint.On(c.data.currentItem.transform)
+                );
+            }
         }
         else
         {

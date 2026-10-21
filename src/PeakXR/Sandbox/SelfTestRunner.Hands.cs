@@ -52,6 +52,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
         yield return BodySteps();
         yield return ItemGestureSteps();
+        yield return AffordanceSteps();
     }
 
     /// <summary>One scripted-hands step: a clean start (empty hands and hotbar), the body, then a guarded teardown

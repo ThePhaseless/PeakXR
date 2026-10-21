@@ -2,6 +2,7 @@ using System;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 using NVector3 = System.Numerics.Vector3;
@@ -108,7 +109,7 @@ internal sealed class BodyInventory : IGripExtension
         {
             // DoSwitching returned early on one of its gates (mid-use, climbing, cooldown...): say so.
             pendingKey = -1;
-            DoublePulse(pendingLeft);
+            DoublePulse(pendingLeft, DenyReason.CantSwitch);
         }
         if (!Valid)
         {
@@ -278,7 +279,7 @@ internal sealed class BodyInventory : IGripExtension
         }
         if (SwitchBlocked(c))
         {
-            DoublePulse(ctx.Left);
+            DoublePulse(ctx.Left, BlockReason(c));
             return;
         }
         drawSlot[hand] = i;
@@ -339,7 +340,13 @@ internal sealed class BodyInventory : IGripExtension
             || SwitchBlocked(c)
         )
         {
-            DoublePulse(left);
+            DoublePulse(
+                left,
+                item != null
+                && (selected.IsNone || selected.Value > PackSlot || !item.UIData.canPocket)
+                    ? DenyReason.CantHolster
+                    : BlockReason(c)
+            );
             return;
         }
         // Pressing the selected slot again holsters (CharacterItems.cs:794).
@@ -356,7 +363,7 @@ internal sealed class BodyInventory : IGripExtension
         {
             // The pack itself is in hand: put it back on.
             if (SwitchBlocked(c))
-                DoublePulse(left);
+                DoublePulse(left, BlockReason(c));
             else
                 PressKey(PackSlot, left);
             return true;
@@ -370,9 +377,17 @@ internal sealed class BodyInventory : IGripExtension
             || selected.Value > PackSlot
             || SwitchBlocked(c)
             || c.player.backpackSlot.backpackType == BackpackSlot.BackpackType.Rocketpack
+            // The wheel refuses these too (BackpackWheelSlice.cs:84, Item.cs:69).
+            || c.data.currentItem == null
+            || !c.data.currentItem.UIData.canBackpack
         )
         {
-            DoublePulse(left);
+            DoublePulse(
+                left,
+                SwitchBlocked(c) ? BlockReason(c)
+                    : free < 0 ? DenyReason.PackFull
+                    : DenyReason.CantHolster
+            );
             return true;
         }
         // The wheel's stash path for a worn pack (BackpackWheel.TryStash -> CharacterBackpackHandler.cs:127).
@@ -404,7 +419,7 @@ internal sealed class BodyInventory : IGripExtension
                 GUIManager.instance.CloseBackpackWheel();
             if (SwitchBlocked(c))
             {
-                DoublePulse(left);
+                DoublePulse(left, BlockReason(c));
                 return;
             }
             PressKey(PackSlot, left);
@@ -424,7 +439,7 @@ internal sealed class BodyInventory : IGripExtension
             || !CanDoInput(c)
         )
         {
-            DoublePulse(left);
+            DoublePulse(left, DenyReason.CantSwitch);
             return;
         }
         // Same call the worn pack's own interaction makes (BackpackOnBackVisuals.cs:162): opens the wheel.
@@ -533,8 +548,27 @@ internal sealed class BodyInventory : IGripExtension
     }
 
     /// <summary>Hand-lock cue: two short pulses instead of a silent failure (IC-05).</summary>
-    private void DoublePulse(bool left)
+    /// <summary>Why <see cref="SwitchBlocked"/> holds: climbing (CharacterItems.cs:735-741), mid-use or just used
+    /// (the cooldown at :72-84), else a generic busy state.</summary>
+    private static DenyReason BlockReason(Character c)
     {
+        if (c.data.isClimbing || c.data.isRopeClimbing)
+            return DenyReason.NotWhileClimbing;
+        var item = c.data.currentItem;
+        if (item != null && (item.progress > 0f || item.lastFinishedCast + 0.1f > Time.time))
+            return DenyReason.TooSoon;
+        return DenyReason.CantSwitch;
+    }
+
+    /// <summary>The body slots' "no": the shared denied cue with its reason when ui.affordance runs, else the old
+    /// double pulse.</summary>
+    private void DoublePulse(bool left, DenyReason reason)
+    {
+        if (Affordance.Enabled)
+        {
+            Affordance.DenyAtHand(left, reason);
+            return;
+        }
         Haptics.Pulse(left, 0.5f, 0.04f);
         secondPulseAt = Time.time + 0.12f;
         secondPulseLeft = left;

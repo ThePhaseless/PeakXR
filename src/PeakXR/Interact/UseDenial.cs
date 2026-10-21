@@ -1,0 +1,71 @@
+using PeakXR.Avatar;
+using PeakXR.Core;
+using PeakXR.UI.Affordances;
+using UnityEngine;
+
+namespace PeakXR.Interact;
+
+/// <summary>
+/// A trigger press on a held item the game will not use (<c>Item.CanUsePrimary</c>, Item.cs:797-817:
+/// <c>overrideUsability</c>, no main interact, <c>ItemUses</c> at 0). The flat game greys its prompt; in VR the
+/// trigger just clicks. Says why, and for the shooters, which write <c>overrideUsability</c> from
+/// <c>WillAttach</c> every frame (RopeShooter.cs:69, :122-138; VineShooter.cs:33, :71-92), which of their rules
+/// failed and where an accepted aim would point.
+/// </summary>
+internal static class UseDenial
+{
+    /// <summary>Just inside the vine shooter's elevation window (VineShooter.cs:83-90: refused above 0.5 and below
+    /// -0.7 of Dot(up, aim)).</summary>
+    private const float VineMaxUp = 0.45f;
+    private const float VineMinUp = -0.65f;
+
+    public static void Deny(Character c, Item item, bool left)
+    {
+        var reason = Why(c, item, out var hint);
+        Affordance.DenyAtHand(left, reason, hint);
+    }
+
+    /// <summary>The reason and, for an aim the vine shooter refuses, the aim it would take. Also read every frame by the
+    /// aim line while it is red.</summary>
+    public static DenyReason Why(Character c, Item item, out DenyHint hint)
+    {
+        hint = default;
+        bool rope = item.TryGetComponent<RopeShooter>(out var ropeShooter);
+        bool vine = !rope && item.TryGetComponent<VineShooter>(out _);
+        if ((rope || vine) && !c.data.isGrounded)
+            return DenyReason.NeedsGround;
+        if (rope && !ropeShooter.HasAmmo)
+            return DenyReason.UsedUp;
+        // TryGetDataEntry, not GetData: GetData registers a missing entry (Item.cs:1223-1239).
+        if (
+            item.data != null
+            && item.data.TryGetDataEntry<OptionableIntItemData>(DataEntryKey.ItemUses, out var uses)
+            && uses.HasData
+            && uses.Value == 0
+        )
+            return DenyReason.UsedUp;
+        if (!(rope || vine) || !HandAim.TryHeld(out var origin, out var rotation))
+            return DenyReason.CantUse;
+        var dir = rotation * Vector3.forward;
+        float max = rope ? ropeShooter.maxLength : item.GetComponent<VineShooter>().maxLength;
+        if (
+            !Physics.Raycast(
+                origin,
+                dir,
+                out var hit,
+                max,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+        )
+            return DenyReason.NoWall;
+        if (!vine)
+            return DenyReason.CantUse;
+        float up = Vector3.Dot(Vector3.up, (hit.point - origin).normalized);
+        if (up <= 0.5f && up >= -0.7f)
+            return DenyReason.CantUse;
+        // An aim the window accepts, same heading, at the same distance: the ring to aim at.
+        var ok = DenyRange.ClampElevation(dir.N(), VineMinUp, VineMaxUp).U();
+        hint = DenyHint.At(origin + ok * Mathf.Min(hit.distance, 6f));
+        return up > 0.5f ? DenyReason.AimLower : DenyReason.AimHigher;
+    }
+}
