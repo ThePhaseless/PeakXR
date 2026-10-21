@@ -51,7 +51,7 @@ public sealed class NetPoseFeature : Feature
             "PoseSendRate",
             25,
             new ConfigDescription(
-                "Pose packets per second. Only changed poses are sent; lower values save bandwidth.",
+                "Most pose packets per second. Only changed poses are sent, and lobbies with 4 or more PeakXR players send fewer; lower values save bandwidth.",
                 new AcceptableValueRange<int>(20, 30)
             )
         );

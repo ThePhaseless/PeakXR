@@ -44,6 +44,36 @@ namespace PeakXR.Core
         public void Reset() => hasSent = false;
     }
 
+    /// <summary>
+    /// Pose send rate for the number of PeakXR peers. Photon counts one message per send plus one per receiver, so
+    /// a room where all N players are in VR carries rate * N^2 pose messages a second. The rate shrinks to keep that
+    /// near <see cref="RoomBudget"/>, half of Photon's ~500 msg/s room guideline (Photon docs), and receivers stretch
+    /// their interpolation delay to match so hands stay smooth at the lower rate.
+    /// </summary>
+    public static class PoseRate
+    {
+        public const float RoomBudget = 250f;
+
+        /// <summary>Floor: an interval under the 0.25 s gap <see cref="PoseBuffer"/> learns and the keepalive.</summary>
+        public const float MinRate = 5f;
+
+        /// <summary>Highest configurable rate (Multiplayer.PoseSendRate).</summary>
+        public const float MaxRate = 30f;
+
+        /// <param name="configured">The configured rate, the ceiling.</param>
+        /// <param name="peers">Remote PeakXR peers this client sends to.</param>
+        public static float ForPeers(float configured, int peers)
+        {
+            float players = Math.Max(1, peers + 1);
+            float rate = Math.Min(configured, RoomBudget / (players * players));
+            return Math.Max(rate, MinRate);
+        }
+
+        /// <summary>Playback delay in seconds: the configured one, or 1.5 send intervals at the rate peers use.</summary>
+        public static double Delay(double configured, int peers) =>
+            Math.Max(configured, 1.5 / ForPeers(MaxRate, peers));
+    }
+
     /// <summary>Token bucket rate limiter: allows bursts up to the capacity, then a steady rate.</summary>
     public struct TokenBucket
     {

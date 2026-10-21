@@ -99,7 +99,7 @@ public class HammerCastTests
     [Fact]
     public void NoStrikes_KeepsTheCastBarelyStarted()
     {
-        float tick = HammerCast.TickBeforeUpdate(0, 3, 1.5f, 0.02f);
+        float tick = HammerCast.TickBeforeUpdate(0, 3, 1.5f, 0.02f, 10f);
         Assert.True(tick > 0f);
         Assert.True(tick + 0.02f < 1.5f * 0.05f);
     }
@@ -108,7 +108,7 @@ public class HammerCastTests
     public void PartialStrikes_LandOnTheirShareAfterTheGamesIncrement()
     {
         float dt = 0.02f;
-        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt);
+        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt, 10f);
         TestUtil.Near(1f, tick + dt, 1e-5f);
         Assert.True(tick + dt < 1.5f);
     }
@@ -117,7 +117,7 @@ public class HammerCastTests
     public void LastStrike_CompletesTheCast()
     {
         float dt = 0.02f;
-        float tick = HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt);
+        float tick = HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 10f);
         Assert.True(tick > 0f);
         Assert.True(tick + dt >= 1.5f);
     }
@@ -125,7 +125,19 @@ public class HammerCastTests
     [Fact]
     public void ExtraStrikes_StillComplete()
     {
-        Assert.True(HammerCast.TickBeforeUpdate(9, 3, 1.5f, 0.02f) + 0.02f >= 1.5f);
+        Assert.True(HammerCast.TickBeforeUpdate(9, 3, 1.5f, 0.02f, 10f) + 0.02f >= 1.5f);
+    }
+
+    [Fact]
+    public void FastStrikes_NeverBeatTheVanillaHoldTime()
+    {
+        // All strikes in after 0.4 s of a 1.5 s cast: the timer follows real time, not the strikes.
+        float dt = 0.02f;
+        float tick = HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 0.4f);
+        TestUtil.Near(0.4f, tick, 1e-5f);
+        Assert.True(tick + dt < 1.5f);
+        // Once the vanilla time has run, the last strike completes on that frame.
+        Assert.True(HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 1.49f) + dt >= 1.5f);
     }
 
     [Fact]
@@ -133,7 +145,7 @@ public class HammerCastTests
     {
         // A hitch of most of the cast must not finish it before the last strike.
         float dt = 1f;
-        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt);
+        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt, 10f);
         Assert.True(tick > 0f);
         Assert.True(tick + dt < 1.5f);
     }

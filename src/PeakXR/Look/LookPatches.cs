@@ -5,6 +5,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Locomotion;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 using NVector2 = System.Numerics.Vector2;
 
@@ -101,8 +102,19 @@ internal static class LookPatches
             LookMath.ToLookValues(head),
             dt
         );
-        c.data.lookValues = new Vector2(LookMath.ContinueYaw(current.x, look.X), look.Y);
+        c.data.lookValues = new Vector2(
+            LookMath.ContinueYaw(current.x, look.X, Unobserved(c)),
+            look.Y
+        );
         Recalculate(c);
+    }
+
+    /// <summary>No peer sees this avatar's look: offline or alone in the room, or dead, which parks the body at
+    /// <c>Character.DeathPos</c> (Character.cs:561, :761). Only then may the synced yaw jump by whole turns.</summary>
+    private static bool Unobserved(Character c)
+    {
+        var room = PhotonNetwork.CurrentRoom;
+        return PhotonNetwork.OfflineMode || room == null || room.PlayerCount <= 1 || c.data.dead;
     }
 
     /// <summary>No turning while a menu or wheel takes the sticks (the game's own gate, Character.cs:1714).</summary>

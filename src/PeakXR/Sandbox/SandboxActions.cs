@@ -62,10 +62,22 @@ public static class SandboxActions
     // ---------------------------------------------------------------- state
 
     /// <summary>Config switch <c>Sandbox.Enabled</c>, or forced on for this run by the self-test.</summary>
-    public static bool Enabled => Forced || SandboxFeature.EnabledEntry?.Value == true;
+    public static bool Enabled => ForcedNow || SandboxFeature.EnabledEntry?.Value == true;
 
     /// <summary>Set by <c>sandbox.selftest</c>; never written to the config file.</summary>
     internal static bool Forced;
+
+    /// <summary><see cref="Forced"/> counts only offline (Play Solo). It is dropped for good once this client is in
+    /// an online room, so a session hosted after <c>-peakxr-selftest-hold</c> gets no sandbox.</summary>
+    static bool ForcedNow
+    {
+        get
+        {
+            if (Forced && PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode)
+                Forced = false;
+            return Forced && PhotonNetwork.OfflineMode;
+        }
+    }
 
     /// <summary>The object the last successful item or entity spawn created, so the self-test can check and remove it.</summary>
     internal static GameObject LastSpawned { get; private set; }

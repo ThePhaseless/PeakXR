@@ -570,3 +570,45 @@ public class RemotePoseStreamTests
         }
     }
 }
+
+public class PoseRateTests
+{
+    [Theory]
+    [InlineData(0, 25f)]
+    [InlineData(1, 25f)]
+    [InlineData(2, 25f)]
+    [InlineData(3, 15.625f)]
+    public void SmallLobbies_KeepTheConfiguredRate(int peers, float expected)
+    {
+        TestUtil.Near(expected, PoseRate.ForPeers(25, peers), 1e-3f);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public void AllVrLobbies_StayWellUnderThePhotonRoomGuideline(int peers)
+    {
+        // Every VR player sends to every other PeakXR peer: rate * (1 + peers) messages each.
+        int players = peers + 1;
+        float total = players * PoseRate.ForPeers(30, peers) * (1 + peers);
+        Assert.True(total <= 350f, $"{players} players: {total} msg/s");
+    }
+
+    [Fact]
+    public void RateNeverDropsBelowTheFloor()
+    {
+        Assert.Equal(PoseRate.MinRate, PoseRate.ForPeers(30, 50));
+        // PoseBuffer only learns packet gaps under 0.25 s.
+        Assert.True(1f / PoseRate.MinRate < 0.25f);
+    }
+
+    [Fact]
+    public void InterpolationDelay_CoversOneAndAHalfSendIntervals()
+    {
+        Assert.Equal(0.1, PoseRate.Delay(0.1, 0), 6);
+        Assert.Equal(1.5 / PoseRate.MinRate, PoseRate.Delay(0.1, 7), 6);
+    }
+}
