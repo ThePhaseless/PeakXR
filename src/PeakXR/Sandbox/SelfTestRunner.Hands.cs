@@ -695,7 +695,31 @@ internal sealed partial class SelfTestRunner
         VRInput.TestOverride = applyHands ??= ApplyHands;
     }
 
-    static void EndHands() => VRInput.TestOverride = null;
+    /// <summary>Hands the controllers back to the idle pose (or to nobody once the run has finished).</summary>
+    void EndHands() => VRInput.TestOverride = finished ? null : IdleHands;
+
+    /// <summary>
+    /// Between hand steps of a VR run (never in hold mode): both hands rest in front of the face, so the desktop
+    /// mirror and screenshots show them. Nothing is pressed and nothing moves, so the rest pose triggers nothing.
+    /// </summary>
+    internal static readonly Action IdleHands = ApplyIdle;
+
+    static void ApplyIdle()
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        VRInput.Left = Idle(head, forward, -right, -30f);
+        VRInput.Right = Idle(head, forward, right, 30f);
+    }
+
+    /// <summary>Head-relative rest in tracking space; <paramref name="roll"/> turns the palm (grip +X / -X) down.</summary>
+    static HandState Idle(Vector3 head, Vector3 forward, Vector3 side, float roll) =>
+        new()
+        {
+            Tracked = true,
+            Position = head + side * 0.18f + Vector3.down * 0.25f + forward * 0.35f,
+            Rotation =
+                Quaternion.LookRotation(forward, Vector3.up) * Quaternion.Euler(0f, 0f, roll),
+        };
 
     static HandState Rest(Vector3 head, Vector3 forward, Vector3 side)
     {
@@ -729,7 +753,7 @@ internal sealed partial class SelfTestRunner
     /// controllers return.</summary>
     IEnumerator HandsRelease()
     {
-        if (VRInput.TestOverride == null || VRRig.Instance == null)
+        if (VRInput.TestOverride != applyHands || VRRig.Instance == null)
             yield break;
         Calm(ref scriptLeft);
         Calm(ref scriptRight);

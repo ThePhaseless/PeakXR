@@ -107,7 +107,8 @@ static class SelfTestUseProbe
 
     static void Prefix(Item __instance, MethodBase __originalMethod)
     {
-        if (VR.VRInput.TestOverride == null || lines >= 120)
+        var hands = VR.VRInput.TestOverride;
+        if (hands == null || hands == SelfTestRunner.IdleHands || lines >= 120)
             return;
         bool start = __originalMethod.Name == "StartUsePrimary";
         if (!start && !__instance.isUsingPrimary)
