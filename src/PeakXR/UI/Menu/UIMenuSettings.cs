@@ -7,6 +7,7 @@ internal sealed class UIMenuSettings
 {
     public ConfigEntry<bool> TitleOnBeach;
     public ConfigEntry<float> TitleMenuDistance;
+    public ConfigEntry<float> TitleReach;
     public ConfigEntry<bool> LoadingSpace;
 
     public static UIMenuSettings Bind(ConfigFile cfg) =>
@@ -23,8 +24,17 @@ internal sealed class UIMenuSettings
                 "TitleMenuDistance",
                 2.2f,
                 new ConfigDescription(
-                    "Distance of the main menu panel on the beach, in metres.",
+                    "Distance of the title panel (logo, timer, settings pages) on the beach, in metres.",
                     new AcceptableValueRange<float>(1.2f, 4f)
+                )
+            ),
+            TitleReach = cfg.Bind(
+                "UI",
+                "TitleReach",
+                0.55f,
+                new ConfigDescription(
+                    "Distance of the title menu's buttons from your eyes, in metres. Within arm's reach you can press them with a fingertip; the laser works at any distance. Set it to the menu distance to keep everything on one panel.",
+                    new AcceptableValueRange<float>(0.35f, 4f)
                 )
             ),
             LoadingSpace = cfg.Bind(

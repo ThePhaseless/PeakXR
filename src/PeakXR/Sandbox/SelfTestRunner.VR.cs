@@ -179,6 +179,25 @@ internal sealed partial class SelfTestRunner
         notes.Add($"OriginOverride {held}, UI.TitleOnBeach {onBeach}");
         if (onBeach && !held)
             fails.Add("title stage does not hold the rig origin");
+        var stage = TitleStage.Instance;
+        if (onBeach && stage != null && stage.Active)
+        {
+            // The title's button groups come to arm's reach (UI/Menu/TitleMenuDepth.cs), measured from the stage eye.
+            float reach = Plugin.Settings.TryGetEntry<float>("UI", "TitleReach", out var r)
+                ? r.Value
+                : 0.55f;
+            yield return WaitFor(() => stage.Depth.NearGroups > 0, 5f);
+            float nearest = stage.Depth.NearestButton(stage.Eye);
+            notes.Add(
+                $"{stage.Depth.NearGroups} button groups near, nearest button {nearest:0.00} m (reach {reach:0.00})"
+            );
+            if (stage.Depth.NearGroups == 0)
+                fails.Add("no title button group brought to reach");
+            else if (nearest > reach + 0.25f)
+                fails.Add(
+                    $"nearest title button {nearest:0.00} m from the eye, reach is {reach:0.00}"
+                );
+        }
         Conclude(fails, notes);
         yield return Shot("vr-02-title");
     }

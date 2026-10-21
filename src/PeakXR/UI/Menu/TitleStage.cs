@@ -10,6 +10,8 @@ namespace PeakXR.UI.Menu;
 /// Title scene: stands the player where the title camera looks out over the beach and floats the
 /// main menu in front of them. The pose comes from the title scene's <see cref="MainCamera"/> at load,
 /// before anything moves it; the research doc's (31.70, 4.63, -405.84), yaw -46.4 is only a sanity check.
+/// The panel is world-locked at the eye height measured once the headset tracks; <see cref="TitleMenuDepth"/>
+/// brings its button groups to hand.
 /// </summary>
 internal sealed class TitleStage : ICanvasPlacement
 {
@@ -25,10 +27,25 @@ internal sealed class TitleStage : ICanvasPlacement
     private Vector3 originPosition;
     private Quaternion originRotation = Quaternion.identity;
     private VRRig overridden;
+    private float eyeHeight = StandingEyeHeight;
+    private readonly TitleMenuDepth depth = new();
 
-    public TitleStage(UIMenuSettings cfg) => this.cfg = cfg;
+    public TitleStage(UIMenuSettings cfg)
+    {
+        this.cfg = cfg;
+        VRSession.Stopped += depth.Restore;
+        Instance = this;
+    }
+
+    /// <summary>The installed stage, for the self-test.</summary>
+    public static TitleStage Instance { get; private set; }
 
     public bool Interactive => true;
+
+    /// <summary>The fixed eye point the title is laid out for (feet plus the eye height measured at arrival).</summary>
+    public Vector3 Eye => feet + Vector3.up * eyeHeight;
+
+    public TitleMenuDepth Depth => depth;
 
     public bool Active => active;
 
@@ -37,6 +54,8 @@ internal sealed class TitleStage : ICanvasPlacement
     {
         active = false;
         originFixed = false;
+        eyeHeight = StandingEyeHeight;
+        depth.Restore();
         Release();
         if (
             !cfg.TitleOnBeach.Value
@@ -95,6 +114,9 @@ internal sealed class TitleStage : ICanvasPlacement
             originRotation = Quaternion.Euler(0f, yaw - headYaw, 0f);
             originPosition = feet - originRotation * new Vector3(head.x, 0f, head.z);
             originFixed = VRInput.HeadTracked;
+            // Latched with the origin: a panel that follows the head's height while crouching is head-locked.
+            if (originFixed)
+                eyeHeight = Mathf.Clamp(head.y, 0.8f, 2.2f);
         }
         rig.Origin.SetPositionAndRotation(originPosition, originRotation);
     }
@@ -119,13 +141,12 @@ internal sealed class TitleStage : ICanvasPlacement
         if (!active)
             return PlacementResult.Default;
 
-        var eyeHeight = VRInput.HeadTracked
-            ? Mathf.Clamp(VRInput.HeadPosition.y, 0.8f, 2.2f)
-            : StandingEyeHeight;
+        var eye = Eye;
+        depth.Tick(canvas, eye, cfg.TitleReach.Value);
         var distance = cfg.TitleMenuDistance.Value;
         rotation = Quaternion.Euler(0f, yaw, 0f);
         var offset = PanelMath.InFront(0f, distance, MenuTilt).ToUnity();
-        position = feet + Vector3.up * eyeHeight + rotation * offset;
+        position = eye + rotation * offset;
         rotation = Quaternion.LookRotation(rotation * offset, Vector3.up);
         widthMeters = distance * 0.85f;
         return PlacementResult.Placed;
