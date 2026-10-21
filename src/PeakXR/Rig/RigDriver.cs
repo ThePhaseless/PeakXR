@@ -319,6 +319,24 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Middle of the face's eye renderers; without them, the old top-of-head point (no forward offset).</summary>
     private static bool TryEyePoint(Character c, out Vector3 eye)
     {
+        if (TryEyeRenderers(c, out eye))
+            return true;
+        var head = CameraPatches.GetBodypart(c, BodypartType.Head);
+        if (head == null)
+            return false;
+        var center = c.Center;
+        eye = new Vector3(
+            center.x,
+            head.transform.position.y + head.transform.lossyScale.y,
+            center.z
+        );
+        return true;
+    }
+
+    /// <summary>Middle of the face's eye renderers (CustomizationRefs.EyeRenderers); false when there are none.
+    /// Also read by the self-test (vr.08).</summary>
+    internal static bool TryEyeRenderers(Character c, out Vector3 eye)
+    {
         var custom = c.refs.customization;
         var eyes = custom != null && custom.refs != null ? custom.refs.EyeRenderers : null;
         eye = Vector3.zero;
@@ -337,20 +355,9 @@ internal sealed class RigDriver : MonoBehaviour
                 n++;
             }
         }
-        if (n > 0)
-        {
-            eye /= n;
-            return true;
-        }
-        var head = CameraPatches.GetBodypart(c, BodypartType.Head);
-        if (head == null)
+        if (n == 0)
             return false;
-        var center = c.Center;
-        eye = new Vector3(
-            center.x,
-            head.transform.position.y + head.transform.lossyScale.y,
-            center.z
-        );
+        eye /= n;
         return true;
     }
 
