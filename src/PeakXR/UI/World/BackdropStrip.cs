@@ -45,14 +45,16 @@ internal static class BackdropStrip
     /// <summary>Hides every backdrop on the canvas not hidden yet, closed pages included so they never flash
     /// when they open. Panels and the text halo only when <paramref name="panels"/> is set. Two passes: dimmers and
     /// panels first, then the fills that belonged to a hidden panel (header bands, frames, card shadows, a tooltip
-    /// card), wherever they sit in the hierarchy.</summary>
-    public static void Scan(TrackedCanvas t, bool panels)
+    /// card), wherever they sit in the hierarchy. <paramref name="scope"/> limits it to one subtree (a scrolled list's
+    /// content); null scans the whole canvas.</summary>
+    public static void Scan(TrackedCanvas t, bool panels, Transform scope = null)
     {
+        Component root = scope != null ? scope : t.Canvas;
         Prune(t);
         var bounds = t.Rect.rect;
         if (bounds.width < 1f || bounds.height < 1f)
             return;
-        t.Canvas.GetComponentsInChildren(true, graphics);
+        root.GetComponentsInChildren(true, graphics);
         for (int i = 0; i < graphics.Count; i++)
             rects.Add(
                 WorldCanvases.Clip(t, graphics[i], bounds, out var lo, out var hi)
@@ -83,7 +85,7 @@ internal static class BackdropStrip
         graphics.Clear();
         rects.Clear();
 
-        var halos = panels && t.Hidden.Count > 0 ? Halo(t) : 0;
+        var halos = panels && t.Hidden.Count > 0 ? Halo(t, root) : 0;
         if (log.Length > 0 || halos > 0)
             Plugin.Log.LogInfo(
                 $"[ui.world] canvas '{t.Canvas.name}': hid {(log.Length > 0 ? log.ToString() : "nothing new")}; text halo on {halos} more"
@@ -277,10 +279,10 @@ internal static class BackdropStrip
 
     /// <summary>Text that sat on a panel now sits on the world: give it a halo. Text on a backing that stays (a
     /// button's ribbon, a row's plate) reads as it did and is left alone. Returns how many changed.</summary>
-    private static int Halo(TrackedCanvas t)
+    private static int Halo(TrackedCanvas t, Component root)
     {
         int count = 0;
-        t.Canvas.GetComponentsInChildren(true, texts);
+        root.GetComponentsInChildren(true, texts);
         foreach (var text in texts)
         {
             if (t.HaloTexts.Contains(text) || OnKeptBacking(t, text))
