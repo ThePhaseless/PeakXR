@@ -47,6 +47,8 @@ internal sealed class InfoCell : SettingInputUICell
         }
         else if (setting is TextRow textRow)
             value = textRow.Value;
+        else if (setting is Guide.GuideRow guideRow)
+            value = guideRow.GetButtonText();
         else
             return;
 

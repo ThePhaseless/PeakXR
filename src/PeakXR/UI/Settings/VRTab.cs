@@ -50,6 +50,8 @@ internal static class VRTab
     public static List<Setting> BuildRows()
     {
         Loc.Set(TabKey, "VR");
+        if (Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
+            return Guide.GuideRows.Comfort(RowFor);
         var sections = new List<string>();
         var bySection = new Dictionary<string, List<ConfigEntryBase>>(StringComparer.Ordinal);
         foreach (var pair in Plugin.Settings)
@@ -67,6 +69,7 @@ internal static class VRTab
         }
 
         var result = new List<Setting>();
+        Guide.GuideRows.Append(result);
         foreach (var section in sections)
         {
             result.Add(Header("PEAKXR_SECTION_" + section, section));
@@ -136,7 +139,7 @@ internal static class VRTab
         return false;
     }
 
-    private static Setting RowFor(ConfigEntryBase entry)
+    internal static Setting RowFor(ConfigEntryBase entry)
     {
         if (rows.TryGetValue(entry, out var cached))
             return cached;

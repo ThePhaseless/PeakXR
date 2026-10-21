@@ -140,4 +140,18 @@ public class SettingPreviewTests
         clock.Stop();
         Assert.False(clock.Active);
     }
+
+    [Fact]
+    public void Play_RunsForTheGivenSeconds_ForAGuideDemo()
+    {
+        var clock = new PreviewClock();
+        clock.Play(6f);
+        Assert.True(clock.Active);
+        Assert.False(clock.FromHover);
+        clock.Tick(5.9f);
+        Assert.True(clock.Active);
+        TestUtil.Near(5.9f, clock.Elapsed);
+        clock.Tick(0.2f);
+        Assert.False(clock.Active);
+    }
 }
