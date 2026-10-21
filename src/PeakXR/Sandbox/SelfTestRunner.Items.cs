@@ -21,16 +21,17 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.21-bugle", "Bugle", 25f, BugleStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
-        yield return HandStep("vr.24-lift-lid", 40f, PropStep(LiftLidStep()));
+        yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
+        yield return WarpBack();
         // Light first: it needs the campfire unlit and stops short of lighting it; cooking then lights it.
-        yield return ItemStep("vr.26-light-with-flame", "Torch", 40f, t => PropStep(LightStep(t)));
-        yield return ItemStep(
-            "vr.25-cook-over-fire",
-            AppleFragment,
-            40f,
-            f => PropStep(CookStep(f))
-        );
-        yield return HandStep("vr.27-warm-hands", 30f, PropStep(WarmStep()));
+        yield return ItemStep("vr.26-light-with-flame", "Torch", 40f, LightStep);
+        yield return WarpBack();
+        // The game has no way to put a campfire out again short of Extinguish_Rpc, which leaves it spent; and
+        // Light_Rpc is buffered. So the fire vr.25 lights stays lit for the rest of the run (vr.27 uses it).
+        yield return ItemStep("vr.25-cook-over-fire", AppleFragment, 40f, CookStep);
+        yield return WarpBack();
+        yield return HandStep("vr.27-warm-hands", 30f, WarmStep());
+        yield return WarpBack();
     }
 
     IEnumerator ItemStep(string id, string fragment, float timeout, Func<Item, IEnumerator> body)
@@ -202,10 +203,10 @@ internal sealed partial class SelfTestRunner
 
     bool warpedForProp;
 
-    /// <summary>Runs a prop step, then warps back to spawn if it warped away, whether it passed or failed.</summary>
-    IEnumerator PropStep(IEnumerator body)
+    /// <summary>Teardown after a prop step's <see cref="HandStep"/>, outside its guarded run, so a pass, fail, throw
+    /// or timeout all end with the player back at spawn.</summary>
+    IEnumerator WarpBack()
     {
-        yield return body;
         if (!warpedForProp)
             yield break;
         warpedForProp = false;

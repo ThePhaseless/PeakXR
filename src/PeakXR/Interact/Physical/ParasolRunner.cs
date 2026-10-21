@@ -38,6 +38,9 @@ internal sealed class ParasolRunner : IGripExtension
             || parasol == null
             || ctx.HeldItem == null
             || !ReferenceEquals(ctx.HeldItem, ItemGestures.Held)
+            // Climbing or airborne, the free hand is reaching for a wall or an item, not the shaft.
+            || ctx.Character.data.isClimbing
+            || !ctx.Character.data.isGrounded
         )
             return false;
         return NearShaft(ctx.HeldItem, ctx.HandPosition);
@@ -108,6 +111,6 @@ internal sealed class ParasolRunner : IGripExtension
             )
                 return true;
         }
-        return (item.Center() - hand).sqrMagnitude <= 0.35f * 0.35f;
+        return false;
     }
 }

@@ -840,8 +840,9 @@ internal static class PhysicalInteraction
         }
         if (Physical.GestureRequests.TryInteract(out var gestureTarget))
         {
+            // An active cook or light gesture wins over a grip's target: it is what the held item is touching.
             interactDown = true;
-            GrabTarget ??= gestureTarget;
+            GrabTarget = gestureTarget;
         }
         InteractEdge.Update(interactDown, dt);
         input.interactWasPressed |= InteractEdge.Pressed;

@@ -35,7 +35,7 @@ Each of these has an on/off setting in the `Interaction` section. With a setting
 - Bugle (`BugleAtMouth`): raise it to your mouth to play. Tilt the bell up for a higher note and down for a lower one. The trigger plays it too.
 - Light things (`LightWithFlame`): touch a lit torch, flare, candle or lantern to a cannon or rocket fuse, a ghost fire or an unlit campfire and keep it there until it catches.
 - Bandages and other healing items (`PressToBody`): press the item to your chest or your other forearm to use it. Press it to a friend's body to use it on them. Food still goes to your mouth.
-- Warm your hands (`WarmHandsAtFire`): hold open palms toward a lit campfire to feel a slow warm buzz. When you are cold, both controllers shiver faintly. This changes nothing in the game.
+- Warm your hands (`WarmHandsAtFire`): hold open palms toward a lit campfire to feel a slow warm buzz. When you are cold and near a lit campfire, both controllers shiver faintly. This changes nothing in the game.
 - Parasol (`ParasolRunner`): grip the shaft with your free hand and push up to open it, or pull down to close it.
 
 ## Turning and comfort

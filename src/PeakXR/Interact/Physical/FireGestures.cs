@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact.Lights;
@@ -17,7 +18,7 @@ namespace PeakXR.Interact.Physical;
 /// <item>Light (G6): a lit held flame touched to a scout cannon fuse (ScoutCannonFuse.cs:99), rocket fuse
 /// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:322) holds interact on it.</item>
 /// <item>Warm hands (G10): open palms toward a lit campfire give a slow warm pulse; cold (status Cold) a faint
-/// shiver. Feel only: campfire warmth stays the game's passive range (Campfire.cs:225).</item>
+/// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:225).</item>
 /// </list>
 /// </summary>
 internal static class FireGestures
@@ -43,7 +44,13 @@ internal static class FireGestures
         Exit = TouchExit,
         Dwell = 0.1f,
     };
-    private static readonly Collider[] Overlap = new Collider[16];
+
+    // Room for clutter (rocks, props, the holder's own colliders) around a fuse.
+    private static readonly Collider[] Overlap = new Collider[64];
+
+    /// <summary>Collider instance id to its fuse or ghost fire, or null for any other collider, so a flame held
+    /// in clutter does not run GetComponentInParent on every hit every frame.</summary>
+    private static readonly Dictionary<int, IInteractible> LightableByCollider = new(256);
     private static readonly float[] NextWarm = new float[2];
 
     private static Campfire cookFire;
@@ -105,11 +112,11 @@ internal static class FireGestures
             return;
         GestureRequests.Interact(fire);
 
+        // Only once the game holds this campfire: the warmth is the cook progress, not just the zone.
         var interaction = Interaction.instance;
-        float progress =
-            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire)
-                ? Mathf.Clamp01(interaction.constantInteractableProgress)
-                : 0f;
+        if (interaction == null || !ReferenceEquals(interaction.currentHeldInteractible, fire))
+            return;
+        float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
         if (now >= nextCookPulse)
         {
             nextCookPulse = now + 0.12f;
@@ -140,8 +147,11 @@ internal static class FireGestures
         if (target == null || !Touch.Update(distance, dt))
             return;
         GestureRequests.Interact(target);
-        // Crackle while the fuse takes: short uneven ticks like HandLights' strike.
-        if (now >= nextCrackle)
+        // Crackle while the fuse takes (the game holds it): short uneven ticks like HandLights' strike.
+        var interaction = Interaction.instance;
+        bool held =
+            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, target);
+        if (held && now >= nextCrackle)
         {
             nextCrackle = now + 0.05f + 0.1f * Random.value;
             Haptics.Pulse(ItemGestures.HoldLeft, 0.15f + 0.25f * Random.value, 0.03f);
@@ -203,8 +213,18 @@ internal static class FireGestures
             Overlap[i] = null;
             if (col == null)
                 continue;
-            var it = col.GetComponentInParent<IInteractible>();
-            if (it is not (ScoutCannonFuse or RocketFuse or GhostFire))
+            int id = col.GetInstanceID();
+            if (!LightableByCollider.TryGetValue(id, out var it))
+            {
+                // Destroyed colliders leave stale ids behind; a cap keeps the map small.
+                if (LightableByCollider.Count >= 1024)
+                    LightableByCollider.Clear();
+                it = col.GetComponentInParent<IInteractible>();
+                if (it is not (ScoutCannonFuse or RocketFuse or GhostFire))
+                    it = null;
+                LightableByCollider[id] = it;
+            }
+            if (it == null || (it is Object unityObject && unityObject == null))
                 continue;
             if (!Lightable(c, it))
                 continue;
@@ -270,8 +290,10 @@ internal static class FireGestures
                 Haptics.Pulse(left, 0.05f + 0.2f * warm, 0.3f);
             }
         }
+        // Shiver only by a lit fire, as a cue to warm up there; no endless pulses across a cold biome.
         if (
-            !warming
+            fire != null
+            && !warming
             && now >= nextShiver
             && c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold) > 0.05f
         )

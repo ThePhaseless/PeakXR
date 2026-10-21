@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using PeakXR.Framework;
 
@@ -19,6 +20,10 @@ public sealed class ItemGesturesFeature : Feature
 
     protected internal override void Install()
     {
+        // Gestures reach the game only through interact.physical's input injection and grip hooks; without it
+        // they would buzz the controllers for holds that never happen.
+        if (!FeatureManager.IsActive<PhysicalInteractionFeature>())
+            throw new InvalidOperationException("needs interact.physical");
         ItemGesturesConfig.Bind(Plugin.Settings);
         ItemGestures.CampfireList = GameMember.StaticField<Campfire, List<Campfire>>(
             "ALL_CAMPFIRES"
