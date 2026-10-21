@@ -1,6 +1,6 @@
 # In-game test report
 
-PEAK 2.6.b, Unity 6000.3.15f1, Proton-CachyOS 11.0, BepInEx 5.4.23.3 (BepInExPack_PEAK 5.4.75301), PEAK_MX 1.1.2 loaded alongside. Runs from 2026-10-21, master `eb8157c`.
+PEAK 2.6.b, Unity 6000.3.15f1, Proton-CachyOS 11.0, BepInEx 5.4.23.3 (BepInExPack_PEAK 5.4.75301), PEAK_MX 1.1.2 loaded alongside. Runs from 2026-10-21, master `eb8157c` for the first runs. Later runs name their own commit.
 
 ## Install and boot
 
@@ -22,12 +22,14 @@ The run starts a solo game, opens the VR settings tab, spawns and uses items, lo
 | 3 | 246 | 2 | 13 | with `-peakxr-compat`, so every VR feature's patches were live during play |
 | 4 | 248 | 0 | 13 | after fixes |
 | 5 | 248 | 0 | 13 | regression run after adding the VR steps |
+| `ebb5b8f` | 248 | 0 | 13 | `-peakxr-novr -peakxr-selftest` on master after the immersion features |
+| `8fd90a5` | 248 | 0 | 13 | same run, repeated |
 
 Coverage in runs 4 and 5: 194 items spawned, 10 representative items held and used on the beach (food, compass, binoculars, rope spool, lantern, flare, torch, rope shooter, chain shooter), 43 entities scanned, 31 spawned, 5 segments jumped to, 3 times of day.
 
 The runs found one PeakXR bug, fixed in `698772c`. The VR settings tab threw and showed no rows: the game ships no text-field cell, so the first text setting tried to instantiate `null`. Text settings now show their value read-only, and one bad row can no longer empty the tab.
 
-The two remaining exceptions come from the game itself: a spawned Stone (`ItemOptimizer` deregisters before it registered) and held binoculars (`ItemRenderFeatureManager.setFeatureActive`). No exception in any run had a PeakXR frame outside the test harness.
+The two remaining exceptions, unchanged in the later runs, come from the game itself: a spawned Stone (`ItemOptimizer` deregisters before it registered) and held binoculars (`ItemRenderFeatureManager.setFeatureActive`). No exception in any run had a PeakXR frame outside the test harness.
 
 Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the tornado, the zombie and petrified player bodies, the spectate ghost, the scoutmaster orbiter and the tied balloon need an owner, a spawner or a dying player that a standalone spawn can't provide. The last skip is the segment the player is already in.
 
@@ -58,6 +60,56 @@ Three problems came up and were fixed:
 
 Launching PEAK from the Steam client while SteamVR runs opens a "VR Theater Screen" prompt that blocks Steam's launch queue. Launch it directly through Proton for VR tests instead.
 
+## Graphics API
+
+On this Proton setup (direct `proton run`, no Wine VR registry keys) D3D12 and D3D11 both fail to create a device (`VK_WINE_openxr_device_extensions` not supported) and Unity falls back to Vulkan. Every VR run so far ran on Vulkan, including the runs launched with `-force-d3d11`. The launch option is now `-force-vulkan` (see the README). Without a flag the game tries D3D12, then D3D11, then Vulkan.
+
+## VR runs after the immersion features
+
+Setup: SteamVR with an ALVR virtual Index, Radeon 780M, Vulkan, OpenXR MultiPass, full self-test.
+
+| Run | Commit | Pass | Fail | Skip |
+|---|---|---|---|---|
+| 9 | `9c4cb42` | 283 | 4 | 14 |
+| 10 | `0d3f4e3` | 286 | 3 | 13 |
+| 11 | `0693c34` | 287 | 2 | 13 |
+| 12 | `e33b231` | 288 | 1 | 13 |
+
+The one failure left in run 12 is `vr.26` (light with flame). The game's hover lands on a nearby item instead of the campfire. A fix is in progress.
+
+New VR steps that pass in run 12:
+
+| Step | What it showed |
+|---|---|
+| `vr.08` arm reach | eye 0.02 m from the avatar's eyes, hands about 2.5 cm from the controllers, arm stretch x1.00, elbows pointing down |
+| `vr.09` belt view | 3 slot ghosts visible when looking down, 0 body colliders in the way |
+| `vr.16` snap turn | the eye slid 0.5 cm on a 30 degree snap |
+| `vr.40` | physical crouch |
+| `vr.41` | arm-swing sprint |
+| `vr.42` rope hand over hand | a 0.40 m pull raised the climb point 0.37 m |
+| `vr.43` vine | 0.32 m along the vine for a 0.40 m pull |
+| `vr.44` | piton hang |
+| `vr.21` bugle | pitch follows the bell |
+| `vr.22` bandage | pressed to the body |
+| `vr.23` parasol | runner |
+| `vr.24` luggage lid | a still hand barely moves it, a 0.35 m lift opens it |
+| `vr.25` cook over fire | cooked 0 to 1 |
+| `vr.27` warm hands | 8 pulses in 2 s |
+| `vr.60` to `vr.62` | refused-action cues (NoWall, NeedsTwoHands, CantUse) |
+| `vr.63` | sticky item hand throw |
+| `ui.01` | interact prompt at the target |
+| `ui.02` | button labels by the hand |
+| `ui.03` world banner | sign clamped to 28.6 m by a raycast |
+| `ui.04` | rope gauge beside the spool |
+
+Headset visual checks, from MCP screenshots:
+
+- Arms now bend with the elbows down. Before, the elbows pointed sideways and the forearms looked like flat bands, because the game's elbow IK hint had weight 0.
+- The pause menu sits on a soft translucent rounded backdrop, with the laser.
+- Looking down first showed the top of the player's own torso, because the eye sat on top of the head, 0.46 to 0.48 m above the shoulders. Scouts have big heads and the real avatar eyes are about 0.48 m above the shoulders. The eye now sits at the avatar's eyes and the belt slots draw on top.
+
+Desktop mirror: it was upside down and cropped, because the provider's mirror `srcRect` is a window-aspect crop (x 0.20, y 0.33, w 0.60, h 0.33). The whole eye is now drawn upright and letterboxed. A desktop screenshot (spectacle) confirmed it.
+
 ## Hand-driven checks
 
 The self-test also drives PeakXR's own input layer with scripted controller poses and buttons (steps vr.10 to vr.20), and another session drove the virtual Index controllers live through SteamVR while PEAK idled on the beach.
@@ -71,6 +123,14 @@ Live controller input reached PeakXR within one frame for every action: thumbsti
 
 The eat step still failed in the latest run because the test moved the wrong hand to the mouth (it read which hand held the item one frame too early). The test is fixed; the next run should show it passing.
 
+## Multiplayer
+
+`docs/multiplayer-compat.md` holds a static audit: no new RPCs, version gates untouched, pose event 151 sent only to PeakXR peers, adaptive pose rate. Parity fixes are merged: feed angle check, no remote yaw spin, reach clamp to the vanilla 2 m from the head, piton time never faster than vanilla, sandbox only offline. A live two-client test (one vanilla, one VR) has not been done. It needs a second Steam account; the plan is in `docs/multiplayer-compat.md`.
+
+## REA
+
+rea-agents 6.7.0 is registered for Claude Code (`~/.claude.json`). `rea mcp doctor` reports healthy: 207/207 tools, 6/6 prompts, request flow OK. A live `inspect_managed_members` call read `CharacterAnimations` from the game's `Assembly-CSharp.dll`.
+
 ## Not tested yet
 
-Still untested: the VR keyboard, eating confirmed end to end, finger curls from real hand tracking, and VR multiplayer pose sync with a second client. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
+Still untested: the VR keyboard, eating confirmed end to end, finger curls from real hand tracking, and VR multiplayer pose sync with a second client. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
