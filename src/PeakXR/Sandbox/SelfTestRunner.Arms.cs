@@ -15,13 +15,17 @@ namespace PeakXR.Sandbox;
 /// (<c>Arm</c>, <c>Elbow</c>, <c>Hand</c> bodyparts, physics space) against the controller-derived wrist target. The
 /// chain's joints are locked (ConfigurableJoint x/y/zMotion 0 in the Character prefab), so a stretch ratio well
 /// above 1 means a force is tearing the hand off the forearm; a ratio near 1 with the hand on target means the IK
-/// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch or
-/// when an elbow points up; with real controllers (hold mode) it only reports. Either way it fails when the eye
-/// sits more than <see cref="SelfTestChecks.MaxEyeAboveShoulders"/> above the shoulders.
+/// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch,
+/// when an elbow points up, or when an empty hand sits more than 0.15 m off its target (each hand follows only its
+/// own controller); with real controllers (hold mode) it only reports. Either way it fails when the eye sits more
+/// than <see cref="SelfTestChecks.MaxEyeAboveShoulders"/> above the shoulders.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
     const float MaxArmStretch = 1.15f;
+
+    /// <summary>Mean wrist-to-target error that fails an idle, empty hand: each hand follows only its controller.</summary>
+    const float MaxIdleTargetError = 0.15f;
     const int ArmSamples = 50;
 
     struct ArmSample
@@ -82,6 +86,9 @@ internal sealed partial class SelfTestRunner
                 );
         }
         notes.Add(idle ? "idle hands" : "live controllers, not judged");
+        notes.Add(
+            c.data.currentItem != null ? "holding " + c.data.currentItem.name : "nothing held"
+        );
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
         Conclude(fails, notes);
@@ -257,12 +264,47 @@ internal sealed partial class SelfTestRunner
                 )
                 + F($"elbow out {outward:0.00} up {up:0.00} back {back:0.00}")
         );
+        float error = s.TargetError / n;
+        if (error > MaxIdleTargetError)
+            notes.Add(side + " pulled by: " + HandPulls(c, left));
         if (!idle)
             return;
+        if (error > MaxIdleTargetError && c.data.currentItem == null)
+            fails.Add(
+                F($"{side} hand {error:0.000} m off its controller > {MaxIdleTargetError:0.00} m ")
+                    + "with idle hands and nothing held"
+            );
         if (s.MaxStretch > MaxArmStretch)
             fails.Add(F($"{side} arm stretched x{s.MaxStretch:0.00} > x{MaxArmStretch:0.00}"));
         if (up > 0f)
             fails.Add(F($"{side} elbow points up ({up:0.00})"));
+    }
+
+    /// <summary>What may hold a ragdoll hand off its target: welds on the hand body (an item joint, or one whose
+    /// item was destroyed, which then pins the hand to the world), solid colliders it touches, and the arm's IK
+    /// weights. vr9 had the left hand 0.36 m off with idle hands and nothing to say why.</summary>
+    static string HandPulls(Character c, bool left)
+    {
+        var hand = c.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
+        var found = new List<string>();
+        foreach (var joint in hand.GetComponents<FixedJoint>())
+            found.Add(
+                "weld to " + (joint.connectedBody != null ? joint.connectedBody.name : "the world")
+            );
+        foreach (
+            var col in Physics.OverlapSphere(
+                hand.position,
+                0.1f,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            found.Add($"touching {col.name} ({LayerMask.LayerToName(col.gameObject.layer)})");
+        var ik = left ? c.refs.ikLeft : c.refs.ikRight;
+        float ikWeight = ik != null ? ik.weight : -1f;
+        float rigWeight = c.refs.ikRig != null ? c.refs.ikRig.weight : -1f;
+        found.Add(F($"IK weight {ikWeight:0.00} (rig {rigWeight:0.00})"));
+        return string.Join(", ", found);
     }
 
     /// <summary>Rest lengths (x forearm, y upper arm) from the skin's bind pose, else from the joint anchors.</summary>
