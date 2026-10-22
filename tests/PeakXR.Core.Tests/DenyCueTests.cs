@@ -93,6 +93,17 @@ public class DenyCueTests
     }
 
     [Fact]
+    public void IsTinted_AcceptsTheValuesReadBackInGame()
+    {
+        // VR run 28 [ui.affordance] tint lines: what the renderers' blocks read back right after the write.
+        Assert.True(DenyTintMath.IsTinted(Vector4.One, new Vector4(1f, 0.3f, 0.26f, 1f)));
+        var claw = new Vector4(0.4339623f, 0.4339623f, 0.4339623f, 1f);
+        Assert.True(DenyTintMath.IsTinted(claw, new Vector4(0.434f, 0.130f, 0.113f, 1f)));
+        var ghost = new Vector4(0f, 2.06029f, 10.68063f, 0f);
+        Assert.True(DenyTintMath.IsPreview(ghost, new Vector4(10.769f, 1.088f, 0.870f, 0f)));
+    }
+
+    [Fact]
     public void Tint_FullStrengthIsRed_ZeroIsTheOriginal()
     {
         var white = Vector4.One;

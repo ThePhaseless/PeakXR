@@ -208,8 +208,15 @@ public static class DenyTintMath
 
     /// <summary>The colour <paramref name="now"/> is the full red tint of <paramref name="baseTint"/>.</summary>
     public static bool IsTinted(Vector4 baseTint, Vector4 now) =>
-        Vector4.Distance(now, Tint(baseTint, 1f)) < 0.02f
-        && Vector4.Distance(now, baseTint) > 0.02f;
+        Gap(now, Tint(baseTint, 1f)) < 0.02f && Gap(now, baseTint) > 0.02f;
+
+    /// <summary>Largest per-channel difference. Plain floats: the in-game check disagreed with the same maths run
+    /// under .NET (VR run 28), so nothing here leans on <see cref="Vector4.Distance"/>.</summary>
+    public static float Gap(Vector4 a, Vector4 b) =>
+        MathF.Max(
+            MathF.Max(MathF.Abs(a.X - b.X), MathF.Abs(a.Y - b.Y)),
+            MathF.Max(MathF.Abs(a.Z - b.Z), MathF.Abs(a.W - b.W))
+        );
 
     /// <summary>
     /// A placement ghost's colour (<c>_Color0</c> of the game's <c>Scouts/ItemPreview</c>, an HDR blue) turned red at
@@ -224,6 +231,5 @@ public static class DenyTintMath
 
     /// <summary>The ghost colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
     public static bool IsPreview(Vector4 baseColor, Vector4 now) =>
-        Vector4.Distance(now, Preview(baseColor, 1f)) < 0.05f
-        && Vector4.Distance(now, baseColor) > 0.05f;
+        Gap(now, Preview(baseColor, 1f)) < 0.05f && Gap(now, baseColor) > 0.05f;
 }

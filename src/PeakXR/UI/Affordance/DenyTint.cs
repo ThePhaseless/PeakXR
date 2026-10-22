@@ -114,7 +114,8 @@ internal static class DenyTint
         Plugin.Log.LogInfo(
             $"[ui.affordance] tint {r.name} {(prop == TintId ? "_Tint" : "_Color0")}: base {Bases[i]}, wrote {set}, "
                 + $"read {back} (as gamma {back.gamma}), _Interactable {block.GetFloat(global::Item.PROPERTY_INTERACTABLE):0.##}, "
-                + $"block stores linear {StoresLinear()}, tinted {IsTinted(r, i)}"
+                + $"block stores linear {StoresLinear()}, tinted {IsTinted(r, i)}, "
+                + $"gap to target {TargetGap(i, back):0.###}"
         );
     }
 
@@ -148,6 +149,16 @@ internal static class DenyTint
             Object.Destroy(ghost);
         ghost = null;
         ghostPrefab = null;
+    }
+
+    private static float TargetGap(int i, Color c)
+    {
+        var now = new System.Numerics.Vector4(c.r, c.g, c.b, c.a);
+        var target =
+            Props[i] == TintId
+                ? DenyTintMath.Tint(Bases[i], 1f)
+                : DenyTintMath.Preview(Bases[i], 1f);
+        return DenyTintMath.Gap(now, target);
     }
 
     /// <summary>The renderer carries the full red tint now.</summary>
