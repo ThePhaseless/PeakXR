@@ -152,6 +152,9 @@ namespace PeakXR.Core
                 else if ((_stallFor += dt) >= StallSeconds)
                     Stalled = true;
             }
+            // The head came back inside the lean: nothing left to recentre, so no fade for a stall the player undid.
+            if (Stalled && dist <= LeanRadius)
+                Stalled = false;
             if (Stalled)
                 _following = false;
             if (_following)

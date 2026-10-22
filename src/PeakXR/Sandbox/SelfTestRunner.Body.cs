@@ -922,8 +922,11 @@ internal sealed partial class SelfTestRunner
             stepNote = "pointing at nobody: " + note;
     }
 
-    /// <summary>vr.156: the head leaning toward a wall (body held, RoomScaleWalking off) gets a contact tick on the
-    /// hands within 0.3 m of the rock, before any fade.</summary>
+    /// <summary>
+    /// vr.156: the head leaning toward rock (body held, RoomScaleWalking off) gets a contact tick on the hands within
+    /// 0.3 m of it, before any fade. The wall is placed 0.95 m ahead of the head itself (run 37: walking up to the
+    /// sandbox wall timed out and the lean ended out of range), so the lean alone closes the gap.
+    /// </summary>
     IEnumerator HeadNearWallStep()
     {
         var rig = VRRig.Instance;
@@ -934,65 +937,68 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool was = setting.Value;
-        bool move = OffLeft;
-        GameObject wall = null;
+        var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         bodyRestore = () =>
         {
             setting.Value = was;
-            Script(move).Stick = Vector2.zero;
             ReleaseHead();
             if (wall != null)
                 UnityEngine.Object.Destroy(wall);
         };
-        wall = SandboxActions.PlaceWall();
-        if (wall == null)
-        {
-            stepSkip = "sandbox wall unavailable (online?)";
-            yield break;
-        }
+        setting.Value = false;
+        var eye = rig.Head.position;
+        var ahead = Flat(rig.Head.forward);
+        wall.name = "PeakXR_TestWallNear";
+        wall.layer = LayerMask.NameToLayer("Map");
+        wall.transform.SetPositionAndRotation(
+            eye + ahead * (0.95f + 0.15f),
+            Quaternion.LookRotation(ahead)
+        );
+        wall.transform.localScale = new Vector3(3f, 3f, 0.3f);
+        Physics.SyncTransforms();
         float WallAhead() =>
             Physics.Raycast(
                 rig.Head.position,
                 Flat(rig.Head.forward),
                 out var hit,
-                6f,
+                3f,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
             )
                 ? hit.distance
                 : float.PositiveInfinity;
-        if (float.IsPositiveInfinity(WallAhead()))
+        yield return Wait(0.3f);
+        float gap = WallAhead();
+        if (gap > 1.5f)
         {
-            Fail("the test wall is not ahead of the head");
+            Fail($"the test wall is not ahead of the head ({gap:0.00} m)");
             yield break;
         }
-        Script(move).Stick = new Vector2(0f, 0.5f);
-        yield return WaitFor(() => WallAhead() < 1f, 6f);
-        Script(move).Stick = Vector2.zero;
-        yield return Wait(0.6f);
-        float gap = WallAhead();
-        setting.Value = false;
         HeadFrame(out var head, out var forward, out _);
         var rot = VRInput.HeadRotation;
-        float lean = Mathf.Min(gap - 0.12f, 0.7f);
+        // Under 0.8 m of drift: room-scale's NotNow warning stays out of it.
+        float lean = Mathf.Min(gap - 0.15f, 0.78f);
         float since = CueMark();
         float start = Now;
         bool black = false;
+        float near = gap;
         while (Now - start < 1.5f)
         {
             ScriptHead(head + forward * Ease(0f, lean, (Now - start) / 1.2f), rot);
             black |= RigDriver.EyeGuardBlack;
+            near = Mathf.Min(near, WallAhead());
             yield return null;
         }
-        float near = WallAhead();
         yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
-        string note = cueNote;
+        string note = $"head {near:0.00} m from the wall (from {gap:0.00}), black {black}";
         ScriptHead(head, rot);
         yield return Wait(0.5f);
         ReleaseHead();
         setting.Value = was;
         if (stepOk)
-            stepNote = $"head {near:0.00} m from the wall (from {gap:0.00}), black {black}: {note}";
+            stepNote = note + ": " + cueNote;
+        else
+            Note(note);
     }
 
     /// <summary>vr.159: two amulet charges show two lit beads on the wrist; an air jump spends one (a double tick)

@@ -34,6 +34,18 @@ public class RoomScaleStallTests
     }
 
     [Fact]
+    public void SteppingBackAfterAStall_NeedsNoFade()
+    {
+        // Leaned into a rock, the follow gave up; the player steps back to the body: no recentre fade is due.
+        var f = new RoomScaleFollow { LeanRadius = 0.35f };
+        for (float t = 0f; t < f.StallSeconds + 0.2f; t += 0.05f)
+            f.Update(Head, Vector2.Zero, true, 0.05f);
+        Assert.True(f.RecenterNeeded);
+        f.Update(new Vector2(0f, 0.1f), Vector2.Zero, true, 0.05f);
+        Assert.False(f.RecenterNeeded);
+    }
+
+    [Fact]
     public void Recenter_ClearsTheStall()
     {
         var f = new RoomScaleFollow { LeanRadius = 0.35f };
