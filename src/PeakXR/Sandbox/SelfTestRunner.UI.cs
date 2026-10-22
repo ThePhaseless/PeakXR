@@ -1,10 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
+using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
+using TMPro;
 using UnityEngine;
 using Zorro.Core;
 
@@ -15,12 +18,100 @@ internal sealed partial class SelfTestRunner
 {
     IEnumerator SpatialSteps()
     {
-        yield return HandStep("ui.01-target-prompt", 20f, TargetPromptStep());
-        yield return HandStep("ui.02-button-labels", 20f, ButtonLabelStep());
-        yield return HandStep("ui.03-world-banner", 25f, BannerStep());
-        yield return HandStep("ui.04-rope-gauge", 28f, RopeGaugeStep());
+        var s = SpatialFeature.Settings;
+        // ui.01 reads the name: the label carries nothing else for a plain pickup (TargetPrompt.cs:25-29).
+        yield return WithOn(
+            "ui.01-target-prompt",
+            20f,
+            TargetPromptStep(),
+            s.TargetPrompt,
+            s.TargetNames
+        );
+        yield return WithOn("ui.02-button-labels", 20f, ButtonLabelStep(), s.ButtonLabels);
+        yield return WithOn("ui.03-world-banner", 25f, BannerStep(), s.WorldBanners);
+        yield return WithOn("ui.04-rope-gauge", 28f, RopeGaugeStep(), s.HeldItemGauges);
         yield return HandStep("ui.05-wrist-hud", 15f, WristHudStep());
     }
+
+    /// <summary>A hand step with <paramref name="on"/> turned on, as a player who uses the feature has it: a step that
+    /// passes with its feature off proves nothing. Each value goes back after the step, after a timeout too
+    /// (<see cref="Restoring"/>).</summary>
+    IEnumerator WithOn(string id, float timeout, IEnumerator body, params ConfigEntry<bool>[] on)
+    {
+        foreach (var setting in on)
+        {
+            if (setting == null || setting.Value)
+                continue;
+            setting.Value = true;
+            bodyRestore += () => setting.Value = false;
+        }
+        yield return Restoring(id, timeout, body);
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> is drawn (shown, opaque, not empty) and a player looking along
+    /// <paramref name="gaze"/> can read it (<see cref="Legibility"/>): near enough to see, not so near the eyes
+    /// cross, in view, facing the eye, tall enough. A miss adds to <paramref name="fails"/>. Returns the measurement.
+    /// </summary>
+    static string Readable(string what, TMP_Text text, Vector3 gaze, List<string> fails)
+    {
+        if (
+            text == null
+            || !text.isActiveAndEnabled
+            || string.IsNullOrWhiteSpace(text.GetParsedText())
+        )
+        {
+            fails.Add(what + " not drawn");
+            return what + " not drawn";
+        }
+        var t = text.transform;
+        var bounds = text.textBounds;
+        return Readable(
+            what,
+            t.TransformPoint(bounds.center),
+            t.forward,
+            t.TransformVector(0f, bounds.size.y, 0f).magnitude,
+            Alpha(text),
+            gaze,
+            fails
+        );
+    }
+
+    static string Readable(
+        string what,
+        Vector3 centre,
+        Vector3 facing,
+        float height,
+        float alpha,
+        Vector3 gaze,
+        List<string> fails
+    )
+    {
+        var eye = VRRig.Instance.Head.position;
+        var why = Legibility.Check(
+            eye.ToNumerics(),
+            gaze.ToNumerics(),
+            centre.ToNumerics(),
+            facing.ToNumerics(),
+            height,
+            out var degrees,
+            out var distance,
+            out var off,
+            out var tilt
+        );
+        if (why == null && alpha < 0.5f)
+            why = F($"faded (alpha {alpha:0.00})");
+        if (why != null)
+            fails.Add(what + " " + why);
+        return F(
+            $"{what} {degrees:0.00} deg tall at {distance:0.00} m, {off:0} deg off the gaze, tilt {tilt:0}, alpha {alpha:0.00}"
+        );
+    }
+
+    /// <summary>What reaches the screen: the colour's alpha, the renderer's own (ui.spatial hides names and verbs
+    /// with it) and its canvas groups'.</summary>
+    static float Alpha(UnityEngine.UI.Graphic g) =>
+        g.color.a * g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha();
 
     /// <summary>
     /// ui.05: the wrist HUD (stamina bar and afflictions, moved by ui.world's HudSplit) on a wrist raised like a watch
@@ -34,7 +125,8 @@ internal sealed partial class SelfTestRunner
         var cfg = UI.World.UIWorldFeature.Settings;
         if (cfg == null || cfg.Hud.Value != UI.World.HudMode.Wrist)
         {
-            stepNote = "UI.HUD.HudMode is not Wrist";
+            // Body mode lays the whole HUD out differently; switching it mid-run is not a test-only toggle.
+            stepSkip = "UI.HUD.HudMode is not Wrist";
             yield break;
         }
         var c = Character.localCharacter;
@@ -73,6 +165,8 @@ internal sealed partial class SelfTestRunner
         float across = hand != null ? Vector3.Angle(rest * Vector3.right, hand.forward) : 0f;
         float width = UI.World.HudSplit.WristWidthMeters;
         float degrees = 2f * Mathf.Atan2(width * 0.5f, toWrist.magnitude) * Mathf.Rad2Deg;
+        // Read from where the player looks: the step raises the wrist into the level gaze (WristHud.LookDegrees).
+        float off = Vector3.Angle(head.forward, toWrist);
         var root = UI.World.HudSplit.WristRoot;
         int afflictions = 0;
         if (root != null)
@@ -85,10 +179,12 @@ internal sealed partial class SelfTestRunner
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
+        else if (off > Legibility.MaxOffViewDegrees || toWrist.magnitude < Legibility.NearestMeters)
+            Fail("wrist HUD out of view or too near the eye");
         else if (facing > 25f)
             Fail("wrist HUD does not face the eye");
         else if (restFacing > 50f)
@@ -126,15 +222,12 @@ internal sealed partial class SelfTestRunner
         return "; no Cold segment in the bar";
     }
 
-    /// <summary>ui.01: an Apple in front of the eyes becomes <c>Interaction.currentHovered</c> (Interaction.cs:15); its
-    /// name group (<c>GUIManager.interactName</c>, GUIManager.cs:84) leaves the HUD for a label just above it as you see it.</summary>
+    /// <summary>ui.01: an Apple in front of the eyes, inside the game's 2 m reach (Interaction.cs:7), becomes
+    /// <c>Interaction.currentHovered</c> (Interaction.cs:15); its name group (<c>GUIManager.interactName</c>,
+    /// GUIManager.cs:84) leaves the HUD for a label just above it as you see it, and its name
+    /// (<c>interactNameText</c>, GUIManager.cs:1051) is drawn there, readable (run with <c>UI.TargetNames</c> on).</summary>
     IEnumerator TargetPromptStep()
     {
-        if (!SpatialFeature.Settings.TargetPrompt.Value)
-        {
-            stepNote = "UI.TargetPrompt is off";
-            yield break;
-        }
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
@@ -178,6 +271,7 @@ internal sealed partial class SelfTestRunner
         var label = GUIManager.instance.interactName.transform.parent;
         var fails = new List<string>();
         float above = 0f;
+        string read = "";
         if (
             label == null
             || label.name != "PeakXR_TargetPrompt"
@@ -201,13 +295,15 @@ internal sealed partial class SelfTestRunner
                 fails.Add(
                     $"label only {above:0.0} deg off the Apple's centre: it crosses the Apple"
                 );
+            // The Apple sits on the head's ray, so the gaze is the view.
+            read = Readable("name", GUIManager.instance.interactNameText, head.forward, fails);
         }
         yield return Shot("ui-01-target-prompt");
         Conclude(
             fails,
             new List<string>
             {
-                $"label at {(label != null ? label.position : Vector3.zero)}, {above:0.0} deg above the Apple",
+                $"label at {(label != null ? label.position : Vector3.zero)}, {above:0.0} deg above the Apple, {read}",
             }
         );
     }
@@ -221,14 +317,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>ui.02: holding an Apple shows its use prompt (<c>itemPromptMain</c>, GUIManager.cs:102) beside the
-    /// holding hand's trigger for a few seconds.</summary>
+    /// holding hand's trigger for a few seconds, readable to a player who looks at that hand.</summary>
     IEnumerator ButtonLabelStep()
     {
-        if (!SpatialFeature.Settings.ButtonLabels.Value)
-        {
-            stepNote = "UI.ButtonLabels is off";
-            yield break;
-        }
         yield return GiveAndHold(FindItem(new List<Item>(SandboxActions.Items), AppleFragment));
         if (!stepOk)
             yield break;
@@ -252,6 +343,9 @@ internal sealed partial class SelfTestRunner
         var fails = new List<string>();
         if (d > 0.2f)
             fails.Add($"label {d:0.00} m from the holding hand");
+        // Read the way a player does: looking at the hand (the labels show while you do, ButtonLabels.cs:22).
+        var head = VRRig.Instance.Head;
+        string read = Readable("use label", prompt, hand.position - head.position, fails);
         bool onTop = UI.Common.OnTop.IsOnTop(prompt);
         if (!onTop)
             fails.Add("label is depth tested: the hand can cover it");
@@ -273,8 +367,27 @@ internal sealed partial class SelfTestRunner
             if (toHand > 0.1f)
                 fails.Add($"leader ends {toHand:0.00} m from the hand, not on its trigger");
         }
-        // A finger on the trigger lights the use label and dims the rest on that hand.
+        // A finger on the trigger lights the use label and dims the rest on that hand. The scripted rest pose already
+        // touches the trigger (Rest, SelfTestRunner.Hands.cs), so lift it first and see the labels even out
+        // (ControllerLabels.Emphasis: 0.85 untouched), or the touch below proves nothing.
         bool left = LocalHold.ItemInLeftHand;
+        bool rested = Script(left).TriggerTouch;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.4f);
+        bool mainUp = ButtonLabels.TryShown(ItemPrompt.Main, out _, out float idle, out _, out _);
+        bool throwUp = ButtonLabels.TryShown(
+            ItemPrompt.Throw,
+            out _,
+            out float idleThrow,
+            out _,
+            out _
+        );
+        if (mainUp && idle >= 0.95f)
+            fails.Add($"the use label stays lit ({idle:0.00}) with no finger on the trigger");
+        if (throwUp && idleThrow <= 0.6f)
+            fails.Add(
+                $"the throw label stays dimmed ({idleThrow:0.00}) with no finger on a button"
+            );
         Script(left).TriggerTouch = true;
         yield return Wait(0.4f);
         ButtonLabels.TryShown(ItemPrompt.Main, out _, out float lit, out _, out _);
@@ -285,7 +398,7 @@ internal sealed partial class SelfTestRunner
             out _,
             out _
         );
-        Script(left).TriggerTouch = false;
+        Script(left).TriggerTouch = rested;
         if (lit < 0.95f)
             fails.Add($"touching the trigger left the use label at {lit:0.00}");
         if (throwShown && dim > 0.6f)
@@ -294,7 +407,7 @@ internal sealed partial class SelfTestRunner
             fails,
             new List<string>
             {
-                $"'{prompt.text}' {d:0.000} m from the hand, on top {onTop}, name '{glyph}', leader to {toHand:0.000} m from the grip, touched {lit:0.00} vs throw {(throwShown ? dim.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "hidden")}",
+                $"'{prompt.text}' {d:0.000} m from the hand, on top {onTop}, name '{glyph}', leader to {toHand:0.000} m from the grip, untouched {idle:0.00}, touched {lit:0.00} vs throw {(throwShown ? dim.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "hidden")}, {read}",
             }
         );
     }
@@ -303,16 +416,11 @@ internal sealed partial class SelfTestRunner
     /// nearer where terrain is in the way.</summary>
     IEnumerator BannerStep()
     {
-        if (!SpatialFeature.Settings.WorldBanners.Value)
-        {
-            stepNote = "UI.WorldBanners is off";
-            yield break;
-        }
         var gui = GUIManager.instance;
         // The title coroutine reads the day counter (GUIManager.cs:499).
         if (DayNightManager.instance == null)
         {
-            stepNote = "no DayNightManager here; skipped";
+            stepSkip = "no DayNightManager here";
             yield break;
         }
         // The title the game shows on reaching this biome (MountainProgressHandler.cs:105), not a made-up one.
@@ -356,10 +464,25 @@ internal sealed partial class SelfTestRunner
         }
         yield return Shot("ui-03-world-banner");
         var fails = new List<string>();
+        string read = "";
         if (sign == null || sign.name != "PeakXR_HeroSign")
             fails.Add($"hero title under '{(sign != null ? sign.name : "none")}'");
         else if (Mathf.Abs(d - expected) > 0.75f)
             fails.Add($"sign {d:0.0} m away, its ray says {expected:0.0} m");
+        else
+        {
+            // The title render texture (heroImage, GUIManager.cs:152) is what the sign draws.
+            var image = gui.heroImage.rectTransform;
+            read = Readable(
+                "title",
+                image.TransformPoint(image.rect.center),
+                image.forward,
+                image.TransformVector(0f, image.rect.height, 0f).magnitude,
+                Alpha(gui.heroImage),
+                head.forward,
+                fails
+            );
+        }
         // The title types out and fades over about 6 s (GUIManager.cs:496-542); later steps' frames must not show it.
         float shown = Now;
         yield return WaitFor(() => !gui.heroObject.activeSelf, 12f);
@@ -369,19 +492,15 @@ internal sealed partial class SelfTestRunner
             fails,
             new List<string>
             {
-                $"'{title}' sign {d:0.0} m away (ray {expected:0.0} m), gone {Now - shown + 1.5f:0.0} s after it showed",
+                $"'{title}' sign {d:0.0} m away (ray {expected:0.0} m), gone {Now - shown + 1.5f:0.0} s after it showed, {read}",
             }
         );
     }
 
-    /// <summary>ui.04: holding a rope spool shows <c>UI_Rope</c> (GUIManager.cs:635) next to the spool.</summary>
+    /// <summary>ui.04: holding a rope spool shows <c>UI_Rope</c> (GUIManager.cs:635) next to the spool, its length
+    /// (<c>ropeLengthText</c>, UI_Rope.cs:68) readable to a player who looks at the spool.</summary>
     IEnumerator RopeGaugeStep()
     {
-        if (!SpatialFeature.Settings.HeldItemGauges.Value)
-        {
-            stepNote = "UI.HeldItemGauges is off";
-            yield break;
-        }
         yield return GiveAndHold(FindItem(new List<Item>(SandboxActions.Items), "RopeSpool"));
         if (!stepOk)
             yield break;
@@ -403,10 +522,18 @@ internal sealed partial class SelfTestRunner
         float d = Vector3.Distance(drawn, HeldItem().Center());
         yield return ShotAt("ui-04-rope-gauge", drawn);
         var fails = new List<string>();
+        string read = "";
         if (box == null || box.name != "PeakXR_RopeGauge")
             fails.Add($"rope gauge under '{(box != null ? box.name : "none")}'");
         else if (d > 0.4f)
             fails.Add($"gauge {d:0.00} m from the spool");
-        Conclude(fails, new List<string> { $"gauge {d:0.00} m from the spool" });
+        else
+            read = Readable(
+                "rope length",
+                text,
+                HeldItem().Center() - VRRig.Instance.Head.position,
+                fails
+            );
+        Conclude(fails, new List<string> { $"gauge {d:0.00} m from the spool, {read}" });
     }
 }

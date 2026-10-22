@@ -127,10 +127,24 @@ internal sealed partial class SelfTestRunner
 
     static float Ease(float from, float to, float t) => Mathf.Lerp(from, to, Mathf.Clamp01(t));
 
+    /// <summary><see cref="ExpectFeel"/> on each hand, for the cues that go to both (BodyFeedback.FeelBoth,
+    /// Affordance.Danger on each): checking one hand passed a cue lost on the other.</summary>
+    IEnumerator ExpectFeelBoth(CueFeel feel, float since, float within)
+    {
+        yield return ExpectFeel(true, feel, since, within);
+        if (!stepOk)
+            yield break;
+        string left = cueNote;
+        yield return ExpectFeel(false, feel, since, within);
+        if (stepOk)
+            cueNote = $"L {left}, R {cueNote}";
+    }
+
     // ---------------------------------------------------------------- steps
 
     /// <summary>vr.140: with the body held still (RoomScaleWalking off), the head drifts 0.9 m back: before the 1 m
-    /// recenter fade, both hands get NotNow with a ring at the body's feet (LocomotionInput.WarnFar).</summary>
+    /// recenter fade, the dominant hand (BodyFeedback.BodyHand) gets NotNow with a ring at the body's feet
+    /// (LocomotionInput.WarnFar).</summary>
     IEnumerator RoomScaleBlockedStep()
     {
         var setting = LocomotionConfig.RoomScaleSetting;
@@ -196,7 +210,8 @@ internal sealed partial class SelfTestRunner
         float l = ComfortEventsRuntime.LastLeftAmplitude;
         float r = ComfortEventsRuntime.LastRightAmplitude;
         var note = $"look weight {weight:0.00}, rumble left {l:0.00} right {r:0.00}";
-        if (ComfortEventsRuntime.LastAt <= at || !(r > l))
+        // The weight is player.look's verdict that the game's look took the heading: a rumble alone passed without it.
+        if (ComfortEventsRuntime.LastAt <= at || !(r > l) || !(weight > 0.5f))
             Fail(note);
         else
             stepNote = note;
@@ -324,7 +339,7 @@ internal sealed partial class SelfTestRunner
             Fail("the head held low did not crouch");
             yield break;
         }
-        yield return ExpectFeel(true, CueFeel.Contact, since, 1f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 1f);
         if (!stepOk)
             yield break;
         float crouched = 0f;
@@ -332,7 +347,7 @@ internal sealed partial class SelfTestRunner
         since = CueMark();
         ScriptHead(head, rot);
         yield return WaitFor(() => !c.data.isCrouching, 2f);
-        yield return ExpectFeel(false, CueFeel.Contact, since, 1f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 1f);
         ReleaseHead();
         float ratio = walked > 0.01f ? crouched / walked : 0f;
         var note =
@@ -426,7 +441,7 @@ internal sealed partial class SelfTestRunner
             Fail($"took off {BodyFeedback.TakeOffs > before} after {took:0.00} s");
             yield break;
         }
-        yield return ExpectFeel(DomLeft, CueFeel.Contact, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         if (!stepOk)
             yield break;
         string takeOff = cueNote;
@@ -533,7 +548,7 @@ internal sealed partial class SelfTestRunner
             Fail(note);
             yield break;
         }
-        yield return ExpectFeel(DomLeft, CueFeel.Contact, since, 1f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 1f);
         if (stepOk)
             stepNote = note;
     }
@@ -573,31 +588,34 @@ internal sealed partial class SelfTestRunner
         bool still = false,
             clap = false,
             run = false;
-        yield return SwingFor(restLeft, restRight, forward, 1.5f, v => still |= v);
+        // The negatives read the gesture's own verdict: with the stick idle the game never sprints anyway
+        // (CharacterMovement.cs:263 needs movementInput.y), so isSprinting passed a detector that fired standing still.
+        yield return SwingFor(restLeft, restRight, forward, 1.5f, (_, s) => still |= s);
         Script(move).Stick = new Vector2(0f, 1f);
-        yield return SwingFor(restLeft, restRight, right, 1.5f, v => clap |= v);
-        yield return SwingFor(restLeft, restRight, forward, 1.5f, v => run |= v);
+        yield return SwingFor(restLeft, restRight, right, 1.5f, (_, s) => clap |= s);
+        yield return SwingFor(restLeft, restRight, forward, 1.5f, (p, s) => run |= p && s);
+        float speed = c.data.avarageVelocity.magnitude;
         Script(move).Stick = Vector2.zero;
         SetHand(true, restLeft);
         SetHand(false, restRight);
         setting.Value = was;
         yield return Wait(0.5f);
         var note =
-            $"sprint standing still {still}, swinging sideways {clap}, running swing {run} (speed {c.data.avarageVelocity.magnitude:0.0})";
+            $"swing gesture standing still {still}, swinging sideways {clap}, sprinting on a running swing {run} (speed {speed:0.0} m/s)";
         if (still || clap || !run)
             Fail(note);
         else
             stepNote = note;
     }
 
-    /// <summary>Alternating swings of 0.25 m at 1.6 Hz along <paramref name="axis"/>; reports
-    /// <see cref="BodyGestures.Swinging"/> with sprinting every frame.</summary>
+    /// <summary>Alternating swings of 0.25 m at 1.6 Hz along <paramref name="axis"/>; reports sprinting and
+    /// <see cref="BodyGestures.Swinging"/> every frame.</summary>
     IEnumerator SwingFor(
         Vector3 restLeft,
         Vector3 restRight,
         Vector3 axis,
         float seconds,
-        Action<bool> sprint
+        Action<bool, bool> sprint
     )
     {
         var c = Character.localCharacter;
@@ -607,7 +625,7 @@ internal sealed partial class SelfTestRunner
             float z = 0.25f * Mathf.Sin(2f * Mathf.PI * 1.6f * (Now - start));
             SetHand(true, restLeft + axis * z);
             SetHand(false, restRight - axis * z);
-            sprint(c.data.isSprinting && BodyGestures.Swinging);
+            sprint(c.data.isSprinting, BodyGestures.Swinging);
             yield return null;
         }
     }
@@ -635,11 +653,11 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float thump = BodyFeedback.LastLanding;
-        yield return ExpectFeel(true, CueFeel.Danger, since, 0.1f);
+        yield return ExpectFeelBoth(CueFeel.Danger, since, 0.1f);
         if (!stepOk)
             yield break;
         string danger = cueNote;
-        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         if (!stepOk)
             yield break;
         float injury = c.refs.afflictions.GetCurrentStatus(STATUS.Injury);
@@ -750,7 +768,7 @@ internal sealed partial class SelfTestRunner
         c.photonView.RPC("RPCA_Fall", RpcTarget.All, 2f, 0f);
         yield return WaitFor(() => c.data.currentRagdollControll < 0.5f, 1f);
         yield return WaitFor(() => c.data.currentRagdollControll > 0.9f, 6f);
-        yield return ExpectFeel(true, CueFeel.Contact, since, 1f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 1f);
         if (!stepOk)
             yield break;
         string tick = cueNote;
@@ -799,7 +817,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "the game refused the status (airport?)";
             yield break;
         }
-        yield return ExpectFeel(true, CueFeel.Danger, since, 3f);
+        yield return ExpectFeelBoth(CueFeel.Danger, since, 3f);
         float value = c.data.passOutValue;
         SandboxActions.ClearStatus(STATUS.Injury);
         yield return WaitFor(() => c.data.passOutValue < 0.01f || c.data.passedOut, 6f);
@@ -1004,7 +1022,8 @@ internal sealed partial class SelfTestRunner
             near = Mathf.Min(near, WallAhead());
             yield return null;
         }
-        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        // Straight ahead: BodyFeedback.NearWall ticks both hands.
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         string note = $"head {near:0.00} m from the wall (from {gap:0.00}), black {black}";
         ScriptHead(head, rot);
         yield return Wait(0.5f);
@@ -1050,7 +1069,7 @@ internal sealed partial class SelfTestRunner
             Fail(note);
             yield break;
         }
-        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         a.totalExtraJumps = total;
         c.data.extraJumps = Mathf.Min(c.data.extraJumps, total);
         yield return WaitFor(() => c.data.isGrounded, 3f);
@@ -1072,11 +1091,16 @@ internal sealed partial class SelfTestRunner
             heavy = 0f;
         yield return Exert(c, 3f, p => light = p);
         SandboxActions.AddStatus(STATUS.Weight, 0.5f);
-        SandboxActions.SetStamina(0.25f, 0f);
+        // Weight lowers the max (1 minus the status sum, Character.cs:1613), and the beat slows as the bar's fraction
+        // rises (BodyCues.Heartbeat): 0.25 of a 0.5 bar beat slower with no weight term at all. Same fraction, so
+        // only the weight (period x1.5 at 0.5) can slow it.
+        float max = c.GetMaxStamina();
+        SandboxActions.SetStamina(0.25f * max, 0f);
         yield return Exert(c, 4f, p => heavy = p);
         SandboxActions.ClearStatus(STATUS.Weight);
-        var note = $"beat every {light:0.00} s, with Weight 0.5 every {heavy:0.00} s";
-        if (!(light > 0f) || !(heavy > light))
+        var note =
+            $"beat every {light:0.00} s at 0.25 of the bar, with Weight 0.5 (max {max:0.00}) every {heavy:0.00} s";
+        if (!(light > 0f) || !(heavy > light * 1.2f))
             Fail(note);
         else
             stepNote = note;
@@ -1408,7 +1432,7 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         if (stepOk)
             stepNote = $"spring {EnvironmentCues.LastBounce:0.00}: {cueNote}";
         UnityEngine.Object.Destroy(pad);
@@ -1444,7 +1468,7 @@ internal sealed partial class SelfTestRunner
             Fail("the lava's touch never burned");
             yield break;
         }
-        yield return ExpectFeel(true, CueFeel.Danger, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Danger, since, 0.5f);
         if (stepOk)
             stepNote = cueNote;
         yield return WaitFor(() => c.data.isGrounded, 4f);
@@ -1493,7 +1517,7 @@ internal sealed partial class SelfTestRunner
         int tugs = EnvironmentCues.Tugs;
         float since = CueMark();
         c.refs.balloons.SetParachute(true);
-        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         c.refs.balloons.SetParachute(false);
         if (stepOk && EnvironmentCues.Tugs == tugs)
             Fail("no tug counted");
@@ -1515,7 +1539,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         float since = CueMark();
         gui.EndSugarRush();
-        yield return ExpectFeel(true, CueFeel.Cancel, since, 0.5f);
+        yield return ExpectFeelBoth(CueFeel.Cancel, since, 0.5f);
         if (stepOk)
             stepNote = cueNote;
     }
@@ -1529,7 +1553,7 @@ internal sealed partial class SelfTestRunner
         SandboxActions.SetGodMode(false);
         float since = CueMark();
         c.refs.afflictions.AddAffliction(new Peak.Afflictions.Affliction_LowGravity(1, 2.5f));
-        yield return ExpectFeel(true, CueFeel.Progress, since, 4f);
+        yield return ExpectFeelBoth(CueFeel.Progress, since, 4f);
         if (stepOk)
             stepNote = cueNote;
         yield return Wait(1.5f);
@@ -1620,7 +1644,7 @@ internal sealed partial class SelfTestRunner
         float since = CueMark();
         EnvironmentCues.BridgeTimer(bridge) = 1000f;
         EnvironmentCues.BridgeBreaking(bridge) = true;
-        yield return ExpectFeel(true, CueFeel.Danger, since, 1.5f);
+        yield return ExpectFeelBoth(CueFeel.Danger, since, 1.5f);
         EnvironmentCues.BridgeBreaking(bridge) = false;
         if (stepOk)
             stepNote = $"{what}: {cueNote}";

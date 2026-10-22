@@ -6,6 +6,7 @@ using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact.Physical;
 using PeakXR.UI.Affordances;
+using PeakXR.UI.Common;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Settings;
 using PeakXR.UI.Spatial;
@@ -120,7 +121,9 @@ internal sealed partial class SelfTestRunner
                 out _
             );
             float d = Vector3.Distance(demo.Root.position, edge);
-            notes.Add($"{topic}: {demo.SoundsPlayed} cue sounds, {d:0.00} m past its row's edge");
+            notes.Add(
+                $"{topic}: {demo.SoundsPlayed} cue sounds, {d:0.00} m past its row's edge, {DemoInView(demo, topic, fails)}"
+            );
             if (demo.SoundsPlayed < 1)
                 fails.Add($"{topic} played no cue sound in a loop");
             if (d > 0.6f)
@@ -247,6 +250,49 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>
+    /// vr.30: the demo draws something, and its drawn bounds sit in the player's view at a size they can follow
+    /// (<see cref="Legibility"/>); a demo that only exists and plays sounds would pass otherwise. The frame alone
+    /// cannot tell: <see cref="ShotAt"/> re-aims the camera at it.
+    /// </summary>
+    static string DemoInView(GhostDemo demo, GuideTopic topic, List<string> fails)
+    {
+        var bounds = default(Bounds);
+        bool any = false;
+        foreach (var r in demo.Root.GetComponentsInChildren<Renderer>())
+        {
+            if (!r.enabled)
+                continue;
+            if (any)
+                bounds.Encapsulate(r.bounds);
+            else
+                bounds = r.bounds;
+            any = true;
+        }
+        if (!any)
+        {
+            fails.Add($"{topic} demo draws nothing");
+            return "nothing drawn";
+        }
+        var head = VRRig.Instance.Head;
+        var to = bounds.center - head.position;
+        // A figure, not a sheet: it has no face to tilt away, so it faces along the line of sight.
+        var why = Legibility.Check(
+            head.position.ToNumerics(),
+            head.forward.ToNumerics(),
+            bounds.center.ToNumerics(),
+            to.ToNumerics(),
+            bounds.size.y,
+            out float degrees,
+            out float distance,
+            out float off,
+            out _
+        );
+        if (why != null)
+            fails.Add($"{topic} demo {why}");
+        return F($"drawn {degrees:0.0} deg tall at {distance:0.00} m, {off:0} deg off the view");
+    }
+
     readonly Vector3[] edgeCorners = new Vector3[4];
 
     static AccessTools.FieldRef<PracticeRun, Transform> practiceStation;
@@ -298,9 +344,11 @@ internal sealed partial class SelfTestRunner
     /// <c>CommsSteps</c>.</summary>
     IEnumerator PromptGlyphSteps()
     {
-        yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
-        yield return HandStep("vr.125-hold-glyph", 40f, HoldGlyphStep());
-        yield return HandStep("vr.133-target-names", 25f, TargetNamesStep());
+        // Glyphs, names and the hold ring are drawn by the target prompt: run with it on, as a player has it.
+        var prompt = SpatialFeature.Settings.TargetPrompt;
+        yield return WithOn("vr.121-prompt-glyphs", 25f, PromptGlyphStep(), prompt);
+        yield return WithOn("vr.125-hold-glyph", 40f, HoldGlyphStep(), prompt);
+        yield return WithOn("vr.133-target-names", 25f, TargetNamesStep(), prompt);
         yield return WarpBack();
     }
 
@@ -312,11 +360,6 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator HoldGlyphStep()
     {
-        if (!SpatialFeature.Settings.TargetPrompt.Value)
-        {
-            stepNote = "UI.TargetPrompt is off";
-            yield break;
-        }
         var c = Character.localCharacter;
         var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
         if (lug == null)
@@ -330,63 +373,56 @@ internal sealed partial class SelfTestRunner
         bool left = VRInput.LeftHanded;
         var notes = new List<string>();
         var fails = new List<string>();
-        try
+        // Put back after the step, a timeout too (Restoring): Guard never runs a dropped step's finally.
+        if (hintText != null)
         {
-            if (hintText != null)
-                hintText.Value = false;
-            yield return WarpFacing(lug.Center(), 0.8f);
-            var top = LidPoint(lug);
-            yield return MoveTo(left, () => top, 0.5f);
-            float mark = CueMark();
-            yield return GripTo(left, 1f, 0.1f);
-            yield return WaitFor(
-                () => ReferenceEquals(interaction.currentHeldInteractible, lug),
-                2f
+            hintText.Value = false;
+            bodyRestore += () => hintText.Value = hintWas;
+        }
+        yield return WarpFacing(lug.Center(), 0.8f);
+        var top = LidPoint(lug);
+        yield return MoveTo(left, () => top, 0.5f);
+        float mark = CueMark();
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(() => ReferenceEquals(interaction.currentHeldInteractible, lug), 2f);
+        if (!ReferenceEquals(interaction.currentHeldInteractible, lug))
+        {
+            Fail(
+                $"grip did not hold the suitcase: hovered {Label(interaction.currentHovered)}, held {Label(interaction.currentHeldInteractible)}"
             );
-            if (!ReferenceEquals(interaction.currentHeldInteractible, lug))
-            {
-                Fail(
-                    $"grip did not hold the suitcase: hovered {Label(interaction.currentHovered)}, held {Label(interaction.currentHeldInteractible)}"
-                );
-                yield break;
-            }
-            yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Hold), 1f);
-            bool ring = TargetPrompt.Drawn(PromptVerb.Hold);
-            bool hidden = TargetPrompt.TextHidden;
-            notes.Add($"hold ring {ring}, text hidden {hidden}");
-            if (!ring)
-                fails.Add("no hold ring while the suitcase's open is held");
-            if (!hidden)
-                fails.Add("the prompt text still shows with UI.ActionHintText off");
+            yield break;
+        }
+        yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Hold), 1f);
+        bool ring = TargetPrompt.Drawn(PromptVerb.Hold);
+        bool hidden = TargetPrompt.TextHidden;
+        notes.Add($"hold ring {ring}, text hidden {hidden}");
+        if (!ring)
+            fails.Add("no hold ring while the suitcase's open is held");
+        if (!hidden)
+            fails.Add("the prompt text still shows with UI.ActionHintText off");
 
-            // Half the lid's open time (Luggage timeToOpen, Luggage.cs:214); the lift gesture caps the timer at the
-            // height reached, so half the lift height.
-            float openTime = GameTiming.InteractSeconds(lug, c);
-            float until = Now + Mathf.Max(0.8f, 0.6f * openTime);
-            var at = Script(left).Position;
-            bool lift = Setting("Interaction", "LiftLidToOpen", true);
-            while (Now < until && !lug.IsOpen)
-            {
-                if (lift)
-                    SetHand(left, at + Vector3.up * (LidGesture.LiftHeight * 0.5f));
-                yield return null;
-            }
-            float fill = TargetPrompt.HoldFillShown;
-            float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
-            yield return ShotAt("vr-125-hold-glyph", lug.Center());
-            notes.Add($"progress {progress:0.00}, ring filled {fill:0.00}");
-            if (progress > 0.05f && (fill <= 0f || Mathf.Abs(fill - progress) > 0.1f))
-                fails.Add("the ring does not follow the hold's progress");
-            yield return ExpectFeel(left, CueFeel.Progress, mark);
-            if (stepOk)
-                notes.Add(cueNote);
-            yield return GripTo(left, 0f, 0.1f);
-        }
-        finally
+        // Half the lid's open time (Luggage timeToOpen, Luggage.cs:214); the lift gesture caps the timer at the
+        // height reached, so half the lift height.
+        float openTime = GameTiming.InteractSeconds(lug, c);
+        float until = Now + Mathf.Max(0.8f, 0.6f * openTime);
+        var at = Script(left).Position;
+        bool lift = Setting("Interaction", "LiftLidToOpen", true);
+        while (Now < until && !lug.IsOpen)
         {
-            if (hintText != null)
-                hintText.Value = hintWas;
+            if (lift)
+                SetHand(left, at + Vector3.up * (LidGesture.LiftHeight * 0.5f));
+            yield return null;
         }
+        float fill = TargetPrompt.HoldFillShown;
+        float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
+        yield return ShotAt("vr-125-hold-glyph", lug.Center());
+        notes.Add($"progress {progress:0.00}, ring filled {fill:0.00}");
+        if (progress > 0.05f && (fill <= 0f || Mathf.Abs(fill - progress) > 0.1f))
+            fails.Add("the ring does not follow the hold's progress");
+        yield return ExpectFeel(left, CueFeel.Progress, mark);
+        if (stepOk)
+            notes.Add(cueNote);
+        yield return GripTo(left, 0f, 0.1f);
         if (stepOk)
             Conclude(fails, notes);
     }
@@ -400,11 +436,6 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator PromptGlyphStep()
     {
-        if (!SpatialFeature.Settings.TargetPrompt.Value)
-        {
-            stepNote = "UI.TargetPrompt is off";
-            yield break;
-        }
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
@@ -431,75 +462,72 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         var hintText = AffordanceFeature.ActionHintText;
         bool hintWas = hintText != null && hintText.Value;
-        try
+        // Off until the step ends, the struggle check included (its glyph stands in for the text only with the
+        // text off); put back after the step, a timeout too (Restoring).
+        if (hintText != null)
         {
-            if (hintText != null)
-                hintText.Value = false;
-            float until = Now + 5f;
-            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
-            }
-            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
-            {
-                Fail("the Apple never became the hovered target");
-                yield break;
-            }
-            for (float t = Now + 0.4f; Now < t; )
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
-            }
-            bool hidden = TargetPrompt.TextHidden && verbText.GetAlpha() <= 0.001f;
-            bool grab = TargetPrompt.Drawn(PromptVerb.Grab);
-            bool namesOn = SpatialFeature.Settings.TargetNames.Value;
-            bool named = NameShown(gui);
-            float glow = Glow(world);
-            notes.Add(
-                $"text hidden {hidden}, grab glyph {grab}, name shown {named} (UI.TargetNames {namesOn}), glow {glow:0.##}"
-            );
-            if (!hidden)
-                fails.Add("PICKUP text still drawn with UI.ActionHintText off");
-            if (grab != namesOn)
-                fails.Add(
-                    namesOn
-                        ? "no grab glyph with UI.TargetNames on"
-                        : "grab glyph drawn with UI.TargetNames off"
-                );
-            if (named != namesOn)
-                fails.Add(
-                    namesOn
-                        ? "the Apple's name is gone"
-                        : "the Apple's name shows with UI.TargetNames off"
-                );
-            if (glow < 0.5f)
-                fails.Add("the hovered Apple does not glow (_Interactable 0)");
-            yield return ShotAt("vr-121-prompt-glyphs", world.Center());
-
-            if (hintText != null)
-            {
-                hintText.Value = true;
-                for (float t = Now + 0.3f; Now < t; )
-                {
-                    HoldOnHeadRay(world, head);
-                    yield return null;
-                }
-                bool back = !TargetPrompt.TextHidden && verbText.GetAlpha() >= 0.99f;
-                notes.Add(
-                    $"with ActionHintText: text back {back}, glyph {TargetPrompt.Drawn(PromptVerb.Grab)}"
-                );
-                if (!back)
-                    fails.Add("UI.ActionHintText on did not bring the PICKUP text back");
-                if (TargetPrompt.Drawn(PromptVerb.Grab))
-                    fails.Add("grab glyph drawn over the PICKUP text");
-                hintText.Value = false;
-            }
+            hintText.Value = false;
+            bodyRestore += () => hintText.Value = hintWas;
         }
-        finally
+        float until = Now + 5f;
+        while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
         {
-            if (hintText != null)
-                hintText.Value = hintWas;
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            Fail("the Apple never became the hovered target");
+            yield break;
+        }
+        for (float t = Now + 0.4f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        bool hidden = TargetPrompt.TextHidden && verbText.GetAlpha() <= 0.001f;
+        bool grab = TargetPrompt.Drawn(PromptVerb.Grab);
+        bool namesOn = SpatialFeature.Settings.TargetNames.Value;
+        bool named = NameShown(gui);
+        float glow = Glow(world);
+        notes.Add(
+            $"text hidden {hidden}, grab glyph {grab}, name shown {named} (UI.TargetNames {namesOn}), glow {glow:0.##}"
+        );
+        if (!hidden)
+            fails.Add("PICKUP text still drawn with UI.ActionHintText off");
+        if (grab != namesOn)
+            fails.Add(
+                namesOn
+                    ? "no grab glyph with UI.TargetNames on"
+                    : "grab glyph drawn with UI.TargetNames off"
+            );
+        if (named != namesOn)
+            fails.Add(
+                namesOn
+                    ? "the Apple's name is gone"
+                    : "the Apple's name shows with UI.TargetNames off"
+            );
+        if (glow < 0.5f)
+            fails.Add("the hovered Apple does not glow (_Interactable 0)");
+        yield return ShotAt("vr-121-prompt-glyphs", world.Center());
+
+        if (hintText != null)
+        {
+            hintText.Value = true;
+            for (float t = Now + 0.3f; Now < t; )
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            bool back = !TargetPrompt.TextHidden && verbText.GetAlpha() >= 0.99f;
+            notes.Add(
+                $"with ActionHintText: text back {back}, glyph {TargetPrompt.Drawn(PromptVerb.Grab)}"
+            );
+            if (!back)
+                fails.Add("UI.ActionHintText on did not bring the PICKUP text back");
+            if (TargetPrompt.Drawn(PromptVerb.Grab))
+                fails.Add("grab glyph drawn over the PICKUP text");
+            hintText.Value = false;
         }
 
         // Struggle: the game shows its prompt only for a web added from zero (CharacterAfflictions.cs:799-806).
@@ -534,11 +562,6 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator TargetNamesStep()
     {
-        if (!SpatialFeature.Settings.TargetPrompt.Value)
-        {
-            stepNote = "UI.TargetPrompt is off";
-            yield break;
-        }
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var c = Character.localCharacter;
@@ -567,55 +590,50 @@ internal sealed partial class SelfTestRunner
         bool namesWas = names.Value;
         var fails = new List<string>();
         var notes = new List<string>();
-        try
-        {
-            names.Value = false;
-            yield return Wait(0.3f);
-            float before = Glow(world);
-            var restAt = Script(false).Position;
-            yield return MoveTo(false, () => world != null ? world.Center() : spot, 0.5f);
-            yield return Wait(0.3f);
-            float reached = Glow(world);
-            bool headHover = ReferenceEquals(Interaction.instance.currentHovered, world);
-            bool named = headHover && NameShown(gui);
-            notes.Add(
-                $"glow {before:0.##} before, {reached:0.##} at the hand (head hover {headHover}), name shown {named}"
-            );
-            if (reached < 0.5f)
-                fails.Add("the Apple at the empty hand does not glow (_Interactable 0)");
-            if (named)
-                fails.Add("the Apple's name shows with UI.TargetNames off");
-            yield return ShotAt("vr-133-target-names", world.Center());
-            yield return MoveTrack(false, restAt, 0.3f);
-            yield return Wait(0.3f);
-            float left = Glow(world);
-            notes.Add($"glow {left:0.##} after the hand left");
-            if (!ReferenceEquals(Interaction.instance.currentHovered, world) && left > 0.5f)
-                fails.Add("the Apple still glows after the hand left");
+        // Put back after the step, a timeout too (Restoring).
+        names.Value = false;
+        bodyRestore += () => names.Value = namesWas;
+        yield return Wait(0.3f);
+        float before = Glow(world);
+        var restAt = Script(false).Position;
+        yield return MoveTo(false, () => world != null ? world.Center() : spot, 0.5f);
+        yield return Wait(0.3f);
+        float reached = Glow(world);
+        bool headHover = ReferenceEquals(Interaction.instance.currentHovered, world);
+        bool named = headHover && NameShown(gui);
+        notes.Add(
+            $"glow {before:0.##} before, {reached:0.##} at the hand (head hover {headHover}), name shown {named}"
+        );
+        if (reached < 0.5f)
+            fails.Add("the Apple at the empty hand does not glow (_Interactable 0)");
+        if (named)
+            fails.Add("the Apple's name shows with UI.TargetNames off");
+        yield return ShotAt("vr-133-target-names", world.Center());
+        yield return MoveTrack(false, restAt, 0.3f);
+        yield return Wait(0.3f);
+        float left = Glow(world);
+        notes.Add($"glow {left:0.##} after the hand left");
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world) && left > 0.5f)
+            fails.Add("the Apple still glows after the hand left");
 
-            names.Value = true;
-            float until = Now + 5f;
-            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
-            }
-            for (float t = Now + 0.4f; Now < t; )
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
-            }
-            bool shown = NameShown(gui);
-            notes.Add($"UI.TargetNames on: name shown {shown}");
-            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
-                fails.Add("the Apple never became the hovered target");
-            else if (!shown)
-                fails.Add("no name with UI.TargetNames on");
-        }
-        finally
+        names.Value = true;
+        float until = Now + 5f;
+        while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
         {
-            names.Value = namesWas;
+            HoldOnHeadRay(world, head);
+            yield return null;
         }
+        for (float t = Now + 0.4f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        bool shown = NameShown(gui);
+        notes.Add($"UI.TargetNames on: name shown {shown}");
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+            fails.Add("the Apple never became the hovered target");
+        else if (!shown)
+            fails.Add("no name with UI.TargetNames on");
         Conclude(fails, notes);
     }
 

@@ -55,6 +55,8 @@ internal sealed partial class SelfTestRunner
     /// danger) on that hand (<see cref="CueCapture.Felt"/>); fails the step naming what is missing.</summary>
     IEnumerator ExpectFeel(bool left, CueFeel feel, float since, float within = 1f)
     {
+        // As ExpectCue: a failed feel must not leave the previous cue's description for the step's note.
+        cueNote = null;
         string why;
         while (!CueLog.Capture.Felt(left, feel, since, out why) && CueLog.Now < since + within)
             yield return null;

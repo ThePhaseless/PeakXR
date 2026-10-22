@@ -519,8 +519,9 @@ internal sealed partial class SelfTestRunner
             Fail($"watch {loadError}; {note}");
         else if (!loadSeen)
             Fail("no level load seen");
+        // The load already ran, so the setting cannot be forced for it: a SKIP, not a pass that proved nothing.
         else if (!Setting("UI.Loading", "LoadingSpace", true))
-            stepNote = "UI.Loading.LoadingSpace is off; " + note;
+            stepSkip = "UI.Loading.LoadingSpace is off; " + note;
         else if (loadShownFrames == 0)
             Fail("loading space never shown while loading");
         else if (loadCulledFrames == 0 && loadOpenFrames > 0)

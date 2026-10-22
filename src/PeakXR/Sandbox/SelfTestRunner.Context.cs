@@ -522,7 +522,9 @@ internal sealed partial class SelfTestRunner
                 c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
             }
             caught = TornadoCaughtRef(tornado).Contains(c);
-            vignette = Mathf.Max(vignette, ComfortEventsRuntime.VignetteBoost);
+            // Only from the capture on: the test's own warps beside the tornado can pulse the vignette too.
+            if (caught)
+                vignette = Mathf.Max(vignette, ComfortEventsRuntime.VignetteBoost);
             yield return null;
         }
         float y0 = c.Center.y;
