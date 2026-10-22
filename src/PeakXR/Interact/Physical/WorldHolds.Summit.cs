@@ -27,6 +27,21 @@ internal static partial class WorldHolds
     /// <summary>Amulet centre to its socket for the insert to run.</summary>
     private const float SocketReach = 0.12f;
 
+    /// <summary>Highest a raised hand offers the amulet, over the head.</summary>
+    private const float RaisedReach = 0.4f;
+
+    /// <summary>Where the amulet has to be held for <paramref name="socket"/>: the socket itself, or straight below it
+    /// at a raised hand's height when it sits higher (holding it up to the altar).
+    /// shortcut: the socket heights on the Peak altar are not measured yet (vr34 ended 2.16 m short); upgrade to the
+    /// real socket reach once a run logs them.</summary>
+    internal static Vector3 SocketSpot(Vector3 socket)
+    {
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (head != null)
+            socket.y = Mathf.Min(socket.y, head.position.y + RaisedReach);
+        return socket;
+    }
+
     /// <summary>Amulet this near any socket of a full altar is refused.</summary>
     private const float AltarNearReach = 0.35f;
 
@@ -125,7 +140,7 @@ internal static partial class WorldHolds
             return;
         }
         AltarNear.Reset();
-        var spot = sockets[socket].transform.position;
+        var spot = SocketSpot(sockets[socket].transform.position);
         if (!Socket.Update(Vector3.Distance(point, spot), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
