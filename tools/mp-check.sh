@@ -58,6 +58,22 @@ def r2: . * 100 | round / 100;
          else ([$y.groundItems[] | dist(.; $x.landing)] | min) as $d
            | "\(if $d <= $land then "PASS" else "FAIL" end) \($x.name) landing: nearest item \($d | r2) m from where A saw it" end)
       end),
+    # Social checkpoints: what B received while A acted (the RPCs since the previous checkpoint).
+    ($a[] | select(.status == "pass" and .name == "feed-refuse") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "GetFedItemRPC" or .name == "SendFeedDataRPC")] | length) == 0
+      then "PASS feed-refuse: B got no feed RPC"
+      else "FAIL feed-refuse: B got a feed RPC for a refused item" end),
+    ($a[] | select(.status == "pass" and .name == "reach-deny") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) == 0
+      then "PASS reach-deny: B was not knocked down"
+      else "FAIL reach-deny: B fell (RPCA_Fall) from a refused grip" end),
+    ($a[] | select(.status == "pass" and .name == "kick-mode") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) > 0
+      then "PASS kick-mode: the shove knocked B down"
+      else "FAIL kick-mode: B logged no RPCA_Fall from the shove" end),
     (if $sum.exceptions == 0 then "PASS B logged no exceptions"
      else "FAIL B logged \($sum.exceptions) exception(s): \($sum.firstExceptions | map(.e) | join(" | "))" end),
     (if $sum.unknownEventErrors == 0 then "PASS B logged no unknown-event errors"

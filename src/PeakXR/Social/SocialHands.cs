@@ -99,7 +99,13 @@ internal sealed class SocialHands : IGripExtension
         {
             // The grip stays owned (nothing falls through to a grab or the head's interact) and says why. A held
             // item turns red for HandsFull; a friend's body never does (D10).
-            Affordance.Deny(ctx.Left, at, refusal, default, ctx.HeldItem);
+            Affordance.Deny(
+                ctx.Left,
+                at,
+                refusal,
+                default,
+                refusal == DenyReason.HandsFull ? ctx.HeldItem : null
+            );
             return;
         }
         kinds[h] = kind;
@@ -111,7 +117,7 @@ internal sealed class SocialHands : IGripExtension
             CarryLeft = ctx.Left;
         plucking[h] = target is ThornOnMe && SocialConfig.Instance.PullToPluck;
         if (plucking[h])
-            pluckFrom[h] = Vector3.Distance(ctx.HandPosition, at);
+            pluckFrom[h] = Vector3.Distance(HandAt(ctx.Left, ctx.HandPosition), at);
         Affordance.Contact(ctx.Left);
     }
 
@@ -426,9 +432,20 @@ internal sealed class SocialHands : IGripExtension
         if (!plucking[h] || targets[h] is not ThornOnMe thorn)
             return;
         var rig = VRRig.Instance;
-        var hand = rig != null ? rig.Hand(h == 0) : null;
-        if (hand != null && Vector3.Distance(hand.position, thorn.Center()) >= pluckFrom[h] + PluckPull)
+        if (
+            rig != null
+            && Vector3.Distance(HandAt(h == 0, thorn.Center()), thorn.Center())
+                >= pluckFrom[h] + PluckPull
+        )
             plucking[h] = false;
+    }
+
+    /// <summary>The rig hand's world position (the same point at grip and while pulling), or the fallback.</summary>
+    private static Vector3 HandAt(bool left, Vector3 fallback)
+    {
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(left) : null;
+        return hand != null ? hand.position : fallback;
     }
 
     /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
@@ -525,11 +542,7 @@ internal sealed class SocialHands : IGripExtension
             Affordance.Contact(h == 0);
             gone = true;
         }
-        if (
-            kinds[h] == SocialKind.Reach
-            && !gone
-            && !CharacterGrabbing.TargetCanBeHelped(who, c)
-        )
+        if (kinds[h] == SocialKind.Reach && !gone && !CharacterGrabbing.TargetCanBeHelped(who, c))
             gone = true;
         if (gone)
             Clear(h);

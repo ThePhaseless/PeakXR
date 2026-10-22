@@ -1,12 +1,12 @@
 using System.Reflection;
 using HarmonyLib;
-using Photon.Pun;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Social;
@@ -125,7 +125,11 @@ internal static class SocialPatches
                 GameMember.Method(typeof(Bugfix), "IsInteractible", [typeof(Character)]),
             ];
 
-        private static void Prefix(Component __instance, Character interactor, out CameraSwap __state)
+        private static void Prefix(
+            Component __instance,
+            Character interactor,
+            out CameraSwap __state
+        )
         {
             __state = default;
             var mc = MainCamera.instance;
@@ -142,12 +146,14 @@ internal static class SocialPatches
                 __state = CameraSwap.Begin(eye, Quaternion.LookRotation(to));
         }
 
-        private static System.Exception Finalizer(System.Exception __exception, CameraSwap __state) =>
-            CameraSwap.Restore(__exception, __state);
+        private static System.Exception Finalizer(
+            System.Exception __exception,
+            CameraSwap __state
+        ) => CameraSwap.Restore(__exception, __state);
     }
 
     /// <summary>BackpackOnBackVisuals.IsInteractible (BackpackOnBackVisuals.cs:99-104) wants the interactor's look
-    /// within 110° of the pack's facing; it also gates the hold's start (IsConstantlyInteractable, :157, read at
+    /// within 110° of the pack's facing; it also gates the hold's start (IsConstantlyInteractable, :152, read at
     /// Interaction.cs:119). For a pack a hand grips, the look points from the head at the pack for that call.</summary>
     [HarmonyPatch]
     internal static class PackPick
@@ -187,7 +193,7 @@ internal static class SocialPatches
         }
     }
 
-    /// <summary>CharacterCarrying.RPCA_StartCarry (CharacterCarrying.cs:55-84) drops the carrier's worn pack at the
+    /// <summary>CharacterCarrying.RPCA_StartCarry (CharacterCarrying.cs:56-84) drops the carrier's worn pack at the
     /// lifted friend's torso (:59-67). For the local VR player, a notice marks where it lies.</summary>
     [HarmonyPatch]
     internal static class CarryDropsPack
@@ -198,7 +204,10 @@ internal static class SocialPatches
         private static bool IsLocal(CharacterCarrying carrying)
         {
             var c = Character.localCharacter;
-            return VRSession.Active && c != null && c.refs.carriying == carrying && c.player != null;
+            return VRSession.Active
+                && c != null
+                && c.refs.carriying == carrying
+                && c.player != null;
         }
 
         private static void Prefix(CharacterCarrying __instance, out bool __state) =>
@@ -221,7 +230,12 @@ internal static class SocialPatches
                 && friend.refs.ragdoll.partDict.TryGetValue(BodypartType.Torso, out var torso)
                     ? torso.transform.position
                     : friend.Center;
-            Affordance.Inform(SocialHands.Instance.CarryLeft, at, DenyReason.Dropped, DenyHint.At(at));
+            Affordance.Inform(
+                SocialHands.Instance.CarryLeft,
+                at,
+                DenyReason.Dropped,
+                DenyHint.At(at)
+            );
         }
     }
 
