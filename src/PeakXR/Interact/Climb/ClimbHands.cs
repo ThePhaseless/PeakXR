@@ -78,11 +78,14 @@ internal static class ClimbHands
     private static float ropeRate;
     private static Vector3 lastHead;
     private static bool headValid;
-    private static Transform pumpSegment;
+    private static Rope pumpRope;
+    private static int pumpSegments;
+    private static int pumpCount;
+    private static Rigidbody[] pumpBodies = Array.Empty<Rigidbody>();
 
     /// <summary>This hold already got its refusal for pumping a rope someone else owns.</summary>
     private static bool pumpRefused;
-    private static Rigidbody pumpBody;
+
     private static ShittyPiton piton;
     private static BreakableRopeAnchor breakable;
     private static float whirrAt;
@@ -289,9 +292,9 @@ internal static class ClimbHands
         LeftHand.Anchored = RightHand.Anchored = false;
         atEnd = false;
         headValid = false;
-        pumpSegment = null;
+        pumpRope = null;
         pumpRefused = false;
-        pumpBody = null;
+
         LastPump = 0f;
         piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
         breakable = next == Mode.Rope ? Breakable(obj as Rope) : null;
@@ -603,7 +606,7 @@ internal static class ClimbHands
     }
 
     /// <summary>
-    /// D7: the head leaning along the swing pushes the held segment (<see cref="RopePump"/>). Only the rope's owner
+    /// D7: the head leaning along the swing pushes the whole rope (<see cref="RopePump"/>). Only the rope's owner
     /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent.
     /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner. The
     /// first pump on such a rope in a hold gets NotHere at the gripping hand instead of nothing.
@@ -631,24 +634,50 @@ internal static class ClimbHands
             }
             return;
         }
-        var api = rope.climbingAPI;
         var segments = rope.GetRopeSegments();
-        if (api == null || segments == null || segments.Count < 2)
+        if (segments == null || segments.Count < 2)
             return;
-        var segment = api.GetSegmentFromPercent(c.data.ropePercent);
-        if (segment != pumpSegment)
-        {
-            pumpSegment = segment;
-            pumpBody = segment != null ? segment.GetComponent<Rigidbody>() : null;
-        }
-        if (pumpBody == null)
+        if (rope != pumpRope || segments.Count != pumpSegments)
+            CachePumpBodies(rope, segments);
+        if (pumpCount == 0)
             return;
         if (rig.Origin != null)
             velocity = rig.Origin.TransformVector(velocity);
         var push = RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax).U();
         LastPump = push.magnitude;
-        if (LastPump > 0f)
-            pumpBody.AddForce(push * dt, ForceMode.VelocityChange);
+        if (LastPump <= 0f)
+            return;
+        // The whole line, as a shift of weight swings a real rope: run 37 pushed only the held segment, which its
+        // joints and the hanging body soaked up (swing 0.21 m pumped against 0.24 m still).
+        var dv = push * dt;
+        for (int i = 0; i < pumpCount; i++)
+        {
+            if (pumpBodies[i] != null)
+                pumpBodies[i].AddForce(dv, ForceMode.VelocityChange);
+        }
+    }
+
+    /// <summary>The simulated segment bodies of the held rope (owner only, Rope.cs:309-373); rebuilt when the rope or
+    /// its segment count changes, never per frame.</summary>
+    private static void CachePumpBodies(
+        Rope rope,
+        System.Collections.Generic.List<Transform> segments
+    )
+    {
+        pumpRope = rope;
+        pumpSegments = segments.Count;
+        pumpCount = 0;
+        if (pumpBodies.Length < segments.Count)
+            pumpBodies = new Rigidbody[segments.Count];
+        for (int i = 0; i < segments.Count; i++)
+        {
+            if (
+                segments[i] != null
+                && segments[i].TryGetComponent<Rigidbody>(out var body)
+                && !body.isKinematic
+            )
+                pumpBodies[pumpCount++] = body;
+        }
     }
 
     /// <summary>

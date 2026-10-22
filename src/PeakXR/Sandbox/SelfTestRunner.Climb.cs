@@ -2021,16 +2021,18 @@ internal sealed partial class SelfTestRunner
     IEnumerator VineDenyStaminaStep()
     {
         var c = Character.localCharacter;
-        yield return ToVine();
-        if (testVine == null)
-            yield break;
-        var vine = testVine;
+        // Empty first, then warp and grip at once: the warp leaves the body in the air under the vine, and after
+        // run 37's 2 s drain it had fallen 3 m and was falling too fast for the hand to stay on the vine.
         if (!StartEmpty())
         {
             stepSkip = SandboxActions.LastMessage;
             yield break;
         }
         yield return WaitFor(() => PeakXR.Interact.PhysicalInteraction.OutOfStamina(c), 2f);
+        yield return ToVine();
+        if (testVine == null)
+            yield break;
+        var vine = testVine;
         var marker = new GameObject("PeakXR_TestVineSpot").transform;
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
         marker.position = vine.GetPosition(0.5f, 1, 1) + Vector3.down * vine.colliderOffset;

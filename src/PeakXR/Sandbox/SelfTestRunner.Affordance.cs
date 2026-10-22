@@ -233,6 +233,16 @@ internal sealed partial class SelfTestRunner
             yield break;
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
+        // Run 37: the cactus stayed in hand 0.5 s after equipping, yet the drop tap found the hand empty. Say whether
+        // closing the holding hand's grip lost it.
+        yield return Wait(0.2f);
+        if (HeldItem() == null)
+        {
+            Fail(
+                $"the sticky item left the hand when its grip closed; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            );
+            yield break;
+        }
         // A gentle drop stays stuck, as in vanilla (InteractPatches.Dropping): the StuckToHand cue with the item red.
         // A drop button tap is the gentle drop that reaches DoDropping by default. A slow grip open only does with
         // Interaction.ReleaseToDrop on; off (the default) it keeps any item, so it is no refusal (VR run 31).

@@ -31,10 +31,6 @@ internal static class PhysicalInteraction
     /// <summary><c>CharacterClimbing.sinceLastClimbStarted</c> (CharacterClimbing.cs:52, private), resolved in Install.</summary>
     public static HarmonyLib.AccessTools.FieldRef<CharacterClimbing, float> SinceLastClimbStarted;
 
-    /// <summary>Slack for the climb start's thickened LineCheck retries (CharacterClimbing.cs:556-560, radius up to
-    /// 0.1): a wall this much past 1.25 m may still be caught, so it gets no "Too far".</summary>
-    private const float ClimbReachSlack = 0.1f;
-
     private sealed class Hand
     {
         public readonly bool Left;
@@ -499,7 +495,7 @@ internal static class PhysicalInteraction
             return;
         }
         float distance = Vector3.Distance(eye, wall);
-        if (distance > ClimbReach + (cfg.ClimbFromHand ? 0f : ClimbReachSlack))
+        if (distance > TraversalRefusal.GameWallReach)
             Affordance.Deny(
                 left,
                 wall,
@@ -781,7 +777,10 @@ internal static class PhysicalInteraction
     {
         var eye = Eye(rig);
         var hold = probeHit ? probePoint : handPos;
-        if (TraversalRefusal.WallReach(Vector3.Distance(eye, hold), ClimbReach) != DenyReason.None)
+        if (
+            TraversalRefusal.WallReach(Vector3.Distance(eye, hold), TraversalRefusal.GameWallReach)
+            != DenyReason.None
+        )
             return false;
         var dir = probeHit ? -probeNormal : handPos - eye;
         if (dir.sqrMagnitude < 1e-4f)
@@ -911,8 +910,10 @@ internal static class PhysicalInteraction
                 QueryTriggerInteraction.Ignore
             )
             || !CastHold(eye, pos, t.forward, cfg.ClimbRadius, out var hit)
-            || TraversalRefusal.WallReach(Vector3.Distance(eye, hit.point), ClimbReach)
-                != DenyReason.None
+            || TraversalRefusal.WallReach(
+                Vector3.Distance(eye, hit.point),
+                TraversalRefusal.GameWallReach
+            ) != DenyReason.None
             || !(
                 hit.collider.TryGetComponent<ClimbModifierSurface>(out _)
                 || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up))
