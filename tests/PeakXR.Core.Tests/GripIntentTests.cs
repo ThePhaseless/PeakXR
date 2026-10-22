@@ -248,4 +248,30 @@ public class GripIntentTests
             GripIntent.OnRelease(false, true, 9f, 2f, true, true, extensionClaims: true)
         );
     }
+
+    [Fact]
+    public void PointedInteract_WaitsWhileTheFingerGunAims()
+    {
+        // A pointing hand is aiming a ping: however long it holds, the interact never comes due (WP6 found a held
+        // ping aim at an item picking it up after 0.35 s).
+        float at = 0.35f;
+        for (float now = 0f; now < 2f; now += 0.1f)
+        {
+            at = GripIntent.DeferPointedInteract(at, pointing: true, now, FingerGun.DefaultWindow);
+            Assert.True(at > now);
+        }
+    }
+
+    [Fact]
+    public void PointedInteract_ComesDueOneWindowAfterTheIndexCurls()
+    {
+        float at = GripIntent.DeferPointedInteract(
+            0.35f,
+            pointing: true,
+            1f,
+            FingerGun.DefaultWindow
+        );
+        at = GripIntent.DeferPointedInteract(at, pointing: false, 1.1f, FingerGun.DefaultWindow);
+        TestUtil.Near(1f + FingerGun.DefaultWindow, at);
+    }
 }

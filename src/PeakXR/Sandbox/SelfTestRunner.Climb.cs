@@ -45,6 +45,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.46b-lunge-too-soon", 30f, LungeTooSoonStep());
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
+        yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
@@ -1039,6 +1040,69 @@ internal sealed partial class SelfTestRunner
                 )
             );
         }
+    }
+
+    /// <summary>
+    /// vr.47d: the finger gun aimed at an Apple on the ground for 1 s (well past <c>FingerGun.DefaultWindow</c>), then
+    /// squeezed. A pointing hand is aiming a ping, so interact.physical's pointed interact keeps waiting
+    /// (<see cref="GripIntent.DeferPointedInteract"/>): the squeeze pings (<c>PointPinger._timeLastPinged</c>,
+    /// PointPinger.cs:68-71) and the Apple stays on the ground.
+    /// </summary>
+    IEnumerator PingAtItemStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var pinger = LocalPinger();
+        if (pinger == null || Interact.Ping.PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        if (apple == null)
+        {
+            Fail("no Apple item");
+            yield break;
+        }
+        // Past the grab radius, inside the game's 2 m interact reach: only a pointed interact could take it.
+        var spot = Flat(rig.Head.forward) * 1.2f + rig.Head.position;
+        spot.y = c.Center.y;
+        if (!SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        var go = SandboxActions.LastSpawned;
+        spawned.Add(go);
+        var item = go != null ? go.GetComponent<Item>() : null;
+        yield return Wait(0.6f);
+        if (item == null)
+        {
+            Fail("spawned Apple has no Item");
+            yield break;
+        }
+        bool InWorld() => item != null && item.gameObject.activeInHierarchy;
+        bool left = false;
+        var aim = item.Center();
+        yield return PingCooldownOver(pinger);
+        yield return FingerGunAim(left, aim, 1f);
+        bool keptWhileAiming = InWorld() && HeldItem() == null;
+        float gameMark = Time.time;
+        yield return FingerGunSqueeze(left, aim);
+        yield return Until(
+            () => Interact.Ping.PingInput.LastPinged(pinger) >= gameMark,
+            2f,
+            "the squeeze did not ping"
+        );
+        yield return GripTo(left, 0f, 0.1f);
+        yield return Wait(0.5f);
+        bool kept = InWorld() && HeldItem() == null;
+        var note =
+            $"Apple on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}";
+        if (!keptWhileAiming || !kept)
+            Fail("aiming a ping at an item picked it up: " + note);
+        else
+            Note(note);
     }
 
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is

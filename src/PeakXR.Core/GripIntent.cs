@@ -164,6 +164,18 @@ namespace PeakXR.Core
                 : DenyReason.None;
         }
 
+        /// <summary>
+        /// When a pointing grip's interact comes due. While the hand keeps pointing it is aiming a finger-gun ping, so
+        /// the interact keeps waiting; it comes due <paramref name="window"/> seconds after the index curls with no
+        /// trigger squeeze (the squeeze itself cancels it). Pinging never picks anything up.
+        /// </summary>
+        public static float DeferPointedInteract(
+            float interactAt,
+            bool pointing,
+            float now,
+            float window
+        ) => pointing && now + window > interactAt ? now + window : interactAt;
+
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
         public static bool IsPointing(in FingerCurls c) =>
             c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;
