@@ -17,11 +17,11 @@ namespace PeakXR.Sandbox;
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
-    /// <summary>Ground speed (m/s) that counts as standing still.</summary>
-    const float SettleSpeed = 0.1f;
+    /// <summary>Horizontal hip speed (m/s) that counts as standing still.</summary>
+    const float SettleSpeed = 0.05f;
 
     /// <summary>Seconds the body must stay grounded and still.</summary>
-    const float SettleHold = 0.5f;
+    const float SettleHold = 1f;
 
     /// <summary>Farther than this (m) from the home spot, the step starts with a warp back to it.</summary>
     const float SettleRadius = 2f;
@@ -39,8 +39,8 @@ internal sealed partial class SelfTestRunner
     /// Releases grips, triggers, sticks and the scripted use; ends any wall, rope, vine or piton climb; warps back
     /// to the segment's home spot when the body strayed from it (the game's <c>WarpPlayerRPC</c>, Character.cs:1822,
     /// whose <c>WarpPlayer</c> also stops climbing, :1851); then waits until the body is grounded
-    /// (<c>CharacterData.isGrounded</c>, CharacterData.cs:58), not sprinting (:87) and still
-    /// (<c>avarageVelocity</c>, :100) for <see cref="SettleHold"/>, and recentres the rig. Without a home spot yet,
+    /// (<c>CharacterData.isGrounded</c>, CharacterData.cs:58), not sprinting (:87) and at rest (<see cref="AtRest"/>)
+    /// for <see cref="SettleHold"/>, and recentres the rig. Without a home spot yet,
     /// the spot the body settles on becomes it when flat and open; otherwise the segment's base camp spawn
     /// (<c>MapHandler.CurrentBaseCampSpawnPoint</c>, MapHandler.cs:231, the target of the game's own segment jump,
     /// :960) is tried. A body that never settles fails the step with "not settled".
@@ -88,7 +88,7 @@ internal sealed partial class SelfTestRunner
                 why = SettleProblem(c, needSpot: !hasHome);
             }
         }
-        if (why != null && !(c.data.isGrounded && settledFor >= SettleHold))
+        if (why != null && settledFor < SettleHold)
         {
             Fail($"not settled: {why}");
             yield break;
@@ -132,15 +132,26 @@ internal sealed partial class SelfTestRunner
         settledFor = 0f;
         while (Now < end)
         {
-            var d = c.data;
-            var v = d.avarageVelocity;
-            v.y = 0f;
-            bool still = d.isGrounded && !d.isSprinting && v.magnitude < SettleSpeed;
-            settledFor = still ? settledFor + Time.unscaledDeltaTime : 0f;
+            settledFor = AtRest(c) ? settledFor + Time.unscaledDeltaTime : 0f;
             if (settledFor >= SettleHold)
                 yield break;
             yield return null;
         }
+    }
+
+    /// <summary>Grounded, under control (<c>currentRagdollControll</c>), not climbing or sprinting, hip slower than
+    /// <see cref="SettleSpeed"/> horizontally, and the view's eye guard done with a spawn or warp
+    /// (<see cref="Rig.RigDriver.ViewSettling"/>).</summary>
+    static bool AtRest(Character c)
+    {
+        var d = c.data;
+        var v = c.refs.hip.Rig.linearVelocity;
+        return d.isGrounded
+            && d.currentRagdollControll >= 0.9f
+            && !d.isClimbingAnything
+            && !d.isSprinting
+            && new Vector2(v.x, v.z).magnitude < SettleSpeed
+            && !Rig.RigDriver.ViewSettling;
     }
 
     /// <summary>Why the body is not settled on a usable spot, or null. <paramref name="needSpot"/> also asks for flat,
@@ -148,11 +159,10 @@ internal sealed partial class SelfTestRunner
     string SettleProblem(Character c, bool needSpot)
     {
         var d = c.data;
-        var v = d.avarageVelocity;
-        v.y = 0f;
-        if (!d.isGrounded || settledFor < SettleHold)
+        var v = c.refs.hip.Rig.linearVelocity;
+        if (settledFor < SettleHold)
             return F(
-                $"grounded {d.isGrounded}, still {settledFor:0.00} of {SettleHold:0.0} s, ground speed {v.magnitude:0.00} m/s, sprinting {d.isSprinting}, at {c.Center}"
+                $"grounded {d.isGrounded}, control {d.currentRagdollControll:0.00}, climbing {d.isClimbingAnything}, sprinting {d.isSprinting}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s, view settling {Rig.RigDriver.ViewSettling}, still {settledFor:0.00} of {SettleHold:0.0} s at {c.Center}"
             );
         if (!needSpot)
             return null;
