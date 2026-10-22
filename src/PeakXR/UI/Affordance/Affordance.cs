@@ -109,6 +109,7 @@ internal static class Affordance
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
         Count++;
+        CueLog.Capture.Reason(left, reason, notice: false, Time.unscaledTime);
         LastReason = reason;
         LastLeft = left;
         LastPosition = worldPos;
@@ -133,6 +134,7 @@ internal static class Affordance
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
+        CueLog.Capture.Reason(left, reason, notice: true, Time.unscaledTime);
         AffordanceRuntime.Show(left, worldPos, reason, hint, notice: true, text);
         return true;
     }

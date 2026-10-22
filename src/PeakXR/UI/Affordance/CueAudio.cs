@@ -1,3 +1,4 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
 using UnityEngine;
 
@@ -18,6 +19,13 @@ internal static class CueAudio
 
     /// <summary>Plays the cue; false when the game's SFX player is not up yet or the clips failed to build.</summary>
     public static bool Play(CueSound sound, Vector3 position, float volume)
+    {
+        bool played = TryPlay(sound, position, volume);
+        CueLog.Capture.Sound(sound, position.N(), played, Time.unscaledTime);
+        return played;
+    }
+
+    private static bool TryPlay(CueSound sound, Vector3 position, float volume)
     {
         var player = SFX_Player.instance;
         // PlaySFX reads MainCamera for its range check (SFX_Player.cs:95).

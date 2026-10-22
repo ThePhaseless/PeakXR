@@ -43,10 +43,9 @@ internal sealed partial class SelfTestRunner
         bool left = cfg.WristLeft;
         // God mode locks statuses (Character.statusesLocked, which AddStatus obeys, CharacterAfflictions.cs:718) and
         // its tick clears Cold, so VR run 27 read Cold 0.00 and the segment stayed hidden (BarAffliction.cs:43-55).
-        // Run puts god mode back after the step.
-        SandboxActions.SetGodMode(false);
-        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
-        c.refs.afflictions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
+        // The sandbox's status actions lift it; Run puts god mode back after the step.
+        SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
+        SandboxActions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
         yield return MoveTo(
             left,
             // The display sits 12 cm down the forearm from the grip: the hand a little above eye level puts it in
@@ -80,7 +79,7 @@ internal sealed partial class SelfTestRunner
         float cold = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold);
         string where = afflictions > 0 ? "" : ColdSlotWhere(root);
         yield return ShotAt("ui-05-wrist-hud", wrist);
-        c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
+        SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
             $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}"
         );

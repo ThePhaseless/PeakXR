@@ -22,10 +22,18 @@ Type in the F1 console, for example `Sandbox.Spawn Rope`. Names are the prefab n
 | `Sandbox.Mob <name>` | Spawn a mob or entity ahead of you |
 | `Sandbox.ScanMobs` | Deep scan Resources for more spawnable prefabs |
 | `Sandbox.God` | Toggle god mode |
-| `Sandbox.Revive`, `Sandbox.Warp` | Revive where you died; warp to spawn |
+| `Sandbox.Revive`, `Sandbox.Warp` | Revive where you died (passed out: where you lie); warp to spawn |
 | `Sandbox.Jump <Segment>` | Beach, Tropics, Alpine, Caldera, TheKiln, Peak |
 | `Sandbox.SetTime <hours>` | 0 to 24 (sunrise 5, sunset 21) |
 | `Sandbox.FreeCam` | Game fly camera, flat play only |
+| `Sandbox.Stamina <current> <extra>`, `Sandbox.MaxStamina <max>` | Set the stamina bar and the bonus bar; max stamina is set through Hunger |
+| `Sandbox.AddStatus <Type> <amount>`, `Sandbox.ClearStatus <Type>` | Add a status the game's way (Cold, Poison, Injury...), or set one to 0 |
+| `Sandbox.PassOut` | Pass out (the game's own command); `Sandbox.Revive` wakes you |
+| `Sandbox.RunSetting <Setting> <value>` | Set a run setting for this run, not saved; `HelpingHand 1` is kick mode. Marks the run custom |
+| `Sandbox.GiveLeft <Item>`, `Sandbox.GiveRight <Item>` | Give an item into that VR hand |
+| `Sandbox.Wall` | Place a climbable test wall 3 m ahead |
+
+The stamina, status and pass-out commands work offline only and turn god mode off first, because god mode would undo them.
 
 The game's own commands also work, for example `Character.InfiniteStamina`, `Afflictions.AddPoison`, `Afflictions.ClearAll`, `Item.Add <Item>`.
 
@@ -174,6 +182,8 @@ Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
 Nobody wears the headset during a run, so the HMD keeps looking wherever it started. Steps whose subject sits outside that view shoot it with `ShotAt` (`SelfTestRunner.Look.cs`): for the frames of that one capture the head and camera turn toward the subject (and with a distance, move up to it) between `beginContextRendering` and `endContextRendering`, then go back, so tracking, hands and the step's checks never see it. Aimed shots: `02-settings-vr` and `vr-04-settings` (the pause menu), `vr.08-arm-reach` (between the hands), `vr.33-ragdoll-arms` (the chest from 1.5 m, mid-fall) and `vr.33-ragdoll-arms-after` (between the hands, tracked again), `vr-09-belt-view` (60 degrees down, the belt and hotbar ghosts), `vr-10`/`vr-11` (the held Apple), `vr-12-eat` (the Apple at the mouth, from 0.45 m), `vr-13-throw` (the Apple in flight), `vr-14-two-hand`, `vr-18-emote-wheel`, `vr-20-holster` (the body slot), `vr-22-bandage` (the hold ring at the chest hand), `vr-25-cook` (the food and its hold ring), `vr-26-light` (between the torch flame and the fire, from 1.2 m) and `vr-26-lit` (the lit fire), `07-time-<hh>` (the sky), `vr-29-ground-backpack` and `vr-32-shoulder-stash` (the wheel), `vr-30-guide-<topic>` (row and demo), `vr-31-comfort-first` (the settings panel), `vr-31-station` (the station demo), `vr-6x-deny-<reason>` (the denial, shot while the trigger is still held so the red preview and reason label are up), `ui-02-button-labels`, `ui-04-rope-gauge` (after ui.03's hero title has gone), `ui-05-wrist-hud` (the wrist HUD raised like a watch, with a Cold slot; the step fails unless it faces the eye within 25 degrees and spans at least 12 degrees) and `vr-70` to `vr-72`. `vr-07-knockback` is taken at the vignette pulse's peak with the ring drawn.
 
 Steps `vr.10` to `vr.20` need no one at the controllers. While each one runs, `VRInput.TestOverride` replaces both controllers right after the sampler with scripted hands, which rest tracked in front of the chest with a finger on the trigger. The step moves a hand, closes a grip or pushes a stick, and the rest of the mod treats that as real controller input. Each step starts with empty hands and an empty hotbar. When it ends, the grips open, the override is cleared and anything the step dropped or threw is removed, so a failed step leaves nothing behind for the next one.
+
+Refusal steps check the whole cue, not just the refusal. ui.affordance writes each refusal or notice into a small capture as it shows it: the reason, the ring drawn (glyph, angular size, red tint), the sound and the haptic pulses per hand (`CueLog`, `CueCapture`). `ExpectCue` (`SelfTestRunner.Cues.cs`) fails a step unless the reason, a ring of at least `CueLayout.MinDegrees`, the refused (or notice) sound and a delivered haptic pulse all reach that hand in time. `ExpectNoCue` fails a step that should stay quiet when that hand gets a reason, ring or pulse. `vr.60` to `vr.62`, the spool's NoWall press and `vr.46`'s stamina refusal use `ExpectCue`. A tie that works uses `ExpectNoCue`. When no wall turns up anywhere, `vr.15`, `vr.44` and `vr.46` use the sandbox test wall.
 
 Each step has a timeout. A step fails when its action fails, when it times out, or when the game logs an exception while it runs. Errors the game logs are written next to the step but do not fail it.
 
