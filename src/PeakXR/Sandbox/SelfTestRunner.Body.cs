@@ -1338,6 +1338,31 @@ internal sealed partial class SelfTestRunner
         return first != default ? first : c.data.groundPos + forward * 3f;
     }
 
+    /// <summary>The nearest collider under the body that is not the body itself, for a failure note (run 45: the
+    /// body hung 2.4 m over the pad on something outside the terrain mask).</summary>
+    static string Beneath(Character c)
+    {
+        string best = "nothing within 4 m";
+        float near = float.MaxValue;
+        foreach (
+            var hit in Physics.RaycastAll(
+                c.Center,
+                Vector3.down,
+                4f,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            if (hit.distance >= near || hit.collider.transform.root == c.transform.root)
+                continue;
+            near = hit.distance;
+            best =
+                $"{hit.collider.name} (layer {LayerMask.LayerToName(hit.collider.gameObject.layer)}) {hit.distance:0.00} m down";
+        }
+        return best;
+    }
+
     IEnumerator BounceStep()
     {
         var c = Character.localCharacter;
@@ -1377,7 +1402,7 @@ internal sealed partial class SelfTestRunner
         {
             Fail(
                 F(
-                    $"no bounce off the test pad: {touches} pad contacts, pad top {spot.y + 0.4f:0.00}, body at {c.Center.y:0.00}, ground under it {GroundY(c.Center):0.00}"
+                    $"no bounce off the test pad: {touches} pad contacts, pad top {spot.y + 0.4f:0.00}, body at {c.Center.y:0.00}, ground under it {GroundY(c.Center):0.00}, under the body: {Beneath(c)}"
                 )
             );
             yield break;
