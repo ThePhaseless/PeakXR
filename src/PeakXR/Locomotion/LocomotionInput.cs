@@ -363,8 +363,8 @@ internal static class LocomotionInput
     private const float FarWarning = 0.8f;
 
     /// <summary>
-    /// The head drifted from a body that cannot step after it (climbing, hanging, airborne, carried): before the
-    /// recenter fade, a NotNow refusal on the dominant hand with a ring at the body's feet, the spot to come back to.
+    /// The head drifted from a body that cannot step after it (climbing, hanging, airborne, carried), or the body's
+    /// follow walk stalled against something: before the recenter fade, a NotNow refusal on the dominant hand with a ring at the body's feet, the spot to come back to.
     /// Once per drift; armed again back inside half the distance.
     /// </summary>
     private static void WarnFar(Character c, bool canFollow, bool stickIdle)
@@ -372,7 +372,9 @@ internal static class LocomotionInput
         float far = Follow.Offset.Length();
         if (far < FarWarning * 0.5f)
             warnedFar = false;
-        if (warnedFar || canFollow || !stickIdle || far < FarWarning)
+        // A follow the body could not finish (RoomScaleFollow.Stalled) also fades: it gets the same reason.
+        bool stalled = Follow.Stalled;
+        if (warnedFar || !stickIdle || (!stalled && (canFollow || far < FarWarning)))
             return;
         warnedFar = true;
         var feet = c.data.isGrounded ? c.data.groundPos : c.Center;
