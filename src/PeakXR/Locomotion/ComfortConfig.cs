@@ -27,15 +27,19 @@ internal static class ComfortConfig
     private static ConfigEntry<bool> vignette;
     private static ConfigEntry<float> vignetteStrength;
     private static ConfigEntry<float> moveSmoothing;
+    private static ConfigEntry<float> vignetteStart;
+    private static ConfigEntry<float> vignetteFull;
     private static ConfigEntry<bool> seated;
     private static bool applying;
 
     public static TurnMode Turn => turnMode?.Value == "Smooth" ? TurnMode.Smooth : TurnMode.Snap;
     public static float SnapAngle => snapAngle?.Value ?? 30f;
-    public static float SmoothTurnSpeed => smoothSpeed?.Value ?? 120f;
+    public static float SmoothTurnSpeed => smoothSpeed?.Value ?? 60f;
     public static bool Vignette => vignette?.Value ?? true;
     public static float VignetteStrength => vignetteStrength?.Value ?? 0.5f;
-    public static float MoveSmoothing => moveSmoothing?.Value ?? 0.15f;
+    public static float MoveSmoothing => moveSmoothing?.Value ?? 0f;
+    public static float VignetteStartSpeed => vignetteStart?.Value ?? 0.2f;
+    public static float VignetteFullSpeed => vignetteFull?.Value ?? 2.5f;
     public static bool Seated => seated?.Value ?? false;
 
     public static void Bind(ConfigFile file)
@@ -50,8 +54,8 @@ internal static class ComfortConfig
             "Moderate",
             new ConfigDescription(
                 "Sets turning, vignette and movement smoothing at once. Comfortable: snap turn, strong vignette, "
-                    + "gentle acceleration. Moderate: snap turn, medium vignette. Intense: smooth turn, no vignette. "
-                    + "Changing any of those settings makes this Custom.",
+                    + "instant start and stop. Moderate: snap turn, medium vignette, instant moves. Intense: smooth "
+                    + "turn, no vignette. Changing any of those settings makes this Custom.",
                 new AcceptableValueList<string>(PresetNames)
             )
         );
@@ -78,7 +82,7 @@ internal static class ComfortConfig
             "SmoothTurnSpeed",
             defaults.SmoothTurnSpeed,
             new ConfigDescription(
-                "Smooth turn speed at full stick, degrees per second.",
+                "Smooth turn speed at full stick, degrees per second. Comfort research puts 60 as the ceiling.",
                 new AcceptableValueRange<float>(30f, 360f)
             )
         );
@@ -102,8 +106,27 @@ internal static class ComfortConfig
             "MoveSmoothing",
             defaults.MoveSmoothing,
             new ConfigDescription(
-                "Seconds the move stick takes to reach full speed (gentler acceleration). 0 is instant.",
+                "Seconds the move stick takes to reach full speed. 0 (instant) is the most comfortable: a ramp "
+                    + "stretches the acceleration that causes motion sickness.",
                 new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        vignetteStart = file.Bind(
+            s,
+            "VignetteStartSpeed",
+            0.2f,
+            new ConfigDescription(
+                "Speed (m/s) at which the vignette starts to close; at the default any artificial motion shows it.",
+                new AcceptableValueRange<float>(0f, 2f)
+            )
+        );
+        vignetteFull = file.Bind(
+            s,
+            "VignetteFullSpeed",
+            2.5f,
+            new ConfigDescription(
+                "Speed (m/s) at which the vignette reaches its full strength; the default is walking speed.",
+                new AcceptableValueRange<float>(0.5f, 8f)
             )
         );
         seated = file.Bind(
@@ -112,6 +135,17 @@ internal static class ComfortConfig
             false,
             "Play sitting down: your seated head height becomes the character's standing eye height."
         );
+
+        // Configs written before the vr-practices review: a preset still holding its old values moves to the new
+        // ones (Comfortable lost its 0.3 s ramp); then any single setting still at its old default moves too.
+        // A player's own choices stay (ComfortPresets.FromOld, ConfigMigration.FromOldDefault).
+        if (
+            Enum.TryParse(preset.Value, out ComfortPreset saved)
+            && ComfortPresets.FromOld(saved, Current(), out var updated)
+        )
+            Apply(updated);
+        Framework.ConfigMigration.FromOldDefault(smoothSpeed, 120f);
+        Framework.ConfigMigration.FromOldDefault(moveSmoothing, 0.15f);
 
         preset.SettingChanged += OnPresetChanged;
         turnMode.SettingChanged += OnValueChanged;
@@ -143,7 +177,16 @@ internal static class ComfortConfig
             || p == ComfortPreset.Custom
         )
             return;
-        var profile = ComfortPresets.Get(p);
+        Apply(ComfortPresets.Get(p));
+        // Comfortable also stills the detached view (Camera.ThirdPersonFollow 0: it stays put and re-places
+        // behind a fade), so a watched body's climbs and falls never glide the eyes. Not part of the preset's
+        // identity: the player can set it back without leaving Comfortable.
+        if (p == ComfortPreset.Comfortable && Rig.CameraFeature.ThirdPersonFollow != null)
+            Rig.CameraFeature.ThirdPersonFollow.Value = 0f;
+    }
+
+    private static void Apply(ComfortProfile profile)
+    {
         applying = true;
         try
         {
@@ -153,11 +196,6 @@ internal static class ComfortConfig
             vignette.Value = profile.Vignette;
             vignetteStrength.Value = profile.VignetteStrength;
             moveSmoothing.Value = profile.MoveSmoothing;
-            // Comfortable also stills the detached view (Camera.ThirdPersonFollow 0: it stays put and re-places
-            // behind a fade), so a watched body's climbs and falls never glide the eyes. Not part of the preset's
-            // identity: the player can set it back without leaving Comfortable.
-            if (p == ComfortPreset.Comfortable && Rig.CameraFeature.ThirdPersonFollow != null)
-                Rig.CameraFeature.ThirdPersonFollow.Value = 0f;
         }
         finally
         {

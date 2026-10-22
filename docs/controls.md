@@ -80,11 +80,11 @@ Settings live in the `Comfort` section. `Preset` sets several of them at once:
 
 | Preset | Turning | Vignette | Move smoothing |
 |---|---|---|---|
-| Comfortable | Snap 30° | Strong | 0.3 s |
-| Moderate (default) | Snap 30° | Medium | 0.15 s |
+| Comfortable | Snap 30° | Strong | Off (instant) |
+| Moderate (default) | Snap 30°; smooth turn, if chosen, at 60°/s | Medium | Off (instant) |
 | Intense | Smooth 150°/s | Off | Off |
 
-Changing `TurnMode`, `SnapTurnAngle`, `SmoothTurnSpeed`, `Vignette`, `VignetteStrength` or `MoveSmoothing` yourself switches the preset to Custom. The vignette darkens the edge of your view while your character moves, falls or smooth-turns without you moving. `SeatedMode` treats your seated head height as standing height.
+Changing `TurnMode`, `SnapTurnAngle`, `SmoothTurnSpeed`, `Vignette`, `VignetteStrength` or `MoveSmoothing` yourself switches the preset to Custom. The vignette darkens the edge of your view while your character moves, falls or smooth-turns without you moving, and while the view follows a body you don't control (spectating, passed out, carried). It starts closing at `VignetteStartSpeed` (0.2 m/s, so any artificial motion shows it) and reaches `VignetteStrength` at `VignetteFullSpeed` (2.5 m/s, about walking speed). `MoveSmoothing` sets how many seconds the move stick takes to reach full speed. At 0 it is instant, which is the most comfortable: a ramp stretches out the acceleration that causes motion sickness. Choosing Comfortable also sets `Camera.ThirdPersonFollow` to 0, so the detached view stays still and jumps to a new spot behind a fade. A config that still holds a preset's old values moves to the new ones, and values you changed yourself stay. `SeatedMode` treats your seated head height as standing height.
 
 ## Moving
 
