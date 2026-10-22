@@ -69,6 +69,14 @@ namespace PeakXR.Core
 
         /// <summary>How far the anchor moved along the last follow, coasting after it included.</summary>
         float _followTravel;
+
+        /// <summary>Seconds after a follow during which the body is still settling from its walk.</summary>
+        public float FollowSettleSeconds = 1.5f;
+
+        /// <summary>Largest sideways body travel (m) in one update that a follow takes into the anchor.</summary>
+        public float MaxSwayStep = 0.05f;
+
+        float _sinceFollow = float.MaxValue;
         bool _following;
         Vector2 _followDir;
         Vector2 _neutralGoal;
@@ -114,6 +122,12 @@ namespace PeakXR.Core
             }
             _following = canFollow && (_following ? dist > StopRadius : start);
             if (_following)
+                _sinceFollow = 0f;
+            else if (!canFollow)
+                _sinceFollow = float.MaxValue;
+            else if (_sinceFollow < float.MaxValue)
+                _sinceFollow += dt;
+            if (_following)
             {
                 if (start)
                     _followTravel = 0f;
@@ -153,8 +167,15 @@ namespace PeakXR.Core
             if (dist <= 1e-5f)
                 return;
             var dir = d / dist;
-            float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
+            float raw = Vector2.Dot(bodyDelta, dir);
+            float along = Math.Clamp(raw, -_absorbed, dist);
             Anchor += dir * along;
+            // While a follow walks and settles, its sideways gait sway and settling are the walk, not the world:
+            // take them too, or the view sways with the gait (run 35: 0.082 m).
+            // A frame's sway is centimetres; anything bigger is a jump, not a walk.
+            var side = bodyDelta - dir * raw;
+            if (_sinceFollow < FollowSettleSeconds && side.Length() <= MaxSwayStep)
+                Anchor += side;
             _absorbed += along;
             _followTravel += MathF.Max(0f, along * Vector2.Dot(dir, _followDir));
         }

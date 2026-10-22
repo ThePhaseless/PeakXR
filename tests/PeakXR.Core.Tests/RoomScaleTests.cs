@@ -213,7 +213,8 @@ public class RoomScaleTests
         var head = new Vector2(0f, 0.5f);
         f.Update(head, Vector2.Zero, true);
         f.Update(head, new Vector2(0.05f, 0.3f), true);
-        TestUtil.Near(0f, f.Anchor.X);
+        // Following: the walk's sideways sway is taken too (run 35), so the view stays put.
+        TestUtil.Near(0.05f, f.Anchor.X);
         TestUtil.Near(0.3f, f.Anchor.Y);
         f.Update(head, new Vector2(0f, 1f), true);
         TestUtil.Near(0.5f, f.Anchor.Y);
@@ -225,6 +226,52 @@ public class RoomScaleTests
         var f = new RoomScaleFollow();
         f.Update(new Vector2(0f, 0.5f), new Vector2(0f, -0.2f), true);
         Assert.Equal(Vector2.Zero, f.Anchor);
+    }
+
+    [Fact]
+    public void SidewaysPush_Standing_StillMovesTheView()
+    {
+        // Not following: a push sideways is the world moving the body, and the view goes with it.
+        var f = new RoomScaleFollow();
+        f.Update(new Vector2(0f, 0.2f), Vector2.Zero, true, 0.01f);
+        f.Update(new Vector2(0f, 0.2f), new Vector2(0.1f, 0f), true, 0.01f);
+        Assert.Equal(0f, f.Anchor.X);
+    }
+
+    [Fact]
+    public void FollowWalk_GaitSwayAndSettle_NeverMoveTheView()
+    {
+        // Run 35: the far lean's walk swayed the body sideways (and it settled 0.12 m back and 0.02 m aside after),
+        // and the view rode the sideways part: 0.082 m peak to peak. While a follow walks and settles, the anchor
+        // takes all of the body's travel, so the view stays where the head is.
+        var f = new RoomScaleFollow();
+        const float dt = 1f / 90f;
+        var head = new Vector2(0f, 0.5f);
+        var view = Vector2.Zero;
+        float minX = 0f,
+            maxX = 0f,
+            minY = 0f,
+            maxY = 0f;
+        float body = 0f;
+        var last = Vector2.Zero;
+        for (float t = 0f; t < 3f; t += dt)
+        {
+            float speed = t < 1.2f ? 0.3f : 0f;
+            var pos = new Vector2(0.04f * MathF.Sin(t * 9f) * (t < 1.5f ? 1f : 0f), body);
+            body += speed * dt;
+            var delta = pos - last;
+            last = pos;
+            var before = f.Anchor;
+            f.Update(head, delta, true, dt);
+            // The view's world position moves by the body's travel minus the anchor's (tracking space).
+            view += delta - (f.Anchor - before);
+            minX = MathF.Min(minX, view.X);
+            maxX = MathF.Max(maxX, view.X);
+            minY = MathF.Min(minY, view.Y);
+            maxY = MathF.Max(maxY, view.Y);
+        }
+        Assert.True(maxX - minX < 0.005f, $"view swayed {maxX - minX:0.000} m sideways");
+        Assert.True(maxY - minY < 0.005f, $"view moved {maxY - minY:0.000} m along the walk");
     }
 
     [Fact]
