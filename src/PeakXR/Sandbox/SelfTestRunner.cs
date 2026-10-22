@@ -195,7 +195,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     yield return Run("06-segment-" + segment, 120f, Jump(segment));
                 yield return TornadoIfHere();
                 if (segment == Segment.Tropics)
+                {
                     yield return VineSteps();
+                    yield return TropicsBodySteps();
+                }
                 // Open desert with sky (TheKiln's spawn is indoors, so its frames all looked the same).
                 if (segment == Segment.Caldera)
                     yield return TimeSteps();
