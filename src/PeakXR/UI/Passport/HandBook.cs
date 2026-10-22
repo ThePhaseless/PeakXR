@@ -1,6 +1,7 @@
 using System;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -54,8 +55,10 @@ internal static class HandBook
         var flip = dir > 0 ? flipRight : flipLeft;
         if (flip == null)
             return false;
+        // The flip does nothing past the first or last spread (A/Guidebook.cs:199, :208).
+        int before = guidebook.currentPageSet;
         flip(guidebook);
-        return true;
+        return guidebook.currentPageSet != before;
     }
 
     internal static bool PassportOpen
@@ -315,8 +318,13 @@ internal sealed class HandBookRuntime : MonoBehaviour
         var local = Quaternion.Inverse(rotation) * (free.position - position);
         var blocked = VRInput.Hand(freeLeft).Trigger > TriggerBlock;
         var dir = swipe.Update(local.ToNumerics(), blocked, Time.unscaledDeltaTime);
-        if (dir != 0 && HandBook.FlipPage(dir))
+        if (dir == 0)
+            return;
+        if (HandBook.FlipPage(dir))
             UIHaptics.Tick(freeLeft, FlipHaptic, FlipHapticSeconds);
+        // Past the cover: a dull bump instead of the flip tick, like a book that has no more pages that way.
+        else
+            Affordance.EndStop(freeLeft);
     }
 
     private static void OnBeforeRender()
