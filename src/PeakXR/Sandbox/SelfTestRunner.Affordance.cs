@@ -25,6 +25,70 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.63-sticky-throw", 25f, StickyThrowStep());
         yield return VRStep("vr.64-cue-in-menu", 20f, CueInMenuStep());
         yield return HandStep("vr.65-hints-off", 25f, HintsOffStep());
+        yield return VRStep("vr.66-refusal-over-ambient", 10f, RefusalOverAmbientStep());
+    }
+
+    /// <summary>vr.66: an ambient beat (heartbeat, wind, texture) asking for the right hand every frame must not cut a
+    /// refusal there: the whole triple tick goes out, and no ambient pulse slips in until it ends and the duck tail
+    /// passes (Interact.Haptics priority channel). The beat is played here, so the step needs no exertion or wind.</summary>
+    IEnumerator RefusalOverAmbientStep()
+    {
+        if (!Affordance.Enabled || Interact.Haptics.Muted)
+        {
+            stepSkip = "ui.affordance not installed or Interaction.Haptics off";
+            yield break;
+        }
+        const bool left = false;
+        const float beat = 0.05f;
+        float end = CueMark() + 0.3f;
+        bool any = false;
+        while (CueMark() < end)
+        {
+            any |= Interact.Haptics.Pulse(left, 0.3f, beat, HapticPriority.Ambient);
+            yield return null;
+        }
+        if (!any)
+        {
+            stepSkip = "no impulse-capable right controller";
+            yield break;
+        }
+        var pattern = DenyHaptics.For(DenyReason.NotNow);
+        float length = pattern[pattern.Length - 1].At + pattern[pattern.Length - 1].Seconds;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Affordance.DenyAtHand(left, DenyReason.NotNow);
+        int pulses = 0;
+        float lastPulse = float.NegativeInfinity;
+        string cut = null;
+        end = mark + length + Core.HapticChannel.DuckTail + 0.2f;
+        while (CueMark() < end)
+        {
+            Interact.Haptics.Pulse(left, 0.3f, beat, HapticPriority.Ambient);
+            ref var hand = ref CueLog.Capture.Hand(left);
+            if (hand.PulseAt >= mark && hand.PulseAt != lastPulse)
+            {
+                lastPulse = hand.PulseAt;
+                if (hand.Delivered || hand.Muted)
+                    pulses++;
+            }
+            float ambientAt = Interact.Haptics.LastSent(left, HapticPriority.Ambient);
+            if (
+                cut == null
+                && ambientAt >= mark
+                && ambientAt < mark + length + Core.HapticChannel.DuckTail
+            )
+                cut =
+                    $"ambient pulse at {ambientAt - mark:0.000} s inside the {length:0.00} s refusal or its duck tail";
+            yield return null;
+        }
+        string note =
+            $"{pulses} of {pattern.Length} refusal pulses delivered, {Interact.Haptics.Dropped} dropped by priority in all";
+        if (cut != null)
+            Fail(cut + "; " + note);
+        else if (pulses != pattern.Length)
+            Fail("refusal pattern not intact: " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>vr.64: a refusal while the pause menu is up still sounds, through the game's SFX player and through

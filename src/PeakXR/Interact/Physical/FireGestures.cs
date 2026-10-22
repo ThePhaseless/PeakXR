@@ -603,7 +603,7 @@ internal static class FireGestures
             {
                 NextWarm[h] = now + 0.5f;
                 WarmPulses++;
-                Haptics.Pulse(left, 0.05f + 0.2f * warm, 0.3f);
+                Haptics.Pulse(left, 0.05f + 0.2f * warm, 0.3f, HapticPriority.Ambient);
             }
         }
         // Shiver only by a lit fire, as a cue to warm up there; no endless pulses across a cold biome.
@@ -615,8 +615,8 @@ internal static class FireGestures
         )
         {
             nextShiver = now + 1.6f;
-            Haptics.Pulse(true, 0.08f, 0.04f);
-            Haptics.Pulse(false, 0.08f, 0.04f);
+            Haptics.Pulse(true, 0.08f, 0.04f, HapticPriority.Ambient);
+            Haptics.Pulse(false, 0.08f, 0.04f, HapticPriority.Ambient);
         }
     }
 }

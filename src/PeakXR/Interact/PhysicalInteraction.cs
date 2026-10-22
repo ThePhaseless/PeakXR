@@ -193,7 +193,7 @@ internal static class PhysicalInteraction
         if (hazardPulseTime > 0f && now >= hazardPulseTime)
         {
             hazardPulseTime = -10f;
-            Haptics.Pulse(hazardPulseLeft, 1f, 0.06f);
+            Haptics.Pulse(hazardPulseLeft, 1f, 0.06f, HapticPriority.Alert);
         }
         TornBeat(LeftHand, now);
         TornBeat(RightHand, now);
@@ -1136,9 +1136,9 @@ internal static class PhysicalInteraction
             if (amplitude > 0f)
             {
                 if (leftGrip)
-                    Haptics.Pulse(true, amplitude, 0.04f);
+                    Haptics.Pulse(true, amplitude, 0.04f, HapticPriority.Ambient);
                 if (rightGrip)
-                    Haptics.Pulse(false, amplitude, 0.04f);
+                    Haptics.Pulse(false, amplitude, 0.04f, HapticPriority.Ambient);
                 return;
             }
         }

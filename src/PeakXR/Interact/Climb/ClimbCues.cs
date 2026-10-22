@@ -46,7 +46,8 @@ internal static class ClimbCues
     /// <summary>A pulse of <paramref name="cue"/> on that hand.</summary>
     public static void Pulse(ClimbCue cue, bool left, float amplitude, float seconds)
     {
-        if (!Haptics.Pulse(left, amplitude, seconds) && !Haptics.Muted)
+        var priority = cue == ClimbCue.Texture ? HapticPriority.Ambient : HapticPriority.Cue;
+        if (!Haptics.Pulse(left, amplitude, seconds, priority) && !Haptics.Muted)
             return;
         int i = (int)cue * 2 + (left ? 0 : 1);
         At[i] = UI.Affordances.CueLog.Now;

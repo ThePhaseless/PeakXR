@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Configuration;
 using PeakXR.Core;
 
@@ -52,5 +53,53 @@ internal static class ConfigMigration
         Plugin.Log.LogInfo(
             $"[config] {def.Section}.{def.Key}: old default {oldDefault} moved to {newDefault}"
         );
+    }
+
+    /// <summary>
+    /// A setting whose default and scale changed together (<see cref="SettingMigration.Rescaled"/>): the old default
+    /// moves to the new one, any other saved value is multiplied by <paramref name="factor"/> and clamped, once.
+    /// <paramref name="saved"/> says whether the file held a value before this version bound it
+    /// (<see cref="Saved"/>, read before <c>Bind</c>); a fresh value is already on the new scale.
+    /// </summary>
+    public static void Rescale(
+        ConfigEntry<float> entry,
+        float oldDefault,
+        float factor,
+        float min,
+        float max,
+        bool saved
+    )
+    {
+        var def = entry.Definition;
+        var marker = Marker(def, oldDefault);
+        float before = entry.Value;
+        float after = SettingMigration.Rescaled(
+            before,
+            oldDefault,
+            (float)entry.DefaultValue,
+            factor,
+            min,
+            max,
+            saved,
+            marker.Value
+        );
+        marker.Value = true;
+        if (after == before)
+            return;
+        entry.Value = after;
+        Plugin.Log.LogInfo($"[config] {def.Section}.{def.Key}: {before} rescaled to {after}");
+    }
+
+    private static System.Reflection.MethodInfo orphans;
+
+    /// <summary>
+    /// Whether <paramref name="file"/> holds a saved value for the key that nothing has bound yet: BepInEx keeps
+    /// such values in its protected <c>OrphanedEntries</c> until <c>Bind</c> claims them. Call before binding.
+    /// </summary>
+    public static bool Saved(ConfigFile file, string section, string key)
+    {
+        orphans ??= HarmonyLib.AccessTools.PropertyGetter(typeof(ConfigFile), "OrphanedEntries");
+        return orphans?.Invoke(file, null) is Dictionary<ConfigDefinition, string> entries
+            && entries.ContainsKey(new ConfigDefinition(section, key));
     }
 }
