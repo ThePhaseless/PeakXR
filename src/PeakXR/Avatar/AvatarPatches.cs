@@ -17,8 +17,12 @@ internal static class AvatarPatches
     private static AccessTools.FieldRef<HideTheBody, bool> hideShowing;
     private static System.Action<HideTheBody, bool> hideToggle;
 
+    /// <summary><c>CharacterMovement.maxAngle</c> (CharacterMovement.cs:130, private): the walkable slope limit.</summary>
+    internal static AccessTools.FieldRef<CharacterMovement, float> MaxAngle;
+
     public static void Resolve()
     {
+        MaxAngle = GameMember.Field<CharacterMovement, float>("maxAngle");
         animationsCharacter = GameMember.Field<CharacterAnimations, Character>("character");
         ragdollCharacter = GameMember.Field<CharacterRagdoll, Character>("character");
         itemsCharacter = GameMember.Field<CharacterItems, Character>("character");

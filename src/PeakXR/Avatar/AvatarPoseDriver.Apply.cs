@@ -244,12 +244,25 @@ public partial class AvatarPoseDriver
         var c = Owner;
         var parts = c.refs.ragdoll.partList;
         var d = c.data;
-        bool free =
-            d.isGrounded
-            && !c.warping
-            && Rig.RigDriver.Upright(c)
-            && c.input != null
-            && c.input.movementInput.sqrMagnitude < 1e-4f;
+        var movement = c.refs.movement;
+        bool free = HoldGate.Free(
+            new HoldInputs
+            {
+                Grounded = d.isGrounded,
+                Upright = Rig.RigDriver.Upright(c),
+                MoveInput = c.input == null || c.input.movementInput.sqrMagnitude >= 1e-4f,
+                Carried = d.isCarried || d.carrier != null || d.carrierCondor != null,
+                InWater = d.inWater > 0f,
+                Warping = c.warping,
+                SinceFallSlide = d.sinceFallSlide,
+                SinceBounce = Time.time - d.lastBouncedTime,
+                SlopeDeg = Vector3.Angle(d.groundNormal, Vector3.up),
+                MaxSlopeDeg =
+                    movement != null && AvatarPatches.MaxAngle != null
+                        ? AvatarPatches.MaxAngle(movement)
+                        : 50f,
+            }
+        );
         var sum = Vector3.zero;
         var momentum = Vector3.zero;
         float mass = 0f;
