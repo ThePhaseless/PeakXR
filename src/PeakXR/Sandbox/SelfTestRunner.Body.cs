@@ -45,7 +45,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator TropicsBodySteps()
     {
-        yield return HandStep("vr.218-bridge", Budget(14f), BridgeStep());
+        yield return Restoring("vr.218-bridge", Budget(16f), BridgeStep());
         yield return WarpBack();
     }
 
@@ -1467,33 +1467,68 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.218: standing on a breakable bridge whose countdown started (BreakableBridge.isBreaking, as its owner sets
     /// it when too many stand on it, :186-189), danger pulses build at the feet. Offline the local player owns it.
-    /// The body lands on a plank (one of the bridge's own colliders, :160-167); the countdown is stopped again before
-    /// the bridge shakes. Runs in Tropics (<see cref="TropicsBodySteps"/>).
+    /// A bridge of the level when one is active; else (run 40: none in this Tropics) one built the game's way: a
+    /// vine from the vine shooter's prefab (VineShooter.cs:61, ForceBuildVine_RPC) carrying BreakableBridge, whose
+    /// AddCollisionModifiers (:160) and Awake (:80, hooks its planks) run once the vine has colliders. The body lands
+    /// on it; the countdown stops again before the bridge shakes. Removed after.
     /// </summary>
     IEnumerator BridgeStep()
     {
         var c = Character.localCharacter;
+        var rig = VRRig.Instance;
         BreakableBridge bridge = null;
+        GameObject built = null;
+        bodyRestore = () =>
+        {
+            if (built != null)
+                PhotonNetwork.Destroy(built);
+        };
         float best = float.MaxValue;
         foreach (
             var b in UnityEngine.Object.FindObjectsByType<BreakableBridge>(FindObjectsSortMode.None)
         )
         {
             float d = Vector3.Distance(b.transform.position, c.Center);
-            if (!b.isShaking && b.photonView.IsMine && d < best)
+            if (b.isActiveAndEnabled && !b.isShaking && b.photonView.IsMine && d < best)
             {
                 best = d;
                 bridge = b;
             }
         }
+        string what = bridge != null ? $"{bridge.name} {best:0} m away" : null;
         if (bridge == null)
         {
-            Fail("no breakable bridge in this segment");
-            yield break;
+            var shooter = FindItemComponent<VineShooter>();
+            if (shooter == null || shooter.vinePrefab == null)
+            {
+                Fail("no breakable bridge here and no vine shooter prefab to build one");
+                yield break;
+            }
+            var forward = Flat(rig.Head.forward);
+            var right = Vector3.Cross(Vector3.up, forward);
+            var centre = c.data.groundPos + forward * 3f + Vector3.up * 1f;
+            var from = centre - right * 4f;
+            var to = centre + right * 4f;
+            const float hang = 0.3f;
+            JungleVine.CheckVinePath(from, to, hang, out var mid);
+            built = PhotonNetwork.Instantiate(
+                shooter.vinePrefab.name,
+                from,
+                Quaternion.identity,
+                0
+            );
+            var vine = built.GetComponent<JungleVine>();
+            vine.photonView.RPC("ForceBuildVine_RPC", RpcTarget.All, from, to, hang, mid);
+            yield return Wait(0.2f);
+            bridge = built.AddComponent<BreakableBridge>();
+            bridge.AddCollisionModifiers();
+            Framework.GameMember.Method(typeof(BreakableBridge), "Awake").Invoke(bridge, null);
+            Physics.SyncTransforms();
+            what = "a vine bridge built for the step";
         }
         if (!Plank(bridge, out var plank))
         {
-            Fail($"no plank to stand on found on {bridge.name}");
+            Fail($"no plank to stand on found on {what}");
             yield break;
         }
         float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
@@ -1502,7 +1537,7 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => EnvironmentCues.Bridge == bridge, 5f);
         if (EnvironmentCues.Bridge != bridge)
         {
-            Fail($"the body never touched {bridge.name} after landing at {plank}");
+            Fail($"the body never touched {what} after landing at {plank}");
             yield break;
         }
         float since = CueMark();
@@ -1511,7 +1546,11 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(true, CueFeel.Danger, since, 1.5f);
         EnvironmentCues.BridgeBreaking(bridge) = false;
         if (stepOk)
-            stepNote = $"{bridge.name} {best:0} m away: {cueNote}";
+            stepNote = $"{what}: {cueNote}";
+        if (built != null)
+            PhotonNetwork.Destroy(built);
+        built = null;
+        yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
     /// <summary>The top of the bridge collider nearest its middle: a raycast down onto that collider.</summary>
@@ -1519,7 +1558,20 @@ internal sealed partial class SelfTestRunner
     {
         top = default;
         float best = float.MaxValue;
-        foreach (var col in bridge.GetComponentsInChildren<Collider>())
+        var middle = Vector3.zero;
+        int n = 0;
+        var colliders = bridge.GetComponentsInChildren<Collider>();
+        foreach (var col in colliders)
+        {
+            if (col.isTrigger)
+                continue;
+            middle += col.bounds.center;
+            n++;
+        }
+        if (n == 0)
+            return false;
+        middle /= n;
+        foreach (var col in colliders)
         {
             if (col.isTrigger)
                 continue;
@@ -1527,7 +1579,7 @@ internal sealed partial class SelfTestRunner
             var ray = new Ray(b.center + Vector3.up * (b.extents.y + 2f), Vector3.down);
             if (!col.Raycast(ray, out var hit, b.size.y + 4f))
                 continue;
-            float d = Vector3.Distance(b.center, bridge.transform.position);
+            float d = Vector3.Distance(b.center, middle);
             if (d < best)
             {
                 best = d;
