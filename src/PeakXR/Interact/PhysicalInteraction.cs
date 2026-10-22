@@ -360,8 +360,10 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(hand.Left, 0.4f, 0.04f);
                 break;
             case GripPressAction.Climb:
+                // The fall this grab stops, read before the climb start resets the body's motion.
+                float fall = c.data.isClimbing ? 0f : -c.data.avarageVelocity.y;
                 if (StartClimb(c, rig, pos, cfg))
-                    CatchPulse(hand.Left, kind, c, cfg);
+                    CatchPulse(hand.Left, kind, fall, cfg);
                 else
                 {
                     action = GripPressAction.None;
@@ -418,7 +420,26 @@ internal static class PhysicalInteraction
         else if (target is Item loose && c.data.isClimbing && !loose.UIData.canPocket)
             Affordance.Deny(hand.Left, loose.Center(), DenyReason.NotWhileClimbing, default, loose);
         else
+        {
             hand.Confirmed = false;
+            if (pocketing)
+                pocketingUntil = now + 3f;
+        }
+    }
+
+    /// <summary>Until when the master's answer to a free hand's pickup counts as a pocketing one.</summary>
+    private static float pocketingUntil = -10f;
+
+    /// <summary>
+    /// A free hand's pocketing pickup is pending: true once, for the game's answer to it, which must then not equip
+    /// the new item over the held one (<see cref="InteractPatches.KeepHeldOnPocket"/>).
+    /// </summary>
+    internal static bool TakePocketing()
+    {
+        if (!VRSession.Active || Time.time > pocketingUntil)
+            return false;
+        pocketingUntil = -10f;
+        return true;
     }
 
     /// <summary>
@@ -1077,13 +1098,13 @@ internal static class PhysicalInteraction
     }
 
     /// <summary>
-    /// C4: a grab that caught a fall turns it into a slide down the wall (<c>StartClimbRpc</c>,
-    /// CharacterClimbing.cs:371-374), read back from <c>playerSlide</c>: the hold ratchets, longer and harder the
-    /// faster it slides (<see cref="ClimbFeel.Catch"/>). A clean grab keeps its surface pulse.
+    /// C4: a grab that stops a fall (the game turns it into a slide down the wall from the same
+    /// <c>avarageVelocity</c>, <c>StartClimbRpc</c>, CharacterClimbing.cs:371-374): the hold ratchets, longer and
+    /// harder the faster the fall (<see cref="ClimbFeel.Catch"/>). A clean grab keeps its surface pulse.
     /// </summary>
-    private static void CatchPulse(bool left, HoldKind kind, Character c, InteractConfig cfg)
+    private static void CatchPulse(bool left, HoldKind kind, float fallSpeed, InteractConfig cfg)
     {
-        var p = cfg.ClimbSurfaceFeel ? ClimbFeel.Catch(-c.refs.climbing.playerSlide.y) : default;
+        var p = cfg.ClimbSurfaceFeel ? ClimbFeel.Catch(fallSpeed) : default;
         if (p.Amplitude > 0f)
             Climb.ClimbCues.Pulse(Climb.ClimbCue.Catch, left, p.Amplitude, p.Seconds);
         else

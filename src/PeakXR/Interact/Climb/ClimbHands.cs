@@ -73,6 +73,9 @@ internal static class ClimbHands
 
     /// <summary>The rope's end was reached on the last frame (one knock per arrival).</summary>
     private static bool atEnd;
+
+    /// <summary>The rope's percent rate at stick +1 last frame (signed: which end the arms pull toward).</summary>
+    private static float ropeRate;
     private static Vector3 lastHead;
     private static bool headValid;
     private static Transform pumpSegment;
@@ -373,6 +376,7 @@ internal static class ClimbHands
             a = api.GetPosition(lo);
             b = api.GetPosition(hi);
             rate = api.GetMove() * rope.climbSpeed * rope.climbSpeedMod * api.UpMult(d.ropePercent);
+            ropeRate = rate;
             negative = 3f;
         }
         else
@@ -573,13 +577,14 @@ internal static class ClimbHands
 
     /// <summary>
     /// A knock as the climb point reaches either end of the rope while the arms still pull that way:
-    /// <c>ropePercent</c> clamps to 0..1 with no event (CharacterRopeHandling.cs:64-65), and stick +Y moves it toward 0
-    /// (<c>GetMove</c> is negative).
+    /// <c>ropePercent</c> clamps to 0..1 with no event (CharacterRopeHandling.cs:64-65). Which end the arms pull toward
+    /// follows the sign of the stick times the rope's rate (<c>GetMove * UpMult</c>, which flips with segment order).
     /// </summary>
     private static void RopeEnd(Character c, bool l, bool r)
     {
         float p = c.data.ropePercent;
-        bool end = (stickY > 0f && p <= 0.001f) || (stickY < 0f && p >= 0.999f);
+        float toward = stickY * ropeRate;
+        bool end = (toward < 0f && p <= 0.001f) || (toward > 0f && p >= 0.999f);
         if (end && !atEnd)
         {
             if (l)

@@ -32,6 +32,8 @@ public sealed class PhysicalInteractionFeature : Feature
         Patch(typeof(InteractPatches.Sample));
         Patch(typeof(InteractPatches.Raycasts));
         Patch(typeof(InteractPatches.Dropping));
+        Patch(typeof(InteractPatches.KeepHeldOnPocket));
+        Patch(typeof(InteractPatches.SkipEquip));
         Climb.ClimbHands.AnchorTimer = GameMember.Field<BreakableRopeAnchor, float>(
             "willBreakInTime"
         );
