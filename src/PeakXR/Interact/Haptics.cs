@@ -1,4 +1,6 @@
 using System;
+using PeakXR.Core;
+using UnityEngine;
 using UnityEngine.XR;
 
 namespace PeakXR.Interact;
@@ -6,7 +8,10 @@ namespace PeakXR.Interact;
 /// <summary>Short controller vibrations through <see cref="InputDevices"/>. Does nothing when the device or runtime
 /// has no impulse support, and never throws; returns whether an impulse went out (the cue capture reads it). The device and its impulse support are cached per hand (the stamina
 /// beat pulses every frame) and looked up again once the handle goes invalid. <c>Interaction.Haptics</c> off mutes
-/// every PeakXR vibration, refusals and UI ticks alike (decision D9); the cues' rings and sounds still play.</summary>
+/// every PeakXR vibration, refusals and UI ticks alike (decision D9); the cues' rings and sounds still play.
+/// <para>One slider, <c>Interaction.HapticStrength</c>, scales every pulse (<see cref="HapticScale"/>). Each hand is
+/// one channel (<see cref="HapticChannel"/>): a pulse of lower <see cref="HapticPriority"/> than the one still playing
+/// is dropped, and ambient feel ducks under cues, so a heartbeat never cuts a refusal's triple tick.</para></summary>
 internal static class Haptics
 {
     private static InputDevice leftDevice;
@@ -14,11 +19,52 @@ internal static class Haptics
     private static bool leftImpulse;
     private static bool rightImpulse;
     private static bool loggedFalse;
+    private static readonly HapticChannel[] Channels = new HapticChannel[2];
+    private static readonly float[] SentAt = NewTimes();
+
+    /// <summary>Pulses dropped because a higher-priority one was playing on that hand (self-test).</summary>
+    public static int Dropped { get; private set; }
+
+    private static float[] NewTimes()
+    {
+        var t = new float[2 * ((int)HapticPriority.Alert + 1)];
+        for (int i = 0; i < t.Length; i++)
+            t[i] = float.NegativeInfinity;
+        return t;
+    }
 
     /// <summary>The player turned controller vibration off (<c>Interaction.Haptics</c>).</summary>
     public static bool Muted => !InteractConfig.Instance.Haptics;
 
-    public static bool Pulse(bool left, float amplitude, float seconds)
+    /// <summary>A gameplay cue (contact, a grab, a use).</summary>
+    public static bool Pulse(bool left, float amplitude, float seconds) =>
+        Send(left, amplitude, seconds, HapticPriority.Cue, HapticScale.Cue);
+
+    /// <summary>A gameplay pulse at <paramref name="priority"/>: Alert for refusals and danger, Ambient for
+    /// background feel (heartbeat, wind, texture, shiver, warmth).</summary>
+    public static bool Pulse(bool left, float amplitude, float seconds, HapticPriority priority) =>
+        Send(left, amplitude, seconds, priority, HapticScale.Cue);
+
+    /// <summary>A UI tick (menus, wheels, keyboard, wrist status): the same slider and mute, at the UI scale.</summary>
+    public static bool Ui(bool left, float amplitude, float seconds) =>
+        Send(left, amplitude, seconds, HapticPriority.Cue, HapticScale.Ui);
+
+    /// <summary>Holds that hand for a pattern's whole length (the refusal triple), gaps included, so nothing lower
+    /// slips in between its pulses.</summary>
+    public static void Hold(bool left, HapticPriority priority, float seconds) =>
+        Channels[left ? 0 : 1].Hold(priority, Time.unscaledTime, seconds);
+
+    /// <summary>When a pulse of <paramref name="priority"/> last went out on that hand (unscaled time).</summary>
+    public static float LastSent(bool left, HapticPriority priority) =>
+        SentAt[(left ? 0 : 1) * ((int)HapticPriority.Alert + 1) + (int)priority];
+
+    private static bool Send(
+        bool left,
+        float amplitude,
+        float seconds,
+        HapticPriority priority,
+        float scale
+    )
     {
         var cfg = InteractConfig.Instance;
         if (!cfg.Haptics || amplitude <= 0f)
@@ -37,11 +83,18 @@ internal static class Haptics
             }
             if (!impulse)
                 return false;
-            float a = amplitude * cfg.HapticStrength;
+            float now = Time.unscaledTime;
+            if (!Channels[left ? 0 : 1].Allow(priority, now, seconds))
+            {
+                Dropped++;
+                return false;
+            }
+            SentAt[(left ? 0 : 1) * ((int)HapticPriority.Alert + 1) + (int)priority] = now;
+            float a = HapticScale.Felt(amplitude, cfg.HapticStrength, scale);
             // Under Unity OpenXR SendHapticImpulse returns false even when the runtime plays the impulse (VR run 30:
             // the vr-test-mcp haptic log had the pulses), so a valid impulse-capable device that took the call counts
             // as delivered. The quirk is logged once.
-            if (!device.SendHapticImpulse(0, a > 1f ? 1f : a, seconds) && !loggedFalse)
+            if (!device.SendHapticImpulse(0, a, seconds) && !loggedFalse)
             {
                 loggedFalse = true;
                 Plugin.Log.LogInfo(

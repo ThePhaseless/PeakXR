@@ -272,7 +272,13 @@ internal static class Affordance
 
     private static void Feel(bool left, CueFeel feel, HapticPulse p)
     {
-        bool delivered = Haptics.Pulse(left, p.Amplitude, p.Seconds);
+        // Danger warns like a refusal; the other feels answer what the hand did.
+        bool delivered = Haptics.Pulse(
+            left,
+            p.Amplitude,
+            p.Seconds,
+            feel == CueFeel.Danger ? HapticPriority.Alert : HapticPriority.Cue
+        );
         CueLog.Capture.Feel(left, feel, p.Amplitude, delivered, Haptics.Muted, Time.unscaledTime);
     }
 

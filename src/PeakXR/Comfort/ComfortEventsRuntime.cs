@@ -165,8 +165,8 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         PressureLeft = a * left;
         PressureRight = a * right;
         PressureAt = now;
-        Haptics.Pulse(true, PressureLeft, 0.05f);
-        Haptics.Pulse(false, PressureRight, 0.05f);
+        Haptics.Pulse(true, PressureLeft, 0.05f, HapticPriority.Ambient);
+        Haptics.Pulse(false, PressureRight, 0.05f, HapticPriority.Ambient);
     }
 
     /// <summary>A camera shake: rumble length follows the shake, capped so long quakes pulse instead.</summary>
