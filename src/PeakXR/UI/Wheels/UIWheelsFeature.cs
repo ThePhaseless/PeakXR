@@ -65,6 +65,7 @@ public sealed class UIWheelsFeature : Feature
         Patch(typeof(HeadLookWhileWheelOpenPatch));
         Patch(typeof(EmoteWheelGamepadPatch));
         Patch(typeof(BackpackWheelGamepadPatch));
+        Patch(typeof(PauseRefusedPatch));
 
         // If a wheel ever sits on a canvas of its own, that canvas must not bring up the menu laser.
         CanvasRules.AddCustom(nameof(EmoteWheel), WheelCanvasPlacement.Instance);

@@ -1,6 +1,8 @@
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -66,4 +68,29 @@ internal static class BackpackWheelGamepadPatch
 
     private static bool Prefix(BackpackWheel __instance, Vector2 gamepadVector) =>
         !VRSession.Active || !RadialWheels.Steer(__instance, gamepadVector);
+}
+
+/// <summary>
+/// A menu-button pause the game refuses (an open wheel, the end screen, loading: A/GUIManager.cs:420-427
+/// <c>public void UpdatePaused()</c>) gets the refusal cue at the hand that pressed it instead of nothing.
+/// Same gate as vanilla, read before it runs; the press itself is left alone.
+/// </summary>
+[HarmonyPatch]
+internal static class PauseRefusedPatch
+{
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(GUIManager), "UpdatePaused");
+
+    private static void Prefix(GUIManager __instance)
+    {
+        var c = Character.localCharacter;
+        if (!VRSession.Active || c == null || !c.input.pauseWasPressed || GUIManager.InPauseMenu)
+            return;
+        bool refused =
+            LoadingScreenHandler.loading
+            || __instance.wheelActive
+            || (__instance.endScreen != null && __instance.endScreen.isOpen);
+        if (refused)
+            Affordance.DenyAtHand(RadialWheels.MenuLeft, DenyReason.NotNow);
+    }
 }
