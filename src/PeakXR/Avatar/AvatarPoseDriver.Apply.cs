@@ -239,20 +239,29 @@ public partial class AvatarPoseDriver
     /// same acceleration on every part (<c>Bodypart.AddForce</c>, Bodypart.cs:262, applied in the movement loop,
     /// Bodypart.cs:286), so the pose is untouched.
     /// </summary>
+    /// <summary>The animator's water blend (<c>CharacterAnimations.AN_INWATER</c>, CharacterAnimations.cs:111).</summary>
+    private static readonly int InWaterParam = Animator.StringToHash("InWater");
+
+    /// <summary>This tick's closed <see cref="HoldGate"/>, or null. Traced.</summary>
+    private string holdGateWhy;
+
     private void HoldBody()
     {
         var c = Owner;
         var parts = c.refs.ragdoll.partList;
         var d = c.data;
         var movement = c.refs.movement;
-        bool free = HoldGate.Free(
+        var animator = c.refs.animator;
+        holdGateWhy = HoldGate.Why(
             new HoldInputs
             {
                 Grounded = d.isGrounded,
                 Upright = Rig.RigDriver.Upright(c),
                 MoveInput = c.input == null || c.input.movementInput.sqrMagnitude >= 1e-4f,
                 Carried = d.isCarried || d.carrier != null || d.carrierCondor != null,
-                InWater = d.inWater > 0f,
+                // The animator keeps the blend WaterZone wrote; data.inWater is back at 1 once
+                // CharacterAnimations fed it (CharacterAnimations.cs:283-284).
+                WaterBlend = animator != null ? animator.GetFloat(InWaterParam) : d.inWater,
                 Warping = c.warping,
                 SinceFallSlide = d.sinceFallSlide,
                 SinceBounce = Time.time - d.lastBouncedTime,
@@ -263,6 +272,7 @@ public partial class AvatarPoseDriver
                         : 50f,
             }
         );
+        bool free = holdGateWhy == null;
         var sum = Vector3.zero;
         var momentum = Vector3.zero;
         float mass = 0f;
@@ -552,7 +562,7 @@ public partial class AvatarPoseDriver
                 : torsoPhys;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? 1 : 0)} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? "1" : "0 (" + (holdGateWhy ?? bodyHold.Why) + ")")} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
             )
         );
     }
