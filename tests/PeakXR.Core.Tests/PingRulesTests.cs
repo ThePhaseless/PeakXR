@@ -98,4 +98,20 @@ public class PingRulesTests
         p.Reset();
         Assert.True(p.Update(false, true, 0.1f, longPress));
     }
+
+    [Fact]
+    public void ButtonPreview_BlockedInput_HidesWithoutForgettingTheLongPress()
+    {
+        // vr34: the long press opens the emote wheel, which blocks player input; reading the blocked frames as
+        // "thumb off" cleared the latch and the preview came back on release with the thumb still resting.
+        var p = new PingButtonPreview();
+        const float longPress = 0.5f;
+        Assert.False(p.Update(true, true, 0.6f, longPress));
+        Assert.False(p.Update(true, true, 0.7f, longPress, allowed: false));
+        Assert.False(p.Update(true, false, 0f, longPress));
+        Assert.False(p.Update(false, false, 0f, longPress));
+        Assert.True(p.Update(true, false, 0f, longPress));
+        // Blocked input never shows it.
+        Assert.False(p.Update(true, false, 0f, longPress, allowed: false));
+    }
 }
