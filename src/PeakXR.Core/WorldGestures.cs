@@ -122,6 +122,31 @@ public static class AltarSocket
         return -1;
     }
 
+    /// <summary>Highest a socket can sit over the head and still be reached directly.</summary>
+    public const float RaisedReach = 0.4f;
+
+    /// <summary>A socket higher than that: the hand holds the amulet up over the head, within this of the line
+    /// straight under the socket.</summary>
+    public const float UnderRadius = 0.35f;
+
+    /// <summary>
+    /// How far the amulet hand is from offering the amulet to <paramref name="socket"/>, 0 when there. A socket
+    /// within reach is a plain distance; one above it (the Peak altar's sit 2.7 m up, vr36) counts once the hand is
+    /// raised over the head straight under it, the way a player holds it up to the statue.
+    /// </summary>
+    public static float Reach(Vector3 hand, Vector3 socket, float headY)
+    {
+        if (socket.Y <= headY + RaisedReach)
+            return Vector3.Distance(hand, socket);
+        return HeatZone.Distance(
+            hand,
+            new Vector3(socket.X, headY + 0.1f, socket.Z),
+            UnderRadius,
+            0f,
+            2f
+        );
+    }
+
     private static bool Has(int[] slots, int type)
     {
         foreach (int s in slots)
