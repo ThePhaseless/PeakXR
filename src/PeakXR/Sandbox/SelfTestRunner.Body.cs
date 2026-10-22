@@ -605,6 +605,11 @@ internal sealed partial class SelfTestRunner
         }
         float since = CueMark();
         warpedForProp = true;
+        // The warp moves Character.Center there (Character.cs:1905-1958): lifted by the standing hip height, so the
+        // body stands on the slope. Placed at the surface, the hip sat in the rock and the hip ray (it starts at
+        // the hip, :900-902) found nothing: run 34 "slide started False".
+        float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
+        spot += Vector3.up * (stand - 0.1f);
         c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spot, false);
         float minSlide = float.PositiveInfinity;
         float start = Now;
@@ -1290,6 +1295,8 @@ internal sealed partial class SelfTestRunner
     IEnumerator FloatEndStep()
     {
         var c = Character.localCharacter;
+        // God mode's tick clears every affliction (SandboxActions.GodTick): off for the step, the runner restores it.
+        SandboxActions.SetGodMode(false);
         float since = CueMark();
         c.refs.afflictions.AddAffliction(new Peak.Afflictions.Affliction_LowGravity(1, 2.5f));
         yield return ExpectFeel(true, CueFeel.Progress, since, 4f);
