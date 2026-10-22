@@ -53,6 +53,10 @@ namespace PeakXR.Core
 
         public void Reset() => Intensity = 0f;
 
+        /// <summary>How far the speed curve drives the vignette at <paramref name="v"/> (0..1): 0 below
+        /// <paramref name="min"/>, 1 from <paramref name="max"/>. Also the settings preview's curve.</summary>
+        public static float Drive(float v, float min, float max) => Ramp(v, min, max);
+
         static float Ramp(float v, float min, float max)
         {
             if (max <= min)

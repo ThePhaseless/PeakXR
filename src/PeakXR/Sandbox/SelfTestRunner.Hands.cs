@@ -637,17 +637,44 @@ internal sealed partial class SelfTestRunner
         Script(hand).Stick = new Vector2(0f, 1f);
         yield return Wait(0.6f);
         yield return Shot("vr-17-move");
-        yield return Wait(0.4f);
+        // The comfort vignette shows at walking speed (vr-practices-review P0-1): its clear angle while walking.
+        float clear = 90f,
+            speed = 0f;
+        float start = Now;
+        while (Now - start < 0.4f)
+        {
+            clear = Mathf.Min(clear, VignetteShape.InnerAngle(LocomotionDriver.Intensity));
+            speed = Mathf.Max(speed, LocomotionDriver.ViewSpeed);
+            yield return null;
+        }
         Script(hand).Stick = Vector2.zero;
         yield return Wait(0.3f);
         var to = c.Center;
         float moved = Vector2.Distance(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
-        var note = $"walked {moved:0.00} m in 1 s";
+        // The bound holds for settings that close it at least that far at this speed (Moderate's do); weaker
+        // choices only get the note.
+        float expected = VignetteShape.InnerAngle(
+            ComfortConfig.VignetteStrength
+                * ComfortVignette.Drive(
+                    speed,
+                    ComfortConfig.VignetteStartSpeed,
+                    ComfortConfig.VignetteFullSpeed
+                )
+        );
+        bool bound = ComfortConfig.Vignette && expected <= MaxWalkClear;
+        var note =
+            $"walked {moved:0.00} m in 1 s; vignette clear to {clear:0} deg at {speed:0.0} m/s";
         if (moved < 0.5f)
             Fail(note);
+        else if (bound && clear > MaxWalkClear)
+            Fail($"vignette barely shows at walking speed (bound {MaxWalkClear:0} deg): {note}");
         else
             stepNote = note;
     }
+
+    /// <summary>Clear-view half-angle (degrees) the walking vignette must reach: a typical headset shows 50-55
+    /// to each side, Moderate clears about 38.</summary>
+    const float MaxWalkClear = 45f;
 
     /// <summary>
     /// vr.29: a grip on a ground backpack opens its wheel (<c>Backpack.Interact</c>, Backpack.cs:34) and the wheel stays

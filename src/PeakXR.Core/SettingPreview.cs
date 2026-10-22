@@ -41,7 +41,10 @@ namespace PeakXR.Core
                 case "Comfort":
                     return key switch
                     {
-                        "Vignette" or "VignetteStrength" => PreviewKind.Vignette,
+                        "Vignette"
+                        or "VignetteStrength"
+                        or "VignetteStartSpeed"
+                        or "VignetteFullSpeed" => PreviewKind.Vignette,
                         "TurnMode" or "SnapTurnAngle" or "SmoothTurnSpeed" => PreviewKind.Turn,
                         _ => PreviewKind.Info,
                     };

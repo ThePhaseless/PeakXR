@@ -5,6 +5,8 @@ public class SettingPreviewTests
     [Theory]
     [InlineData("Comfort", "VignetteStrength", PreviewKind.Vignette)]
     [InlineData("Comfort", "Vignette", PreviewKind.Vignette)]
+    [InlineData("Comfort", "VignetteStartSpeed", PreviewKind.Vignette)]
+    [InlineData("Comfort", "VignetteFullSpeed", PreviewKind.Vignette)]
     [InlineData("Comfort", "TurnMode", PreviewKind.Turn)]
     [InlineData("Comfort", "SnapTurnAngle", PreviewKind.Turn)]
     [InlineData("Comfort", "SmoothTurnSpeed", PreviewKind.Turn)]

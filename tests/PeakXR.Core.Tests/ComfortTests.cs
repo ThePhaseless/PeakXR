@@ -49,6 +49,14 @@ public class ComfortTests
     }
 
     [Fact]
+    public void Drive_IsTheSpeedCurve()
+    {
+        Assert.Equal(0f, ComfortVignette.Drive(0.1f, 0.2f, 2.5f));
+        Assert.Equal(1f, ComfortVignette.Drive(2.7f, 0.2f, 2.5f));
+        TestUtil.Near(0.5f, ComfortVignette.Drive(1.35f, 0.2f, 2.5f), 1e-3f);
+    }
+
+    [Fact]
     public void Vignette_StartsWithAnyArtificialMotion()
     {
         var v = new ComfortVignette { Strength = 0.5f };
