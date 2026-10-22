@@ -31,6 +31,146 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
+        yield return HandStep("vr.46-lunge", 40f, LungeStep());
+    }
+
+    /// <summary>
+    /// vr.46: the climb lunge (interact.physical <c>TryLunge</c>, <see cref="ClimbInput.Lunge"/>). Climbing on one hand,
+    /// that hand thrown upward faster than <c>Interaction.LungeSpeed</c> as it lets go queues the sprint press the
+    /// game's climb jump reads (CharacterClimbing.cs:122); <c>RPCA_ClimbJump</c> (:238-240) resets
+    /// <c>sinceClimbJump</c>. The hand then catches the wall inside the lunge grace and the climb never ended. Out of
+    /// stamina (god mode off; the game refuses the jump from <c>outOfStaminaFor</c> 0.5 s, :122) the same throw gets
+    /// the NoStamina refusal cue and no jump.
+    /// </summary>
+    IEnumerator LungeStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var cfg = Interact.InteractConfig.Instance;
+        if (!cfg.ArmLunge)
+        {
+            stepSkip = "Interaction.ArmLunge off";
+            yield break;
+        }
+        if (!FindWall(c, out var wall, out var stand))
+        {
+            stepSkip = NoWall;
+            yield break;
+        }
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
+        yield return Wait(0.5f);
+        yield return WaitFor(() => !c.warping, 3f);
+        yield return Wait(1.5f);
+        rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(wall.normal), Vector3.up));
+        yield return Wait(0.6f);
+        bool left = VRInput.LeftHanded;
+        if (!WallInFront(c, wall, 0.1f, out var hit))
+        {
+            Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return MoveTo(left, () => hit.point + hit.normal * 0.04f, 0.5f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(() => c.data.isClimbing, 2f);
+        if (!c.data.isClimbing)
+        {
+            Fail($"climb did not start ({PeakXR.Interact.PhysicalInteraction.LastGripNote})");
+            yield return LetGoAll(c);
+            yield break;
+        }
+        // Pull up first (as vr.15), so the throw's own pull-down cannot set the feet back on the ground.
+        yield return MoveTrack(left, Script(left).Position + Vector3.down * 0.4f, 0.6f);
+        // The game takes a climb jump at most once a second (CharacterClimbing.cs:122).
+        yield return WaitFor(() => c.data.sinceClimbJump > 1.1f, 2f);
+        yield return Wait(0.3f);
+
+        // The throw: 0.15 s straight up, let go 70 % of the way at twice the lunge speed (at least 4 m/s).
+        float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
+        var from = Script(left).Position;
+        float jumpBefore = c.data.sinceClimbJump;
+        float y0 = c.Center.y;
+        yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+        float released = Now;
+        yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
+        bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
+        float jumpAfter = Now - released;
+        // Catch: the same hand back on the wall in front of the body, inside the grace.
+        // The body rises with the jump: the catch point is the wall in front of it, read every frame.
+        var catchAt = hit.point + hit.normal * 0.04f;
+        yield return MoveTo(
+            left,
+            () =>
+                catchAt = WallInFront(c, wall, 0.3f, out var again)
+                    ? again.point + again.normal * 0.04f
+                    : catchAt,
+            0.15f
+        );
+        yield return GripTo(left, 1f, 0.05f);
+        yield return WaitFor(
+            () => PeakXR.Interact.PhysicalInteraction.HandAction(left) == GripPressAction.Climb,
+            0.5f
+        );
+        float caughtAfter = Now - released;
+        bool caught =
+            PeakXR.Interact.PhysicalInteraction.HandAction(left) == GripPressAction.Climb
+            && c.data.isClimbing;
+        // A climb that ended and started again on the catch restarts the game's own clock (CharacterClimbing.cs:107).
+        var sinceStart = PeakXR.Interact.PhysicalInteraction.SinceLastClimbStarted;
+        bool unbroken = sinceStart == null || sinceStart(c.refs.climbing) > caughtAfter - 0.05f;
+        float rise = c.Center.y - y0;
+        yield return Shot("vr-46-lunge");
+
+        // Out of stamina: the same throw is refused with the stamina cue, and the game takes no jump.
+        string refusal = "refusal not checked (UI.ActionHints off)";
+        if (UI.Affordances.Affordance.Enabled && caught)
+        {
+            SandboxActions.SetGodMode(false);
+            float drainEnd = Now + 3f;
+            while (
+                Now < drainEnd && (c.data.outOfStaminaFor < 0.6f || c.data.sinceClimbJump < 1.1f)
+            )
+            {
+                c.data.currentStamina = 0f;
+                c.data.extraStamina = 0f;
+                yield return null;
+            }
+            UI.Affordances.Affordance.ResetGate();
+            int denials = UI.Affordances.Affordance.Count;
+            float noJumpBefore = c.data.sinceClimbJump;
+            bool climbingAtThrow = c.data.isClimbing;
+            from = Script(left).Position;
+            yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+            bool Denied() =>
+                UI.Affordances.Affordance.Count > denials
+                && UI.Affordances.Affordance.LastReason == DenyReason.NoStamina
+                && UI.Affordances.Affordance.LastLeft == left;
+            yield return WaitFor(Denied, 0.5f);
+            bool denied = Denied();
+            string cue = denied ? CueCheck() : null;
+            bool noJump = c.data.sinceClimbJump >= noJumpBefore;
+            SandboxActions.SetGodMode(true);
+            refusal =
+                $"out of stamina {c.data.outOfStaminaFor:0.0} s (climbing {climbingAtThrow}): denied {denied}"
+                + $" ({UI.Affordances.Affordance.LastReason}), no jump {noJump}";
+            if (!denied)
+                Fail("no NoStamina refusal for a lunge without stamina: " + refusal);
+            else if (cue != null)
+                Fail($"{refusal}; {cue}");
+            else if (!noJump)
+                Fail("the game took the climb jump without stamina: " + refusal);
+        }
+        var note = F(
+            $"climb jump {jumped} {jumpAfter:0.00} s after the release ({speed:0.0} m/s throw, lunge from {cfg.LungeSpeed:0.0}), caught {caught} after {caughtAfter:0.00} s (grace 0.6 s), climb unbroken {unbroken}, rose {rise:0.00} m; {refusal}"
+        );
+        if (!jumped)
+            Fail("the throw did not make the game's climb jump: " + note);
+        else if (!caught)
+            Fail("the hand did not catch the wall after the lunge: " + note);
+        else if (!unbroken)
+            Fail("the climb ended between the lunge and the catch: " + note);
+        Note(note);
+        yield return LetGoAll(c);
     }
 
     IEnumerator Restoring(string id, float timeout, IEnumerator body)
@@ -432,7 +572,7 @@ internal sealed partial class SelfTestRunner
         }
         if (!FindWall(c, out var wall, out var stand))
         {
-            stepSkip = "no climbable wall with walkable ground in front within 40 m of spawn";
+            stepSkip = NoWall;
             yield break;
         }
         var normal = Flat(wall.normal);

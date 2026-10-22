@@ -41,6 +41,10 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         var head = rig.Head;
         bool left = cfg.WristLeft;
+        // God mode locks statuses (Character.statusesLocked, which AddStatus obeys, CharacterAfflictions.cs:718) and
+        // its tick clears Cold, so VR run 27 read Cold 0.00 and the segment stayed hidden (BarAffliction.cs:43-55).
+        // Run puts god mode back after the step.
+        SandboxActions.SetGodMode(false);
         c.refs.afflictions.SetStatus(CharacterAfflictions.STATUSTYPE.Cold, 0f);
         c.refs.afflictions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
         yield return MoveTo(

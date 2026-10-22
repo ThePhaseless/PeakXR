@@ -347,10 +347,13 @@ internal sealed partial class SelfTestRunner
 
     // ---------------------------------------------------------------- tornado
 
-    /// <summary>After a segment jump: mob.Tornado once a segment with a running <c>TornadoSpawner</c> is active.</summary>
+    /// <summary>After a segment jump: mob.Tornado once a segment with a running <c>TornadoSpawner</c> is active.
+    /// Only after a jump that passed: one that threw midway (VR run 27) left the segment just switched on, its
+    /// spawner's <c>Start</c> (TornadoSpawner.cs:20-23, which sets <c>view</c>) not yet run, so <c>SpawnTornado</c>
+    /// threw on <c>view.ViewID</c> after instantiating a tornado with no targets (Tornado.PickTarget NRE spam).</summary>
     IEnumerator TornadoIfHere()
     {
-        if (!tornadoPending)
+        if (!tornadoPending || !stepOk)
             yield break;
         TornadoSpawner spawner = null;
         foreach (var s in FindObjectsByType<TornadoSpawner>(FindObjectsSortMode.None))
@@ -470,7 +473,24 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var before = Ids<Tornado>();
-        SpawnTornadoMethod.Invoke(spawner, null);
+        Exception threw = null;
+        try
+        {
+            SpawnTornadoMethod.Invoke(spawner, null);
+        }
+        catch (TargetInvocationException e)
+        {
+            threw = e.InnerException ?? e;
+        }
+        if (threw != null)
+        {
+            // Instantiate ran before the RPC argument threw: remove the tornado it left with no targets.
+            var stray = Fresh<Tornado>(before);
+            if (stray != null)
+                spawned.Add(stray.gameObject);
+            Fail($"SpawnTornado threw {threw.GetType().Name}: {threw.Message}");
+            yield break;
+        }
         yield return WaitFor(() => Fresh<Tornado>(before) != null, 2f);
         var tornado = Fresh<Tornado>(before);
         if (tornado == null)

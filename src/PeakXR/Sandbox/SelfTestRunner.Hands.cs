@@ -514,8 +514,7 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         if (!FindWall(c, out var wall, out var stand))
         {
-            stepSkip =
-                "no climbable wall with walkable ground in front within 40 m of spawn or 8 points around it";
+            stepSkip = NoWall;
             yield break;
         }
         var normal = Flat(wall.normal);
@@ -1393,10 +1392,6 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// The nearest steep terrain face around the character with a walkable spot 0.6 m in front of it. A wall that is
-    /// still there 1.2 m higher, so the climb has room to rise.
-    /// </summary>
-    /// <summary>
     /// The face <see cref="FindWall"/> picked, seen from the body after the warp: along -normal at
     /// <paramref name="upFromCenter"/> above the body centre, then at the height FindWall found the face, then straight
     /// at that point. FindWall only proves the face 0.3-1.6 m above the standing spot, so a low ledge can end below
@@ -1433,79 +1428,106 @@ internal sealed partial class SelfTestRunner
             );
     }
 
+    /// <summary>
+    /// The nearest steep terrain face with a walkable spot 0.6 m in front of it and still there 1.2 m higher, so the
+    /// climb has room to rise. The daily map varies, so the search casts from the character and two rings around it
+    /// (15 m and 35 m); with nothing there, from every suitcase and campfire of the active segment, which the game
+    /// scatters along its whole climb. A warp reaches whichever wins, the one nearest the character.
+    /// </summary>
+    const string NoWall =
+        "no climbable wall with walkable ground in front near the player or any suitcase or campfire of this segment";
+
     static bool FindWall(Character c, out RaycastHit wall, out Vector3 stand)
     {
         wall = default;
         stand = default;
-        const int Rays = 24;
-        const float Range = 40f;
         float best = float.MaxValue;
         var home = c.Center;
-        // The beach spawn and the daily level vary, so also cast from a ring of points around the character and
-        // at three heights each; the wall nearest the character wins.
-        for (int o = 0; o < 9; o++)
+        WallsFrom(home, home, ref best, ref wall, ref stand);
+        foreach (float radius in new[] { 15f, 35f })
         {
-            var spot =
-                o == 0
-                    ? home
-                    : home + Quaternion.Euler(0f, (o - 1) * 45f, 0f) * Vector3.forward * 15f;
-            foreach (float h in new[] { 0.2f, 2f, 5f })
+            for (int o = 0; o < 8; o++)
             {
-                var origin = spot + Vector3.up * h;
-                for (int i = 0; i < Rays; i++)
-                {
-                    var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
-                    if (
-                        !Physics.Raycast(
-                            origin,
-                            dir,
-                            out var hit,
-                            Range,
-                            HelperFunctions.terrainMapMask,
-                            QueryTriggerInteraction.Ignore
-                        )
-                    )
-                        continue;
-                    float away = Vector3.Distance(home, hit.point);
-                    if (away >= best)
-                        continue;
-                    float angle = Vector3.Angle(hit.normal, Vector3.up);
-                    if (angle < 65f || angle > 115f)
-                        continue;
-                    if (
-                        !Physics.Raycast(
-                            origin + Vector3.up * 1.2f,
-                            dir,
-                            out var high,
-                            hit.distance + 1.5f,
-                            HelperFunctions.terrainMapMask,
-                            QueryTriggerInteraction.Ignore
-                        ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
-                    )
-                        continue;
-                    var front = hit.point + Flat(hit.normal) * 0.6f;
-                    if (
-                        !Physics.Raycast(
-                            front + Vector3.up * 2f,
-                            Vector3.down,
-                            out var ground,
-                            6f,
-                            HelperFunctions.terrainMapMask,
-                            QueryTriggerInteraction.Ignore
-                        )
-                        || Vector3.Angle(ground.normal, Vector3.up) > 40f
-                    )
-                        continue;
-                    // Chest height over that ground still meets the wall: the face starts at the standing spot's level.
-                    float rise = hit.point.y - ground.point.y;
-                    if (rise < 0.3f || rise > 1.6f)
-                        continue;
-                    best = away;
-                    wall = hit;
-                    stand = ground.point + Vector3.up * 0.1f;
-                }
+                var spot = home + Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward * radius;
+                WallsFrom(spot, home, ref best, ref wall, ref stand);
             }
         }
+        if (best < float.MaxValue)
+            return true;
+        foreach (var lug in FindObjectsByType<Luggage>(FindObjectsSortMode.None))
+            WallsFrom(lug.transform.position, home, ref best, ref wall, ref stand);
+        foreach (var fire in FindObjectsByType<Campfire>(FindObjectsSortMode.None))
+            WallsFrom(fire.transform.position, home, ref best, ref wall, ref stand);
         return best < float.MaxValue;
+    }
+
+    /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
+    /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
+    static void WallsFrom(
+        Vector3 spot,
+        Vector3 home,
+        ref float best,
+        ref RaycastHit wall,
+        ref Vector3 stand
+    )
+    {
+        const int Rays = 24;
+        const float Range = 40f;
+        foreach (float h in new[] { 0.2f, 2f, 5f })
+        {
+            var origin = spot + Vector3.up * h;
+            for (int i = 0; i < Rays; i++)
+            {
+                var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
+                if (
+                    !Physics.Raycast(
+                        origin,
+                        dir,
+                        out var hit,
+                        Range,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                )
+                    continue;
+                float away = Vector3.Distance(home, hit.point);
+                if (away >= best)
+                    continue;
+                float angle = Vector3.Angle(hit.normal, Vector3.up);
+                if (angle < 65f || angle > 115f)
+                    continue;
+                if (
+                    !Physics.Raycast(
+                        origin + Vector3.up * 1.2f,
+                        dir,
+                        out var high,
+                        hit.distance + 1.5f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+                )
+                    continue;
+                var front = hit.point + Flat(hit.normal) * 0.6f;
+                if (
+                    !Physics.Raycast(
+                        front + Vector3.up * 2f,
+                        Vector3.down,
+                        out var ground,
+                        6f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                    || Vector3.Angle(ground.normal, Vector3.up) > 40f
+                )
+                    continue;
+                // Chest height over that ground still meets the wall: the face starts at the standing spot's level.
+                float rise = hit.point.y - ground.point.y;
+                if (rise < 0.3f || rise > 1.6f)
+                    continue;
+                best = away;
+                wall = hit;
+                stand = ground.point + Vector3.up * 0.1f;
+            }
+        }
     }
 }
