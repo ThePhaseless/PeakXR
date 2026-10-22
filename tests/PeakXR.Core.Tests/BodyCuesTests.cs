@@ -276,6 +276,37 @@ public class ShiverTests
     }
 
     [Fact]
+    public void ShiverTexture_NeverKeepsTheRefusalBeat()
+    {
+        // The refusal is three ticks 70 ms apart (DenyHaptics.Deny): a shiver must not feel like a stream of them, so
+        // its gaps are irregular and no two in a row sit on the refusal's spacing.
+        float step = DenyHaptics.Deny[1].At - DenyHaptics.Deny[0].At;
+        var s = new Shiver();
+        float last = -1f;
+        var gaps = new System.Collections.Generic.List<float>();
+        float t = 0f;
+        s.Update(0.2f, Dt);
+        for (int i = 0; i < 400; i++, t += 0.001f)
+        {
+            if (s.Update(0.2f + 0.001f * i, 0.001f) > 0f)
+            {
+                if (last >= 0f)
+                    gaps.Add(t - last);
+                last = t;
+            }
+        }
+        Assert.True(gaps.Count > 4);
+        for (int i = 0; i < gaps.Count; i++)
+            Assert.True(
+                MathF.Abs(gaps[i] - step) > 0.008f,
+                $"gap {gaps[i]:0.000} s is the refusal's beat"
+            );
+        float min = System.Linq.Enumerable.Min(gaps),
+            max = System.Linq.Enumerable.Max(gaps);
+        Assert.True(max - min > 0.01f, $"gaps {min:0.000}-{max:0.000} s are regular");
+    }
+
+    [Fact]
     public void AStepUpInCold_ShiversForAWhile()
     {
         // The game adds cold in steps (wind, night): one step keeps the shiver going briefly, then it stops.

@@ -232,6 +232,7 @@ internal sealed class RigDriver : MonoBehaviour
     private System.Numerics.Vector2 EyeOffsetNow =>
         System.Numerics.Vector2.Lerp(torsoEyes.Offset, massEyes.Offset, rootBlend);
     private Vector3 anchor;
+    private readonly ViewMotionLimit chaseLimit = new();
     private bool snap = true;
     private Vector3 turnShift;
 
@@ -787,9 +788,17 @@ internal sealed class RigDriver : MonoBehaviour
             viewHold.Reset();
             viewHoldWhy = "view";
         }
+        var before = anchor;
         anchor = snap
             ? goal
             : RigMath.Follow(anchor.N(), viewGoal.N(), dt, rate, verticalRate, maxLag).U();
+        // The detached chase moves the view without the player (spectating, passed out, carried, a tumble, a launch):
+        // artificial locomotion, so it eases in and out at a capped acceleration and speed (ViewMotionLimit). A body
+        // that gets away re-places the view behind a fade (TryGoal's Blink), never a fast glide.
+        if (shownKind == ViewKind.ThirdPerson && !snap)
+            anchor = chaseLimit.Step(before.N(), anchor.N(), dt).U();
+        else
+            chaseLimit.Reset();
         if (shownKind == ViewKind.FirstPerson && !snap)
         {
             BodyAnchor = anchor;

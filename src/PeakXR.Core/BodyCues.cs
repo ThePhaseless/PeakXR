@@ -206,12 +206,18 @@ public sealed class Heartbeat
 }
 
 /// <summary>Shivering: fine, fast pulses while the Cold status is rising (and for <see cref="Hold"/> seconds after
-/// a step up), once it is past <see cref="MinCold"/>. Steady or warming cold is quiet.</summary>
+/// a step up), once it is past <see cref="MinCold"/>. Steady or warming cold is quiet. The gaps jitter between 36 and
+/// 57 ms (<see cref="Gaps"/>): a trembling texture, never the refusal's even 70 ms triple
+/// (<see cref="DenyHaptics.Deny"/>).</summary>
 public sealed class Shiver
 {
     public float MinCold = 0.05f;
     public float Hold = 1f;
-    public float Interval = 0.07f;
+
+    /// <summary>The pulse gaps (s), played in turn: irregular and all well off the refusal's 70 ms.</summary>
+    static readonly float[] Gaps = { 0.045f, 0.038f, 0.057f, 0.041f, 0.052f, 0.036f, 0.049f };
+
+    int _gap;
 
     float _last = float.NaN;
     float _since = float.PositiveInfinity;
@@ -230,7 +236,8 @@ public sealed class Shiver
         _timer -= dt;
         if (_timer > 0f)
             return 0f;
-        _timer = Interval;
+        _timer = Gaps[_gap];
+        _gap = (_gap + 1) % Gaps.Length;
         return 0.05f + 0.1f * MathF.Min(1f, cold);
     }
 }
