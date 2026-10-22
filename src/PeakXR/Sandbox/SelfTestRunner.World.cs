@@ -809,10 +809,36 @@ internal sealed partial class SelfTestRunner
     /// end the run. A real campfire advances the segment; then the summit props on the Peak; last the end screen,
     /// which wins the run and returns to the airport, where the summary and quit run as after any test.
     /// </summary>
+    /// <summary>Opt-in for the end-of-run slot when the progress guard is not in place.</summary>
+    const string EndRunFlag = "-peakxr-selftest-endrun";
+
+    static readonly string[] EndOfRunIds =
+    {
+        "vr.85-campfire-segment",
+        "vr.89-to-peak",
+        "vr.89-altar-full",
+        "vr.89b-amulet-socket",
+        "vr.90-soul-pillar",
+        "vr.91-portal",
+        "vr.93-summit-flare",
+        "vr.86-end-screen",
+    };
+
     IEnumerator EndOfRunSteps()
     {
         if (!VRRun || !Ready || Singleton<MapHandler>.Instance == null)
             yield break;
+        // These win the run, light a real campfire, summon the helicopter and visit the summit: never without the
+        // self-test's progress guard, unless the user opts in to granting real progress.
+        if (
+            !SelfTestProgressGuard.Active
+            && Array.IndexOf(Environment.GetCommandLineArgs(), EndRunFlag) < 0
+        )
+        {
+            foreach (var id in EndOfRunIds)
+                Skip(id, $"needs {EndRunFlag} (grants real progress)");
+            yield break;
+        }
         yield return HandStep("vr.85-campfire-segment", 120f, CampfireSegmentStep());
         yield return WarpBack();
         yield return Run("vr.89-to-peak", 150f, Jump(Segment.Peak, "vr-89-peak"));

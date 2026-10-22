@@ -43,6 +43,11 @@ public sealed class SelfTestFeature : Feature
         Patch(typeof(SelfTestUseProbe));
         Patch(typeof(SelfTestEndGamePatch));
         Patch(typeof(SelfTestCampfirePatch));
+        Patch(typeof(SelfTestProgressGuard.Achievement));
+        Patch(typeof(SelfTestProgressGuard.StatSet));
+        Patch(typeof(SelfTestProgressGuard.StatIncrement));
+        Patch(typeof(SelfTestProgressGuard.AscentComplete));
+        SelfTestProgressGuard.Active = true;
         SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
             "bingbong"
         );
@@ -57,6 +62,75 @@ public sealed class SelfTestFeature : Feature
         SandboxActions.Forced = true;
         var go = new GameObject("PeakXR.SelfTest") { hideFlags = HideFlags.HideAndDontSave };
         go.AddComponent<SelfTestRunner>();
+    }
+}
+
+/// <summary>
+/// Keeps a self-test run from granting the player's real profile anything. Every unlock goes through four
+/// <c>AchievementManager</c> entry points (decomp Assembly-CSharp/AchievementManager.cs): achievements
+/// (<c>ThrowAchievement</c>, :570, the only <c>Platform.UnlockAchievement</c> call, :596), stats such as MaxAscent,
+/// BestTime, guidebook pages and cosmetic picks (<c>SetSteamStat</c>, :447, and <c>IncrementSteamStat</c>, :500, the
+/// only <c>SetStat</c>/<c>SetProgress</c> calls, :518-524), and ascent completion (<c>TryCompleteAscent</c>, :957, which
+/// also queues the end screen's promotion popups). Badges and cosmetics follow from achievements earned this run
+/// (EndScreen.cs:480-492, :508-570). The game's own guard, a custom run (<c>RunSettings.blockingAchievements</c>,
+/// RunSettings.cs:136-146), covers the same four but never in the airport, where the self-test also reads the
+/// guidebook and uses items, so the self-test blocks them itself for the whole run.
+/// </summary>
+static class SelfTestProgressGuard
+{
+    /// <summary>All four are patched: steps that would grant progress may run.</summary>
+    internal static bool Active;
+
+    [HarmonyPatch]
+    internal static class Achievement
+    {
+        static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(AchievementManager),
+                "ThrowAchievement",
+                new[] { typeof(ACHIEVEMENTTYPE) }
+            );
+
+        static bool Prefix() => false;
+    }
+
+    [HarmonyPatch]
+    internal static class StatSet
+    {
+        static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(AchievementManager),
+                "SetSteamStat",
+                new[] { typeof(STEAMSTATTYPE), typeof(int) }
+            );
+
+        static bool Prefix() => false;
+    }
+
+    [HarmonyPatch]
+    internal static class StatIncrement
+    {
+        static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(AchievementManager),
+                "IncrementSteamStat",
+                new[] { typeof(STEAMSTATTYPE), typeof(int) }
+            );
+
+        static bool Prefix(ref int __result)
+        {
+            __result = 0;
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class AscentComplete
+    {
+        static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(AchievementManager), "TryCompleteAscent");
+
+        static bool Prefix() => false;
     }
 }
 
