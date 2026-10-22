@@ -148,3 +148,23 @@ public class SelfTestChecksTests
         TestUtil.Near(0f, SelfTestChecks.FallSeconds(-1f, 9.8f, 50f));
     }
 }
+
+public class SettleDeadlineTests
+{
+    [Fact]
+    public void NotStill_KeepsTheBaseDeadline() =>
+        TestUtil.Near(5f, SelfTestChecks.SettleDeadline(5f, 6f, 0f, 1f, 0.5f));
+
+    [Fact]
+    public void StillnessStartedBeforeTheDeadline_CanFinish()
+    {
+        // Run 30 vr.32: still for 0.6 of 1 s when a 4 s deadline ran out.
+        float deadline = SelfTestChecks.SettleDeadline(4f, 4f, 0.6f, 1f, 0.5f);
+        TestUtil.Near(4.9f, deadline);
+        Assert.True(deadline > 4f + (1f - 0.6f));
+    }
+
+    [Fact]
+    public void EarlyStillness_DoesNotShortenTheDeadline() =>
+        TestUtil.Near(5f, SelfTestChecks.SettleDeadline(5f, 2f, 0.5f, 1f, 0.5f));
+}

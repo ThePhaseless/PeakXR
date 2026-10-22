@@ -80,6 +80,20 @@ namespace PeakXR.Core
         public static float WaitBudget(float gameSeconds, float leadIn = 0f) =>
             (gameSeconds > 0f ? gameSeconds * 1.25f : 0f) + MathF.Max(0f, leadIn) + GameMargin;
 
+        /// <summary>
+        /// When a settle wait gives up: at <paramref name="deadline"/>, unless the body has been still for
+        /// <paramref name="stillFor"/> seconds at <paramref name="now"/>; then no earlier than that stillness reaching
+        /// <paramref name="hold"/> plus <paramref name="margin"/>, so a settle in progress always finishes. Stillness
+        /// that breaks after the deadline ends the wait.
+        /// </summary>
+        public static float SettleDeadline(
+            float deadline,
+            float now,
+            float stillFor,
+            float hold,
+            float margin
+        ) => stillFor > 0f ? MathF.Max(deadline, now - stillFor + hold + margin) : deadline;
+
         /// <summary>Seconds to fall <paramref name="height"/> from rest: free fall up to
         /// <paramref name="terminalSpeed"/>, then at that speed.</summary>
         public static float FallSeconds(float height, float gravity, float terminalSpeed)

@@ -31,7 +31,52 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
-        yield return HandStep("vr.46-lunge", 40f, LungeStep());
+        yield return Restoring("vr.46-lunge", 40f, LungeStep());
+    }
+
+    /// <summary>
+    /// Offline: <see cref="SandboxActions.PlaceWall"/> ahead of the settled player (7 m of face, far above
+    /// <see cref="LungeHeadroom"/>), its face and the ground 0.6 m in front of it. Removed after the step.
+    /// </summary>
+    bool LungeWall(Character c, out RaycastHit wall, out Vector3 stand)
+    {
+        wall = default;
+        stand = default;
+        var placed = SandboxActions.PlaceWall();
+        if (placed == null)
+            return false;
+        bodyRestore = () =>
+        {
+            if (placed != null)
+                UnityEngine.Object.Destroy(placed);
+        };
+        var mask = HelperFunctions.terrainMapMask;
+        if (
+            !Physics.Raycast(
+                c.Center,
+                Flat(placed.transform.position - c.Center),
+                out wall,
+                8f,
+                mask,
+                QueryTriggerInteraction.Ignore
+            )
+            || wall.collider.gameObject != placed
+        )
+            return false;
+        var front = wall.point + Flat(wall.normal) * 0.6f;
+        if (
+            !Physics.Raycast(
+                front + Vector3.up * 2f,
+                Vector3.down,
+                out var ground,
+                6f,
+                mask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return false;
+        stand = ground.point + Vector3.up * 0.1f;
+        return true;
     }
 
     /// <summary>Face above the grip vr.46 needs: the 0.4 m pull, the ~1.4 m jump and the catch above the body. Run 29's
@@ -56,7 +101,11 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.ArmLunge off";
             yield break;
         }
-        if (!FindWall(c, out var wall, out var stand, LungeHeadroom))
+        // The sandbox's 7 m test wall offline, so the catch is always tested; online, a tall enough map wall.
+        if (
+            !LungeWall(c, out var wall, out var stand)
+            && !FindWall(c, out wall, out stand, LungeHeadroom)
+        )
         {
             stepSkip = NoWall;
             yield break;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using PeakXR.Core;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
@@ -123,14 +124,24 @@ internal sealed partial class SelfTestRunner
     float settledFor;
 
     /// <summary>Waits until the body has been grounded, not sprinting and still for <see cref="SettleHold"/>; the
-    /// deadline is the fall to the ground under it plus that hold.</summary>
+    /// deadline is the fall to the ground under it plus that hold, pushed back while a stillness that started in time
+    /// runs (run 30's vr.32 ran out still 0.6 of 1 s, every condition holding).</summary>
     IEnumerator StandStill(Character c)
     {
         float drop = GroundBelow(c.Center, 200f);
-        float end =
+        float deadline =
             Now + GameTiming.Budget(GameTiming.FallSeconds(Mathf.Max(0f, drop)) + SettleHold, 1f);
         settledFor = 0f;
-        while (Now < end)
+        while (
+            Now
+            < SelfTestChecks.SettleDeadline(
+                deadline,
+                Now,
+                settledFor,
+                SettleHold,
+                SelfTestChecks.GameMargin
+            )
+        )
         {
             settledFor = AtRest(c) ? settledFor + Time.unscaledDeltaTime : 0f;
             if (settledFor >= SettleHold)
