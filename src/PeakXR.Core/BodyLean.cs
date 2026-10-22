@@ -79,6 +79,32 @@ namespace PeakXR.Core
             return true;
         }
 
+        /// <summary>
+        /// Horizontal shift of the legs' animated pose (relative to the hip) that keeps the mass centre over the
+        /// planted feet while the upper body bends. The ragdoll pulls every part toward hip + its animated offset
+        /// (Bodypart.cs:193-207) and the feet grip, so a bend alone leaves the leg targets behind the feet: friction
+        /// then creeps the whole body toward the lean until the hip is back over them (run 28: the mass centre 0.06 m
+        /// forward, back again on standing up). With the legs shifted, the hip settles back by this much and the
+        /// mass centre stays, as a person's hips go back when they bend. <paramref name="upperMoment"/> is the sum of
+        /// mass times animated displacement of the bent parts; <paramref name="legMass"/> the mass that stays planted.
+        /// </summary>
+        public static Vector3 LegShift(Vector3 upperMoment, float totalMass, float legMass)
+        {
+            float carried = totalMass - legMass;
+            if (carried <= 1e-4f)
+                return Vector3.Zero;
+            return new Vector3(upperMoment.X, 0f, upperMoment.Z) / carried;
+        }
+
+        /// <summary>
+        /// What to add to the tracked head so the lean starts from the calibrated eyes: the unbent animated eyes
+        /// (<paramref name="eyeFromHip"/>, relative to the animated hip, taken on a physics step) carried onto the
+        /// rendered frame's physical <paramref name="hip"/>, minus that frame's <paramref name="calibratedEye"/>.
+        /// Both ends on the same frame, so a moving body adds no bias.
+        /// </summary>
+        public static Vector3 HeadBias(Vector3 eyeFromHip, Vector3 hip, Vector3 calibratedEye) =>
+            hip + eyeFromHip - calibratedEye;
+
         /// <summary>Shortest rotation turning direction <paramref name="a"/> onto <paramref name="b"/>.</summary>
         public static Quaternion FromTo(Vector3 a, Vector3 b)
         {

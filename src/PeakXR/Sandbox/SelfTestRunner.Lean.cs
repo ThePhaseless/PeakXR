@@ -10,7 +10,8 @@ using UnityEngine;
 namespace PeakXR.Sandbox;
 
 /// <summary>
-/// <c>vr.45-lean</c>: leaning bends the avatar and never moves the view. A scripted head on the calibrated spot
+/// <c>vr.45-lean</c>: leaning bends the avatar and never moves the view. The body must first be grounded and at
+/// rest for 1 s, else "not settled". A scripted head on the calibrated spot
 /// stands, leans 0.3 m forward and 0.25 m sideways (inside <c>Locomotion.LeanLimit</c>) with both hands reaching out,
 /// then makes a fast 0.15 s lean, and finally leans 0.5 m (past the limit) and stands back up. The body is the
 /// view's root (<see cref="RigDriver.ViewRoot"/>, the ragdoll's mass centre; the hip itself slides back when the
@@ -19,7 +20,9 @@ namespace PeakXR.Sandbox;
 /// <see cref="MaxLeanDrift"/> peak to peak; the fast lean moves the rig origin more than
 /// <see cref="MaxFastViewDrift"/>; the far lean does not walk the body at least 0.1 m forward, moves the rig origin,
 /// or the body moves at all (beyond <see cref="MaxLeanDrift"/>) while the head stands up and for 3.5 s after; or an arm fails the vr.08 judgement during a lean (hand more than
-/// 0.15 m off its controller, stretched, or an elbow pointing up or back).
+/// 0.15 m off its target, stretched, or an elbow pointing up or back). The hands (0.45 m ahead of and 0.3 m under the
+/// head, about 0.53 m from a person's shoulders) are out of the scout's reach, so the target is the controller
+/// mapped onto the avatar's reach (<see cref="ArmReach"/>); how far that holds each hand short is reported.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -39,6 +42,28 @@ internal sealed partial class SelfTestRunner
         if (driver == null || rig == null || c.refs.hip == null)
         {
             Fail("no pose driver, rig or hip");
+            yield break;
+        }
+        // Run 29 started right after the sprint step with the body still moving ("standing: body moved 0.551 m").
+        // shortcut: local wait for rest; switch to the shared settle helper once it lands.
+        float restSince = Now;
+        yield return WaitFor(
+            () =>
+            {
+                if (!AtRest(c))
+                    restSince = Now;
+                return Now - restSince >= 1f;
+            },
+            8f
+        );
+        if (!AtRest(c))
+        {
+            var v = c.refs.hip.Rig.linearVelocity;
+            Fail(
+                F(
+                    $"not settled: grounded {c.data.isGrounded}, control {c.data.currentRagdollControll:0.00}, climbing {c.data.isClimbingAnything}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s"
+                )
+            );
             yield break;
         }
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
@@ -133,7 +158,11 @@ internal sealed partial class SelfTestRunner
             );
             if (name == "forward")
                 yield return ShotAt("vr.45-lean-forward", HandsMid());
-            notes.Add("lean " + name + ":");
+            notes.Add(
+                F(
+                    $"lean {name}: reach map holds L {driver.ReachPull(true):0.000} m, R {driver.ReachPull(false):0.000} m short of the controllers, leg shift {driver.LegShiftNow.magnitude:0.000} m"
+                )
+            );
             JudgeArm(c, "L", true, left, true, fails, notes);
             JudgeArm(c, "R", false, rightArm, true, fails, notes);
             yield return Track(c, rig, Vector3.zero, 0.6f, 1f);
@@ -186,6 +215,17 @@ internal sealed partial class SelfTestRunner
             Fail(string.Join("; ", fails) + " | " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>Grounded, under control, not climbing, hip slower than 5 cm/s horizontally.</summary>
+    static bool AtRest(Character c)
+    {
+        var d = c.data;
+        var v = c.refs.hip.Rig.linearVelocity;
+        return d.isGrounded
+            && d.currentRagdollControll >= 0.9f
+            && !d.isClimbingAnything
+            && new Vector2(v.x, v.z).magnitude < 0.05f;
     }
 
     void StartTrack(Character c, VRRig rig)

@@ -85,6 +85,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// follow without the body walking back.</summary>
     internal static System.Numerics.Vector2 LeanNeutral;
 
+    /// <summary>The local avatar's calibrated, unleaned eyes this frame (the point the first-person view rides before
+    /// follow lag); null while the view is elsewhere. avatar.local leans from the head's offset to this point.</summary>
+    internal static Vector3? LeanEye;
+
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
     internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
 
@@ -99,6 +103,10 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>The eye guard (finding: warps into rock) wants black; read by the self-test.</summary>
     internal static bool EyeGuardBlack => instance != null && instance.eyeGuard.Black;
+
+    /// <summary>The eye guard is watching a fresh view (a spawn, warp, jump or takeover): the body and the view are
+    /// still settling, so avatar.local does not learn the player's reach meanwhile.</summary>
+    internal static bool ViewSettling => instance != null && instance.eyeGuard.Watching;
 
     /// <summary>Whether a point is inside level geometry: within <see cref="EyeRadius"/> of a surface, or inside a
     /// closed mesh (the first face above it is a back face, and the same collider shows a back face below it too).
@@ -385,6 +393,7 @@ internal sealed class RigDriver : MonoBehaviour
 
         BodyAnchor = null;
         ViewOffset = Vector3.zero;
+        LeanEye = null;
         if (rig.OriginOverride)
             ResetTakeover();
         else
@@ -760,12 +769,15 @@ internal sealed class RigDriver : MonoBehaviour
         if (shownKind == ViewKind.FirstPerson && !snap)
             BodyAnchor = anchor;
         if (shownKind == ViewKind.FirstPerson)
+        {
+            LeanEye = BodyEye(c, yaw);
             ViewOffset =
                 anchor
                 - goal
                 + turnShift
                 + Vector3.up * rig.CrouchLift
                 + rig.Origin.TransformVector(new Vector3(LeanNeutral.X, 0f, LeanNeutral.Y));
+        }
         snap = false;
 
         var origin = RigMath.OriginPosition(

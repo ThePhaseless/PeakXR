@@ -103,3 +103,111 @@ public class BodyLeanTryTests
         );
     }
 }
+
+public class BodyLeanLegShiftTests
+{
+    [Fact]
+    public void NoBend_NoShift()
+    {
+        TestUtil.Near(Vector3.Zero, BodyLean.LegShift(Vector3.Zero, 60f, 20f));
+    }
+
+    // A ragdoll at rest: every part at hip + its animated offset (Bodypart.cs:193-207). Masses in kg, offsets in m.
+    static readonly (float Mass, Vector3 Offset, bool Upper, bool Leg)[] Parts =
+    {
+        (15f, Vector3.Zero, false, false), // hip
+        (8f, new(0f, 0.2f, 0f), true, false), // mid (the bend's pivot)
+        (12f, new(0f, 0.45f, -0.02f), true, false), // torso
+        (10f, new(0f, 0.85f, 0.05f), true, false), // head
+        (3f, new(-0.2f, 0.6f, 0f), true, false), // upper arms
+        (3f, new(0.2f, 0.6f, 0f), true, false),
+        (5f, new(-0.1f, -0.25f, 0f), false, true), // thighs, shins, feet
+        (5f, new(0.1f, -0.25f, 0f), false, true),
+        (3f, new(-0.1f, -0.6f, 0f), false, true),
+        (3f, new(0.1f, -0.6f, 0f), false, true),
+        (2f, new(-0.1f, -0.9f, 0.05f), false, true),
+        (2f, new(0.1f, -0.9f, 0.05f), false, true),
+    };
+
+    /// <summary>Horizontal mass centre with the feet (the last part) planted at <paramref name="feet"/>.</summary>
+    static Vector3 Centre(Vector3[] offsets, Vector3 feet)
+    {
+        var hip = feet - offsets[^1];
+        var sum = Vector3.Zero;
+        float mass = 0f;
+        for (int i = 0; i < Parts.Length; i++)
+        {
+            sum += (hip + offsets[i]) * Parts[i].Mass;
+            mass += Parts[i].Mass;
+        }
+        var c = sum / mass;
+        return new Vector3(c.X, 0f, c.Z);
+    }
+
+    [Theory]
+    [InlineData(20f, 0f)]
+    [InlineData(35f, 0f)]
+    [InlineData(0f, 20f)]
+    [InlineData(25f, -15f)]
+    public void PlantedFeet_KeepTheMassCentre(float pitchDeg, float rollDeg)
+    {
+        var feet = new Vector3(3f, 0f, -2f);
+        var rest = Array.ConvertAll(Parts, p => p.Offset);
+        var before = Centre(rest, feet);
+
+        var pivot = Parts[1].Offset;
+        var bend = Quaternion.CreateFromYawPitchRoll(
+            0f,
+            pitchDeg * MathF.PI / 180f,
+            rollDeg * MathF.PI / 180f
+        );
+        var bent = (Vector3[])rest.Clone();
+        var moment = Vector3.Zero;
+        float total = 0f;
+        float legs = 0f;
+        for (int i = 0; i < Parts.Length; i++)
+        {
+            total += Parts[i].Mass;
+            if (Parts[i].Leg)
+                legs += Parts[i].Mass;
+            if (!Parts[i].Upper)
+                continue;
+            bent[i] = pivot + Vector3.Transform(rest[i] - pivot, bend);
+            moment += Parts[i].Mass * (bent[i] - rest[i]);
+        }
+        // Without the shift the bend alone moves the planted body's mass centre: the creep run 28 saw.
+        Assert.True(Vector3.Distance(before, Centre(bent, feet)) > 0.02f);
+
+        var shift = BodyLean.LegShift(moment, total, legs);
+        Assert.Equal(0f, shift.Y);
+        for (int i = 0; i < Parts.Length; i++)
+            if (Parts[i].Leg)
+                bent[i] += shift;
+        TestUtil.Near(before, Centre(bent, feet), 1e-5f);
+    }
+
+    [Fact]
+    public void AllMassInTheLegs_NoShift()
+    {
+        TestUtil.Near(Vector3.Zero, BodyLean.LegShift(new Vector3(0f, 0f, 1f), 20f, 20f));
+    }
+}
+
+public class BodyLeanHeadBiasTests
+{
+    [Fact]
+    public void MovingBody_NoBias()
+    {
+        // The animated eye is sampled on a physics step, the calibrated eye on the rendered frame 20 ms later. Walking
+        // at 5 m/s the body moved 0.1 m in between: carried on the frame's hip, the bias is the animated-physical gap
+        // alone, not that motion.
+        var gap = new Vector3(0f, 0.01f, 0.12f);
+        var eyeFromHip = new Vector3(0f, 1.0f, 0.15f) + gap;
+        var hipStep = new Vector3(4f, 1f, 7f);
+        var hipFrame = hipStep + new Vector3(0f, 0f, 5f) * 0.02f;
+        var calibrated = hipFrame + new Vector3(0f, 1.0f, 0.15f);
+        TestUtil.Near(gap, BodyLean.HeadBias(eyeFromHip, hipFrame, calibrated), 1e-5f);
+        // The step's world eye against the frame's calibrated eye reads the 0.1 m walk as a backward lean.
+        Assert.True(Vector3.Distance(gap, hipStep + eyeFromHip - calibrated) > 0.09f);
+    }
+}
