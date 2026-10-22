@@ -264,11 +264,41 @@ internal static class PhysicalInteraction
             && hand.Trigger.Pressed
         )
             hand.Action = GripPressAction.None;
+        // While the hand keeps pointing it is aiming a ping (the aim preview invites a long hold): the pending
+        // interact waits, so a ping aimed at an item never picks it up.
+        else if (hand.Action == GripPressAction.Interact && now < hand.InteractAt && PingAims())
+            hand.InteractAt = GripIntent.DeferPointedInteract(
+                hand.InteractAt,
+                GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left)),
+                now,
+                FingerGun.DefaultWindow
+            );
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);
         else if (hand.Grip.Released)
             OnGripRelease(hand, c, rig, cfg, active);
+    }
+
+    private static Framework.Feature pingFeature;
+    private static bool pingLooked;
+
+    /// <summary>The finger-gun ping is live (<c>interact.ping</c> active, <c>Ping.FingerGunPing</c> on), so a pointing
+    /// hand is aiming it. The feature is looked up once, not per frame.</summary>
+    private static bool PingAims()
+    {
+        if (!pingLooked)
+        {
+            pingLooked = true;
+            foreach (var f in Framework.FeatureManager.Features)
+            {
+                if (f.Id == "interact.ping")
+                    pingFeature = f;
+            }
+        }
+        return pingFeature != null
+            && pingFeature.State == Framework.FeatureState.Active
+            && Ping.PingConfig.Instance.FingerGun;
     }
 
     private static bool Holding(Character c, out Item item)
