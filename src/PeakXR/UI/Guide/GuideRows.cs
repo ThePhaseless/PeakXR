@@ -145,14 +145,7 @@ internal static class GuideRows
             $"[ui.guide] VR tab: guide section, demos {(expanded ? "listed" : "folded")}, practice {(PracticeRun.Running ? "running" : "idle")}"
         );
         rows.Add(Header("PEAKXR_SECTION_GUIDE", "VR Guide"));
-        rows.Add(
-            new GuideRow(
-                GuideAction.Practice,
-                GuideTopic.Count,
-                Loc.Set("PEAKXR_GUIDE_PRACTICE", "Practice"),
-                PracticeRun.Running ? "Stop" : "Start"
-            )
-        );
+        rows.Add(PracticeRow());
         rows.Add(
             new GuideRow(
                 GuideAction.Expand,
@@ -164,19 +157,34 @@ internal static class GuideRows
         if (!expanded)
             return;
         for (int i = 0; i < (int)GuideTopic.Count; i++)
-        {
-            var topic = (GuideTopic)i;
-            var demo = GuideTable.Get(topic);
-            rows.Add(
-                new GuideRow(
-                    GuideAction.Demo,
-                    topic,
-                    Loc.Set("PEAKXR_GUIDE_" + topic, demo.Name),
-                    "Play"
-                )
-            );
-        }
+            rows.Add(DemoRow((GuideTopic)i));
     }
+
+    /// <summary>The VR Guide page of the VR layout: Practice, then every demo. The page is the guide's own, so nothing
+    /// is folded away.</summary>
+    public static void AppendAll(List<Setting> rows)
+    {
+        rows.Add(PracticeRow());
+        rows.Add(Header("PEAKXR_SECTION_DEMOS", "Demos"));
+        for (int i = 0; i < (int)GuideTopic.Count; i++)
+            rows.Add(DemoRow((GuideTopic)i));
+    }
+
+    private static GuideRow PracticeRow() =>
+        new(
+            GuideAction.Practice,
+            GuideTopic.Count,
+            Loc.Set("PEAKXR_GUIDE_PRACTICE", "Practice"),
+            PracticeRun.Running ? "Stop" : "Start"
+        );
+
+    private static GuideRow DemoRow(GuideTopic topic) =>
+        new(
+            GuideAction.Demo,
+            topic,
+            Loc.Set("PEAKXR_GUIDE_" + topic, GuideTable.Get(topic).Name),
+            "Play"
+        );
 
     /// <summary>The comfort choices with their usual previews, then Start and Back.</summary>
     public static List<Setting> Comfort(System.Func<ConfigEntryBase, Setting> rowFor)
