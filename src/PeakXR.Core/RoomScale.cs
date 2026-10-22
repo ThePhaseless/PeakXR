@@ -66,6 +66,9 @@ namespace PeakXR.Core
         public float NeutralSpeed = 0.3f;
 
         float _absorbed;
+
+        /// <summary>How far the anchor moved along the last follow, coasting after it included.</summary>
+        float _followTravel;
         bool _following;
         Vector2 _followDir;
         Vector2 _neutralGoal;
@@ -100,6 +103,7 @@ namespace PeakXR.Core
                 float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
                 Anchor += dir * along;
                 _absorbed += along;
+                _followTravel += MathF.Max(0f, along * Vector2.Dot(dir, _followDir));
                 d = head - Anchor;
                 dist = d.Length();
             }
@@ -107,10 +111,23 @@ namespace PeakXR.Core
             if (!canFollow)
                 _absorbed = 0f;
 
-            // Hysteresis: start past the lean radius, stop only well inside it.
-            _following = canFollow && (_following ? dist > StopRadius : dist > LeanRadius);
+            // Hysteresis: start past the lean radius, stop only well inside it. Standing back up after a follow
+            // points the head back by up to how far the body walked (more when the walk coasted onto the head, run
+            // 31): that stance is not a step, so it never starts a walk back. Neutral then makes it upright.
+            bool start = !_following;
+            if (start)
+            {
+                var trigger = d;
+                float back = -Vector2.Dot(d, _followDir);
+                if (back > 0f)
+                    trigger += _followDir * MathF.Min(back, _followTravel);
+                start = trigger.Length() > LeanRadius;
+            }
+            _following = canFollow && (_following ? dist > StopRadius : start);
             if (_following)
             {
+                if (start)
+                    _followTravel = 0f;
                 _followDir = d / dist;
                 _neutralGoal = Vector2.Zero;
             }
@@ -139,6 +156,7 @@ namespace PeakXR.Core
             _absorbed = 0f;
             _following = false;
             _followDir = Vector2.Zero;
+            _followTravel = 0f;
             _neutralGoal = Vector2.Zero;
             Neutral = Vector2.Zero;
         }
