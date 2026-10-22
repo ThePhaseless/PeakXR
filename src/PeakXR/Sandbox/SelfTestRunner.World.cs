@@ -320,11 +320,19 @@ internal sealed partial class SelfTestRunner
             float mark = CueMark();
             var interaction = Interaction.instance;
             float progress = 0f;
+            bool over = false;
+            // The gesture reads the book hand, as a player holds the book over the body: the hand goes 0.4 m above
+            // the hips and stays (the book itself moves when the revive opens it).
+            var rig = VRRig.Instance;
+            yield return MoveTo(left, () => skeleton.Center() + Vector3.up * 0.4f, 0.6f);
             float end = Now + 4f;
-            BeginCarry();
             while (Now < end && held != null && (usedUp || progress < 0.1f))
             {
-                CarryToward(left, held.Center(), skeleton.Center() + Vector3.up * 0.25f);
+                SetHand(
+                    left,
+                    rig.Origin.InverseTransformPoint(skeleton.Center() + Vector3.up * 0.4f)
+                );
+                over |= WorldHolds.BookTarget != null;
                 if (
                     interaction != null
                     && ReferenceEquals(interaction.currentHeldInteractible, skeleton)
@@ -334,7 +342,7 @@ internal sealed partial class SelfTestRunner
                     break;
                 yield return null;
             }
-            float above = held != null ? (held.Center() - skeleton.Center()).y : 0f;
+            float above = (rig.Hand(left).position - skeleton.Center()).y;
             if (usedUp)
             {
                 yield return ExpectCue(left, DenyReason.UsedUp, mark, tint: true, within: 0.5f);
@@ -347,14 +355,15 @@ internal sealed partial class SelfTestRunner
             if (progress <= 0f)
             {
                 Fail(
-                    $"book over the bones did not start the revive hold: book {above:0.00} m above the hips, "
-                        + $"over {(WorldHolds.BookTarget != null ? "the skeleton" : "nothing")}"
+                    $"book over the bones did not start the revive hold: book hand {above:0.00} m above the hips, "
+                        + $"gesture over the skeleton {over}, hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}"
                 );
                 yield break;
             }
             yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0.5f);
             if (stepOk)
-                stepNote = $"revive hold {progress:0.00}, book {above:0.00} m above; {cueNote}";
+                stepNote =
+                    $"revive hold {progress:0.00}, book hand {above:0.00} m above; {cueNote}";
         }
         finally
         {
