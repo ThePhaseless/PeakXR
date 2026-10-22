@@ -81,10 +81,10 @@ internal static class PingInput
         buttonFrame = Time.frameCount;
         bool touched = false,
             held = false;
+        // The thumb is read even while input is blocked: the long press opens the emote wheel, which blocks input, and
+        // reading those frames as "thumb off" cleared the long press, so the preview came back on release (vr34).
         if (
-            active
-            && c.data.fullyConscious
-            && ControllerLabels.ForAction(
+            ControllerLabels.ForAction(
                 VRAction.Ping,
                 VRInput.LeftHanded,
                 LocalHold.ItemInLeftHand,
@@ -113,7 +113,13 @@ internal static class PingInput
             }
         }
         buttonHeldFor = held ? buttonHeldFor + dt : 0f;
-        buttonAiming = ButtonPreview.Update(touched, held, buttonHeldFor, LongPressSeconds);
+        buttonAiming = ButtonPreview.Update(
+            touched,
+            held,
+            buttonHeldFor,
+            LongPressSeconds,
+            active && c.data.fullyConscious
+        );
         buttonAimLeft = PingRules.ButtonHandLeft(
             PingConfig.Instance.Hand,
             LeftHand.Pointing,

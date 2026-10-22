@@ -88,13 +88,21 @@ public sealed class PingButtonPreview
 {
     private bool longPressed;
 
-    public bool Update(bool touched, bool held, float heldSeconds, float longPressSeconds)
+    /// <param name="allowed">Player input is live (no wheel or window blocks it). False hides the preview but still
+    /// tracks the thumb, so the emote wheel the long press opened does not clear the long press.</param>
+    public bool Update(
+        bool touched,
+        bool held,
+        float heldSeconds,
+        float longPressSeconds,
+        bool allowed = true
+    )
     {
         if (held && heldSeconds >= longPressSeconds)
             longPressed = true;
         if (!touched && !held)
             longPressed = false;
-        return !longPressed && (touched || held);
+        return allowed && !longPressed && (touched || held);
     }
 
     public void Reset() => longPressed = false;
