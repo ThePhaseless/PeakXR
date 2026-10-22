@@ -77,19 +77,17 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator CampfireFarStep()
     {
-        var c = Character.localCharacter;
-        var fire = Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Off);
+        var fire = UnlitCampfire(_ => true, out var was);
         if (fire == null)
         {
-            stepSkip = "no unlit campfire loaded";
+            stepSkip = "no campfire loaded";
             yield break;
         }
-        var fireBase = ItemGestures.FireBase(fire);
-        yield return ApproachFire(fireBase);
         float radius = fire.moraleBoostRadius;
-        fire.moraleBoostRadius = 0.05f;
         try
         {
+            yield return ApproachFire(ItemGestures.FireBase(fire));
+            fire.moraleBoostRadius = 0.05f;
             bool left = !VRInput.LeftHanded;
             var logs = fire.Center();
             yield return MoveTo(left, () => logs, 0.5f);
@@ -109,7 +107,32 @@ internal sealed partial class SelfTestRunner
         finally
         {
             fire.moraleBoostRadius = radius;
+            RestoreFire(fire, was);
         }
+    }
+
+    /// <summary>
+    /// The nearest campfire a step can use unlit: an unlit one, else a lit one set back to unlit locally
+    /// (<c>Campfire.state</c>, Campfire.cs:97-108; its flames stay drawn). vr.26 lights the beach's own fire and every
+    /// segment jump lights the one behind it (<c>PreviousCampfire.LightWithoutReveal</c>, MapHandler.cs:811), so a
+    /// run otherwise has no unlit fire left. Restore with <see cref="RestoreFire"/>.
+    /// </summary>
+    static Campfire UnlitCampfire(Func<Campfire, bool> ok, out Campfire.FireState was)
+    {
+        var c = Character.localCharacter;
+        var fire =
+            Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Off && ok(f))
+            ?? Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Lit && ok(f));
+        was = fire != null ? fire.state : Campfire.FireState.Off;
+        if (fire != null && was != Campfire.FireState.Off)
+            fire.state = Campfire.FireState.Off;
+        return fire;
+    }
+
+    static void RestoreFire(Campfire fire, Campfire.FireState was)
+    {
+        if (fire != null && fire.state == Campfire.FireState.Off && was != Campfire.FireState.Off)
+            fire.state = was;
     }
 
     /// <summary>
@@ -253,18 +276,24 @@ internal sealed partial class SelfTestRunner
     /// fire red, and does not cook.</summary>
     IEnumerator CookNotLitStep(Item food)
     {
-        var c = Character.localCharacter;
-        var fire = Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Off);
+        var fire = UnlitCampfire(_ => true, out var was);
         if (fire == null)
         {
-            stepSkip = "no unlit campfire loaded";
+            stepSkip = "no campfire loaded";
             yield break;
         }
-        var fireBase = ItemGestures.FireBase(fire);
-        yield return ApproachFire(fireBase);
-        yield return HoldInHeat(food, fireBase, DenyReason.NotLit);
-        if (stepOk && fire.state != Campfire.FireState.Off)
-            Fail($"{fire.name} changed to {fire.state}");
+        try
+        {
+            var fireBase = ItemGestures.FireBase(fire);
+            yield return ApproachFire(fireBase);
+            yield return HoldInHeat(food, fireBase, DenyReason.NotLit);
+            if (stepOk && fire.state != Campfire.FireState.Off)
+                Fail($"{fire.name} changed to {fire.state}");
+        }
+        finally
+        {
+            RestoreFire(fire, was);
+        }
     }
 
     /// <summary>Holds <paramref name="prefab"/> in the near side of the heat column over <paramref name="fireBase"/>
@@ -444,11 +473,37 @@ internal sealed partial class SelfTestRunner
             fuse = Nearest<ScoutCannonFuse>(c.Center, f => !f.IsConstantlyInteractable(c));
         if (fuse == null)
             fuse = Nearest<RocketFuse>(c.Center, f => !f.IsConstantlyInteractable(c));
+        GameObject placed = null;
+        ScoutCannon burning = null;
         if (fuse == null)
         {
-            stepSkip = "no lit fuse or ghost fire loaded";
-            yield break;
+            // None in the level: place a cannon and mark its fuse burning (ScoutCannon.lit, read by
+            // ScoutCannonFuse.IsConstantlyInteractable, ScoutCannonFuse.cs:104-107), as for the 3 s after a light.
+            burning = SpawnCannon(out placed);
+            fuse = burning != null ? burning.GetComponentInChildren<ScoutCannonFuse>() : null;
+            if (fuse == null)
+            {
+                DestroySpawned(placed);
+                stepSkip = "no lit fuse or ghost fire loaded, and no scout cannon to place";
+                yield break;
+            }
+            burning.lit = true;
         }
+        try
+        {
+            yield return FuseRefused(torchPrefab, fuse);
+        }
+        finally
+        {
+            if (burning != null)
+                burning.lit = false;
+            DestroySpawned(placed);
+        }
+    }
+
+    IEnumerator FuseRefused(Item torchPrefab, Component fuse)
+    {
+        var c = Character.localCharacter;
         var reason =
             fuse is GhostFire || ((IInteractible)fuse).IsInteractible(c)
                 ? DenyReason.UsedUp
@@ -701,13 +756,82 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var cannon = Nearest<ScoutCannon>(c.Center, k => !k.lit);
+        GameObject placed = null;
+        if (cannon == null)
+            cannon = SpawnCannon(out placed);
         var entry =
             cannon != null ? GameMember.Field<ScoutCannon, Transform>("entry")(cannon) : null;
         if (entry == null)
         {
-            stepSkip = "no scout cannon loaded";
+            DestroySpawned(placed);
+            stepSkip = "no scout cannon loaded or placeable";
             yield break;
         }
+        try
+        {
+            yield return CannonFires(cannon, entry);
+        }
+        finally
+        {
+            DestroySpawned(placed);
+        }
+    }
+
+    /// <summary>
+    /// A scout cannon placed offline as the Scout Cannon item places one (<c>Constructable.FinishConstruction</c>,
+    /// Constructable.cs:158-191: <c>PhotonNetwork.Instantiate</c> of its <c>constructedPrefab</c>), on the ground 3 m
+    /// ahead, its barrel facing away. Null when no item builds one. Remove it with <see cref="DestroySpawned"/>.
+    /// </summary>
+    static ScoutCannon SpawnCannon(out GameObject placed)
+    {
+        placed = null;
+        GameObject prefab = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (
+                it != null
+                && it.TryGetComponent(out Constructable build)
+                && build.constructedPrefab != null
+                && build.constructedPrefab.GetComponentInChildren<ScoutCannon>(true) != null
+            )
+            {
+                prefab = build.constructedPrefab;
+                break;
+            }
+        }
+        var rig = VRRig.Instance;
+        if (prefab == null || rig == null || rig.Head == null)
+            return null;
+        var forward = Flat(rig.Head.forward);
+        var at = Character.localCharacter.Center + forward * 3f;
+        if (
+            Physics.Raycast(
+                at + Vector3.up * 3f,
+                Vector3.down,
+                out var ground,
+                8f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            at = ground.point;
+        placed = Photon.Pun.PhotonNetwork.Instantiate(
+            prefab.name,
+            at,
+            Quaternion.LookRotation(forward, Vector3.up),
+            0
+        );
+        return placed != null ? placed.GetComponentInChildren<ScoutCannon>() : null;
+    }
+
+    static void DestroySpawned(GameObject placed)
+    {
+        if (placed != null)
+            Photon.Pun.PhotonNetwork.Destroy(placed);
+    }
+
+    IEnumerator CannonFires(ScoutCannon cannon, Transform entry)
+    {
         yield return WarpFacing(entry.position, 2f);
         int before = WorldHolds.Notices;
         float mark = CueMark();
@@ -1041,15 +1165,15 @@ internal sealed partial class SelfTestRunner
         var map = Singleton<MapHandler>.Instance;
         var c = Character.localCharacter;
         var from = map.GetCurrentSegment();
-        var fire = Nearest<Campfire>(
-            c.Center,
-            f => f.state == Campfire.FireState.Off && f.advanceToSegment > from
-        );
+        // The fire that advances past this segment; the segment loop's jumps light every fire behind them, so it is
+        // usually lit by now and gets set back to unlit locally first (UnlitCampfire). It is then lit for real.
+        var fire = UnlitCampfire(f => f.advanceToSegment > from, out var was);
         if (fire == null)
         {
-            stepSkip = "no unlit campfire ahead of " + from;
+            stepSkip = "no campfire ahead of " + from;
             yield break;
         }
+        stepNote = $"{fire.name} was {was}";
         yield return ApproachFire(ItemGestures.FireBase(fire));
         SelfTestCampfirePatch.Hold = false;
         bool left = !VRInput.LeftHanded;
@@ -1063,6 +1187,8 @@ internal sealed partial class SelfTestRunner
             "the grip hold did not light " + fire.name
         );
         yield return GripTo(left, 0f, 0.1f);
+        // Not lit: put back what the local reset changed.
+        RestoreFire(fire, was);
         if (!stepOk)
             yield break;
         if (CueLog.Capture.Fired(left, DenyReason.FriendsFar, mark, out _))
@@ -1083,7 +1209,8 @@ internal sealed partial class SelfTestRunner
             fade = Mathf.Max(fade, VRFade.Target);
             yield return null;
         }
-        var note = $"{fire.name}: {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00}";
+        var note =
+            $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00}";
         if (map.GetCurrentSegment() <= from)
             Fail("segment did not advance: " + note);
         else if (Setting("UI", "FadeOnSegmentChange", true) && fade < 0.5f)
@@ -1215,7 +1342,7 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 pillar == null
-                    ? "no soul pillar loaded (Nadir only)"
+                    ? "no soul pillar loaded: it is a Nadir scene object (Segment.Void, ascent 8+ runs, Ascents.cs:48) with no prefab to place offline"
                     : "Interaction.PalmsOnPillar is off";
             yield break;
         }
@@ -1289,7 +1416,7 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 col == null || !portal.isActiveAndEnabled
-                    ? "no active summit portal loaded"
+                    ? "no active summit portal: a scene object only the level switches on (no code enables PeakGatePortal) for the Nadir route, with no prefab to place offline"
                     : "Interaction.HandIntoPortal is off";
             yield break;
         }
