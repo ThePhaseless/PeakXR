@@ -36,6 +36,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
         yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
         // ---- WP6 gap round: wheels
+        yield return WheelGapSteps();
     }
 
     // ================================================================ WP6 gap round: ping
