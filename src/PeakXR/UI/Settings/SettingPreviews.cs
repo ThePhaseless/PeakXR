@@ -99,6 +99,9 @@ internal sealed class PreviewStage : MonoBehaviour
     private const float ReplaceDelay = 0.35f;
     private const float PulseInterval = 0.2f;
     private const float VignetteRamp = 0.15f;
+
+    /// <summary>Walking speed (m/s) the vignette preview shows: vr.17 walked 2.7 m/s.</summary>
+    private const float PreviewWalkSpeed = 2.7f;
     private const float HoverVignetteCap = 0.4f;
     private static readonly float CrouchEnter = new PhysicalCrouch().EnterFraction;
     private static readonly Color Accent = new(0.45f, 0.85f, 1f, 1f);
@@ -144,6 +147,8 @@ internal sealed class PreviewStage : MonoBehaviour
 
     private static ConfigEntry<bool> vignetteOn;
     private static ConfigEntry<float> vignetteStrength,
+        vignetteStart,
+        vignetteFull,
         snapAngle,
         smoothSpeed,
         statusIntensity,
@@ -470,6 +475,13 @@ internal sealed class PreviewStage : MonoBehaviour
                     "Comfort",
                     "VignetteStrength",
                     0.5f
+                );
+                // As it would close while walking (2.7 m/s, vr.17's walk) on the speed curve, so the start and full
+                // speed settings preview too.
+                strength *= ComfortVignette.Drive(
+                    PreviewWalkSpeed,
+                    SettingPreviews.Value(ref vignetteStart, "Comfort", "VignetteStartSpeed", 0.2f),
+                    SettingPreviews.Value(ref vignetteFull, "Comfort", "VignetteFullSpeed", 2.5f)
                 );
                 // Eased in, and a hover never tunnels the view further than a medium vignette.
                 if (clock.FromHover)
