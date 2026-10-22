@@ -49,6 +49,9 @@ internal static class LidGesture
     /// ring sits there above the low hand. Tune against the prefabs in game.</summary>
     private const float LidEdgeUp = 0.1f;
 
+    /// <summary>Open time (<c>timeToOpen</c>, Luggage.cs:214) from which the low-grip hint is worth showing.</summary>
+    internal const float LowGripMinOpen = 1.5f;
+
     private static Luggage target;
     private static float fraction;
     private static int frame = -10;
@@ -141,7 +144,13 @@ internal static class LidGesture
     private static void LowGrip(VRRig rig, int h)
     {
         var lug = Grabbed[h];
-        bool low = lug != null && !OnLid[h] && Affordance.Hints;
+        // A quick case (LuggageSmall opens in 0.5 s, vr33) is open before the hint could help.
+        bool low =
+            lug != null
+            && !OnLid[h]
+            && Affordance.Hints
+            && Character.localCharacter != null
+            && lug.GetInteractTime(Character.localCharacter) >= LowGripMinOpen;
         bool was = Low[h].Active;
         if (!Low[h].Update(low ? 0f : 1f, Time.deltaTime))
             return;

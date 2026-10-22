@@ -80,7 +80,6 @@ public sealed class WorldHoldsFeature : Feature
         WorldHolds.HasAmulets = GameMember.Field<ScoutStatue, int[]>("hasAmulets");
         WorldHolds.Usability = GameMember.Field<Item, Optionable<bool>>("overrideUsability");
         WorldHolds.CannonEntry = GameMember.Field<ScoutCannon, Transform>("entry");
-        Patch(typeof(WorldHolds.StatueSeen));
         Patch(typeof(WorldHolds.PortalSeen));
         Patch(typeof(WorldHolds.CannonLit));
         Patch(typeof(WorldHolds.CannonLaunch));
