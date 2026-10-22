@@ -280,9 +280,9 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 
 | Step id | Runs | Checks |
 |---|---|---|
-| `vr.100-thorn-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Thorn over 25 degrees off camera aim: scripted hand pinches it, contact tick felt, pull 14 cm, thorn leaves stuckIn within game hold time, progress tick felt. SKIP if AddThorn yields no off-view thorn. |
-| `vr.101-thorn-stuck` | SocialSteps, solo sandbox, VR hand step, god mode off | Foot stuck via Character.TryStickBodypart; pinch on a thorn gives DenyReason.Stuck cue on that hand, no tint, and the thorn stays after 1.5 s. Fails if foot cannot stick. SKIP if no thorn can be added. |
-| `vr.102-tick-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Spawned BugfixOnYou tick attaches to local player; left-hand pinch gives contact tick and the tick is removed within 3 s, hand holds the bug item. SKIP if the tick cannot spawn. |
+| `vr.100-thorn-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Thorn over 25 degrees off camera aim: scripted hand pinches it, contact tick felt, pull 14 cm, the game's hold runs on that thorn and it leaves stuckIn within the hold time, progress tick felt. Only thorns within 0.85 m of the head and off the right arm count. SKIP if AddThorn yields no such thorn. |
+| `vr.101-thorn-stuck` | SocialSteps, solo sandbox, VR hand step, god mode off | Foot stuck via Character.TryStickBodypart; pinch on a thorn within reach (not behind the head) gives DenyReason.Stuck cue on that hand, no tint, and the thorn stays after 1.5 s. Fails if foot cannot stick. SKIP if no thorn can be added. |
+| `vr.102-tick-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Spawned BugfixOnYou tick attaches to local player; left-hand pinch gives contact tick and the tick is removed within 3 s and the hand holds the bug item within 2 s more. SKIP if the tick cannot spawn. |
 | `vr.104-struggle` | SocialSteps, solo sandbox, VR hand step, god mode off | Web status 0.5 sets isStruggling; up/down shaking of both hands (up to 12 strokes) lowers the Web status, and a Progress feel is felt on the left hand. SKIP if AddStatus refuses. |
 | `vr.105-give-up` | SocialSteps, solo sandbox, VR hand step, god mode off | After PassOut and fullyPassedOut, one grip gives DenyReason.NeedsTwoHands and interactIsPressed stays false for 20 frames; both grips plus both triggers hold interact and give a Progress feel. SKIP if PassOut refuses. |
 
@@ -490,21 +490,24 @@ All files are in the shared directory.
 ### Checking the result
 
 ```sh
-tools/mp-check.sh [mp-dir]       # POS_TOL=1.0, LAND_TOL=1.5 metres, LAG_TOL=1.0 s by default
+tools/mp-check.sh [mp-dir]       # POS_TOL=1.0, LAND_TOL=1.5 metres, LAG_TOL=1.0 s, HOLD=2.0 s by default
 ```
 
 It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 when any check fails:
 
 - B saw a remote player join.
 - A's version check passed: the lobby's version equals A's, A is in the lobby, and the master is the host.
-- For each checkpoint A passed: B logged it with A present, B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. B can write its checkpoint before A's equip RPC arrives, so the first matching sample within `LAG_TOL` seconds after the checkpoint counts. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
+- A wrote a checkpoint for every step of its script, finished it (`a-done.json` says `script done`), ran in VR and logged no failed step.
+- For each checkpoint A passed: B logged it with A present within `HOLD` seconds (A's still hold after a checkpoint), B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. B can write its checkpoint before A's equip RPC arrives, so the first matching sample within `LAG_TOL` seconds after the checkpoint counts. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
 - B logged no exceptions and no unknown-event errors, and received no event 151.
 - A sent no event 151 (with a vanilla host, net.pose has no peers).
+- What B received for a step comes from its own `rpc` lines between its previous checkpoint and this one plus `LAG_TOL`. A check that something must not arrive looks on until B's next checkpoint, so a late RPC still counts.
+- `walk-to-host` and `regroup`: B sees A within 1.5 m plus `POS_TOL`. `emote`: B got A's `RPCA_PlayRemove` for the emote A hovered. `ping`: B got A's `ReceivePoint_Rpc` within `LAND_TOL` of A's point. `board`: B is on A's level. `luggage`: B saw an `OpenLuggageRPC` for each case A opened. `drop` and `throw`: B got A's `DropItemRpc`. `eat`: B saw A's `Consume`. `holster`: B saw an `EquipSlotRpc` stow, then a draw. `climb`: B got A's `StartClimbRpc`. `feed`: B got A's `SendFeedDataRPC` and its own `GetFedItemRPC`.
 - `feed-refuse`: B got no `GetFedItemRPC` or `SendFeedDataRPC`. `reach-deny`: B got no local `RPCA_Fall`. `scene-button`: no `RPCA_Trigger` reached B. `campfire-far`: B saw no `Light_Rpc`.
-- `kick-mode`: B logged a local `RPCA_Fall` from the shove. `carry`: B logged a remote `RPCA_StartCarry` and `RPCA_Drop`. `pal-jump`: B logged a local `JumpRpc` with `isPalJump`. `spectate`: B's checkpoint shows A passed out. `reach`: B's own Web status is 0.05 or less, so the reach freed B. `pack`: B still wears its pack and got no `PutInBackpackRPC` or `RPCAddItemToBackpack`.
+- `kick-mode`: B logged a local `RPCA_Fall` from the shove. `carry`: B logged a remote `RPCA_StartCarry` and, at least 0.5 s later, `RPCA_Drop`. `pal-jump`: B logged a local `JumpRpc` with `isPalJump`. `spectate`: B's checkpoint shows A passed out. `reach`: B's own Web status is 0.05 or less and B's own `sinceGrabFriend` is 5 s or less, so the reach caught and freed B. `pack`: B wore a pack before the step, still wears it and got no `PutInBackpackRPC` or `RPCAddItemToBackpack`.
 - B's quicksave fingerprint is the same at the end as at the start.
 
-The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and B's `rpc` lines in `b-observer.jsonl` for emote, ping, eat and feed.
+`INFO` lines list the skipped checkpoints and any emote B saw from A outside the `emote` step. The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and the hand IK targets for `two-hand`.
 
 ## What the sandbox does not cover
 

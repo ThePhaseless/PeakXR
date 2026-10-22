@@ -870,15 +870,29 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         var rig = VRRig.Instance;
         bool left = LocalHold.ItemInLeftHand;
+        var c = Character.localCharacter;
+        // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
+        // lost grip also takes the item from the hand, and only this tells them apart.
+        float consumedBefore = c.data.lastConsumedItem;
         yield return GripTo(left, 1f, 0.1f);
         // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head.
         float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 6f);
         float best = float.MaxValue;
-        while (item != null && HeldItem() == item && Now < end && host != null)
+        while (
+            item != null
+            && HeldItem() == item
+            && Now < end
+            && host != null
+            && c.data.lastConsumedItem == consumedBefore
+        )
         {
             var miss = host.Head - item.Center();
             best = Mathf.Min(best, miss.magnitude);
             var goal = Script(left).Position + rig.Origin.InverseTransformVector(miss);
+            // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
+            goal =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
             SetHand(
                 left,
                 HandScript
@@ -888,8 +902,11 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         var note = $"item closest {best:0.00} m to the host's head";
-        if (item != null && HeldItem() == item)
-            Fail("not fed: " + note);
+        if (c.data.lastConsumedItem == consumedBefore)
+            Fail(
+                (item != null && HeldItem() == item ? "not fed: " : "item left the hand unfed: ")
+                    + note
+            );
         else
             stepNote = "fed; " + note;
     }
@@ -1307,11 +1324,38 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
     }
 
-    /// <summary>A grip closes on the host's right hand (where a helping hand goes).</summary>
+    /// <summary>Shoulder to fingertip of an adult arm (m), the brief's 0.6-0.75 m.</summary>
+    const float MpShoulderReach = 0.75f;
+
+    /// <summary>How far (m) past a real arm the <paramref name="left"/> hand must go to touch <paramref name="world"/>:
+    /// from the shoulder (0.25 m under the head, 0.18 m to that side) less the grip's own pick radius
+    /// (<see cref="SocialConfig.Reach"/>, SocialHands.Find); 0 or less is in reach.</summary>
+    static float PastArm(bool left, Vector3 world)
+    {
+        HeadFrame(out var head, out _, out var right);
+        var shoulder = head + Vector3.down * 0.25f + (left ? -right : right) * 0.18f;
+        return Vector3.Distance(shoulder, world) - SocialConfig.Instance.Reach - MpShoulderReach;
+    }
+
+    /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
+    /// takes one more step in, then skips the step rather than stretch the scripted arm.</summary>
     IEnumerator GripHostHand(bool left)
     {
         var host = Host();
-        yield return MoveTo(left, () => HostPart(host, BodypartType.Hand_R), 0.5f);
+        Vector3 Part() => HostPart(host, BodypartType.Hand_R);
+        if (PastArm(left, Part()) > 0f)
+        {
+            yield return MpWalkBounded(HostCenter, 0.3f, 4f);
+            Face(host.Head);
+            yield return Wait(0.3f);
+        }
+        float past = PastArm(left, Part());
+        if (past > 0f)
+        {
+            stepSkip = $"the host's hand is {past:0.00} m past a real arm's reach";
+            yield break;
+        }
+        yield return MoveTo(left, Part, 0.5f);
         yield return GripTo(left, 1f, 0.1f);
     }
 
@@ -1408,6 +1452,8 @@ internal sealed partial class SelfTestRunner
         }
         float mark = CueMark();
         yield return GripHostHand(false);
+        if (stepSkip != null)
+            yield break;
         yield return ExpectCue(false, DenyReason.NotInTrouble, mark, false);
         if (!stepOk)
             yield break;
@@ -1446,6 +1492,8 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return GripHostHand(false);
+        if (stepSkip != null)
+            yield break;
         yield return Until(
             () => c.data.sinceGrabFriend < 0.3f,
             3f,
@@ -1473,6 +1521,8 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         float stamina = c.data.currentStamina;
         yield return GripHostHand(false);
+        if (stepSkip != null)
+            yield break;
         for (float end = Now + 1f; Now < end; )
         {
             if (c.data.isKicking)
@@ -1529,6 +1579,14 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         bool pack = c.player != null && !c.player.backpackSlot.IsEmpty();
+        // shortcut: A lifts a body on the ground standing upright, so the hands may go past a real arm; a player
+        // crouches first. Logged until the step crouches like pal-jump does.
+        float stretch = Mathf.Max(
+            PastArm(true, HostPart(host, BodypartType.Torso)),
+            PastArm(false, HostPart(host, BodypartType.Hip))
+        );
+        if (stretch > 0f)
+            Note($"the hands reach {stretch:0.00} m past a real arm to the lying host");
         float mark = CueMark();
         yield return MoveTo(true, () => HostPart(host, BodypartType.Torso), 0.5f);
         yield return MoveTo(false, () => HostPart(host, BodypartType.Hip), 0.5f);
@@ -1576,8 +1634,6 @@ internal sealed partial class SelfTestRunner
             stepNote = pack ? "lifted, pack dropped and marked, put down" : "lifted and put down";
     }
 
-    /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
-    /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
     /// <summary>Each of the three spots behind the host gets this long to walk to (MP run 11: three unbounded walks ran
     /// the step past 40 s).</summary>
     const float MpPackWalkSeconds = 8f;
@@ -1587,6 +1643,8 @@ internal sealed partial class SelfTestRunner
     /// (2 s), with a margin.</summary>
     const float MpPackBudget = 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
 
+    /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
+    /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
     IEnumerator MpPack()
     {
         var host = Host();
