@@ -103,3 +103,35 @@ public class BodyLeanTryTests
         );
     }
 }
+
+public class BodyLeanLegShiftTests
+{
+    [Fact]
+    public void NoBend_NoShift()
+    {
+        TestUtil.Near(Vector3.Zero, BodyLean.LegShift(Vector3.Zero, 60f, 20f));
+    }
+
+    [Fact]
+    public void PlantedFeet_KeepTheMassCentre()
+    {
+        // Upper parts (torso 20 kg, head 10 kg) move 0.1 and 0.2 m forward relative to the hip. The ragdoll pulls every
+        // part to hip + offset (Bodypart.cs:193-207) and the planted feet fix the hip at feet - leg offset, so the
+        // legs' offset grows by the shift and the hip (with all it carries) moves back by it.
+        const float total = 60f;
+        const float legs = 20f;
+        var moment = new Vector3(0f, -0.4f, 20f * 0.1f + 10f * 0.2f);
+        var shift = BodyLean.LegShift(moment, total, legs);
+        Assert.Equal(0f, shift.Y);
+        // Mass centre change: everything off the feet moves back by the shift, the upper parts forward by their bend.
+        var centre = (-shift * (total - legs) + new Vector3(moment.X, 0f, moment.Z)) / total;
+        TestUtil.Near(Vector3.Zero, centre, 1e-5f);
+        Assert.True(shift.Z > 0f, "the legs' targets move forward of the hip");
+    }
+
+    [Fact]
+    public void AllMassInTheLegs_NoShift()
+    {
+        TestUtil.Near(Vector3.Zero, BodyLean.LegShift(new Vector3(0f, 0f, 1f), 20f, 20f));
+    }
+}

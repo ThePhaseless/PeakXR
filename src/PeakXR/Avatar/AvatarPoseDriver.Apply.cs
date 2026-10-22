@@ -141,6 +141,7 @@ public partial class AvatarPoseDriver
             Plugin.Log.LogInfo(
                 $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}"
             );
+        SplitForLegShift(c.refs.ragdoll.partList);
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
         if (c.refs.ikLeft != null)
             hintWeightL = c.refs.ikLeft.data.hintWeight;
@@ -157,6 +158,79 @@ public partial class AvatarPoseDriver
     }
 
     private Vector3 AnimatedOffset() => hip.transform.position - hip.Rig.position;
+
+    /// <summary>The parts the lean carries (under <see cref="spine"/>, minus the controller-driven elbows and hands),
+    /// their masses, and their animated positions before this tick's bend.</summary>
+    private Transform[] bentParts = System.Array.Empty<Transform>();
+    private float[] bentMass = System.Array.Empty<float>();
+    private Vector3[] bentBefore = System.Array.Empty<Vector3>();
+
+    /// <summary>The topmost leg bones (neither the hip nor under the spine): shifting them moves the whole legs'
+    /// animated pose relative to the hip.</summary>
+    private Transform[] legRoots = System.Array.Empty<Transform>();
+
+    /// <summary>The leg roots' local positions without a shift. The shift is set from these each tick rather than
+    /// added: an animation that only rotates a bone never writes its position back.</summary>
+    private Vector3[] legRest = System.Array.Empty<Vector3>();
+    private float bodyMass;
+    private float legMass;
+
+    /// <summary>This tick's <see cref="BodyLean.LegShift"/> (world, animated pose). Traced.</summary>
+    internal Vector3 LegShiftNow { get; private set; }
+
+    private void SplitForLegShift(System.Collections.Generic.List<Bodypart> parts)
+    {
+        var bent = new System.Collections.Generic.List<Bodypart>();
+        var legs = new System.Collections.Generic.List<Transform>();
+        bodyMass = legMass = 0f;
+        foreach (var part in parts)
+        {
+            if (part == null || part.Rig == null)
+                continue;
+            float mass = part.Rig.mass;
+            bodyMass += mass;
+            if (part == hip)
+                continue;
+            if (spine != null && part.transform.IsChildOf(spine.transform))
+            {
+                if (!IsArmEnd(part.partType))
+                    bent.Add(part);
+                continue;
+            }
+            legMass += mass;
+            legs.Add(part.transform);
+        }
+        bentParts = new Transform[bent.Count];
+        bentMass = new float[bent.Count];
+        bentBefore = new Vector3[bent.Count];
+        for (int i = 0; i < bent.Count; i++)
+        {
+            bentParts[i] = bent[i].transform;
+            bentMass[i] = bent[i].Rig.mass;
+        }
+        legRoots = legs.FindAll(t => !legs.Exists(o => o != t && t.IsChildOf(o))).ToArray();
+        legRest = System.Array.ConvertAll(legRoots, t => t.localPosition);
+    }
+
+    /// <summary>Puts the leg roots at their rest offset plus <paramref name="shift"/> (world).</summary>
+    private void ShiftLegs(Vector3 shift)
+    {
+        LegShiftNow = shift;
+        for (int i = 0; i < legRoots.Length; i++)
+        {
+            var leg = legRoots[i];
+            leg.localPosition =
+                legRest[i]
+                + (leg.parent != null ? leg.parent.InverseTransformVector(shift) : shift);
+        }
+    }
+
+    private static bool IsArmEnd(BodypartType t) =>
+        t
+            is BodypartType.Elbow_L
+                or BodypartType.Elbow_R
+                or BodypartType.Hand_L
+                or BodypartType.Hand_R;
 
     private void LateUpdate()
     {
@@ -195,6 +269,8 @@ public partial class AvatarPoseDriver
         {
             // Vanilla animation takes the whole body back (the arms snap back too), so the lean ends with it.
             EyeLeanShift = Vector3.zero;
+            UnleanedEye = null;
+            ShiftLegs(Vector3.zero);
             leanWeight = 0f;
             LeanGate = "stale pose";
             if (rigReady)
@@ -228,7 +304,7 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
-                BlendTarget(refs.IKHandTargetLeft, p + offset, r, w);
+                BlendTarget(refs.IKHandTargetLeft, Reach(true, refs.ikLeft, p + offset), r, w);
             }
             SetHint(true, pose.HasLeftHand, refs.IKHandTargetLeft.position, w);
             if (pose.HasRightHand)
@@ -239,7 +315,7 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
-                BlendTarget(refs.IKHandTargetRight, p + offset, r, w);
+                BlendTarget(refs.IKHandTargetRight, Reach(false, refs.ikRight, p + offset), r, w);
             }
             SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position, w);
             // The IK solved this tick's arms on the unleaned shoulders; reach again from where the lean put them.
@@ -274,6 +350,8 @@ public partial class AvatarPoseDriver
         EyeLeanShift = Vector3.zero;
         LeanDegrees = 0f;
         LeanShoulderShift = Vector3.zero;
+        ShiftLegs(Vector3.zero);
+        UnleanedEye = null;
         if (spine == null || torso == null || head == null || !haveEyeInHead)
         {
             LeanGate =
@@ -285,6 +363,7 @@ public partial class AvatarPoseDriver
         var forward = bodyFrame.forward;
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
+        UnleanedEye = eye - AnimatedOffset();
         var target = Pose.HeadPosition + AnimatedOffset();
         LeanGate = ClosedGate(c, w, forward);
         bool allowed = false;
@@ -319,8 +398,16 @@ public partial class AvatarPoseDriver
         var q = Quaternion.Slerp(Quaternion.identity, lastSwing, amount);
         var headRot = head.transform.rotation;
         var shoulders = ShoulderMid();
+        for (int i = 0; i < bentParts.Length; i++)
+            bentBefore[i] = bentParts[i].position;
         spine.transform.rotation = q * spine.transform.rotation;
         head.transform.rotation = headRot;
+        // Keep the mass centre over the planted feet (BodyLean.LegShift): the hip goes back instead of the whole
+        // body creeping toward the lean and back on standing up.
+        var moment = Vector3.zero;
+        for (int i = 0; i < bentParts.Length; i++)
+            moment += bentMass[i] * (bentParts[i].position - bentBefore[i]);
+        ShiftLegs(BodyLean.LegShift(moment.N(), bodyMass, legMass).U());
         EyeLeanShift = head.transform.TransformPoint(eyeInHead) - eye;
         LeanShoulderShift = ShoulderMid() - shoulders;
         LeanDegrees = Quaternion.Angle(Quaternion.identity, q);
@@ -362,6 +449,10 @@ public partial class AvatarPoseDriver
 
     internal Vector3 LeanShoulderShift { get; private set; }
 
+    /// <summary>This tick's animated eyes before the bend, carried onto the physical hip (world): where the lean
+    /// starts from. avatar.local sends the head relative to it, so the head on the calibrated eyes is upright.</summary>
+    internal Vector3? UnleanedEye { get; private set; }
+
     private float nextLeanTrace;
 
     /// <summary>Lean trace, avatar side (local player only): the gate, the eased weight, what the head asks of the
@@ -383,7 +474,7 @@ public partial class AvatarPoseDriver
                 : torsoPhys;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
             )
         );
     }
@@ -501,7 +592,67 @@ public partial class AvatarPoseDriver
             out pos,
             out _
         );
+        if (left ? haveReachL : haveReachR)
+            pos += left ? reachShiftL : reachShiftR;
         return true;
+    }
+
+    /// <summary>Seconds the reach map takes to fade in or out (standing up, grabbing or dropping an item).</summary>
+    private const float ReachFadeSeconds = 0.3f;
+
+    /// <summary>The player's longest measured controller distance from the avatar's shoulder (<see cref="ArmReach"/>).</summary>
+    private float playerReach;
+    private float reachWeightL;
+    private float reachWeightR;
+    private bool haveReachL;
+    private bool haveReachR;
+    private Vector3 reachShiftL;
+    private Vector3 reachShiftR;
+
+    /// <summary>How far the reach map holds this hand's target off its controller (m). Read by the self-test.</summary>
+    internal float ReachPull(bool left) => (left ? reachShiftL : reachShiftR).magnitude;
+
+    /// <summary>
+    /// <paramref name="target"/> (the controller's hand bone, animated space) mapped onto the avatar's reach from the
+    /// arm's shoulder (<see cref="ArmReach"/>), while standing with that hand empty. A hand holding an item stays on
+    /// the controller: the item follows the controller pose and is welded to the hand. Climbing, hanging and gliding
+    /// keep the raw controller too. Also learns the player's reach from relaxed (slow body) samples.
+    /// </summary>
+    private Vector3 Reach(bool left, TwoBoneIKConstraint ik, Vector3 target)
+    {
+        var c = Owner;
+        var item = c.data.currentItem;
+        bool holding = item != null && (Pose.TwoHandHold || Pose.ItemInLeftHand == left);
+        bool on = !holding && Rig.RigDriver.Upright(c);
+        ref float weight = ref left ? ref reachWeightL : ref reachWeightR;
+        weight = Mathf.MoveTowards(weight, on ? 1f : 0f, Time.fixedDeltaTime / ReachFadeSeconds);
+        var result = target;
+        if (ik != null && ik.data.root != null && ik.data.mid != null && ik.data.tip != null)
+        {
+            var shoulder = ik.data.root.position;
+            var mid = ik.data.mid.position;
+            float arm =
+                Vector3.Distance(shoulder, mid) + Vector3.Distance(mid, ik.data.tip.position);
+            if (on && hip.Rig.linearVelocity.sqrMagnitude < 0.25f)
+                playerReach = ArmReach.Learn(playerReach, Vector3.Distance(shoulder, target), arm);
+            if (weight > 0f)
+                result = Vector3.Lerp(
+                    target,
+                    ArmReach.Target(shoulder.N(), target.N(), arm, playerReach).U(),
+                    weight
+                );
+        }
+        if (left)
+        {
+            haveReachL = true;
+            reachShiftL = result - target;
+        }
+        else
+        {
+            haveReachR = true;
+            reachShiftR = result - target;
+        }
+        return result;
     }
 
     /// <summary>After <c>CharacterAnimations.HandleIK</c>: arms follow their own controllers, blended with vanilla's

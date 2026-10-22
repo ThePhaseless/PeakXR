@@ -35,7 +35,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>Mean elbow offset (m) off the shoulder-hand line below which the arm counts as straight.</summary>
     const float MinJudgedBend = 0.03f;
 
-    /// <summary>Mean wrist-to-target error that fails an idle, empty hand: each hand follows only its controller.</summary>
+    /// <summary>Mean wrist-to-target error that fails an idle, empty hand: each hand follows only its controller,
+    /// mapped onto the avatar's reach (<see cref="ArmReach"/>; <see cref="AvatarPoseDriver.HandTarget"/>).</summary>
     const float MaxIdleTargetError = 0.15f;
     const int ArmSamples = 50;
 
@@ -443,8 +444,9 @@ internal sealed partial class SelfTestRunner
             return;
         if (error > MaxIdleTargetError && c.data.currentItem == null)
             fails.Add(
-                F($"{side} hand {error:0.000} m off its controller > {MaxIdleTargetError:0.00} m ")
-                    + "with idle hands and nothing held"
+                F(
+                    $"{side} hand {error:0.000} m off its target (controller, reach-mapped) > {MaxIdleTargetError:0.00} m "
+                ) + "with idle hands and nothing held"
             );
         if (s.MaxStretch > MaxArmStretch)
             fails.Add(F($"{side} arm stretched x{s.MaxStretch:0.00} > x{MaxArmStretch:0.00}"));

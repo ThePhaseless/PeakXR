@@ -85,6 +85,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// follow without the body walking back.</summary>
     internal static System.Numerics.Vector2 LeanNeutral;
 
+    /// <summary>The local avatar's calibrated, unleaned eyes this frame (the point the first-person view rides before
+    /// follow lag); null while the view is elsewhere. avatar.local leans from the head's offset to this point.</summary>
+    internal static Vector3? LeanEye;
+
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
     internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
 
@@ -385,6 +389,7 @@ internal sealed class RigDriver : MonoBehaviour
 
         BodyAnchor = null;
         ViewOffset = Vector3.zero;
+        LeanEye = null;
         if (rig.OriginOverride)
             ResetTakeover();
         else
@@ -760,12 +765,15 @@ internal sealed class RigDriver : MonoBehaviour
         if (shownKind == ViewKind.FirstPerson && !snap)
             BodyAnchor = anchor;
         if (shownKind == ViewKind.FirstPerson)
+        {
+            LeanEye = BodyEye(c, yaw);
             ViewOffset =
                 anchor
                 - goal
                 + turnShift
                 + Vector3.up * rig.CrouchLift
                 + rig.Origin.TransformVector(new Vector3(LeanNeutral.X, 0f, LeanNeutral.Y));
+        }
         snap = false;
 
         var origin = RigMath.OriginPosition(

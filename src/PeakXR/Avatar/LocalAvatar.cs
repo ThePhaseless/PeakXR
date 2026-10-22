@@ -84,6 +84,11 @@ internal sealed class LocalAvatar : MonoBehaviour
             // The head as it stands over the body: without the view's follow lag, turn shift and crouch lift, which
             // are not the player leaning (peers get the same lean).
             pose.HeadPosition = rig.Head.position - RigDriver.ViewOffset;
+            // The lean aims the animated eyes, which sit apart from the physical eyes the view is calibrated on
+            // (run 28: 0.12 m, a 7.5 degree back bend standing on the spot). Send the head's offset from the
+            // calibrated eyes applied to the animated ones, so the calibrated spot is upright here and for peers.
+            if (RigDriver.LeanEye is { } calibrated && driver.UnleanedEye is { } animated)
+                pose.HeadPosition += animated - calibrated;
             pose.HeadRotation = rig.Head.rotation;
         }
 
