@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using Peak;
 using PeakXR.Core;
 using PeakXR.Framework;
 using UnityEngine;
@@ -43,11 +44,9 @@ public sealed class SelfTestFeature : Feature
         Patch(typeof(SelfTestUseProbe));
         Patch(typeof(SelfTestEndGamePatch));
         Patch(typeof(SelfTestCampfirePatch));
-        Patch(typeof(SelfTestProgressGuard.Achievement));
-        Patch(typeof(SelfTestProgressGuard.StatSet));
-        Patch(typeof(SelfTestProgressGuard.StatIncrement));
-        Patch(typeof(SelfTestProgressGuard.AscentComplete));
-        SelfTestProgressGuard.Active = true;
+        foreach (var guard in SelfTestProgressGuard.Patches)
+            Patch(guard);
+        SelfTestProgressGuard.Arm(Id);
         SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
             "bingbong"
         );
@@ -75,11 +74,72 @@ public sealed class SelfTestFeature : Feature
 /// (EndScreen.cs:480-492, :508-570). The game's own guard, a custom run (<c>RunSettings.blockingAchievements</c>,
 /// RunSettings.cs:136-146), covers the same four but never in the airport, where the self-test also reads the
 /// guidebook and uses items, so the self-test blocks them itself for the whole run.
+/// <para>The player's quicksave (<c>quicksave.peak</c> in the persistent data path, Peak/Quicksave.cs:253-265) is
+/// kept too: a campfire light writes it (<c>SaveNow</c>, :333-347, from Campfire.cs:485) and the run's end deletes it
+/// (<c>DestroySaveData</c>, :424-434, from Character.cs:896). Both are skipped and logged; nothing in a test run loads
+/// the save back. <see cref="Arm"/> records the file's fingerprint so the run's last step can prove it unchanged.
+/// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>.</para>
 /// </summary>
 static class SelfTestProgressGuard
 {
-    /// <summary>All four are patched: steps that would grant progress may run.</summary>
+    /// <summary>Every guard patch; a feature applies them all in its Install.</summary>
+    internal static readonly Type[] Patches =
+    {
+        typeof(Achievement),
+        typeof(StatSet),
+        typeof(StatIncrement),
+        typeof(AscentComplete),
+        typeof(SaveWrite),
+        typeof(SaveDelete),
+    };
+
+    /// <summary>All guards are patched: steps that would grant progress or touch the save may run.</summary>
     internal static bool Active;
+
+    /// <summary>The quicksave's path and how it looked when the guard was armed.</summary>
+    internal static string SavePath;
+    internal static FileFingerprint SaveAtStart;
+
+    /// <summary>Called by a feature once all <see cref="Patches"/> are applied.</summary>
+    internal static void Arm(string feature)
+    {
+        SavePath = Quicksave.SaveFile.FullName;
+        SaveAtStart = FileFingerprint.Of(SavePath);
+        Active = true;
+        Plugin.Log.LogInfo(
+            $"[{feature}] progress and save guard on; quicksave {SavePath}: {SaveAtStart}"
+        );
+    }
+
+    [HarmonyPatch]
+    internal static class SaveWrite
+    {
+        static MethodBase TargetMethod() => GameMember.Method(typeof(Quicksave), "SaveNow");
+
+        static bool Prefix()
+        {
+            Plugin.Log.LogInfo(
+                "[selftest] guarded Quicksave.SaveNow: the player's quicksave is kept"
+            );
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class SaveDelete
+    {
+        static MethodBase TargetMethod() => GameMember.Method(typeof(Quicksave), "DestroySaveData");
+
+        static bool Prefix()
+        {
+            // The rest of DestroySaveData's effect that a test run relies on: no load from the save.
+            Quicksave.ShouldUseSaveData = false;
+            Plugin.Log.LogInfo(
+                "[selftest] guarded Quicksave.DestroySaveData: the player's quicksave is kept"
+            );
+            return false;
+        }
+    }
 
     [HarmonyPatch]
     internal static class Achievement
