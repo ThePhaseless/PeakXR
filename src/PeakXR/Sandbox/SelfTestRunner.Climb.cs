@@ -281,7 +281,8 @@ internal sealed partial class SelfTestRunner
             // Every channel of the stamina refusal on the throwing hand, the stamina bar turned red.
             yield return ExpectCue(left, DenyReason.NoStamina, mark, true, 1.5f);
             bool denied = Denied();
-            string cue = denied ? CueCheck() : null;
+            // ExpectCue has proven the ring drawn and readable. CueCheck asks whether it is still drawn now, but a
+            // refusal on a release (the grip already open) is not held, so it may have faded (run 34).
             bool noJump = c.data.sinceClimbJump >= noJumpBefore;
             SandboxActions.SetGodMode(true);
             refusal =
@@ -289,8 +290,6 @@ internal sealed partial class SelfTestRunner
                 + $" ({UI.Affordances.Affordance.LastReason}), no jump {noJump}; {cueNote}";
             if (!denied)
                 Fail("no NoStamina refusal for a lunge without stamina: " + refusal);
-            else if (cue != null)
-                Fail($"{refusal}; {cue}");
             else if (!noJump)
                 Fail("the game took the climb jump without stamina: " + refusal);
         }
@@ -472,8 +471,10 @@ internal sealed partial class SelfTestRunner
     /// <c>RopeAnchorProjectile.GetShot</c> and <c>RopeAnchorWithRope.SpawnRope</c>, hanging 0.7 m in front from 2.6 m up;
     /// <see cref="testRope"/> once it has spooled out and settled, else null with the step skipped or failed. The
     /// local player owns it, so it simulates here (Rope.cs:155). A warp to open sky sets <see cref="WarpBack"/>.
+    /// <paramref name="height"/> and <paramref name="segments"/> (0.25 m each, Rope.cs:287-290; 0 for the shooter's
+    /// own length) hang a shorter rope higher, clear of the ground, so it can swing.
     /// </summary>
-    IEnumerator HangRope()
+    IEnumerator HangRope(float height = 2.6f, float segments = 0f)
     {
         testRope = null;
         testAnchor = null;
@@ -501,7 +502,7 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
         }
-        var top = c.Center + forward * 0.7f + Vector3.up * 2.6f;
+        var top = c.Center + forward * 0.7f + Vector3.up * height;
         var go = PhotonNetwork.Instantiate(
             shooter.ropeAnchorWithRopePref.name,
             top,
@@ -510,7 +511,14 @@ internal sealed partial class SelfTestRunner
         );
         spawned.Add(go);
         go.GetComponent<RopeAnchorProjectile>()
-            .photonView.RPC("GetShot", RpcTarget.AllBuffered, top, 0.05f, shooter.length, -forward);
+            .photonView.RPC(
+                "GetShot",
+                RpcTarget.AllBuffered,
+                top,
+                0.05f,
+                segments > 0f ? segments : shooter.length,
+                -forward
+            );
         var anchor = go.GetComponent<RopeAnchorWithRope>();
         yield return WaitFor(() => anchor.rope != null, 3f);
         if (anchor.rope == null)
@@ -977,6 +985,21 @@ internal sealed partial class SelfTestRunner
 
     /// <summary><see cref="ExpectFeel"/> with <see cref="cueNote"/> cleared first, so a failure's note never
     /// carries the previous step's cue (run 33's vr.50 quoted vr.49's Carried).</summary>
+    /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
+    /// before): which reason or notice fired and which ring was last captured, to tell a replaced cue from an undrawn
+    /// one.</summary>
+    static string CueState(float since)
+    {
+        string One(bool isLeft)
+        {
+            var h = UI.Affordances.CueLog.Capture.Hand(isLeft);
+            return F(
+                $"{(isLeft ? "L" : "R")} {(h.Notice ? "notice " : "")}{h.Reason} at {h.ReasonAt - since:+0.00;-0.00}, ring {h.RingReason} {h.RingDegrees:0.0} deg at {h.RingAt - since:+0.00;-0.00}"
+            );
+        }
+        return One(true) + "; " + One(false);
+    }
+
     IEnumerator Feel(bool left, CueFeel feel, float since, float within)
     {
         cueNote = null;
@@ -1181,7 +1204,7 @@ internal sealed partial class SelfTestRunner
         string slopeCue =
             cueNote
             ?? F(
-                $"last refusal {UI.Affordances.Affordance.LastReason} ({(UI.Affordances.Affordance.LastLeft ? "left" : "right")}), {UI.Affordances.Affordance.Count} since start; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                $"last refusal {UI.Affordances.Affordance.LastReason} ({(UI.Affordances.Affordance.LastLeft ? "left" : "right")}), {UI.Affordances.Affordance.Count} accepted in the whole run; {CueState(mark)}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
             );
         bool climbedSlope = c.data.isClimbing;
         yield return GripTo(left, 0f, 0.1f);
@@ -1570,7 +1593,8 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.RopeHandOverHand or Interaction.RopeSwingPump off";
             yield break;
         }
-        yield return HangRope();
+        // A 2.5 m rope from 4.2 m up hangs clear of the ground: run 34's full-length rope lay on it and could not swing.
+        yield return HangRope(4.2f, 10f);
         if (testRope == null)
             yield break;
         bool left = VRInput.LeftHanded;
@@ -1944,7 +1968,7 @@ internal sealed partial class SelfTestRunner
         bool climbed = c.data.isClimbing;
         bool felt = ClimbCues.Since(ClimbCue.Catch, left, mark, out float amplitude);
         var note = F(
-            $"falling {fall:0.0} m/s at the grip: climbing {climbed}, catch felt {felt} at {amplitude:0.00}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            $"falling {fall:0.0} m/s at the grip: climbing {climbed}, catch felt {felt} at {amplitude:0.00}, the grab read a {PeakXR.Interact.PhysicalInteraction.LastCatchFall:0.0} m/s fall; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (!climbed)
             Fail("the falling grab did not catch: " + note);

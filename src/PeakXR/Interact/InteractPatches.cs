@@ -186,9 +186,10 @@ internal static class InteractPatches
             var held = c.data.currentItem;
             if (sticky == null && held != null)
                 held.TryGetComponent(out sticky);
-            if (sticky != null && VRSession.Active)
+            // One line per drop release (run 34's vr.63 had no sticky line: did the release reach DoDropping at all?).
+            if (VRSession.Active)
                 Plugin.Log.LogInfo(
-                    $"[interact] sticky drop release: {held?.name}, currentStickyItem {c.data.currentStickyItem != null}, charge {__instance.throwChargeLevel:0.00} of {sticky.throwChargeRequirement:0.00}, hand throw {PhysicalInteraction.ThrowPending}"
+                    $"[interact] drop release: {(held != null ? held.name : "nothing")}, sticky {sticky != null} (currentStickyItem {c.data.currentStickyItem != null}), charge {__instance.throwChargeLevel:0.00} of {(sticky != null ? sticky.throwChargeRequirement : 0f):0.00}, hand throw {PhysicalInteraction.ThrowPending}"
                 );
             if (!PhysicalInteraction.ThrowPending)
             {
