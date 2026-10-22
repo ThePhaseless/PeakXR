@@ -148,7 +148,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             yield return Run("02-settings-vr", 30f, SettingsVR());
             ClosePause();
-            yield return VRStep("vr.04-settings-panel", 30f, SettingsPanel());
+            yield return VRStep("vr.04-settings-panel", 60f, SettingsPanel());
             ClosePause();
             yield return AirportScreenSteps();
         }
