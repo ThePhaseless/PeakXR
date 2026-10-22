@@ -17,7 +17,8 @@ namespace MpObserver;
 /// The observer's script: host from the title, publish the lobby id, then log every remote character twice a
 /// second and answer each checkpoint the VR side writes with a snapshot and a screenshot. Files (all in the shared
 /// directory): <c>lobby.json</c>, <c>b-observer.jsonl</c>, <c>b-summary.json</c>, <c>b-&lt;checkpoint&gt;.png</c>.
-/// It reads <c>a-checkpoints.jsonl</c> and <c>a-done.json</c> from the VR side.
+/// It reads <c>a-checkpoints.jsonl</c>, <c>a-requests.jsonl</c> and <c>a-done.json</c> from the VR side and answers
+/// requests in <c>b-acks.jsonl</c>.
 /// </summary>
 internal sealed class Observer : MonoBehaviour
 {
@@ -39,6 +40,7 @@ internal sealed class Observer : MonoBehaviour
     string outPath;
     double lobbyTime = double.MaxValue;
     int checkpointLines;
+    int requestLines;
     int checkpoints;
     int samples;
     int exceptions;
@@ -171,6 +173,7 @@ internal sealed class Observer : MonoBehaviour
             {
                 nextPoll = Now + PollInterval;
                 yield return PollCheckpoints();
+                PollRequests();
                 if (DoneWritten())
                 {
                     Finish("vr side done");
@@ -353,6 +356,121 @@ internal sealed class Observer : MonoBehaviour
         for (int i = 0; i < found.Count && i < 8; i++)
             sb.Append(i > 0 ? "," : "").Append(V(found[i]));
         return sb.Append(']').ToString();
+    }
+
+    // ------------------------------------------------------------------ requests
+
+    /// <summary>
+    /// The VR side's requests (<see cref="MpRequest"/>), each done once to our own character with what the game
+    /// itself offers: its console command, its own RPCs on our view, or our own input, as a player at the keyboard
+    /// could. Answered in <c>b-acks.jsonl</c> and logged as a <c>request</c> line.
+    /// </summary>
+    void PollRequests()
+    {
+        var path = Path.Combine(Dir, MpRequest.RequestFile);
+        if (!File.Exists(path))
+            return;
+        string[] lines;
+        try
+        {
+            lines = ReadShared(path).Split('\n');
+        }
+        catch (IOException)
+        {
+            return;
+        }
+        for (; requestLines < lines.Length - 1; requestLines++)
+        {
+            if (
+                !MpRequest.TryRead(lines[requestLines], out int id, out var what, out double t)
+                || t < lobbyTime
+            )
+                continue;
+            bool ok;
+            string note;
+            try
+            {
+                ok = Execute(what, out note);
+            }
+            catch (Exception e)
+            {
+                ok = false;
+                note = e.GetType().Name + ": " + e.Message;
+            }
+            var ack = MpRequest.Ack(id, what, ok, note, Unix);
+            Write(new JsonLine().Str("type", "request").Num("t", Unix).Raw("ack", ack));
+            try
+            {
+                File.AppendAllText(Path.Combine(Dir, MpRequest.AckFile), ack + "\n");
+            }
+            catch (IOException e)
+            {
+                ObserverPlugin.Log.LogWarning("ack write failed: " + e.Message);
+            }
+        }
+    }
+
+    static bool Execute(string what, out string note)
+    {
+        var c = Character.localCharacter;
+        note = "";
+        if (c == null)
+        {
+            note = "no local character";
+            return false;
+        }
+        switch (what)
+        {
+            case MpRequest.PassOut:
+                // The game's console command (Character.cs:986): Starve, then RPCA_PassOut.
+                if (c.data.passedOut || c.data.dead)
+                {
+                    note = "already down";
+                    return true;
+                }
+                Character.PassOut();
+                note = "passed out";
+                return true;
+            case MpRequest.Web:
+                // CharacterAfflictions.AddStatus (:712), as a spider's web does; the game refuses it in the airport.
+                bool webbed = c.refs.afflictions.AddStatus(
+                    CharacterAfflictions.STATUSTYPE.Web,
+                    0.6f
+                );
+                note = webbed ? "webbed" : "the game refused Web (airport?)";
+                return webbed;
+            case MpRequest.Wake:
+                // ClearAllStatus (CharacterAfflictions.cs:1427), then the revive RPC the game's own revives send
+                // (RPCA_ReviveAtPosition, Character.cs:1802) where the body lies.
+                InputHold.Crouch = false;
+                c.refs.afflictions.ClearAllStatus(excludeCurse: false, excludePetrify: false);
+                if (c.data.dead || c.data.passedOut)
+                    c.refs.view.RPC("RPCA_ReviveAtPosition", RpcTarget.All, c.Center, false, -1);
+                note = "awake";
+                return true;
+            case MpRequest.Crouch:
+                InputHold.Crouch = true;
+                note = "crouching";
+                return true;
+            case MpRequest.Stand:
+                InputHold.Crouch = false;
+                note = "standing";
+                return true;
+            case MpRequest.StandOn:
+                // The game's own warp RPC on our view (Character.cs:1822), onto the VR player's head.
+                var vr = FirstRemote();
+                if (vr == null)
+                {
+                    note = "no remote player";
+                    return false;
+                }
+                c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, vr.Head + Vector3.up * 0.6f, false);
+                note = "warped onto " + vr.characterName;
+                return true;
+            default:
+                note = "unknown request";
+                return false;
+        }
     }
 
     bool DoneWritten()
