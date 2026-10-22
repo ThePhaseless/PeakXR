@@ -71,6 +71,14 @@ internal sealed class Observer : MonoBehaviour
                 .Str("game", Application.version)
                 .Str("dir", Dir)
         );
+        Write(
+            new JsonLine()
+                .Str("type", "save")
+                .Num("t", Unix)
+                .Str("when", "start")
+                .Str("path", ProgressGuard.SavePath)
+                .Str("fingerprint", ProgressGuard.SaveAtStart.ToString())
+        );
         StartCoroutine(Flow());
     }
 
@@ -588,6 +596,16 @@ internal sealed class Observer : MonoBehaviour
         var rpcs = new JsonLine();
         foreach (var kv in rpcCounts)
             rpcs.Num(kv.Key, kv.Value);
+        // The quicksave must be exactly as B found it (ProgressGuard).
+        var saveEnd = FileFingerprint.Of(ProgressGuard.SavePath);
+        Write(
+            new JsonLine()
+                .Str("type", "save")
+                .Num("t", Unix)
+                .Str("when", "end")
+                .Str("path", ProgressGuard.SavePath)
+                .Str("fingerprint", saveEnd.ToString())
+        );
         var exc = new StringBuilder("[");
         for (int i = 0; i < firstExceptions.Count; i++)
             exc.Append(i > 0 ? "," : "").Append(new JsonLine().Str("e", firstExceptions[i]));
@@ -606,6 +624,9 @@ internal sealed class Observer : MonoBehaviour
             .Num("errors", errors)
             .Num("unknownEventErrors", unknownEventErrors)
             .Raw("firstExceptions", exc.Append(']').ToString())
+            .Str("saveStart", ProgressGuard.SaveAtStart.ToString())
+            .Str("saveEnd", saveEnd.ToString())
+            .Bool("saveSame", saveEnd.Same(ProgressGuard.SaveAtStart))
             .ToString();
         try
         {

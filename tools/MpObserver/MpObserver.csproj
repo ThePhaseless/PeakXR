@@ -25,6 +25,7 @@
   <!-- Pure JSON-line and shared-directory helpers; a source file, not a PeakXR reference. -->
   <ItemGroup>
     <Compile Include="../../src/PeakXR.Core/MpTestFiles.cs" Link="Shared/MpTestFiles.cs" />
+    <Compile Include="../../src/PeakXR.Core/FileFingerprint.cs" Link="Shared/FileFingerprint.cs" />
   </ItemGroup>
 
   <ItemGroup>

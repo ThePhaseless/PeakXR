@@ -15,7 +15,8 @@ namespace MpObserver;
 /// records what it sees of the PeakXR player. It sends nothing a vanilla player could not: it clicks the game's own
 /// menu and turns its own camera, and on the VR side's request (<see cref="MpRequest"/>) acts on its own character
 /// only through the game's console command, the game's RPCs on its own view, or its own crouch input. No custom RPC,
-/// event or property. Idle unless the game starts with <c>-mpobs</c>.
+/// event or property. B's profile is kept (<see cref="ProgressGuard"/>): it refuses to start unguarded. Idle unless
+/// the game starts with <c>-mpobs</c>.
 /// </summary>
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 public sealed class ObserverPlugin : BaseUnityPlugin
@@ -44,6 +45,15 @@ public sealed class ObserverPlugin : BaseUnityPlugin
             ),
             Path.DirectorySeparatorChar == '\\'
         );
+        // B's real profile stays as it was (achievements, stats, quicksave); never run unguarded.
+        var guarded = ProgressGuard.Targets(out var missing);
+        if (guarded == null)
+        {
+            Log.LogError($"refusing to observe: progress guard targets missing ({missing})");
+            return;
+        }
+        var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
+        ProgressGuard.Arm(harmony, guarded);
         Harmony.CreateAndPatchAll(typeof(RpcProbe), MyPluginInfo.PLUGIN_GUID);
         Harmony.CreateAndPatchAll(typeof(InputHold), MyPluginInfo.PLUGIN_GUID);
         var go = new GameObject("MpObserver") { hideFlags = HideFlags.HideAndDontSave };

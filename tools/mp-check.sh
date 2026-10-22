@@ -99,6 +99,9 @@ def r2: . * 100 | round / 100;
       elif ([$y.rpcs[]? | select(.name == "RPCA_Trigger")] | length) == 0
       then "PASS scene-button: no trigger reached B"
       else "FAIL scene-button: B saw RPCA_Trigger from a refused press" end),
+    (if $sum.saveSame == null then "FAIL B logged no quicksave fingerprints (observer without the progress guard?)"
+     elif $sum.saveSame then "PASS B quicksave unchanged: \($sum.saveEnd)"
+     else "FAIL B quicksave changed: \($sum.saveStart) -> \($sum.saveEnd)" end),
     (if $sum.exceptions == 0 then "PASS B logged no exceptions"
      else "FAIL B logged \($sum.exceptions) exception(s): \($sum.firstExceptions | map(.e) | join(" | "))" end),
     (if $sum.unknownEventErrors == 0 then "PASS B logged no unknown-event errors"
