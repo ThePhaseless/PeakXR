@@ -354,7 +354,7 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         if (rig == null || rig.Head == null)
             return "no head";
-        if (!AffordanceRuntime.DeniedRing(out var center, out float radius))
+        if (!AffordanceRuntime.DeniedRing(Affordance.LastLeft, out var center, out float radius))
             return "deny cue not drawn while the attempt is held";
         return CueLayout.Readable(
             rig.Head.position.N(),

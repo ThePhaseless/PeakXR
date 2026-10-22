@@ -95,6 +95,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
         /// <summary>This frame's opacity of a refusal cue.</summary>
         public float Alpha;
+
+        /// <summary>Its ring has been drawn at a readable opacity since it started.</summary>
+        public bool Drawn = true;
     }
 
     private static AffordanceRuntime instance;
@@ -122,7 +125,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         new(),
     };
 
-    /// <summary>The refusal shown last: the label and the self-test's <see cref="DeniedRing"/> follow it.</summary>
+    /// <summary>The refusal or notice shown last: the label follows it.</summary>
     private Cue denied;
 
     /// <summary>The refusal whose red preview <see cref="DenyTint"/> shows (one at a time).</summary>
@@ -184,9 +187,23 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         else
             (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
         var d = self.denials[left ? 0 : 1];
-        // The same refusal repeated while its cue is up (a check every frame, rate-limited) keeps it lit: no ramp
-        // from zero, which would blink.
-        bool live = d.Reason == reason && DenyFade.Alpha(now - d.At, d.HeldUntil - d.At) > 0f;
+        // The same refusal reported again while its cue is up (even every frame) keeps one live cue: it never
+        // restarts from 0, which would blink or never get drawn (DenyFade.Refresh).
+        float start = DenyFade.Refresh(
+            d.At,
+            d.HeldUntil,
+            now,
+            d.Reason == reason && d.Notice == notice
+        );
+        // Diagnostic (rare, so the string is fine): this hand's previous cue was replaced before its ring was ever
+        // drawn, which a self-test reports as "no ring drawn".
+        if (!d.Drawn && d.Reason != DenyReason.None && now - d.At < 1f)
+            Plugin.Log.LogInfo(
+                $"[ui.affordance] {(left ? "left" : "right")} {d.Reason} replaced by {reason} "
+                    + $"{now - d.At:0.000} s after it, before its ring was drawn"
+            );
+        if (start != d.At)
+            d.Drawn = false;
         d.Notice = notice;
         d.Glyph = DenyGlyph.For(reason);
         d.Text = text;
@@ -212,7 +229,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         d.Position = pos;
         d.Reason = reason;
         d.Spot = hint;
-        d.At = live ? now - DenyFade.In : now;
+        d.At = start;
         ref var input = ref VRInput.Hand(left);
         d.ByTrigger = input.Trigger > 0.5f;
         d.Holding = !notice && (d.ByTrigger || input.Grip > 0.5f);
@@ -222,18 +239,22 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         self.SetLabel(-1, reason, hint.Meters, text);
     }
 
-    /// <summary>The live refusal's ring, for the self-test: false unless it is drawn and clearly visible.</summary>
-    public static bool DeniedRing(out Vector3 center, out float radius)
+    /// <summary>The live refusal ring of the <paramref name="left"/> hand, for the self-test: false unless it is drawn
+    /// and clearly visible. Per hand, so a notice on the other hand meanwhile (a free-hand hint) does not hide it.</summary>
+    public static bool DeniedRing(bool left, out Vector3 center, out float radius)
     {
         center = default;
         radius = 0f;
         var self = instance;
-        if (self == null || !self.built || !self.denied.Deny.enabled)
+        if (self == null || !self.built)
             return false;
-        var t = self.denied.Deny.transform;
+        var d = self.denials[left ? 0 : 1];
+        if (!d.Deny.enabled)
+            return false;
+        var t = d.Deny.transform;
         center = t.position;
         radius = t.localScale.x;
-        return self.denied.Deny.sharedMaterial.color.a > 0.3f;
+        return d.Deny.sharedMaterial.color.a > 0.3f;
     }
 
     /// <summary>A teal "would work" part (valid-spot ring, link, chevron) is drawn now, for the self-test.</summary>
@@ -581,6 +602,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             : null;
         if (ring == null || d.Alpha < 0.3f)
             return;
+        d.Drawn = true;
         var t = ring.transform;
         var center = t.position;
         CueLog.Capture.Ring(
