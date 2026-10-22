@@ -115,6 +115,12 @@ internal static class PhysicalInteraction
     public static bool ThrowPending => Time.frameCount - throwFrame <= 2;
     public static Vector3 ThrowVelocity { get; private set; }
 
+    /// <summary>The last throw's parts before scaling, for the self-test's vr.13 note: the fitted hand velocity
+    /// (world, relative to the body) and the hip velocity added to it.</summary>
+    internal static Vector3 LastThrowHand { get; private set; }
+
+    internal static Vector3 LastThrowBody { get; private set; }
+
     /// <summary>Hand throws since start; the VR practice counts its throw station with it.</summary>
     public static int ThrowCount { get; private set; }
 
@@ -461,6 +467,9 @@ internal static class PhysicalInteraction
                 if (result == GripReleaseAction.Throw)
                 {
                     ThrowVelocity = ReleaseVelocity(handVelocity, c) * cfg.ThrowScale;
+                    LastThrowHand = handVelocity;
+                    LastThrowBody =
+                        c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
                     throwFrame = Time.frameCount;
                     ThrowCount++;
                     dropPending = true;
