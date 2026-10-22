@@ -22,6 +22,20 @@ internal sealed partial class SelfTestRunner
     /// <summary>Shortest landing that counts as a throw (m).</summary>
     const float MinThrowDistance = 2f;
 
+    /// <summary>
+    /// The scripted throw's path in tracking space, 0.9 m swept by <see cref="SwingRelease"/> in 0.15 s (6 m/s, a
+    /// casual toss): from cocked beside the ear (0.3 m behind the eyes, about 0.25 m from the shoulder) to 0.6 m
+    /// ahead of them (about 0.7 m from the shoulder, inside an adult's 0.6-0.75 m reach). The old path started level
+    /// with the eyes and let go 0.9 m ahead, about 1 m from the shoulder: the item appeared clear of the arm and body
+    /// a real release has to clear.
+    /// </summary>
+    static void ThrowArc(bool left, out Vector3 windup, out Vector3 release)
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        windup = head + (left ? -right : right) * 0.25f + Vector3.down * 0.15f - forward * 0.3f;
+        release = windup + forward * 0.9f + Vector3.up * 0.15f;
+    }
+
     /// <summary>vr.13: the fixed item, thrown along the head's level forward, judged with <see cref="ThrowReport"/>.</summary>
     IEnumerator ThrowCheck()
     {
@@ -47,10 +61,7 @@ internal sealed partial class SelfTestRunner
         float multiplier = held.throwForceMultiplier;
         yield return GripTo(left, 1f, 0.1f);
 
-        HeadFrame(out var head, out var forward, out var right);
-        var side = left ? -right : right;
-        var windup = head + side * 0.25f + Vector3.down * 0.15f;
-        var release = windup + forward * 0.9f + Vector3.up * 0.15f;
+        ThrowArc(left, out var windup, out var release);
         yield return MoveTrack(left, windup, 0.4f);
         yield return Wait(0.3f);
         SnapshotItems();
@@ -272,10 +283,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GripTo(left, 1f, 0.1f);
-        HeadFrame(out var head, out var forward, out var right);
-        var side = left ? -right : right;
-        var windup = head + side * 0.25f + Vector3.down * 0.15f;
-        var release = windup + forward * 0.9f + Vector3.up * 0.15f;
+        ThrowArc(left, out var windup, out var release);
         yield return MoveTrack(left, windup, 0.4f);
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;

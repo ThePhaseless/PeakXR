@@ -76,6 +76,10 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>Farthest the holding hand may be from the mouth when the toot starts: HeldGestures' mouth exit radius
+    /// (0.22 m) plus the scripted approach's last frame.</summary>
+    const float BugleMouthExit = 0.25f;
+
     /// <summary>vr.21: the holding hand at the mouth, tilted 30 degrees up, starts the toot
     /// (<c>BugleSFX.hold</c>, BugleSFX.cs:76) with the bell's pitch (<c>currentPitch</c>, BugleSFX.cs:74);
     /// moving away ends it.</summary>
@@ -119,6 +123,17 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         bool started = sfx.hold;
+        // Where the toot began: a bugle that toots anywhere would also pass the loop above on its first frame.
+        float gap = Vector3.Distance(
+            MouthGesture
+                .MouthPoint(
+                    rig.Head.position.N(),
+                    rig.Head.rotation.N(),
+                    MouthGesture.DefaultOffset
+                )
+                .U(),
+            rig.Hand(left).position
+        );
         float pitch = sfx.currentPitch;
         var aim = rig.Aim(left);
         float expected = aim != null ? (Vector3.Dot(aim.forward, Vector3.up) + 1f) / 2f : -1f;
@@ -132,9 +147,11 @@ internal sealed partial class SelfTestRunner
         );
         yield return WaitFor(() => !sfx.hold, 2f);
         var note =
-            $"{item.name}: toot {started}, pitch {pitch:0.00} (bell {expected:0.00}), stopped {!sfx.hold}";
+            $"{item.name}: toot {started} with the hand {gap:0.00} m from the mouth, pitch {pitch:0.00} (bell {expected:0.00}), stopped {!sfx.hold}";
         if (!started)
             Fail("no toot at the mouth: " + note);
+        else if (gap > BugleMouthExit)
+            Fail("the toot started away from the mouth: " + note);
         else if (Mathf.Abs(pitch - expected) > 0.1f)
             Fail("pitch not from the bell: " + note);
         else if (sfx.hold)
@@ -155,6 +172,13 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         float finishedBefore = item.lastFinishedCast;
+        float consumedBefore = c.data.lastConsumedItem;
+        // Room for the status the item lowers (Bandages: Injury -0.3 on cast finished); AddStatus lifts god mode.
+        bool measured = StatusEffect(item, out var status, out float change) && change < 0f;
+        if (measured)
+            SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
+        var afflictions = c.refs.afflictions;
+        float statusBefore = measured ? afflictions.GetCurrentStatus(status) : 0f;
         HeadFrame(out var head, out var forward, out var right);
         var chest = head + Vector3.down * 0.45f + forward * 0.08f + (left ? -right : right) * 0.05f;
         yield return MoveTrack(left, chest, 0.6f);
@@ -165,15 +189,18 @@ internal sealed partial class SelfTestRunner
         bool shot = false;
         while (Now < end)
         {
+            // Used means the cast finished or the item was consumed; a drop also leaves the hand and is no use.
             if (
                 item == null
-                || c.data.currentItem != item
                 || item.lastFinishedCast > finishedBefore
+                || c.data.lastConsumedItem != consumedBefore
             )
             {
                 used = true;
                 break;
             }
+            if (c.data.currentItem != item)
+                break;
             progress = Mathf.Max(progress, item.castProgress);
             if (!shot && progress > 0.3f)
             {
@@ -184,9 +211,17 @@ internal sealed partial class SelfTestRunner
             }
             yield return null;
         }
+        yield return Wait(0.5f);
+        float statusAfter = measured ? afflictions.GetCurrentStatus(status) : 0f;
         var note = $"{prefab.name}: cast progress {progress:0.00} of {useTime:0.0} s, used {used}";
-        if (!used && progress < 0.2f)
+        if (measured)
+            note +=
+                $", {status} {statusBefore:0.00} -> {statusAfter:0.00} (item changes it by {change:+0.00;-0.00})";
+        if (!used)
             Fail("no use on the chest: " + note);
+        // Half the amount: statuses creep between the reads, and the start value caps a large change.
+        else if (measured && statusBefore - statusAfter < Mathf.Min(-change, statusBefore) * 0.5f)
+            Fail($"used but {status} did not fall: " + note);
         else
             stepNote = note;
     }
@@ -784,6 +819,9 @@ internal sealed partial class SelfTestRunner
         float cookTime = GameTiming.InteractSeconds(fire, c);
         float mark = CueMark();
         float end = Now + GameTiming.Budget(cookTime * 0.8f, 3f);
+        var interaction = Interaction.instance;
+        // The danger has to come from the cook hold (ItemGestures.CookWarning), not a fall or pass-out cue.
+        bool holding = false;
         BeginCarry();
         while (
             Now < end
@@ -794,6 +832,8 @@ internal sealed partial class SelfTestRunner
         {
             CarryToward(left, food.Center(), goal);
             yield return null;
+            holding |=
+                interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire);
         }
         var back = c.Center + Flat(c.Center - fireBase) * 0.3f + Vector3.up * 0.3f;
         yield return MoveTo(left, () => back, 0.3f);
@@ -802,8 +842,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         int after = food != null ? Cooked(food) : -1;
         var note =
-            $"{foodPrefab.name} at cook level 2 over {fire.name}: {cueNote}; cooked after {after}";
-        if (after != 2)
+            $"{foodPrefab.name} at cook level 2 over {fire.name}: {cueNote}; game cook hold seen {holding}; cooked after {after}";
+        if (!holding)
+            Fail("the danger came without the game's cook hold on the fire: " + note);
+        else if (after != 2)
             Fail("the danger came too late to pull the food back: " + note);
         else
             Note(note);
@@ -860,7 +902,10 @@ internal sealed partial class SelfTestRunner
         var interaction = Interaction.instance;
         var held = c.data.currentItem;
         var off = part - fireBase;
-        float lead = Vector3.Distance(VRRig.Instance.Hand(left).position, part);
+        var hand = VRRig.Instance.Hand(left).position;
+        float lead = Vector3.Distance(hand, part);
+        // Arm's reach is about 0.6-0.75 m from the shoulder, some 0.8 m from the eye: past that the pose is no player's.
+        float reach = Vector3.Distance(VRRig.Instance.Head.position, hand);
         var touching = new List<string>();
         foreach (
             var col in Physics.OverlapSphere(
@@ -876,7 +921,7 @@ internal sealed partial class SelfTestRunner
         }
         fireTraceText =
             $"in hand {(held != null ? held.name : "nothing")}, item point {new Vector2(off.x, off.z).magnitude:0.00} m "
-            + $"out and {off.y:0.00} m up from the fire base, hand {lead:0.00} m ahead of it, near "
+            + $"out and {off.y:0.00} m up from the fire base, hand {lead:0.00} m ahead of it and {reach:0.00} m from the eye, near "
             + $"[{string.Join(", ", touching)}], body {FlatDistance(c.Center, fireBase):0.00} m out; interact "
             + $"{c.input.interactIsPressed}, hovered {Label(interaction != null ? interaction.currentHovered : null)}, "
             + $"interact hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}";
@@ -887,8 +932,8 @@ internal sealed partial class SelfTestRunner
     static int Cooked(Item item) => item.GetData<IntItemData>(DataEntryKey.CookedAmount).Value;
 
     /// <summary>vr.27: open palms held toward a lit campfire send interact.items' warm pulses
-    /// (<c>FireGestures.WarmPulses</c>, counted where <c>Haptics.Pulse</c> is called). Uses the campfire vr.25 lit;
-    /// skips when none is lit.</summary>
+    /// (<c>FireGestures.WarmPulses</c>, counted where <c>Haptics.Pulse</c> is called); the backs of the hands send
+    /// none. Uses the campfire vr.25 lit; skips when none is lit.</summary>
     IEnumerator WarmStep()
     {
         var c = Character.localCharacter;
@@ -904,33 +949,50 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.WarmHandsAtFire is off";
             yield break;
         }
+        // The heat point FireGestures.UpdateWarmth measures from (0.3 m over the fire base).
         var heat = ItemGestures.FireBase(fire) + Vector3.up * 0.3f;
-        yield return WarpFacing(heat, 1.3f);
-        var toFire = Flat(heat - c.Center);
-        var side = Vector3.Cross(Vector3.up, toFire);
-        var leftAt = heat - toFire * 0.55f - side * 0.15f;
-        var rightAt = heat - toFire * 0.55f + side * 0.15f;
-        yield return MoveTo(true, () => leftAt, 0.5f);
-        yield return MoveTo(false, () => rightAt, 0.5f);
+        // Walk in as a player does, then hold both hands out low in front, in reach: 0.45 m ahead of the eyes and
+        // 0.65 m below them is about 0.65 m from the shoulder. The old pose put them 0.3 m over the fire base from
+        // 1.3 m out, some 1.3 m from a standing shoulder.
+        yield return ApproachFire(ItemGestures.FireBase(fire));
+        HeadFrame(out var head, out var forward, out var right);
+        var low = head + forward * 0.45f + Vector3.down * 0.65f;
+        yield return MoveTrack(true, low - right * 0.15f, 0.5f);
+        yield return MoveTrack(false, low + right * 0.15f, 0.5f);
         // Palms to the fire: +X of the left grip pose, -X of the right (HandRig.cs:62), in tracking space.
-        var dir = rig.Origin.InverseTransformDirection(toFire);
+        var dir = Flat(rig.Origin.InverseTransformDirection(heat - c.Center));
         var leftRot = Quaternion.LookRotation(Vector3.Cross(dir, Vector3.up), Vector3.up);
         var rightRot = Quaternion.LookRotation(Vector3.Cross(-dir, Vector3.up), Vector3.up);
         int before = FireGestures.WarmPulses;
-        float end = Now + 2f;
+        yield return HoldPalms(leftRot, rightRot, 2f);
+        int pulses = FireGestures.WarmPulses - before;
+        float leftGap = Vector3.Distance(rig.Hand(true).position, heat);
+        float rightGap = Vector3.Distance(rig.Hand(false).position, heat);
+        yield return Shot("vr-27-warm-hands");
+        // Backs of the hands to the fire: no warmth (PalmWarmth.MinFacing), so the pulses come from the palms.
+        int away = FireGestures.WarmPulses;
+        yield return HoldPalms(rightRot, leftRot, 1.5f);
+        away = FireGestures.WarmPulses - away;
+        var note =
+            $"{fire.name}: {pulses} warm pulses in 2 s, palms {leftGap:0.00} m (left) and {rightGap:0.00} m (right) from the heat point; backs to the fire {away} pulses in 1.5 s";
+        if (pulses <= 0)
+            Fail("no warm pulse: " + note);
+        else if (away > 0)
+            Fail("warm pulses with the backs of the hands to the fire: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>Holds both scripted hands at these rotations for <paramref name="seconds"/>.</summary>
+    IEnumerator HoldPalms(Quaternion leftRot, Quaternion rightRot, float seconds)
+    {
+        float end = Now + seconds;
         while (Now < end)
         {
             Script(true).Rotation = leftRot;
             Script(false).Rotation = rightRot;
             yield return null;
         }
-        int pulses = FireGestures.WarmPulses - before;
-        yield return Shot("vr-27-warm-hands");
-        var note = $"{fire.name}: {pulses} warm pulses in 2 s, both palms 0.55 m from the fire";
-        if (pulses <= 0)
-            Fail("no warm pulse: " + note);
-        else
-            stepNote = note;
     }
 
     // ---------------------------------------------------------------- use.* (one item per category)
@@ -1981,7 +2043,16 @@ internal sealed partial class SelfTestRunner
         Script(off).TriggerTouch = true;
         Script(off).Trigger = 1f;
         yield return ExpectCue(off, DenyReason.NeedsFriend, mark, tint: true);
-        bool cast = item.isUsingSecondary || item.isUsingPrimary || item.castProgress > 0f;
+        // A moment longer with the trigger held: the refused press must still start nothing.
+        bool cast = false;
+        float until = Now + 0.3f;
+        do
+        {
+            cast |=
+                item != null
+                && (item.isUsingSecondary || item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        } while (Now < until && !cast);
         Script(off).Trigger = 0f;
         yield return Wait(0.3f);
         var note =
@@ -2182,11 +2253,14 @@ internal sealed partial class SelfTestRunner
         AimPatches.SelfTestNoPath = true;
         Affordance.ResetGate();
         float mark = CueMark();
-        SelfTestInputPatch.HoldPrimary = true;
+        // The holding hand's trigger, as a player fires it (the input patch would skip interact.physical's use path).
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
         float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item), 1f);
         while (Now < end && !CueLog.Capture.Fired(left, DenyReason.NoPath, mark, true, out _))
             yield return null;
-        SelfTestInputPatch.HoldPrimary = false;
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
         AimPatches.SelfTestNoPath = false;
         yield return ExpectCue(left, DenyReason.NoPath, mark, tint: true, within: 0.5f);
         var cue = cueNote;
@@ -2235,6 +2309,7 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         var from = c.Center;
+        int usesBefore = UsesLeft(item);
         Affordance.ResetGate();
         float mark = CueMark();
         Script(left).TriggerTouch = true;
@@ -2249,9 +2324,15 @@ internal sealed partial class SelfTestRunner
         float moved = Vector3.Distance(from, c.Center);
         if (!stepOk)
             yield break;
+        // The game gives the use back (IncreaseUsesRPC, Action_WarpToRandomPlayer.cs:27-31) a moment after the try.
+        var now = HeldItem();
+        yield return WaitFor(() => now != null && UsesLeft(now) == usesBefore, 1f);
+        int usesAfter = now != null ? UsesLeft(now) : -2;
         if (moved > 2f)
             Fail($"warped {moved:0.0} m with nobody to warp to");
+        else if (usesAfter != usesBefore)
+            Fail($"the use was not given back: uses {usesBefore} -> {usesAfter}; {cue}");
         else
-            Note($"{prefab.name}: moved {moved:0.0} m; {cue}");
+            Note($"{prefab.name}: moved {moved:0.0} m, uses {usesBefore} -> {usesAfter}; {cue}");
     }
 }

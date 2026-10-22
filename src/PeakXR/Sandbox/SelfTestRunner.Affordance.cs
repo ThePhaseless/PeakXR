@@ -258,25 +258,30 @@ internal sealed partial class SelfTestRunner
             Fail("sticky item left the hand on a drop button tap");
             yield break;
         }
-        HeadFrame(out var head, out var forward, out var right);
-        var windup = head + (left ? -right : right) * 0.25f + Vector3.down * 0.15f;
+        ThrowArc(left, out var windup, out var release);
         yield return MoveTrack(left, windup, 0.4f);
         yield return Wait(0.3f);
-        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        int throwsBefore = PeakXR.Interact.PhysicalInteraction.ThrowCount;
+        yield return SwingRelease(left, windup, release);
         yield return Until(
             () => HeldItem() == null,
             1.5f,
             "sticky item still in hand after the swing"
         );
+        // Thrown, not dropped: interact.physical counted the release as a throw.
+        int throws = PeakXR.Interact.PhysicalInteraction.ThrowCount - throwsBefore;
+        if (stepOk && throws < 1)
+            Fail($"the sticky item left the hand without a throw (throws {throws})");
         if (stepOk)
             stepNote =
-                $"released (charge requirement {sticky.throwChargeRequirement:0.00}); gentle release: {gentle}";
+                $"thrown (charge requirement {sticky.throwChargeRequirement:0.00}); gentle release: {gentle}";
     }
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for the cue of
     /// <paramref name="expected"/> on that hand on every channel, the held item's red preview included
     /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>); other denials meanwhile do not end the
-    /// wait.</summary>
+    /// wait. The held item must also stay in the hand with its uses unspent: a cue over a use that went through
+    /// is no refusal.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected)
     {
         if (!Affordance.Enabled)
@@ -286,6 +291,10 @@ internal sealed partial class SelfTestRunner
         }
         Affordance.ResetGate();
         int before = Affordance.Count;
+        // The refused item, to prove the refusal also held: it stays in the hand with every use left.
+        var held = HeldItem();
+        ushort heldId = held != null ? held.itemID : (ushort)0;
+        int usesBefore = held != null ? UsesLeft(held) : -1;
         float mark = CueMark();
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
@@ -324,11 +333,21 @@ internal sealed partial class SelfTestRunner
                 }
             }
         }
+        // By id: a given item can be swapped for its reconnected copy (see vr.87).
+        var after = HeldItem();
+        string spent =
+            held == null ? null
+            : after == null || after.itemID != heldId ? $"the refused {held.name} left the hand"
+            : UsesLeft(after) != usesBefore
+                ? $"the refused use spent a use of {held.name} ({usesBefore} -> {UsesLeft(after)})"
+            : null;
         var note =
             $"denials {Affordance.Count - before}, last {Affordance.LastReason} "
             + $"({(Affordance.LastLeft ? "left" : "right")}) at {Affordance.LastPosition}"
             + (cueNote != null ? "; " + cueNote : "");
-        if (Affordance.Count == before)
+        if (spent != null)
+            Fail($"{spent}: {note}");
+        else if (Affordance.Count == before)
             Fail($"no denial for {expected}: {note}");
         else if (!Got())
             Fail($"expected {expected} on the {(left ? "left" : "right")} hand: {note}");
@@ -336,6 +355,14 @@ internal sealed partial class SelfTestRunner
             Fail($"{note}; {cue}");
         else
             stepNote = note;
+    }
+
+    /// <summary>The item's uses left (<c>DataEntryKey.ItemUses</c>, read by <c>CanUsePrimary</c>, Item.cs:797-813),
+    /// or -1 when it has no count; for "a refused use spent nothing".</summary>
+    static int UsesLeft(Item item)
+    {
+        var uses = item.GetData<OptionableIntItemData>(DataEntryKey.ItemUses);
+        return uses.HasData ? uses.Value : -1;
     }
 
     /// <summary>Null when the red preview is up on every renderer it covers (the held item or a placement
