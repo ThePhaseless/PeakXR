@@ -113,6 +113,20 @@ public class TraversalRefusalTests
         );
 
     [Theory]
+    [InlineData(1.28f, false)]
+    [InlineData(1.35f, false)]
+    [InlineData(1.36f, true)]
+    public void GameWallReach_IncludesTheThickenedLineCheck(float eyeToHold, bool refused)
+    {
+        // VR run 37: a hold 1.28 m from the camera, which the game's 0.1 m thickened climb check reaches
+        // (CharacterClimbing.cs:553-561), was refused by a bare 1.25 m cap and vr.15 could not climb.
+        Assert.Equal(
+            refused ? DenyReason.OutOfReach : DenyReason.None,
+            TraversalRefusal.WallReach(eyeToHold, TraversalRefusal.GameWallReach)
+        );
+    }
+
+    [Theory]
     [InlineData(1.2f, 1.25f, false)]
     [InlineData(1.25f, 1.25f, false)]
     [InlineData(1.26f, 1.25f, true)]

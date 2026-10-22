@@ -67,4 +67,10 @@ public static class TraversalRefusal
     /// </summary>
     public static DenyReason WallReach(float eyeToHold, float reach) =>
         eyeToHold > reach ? DenyReason.OutOfReach : DenyReason.None;
+
+    /// <summary>
+    /// How far from the camera a hold the game's climb start can still catch: its 1.25 m ray (CharacterClimbing.cs:552)
+    /// retried as a line check thickened up to 0.1 m (:553-561), so surface points up to 1.35 m away are hit.
+    /// </summary>
+    public const float GameWallReach = 1.35f;
 }
