@@ -29,6 +29,9 @@ internal static class DenyTint
     internal static HarmonyLib.AccessTools.FieldRef<Item, MaterialPropertyBlock> ItemBlock;
 
     private static Item item;
+
+    /// <summary>This refusal's tint read-back was logged (<see cref="LogReadBack"/>).</summary>
+    private static bool logged;
     private static GameObject ghost;
     private static GameObject ghostPrefab;
 
@@ -92,9 +95,27 @@ internal static class DenyTint
                 prop == TintId
                     ? DenyTintMath.Tint(Bases[i], strength)
                     : DenyTintMath.Preview(Bases[i], strength);
-            block.SetColor(prop, new Color(c.X, c.Y, c.Z, c.W));
+            var set = new Color(c.X, c.Y, c.Z, c.W);
+            block.SetColor(prop, set);
             r.SetPropertyBlock(block);
+            if (!logged && strength >= 1f)
+                LogReadBack(r, i, set);
         }
+        logged |= strength >= 1f;
+    }
+
+    /// <summary>Once per refusal at full strength: what was written and what the renderer's block reads back in
+    /// the same frame, so a failing vr.6x check shows whether the tint landed or only its read-back differs.</summary>
+    private static void LogReadBack(Renderer r, int i, Color set)
+    {
+        r.GetPropertyBlock(block);
+        int prop = Props[i];
+        var back = block.GetColor(prop);
+        Plugin.Log.LogInfo(
+            $"[ui.affordance] tint {r.name} {(prop == TintId ? "_Tint" : "_Color0")}: base {Bases[i]}, wrote {set}, "
+                + $"read {back} (as gamma {back.gamma}), _Interactable {block.GetFloat(global::Item.PROPERTY_INTERACTABLE):0.##}, "
+                + $"block stores linear {StoresLinear()}, tinted {IsTinted(r, i)}"
+        );
     }
 
     /// <summary>Ends the preview: the item gets the game's own block back, the ghost hides.</summary>
@@ -110,6 +131,7 @@ internal static class DenyTint
             }
         }
         item = null;
+        logged = false;
         if (ghost != null)
             ghost.SetActive(false);
         Targets.Clear();
@@ -137,11 +159,29 @@ internal static class DenyTint
         r.GetPropertyBlock(block);
         int prop = Props[index];
         var c = block.GetColor(prop);
+        // SetColor stores the colour converted to linear (linear colour space) and GetColor hands that back
+        // unconverted: compare in the gamma space it was set in, or no value ever matches.
+        if (StoresLinear())
+            c = c.gamma;
         var now = new System.Numerics.Vector4(c.r, c.g, c.b, c.a);
         if (prop != TintId)
             return DenyTintMath.IsPreview(Bases[index], now);
         return block.GetFloat(global::Item.PROPERTY_INTERACTABLE) > 0.5f
             && DenyTintMath.IsTinted(Bases[index], now);
+    }
+
+    private static int storesLinear = -1;
+
+    /// <summary>Probed once: does a property block read a colour back as linear?</summary>
+    private static bool StoresLinear()
+    {
+        if (storesLinear < 0)
+        {
+            var probe = new MaterialPropertyBlock();
+            probe.SetColor(TintId, new Color(0.5f, 0.5f, 0.5f, 1f));
+            storesLinear = Mathf.Abs(probe.GetColor(TintId).r - 0.5f) > 0.01f ? 1 : 0;
+        }
+        return storesLinear == 1;
     }
 
     /// <summary>The renderer shows no red tint: gone, hidden, or its block holds no <c>_Tint</c> override.</summary>
