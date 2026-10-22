@@ -83,6 +83,16 @@ Setup: SteamVR with an ALVR virtual Index, Radeon 780M, Vulkan, OpenXR MultiPass
 
 Run 18 is the first run with no failure and no skip. The log holds only the two known vanilla exceptions.
 
+Run 29 on `2124aaa` (master): 308 pass, 7 fail, 0 skip, 676 s. The `vr.12-eat` and `vr.72-keyboard` steps pass. Known open items, the seven failures:
+
+- `vr.04-settings-panel`: a flat-screen backdrop is still left on the pause menu (29 hidden, 6 row strips drawn).
+- `vr.29-ground-backpack`: the backpack wheel did not open on a grip with nothing under the hand.
+- `vr.42-rope-hand-over-hand`: the grip did not grab the rope (nearest segment 0.83 m from the reach point).
+- `vr.45-lean`: the body and view moved 0.5 m while standing, and the hands sat 0.19 m off the controllers.
+- `vr.46-lunge`: the hand did not catch the wall after the lunge (0.74 s, grace 0.6 s).
+- `use.Compass`: the primary use never started.
+- `use.RopeSpool`: no red preview while the tie-off attempt was held, though the NoWall denial fired.
+
 The one failure left in run 12 was `vr.26` (light with flame): the game's hover landed on a nearby item instead of the campfire. Runs 13 to 18 found the cause and four other bugs, listed below.
 
 New VR steps that pass in run 12:
@@ -149,20 +159,24 @@ Desktop mirror: it was upside down and cropped, because the provider's mirror `s
 
 The self-test also drives PeakXR's own input layer with scripted controller poses and buttons (steps vr.10 to vr.20), and another session drove the virtual Index controllers live through SteamVR while PEAK idled on the beach.
 
-Scripted hands, latest VR run (266 pass, 1 fail): grabbing with either hand, throwing (landed 2.8 to 3.0 m away at about 6 m/s, inside the vanilla clamp), two-hand holds, snap turn, stick walking, the emote wheel, clicking the pause menu with the laser, holstering to a body slot and drawing back, and climbing all pass. Climbing needed a fix: the game only moves a climber 2/7 of the requested step on a flat wall, so arm pulls were scaled against the wrong speed; a 0.4 m pull now lifts the body 0.39 m.
+Scripted hands, run 18 (266 pass, 1 fail at the time of that report): grabbing with either hand, throwing (landed 2.8 to 3.0 m away at about 6 m/s, inside the vanilla clamp), two-hand holds, snap turn, stick walking, the emote wheel, clicking the pause menu with the laser, holstering to a body slot and drawing back, and climbing all pass. Climbing needed a fix: the game only moves a climber 2/7 of the requested step on a flat wall, so arm pulls were scaled against the wrong speed; a 0.4 m pull now lifts the body 0.39 m.
 
 Live controller input reached PeakXR within one frame for every action: thumbstick turn and walk, A jump, trigger use, grip interact, the emote wheel on B, the pause menu on a firm trackpad squeeze (SteamVR keeps the Index system button), arm tracking and finger touch. Two problems came up and are fixed but not yet re-run in the headset:
 
 - Pressing B also jumped, because PEAK ships its own "XR" input scheme that binds Jump, Use and Move to XR controllers. PeakXR now stops the game's input system from reading XR controllers while VR runs.
 - The pause menu was readable only with effort, because the whole 1920x1080 canvas was fitted to the panel width while the menu content filled a small part of it. Menus are now sized by what they draw.
 
-The eat step still failed in the latest run because the test moved the wrong hand to the mouth (it read which hand held the item one frame too early). The test is fixed; the next run should show it passing.
+The eat step once failed because the test moved the wrong hand to the mouth (it read which hand held the item one frame too early). The test is fixed, and `vr.12-eat` passes in run 29.
 
 ## Multiplayer
 
 `docs/multiplayer-compat.md` holds a static audit: no new RPCs, version gates untouched, pose event 151 sent only to PeakXR peers, adaptive pose rate. Parity fixes are merged: feed angle check, no remote yaw spin, reach clamp to the vanilla 2 m from the head, piton time never faster than vanilla, sandbox only offline. 
 
-An automated two-client harness now exists: `tools/MpObserver` is a read-only observer plugin for an unmodded client on a second Steam account in Flatpak Steam, PeakXR has a `-peakxr-mptest` mode, and `tools/mp-check.sh` runs the check. Client B is set up: an unmodded PEAK copied from the main install without PeakXR, with BepInEx core and the observer only. The live run is blocked. The second account has to accept PEAK's EULA in Steam first, and that needs the user. Until it runs, multiplayer compatibility rests on the static audit in `docs/multiplayer-compat.md`.
+The two-client test has run to the end. Run 4 had one VR client (PeakXR) and one unmodded client: 16 pass, 0 fail, 2 skip, 188 s. `tools/mp-check.sh` on its logs is clean. B logged no exceptions and no unknown-event errors, received no event 151, and A sent none. Join, walk to the host, emote, ping, board, regroup, luggage, grab, drop, pickup, throw, holster, climb and two-hand pass, with positions and held items matching on both sides. The `eat` and `feed` steps skip because no food lay within 40 m of the players.
+
+Earlier runs failed (run 3: 7 pass, 9 fail, 2 skip). The fix that made run 4 clean was a lag tolerance in `tools/mp-check.sh`: B can write its checkpoint before A's equip RPC arrives, so the held-item check takes the first sample within `LAG_TOL` (1.0 s by default). To rerun, follow "Two-client multiplayer test" in `docs/testing.md`, then run `tools/mp-check.sh [mp-dir]`.
+
+`tools/MpObserver` is the read-only observer plugin on the unmodded client, and `-peakxr-mptest` is PeakXR's scripted side. The static audit in `docs/multiplayer-compat.md` still covers what the test does not drive.
 
 ## REA
 
@@ -170,4 +184,4 @@ rea-agents 6.7.0 is registered for Claude Code (`~/.claude.json`). `rea mcp doct
 
 ## Not tested yet
 
-Still untested: the VR keyboard, eating confirmed end to end, finger curls from real hand tracking, and VR multiplayer pose sync with a second client. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
+Still untested: finger curls from real hand tracking, eating and feeding another player over the network (the `eat` and `feed` multiplayer steps skipped for lack of food), and a multiplayer run with a second PeakXR client. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.

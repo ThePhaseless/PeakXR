@@ -4,7 +4,7 @@ Static audit of master `ebb5b8f` (2026-10-21) against the requirement: a PeakXR 
 
 ## Verdict
 
-Statically, the requirement holds. Vanilla peers see some cosmetic differences, and a few gestures loosen vanilla preconditions.
+Statically, the requirement holds, and the two-client test (run 4, below) agrees for the steps it drives. Vanilla peers see some cosmetic differences, and a few gestures loosen vanilla preconditions.
 
 - PeakXR adds no RPC names, changes no RPC signatures and leaves the game version, Photon AppVersion and the Steam lobby version untouched.
 - Vanilla clients never receive the pose event. They see one extra int player property, which PUN stores and the game never reads.
@@ -115,13 +115,17 @@ The shared affordance service (`src/PeakXR/UI/Affordance/`) is meant to take ove
 
 ## Live single-client check (2026-10-21)
 
-PeakXR in VR (master `ad2932f`, Vulkan, SteamVR with the ALVR virtual headset) hosted a real online lobby on the main account, through the game's own host flow driven by the read-only `MpObserver` plugin. Steam lobby `109775241740456695`, Photon room `DBIPRX`. It advertised `peakVersion 2.6` and game `2.6.b`, the same values unmodded PEAK writes. It stayed online in the airport for over two minutes with no exceptions in the log. The only RPC seen was the game's own `EquipSlotRpc` for the passport, and nothing else went out, since no PeakXR peer was in the room. This shows what an unmodded player would see when browsing for or joining the lobby. It does not replace the two-client test below. That test is set up but waits on the second account accepting PEAK's EULA in Steam.
+PeakXR in VR (master `ad2932f`, Vulkan, SteamVR with the ALVR virtual headset) hosted a real online lobby on the main account, through the game's own host flow driven by the read-only `MpObserver` plugin. Steam lobby `109775241740456695`, Photon room `DBIPRX`. It advertised `peakVersion 2.6` and game `2.6.b`, the same values unmodded PEAK writes. It stayed online in the airport for over two minutes with no exceptions in the log. The only RPC seen was the game's own `EquipSlotRpc` for the passport, and nothing else went out, since no PeakXR peer was in the room. This shows what an unmodded player would see when browsing for or joining the lobby. It does not replace the two-client test below.
 
-### Two clients on one machine: blocked by Steam
+### Two clients on one machine
 
-Client B, the unmodded PEAK on a second Steam account in Flatpak Steam with only `MpObserver`, started and hosted lobbies without problems, for example room `DCGFKT` advertising `peakVersion 2.6`. Client A, PeakXR on the main account, died three times about 28 s after launch, before joining. The Steam client library inside A raised `Assert( fatal stalled cross-thread pipe (pipe is disconnected). ):../common/pipes.cpp:900`. That happened whenever B's game was running, including after Flatpak Steam was given its own IPC namespace, a private `/dev/shm` and no `com.steampowered.*` D-Bus names, and after native Steam was restarted fresh. PeakXR runs fine alone with Flatpak Steam open, and the crash comes before any PeakXR multiplayer code runs. So two Steam accounts playing PEAK at the same time under one Linux user is a Steam limitation on this machine, not a PeakXR problem. The two-client test needs client B on another machine or under another Linux user. The harness supports both, given a shared `-mpdir`.
+Client B is the unmodded PEAK on a second Steam account in Flatpak Steam with only `MpObserver`. Client A is PeakXR on the main account. Early attempts failed: A died about 28 s after launch with a Steam client assert (`stalled cross-thread pipe`) whenever B's game ran. Run 4 (2026-10-22) got through, with A in VR and B unmodded: 16 pass, 0 fail, 2 skip, and `tools/mp-check.sh` is clean. The two skips are `eat` and `feed`, because no food lay within 40 m. The logs do not record what changed since the early attempts.
 
-## What only a live two-client test can confirm
+What run 4 confirmed: B saw A join, A's version check passed (lobby 2.6 equals local 2.6, master is the host), and B logged no exceptions, no unknown-event errors and no event 151. A sent none. B's view of A matched A on position and held item for grab, drop, pickup, throw (landed 7.8 m away), holster, climb and the two-handed rope spool. Emote, ping and suitcase opening reached B as `RPCA_PlayRemove`, `ReceivePoint_Rpc` and `OpenLuggageRPC`. Rerun it with `tools/mp-check.sh [mp-dir]` (see "Two-client multiplayer test" in `docs/testing.md`). The held-item check accepts the first matching sample within `LAG_TOL` (1.0 s by default), because B can write its checkpoint before A's equip RPC arrives.
+
+## What the two-client test has not fully confirmed
+
+Run 4 covered item 1 for its own steps (no event 151 on B, no kick) and the thrown item's landing in item 3. The rest is by hand.
 
 1. Vanilla clients log nothing for the `PeakXR` property or event 151, and are never kicked.
 2. Remote lerp of `lookValues` looks smooth for head-driven yaw, including snap turns and past 2048° (risk 3 fix).

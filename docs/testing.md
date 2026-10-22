@@ -263,7 +263,7 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `two-hand` (VR) | Holds a two-handed item with both hands | current item, hand IK targets |
 | `feed` (VR) | Holds food at B's head until B is fed | `SendFeedDataRPC`, `GetFedItemRPC`, B's own `lastConsumedItem` |
 
-A step that finds nothing to do (no wall or no food within 40 m) is `SKIP`.
+A step that finds nothing to do (no wall or no food within 40 m) is `SKIP`. Run 4 (one VR client, one unmodded client) gave 16 pass, 0 fail, 2 skip (`eat` and `feed`, no food in range), and `tools/mp-check.sh` printed no `FAIL`.
 
 ### Files
 
@@ -279,14 +279,14 @@ All files are in the shared directory.
 ### Checking the result
 
 ```sh
-tools/mp-check.sh [mp-dir]       # POS_TOL=1.0 and LAND_TOL=1.5 metres by default
+tools/mp-check.sh [mp-dir]       # POS_TOL=1.0, LAND_TOL=1.5 metres, LAG_TOL=1.0 s by default
 ```
 
 It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 when any check fails:
 
 - B saw a remote player join.
 - A's version check passed: the lobby's version equals A's, A is in the lobby, and the master is the host.
-- For each checkpoint A passed: B logged it with A present, B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
+- For each checkpoint A passed: B logged it with A present, B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. B can write its checkpoint before A's equip RPC arrives, so the first matching sample within `LAG_TOL` seconds after the checkpoint counts. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
 - B logged no exceptions and no unknown-event errors, and received no event 151.
 - A sent no event 151 (with a vanilla host, net.pose has no peers).
 
