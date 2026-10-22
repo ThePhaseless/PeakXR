@@ -20,6 +20,8 @@ public static class FeatureManager
 
     internal static void InstallAll(bool vrEnabled)
     {
+        bool save = Plugin.Settings.SaveOnConfigSet;
+        Plugin.Settings.SaveOnConfigSet = false;
         foreach (var type in LoadableTypes())
         {
             if (
@@ -74,6 +76,15 @@ public static class FeatureManager
         }
 
         LogReport();
+        Plugin.Settings.SaveOnConfigSet = save;
+        try
+        {
+            Plugin.Settings.Save();
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not save initial settings to disk: {e.Message}");
+        }
     }
 
     /// <summary>
