@@ -266,6 +266,40 @@ public class BodyHoldTests
     }
 
     [Fact]
+    public void Run36FastLean_TheLeansOwnJolt_IsNotAKick()
+    {
+        // Run 36: the 0.15 s fast lean (16.6 deg) jolted the mass centre past 2.5 m/s^2, the detector took it for an
+        // outside force, and the hold sat in cooldown through the lean (view 0.020 m). A jolt while the bend is
+        // changing fast, or just after, is the lean's own.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, true, true, Dt, bendRate: 0f);
+        var v = Vector2.Zero;
+        for (int i = 0; i < 8; i++)
+        {
+            v += new Vector2(0f, i % 2 == 0 ? 0.08f : -0.08f);
+            h.Update(Start, v, true, true, Dt, bendRate: 16.6f / 0.15f);
+            Assert.True(h.Holding, h.Why);
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            v += new Vector2(0f, i % 2 == 0 ? 0.08f : -0.08f);
+            h.Update(Start, v, true, true, Dt, bendRate: 0f);
+            Assert.True(h.Holding, h.Why);
+        }
+    }
+
+    [Fact]
+    public void SteadyBend_AJolt_IsStillAKick()
+    {
+        var h = new BodyHold();
+        for (float t = 0f; t < 1f; t += Dt)
+            h.Update(Start, Vector2.Zero, true, true, Dt, bendRate: 0f);
+        h.Update(Start, new Vector2(0.5f, 0f), true, true, Dt, bendRate: 0f);
+        Assert.False(h.Holding);
+        Assert.Equal("kick", h.Why);
+    }
+
+    [Fact]
     public void NonFinite_NoForce()
     {
         var h = new BodyHold();

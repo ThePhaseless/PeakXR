@@ -73,8 +73,9 @@ namespace PeakXR.Core
         /// <summary>Seconds after a follow during which the body is still settling from its walk.</summary>
         public float FollowSettleSeconds = 1.5f;
 
-        /// <summary>Largest sideways body travel (m) in one update that a follow takes into the anchor.</summary>
-        public float MaxSwayStep = 0.05f;
+        /// <summary>Largest body travel (m) in one update that a follow takes into the anchor whole (about 3 m/s at
+        /// 20 updates a second); a bigger step is a jump.</summary>
+        public float MaxFollowStep = 0.15f;
 
         float _sinceFollow = float.MaxValue;
         bool _following;
@@ -164,18 +165,23 @@ namespace PeakXR.Core
         {
             var d = head - Anchor;
             float dist = d.Length();
+            // While a follow walks and settles, all of the body's travel is the walk: its sideways gait sway (run 35)
+            // and its coast past the head and back (run 36: 0.077 m within the far lean, the origin unchanged at
+            // every 0.25 s sample). Take it all so the view stays where the head is. A step bigger than a walk's
+            // frame is a jump, not a walk.
+            if (_sinceFollow < FollowSettleSeconds && bodyDelta.Length() <= MaxFollowStep)
+            {
+                Anchor += bodyDelta;
+                float toward = dist > 1e-5f ? Vector2.Dot(bodyDelta, d / dist) : 0f;
+                _absorbed = MathF.Max(0f, _absorbed + toward);
+                _followTravel = MathF.Max(0f, _followTravel + Vector2.Dot(bodyDelta, _followDir));
+                return;
+            }
             if (dist <= 1e-5f)
                 return;
             var dir = d / dist;
-            float raw = Vector2.Dot(bodyDelta, dir);
-            float along = Math.Clamp(raw, -_absorbed, dist);
+            float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
             Anchor += dir * along;
-            // While a follow walks and settles, its sideways gait sway and settling are the walk, not the world:
-            // take them too, or the view sways with the gait (run 35: 0.082 m).
-            // A frame's sway is centimetres; anything bigger is a jump, not a walk.
-            var side = bodyDelta - dir * raw;
-            if (_sinceFollow < FollowSettleSeconds && side.Length() <= MaxSwayStep)
-                Anchor += side;
             _absorbed += along;
             _followTravel += MathF.Max(0f, along * Vector2.Dot(dir, _followDir));
         }
