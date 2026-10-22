@@ -36,7 +36,6 @@ public sealed class LocomotionFeature : Feature
         Patch(typeof(EnvironmentCues.BalloonPop));
         Patch(typeof(EnvironmentCues.ParachuteTug));
         Patch(typeof(EnvironmentCues.SugarCrash));
-        Patch(typeof(EnvironmentCues.FloatEnd));
         Patch(typeof(EnvironmentCues.BridgeTouch));
         Patch(typeof(EnvironmentCues.BridgeFall));
 

@@ -364,7 +364,7 @@ internal static class LocomotionInput
 
     /// <summary>
     /// The head drifted from a body that cannot step after it (climbing, hanging, airborne, carried): before the
-    /// recenter fade, a NotNow refusal on both hands with a ring at the body's feet, the spot to come back to.
+    /// recenter fade, a NotNow refusal on the dominant hand with a ring at the body's feet, the spot to come back to.
     /// Once per drift; armed again back inside half the distance.
     /// </summary>
     private static void WarnFar(Character c, bool canFollow, bool stickIdle)
@@ -376,9 +376,8 @@ internal static class LocomotionInput
             return;
         warnedFar = true;
         var feet = c.data.isGrounded ? c.data.groundPos : c.Center;
-        var hint = DenyHint.At(feet);
-        Affordance.Deny(true, feet, DenyReason.NotNow, hint);
-        Affordance.Deny(false, feet, DenyReason.NotNow, hint);
+        // One hand: ui.affordance draws one refusal ring at a time, and a second Deny would replace it.
+        Affordance.Deny(VRInput.LeftHanded, feet, DenyReason.NotNow, DenyHint.At(feet));
     }
 
     /// <summary>Widest angle (degrees) between the pointing hand and a teammate it picks.</summary>

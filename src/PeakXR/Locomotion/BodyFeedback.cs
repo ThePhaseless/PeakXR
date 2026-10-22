@@ -59,7 +59,6 @@ internal static class BodyFeedback
     private static float lastPassOut;
     private static int refusedFrame = -10;
     private static float wallNearest = float.PositiveInfinity;
-    private static float floatEndAt = -1f;
     private static float lastBeatAt = -1f;
 
     /// <summary>Jumps the local body took off (self-test).</summary>
@@ -81,10 +80,6 @@ internal static class BodyFeedback
 
     /// <summary>Air jumps (double-jump amulet charges) spent (self-test).</summary>
     internal static int AirJumps { get; private set; }
-
-    /// <summary>The low gravity is about to end (CharacterAfflictions.WarnStopWhirlwind, :1833): a 1.5 s
-    /// countdown on the hands. Called by its patch.</summary>
-    internal static void FloatEnding() => floatEndAt = Time.unscaledTime + FloatEndWarning;
 
     /// <summary>The game's fall damage time (CharacterMovement.cs:126), 1.5 s in this build.</summary>
     internal static float FallDamageTime(Character c) =>
@@ -157,13 +152,17 @@ internal static class BodyFeedback
         BodyBeat(c);
         NearWall(c);
 
-        // G9: the float ends soon: progress ticks fill toward the moment gravity returns.
-        if (floatEndAt > 0f)
+        // G9: low gravity about to end (Affliction_LowGravity.cs:42-46 warns 1.5 s early): progress ticks fill
+        // toward the moment gravity returns. Polled, not patched: nothing to miss if the warning call is inlined.
+        if (
+            c.refs.afflictions.HasAfflictionType(
+                Peak.Afflictions.Affliction.AfflictionType.LowGravity,
+                out var low
+            )
+        )
         {
-            float left = floatEndAt - Time.unscaledTime;
-            if (left <= 0f)
-                floatEndAt = -1f;
-            else
+            float left = low.totalTime - low.timeElapsed;
+            if (left > 0f && left < FloatEndWarning)
             {
                 float u = BodyCues.CountdownUrgency(left, FloatEndWarning);
                 Affordance.Progress(true, u);
@@ -204,8 +203,8 @@ internal static class BodyFeedback
         bool sliding = d.sinceFallSlide < 0.1f && !d.isClimbingAnything;
         if (sliding && !wasSliding)
         {
-            Affordance.Deny(true, feet, DenyReason.TooSteep);
-            Affordance.Deny(false, feet, DenyReason.TooSteep);
+            // One hand: ui.affordance draws one refusal ring at a time, and a second Deny would replace it.
+            Affordance.Deny(DominantLeft, feet, DenyReason.TooSteep);
         }
         wasSliding = sliding;
     }
