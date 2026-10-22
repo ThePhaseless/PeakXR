@@ -69,6 +69,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.147-morale-glow", Budget(3f), MoraleGlowStep());
         yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
         yield return Restoring("vr.157-spectate-point", Budget(15f), SpectatePointStep());
+        yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
         yield return HandStep("vr.210-heartbeat", Budget(11f), HeartbeatStep());
@@ -1663,5 +1664,98 @@ internal sealed partial class SelfTestRunner
             }
         }
         return best < float.MaxValue;
+    }
+
+    /// <summary>
+    /// vr.219: passed out, the detached view follows the body without the player. The body is moved 3 m (the game's
+    /// warp, as a fall or a throw would move it) and the view must ease after it: the comfort vignette closes while
+    /// the view moves (LocomotionDriver reads the rig origin while detached), its acceleration stays under the
+    /// chase limit (<see cref="ViewMotionLimit"/>) and its speed under the cap; jumps over 1.5 m in a frame (a
+    /// re-place behind a fade) are left out. With Camera.ThirdPersonFollow 0 the view stays still, which passes.
+    /// </summary>
+    IEnumerator SpectateComfortStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        if (!ComfortConfig.Vignette || ComfortConfig.VignetteStrength <= 0.01f)
+        {
+            stepSkip = "Comfort.Vignette off or at strength 0";
+            yield break;
+        }
+        bodyRestore = () =>
+        {
+            if (c != null && c.data.fullyPassedOut)
+                SandboxActions.Revive();
+        };
+        if (!SandboxActions.PassOut())
+        {
+            stepSkip = "sandbox pass-out unavailable";
+            yield break;
+        }
+        yield return WaitFor(() => c.data.fullyPassedOut, 6f);
+        if (!c.data.fullyPassedOut)
+        {
+            Fail("did not pass out");
+            yield break;
+        }
+        yield return Wait(1.5f);
+        bool chase = RigDriver.ViewDetached;
+        var limit = new ViewMotionLimit();
+        warpedForProp = true;
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            c.Center + Vector3.up * 3f + Flat(rig.Head.right) * 2f,
+            false
+        );
+        var last = rig.Origin.position;
+        var lastV = Vector3.zero;
+        bool haveV = false;
+        float maxAccel = 0f,
+            maxSpeed = 0f,
+            moving = 0f,
+            vignetted = 0f,
+            peak = 0f;
+        float start = Now;
+        while (Now - start < 4f)
+        {
+            yield return null;
+            float dt = Time.deltaTime;
+            var p = rig.Origin.position;
+            var d = p - last;
+            last = p;
+            if (dt <= 0f || d.magnitude > ViewMotionLimit.JumpDistance)
+            {
+                haveV = false;
+                continue;
+            }
+            var v = d / dt;
+            if (haveV)
+                maxAccel = Mathf.Max(maxAccel, (v - lastV).magnitude / dt);
+            lastV = v;
+            haveV = true;
+            maxSpeed = Mathf.Max(maxSpeed, v.magnitude);
+            peak = Mathf.Max(peak, LocomotionDriver.Intensity);
+            if (v.magnitude > 0.5f)
+            {
+                moving += dt;
+                if (LocomotionDriver.Intensity > 0.05f)
+                    vignetted += dt;
+            }
+        }
+        SandboxActions.Revive();
+        yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);
+        var note =
+            $"chase view {chase}, moving {moving:0.00} s (vignette on {vignetted:0.00} s, peak {peak:0.00}), "
+            + $"top speed {maxSpeed:0.0} m/s, top acceleration {maxAccel:0.0} m/s^2";
+        // Frame-time jitter roughens a finite difference: half again over the limit is the bar.
+        if (moving > 0.2f && vignetted < moving * 0.8f)
+            Fail("the view moved without the vignette: " + note);
+        else if (chase && maxAccel > limit.MaxAcceleration * 1.5f)
+            Fail("the view accelerated past the chase limit: " + note);
+        else if (chase && maxSpeed > limit.MaxSpeed + 0.5f)
+            Fail("the view moved faster than the chase cap: " + note);
+        else
+            stepNote = note;
     }
 }

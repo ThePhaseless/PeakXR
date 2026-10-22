@@ -153,6 +153,11 @@ internal static class ComfortConfig
             vignette.Value = profile.Vignette;
             vignetteStrength.Value = profile.VignetteStrength;
             moveSmoothing.Value = profile.MoveSmoothing;
+            // Comfortable also stills the detached view (Camera.ThirdPersonFollow 0: it stays put and re-places
+            // behind a fade), so a watched body's climbs and falls never glide the eyes. Not part of the preset's
+            // identity: the player can set it back without leaving Comfortable.
+            if (p == ComfortPreset.Comfortable && Rig.CameraFeature.ThirdPersonFollow != null)
+                Rig.CameraFeature.ThirdPersonFollow.Value = 0f;
         }
         finally
         {
