@@ -464,7 +464,8 @@ public partial class AvatarPoseDriver
             && BodyLean.TrySwing(
                 spine.transform.position.N(),
                 eye.N(),
-                target.N(),
+                // A still head bends nothing (BodyLean.WantDeadband), or the hip's own sway feeds back (MP run 9).
+                eye.N() + BodyLean.Deadband((target - eye).N(), Vector3.up.N()),
                 forward.normalized.N(),
                 Vector3.up.N(),
                 out var swing

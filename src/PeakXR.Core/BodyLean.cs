@@ -105,6 +105,23 @@ namespace PeakXR.Core
         public static Vector3 HeadBias(Vector3 eyeFromHip, Vector3 hip, Vector3 calibratedEye) =>
             hip + eyeFromHip - calibratedEye;
 
+        /// <summary>Horizontal head offset (m) the lean ignores: the hip's own sway and frame timing read as about
+        /// 0.01 m (MP run 9), and bending for it pushed the sway on (a still head, a body rocking at 0.04-0.15 m/s).</summary>
+        public const float WantDeadband = 0.02f;
+
+        /// <summary>
+        /// <paramref name="want"/> (head minus the unbent eyes) with <see cref="WantDeadband"/> taken off its
+        /// horizontal length, continuously: a still head bends nothing, a real lean keeps its direction and loses 2 cm.
+        /// The vertical part (ducking, the crouch's) is kept.
+        /// </summary>
+        public static Vector3 Deadband(Vector3 want, Vector3 up)
+        {
+            var vertical = up * Vector3.Dot(want, up);
+            var flat = want - vertical;
+            float len = flat.Length();
+            return len <= WantDeadband ? vertical : vertical + flat * ((len - WantDeadband) / len);
+        }
+
         /// <summary>Shortest rotation turning direction <paramref name="a"/> onto <paramref name="b"/>.</summary>
         public static Quaternion FromTo(Vector3 a, Vector3 b)
         {
