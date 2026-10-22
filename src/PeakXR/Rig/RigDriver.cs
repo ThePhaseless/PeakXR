@@ -438,7 +438,7 @@ internal sealed class RigDriver : MonoBehaviour
         var eyes = EyeOffsetNow;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} neutral ({LeanNeutral.X:0.000},{LeanNeutral.Y:0.000}) eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) head-eye {Vector3.Distance(rig.Head.position, BodyEye(c, rig.Origin.eulerAngles.y)):0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} neutral ({LeanNeutral.X:0.000},{LeanNeutral.Y:0.000}) eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) head-eye {Vector3.Distance(rig.Head.position, BodyEye(c, rig.Origin.eulerAngles.y)):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000}"
             )
         );
     }
@@ -768,9 +768,23 @@ internal sealed class RigDriver : MonoBehaviour
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything,
             FollowWalking
         );
+        // The standing body's idle sway stays out of the view (ViewHold); goal keeps the body's own point, so
+        // ViewOffset carries the held offset like follow lag and the lean never reads it as head motion.
+        var viewGoal = goal;
+        if (shownKind == ViewKind.FirstPerson && !snap)
+        {
+            var extra = turnShift + Vector3.up * rig.CrouchLift;
+            viewHoldWhy = ViewHoldGate.Why(ViewHoldNow(c));
+            viewGoal = viewHold.Update((goal - extra).N(), viewHoldWhy == null, dt).U() + extra;
+        }
+        else
+        {
+            viewHold.Reset();
+            viewHoldWhy = "view";
+        }
         anchor = snap
             ? goal
-            : RigMath.Follow(anchor.N(), goal.N(), dt, rate, verticalRate, maxLag).U();
+            : RigMath.Follow(anchor.N(), viewGoal.N(), dt, rate, verticalRate, maxLag).U();
         if (shownKind == ViewKind.FirstPerson && !snap)
         {
             BodyAnchor = anchor;
@@ -1081,6 +1095,28 @@ internal sealed class RigDriver : MonoBehaviour
             rig.Origin.rotation = Quaternion.Euler(0f, savedYaw, 0f);
             haveSavedYaw = false;
         }
+    }
+
+    private readonly ViewHold viewHold = new();
+
+    /// <summary>This frame's closed <see cref="ViewHoldGate"/>, or null while the view holds. Traced.</summary>
+    private string viewHoldWhy;
+
+    /// <summary>The local body for <see cref="ViewHoldGate"/>: the lean's body gate (grounded, upright, no stick,
+    /// not carried, swimming, warping, sliding or bouncing), the bend, the mean part speed, a jump, a room-scale
+    /// walk. Only this player's view reads it; the body and what peers see are untouched.</summary>
+    private static ViewHoldInputs ViewHoldNow(Character c)
+    {
+        var d = c.data;
+        var driver = AvatarPoseDriver.Of(c);
+        return new ViewHoldInputs
+        {
+            BodyFree = HoldGate.Free(AvatarPoseDriver.GateInputs(c)),
+            LeanDegrees = driver != null ? driver.LeanDegrees : 0f,
+            Speed = d.avarageVelocity.magnitude,
+            Jumping = d.isJumping || (c.input != null && c.input.jumpWasPressed),
+            RoomWalking = FollowWalking,
+        };
     }
 
     /// <summary>The avatar's calibrated eyes: for the local player over <see cref="ViewRoot"/>, blended toward the

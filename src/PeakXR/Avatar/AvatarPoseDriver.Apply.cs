@@ -246,33 +246,38 @@ public partial class AvatarPoseDriver
     private string holdGateWhy;
     private float lastLeanDegrees;
 
+    /// <summary>What the game says about <paramref name="c"/>'s body this tick, for <see cref="HoldGate"/> (the lean's
+    /// body hold here, rig.camera's view hold).</summary>
+    internal static HoldInputs GateInputs(Character c)
+    {
+        var d = c.data;
+        var movement = c.refs.movement;
+        var animator = c.refs.animator;
+        return new HoldInputs
+        {
+            Grounded = d.isGrounded,
+            Upright = Rig.RigDriver.Upright(c),
+            MoveInput = c.input == null || c.input.movementInput.sqrMagnitude >= 1e-4f,
+            Carried = d.isCarried || d.carrier != null || d.carrierCondor != null,
+            // The animator keeps the blend WaterZone wrote; data.inWater is back at 1 once
+            // CharacterAnimations fed it (CharacterAnimations.cs:283-284).
+            WaterBlend = animator != null ? animator.GetFloat(InWaterParam) : d.inWater,
+            Warping = c.warping,
+            SinceFallSlide = d.sinceFallSlide,
+            SinceBounce = Time.time - d.lastBouncedTime,
+            SlopeDeg = Vector3.Angle(d.groundNormal, Vector3.up),
+            MaxSlopeDeg =
+                movement != null && AvatarPatches.MaxAngle != null
+                    ? AvatarPatches.MaxAngle(movement)
+                    : 50f,
+        };
+    }
+
     private void HoldBody()
     {
         var c = Owner;
         var parts = c.refs.ragdoll.partList;
-        var d = c.data;
-        var movement = c.refs.movement;
-        var animator = c.refs.animator;
-        holdGateWhy = HoldGate.Why(
-            new HoldInputs
-            {
-                Grounded = d.isGrounded,
-                Upright = Rig.RigDriver.Upright(c),
-                MoveInput = c.input == null || c.input.movementInput.sqrMagnitude >= 1e-4f,
-                Carried = d.isCarried || d.carrier != null || d.carrierCondor != null,
-                // The animator keeps the blend WaterZone wrote; data.inWater is back at 1 once
-                // CharacterAnimations fed it (CharacterAnimations.cs:283-284).
-                WaterBlend = animator != null ? animator.GetFloat(InWaterParam) : d.inWater,
-                Warping = c.warping,
-                SinceFallSlide = d.sinceFallSlide,
-                SinceBounce = Time.time - d.lastBouncedTime,
-                SlopeDeg = Vector3.Angle(d.groundNormal, Vector3.up),
-                MaxSlopeDeg =
-                    movement != null && AvatarPatches.MaxAngle != null
-                        ? AvatarPatches.MaxAngle(movement)
-                        : 50f,
-            }
-        );
+        holdGateWhy = HoldGate.Why(GateInputs(c));
         bool free = holdGateWhy == null;
         var sum = Vector3.zero;
         var momentum = Vector3.zero;
