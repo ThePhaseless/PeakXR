@@ -215,6 +215,9 @@ public partial class AvatarPoseDriver
     /// <summary>Puts the leg roots at their rest offset plus <paramref name="shift"/> (world).</summary>
     private void ShiftLegs(Vector3 shift)
     {
+        // Unshifted and staying so: leave the animator's leg roots alone rather than write the init capture.
+        if (shift == Vector3.zero && LegShiftNow == Vector3.zero)
+            return;
         LegShiftNow = shift;
         for (int i = 0; i < legRoots.Length; i++)
         {
@@ -265,6 +268,7 @@ public partial class AvatarPoseDriver
     /// look, curl fingers.</summary>
     internal void OnConfigureIK()
     {
+        ClearReach();
         if (!HasFreshPose)
         {
             // Vanilla animation takes the whole body back (the arms snap back too), so the lean ends with it.
@@ -273,12 +277,16 @@ public partial class AvatarPoseDriver
             ShiftLegs(Vector3.zero);
             leanWeight = 0f;
             LeanGate = "stale pose";
+            FadeUnreached();
             if (rigReady)
                 RestoreFingers();
             return;
         }
         if (!EnsureRig())
+        {
+            FadeUnreached();
             return;
+        }
         var refs = Owner.refs;
         var cfg = AvatarConfig.Instance;
 
@@ -324,6 +332,7 @@ public partial class AvatarPoseDriver
             if (leaned && pose.HasRightHand)
                 ReachAfterLean(refs.ikRight, refs.IKHandTargetRight, tipR, w);
         }
+        FadeUnreached();
 
         // The local player's head is hidden and the camera hangs off it, so only other characters get head look.
         if (cfg.HeadLook && head != null && Pose.HasHead && !Owner.IsLocal)
@@ -363,7 +372,7 @@ public partial class AvatarPoseDriver
         var forward = bodyFrame.forward;
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
-        UnleanedEye = eye - AnimatedOffset();
+        UnleanedEye = eye - hip.transform.position;
         var target = Pose.HeadPosition + AnimatedOffset();
         LeanGate = ClosedGate(c, w, forward);
         bool allowed = false;
@@ -449,8 +458,9 @@ public partial class AvatarPoseDriver
 
     internal Vector3 LeanShoulderShift { get; private set; }
 
-    /// <summary>This tick's animated eyes before the bend, carried onto the physical hip (world): where the lean
-    /// starts from. avatar.local sends the head relative to it, so the head on the calibrated eyes is upright.</summary>
+    /// <summary>This tick's animated eyes before the bend, relative to the animated hip: where the lean starts from.
+    /// avatar.local carries it onto the rendered frame's hip (<see cref="BodyLean.HeadBias"/>) and sends the head
+    /// relative to it, so the head on the calibrated eyes is upright.</summary>
     internal Vector3? UnleanedEye { get; private set; }
 
     private float nextLeanTrace;
@@ -597,11 +607,9 @@ public partial class AvatarPoseDriver
         return true;
     }
 
-    /// <summary>Seconds the reach map takes to fade in or out (standing up, grabbing or dropping an item).</summary>
-    private const float ReachFadeSeconds = 0.3f;
-
-    /// <summary>The player's longest measured controller distance from the avatar's shoulder (<see cref="ArmReach"/>).</summary>
-    private float playerReach;
+    /// <summary>The player's reach, learned per arm (<see cref="ReachLearner"/>); the map uses the longer.</summary>
+    private readonly ReachLearner reachL = new();
+    private readonly ReachLearner reachR = new();
     private float reachWeightL;
     private float reachWeightR;
     private bool haveReachL;
@@ -612,20 +620,41 @@ public partial class AvatarPoseDriver
     /// <summary>How far the reach map holds this hand's target off its controller (m). Read by the self-test.</summary>
     internal float ReachPull(bool left) => (left ? reachShiftL : reachShiftR).magnitude;
 
+    /// <summary>Drops this tick's reach shifts, so <see cref="HandTarget"/> never adds one from a tick that skipped
+    /// <see cref="Reach"/>.</summary>
+    private void ClearReach()
+    {
+        haveReachL = haveReachR = false;
+        reachShiftL = reachShiftR = Vector3.zero;
+    }
+
+    /// <summary>Fades out the map of a hand <see cref="Reach"/> did not run for this tick.</summary>
+    private void FadeUnreached()
+    {
+        float dt = Time.fixedDeltaTime;
+        if (!haveReachL)
+            reachWeightL = ArmReach.StepWeight(reachWeightL, false, false, dt);
+        if (!haveReachR)
+            reachWeightR = ArmReach.StepWeight(reachWeightR, false, false, dt);
+    }
+
     /// <summary>
     /// <paramref name="target"/> (the controller's hand bone, animated space) mapped onto the avatar's reach from the
-    /// arm's shoulder (<see cref="ArmReach"/>), while standing with that hand empty. A hand holding an item stays on
-    /// the controller: the item follows the controller pose and is welded to the hand. Climbing, hanging and gliding
-    /// keep the raw controller too. Also learns the player's reach from relaxed (slow body) samples.
+    /// arm's shoulder (<see cref="ArmReach"/>), while standing with that hand empty. A hand holding an item is on the
+    /// controller from the grab's first tick (<see cref="ArmReach.StepWeight"/>): the item follows the controller pose
+    /// and is welded to the hand. Climbing, hanging and gliding fade back to the raw controller. Also learns the
+    /// player's reach while the body is at rest and, for the local player, the view is not settling after a warp,
+    /// spawn or takeover.
     /// </summary>
     private Vector3 Reach(bool left, TwoBoneIKConstraint ik, Vector3 target)
     {
         var c = Owner;
         var item = c.data.currentItem;
         bool holding = item != null && (Pose.TwoHandHold || Pose.ItemInLeftHand == left);
-        bool on = !holding && Rig.RigDriver.Upright(c);
+        bool upright = Rig.RigDriver.Upright(c);
+        float dt = Time.fixedDeltaTime;
         ref float weight = ref left ? ref reachWeightL : ref reachWeightR;
-        weight = Mathf.MoveTowards(weight, on ? 1f : 0f, Time.fixedDeltaTime / ReachFadeSeconds);
+        weight = ArmReach.StepWeight(weight, holding, upright, dt);
         var result = target;
         if (ik != null && ik.data.root != null && ik.data.mid != null && ik.data.tip != null)
         {
@@ -633,12 +662,30 @@ public partial class AvatarPoseDriver
             var mid = ik.data.mid.position;
             float arm =
                 Vector3.Distance(shoulder, mid) + Vector3.Distance(mid, ik.data.tip.position);
-            if (on && hip.Rig.linearVelocity.sqrMagnitude < 0.25f)
-                playerReach = ArmReach.Learn(playerReach, Vector3.Distance(shoulder, target), arm);
+            bool learn =
+                upright
+                && !holding
+                && !c.warping
+                && hip.Rig.linearVelocity.sqrMagnitude < 0.25f
+                && !(c.IsLocal && Rig.RigDriver.ViewSettling);
+            (left ? reachL : reachR).Sample(
+                Vector3.Distance(shoulder, target),
+                target.y - shoulder.y,
+                arm,
+                learn,
+                dt
+            );
             if (weight > 0f)
                 result = Vector3.Lerp(
                     target,
-                    ArmReach.Target(shoulder.N(), target.N(), arm, playerReach).U(),
+                    ArmReach
+                        .Target(
+                            shoulder.N(),
+                            target.N(),
+                            arm,
+                            Mathf.Max(reachL.Reach, reachR.Reach)
+                        )
+                        .U(),
                     weight
                 );
         }

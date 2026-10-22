@@ -104,6 +104,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>The eye guard (finding: warps into rock) wants black; read by the self-test.</summary>
     internal static bool EyeGuardBlack => instance != null && instance.eyeGuard.Black;
 
+    /// <summary>The eye guard is watching a fresh view (a spawn, warp, jump or takeover): the body and the view are
+    /// still settling, so avatar.local does not learn the player's reach meanwhile.</summary>
+    internal static bool ViewSettling => instance != null && instance.eyeGuard.Watching;
+
     /// <summary>Whether a point is inside level geometry: within <see cref="EyeRadius"/> of a surface, or inside a
     /// closed mesh (the first face above it is a back face, and the same collider shows a back face below it too).
     /// Also read by the self-test.</summary>

@@ -81,17 +81,108 @@ public class ArmReachTests
         TestUtil.Near(controller, ArmReach.Target(shoulder, controller, Avatar, 0.9f));
     }
 
-    [Fact]
-    public void Learn_KeepsTheLongestPlausibleReach()
+    const float Tick = 1f / 50f;
+
+    static void Hold(ReachLearner l, float d, float seconds, float rise = 0f, bool valid = true)
     {
-        float p = 0f;
-        p = ArmReach.Learn(p, 0.7f, Avatar);
-        p = ArmReach.Learn(p, 0.5f, Avatar);
-        TestUtil.Near(0.7f, p);
-        p = ArmReach.Learn(p, 0.86f, Avatar);
-        TestUtil.Near(0.86f, p);
-        // A hand metres off the shoulder is a warp or a lagging view, not an arm.
-        p = ArmReach.Learn(p, 3f, Avatar);
-        TestUtil.Near(0.86f, p);
+        for (float t = 0f; t < seconds; t += Tick)
+            l.Sample(d, rise, Avatar, valid, Tick);
+    }
+
+    [Fact]
+    public void Learner_KeepsTheLongestHeldReach()
+    {
+        var l = new ReachLearner();
+        Hold(l, 0.7f, 0.5f);
+        Hold(l, 0.5f, 0.5f);
+        TestUtil.Near(0.7f, l.Reach);
+        Hold(l, 0.86f, 0.5f);
+        TestUtil.Near(0.86f, l.Reach);
+    }
+
+    [Fact]
+    public void Learner_IgnoresAOneFrameSpike()
+    {
+        // A warp, respawn or tracking pop: one frame under the cap, at rest (hip velocity 0).
+        var l = new ReachLearner();
+        Hold(l, 0.7f, 0.5f);
+        l.Sample(1.05f, 0f, Avatar, true, Tick);
+        Hold(l, 0.7f, 0.5f);
+        TestUtil.Near(0.7f, l.Reach);
+    }
+
+    [Fact]
+    public void Learner_SkipsInvalidSpans()
+    {
+        // The eye guard armed after a warp or takeover: a long held distance does not count.
+        var l = new ReachLearner();
+        Hold(l, 1.0f, 2f, valid: false);
+        Assert.Equal(0f, l.Reach);
+        // Nor does a run that an invalid frame interrupts before it is held.
+        Hold(l, 0.9f, 0.15f);
+        l.Sample(0.9f, 0f, Avatar, false, Tick);
+        Hold(l, 0.9f, 0.15f);
+        Assert.Equal(0f, l.Reach);
+    }
+
+    [Fact]
+    public void Learner_RejectsNonFinite()
+    {
+        var l = new ReachLearner();
+        Hold(l, 0.7f, 0.5f);
+        Hold(l, float.NaN, 0.5f);
+        Hold(l, float.PositiveInfinity, 0.5f);
+        Hold(l, 0.8f, 0.5f, rise: float.NaN);
+        for (int i = 0; i < 30; i++)
+            l.Sample(0.8f, 0f, Avatar, true, float.NaN);
+        TestUtil.Near(0.7f, l.Reach);
+        Assert.True(float.IsFinite(ArmReach.Map(0.8f, Avatar, float.NaN)));
+    }
+
+    [Fact]
+    public void Learner_IgnoresOverheadReach()
+    {
+        // The scout's shoulder sits 0.47 m under the eyes: a hand overhead is ~1 m from it.
+        var l = new ReachLearner();
+        Hold(l, 0.95f, 1f, rise: 0.8f);
+        Assert.Equal(0f, l.Reach);
+        Hold(l, 0.8f, 0.5f, rise: 0.2f);
+        TestUtil.Near(0.8f, l.Reach);
+    }
+
+    [Fact]
+    public void BeforeLearning_CloseHandsExactAndFarOnesWithinReach()
+    {
+        Assert.Equal(0f, new ReachLearner().Reach);
+        TestUtil.Near(0.3f, ArmReach.Map(0.3f, Avatar, 0f));
+        Assert.True(ArmReach.Map(0.86f, Avatar, 0f) <= Bent + 1e-5f);
+    }
+
+    [Fact]
+    public void Weight_DropsAtOnceOnGrab()
+    {
+        // The item is welded to the controller pose the tick it is grabbed: the hand must already be there.
+        Assert.Equal(0f, ArmReach.StepWeight(1f, holding: true, upright: true, Tick));
+    }
+
+    [Fact]
+    public void Weight_FadesBackInOnRelease()
+    {
+        float w = ArmReach.StepWeight(1f, true, true, Tick);
+        float last = w;
+        for (int i = 0; i < 40; i++)
+        {
+            w = ArmReach.StepWeight(w, false, true, Tick);
+            Assert.True(w - last <= Tick / ArmReach.FadeSeconds + 1e-6f, "release snapped");
+            last = w;
+        }
+        Assert.Equal(1f, w);
+    }
+
+    [Fact]
+    public void Weight_FadesOutWhenNotUpright()
+    {
+        float w = ArmReach.StepWeight(1f, false, false, Tick);
+        TestUtil.Near(1f - Tick / ArmReach.FadeSeconds, w);
     }
 }

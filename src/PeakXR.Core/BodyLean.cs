@@ -96,6 +96,15 @@ namespace PeakXR.Core
             return new Vector3(upperMoment.X, 0f, upperMoment.Z) / carried;
         }
 
+        /// <summary>
+        /// What to add to the tracked head so the lean starts from the calibrated eyes: the unbent animated eyes
+        /// (<paramref name="eyeFromHip"/>, relative to the animated hip, taken on a physics step) carried onto the
+        /// rendered frame's physical <paramref name="hip"/>, minus that frame's <paramref name="calibratedEye"/>.
+        /// Both ends on the same frame, so a moving body adds no bias.
+        /// </summary>
+        public static Vector3 HeadBias(Vector3 eyeFromHip, Vector3 hip, Vector3 calibratedEye) =>
+            hip + eyeFromHip - calibratedEye;
+
         /// <summary>Shortest rotation turning direction <paramref name="a"/> onto <paramref name="b"/>.</summary>
         public static Quaternion FromTo(Vector3 a, Vector3 b)
         {
