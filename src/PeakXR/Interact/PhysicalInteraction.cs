@@ -59,6 +59,9 @@ internal static class PhysicalInteraction
         public float RetryAt;
         public bool Retried;
 
+        /// <summary>This pickup is a free hand's while another item is held: the game pockets it (Item.cs:578-591).</summary>
+        public bool Pocketing;
+
         /// <summary>When a forced detach's second "torn off" beat is due on this hand.</summary>
         public float TornAt = -10f;
 
@@ -84,6 +87,10 @@ internal static class PhysicalInteraction
     private static readonly IInteractible[] Candidates = new IInteractible[32];
     private static readonly ClimbGrace Grace = new();
     private static readonly StaminaHaptics StaminaBeat = new();
+    private static readonly SurfaceTexture Texture = new();
+
+    /// <summary>When the last top-out started its mantle (cue clock), for the self-test (vr.54).</summary>
+    internal static float LastMantleAt { get; private set; } = float.NegativeInfinity;
 
     /// <summary>Seconds a lunge keeps the climb alive with no hand on the wall, so hands can catch it.</summary>
     private const float LungeGrace = 0.6f;
@@ -342,7 +349,7 @@ internal static class PhysicalInteraction
                     pendingLeft = hand.Left;
                     pendingTime = now;
                 }
-                BeginPickup(hand, c, target, now);
+                BeginPickup(hand, c, target, now, holding);
                 break;
             case GripPressAction.GrabInteractible:
                 hand.Target = target;
@@ -354,7 +361,7 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.Climb:
                 if (StartClimb(c, rig, pos, cfg))
-                    HoldPulse(hand.Left, kind);
+                    CatchPulse(hand.Left, kind, c, cfg);
                 else
                 {
                     action = GripPressAction.None;
@@ -391,8 +398,15 @@ internal static class PhysicalInteraction
     /// success tick waits until the item is really taken (<see cref="ConfirmPickup"/>), so the hand never feels a
     /// grab that did not happen. A ground backpack opens its wheel instead (Backpack.cs:32-35): ticked at once.
     /// </summary>
-    private static void BeginPickup(Hand hand, Character c, IInteractible target, float now)
+    private static void BeginPickup(
+        Hand hand,
+        Character c,
+        IInteractible target,
+        float now,
+        bool pocketing
+    )
     {
+        hand.Pocketing = pocketing;
         hand.Confirmed = true;
         hand.Retried = false;
         hand.RetryAt = now + PickupRetry;
@@ -421,7 +435,7 @@ internal static class PhysicalInteraction
         if (taken)
         {
             if (!hand.Confirmed)
-                Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+                PickupDone(hand);
             hand.Confirmed = true;
             return false;
         }
@@ -453,7 +467,12 @@ internal static class PhysicalInteraction
         var wall = probeHit ? probePoint : handPos;
         if (c.data.carrierCondor)
         {
-            Affordance.Deny(left, wall, DenyReason.Carried);
+            Affordance.Deny(
+                left,
+                wall,
+                DenyReason.Carried,
+                Affordance.Hints ? NearestHandle(handPos) : default
+            );
             return;
         }
         float distance = Vector3.Distance(eye, wall);
@@ -913,6 +932,11 @@ internal static class PhysicalInteraction
         }
         lungeInput = new Vector2(stick.X, stick.Y);
         lungePending = true;
+        Climb.ClimbCues.Sound(
+            Climb.ClimbCue.Whoosh,
+            ClimbSound.Whoosh,
+            rig.Hand(hand.Left) != null ? rig.Hand(hand.Left).position : c.Center
+        );
         Grace.Extend(LungeGrace);
         Haptics.Pulse(hand.Left, 0.6f, 0.05f);
     }
@@ -924,6 +948,7 @@ internal static class PhysicalInteraction
             Arms.Reset();
             Grace.Reset();
             StaminaBeat.Reset();
+            Texture.Reset();
         }
         physicalClimb = true;
         mantleUntil = -10f;
@@ -1020,8 +1045,94 @@ internal static class PhysicalInteraction
                     Haptics.Pulse(true, amplitude, 0.04f);
                 if (rightGrip)
                     Haptics.Pulse(false, amplitude, 0.04f);
+                return;
             }
         }
+        SurfaceFeel(c, cfg, leftGrip, rightGrip);
+    }
+
+    /// <summary>
+    /// C9: the rock under the climber, felt while holding it (<see cref="SurfaceTexture"/>): the current
+    /// <c>climbMod</c> (CharacterClimbing.cs:140-143) and the wind's <c>slippy</c> (WindChillZone.cs:211). Quiet while
+    /// the stamina beat speaks.
+    /// </summary>
+    private static void SurfaceFeel(Character c, InteractConfig cfg, bool leftGrip, bool rightGrip)
+    {
+        if (!cfg.ClimbSurfaceFeel || !(leftGrip || rightGrip))
+            return;
+        var mod = c.data.climbMod;
+        bool hasMod = mod != null;
+        var kind = ClimbRules.Kind(
+            hasMod,
+            hasMod && mod.onlySlideDown,
+            hasMod && (mod.applyStatus || mod.applyPetrify),
+            hasMod ? mod.staminaUsageMultiplier : 1f
+        );
+        if (!Texture.TryTick(kind, c.data.slippy, Time.time, out var p))
+            return;
+        if (leftGrip)
+            Climb.ClimbCues.Pulse(Climb.ClimbCue.Texture, true, p.Amplitude, p.Seconds);
+        if (rightGrip)
+            Climb.ClimbCues.Pulse(Climb.ClimbCue.Texture, false, p.Amplitude, p.Seconds);
+    }
+
+    /// <summary>
+    /// C4: a grab that caught a fall turns it into a slide down the wall (<c>StartClimbRpc</c>,
+    /// CharacterClimbing.cs:371-374), read back from <c>playerSlide</c>: the hold ratchets, longer and harder the
+    /// faster it slides (<see cref="ClimbFeel.Catch"/>). A clean grab keeps its surface pulse.
+    /// </summary>
+    private static void CatchPulse(bool left, HoldKind kind, Character c, InteractConfig cfg)
+    {
+        var p = cfg.ClimbSurfaceFeel ? ClimbFeel.Catch(-c.refs.climbing.playerSlide.y) : default;
+        if (p.Amplitude > 0f)
+            Climb.ClimbCues.Pulse(Climb.ClimbCue.Catch, left, p.Amplitude, p.Seconds);
+        else
+            HoldPulse(left, kind);
+    }
+
+    /// <summary>
+    /// The pickup really happened: the success tick in hand, or for a free hand's grab the game pocketed, the Stowed
+    /// notice at that hand (pin glyph, notice bell, light tick), so the item never vanishes silently.
+    /// </summary>
+    private static void PickupDone(Hand hand)
+    {
+        var rig = VRRig.Instance;
+        var t = rig != null ? rig.Hand(hand.Left) : null;
+        if (hand.Pocketing && t != null)
+            Affordance.Inform(hand.Left, t.position, DenyReason.Stowed, default);
+        else
+            Haptics.Pulse(hand.Left, 0.6f, 0.05f);
+    }
+
+    private static readonly Collider[] HandleHits = new Collider[32];
+
+    /// <summary>The "would work" spot for a condor's prey: the nearest free piton or handle within 5 m.</summary>
+    private static DenyHint NearestHandle(Vector3 from)
+    {
+        int n = Physics.OverlapSphereNonAlloc(
+            from,
+            5f,
+            HandleHits,
+            Physics.AllLayers,
+            QueryTriggerInteraction.Collide
+        );
+        ClimbHandle best = null;
+        float bestSq = float.MaxValue;
+        for (int i = 0; i < n; i++)
+        {
+            var handle =
+                HandleHits[i] != null ? HandleHits[i].GetComponentInParent<ClimbHandle>() : null;
+            HandleHits[i] = null;
+            if (handle == null || handle.hanger != null)
+                continue;
+            float d = (handle.transform.position - from).sqrMagnitude;
+            if (d < bestSq)
+            {
+                bestSq = d;
+                best = handle;
+            }
+        }
+        return best != null ? DenyHint.On(best.transform) : default;
     }
 
     /// <summary>
@@ -1049,6 +1160,7 @@ internal static class PhysicalInteraction
             return false;
         mantleDir = into;
         mantleUntil = now + MantleSeconds;
+        LastMantleAt = UI.Affordances.CueLog.Now;
         // Stepped up: a settle tick on the hands still on the lip, so a push-down on the ledge is learnt as the move.
         if (LeftHand.Grip.Held)
             Affordance.Contact(true);

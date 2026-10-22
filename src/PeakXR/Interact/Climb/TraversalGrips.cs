@@ -31,10 +31,12 @@ internal sealed class TraversalGrips : IGripExtension
     private DenyReason reason;
     private Vector3 spot;
     private Component tint;
+    private DenyHint hint;
 
     public bool ClaimPress(in GripHookContext ctx)
     {
         tint = null;
+        hint = default;
         reason = DenyReason.None;
         if (ctx.ThisHandHolds || !InteractConfig.Instance.PhysicalGrab)
             return false;
@@ -60,7 +62,7 @@ internal sealed class TraversalGrips : IGripExtension
                 Affordance.DenyStamina(ctx.Left, spot);
                 break;
             default:
-                Affordance.Deny(ctx.Left, spot, reason, default, tint);
+                Affordance.Deny(ctx.Left, spot, reason, hint, tint);
                 break;
         }
         tint = null;
@@ -119,6 +121,13 @@ internal sealed class TraversalGrips : IGripExtension
         );
         spot = segment.transform.position;
         tint = rope;
+        // Would work once fixed: the rope's first segment, the end that anchors it.
+        if (reason == DenyReason.Unanchored && Affordance.Hints)
+        {
+            var segments = rope.GetRopeSegments();
+            if (segments != null && segments.Count > 0 && segments[0] != null)
+                hint = DenyHint.On(segments[0]);
+        }
         return reason != DenyReason.None || !handling.canInteractWithRope;
     }
 

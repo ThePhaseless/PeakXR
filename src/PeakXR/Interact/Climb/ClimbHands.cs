@@ -78,6 +78,16 @@ internal static class ClimbHands
     private static Transform pumpSegment;
     private static Rigidbody pumpBody;
     private static ShittyPiton piton;
+    private static BreakableRopeAnchor breakable;
+    private static float whirrAt;
+
+    /// <summary><c>BreakableRopeAnchor.willBreakInTime</c> and <c>isBreaking</c> (BreakableRopeAnchor.cs:15, :21,
+    /// private), resolved in Install. Only the anchor's owner counts the timer down (:36-52).</summary>
+    internal static HarmonyLib.AccessTools.FieldRef<BreakableRopeAnchor, float> AnchorTimer;
+    internal static HarmonyLib.AccessTools.FieldRef<BreakableRopeAnchor, bool> AnchorBreaking;
+
+    /// <summary>Seconds before an anchor gives way that the gripping hands start to feel it.</summary>
+    private const float TremorSeconds = 3f;
 
     /// <summary>An exception was logged for the current rope, vine or handle; quiet until the next one.</summary>
     private static bool faulted;
@@ -210,7 +220,10 @@ internal static class ClimbHands
         {
             RopeEnd(c, l, r);
             Pump(c, rig, l || r, dt);
+            AnchorTremor(l, r);
         }
+        else if (mode == Mode.Vine && !frozen)
+            VineSlide(c, cfg, l, r);
 
         if (cfg.StaminaHaptics && (l || r))
         {
@@ -271,6 +284,7 @@ internal static class ClimbHands
         pumpBody = null;
         LastPump = 0f;
         piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
+        breakable = next == Mode.Rope ? Breakable(obj as Rope) : null;
         Arms.Reset();
         Grace.Reset();
         StaminaBeat.Reset();
@@ -457,6 +471,67 @@ internal static class ClimbHands
                 return true;
         }
         return false;
+    }
+
+    /// <summary>The breakable anchor holding <paramref name="rope"/>, if any. Once per rope grab, never per frame.</summary>
+    private static BreakableRopeAnchor Breakable(Rope rope)
+    {
+        if (rope == null || AnchorTimer == null)
+            return null;
+        foreach (
+            var b in UnityEngine.Object.FindObjectsByType<BreakableRopeAnchor>(
+                FindObjectsSortMode.None
+            )
+        )
+        {
+            if (b.TryGetComponent<RopeAnchorWithRope>(out var anchor) && anchor.rope == rope)
+                return b;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// D5: a breakable anchor (BreakableRopeAnchor.cs:34-70) gives way 3-8 s into being climbed. In its last seconds,
+    /// and through the 3 s break, the gripping hands feel the danger warning at the anchor, growing as it nears.
+    /// shortcut: only the anchor's owner runs the timer, so on another player's rope the warning stays silent.
+    /// </summary>
+    private static void AnchorTremor(bool l, bool r)
+    {
+        if (breakable == null)
+            return;
+        float left = AnchorTimer(breakable);
+        float urgency =
+            AnchorBreaking(breakable) ? 1f
+            : left < TremorSeconds ? 1f - Mathf.Max(left, 0f) / TremorSeconds
+            : 0f;
+        if (urgency <= 0f)
+            return;
+        var at = breakable.transform.position;
+        if (l)
+            Affordance.Danger(true, at, urgency);
+        if (r)
+            Affordance.Danger(false, at, urgency);
+    }
+
+    /// <summary>
+    /// D9: a fast grab onto a vine slides along it with input ignored (<c>Sliding</c>, CharacterVineClimbing.cs:102-127).
+    /// The hands feel a whirr and hear it, like a line running through them; the ones holding the vine, or both
+    /// after a button grab.
+    /// </summary>
+    private static void VineSlide(Character c, InteractConfig cfg, bool l, bool r)
+    {
+        if (!cfg.ClimbSurfaceFeel || !c.refs.vineClimbing.Sliding())
+            return;
+        float now = Time.time;
+        if (now < whirrAt)
+            return;
+        whirrAt = now + 0.15f;
+        ClimbCues.Sound(ClimbCue.Whirr, ClimbSound.Whirr, c.Center);
+        bool both = !l && !r;
+        if (l || both)
+            ClimbCues.Pulse(ClimbCue.Whirr, true, 0.35f, 0.12f);
+        if (r || both)
+            ClimbCues.Pulse(ClimbCue.Whirr, false, 0.35f, 0.12f);
     }
 
     private static void TornIfHeld(Hand hand)

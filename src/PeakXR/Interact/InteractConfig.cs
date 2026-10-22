@@ -20,6 +20,7 @@ internal sealed class InteractConfig
         armLunge,
         climbFromHand,
         climbHoverRing,
+        climbSurfaceFeel,
         haptics;
     private ConfigEntry<float> grabRadius,
         throwSpeed,
@@ -49,6 +50,7 @@ internal sealed class InteractConfig
     public bool ArmLunge => armLunge?.Value ?? true;
     public bool ClimbFromHand => climbFromHand?.Value ?? true;
     public bool ClimbHoverRing => climbHoverRing?.Value ?? true;
+    public bool ClimbSurfaceFeel => climbSurfaceFeel?.Value ?? true;
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? 0.5f;
 
@@ -222,6 +224,13 @@ internal sealed class InteractConfig
                 "ClimbHoverRing",
                 true,
                 "A faint chalk ring under an open hand marks rock you can grab, with a light tick when the hand first meets it."
+            ),
+            climbSurfaceFeel = file.Bind(
+                s,
+                "ClimbSurfaceFeel",
+                true,
+                "Feel the rock while climbing: a hard catch ratchets, easy holds tick softly, slides grit, hazards prickle, "
+                    + "wind shudders, and a sliding vine whirrs."
             ),
             haptics = file.Bind(
                 s,
