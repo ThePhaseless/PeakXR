@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.VR;
 using Photon.Pun;
@@ -72,6 +73,12 @@ internal sealed partial class SelfTestRunner
             yield return SettleWarp(c, home);
             warped = true;
         }
+        ClearAround(c);
+        // Recentre before waiting: a head off the avatar's eyes leans the body, and the lean's hold rocks it (run 32:
+        // from vr.26 on, every settle saw the hip at 0.05-0.12 m/s on the home spot and never got to its recentre).
+        if (hasHome)
+            rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), saved.Facing, Vector3.up));
+        yield return SettleRecenter(rig);
         yield return StandStill(c);
         string why = SettleProblem(c, needSpot: !hasHome);
         if (why != null && !warped)
@@ -85,6 +92,8 @@ internal sealed partial class SelfTestRunner
             if (target is { } to)
             {
                 yield return SettleWarp(c, to);
+                ClearAround(c);
+                yield return SettleRecenter(rig);
                 yield return StandStill(c);
                 why = SettleProblem(c, needSpot: !hasHome);
             }
@@ -102,12 +111,11 @@ internal sealed partial class SelfTestRunner
             else
                 Note($"settled on poor ground ({why})");
         }
-        else
-        {
-            // A step that turned to its wall or prop keeps that yaw through a warp: face the home heading again.
-            rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), saved.Facing, Vector3.up));
-        }
+    }
 
+    /// <summary>Recentres the rig (its fade included) and fails the step if it never does.</summary>
+    IEnumerator SettleRecenter(VRRig rig)
+    {
         bool recentered = false;
         Action onRecenter = () => recentered = true;
         rig.Recentered += onRecenter;
@@ -118,6 +126,35 @@ internal sealed partial class SelfTestRunner
             Fail("not settled: the rig did not recentre within 3 s");
         // The recentre runs under a short fade; let it clear before the step looks.
         yield return Wait(0.5f);
+    }
+
+    /// <summary>Loose world items (<c>Item.itemState</c> Ground, Item.cs:286) within this of the feet go before a
+    /// step: a prop step's spill or a dropped item underfoot would push the body.</summary>
+    const float SettleClearRadius = 1.5f;
+
+    /// <summary>Removes loose items near the feet; notes how many.</summary>
+    void ClearAround(Character c)
+    {
+        var feet = Feet(c);
+        int n = 0;
+        foreach (var item in FindObjectsByType<Item>(FindObjectsSortMode.None))
+        {
+            if (
+                item.itemState != ItemState.Ground
+                || (item.Center() - feet).sqrMagnitude > SettleClearRadius * SettleClearRadius
+            )
+                continue;
+            var view = item.GetComponent<PhotonView>();
+            if (view != null && (view.IsMine || PhotonNetwork.IsMasterClient))
+            {
+                PhotonNetwork.Destroy(item.gameObject);
+                n++;
+            }
+        }
+        if (n > 0)
+            Note(
+                F($"settle removed {n} loose item(s) within {SettleClearRadius:0.0} m of the feet")
+            );
     }
 
     /// <summary>Seconds the body has been grounded and still, as of the last <see cref="StandStill"/>.</summary>
@@ -132,6 +169,9 @@ internal sealed partial class SelfTestRunner
         float deadline =
             Now + GameTiming.Budget(GameTiming.FallSeconds(Mathf.Max(0f, drop)) + SettleHold, 1f);
         settledFor = 0f;
+        System.Array.Clear(blocked, 0, blocked.Length);
+        standFrames = 0;
+        hipPeak = 0f;
         while (
             Now
             < SelfTestChecks.SettleDeadline(
@@ -144,6 +184,7 @@ internal sealed partial class SelfTestRunner
         )
         {
             settledFor = AtRest(c) ? settledFor + Time.unscaledDeltaTime : 0f;
+            CountBlocked(c);
             if (settledFor >= SettleHold)
                 yield break;
             yield return null;
@@ -165,6 +206,33 @@ internal sealed partial class SelfTestRunner
             && !Rig.RigDriver.ViewSettling;
     }
 
+    /// <summary>Frames of the last <see cref="StandStill"/> each <see cref="AtRest"/> condition failed: grounded, control,
+    /// climbing, sprinting, hip speed, view settling.</summary>
+    readonly int[] blocked = new int[6];
+    int standFrames;
+    float hipPeak;
+
+    void CountBlocked(Character c)
+    {
+        var d = c.data;
+        var v = c.refs.hip.Rig.linearVelocity;
+        float hip = new Vector2(v.x, v.z).magnitude;
+        standFrames++;
+        hipPeak = Mathf.Max(hipPeak, hip);
+        if (!d.isGrounded)
+            blocked[0]++;
+        if (d.currentRagdollControll < 0.9f)
+            blocked[1]++;
+        if (d.isClimbingAnything)
+            blocked[2]++;
+        if (d.isSprinting)
+            blocked[3]++;
+        if (hip >= SettleSpeed)
+            blocked[4]++;
+        if (Rig.RigDriver.ViewSettling)
+            blocked[5]++;
+    }
+
     /// <summary>Why the body is not settled on a usable spot, or null. <paramref name="needSpot"/> also asks for flat,
     /// open ground (a home spot candidate).</summary>
     string SettleProblem(Character c, bool needSpot)
@@ -172,9 +240,15 @@ internal sealed partial class SelfTestRunner
         var d = c.data;
         var v = c.refs.hip.Rig.linearVelocity;
         if (settledFor < SettleHold)
+        {
+            var driver = AvatarPoseDriver.Of(c);
+            var rig = VRRig.Instance;
+            float eyeGap =
+                rig != null && rig.Head != null ? Vector3.Distance(rig.Head.position, c.Head) : -1f;
             return F(
-                $"grounded {d.isGrounded}, control {d.currentRagdollControll:0.00}, climbing {d.isClimbingAnything}, sprinting {d.isSprinting}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s, view settling {Rig.RigDriver.ViewSettling}, still {settledFor:0.00} of {SettleHold:0.0} s at {c.Center}"
+                $"grounded {d.isGrounded}, control {d.currentRagdollControll:0.00}, climbing {d.isClimbingAnything}, sprinting {d.isSprinting}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s (peak {hipPeak:0.00}), view settling {Rig.RigDriver.ViewSettling}, lean {(driver != null ? driver.LeanDegrees : 0f):0.0} deg, body hold {driver != null && driver.BodyHeld}, eye {eyeGap:0.00} m from the head, still {settledFor:0.00} of {SettleHold:0.0} s at {c.Center}; frames of {standFrames} blocked by grounded {blocked[0]}, control {blocked[1]}, climbing {blocked[2]}, sprinting {blocked[3]}, hip {blocked[4]}, view settling {blocked[5]}"
             );
+        }
         if (!needSpot)
             return null;
         if (

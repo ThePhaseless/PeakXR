@@ -69,8 +69,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// Offline: <see cref="SandboxActions.PlaceWall"/> ahead of the settled player (7 m of face, far above
-    /// <see cref="LungeHeadroom"/>), its face and the ground 0.6 m in front of it. Removed after the step.
+    /// Offline: <see cref="SandboxActions.PlaceWall"/> (7 m of face, far above <see cref="LungeHeadroom"/>) moved so
+    /// its face stands 0.6 m ahead of the settled player, its face and the ground there. Removed after the step.
+    /// Placed 3 m out, the warp to its front left the body 1.1 m short of the spot (run 32: warped to
+    /// (24.70, 1.84, -372.05), next seen at (23.71, 2.65, -372.51)) and the grip 1.55 m from the eye, past the
+    /// hand-cast grab's 1.25 m.
     /// </summary>
     bool LungeWall(Character c, out RaycastHit wall, out Vector3 stand)
     {
@@ -84,6 +87,11 @@ internal sealed partial class SelfTestRunner
             if (placed != null)
                 UnityEngine.Object.Destroy(placed);
         });
+        // Half the wall's 0.5 m thickness behind the face.
+        var ahead = Flat(placed.transform.forward);
+        var at = c.Center + ahead * (0.6f + 0.25f);
+        placed.transform.position = new Vector3(at.x, Feet(c).y + 3f, at.z);
+        Physics.SyncTransforms();
         var mask = HelperFunctions.terrainMapMask;
         if (
             !Physics.Raycast(
@@ -112,6 +120,12 @@ internal sealed partial class SelfTestRunner
         stand = ground.point + Vector3.up * 0.1f;
         return true;
     }
+
+    /// <summary>A warp target for standing on <paramref name="stand"/> (ground + 0.1 m): the game's warp moves the
+    /// body's centre there (Character.cs:1905-1911), so it is raised by the centre's height over the feet. A centre
+    /// sunk to the ground pops back up and lands off the spot (0.3 m at spawn, 1.1 m beside the test wall in run 32).</summary>
+    static Vector3 CentreOver(Character c, Vector3 stand) =>
+        stand + Vector3.up * Mathf.Clamp(c.Center.y - Feet(c).y - 0.1f, 0f, 1.2f);
 
     /// <summary>Face above the grip vr.46 needs: the 0.4 m pull, the ~1.4 m jump and the catch above the body. Run 29's
     /// wall (1.2 m proven) ran out under the jump, the game ended the climb and there was nothing left to catch.</summary>
@@ -144,7 +158,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = NoWall;
             yield break;
         }
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, stand), false);
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);
@@ -898,7 +912,7 @@ internal sealed partial class SelfTestRunner
             )
         )
             wallStand = ground.point + Vector3.up * 0.1f;
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, wallStand, false);
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, wallStand), false);
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);

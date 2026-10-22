@@ -53,6 +53,9 @@ internal sealed partial class SelfTestRunner
         yield return MoveTrack(left, windup, 0.4f);
         yield return Wait(0.3f);
         SnapshotItems();
+        int throwsBefore = PhysicalInteraction.ThrowCount;
+        float consumedBefore = c.data.lastConsumedItem;
+        int slotsBefore = SlotsHolding(c, heldId);
         float clamp =
             (c.refs.hip != null ? c.refs.hip.Rig.linearVelocity.magnitude : 0f)
             + 0.5f * c.refs.items.maxThrowForce * multiplier;
@@ -89,7 +92,13 @@ internal sealed partial class SelfTestRunner
         }
         if (thrown == null)
         {
-            Fail("no thrown " + held.name + " in the world");
+            // Where it went instead: still in hand (the release was not a throw), pocketed into a slot, eaten.
+            var now = HeldItem();
+            Fail(
+                F(
+                    $"no thrown {held.name} in the world: in hand {(now != null ? now.name : "nothing")}, throws {PhysicalInteraction.ThrowCount - throwsBefore}, slots holding it {slotsBefore} -> {SlotsHolding(c, heldId)}, eaten {c.data.lastConsumedItem != consumedBefore}, last grip {PhysicalInteraction.LastGripNote}"
+                )
+            );
             yield break;
         }
         float launch = firstVelocity.magnitude;
@@ -130,6 +139,22 @@ internal sealed partial class SelfTestRunner
         );
         if (probe != null)
             Destroy(probe);
+    }
+
+    static readonly byte[] PocketSlots = { 0, 1, 2, 250 };
+
+    /// <summary>Hotbar slots and the overflow slot (<c>Player.GetItemSlot</c>, Player.cs:246-259) holding
+    /// <paramref name="id"/>.</summary>
+    static int SlotsHolding(Character c, ushort id)
+    {
+        int n = 0;
+        foreach (byte i in PocketSlots)
+        {
+            var slot = c.player != null ? c.player.GetItemSlot(i) : null;
+            if (slot != null && !slot.IsEmpty() && slot.prefab != null && slot.prefab.itemID == id)
+                n++;
+        }
+        return n;
     }
 
     /// <summary>The vr.13 note and verdict.</summary>
