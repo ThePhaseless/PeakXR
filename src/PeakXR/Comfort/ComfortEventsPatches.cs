@@ -146,7 +146,11 @@ internal static class ComfortEventsPatches
                 return;
             float size = Vector3.Magnitude(wholeBodyForce);
             if (size >= 20f)
-                ComfortEventsRuntime.RaiseFrom(ComfortEvent.Knockback, size / 1000f, -wholeBodyForce);
+                ComfortEventsRuntime.RaiseFrom(
+                    ComfortEvent.Knockback,
+                    size / 1000f,
+                    -wholeBodyForce
+                );
         }
     }
 

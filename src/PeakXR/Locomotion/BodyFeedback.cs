@@ -37,12 +37,16 @@ internal static class BodyFeedback
     private static bool wasSliding;
     private static int jumps;
     private static float lastPassOut;
+    private static int refusedFrame = -10;
 
     /// <summary>Jumps the local body took off (self-test).</summary>
     internal static int TakeOffs => jumps;
 
     /// <summary>Thump amplitude of the last landing (self-test).</summary>
     internal static float LastLanding { get; private set; }
+
+    /// <summary>Landings felt (self-test).</summary>
+    internal static int Landings { get; private set; }
 
     /// <summary>The game's fall damage time (CharacterMovement.cs:126), 1.5 s in this build.</summary>
     internal static float FallDamageTime(Character c) =>
@@ -110,6 +114,14 @@ internal static class BodyFeedback
             return;
         var feet = Feet(c);
 
+        // A7: a jump press the game turned down (see JumpTry), unless it became a climb grab.
+        if (refusedFrame >= 0 && Time.frameCount > refusedFrame)
+        {
+            if (!d.isClimbingAnything && Time.frameCount - refusedFrame <= 3)
+                Affordance.Deny(DominantLeft, feet, DenyReason.TooSoon);
+            refusedFrame = -10;
+        }
+
         // F3a: the status sum is over the top and passOutValue climbs to 1 over 5 s (Character.cs:1043-1063).
         bool rising = d.passOutValue > lastPassOut;
         lastPassOut = d.passOutValue;
@@ -176,7 +188,8 @@ internal static class BodyFeedback
 
     /// <summary>
     /// CharacterMovement.TryToJump (CharacterMovement.cs:415, private): a press the game turns down (past the 0.2 s
-    /// coyote time, within 0.3 s of the last jump) sends no JumpRpc. That refusal gets TooSoon at the feet, so
+    /// coyote time, within 0.3 s of the last jump) sends no JumpRpc. That refusal gets TooSoon at the feet (next
+    /// frame, in <see cref="Tick"/>), so
     /// mashing jump in the air feels different from a jump. Climbing, a handle, struggling, passed out, a jetpack
     /// and a jump still charging are not refusals of a jump and stay quiet.
     /// </summary>
@@ -203,11 +216,12 @@ internal static class BodyFeedback
                 || (__instance.hasJetpack && !d.isGrounded)
             )
                 return;
-            Affordance.Deny(DominantLeft, Feet(c), DenyReason.TooSoon);
+            // Judged next frame: the same press may start a jump-to-climb grab (CharacterClimbing.cs:68-78).
+            refusedFrame = Time.frameCount;
         }
     }
 
-    /// <summary>CharacterMovement.JumpRpc(bool) (CharacterMovement.cs:628, [PunRPC], runs at once on the sender):
+    /// <summary>CharacterMovement.JumpRpc(bool) (CharacterMovement.cs:626, [PunRPC], runs at once on the sender):
     /// the local body takes off; a pal jump boost is the strong tick.</summary>
     [HarmonyPatch]
     internal static class TakeOff
@@ -239,6 +253,7 @@ internal static class BodyFeedback
             var d = c.data;
             float speed = Mathf.Max(-d.avarageLastFrameVelocity.y, -d.avarageVelocity.y);
             LastLanding = BodyCues.LandingAmplitude(speed);
+            Landings++;
             FeelBoth(CueFeel.Contact, LastLanding, 0.06f + 0.08f * LastLanding);
         }
     }

@@ -18,7 +18,13 @@ public class JumpGestureTests
         public bool Swinging;
     }
 
-    static Pose Standing => new() { Head = Eye, Left = Eye - 0.5f, Right = Eye - 0.5f };
+    static Pose Standing =>
+        new()
+        {
+            Head = Eye,
+            Left = Eye - 0.5f,
+            Right = Eye - 0.5f,
+        };
 
     /// <summary>Runs <paramref name="pose"/> (t from 0 to seconds) through the gesture; counts the hops seen.</summary>
     static int Run(JumpGesture g, float seconds, Func<float, Pose> pose, bool enabled = true)
@@ -28,17 +34,7 @@ public class JumpGestureTests
         {
             var p = pose(t);
             if (
-                g.Update(
-                    enabled,
-                    p.Head,
-                    Eye,
-                    p.Pitch,
-                    p.Left,
-                    p.Right,
-                    p.Crouched,
-                    p.Swinging,
-                    Dt
-                )
+                g.Update(enabled, p.Head, Eye, p.Pitch, p.Left, p.Right, p.Crouched, p.Swinging, Dt)
             )
                 hops++;
         }
@@ -213,9 +209,6 @@ public class JumpGestureTests
     [Fact]
     public void TwoHopsCloserThanTheCooldown_CountOnce()
     {
-        Assert.Equal(
-            1,
-            Run(new JumpGesture(), 1.5f, t => t < 0.5f ? Hop(t, 0.1f) : Hop(t, 0.5f))
-        );
+        Assert.Equal(1, Run(new JumpGesture(), 1.5f, t => t < 0.5f ? Hop(t, 0.1f) : Hop(t, 0.5f)));
     }
 }

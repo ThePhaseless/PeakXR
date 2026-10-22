@@ -43,6 +43,9 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
 
     internal static float LastRightAmplitude { get; private set; }
 
+    /// <summary>When the last comfort rumble went out (unscaled time).</summary>
+    internal static float LastAt { get; private set; } = -1f;
+
     /// <summary>Extra vignette closing (0..1) the locomotion vignette shows on top of its own.</summary>
     internal static float VignetteBoost { get; private set; }
 
@@ -230,6 +233,7 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             }
             LastLeftAmplitude = pulses.HapticAmplitude * left;
             LastRightAmplitude = pulses.HapticAmplitude * right;
+            LastAt = Time.unscaledTime;
             Haptics.Pulse(true, LastLeftAmplitude, seconds);
             Haptics.Pulse(false, LastRightAmplitude, seconds);
         }

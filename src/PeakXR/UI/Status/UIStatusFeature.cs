@@ -61,6 +61,7 @@ public sealed class UIStatusFeature : Feature
         ScreenFxFields = fields.ToArray();
 
         Patch(typeof(MoraleBoostPatch));
+        Patch(typeof(MoraleBoostTextPatch));
         Patch(typeof(ExtraStaminaPatch));
 
         StatusRuntime.Create();
