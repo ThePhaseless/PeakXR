@@ -664,8 +664,9 @@ internal static class WorldCanvases
     }
 
     /// <summary>Distance to the first wall on the way from <paramref name="origin"/> to
-    /// <paramref name="origin"/> + <paramref name="toPoint"/>, or infinity. Placement only, never per frame.</summary>
-    private static float WallAlong(Vector3 origin, Vector3 toPoint, out Collider hitCollider)
+    /// <paramref name="origin"/> + <paramref name="toPoint"/>, or infinity. Placement only, never per frame (also
+    /// player.look's spawn facing).</summary>
+    internal static float WallAlong(Vector3 origin, Vector3 toPoint, out Collider hitCollider)
     {
         var length = toPoint.magnitude;
         int count = Physics.RaycastNonAlloc(

@@ -626,6 +626,13 @@ internal sealed partial class SelfTestRunner
             );
             if (VRFade.Target > 0f)
                 fails.Add("VRFade.Target stuck after the warp");
+            var warped = VRRig.Instance;
+            if (
+                warped != null
+                && VRFade.Target < 0.99f
+                && Rig.RigDriver.EyeInside(warped.Head.position)
+            )
+                fails.Add("the eye is inside rock and the view is not black after the warp");
             Recover();
         }
         Conclude(fails, notes);

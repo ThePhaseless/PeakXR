@@ -302,4 +302,25 @@ public class RigMathTests
         TestUtil.Near(before.Z + shift.Z, after.Z + held.Z, 1e-6f);
         Assert.Equal(0f, held.Y);
     }
+
+    [Fact]
+    public void PullIn_NoHit_KeepsTheGoal()
+    {
+        var goal = new Vector3(0f, 1f, -3f);
+        TestUtil.Near(goal, RigMath.PullIn(Vector3.Zero, goal, float.PositiveInfinity, 0.2f));
+    }
+
+    [Fact]
+    public void PullIn_StopsMarginBeforeTheHit()
+    {
+        var goal = new Vector3(0f, 0f, -3f);
+        TestUtil.Near(new Vector3(0f, 0f, -1.8f), RigMath.PullIn(Vector3.Zero, goal, 2f, 0.2f));
+    }
+
+    [Fact]
+    public void PullIn_HitInsideTheMargin_StaysAtTheStart()
+    {
+        var from = new Vector3(1f, 2f, 3f);
+        TestUtil.Near(from, RigMath.PullIn(from, from + new Vector3(0f, 0f, 3f), 0.1f, 0.2f));
+    }
 }
