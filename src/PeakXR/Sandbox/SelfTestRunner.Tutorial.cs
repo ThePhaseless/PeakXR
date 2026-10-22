@@ -4,8 +4,10 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Settings;
+using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
 using Zorro.UI;
@@ -287,6 +289,135 @@ internal sealed partial class SelfTestRunner
         Plugin.Log.LogInfo($"[selftest] title VR tab open, {rows} VR Guide rows");
         if (rows == 0)
             Fail("the VR tab has no VR Guide rows (see the [ui.guide] VR tab line)");
+    }
+
+    // ---------------------------------------------------------------- WP6 slice D: prompt glyphs (D8)
+
+    /// <summary>Prompt steps for the level's hand steps; the lead wires <c>yield return PromptGlyphSteps();</c> into
+    /// <c>CommsSteps</c>.</summary>
+    IEnumerator PromptGlyphSteps()
+    {
+        yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
+    }
+
+    /// <summary>
+    /// vr.121 (D8): an Apple on the head's interact ray (<c>Interaction.currentHovered</c>, Interaction.cs:15) shows
+    /// its name and, in place of the PICKUP text (Item.cs:680, GUIManager.cs:1049), the grab glyph; the text is
+    /// hidden, and comes back (glyph gone) with <c>UI.ActionHintText</c>. Then a web (CharacterAfflictions.cs:803,
+    /// the struggle prompt) draws the shake glyph on both wrists with a contact tick on each hand.
+    /// </summary>
+    IEnumerator PromptGlyphStep()
+    {
+        if (!SpatialFeature.Settings.TargetPrompt.Value)
+        {
+            stepNote = "UI.TargetPrompt is off";
+            yield break;
+        }
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var head = VRRig.Instance.Head;
+        var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
+        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail("spawned Apple has no Item");
+            yield break;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        var gui = GUIManager.instance;
+        var verbText = gui.interactPromptText.canvasRenderer;
+        var fails = new List<string>();
+        var notes = new List<string>();
+        var hintText = AffordanceFeature.ActionHintText;
+        bool hintWas = hintText != null && hintText.Value;
+        try
+        {
+            if (hintText != null)
+                hintText.Value = false;
+            float until = Now + 5f;
+            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+            {
+                Fail("the Apple never became the hovered target");
+                yield break;
+            }
+            for (float t = Now + 0.4f; Now < t; )
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            bool hidden = TargetPrompt.TextHidden && verbText.GetAlpha() <= 0.001f;
+            bool grab = TargetPrompt.Drawn(PromptVerb.Grab);
+            bool named = gui.interactName.activeInHierarchy;
+            notes.Add($"text hidden {hidden}, grab glyph {grab}, name shown {named}");
+            if (!hidden)
+                fails.Add("PICKUP text still drawn with UI.ActionHintText off");
+            if (!grab)
+                fails.Add("no grab glyph in place of the PICKUP text");
+            if (!named)
+                fails.Add("the Apple's name is gone");
+            yield return ShotAt("vr-121-prompt-glyphs", world.Center());
+
+            if (hintText != null)
+            {
+                hintText.Value = true;
+                for (float t = Now + 0.3f; Now < t; )
+                {
+                    HoldOnHeadRay(world, head);
+                    yield return null;
+                }
+                bool back = !TargetPrompt.TextHidden && verbText.GetAlpha() >= 0.99f;
+                notes.Add(
+                    $"with ActionHintText: text back {back}, glyph {TargetPrompt.Drawn(PromptVerb.Grab)}"
+                );
+                if (!back)
+                    fails.Add("UI.ActionHintText on did not bring the PICKUP text back");
+                if (TargetPrompt.Drawn(PromptVerb.Grab))
+                    fails.Add("grab glyph drawn over the PICKUP text");
+                hintText.Value = false;
+            }
+        }
+        finally
+        {
+            if (hintText != null)
+                hintText.Value = hintWas;
+        }
+
+        // Struggle: the game shows its prompt only for a web added from zero (CharacterAfflictions.cs:799-806).
+        SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Web);
+        yield return Wait(0.2f);
+        float mark = CueMark();
+        if (!SandboxActions.AddStatus(CharacterAfflictions.STATUSTYPE.Web, 0.3f))
+            fails.Add("the game refused a web: " + SandboxActions.LastMessage);
+        else
+        {
+            yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Struggle), 2f);
+            bool shake = TargetPrompt.Drawn(PromptVerb.Struggle);
+            notes.Add($"struggle glyph {shake}");
+            if (!shake)
+                fails.Add("no shake glyph on the wrists while webbed");
+            yield return ExpectFeel(true, CueFeel.Contact, mark);
+            if (stepOk)
+                yield return ExpectFeel(false, CueFeel.Contact, mark);
+            SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Web);
+            if (!stepOk)
+                yield break;
+            notes.Add(cueNote);
+        }
+        Conclude(fails, notes);
     }
 
     static GuideRow GuideRowOf(GuideAction action, GuideTopic topic)

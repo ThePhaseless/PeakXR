@@ -1,6 +1,8 @@
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -55,5 +57,37 @@ internal static class ExtraStaminaPatch
     {
         if (add > 0.001f && __instance.IsLocal)
             StatusHaptics.Pulse(0.5f, 0.08f);
+    }
+}
+
+/// <summary>
+/// The MORALEBOOST word on the wrist bar (B3) is text to read mid-climb: in VR the bar's own boost animation plays
+/// without the word, with the rising chord at the wrist; <see cref="MoraleBoostPatch"/> already pulses the hands.
+/// A/StaminaBar.cs:223 <c>public void PlayMoraleBoost(int scoutCount)</c>.
+/// </summary>
+[HarmonyPatch]
+internal static class MoraleBoostTextPatch
+{
+    /// <summary>Boosts shown without the word (self-test).</summary>
+    internal static int Shown { get; private set; }
+
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(StaminaBar), nameof(StaminaBar.PlayMoraleBoost));
+
+    private static bool Prefix(StaminaBar __instance)
+    {
+        if (!Affordance.Enabled)
+            return true;
+        Shown++;
+        if (__instance.moraleBoostText != null)
+            __instance.moraleBoostText.enabled = false;
+        if (__instance.moraleBoostAnimator != null)
+            __instance.moraleBoostAnimator.Play("Boost", 0, 0f);
+        var spot = DenyHint.Wrist();
+        Affordance.Play(
+            CueSound.WouldWork,
+            spot.HasSpot ? spot.SpotNow : __instance.transform.position
+        );
+        return false;
     }
 }

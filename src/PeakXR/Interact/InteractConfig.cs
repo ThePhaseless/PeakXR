@@ -18,6 +18,8 @@ internal sealed class InteractConfig
         physicalClimb,
         staminaHaptics,
         armLunge,
+        climbFromHand,
+        climbHoverRing,
         haptics;
     private ConfigEntry<float> grabRadius,
         throwSpeed,
@@ -45,6 +47,8 @@ internal sealed class InteractConfig
     public float ClimbRegripGrace => regripGrace?.Value ?? 0.25f;
     public bool StaminaHaptics => staminaHaptics?.Value ?? true;
     public bool ArmLunge => armLunge?.Value ?? true;
+    public bool ClimbFromHand => climbFromHand?.Value ?? true;
+    public bool ClimbHoverRing => climbHoverRing?.Value ?? true;
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? 0.5f;
 
@@ -205,6 +209,19 @@ internal sealed class InteractConfig
                     "Upward hand speed (m/s, relative to your body) at release that counts as a lunge.",
                     new AcceptableValueRange<float>(1f, 6f)
                 )
+            ),
+            climbFromHand = file.Bind(
+                s,
+                "ClimbGrabFromHand",
+                true,
+                "A wall grab checks the rock right at your hand instead of along your view, so a hand on a hold grabs it. "
+                    + "Reach stays the game's: the hold must be within 1.25 m of your head. Off: the game's view ray."
+            ),
+            climbHoverRing = file.Bind(
+                s,
+                "ClimbHoverRing",
+                true,
+                "A faint chalk ring under an open hand marks rock you can grab, with a light tick when the hand first meets it."
             ),
             haptics = file.Bind(
                 s,

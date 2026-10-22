@@ -24,6 +24,7 @@ public sealed class EmotesFeature : Feature
     internal static ConfigEntry<string> Mode;
     internal static ConfigEntry<string> FullBody;
     internal static ConfigEntry<bool> FadeBackflip;
+    internal static ConfigEntry<bool> Gestures;
 
     protected internal override void Install()
     {
@@ -51,7 +52,15 @@ public sealed class EmotesFeature : Feature
             true,
             "Fade the view to black while your own backflip emote flips the camera."
         );
+        Gestures = Plugin.Settings.Bind(
+            s,
+            "GestureEmotes",
+            true,
+            "In VR, wave a raised open hand side to side to wave, or hold both open hands over your head to cheer. "
+                + "They are the game's own emotes, so every player sees them, modded or not."
+        );
         Patch(typeof(PlayEmote));
+        GestureEmotes.Create();
     }
 
     /// <summary>CharacterAnimations.RPCA_PlayRemove(string, bool) (CharacterAnimations.cs:417, private RPC): the

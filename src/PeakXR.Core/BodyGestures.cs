@@ -35,12 +35,19 @@ namespace PeakXR.Core
     /// Arm-swing sprint: alternating hand swings (hands moving in opposite directions, positions relative to the
     /// head) above <see cref="EnterSpeed"/> average hand speed hold sprint; it lets go below <see cref="ExitSpeed"/>.
     /// The average decays over <see cref="TimeConstant"/>, so the slow points of each swing do not drop it.
+    /// Only a running swing counts: fore-aft and up-down motion (sideways is clapping or waving), hands below
+    /// <see cref="MaxHandHeight"/> (not gestures at the face), and only while the player walks; standing still
+    /// clears it, so gestures made in place never sprint, not even on the first steps after.
     /// </summary>
     public sealed class ArmSwing
     {
         public float EnterSpeed = 1.2f;
         public float ExitSpeed = 0.8f;
         public float TimeConstant = 0.35f;
+
+        /// <summary>Both hands must be this far below the head (m, so negative): a running swing is at the hips
+        /// and chest.</summary>
+        public float MaxHandHeight = -0.15f;
 
         bool _have;
         Vector3 _left,
@@ -51,24 +58,31 @@ namespace PeakXR.Core
 
         /// <param name="left">Left hand position relative to the head, tracking space.</param>
         /// <param name="right">Right hand position relative to the head, tracking space.</param>
+        /// <param name="side">The head's flat right axis, tracking space (unit length): motion along it is not a
+        /// running swing.</param>
+        /// <param name="moving">The player walks forward (stick pushed, on the ground).</param>
         public bool Update(
             bool leftTracked,
             Vector3 left,
             bool rightTracked,
             Vector3 right,
+            Vector3 side,
+            bool moving,
             float dt
         )
         {
-            if (!leftTracked || !rightTracked || dt <= 0f)
+            if (!leftTracked || !rightTracked || !moving || dt <= 0f)
             {
                 Reset();
                 return false;
             }
             float sample = 0f;
-            if (_have)
+            if (_have && left.Y < MaxHandHeight && right.Y < MaxHandHeight)
             {
                 var vl = (left - _left) / dt;
                 var vr = (right - _right) / dt;
+                vl -= side * Vector3.Dot(vl, side);
+                vr -= side * Vector3.Dot(vr, side);
                 if (Vector3.Dot(vl, vr) < 0f)
                     sample = (vl.Length() + vr.Length()) * 0.5f;
             }

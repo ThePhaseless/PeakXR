@@ -28,6 +28,9 @@ namespace PeakXR.Core
         /// <summary>1 = the scripted look is in charge, 0 = the headset is.</summary>
         public float Weight { get; private set; }
 
+        /// <summary>The last scripted look values (yaw, pitch): which way the script pulled.</summary>
+        public Vector2 Scripted => _scripted;
+
         /// <param name="current">Look values (yaw, pitch) before this frame's write.</param>
         /// <param name="hmd">Look values from the headset.</param>
         /// <returns>The look values to write.</returns>

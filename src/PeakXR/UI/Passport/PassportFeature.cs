@@ -43,6 +43,7 @@ public sealed class PassportFeature : Feature
             GameMember.Delegate<Action<Guidebook>>(typeof(Guidebook), "FlipPageLeft")
         );
         Patch(typeof(PhotoboothFlashPatch));
+        Patch(typeof(PassportLockPatch));
 
         // GAME/PassportManager/PassportUI/Canvas: PassportManager sits on a parent of its only canvas.
         // A menu: its page and dimmer backdrops come off in VR like every other menu.
