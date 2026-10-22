@@ -152,6 +152,46 @@ internal static class SocialPatches
         ) => CameraSwap.Restore(__exception, __state);
     }
 
+    /// <summary>
+    /// ThornOnMe.HoverEnter / HoverExit (ThornOnMe.cs:155-165) write its highlight through <c>mpb</c>, which only
+    /// <c>AddPropertyBlock</c> (:144) creates, and <c>OnEnable</c> (:54-60) calls that only when the serialized
+    /// <c>mainRenderer</c> is unset; on the thorn prefabs it is set, so <c>mpb</c> stays null. Vanilla's head cone almost
+    /// never hovers a thorn, but a hand pick does: GUIManager.OnInteractChange (GUIManager.cs:1031-1043) then throws in
+    /// HoverExit before it takes the new hover, and repeats every frame, which stops the rest of GUIManager.LateUpdate
+    /// (prompts, wheels, wrist readouts). Creates the block the way <c>AddPropertyBlock</c> does before either runs;
+    /// with no renderer at all there is nothing to highlight, so the call is skipped.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class ThornHover
+    {
+        private static readonly AccessTools.FieldRef<ThornOnMe, MaterialPropertyBlock> Block =
+            GameMember.Field<ThornOnMe, MaterialPropertyBlock>("mpb");
+
+        private static MethodBase[] TargetMethods() =>
+            [
+                GameMember.Method(typeof(ThornOnMe), "HoverEnter"),
+                GameMember.Method(typeof(ThornOnMe), "HoverExit"),
+            ];
+
+        private static bool Prefix(ThornOnMe __instance)
+        {
+            if (Block(__instance) != null)
+                return true;
+            if (__instance.mainRenderer == null)
+                __instance.mainRenderer = __instance.GetComponentInChildren<MeshRenderer>(true);
+            if (__instance.mainRenderer == null)
+                __instance.mainRenderer = __instance.GetComponentInChildren<SkinnedMeshRenderer>(
+                    true
+                );
+            if (__instance.mainRenderer == null)
+                return false;
+            var block = new MaterialPropertyBlock();
+            __instance.mainRenderer.GetPropertyBlock(block);
+            Block(__instance) = block;
+            return true;
+        }
+    }
+
     /// <summary>BackpackOnBackVisuals.IsInteractible (BackpackOnBackVisuals.cs:99-104) wants the interactor's look
     /// within 110° of the pack's facing; it also gates the hold's start (IsConstantlyInteractable, :152, read at
     /// Interaction.cs:119). For a pack a hand grips, the look points from the head at the pack for that call.</summary>
