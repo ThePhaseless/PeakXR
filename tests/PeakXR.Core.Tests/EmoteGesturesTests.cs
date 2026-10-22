@@ -57,9 +57,9 @@ public class EmoteGesturesTests
     }
 
     [Fact]
-    public void Cheer_BothHandsUpForTheDwell_FiresOnce()
+    public void Dwell_BothHandsUpForTheDwell_FiresOnce()
     {
-        var g = new CheerGesture();
+        var g = new DwellGesture();
         int fired = 0;
         for (float t = 0f; t < 2f; t += Dt)
             if (g.Update(true, Dt))
@@ -68,18 +68,18 @@ public class EmoteGesturesTests
     }
 
     [Fact]
-    public void Cheer_ShorterThanDwell_DoesNotFire()
+    public void Dwell_ShorterThanDwell_DoesNotFire()
     {
-        var g = new CheerGesture();
+        var g = new DwellGesture();
         for (float t = 0f; t < g.Dwell * 0.8f; t += Dt)
             Assert.False(g.Update(true, Dt));
         Assert.False(g.Update(false, Dt));
     }
 
     [Fact]
-    public void Cheer_RearmsAfterTheHandsDrop()
+    public void Dwell_RearmsAfterTheHandsDrop()
     {
-        var g = new CheerGesture();
+        var g = new DwellGesture();
         bool first = false;
         for (float t = 0f; t < 1f; t += Dt)
             first |= g.Update(true, Dt);
@@ -114,5 +114,43 @@ public class EmoteGesturesTests
     )
     {
         Assert.Equal(expected, EmoteGestures.WheelRefusal(dead, won, climbing, otherWheel, window));
+    }
+
+    // Fist on the controller (grip closed, finger resting on the trigger), thumb lifted off every button.
+    static readonly FingerCurls Fist = new(0f, FingerCurlMapper.TriggerTouchCurl, 1f, 1f, 1f);
+
+    [Fact]
+    public void ThumbsUp_FistWithTheThumbLiftedAndUp()
+    {
+        Assert.True(EmoteGestures.ThumbsUp(Fist, thumbUp: 0.9f));
+    }
+
+    [Fact]
+    public void ThumbsUp_ThumbOnAButton_IsNot()
+    {
+        var c = Fist;
+        c.Thumb = FingerCurlMapper.ThumbTouchCurl;
+        Assert.False(EmoteGestures.ThumbsUp(c, thumbUp: 0.9f));
+    }
+
+    [Fact]
+    public void ThumbsUp_OpenHand_IsNot()
+    {
+        Assert.False(EmoteGestures.ThumbsUp(new FingerCurls(0f, 0f, 0.1f, 0.1f, 0.1f), 0.9f));
+    }
+
+    [Fact]
+    public void ThumbsUp_PointingIndex_IsNot()
+    {
+        var c = Fist;
+        c.Index = 0f;
+        Assert.False(EmoteGestures.ThumbsUp(c, thumbUp: 0.9f));
+    }
+
+    [Fact]
+    public void ThumbsUp_ThumbSidewaysOrDown_IsNot()
+    {
+        Assert.False(EmoteGestures.ThumbsUp(Fist, thumbUp: 0.3f));
+        Assert.False(EmoteGestures.ThumbsUp(Fist, thumbUp: -0.9f));
     }
 }
