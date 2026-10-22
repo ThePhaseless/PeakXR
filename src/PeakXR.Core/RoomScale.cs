@@ -100,6 +100,9 @@ namespace PeakXR.Core
 
         public bool RecenterNeeded => Stalled || Offset.Length() > RecenterDistance;
 
+        /// <summary>A follow is walking the body, or it is settling from one (<see cref="FollowSettleSeconds"/>).</summary>
+        public bool Walking => _following || _sinceFollow < FollowSettleSeconds;
+
         /// <param name="head">HMD position in tracking space (x, z).</param>
         /// <param name="bodyDelta">The body's horizontal movement since the last update, in tracking space.</param>
         /// <param name="canFollow">The body is free to walk: grounded, conscious, not climbing and the move stick
