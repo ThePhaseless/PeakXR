@@ -32,6 +32,9 @@ internal sealed partial class SelfTestRunner
     /// about 0.26 back (<see cref="ArmMath.ElbowHint"/>); an arm twisted behind the torso reads about 0.75.</summary>
     const float MaxElbowBack = 0.5f;
 
+    /// <summary>Mean elbow offset (m) off the shoulder-hand line below which the arm counts as straight.</summary>
+    const float MinJudgedBend = 0.03f;
+
     /// <summary>Mean wrist-to-target error that fails an idle, empty hand: each hand follows only its controller.</summary>
     const float MaxIdleTargetError = 0.15f;
     const int ArmSamples = 50;
@@ -359,7 +362,7 @@ internal sealed partial class SelfTestRunner
         s.Upper += upper;
         s.MaxStretch = Mathf.Max(s.MaxStretch, Mathf.Max(fore / rest.x, upper / rest.y));
         s.ShoulderToTarget += Vector3.Distance(a, target);
-        s.Bend += ArmMath.BendDirection(a.N(), e.N(), h.N()).U();
+        s.Bend += ArmMath.BendOffset(a.N(), e.N(), h.N()).U();
     }
 
     static void JudgeArm(
@@ -392,7 +395,11 @@ internal sealed partial class SelfTestRunner
                 ? c.data.lookDirection_Flat.normalized
                 : Vector3.forward;
         var rightAxis = Vector3.Cross(Vector3.up, fwd);
-        var bend = s.Bend / n;
+        // Mean offset in metres: a straight (out of reach) arm's elbow sits millimetres off the line in a direction
+        // that is noise, which run 26 judged as "R elbow points up (0.46)".
+        var bendOffset = s.Bend / n;
+        bool bent = bendOffset.magnitude >= MinJudgedBend;
+        var bend = bent ? bendOffset.normalized : Vector3.zero;
         float outward = Vector3.Dot(bend, rightAxis) * (left ? -1f : 1f);
         float up = bend.y;
         float back = -Vector3.Dot(bend, fwd);
@@ -408,7 +415,10 @@ internal sealed partial class SelfTestRunner
                 + F(
                     $"shoulder-target {s.ShoulderToTarget / n:0.000} m vs reach {rest.x + rest.y:0.000} m, "
                 )
-                + F($"elbow out {outward:0.00} up {up:0.00} back {back:0.00}")
+                + F(
+                    $"elbow out {outward:0.00} up {up:0.00} back {back:0.00} (bent {bendOffset.magnitude:0.000} m"
+                )
+                + (bent ? ")" : ", straight: direction not judged)")
         );
         float error = s.TargetError / n;
         if (error > MaxIdleTargetError)

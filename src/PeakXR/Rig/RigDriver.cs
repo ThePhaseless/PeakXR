@@ -339,7 +339,14 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void UpdateHead()
     {
-        if (devices.TryGetHead(out var p, out var r))
+        // A scripted self-test head (vr.45 leans, vr.40 crouches) must move the view and the avatar's lean like a
+        // real one; run 26 read the static HMD here, so the avatar never saw the lean the hands and room-scale did.
+        if (VRInput.TestOverride != null && VRInput.HeadTracked)
+        {
+            headTracked = true;
+            rig.Head.SetLocalPositionAndRotation(VRInput.HeadPosition, VRInput.HeadRotation);
+        }
+        else if (devices.TryGetHead(out var p, out var r))
         {
             headTracked = true;
             rig.Head.SetLocalPositionAndRotation(p, r);

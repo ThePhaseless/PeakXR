@@ -220,7 +220,13 @@ internal sealed partial class SelfTestRunner
         }
         yield return MoveTo(left, () => segment.position, 0.6f);
         yield return GripTo(left, 1f, 0.1f);
-        yield return Until(() => c.data.isRopeClimbing, 2f, "grip on the rope did not grab it");
+        yield return Until(
+            () => c.data.isRopeClimbing,
+            2f,
+            FormattableString.Invariant(
+                $"grip on the rope did not grab it (nearest segment {Mathf.Sqrt(best):0.00} m from the reach point, {segment.position.y - reach.y:0.00} m above it)"
+            )
+        );
         if (!stepOk)
         {
             yield return LetGoAll(c);
@@ -248,14 +254,28 @@ internal sealed partial class SelfTestRunner
         yield return LetGoAll(c);
     }
 
-    /// <summary>Nothing solid between the body centre and the rope's anchor point, 0.7 m ahead and 2.6 m up.</summary>
-    static bool RopeRoom(Vector3 center, Vector3 forward) =>
-        !Physics.Linecast(
-            center,
-            center + forward * 0.7f + Vector3.up * 2.6f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        );
+    /// <summary>Nothing solid between the body centre and the rope's anchor point, 0.7 m ahead and 2.6 m up, nor
+    /// along the line the rope hangs down from it to the body's height: run 26 hung it after vr.45 near the crashed
+    /// plane, where it caught 2.7 m up and the reach found no segment within arm's length.</summary>
+    static bool RopeRoom(Vector3 center, Vector3 forward)
+    {
+        var top = center + forward * 0.7f + Vector3.up * 2.6f;
+        return !Physics.Linecast(
+                center,
+                top,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            && !Physics.SphereCast(
+                top,
+                0.2f,
+                Vector3.down,
+                out _,
+                2.6f,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            );
+    }
 
     /// <summary>Flat open ground within 15 m (rings of 12 points every 3 m, nearest first) with room for a hanging
     /// rope over a body standing on it; <paramref name="ground"/> is the point to warp to.</summary>

@@ -13,6 +13,10 @@ namespace PeakXR.Core
         /// <summary>Distance of the hint from the shoulder-hand midpoint; the solver only uses its direction.</summary>
         public const float HintDistance = 0.5f;
 
+        /// <summary>Sine of the elbow bend (about 6 degrees) below which <see cref="SolveTwoBone"/> treats the arm as
+        /// straight and takes its bend plane from the hint.</summary>
+        public const float StraightSin = 0.1f;
+
         /// <summary>
         /// Hint point for one arm's elbow, in the same space as <paramref name="shoulder"/> and
         /// <paramref name="hand"/>. <paramref name="right"/>, <paramref name="up"/> and <paramref name="forward"/>
@@ -34,12 +38,20 @@ namespace PeakXR.Core
         /// <summary>Unit direction of the elbow off the shoulder-hand line, or zero for a straight arm.</summary>
         public static Vector3 BendDirection(Vector3 shoulder, Vector3 elbow, Vector3 hand)
         {
+            var off = BendOffset(shoulder, elbow, hand);
+            return off.LengthSquared() > 1e-8f ? Vector3.Normalize(off) : Vector3.Zero;
+        }
+
+        /// <summary>The elbow's offset (metres) off the shoulder-hand line: how much the arm is bent, and which way.
+        /// A few millimetres is a straight arm whose direction means nothing.</summary>
+        public static Vector3 BendOffset(Vector3 shoulder, Vector3 elbow, Vector3 hand)
+        {
             var axis = hand - shoulder;
             var off = elbow - shoulder;
             float len2 = axis.LengthSquared();
             if (len2 > 1e-8f)
                 off -= axis * (Vector3.Dot(off, axis) / len2);
-            return off.LengthSquared() > 1e-8f ? Vector3.Normalize(off) : Vector3.Zero;
+            return off;
         }
 
         /// <summary>
@@ -70,8 +82,15 @@ namespace PeakXR.Core
             if (a < 1e-5f || b < 1e-5f || dist < 1e-5f)
                 return;
             var n = Vector3.Cross(u, v);
-            if (n.LengthSquared() < 1e-10f)
-                n = Vector3.Cross(hint - shoulder, st);
+            var straighten = Quaternion.Identity;
+            // Within StraightSin of straight the bend plane is noise (an out-of-reach IK leaves a millimetre kink):
+            // straighten the forearm and bend toward the hint instead, or a lean in flips the elbow up or back.
+            if (n.Length() < StraightSin * a * b)
+            {
+                straighten = BodyLean.FromTo(v, u);
+                v = u * (b / a);
+                n = Vector3.Cross(hint - shoulder, u);
+            }
             if (n.LengthSquared() < 1e-10f)
                 return;
             n = Vector3.Normalize(n);
@@ -83,7 +102,7 @@ namespace PeakXR.Core
             var open = Quaternion.CreateFromAxisAngle(n, System.MathF.PI - interior - bend);
             var swing = BodyLean.FromTo(elbow + Vector3.Transform(v, open) - shoulder, st);
             upper = swing;
-            lower = Quaternion.Multiply(swing, open);
+            lower = Quaternion.Multiply(swing, Quaternion.Multiply(open, straighten));
         }
     }
 }

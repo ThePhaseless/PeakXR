@@ -167,4 +167,32 @@ public class ArmMathTests
         TestUtil.Near(new Vector3(0f, 0f, 0.4f), hand, 1e-3f);
         Assert.True(elbow.Y < -0.1f, $"elbow went to y {elbow.Y:0.000}, away from the hint");
     }
+
+    [Fact]
+    public void SolveTwoBone_NearlyStraightArm_BendsTowardTheHintNotItsNoise()
+    {
+        // The IK left an out-of-reach arm straight but for a 1 cm upward kink; the lean then brought the shoulder
+        // in. That kink's plane is noise: the elbow must still go down toward the hint (vr.08 "elbow points up").
+        var s = Vector3.Zero;
+        var e = new Vector3(0f, 0.01f, 0.3f);
+        var h = new Vector3(0f, 0f, 0.6f);
+        var hint = new Vector3(0f, -0.5f, 0.3f);
+        var target = new Vector3(0f, 0f, 0.4f);
+        ArmMath.SolveTwoBone(s, e, h, target, hint, out var upper, out var lower);
+        var (elbow, hand) = Apply(s, e, h, upper, lower);
+        TestUtil.Near(target, hand, 1e-3f);
+        TestUtil.Near(Vector3.Distance(s, e), Vector3.Distance(s, elbow), 1e-4f);
+        Assert.True(elbow.Y < -0.1f, $"elbow went to y {elbow.Y:0.000}, the kink's side");
+    }
+
+    [Fact]
+    public void BendOffset_IsTheElbowsDistanceOffTheLine()
+    {
+        var off = ArmMath.BendOffset(
+            Vector3.Zero,
+            new Vector3(0f, -0.02f, 0.3f),
+            new Vector3(0f, 0f, 0.6f)
+        );
+        TestUtil.Near(new Vector3(0f, -0.02f, 0f), off, 1e-5f);
+    }
 }

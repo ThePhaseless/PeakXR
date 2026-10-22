@@ -50,6 +50,15 @@ internal sealed partial class SelfTestRunner
         }
         rig.RotateYaw(turn);
         yield return Wait(0.8f);
+        // Standing still keeps the turn's eye shift (run 26: the view 0.29 m off the avatar's eyes), which puts the
+        // scripted hands that far off the shoulders. A recenter (under its fade) starts the view on the eyes.
+        bool recentered = false;
+        Action onRecenter = () => recentered = true;
+        rig.Recentered += onRecenter;
+        rig.Recenter();
+        yield return WaitFor(() => recentered, 3f);
+        rig.Recentered -= onRecenter;
+        yield return Wait(0.8f);
         RigDriver.TraceLeanUntil = Time.unscaledTime + 60f;
 
         // The head on the calibrated spot at the calibrated eye height: there the view sits on the avatar's eyes.
@@ -86,6 +95,8 @@ internal sealed partial class SelfTestRunner
         Drift("standing", fails, notes);
         var standShoulders = Shoulders(c);
         var standHip = c.refs.hip.Rig.position;
+        // Run 26 set the bend's absolute shoulder shift beside the ragdoll's change from standing; both from standing.
+        var standAnimShift = driver.LeanShoulderShift;
         foreach (
             var (name, offset) in new[]
             {
@@ -96,12 +107,15 @@ internal sealed partial class SelfTestRunner
         {
             leanBend = 0f;
             leanAnimShoulders = 0f;
-            yield return Track(c, rig, offset, 0.6f, 1f);
             // Each stage of the lean, so a failure names the one that did not happen: the gate, the bend applied
             // to the animated spine, how far that moved the animated shoulders, and what the ragdoll did.
             var worldDir = rig.Origin.TransformDirection(offset.normalized);
             worldDir.y = 0f;
             worldDir.Normalize();
+            leanAnimDir = worldDir;
+            leanAnimFrom = standAnimShift;
+            yield return Track(c, rig, offset, 0.6f, 1f);
+            leanAnimDir = Vector3.zero;
             notes.Add(
                 F(
                     $"lean {name} stages: gate {driver.LeanGate ?? "open"}, weight {driver.LeanWeight:0.00}, bend {leanBend:0.0} deg, animated shoulders {leanAnimShoulders:0.000} m, ragdoll shoulders {Vector3.Dot(Shoulders(c) - standShoulders, worldDir):0.000} m, hip {Vector3.Dot(c.refs.hip.Rig.position - standHip, worldDir):0.000} m along the lean"
@@ -201,7 +215,7 @@ internal sealed partial class SelfTestRunner
                 leanBend = Mathf.Max(leanBend, driver.LeanDegrees);
                 leanAnimShoulders = Mathf.Max(
                     leanAnimShoulders,
-                    driver.LeanShoulderShift.magnitude
+                    Vector3.Dot(driver.LeanShoulderShift - leanAnimFrom, leanAnimDir)
                 );
             }
             NoteContacts(c.Center);
@@ -212,6 +226,11 @@ internal sealed partial class SelfTestRunner
 
     float leanBend;
     float leanAnimShoulders;
+
+    /// <summary>While a lean is tracked: its world direction and the standing bend's shoulder shift, so the animated
+    /// shoulders are reported along the lean from standing, like the ragdoll's.</summary>
+    Vector3 leanAnimDir;
+    Vector3 leanAnimFrom;
     readonly HashSet<string> leanContacts = new(StringComparer.Ordinal);
     readonly Collider[] contactBuffer = new Collider[8];
 
