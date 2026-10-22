@@ -373,7 +373,8 @@ internal static class FireGestures
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it
     /// (Campfire.cs:322, EveryoneInRange :375-386, distances from the fire to <c>Center</c> :364); otherwise the
     /// whole hold ends in nothing. The logs turn red. The farthest missing friend gets the teal ring, joined to the
-    /// fire, if in sight; out of sight, the ring sits a hand's length from the hand in their direction.
+    /// fire, if in sight; out of sight, the ring sits a hand's length from the hand in their direction. Every other
+    /// missing friend in sight gets a teal ring of their own.
     /// </summary>
     private static void WarnFriendsFar(Campfire fire, bool left)
     {
@@ -396,23 +397,37 @@ internal static class FireGestures
             return;
         // The friend's ring only when you can see them: a ring through a cliff would read as the wrong place.
         var cam = MainCamera.instance;
-        bool seen =
-            cam != null
-            && !Physics.Linecast(
-                cam.transform.position,
-                far.Center,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            );
         var rig = VRRig.Instance;
         var hand = rig != null ? rig.Hand(left) : null;
         var hint =
-            seen ? DenyHint.At(far.Center)
+            InSight(cam, far) ? DenyHint.At(far.Center)
             : hand != null
                 ? DenyHint.At(FriendBearing.Spot(hand.position.N(), far.Center.N(), 0.25f).U())
             : default;
+        // Every other missing friend in sight gets a ring too (up to SpotSet.Capacity), so the cue shows who is
+        // missing, not only the farthest.
+        foreach (var ch in PlayerHandler.GetAllPlayerCharacters())
+        {
+            if (
+                ch != null
+                && ch != far
+                && !ch.data.dead
+                && Vector3.Distance(at, ch.Center) > radius
+                && InSight(cam, ch)
+            )
+                hint = hint.And(ch.Center);
+        }
         Affordance.Deny(left, ItemGestures.FireBase(fire), DenyReason.FriendsFar, hint, fire);
     }
+
+    private static bool InSight(MainCamera cam, Character ch) =>
+        cam != null
+        && !Physics.Linecast(
+            cam.transform.position,
+            ch.Center,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
 
     private static void BindFlame(Item item)
     {

@@ -16,7 +16,7 @@ namespace PeakXR.Interact.Physical;
 /// <para>Feel (WS-W8, W10): a contact tick as the hand takes the lid edge, the progress ramp while the game's timer
 /// runs, a firm tick when it opens. One hand alone on a respawn chest for 0.6 s is refused (NeedsTwoHands, the chest
 /// red, a teal ring at the lid's opposite corner), or HandsFull with the held item red when the other hand is busy.
-/// A chest that revives someone (RespawnChest.cs:51-55) also sounds the notice note.</para>
+/// A chest that revives someone (RespawnChest.cs:51-55) also gives the Revived notice, or NoRevive when the ascent allows no revives.</para>
 /// </summary>
 internal static class LidGesture
 {
@@ -176,7 +176,7 @@ internal static class LidGesture
     }
 
     /// <summary>The case being lifted opened (Luggage.IsOpen, Luggage.cs:37): a firm tick on the hands that lifted
-    /// it; a chest that revived someone also sounds the notice note there.</summary>
+    /// it; a chest that revived someone also gives the Revived or NoRevive notice there.</summary>
     private static void Opened()
     {
         if (opening == null)
@@ -194,8 +194,15 @@ internal static class LidGesture
             if (chest || OnLid[h])
                 Affordance.Contact(h == 0);
         }
+        // RespawnChest.SpawnItems (RespawnChest.cs:51-55) revives only when the ascent allows it (Ascents.cs:207);
+        // otherwise it gives items, and the notice says why nobody came back.
         if (openingRevives)
-            Affordance.Play(CueSound.Notice, opening.Center());
+            Affordance.Inform(
+                ReferenceEquals(Grabbed[0], opening) || OnLid[0],
+                opening.Center(),
+                Ascents.canReviveDead ? DenyReason.Revived : DenyReason.NoRevive,
+                default
+            );
         opening = null;
     }
 

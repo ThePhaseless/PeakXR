@@ -190,7 +190,7 @@ internal static class PingInput
         var rig = VRRig.Instance;
         var free = rig != null ? rig.Hand(freeLeft) : null;
         if (free != null)
-            Affordance.Inform(freeLeft, free.position, DenyReason.HandsFull, DenyHint.On(free));
+            Affordance.Inform(freeLeft, free.position, DenyReason.UseOtherHand, DenyHint.On(free));
     }
 
     private static void Suppress(Hand hand, CharacterInput input, bool primary)

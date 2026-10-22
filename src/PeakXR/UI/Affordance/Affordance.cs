@@ -20,16 +20,32 @@ internal readonly struct DenyHint
     /// <summary>When set, the spot moves with this transform (a grip on a held item, the wrist status bar).</summary>
     public readonly Transform Follow;
 
-    private DenyHint(bool hasSpot, Vector3 spot, float meters, Transform follow = null)
+    /// <summary>More spots that would work, each a teal ring (every missing friend in sight). No line or chevron:
+    /// those lead to the main spot only.</summary>
+    public readonly SpotSet Marks;
+
+    private DenyHint(
+        bool hasSpot,
+        Vector3 spot,
+        float meters,
+        Transform follow = null,
+        SpotSet marks = default
+    )
     {
         HasSpot = hasSpot;
         Spot = spot;
         Meters = meters;
         Follow = follow;
+        Marks = marks;
     }
 
     /// <summary>Where the spot is this frame.</summary>
     public Vector3 SpotNow => Follow != null ? Follow.position : Spot;
+
+    /// <summary>This hint with one more marked spot (up to <see cref="SpotSet.Capacity"/>; more are dropped).
+    /// Allocation-free. On a hint with no main spot, the first mark becomes the main spot.</summary>
+    public DenyHint And(Vector3 spot) =>
+        HasSpot ? new(true, Spot, Meters, Follow, Marks.And(spot.N())) : At(spot);
 
     /// <summary>The action works at <paramref name="spot"/>.</summary>
     public static DenyHint At(Vector3 spot) => new(true, spot, 0f);

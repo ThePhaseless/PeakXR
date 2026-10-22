@@ -12,7 +12,7 @@ namespace PeakXR.Interact.Physical;
 
 /// <summary>
 /// Things the game does on its own that the hands should feel, each a notice (a contact tick on both hands and the
-/// notice note at the spot), never a refusal:
+/// HappenedHere notice at the spot: a pin in a teal ring and the notice note), never a refusal:
 /// <list type="bullet">
 /// <item>Scout cannon (WS-C1): from the light to the shot (<c>fireTime</c>, ScoutCannon.cs:170-182) a rising
 /// progress ramp on both hands of anyone within 4 m; standing by it unlaunched when it fires gets the notice at
@@ -84,7 +84,7 @@ internal static partial class WorldHolds
         Notices++;
         Affordance.Contact(true);
         Affordance.Contact(false);
-        Affordance.Play(CueSound.Notice, at);
+        Affordance.Inform(!VRInput.LeftHanded, at, DenyReason.HappenedHere, default);
     }
 
     /// <summary>ScoutCannon.RPCA_Light (ScoutCannon.cs:170, PunRPC on every client): the fuse caught; the shot
@@ -164,7 +164,12 @@ internal static partial class WorldHolds
                 return;
             Notices++;
             Affordance.Contact(LocalHold.ItemInLeftHand);
-            Affordance.Play(CueSound.Notice, item.Center());
+            Affordance.Inform(
+                LocalHold.ItemInLeftHand,
+                item.Center(),
+                DenyReason.HappenedHere,
+                default
+            );
         }
     }
 

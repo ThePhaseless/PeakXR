@@ -243,7 +243,7 @@ internal sealed class SocialHands : IGripExtension
             // (SocialPatches.HandPick).
             if (target is ThornOnMe && c.IsStuck())
             {
-                refusal = DenyReason.StuckToHand;
+                refusal = DenyReason.Stuck;
                 target = null;
                 return true;
             }

@@ -103,8 +103,82 @@ public enum DenyReason : byte
     /// <c>Affordance.Danger</c>.</summary>
     DangerSoon,
 
+    /// <summary>Push to talk tried while the game's mic mode is Voice Activation: the mic is always open.</summary>
+    MicAlwaysOn,
+
+    /// <summary>This hand's item has no use for the gesture: the other (free) hand does it.</summary>
+    UseOtherHand,
+
+    /// <summary>Stuck fast for now (a thorn that will not come out while you are caught).</summary>
+    Stuck,
+
+    /// <summary>A notice: the chest or bones brought fallen friends back.</summary>
+    Revived,
+
+    /// <summary>A notice: this ascent allows no revives, so the chest only gives items.</summary>
+    NoRevive,
+
+    /// <summary>A notice: something happened here on its own (a cannon about to fire, a checkpoint saved, the
+    /// helicopter summoned). Pin glyph, teal ring at the spot, the notice bell.</summary>
+    HappenedHere,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
+}
+
+/// <summary>
+/// Up to <see cref="Capacity"/> extra spots a cue marks besides its main one (each missing friend), held in
+/// fields so a hint carrying them never allocates. Spots past the capacity are dropped.
+/// </summary>
+public readonly struct SpotSet
+{
+    public const int Capacity = 4;
+
+    private readonly System.Numerics.Vector3 a,
+        b,
+        c,
+        d;
+
+    public int Count { get; }
+
+    private SpotSet(
+        System.Numerics.Vector3 a,
+        System.Numerics.Vector3 b,
+        System.Numerics.Vector3 c,
+        System.Numerics.Vector3 d,
+        int count
+    )
+    {
+        this.a = a;
+        this.b = b;
+        this.c = c;
+        this.d = d;
+        Count = count;
+    }
+
+    /// <summary>This set with <paramref name="spot"/> added at the end; unchanged when full.</summary>
+    public SpotSet And(System.Numerics.Vector3 spot) =>
+        Count switch
+        {
+            0 => new SpotSet(spot, b, c, d, 1),
+            1 => new SpotSet(a, spot, c, d, 2),
+            2 => new SpotSet(a, b, spot, d, 3),
+            3 => new SpotSet(a, b, c, spot, 4),
+            _ => this,
+        };
+
+    /// <summary>Spot <paramref name="i"/>; zero outside 0..Count-1.</summary>
+    public System.Numerics.Vector3 this[int i] =>
+        i >= Count
+            ? default
+            : i switch
+            {
+                0 => a,
+                1 => b,
+                2 => c,
+                3 => d,
+                _ => default,
+            };
 }
 
 /// <summary>Short English labels (20 characters at most) shown by the hand or target.</summary>
@@ -161,6 +235,12 @@ public static class DenyText
             DenyReason.Petrified => "Turned to stone",
             DenyReason.FuseLit => "Fuse is lit",
             DenyReason.DangerSoon => "Careful",
+            DenyReason.MicAlwaysOn => "Mic is always on",
+            DenyReason.UseOtherHand => "This hand is busy",
+            DenyReason.Stuck => "Stuck fast",
+            DenyReason.Revived => "Friends revived",
+            DenyReason.NoRevive => "No revive this climb",
+            DenyReason.HappenedHere => "Here",
             _ => "",
         };
 
@@ -208,6 +288,10 @@ public static class DenyText
             DenyReason.NoPath => "Aim at open ground",
             DenyReason.FuseLit => "Let it go off first",
             DenyReason.DangerSoon => "Pull it away now",
+            DenyReason.MicAlwaysOn => "Just talk",
+            DenyReason.UseOtherHand => "Use your other hand",
+            DenyReason.Stuck => "Get free first",
+            DenyReason.NoRevive => "Keep them safe instead",
             _ => "",
         };
 
