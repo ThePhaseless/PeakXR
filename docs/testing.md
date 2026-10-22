@@ -160,7 +160,7 @@ VR runs only:
 | `vr.72-keyboard` | airport | The VR keyboard opens as a platform text dialog (`VRKeyboard.TryOpenDialog`); screenshot `vr-72-keyboard`, then the dialog is cancelled |
 | `vr.05-loading-space` | after `04-beach` | During that load the loading space was shown and the game camera's `cullingMask` was 0; screenshot `vr-05-loading` mid-load |
 | `vr.06-features` | beach | Every VR feature is `Active`, the local avatar driver has a fresh pose, the HUD canvas is world space, `VRFade.Target` is 0; records whether the vignette ring exists yet |
-| `vr.46-lunge` | beach, after `vr.44` | At a wall like `vr.15`'s with 2.8 m of face above the grip (the jump rises about 1.4 m; on a lower wall the body tops out and there is nothing to catch), one gripping hand climbs and pulls up, then is thrown straight up at twice `Interaction.LungeSpeed` (at least 4 m/s) and lets go: the game's climb jump must fire (`RPCA_ClimbJump` resets `sinceClimbJump`), the same hand must catch the wall again inside the 0.6 s lunge grace, and the climb must not have ended in between. Then, god mode off and stamina at 0 for 0.6 s, the same throw must get the NoStamina refusal cue on that hand and no climb jump; screenshot `vr-46-lunge` |
+| `vr.46-lunge` | beach, after `vr.44` | At a wall like `vr.15`'s with 2.8 m of face above the grip (the jump rises about 1.4 m; on a lower wall the body tops out and there is nothing to catch), one gripping hand climbs and pulls up, then is thrown straight up at twice `Interaction.LungeSpeed` (at least 4 m/s) and lets go: the game's climb jump must fire (`RPCA_ClimbJump` resets `sinceClimbJump`), the same hand must catch the wall again inside the 0.6 s lunge grace, and the climb must not have ended in between. Then, god mode off and stamina at 0 for 0.6 s, the same throw must get the NoStamina refusal cue on that hand and no climb jump. The lunge also plays the whoosh feel on the throwing hand, and the climb must stay unbroken between the lunge and the catch; screenshot `vr-46-lunge` |
 | `vr.33-ragdoll-arms` | beach, after `vr.09` | A 2 s fall (`RPCA_Fall` on the local character) releases the tracked arm IK (`AvatarPoseDriver.ArmWeight` 0 within 1 s). While the body falls, each ragdoll hand stays within 0.9 m of the chest and each tracked hand target within 1.5 m of the hip, even with the view detached. The arms are tracked again within 6 s of the fall ending; screenshot `vr.33-ragdoll-arms` |
 | `vr.07-comfort` | beach, after the mobs | A knockback (`RPCA_AddForceAtPosition` on the local character) pulses the comfort vignette, which opens again within 2 s; a warp to the current segment leaves `VRFade.Target` at 0; screenshot `vr-07-knockback` |
 | `vr.34-blind` | beach, after `vr.07` | BLIND for 5 s (`Character.illegalStatusAction`): the game's white-out quad is never drawn and the haze that replaces it peaks above 0.1 and at most at `ComfortPolicy.MaxWashAlpha`. Every `mob.*` step that leaves the player blinded checks the same; screenshot `vr-34-blind` |
@@ -178,6 +178,157 @@ VR runs only:
 | `vr.32-shoulder-stash` | beach | With a pack worn and an Apple grabbed in one hand (grip kept closed), the other hand over the shoulder opens the pack wheel, hovers a pocket, and opening that grip stashes the Apple and closes the wheel; screenshot `vr-32-shoulder-stash` |
 | `vr.64-cue-in-menu` | beach, pause menu | With the pause menu open, a NotNow refusal at the right hand gets the full cue twice: once through the game's SFX player and once through PeakXR's own fallback sound source, forced for the second pass. Each pass needs the ring, the refused note played and the denied pulse |
 | `vr.65-hints-off` | beach | With `UI.ActionHints` and `UI.ActionHintText` off, the trigger on a rescue hook held in one hand still gets the whole NeedsTwoHands cue, with the hook red. No teal ring, rising note, reach ray or text label may show. Both settings go back to their earlier values; screenshot `vr-65-hints-off` |
+
+More VR steps, grouped by area rather than by run order. The end-of-run slot is last. They all run on the scripted hands described below.
+
+#### Climbing
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.42b-rope-pump` | beach, after vr.56 (before vr.42c) | Hangs a rope, grips it, measures sway with a still head, then sways the head 0.25 m at 0.35 Hz. Asserts ClimbHands.LastPump above 0, pumped swing at least 0.1 m beyond still swing, no refusal cue. SKIP if RopeHandOverHand or RopeSwingPump off. |
+| `vr.42c-rope-end-stop` | beach, after vr.42b | Grips the test rope, pokes ropePercent to 0.02, pulls the hand down 0.4 m. Expects the EndStop feel on the hand. SKIP if Interaction.RopeHandOverHand off. |
+| `vr.43b-vine-look-back` | tropics, after vr.43 | Attaches the vine via the game's Interact, turns the rig 180 degrees, grips and pulls the hand back along the vine 0.4 m. Asserts the body moves at least 0.1 m along the pull (ClimbHands re-signs GetSign) and no cue. SKIP if RopeHandOverHand off. |
+| `vr.43c-vine-slide` | tropics, after vr.43b | Attaches the vine, pokes CharacterVineClimbing.attachVel to 10 so Sliding() is true. Asserts the ClimbCue.Whirr cue reaches the main hand within 1 s. SKIP if RopeHandOverHand or ClimbSurfaceFeel off. |
+| `vr.44b-handle-rest` | beach, after vr.54 | Hangs on a placed piton, sets stamina to 0.3. Expects the Progress feel on the gripping hand within 1.5 s. SKIP if PitonGripHang off, or if the piton cracked first (vr.56 covers it). |
+| `vr.46b-lunge-too-soon` | beach, first of ClimbSteps, after vr.46 | Grips a tall wall, pokes sinceClimbJump to 0.2, throws the hand upward. Expects the TooSoon refusal cue at that hand (no tint) and no climb jump (clock not reset). SKIP if ArmLunge off. |
+| `vr.47-climb-deny-reach` | beach, after vr.46b | Stands 1.6 m from the face and grips a hold beyond 1.25 m of the eye. Expects the OutOfReach cue and no climbing. SKIP if PhysicalClimb off, or if the head ended within 1.35 m of the face. |
+| `vr.47b-free-hand-pocket` | beach, after vr.47 | Gives an Apple in the right hand, spawns a second on the ground, grips it with the left. Asserts it leaves the world (pocketed), the Stowed cue fires, and the first Apple stays in the right hand. SKIP if the give fails. |
+| `vr.48-climb-deny-steep` | beach, after vr.47b | Places a 40 degree slab, then a ceiling tilted 5 degrees. Asserts no chalk ring on the slope, TooFlat then Overhang cues on the grips, and no climbing on either. SKIP if PhysicalClimb off. |
+| `vr.48b-surface-texture` | beach, after vr.48 | Adds a ClimbModifierSurface (stamina use 0.3) to the wall, grips it. Asserts the ClimbCue.Texture tick reaches the hand within 2 s, and no deny cue. SKIP if Interaction.ClimbSurfaceFeel off. |
+| `vr.49-condor` | beach, after vr.48b | Pokes a stand-in Condor into CharacterData.carrierCondor, grips the wall. Expects the Carried cue and asserts no climbing. No SKIP besides the wall being missing. |
+| `vr.50-climb-hover` | beach, after vr.49 | Open hand at the wall. Asserts the ClimbHover chalk ring is drawn and a Contact feel arrives with no deny cue; then a grip must climb and the ring must go. SKIP if Interaction.ClimbHoverRing off. |
+| `vr.51-air-grip` | beach, after vr.50 | Warps the player 1.5 m above the ground at the wall, grips mid-air. Asserts the grip climb starts (isClimbing) and no deny cue. SKIP if the player landed before the grip. |
+| `vr.51b-falling-catch` | beach, after vr.51 | Drops the player 2.5 m, waits for fall speed over 3 m/s, grips the wall. Asserts climbing starts and the ClimbCue.Catch feel is at least the ClimbFeel.CleanCatch amplitude. SKIP if ClimbSurfaceFeel off. |
+| `vr.52-climb-empty` | beach, after vr.51b | Grips the wall, empties both stamina bars, pulls the hand down 0.4 m. Asserts the body rises under 0.1 m and the NoStamina cue (with the stamina bar red) fires. SKIP if stamina cannot be set. |
+| `vr.53-forced-detach` | beach, after vr.52 | Grips the wall, then calls StopAnyClimbing while the hand still grips. Expects the Cancel feel on that hand; reports a note only, no failing assertion beyond the feel. |
+| `vr.54-mantle` | beach, after vr.53 | Builds a 1.7 m Map-layer ledge, climbs hand over hand. Asserts the climb starts, PhysicalInteraction.LastMantleAt marks a mantle, feet end within 0.3 m of the top, and a Contact settle tick follows. SKIP if PhysicalClimb off. |
+| `vr.55-handle-occupied` | beach, after vr.44b | Sets ClimbHandle.hanger on a placed piton to a stand-in Character, grips it. Expects the Occupied cue (piton red) and asserts neither hanging (currentClimbHandle) nor wall climbing happens. |
+| `vr.56-fragile-piton` | beach, after vr.55 | Hangs on a hammered ShittyPiton. Expects the Danger feel once it cracks (within 8 s), then waits for the break and expects the Cancel feel. SKIP if PitonGripHang off or the piton has no ShittyPiton. |
+| `vr.57-rope-deny-stamina` | beach, after vr.42c | Hangs a rope, empties stamina, grips the rope. Asserts the NoStamina cue (tinted) fires, and neither isRopeClimbing nor wall climbing starts. SKIP if stamina cannot be set. |
+| `vr.58-rope-deny-unanchored` | beach, after vr.57 | Pokes Rope.attachmenState to unattached, grips a rope segment. Asserts the Unanchored cue (rope tinted), no rope climb and no wall climb. Fails if the rope has no segments. |
+| `vr.58b-breakable-anchor` | beach, after vr.58 | Adds BreakableRopeAnchor to the test rope's anchor if missing, grips the rope. Expects the Danger feel within 9 s of the climb start. SKIP if RopeHandOverHand off. |
+| `vr.59-vine-deny-stamina` | tropics, after vr.43c | Empties stamina, grips a point on the vine. Asserts the NoStamina cue (tinted) fires, and neither isVineClimbing nor wall climbing starts. SKIP if stamina cannot be set. |
+
+#### Body and movement
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.140-roomscale-blocked` | VR run, MovementSteps | With Locomotion RoomScaleWalking off, the head scripted 0.9 m backward gives NotNow cue on both hands, with a ring at the feet (LocomotionInput.WarnFar), before the 1 m fade. SKIP: player.locomotion not installed. |
+| `vr.141-forced-look-side` | VR run, MovementSteps | Writing lookValues.x +40 degrees each frame (as a frog tongue does) gives ForcedLook comfort rumble with right hand amplitude above left. Records LookPatches.ScriptedLookWeight. SKIP: comfort haptics off. |
+| `vr.142-sprint-out` | VR run, MovementSteps | Stick sprint sets isSprinting with no wrist cue. Emptying stamina mid-sprint stops it and fires NoStamina with tint on the move-stick hand. SKIP: sandbox stamina control unavailable. |
+| `vr.154-jump-out` | VR run, MovementSteps | A jump press with stamina near 0.006 takes off (BodyFeedback.TakeOffs rises), then the move-stick hand gets the NoStamina cue with tint. SKIP: sandbox stamina control unavailable. |
+| `vr.143-crouch-walk` | VR run, MovementSteps | Head scripted to 40% of standing height sets isCrouching and gives a Contact feel on both hands. Crouched 1 s walk covers 0.3 to 0.75 of the standing distance. Standing up gives Contact again. SKIP: PhysicalCrouch off or seated. |
+| `vr.144-jump` | VR run, MovementSteps | Jump press takes off within 0.3 s with a Contact feel on the dominant hand. A second press before the game's cooldown does not jump and fires TooSoon on the dominant hand. |
+| `vr.155-hop-jump` | VR run, MovementSteps | With Locomotion.HopToJump on: standing up from a crouch, and look down then up with arms lifting, do not take off. Arms up with head 0.1 m above standing takes off, with Contact on the dominant hand. SKIP: not installed or seated. |
+| `vr.158-arm-swing-still` | VR run, MovementSteps | With the arm swing setting on, swinging with the stick idle or sideways with stick forward does not sprint (isSprinting with BodyGestures.Swinging). A forward running swing with stick forward does. SKIP: player.locomotion not installed. |
+| `vr.145-landing` | VR run, MovementSteps | A 12 m warp drop, god mode off: BodyFeedback.Landings rises, Danger feel on both hands before landing, Contact feel after, and LastLanding amplitude at least 0.6. SKIP: sky blocked within 13 m above. |
+| `vr.146-slope` | VR run, MovementSteps | Warping onto terrain of 58 to 75 degrees (no CollisionModifier) gives the TooSteep cue on both hands. SKIP: no such slope within 30 m. |
+| `vr.148-ragdoll-getup` | VR run, MovementSteps | RPCA_Fall for 2 s: when currentRagdollControll passes 0.9, both hands get a Contact feel, and the move stick then walks at least 0.3 m in 0.8 s. |
+| `vr.149-knockback-side` | VR run, MovementSteps | RPCA_AddForceAtPosition from the right gives a comfort rumble (ComfortEventsRuntime) with right amplitude above left. SKIP: comfort haptics off. |
+| `vr.150-pre-pass-out` | VR run, MovementSteps | Adding Injury 1 raises passOutValue and gives a Danger feel on both hands within 3 s, before the pass-out. Status then cleared and revived if passed out. SKIP: game refused the status. |
+| `vr.147-morale-glow` | VR run, MovementSteps | StaminaBar.PlayMoraleBoost(2) is handled by MoraleBoostTextPatch, the MORALEBOOST text stays disabled, and the WouldWork chord sound plays after the mark. SKIP: no stamina bar. |
+| `vr.153-spectate-single` | VR run, MovementSteps | Passed out solo, a spectate stick flick gives CantSwitch on the hand bound to VRAction.SpectateNext. Then revives. SKIP: not solo, or sandbox pass-out unavailable. |
+| `vr.157-spectate-point` | VR run, MovementSteps | Passed out solo, dominant hand pointing straight up with trigger pulled gives CantSwitch on that hand (PointToWatch). Then revives. SKIP: not solo, or sandbox pass-out unavailable. |
+| `vr.156-head-near-wall` | VR run, MovementSteps | With RoomScaleWalking off and a sandbox wall ahead, leaning the head to within 0.12 m of it gives a Contact feel on both hands. Records RigDriver.EyeGuardBlack in the note only. SKIP: not installed, or no wall. |
+| `vr.159-amulet-pips` | VR run, MovementSteps | With totalExtraJumps 2: AmuletPips shows 2 beads, 2 lit. An air jump raises BodyFeedback.AirJumps, drops lit beads to 1, and gives a Contact feel on both hands. |
+| `vr.210-heartbeat` | VR run, MovementSteps | Spending stamina from 0.25 gives BodyFeedback beats with a measured period. Under the Weight 0.5 status the beat period is longer than without it. SKIP: sandbox stamina control unavailable. |
+| `vr.211-shiver` | VR run, MovementSteps | Cold raised in four 0.05 steps gives at least 5 BodyFeedback.Shivers pulses. Held steady for 1 s gives none. SKIP: game refused Cold. |
+| `vr.151-wind-pressure` | VR run, MovementSteps | Inside an active WindChillZone, ComfortEventsRuntime reports a pressure push within 3 s, with no hand above BodyCues.PressureMax. SKIP: no active wind zone, or no push (sheltered or calm). |
+| `vr.212-tornado-brace` | VR run, MovementSteps | Within a Tornado's range, pressure on the hand is positive standing and lower after the head is scripted to crouch. Also fails when RoomScaleSetting is null. SKIP: no tornado reaching the player. |
+| `vr.152-bounce` | VR run, MovementSteps | Warp 2.5 m above the nearest CollisionModifier with knockback within 60 m: EnvironmentCues.Bounces rises and both hands get a Contact feel. SKIP: no bounce shroom within 60 m. |
+| `vr.213-lava-sting` | VR run, MovementSteps | Calling Lava.HitPlayer on the local body (god mode off) raises EnvironmentCues.Stings and gives a Danger feel on both hands. SKIP: no Lava in the level. |
+| `vr.214-balloon` | VR run, MovementSteps | TieNewBalloon gives a Contact feel on the item hand. A TiedBalloon appears; Pop() raises EnvironmentCues.Pops and gives a Contact feel on the other hand. |
+| `vr.215-parachute` | VR run, MovementSteps | CharacterBalloons.SetParachute(true) raises EnvironmentCues.Tugs and gives a Contact feel on both hands. Parachute closed afterwards. |
+| `vr.216-sugar-crash` | VR run, MovementSteps | GUIManager.StartSugarRush then EndSugarRush gives a Cancel feel on both hands. SKIP: no GUIManager. |
+| `vr.217-float-end` | VR run, MovementSteps | Adding Affliction_LowGravity (2.5 s) gives a Progress feel on both hands within 4 s, the warning before gravity returns. |
+| `vr.218-bridge` | VR run, MovementSteps | Standing on an owned BreakableBridge with its timer and isBreaking forced gives a Danger feel on both hands. SKIP: no owned bridge within 80 m, or warp missed the planks. |
+
+#### Item gestures
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.160-use-routes` | VR run, ItemGestureSteps | For each listed route item, given and held, ItemGestures.UseOf(held) equals the expected UseGesture. Items absent from the game version are listed only. SKIP: none of the route items exist. |
+| `vr.161-drink` | VR run, ItemStep Antidote | Hand raised to the mouth casts the drink to completion (lastFinishedCast), the status it lowers (Action_ModifyStatus) falls by at least half its change, and no refusal cue fires. SKIP: EatAtMouth off. |
+| `vr.162-build-not-at-mouth` | VR run, ItemStep Checkpoint Flag | Held at the mouth for use time plus 1 s, the flag starts no use (isUsingPrimary false), castProgress stays 0, and the item stays in hand. |
+| `vr.163-build` | VR run, ItemStep Checkpoint Flag | Aimed at open sky the trigger gives OutOfReach. Aimed at ground in reach, holding the trigger spawns a CheckpointFlag and the item leaves the hand. SKIP: ui.affordance not installed. |
+| `vr.164-commune-guard` | VR run, ItemStep Cursed Skull | Bare trigger gives DangerSoon and starts no cast. Held at the face the cast reaches 0.4 with AtFace and a Progress feel. Pulled away gives a Cancel feel, player alive, skull held. SKIP: CommuneAtFace off, or cast under 0.5 s. |
+| `vr.165-read-cancel` | VR run, ItemStep Book of Bones | Held at the eyes the cast reaches 0.3 with HeldGestures.AtFace. Lowered, it gives a Cancel feel, isSkeleton stays false, book still held. SKIP: ReadAtFace off, already skeleton, or cast under 0.5 s. |
+| `vr.166-eat-cancel` | VR run, ItemStep apple fragment | Food at the mouth casts to 0.5, pulled away gives a Cancel feel. lastConsumedItem unchanged, item still held, Hunger not lowered more than 0.02. SKIP: ui.affordance not installed, or cast under 0.5 s. |
+| `vr.167-secondary-deny` | VR run, Items steps | With a must-use-on-friend food held and nobody in front, off-hand trigger gives NeedsFriend with tint on the off hand and starts no use or cast. SKIP: ui.affordance not installed, or no such item. |
+| `vr.168-shoot-hand` | VR run, ItemStep RopeShooter | Aimed at open sky the trigger gives NoWall. Aimed at terrain or the test wall within maxLength, holding the trigger spawns a RopeAnchorProjectile with no refusal cue. SKIP: ui.affordance not installed. |
+| `vr.169-zoom-endstop` | VR run, ItemStep Binoculars | In forced Hold mode with the trigger held, binocularsActive turns on. Twisting the hand 270 degrees per second drives lerpedFOV to maxFov and gives one EndStop feel. SKIP: ui.affordance not installed, or TwistZoom off. |
+
+#### Friends
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.100-thorn-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Thorn over 25 degrees off camera aim: scripted hand pinches it, contact tick felt, pull 14 cm, thorn leaves stuckIn within game hold time, progress tick felt. SKIP if AddThorn yields no off-view thorn. |
+| `vr.101-thorn-stuck` | SocialSteps, solo sandbox, VR hand step, god mode off | Foot stuck via Character.TryStickBodypart; pinch on a thorn gives DenyReason.Stuck cue on that hand, no tint, and the thorn stays after 1.5 s. Fails if foot cannot stick. SKIP if no thorn can be added. |
+| `vr.102-tick-pluck` | SocialSteps, solo sandbox, VR hand step, god mode off | Spawned BugfixOnYou tick attaches to local player; left-hand pinch gives contact tick and the tick is removed within 3 s, hand holds the bug item. SKIP if the tick cannot spawn. |
+| `vr.104-struggle` | SocialSteps, solo sandbox, VR hand step, god mode off | Web status 0.5 sets isStruggling; up/down shaking of both hands (up to 12 strokes) lowers the Web status, and a Progress feel is felt on the left hand. SKIP if AddStatus refuses. |
+| `vr.105-give-up` | SocialSteps, solo sandbox, VR hand step, god mode off | After PassOut and fullyPassedOut, one grip gives DenyReason.NeedsTwoHands and interactIsPressed stays false for 20 frames; both grips plus both triggers hold interact and give a Progress feel. SKIP if PassOut refuses. |
+
+#### Comms and menus
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.110-ping` | CommsSteps, VR hand step, scripted hands | Right finger gun aimed at ground: PingPreview dot shown, not red, within 1.5 m of aim; squeeze updates PointPinger _timeLastPinged, Contact feel, no denial cue. SKIP if no PointPinger or interact.ping missing. |
+| `vr.111-ping-refused` | CommsSteps, VR hand step, scripted hands | Sky aim gives red dot and NoWall cue with tint, no ping sent; second ping inside PointPinger.coolDown gives TooSoon; finger gun on a hand with unusable held item gives UseOtherHand on the free hand. SKIP as vr.110. |
+| `vr.112-ptt` | CommsSteps, VR hand step, scripted hands | In PushToTalk with HandToMouthTalk on, hand at mouth sets pushToTalkPressed, plays Transmit click, shows MicGlyph.Open, Contact feel; hand away releases with closing click. In VoiceActivation it gives MicAlwaysOn. SKIP if no PushToTalkSetting or voice. |
+| `vr.113-mute` | CommsSteps, VR hand step, scripted hands | With PalmMute on, palm over mouth in VoiceActivation sets VoiceInput.MuteHeld, stops voice.transmitting, shows MicGlyph.Muted, Cancel click and Cancel feel; reopens on leaving. In PushToMute it presses pushToTalkPressed. SKIP if no setting, voice handler or feature. |
+| `vr.114-emote-refused` | CommsSteps, VR hand step, scripted hands | With the pause menu open, holding the emote binding gives NotNow and the wheel stays shut. After unpausing, wheel opens and a centre release gives a Cancel feel with no new denial. |
+| `vr.115-gesture-emote` | CommsSteps, VR hand step, scripted hands | Open hand raised beside the head and waved at 1.5 Hz for up to 2.5 s makes CharacterAnimations emoting true and GestureEmotes.LastPlayed equal WaveAnim, with no refusal cue. SKIP if Emotes gestures setting off. Fails if no wave emote data. |
+| `vr.116-disabled-control` | AirportScreenSteps, ScreenHandStep, scripted hands, boarding pass | Lower-ascent arrow clicked down until disabled; laser press on it gives DenyReason.Locked with tint on the pressing hand, and pass.ascentIndex is unchanged. SKIP if no kiosk, boarding pass or character. |
+| `vr.117-pause-refused` | CommsSteps, VR hand step, scripted hands | With the emote wheel open, a left menu tap gives NotNow on the left hand, and GUIManager.InPauseMenu stays false. |
+| `vr.118-passport-locked` | AirportScreenSteps, ScreenHandStep, scripted hands, passport | Laser press on a locked passport cosmetic gives Locked with tint (noted if none in save). With SwipeToFlip on, right-hand swipe on the last page gives an EndStop feel. SKIP if no PassportManager or character. |
+| `vr.119-keyboard-type` | AirportScreenSteps, ScreenHandStep, scripted hands, VRKeyboard | Four-character dialog: poking keys with the right fingertip types "ab12"; a fifth key gives PackFull with tint and text unchanged; Done submits "ab12" with ok true. Fails if the keyboard will not open. |
+| `vr.120-invite-offline` | AirportScreenSteps, ScreenHandStep, airport invite kiosk | Calling AirportInviteFriendsKiosk.Interact while not in a lobby gives DenyReason.Blocked on the nearer hand, tinted only if the kiosk is active. SKIP if no kiosk, or already InLobby. |
+| `vr.121-prompt-glyphs` | CommsSteps via PromptGlyphSteps, VR hand step | With TargetPrompt on and ActionHintText off, hovered Apple hides the PICKUP text, draws the Grab glyph, keeps its name; ActionHintText on restores text, no glyph. Web draws Struggle glyph, Contact feel both hands. Passes with note if TargetPrompt off. |
+| `vr.123-ping-dotted` | CommsSteps, VR hand step, scripted hands | Right finger gun aimed at ground: PingPreview.RayDots at least 3, landing dot shown and not red, FromLeft equals hand; aiming gives no refusal cue. |
+| `vr.124-button-ping-preview` | CommsSteps, VR hand step, scripted hands | Thumb resting on the ping button shows aim preview from that hand (ButtonAiming, DotShown); tap pings with Contact feel and no cue; long press hides preview while held and after release. SKIP if no PointPinger, or ping not on Secondary. |
+| `vr.125-hold-glyph` | CommsSteps via PromptGlyphSteps, VR hand step | With ActionHintText off, gripping a closed suitcase holds it, draws the Hold ring and hides text; lifting lid halfway makes HoldFillShown track constantInteractableProgress within 0.1, Progress feel. Passes with note if TargetPrompt off; SKIP if no suitcase. |
+| `vr.126-wheel-climbing-refused` | CommsSteps via WheelGapSteps, VR hand step | Warped to a wall and climbing, holding the emote binding gives DenyReason.NotWhileClimbing and the wheel stays shut. Fails if climbing does not start. SKIP if no wall found. |
+| `vr.127-thumbs-up` | CommsSteps via WheelGapSteps, VR hand step | Fist forward, trigger touched, thumb off all buttons and up: emoting true, GestureEmotes.LastPlayed equals ThumbsUpAnim within 2 s, no refusal cue. SKIP if Emotes gestures setting off or no thumbs-up emote. |
+| `vr.128-backpack-wheel-cancel` | CommsSteps via WheelGapSteps, VR hand step | Grip on a spawned ground Backpack opens the wheel (usingBackpackWheel); release with no pocket hovered gives Cancel feel, no denial added, and the pack is not worn. Fails if no Backpack item or open ground. |
+| `vr.129-passport-try-on` | AirportScreenSteps, ScreenHandStep, scripted hands, passport | Right fingertip poke on an unlocked, unworn skin cell increments PassportPoke.Equips, changes the worn skin, and gives a Contact feel; skin restored. SKIP if no passport or no such cell. |
+| `vr.130-connecting-wait` | AirportScreenSteps, ScreenHandStep, scripted hands, boarding pass | With the load flag faked on, laser press on Start gives DenyReason.NotNow with tint on the pressing hand. SKIP if no kiosk or pass, or Start not interactable. |
+| `vr.131-modal-bell` | AirportScreenSteps, ScreenHandStep | Modal.TestModal opens a modal and, once placed, gives a NotNow cue within 1.5 s on the laser hand, without tint. |
+| `vr.132-guide-comms-rows` | AirportScreenSteps, plain VRStep, no hands | GhostDemo on a stage plays guide topics Ping, Mic, Mute, Spectate for one loop each; each stays alive on its topic and plays at least one cue sound. Fails if no rig. |
+
+#### World and items in the world
+
+| Step id | Runs | Checks |
+|---|---|---|
+| `vr.80-campfire-far` | beach, world steps | A grip on the nearest unlit campfire with `moraleBoostRadius` shrunk to 0.05 m gets the FriendsFar cue with the logs red within 2 s, and the fire stays off. The radius is restored. `SKIP` with no unlit campfire |
+| `vr.81-chest-two-hands` | beach, world steps | One hand on a closed respawn chest lid gets the NeedsTwoHands cue (red) within 2 s and the hold progress stays at 0.05 or below. Both hands lifting must raise progress or open the chest. `SKIP` with no closed chest or `Interaction.LiftLidToOpen` off |
+| `vr.82-lid-progress` | beach, world steps | Lifting a closed suitcase lid logs a Progress feel, then a Contact feel at the open, on the dominant hand. `SKIP` with no closed suitcase or `LiftLidToOpen` off |
+| `vr.82b-lid-low-grip` | beach, world steps | A grip 8 cm below the case centre gets the AimHigher cue (no tint) within 2 s, and the case stays the held interactable, so the vanilla hold is kept. `SKIP` with `UI.ActionHints` or `LiftLidToOpen` off |
+| `vr.83-cook-cant-use` | beach, world steps | A Rope held in the heat column of a lit fire gets the CantUse cue with the item red within 0.5 s. `SKIP` with no campfire or `Interaction.CookOverFire` off |
+| `vr.83b-cook-not-lit` | beach, world steps | An Apple held over an unlit campfire gets the NotLit cue (red) and the fire stays off |
+| `vr.83c-cook-warmth` | beach, world steps | Food carried to 0.85 m out and 0.55 m up, short of the cook column, gives a Progress feel. Fails if the fire became the held interactable or the food cooked |
+| `vr.84-book-of-bones` | beach, world steps | The Book of Bones held 0.25 m above a spawned skeleton's hips starts the revive hold: progress above 0 on the skeleton plus a Progress feel. `SKIP` with `Interaction.BookOverBones` off |
+| `vr.84b-book-used-up` | beach, world steps | The same setup with the book's uses at 0 gets the UsedUp cue (red) within 0.5 s and no hold progress |
+| `vr.87-fuse-lit` | beach, world steps | A lit torch carried to a ghost fire or a cannon or rocket fuse that cannot be lit again gets UsedUp (or Occupied), red, within 0.5 s. `SKIP` with none loaded |
+| `vr.88-scout-cannon` | beach, world steps | Standing 2 m from an unlit scout cannon, `Light()` gives a Progress ramp within 1.5 s. After the shot, a notice, a Contact tick and the notice note follow |
+| `vr.92-checkpoint` | beach, world steps | Planting a checkpoint flag with the hand aimed at the ground, then `Character.TryCheckpoint()` succeeds, a notice shows, a Contact feel fires and the notice sound sits within 0.5 m of the flag |
+| `vr.94-effigy-nobody-down` | beach, world steps | A scout effigy with nobody down cannot be used: the trigger gets the CantUse cue and the effigy stays in hand. `SKIP` with `Interaction.GuardWastedItems` off or someone down |
+
+#### End-of-run slot
+
+These steps run last in the VR run, after `TornadoTrip` (which may load another level) and the `06-segment-Peak` jump. The slot is skipped unless the run is VR, the game is ready and a `MapHandler` exists. It ends with `vr.86-end-screen`, which returns to the airport, where the summary and quit run as after any step.
+
+| Step id | Checks |
+|---|---|
+| `vr.85-campfire-segment` | A bare-hand grip on the nearest unlit campfire that advances the segment lights it for real, with no FriendsFar cue. The segment advances within 40 s, and `VRFade.Target` reaches 0.5 or more when `UI.FadeOnSegmentChange` is on. `SKIP` with no unlit campfire ahead |
+| `vr.89-to-peak` | Jumps the run to the Peak segment (screenshot `vr-89-peak`) |
+| `vr.89-altar-full` | With every altar slot filled locally, using a held amulet gets the Occupied cue (red) and the amulet stays in hand after 1 s. `SKIP` with `GuardWastedItems` off |
+| `vr.89b-amulet-socket` | With the altar emptied locally, an amulet carried to the socket starts the interact hold (progress above 0) plus a Progress feel. `SKIP` with `Interaction.AmuletInSocket` off |
+| `vr.90-soul-pillar` | Both open palms on the soul pillar start its hold (progress 0.3 or more), then are withdrawn; a Progress feel must be logged. `SKIP` with no pillar or `PalmsOnPillar` off |
+| `vr.91-portal` | A hand pushed into the summit portal starts the hold (progress 0.3), then is pulled out; the character is not dead and no loading screen shows. `SKIP` with no active portal or `HandIntoPortal` off |
+| `vr.93-summit-flare` | A lit flare held when the helicopter is summoned (the step sends the RPC itself if it must): a notice shows, a Contact feel fires and the notice sound plays |
+| `vr.86-end-screen` | Forces a win, laser-presses Next on the end screen. During credits an early press gets TooSoon, both hands feel Contact once the skip delay has passed, then the press returns to the Airport scene |
+
+The existing `use.<name>` steps now check the real effect: food must change `lastConsumedItem` and lower Hunger by half the item's change, lanterns and torches must be lit with fuel falling, flares lit and tracked, rope and chain launchers must spawn their projectile or vine, and binoculars must raise and lower in `Hold` mode.
 
 Screenshots in VR show the desktop mirror, which rig.camera copies from one eye.
 
@@ -274,8 +425,23 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `climb` (VR) | Walks to the nearest climbable wall and starts climbing by grabbing it | `StartClimbRpc`, climbing flag |
 | `two-hand` (VR) | Holds a two-handed item with both hands | current item, hand IK targets |
 | `feed` (VR) | Holds food at B's head until B is fed | `SendFeedDataRPC`, `GetFedItemRPC`, B's own `lastConsumedItem` |
+| `feed-refuse` (VR) | Holds a non-food item at B's head; expects the CantUse cue | No `GetFedItemRPC` or `SendFeedDataRPC` |
+| `reach-deny` (VR) | Grips B's hand while B needs no help; expects NotInTrouble and no reaching | No local `RPCA_Fall` |
+| `reach` (VR) | Asks B to web itself, then grips B's hand; `sinceGrabFriend` must start within 3 s | B's web status |
+| `kick-mode` (VR) | Grips B's hand (no kick for 1 s), then shoves with both open palms; `isKicking` must turn on | A local `RPCA_Fall` |
+| `carry` (VR) | Asks B to pass out, then lifts B with both hands and puts B down | Remote `RPCA_StartCarry` and `RPCA_Drop` |
+| `pack` (VR) | Walks behind B and grips B's worn pack | Generic position and held-item checks |
+| `pal-jump` (VR) | Crouches by lowering the head to 0.6 of its height, asks B to stand on A, then jumps | A local `JumpRpc` with `isPalJump` |
+| `campfire-far` (VR) | Grips the logs of an unlit campfire out of B's morale radius; expects FriendsFar and the fire stays off | No `Light_Rpc` |
+| `spectate` (VR) | Passes out, waits until the view follows B, flicks the stick up; expects CantSwitch. Then wakes itself | B sees A passed out |
 
-A step that finds nothing to do (no wall or no food within 40 m) is `SKIP`. Run 4 (one VR client, one unmodded client) gave 16 pass, 0 fail, 2 skip (`eat` and `feed`, no food in range), and `tools/mp-check.sh` printed no `FAIL`.
+`scene-button` (VR) runs after `ping` and before `board`: A grips a scene button only the host can press (a host-owned trigger) and expects the Blocked cue, and B must see no `RPCA_Trigger`. The social checkpoints from `feed-refuse` on run after `feed`, and `spectate` is last. Between them A asks B to wake when B is passed out, dead or struggling.
+
+A step that finds nothing to do (no wall or no food within 40 m, no host-owned scene button, no pack on B) is `SKIP`. `kick-mode` is also `SKIP` unless the host run has kick mode on (`Sandbox.RunSetting HelpingHand 1`). Run 4 (one VR client, one unmodded client, before the social and world checkpoints) gave 16 pass, 0 fail, 2 skip (`eat` and `feed`, no food in range), and `tools/mp-check.sh` printed no `FAIL`.
+
+### Observer requests
+
+B obeys requests from A. A appends `{id, do, t}` lines to `a-requests.jsonl`; B ignores lines older than the lobby, runs each one and appends `{id, do, ok, note, t}` to `b-acks.jsonl` (and a `request` line to `b-observer.jsonl`). A waits 5 s for the ack by default, and a missing or failed ack skips the step. The requests are `passout` (the game's `Character.PassOut` console command), `web` (adds the Web status to B's own character, refused in the airport), `wake` (releases crouch, clears statuses and revives B on its own view if dead or passed out), `crouch` and `stand` (B's own crouch input) and `stand-on` (a `WarpPlayerRPC` on B's own view onto A's head). Apart from `web`, B uses only the game's console command, RPCs on its own view, or its own input. No current step sends `crouch` or `stand`.
 
 ### Files
 
@@ -301,6 +467,8 @@ It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 w
 - For each checkpoint A passed: B logged it with A present, B's view of A's position is within `POS_TOL`, and B sees the same held item id as A. B can write its checkpoint before A's equip RPC arrives, so the first matching sample within `LAG_TOL` seconds after the checkpoint counts. For `drop` and `throw`, an item of that kind lies within `LAND_TOL` of where A saw it land. A checkpoint A failed is a `FAIL`, and one A skipped is a `SKIP`.
 - B logged no exceptions and no unknown-event errors, and received no event 151.
 - A sent no event 151 (with a vanilla host, net.pose has no peers).
+- `feed-refuse`: B got no `GetFedItemRPC` or `SendFeedDataRPC`. `reach-deny`: B got no local `RPCA_Fall`. `scene-button`: no `RPCA_Trigger` reached B. `campfire-far`: B saw no `Light_Rpc`.
+- `kick-mode`: B logged a local `RPCA_Fall` from the shove. `carry`: B logged a remote `RPCA_StartCarry` and `RPCA_Drop`. `pal-jump`: B logged a local `JumpRpc` with `isPalJump`. `spectate`: B's checkpoint shows A passed out. `reach` and `pack` have no rule of their own.
 
 The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and B's `rpc` lines in `b-observer.jsonl` for emote, ping, eat and feed.
 

@@ -192,10 +192,10 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var fire = Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent);
-        var raw = FindItem(new List<Item>(SandboxActions.Items), "Rope");
-        if (fire == null || raw == null || raw.cooking == null || raw.cooking.canBeCooked)
+        var raw = Uncookable();
+        if (fire == null || raw == null)
         {
-            stepSkip = fire == null ? "no campfire loaded" : "no uncookable Rope item";
+            stepSkip = fire == null ? "no campfire loaded" : "no item with cooking disabled";
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
@@ -208,6 +208,27 @@ internal sealed partial class SelfTestRunner
                 yield break;
         }
         yield return HoldInHeat(raw, fireBase, DenyReason.CantUse);
+    }
+
+    /// <summary>The first item prefab whose <c>ItemCooking.disableCooking</c> is set (<c>canBeCooked</c> false,
+    /// ItemCooking.cs:48), leaving out held lights (over a fire they are the light gesture) and placeables.</summary>
+    static Item Uncookable()
+    {
+        foreach (var item in SandboxActions.Items)
+        {
+            if (
+                item != null
+                && item.TryGetComponent(out ItemCooking cooking)
+                && !cooking.canBeCooked
+                && !item.TryGetComponent(out Flare _)
+                && !item.TryGetComponent(out Candle _)
+                && !item.TryGetComponent(out Lantern _)
+                && item.GetComponentInChildren<Action_Torch>() == null
+                && !item.TryGetComponent(out Constructable _)
+            )
+                return item;
+        }
+        return null;
     }
 
     /// <summary>vr.83b: food held where the heat column of an unlit campfire would be is refused with NotLit, the
@@ -320,11 +341,19 @@ internal sealed partial class SelfTestRunner
             float mark = CueMark();
             var interaction = Interaction.instance;
             float progress = 0f;
+            bool over = false;
+            // The gesture reads the book hand, as a player holds the book over the body: the hand goes 0.4 m above
+            // the hips and stays (the book itself moves when the revive opens it).
+            var rig = VRRig.Instance;
+            yield return MoveTo(left, () => skeleton.Center() + Vector3.up * 0.4f, 0.6f);
             float end = Now + 4f;
-            BeginCarry();
             while (Now < end && held != null && (usedUp || progress < 0.1f))
             {
-                CarryToward(left, held.Center(), skeleton.Center() + Vector3.up * 0.25f);
+                SetHand(
+                    left,
+                    rig.Origin.InverseTransformPoint(skeleton.Center() + Vector3.up * 0.4f)
+                );
+                over |= WorldHolds.BookTarget != null;
                 if (
                     interaction != null
                     && ReferenceEquals(interaction.currentHeldInteractible, skeleton)
@@ -334,7 +363,7 @@ internal sealed partial class SelfTestRunner
                     break;
                 yield return null;
             }
-            float above = held != null ? (held.Center() - skeleton.Center()).y : 0f;
+            float above = (rig.Hand(left).position - skeleton.Center()).y;
             if (usedUp)
             {
                 yield return ExpectCue(left, DenyReason.UsedUp, mark, tint: true, within: 0.5f);
@@ -347,14 +376,15 @@ internal sealed partial class SelfTestRunner
             if (progress <= 0f)
             {
                 Fail(
-                    $"book over the bones did not start the revive hold: book {above:0.00} m above the hips, "
-                        + $"over {(WorldHolds.BookTarget != null ? "the skeleton" : "nothing")}"
+                    $"book over the bones did not start the revive hold: book hand {above:0.00} m above the hips, "
+                        + $"gesture over the skeleton {over}, hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}"
                 );
                 yield break;
             }
             yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0.5f);
             if (stepOk)
-                stepNote = $"revive hold {progress:0.00}, book {above:0.00} m above; {cueNote}";
+                stepNote =
+                    $"revive hold {progress:0.00}, book hand {above:0.00} m above; {cueNote}";
         }
         finally
         {

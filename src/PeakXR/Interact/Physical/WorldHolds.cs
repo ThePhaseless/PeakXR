@@ -101,11 +101,12 @@ public sealed class WorldHoldsFeature : Feature
 /// flare) in <c>WorldHolds.Notices.cs</c>.</summary>
 internal static partial class WorldHolds
 {
-    /// <summary>Book above the skeleton's hips (<c>Skelleton.Center</c>, Skelleton.cs:87): radius and height span.</summary>
-    private const float BookRadius = 0.3f;
-    private const float BookMaxUp = 0.5f;
+    /// <summary>The book hand above the skeleton's hips (<c>Skelleton.Center</c>, Skelleton.cs:87): radius and height
+    /// span. Up to 0.9 m covers a player standing over a body on the ground with the book at waist height.</summary>
+    private const float BookRadius = 0.4f;
+    private const float BookMaxUp = 0.9f;
 
-    /// <summary>Skeletons farther than this from the book are not considered.</summary>
+    /// <summary>Skeletons farther than this from the book hand are not considered.</summary>
     private const float BookSearch = 1.5f;
 
     internal static AccessTools.FieldRef<ScoutStatue, int[]> HasAmulets;
@@ -114,10 +115,13 @@ internal static partial class WorldHolds
     private static readonly ContactDwell Book = new()
     {
         Enter = 0f,
-        Exit = 0.1f,
+        Exit = 0.15f,
         Dwell = 0.3f,
     };
 
+    /// <summary>The tracked grip of the book hand, not the book: the revive hold opens the book
+    /// (Skelleton.Interact, Skelleton.cs:65-71, Action_BookOfBonesAnim.Open), which moves the item's render centre
+    /// up out of the zone and ended the hold it had just started (vr32: 0.49 m above, over nothing).</summary>
     private static Vector3 bookPoint;
     private static bool bookOut;
     private static Skelleton seen;
@@ -171,7 +175,10 @@ internal static partial class WorldHolds
             bookTarget = null;
             return;
         }
-        bookPoint = item.Center();
+        bool left = LocalHold.ItemInLeftHand;
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(left) : null;
+        bookPoint = hand != null ? hand.position : item.Center();
         if (skeleton == null || !ReferenceEquals(skeleton, bookTarget))
         {
             Book.Reset();
@@ -189,7 +196,6 @@ internal static partial class WorldHolds
         );
         if (!Book.Update(d, Time.deltaTime))
             return;
-        bool left = LocalHold.ItemInLeftHand;
         // Skelleton.IsInteractible (Skelleton.cs:58-63): the book with uses left.
         if (!skeleton.IsInteractible(c))
         {

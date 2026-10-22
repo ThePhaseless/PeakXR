@@ -220,7 +220,11 @@ internal static class BodyFeedback
         var d = c.data;
         var a = c.refs.afflictions;
         float dt = Time.deltaTime;
-        bool exerting = d.sinceUseStamina < 0.5f && !d.isClimbingAnything && !c.infiniteStam;
+        bool exerting =
+            BodyGestures.HeartbeatOn
+            && d.sinceUseStamina < 0.5f
+            && !d.isClimbingAnything
+            && !c.infiniteStam;
         float max = Mathf.Max(c.GetMaxStamina(), 0.05f);
         float weight = a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Weight);
         if (Beat.Update(exerting, d.currentStamina / max, weight, dt, out var pulse))
@@ -235,7 +239,10 @@ internal static class BodyFeedback
                 Beats++;
             }
         }
-        float shiver = Chill.Update(a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold), dt);
+        float shiver = Chill.Update(
+            BodyGestures.ShiverOn ? a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold) : 0f,
+            dt
+        );
         if (shiver > 0f)
         {
             Haptics.Pulse(true, shiver, 0.03f);
@@ -252,7 +259,12 @@ internal static class BodyFeedback
     private static void NearWall(Character c)
     {
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
-        if (head == null || c.data.isClimbingAnything || c.data.currentClimbHandle != null)
+        if (
+            head == null
+            || !BodyGestures.WallTouchOn
+            || c.data.isClimbingAnything
+            || c.data.currentClimbHandle != null
+        )
         {
             wallNearest = float.PositiveInfinity;
             return;
