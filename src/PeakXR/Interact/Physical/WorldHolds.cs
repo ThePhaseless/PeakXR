@@ -102,8 +102,8 @@ internal static partial class WorldHolds
 {
     /// <summary>The book hand above the skeleton's hips (<c>Skelleton.Center</c>, Skelleton.cs:87): radius and height
     /// span. Up to 0.9 m covers a player standing over a body on the ground with the book at waist height.</summary>
-    private const float BookRadius = 0.4f;
-    private const float BookMaxUp = 0.9f;
+    private const float BookRadius = ReadZone.ReviveRadius;
+    private const float BookMaxUp = ReadZone.ReviveUp;
 
     /// <summary>Skeletons farther than this from the book hand are not considered.</summary>
     private const float BookSearch = 1.5f;
