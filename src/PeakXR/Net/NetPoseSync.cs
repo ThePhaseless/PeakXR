@@ -26,8 +26,8 @@ namespace PeakXR.Net;
 /// Zorro's <c>CustomCommandListener.OnEvent</c> (CustomCommandListener.cs:52) ignores unregistered codes
 /// at or above 6 silently; <c>PlayerHandler.OnNetworkEvent</c> (PlayerHandler.cs:163) only reads the code;
 /// PUN internals use 200-212 (<c>PunEvent</c>), Photon Realtime 210-255 (<c>EventCode</c>), Photon Voice
-/// 202/203 on its own client; PUN's TurnManager (1-2) is unused. 198/199 are avoided because the
-/// unrelated PeakVR mod uses them, so the two mods never feed each other's decoders.
+/// 202/203 on its own client; PUN's TurnManager (1-2) is unused. Photon leaves 0-199 to the game
+/// (https://doc.photonengine.com/pun/current/gameplay/rpcsandraiseevent).
 ///
 /// Packet size and bandwidth: the payload is a <see cref="PoseCodec"/> blob, 44 bytes with head, both
 /// hands and fingers (4 header + 3 x 10 pose + 10 fingers). Photon adds about 30 bytes of event and
