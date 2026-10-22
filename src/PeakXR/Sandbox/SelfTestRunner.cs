@@ -39,6 +39,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         "Granola",
         "Apple",
         "Compass",
+        "Pirate Compass",
         "Binoculars",
         "RopeSpool",
         "Lantern",
@@ -178,12 +179,16 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.34-blind", 15f, BlindCheck());
             yield return HandSteps();
             yield return SpatialSteps();
+            var warp = WarpCompass(out var warpTo);
             foreach (var segment in SandboxActions.Segments)
             {
                 // The summit spawn looks level over the cloud sea with no ground in frame, so the time-of-day and
                 // death (spectate) frames are taken a segment lower, where ground and props show the view.
                 if (segment == Segment.Peak)
                     continue;
+                // The warp compass's hold stands in for the jump to its segment; when it fails the jump below runs.
+                if (warp != null && segment == warpTo)
+                    yield return WarpStep(warp, segment);
                 if (Singleton<MapHandler>.Instance.GetCurrentSegment() == segment)
                     yield return Run("06-segment-" + segment, 5f, AlreadyIn(segment));
                 else
@@ -502,6 +507,22 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (held.TryGetComponent<RopeTier>(out var tier))
         {
             yield return SpoolUse(held, tier);
+            yield return DropHeld();
+            yield break;
+        }
+        // An item with no primary use (Item.CanUsePrimary, Item.cs:797-805) gets a check of its own mechanic.
+        var compass = held.GetComponentInChildren<CompassPointer>();
+        if (compass != null && !held.CanUsePrimary())
+        {
+            yield return CompassHeading(compass);
+            yield return DropHeld();
+            yield break;
+        }
+        if (!held.UIData.hasMainInteract)
+        {
+            Fail(
+                "no primary use (UIData.hasMainInteract off, Item.cs:803) and no check of its own mechanic"
+            );
             yield return DropHeld();
             yield break;
         }

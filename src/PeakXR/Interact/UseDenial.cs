@@ -27,11 +27,10 @@ internal static class UseDenial
 
     /// <summary>A held rope spool's press that cannot tie off: <c>RopeTier.Update</c> (RopeTier.cs:97-111) only takes
     /// terrain its aim meets within <c>maxAnchorGhostDistance</c> that lies within <c>maxAnchorDistance</c> of the
-    /// body, and otherwise holding the trigger does nothing at all. Says where the press went and, for terrain too far
-    /// from the body, how much closer.</summary>
-    public static bool SpoolRefused(Character c, Item item, out Vector3 spot, out DenyHint hint)
+    /// body, and otherwise holding the trigger does nothing at all. For terrain too far from the body, says how much
+    /// closer.</summary>
+    public static bool SpoolRefused(Character c, Item item, out DenyHint hint)
     {
-        spot = default;
         hint = default;
         if (
             !item.TryGetComponent<RopeTier>(out var tier)
@@ -49,13 +48,9 @@ internal static class UseDenial
                 QueryTriggerInteraction.Ignore
             )
         )
-        {
-            spot = origin + dir * tier.maxAnchorGhostDistance;
             return true;
-        }
         if (Vector3.Distance(hit.point, c.Center) < tier.maxAnchorDistance)
             return false;
-        spot = hit.point;
         hint = DenyHint.Range(c.Center, hit.point, tier.maxAnchorDistance);
         return true;
     }

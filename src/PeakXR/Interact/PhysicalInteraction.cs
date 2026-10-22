@@ -1027,8 +1027,9 @@ internal static class PhysicalInteraction
                 && !held.TryGetComponent<ClimbingSpikeComponent>(out _)
             )
                 UseDenial.Deny(c, held, primaryHand.Left);
-            else if (handsOk && UseDenial.SpoolRefused(c, held, out var spot, out var hint))
-                Affordance.Deny(primaryHand.Left, spot, DenyReason.NoWall, hint);
+            // The spool's own tie-off refused: at the hand, so the held spool turns red while the press is held.
+            else if (handsOk && UseDenial.SpoolRefused(c, held, out var hint))
+                Affordance.DenyAtHand(primaryHand.Left, DenyReason.NoWall, hint);
             else if (handsOk)
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
         }

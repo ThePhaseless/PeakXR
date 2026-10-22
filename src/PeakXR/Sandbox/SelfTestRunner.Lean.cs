@@ -44,28 +44,8 @@ internal sealed partial class SelfTestRunner
             Fail("no pose driver, rig or hip");
             yield break;
         }
-        // Run 29 started right after the sprint step with the body still moving ("standing: body moved 0.551 m").
-        // shortcut: local wait for rest; switch to the shared settle helper once it lands.
-        float restSince = Now;
-        yield return WaitFor(
-            () =>
-            {
-                if (!AtRest(c))
-                    restSince = Now;
-                return Now - restSince >= 1f;
-            },
-            8f
-        );
-        if (!AtRest(c))
-        {
-            var v = c.refs.hip.Rig.linearVelocity;
-            Fail(
-                F(
-                    $"not settled: grounded {c.data.isGrounded}, control {c.data.currentRagdollControll:0.00}, climbing {c.data.isClimbingAnything}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s"
-                )
-            );
-            yield break;
-        }
+        // HandSetup settled the body first (Settle: run 29 started right after the sprint step with the body still
+        // moving, "standing: body moved 0.551 m").
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
         // Run 24 leaned into the crashed plane's seats: face open ground first, or say what is in the way.
         if (!ClearHeading(c, rig, out float turn, out string blocked))
@@ -215,17 +195,6 @@ internal sealed partial class SelfTestRunner
             Fail(string.Join("; ", fails) + " | " + note);
         else
             stepNote = note;
-    }
-
-    /// <summary>Grounded, under control, not climbing, hip slower than 5 cm/s horizontally.</summary>
-    static bool AtRest(Character c)
-    {
-        var d = c.data;
-        var v = c.refs.hip.Rig.linearVelocity;
-        return d.isGrounded
-            && d.currentRagdollControll >= 0.9f
-            && !d.isClimbingAnything
-            && new Vector2(v.x, v.z).magnitude < 0.05f;
     }
 
     void StartTrack(Character c, VRRig rig)

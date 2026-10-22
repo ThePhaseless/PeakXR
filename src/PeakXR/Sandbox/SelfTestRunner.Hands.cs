@@ -108,6 +108,10 @@ internal sealed partial class SelfTestRunner
         yield return DropHeld();
         if (!stepOk)
             yield break;
+        // Every hand step starts from the same still, recentred stance (SelfTestRunner.Settle.cs).
+        yield return Settle();
+        if (!stepOk)
+            yield break;
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
         if (c == null || rig == null || rig.Origin == null || rig.Head == null)
@@ -673,7 +677,17 @@ internal sealed partial class SelfTestRunner
             Fail("no Backpack item");
             yield break;
         }
-        var head = VRRig.Instance.Head;
+        // Run 29: after vr.15 the view faced the crashed plane, and the pack spawned in its hull landed 2.4 m up, out
+        // of reach. Face open ground first, as vr.45 does.
+        var rig = VRRig.Instance;
+        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        {
+            Fail("no open ground to drop the pack on in any heading: " + blocked);
+            yield break;
+        }
+        rig.RotateYaw(turn);
+        yield return Wait(0.5f);
+        var head = rig.Head;
         var spot = Flat(head.forward) * 0.6f + head.position;
         spot.y = c.Center.y;
         if (!SandboxActions.SpawnItemAt(prefab, spot))
@@ -703,8 +717,9 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
         {
-            stepNote =
-                $"grip {PhysicalInteraction.HandAction(left)} on {Label(PhysicalInteraction.HandTarget(left))}";
+            stepNote = F(
+                $"grip {PhysicalInteraction.HandAction(left)} on {Label(PhysicalInteraction.HandTarget(left))}, pack {at - head.position} from the head"
+            );
             yield break;
         }
         // The hand stays still, so DriveWheel hovers no pocket and the release commits nothing.
@@ -727,8 +742,14 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         // Turn away first, so the walk does not run into the pack.
-        VRRig.Instance.RotateYaw(180f);
+        rig.RotateYaw(180f);
         yield return Wait(0.3f);
+        // The open heading's back may face what the first turn avoided; take the nearest clear one from there.
+        if (ClearHeading(c, rig, out turn, out _))
+        {
+            rig.RotateYaw(turn);
+            yield return Wait(0.3f);
+        }
         bool hand = !VRInput.LeftHanded;
         var from = c.Center;
         Script(hand).Stick = Vector2.up;
@@ -1437,30 +1458,31 @@ internal sealed partial class SelfTestRunner
     const string NoWall =
         "no climbable wall with walkable ground in front near the player or any suitcase or campfire of this segment";
 
-    static bool FindWall(Character c, out RaycastHit wall, out Vector3 stand)
+    /// <param name="headroom">Metres above the face that must still be climbable (vr.46's lunge rises past 1.2 m).</param>
+    static bool FindWall(Character c, out RaycastHit wall, out Vector3 stand, float headroom = 1.2f)
     {
         wall = default;
         stand = default;
         float best = float.MaxValue;
         var home = c.Center;
-        WallsFrom(home, home, ref best, ref wall, ref stand);
+        WallsFrom(home, home, headroom, ref best, ref wall, ref stand);
         foreach (float radius in new[] { 15f, 35f })
         {
             for (int o = 0; o < 8; o++)
             {
                 var spot = home + Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward * radius;
-                WallsFrom(spot, home, ref best, ref wall, ref stand);
+                WallsFrom(spot, home, headroom, ref best, ref wall, ref stand);
             }
         }
         if (best < float.MaxValue)
             return true;
         foreach (var lug in FindObjectsByType<Luggage>(FindObjectsSortMode.None))
-            WallsFrom(lug.transform.position, home, ref best, ref wall, ref stand);
+            WallsFrom(lug.transform.position, home, headroom, ref best, ref wall, ref stand);
         foreach (var fire in FindObjectsByType<Campfire>(FindObjectsSortMode.None))
-            WallsFrom(fire.transform.position, home, ref best, ref wall, ref stand);
+            WallsFrom(fire.transform.position, home, headroom, ref best, ref wall, ref stand);
         // Nothing on today's map: the sandbox's test wall ahead of the player.
         if (best == float.MaxValue && SandboxActions.PlaceWall() != null)
-            WallsFrom(home, home, ref best, ref wall, ref stand);
+            WallsFrom(home, home, headroom, ref best, ref wall, ref stand);
         return best < float.MaxValue;
     }
 
@@ -1469,6 +1491,7 @@ internal sealed partial class SelfTestRunner
     static void WallsFrom(
         Vector3 spot,
         Vector3 home,
+        float headroom,
         ref float best,
         ref RaycastHit wall,
         ref Vector3 stand
@@ -1501,7 +1524,7 @@ internal sealed partial class SelfTestRunner
                     continue;
                 if (
                     !Physics.Raycast(
-                        origin + Vector3.up * 1.2f,
+                        origin + Vector3.up * headroom,
                         dir,
                         out var high,
                         hit.distance + 1.5f,
