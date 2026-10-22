@@ -36,9 +36,12 @@ internal static class LocomotionInput
     private static Vector3 lastBody;
     private static bool hadBody;
     private static bool warnedFar;
-    private static bool hasReserved;
-    private static bool reservedLeft;
-    private static VRControl reservedControl;
+    private static bool pointTrigger;
+    private static Character watchGoal;
+    private static float watchNextPress;
+    private static int watchPressesLeft;
+    private static readonly Reservation DropReserve = new();
+    private static readonly Reservation TalkReserve = new();
 
     /// <summary>
     /// One-shot backpack press for the hotbar-key patch. Valid this frame and the next, because CharacterItems may
@@ -64,22 +67,42 @@ internal static class LocomotionInput
         return key == (p != null ? p.backpackSlot.itemSlotID : BackpackSlot);
     }
 
-    /// <summary>Keeps layout actions off the button interact.physical uses for drop, so one press never drops and
-    /// pings (e.g. a fixed <c>RightSecondary</c> for a left-handed player).</summary>
-    private static void ReserveDropButton(bool owns, bool dominantLeft)
+    /// <summary>Keeps layout actions off the buttons other features own, so one press never does two jobs: the
+    /// button interact.physical uses for drop (e.g. a fixed <c>RightSecondary</c> for a left-handed player, which
+    /// would also ping) and <c>Voice.PushToTalkButton</c> (which would also jump, ping or open a wheel while
+    /// talking). Both are cleared before either is set, so a shared control stays reserved.</summary>
+    private static void ReserveButtons(bool owns, bool dominantLeft)
     {
-        if (hasReserved)
-            Mapper.SetReserved(reservedLeft, reservedControl, false);
-        hasReserved =
-            owns
-            && ButtonName.TryParse(
-                InteractConfig.Instance.DropButton,
-                dominantLeft,
-                out reservedLeft,
-                out reservedControl
-            );
-        if (hasReserved)
-            Mapper.SetReserved(reservedLeft, reservedControl, true);
+        DropReserve.Clear();
+        TalkReserve.Clear();
+        DropReserve.Take(owns, InteractConfig.Instance.DropButton, dominantLeft);
+        var talk = VoiceFeature.Settings?.PushToTalkButton;
+        TalkReserve.Take(talk != null, talk?.Value, dominantLeft);
+    }
+
+    /// <summary>One control reserved in <see cref="Mapper"/> by name (<see cref="ButtonName"/>).</summary>
+    private sealed class Reservation
+    {
+        private bool has;
+        private bool left;
+        private VRControl control;
+
+        public void Clear()
+        {
+            if (has)
+                Mapper.SetReserved(left, control, false);
+            has = false;
+        }
+
+        public void Take(bool want, string name, bool dominantLeft)
+        {
+            has =
+                want
+                && name != null
+                && ButtonName.TryParse(name, dominantLeft, out left, out control);
+            if (has)
+                Mapper.SetReserved(left, control, true);
+        }
     }
 
     /// <param name="active">The game's <c>playerMovementActive</c>: no menu window or wheel blocks input.</param>
@@ -97,7 +120,7 @@ internal static class LocomotionInput
         Mapper.SetDisabled(VRAction.UsePrimary, owns);
         Mapper.SetDisabled(VRAction.UseSecondary, owns);
         Mapper.SetDisabled(VRAction.Drop, owns);
-        ReserveDropButton(owns, dominantLeft);
+        ReserveButtons(owns, dominantLeft);
         Mapper.MenuHoldSeconds = CameraFeature.RecenterSeconds;
         // One stick, two meanings: items with a scroll function (rope spool, binoculars, guidebook, scout cannon)
         // take up/down as scroll, otherwise it cycles the hotbar.
@@ -186,6 +209,7 @@ internal static class LocomotionInput
         // Spectating reads its own next/previous (CharacterInput.cs:254-255).
         input.spectateRightWasPressed |= Mapper.Pressed(VRAction.SpectateNext);
         input.spectateLeftWasPressed |= Mapper.Pressed(VRAction.SpectatePrevious);
+        PointToWatch(c, input, dominantLeft, spectating);
         if (spectating)
         {
             if (Mapper.Pressed(VRAction.SpectateNext))
@@ -333,6 +357,95 @@ internal static class LocomotionInput
         var hint = DenyHint.At(feet);
         Affordance.Deny(true, feet, DenyReason.NotNow, hint);
         Affordance.Deny(false, feet, DenyReason.NotNow, hint);
+    }
+
+    /// <summary>Widest angle (degrees) between the pointing hand and a teammate it picks.</summary>
+    private const float PointCone = 15f;
+
+    /// <summary>Seconds between the stepped switches: the game's switch transition (MainCameraMovement.cs:193-201,
+    /// sinceSwitch over 0.2 s) must finish before the next one counts.</summary>
+    private const float WatchStep = 0.6f;
+
+    /// <summary>
+    /// WS-D4: while spectating, point the dominant hand at a teammate and pull its trigger to watch them. Vanilla
+    /// only steps through players (SwapSpecPlayer, MainCameraMovement.cs:221), so this presses its own "next" once
+    /// per <see cref="WatchStep"/> until that teammate is watched: nothing new reaches the network. A contact tick
+    /// when the view lands on them; CantSwitch at the hand when nobody is pointed at or they cannot be watched.
+    /// </summary>
+    private static void PointToWatch(
+        Character c,
+        CharacterInput input,
+        bool dominantLeft,
+        bool spectating
+    )
+    {
+        ref var hand = ref VRInput.Hand(dominantLeft);
+        bool down = spectating && hand.Tracked && hand.Trigger > (pointTrigger ? 0.3f : 0.7f);
+        bool pressed = down && !pointTrigger;
+        pointTrigger = down;
+        if (!spectating)
+        {
+            watchGoal = null;
+            return;
+        }
+        var spec = MainCameraMovement.specCharacter;
+        if (pressed)
+        {
+            var pick = PointedTeammate(c, dominantLeft);
+            if (pick == null)
+                Affordance.DenyAtHand(dominantLeft, DenyReason.CantSwitch);
+            else if (pick == spec)
+                Affordance.Contact(dominantLeft);
+            else
+            {
+                watchGoal = pick;
+                watchPressesLeft = Character.AllCharacters.Count + 1;
+                watchNextPress = 0f;
+            }
+        }
+        if (watchGoal == null)
+            return;
+        if (spec == watchGoal)
+        {
+            Affordance.Contact(dominantLeft);
+            watchGoal = null;
+            return;
+        }
+        // Your own body cannot be switched away from (MainCameraMovement.cs:189).
+        if (!watchGoal.data.canBeSpectated || watchPressesLeft <= 0 || spec == c)
+        {
+            Affordance.DenyAtHand(dominantLeft, DenyReason.CantSwitch);
+            watchGoal = null;
+            return;
+        }
+        if (Time.unscaledTime < watchNextPress)
+            return;
+        input.spectateRightWasPressed = true;
+        watchPressesLeft--;
+        watchNextPress = Time.unscaledTime + WatchStep;
+    }
+
+    /// <summary>The watchable teammate nearest the dominant hand's pointing ray, within <see cref="PointCone"/>.</summary>
+    private static Character PointedTeammate(Character self, bool dominantLeft)
+    {
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(dominantLeft) : null;
+        if (hand == null)
+            return null;
+        Character best = null;
+        float bestAngle = PointCone;
+        foreach (var ch in Character.AllCharacters)
+        {
+            if (ch == null || ch == self || ch.isBot || !ch.data.canBeSpectated)
+                continue;
+            float angle = Vector3.Angle(hand.forward, ch.Center - hand.position);
+            if (angle < bestAngle)
+            {
+                bestAngle = angle;
+                best = ch;
+            }
+        }
+        return best;
     }
 
     /// <summary>

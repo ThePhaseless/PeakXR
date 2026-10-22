@@ -18,6 +18,7 @@ internal sealed class StatusRuntime : MonoBehaviour
     private static readonly int IntensityId = Shader.PropertyToID("_Intensity");
 
     private readonly PeripheralCue cue = new();
+    private readonly AmuletPips pips = new();
     private GUIManager gui;
     private ScreenVFX[] effects = System.Array.Empty<ScreenVFX>();
     private Material[] materials = System.Array.Empty<Material>();
@@ -36,6 +37,7 @@ internal sealed class StatusRuntime : MonoBehaviour
     private void LateUpdate()
     {
         var rig = VRRig.Instance;
+        pips.Update(rig);
         var peripheral =
             UIWorldRuntime.Ready
             && rig != null

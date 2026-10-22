@@ -29,6 +29,16 @@ public sealed class LocomotionFeature : Feature
         Patch(typeof(BodyFeedback.JumpTry));
         Patch(typeof(BodyFeedback.TakeOff));
         Patch(typeof(BodyFeedback.Landing));
+        EnvironmentCues.Resolve();
+        Patch(typeof(EnvironmentCues.Bounce));
+        Patch(typeof(EnvironmentCues.LavaSting));
+        Patch(typeof(EnvironmentCues.BalloonTie));
+        Patch(typeof(EnvironmentCues.BalloonPop));
+        Patch(typeof(EnvironmentCues.ParachuteTug));
+        Patch(typeof(EnvironmentCues.SugarCrash));
+        Patch(typeof(EnvironmentCues.FloatEnd));
+        Patch(typeof(EnvironmentCues.BridgeTouch));
+        Patch(typeof(EnvironmentCues.BridgeFall));
 
         var host = new GameObject("PeakXR.Locomotion") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(host);

@@ -26,11 +26,13 @@ internal static class ComfortEventsConfig
         new ConfigEntry<ComfortTreatment>[Enum.GetValues(typeof(ComfortEvent)).Length];
     private static ConfigEntry<float> intensity;
     private static ConfigEntry<bool> haptics;
+    private static ConfigEntry<bool> pressure;
     private static ConfigEntry<CutsceneView> cutscene;
     private static ConfigEntry<bool> mirrors;
 
     public static float Intensity => intensity?.Value ?? 1f;
     public static bool Haptics => haptics?.Value ?? true;
+    public static bool Pressure => pressure?.Value ?? true;
     public static CutsceneView Cutscene => cutscene?.Value ?? CutsceneView.Viewpoint;
     public static bool Mirrors => mirrors?.Value ?? true;
 
@@ -54,6 +56,15 @@ internal static class ComfortEventsConfig
             true,
             new ConfigDescription(
                 "Hits, launches, falls and shakes also rumble the controllers, whatever their treatment."
+            )
+        );
+        pressure = file.Bind(
+            Section,
+            "WindPressure",
+            true,
+            new ConfigDescription(
+                "Wind and a tornado's pull press faintly on the hand facing them: hide behind rock and it fades, "
+                    + "crouch near a tornado and it eases. A light tap a few times a second, never a buzz."
             )
         );
         Bind(

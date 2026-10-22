@@ -26,6 +26,7 @@ internal sealed partial class SelfTestRunner
     Vector3 headAt;
     Quaternion headTurn;
     bool headScripted;
+    Action headOverride;
 
     static bool DomLeft => VRInput.LeftHanded;
 
@@ -51,6 +52,22 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.150-pre-pass-out", 20f, PrePassOutStep());
         yield return HandStep("vr.147-morale-glow", 10f, MoraleGlowStep());
         yield return Restoring("vr.153-spectate-single", 30f, SpectateSingleStep());
+        yield return Restoring("vr.157-spectate-point", 30f, SpectatePointStep());
+        yield return Restoring("vr.156-head-near-wall", 25f, HeadNearWallStep());
+        yield return Restoring("vr.159-amulet-pips", 20f, AmuletStep());
+        yield return HandStep("vr.210-heartbeat", 20f, HeartbeatStep());
+        yield return HandStep("vr.211-shiver", 15f, ShiverStep());
+        yield return HandStep("vr.151-wind-pressure", 10f, WindPressureStep());
+        yield return HandStep("vr.212-tornado-brace", 10f, TornadoBraceStep());
+        yield return HandStep("vr.152-bounce", 30f, BounceStep());
+        yield return WarpBack();
+        yield return HandStep("vr.213-lava-sting", 10f, LavaStingStep());
+        yield return HandStep("vr.214-balloon", 15f, BalloonTieStep());
+        yield return HandStep("vr.215-parachute", 10f, ParachuteStep());
+        yield return HandStep("vr.216-sugar-crash", 10f, SugarCrashStep());
+        yield return HandStep("vr.217-float-end", 15f, FloatEndStep());
+        yield return HandStep("vr.218-bridge", 30f, BridgeStep());
+        yield return WarpBack();
     }
 
     // ---------------------------------------------------------------- scripted head
@@ -61,16 +78,18 @@ internal sealed partial class SelfTestRunner
     {
         headAt = position;
         headTurn = rotation;
-        if (headScripted)
+        // Re-installed whenever something else took the override (a failed step's teardown): never stale.
+        if (headScripted && VRInput.TestOverride == headOverride)
             return;
         headScripted = true;
         var hands = applyHands;
-        VRInput.TestOverride = () =>
+        headOverride = () =>
         {
             hands();
             VRInput.HeadPosition = headAt;
             VRInput.HeadRotation = headTurn;
         };
+        VRInput.TestOverride = headOverride;
     }
 
     void ReleaseHead()
@@ -78,7 +97,7 @@ internal sealed partial class SelfTestRunner
         if (!headScripted)
             return;
         headScripted = false;
-        if (VRInput.TestOverride != IdleHands)
+        if (VRInput.TestOverride == headOverride)
             VRInput.TestOverride = finished ? null : applyHands;
     }
 
@@ -757,5 +776,493 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);
         if (stepOk)
             stepNote = note;
+    }
+
+    // ---------------------------------------------------------------- WP3 gaps
+
+    /// <summary>vr.157: passed out solo, pointing at nobody and pulling the trigger refuses with CantSwitch at the
+    /// pointing hand (LocomotionInput.PointToWatch). Picking a teammate needs company: the MP run covers it.</summary>
+    IEnumerator SpectatePointStep()
+    {
+        var c = Character.localCharacter;
+        if (PhotonNetwork.PlayerList.Length > 1)
+        {
+            stepSkip = "not solo";
+            yield break;
+        }
+        bool dom = DomLeft;
+        bodyRestore = () =>
+        {
+            Script(dom).Trigger = 0f;
+            if (c != null && c.data.fullyPassedOut)
+                SandboxActions.Revive();
+        };
+        if (!SandboxActions.PassOut())
+        {
+            stepSkip = "sandbox pass-out unavailable";
+            yield break;
+        }
+        yield return WaitFor(() => c.data.fullyPassedOut, 6f);
+        if (!c.data.fullyPassedOut)
+        {
+            Fail("did not pass out");
+            yield break;
+        }
+        yield return Wait(0.5f);
+        HeadFrame(out var head, out _, out var right);
+        // Straight up: no teammate there.
+        SetHand(dom, head + (dom ? -right : right) * 0.2f + Vector3.up * 0.3f);
+        Script(dom).Rotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+        yield return Wait(0.2f);
+        float since = CueMark();
+        Script(dom).Trigger = 1f;
+        yield return Wait(0.2f);
+        Script(dom).Trigger = 0f;
+        yield return ExpectCue(dom, DenyReason.CantSwitch, since, false, 1.5f);
+        string note = cueNote;
+        SandboxActions.Revive();
+        yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);
+        if (stepOk)
+            stepNote = "pointing at nobody: " + note;
+    }
+
+    /// <summary>vr.156: the head leaning toward a wall (body held, RoomScaleWalking off) gets a contact tick on the
+    /// hands within 0.3 m of the rock, before any fade.</summary>
+    IEnumerator HeadNearWallStep()
+    {
+        var rig = VRRig.Instance;
+        var setting = LocomotionConfig.RoomScaleSetting;
+        if (setting == null)
+        {
+            stepSkip = "player.locomotion not installed";
+            yield break;
+        }
+        bool was = setting.Value;
+        bool move = OffLeft;
+        GameObject wall = null;
+        bodyRestore = () =>
+        {
+            setting.Value = was;
+            Script(move).Stick = Vector2.zero;
+            ReleaseHead();
+            if (wall != null)
+                UnityEngine.Object.Destroy(wall);
+        };
+        wall = SandboxActions.PlaceWall();
+        if (wall == null)
+        {
+            stepSkip = "sandbox wall unavailable (online?)";
+            yield break;
+        }
+        float WallAhead() =>
+            Physics.Raycast(
+                rig.Head.position,
+                Flat(rig.Head.forward),
+                out var hit,
+                6f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? hit.distance
+                : float.PositiveInfinity;
+        if (float.IsPositiveInfinity(WallAhead()))
+        {
+            Fail("the test wall is not ahead of the head");
+            yield break;
+        }
+        Script(move).Stick = new Vector2(0f, 0.5f);
+        yield return WaitFor(() => WallAhead() < 1f, 6f);
+        Script(move).Stick = Vector2.zero;
+        yield return Wait(0.6f);
+        float gap = WallAhead();
+        setting.Value = false;
+        HeadFrame(out var head, out var forward, out _);
+        var rot = VRInput.HeadRotation;
+        float lean = Mathf.Min(gap - 0.12f, 0.7f);
+        float since = CueMark();
+        float start = Now;
+        bool black = false;
+        while (Now - start < 1.5f)
+        {
+            ScriptHead(head + forward * Ease(0f, lean, (Now - start) / 1.2f), rot);
+            black |= RigDriver.EyeGuardBlack;
+            yield return null;
+        }
+        float near = WallAhead();
+        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        string note = cueNote;
+        ScriptHead(head, rot);
+        yield return Wait(0.5f);
+        ReleaseHead();
+        setting.Value = was;
+        if (stepOk)
+            stepNote = $"head {near:0.00} m from the wall (from {gap:0.00}), black {black}: {note}";
+    }
+
+    /// <summary>vr.159: two amulet charges show two lit beads on the wrist; an air jump spends one (a double tick)
+    /// and its bead dims.</summary>
+    IEnumerator AmuletStep()
+    {
+        var c = Character.localCharacter;
+        var a = c.refs.afflictions;
+        int total = a.totalExtraJumps;
+        bodyRestore = () =>
+        {
+            a.totalExtraJumps = total;
+            c.data.extraJumps = Mathf.Min(c.data.extraJumps, total);
+        };
+        a.totalExtraJumps = 2;
+        c.data.extraJumps = 2;
+        yield return Wait(0.3f);
+        int shown = AmuletPips.Shown;
+        int lit = AmuletPips.LitCount;
+        int air = BodyFeedback.AirJumps;
+        int before = BodyFeedback.TakeOffs;
+        yield return PressJump();
+        yield return WaitFor(() => BodyFeedback.TakeOffs > before && !c.data.chargingJump, 1f);
+        yield return Wait(0.35f);
+        float since = CueMark();
+        yield return PressJump();
+        yield return WaitFor(() => BodyFeedback.AirJumps > air, 1f);
+        yield return Wait(0.1f);
+        int litAfter = AmuletPips.LitCount;
+        var note =
+            $"beads {shown}, lit {lit}, after the air jump lit {litAfter}, air jumps {BodyFeedback.AirJumps - air}";
+        if (shown != 2 || lit != 2 || BodyFeedback.AirJumps == air || litAfter != 1)
+        {
+            Fail(note);
+            yield break;
+        }
+        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        a.totalExtraJumps = total;
+        c.data.extraJumps = Mathf.Min(c.data.extraJumps, total);
+        yield return WaitFor(() => c.data.isGrounded, 3f);
+        if (stepOk)
+            stepNote = note;
+    }
+
+    /// <summary>vr.210: spending stamina low on the bar beats a heartbeat; under the Weight status the beat is
+    /// slower (and heavier).</summary>
+    IEnumerator HeartbeatStep()
+    {
+        var c = Character.localCharacter;
+        if (!SandboxActions.SetStamina(0.25f, 0f))
+        {
+            stepSkip = "sandbox stamina control unavailable (online?)";
+            yield break;
+        }
+        float light = 0f,
+            heavy = 0f;
+        yield return Exert(c, 3f, p => light = p);
+        SandboxActions.AddStatus(STATUS.Weight, 0.5f);
+        SandboxActions.SetStamina(0.25f, 0f);
+        yield return Exert(c, 4f, p => heavy = p);
+        SandboxActions.ClearStatus(STATUS.Weight);
+        var note = $"beat every {light:0.00} s, with Weight 0.5 every {heavy:0.00} s";
+        if (!(light > 0f) || !(heavy > light))
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>Holds the body spending stamina (CharacterData.sinceUseStamina at 0, as any use leaves it) for
+    /// <paramref name="seconds"/>; reports the last beat gap.</summary>
+    static IEnumerator Exert(Character c, float seconds, Action<float> period)
+    {
+        int beats = BodyFeedback.Beats;
+        float start = Now;
+        while (Now - start < seconds)
+        {
+            c.data.sinceUseStamina = 0f;
+            yield return null;
+        }
+        period(BodyFeedback.Beats - beats >= 2 ? BodyFeedback.LastBeatPeriod : 0f);
+        yield return Wait(1f);
+    }
+
+    /// <summary>vr.211: Cold rising shivers the hands; held steady, it stops.</summary>
+    IEnumerator ShiverStep()
+    {
+        var c = Character.localCharacter;
+        int before = BodyFeedback.Shivers;
+        for (int i = 0; i < 4; i++)
+        {
+            if (!SandboxActions.AddStatus(STATUS.Cold, 0.05f))
+            {
+                stepSkip = "the game refused Cold (airport?)";
+                yield break;
+            }
+            yield return Wait(0.3f);
+        }
+        int rising = BodyFeedback.Shivers - before;
+        yield return Wait(1.5f);
+        int held = BodyFeedback.Shivers;
+        yield return Wait(1f);
+        int steady = BodyFeedback.Shivers - held;
+        float cold = c.refs.afflictions.GetCurrentStatus(STATUS.Cold);
+        SandboxActions.ClearStatus(STATUS.Cold);
+        var note = $"shiver pulses while rising {rising}, while steady {steady} (cold {cold:0.00})";
+        if (rising < 5 || steady > 0)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>vr.151: inside an active wind zone, the wind presses faintly on the windward hand. Skips where no
+    /// wind blows on the player.</summary>
+    IEnumerator WindPressureStep()
+    {
+        bool windy = false;
+        foreach (
+            var z in UnityEngine.Object.FindObjectsByType<WindChillZone>(FindObjectsSortMode.None)
+        )
+            windy |= z.windActive && z.localCharacterInsideBounds;
+        if (!windy)
+        {
+            stepSkip = "no active wind zone around the player";
+            yield break;
+        }
+        float at = ComfortEventsRuntime.PressureAt;
+        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 3f);
+        float l = ComfortEventsRuntime.PressureLeft;
+        float r = ComfortEventsRuntime.PressureRight;
+        var note = $"pressure left {l:0.000} right {r:0.000}";
+        if (ComfortEventsRuntime.PressureAt <= at)
+            stepSkip = "sheltered or calm: no push now (" + note + ")";
+        else if (Mathf.Max(l, r) > BodyCues.PressureMax + 1e-3f)
+            Fail("too strong: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>vr.212: in a tornado's reach the pull presses on the hand facing it; crouching drops it to a
+    /// quarter. Skips without a tornado reaching the player.</summary>
+    IEnumerator TornadoBraceStep()
+    {
+        var c = Character.localCharacter;
+        bool near = false;
+        foreach (var t in UnityEngine.Object.FindObjectsByType<Tornado>(FindObjectsSortMode.None))
+            near |=
+                FlatDistance(t.transform.position, c.Center) < t.transform.localScale.x * t.range;
+        if (!near)
+        {
+            stepSkip = "no tornado reaching the player";
+            yield break;
+        }
+        var setting = LocomotionConfig.RoomScaleSetting;
+        float at = ComfortEventsRuntime.PressureAt;
+        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 1f);
+        float standing = Mathf.Max(
+            ComfortEventsRuntime.PressureLeft,
+            ComfortEventsRuntime.PressureRight
+        );
+        var rig = VRRig.Instance;
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        var head = VRInput.HeadPosition;
+        ScriptHead(new Vector3(head.x, eye - 0.7f, head.z), VRInput.HeadRotation);
+        yield return WaitFor(() => c.data.isCrouching, 1.5f);
+        at = ComfortEventsRuntime.PressureAt;
+        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 1f);
+        float crouched = Mathf.Max(
+            ComfortEventsRuntime.PressureLeft,
+            ComfortEventsRuntime.PressureRight
+        );
+        ReleaseHead();
+        var note = $"pull standing {standing:0.000}, crouched {crouched:0.000}";
+        if (!(standing > 0f) || !(crouched < standing) || setting == null)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>vr.152: dropping onto a bounce shroom (a CollisionModifier with knockback) springs: a contact
+    /// spring on both hands. Skips without a shroom within 60 m.</summary>
+    IEnumerator BounceStep()
+    {
+        var c = Character.localCharacter;
+        CollisionModifier pad = null;
+        float best = 60f;
+        foreach (
+            var m in UnityEngine.Object.FindObjectsByType<CollisionModifier>(
+                FindObjectsSortMode.None
+            )
+        )
+        {
+            float d = Vector3.Distance(m.transform.position, c.Center);
+            if (m.knockback > 0f && d < best && m.GetComponentInParent<BreakableBridge>() == null)
+            {
+                best = d;
+                pad = m;
+            }
+        }
+        if (pad == null)
+        {
+            stepSkip = "no bounce shroom within 60 m";
+            yield break;
+        }
+        var col = pad.GetComponent<Collider>();
+        var top =
+            col != null
+                ? col.bounds.center + Vector3.up * (col.bounds.extents.y + 2.5f)
+                : pad.transform.position + Vector3.up * 3f;
+        int bounces = EnvironmentCues.Bounces;
+        float since = CueMark();
+        warpedForProp = true;
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, top, false);
+        yield return WaitFor(() => EnvironmentCues.Bounces > bounces, 5f);
+        if (EnvironmentCues.Bounces == bounces)
+        {
+            Fail($"no bounce off {pad.name} ({best:0} m away)");
+            yield break;
+        }
+        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        if (stepOk)
+            stepNote = $"spring {EnvironmentCues.LastBounce:0.00} off {pad.name}: {cueNote}";
+        yield return WaitFor(() => c.data.isGrounded, 4f);
+    }
+
+    /// <summary>vr.213: a lava burn (Lava.HitPlayer, the game's once-a-second touch, run here on the local body)
+    /// stings both hands. Skips without lava in the level.</summary>
+    IEnumerator LavaStingStep()
+    {
+        var c = Character.localCharacter;
+        var lava = UnityEngine.Object.FindFirstObjectByType<Lava>();
+        if (lava == null)
+        {
+            stepSkip = "no lava in this level";
+            yield break;
+        }
+        int stings = EnvironmentCues.Stings;
+        float since = CueMark();
+        SandboxActions.SetGodMode(false);
+        Framework
+            .GameMember.Method(typeof(Lava), "HitPlayer", new[] { typeof(Character) })
+            .Invoke(lava, new object[] { c });
+        yield return ExpectFeel(true, CueFeel.Danger, since, 0.5f);
+        SandboxActions.ClearStatus(STATUS.Injury);
+        SandboxActions.ClearStatus(STATUS.Hot);
+        if (stepOk && EnvironmentCues.Stings == stings)
+            Fail("no sting counted");
+        else if (stepOk)
+            stepNote = cueNote;
+    }
+
+    /// <summary>vr.214: tying a balloon (CharacterBalloons.TieNewBalloon) gives a lift tick on the item hand;
+    /// popping it a snap on both hands.</summary>
+    IEnumerator BalloonTieStep()
+    {
+        var c = Character.localCharacter;
+        bool hand = LocalHold.ItemInLeftHand;
+        float since = CueMark();
+        c.refs.balloons.TieNewBalloon(0);
+        yield return ExpectFeel(hand, CueFeel.Contact, since, 1f);
+        if (!stepOk)
+            yield break;
+        string tie = cueNote;
+        TiedBalloon tied = null;
+        yield return WaitFor(
+            () => (tied = UnityEngine.Object.FindFirstObjectByType<TiedBalloon>()) != null,
+            2f
+        );
+        if (tied == null)
+        {
+            Fail("no tied balloon appeared");
+            yield break;
+        }
+        yield return Wait(0.5f);
+        int pops = EnvironmentCues.Pops;
+        since = CueMark();
+        tied.Pop();
+        yield return WaitFor(() => EnvironmentCues.Pops > pops, 1f);
+        yield return ExpectFeel(!hand, CueFeel.Contact, since, 0.5f);
+        if (stepOk && EnvironmentCues.Pops == pops)
+            Fail("the pop was not felt");
+        else if (stepOk)
+            stepNote = $"tie: {tie}; pop: {cueNote}";
+        yield return WaitFor(() => c.data.isGrounded, 3f);
+    }
+
+    /// <summary>vr.215: the parachute opening (CharacterBalloons.SetParachute(true), what the auto-open after
+    /// 1.5 s of falling calls) tugs both hands.</summary>
+    IEnumerator ParachuteStep()
+    {
+        var c = Character.localCharacter;
+        int tugs = EnvironmentCues.Tugs;
+        float since = CueMark();
+        c.refs.balloons.SetParachute(true);
+        yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
+        c.refs.balloons.SetParachute(false);
+        if (stepOk && EnvironmentCues.Tugs == tugs)
+            Fail("no tug counted");
+        else if (stepOk)
+            stepNote = cueNote;
+    }
+
+    /// <summary>vr.216: the end of a sugar rush (GUIManager.EndSugarRush, called when infinite stamina ends) is a
+    /// crash: the soft falling cancel cue on both hands.</summary>
+    IEnumerator SugarCrashStep()
+    {
+        var gui = GUIManager.instance;
+        if (gui == null)
+        {
+            stepSkip = "no GUIManager";
+            yield break;
+        }
+        gui.StartSugarRush();
+        yield return Wait(0.3f);
+        float since = CueMark();
+        gui.EndSugarRush();
+        yield return ExpectFeel(true, CueFeel.Cancel, since, 0.5f);
+        if (stepOk)
+            stepNote = cueNote;
+    }
+
+    /// <summary>vr.217: low gravity (Affliction_LowGravity, as a super jump adds it) warns 1.5 s before it ends;
+    /// progress ticks fill toward the moment gravity returns.</summary>
+    IEnumerator FloatEndStep()
+    {
+        var c = Character.localCharacter;
+        float since = CueMark();
+        c.refs.afflictions.AddAffliction(new Peak.Afflictions.Affliction_LowGravity(1, 2.5f));
+        yield return ExpectFeel(true, CueFeel.Progress, since, 4f);
+        if (stepOk)
+            stepNote = cueNote;
+        yield return Wait(1.5f);
+        yield return WaitFor(() => c.data.isGrounded, 4f);
+    }
+
+    /// <summary>vr.218: standing on a breakable bridge whose countdown started (BreakableBridge.isBreaking, as the
+    /// owner sets it when too many stand on it), danger pulses build at the feet. The countdown is stopped again
+    /// before the bridge shakes. Skips without a bridge within 80 m.</summary>
+    IEnumerator BridgeStep()
+    {
+        var c = Character.localCharacter;
+        BreakableBridge bridge = null;
+        foreach (
+            var b in UnityEngine.Object.FindObjectsByType<BreakableBridge>(FindObjectsSortMode.None)
+        )
+        {
+            if (Vector3.Distance(b.transform.position, c.Center) < 80f && !b.isShaking)
+                bridge = b;
+        }
+        if (bridge == null || !bridge.photonView.IsMine)
+        {
+            stepSkip = "no breakable bridge we own within 80 m";
+            yield break;
+        }
+        yield return WarpTo(bridge.transform.position);
+        yield return WaitFor(() => EnvironmentCues.Bridge == bridge, 2f);
+        if (EnvironmentCues.Bridge != bridge)
+        {
+            stepSkip = "the warp did not land on the bridge planks";
+            yield break;
+        }
+        float since = CueMark();
+        EnvironmentCues.BridgeTimer(bridge) = 1000f;
+        EnvironmentCues.BridgeBreaking(bridge) = true;
+        yield return ExpectFeel(true, CueFeel.Danger, since, 1.5f);
+        EnvironmentCues.BridgeBreaking(bridge) = false;
+        if (stepOk)
+            stepNote = cueNote;
     }
 }

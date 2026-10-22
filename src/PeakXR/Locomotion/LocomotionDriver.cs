@@ -28,7 +28,10 @@ internal sealed class LocomotionDriver : MonoBehaviour
         float dt = Time.deltaTime;
         var c = Character.localCharacter;
         if (VRSession.Active)
+        {
             BodyFeedback.Tick(c);
+            EnvironmentCues.Tick(c);
+        }
         bool on =
             VRSession.Active
             && ComfortConfig.Vignette

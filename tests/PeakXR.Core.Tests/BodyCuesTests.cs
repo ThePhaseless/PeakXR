@@ -120,4 +120,178 @@ public class BodyCuesTests
         Assert.False(f.Update(0.85f)); // a wobble, not a fall
         Assert.False(f.Update(0.95f));
     }
+
+    [Fact]
+    public void Bounce_SpringGrowsWithTheGamesBounce()
+    {
+        Assert.Equal(BodyCues.BounceMin, BodyCues.BounceAmplitude(1f, 7.5f));
+        Assert.Equal(1f, BodyCues.BounceAmplitude(7.5f, 7.5f));
+        Assert.True(BodyCues.BounceAmplitude(4f, 7.5f) > BodyCues.BounceAmplitude(2f, 7.5f));
+    }
+
+    [Fact]
+    public void Brace_CrouchingCutsThePullToAQuarter()
+    {
+        TestUtil.Near(
+            0.25f * BodyCues.PullAmplitude(1f),
+            BodyCues.PullAmplitude(1f, crouched: true)
+        );
+        Assert.True(BodyCues.PullAmplitude(1f) <= BodyCues.PressureMax);
+        Assert.Equal(0f, BodyCues.PullAmplitude(0f));
+    }
+
+    [Theory]
+    [InlineData(5f, 0f)]
+    [InlineData(1.5f, 0f)]
+    [InlineData(0.1f, 0.93f)]
+    [InlineData(0f, 1f)]
+    public void Countdown_BuildsOverItsLastSeconds(float left, float urgency) =>
+        TestUtil.Near(urgency, BodyCues.CountdownUrgency(left, 1.5f), 0.07f);
+}
+
+public class HeartbeatTests
+{
+    const float Dt = 1f / 90f;
+
+    /// <summary>Runs the heartbeat for seconds; returns the beats (first pulse of each lub-dub), the mean gap and
+    /// the last beat's amplitude.</summary>
+    static (int beats, float period, float amplitude) Run(
+        Heartbeat h,
+        float seconds,
+        bool exerting,
+        float stamina,
+        float weight
+    )
+    {
+        int beats = 0;
+        float first = -1f,
+            last = -1f,
+            amp = 0f;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            if (h.Update(exerting, stamina, weight, Dt, out var pulse) && pulse.Beat)
+            {
+                beats++;
+                if (first < 0f)
+                    first = t;
+                last = t;
+                amp = pulse.Amplitude;
+            }
+        }
+        return (beats, beats > 1 ? (last - first) / (beats - 1) : 0f, amp);
+    }
+
+    [Fact]
+    public void Resting_IsQuiet()
+    {
+        Assert.Equal(0, Run(new Heartbeat(), 5f, false, 0.2f, 0f).beats);
+    }
+
+    [Fact]
+    public void ExertingWithAFullBar_IsQuiet()
+    {
+        Assert.Equal(0, Run(new Heartbeat(), 5f, true, 0.95f, 0f).beats);
+    }
+
+    [Fact]
+    public void ExertingLow_BeatsFasterAsStaminaFalls()
+    {
+        var half = Run(new Heartbeat(), 6f, true, 0.5f, 0f);
+        var low = Run(new Heartbeat(), 6f, true, 0.1f, 0f);
+        Assert.True(half.beats >= 3);
+        Assert.True(low.period < half.period, $"{low.period} vs {half.period}");
+    }
+
+    [Fact]
+    public void Weight_SlowsAndDeepensTheBeat()
+    {
+        var light = Run(new Heartbeat(), 6f, true, 0.4f, 0f);
+        var heavy = Run(new Heartbeat(), 6f, true, 0.4f, 0.5f);
+        Assert.True(heavy.period > light.period, $"{heavy.period} vs {light.period}");
+        Assert.True(heavy.amplitude > light.amplitude);
+    }
+
+    [Fact]
+    public void Weight_IsFeltEvenWithAFullBar()
+    {
+        Assert.True(Run(new Heartbeat(), 5f, true, 1f, 0.5f).beats >= 2);
+    }
+
+    [Fact]
+    public void EachBeat_IsALubDub()
+    {
+        var h = new Heartbeat();
+        int lub = 0,
+            dub = 0;
+        for (float t = 0f; t < 3f; t += Dt)
+        {
+            if (h.Update(true, 0.2f, 0f, Dt, out var p))
+            {
+                if (p.Beat)
+                    lub++;
+                else
+                    dub++;
+            }
+        }
+        Assert.True(lub > 0);
+        Assert.InRange(dub, lub - 1, lub);
+    }
+}
+
+public class ShiverTests
+{
+    const float Dt = 1f / 90f;
+
+    static int Run(Shiver s, float seconds, float from, float ratePerSecond)
+    {
+        int pulses = 0;
+        float cold = from;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            cold += ratePerSecond * Dt;
+            if (s.Update(cold, Dt) > 0f)
+                pulses++;
+        }
+        return pulses;
+    }
+
+    [Fact]
+    public void ColdRising_Shivers()
+    {
+        Assert.True(Run(new Shiver(), 2f, 0.1f, 0.02f) > 10);
+    }
+
+    [Fact]
+    public void ColdSteadyOrFalling_IsQuiet()
+    {
+        Assert.Equal(0, Run(new Shiver(), 2f, 0.3f, 0f));
+        Assert.Equal(0, Run(new Shiver(), 2f, 0.3f, -0.05f));
+    }
+
+    [Fact]
+    public void ATinyFirstChill_IsQuiet()
+    {
+        // Barely cold: the first status step is not a shiver yet.
+        Assert.Equal(0, Run(new Shiver(), 1f, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void AStepUpInCold_ShiversForAWhile()
+    {
+        // The game adds cold in steps (wind, night): one step keeps the shiver going briefly, then it stops.
+        var s = new Shiver();
+        int during = 0,
+            after = 0;
+        s.Update(0.2f, Dt);
+        for (float t = 0f; t < 3f; t += Dt)
+        {
+            bool p = s.Update(0.25f, Dt) > 0f;
+            if (t < 0.5f && p)
+                during++;
+            if (t > 2.5f && p)
+                after++;
+        }
+        Assert.True(during > 3);
+        Assert.Equal(0, after);
+    }
 }
