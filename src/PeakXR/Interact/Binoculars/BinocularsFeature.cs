@@ -35,11 +35,14 @@ internal static class BinocularsConfig
 {
     public const string Lens = "Lens";
     public const string Panel = "Panel";
+    public const string Toggle = "Toggle";
+    public const string Hold = "Hold";
 
     private static ConfigEntry<string> mode;
     private static ConfigEntry<int> lensResolution;
     private static ConfigEntry<float> eyeDistance;
     private static ConfigEntry<bool> twistZoom;
+    private static ConfigEntry<string> activation;
 
     /// <summary>True for the world panel fallback, false for the eyepiece lens.</summary>
     public static bool PanelMode =>
@@ -48,6 +51,15 @@ internal static class BinocularsConfig
     public static int LensResolution => lensResolution != null ? lensResolution.Value : 512;
     public static float EyeDistance => eyeDistance != null ? eyeDistance.Value : 0.12f;
     public static bool TwistZoom => twistZoom == null || twistZoom.Value;
+
+    /// <summary>True when the binoculars stay raised only while the use button is held.</summary>
+    public static bool HoldMode =>
+        ForceHold
+        || activation != null
+            && string.Equals(activation.Value, Hold, System.StringComparison.Ordinal);
+
+    /// <summary>Self-test override of <see cref="HoldMode"/> that never touches the saved setting.</summary>
+    internal static bool ForceHold;
 
     public static void Bind(ConfigFile file)
     {
@@ -90,6 +102,16 @@ internal static class BinocularsConfig
             new ConfigDescription(
                 "Twist the wrist of the hand holding the binoculars to zoom: clockwise zooms in. "
                     + "Scroll input keeps working."
+            )
+        );
+        activation = file.Bind(
+            s,
+            "Activation",
+            Toggle,
+            new ConfigDescription(
+                "Toggle: press use to raise the binoculars and press again to lower them, as in the game. "
+                    + "Hold: they stay raised only while you hold the use button.",
+                new AcceptableValueList<string>(Toggle, Hold)
             )
         );
     }

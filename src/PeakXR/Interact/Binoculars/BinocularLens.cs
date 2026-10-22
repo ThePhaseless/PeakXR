@@ -127,6 +127,12 @@ internal sealed class BinocularLens : MonoBehaviour
             || !HandAim.IsLocalHeld(ItemOf(binoculars))
         )
             return;
+        // Hold mode: no VR trigger is held any more, so lower them the game's way instead of restoring the flat zoom.
+        if (BinocularHold.ShouldLower(BinocularsConfig.HoldMode, true, true, usePressed: false))
+        {
+            binoculars.RunAction();
+            return;
+        }
         if (binoculars.featureManager != null)
             binoculars.featureManager.setFeatureActive(true);
         if (MainCamera.instance != null)
@@ -177,9 +183,25 @@ internal sealed class BinocularLens : MonoBehaviour
             Stop();
             return;
         }
+        bool held = item != null && HandAim.IsLocalHeld(item);
+        // Hold mode: the use button (as PeakXR's bindings feed it to the game) was let go, so lower them through
+        // the game's own toggle; its postfix then stops this lens.
+        var c = Character.localCharacter;
+        if (
+            BinocularHold.ShouldLower(
+                BinocularsConfig.HoldMode,
+                binoculars.binocularsActive,
+                held,
+                c != null && c.input.usePrimaryIsPressed
+            )
+        )
+        {
+            binoculars.RunAction();
+            return;
+        }
         // Not (or no longer) in the local player's hand: free the GPU resources, keep watching in case the same
         // binoculars come back to hand still raised.
-        if (item == null || !HandAim.IsLocalHeld(item))
+        if (!held)
         {
             Release();
             twistValid = false;
