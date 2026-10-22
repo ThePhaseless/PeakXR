@@ -96,6 +96,8 @@ namespace PeakXR.Core
             ("book", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
             ("passport", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
             ("binocular", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder)),
+            // A flag pole is planted with one hand; a second steadies it (inferred long items need two).
+            ("checkpoint", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole)),
             ("compass", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
             ("firstaid", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
             ("medkit", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),

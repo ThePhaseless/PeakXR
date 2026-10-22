@@ -19,6 +19,9 @@ internal static class ToolInput
     /// <summary>A single twist step keeps the spool scrolling this long, so slow twists still move the rope.</summary>
     private const float StepHoldSeconds = 0.2f;
 
+    /// <summary>Largest twist in one frame that still counts, degrees (a fast wrist turns about 15 per 90 Hz frame).</summary>
+    private const float MaxFrameTwist = 45f;
+
     /// <summary>Most queued cannon steps; the game takes one press per frame.</summary>
     private const int MaxPendingSteps = 8;
 
@@ -225,6 +228,12 @@ internal static class ToolInput
         }
         float angle = TwistKnob.TwistAngle(knob.Previous.N(), rotation.N(), TwistAxis);
         knob.Previous = rotation;
+        // A jump no wrist makes in one frame (tracking regained, a recentre, a scripted pose): not a twist.
+        if (Mathf.Abs(angle) > MaxFrameTwist)
+        {
+            knob.Twist.Reset();
+            return 0;
+        }
         knob.Twist.StepDegrees = stepDegrees;
         return knob.Twist.Update(angle, dt);
     }

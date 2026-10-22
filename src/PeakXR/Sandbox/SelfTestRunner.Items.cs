@@ -1287,23 +1287,28 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.2f);
         float rate = Mathf.Max(180f, ToolsConfig.Instance.TwistStepDegrees * 6f);
         float start = spool.Segments;
+        // Out first: the twist then turns round and runs the rope back into the minimum, a fresh push into the
+        // limit. (A push already held against it when the hands were scripted, or the knob's own 0.3 s repeat
+        // window, would rightly stay quiet.)
+        yield return TwistHand(left, rate, () => spool.Segments > spool.minSegments + 1f, 1.5f);
+        float paid = spool.Segments;
+        // Let the knob's twist rate fall back to rest before turning the other way.
+        yield return Wait(0.4f);
         string stop = "end stop not checked (ui.affordance off)";
-        if (Affordance.Enabled)
+        if (Affordance.Enabled && paid > spool.minSegments + 0.5f)
         {
             float mark = CueMark();
             yield return TwistHand(
                 left,
                 -rate,
                 () => CueLog.Capture.Felt(left, CueFeel.EndStop, mark, out _),
-                1f
+                2f
             );
             yield return ExpectFeel(left, CueFeel.EndStop, mark, 0f);
             stop = CueLog.Capture.Felt(left, CueFeel.EndStop, mark, out _)
-                ? "end stop at the minimum"
-                : "no end stop at the minimum";
+                ? $"wound back to {spool.Segments:0.0}: end stop at the minimum"
+                : $"wound back to {spool.Segments:0.0}: no end stop at the minimum";
         }
-        yield return TwistHand(left, rate, () => spool.Segments > spool.minSegments + 1f, 1.5f);
-        float paid = spool.Segments;
         spoolNote =
             $"twist payout {start:0.0} -> {paid:0.0} segments (min {spool.minSegments:0.0}); {stop}";
         if (paid <= spool.minSegments + 0.5f)
