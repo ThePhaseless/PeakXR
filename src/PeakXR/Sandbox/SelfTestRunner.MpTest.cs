@@ -213,61 +213,33 @@ internal sealed partial class SelfTestRunner
         yield return body;
     }
 
-    /// <summary>Net horizontal travel (m) of the hip over <see cref="SettleHold"/> that still counts as standing.</summary>
-    const float MpStillDrift = 0.03f;
-
     bool mpStill;
     string mpStillNote;
 
-    /// <summary>
-    /// Online stillness: grounded, under control, not climbing or sprinting, the view not settling, and the hip's net
-    /// horizontal travel within <see cref="MpStillDrift"/> over <see cref="SettleHold"/>. Not the offline
-    /// <see cref="AtRest"/>'s instantaneous hip speed: in MP run 9 a standing body's hip swayed ±6 mm (the avatar's
-    /// idle sway, 0.04-0.09 m/s peaks) around a fixed point for every step, with no follow (the trace's room lines all
-    /// "stick 0") and no lean; any real motion, a mod's included (a follow, a lean push, a slide), travels farther than
-    /// the window and still fails it. Up to 6 s.
-    /// </summary>
+    /// <summary>Online stillness: the offline settle's own rule (<see cref="StillTick"/>), up to 6 s.</summary>
     IEnumerator MpStandStill(Character c)
     {
         mpStill = false;
+        stillWindow.Reset();
+        System.Array.Clear(blocked, 0, blocked.Length);
+        standFrames = 0;
+        hipPeak = 0f;
         float end = Now + 6f;
-        float since = Now;
-        var start = Flat(c.refs.hip.Rig.position);
-        float drift = 0f;
-        float peak = 0f;
         string why = "never checked";
         while (Now < end)
         {
-            var d = c.data;
-            var v = c.refs.hip.Rig.linearVelocity;
-            peak = Mathf.Max(peak, new Vector2(v.x, v.z).magnitude);
-            drift = Vector3.Distance(Flat(c.refs.hip.Rig.position), start);
-            why =
-                !d.isGrounded ? "not grounded"
-                : d.currentRagdollControll < 0.9f ? $"control {d.currentRagdollControll:0.00}"
-                : d.isClimbingAnything ? "climbing"
-                : d.isSprinting ? "sprinting"
-                : Rig.RigDriver.ViewSettling ? "view settling"
-                : drift > MpStillDrift ? $"hip travelled {drift:0.000} m"
-                : null;
-            if (why != null)
-            {
-                // Start the window again from here.
-                start = Flat(c.refs.hip.Rig.position);
-                since = Now;
-            }
-            else if (Now - since >= SettleHold)
+            if (StillTick(c, out var now))
             {
                 mpStill = true;
                 yield break;
             }
+            if (now != null)
+                why = now;
             yield return null;
         }
         mpStillNote = F(
-            $"{why}; hip net travel {drift:0.000} m in the last window, speed peak {peak:0.00} m/s, at {c.Center}"
+            $"{why}; hip net travel {stillWindow.Drift:0.000} m in the last window, still {stillWindow.StillFor:0.00} s, speed peak {hipPeak:0.00} m/s, at {c.Center}"
         );
-
-        static Vector3 Flat(Vector3 p) => new(p.x, 0f, p.z);
     }
 
     /// <summary>Steepest ground (deg) the MP settle stands on; past it A walks to flatter ground nearby.</summary>
