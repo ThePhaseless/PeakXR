@@ -21,9 +21,11 @@ namespace PeakXR.Sandbox;
 /// The <c>-peakxr-mptest</c> script (client A of the two-client test, docs/testing.md). It joins the lobby a vanilla
 /// peer hosts, then plays a VR sequence with the scripted hands: walk, emote, ping, board, open a suitcase, grab,
 /// drop, pick up, throw, eat, holster and draw, climb, two-hand hold, feed the host, then the social steps (a refused
-/// feed and reach, help-up, kick, carry, the host's pack). Every step ends with a line in
-/// <c>a-checkpoints.jsonl</c>, which the observer answers with its own snapshot under the same name. Nothing here
-/// spawns, warps or uses the sandbox: online, every action is one the controllers can make.
+/// feed and reach, help-up, kick, carry, the host's pack, pal jump, a far campfire, spectating). Every step ends with
+/// a line in <c>a-checkpoints.jsonl</c>, which the observer answers with its own snapshot under the same name. Nothing
+/// here spawns or uses the sandbox, and every action is one the controllers can make, with two exceptions that use
+/// the game's own commands on a character the issuer owns: the host is asked (<see cref="MpRequest"/>) to pass out,
+/// get webbed, wake or step onto A, and A passes itself out (Character.PassOut) to spectate and wakes after.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -98,6 +100,8 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("walk-to-host", 60f, true, WalkTo(HostCenter, 1.5f, true));
         yield return MpStep("emote", 20f, true, EmoteStep());
         yield return MpStep("ping", 15f, true, PingStep());
+        // A host-owned scene button refused for this non-host (WP5 body, SelfTestRunner.World.cs); SKIP when none.
+        yield return MpStep("scene-button", 60f, true, MpSceneButton());
         yield return MpStep("board", 400f, false, Board());
         if (!MpReady || Singleton<MapHandler>.Instance == null)
         {
@@ -953,6 +957,9 @@ internal sealed partial class SelfTestRunner
         yield return HostWake();
         yield return MpStep("pack", 40f, true, MpPack());
         yield return MpStep("pal-jump", 40f, true, PalJump());
+        // A timed-out step is dropped without its finally: put the head back from the crouch dip.
+        if (VRSession.Active && VRInput.TestOverride != null)
+            VRInput.TestOverride = applyHands;
         yield return HostWake();
         yield return MpStep("campfire-far", 60f, true, CampfireFar());
         // Last: A passes out to spectate, then wakes.
@@ -1007,7 +1014,10 @@ internal sealed partial class SelfTestRunner
     IEnumerator HostWake()
     {
         var host = Host();
-        if (host == null || !(host.data.passedOut || host.data.dead || host.refs.afflictions.isStruggling))
+        if (
+            host == null
+            || !(host.data.passedOut || host.data.dead || host.refs.afflictions.isStruggling)
+        )
             yield break;
         stepSkip = null;
         yield return Ask(MpRequest.Wake);
