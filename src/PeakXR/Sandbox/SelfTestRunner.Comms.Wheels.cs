@@ -35,29 +35,18 @@ internal sealed partial class SelfTestRunner
             Fail("no GUIManager emote wheel");
             yield break;
         }
-        if (!FindWall(c, out var wall, out var stand))
-        {
-            stepSkip = NoWall;
+        // The climb steps' own wall (SelfTestRunner.Climb.cs: ToWall, GripWall): offline the sandbox's 7 m test wall
+        // 0.6 m ahead, so the hold is inside the game's reach. Run 37 and 40's map wall here was not, and the grip
+        // never climbed. The test wall goes after the step.
+        yield return ToWall();
+        if (!wallReady)
             yield break;
-        }
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
-        yield return Wait(0.5f);
-        yield return WaitFor(() => !c.warping, 3f);
-        yield return Wait(1.5f);
-        rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(wall.normal), Vector3.up));
-        yield return Wait(0.6f);
-        if (!WallInFront(c, wall, 0.1f, out var hit))
-        {
-            Fail($"wall not in front (wall {wall.point}, body {c.Center})");
-            yield break;
-        }
         bool grip = VRInput.LeftHanded;
-        var hold = hit.point + hit.normal * 0.04f;
-        yield return MoveTo(grip, () => hold, 0.5f);
-        yield return GripTo(grip, 1f, 0.1f);
-        yield return WaitFor(() => c.data.isClimbing, 2f);
+        yield return GripWall(grip);
         if (!c.data.isClimbing)
-            Fail("did not start climbing on the wall grip");
+            Fail(
+                $"did not start climbing on the wall grip ({PeakXR.Interact.PhysicalInteraction.LastGripNote})"
+            );
         else
         {
             bool hand = RadialWheels.OpeningHandLeft(VRAction.Emote);
@@ -75,6 +64,10 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         if (c.data.isClimbing)
             c.refs.climbing.StopClimbing();
+        // ToWall's undo (the test wall); this step runs outside the climb steps' Restoring wrapper.
+        var restore = bodyRestore;
+        bodyRestore = null;
+        restore?.Invoke();
         SandboxActions.WarpToSpawn();
         yield return Wait(2f);
     }

@@ -1718,7 +1718,9 @@ internal sealed partial class SelfTestRunner
         }
         float mark = CueMark();
         yield return WaitFor(() => piton == null || piton.crack.activeSelf, 8f);
-        yield return Feel(left, CueFeel.Danger, mark, 1f);
+        // The crack starts 1-5 s into the hang: the window runs from the mark to 3 s after it showed (run 40 gave
+        // the warning only 1 s from the mark, long gone by the first crack).
+        yield return Feel(left, CueFeel.Danger, mark, CueMark() - mark + 3f);
         string warning = cueNote;
         float broke = CueMark();
         yield return WaitFor(() => c.data.currentClimbHandle == null, 8f);
@@ -2422,5 +2424,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(2f);
         // A body still falling from a vine or rope warp fails the next step's settle (run 33's vr.43b).
         yield return WaitFor(() => c.data.isGrounded, 3f);
+        // And the view done settling after the warp, or the next step's settle starts against it (run 40's vr.59).
+        yield return WaitFor(() => !Rig.RigDriver.ViewSettling, 3f);
     }
 }
