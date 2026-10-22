@@ -762,15 +762,34 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var c = Character.localCharacter;
-        // On foot, so only a wall near the player (FindWall also looks across the whole segment).
-        if (!FindWall(c, out var wall, out var stand) || Vector3.Distance(stand, c.Center) > 40f)
+        // On foot, so only walls near the player, nearest first; a wall the walk cannot reach (MP run 11: stuck 1.9 m
+        // short) gives way to the next. Each try is bounded so all of them fit the step's budget.
+        var walls = MpWalls(c);
+        RaycastHit wall = default;
+        bool reached = false;
+        int tried = 0;
+        foreach (var (face, stand) in walls)
         {
-            stepSkip = "no climbable wall with walkable ground in front within 40 m";
+            if (tried++ >= MpWallTries)
+                break;
+            yield return MpWalkBounded(() => stand, 0.4f, MpWallWalkSeconds);
+            var miss = stand - c.Center;
+            miss.y = 0f;
+            if (miss.magnitude <= 0.6f)
+            {
+                wall = face;
+                reached = true;
+                break;
+            }
+        }
+        if (!reached)
+        {
+            stepSkip =
+                walls.Count == 0
+                    ? "no climbable wall with walkable ground in front within 40 m"
+                    : $"none of the {tried} nearest climbable walls was reachable on foot";
             yield break;
         }
-        yield return WalkTo(() => stand, 0.4f, true);
-        if (!stepOk)
-            yield break;
         var rig = VRRig.Instance;
         rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(wall.normal), Vector3.up));
         yield return Wait(0.6f);
@@ -778,6 +797,56 @@ internal sealed partial class SelfTestRunner
         Script(VRInput.LeftHanded).Grip = 0f;
         yield return WaitFor(() => !c.data.isClimbing, 2f);
         yield return Wait(1f);
+    }
+
+    /// <summary>Walls the climb step tries, and how long each walk may take: 4 x 18 s, plus the settle (about 12 s)
+    /// and the climb itself (about 20 s), fits the step's 120 s.</summary>
+    const int MpWallTries = 4;
+
+    const float MpWallWalkSeconds = 18f;
+
+    /// <summary>
+    /// Climbable faces with walkable ground in front within 40 m of A, nearest first: <see cref="WallsFrom"/>'s best
+    /// face from A and from rings of seeds 6 and 15 m around A, each standing spot at least 2 m from the others.
+    /// </summary>
+    static List<(RaycastHit Face, Vector3 Stand)> MpWalls(Character c)
+    {
+        var found = new List<(RaycastHit Face, Vector3 Stand)>();
+        var home = c.Center;
+        void From(Vector3 seed)
+        {
+            float best = float.MaxValue;
+            RaycastHit face = default;
+            var stand = Vector3.zero;
+            WallsFrom(seed, home, 1.2f, ref best, ref face, ref stand);
+            if (best == float.MaxValue || Vector3.Distance(stand, home) > 40f)
+                return;
+            foreach (var other in found)
+            {
+                if (Vector3.Distance(other.Stand, stand) < 2f)
+                    return;
+            }
+            found.Add((face, stand));
+        }
+        From(home);
+        foreach (float radius in new[] { 6f, 15f })
+        {
+            for (int o = 0; o < 8; o++)
+                From(home + Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward * radius);
+        }
+        found.Sort(
+            (a, b) => Vector3.Distance(a.Stand, home).CompareTo(Vector3.Distance(b.Stand, home))
+        );
+        return found;
+    }
+
+    /// <summary><see cref="WalkTo"/> (not must-arrive) cut off after <paramref name="seconds"/>, the stick released
+    /// either way.</summary>
+    IEnumerator MpWalkBounded(Func<Vector3> target, float stop, float seconds)
+    {
+        yield return Guard(WalkTo(target, stop, false), Now + seconds, _ => { });
+        Script(!VRInput.LeftHanded).Stick = Vector2.zero;
+        yield return Wait(0.3f);
     }
 
     IEnumerator MpTwoHand()
@@ -1163,7 +1232,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("kick-mode", 40f, true, KickMode());
         yield return MpStep("carry", 60f, true, MpCarry());
         yield return HostWake();
-        yield return MpStep("pack", 40f, true, MpPack());
+        yield return MpStep("pack", MpPackBudget, true, MpPack());
         yield return MpStep("pal-jump", 40f, true, PalJump());
         // A timed-out step is dropped without its finally: put the head back from the crouch dip.
         if (VRSession.Active && VRInput.TestOverride != null)
@@ -1511,6 +1580,15 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
     /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
+    /// <summary>Each of the three spots behind the host gets this long to walk to (MP run 11: three unbounded walks ran
+    /// the step past 40 s).</summary>
+    const float MpPackWalkSeconds = 8f;
+
+    /// <summary>The pack step's budget from its parts: the settle (recentre about 4 s, stillness up to 6 s, a slope
+    /// walk), freeing the hands (about 3 s), three bounded walks, turning and reaching (about 1 s) and the hold check
+    /// (2 s), with a margin.</summary>
+    const float MpPackBudget = 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
+
     IEnumerator MpPack()
     {
         var host = Host();
@@ -1534,7 +1612,7 @@ internal sealed partial class SelfTestRunner
         {
             var back = Quaternion.Euler(0f, yaw, 0f) * -host.data.lookDirection_Flat.normalized;
             Vector3 Spot() => host.Center + back * 0.8f;
-            yield return WalkTo(Spot, 0.3f, false);
+            yield return MpWalkBounded(Spot, 0.3f, MpPackWalkSeconds);
             var miss = Spot() - c.Center;
             miss.y = 0f;
             if (
