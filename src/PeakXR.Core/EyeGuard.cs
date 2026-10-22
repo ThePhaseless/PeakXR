@@ -18,7 +18,8 @@ public sealed class EyeGuard
     /// <summary>Seconds the eye must stay clear before the view comes back.</summary>
     public float ClearSeconds = 0.2f;
 
-    /// <summary>Longest black hold; after it the guard gives up until the next jump.</summary>
+    /// <summary>Most black in one watch, all spells together; after it the guard gives up until the next jump,
+    /// so it cannot blink on and off for long.</summary>
     public float MaxHoldSeconds = 5f;
 
     private float watch;
@@ -32,7 +33,11 @@ public sealed class EyeGuard
     public bool Watching => watch > 0f || Black;
 
     /// <summary>The view just jumped: watch the eye for <see cref="WatchSeconds"/>.</summary>
-    public void Arm() => watch = WatchSeconds;
+    public void Arm()
+    {
+        watch = WatchSeconds;
+        held = 0f;
+    }
 
     public void Reset()
     {
@@ -48,8 +53,6 @@ public sealed class EyeGuard
         watch = MathF.Max(0f, watch - dt);
         if (inside)
         {
-            if (!Black)
-                held = 0f;
             Black = true;
             clearFor = 0f;
         }

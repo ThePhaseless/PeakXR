@@ -78,6 +78,19 @@ public class EyeGuardTests
     }
 
     [Fact]
+    public void MaxHold_CountsAllBlackInOneWatch()
+    {
+        var g = Make();
+        g.Arm();
+        Run(g, true, 2f);
+        Run(g, false, 0.3f);
+        Assert.True(g.Update(0.01f, true));
+        Run(g, true, 2.9f);
+        Assert.False(g.Update(0.01f, true));
+        Assert.False(g.Watching);
+    }
+
+    [Fact]
     public void Rearm_RestartsTheWindow()
     {
         var g = Make();
