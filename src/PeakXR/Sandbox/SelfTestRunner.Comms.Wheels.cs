@@ -176,6 +176,9 @@ internal sealed partial class SelfTestRunner
         bool left = !VRInput.LeftHanded;
         var at = pack.Center();
         yield return MoveTo(left, () => at, 0.5f);
+        // shortcut: the head stays standing while the hand goes to the pack on the ground, a reach no standing player
+        // has; logged until the step crouches the scripted head as a player would.
+        float reach = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
         yield return GripTo(left, 1f, 0.1f);
         float openTime = pack is Backpack bp ? bp.GetInteractTime(c) : 0f;
         yield return Until(
@@ -197,6 +200,6 @@ internal sealed partial class SelfTestRunner
         else if (!c.player.backpackSlot.IsEmpty())
             Fail("the pack was worn, not left on the ground");
         else
-            stepNote = $"released on no pocket: {cueNote}";
+            stepNote = $"released on no pocket: {cueNote}; grip {reach:0.00} m from the eyes";
     }
 }

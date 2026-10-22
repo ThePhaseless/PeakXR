@@ -147,13 +147,30 @@ internal sealed partial class SelfTestRunner
     void TipTo(Vector3 world) =>
         Script(tipLeft).Position = VRRig.Instance.Origin.InverseTransformPoint(world) - tipOffset;
 
-    /// <summary>A short right-trigger pull: the laser click.</summary>
+    /// <summary>Eye to grip an adult reaches without stepping: 0.6-0.75 m from the shoulder, which sits about 0.25 m
+    /// below and beside the eyes (as MpArmReach). A poke placed farther is a pose no player makes.</summary>
+    const float PokeReach = 0.85f;
+
+    /// <summary>Fails the step when the poking hand was put past <see cref="PokeReach"/>.</summary>
+    void CheckPokeReach(bool left, string what)
+    {
+        float d = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
+        if (d > PokeReach)
+            Fail($"{what} is {d:0.00} m from the eyes, past arm's reach ({PokeReach:0.00} m)");
+    }
+
+    /// <summary>A short right-trigger pull: the laser click. The Airport hands the passport to the right hand, so the
+    /// pull must stay a UI click and not also use the passport (Action_Passport.cs:5 opens it): a step fails if it
+    /// opened.</summary>
     IEnumerator PullRight()
     {
+        bool passportShut = PassportManager.instance == null || !PassportManager.instance.isOpen;
         Script(false).Trigger = 1f;
         yield return Wait(0.15f);
         Script(false).Trigger = 0f;
         yield return Wait(0.1f);
+        if (passportShut && PassportManager.instance != null && PassportManager.instance.isOpen)
+            Fail("the laser click also used the held passport");
     }
 
     /// <summary>vr.116: the boarding pass's lower-ascent arrow at its limit is disabled (BoardingPass.cs:186); a laser
@@ -191,7 +208,8 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         float since = CueMark();
         yield return PullRight();
-        yield return ExpectCue(LaserPointer.PressLeft, DenyReason.Locked, since, true);
+        // The right trigger pulled, so the right hand must get the cue (not whichever laser last pressed).
+        yield return ExpectCue(false, DenyReason.Locked, since, true);
         if (!stepOk)
             yield break;
         if (pass.ascentIndex != ascent)
@@ -253,7 +271,7 @@ internal sealed partial class SelfTestRunner
             Script(free).Trigger = 0f;
             yield return Wait(0.1f);
             LogPassport("vr.118 after", locked, free);
-            yield return ExpectCue(LaserPointer.PressLeft, DenyReason.Locked, since, true);
+            yield return ExpectCue(free, DenyReason.Locked, since, true);
             if (!stepOk)
                 yield break;
             notes.Add($"locked '{locked.name}': {cueNote}");
@@ -316,7 +334,11 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => VRKeyboard.HasPose, 2f, "keyboard not placed");
         yield return Wait(0.4f);
         foreach (var c in "ab12")
+        {
             yield return PokeKey(c, KeyKind.Character);
+            if (!stepOk)
+                yield break;
+        }
         if (VRKeyboard.DialogText != "ab12")
         {
             Fail($"typed '{VRKeyboard.DialogText}', not 'ab12'");
@@ -378,6 +400,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
             yield return null;
         }
+        CheckPokeReach(false, $"key '{c}'");
         yield return Wait(0.1f);
     }
 
@@ -476,6 +499,8 @@ internal sealed partial class SelfTestRunner
         bool pressed = PassportPoke.Equips > equips;
         int after = WornSkin();
         CharacterCustomization.SetCharacterSkinColor(before);
+        if (!stepOk)
+            yield break;
         if (!pressed)
         {
             Fail("the poke did not press the cell");
@@ -524,6 +549,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
             LogPassport($"vr.129 d {d:0.000}", cell, left);
         }
+        CheckPokeReach(left, $"passport cell '{cell.name}'");
         yield return GripTo(left, 0f, 0.1f);
         Script(left).TriggerTouch = true;
         yield return Wait(0.1f);
@@ -558,7 +584,7 @@ internal sealed partial class SelfTestRunner
         float since = CueMark();
         yield return PullRight();
         LoadingFlag(false);
-        yield return ExpectCue(LaserPointer.PressLeft, DenyReason.NotNow, since, true);
+        yield return ExpectCue(false, DenyReason.NotNow, since, true);
         if (stepOk)
             stepNote = cueNote;
     }
@@ -624,7 +650,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.70: the passport through <c>PassportManager.ToggleOpen</c> (PassportManager.cs:113, what using the
-    /// passport item calls, Action_Passport.cs:5); ui.passport places it at the hand.</summary>
+    /// passport item calls, Action_Passport.cs:5); ui.passport places it at the hand: the page centre within the book's
+    /// lift and side shift (BookPose) of the holding hand, plus slack for the cropped canvas.</summary>
     IEnumerator PassportShot()
     {
         var passport = PassportManager.instance;
@@ -641,10 +668,24 @@ internal sealed partial class SelfTestRunner
         // Its open animation, and a frame for ui.world to place the canvas.
         yield return Wait(0.8f);
         var canvas = HandBook.PassportCanvas;
-        stepNote =
-            canvas != null ? $"passport canvas {canvas.renderMode}" : "passport canvas not placed";
         // Aimed between the book and the hand under it, so the frame shows the book held, not floating.
         var hand = VRRig.Instance != null ? VRRig.Instance.Hand(HandBook.BookInLeftHand()) : null;
+        if (canvas == null || hand == null)
+            Fail($"passport canvas placed {canvas != null}, book hand {hand != null}");
+        else if (PassportFeature.Settings.PassportAtHand.Value)
+        {
+            var cfg = PassportFeature.Settings;
+            float gap = Vector3.Distance(CentreOf(canvas.transform), hand.position);
+            float most = cfg.BookLift.Value + cfg.BookSide.Value + 0.15f;
+            stepNote =
+                $"passport canvas {canvas.renderMode}, page centre {gap:0.00} m from the book hand";
+            if (gap > most)
+                Fail(
+                    $"the passport page is {gap:0.00} m from the hand holding it (at most {most:0.00} m)"
+                );
+        }
+        else
+            stepNote = $"passport canvas {canvas.renderMode} (PassportAtHand off)";
         yield return canvas != null
             ? ShotAt(
                 "vr-70-passport",
@@ -679,7 +720,27 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.8f);
         var at = CentreOf(pass.panel.transform);
         var eye = ViewCamera() != null ? ViewCamera().transform.position : at;
-        stepNote = $"boarding pass {Vector3.Distance(eye, at):0.0} m from the eye";
+        // A player opens the kiosk from within the game's interact reach (Interaction.distance 2 m, Interaction.cs:7);
+        // this step opens it from wherever the run stands, so say how far that was and what blocks the view.
+        float kioskAway = Vector3.Distance(
+            Character.localCharacter.Center,
+            kiosk.transform.position
+        );
+        int hidden = 0;
+        var corners = new Vector3[4];
+        ((RectTransform)pass.panel.transform).GetWorldCorners(corners);
+        foreach (var corner in corners)
+            if (
+                Physics.Linecast(
+                    eye,
+                    Vector3.Lerp(corner, at, 0.05f),
+                    HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                hidden++;
+        stepNote =
+            $"boarding pass {Vector3.Distance(eye, at):0.0} m from the eye, kiosk {kioskAway:0.0} m from the body, {hidden}/4 corners hidden by geometry";
         yield return ShotAt("vr-71-kiosk", at, 1.2f);
         MenuWindow.CloseAllWindows();
         yield return Until(() => !pass.isOpen, 2f, "boarding pass did not close");
