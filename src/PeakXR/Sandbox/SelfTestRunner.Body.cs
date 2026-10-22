@@ -578,28 +578,78 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.currentRagdollControll > 0.9f, 5f);
     }
 
-    /// <summary>vr.146: standing on ground steeper than the game's max angle (CharacterMovement.cs:906) slides:
-    /// TooSteep on both hands, once.</summary>
+    /// <summary>
+    /// vr.146: standing on ground a little steeper than the game's max angle (CharacterMovement.maxAngle, :130)
+    /// slides: the game resets sinceFallSlide (:906-919) and both hands get TooSteep, once. The game only
+    /// registers a slide where its hip ray (targetHipHeight + 0.3 m straight down, :900-902) still meets the slope,
+    /// so the step looks for one up to 8 degrees past the limit; much steeper faces read as a plain fall.
+    /// The note says whether the slide started, so a miss is the placement and not the cue.
+    /// </summary>
     IEnumerator SlopeStep()
     {
         var c = Character.localCharacter;
-        if (!FindSlope(c.Center, out var spot, out float angle))
+        float limit = Framework.GameMember.Field<CharacterMovement, float>("maxAngle")(
+            c.refs.movement
+        );
+        if (
+            !FindSlope(
+                c.Center,
+                limit + 2f,
+                limit + 8f,
+                out var spot,
+                out float angle,
+                out string on
+            )
+        )
         {
-            stepSkip = "no 58-75 degree slope within 30 m";
+            stepSkip = $"no {limit + 2f:0}-{limit + 8f:0} degree slope within 30 m";
             yield break;
         }
         float since = CueMark();
-        yield return WarpTo(spot);
-        yield return ExpectCue(true, DenyReason.TooSteep, since, false, 3f);
+        warpedForProp = true;
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spot, false);
+        float minSlide = float.PositiveInfinity;
+        float start = Now;
+        while (
+            Now - start < 4f
+            && !CueLog.Capture.Fired(true, DenyReason.TooSteep, since, false, out _)
+        )
+        {
+            if (!c.warping)
+                minSlide = Mathf.Min(minSlide, c.data.sinceFallSlide);
+            yield return null;
+        }
+        bool slid = minSlide < 0.1f;
+        string where = $"slope {angle:0} degrees on {on} (limit {limit:0}), slide started {slid}";
+        if (!slid)
+        {
+            Fail(where + ": the game never registered a slide there");
+            yield break;
+        }
+        yield return ExpectCue(true, DenyReason.TooSteep, since, false, 0.5f);
         if (stepOk)
-            stepNote = $"slope {angle:0} degrees: {cueNote}";
+            yield return ExpectCue(false, DenyReason.TooSteep, since, false, 0.5f);
+        if (stepOk)
+            stepNote = $"{where}: {cueNote}";
+        else
+            Note(where);
     }
 
-    static bool FindSlope(Vector3 around, out Vector3 spot, out float angle)
+    /// <summary>The nearest ground within 30 m sloped between <paramref name="min"/> and <paramref name="max"/>
+    /// degrees, on a collider the game stands on (no non-standable CollisionModifier, :908-912); the spot is just
+    /// above it.</summary>
+    static bool FindSlope(
+        Vector3 around,
+        float min,
+        float max,
+        out Vector3 spot,
+        out float angle,
+        out string on
+    )
     {
-        for (float r = 3f; r <= 30f; r += 3f)
+        for (float r = 3f; r <= 30f; r += 1.5f)
         {
-            for (float a = 0f; a < 360f; a += 30f)
+            for (float a = 0f; a < 360f; a += 20f)
             {
                 var p = around + Quaternion.Euler(0f, a, 0f) * Vector3.forward * r;
                 if (
@@ -614,19 +664,18 @@ internal sealed partial class SelfTestRunner
                 )
                     continue;
                 angle = Vector3.Angle(Vector3.up, hit.normal);
-                if (
-                    angle > 58f
-                    && angle < 75f
-                    && hit.collider.GetComponent<CollisionModifier>() == null
-                )
+                var mod = hit.collider.GetComponent<CollisionModifier>();
+                if (angle > min && angle < max && (mod == null || mod.standable))
                 {
-                    spot = hit.point + hit.normal * 0.3f;
+                    spot = hit.point + Vector3.up * 0.1f;
+                    on = hit.collider.name;
                     return true;
                 }
             }
         }
         spot = default;
         angle = 0f;
+        on = null;
         return false;
     }
 
