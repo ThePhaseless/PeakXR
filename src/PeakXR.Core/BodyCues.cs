@@ -25,6 +25,38 @@ public static class BodyCues
     /// <summary>Seconds after the damage time that the danger cue reaches full urgency.</summary>
     public const float FallFull = 1f;
 
+    /// <summary>The softest bounce-shroom spring.</summary>
+    public const float BounceMin = 0.25f;
+
+    /// <summary>Strongest steady pressure (wind, tornado pull): a lean, never a buzz that drowns other cues.</summary>
+    public const float PressureMax = 0.15f;
+
+    /// <summary>Spring amplitude for the game's bounce multiplier <paramref name="bounce"/> (1 up to
+    /// <paramref name="maxBounce"/>, CollisionModifier.cs:94-110).</summary>
+    public static float BounceAmplitude(float bounce, float maxBounce)
+    {
+        float t = maxBounce > 1f ? (bounce - 1f) / (maxBounce - 1f) : 1f;
+        t = float.IsNaN(t) ? 0f : MathF.Max(0f, MathF.Min(1f, t));
+        return BounceMin + (1f - BounceMin) * t;
+    }
+
+    /// <summary>Pressure amplitude for a push of <paramref name="strength"/> (0..1). Crouched, the game pulls a
+    /// quarter as hard (Tornado.cs:296-300), and the hands feel it drop: the brace works.</summary>
+    public static float PullAmplitude(float strength, bool crouched = false)
+    {
+        float s = float.IsNaN(strength) ? 0f : MathF.Max(0f, MathF.Min(1f, strength));
+        return PressureMax * s * (crouched ? 0.25f : 1f);
+    }
+
+    /// <summary>Urgency (0..1) of something ending in <paramref name="secondsLeft"/>: 0 until the last
+    /// <paramref name="window"/> seconds, then rising to 1 at the end.</summary>
+    public static float CountdownUrgency(float secondsLeft, float window)
+    {
+        if (!(window > 0f) || !(secondsLeft < window))
+            return 0f;
+        return MathF.Min(1f, 1f - MathF.Max(0f, secondsLeft) / window);
+    }
+
     /// <summary>Thump amplitude (0..1) for a landing at <paramref name="downSpeed"/> m/s.</summary>
     public static float LandingAmplitude(float downSpeed)
     {
@@ -96,6 +128,110 @@ public sealed class StaminaOutCue
         if (fire)
             _at = now;
         return fire;
+    }
+}
+
+/// <summary>One heartbeat pulse: the first ("lub", <see cref="Beat"/>) or the softer echo ("dub").</summary>
+public readonly struct BeatPulse
+{
+    public readonly bool Beat;
+    public readonly float Amplitude;
+    public readonly float Seconds;
+
+    public BeatPulse(bool beat, float amplitude, float seconds)
+    {
+        Beat = beat;
+        Amplitude = amplitude;
+        Seconds = seconds;
+    }
+}
+
+/// <summary>
+/// The body breathing hard: while stamina is being spent, a lub-dub heartbeat below <see cref="Start"/> of the bar,
+/// faster and stronger as it empties. A heavy load (the Weight status) slows and deepens it, and is felt from the
+/// first step. Quiet at rest.
+/// </summary>
+public sealed class Heartbeat
+{
+    public float Start = 0.6f;
+    public float SlowPeriod = 1.1f;
+    public float FastPeriod = 0.45f;
+    public float Soft = 0.12f;
+    public float Hard = 0.3f;
+    public float DubDelay = 0.16f;
+
+    float _toBeat;
+    float _toDub = -1f;
+    float _dubAmplitude;
+
+    /// <param name="exerting">Stamina spent in the last moment (sprint, jump, a carry), not climbing.</param>
+    /// <param name="stamina">Current stamina as a fraction of the bar.</param>
+    /// <param name="weight">The Weight status (0..1).</param>
+    /// <returns>True when a pulse plays this frame.</returns>
+    public bool Update(bool exerting, float stamina, float weight, float dt, out BeatPulse pulse)
+    {
+        pulse = default;
+        if (_toDub >= 0f)
+        {
+            _toDub -= dt;
+            if (_toDub < 0f)
+            {
+                pulse = new BeatPulse(false, _dubAmplitude, 0.04f);
+                return true;
+            }
+        }
+        float w = float.IsNaN(weight) ? 0f : MathF.Max(0f, MathF.Min(1f, weight));
+        if (!exerting || !(stamina < Start || w > 0.1f))
+        {
+            _toBeat = 0f;
+            return false;
+        }
+        _toBeat -= dt;
+        if (_toBeat > 0f)
+            return false;
+        float effort = MathF.Max(0f, MathF.Min(1f, (Start - stamina) / Start));
+        float amplitude = MathF.Min(1f, Soft + (Hard - Soft) * effort + 0.25f * w);
+        _toBeat = (SlowPeriod + (FastPeriod - SlowPeriod) * effort) * (1f + w);
+        _toDub = DubDelay;
+        _dubAmplitude = amplitude * 0.6f;
+        pulse = new BeatPulse(true, amplitude, 0.05f + 0.04f * w);
+        return true;
+    }
+
+    public void Reset()
+    {
+        _toBeat = 0f;
+        _toDub = -1f;
+    }
+}
+
+/// <summary>Shivering: fine, fast pulses while the Cold status is rising (and for <see cref="Hold"/> seconds after
+/// a step up), once it is past <see cref="MinCold"/>. Steady or warming cold is quiet.</summary>
+public sealed class Shiver
+{
+    public float MinCold = 0.05f;
+    public float Hold = 1f;
+    public float Interval = 0.07f;
+
+    float _last = float.NaN;
+    float _since = float.PositiveInfinity;
+    float _timer;
+
+    /// <returns>Pulse amplitude this frame, 0 for none.</returns>
+    public float Update(float cold, float dt)
+    {
+        _since = !float.IsNaN(_last) && cold > _last + 1e-5f ? 0f : _since + dt;
+        _last = cold;
+        if (!(cold >= MinCold) || _since > Hold)
+        {
+            _timer = 0f;
+            return 0f;
+        }
+        _timer -= dt;
+        if (_timer > 0f)
+            return 0f;
+        _timer = Interval;
+        return 0.05f + 0.1f * MathF.Min(1f, cold);
     }
 }
 
