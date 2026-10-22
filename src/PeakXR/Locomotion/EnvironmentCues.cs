@@ -123,10 +123,11 @@ internal static class EnvironmentCues
             if (__instance.knockback <= 0f || !__instance.applyEffects || !Local(character))
                 return;
             var d = character.data;
+            var contact = contactPoint;
             if (
                 held(__instance).Contains(character)
                 || !(
-                    Vector3.Dot(contactPoint.normal, __instance.transform.forward)
+                    Vector3.Dot(contact.normal, __instance.transform.forward)
                     > __instance.bounceDotMinimum
                 )
                 || !(d.lastBouncedTime + 0.2f < Time.time)
