@@ -117,22 +117,42 @@ internal sealed partial class SelfTestRunner
     /// segment jump lights the one behind it (<c>PreviousCampfire.LightWithoutReveal</c>, MapHandler.cs:811), so a
     /// run otherwise has no unlit fire left. Restore with <see cref="RestoreFire"/>.
     /// </summary>
-    static Campfire UnlitCampfire(Func<Campfire, bool> ok, out Campfire.FireState was)
+    static Campfire UnlitCampfire(
+        Func<Campfire, bool> ok,
+        out (Campfire.FireState State, bool Forced) was
+    )
     {
         var c = Character.localCharacter;
         var fire =
-            Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Off && ok(f))
-            ?? Nearest<Campfire>(c.Center, f => f.state == Campfire.FireState.Lit && ok(f));
-        was = fire != null ? fire.state : Campfire.FireState.Off;
-        if (fire != null && was != Campfire.FireState.Off)
+            Nearest<Campfire>(c.Center, f => !f.Lit && f.state == Campfire.FireState.Off && ok(f))
+            ?? Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent && ok(f));
+        was = fire != null ? (fire.state, fire.forceLit) : (Campfire.FireState.Off, false);
+        if (fire != null)
+        {
+            // Lit is state Lit or forceLit (Campfire.cs:112-122): clear both (vr40 still cooked on a reset fire).
             fire.state = Campfire.FireState.Off;
+            fire.forceLit = false;
+        }
         return fire;
     }
 
-    static void RestoreFire(Campfire fire, Campfire.FireState was)
+    /// <summary>Puts back what <see cref="UnlitCampfire"/> changed, unless the step lit the fire for real.</summary>
+    static bool HasFireAhead(Segment from)
     {
-        if (fire != null && fire.state == Campfire.FireState.Off && was != Campfire.FireState.Off)
-            fire.state = was;
+        foreach (var f in FindObjectsByType<Campfire>(FindObjectsSortMode.None))
+        {
+            if (f != null && f.advanceToSegment > from && f.state != Campfire.FireState.Spent)
+                return true;
+        }
+        return false;
+    }
+
+    static void RestoreFire(Campfire fire, (Campfire.FireState State, bool Forced) was)
+    {
+        if (fire == null || fire.state != Campfire.FireState.Off)
+            return;
+        fire.state = was.State;
+        fire.forceLit = was.Forced;
     }
 
     /// <summary>
@@ -509,19 +529,33 @@ internal sealed partial class SelfTestRunner
                 ? DenyReason.UsedUp
                 : DenyReason.Occupied;
         var at = fuse.transform.position;
-        yield return WarpFacing(at, 0.8f);
+        // A cannon pulls in and launches whoever is within 1 m of its entry (ScoutCannon.cs:66-110), dropping what
+        // they hold: stand on the fuse's side away from the entry.
+        var cannon = fuse.GetComponentInParent<ScoutCannon>();
+        var entry =
+            cannon != null ? GameMember.Field<ScoutCannon, Transform>("entry")(cannon) : null;
+        if (entry != null)
+            yield return WarpBeside(at, 0.8f, at - entry.position);
+        else
+            yield return WarpFacing(at, 0.8f);
         yield return GiveAndHold(torchPrefab);
         if (!stepOk)
             yield break;
         var torch = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
+        float lightUse = GameTiming.Budget(GameTiming.UseSeconds(torch));
         Script(left).Trigger = 1f;
-        yield return WaitFor(
-            () => HandLights.IsLit(torch),
-            GameTiming.Budget(GameTiming.UseSeconds(torch))
-        );
+        // The torch in hand each time: a given trackable item can be swapped for its reconnected copy, which left
+        // the first reference destroyed (vr40 threw on it; vr38 lost a flare the same way).
+        yield return WaitFor(() => HeldItem() != null && HandLights.IsLit(HeldItem()), lightUse);
         Script(left).Trigger = 0f;
+        torch = HeldItem();
+        if (torch == null)
+        {
+            Fail("no torch in hand after lighting it");
+            yield break;
+        }
         var flame = FireGestures.FlamePoint(torch);
         if (flame == null)
             flame = torch.transform;
@@ -529,10 +563,15 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         float end = Now + 4f;
         BeginCarry();
-        while (Now < end && !CueLog.Capture.Fired(left, reason, mark, true, out _))
+        while (Now < end && flame != null && !CueLog.Capture.Fired(left, reason, mark, true, out _))
         {
             CarryToward(left, flame.position, at);
             yield return null;
+        }
+        if (flame == null)
+        {
+            Fail("the torch left the hand while carried to the fuse");
+            yield break;
         }
         yield return ExpectCue(left, reason, mark, tint: true, within: 0.5f);
         if (stepOk)
@@ -987,7 +1026,7 @@ internal sealed partial class SelfTestRunner
         flatScreens.Clear();
         watchFlat = true;
         StartCoroutine(WatchFlatScreens());
-        yield return HandStep("vr.85-campfire-segment", 120f, CampfireSegmentStep());
+        yield return HandStep("vr.85-campfire-segment", 240f, CampfireSegmentStep());
         yield return WarpBack();
         yield return Run("vr.89-to-peak", 150f, Jump(Segment.Peak, "vr-89-peak"));
         yield return HandStep("vr.89-altar-full", 20f, AltarFullStep());
@@ -1165,9 +1204,19 @@ internal sealed partial class SelfTestRunner
         var map = Singleton<MapHandler>.Instance;
         var c = Character.localCharacter;
         var from = map.GetCurrentSegment();
+        // The end slot starts in TheKiln's slot, which has no fire ahead (vr40): go back to the Alpine, whose end
+        // fire advances to the Caldera.
+        if (!HasFireAhead(from))
+        {
+            yield return Jump(Segment.Alpine, "vr-85-alpine");
+            if (!stepOk)
+                yield break;
+            from = map.GetCurrentSegment();
+        }
+        var ahead = from;
         // The fire that advances past this segment; the segment loop's jumps light every fire behind them, so it is
         // usually lit by now and gets set back to unlit locally first (UnlitCampfire). It is then lit for real.
-        var fire = UnlitCampfire(f => f.advanceToSegment > from, out var was);
+        var fire = UnlitCampfire(f => f.advanceToSegment > ahead, out var was);
         if (fire == null)
         {
             stepSkip = "no campfire ahead of " + from;
@@ -1625,10 +1674,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>Warps onto the ground <paramref name="distance"/> from <paramref name="target"/> on the side the player
     /// came from, centre over the spot (<see cref="CentreOver"/>, the warp moves the body's centre,
     /// Character.cs:1905-1911), facing it. Sets <see cref="warpedForProp"/>.</summary>
-    IEnumerator WarpBeside(Vector3 target, float distance)
+    IEnumerator WarpBeside(Vector3 target, float distance, Vector3 side = default)
     {
         var c = Character.localCharacter;
-        var stand = target + Flat(c.Center - target) * distance;
+        var stand = target + Flat(side == default ? c.Center - target : side) * distance;
         // From just above the target, not far above: a ray from high up lands on top of the prop itself.
         float top = target.y + 0.5f;
         if (
