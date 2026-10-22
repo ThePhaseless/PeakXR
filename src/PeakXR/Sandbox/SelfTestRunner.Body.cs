@@ -45,7 +45,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.158-arm-swing-still", 20f, SwingStillStep());
         yield return HandStep("vr.145-landing", 25f, LandingStep());
         yield return WarpBack();
-        yield return HandStep("vr.146-slope", 30f, SlopeStep());
+        yield return Restoring("vr.146-slope", 30f, SlopeStep());
         yield return WarpBack();
         yield return HandStep("vr.148-ragdoll-getup", 15f, GetUpStep());
         yield return HandStep("vr.149-knockback-side", 10f, KnockbackSideStep());
@@ -288,6 +288,12 @@ internal sealed partial class SelfTestRunner
         float standing = XRRuntimeInfo.FloorTracking
             ? eye
             : HeightCalibration.DefaultStandingEyeHeight;
+        if (!FaceOpen(c, rig, 6f, out string blocked))
+        {
+            stepSkip = "no heading with 6 m of open ground: " + blocked;
+            yield break;
+        }
+        yield return Wait(0.5f);
         var head = VRInput.HeadPosition;
         var rot = VRInput.HeadRotation;
 
@@ -314,7 +320,8 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(false, CueFeel.Contact, since, 1f);
         ReleaseHead();
         float ratio = walked > 0.01f ? crouched / walked : 0f;
-        var note = $"walked {walked:0.00} m standing, {crouched:0.00} m crouched (x{ratio:0.00})";
+        var note =
+            $"walked {walked:0.00} m standing, {crouched:0.00} m crouched (x{ratio:0.00}), ahead: {Ahead(c, rig)}";
         if (!stepOk)
             yield break;
         if (ratio < 0.3f || ratio > 0.75f)
@@ -322,6 +329,60 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
     }
+
+    /// <summary>Turns the rig toward the nearest heading with <paramref name="meters"/> of open ground at hip and
+    /// knee height (the move stick walks where the head looks).</summary>
+    static bool FaceOpen(Character c, VRRig rig, float meters, out string blocked)
+    {
+        var facing = Flat(rig.Head.forward);
+        blocked = null;
+        for (int i = 0; i < 16; i++)
+        {
+            float turn = (i + 1) / 2 * 22.5f * (i % 2 == 0 ? 1f : -1f);
+            var dir = Quaternion.Euler(0f, turn, 0f) * facing;
+            if (
+                Physics.SphereCast(
+                    c.Center,
+                    0.3f,
+                    dir,
+                    out var hit,
+                    meters,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.SphereCast(
+                    c.Center + Vector3.down * 0.6f,
+                    0.25f,
+                    dir,
+                    out hit,
+                    meters,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                blocked ??= hit.collider.name;
+                continue;
+            }
+            rig.RotateYaw(turn);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>What stands within 0.8 m ahead of the body, for a step's note.</summary>
+    static string Ahead(Character c, VRRig rig) =>
+        Physics.SphereCast(
+            c.Center + Vector3.down * 0.3f,
+            0.3f,
+            Flat(rig.Head.forward),
+            out var hit,
+            0.8f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? $"{hit.collider.name} at {hit.distance:0.00} m"
+            : "open";
 
     /// <summary>The move stick forward for <paramref name="seconds"/>; reports the flat distance walked.</summary>
     IEnumerator Walk(Character c, bool move, float seconds, Action<float> walked)
@@ -577,41 +638,64 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.146: standing on ground a little steeper than the game's max angle (CharacterMovement.maxAngle, :130)
-    /// slides: the game resets sinceFallSlide (:906-919) and both hands get TooSteep, once. The game only
-    /// registers a slide where its hip ray (targetHipHeight + 0.3 m straight down, :900-902) still meets the slope,
-    /// so the step looks for one up to 8 degrees past the limit; much steeper faces read as a plain fall.
-    /// The note says whether the slide started, so a miss is the placement and not the cue.
+    /// vr.146: a body on ground steeper than the game's max angle (CharacterMovement.maxAngle, :130) slides: the
+    /// game resets sinceFallSlide from its hip ray (:900-919), the body leaves the ground and moves down, and the
+    /// dominant hand gets TooSteep once (BodyFeedback, <see cref="SlideCue"/>). The slope is a placed slab on the Map
+    /// layer 6 degrees past the limit, so the slide is the game's own and nothing lodges the body (run 35: the plane
+    /// hull's 52 degree face registered the flag but held the body still). The note says what the body did.
     /// </summary>
     IEnumerator SlopeStep()
     {
         var c = Character.localCharacter;
+        var rig = VRRig.Instance;
         float limit = Framework.GameMember.Field<CharacterMovement, float>("maxAngle")(
             c.refs.movement
         );
+        float angle = limit + 6f;
+        var forward = Flat(rig.Head.forward);
+        var right = Vector3.Cross(Vector3.up, forward);
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        bodyRestore = () =>
+        {
+            if (slab != null)
+                UnityEngine.Object.Destroy(slab);
+        };
+        slab.name = "PeakXR_TestSlope";
+        slab.layer = LayerMask.NameToLayer("Map");
+        // 8 m long, falling away from the player: its high end 4 m up, clear of the beach.
+        var centre = c.Center + forward * 6f + Vector3.up * 2.5f;
+        slab.transform.SetPositionAndRotation(
+            centre,
+            Quaternion.AngleAxis(angle, right) * Quaternion.LookRotation(forward)
+        );
+        slab.transform.localScale = new Vector3(3f, 0.4f, 8f);
+        Physics.SyncTransforms();
         if (
-            !FindSlope(
-                c.Center,
-                limit + 2f,
-                limit + 8f,
-                out var spot,
-                out float angle,
-                out string on
+            !Physics.Raycast(
+                centre + Vector3.up * 6f,
+                Vector3.down,
+                out var top,
+                8f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
             )
+            || top.collider.gameObject != slab
         )
         {
-            stepSkip = $"no {limit + 2f:0}-{limit + 8f:0} degree slope within 30 m";
+            Fail("the test slope is not the first thing under its centre");
             yield break;
         }
+        float tilt = Vector3.Angle(Vector3.up, top.normal);
         float since = CueMark();
         warpedForProp = true;
-        // The warp moves Character.Center there (Character.cs:1905-1958): lifted by the standing hip height, so the
-        // body stands on the slope. Placed at the surface, the hip sat in the rock and the hip ray (it starts at
-        // the hip, :900-902) found nothing: run 34 "slide started False".
+        // The warp moves Character.Center (about the hip) there (Character.cs:1905-1958): lifted by the standing hip
+        // height so the feet, not the hip, meet the slope and the hip ray finds it (run 34).
         float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
-        spot += Vector3.up * (stand - 0.1f);
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spot, false);
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, top.point + Vector3.up * stand, false);
         float minSlide = float.PositiveInfinity;
+        float maxDown = 0f;
+        int frames = 0,
+            airborne = 0;
         float start = Now;
         while (
             Now - start < 4f
@@ -619,14 +703,24 @@ internal sealed partial class SelfTestRunner
         )
         {
             if (!c.warping)
+            {
                 minSlide = Mathf.Min(minSlide, c.data.sinceFallSlide);
+                if (c.data.sinceFallSlide < 0.1f)
+                {
+                    frames++;
+                    if (!c.data.isGrounded)
+                        airborne++;
+                    maxDown = Mathf.Max(maxDown, -c.data.avarageVelocity.y);
+                }
+            }
             yield return null;
         }
-        bool slid = minSlide < 0.1f;
-        string where = $"slope {angle:0} degrees on {on} (limit {limit:0}), slide started {slid}";
-        if (!slid)
+        string where =
+            $"slope {tilt:0} degrees (limit {limit:0}), slide started {minSlide < 0.1f}, "
+            + $"off the ground {airborne} of {frames} slide frames, down up to {maxDown:0.0} m/s";
+        if (!(minSlide < 0.1f))
         {
-            Fail(where + ": the game never registered a slide there");
+            Fail(where + ": the game never registered a slide");
             yield break;
         }
         yield return ExpectCue(DomLeft, DenyReason.TooSteep, since, false, 0.5f);
@@ -634,50 +728,8 @@ internal sealed partial class SelfTestRunner
             stepNote = $"{where}: {cueNote}";
         else
             Note(where);
-    }
-
-    /// <summary>The nearest ground within 30 m sloped between <paramref name="min"/> and <paramref name="max"/>
-    /// degrees, on a collider the game stands on (no non-standable CollisionModifier, :908-912); the spot is just
-    /// above it.</summary>
-    static bool FindSlope(
-        Vector3 around,
-        float min,
-        float max,
-        out Vector3 spot,
-        out float angle,
-        out string on
-    )
-    {
-        for (float r = 3f; r <= 30f; r += 1.5f)
-        {
-            for (float a = 0f; a < 360f; a += 20f)
-            {
-                var p = around + Quaternion.Euler(0f, a, 0f) * Vector3.forward * r;
-                if (
-                    !Physics.Raycast(
-                        p + Vector3.up * 20f,
-                        Vector3.down,
-                        out var hit,
-                        40f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                )
-                    continue;
-                angle = Vector3.Angle(Vector3.up, hit.normal);
-                var mod = hit.collider.GetComponent<CollisionModifier>();
-                if (angle > min && angle < max && (mod == null || mod.standable))
-                {
-                    spot = hit.point + Vector3.up * 0.1f;
-                    on = hit.collider.name;
-                    return true;
-                }
-            }
-        }
-        spot = default;
-        angle = 0f;
-        on = null;
-        return false;
+        UnityEngine.Object.Destroy(slab);
+        yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
     /// <summary>vr.148: a 2 s ragdoll (RPCA_Fall, Character.cs:1752): when control returns past 0.9 both hands get
