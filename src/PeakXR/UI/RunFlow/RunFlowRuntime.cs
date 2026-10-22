@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.Menu;
 using PeakXR.VR;
@@ -76,6 +77,9 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     /// <summary>True while the win credits wait for a key press (PeakHandler.cs:228-257).</summary>
     public static bool CreditsWaiting { get; private set; }
+
+    /// <summary>Unscaled seconds since the credits started (PeakHandler.cs:229-231 ignores keys for 20 s).</summary>
+    internal static float CreditsAge { get; private set; }
 
     /// <summary>True on a frame where any VR trigger, primary or secondary button went down.</summary>
     public static bool AnyButtonPressedThisFrame =>
@@ -240,6 +244,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     public static void OnCreditsStart(PeakHandler handler)
     {
         CreditsWaiting = true;
+        CreditsAge = 0f;
         if (
             instance == null
             || !VRSession.Active
@@ -399,6 +404,31 @@ internal sealed class RunFlowRuntime : MonoBehaviour
             || rightSecondary.Pressed
         )
             anyButtonFrame = Time.frameCount;
+        if (CreditsWaiting)
+            UpdateCreditsSkip(dt);
+    }
+
+    /// <summary>
+    /// WS-R14: a press in the credits' first 20 s does nothing (TooSoon at that hand); the moment skipping starts to
+    /// work, both controllers get a contact tick and the notice note sounds at the head.
+    /// </summary>
+    private void UpdateCreditsSkip(float dt)
+    {
+        float before = CreditsAge;
+        CreditsAge += dt;
+        if (CreditsSkip.BecameReady(before, CreditsAge))
+        {
+            Affordance.Contact(true);
+            Affordance.Contact(false);
+            var cam = Camera.main;
+            if (cam != null)
+                Affordance.Play(CueSound.Notice, cam.transform.position);
+            return;
+        }
+        if (!AnyButtonPressedThisFrame || !CreditsSkip.TooSoon(CreditsAge))
+            return;
+        bool left = leftTrigger.Pressed || leftPrimary.Pressed || leftSecondary.Pressed;
+        Affordance.DenyAtHand(left, DenyReason.TooSoon);
     }
 
     private void UpdateRumble(float dt)
