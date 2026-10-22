@@ -24,6 +24,14 @@ internal static class PassportPoke
 
     public static bool Left { get; private set; }
 
+    /// <summary>Last tick's fingertip distance in front of the page (m), the cell under it and the pointing state,
+    /// for self-test logs.</summary>
+    public static float LastFront { get; private set; }
+
+    public static PassportButton LastHit { get; private set; }
+
+    public static bool LastPointing { get; private set; }
+
     /// <summary>Equips by poke since start, for the self-test.</summary>
     public static int Equips { get; private set; }
 
@@ -37,7 +45,9 @@ internal static class PassportPoke
     public static void Tick(VRRig rig, PassportManager passport, Transform canvas, bool left)
     {
         var aim = rig.Aim(left);
-        if (aim == null || !Pointing(left))
+        LastPointing = Pointing(left);
+        LastHit = null;
+        if (aim == null || !LastPointing)
         {
             Poke.Reset();
             return;
@@ -58,6 +68,8 @@ internal static class PassportPoke
         }
         // The page faces the eyes along its -Z, so "in front" is toward -Z (as the VR keyboard).
         float front = -canvas.InverseTransformPoint(tip).z * canvas.lossyScale.x;
+        LastFront = front;
+        LastHit = hit;
         if (Poke.Update(front, hit != null) && hit != null)
             Press(hit, left);
     }

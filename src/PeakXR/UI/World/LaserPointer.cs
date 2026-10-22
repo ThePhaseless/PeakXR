@@ -58,6 +58,11 @@ internal sealed class LaserPointer
     /// <summary>The control under the last laser press (null over none), for a refusal that tints it.</summary>
     public static Selectable PressedControl { get; private set; }
 
+    /// <summary>What the laser is over this frame (null over nothing) and from which hand, for self-test logs.</summary>
+    public static GameObject Over { get; private set; }
+
+    public static bool OverLeft { get; private set; }
+
     // A dim dot over a disabled control: it is there, but it will not take the press.
     private static readonly Color LockedColor = new(0.55f, 0.55f, 0.55f, 0.7f);
 
@@ -185,6 +190,8 @@ internal sealed class LaserPointer
         if (blocked)
             Affordance.Hover(hands.ActiveLeft, shown, DenyReason.Blocked);
 
+        Over = over;
+        OverLeft = hands.ActiveLeft;
         HandleEnterExit(over);
         TickOnHover(over, cfg.HoverHaptics.Value);
         SetHoverLook(hoverSelectable != null && !blocked);

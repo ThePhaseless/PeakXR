@@ -108,6 +108,39 @@ internal sealed partial class SelfTestRunner
 
     Vector3 tipOffset;
 
+    /// <summary>
+    /// One frame of passport evidence for vr.118 and vr.129 (run 34 failed both without saying why): the window and
+    /// canvas state, where <paramref name="cell"/> is on the canvas, the right aim ray and fingertip, what the laser
+    /// is over and what the poke last saw.
+    /// </summary>
+    static void LogPassport(string tag, PassportButton cell)
+    {
+        var passport = PassportManager.instance;
+        var canvas = HandBook.PassportCanvas;
+        var aim = VRRig.Instance != null ? VRRig.Instance.Aim(false) : null;
+        if (passport == null || canvas == null || aim == null || cell == null)
+        {
+            Plugin.Log.LogInfo(
+                $"[selftest] {tag}: passport {passport != null}, canvas {canvas != null}, aim {aim != null}, cell {cell != null}"
+            );
+            return;
+        }
+        var rect = (RectTransform)cell.transform;
+        var centre = rect.TransformPoint(rect.rect.center);
+        var onCanvas = canvas.transform.InverseTransformPoint(centre);
+        var canvasRect = ((RectTransform)canvas.transform).rect;
+        var tip = aim.position + aim.forward * 0.04f;
+        float offRay = Vector3.Cross(aim.forward, centre - aim.position).magnitude;
+        var over = LaserPointer.Over;
+        Plugin.Log.LogInfo(
+            $"[selftest] {tag}: open {passport.isOpen} ui {passport.uiObject.activeInHierarchy} canvas {canvas.renderMode} at {canvas.transform.position:F3} "
+                + $"rect {canvasRect.size:F0} | cell '{cell.name}' at {centre:F3} = canvas {onCanvas:F0} active {cell.gameObject.activeInHierarchy} "
+                + $"| aim {aim.position:F3} fwd {aim.forward:F2} ray miss {offRay:F3} m | laser over '{(over != null ? over.name : "-")}' "
+                + $"({(LaserPointer.OverLeft ? "L" : "R")}, showing {LaserPointer.Showing}) | tip {tip:F3} poke front {PassportPoke.LastFront:F3} "
+                + $"hit '{(PassportPoke.LastHit != null ? PassportPoke.LastHit.name : "-")}' pointing {PassportPoke.LastPointing}"
+        );
+    }
+
     /// <summary>Puts the right fingertip on <paramref name="world"/> (after <see cref="MeasureTip"/>).</summary>
     void TipTo(Vector3 world) =>
         Script(false).Position = VRRig.Instance.Origin.InverseTransformPoint(world) - tipOffset;
@@ -202,9 +235,21 @@ internal sealed partial class SelfTestRunner
             // that hand would carry the cell away from the aimed point.
             var rect = (RectTransform)locked.transform;
             AimLaser(false, rect.TransformPoint(rect.rect.center));
-            yield return Wait(0.3f);
+            for (float until = Now + 0.3f; Now < until; )
+            {
+                LogPassport("vr.118 aim", locked);
+                yield return null;
+            }
             float since = CueMark();
-            yield return PullRight();
+            Script(false).Trigger = 1f;
+            for (float until = Now + 0.15f; Now < until; )
+            {
+                LogPassport("vr.118 pull", locked);
+                yield return null;
+            }
+            Script(false).Trigger = 0f;
+            yield return Wait(0.1f);
+            LogPassport("vr.118 after", locked);
             yield return ExpectCue(LaserPointer.PressLeft, DenyReason.Locked, since, true);
             if (!stepOk)
                 yield break;
@@ -468,7 +513,9 @@ internal sealed partial class SelfTestRunner
             // Re-read each step: the book rides on the left hand. The page faces the eyes along -Z: +Z goes into it.
             TipTo(rect.TransformPoint(rect.rect.center) + canvas.forward * d);
             yield return null;
+            LogPassport($"vr.129 d {d:0.000}", cell);
             yield return null;
+            LogPassport($"vr.129 d {d:0.000}", cell);
         }
         yield return GripTo(false, 0f, 0.1f);
         Script(false).TriggerTouch = true;
