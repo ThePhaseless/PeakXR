@@ -72,17 +72,45 @@ internal sealed partial class SelfTestRunner
     /// <summary>Aims both lasers from beside the head at <paramref name="target"/> (as vr.19 does).</summary>
     void AimLasers(Vector3 target)
     {
+        AimLaser(true, target);
+        AimLaser(false, target);
+    }
+
+    /// <summary>Aims one laser from beside the head at <paramref name="target"/>; the other hand stays put (it may
+    /// hold the passport, which moves with it).</summary>
+    void AimLaser(bool left, Vector3 target)
+    {
         var rig = VRRig.Instance;
         HeadFrame(out var head, out var forward, out var right);
-        for (int i = 0; i < 2; i++)
-        {
-            bool left = i == 0;
-            var p = head + (left ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
-            var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
-            Script(left).Position = p;
-            Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
-        }
+        var p = head + (left ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
+        var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
+        Script(left).Position = p;
+        Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
     }
+
+    /// <summary>
+    /// The right fingertip (4 cm ahead of the aim pose, as the keyboard and passport pokes use) relative to the scripted
+    /// grip, in tracking space, for the current scripted rotation. The rig shows a scripted pose only two frames after
+    /// the step sets it (the sampler copies it before the step runs, the rig poses in LateUpdate), so a per-frame
+    /// closed loop on the tip overshoots and oscillates; set the rotation, wait, measure once, then place open loop.
+    /// </summary>
+    IEnumerator MeasureTip(Quaternion trackingRotation)
+    {
+        Script(false).Rotation = trackingRotation;
+        for (int i = 0; i < 3; i++)
+            yield return null;
+        var rig = VRRig.Instance;
+        var aim = rig.Aim(false);
+        tipOffset =
+            rig.Origin.InverseTransformPoint(aim.position + aim.forward * 0.04f)
+            - Script(false).Position;
+    }
+
+    Vector3 tipOffset;
+
+    /// <summary>Puts the right fingertip on <paramref name="world"/> (after <see cref="MeasureTip"/>).</summary>
+    void TipTo(Vector3 world) =>
+        Script(false).Position = VRRig.Instance.Origin.InverseTransformPoint(world) - tipOffset;
 
     /// <summary>A short right-trigger pull: the laser click.</summary>
     IEnumerator PullRight()
@@ -170,8 +198,10 @@ internal sealed partial class SelfTestRunner
         }
         if (locked != null)
         {
+            // Only the free right hand aims: the book rides on the left hand (HandBook.BookInLeftHand), so moving
+            // that hand would carry the cell away from the aimed point.
             var rect = (RectTransform)locked.transform;
-            AimLasers(rect.TransformPoint(rect.rect.center));
+            AimLaser(false, rect.TransformPoint(rect.rect.center));
             yield return Wait(0.3f);
             float since = CueMark();
             yield return PullRight();
@@ -266,8 +296,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>One poke of the right fingertip (<c>VRKeyboard</c>'s tip: 4 cm ahead of the aim pose) on a key: from
-    /// 5 cm in front of it to 1.5 cm past the face, then back. Closed loop on the tip, since the aim pose sits at an
-    /// offset from the scripted grip.</summary>
+    /// 5 cm in front of it to 1.5 cm past the face, then back. Placed open loop from the measured tip offset
+    /// (<see cref="MeasureTip"/>): a per-frame closed loop overshot by the rig's two-frame lag and pressed 'a' twice.</summary>
     IEnumerator PokeKey(char c, KeyKind kind)
     {
         if (!VRKeyboard.TryKey(c, kind, out var key))
@@ -277,7 +307,7 @@ internal sealed partial class SelfTestRunner
         }
         var rig = VRRig.Instance;
         var into = VRKeyboard.PanelRotation * Vector3.forward;
-        Script(false).Rotation = Quaternion.Inverse(rig.Origin.rotation) * VRKeyboard.PanelRotation;
+        yield return MeasureTip(Quaternion.Inverse(rig.Origin.rotation) * VRKeyboard.PanelRotation);
         float[] depths =
         {
             -0.05f,
@@ -293,13 +323,9 @@ internal sealed partial class SelfTestRunner
         };
         foreach (var d in depths)
         {
-            for (int k = 0; k < 2; k++)
-            {
-                var aim = rig.Aim(false);
-                var tip = aim.position + aim.forward * 0.04f;
-                Script(false).Position += rig.Origin.InverseTransformVector(key + into * d - tip);
-                yield return null;
-            }
+            TipTo(key + into * d);
+            yield return null;
+            yield return null;
         }
         yield return Wait(0.1f);
     }
@@ -414,7 +440,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>One poke of the right fingertip (4 cm ahead of the aim pose, as <see cref="PassportPoke"/>) on a passport
     /// cell, with the index straight (grip closed, no trigger touch): from 5 cm in front of the page to 1.5 cm past it.
-    /// Closed loop on the tip, since the book moves with the left hand.</summary>
+    /// Placed open loop from the measured tip offset (<see cref="MeasureTip"/>), on the cell re-read each step.</summary>
     IEnumerator PokeCell(PassportButton cell)
     {
         var rig = VRRig.Instance;
@@ -435,21 +461,14 @@ internal sealed partial class SelfTestRunner
             -0.05f,
             -0.05f,
         };
+        yield return MeasureTip(Quaternion.Inverse(rig.Origin.rotation) * canvas.rotation);
+        var rect = (RectTransform)cell.transform;
         foreach (var d in depths)
         {
-            for (int k = 0; k < 2; k++)
-            {
-                var rect = (RectTransform)cell.transform;
-                var at = rect.TransformPoint(rect.rect.center);
-                Script(false).Rotation = Quaternion.Inverse(rig.Origin.rotation) * canvas.rotation;
-                var aim = rig.Aim(false);
-                var tip = aim.position + aim.forward * 0.04f;
-                // The page faces the eyes along -Z: +Z goes into it.
-                Script(false).Position += rig.Origin.InverseTransformVector(
-                    at + canvas.forward * d - tip
-                );
-                yield return null;
-            }
+            // Re-read each step: the book rides on the left hand. The page faces the eyes along -Z: +Z goes into it.
+            TipTo(rect.TransformPoint(rect.rect.center) + canvas.forward * d);
+            yield return null;
+            yield return null;
         }
         yield return GripTo(false, 0f, 0.1f);
         Script(false).TriggerTouch = true;
