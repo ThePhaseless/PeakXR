@@ -81,6 +81,10 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>The item has been held at <see cref="FeedTarget"/> for the dwell time: the player means to feed.</summary>
     public bool FeedReady { get; private set; }
 
+    /// <summary>Lifts the local VR player started (RPCA_StartCarry run for them), for the MP test: a lift and drop
+    /// within one frame never shows in <c>carriedPlayer</c>.</summary>
+    public static int CarryStarts;
+
     /// <summary>The hand that last gripped a passed-out friend: where the dropped-pack notice goes.</summary>
     public bool CarryLeft { get; private set; }
 
@@ -359,6 +363,24 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>Run setting HelpingHand = 1 (CharacterGrabbing.isKickMode, CharacterGrabbing.cs:33).</summary>
     private static bool KickMode => RunSettings.GetValue(RunSettings.SETTINGTYPE.HelpingHand) == 1;
 
+    /// <summary>
+    /// A pack shows on their back: one in the backpack slot, not in hand (CharacterBackpackHandler.LateUpdate,
+    /// :68-72). <c>activeBackpackVisuals</c> (:37-57) answers the plain backpack's visuals even with the slot empty,
+    /// and that component stays enabled (only its view is hidden), so it alone says nothing (MP run 13: a grip behind
+    /// a host with no pack held an invisible pack, and a carry grip at their back went to it instead of the lift).
+    /// </summary>
+    internal static bool WearsPack(Character ch)
+    {
+        var items = ch.refs.items;
+        return ch.player != null
+            && ch.player.backpackSlot.backpackType != BackpackSlot.BackpackType.None
+            && !(
+                items != null
+                && items.currentSelectedSlot.IsSome
+                && items.currentSelectedSlot.Value == 3
+            );
+    }
+
     /// <summary>The nearest pack another character wears (CharacterBackpackHandler.activeBackpackVisuals) within
     /// <paramref name="maxSq"/> of a hand behind that character (a hand in front reaches their chest, not the pack).</summary>
     private static BackpackOnBackVisuals NearestPack(
@@ -379,6 +401,7 @@ internal sealed class SocialHands : IGripExtension
                 || ch == self
                 || !ch.gameObject.activeInHierarchy
                 || ch.refs.backpackHandler == null
+                || !WearsPack(ch)
             )
                 continue;
             var pack = ch.refs.backpackHandler.activeBackpackVisuals;
