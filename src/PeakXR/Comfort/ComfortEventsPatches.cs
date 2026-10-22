@@ -110,13 +110,18 @@ internal static class ComfortEventsPatches
             float size = Vector3.Magnitude(force);
             // A wind zone's own push (see WindZone): sized by the force it really applies, which shelter, the
             // intensity curve or low gravity can scale to 0. Its nominal 15 (WindChillZone.cs:52) gives 0.5.
+            // Felt more on the side the push came from (against the force): windward, or facing the hit.
             if (inPushZone)
             {
                 if (size > 0.5f)
-                    ComfortEventsRuntime.Raise(ComfortEvent.WindPush, Mathf.Min(size / 30f, 1f));
+                    ComfortEventsRuntime.RaiseFrom(
+                        ComfortEvent.WindPush,
+                        Mathf.Min(size / 30f, 1f),
+                        -force
+                    );
             }
             else if (size >= 50f)
-                ComfortEventsRuntime.Raise(ComfortEvent.Knockback, size / 800f);
+                ComfortEventsRuntime.RaiseFrom(ComfortEvent.Knockback, size / 800f, -force);
         }
     }
 
@@ -141,7 +146,7 @@ internal static class ComfortEventsPatches
                 return;
             float size = Vector3.Magnitude(wholeBodyForce);
             if (size >= 20f)
-                ComfortEventsRuntime.Raise(ComfortEvent.Knockback, size / 1000f);
+                ComfortEventsRuntime.RaiseFrom(ComfortEvent.Knockback, size / 1000f, -wholeBodyForce);
         }
     }
 

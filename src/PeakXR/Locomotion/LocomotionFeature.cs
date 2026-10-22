@@ -24,6 +24,11 @@ public sealed class LocomotionFeature : Feature
         LocomotionInput.PhysicalOwnsHands = FeatureManager.IsActive<PhysicalInteractionFeature>();
         Patch(typeof(LocomotionPatches.Sample));
         Patch(typeof(LocomotionPatches.HotbarKey));
+        BodyFeedback.Resolve();
+        Patch(typeof(BodyFeedback.SprintState));
+        Patch(typeof(BodyFeedback.JumpTry));
+        Patch(typeof(BodyFeedback.TakeOff));
+        Patch(typeof(BodyFeedback.Landing));
 
         var host = new GameObject("PeakXR.Locomotion") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(host);

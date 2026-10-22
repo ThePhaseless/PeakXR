@@ -27,6 +27,10 @@ internal static class LookPatches
     /// <summary>How much a scripted look (frog tongue, rescue hook, scoutmaster) holds the heading, 0..1. Read by
     /// comfort.events as its forced-look cue.</summary>
     internal static float ScriptedLookWeight => Override.Weight;
+
+    /// <summary>Yaw (degrees, + = right) from the headset's look to the scripted one while a script holds the
+    /// heading: the side the pull comes from, for comfort.events' lateral rumble.</summary>
+    internal static float ScriptedPullYaw { get; private set; }
     private static Character lastCharacter;
     private static bool faceSpawnLook;
     private static float spawnYaw;
@@ -118,11 +122,10 @@ internal static class LookPatches
             );
         }
         var head = (rig.Origin.rotation * VRInput.HeadRotation).N();
-        var look = Override.Update(
-            new NVector2(current.x, current.y),
-            LookMath.ToLookValues(head),
-            dt
-        );
+        var hmdLook = LookMath.ToLookValues(head);
+        var look = Override.Update(new NVector2(current.x, current.y), hmdLook, dt);
+        ScriptedPullYaw =
+            Override.Weight > 0f ? LookMath.WrapDegrees(Override.Scripted.X - hmdLook.X) : 0f;
         c.data.lookValues = new Vector2(
             LookMath.ContinueYaw(current.x, look.X, Unobserved(c)),
             look.Y

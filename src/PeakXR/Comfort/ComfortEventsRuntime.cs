@@ -29,7 +29,19 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     /// <summary>Seconds the scene-cut fade may hold before it gives up (a leave that never completes).</summary>
     private const float SceneCutTimeout = 5f;
 
+    /// <summary>Seconds a side push keeps its lateral bias on the rumble.</summary>
+    private const float SideSeconds = 0.4f;
+
     private static ComfortEventsRuntime instance;
+
+    private Vector3 sideFrom;
+    private float sideUntil = -1f;
+
+    /// <summary>Amplitudes of the last comfort rumble per hand (self-test: a hit from the right is stronger on
+    /// the right).</summary>
+    internal static float LastLeftAmplitude { get; private set; }
+
+    internal static float LastRightAmplitude { get; private set; }
 
     /// <summary>Extra vignette closing (0..1) the locomotion vignette shows on top of its own.</summary>
     internal static float VignetteBoost { get; private set; }
@@ -75,6 +87,17 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         var r = Resolve(e, magnitude);
         if (r.Any)
             instance.pulses.Add(r);
+    }
+
+    /// <summary>As <see cref="Raise"/>, felt more on the hand facing <paramref name="towardSource"/> (world): the
+    /// side a hit, a pull or the wind came from.</summary>
+    internal static void RaiseFrom(ComfortEvent e, float magnitude, Vector3 towardSource)
+    {
+        if (instance == null || !VRSession.Active)
+            return;
+        instance.sideFrom = towardSource;
+        instance.sideUntil = Time.unscaledTime + SideSeconds;
+        Raise(e, magnitude);
     }
 
     /// <summary>A camera shake: rumble length follows the shake, capped so long quakes pulse instead.</summary>
@@ -192,8 +215,23 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         {
             nextHaptic = Time.unscaledTime + HapticInterval;
             float seconds = Mathf.Max(pulses.HapticSeconds, HapticInterval);
-            Haptics.Pulse(true, pulses.HapticAmplitude, seconds);
-            Haptics.Pulse(false, pulses.HapticAmplitude, seconds);
+            float left = 1f,
+                right = 1f;
+            var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+            if (Time.unscaledTime < sideUntil && head != null)
+            {
+                var r = head.right;
+                BodyCues.SideGains(
+                    new System.Numerics.Vector2(sideFrom.x, sideFrom.z),
+                    System.Numerics.Vector2.Normalize(new System.Numerics.Vector2(r.x, r.z)),
+                    out left,
+                    out right
+                );
+            }
+            LastLeftAmplitude = pulses.HapticAmplitude * left;
+            LastRightAmplitude = pulses.HapticAmplitude * right;
+            Haptics.Pulse(true, LastLeftAmplitude, seconds);
+            Haptics.Pulse(false, LastRightAmplitude, seconds);
         }
     }
 
@@ -229,7 +267,15 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         // A scripted look (frog tongue, rescue hook, scoutmaster, grabs) took the body's heading.
         bool look = LookPatches.ScriptedLookWeight > 0.5f;
         if (look && !scriptedLook)
-            Raise(ComfortEvent.ForcedLook, 1f);
+        {
+            // The pull side: the scripted heading relative to the headset's (LookPatches.ScriptedPullYaw).
+            var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+            float pull = LookPatches.ScriptedPullYaw;
+            if (head != null && Mathf.Abs(pull) > 5f)
+                RaiseFrom(ComfortEvent.ForcedLook, 1f, head.right * Mathf.Sign(pull));
+            else
+                Raise(ComfortEvent.ForcedLook, 1f);
+        }
         scriptedLook = look;
 
         // A launched body often tumbles too (cannon, mushroom); the chase view stays through it. Climbing ends
