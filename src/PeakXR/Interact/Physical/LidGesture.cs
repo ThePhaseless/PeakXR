@@ -16,7 +16,7 @@ namespace PeakXR.Interact.Physical;
 /// <para>Feel (WS-W8, W10): a contact tick as the hand takes the lid edge, the progress ramp while the game's timer
 /// runs, a firm tick when it opens. One hand alone on a respawn chest for 0.6 s is refused (NeedsTwoHands, the chest
 /// red, a teal ring at the lid's opposite corner), or HandsFull with the held item red when the other hand is busy.
-/// A chest that revives someone (RespawnChest.cs:51-55) also sounds the notice note.</para>
+/// A chest that revives someone (RespawnChest.cs:51-55) also gives the Revived notice, or NoRevive when the ascent allows no revives.</para>
 /// </summary>
 internal static class LidGesture
 {
@@ -27,6 +27,27 @@ internal static class LidGesture
     private static readonly bool[] OnLid = new bool[2];
     private static readonly float[] StartY = new float[2];
     private static readonly TwoHandGate ChestGate = new();
+
+    /// <summary>Per hand: a low grip held long enough for the "grab the lid" hint.</summary>
+    private static readonly ContactDwell[] Low =
+    {
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+    };
+
+    /// <summary>Height of the lid edge over the case's render centre (Luggage.Center, Luggage.cs:148); the hint
+    /// ring sits there above the low hand. Tune against the prefabs in game.</summary>
+    private const float LidEdgeUp = 0.1f;
 
     private static Luggage target;
     private static float fraction;
@@ -60,6 +81,8 @@ internal static class LidGesture
         }
         float left = Track(rig, 0);
         float right = Track(rig, 1);
+        LowGrip(rig, 0);
+        LowGrip(rig, 1);
         var lug =
             OnLid[0] ? Grabbed[0]
             : OnLid[1] ? Grabbed[1]
@@ -110,6 +133,29 @@ internal static class LidGesture
         return OnLid[h] ? LidLift.Fraction(state.Position.y - StartY[h], LiftHeight) : 0f;
     }
 
+    /// <summary>
+    /// A grip low on a closed case keeps the plain hold, but lifting the lid is the faster, physical way (WS-W8): held
+    /// for 0.5 s, it gets a teal "higher" ring (ArrowUp) on the lid edge above the hand, once as a notice and then
+    /// while the grip stays. A "would work" hint, so only with <c>UI.ActionHints</c>.
+    /// </summary>
+    private static void LowGrip(VRRig rig, int h)
+    {
+        var lug = Grabbed[h];
+        bool low = lug != null && !OnLid[h] && Affordance.Hints;
+        bool was = Low[h].Active;
+        if (!Low[h].Update(low ? 0f : 1f, Time.deltaTime))
+            return;
+        bool left = h == 0;
+        var hand = rig.Hand(left);
+        if (hand == null)
+            return;
+        var lid = hand.position;
+        lid.y = lug.Center().y + LidEdgeUp;
+        if (!was)
+            Affordance.Inform(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+        Affordance.Mark(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+    }
+
     /// <summary>The progress ramp on each lifting hand while the game's timer runs on this case.</summary>
     private static void Feel(Luggage lug)
     {
@@ -130,7 +176,7 @@ internal static class LidGesture
     }
 
     /// <summary>The case being lifted opened (Luggage.IsOpen, Luggage.cs:37): a firm tick on the hands that lifted
-    /// it; a chest that revived someone also sounds the notice note there.</summary>
+    /// it; a chest that revived someone also gives the Revived or NoRevive notice there.</summary>
     private static void Opened()
     {
         if (opening == null)
@@ -148,8 +194,15 @@ internal static class LidGesture
             if (chest || OnLid[h])
                 Affordance.Contact(h == 0);
         }
+        // RespawnChest.SpawnItems (RespawnChest.cs:51-55) revives only when the ascent allows it (Ascents.cs:207);
+        // otherwise it gives items, and the notice says why nobody came back.
         if (openingRevives)
-            Affordance.Play(CueSound.Notice, opening.Center());
+            Affordance.Inform(
+                ReferenceEquals(Grabbed[0], opening) || OnLid[0],
+                opening.Center(),
+                Ascents.canReviveDead ? DenyReason.Revived : DenyReason.NoRevive,
+                default
+            );
         opening = null;
     }
 

@@ -53,19 +53,25 @@ public static class DenyGlyph
             DenyReason.PocketsFull
             or DenyReason.PackFull
             or DenyReason.HandsFull
-            or DenyReason.CantHolster => CueGlyph.Bar,
+            or DenyReason.CantHolster
+            or DenyReason.UseOtherHand => CueGlyph.Bar,
             DenyReason.TooSoon
             or DenyReason.KeepHolding
             or DenyReason.CantSwitch
             or DenyReason.Unanchored
-            or DenyReason.NotNow => CueGlyph.Wait,
-            DenyReason.Stowed or DenyReason.Dropped => CueGlyph.Pin,
+            or DenyReason.NotNow
+            or DenyReason.Stuck => CueGlyph.Wait,
+            DenyReason.Stowed
+            or DenyReason.Dropped
+            or DenyReason.Revived
+            or DenyReason.HappenedHere => CueGlyph.Pin,
             DenyReason.NoStamina => CueGlyph.Stamina,
             DenyReason.NeedsTwoHands => CueGlyph.TwoHands,
             DenyReason.AimHigher => CueGlyph.ArrowUp,
             DenyReason.AimLower => CueGlyph.ArrowDown,
             DenyReason.NeedsGround => CueGlyph.Ground,
-            DenyReason.FriendsFar or DenyReason.NeedsFriend => CueGlyph.People,
+            DenyReason.FriendsFar or DenyReason.NeedsFriend or DenyReason.NoRevive =>
+                CueGlyph.People,
             DenyReason.NotHere or DenyReason.Blocked or DenyReason.Locked or DenyReason.Petrified =>
                 CueGlyph.Padlock,
             DenyReason.UsedUp or DenyReason.NotLit => CueGlyph.Empty,

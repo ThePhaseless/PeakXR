@@ -61,6 +61,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         /// <summary>Child of <see cref="Hint"/>: the inner ring that makes it a double ring.</summary>
         public LineRenderer Inner;
         public LineRenderer Chevron;
+
+        /// <summary>Rings at the hint's extra spots (<see cref="DenyHint.Marks"/>); the refusal cue only.</summary>
+        public LineRenderer[] Marks;
         public CueGlyph Glyph;
         public Vector3 Position;
         public DenyReason Reason;
@@ -215,7 +218,25 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 if (cue.Hint.enabled || cue.Link.enabled || cue.Chevron.enabled)
                     return true;
             }
-            return false;
+            return MarksDrawn > 0;
+        }
+    }
+
+    /// <summary>How many extra hint rings (<see cref="DenyHint.Marks"/>) are drawn now, for the self-test.</summary>
+    public static int MarksDrawn
+    {
+        get
+        {
+            var self = instance;
+            if (self == null || !self.built)
+                return 0;
+            int n = 0;
+            foreach (var ring in self.denied.Marks)
+            {
+                if (ring.enabled)
+                    n++;
+            }
+            return n;
         }
     }
 
@@ -625,6 +646,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         );
         cue.Inner.widthMultiplier = cue.Hint.widthMultiplier;
         SetLine(cue.Inner, hint && shown, alpha, Affordance.HintColor);
+        PoseMarks(cue, eye, hint ? alpha : 0f, now);
         var link = cue.Link;
         if (!hint || !shown)
         {
@@ -644,6 +666,27 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             Affordance.HintColor
         );
         PoseChevron(cue, spot, eye, alpha, now);
+    }
+
+    /// <summary>The hint's extra spots (<see cref="DenyHint.Marks"/>, each missing friend): a teal ring at each,
+    /// breathing a little out of step with the main one so they read as a set. Refusals only; hovers have none.</summary>
+    private static void PoseMarks(Cue cue, Vector3 eye, float alpha, float now)
+    {
+        if (cue.Marks == null)
+            return;
+        var marks = cue.Spot.Marks;
+        for (int i = 0; i < cue.Marks.Length; i++)
+        {
+            bool on = i < marks.Count;
+            PoseRing(
+                cue.Marks[i],
+                on ? marks[i].U() : Vector3.zero,
+                eye,
+                on ? alpha : 0f,
+                Affordance.HintColor,
+                cue.Degrees * CueMotion.Breathe(now + 0.25f * (i + 1))
+            );
+        }
     }
 
     /// <summary>The refused ring's inner shape (<see cref="GlyphShape"/>): a slash (no), a bar (full), a sweeping arc
@@ -822,7 +865,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             labelRoot.SetActive(false);
     }
 
-    private static void Hide(Cue cue) =>
+    private static void Hide(Cue cue)
+    {
         cue.Deny.enabled =
             cue.Hint.enabled =
             cue.Link.enabled =
@@ -834,6 +878,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             cue.Inner.enabled =
             cue.Chevron.enabled =
                 false;
+        if (cue.Marks != null)
+        {
+            foreach (var ring in cue.Marks)
+                ring.enabled = false;
+        }
+    }
 
     private void Build()
     {
@@ -884,6 +934,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 cue.Hint.transform
             );
             cue.Inner.transform.localScale = new Vector3(0.55f, 0.55f, 0.55f);
+            if (top)
+            {
+                cue.Marks = new LineRenderer[SpotSet.Capacity];
+                for (int i = 0; i < cue.Marks.Length; i++)
+                    cue.Marks[i] = Line("HintMark", RingPoints, true, Affordance.HintColor, top);
+            }
             cue.Link = Line("HintLink", 2, false, Affordance.HintColor, top);
             cue.Link.useWorldSpace = true;
             cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, top);

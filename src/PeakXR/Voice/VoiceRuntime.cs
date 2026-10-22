@@ -199,11 +199,11 @@ internal sealed class VoiceRuntime : MonoBehaviour
         if (mute && !lastMute)
             Affordance.Cancel(left);
         if (mode == MicMode.VoiceActivation && ask && !lastAsk && !mute && !toldVoiceActivation)
-            // Nearest reason: the key cannot be used in this mode (the mic is always open).
+            // The key does nothing in this mode: the mic is always open.
             toldVoiceActivation = Affordance.Inform(
                 left,
                 at,
-                DenyReason.CantUse,
+                DenyReason.MicAlwaysOn,
                 DenyHint.On(hand)
             );
         lastGlyph = glyph;

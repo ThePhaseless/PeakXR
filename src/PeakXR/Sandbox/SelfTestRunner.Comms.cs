@@ -347,7 +347,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.111: pings the game drops silently get a cue. The sky (TryGetPingHit misses, PointPinger.cs:68) gives NoWall
     /// at the ray end with the red marker; a second ping inside <c>PointPinger.coolDown</c> (a prefab value, read here)
-    /// gives TooSoon; the finger gun on a hand that holds an unusable item gives the free hand a HandsFull notice.
+    /// gives TooSoon; the finger gun on a hand that holds an unusable item gives the free hand a UseOtherHand notice.
     /// </summary>
     IEnumerator PingRefusedStep()
     {
@@ -422,7 +422,7 @@ internal sealed partial class SelfTestRunner
         mark = CueMark();
         yield return FingerGunAim(holdLeft, ground, 0.3f);
         yield return FingerGunSqueeze(holdLeft, ground);
-        yield return ExpectCue(!holdLeft, DenyReason.HandsFull, mark);
+        yield return ExpectCue(!holdLeft, DenyReason.UseOtherHand, mark);
         if (HeldItem() != null)
             usability(HeldItem()) = Optionable<bool>.None;
         if (!stepOk)
@@ -435,7 +435,7 @@ internal sealed partial class SelfTestRunner
     /// vr.112: Push To Talk. A closed hand held at the mouth presses the game's key (<c>pushToTalkPressed</c>, read by
     /// CharacterVoiceHandler.cs:250), plays the radio click, ticks the hand and lights the mic icon; taking it away
     /// plays the closing click and hides the icon. In Voice Activation the same move gets the one-time notice
-    /// (CantUse: the key does nothing there). The game's mode is set without saving and restored.
+    /// (MicAlwaysOn: the key does nothing there). The game's mode is set without saving and restored.
     /// </summary>
     IEnumerator PushToTalkStep()
     {
@@ -500,7 +500,7 @@ internal sealed partial class SelfTestRunner
             Affordance.ResetGate();
             mark = CueMark();
             yield return HandToMouth(left, palm: false);
-            yield return ExpectCue(left, DenyReason.CantUse, mark, within: 1.5f);
+            yield return ExpectCue(left, DenyReason.MicAlwaysOn, mark, within: 1.5f);
             if (!stepOk)
                 yield break;
             notes.Add("voice activation: " + cueNote);
