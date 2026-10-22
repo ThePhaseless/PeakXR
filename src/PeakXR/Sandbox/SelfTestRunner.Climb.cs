@@ -1726,7 +1726,9 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.currentClimbHandle == null, 8f);
         bool fell = c.data.currentClimbHandle == null;
         if (fell)
-            yield return Feel(left, CueFeel.Cancel, broke, 1f);
+            // The break comes up to 4 cracks (6 s) after the warning: the window runs to 1.5 s past it (run 41 gave
+            // the Cancel only 1 s from the mark).
+            yield return Feel(left, CueFeel.Cancel, broke, CueMark() - broke + 1.5f);
         Note(
             $"fragile piton {source}; cracking: {warning}; broke {fell}{(fell ? ": " + cueNote : "")}"
         );
