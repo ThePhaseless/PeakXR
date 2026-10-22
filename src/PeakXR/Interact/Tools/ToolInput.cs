@@ -160,7 +160,13 @@ internal static class ToolInput
             SpoolStop.Update(0f, 0f, 0f, 0);
             return;
         }
-        float max = Mathf.Min(spool.RopeFuel, Rope.MaxSegments);
+        // The fuel entry read without RopeFuel's getter, which allocates its default delegate (RopeSpool.cs:39-44).
+        var data = spool.item.data;
+        float fuel =
+            data != null && data.TryGetDataEntry<FloatItemData>(DataEntryKey.Fuel, out var entry)
+                ? entry.Value
+                : spool.ropeStartFuel;
+        float max = Mathf.Min(fuel, Rope.MaxSegments);
         if (SpoolStop.Update(spool.Segments, spool.minSegments, max, push))
             UI.Affordances.Affordance.EndStop(left);
     }

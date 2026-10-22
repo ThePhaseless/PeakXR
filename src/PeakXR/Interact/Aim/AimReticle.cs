@@ -42,6 +42,7 @@ internal sealed class AimReticle : MonoBehaviour
     private Material material;
     private bool red;
     private bool spool;
+    private Constructable build;
     private global::Peak.Action_CloneSelectedItem clone;
     private bool cloneRefused;
     private float cloneCheckAt;
@@ -89,7 +90,10 @@ internal sealed class AimReticle : MonoBehaviour
         }
         else
         {
-            outOfRange = aimUsability && !cachedItem.CanUsePrimary();
+            // A build with no preview spot is refused too (ItemGestures.BeforeUsing).
+            outOfRange =
+                aimUsability
+                && (!cachedItem.CanUsePrimary() || (build != null && build.currentPreview == null));
             if (outOfRange)
                 reason = UseDenial.Why(c, cachedItem, out hint);
         }
@@ -165,6 +169,7 @@ internal sealed class AimReticle : MonoBehaviour
         spike = null;
         aimUsability = false;
         spool = false;
+        build = null;
         clone = null;
         cloneRefused = false;
         if (item.TryGetComponent<RopeShooter>(out var ropeShooter))
@@ -195,9 +200,9 @@ internal sealed class AimReticle : MonoBehaviour
             range = tier.maxAnchorGhostDistance;
             spool = true;
         }
-        else if (item.TryGetComponent<Constructable>(out var constructable))
+        else if (item.TryGetComponent(out build))
         {
-            range = constructable.maxConstructDistance;
+            range = build.maxConstructDistance;
             aimUsability = true;
         }
         else if (item.TryGetComponent(out spike))

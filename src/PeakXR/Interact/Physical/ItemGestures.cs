@@ -102,10 +102,30 @@ internal static class ItemGestures
             return;
         var input = c.input;
         bool left = LocalHold.ItemInLeftHand;
-        if (input.useSecondaryWasPressed && !item.isUsingPrimary && !item.CanUseSecondary())
+        // While climbing, the off-hand trigger sets a pocketed piton (CharacterItems.cs:1019), not the held item.
+        if (
+            input.useSecondaryWasPressed
+            && !item.isUsingPrimary
+            && !(c.data.isClimbingAnything && c.data.climbingSpikeCount > 0)
+            && !item.CanUseSecondary()
+        )
             UseDenial.DenySecondary(item, !left);
         if (input.usePrimaryWasPressed && item.CanUsePrimary())
             UseDenial.DenyEmptyPress(item, left);
+        // A build aimed at nothing: Constructable.CurrentHitIsValid (Constructable.cs:136-147) accepts the empty
+        // hit, the cast runs, FinishConstruction (:158-166) builds nothing and Action_Consume still eats the item.
+        // Refused here instead, and the local press withheld so the item is kept.
+        if (
+            (input.usePrimaryWasPressed || input.usePrimaryIsPressed)
+            && !item.isUsingPrimary
+            && item.TryGetComponent<Constructable>(out var build)
+            && build.currentPreview == null
+        )
+        {
+            if (input.usePrimaryWasPressed)
+                UseDenial.Deny(c, item, left);
+            input.usePrimaryWasPressed = input.usePrimaryIsPressed = false;
+        }
     }
 
     /// <summary>Patched before Item.Interact: the game's equip cooldown (Item.cs:580) would drop this pickup
