@@ -18,6 +18,16 @@ public class ItemHoldTableTests
     }
 
     [Fact]
+    public void CheckpointFlag_PlantsOneHanded()
+    {
+        var p = ItemHoldTable.Classify(
+            "Checkpoint Flag Flag_Plantable_Checkpoint",
+            ItemTraits.Elongated
+        );
+        Assert.Equal(Handedness.OptionalTwoHand, p.Handedness);
+    }
+
+    [Fact]
     public void UnknownName_RightHandOnly_IsOneHanded()
     {
         var p = ItemHoldTable.Classify("Some Future Gadget", ItemTraits.RightHandOnly);
