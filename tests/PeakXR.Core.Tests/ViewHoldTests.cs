@@ -130,6 +130,31 @@ public class ViewHoldTests
         Assert.True(o.X > Base.X + 0.1f);
     }
 
+    [Theory]
+    [InlineData(30f)]
+    [InlineData(-30f)]
+    [InlineData(90f)]
+    public void SnapTurnWithAHeldOffset_PivotsOnTheEye(float snap)
+    {
+        // rig.camera's first-person view: the eye anchor ahead of the torso along the rig heading, the turn shift
+        // that cancels its swing, and the hold on the anchor (run 45, vr.16: the eye slid 3.2 cm in a 30 degree snap).
+        var eyes = new Vector2(0.19f, 1.0f);
+        var hold = new ViewHold();
+        var shift = Vector3.Zero;
+        Vector3 view = default;
+        float t = 0f;
+        for (; t < 3f; t += Dt)
+            view = hold.Update(RigMath.EyeAnchor(Sway(t), 0f, eyes), true, Dt) + shift;
+        Assert.True(hold.Holding && hold.Offset > 0.005f, "no held offset to carry");
+
+        shift = RigMath.TurnShift(shift, 0f, snap, eyes.X);
+        var body = RigMath.EyeAnchor(Sway(t), snap, eyes);
+        hold.Rebase(body);
+        var after = hold.Update(body, true, Dt) + shift;
+        float slide = new Vector2(after.X - view.X, after.Z - view.Z).Length();
+        Assert.True(slide < 0.005f, $"eye slid {slide:0.0000} m");
+    }
+
     [Fact]
     public void Teleport_Snaps()
     {

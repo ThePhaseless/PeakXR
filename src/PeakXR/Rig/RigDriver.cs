@@ -775,7 +775,12 @@ internal sealed class RigDriver : MonoBehaviour
         {
             var extra = turnShift + Vector3.up * rig.CrouchLift;
             viewHoldWhy = ViewHoldGate.Why(ViewHoldNow(c));
-            viewGoal = viewHold.Update((goal - extra).N(), viewHoldWhy == null, dt).U() + extra;
+            var body = (goal - extra).N();
+            // A turn (and the torso swing after it) moves the eye anchor and turnShift cancels it: the hold must not
+            // cancel it again, or the turn pivots off the eye (run 45, vr.16: 3.2 cm slide in a 30 degree snap).
+            if (Time.unscaledTime < turnHoldUntil)
+                viewHold.Rebase(body);
+            viewGoal = viewHold.Update(body, viewHoldWhy == null, dt).U() + extra;
         }
         else
         {

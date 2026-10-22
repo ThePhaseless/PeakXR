@@ -1302,10 +1302,48 @@ internal sealed partial class SelfTestRunner
     /// under the warped body. The game's collision path (CharacterMovement.OnCollision, :944) runs the bounce
     /// (CollisionModifier.cs:92-135). Removed after.
     /// </summary>
+    /// <summary>
+    /// The pad's spot: on the ground 3 m out, under a fall column clear of everything but that ground. Run 43 faced
+    /// uphill and the pad sat inside the slope; run 45's column had something 1.5 m above the pad that caught the
+    /// falling body. Headings from the view's forward round in 45 degree steps; none clear: straight ahead.
+    /// </summary>
+    static Vector3 BounceSpot(Character c, Vector3 forward, float stand)
+    {
+        Vector3 first = default;
+        for (int i = 0; i < 8; i++)
+        {
+            float turn = (i + 1) / 2 * 45f * (i % 2 == 0 ? 1f : -1f);
+            var spot = c.data.groundPos + Quaternion.Euler(0f, turn, 0f) * forward * 3f;
+            float ground = GroundY(spot + Vector3.up * 2f);
+            if (float.IsNaN(ground))
+                continue;
+            spot.y = ground;
+            if (first == default)
+                first = spot;
+            float top = 0.4f + stand + 3f;
+            if (
+                !Physics.SphereCast(
+                    spot + Vector3.up * top,
+                    0.5f,
+                    Vector3.down,
+                    out var hit,
+                    top,
+                    HelperFunctions.AllPhysicalExceptCharacter,
+                    QueryTriggerInteraction.Ignore
+                )
+                || hit.point.y < ground + 0.3f
+            )
+                return spot;
+        }
+        return first != default ? first : c.data.groundPos + forward * 3f;
+    }
+
     IEnumerator BounceStep()
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
+        float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
+        var spot = BounceSpot(c, Flat(rig.Head.forward), stand);
         var pad = GameObject.CreatePrimitive(PrimitiveType.Cube);
         bodyRestore = () =>
         {
@@ -1314,12 +1352,6 @@ internal sealed partial class SelfTestRunner
         };
         pad.name = "PeakXR_TestBouncePad";
         pad.layer = LayerMask.NameToLayer("Map");
-        var spot = c.data.groundPos + Flat(rig.Head.forward) * 3f;
-        // On the ground 3 m ahead, not at the feet's height: run 43 faced uphill, the pad sat 0.5 m inside the slope
-        // and the body landed on the terrain above it.
-        float ground = GroundY(spot + Vector3.up * 2f);
-        if (!float.IsNaN(ground))
-            spot.y = ground;
         pad.transform.SetPositionAndRotation(spot + Vector3.up * 0.2f, Quaternion.identity);
         pad.transform.localScale = new Vector3(2f, 0.4f, 2f);
         var mod = pad.AddComponent<CollisionModifier>();
@@ -1333,7 +1365,6 @@ internal sealed partial class SelfTestRunner
         Physics.SyncTransforms();
         int bounces = EnvironmentCues.Bounces;
         float since = CueMark();
-        float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
         warpedForProp = true;
         c.photonView.RPC(
             "WarpPlayerRPC",
