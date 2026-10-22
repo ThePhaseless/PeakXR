@@ -964,6 +964,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("campfire-far", 60f, true, CampfireFar());
         // Last: A passes out to spectate, then wakes.
         yield return MpStep("spectate", 40f, true, MpSpectate());
+        yield return MpStep("save-untouched", 10f, false, SaveUntouched());
         Safe("mp.self-wake", () => Wake(Character.localCharacter));
     }
 
