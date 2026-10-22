@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 
 namespace PeakXR.Core;
 
@@ -17,7 +18,8 @@ public enum UseGesture : byte
     /// <summary>Pressed to your own chest or forearm (bandage, heat pack, chalk).</summary>
     Apply,
 
-    /// <summary>Held open in front of your eyes for the cast.</summary>
+    /// <summary>Held open in front of your eyes for the cast; never on a bare trigger (see
+    /// <see cref="ItemUse.NeedsGesture"/>).</summary>
     Read,
 
     /// <summary>Held eye to eye for the cast: an item that kills or warps you, so a bare trigger never starts it.</summary>
@@ -153,8 +155,9 @@ public static class ItemUse
     public static bool AtMouth(UseGesture g) =>
         g is UseGesture.Eat or UseGesture.Drink or UseGesture.Inflate;
 
-    /// <summary>The bare trigger is refused: only the gesture (held for the game's own cast) starts the use.</summary>
-    public static bool NeedsGesture(UseGesture g) => g == UseGesture.Commune;
+    /// <summary>The bare trigger is refused: only the gesture (held for the game's own cast) starts the use. Commune
+    /// kills or warps you; the one readable item, the Book of Bones, turns its reader into a skeleton.</summary>
+    public static bool NeedsGesture(UseGesture g) => g is UseGesture.Commune or UseGesture.Read;
 
     private static bool Has(ItemParts parts, ItemParts any) => (parts & any) != 0;
 
@@ -202,4 +205,40 @@ public static class CookRisk
         int next = cooked + 1;
         return wreck || (explodeAt > 0 && next >= explodeAt) || (defaults && next > 2);
     }
+}
+
+/// <summary>
+/// Where the Book of Bones is read, kept apart from where it revives. Held open at eye level it reads, which turns the
+/// reader into a skeleton (Action_BecomeSkeleton.cs:7); held over a skeleton's hips it revives that scout
+/// (interact.world's book-over-bones, Skelleton.cs:65-71). The two must never overlap, so near bones the read is off.
+/// </summary>
+public static class ReadZone
+{
+    /// <summary>The read spot: this far in front of the eyes ...</summary>
+    public const float Ahead = 0.35f;
+
+    /// <summary>... and this far below them, metres.</summary>
+    public const float Below = 0.12f;
+
+    /// <summary>The book hand within this of the read spot reads, metres.</summary>
+    public const float Radius = 0.16f;
+
+    /// <summary>The revive zone over a skeleton's hips (interact.world WorldHolds: radius 0.4 m, up to 0.9 m).</summary>
+    public const float ReviveRadius = 0.4f;
+
+    public const float ReviveUp = 0.9f;
+
+    /// <summary>Gap the book hand keeps from the revive zone before it may read, metres: covers an opening book
+    /// drifting up and tracking jitter.</summary>
+    public const float Clearance = 0.3f;
+
+    /// <param name="eyes">Tracked eye position.</param>
+    /// <param name="forward">Head forward (unit).</param>
+    public static Vector3 Spot(Vector3 eyes, Vector3 forward) =>
+        eyes + forward * Ahead - Vector3.UnitY * Below;
+
+    /// <summary>The book hand at <paramref name="hand"/> may read: no skeleton near, or clear of its revive zone.</summary>
+    /// <param name="hips">The nearest skeleton's hips (<c>Skelleton.Center</c>), or null when none is near.</param>
+    public static bool Allowed(Vector3 hand, Vector3? hips) =>
+        hips is not { } h || HeatZone.Distance(hand, h, ReviveRadius, 0f, ReviveUp) > Clearance;
 }

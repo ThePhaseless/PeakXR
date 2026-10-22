@@ -35,6 +35,7 @@ public sealed class ItemGesturesFeature : Feature
         Patch(typeof(ItemGesturesPatches.DoUsing));
         Patch(typeof(ItemGesturesPatches.PickupCooldown));
         Patch(typeof(ItemGesturesPatches.PickupDenied));
+        Patch(typeof(ItemGesturesPatches.SkeletonNear));
         GripHooks.Register(ParasolRunner.Instance);
         ItemGestures.Installed = true;
     }

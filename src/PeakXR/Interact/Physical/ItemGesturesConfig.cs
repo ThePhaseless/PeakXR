@@ -86,8 +86,9 @@ internal sealed class ItemGesturesConfig
                 s,
                 "ReadAtFace",
                 true,
-                "Hold a book you can read (the Book of Bones) open in front of your eyes to read it; lowering it "
-                    + "stops. The trigger still works."
+                "Reading the Book of Bones turns you into a skeleton, so it starts only when you hold it open at eye "
+                    + "level for a moment, and lowering it stops. The trigger alone is refused with a warning, and near "
+                    + "a skeleton the book never reads (there it revives). Off: the trigger reads it."
             ),
             communeAtFace = file.Bind(
                 s,

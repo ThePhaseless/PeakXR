@@ -110,4 +110,14 @@ internal static class ItemGesturesPatches
         private static void Postfix(Item __instance) =>
             ItemGestures.PickupRefused(__instance, DenyReason.Occupied);
     }
+
+    /// <summary>Skelleton.Update (Skelleton.cs:31, private): each skeleton, every frame. Reports its hips
+    /// (Skelleton.Center, :80) so the book's read zone stays off where the book revives instead.</summary>
+    [HarmonyPatch]
+    internal static class SkeletonNear
+    {
+        private static MethodBase TargetMethod() => GameMember.Method(typeof(Skelleton), "Update");
+
+        private static void Postfix(Skelleton __instance) => ItemGestures.SeeSkeleton(__instance);
+    }
 }
