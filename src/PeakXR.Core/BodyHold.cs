@@ -65,6 +65,11 @@ public sealed class BodyHold
     const float Never = float.MaxValue;
 
     float _quiet;
+
+    /// <summary>Why the hold is off this tick ("gate", "kick", "cooldown", "no lean", "budget"); null while it holds.
+    /// Traced by avatar.local.</summary>
+    public string Why { get; private set; }
+
     float _sinceLean = Never;
     float _sinceBlocked = Never;
     float _spent;
@@ -119,11 +124,17 @@ public sealed class BodyHold
         bool done = _sinceLean == Never || _spent >= Budget - 0.01f * FadeBudget;
         if (done)
         {
+            Why =
+                !free ? "gate"
+                : _sinceBlocked < Cooldown ? (kicked ? "kick" : "cooldown")
+                : _sinceLean == Never ? "no lean"
+                : "budget";
             Holding = false;
             _quiet = 0f;
             Anchor = centre;
             return Vector2.Zero;
         }
+        Why = null;
         if (!Holding)
         {
             Holding = true;
@@ -154,7 +165,10 @@ public struct HoldInputs
     public bool Upright;
     public bool MoveInput;
     public bool Carried;
-    public bool InWater;
+
+    /// <summary><c>CharacterData.inWater</c>, the animator's water blend: 1 on dry land (CharacterAnimations.cs:284
+    /// puts it back every frame), 0.25 deep or 0.3 shallow in a WaterZone (WaterZone.cs:126, :130).</summary>
+    public float WaterBlend;
     public bool Warping;
 
     /// <summary>Seconds since the game's fall-slide (CharacterMovement.cs:915-919).</summary>
@@ -177,14 +191,32 @@ public static class HoldGate
     public const float SlideCooldown = 0.5f;
     public const float BounceCooldown = 1f;
 
-    public static bool Free(in HoldInputs i) =>
-        i.Grounded
-        && i.Upright
-        && !i.MoveInput
-        && !i.Carried
-        && !i.InWater
-        && !i.Warping
-        && i.SinceFallSlide >= SlideCooldown
-        && i.SinceBounce >= BounceCooldown
-        && i.SlopeDeg < i.MaxSlopeDeg;
+    /// <summary>Below this <see cref="HoldInputs.WaterBlend"/> the body is in water.</summary>
+    public const float DryBlend = 0.99f;
+
+    public static bool Free(in HoldInputs i) => Why(i) == null;
+
+    /// <summary>The first closed gate (traced by avatar.local), or null when the hold may act.</summary>
+    public static string Why(in HoldInputs i)
+    {
+        if (!i.Grounded)
+            return "airborne";
+        if (!i.Upright)
+            return "not upright";
+        if (i.MoveInput)
+            return "move input";
+        if (i.Carried)
+            return "carried";
+        if (!(i.WaterBlend >= DryBlend))
+            return "water";
+        if (i.Warping)
+            return "warping";
+        if (!(i.SinceFallSlide >= SlideCooldown))
+            return "slide";
+        if (!(i.SinceBounce >= BounceCooldown))
+            return "bounce";
+        if (!(i.SlopeDeg < i.MaxSlopeDeg))
+            return "slope";
+        return null;
+    }
 }

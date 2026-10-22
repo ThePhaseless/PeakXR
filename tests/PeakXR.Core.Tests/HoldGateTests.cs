@@ -7,6 +7,7 @@ public class HoldGateTests
         {
             Grounded = true,
             Upright = true,
+            WaterBlend = 1f,
             SinceFallSlide = 10f,
             SinceBounce = 10f,
             SlopeDeg = 5f,
@@ -52,9 +53,54 @@ public class HoldGateTests
     [Fact]
     public void InWater_NotFree()
     {
+        // CharacterData.inWater is the animator's blend: WaterZone writes 0.25 deep or 0.3 shallow (WaterZone.cs:126,
+        // :130), and CharacterAnimations puts 1 back every frame (CharacterAnimations.cs:283-284).
         var i = Calm();
-        i.InWater = true;
+        i.WaterBlend = 0.25f;
         Assert.False(HoldGate.Free(i));
+        i.WaterBlend = 0.3f;
+        Assert.False(HoldGate.Free(i));
+        Assert.Equal("water", HoldGate.Why(i));
+    }
+
+    [Fact]
+    public void Run34PlainLean_Holds()
+    {
+        // Run 34 vr.45 forward lean: grounded, upright, no input, dry (inWater 1), flat sand, no slide or bounce
+        // since the session started; bend 16.8 deg. The hold must act.
+        var i = new HoldInputs
+        {
+            Grounded = true,
+            Upright = true,
+            WaterBlend = 1f,
+            SinceFallSlide = 500f,
+            SinceBounce = 529f,
+            SlopeDeg = 3f,
+            MaxSlopeDeg = 50f,
+        };
+        Assert.True(HoldGate.Free(i));
+        var h = new BodyHold();
+        var start = new Vector2(22.7f, -373.1f);
+        h.Update(start, Vector2.Zero, true, HoldGate.Free(i), 1f / 50f);
+        var a = h.Update(
+            start + new Vector2(0.01f, 0f),
+            new Vector2(0.01f, 0f),
+            true,
+            HoldGate.Free(i),
+            1f / 50f
+        );
+        Assert.True(h.Holding, h.Why);
+        Assert.True(a.X < 0f);
+    }
+
+    [Fact]
+    public void DryLand_IsNotWater()
+    {
+        // Run 34: every plain lean read inWater 1 (dry) as water and the hold never ran (hold 0 all through vr.45).
+        var i = Calm();
+        i.WaterBlend = 1f;
+        Assert.True(HoldGate.Free(i));
+        Assert.Null(HoldGate.Why(i));
     }
 
     [Fact]
