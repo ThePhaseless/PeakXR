@@ -1315,10 +1315,21 @@ internal sealed partial class SelfTestRunner
         pad.name = "PeakXR_TestBouncePad";
         pad.layer = LayerMask.NameToLayer("Map");
         var spot = c.data.groundPos + Flat(rig.Head.forward) * 3f;
+        // On the ground 3 m ahead, not at the feet's height: run 43 faced uphill, the pad sat 0.5 m inside the slope
+        // and the body landed on the terrain above it.
+        float ground = GroundY(spot + Vector3.up * 2f);
+        if (!float.IsNaN(ground))
+            spot.y = ground;
         pad.transform.SetPositionAndRotation(spot + Vector3.up * 0.2f, Quaternion.identity);
         pad.transform.localScale = new Vector3(2f, 0.4f, 2f);
         var mod = pad.AddComponent<CollisionModifier>();
         mod.knockback = 20f;
+        int touches = 0;
+        mod.onCollide += (who, _, _, _) =>
+        {
+            if (who == c)
+                touches++;
+        };
         Physics.SyncTransforms();
         int bounces = EnvironmentCues.Bounces;
         float since = CueMark();
@@ -1333,7 +1344,11 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => EnvironmentCues.Bounces > bounces, 6f);
         if (EnvironmentCues.Bounces == bounces)
         {
-            Fail("no bounce off the test pad");
+            Fail(
+                F(
+                    $"no bounce off the test pad: {touches} pad contacts, pad top {spot.y + 0.4f:0.00}, body at {c.Center.y:0.00}, ground under it {GroundY(c.Center):0.00}"
+                )
+            );
             yield break;
         }
         yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);

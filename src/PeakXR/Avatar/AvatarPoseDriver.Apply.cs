@@ -139,7 +139,7 @@ public partial class AvatarPoseDriver
             spine = torso;
         if (c.IsLocal)
             Plugin.Log.LogInfo(
-                $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}"
+                $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}, physics step {Time.fixedDeltaTime * 1000f:0.0} ms"
             );
         SplitForLegShift(c.refs.ragdoll.partList);
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
@@ -568,7 +568,7 @@ public partial class AvatarPoseDriver
                 : torsoPhys;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? "1" : "0 (" + (holdGateWhy ?? bodyHold.Why) + ")")} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? "1" : "0 (" + (holdGateWhy ?? bodyHold.Why) + ")")} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.y:0.000},{hipPos.z:0.000}) head-height {c.data.currentHeadHeight:0.000} target {c.data.targetHeadHeight:0.000} anim-offset {AnimatedOffset().magnitude:0.000}"
             )
         );
     }
