@@ -187,29 +187,148 @@ internal sealed partial class SelfTestRunner
             scriptLeft.Grip = scriptRight.Grip = 0f;
             yield return WaitFor(() => !c.data.isClimbingAnything, 3f);
         }
-        // Hands back to rest in front of the head as it is now (grips kept, so a held item stays held), then the
-        // recentre with the head and hands where the step will start; the lean trace logs the room-scale follow.
+        // Hands back to rest in front of the head as it is now (grips kept, so a held item stays held).
         yield return MpRest();
-        Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 10f;
-        // Twice, as the offline settle does after its warp: a follow still running at the first recentre (or one
-        // that stalled and faded) gets a second, clean start.
-        for (int attempt = 0; attempt < 2; attempt++)
+        // Sloped ground keeps a standing body sliding; offline the settle warps to a flat home spot, online A walks.
+        yield return MpFlatGround(c);
+        yield return SettleRecenter(rig);
+        if (!stepOk)
+            yield break;
+        yield return MpStandStill(c);
+        if (mpStill)
         {
-            yield return SettleRecenter(rig);
-            if (!stepOk)
-                yield break;
-            yield return StandStill(c);
-            if (settledFor >= SettleHold)
-                break;
-        }
-        Rig.RigDriver.TraceLeanUntil = 0f;
-        if (settledFor < SettleHold)
-        {
-            Fail("not settled: " + SettleProblem(c, needSpot: false));
+            yield return body;
             yield break;
         }
+        // Not still: a body that is down, ragdolled, airborne or climbing would make the step meaningless, so it
+        // fails; a body that only drifts starts the step anyway with the reason in the note (MP run 7 passed 19
+        // steps with no settle at all; the settle must not become the failure).
+        var d = c.data;
+        if (!d.isGrounded || d.currentRagdollControll < 0.9f || d.isClimbingAnything || d.passedOut)
+        {
+            Fail("not settled: " + mpStillNote);
+            yield break;
+        }
+        Note("started unsettled: " + mpStillNote);
         yield return body;
     }
+
+    /// <summary>Net horizontal travel (m) of the hip over <see cref="SettleHold"/> that still counts as standing.</summary>
+    const float MpStillDrift = 0.03f;
+
+    bool mpStill;
+    string mpStillNote;
+
+    /// <summary>
+    /// Online stillness: grounded, under control, not climbing or sprinting, the view not settling, and the hip's net
+    /// horizontal travel within <see cref="MpStillDrift"/> over <see cref="SettleHold"/>. Not the offline
+    /// <see cref="AtRest"/>'s instantaneous hip speed: in MP run 9 a standing body's hip swayed ±6 mm (the avatar's
+    /// idle sway, 0.04-0.09 m/s peaks) around a fixed point for every step, with no follow (the trace's room lines all
+    /// "stick 0") and no lean; any real motion, a mod's included (a follow, a lean push, a slide), travels farther than
+    /// the window and still fails it. Up to 6 s.
+    /// </summary>
+    IEnumerator MpStandStill(Character c)
+    {
+        mpStill = false;
+        float end = Now + 6f;
+        float since = Now;
+        var start = Flat(c.refs.hip.Rig.position);
+        float drift = 0f;
+        float peak = 0f;
+        string why = "never checked";
+        while (Now < end)
+        {
+            var d = c.data;
+            var v = c.refs.hip.Rig.linearVelocity;
+            peak = Mathf.Max(peak, new Vector2(v.x, v.z).magnitude);
+            drift = Vector3.Distance(Flat(c.refs.hip.Rig.position), start);
+            why =
+                !d.isGrounded ? "not grounded"
+                : d.currentRagdollControll < 0.9f ? $"control {d.currentRagdollControll:0.00}"
+                : d.isClimbingAnything ? "climbing"
+                : d.isSprinting ? "sprinting"
+                : Rig.RigDriver.ViewSettling ? "view settling"
+                : drift > MpStillDrift ? $"hip travelled {drift:0.000} m"
+                : null;
+            if (why != null)
+            {
+                // Start the window again from here.
+                start = Flat(c.refs.hip.Rig.position);
+                since = Now;
+            }
+            else if (Now - since >= SettleHold)
+            {
+                mpStill = true;
+                yield break;
+            }
+            yield return null;
+        }
+        mpStillNote = F(
+            $"{why}; hip net travel {drift:0.000} m in the last window, speed peak {peak:0.00} m/s, at {c.Center}"
+        );
+
+        static Vector3 Flat(Vector3 p) => new(p.x, 0f, p.z);
+    }
+
+    /// <summary>Steepest ground (deg) the MP settle stands on; past it A walks to flatter ground nearby.</summary>
+    const float MpFlatSlope = 15f;
+
+    /// <summary>
+    /// When the ground under A slopes past <see cref="MpFlatSlope"/>, walks to the nearest flatter, open spot found
+    /// 1.5 or 3 m around A (a terrain ray down, the normal's tilt, nothing at chest height). Nothing found: stays.
+    /// </summary>
+    IEnumerator MpFlatGround(Character c)
+    {
+        if (Slope(c.Center) <= MpFlatSlope)
+            yield break;
+        Vector3? best = null;
+        float bestSq = float.MaxValue;
+        foreach (float r in new[] { 1.5f, 3f })
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
+                var probe = c.Center + dir * r;
+                if (
+                    Slope(probe) > MpFlatSlope
+                    || Physics.CheckSphere(
+                        probe,
+                        0.3f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                )
+                    continue;
+                float sq = (probe - c.Center).sqrMagnitude;
+                if (sq < bestSq)
+                {
+                    bestSq = sq;
+                    best = probe;
+                }
+            }
+            if (best != null)
+                break;
+        }
+        if (best is not { } spot)
+        {
+            Note($"ground slopes {Slope(c.Center):0} deg and no flat spot within 3 m");
+            yield break;
+        }
+        yield return WalkTo(() => spot, 0.3f, false);
+    }
+
+    /// <summary>Tilt (deg) of the terrain under <paramref name="from"/>; 90 with no ground within 3 m.</summary>
+    static float Slope(Vector3 from) =>
+        Physics.Raycast(
+            from,
+            Vector3.down,
+            out var hit,
+            3f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? Vector3.Angle(hit.normal, Vector3.up)
+            : 90f;
 
     void WriteCheckpoint(string id, string status, string note)
     {
