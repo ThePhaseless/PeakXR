@@ -6,6 +6,8 @@ using System.IO;
 using System.Text;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Social;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using Photon.Pun;
 using Steamworks;
@@ -18,7 +20,8 @@ namespace PeakXR.Sandbox;
 /// <summary>
 /// The <c>-peakxr-mptest</c> script (client A of the two-client test, docs/testing.md). It joins the lobby a vanilla
 /// peer hosts, then plays a VR sequence with the scripted hands: walk, emote, ping, board, open a suitcase, grab,
-/// drop, pick up, throw, eat, holster and draw, climb, two-hand hold, feed the host. Every step ends with a line in
+/// drop, pick up, throw, eat, holster and draw, climb, two-hand hold, feed the host, then the social steps (a refused
+/// feed and reach, help-up, kick, carry, the host's pack). Every step ends with a line in
 /// <c>a-checkpoints.jsonl</c>, which the observer answers with its own snapshot under the same name. Nothing here
 /// spawns, warps or uses the sandbox: online, every action is one the controllers can make.
 /// </summary>
@@ -112,6 +115,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("climb", 120f, true, MpClimb());
         yield return MpStep("two-hand", 60f, true, MpTwoHand());
         yield return MpStep("feed", 60f, true, Feed());
+        yield return MpSocialSteps();
         MpFinish("script done");
     }
 
@@ -931,5 +935,283 @@ internal sealed partial class SelfTestRunner
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The social checkpoints (WP4), after <c>feed</c>. The host is a vanilla player A cannot steer, so each step
+    /// reads the host's state and is SKIP when it does not fit (not passed out, no pack, not in trouble, no kick mode
+    /// in the host's run). Everything A does goes through interact.social's grips and the game's own RPCs.
+    /// </summary>
+    IEnumerator MpSocialSteps()
+    {
+        yield return MpStep("feed-refuse", 60f, true, FeedRefuse());
+        yield return MpStep("reach-deny", 40f, true, ReachDeny());
+        yield return MpStep("reach", 40f, true, MpReach());
+        yield return MpStep("kick-mode", 40f, true, KickMode());
+        yield return MpStep("carry", 60f, true, MpCarry());
+        yield return MpStep("pack", 40f, true, MpPack());
+    }
+
+    static Vector3 HostPart(Character host, BodypartType type) =>
+        host.refs.ragdoll != null && host.refs.ragdoll.partDict.TryGetValue(type, out var part)
+            ? part.transform.position
+            : host.Center;
+
+    /// <summary>Walks up to the host, empty-handed, facing them.</summary>
+    IEnumerator ToHost(float stop)
+    {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        yield return WalkTo(HostCenter, stop, true);
+        if (!stepOk)
+            yield break;
+        Face(Host().Head);
+        yield return Wait(0.3f);
+    }
+
+    /// <summary>A grip closes on the host's right hand (where a helping hand goes).</summary>
+    IEnumerator GripHostHand(bool left)
+    {
+        var host = Host();
+        yield return MoveTo(left, () => HostPart(host, BodypartType.Hand_R), 0.5f);
+        yield return GripTo(left, 1f, 0.1f);
+    }
+
+    /// <summary>
+    /// feed-refuse: a non-food item (not <c>canUseOnFriend</c>) held at the host's mouth is refused
+    /// (CharacterInteractible.HasItemCanUseOnFriend, :90): CantUse at that hand with the item turned red, and B gets
+    /// no feed RPC.
+    /// </summary>
+    IEnumerator FeedRefuse()
+    {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        var rock = NearestGround(i => !i.canUseOnFriend && !IsFood(i));
+        if (rock == null)
+        {
+            stepSkip = $"no non-food item within {NearItems:0} m";
+            yield break;
+        }
+        yield return GrabWorld(rock);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        yield return WalkTo(HostCenter, 0.75f, true);
+        if (!stepOk)
+            yield break;
+        var host = Host();
+        Face(host.Head);
+        bool left = LocalHold.ItemInLeftHand;
+        float mark = CueMark();
+        float end = Now + 3f;
+        while (Now < end && HeldItem() == item)
+        {
+            var goal =
+                Script(left).Position
+                + VRRig.Instance.Origin.InverseTransformVector(host.Head - item.Center());
+            SetHand(
+                left,
+                HandScript
+                    .Approach(Script(left).Position.N(), goal.N(), 1.2f, Time.unscaledDeltaTime)
+                    .U()
+            );
+            if (CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _))
+                break;
+            yield return null;
+        }
+        yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0f);
+        if (stepOk)
+            stepNote = $"{item.name} at the host's mouth refused; {cueNote}";
+    }
+
+    /// <summary>reach-deny: an empty hand grips a host who needs no help (CharacterGrabbing.TargetCanBeHelped,
+    /// :293): NotInTrouble at that hand, no tint (D10), and no reach starts.</summary>
+    IEnumerator ReachDeny()
+    {
+        yield return ToHost(0.6f);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        if (CharacterGrabbing.TargetCanBeHelped(Host(), c))
+        {
+            stepSkip = "the host needs help now (reach covers it)";
+            yield break;
+        }
+        float mark = CueMark();
+        yield return GripHostHand(false);
+        yield return ExpectCue(false, DenyReason.NotInTrouble, mark, false);
+        if (!stepOk)
+            yield break;
+        for (float end = Now + 0.5f; Now < end; )
+        {
+            if (c.data.isReaching)
+            {
+                Fail("a reach started on a host who needs no help");
+                yield break;
+            }
+            yield return null;
+        }
+        stepNote = "grip on a fine host refused; " + cueNote;
+    }
+
+    /// <summary>reach: the host is stuck, webbed or climbing below; a grip on their hand holds the game's reach and
+    /// it catches them (GUIManager.Grasp after CharacterGrabbing.Reach, :247-276).</summary>
+    IEnumerator MpReach()
+    {
+        var c = Character.localCharacter;
+        var host = Host();
+        if (host == null || !CharacterGrabbing.TargetCanBeHelped(host, c))
+        {
+            stepSkip = "the host needs no help";
+            yield break;
+        }
+        yield return ToHost(0.6f);
+        if (!stepOk)
+            yield break;
+        yield return GripHostHand(false);
+        yield return Until(
+            () => c.data.sinceGrabFriend < 0.3f,
+            3f,
+            "the reach never caught the host"
+        );
+        if (stepOk)
+            stepNote = "reached and caught the host";
+    }
+
+    /// <summary>
+    /// kick-mode (the host's custom run sets HelpingHand to kick, CharacterGrabbing.cs:33): a grip on the host's hand
+    /// must not kick (no stamina spent, no RPCA_Fall on B); then both open palms pushed at the host kick through the
+    /// game's own reach press (CharacterGrabbing.cs:104).
+    /// </summary>
+    IEnumerator KickMode()
+    {
+        if (RunSettings.GetValue(RunSettings.SETTINGTYPE.HelpingHand) != 1)
+        {
+            stepSkip = "the host's run has no kick mode";
+            yield break;
+        }
+        yield return ToHost(0.7f);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        float stamina = c.data.currentStamina;
+        yield return GripHostHand(false);
+        for (float end = Now + 1f; Now < end; )
+        {
+            if (c.data.isKicking)
+            {
+                Fail("a grip on the host kicked them");
+                yield break;
+            }
+            yield return null;
+        }
+        yield return HandsRelease();
+        HeadFrame(out var head, out var forward, out var right);
+        var l = Rest(head, forward, -right).Position;
+        var r = Rest(head, forward, right).Position;
+        float start = Now;
+        // 0.45 m in 0.15 s: 3 m/s, both palms open (ShoveGesture).
+        while (Now - start < 0.15f)
+        {
+            float t = (Now - start) / 0.15f;
+            SetHand(true, l + forward * (0.45f * t));
+            SetHand(false, r + forward * (0.45f * t));
+            yield return null;
+        }
+        yield return Until(() => c.data.isKicking, 1f, "the shove did not kick");
+        if (stepOk)
+            stepNote = $"grip kept stamina {stamina:0.00}; shove kicked";
+    }
+
+    /// <summary>
+    /// carry: the host is passed out; both hands on their body lift them (RPCA_StartCarry, CharacterCarrying.cs:56).
+    /// A worn pack drops at their torso (:59-67), marked by a Dropped notice. A grip on the carried host drops them.
+    /// </summary>
+    IEnumerator MpCarry()
+    {
+        var c = Character.localCharacter;
+        var host = Host();
+        if (
+            host == null
+            || !host.data.fullyPassedOut
+            || host.data.dead
+            || host.data.carrier != null
+        )
+        {
+            stepSkip = "the host is not passed out";
+            yield break;
+        }
+        yield return ToHost(0.6f);
+        if (!stepOk)
+            yield break;
+        bool pack = c.player != null && !c.player.backpackSlot.IsEmpty();
+        float mark = CueMark();
+        yield return MoveTo(true, () => HostPart(host, BodypartType.Torso), 0.5f);
+        yield return MoveTo(false, () => HostPart(host, BodypartType.Hip), 0.5f);
+        Script(true).Grip = Script(false).Grip = 1f;
+        float hold = GameTiming.InteractSeconds(host.refs.interactible, c);
+        yield return Until(
+            () => c.data.carriedPlayer == host,
+            GameTiming.Budget(hold, 1f),
+            "the host was not lifted"
+        );
+        if (!stepOk)
+            yield break;
+        if (pack)
+            yield return ExpectCue(SocialHands.Instance.CarryLeft, DenyReason.Dropped, mark);
+        if (!stepOk)
+            yield break;
+        Script(true).Grip = Script(false).Grip = 0f;
+        yield return Wait(0.5f);
+        yield return MoveTo(false, () => HostPart(host, BodypartType.Torso), 0.4f);
+        Script(false).Grip = 1f;
+        yield return Until(
+            () => c.data.carriedPlayer == null,
+            GameTiming.Budget(hold, 1f),
+            "the host was not put down"
+        );
+        Script(false).Grip = 0f;
+        if (stepOk)
+            stepNote = pack ? "lifted, pack dropped and marked, put down" : "lifted and put down";
+    }
+
+    /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
+    /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
+    IEnumerator MpPack()
+    {
+        var host = Host();
+        var visuals =
+            host != null && host.refs.backpackHandler != null
+                ? host.refs.backpackHandler.activeBackpackVisuals
+                : null;
+        if (visuals == null || !visuals.isActiveAndEnabled)
+        {
+            stepSkip = "the host wears no pack";
+            yield break;
+        }
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        yield return WalkTo(() => host.Center - host.data.lookDirection_Flat * 0.8f, 0.3f, true);
+        if (!stepOk)
+            yield break;
+        Face(visuals.transform.position);
+        // Turn away: vanilla needs the look within 110° of the pack's facing (BackpackOnBackVisuals.cs:99-104).
+        VRRig.Instance.RotateYaw(150f);
+        yield return Wait(0.3f);
+        yield return MoveTo(false, () => visuals.transform.position, 0.6f);
+        yield return GripTo(false, 1f, 0.1f);
+        yield return Until(
+            () =>
+                Interaction.instance != null
+                && Interaction.instance.currentHeldInteractible is BackpackOnBackVisuals,
+            2f,
+            "the pack hold did not start"
+        );
+        Script(false).Grip = 0f;
+        if (stepOk)
+            stepNote = "host's pack held from behind while looking away";
     }
 }
