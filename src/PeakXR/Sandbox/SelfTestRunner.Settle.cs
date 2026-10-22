@@ -56,6 +56,9 @@ internal sealed partial class SelfTestRunner
             Fail("not settled: no character or rig");
             yield break;
         }
+        yield return RestoreBody(c);
+        if (!stepOk)
+            yield break;
         // Idle hands press nothing: grips, triggers and sticks at rest.
         VRInput.TestOverride = IdleHands;
         SelfTestInputPatch.HoldPrimary = false;
@@ -111,6 +114,71 @@ internal sealed partial class SelfTestRunner
             else
                 Note($"settled on poor ground ({why})");
         }
+    }
+
+    /// <summary>
+    /// A normal living body before every step (run 33: ui.05's Cold was refused by a body left a skeleton, whose
+    /// statuses only take Injury, Curse, Petrify, FlyTrap and Web, CharacterAfflictions.cs:685-692, :722-727). Dead
+    /// or passed out: the game's revive (<see cref="SandboxActions.Revive"/>). A skeleton: the game's own
+    /// <c>CharacterData.SetSkeleton(false)</c> (CharacterData.cs:688, as a skeleton's death does, Character.cs:754).
+    /// Statuses and afflictions (an invincibility one refuses statuses too, :745): cleared. A local zombie body has no
+    /// game path back, so the step fails. The note says what was restored.
+    /// </summary>
+    IEnumerator RestoreBody(Character c)
+    {
+        var restored = new List<string>();
+        var d = c.data;
+        if (d.dead || d.fullyPassedOut)
+        {
+            restored.Add(d.dead ? "revived from dead" : "woke from passed out");
+            SandboxActions.Revive();
+            yield return WaitFor(() => !c.data.dead && !c.data.fullyPassedOut, 5f);
+            if (c.data.dead || c.data.fullyPassedOut)
+            {
+                Fail("not settled: the revive did not take: " + BodyState(c));
+                yield break;
+            }
+        }
+        if (d.isSkeleton)
+        {
+            restored.Add("skeleton back to flesh");
+            d.SetSkeleton(false);
+        }
+        if (c.isZombie)
+        {
+            Fail("not settled: the local body is a zombie: " + BodyState(c));
+            yield break;
+        }
+        if (Invincible(c))
+            restored.Add("invincibility cleared");
+        SandboxActions.ClearAll(c);
+        if (restored.Count > 0)
+        {
+            yield return null;
+            Note(
+                "settle restored the body: " + string.Join(", ", restored) + "; now " + BodyState(c)
+            );
+        }
+    }
+
+    /// <summary>CharacterData.isInvincible (internal) as RecalculateInvincibility sets it (CharacterData.cs:541-555).</summary>
+    static bool Invincible(Character c) =>
+        c.refs.afflictions.HasAfflictionType(
+            Peak.Afflictions.Affliction.AfflictionType.BingBongShield,
+            out _
+        )
+        || c.refs.afflictions.HasAfflictionType(
+            Peak.Afflictions.Affliction.AfflictionType.Invincibility,
+            out _
+        );
+
+    /// <summary>What decides whether the game takes a status (CharacterAfflictions.AddStatus, :712-760).</summary>
+    internal static string BodyState(Character c)
+    {
+        var d = c.data;
+        return F(
+            $"skeleton {d.isSkeleton}, zombie {c.isZombie}, dead {d.dead}, passed out {d.passedOut}/{d.fullyPassedOut}, invincible {Invincible(c)}, statuses locked {c.statusesLocked}, scoutmaster {c.isScoutmaster}"
+        );
     }
 
     /// <summary>Recentres the rig (its fade included) and fails the step if it never does.</summary>
