@@ -16,7 +16,9 @@ namespace PeakXR.Interact.Physical;
 
 /// <summary>
 /// <c>interact.world</c>: world props the hands act on beyond the item gestures. Hold the open Book of Bones over a
-/// skeleton to revive it; local guards for two vanilla wastes (D11: an amulet put into a full altar, an effigy used
+/// skeleton to revive it; bring an amulet to its altar socket, lay both palms on the soul pillar, push a hand into
+/// the summit portal; notices for a cannon shot that left you behind, a checkpoint that saved you and a summoned
+/// helicopter, and the summit countdown's last seconds on the wrist; local guards for two vanilla wastes (D11: an amulet put into a full altar, an effigy used
 /// with nobody down) that refuse with the usual cue instead; a scene button only the host can press refuses for
 /// everyone else; the campfire's "can't light" name list stays opt-in text. Every action still ends in the game's own
 /// interact hold or use, and nothing new goes over the network.
@@ -30,6 +32,9 @@ public sealed class WorldHoldsFeature : Feature
 
     internal static ConfigEntry<bool> BookOverBones { get; private set; }
     internal static ConfigEntry<bool> GuardWaste { get; private set; }
+    internal static ConfigEntry<bool> AmuletInSocket { get; private set; }
+    internal static ConfigEntry<bool> PalmsOnPillar { get; private set; }
+    internal static ConfigEntry<bool> HandIntoPortal { get; private set; }
 
     protected internal override void Install()
     {
@@ -51,8 +56,37 @@ public sealed class WorldHoldsFeature : Feature
                 + "is lost) and placing a scout effigy when nobody is down (it does nothing). Only your own action is "
                 + "stopped."
         );
+        AmuletInSocket = Plugin.Settings.Bind(
+            "Interaction",
+            "AmuletInSocket",
+            true,
+            "Put an amulet into the summit altar by bringing it to its socket; the insert runs while it stays there. "
+                + "Gripping the statue still works."
+        );
+        PalmsOnPillar = Plugin.Settings.Bind(
+            "Interaction",
+            "PalmsOnPillar",
+            true,
+            "Commune with the soul pillar by laying both open palms on it; the hold runs while they stay there. "
+                + "Gripping it still works."
+        );
+        HandIntoPortal = Plugin.Settings.Bind(
+            "Interaction",
+            "HandIntoPortal",
+            true,
+            "Enter the summit portal by pushing a hand into it and keeping it there; pull the hand out to stop. "
+                + "Gripping it still works."
+        );
         WorldHolds.HasAmulets = GameMember.Field<ScoutStatue, int[]>("hasAmulets");
         WorldHolds.Usability = GameMember.Field<Item, Optionable<bool>>("overrideUsability");
+        WorldHolds.CannonEntry = GameMember.Field<ScoutCannon, Transform>("entry");
+        Patch(typeof(WorldHolds.StatueSeen));
+        Patch(typeof(WorldHolds.PortalSeen));
+        Patch(typeof(WorldHolds.CannonLit));
+        Patch(typeof(WorldHolds.CannonLaunch));
+        Patch(typeof(WorldHolds.CheckpointUsed));
+        Patch(typeof(WorldHolds.FlareSummon));
+        Patch(typeof(WorldHolds.SummitCountdown));
         Patch(typeof(WorldHolds.Sample));
         Patch(typeof(WorldHolds.SkeletonSeen));
         Patch(typeof(WorldHolds.AltarFull));
@@ -62,8 +96,10 @@ public sealed class WorldHoldsFeature : Feature
     }
 }
 
-/// <summary>Per-frame state and patch bodies of <see cref="WorldHoldsFeature"/>. Local VR player only.</summary>
-internal static class WorldHolds
+/// <summary>Per-frame state and patch bodies of <see cref="WorldHoldsFeature"/>. Local VR player only. The summit
+/// props (altar socket, soul pillar, portal) live in <c>WorldHolds.Summit.cs</c>, the notices (cannon, checkpoint,
+/// flare) in <c>WorldHolds.Notices.cs</c>.</summary>
+internal static partial class WorldHolds
 {
     /// <summary>Book above the skeleton's hips (<c>Skelleton.Center</c>, Skelleton.cs:87): radius and height span.</summary>
     private const float BookRadius = 0.3f;
@@ -108,6 +144,16 @@ internal static class WorldHolds
     }
 
     private static void Tick(Character c, bool active)
+    {
+        TickBook(c, active);
+        bool on = active && VRSession.Active;
+        TickSocket(c, on);
+        TickPillar(c, on);
+        TickPortal(on);
+        TickNotices(c);
+    }
+
+    private static void TickBook(Character c, bool active)
     {
         var skeleton = seen;
         seen = null;

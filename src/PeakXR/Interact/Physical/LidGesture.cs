@@ -28,6 +28,27 @@ internal static class LidGesture
     private static readonly float[] StartY = new float[2];
     private static readonly TwoHandGate ChestGate = new();
 
+    /// <summary>Per hand: a low grip held long enough for the "grab the lid" hint.</summary>
+    private static readonly ContactDwell[] Low =
+    {
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+    };
+
+    /// <summary>Height of the lid edge over the case's render centre (Luggage.Center, Luggage.cs:148); the hint
+    /// ring sits there above the low hand. Tune against the prefabs in game.</summary>
+    private const float LidEdgeUp = 0.1f;
+
     private static Luggage target;
     private static float fraction;
     private static int frame = -10;
@@ -60,6 +81,8 @@ internal static class LidGesture
         }
         float left = Track(rig, 0);
         float right = Track(rig, 1);
+        LowGrip(rig, 0);
+        LowGrip(rig, 1);
         var lug =
             OnLid[0] ? Grabbed[0]
             : OnLid[1] ? Grabbed[1]
@@ -108,6 +131,29 @@ internal static class LidGesture
                 Affordance.Contact(left);
         }
         return OnLid[h] ? LidLift.Fraction(state.Position.y - StartY[h], LiftHeight) : 0f;
+    }
+
+    /// <summary>
+    /// A grip low on a closed case keeps the plain hold, but lifting the lid is the faster, physical way (WS-W8): held
+    /// for 0.5 s, it gets a teal "higher" ring (ArrowUp) on the lid edge above the hand, once as a notice and then
+    /// while the grip stays. A "would work" hint, so only with <c>UI.ActionHints</c>.
+    /// </summary>
+    private static void LowGrip(VRRig rig, int h)
+    {
+        var lug = Grabbed[h];
+        bool low = lug != null && !OnLid[h] && Affordance.Hints;
+        bool was = Low[h].Active;
+        if (!Low[h].Update(low ? 0f : 1f, Time.deltaTime))
+            return;
+        bool left = h == 0;
+        var hand = rig.Hand(left);
+        if (hand == null)
+            return;
+        var lid = hand.position;
+        lid.y = lug.Center().y + LidEdgeUp;
+        if (!was)
+            Affordance.Inform(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+        Affordance.Mark(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
     }
 
     /// <summary>The progress ramp on each lifting hand while the game's timer runs on this case.</summary>
