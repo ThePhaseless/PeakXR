@@ -24,22 +24,18 @@ namespace PeakXR.Interact.Physical;
 /// </summary>
 internal static partial class WorldHolds
 {
-    /// <summary>Amulet centre to its socket for the insert to run.</summary>
-    private const float SocketReach = 0.12f;
+    /// <summary>Amulet hand to its socket (<see cref="AltarSocket.Reach"/>) for the insert to run. The tracked grip,
+    /// not the amulet: the held item hangs off the ragdoll arm and lags a raised hand (vr36: 0.89 m short).</summary>
+    private const float SocketReach = 0.15f;
 
-    /// <summary>Highest a raised hand offers the amulet, over the head.</summary>
-    private const float RaisedReach = 0.4f;
-
-    /// <summary>Where the amulet has to be held for <paramref name="socket"/>: the socket itself, or straight below it
-    /// at a raised hand's height when it sits higher (holding it up to the altar).
-    /// shortcut: the socket heights on the Peak altar are not measured yet (vr34 ended 2.16 m short); upgrade to the
-    /// real socket reach once a run logs them.</summary>
-    internal static Vector3 SocketSpot(Vector3 socket)
+    /// <summary>How far the amulet hand is from offering it to <paramref name="socket"/> (0 when there): a reachable
+    /// socket directly, the Peak altar's 2.7 m high ones held up over the head under them, as vanilla inserts from
+    /// below by interact.</summary>
+    internal static float SocketDistance(Vector3 hand, Vector3 socket)
     {
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
-        if (head != null)
-            socket.y = Mathf.Min(socket.y, head.position.y + RaisedReach);
-        return socket;
+        float headY = head != null ? head.position.y : hand.y;
+        return AltarSocket.Reach(hand.N(), socket.N(), headY);
     }
 
     /// <summary>Amulet this near any socket of a full altar is refused.</summary>
@@ -127,8 +123,10 @@ internal static partial class WorldHolds
         }
         var sockets = statue.amuletObjects;
         var centers = SocketCenters(statue);
-        var point = item.Center();
         bool left = LocalHold.ItemInLeftHand;
+        var rig = VRRig.Instance;
+        var grip = rig != null ? rig.Hand(left) : null;
+        var point = grip != null ? grip.position : item.Center();
         int socket = AltarSocket.For(amulet.amuletIndex, slots, sockets.Length);
         SocketTarget = socket;
         if (socket < 0 || sockets[socket] == null)
@@ -141,8 +139,7 @@ internal static partial class WorldHolds
             return;
         }
         AltarNear.Reset();
-        var spot = SocketSpot(centers[socket]);
-        if (!Socket.Update(Vector3.Distance(point, spot), Time.deltaTime))
+        if (!Socket.Update(SocketDistance(point, centers[socket]), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
         HeldProgress(left, statue);
@@ -154,7 +151,7 @@ internal static partial class WorldHolds
         at = point;
         foreach (var p in centers)
         {
-            float d = Vector3.Distance(p, point);
+            float d = SocketDistance(point, p);
             if (d < best)
             {
                 best = d;

@@ -143,3 +143,35 @@ public class AltarSocketTests
     public void BadTypeIsNone() =>
         Assert.Equal(-1, AltarSocket.For(99, new[] { -1, -1, -1, -1 }, 4));
 }
+
+public class AltarSocketReachTests
+{
+    const float Head = 1.6f;
+
+    [Fact]
+    public void ReachableSocketIsPlainDistance() =>
+        Assert.Equal(
+            0.2f,
+            AltarSocket.Reach(new Vector3(0, 1.2f, 0.2f), new Vector3(0, 1.2f, 0), Head),
+            3
+        );
+
+    [Fact]
+    public void HighSocketCountsHeldUpUnderIt() =>
+        Assert.Equal(
+            0f,
+            AltarSocket.Reach(new Vector3(0.1f, 1.9f, 0), new Vector3(0, 2.7f, 0), Head)
+        );
+
+    [Fact]
+    public void HighSocketWithTheHandAtTheChestIsShort() =>
+        Assert.True(
+            AltarSocket.Reach(new Vector3(0, 1.3f, 0), new Vector3(0, 2.7f, 0), Head) > 0.3f
+        );
+
+    [Fact]
+    public void HighSocketRaisedButOffToTheSideIsShort() =>
+        Assert.True(
+            AltarSocket.Reach(new Vector3(0.8f, 1.9f, 0), new Vector3(0, 2.7f, 0), Head) > 0.3f
+        );
+}

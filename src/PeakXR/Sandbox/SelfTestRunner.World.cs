@@ -995,21 +995,30 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
             var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[WorldHolds.SocketTarget]);
-            var socket = WorldHolds.SocketSpot(socketAt);
             float socketUp = socketAt.y - Feet(Character.localCharacter).y;
+            var rig = VRRig.Instance;
+            // Where a player holds it: at the socket when it is within reach, else raised over the head straight
+            // under it (AltarSocket.Reach); the gesture reads the tracked hand, so the scripted hand goes there.
+            Vector3 Offer()
+            {
+                float headY = rig.Head.position.y;
+                return socketAt.y <= headY + AltarSocket.RaisedReach
+                    ? socketAt
+                    : new Vector3(socketAt.x, headY + 0.25f, socketAt.z);
+            }
             var interaction = Interaction.instance;
             float progress = 0f;
             float mark = CueMark();
+            yield return MoveTo(left, Offer, 0.6f);
             float end =
                 Now
                 + GameTiming.Budget(
                     GameTiming.InteractSeconds(statue, Character.localCharacter),
                     3f
                 );
-            BeginCarry();
             while (Now < end && held != null && ReferenceEquals(HeldItem(), held))
             {
-                CarryToward(left, held.Center(), socket);
+                SetHand(left, rig.Origin.InverseTransformPoint(Offer()));
                 if (
                     interaction != null
                     && ReferenceEquals(interaction.currentHeldInteractible, statue)
@@ -1017,10 +1026,11 @@ internal sealed partial class SelfTestRunner
                     progress = Mathf.Max(progress, interaction.constantInteractableProgress);
                 yield return null;
             }
+            float reach = WorldHolds.SocketDistance(rig.Hand(left).position, socketAt);
             if (progress <= 0f)
             {
                 Fail(
-                    $"the amulet at the socket did not start the hold ({(held != null ? Vector3.Distance(held.Center(), socket) : -1f):0.00} m from its spot; socket {socketUp:0.00} m over the feet, body {FlatDistance(Character.localCharacter.Center, socketAt):0.00} m from it; socket mesh {(socketAt - statue.amuletObjects[WorldHolds.SocketTarget].transform.position).y:0.00} m over its transform)"
+                    $"the amulet at the socket did not start the hold (hand {reach:0.00} m short of offering it; socket {socketUp:0.00} m over the feet, body {FlatDistance(Character.localCharacter.Center, socketAt):0.00} m from it; socket mesh {(socketAt - statue.amuletObjects[WorldHolds.SocketTarget].transform.position).y:0.00} m over its transform)"
                 );
                 yield break;
             }
