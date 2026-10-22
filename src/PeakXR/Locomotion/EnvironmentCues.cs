@@ -18,6 +18,10 @@ namespace PeakXR.Locomotion;
 internal static class EnvironmentCues
 {
     private static AccessTools.FieldRef<CollisionModifier, float> maxBounce;
+    private static AccessTools.FieldRef<
+        CollisionModifier,
+        System.Collections.Generic.List<Character>
+    > held;
     private static AccessTools.FieldRef<CharacterBalloons, Character> balloonOwner;
     private static AccessTools.FieldRef<CharacterBalloons, bool> parachuteOpen;
     private static AccessTools.FieldRef<BreakableBridge, bool> bridgeBreaking;
@@ -50,6 +54,9 @@ internal static class EnvironmentCues
     public static void Resolve()
     {
         maxBounce = GameMember.Field<CollisionModifier, float>("maxBounce");
+        held = GameMember.Field<CollisionModifier, System.Collections.Generic.List<Character>>(
+            "characterList"
+        );
         balloonOwner = GameMember.Field<CharacterBalloons, Character>("character");
         parachuteOpen = GameMember.Field<CharacterBalloons, bool>("_isParachuteOpen");
         bridgeBreaking = GameMember.Field<BreakableBridge, bool>("isBreaking");
@@ -84,9 +91,12 @@ internal static class EnvironmentCues
     }
 
     /// <summary>
-    /// CollisionModifier.TriggerCharacterBouncedEvents(Character) (CollisionModifier.cs:168, private), called at
-    /// the bounce (:135): a spring on both hands scaled by the game's bounce multiplier (:94-103), so a long drop
-    /// onto a shroom springs harder.
+    /// CollisionModifier.Collide(Character, ContactPoint, Collision, Bodypart) (CollisionModifier.cs:69), run for
+    /// every body-part contact (CharacterMovement.OnCollision, :944-952): the prefix applies the bounce's own gate
+    /// (:72, :92: effects on, not held from the last hit, knockback, contact side, 0.2 s since the last bounce,
+    /// standing when it must be) and, when it bounces, a spring on both hands scaled by the game's bounce multiplier
+    /// (:94-103), so a long drop onto a shroom springs harder. Collide, not the small bounce-event method it ends
+    /// with: run 40's pad bounced but that patch never ran (most likely inlined).
     /// </summary>
     [HarmonyPatch]
     internal static class Bounce
@@ -94,15 +104,39 @@ internal static class EnvironmentCues
         private static MethodBase TargetMethod() =>
             GameMember.Method(
                 typeof(CollisionModifier),
-                "TriggerCharacterBouncedEvents",
-                new[] { typeof(Character) }
+                nameof(CollisionModifier.Collide),
+                new[]
+                {
+                    typeof(Character),
+                    typeof(ContactPoint),
+                    typeof(Collision),
+                    typeof(Bodypart),
+                }
             );
 
-        private static void Prefix(CollisionModifier __instance, Character bouncedCharacter)
+        private static void Prefix(
+            CollisionModifier __instance,
+            Character character,
+            ContactPoint contactPoint
+        )
         {
-            if (!Local(bouncedCharacter))
+            if (__instance.knockback <= 0f || !__instance.applyEffects || !Local(character))
                 return;
-            var d = bouncedCharacter.data;
+            var d = character.data;
+            var contact = contactPoint;
+            if (
+                held(__instance).Contains(character)
+                || !(
+                    Vector3.Dot(contact.normal, __instance.transform.forward)
+                    > __instance.bounceDotMinimum
+                )
+                || !(d.lastBouncedTime + 0.2f < Time.time)
+                || (
+                    __instance.knockbackOnlyWhenStanding
+                    && (d.isClimbingAnything || !d.fullyConscious)
+                )
+            )
+                return;
             float max = maxBounce(__instance);
             float bounce = Mathf.Clamp(
                 Mathf.Pow(
@@ -113,7 +147,7 @@ internal static class EnvironmentCues
                 max
             );
             // Ragdolled or about to pass out, the game bounces at 1 (:100-103).
-            if (d.fallSeconds > 0f || bouncedCharacter.refs.afflictions.shouldPassOut)
+            if (d.fallSeconds > 0f || character.refs.afflictions.shouldPassOut)
                 bounce = 1f;
             LastBounce = BodyCues.BounceAmplitude(bounce, max);
             Bounces++;
