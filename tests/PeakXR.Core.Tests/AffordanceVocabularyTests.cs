@@ -53,6 +53,12 @@ public class AffordanceVocabularyTests
     [InlineData(DenyReason.Petrified, CueGlyph.Padlock)]
     [InlineData(DenyReason.FuseLit, CueGlyph.Danger)]
     [InlineData(DenyReason.DangerSoon, CueGlyph.Danger)]
+    [InlineData(DenyReason.MicAlwaysOn, CueGlyph.Slash)]
+    [InlineData(DenyReason.UseOtherHand, CueGlyph.Bar)]
+    [InlineData(DenyReason.Stuck, CueGlyph.Wait)]
+    [InlineData(DenyReason.Revived, CueGlyph.Pin)]
+    [InlineData(DenyReason.NoRevive, CueGlyph.People)]
+    [InlineData(DenyReason.HappenedHere, CueGlyph.Pin)]
     public void Glyph_FollowsTheCueTable(DenyReason reason, CueGlyph glyph) =>
         Assert.Equal(glyph, DenyGlyph.For(reason));
 
@@ -62,7 +68,22 @@ public class AffordanceVocabularyTests
         // Appended only: the self-test reports and saved logs name reasons by value.
         Assert.Equal(30, (int)DenyReason.Blocked);
         Assert.True(DenyReason.TooSteep > DenyReason.Blocked);
-        Assert.Equal(DenyReason.DangerSoon + 1, DenyReason.Count);
+        Assert.Equal(DenyReason.DangerSoon + 1, DenyReason.MicAlwaysOn);
+        Assert.Equal(DenyReason.HappenedHere + 1, DenyReason.Count);
+    }
+
+    [Fact]
+    public void SpotSet_HoldsUpToFourInOrder_AndDropsTheRest()
+    {
+        var s = default(SpotSet);
+        Assert.Equal(0, s.Count);
+        for (int i = 0; i < 6; i++)
+            s = s.And(new Vector3(i, 0f, 0f));
+        Assert.Equal(SpotSet.Capacity, s.Count);
+        Assert.Equal(4, SpotSet.Capacity);
+        for (int i = 0; i < s.Count; i++)
+            Assert.Equal(i, s[i].X);
+        Assert.Equal(Vector3.Zero, s[7]);
     }
 
     [Theory]

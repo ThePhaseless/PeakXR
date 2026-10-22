@@ -121,7 +121,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.101: stuck (a foot held by the game's own stick, Character.TryStickBodypart, :2168), a pinch on a thorn is
-    /// refused as the game refuses it (ThornOnMe.cs:123): StuckToHand at that hand, no tint (a body part, D10), and
+    /// refused as the game refuses it (ThornOnMe.cs:123): Stuck at that hand, no tint (a body part, D10), and
     /// the thorn stays.
     /// </summary>
     IEnumerator ThornStuckStep()
@@ -159,7 +159,7 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
-        yield return ExpectCue(left, DenyReason.StuckToHand, mark, false);
+        yield return ExpectCue(left, DenyReason.Stuck, mark, false);
         if (!stepOk)
             yield break;
         yield return Wait(1.5f);

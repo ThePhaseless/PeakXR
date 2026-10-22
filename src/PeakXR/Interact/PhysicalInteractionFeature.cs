@@ -32,7 +32,12 @@ public sealed class PhysicalInteractionFeature : Feature
         Patch(typeof(InteractPatches.Sample));
         Patch(typeof(InteractPatches.Raycasts));
         Patch(typeof(InteractPatches.Dropping));
+        Climb.ClimbHands.AnchorTimer = GameMember.Field<BreakableRopeAnchor, float>(
+            "willBreakInTime"
+        );
+        Climb.ClimbHands.AnchorBreaking = GameMember.Field<BreakableRopeAnchor, bool>("isBreaking");
         Climb.ClimbHands.Bind(Plugin.Settings);
         GripHooks.Register(Climb.ClimbHands.Extension);
+        GripHooks.Register(Climb.TraversalGrips.Instance);
     }
 }

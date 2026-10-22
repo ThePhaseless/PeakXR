@@ -21,9 +21,11 @@ namespace PeakXR.Sandbox;
 /// The <c>-peakxr-mptest</c> script (client A of the two-client test, docs/testing.md). It joins the lobby a vanilla
 /// peer hosts, then plays a VR sequence with the scripted hands: walk, emote, ping, board, open a suitcase, grab,
 /// drop, pick up, throw, eat, holster and draw, climb, two-hand hold, feed the host, then the social steps (a refused
-/// feed and reach, help-up, kick, carry, the host's pack). Every step ends with a line in
-/// <c>a-checkpoints.jsonl</c>, which the observer answers with its own snapshot under the same name. Nothing here
-/// spawns, warps or uses the sandbox: online, every action is one the controllers can make.
+/// feed and reach, help-up, kick, carry, the host's pack, pal jump, a far campfire, spectating). Every step ends with
+/// a line in <c>a-checkpoints.jsonl</c>, which the observer answers with its own snapshot under the same name. Nothing
+/// here spawns or uses the sandbox, and every action is one the controllers can make, with two exceptions that use
+/// the game's own commands on a character the issuer owns: the host is asked (<see cref="MpRequest"/>) to pass out,
+/// get webbed, wake or step onto A, and A passes itself out (Character.PassOut) to spectate and wakes after.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -98,6 +100,8 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("walk-to-host", 60f, true, WalkTo(HostCenter, 1.5f, true));
         yield return MpStep("emote", 20f, true, EmoteStep());
         yield return MpStep("ping", 15f, true, PingStep());
+        // A host-owned scene button refused for this non-host (WP5 body, SelfTestRunner.World.cs); SKIP when none.
+        yield return MpStep("scene-button", 60f, true, MpSceneButton());
         yield return MpStep("board", 400f, false, Board());
         if (!MpReady || Singleton<MapHandler>.Instance == null)
         {
@@ -947,9 +951,92 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("feed-refuse", 60f, true, FeedRefuse());
         yield return MpStep("reach-deny", 40f, true, ReachDeny());
         yield return MpStep("reach", 40f, true, MpReach());
+        yield return HostWake();
         yield return MpStep("kick-mode", 40f, true, KickMode());
         yield return MpStep("carry", 60f, true, MpCarry());
+        yield return HostWake();
         yield return MpStep("pack", 40f, true, MpPack());
+        yield return MpStep("pal-jump", 40f, true, PalJump());
+        // A timed-out step is dropped without its finally: put the head back from the crouch dip.
+        if (VRSession.Active && VRInput.TestOverride != null)
+            VRInput.TestOverride = applyHands;
+        yield return HostWake();
+        yield return MpStep("campfire-far", 60f, true, CampfireFar());
+        // Last: A passes out to spectate, then wakes.
+        yield return MpStep("spectate", 40f, true, MpSpectate());
+        Safe("mp.self-wake", () => Wake(Character.localCharacter));
+    }
+
+    int mpRequestId;
+
+    /// <summary>
+    /// Asks the observer to do <paramref name="what"/> to its own character (<see cref="MpRequest"/>) and waits up to
+    /// <paramref name="seconds"/> for its answer. No answer (an older observer) or a refusal skips the step.
+    /// </summary>
+    IEnumerator Ask(string what, float seconds = 5f)
+    {
+        int id = ++mpRequestId;
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(MpDirectory, MpRequest.RequestFile),
+                MpRequest.Line(id, what, Unix) + "\n"
+            );
+        }
+        catch (IOException e)
+        {
+            stepSkip = $"request {what} not written: {e.Message}";
+            yield break;
+        }
+        var acks = Path.Combine(MpDirectory, MpRequest.AckFile);
+        float end = Now + seconds;
+        while (Now < end)
+        {
+            var text = ReadText(acks);
+            if (text != null)
+            {
+                foreach (var line in text.Split('\n'))
+                {
+                    if (!MpRequest.TryReadAck(line, out int got, out bool ok) || got != id)
+                        continue;
+                    if (!ok)
+                        stepSkip = $"observer refused {what}: {JsonLine.ReadString(line, "note")}";
+                    yield break;
+                }
+            }
+            yield return Wait(0.25f);
+        }
+        stepSkip = $"observer did not answer {what} in {seconds:0} s";
+    }
+
+    /// <summary>Between social steps: the host wakes and clears statuses (<see cref="MpRequest.Wake"/>); a missing
+    /// answer only logs.</summary>
+    IEnumerator HostWake()
+    {
+        var host = Host();
+        if (
+            host == null
+            || !(host.data.passedOut || host.data.dead || host.refs.afflictions.isStruggling)
+        )
+            yield break;
+        stepSkip = null;
+        yield return Ask(MpRequest.Wake);
+        if (stepSkip != null)
+            Plugin.Log.LogWarning("[mptest] " + stepSkip);
+        stepSkip = null;
+        var end = Now + 6f;
+        while (Now < end && (host.data.passedOut || host.refs.afflictions.isStruggling))
+            yield return null;
+    }
+
+    /// <summary>The game's own wake for a character we own: statuses cleared, then the revive RPC
+    /// (RPCA_ReviveAtPosition, Character.cs:1802) where it lies.</summary>
+    static void Wake(Character c)
+    {
+        if (c == null || !(c.data.passedOut || c.data.dead))
+            return;
+        c.refs.afflictions.ClearAllStatus(excludeCurse: false, excludePetrify: false);
+        c.refs.view.RPC("RPCA_ReviveAtPosition", RpcTarget.All, c.Center, false, -1);
     }
 
     static Vector3 HostPart(Character host, BodypartType type) =>
@@ -1056,15 +1143,23 @@ internal sealed partial class SelfTestRunner
         stepNote = "grip on a fine host refused; " + cueNote;
     }
 
-    /// <summary>reach: the host is stuck, webbed or climbing below; a grip on their hand holds the game's reach and
-    /// it catches them (GUIManager.Grasp after CharacterGrabbing.Reach, :247-276).</summary>
+    /// <summary>reach: the host is asked to get webbed (<see cref="MpRequest.Web"/>), so the game lets a friend help
+    /// (CharacterGrabbing.TargetCanBeHelped, :293); a grip on their hand holds the game's reach and it catches them
+    /// (GUIManager.Grasp after CharacterGrabbing.Reach, :247-276).</summary>
     IEnumerator MpReach()
     {
         var c = Character.localCharacter;
         var host = Host();
+        if (host != null && !CharacterGrabbing.TargetCanBeHelped(host, c))
+        {
+            yield return Ask(MpRequest.Web);
+            if (stepSkip != null)
+                yield break;
+            yield return WaitFor(() => CharacterGrabbing.TargetCanBeHelped(host, c), 3f);
+        }
         if (host == null || !CharacterGrabbing.TargetCanBeHelped(host, c))
         {
-            stepSkip = "the host needs no help";
+            stepSkip = "the host needs no help (web request had no effect)";
             yield break;
         }
         yield return ToHost(0.6f);
@@ -1133,6 +1228,13 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var host = Host();
+        if (host != null && !host.data.fullyPassedOut && !host.data.dead)
+        {
+            yield return Ask(MpRequest.PassOut);
+            if (stepSkip != null)
+                yield break;
+            yield return WaitFor(() => host.data.fullyPassedOut, 8f);
+        }
         if (
             host == null
             || !host.data.fullyPassedOut
@@ -1140,7 +1242,7 @@ internal sealed partial class SelfTestRunner
             || host.data.carrier != null
         )
         {
-            stepSkip = "the host is not passed out";
+            stepSkip = "the host is not passed out (pass-out request had no effect)";
             yield break;
         }
         yield return ToHost(0.6f);
@@ -1213,5 +1315,151 @@ internal sealed partial class SelfTestRunner
         Script(false).Grip = 0f;
         if (stepOk)
             stepNote = "host's pack held from behind while looking away";
+    }
+
+    /// <summary>
+    /// pal-jump (CharacterMovement.StandOnPlayer :992-1022, CheckForPalJump :1024-1034): A crouches by a scripted head
+    /// dip (player.locomotion's physical crouch), the host is asked to stand on A's head (<see cref="MpRequest.StandOn"/>,
+    /// the game's warp RPC), and A jumps with the jump button. B's own client boosts B (JumpRpc true, checked by
+    /// tools/mp-check.sh). The note says whether A felt the pressure of a friend on its back.
+    /// </summary>
+    IEnumerator PalJump()
+    {
+        var c = Character.localCharacter;
+        yield return ToHost(1.5f);
+        if (!stepOk)
+            yield break;
+        var hands = applyHands;
+        float low = VRInput.HeadPosition.y * 0.6f;
+        VRInput.TestOverride = () =>
+        {
+            hands();
+            var p = VRInput.HeadPosition;
+            p.y = low;
+            VRInput.HeadPosition = p;
+        };
+        try
+        {
+            yield return WaitFor(() => c.data.isCrouching, 2f);
+            if (!c.data.isCrouching)
+            {
+                stepSkip = "A did not crouch (Locomotion.PhysicalCrouch off?)";
+                yield break;
+            }
+            yield return Ask(MpRequest.StandOn);
+            if (stepSkip != null)
+                yield break;
+            float mark = CueMark();
+            yield return Wait(1.2f);
+            bool felt = CueLog.Capture.Felt(true, CueFeel.Progress, mark, out _);
+            bool jumper = !VRInput.LeftHanded;
+            Script(jumper).Primary = true;
+            yield return Wait(0.15f);
+            Script(jumper).Primary = false;
+            yield return Wait(0.5f);
+            stepNote = $"crouched under the host and jumped; pressure felt on A: {felt}";
+        }
+        finally
+        {
+            VRInput.TestOverride = hands;
+        }
+    }
+
+    /// <summary>
+    /// campfire-far (Campfire.cs:315-326, EveryoneInRange :375-386): A grips an unlit campfire within reach while the
+    /// host stays outside its <c>moraleBoostRadius</c>: FriendsFar with the logs red (interact.items), the fire stays
+    /// unlit and B sees no Light_Rpc. SKIP when no unlit fire is within walking range.
+    /// </summary>
+    IEnumerator CampfireFar()
+    {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var host = Host();
+        Campfire fire = null;
+        float bestSq = NearItems * NearItems;
+        foreach (var f in FindObjectsByType<Campfire>(FindObjectsSortMode.None))
+        {
+            float sq = (f.transform.position - c.Center).sqrMagnitude;
+            if (
+                f.state == Campfire.FireState.Off
+                && sq < bestSq
+                && host != null
+                && Vector3.Distance(host.Center, f.transform.position) > f.moraleBoostRadius
+            )
+            {
+                bestSq = sq;
+                fire = f;
+            }
+        }
+        if (fire == null)
+        {
+            stepSkip = $"no unlit campfire within {NearItems:0} m with the host away from it";
+            yield break;
+        }
+        yield return WalkTo(() => fire.transform.position, 1.2f, true);
+        if (!stepOk)
+            yield break;
+        Face(fire.Center());
+        bool left = !VRInput.LeftHanded;
+        var logs = fire.Center();
+        yield return MoveTo(left, () => logs, 0.5f);
+        float mark = CueMark();
+        yield return GripTo(left, 1f, 0.1f);
+        yield return ExpectCue(left, DenyReason.FriendsFar, mark, true, 2f);
+        var cue = cueNote;
+        Script(left).Grip = 0f;
+        if (!stepOk)
+            yield break;
+        if (fire.state != Campfire.FireState.Off)
+            Fail($"{fire.name} lit with the host away");
+        else
+            stepNote = $"{fire.name} refused: {cue}";
+    }
+
+    /// <summary>
+    /// spectate (MainCameraMovement.cs:77-84, HandleSpecSelection :175-205): A passes out with the game's own command
+    /// on its own character (Character.PassOut, :986), so the game spectates the host. With one friend there is
+    /// nobody to switch to: a flick of the stick (SpectateNext) keeps the view on the host and must say so
+    /// (CantSwitch on the dominant hand). A stays down until after the checkpoint, so B sees it passed out.
+    /// </summary>
+    IEnumerator MpSpectate()
+    {
+        var c = Character.localCharacter;
+        var host = Host();
+        if (host == null)
+        {
+            stepSkip = "no host";
+            yield break;
+        }
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        Character.PassOut();
+        yield return Until(() => c.data.fullyPassedOut, 8f, "A never fully passed out");
+        if (!stepOk)
+            yield break;
+        yield return Until(
+            () => MainCameraMovement.specCharacter == host,
+            5f,
+            "the view never went to the host"
+        );
+        if (!stepOk)
+            yield break;
+        bool dominant = !VRInput.LeftHanded;
+        float mark = CueMark();
+        Script(dominant).Stick = Vector2.up;
+        yield return Wait(0.2f);
+        Script(dominant).Stick = Vector2.zero;
+        yield return Wait(0.5f);
+        if (MainCameraMovement.specCharacter != host)
+        {
+            Fail("the flick left the only friend");
+            yield break;
+        }
+        yield return ExpectCue(dominant, DenyReason.CantSwitch, mark, false, 0.5f);
+        if (stepOk)
+            stepNote = "spectating the host; single-target flick refused: " + cueNote;
     }
 }
