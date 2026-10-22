@@ -37,7 +37,7 @@ internal sealed class InteractConfig
     public bool TriggerUse => triggerUse?.Value ?? true;
     public bool EatAtMouth => eatAtMouth?.Value ?? true;
     public bool PhysicalThrow => physicalThrow?.Value ?? true;
-    public bool ReleaseToDrop => releaseToDrop?.Value ?? false;
+    public bool ReleaseToDrop => releaseToDrop?.Value ?? true;
     public bool PhysicalClimb => physicalClimb?.Value ?? true;
     public bool Haptics => haptics?.Value ?? true;
     public float GrabRadius => grabRadius?.Value ?? 0.12f;
@@ -142,7 +142,7 @@ internal sealed class InteractConfig
             releaseToDrop = file.Bind(
                 s,
                 "ReleaseToDrop",
-                false,
+                true,
                 "A slow grip release drops the held item. Off: the item stays in hand until thrown or dropped with the button."
             ),
             dropButton = file.Bind(
