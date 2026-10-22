@@ -26,6 +26,50 @@ internal sealed partial class SelfTestRunner
         yield return SocialStep("vr.102-tick-pluck", 30f, TickPluckStep());
         yield return SocialStep("vr.104-struggle", 30f, StruggleStep());
         yield return SocialStep("vr.105-give-up", 40f, GiveUpStep());
+        yield return HandStep("vr.106-social-clean", 15f, SocialCleanStep());
+    }
+
+    /// <summary>GUIManager.currentInteractable (GUIManager.cs:300, internal getter).</summary>
+    static System.Func<GUIManager, IInteractible> guiHovered;
+
+    // Resolved on first use, so a renamed member fails this step only, not the runner's type.
+    static IInteractible GuiHovered(GUIManager gui) =>
+        (
+            guiHovered ??= GameMember.Delegate<System.Func<GUIManager, IInteractible>>(
+                typeof(GUIManager),
+                "get_currentInteractable"
+            )
+        )(gui);
+
+    /// <summary>
+    /// vr.106: after the social steps the player is clean (no thorn stuck in, no stuck part) and vanilla's hover is
+    /// whole: GUIManager has caught up with Interaction's hover (GUIManager.LateUpdate, :363-366, which a throwing
+    /// HoverExit would stall every frame) and no vanilla exception is logged in a quiet 1.5 s.
+    /// </summary>
+    IEnumerator SocialCleanStep()
+    {
+        var c = Character.localCharacter;
+        int stuckThorns = 0;
+        foreach (var thorn in c.refs.afflictions.physicalThorns)
+        {
+            if (thorn != null && thorn.stuckIn)
+                stuckThorns++;
+        }
+        int before = report.VanillaExceptions;
+        yield return Wait(1.5f);
+        var gui = GUIManager.instance;
+        var interaction = Interaction.instance;
+        bool caughtUp =
+            gui == null
+            || interaction == null
+            || ReferenceEquals(GuiHovered(gui), interaction.currentHovered);
+        int thrown = report.VanillaExceptions - before;
+        var note =
+            $"thorns stuck {stuckThorns}, stuck {c.IsStuck()}, hover caught up {caughtUp}, vanilla exceptions {thrown}";
+        if (stuckThorns > 0 || c.IsStuck() || !caughtUp || thrown > 0)
+            Fail(note);
+        else
+            stepNote = note;
     }
 
     /// <summary>A hand step with god mode off (its tick clears thorns and statuses), then the body put back: no
