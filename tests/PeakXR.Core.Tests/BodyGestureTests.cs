@@ -66,23 +66,34 @@ public class ArmSwingTests
 {
     const float Dt = 1f / 90f;
 
-    /// <summary>Hands swing forward and back along Z with the given amplitude and frequency, for seconds.</summary>
+    // Head right in tracking space: the head faces +Z.
+    static readonly Vector3 Side = Vector3.UnitX;
+
+    static bool Step(ArmSwing s, Vector3 left, Vector3 right, bool moving = true) =>
+        s.Update(true, left, true, right, Side, moving, Dt);
+
+    /// <summary>Hands swing along <paramref name="axis"/> with the given amplitude and frequency, for seconds;
+    /// <paramref name="y"/> is the hands' height relative to the head.</summary>
     static bool Swing(
         ArmSwing s,
         float seconds,
         float amplitude,
         float hz,
         bool alternate,
-        ref float t
+        ref float t,
+        bool moving = true,
+        Vector3? axis = null,
+        float y = -0.5f
     )
     {
+        var a = axis ?? Vector3.UnitZ;
         bool on = false;
         for (float end = t + seconds; t < end; t += Dt)
         {
             float z = amplitude * MathF.Sin(2f * MathF.PI * hz * t);
-            var left = new Vector3(-0.25f, -0.5f, z);
-            var right = new Vector3(0.25f, -0.5f, alternate ? -z : z);
-            on = s.Update(true, left, true, right, Dt);
+            var left = new Vector3(-0.25f, y, 0f) + a * z;
+            var right = new Vector3(0.25f, y, 0f) + a * (alternate ? -z : z);
+            on = Step(s, left, right, moving);
         }
         return on;
     }
@@ -121,7 +132,7 @@ public class ArmSwingTests
         bool on = true;
         var still = new Vector3(0f, -0.5f, 0f);
         for (int i = 0; i < 90; i++)
-            on = s.Update(true, still, true, still, Dt);
+            on = Step(s, still, still);
         Assert.False(on);
     }
 
@@ -131,6 +142,35 @@ public class ArmSwingTests
         var s = new ArmSwing();
         float t = 0f;
         Assert.True(Swing(s, 1.5f, 0.25f, 1.6f, true, ref t));
-        Assert.False(s.Update(false, Vector3.Zero, true, Vector3.Zero, Dt));
+        Assert.False(s.Update(false, Vector3.Zero, true, Vector3.Zero, Side, true, Dt));
+    }
+
+    [Fact]
+    public void ClappingOrWavingSideways_DoesNotSprint()
+    {
+        // Hands meeting and parting across the body move in opposite directions too, but sideways.
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.False(Swing(s, 2f, 0.25f, 1.6f, true, ref t, axis: Vector3.UnitX));
+    }
+
+    [Fact]
+    public void SwingingWhileStandingStill_DoesNotSprint_NorChargeTheNextWalk()
+    {
+        // The stick is idle: gestures (a chat, a stretch) never sprint, and they leave nothing behind, so the first
+        // frames of walking afterwards do not sprint either.
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.False(Swing(s, 2f, 0.25f, 1.6f, true, ref t, moving: false));
+        Assert.False(Swing(s, 0.1f, 0.25f, 1.6f, true, ref t));
+    }
+
+    [Fact]
+    public void HandsUpAtTheFace_DoNotSprint()
+    {
+        // Gestures at head height (talking, eating, waving hello) are not a running arm swing.
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.False(Swing(s, 2f, 0.25f, 1.6f, true, ref t, y: 0f));
     }
 }
