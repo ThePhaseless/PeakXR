@@ -30,7 +30,12 @@ public class DenyCueTests
         for (var r = DenyReason.None + 1; r < DenyReason.Count; r++)
         {
             var g = DenyGlyph.For(r);
-            bool notice = r is DenyReason.Stowed or DenyReason.Dropped;
+            bool notice =
+                r
+                is DenyReason.Stowed
+                    or DenyReason.Dropped
+                    or DenyReason.Revived
+                    or DenyReason.HappenedHere;
             Assert.True(notice == (g == CueGlyph.Pin), $"{r}: {g}");
             Assert.True(Enum.IsDefined(g), r.ToString());
         }

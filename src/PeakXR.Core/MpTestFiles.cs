@@ -208,6 +208,70 @@ namespace PeakXR.Core
     }
 
     /// <summary>
+    /// Requests from the VR side (A) to the observer (B) in the two-client test: A appends a line to
+    /// <see cref="RequestFile"/>, B does it to its own character with the game's own commands, RPCs or input, and
+    /// answers in <see cref="AckFile"/>. Lets A test what needs a friend in a state (passed out, webbed, crouching).
+    /// </summary>
+    public static class MpRequest
+    {
+        public const string RequestFile = "a-requests.jsonl";
+        public const string AckFile = "b-acks.jsonl";
+
+        /// <summary>Pass out (the game's <c>Character.PassOut</c> console command).</summary>
+        public const string PassOut = "passout";
+
+        /// <summary>Get webbed, so a friend can help (CharacterGrabbing.TargetCanBeHelped: struggling).</summary>
+        public const string Web = "web";
+
+        /// <summary>Clear statuses and wake or revive where B lies.</summary>
+        public const string Wake = "wake";
+
+        /// <summary>Hold the crouch input; <see cref="Stand"/> lets go.</summary>
+        public const string Crouch = "crouch";
+        public const string Stand = "stand";
+
+        /// <summary>Warp B onto A's head (the game's WarpPlayerRPC), to stand on A for a pal jump.</summary>
+        public const string StandOn = "stand-on";
+
+        public static bool Known(string what) =>
+            what is PassOut or Web or Wake or Crouch or Stand or StandOn;
+
+        public static string Line(int id, string what, double t) =>
+            new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();
+
+        public static bool TryRead(string line, out int id, out string what, out double t)
+        {
+            id = 0;
+            t = 0;
+            what = JsonLine.ReadString(line, "do");
+            if (what == null || !JsonLine.TryReadNumber(line, "id", out var n))
+                return false;
+            id = (int)n;
+            JsonLine.TryReadNumber(line, "t", out t);
+            return true;
+        }
+
+        public static string Ack(int id, string what, bool ok, string note, double t) =>
+            new JsonLine()
+                .Num("id", id)
+                .Str("do", what)
+                .Bool("ok", ok)
+                .Str("note", note)
+                .Num("t", t)
+                .ToString();
+
+        public static bool TryReadAck(string line, out int id, out bool ok)
+        {
+            id = 0;
+            ok = line != null && line.Contains("\"ok\":true", StringComparison.Ordinal);
+            if (!JsonLine.TryReadNumber(line, "id", out var n))
+                return false;
+            id = (int)n;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The directory both test clients share. Client B runs in Flatpak Steam, whose sandbox keeps its own home under
     /// <c>~/.var/app/com.valvesoftware.Steam</c> and mounts that directory at the same host path, while the rest of
     /// the real home is hidden; so a folder there is the one path both clients can read and write.
