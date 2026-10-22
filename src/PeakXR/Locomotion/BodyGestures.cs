@@ -27,6 +27,15 @@ internal static class BodyGestures
     private static ConfigEntry<bool> physicalCrouch;
     private static ConfigEntry<bool> armSwingSprint;
     private static ConfigEntry<bool> hopToJump;
+    private static ConfigEntry<bool> heartbeat;
+    private static ConfigEntry<bool> shiver;
+    private static ConfigEntry<bool> wallTouch;
+
+    /// <summary>Body feels in <see cref="BodyFeedback"/>, each its own switch (all also need Interaction.Haptics).</summary>
+    internal static bool HeartbeatOn => heartbeat?.Value ?? true;
+
+    internal static bool ShiverOn => shiver?.Value ?? true;
+    internal static bool WallTouchOn => wallTouch?.Value ?? true;
     private static float standAbove;
     private static bool haveStand;
     private static float uprightFor;
@@ -75,6 +84,24 @@ internal static class BodyGestures
             "Swing both arms up and hop (head rising above your standing height) to jump. Standing up from a "
                 + "crouch, looking down and running arms do not jump. Off by default: a false jump near a cliff "
                 + "can kill. The jump button keeps working."
+        );
+        heartbeat = file.Bind(
+            s,
+            "Heartbeat",
+            true,
+            "Feel a heartbeat in both hands while you spend stamina low on the bar, slower and heavier when weighed down."
+        );
+        shiver = file.Bind(
+            s,
+            "Shiver",
+            true,
+            "Feel fine shivers in both hands while you are getting colder."
+        );
+        wallTouch = file.Bind(
+            s,
+            "WallTouch",
+            true,
+            "Feel a soft tick in the hand on that side when your head comes within 30 cm of rock."
         );
     }
 
