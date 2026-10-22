@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace PeakXR.Core.Tests;
 
 public class BodyHoldTests
@@ -86,6 +89,62 @@ public class BodyHoldTests
         for (float t = 0f; t < h.ReleaseSeconds; t += Dt)
             h.Update(Start, Vector2.Zero, false, true, Dt);
         Assert.False(h.Holding);
+    }
+
+    /// <summary>A body on <paramref name="h"/> under a steady contact push (m/s^2, x), 50 Hz; returns its x.</summary>
+    static List<float> Creep(BodyHold h, float push, float v0, float seconds)
+    {
+        var x = new List<float>();
+        float pos = 0f,
+            vel = v0;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            var a = h.Update(Start + new Vector2(pos, 0f), new Vector2(vel, 0f), true, true, Dt);
+            vel += (push + a.X) * Dt;
+            pos += vel * Dt;
+            x.Add(pos);
+        }
+        return x;
+    }
+
+    [Fact]
+    public void SteadyCreep_HeldWithinACentimetre()
+    {
+        // Run 32: a back bend's contact creep held the old spring 0.064 m off (about 1.3 m/s^2).
+        var x = Creep(new BodyHold(), 1.3f, 0f, 3f);
+        Assert.True(x.Max(MathF.Abs) < 0.012f, $"crept {x.Max(MathF.Abs):0.000} m");
+    }
+
+    [Fact]
+    public void CreepThatOutlastsTheLean_StaysHeld()
+    {
+        // Run 32: released 1 s after standing up, the body slid another 0.026 m: the feet the lean planted are not
+        // under the hip yet, so the contact push goes on. The hold lasts until nothing pushes any more.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, true, true, Dt);
+        float pos = 0f,
+            vel = 0f;
+        for (float t = 0f; t < 5f; t += Dt)
+        {
+            var a = h.Update(Start + new Vector2(pos, 0f), new Vector2(vel, 0f), false, true, Dt);
+            vel += (1.3f + a.X) * Dt;
+            pos += vel * Dt;
+        }
+        Assert.True(h.Holding);
+        Assert.True(MathF.Abs(pos) < 0.012f, $"crept {pos:0.000} m after the lean");
+    }
+
+    [Fact]
+    public void ACoastingBody_IsBrakedWhereItStops_NotPulledBack()
+    {
+        // Run 32: the far lean's walk was still coasting at 1 m/s when the hold began; anchored there, it pulled
+        // the body 0.08 m back once it stopped.
+        var x = Creep(new BodyHold(), 0f, 1f, 3f);
+        float peak = x.Max();
+        Assert.True(
+            peak - x[^1] < 0.01f,
+            $"pulled back {peak - x[^1]:0.000} m from {peak:0.000} m"
+        );
     }
 
     [Fact]
