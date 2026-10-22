@@ -242,6 +242,22 @@ namespace PeakXR.Core
             return p;
         }
 
+        /// <summary>Vertical follow rate (1/s) of the first-person eye anchor on the ground: the torso is a driven
+        /// rigidbody that bobs at step rate (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls
+        /// keep the full rate.</summary>
+        public const float GroundedVerticalRate = 5f;
+
+        /// <summary>While room-scale walks the body under a still head (a follow and its settle), the view's height
+        /// holds: the walk's stride bob is not the player's (run 39: 0.045 m within the far lean). Slow enough to
+        /// filter a 2 Hz bob, quick enough to reach a new ground height within a couple of seconds.</summary>
+        public const float FollowVerticalRate = 0.5f;
+
+        /// <summary>The eye anchor's vertical follow rate for the view's own <paramref name="rate"/>.</summary>
+        public static float ViewVerticalRate(float rate, bool grounded, bool followWalking) =>
+            !grounded ? rate
+            : followWalking ? MathF.Min(rate, FollowVerticalRate)
+            : MathF.Min(rate, GroundedVerticalRate);
+
         static float Blend(float rate, float dt)
         {
             if (rate < 0f)

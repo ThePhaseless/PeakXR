@@ -236,7 +236,7 @@ internal sealed partial class SelfTestRunner
         var head = VRInput.HeadPosition;
         Plugin.Log.LogInfo(
             F(
-                $"[selftest] lean extreme f{Time.frameCount} t{Time.unscaledTime:0.000} dt {Time.unscaledDeltaTime * 1000f:0.0} ms body {root:0.000} view {origin:0.000} root ({r.x:0.000},{r.z:0.000}) origin ({o.x:0.000},{o.z:0.000}) room ({rig.RoomAnchor.X:0.000},{rig.RoomAnchor.Y:0.000}) head ({head.x:0.000},{head.z:0.000}) hip ({hip.x:0.000},{hip.z:0.000}) grounded {c.data.isGrounded} since {c.data.sinceGrounded:0.00} input {c.input.movementInput.y:0.00}"
+                $"[selftest] lean extreme f{Time.frameCount} t{Time.unscaledTime:0.000} dt {Time.unscaledDeltaTime * 1000f:0.0} ms body {root:0.000} view {origin:0.000} root ({r.x:0.000},{r.z:0.000}) origin ({o.x:0.000},{o.y:0.000},{o.z:0.000}) hip y {hip.y:0.000} room ({rig.RoomAnchor.X:0.000},{rig.RoomAnchor.Y:0.000}) head ({head.x:0.000},{head.z:0.000}) hip ({hip.x:0.000},{hip.z:0.000}) grounded {c.data.isGrounded} since {c.data.sinceGrounded:0.00} input {c.input.movementInput.y:0.00}"
             )
         );
     }

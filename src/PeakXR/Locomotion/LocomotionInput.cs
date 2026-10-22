@@ -345,6 +345,7 @@ internal static class LocomotionInput
             Follow.Recenter(head);
         rig.RoomAnchor = Follow.Anchor;
         RigDriver.LeanNeutral = LocomotionConfig.RoomScale ? Follow.Neutral : NVector2.Zero;
+        RigDriver.FollowWalking = LocomotionConfig.RoomScale && canFollow && Follow.Walking;
         if (Fade.Target > 0f)
             VRFade.Set(FadeOwner, Fade.Target);
         else

@@ -42,10 +42,6 @@ internal sealed class RigDriver : MonoBehaviour
     /// pitches with the look (Look Y), which would carry the eye renderers down and forward.</summary>
     private const float LevelLookY = 0.35f;
 
-    /// <summary>Vertical follow rate (1/s) on the ground: the torso is a driven rigidbody that bobs at step rate
-    /// (about 2 Hz), which a 20/s follow passes almost whole. Jumps and falls keep the full rate.</summary>
-    private const float GroundedVerticalRate = 5f;
-
     /// <summary>The view stops this far (m) in front of a wall the head went into.</summary>
     private const float WallMargin = 0.05f;
 
@@ -88,6 +84,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// player.locomotion): part of <see cref="ViewOffset"/>, so the avatar straightens after standing back up from a
     /// follow without the body walking back.</summary>
     internal static System.Numerics.Vector2 LeanNeutral;
+
+    /// <summary>player.locomotion's room-scale follow is walking the body under a still head, or settling from it:
+    /// the view's height holds (<see cref="RigMath.FollowVerticalRate"/>).</summary>
+    internal static bool FollowWalking;
 
     /// <summary>The local avatar's calibrated, unleaned eyes this frame (the point the first-person view rides before
     /// follow lag); null while the view is elsewhere. avatar.local leans from the head's offset to this point.</summary>
@@ -763,10 +763,11 @@ internal sealed class RigDriver : MonoBehaviour
         lastGoal = goal;
         lastRawGoal = rawGoal;
         haveLastGoal = true;
-        float verticalRate =
-            shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything
-                ? Mathf.Min(rate, GroundedVerticalRate)
-                : rate;
+        float verticalRate = RigMath.ViewVerticalRate(
+            rate,
+            shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything,
+            FollowWalking
+        );
         anchor = snap
             ? goal
             : RigMath.Follow(anchor.N(), goal.N(), dt, rate, verticalRate, maxLag).U();
