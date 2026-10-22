@@ -43,7 +43,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.10-grab-right", 25f, GrabStep(false));
         yield return HandStep("vr.11-grab-left", 25f, GrabStep(true));
         yield return HandStep("vr.12-eat", 30f, EatStep());
-        yield return HandStep("vr.13-throw", 25f, ThrowStep());
+        yield return HandStep("vr.13-throw", 25f, ThrowCheck());
         yield return HandStep("vr.14-two-hand", 25f, TwoHandStep());
         yield return HandStep("vr.15-climb", 40f, ClimbStep());
         yield return HandStep("vr.16-snap-turn", 15f, SnapTurnStep());
@@ -330,20 +330,6 @@ internal sealed partial class SelfTestRunner
             }
         }
         return change != 0f;
-    }
-
-    /// <summary>
-    /// vr.13: a 6 m/s forward swing released mid-swing throws the held Apple through the game's drop path
-    /// (<c>CharacterItems.DropItemRpc</c>, CharacterItems.cs:385). It lands 2 m or more away, launched no faster than
-    /// the clamp interact.physical applies (hip speed plus half <c>maxThrowForce</c>, CharacterItems.cs:21).
-    /// </summary>
-    IEnumerator ThrowStep()
-    {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
-        yield return GiveAndHold(apple);
-        if (!stepOk)
-            yield break;
-        yield return ThrowHeld();
     }
 
     /// <summary>Where the last <see cref="ThrowHeld"/> came to rest; null when it did not land.</summary>
