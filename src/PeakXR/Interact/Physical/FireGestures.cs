@@ -30,6 +30,11 @@ internal static class FireGestures
     private const float CookMinUp = 0.2f;
     private const float CookMaxUp = 1f;
 
+    /// <summary>Food within this of the heat column feels the warmth ramp (WS-W12), up to this fraction of the
+    /// progress ramp at the column's edge, so the cook ramp that follows still feels like a new, stronger stage.</summary>
+    private const float HeatSearch = 0.5f;
+    private const float HeatSearchMax = 0.25f;
+
     /// <summary>Light zone over an unlit campfire's base: its log pile plus a reach margin. A torch held at full
     /// reach from a body stopped by the fire ring got its flame to 0.47-0.49 m out, 0.24 m up (vr11); the old
     /// 0.35 m zone sat at the edge of what an arm can reach.</summary>
@@ -161,7 +166,13 @@ internal static class FireGestures
         );
         // Vanilla: a lit campfire takes interact only while the held item can be cooked (Campfire.cs:341-356).
         if (!Cook.Update(distance, dt) || !fire.IsInteractible(c))
+        {
+            // Outside the column: a faint ramp that firms up toward it, to find the heat by feel.
+            float warm = HeatGradient.Closeness(distance, HeatSearch);
+            if (warm > 0f)
+                Affordance.Progress(ItemGestures.HoldLeft, HeatSearchMax * warm);
             return;
+        }
         GestureRequests.Interact(fire);
 
         // Only once the game holds this campfire: the warmth is the cook progress, not just the zone.
