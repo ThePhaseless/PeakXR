@@ -40,6 +40,7 @@ internal static class BackdropStrip
     private static readonly List<Rect> panelRects = new();
     private static readonly List<Transform> panelGroups = new();
     private static readonly List<TMP_Text> texts = new();
+    private static readonly Vector3[] corners = new Vector3[4];
     private static readonly StringBuilder log = new();
 
     /// <summary>Hides every backdrop on the canvas not hidden yet, closed pages included so they never flash
@@ -56,11 +57,7 @@ internal static class BackdropStrip
             return;
         root.GetComponentsInChildren(true, graphics);
         for (int i = 0; i < graphics.Count; i++)
-            rects.Add(
-                WorldCanvases.Clip(t, graphics[i], bounds, out var lo, out var hi)
-                    ? Rect.MinMaxRect(lo.x, lo.y, hi.x, hi.y)
-                    : Rect.zero
-            );
+            rects.Add(CanvasRect(t, graphics[i]));
 
         log.Clear();
         Pass(t, bounds, panels, parts: false);
@@ -70,8 +67,9 @@ internal static class BackdropStrip
             {
                 if (!h.Panel || h.Graphic == null)
                     continue;
-                if (WorldCanvases.Clip(t, h.Graphic, bounds, out var lo, out var hi))
-                    panelRects.Add(Rect.MinMaxRect(lo.x, lo.y, hi.x, hi.y));
+                var pr = CanvasRect(t, h.Graphic);
+                if (pr.width > 0f && pr.height > 0f)
+                    panelRects.Add(pr);
                 // The panel's parent groups its card; the canvas root would group everything.
                 var group = h.Graphic.transform.parent;
                 if (group != null && group != t.Rect && !panelGroups.Contains(group))
@@ -195,15 +193,38 @@ internal static class BackdropStrip
         }
     }
 
+    /// <summary>A graphic's rect in canvas pixels, not clipped to the canvas: a scroll list's viewport can reach past
+    /// the canvas edge (the pause menu's settings list), and rows drawn there were skipped as "nothing left" and
+    /// kept their strips. Zero for a graphic with no area.</summary>
+    private static Rect CanvasRect(TrackedCanvas t, Graphic g)
+    {
+        g.rectTransform.GetWorldCorners(corners);
+        Vector2 a = t.Rect.InverseTransformPoint(corners[0]);
+        Vector2 b = t.Rect.InverseTransformPoint(corners[2]);
+        var r = Rect.MinMaxRect(
+            Mathf.Min(a.x, b.x),
+            Mathf.Min(a.y, b.y),
+            Mathf.Max(a.x, b.x),
+            Mathf.Max(a.y, b.y)
+        );
+        return r.width > 0f && r.height > 0f ? r : Rect.zero;
+    }
+
     private static BackdropTraits Traits(int i, Rect bounds)
     {
         var g = graphics[i];
         var r = rects[i];
+        // Size on the canvas only (BackdropTraits): a graphic off the canvas is never a dimmer or a panel of its
+        // own, but still goes with a hidden panel's group.
         var traits = new BackdropTraits
         {
             IsImage = g is Image or RawImage,
-            WidthFraction = r.width / bounds.width,
-            HeightFraction = r.height / bounds.height,
+            WidthFraction =
+                Mathf.Max(0f, Mathf.Min(r.xMax, bounds.xMax) - Mathf.Max(r.xMin, bounds.xMin))
+                / bounds.width,
+            HeightFraction =
+                Mathf.Max(0f, Mathf.Min(r.yMax, bounds.yMax) - Mathf.Max(r.yMin, bounds.yMin))
+                / bounds.height,
         };
         if (!traits.IsImage)
             return traits;

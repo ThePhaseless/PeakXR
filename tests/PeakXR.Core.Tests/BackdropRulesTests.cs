@@ -150,6 +150,18 @@ public class BackdropRulesTests
     }
 
     [Fact]
+    public void RowStripBelowTheCanvasEdge_GoesWithItsList()
+    {
+        // A settings row drawn in the list's viewport past the canvas edge: no size on the canvas, still the list's.
+        var t = Panel();
+        t.WidthFraction = 0f;
+        t.HeightFraction = 0f;
+        t.ContentAbove = 3;
+        t.InPanelGroup = true;
+        Assert.Equal(BackdropRole.Panel, BackdropRules.Classify(t));
+    }
+
+    [Fact]
     public void PictureGroupedWithAHiddenPanel_Stays()
     {
         // The barcode or logo printed on the ticket.
