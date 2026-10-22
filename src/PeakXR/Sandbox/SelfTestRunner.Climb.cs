@@ -2100,6 +2100,15 @@ internal sealed partial class SelfTestRunner
         var marker = new GameObject("PeakXR_TestVineSpot").transform;
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
         marker.position = vine.GetPosition(0.5f, 1, 1) + Vector3.down * vine.colliderOffset;
+        // ToVine places the body by the vine's colliders, which sit colliderOffset above the drawn vine: run 38's hand
+        // reached 3.56 m from the eye. Warp again with the drawn vine just above the head, within arm's reach.
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            marker.position + Vector3.down * 1.8f,
+            false
+        );
+        yield return WaitFor(() => !c.warping, 2f);
         yield return GripRefusedLine(DenyReason.NoStamina, () => c.data.isVineClimbing, marker);
     }
 

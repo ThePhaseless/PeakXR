@@ -72,6 +72,10 @@ namespace PeakXR.Core
         /// <summary>The body is already on a wall or in the air: a wall in reach wins over a loose item, so a
         /// hand reaching for a hold never picks up an item lying on the ledge instead.</summary>
         public bool BodyClimbing;
+
+        /// <summary>The hold probe found rock the game would let this hand grab, not just something in the grip
+        /// sphere. A hand that holds an item climbs only on such a hold.</summary>
+        public bool HoldConfirmed;
     }
 
     /// <summary>
@@ -92,12 +96,12 @@ namespace PeakXR.Core
 
             if (c.ExtensionClaim)
                 return GripPressAction.Extension;
-            if (
-                c.BodyClimbing
-                && c.PhysicalClimb
-                && c.NearClimbable
-                && c.Candidate != GrabCandidate.Interactible
-            )
+            // Tightening the grip on a held item is never a climb attempt (climbing puts the item away, and a sticky one
+            // falls, CharacterItems.cs:498): the holding hand climbs only when it is on a real hold, as a falling
+            // player catching the wall.
+            bool mayClimb =
+                c.PhysicalClimb && c.NearClimbable && (!c.ThisHandHolds || c.HoldConfirmed);
+            if (c.BodyClimbing && mayClimb && c.Candidate != GrabCandidate.Interactible)
                 return GripPressAction.Climb;
 
             if (c.PhysicalGrab)
@@ -108,7 +112,7 @@ namespace PeakXR.Core
                     return GripPressAction.GrabInteractible;
             }
 
-            if (c.PhysicalClimb && c.NearClimbable)
+            if (mayClimb)
                 return GripPressAction.Climb;
             // A free hand on a second item: the game pockets it (Item.Interact, Item.cs:578-591), so the hand takes the
             // item it touched rather than whatever the head aims at.

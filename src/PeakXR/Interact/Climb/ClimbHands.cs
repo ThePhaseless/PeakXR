@@ -465,26 +465,30 @@ internal static class ClimbHands
 
     /// <summary>The point is within <paramref name="r"/> of the drawn vine: its collider children lowered by
     /// <c>colliderOffset</c> (JungleVine.cs:286-297).</summary>
-    internal static bool NearVine(JungleVine vine, Vector3 pos, float r)
+    internal static bool NearVine(JungleVine vine, Vector3 pos, float r) =>
+        VineDistance(vine, pos) <= r;
+
+    /// <summary>Distance from <paramref name="pos"/> to the drawn vine; infinity without colliders.</summary>
+    internal static float VineDistance(JungleVine vine, Vector3 pos)
     {
-        float r2 = r * r;
         var p = pos.N();
         var root = vine.colliderRoot;
         if (root == null)
-            return false;
+            return float.PositiveInfinity;
         var down = Vector3.down * vine.colliderOffset;
+        float best = float.PositiveInfinity;
         for (int i = 1; i < root.childCount; i++)
         {
-            if (
+            best = Mathf.Min(
+                best,
                 RopeClimb.SegmentDistanceSq(
                     p,
                     (root.GetChild(i - 1).position + down).N(),
                     (root.GetChild(i).position + down).N()
-                ) <= r2
-            )
-                return true;
+                )
+            );
         }
-        return false;
+        return Mathf.Sqrt(best);
     }
 
     /// <summary>The breakable anchor holding <paramref name="rope"/>, if any. Once per rope grab, never per frame.</summary>
