@@ -162,7 +162,82 @@ public class CueCaptureTests
     {
         var c = new CueCapture();
         Refuse(c, true, DenyReason.NoWall, 10f);
+        c.Feel(true, CueFeel.Contact, 0.3f, true, false, 10f);
         c.Clear();
         Assert.True(c.Quiet(true, float.MinValue, out _));
+        Assert.False(c.Felt(true, CueFeel.Contact, float.MinValue, out _));
+    }
+
+    [Fact]
+    public void MutedPulse_CountsAsTheHapticChannel()
+    {
+        // Interaction.Haptics off (D9): the pulse was asked for and withheld on purpose; the cue is still complete.
+        var c = new CueCapture();
+        Refuse(c, true, DenyReason.NoWall, 10f);
+        c.Pulse(true, 0.32f, 0.02f, delivered: false, 10.02f, muted: true);
+        Assert.True(c.Fired(true, DenyReason.NoWall, 9f, out var why), why);
+        Assert.Contains("muted", why);
+    }
+
+    [Fact]
+    public void Tint_IsCheckedOnlyWhenExpected_AndStaysSeenAfterItFades()
+    {
+        var c = new CueCapture();
+        Refuse(c, false, DenyReason.CantUse, 10f);
+        Assert.True(c.Fired(false, DenyReason.CantUse, 9f, tint: false, out _));
+        Assert.False(c.Fired(false, DenyReason.CantUse, 9f, tint: true, out var why));
+        Assert.Contains("no red preview", why);
+        c.Ring(false, DenyReason.CantUse, CueGlyph.Slash, Spot, 5f, tint: true, 10.1f);
+        // The preview fades before the ring does: a later untinted frame does not undo what was seen.
+        c.Ring(false, DenyReason.CantUse, CueGlyph.Slash, Spot, 5f, tint: false, 10.5f);
+        Assert.True(c.Fired(false, DenyReason.CantUse, 9f, tint: true, out why), why);
+        Assert.False(c.Fired(false, DenyReason.CantUse, 10.2f, tint: true, out _));
+    }
+
+    [Fact]
+    public void Feel_IsNotARefusal()
+    {
+        var c = new CueCapture();
+        c.Feel(true, CueFeel.Contact, 0.3f, delivered: true, muted: false, 10f);
+        // A contact tick neither completes a refusal's haptic channel nor breaks a "stay quiet" check.
+        Assert.True(c.Quiet(true, 9f, out _));
+        c.Reason(true, DenyReason.NoWall, false, 10f);
+        c.Ring(true, DenyReason.NoWall, CueGlyph.Slash, Spot, 5f, false, 10f);
+        c.Sound(CueSound.Refused, Spot, true, 10f);
+        Assert.False(c.Fired(true, DenyReason.NoWall, 9f, out var why));
+        Assert.Contains("no haptic", why);
+    }
+
+    [Theory]
+    [InlineData(CueFeel.Progress)]
+    [InlineData(CueFeel.Contact)]
+    [InlineData(CueFeel.Cancel)]
+    [InlineData(CueFeel.EndStop)]
+    [InlineData(CueFeel.Danger)]
+    public void Felt_NeedsThatFeelOnThatHand(CueFeel feel)
+    {
+        var c = new CueCapture();
+        Assert.False(c.Felt(true, feel, 9f, out var why));
+        Assert.Contains("no " + feel, why);
+        c.Feel(false, feel, 0.2f, true, false, 10f);
+        Assert.False(c.Felt(true, feel, 9f, out _));
+        c.Feel(true, feel, 0.2f, true, false, 10f);
+        Assert.True(c.Felt(true, feel, 9f, out why), why);
+        Assert.False(c.Felt(true, feel, 10.5f, out _));
+        c.Feel(true, feel, 0.2f, delivered: false, muted: false, 11f);
+        Assert.False(c.Felt(true, feel, 10.5f, out why));
+        Assert.Contains("not delivered", why);
+        c.Feel(true, feel, 0.2f, delivered: false, muted: true, 12f);
+        Assert.True(c.Felt(true, feel, 11.5f, out why), why);
+    }
+
+    [Fact]
+    public void NewSounds_AreRecorded()
+    {
+        var c = new CueCapture();
+        c.Sound(CueSound.Transmit, Spot, true, 10f);
+        c.Sound(CueSound.Cancel, Spot, false, 11f);
+        Assert.Equal(10f, c.LastSound(CueSound.Transmit).At);
+        Assert.False(c.LastSound(CueSound.Cancel).Played);
     }
 }

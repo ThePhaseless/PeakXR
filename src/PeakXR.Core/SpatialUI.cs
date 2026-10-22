@@ -309,6 +309,10 @@ namespace PeakXR.Core
             return fire;
         }
 
+        /// <summary>Alert at the next <see cref="Update"/> (cooldown still applies): a refusal about stamina raises
+        /// the wrist the same way a low-stamina alert does.</summary>
+        public void Kick() => pending = true;
+
         public void Reset()
         {
             primed = false;

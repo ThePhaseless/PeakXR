@@ -157,7 +157,7 @@ public class AffordanceTests
     {
         Assert.Equal("Not lit", DenyText.Label(DenyReason.NotLit));
         Assert.Contains("trigger", DenyText.Hint(DenyReason.NotLit));
-        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.NotLit));
+        Assert.Equal(CueGlyph.Empty, DenyGlyph.For(DenyReason.NotLit));
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public class AffordanceTests
     {
         Assert.Equal("Blocked", DenyText.Label(DenyReason.Blocked));
         Assert.Contains("window", DenyText.Hint(DenyReason.Blocked));
-        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.Blocked));
+        Assert.Equal(CueGlyph.Padlock, DenyGlyph.For(DenyReason.Blocked));
     }
 
     [Fact]

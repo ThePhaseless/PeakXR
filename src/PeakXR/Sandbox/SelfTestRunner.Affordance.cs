@@ -11,9 +11,9 @@ using Zorro.Core;
 namespace PeakXR.Sandbox;
 
 /// <summary>
-/// The <c>vr.6x</c> steps: ui.affordance. Scripted hands try things the game refuses and each step proves that
-/// <see cref="Affordance.Deny"/> fired with the right reason (<see cref="Affordance.LastReason"/>), not just that the
-/// action failed.
+/// The <c>vr.6x</c> steps: ui.affordance. Scripted hands try things the game refuses and each step proves the whole
+/// cue (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>: reason, ring, sound, haptic, red preview),
+/// not just that the action failed.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -22,7 +22,110 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.60-deny-piton-range", 20f, DenyPitonStep());
         yield return HandStep("vr.61-deny-two-hands", 20f, DenyTwoHandStep());
         yield return HandStep("vr.62-deny-unusable", 20f, DenyUnusableStep());
-        yield return HandStep("vr.63-sticky-throw", 20f, StickyThrowStep());
+        yield return HandStep("vr.63-sticky-throw", 25f, StickyThrowStep());
+        yield return VRStep("vr.64-cue-in-menu", 20f, CueInMenuStep());
+        yield return HandStep("vr.65-hints-off", 25f, HintsOffStep());
+    }
+
+    /// <summary>vr.64: a refusal while the pause menu is up still sounds, through the game's SFX player and through
+    /// the fallback source used where the game has none (menus, loading). NotNow is the reason a paused action
+    /// gets.</summary>
+    IEnumerator CueInMenuStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        var gui = GUIManager.instance;
+        var c = Character.localCharacter;
+        if (gui == null || c == null)
+        {
+            Fail("no GUIManager or character");
+            yield break;
+        }
+        c.input.pauseWasPressed = true;
+        gui.UpdatePaused();
+        yield return Until(() => GUIManager.InPauseMenu, 5f, "pause menu did not open");
+        string note = null;
+        try
+        {
+            for (int pass = 0; pass < 2 && stepOk; pass++)
+            {
+                bool fallback = pass == 1;
+                CueAudio.ForceFallback = fallback;
+                Affordance.ResetGate();
+                float mark = CueMark();
+                if (!Affordance.DenyAtHand(false, DenyReason.NotNow))
+                {
+                    Fail("NotNow refusal not accepted in the pause menu");
+                    break;
+                }
+                yield return ExpectCue(false, DenyReason.NotNow, mark);
+                if (stepOk && CueAudio.LastWasFallback != fallback)
+                    Fail($"sound went through the {(fallback ? "game's SFX player" : "fallback")}");
+                note += (fallback ? "; fallback: " : "SFX player: ") + cueNote;
+            }
+        }
+        finally
+        {
+            CueAudio.ForceFallback = false;
+            ClosePause();
+        }
+        if (stepOk)
+            stepNote = note;
+    }
+
+    /// <summary>vr.65: with <c>UI.ActionHints</c> off a refusal still gets its whole cue (the two-handed item held
+    /// in one hand: ring, sound, haptic, red item) but none of the teal "would work" parts (no valid-spot ring, no
+    /// rising note, no reach ray), and with <c>UI.ActionHintText</c> off no label.</summary>
+    IEnumerator HintsOffStep()
+    {
+        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        if (hook == null)
+        {
+            stepSkip = "no RescueHook item";
+            yield break;
+        }
+        bool hints = AffordanceFeature.ActionHints.Value;
+        bool text = AffordanceFeature.ActionHintText.Value;
+        try
+        {
+            AffordanceFeature.ActionHints.Value = false;
+            AffordanceFeature.ActionHintText.Value = false;
+            yield return GiveAndHold(hook);
+            if (!stepOk)
+                yield break;
+            bool left = LocalHold.ItemInLeftHand;
+            Affordance.ResetGate();
+            float mark = CueMark();
+            Script(left).TriggerTouch = true;
+            Script(left).Trigger = 1f;
+            yield return ExpectCue(left, DenyReason.NeedsTwoHands, mark, tint: true);
+            string note = cueNote;
+            // Past the would-work delay: the rising note would have played by now.
+            yield return Wait(0.4f);
+            string extra =
+                AffordanceRuntime.HintDrawn ? "teal would-work ring drawn"
+                : CueLog.Capture.LastSound(CueSound.WouldWork).At >= mark ? "rising note played"
+                : AffordanceRuntime.RayShown ? "reach ray drawn"
+                : AffordanceRuntime.LabelShown ? "text label shown"
+                : null;
+            yield return ShotAt("vr-65-hints-off", Affordance.LastPosition);
+            Script(left).Trigger = 0f;
+            Script(left).TriggerTouch = false;
+            if (!stepOk)
+                yield break;
+            if (extra != null)
+                Fail($"hints off, yet {extra}; {note}");
+            else
+                stepNote = note;
+        }
+        finally
+        {
+            AffordanceFeature.ActionHints.Value = hints;
+            AffordanceFeature.ActionHintText.Value = text;
+        }
     }
 
     /// <summary>vr.60: a held climbing spike aimed at the open sky. The trigger press reaches
@@ -129,6 +232,20 @@ internal sealed partial class SelfTestRunner
             yield break;
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
+        // A gentle release stays stuck, as in vanilla (InteractPatches.Dropping): the StuckToHand cue with the item red.
+        Affordance.ResetGate();
+        float mark = CueMark();
+        yield return GripTo(left, 0f, 0.3f);
+        yield return ExpectCue(left, DenyReason.StuckToHand, mark, tint: true, within: 1.5f);
+        string gentle = cueNote;
+        if (!stepOk)
+            yield break;
+        if (HeldItem() == null)
+        {
+            Fail("sticky item left the hand on a gentle release");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
         HeadFrame(out var head, out var forward, out var right);
         var windup = head + (left ? -right : right) * 0.25f + Vector3.down * 0.15f;
         yield return MoveTrack(left, windup, 0.4f);
@@ -140,17 +257,19 @@ internal sealed partial class SelfTestRunner
             "sticky item still in hand after the swing"
         );
         if (stepOk)
-            stepNote = $"released (charge requirement {sticky.throwChargeRequirement:0.00})";
+            stepNote =
+                $"released (charge requirement {sticky.throwChargeRequirement:0.00}); gentle release: {gentle}";
     }
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for the cue of
-    /// <paramref name="expected"/> on that hand on every channel (<see cref="ExpectCue"/>); other denials meanwhile
-    /// do not end the wait.</summary>
+    /// <paramref name="expected"/> on that hand on every channel, the held item's red preview included
+    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>); other denials meanwhile do not end the
+    /// wait.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected)
     {
         if (!Affordance.Enabled)
         {
-            stepSkip = "UI.ActionHints off or ui.affordance not installed";
+            stepSkip = "ui.affordance not installed";
             yield break;
         }
         Affordance.ResetGate();
@@ -162,8 +281,8 @@ internal sealed partial class SelfTestRunner
             Affordance.Count > before
             && Affordance.LastReason == expected
             && Affordance.LastLeft == left;
-        // Reason, readable ring, refused sound and a haptic pulse on that hand.
-        yield return ExpectCue(left, expected, mark);
+        // Reason, readable ring, refused sound, a haptic pulse on that hand and the red preview (item or ghost).
+        yield return ExpectCue(left, expected, mark, tint: true);
         // Keep holding past the one-shot fade: the cue must stay for as long as the attempt is held.
         if (Got())
             yield return Wait(DenyFade.Duration + 0.3f);

@@ -67,6 +67,11 @@ internal sealed partial class SelfTestRunner
         yield return BodySteps();
         yield return ItemGestureSteps();
         yield return AffordanceSteps();
+        // One slot per mechanics package; each owns its partial file (.Body, .Social, .World, .Comms).
+        yield return MovementSteps();
+        yield return SocialSteps();
+        yield return WorldSteps();
+        yield return CommsSteps();
     }
 
     /// <summary>One scripted-hands step: a clean start (empty hands and hotbar), the body, then a guarded teardown

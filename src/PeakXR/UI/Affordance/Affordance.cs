@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Interact;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -60,17 +61,28 @@ internal readonly struct DenyHint
 }
 
 /// <summary>
-/// The one place a VR refusal is reported. <see cref="Deny"/> is for an attempt that just failed (a grip, a trigger
-/// press, a release); <see cref="Hover"/> is the pre-emptive "can't" state, called every frame while it holds. Both
-/// are cheap no-ops in flat play, with <c>UI.ActionHints</c> off, or if ui.affordance did not install, so callers
-/// never need to check first. Allocation-free.
+/// The one place a VR refusal or limit is reported, so every one gets the same multi-sense cue: the red preview of
+/// the refused thing, a ring with the reason's glyph, the refused note and the denied haptic (text only with
+/// <c>UI.ActionHintText</c>). <see cref="Deny"/> is for an attempt that just failed (a grip, a trigger press, a
+/// release); <see cref="Hover"/> is the pre-emptive "can't" state, called every frame while it holds.
+/// <see cref="Progress"/>, <see cref="Contact"/>, <see cref="Cancel"/>, <see cref="EndStop"/> and <see cref="Danger"/>
+/// are the non-refusal feels. All are cheap no-ops in flat play or if ui.affordance did not install, so callers never
+/// need to check first. <c>UI.ActionHints</c> off hides only the teal "would work" parts; refusals still cue.
+/// <c>Interaction.Haptics</c> off mutes the haptics only. Allocation-free.
 /// </summary>
 internal static class Affordance
 {
     /// <summary>Colour of a "can't" cue (aim line end, ring, label text). Muted, never a full-saturation flash.</summary>
     public static readonly Color DenyColor = new(1f, 0.42f, 0.36f, 0.85f);
 
+    private const float EndStopRepeat = 0.3f;
+    private const float DangerSoundRepeat = 0.8f;
+
     private static readonly DenyGate Gate = new();
+    private static readonly ProgressRamp[] Ramps = { new(), new() };
+    private static readonly DangerPulse[] Dangers = { new(), new() };
+    private static readonly float[] EndStopAt = { float.NegativeInfinity, float.NegativeInfinity };
+    private static float dangerSoundAt = float.NegativeInfinity;
 
     /// <summary>Accepted denials since start, for the self-test.</summary>
     public static int Count { get; private set; }
@@ -82,10 +94,13 @@ internal static class Affordance
     /// <summary>ui.affordance installed (its runtime exists), whatever the setting.</summary>
     public static bool Installed => AffordanceFeature.ActionHints != null;
 
-    public static bool Enabled =>
-        VRSession.Active
-        && AffordanceFeature.ActionHints != null
-        && AffordanceFeature.ActionHints.Value;
+    /// <summary>Refusal cues run: in VR with ui.affordance installed. Not tied to <c>UI.ActionHints</c>: a failure
+    /// is never silent.</summary>
+    public static bool Enabled => VRSession.Active && Installed;
+
+    /// <summary>The teal "would work" parts show (valid-spot ring, chevron, rising note, reach ray):
+    /// <see cref="Enabled"/> and <c>UI.ActionHints</c> on.</summary>
+    public static bool Hints => Enabled && AffordanceFeature.ActionHints.Value;
 
     /// <summary>
     /// An attempt by the <paramref name="left"/> hand at <paramref name="worldPos"/> did nothing because of
@@ -96,14 +111,37 @@ internal static class Affordance
 
     /// <summary>As above, with what would work instead (<see cref="DenyHint"/>).</summary>
     public static bool Deny(bool left, Vector3 worldPos, DenyReason reason, DenyHint hint) =>
-        Deny(left, worldPos, reason, hint, atHand: false);
+        DenyCore(left, worldPos, reason, hint, false, null);
 
-    private static bool Deny(
+    /// <summary>As above, with the refused thing to turn red while the cue shows (<see cref="DenyTint.Target"/>):
+    /// an <see cref="Item"/>, a UI <c>Graphic</c> or any component whose renderers to tint. A part of a character is
+    /// never tinted (D10: ring only). Null gives no tint.</summary>
+    public static bool Deny(
         bool left,
         Vector3 worldPos,
         DenyReason reason,
         DenyHint hint,
-        bool atHand
+        Component tint
+    ) => DenyCore(left, worldPos, reason, hint, false, tint);
+
+    /// <summary>A stamina refusal at the hand: NoStamina, the stamina bar turned red, the wrist raised (the status
+    /// alert's pulse) and the bar as the would-work spot.</summary>
+    public static bool DenyStamina(bool left) =>
+        RaiseWrist(DenyAtHand(left, DenyReason.NoStamina, DenyHint.Wrist(), StaminaBar()));
+
+    /// <summary>As <see cref="DenyStamina(bool)"/>, for an attempt at a spot in the world (a wall grab).</summary>
+    public static bool DenyStamina(bool left, Vector3 worldPos) =>
+        RaiseWrist(
+            DenyCore(left, worldPos, DenyReason.NoStamina, DenyHint.Wrist(), false, StaminaBar())
+        );
+
+    private static bool DenyCore(
+        bool left,
+        Vector3 worldPos,
+        DenyReason reason,
+        DenyHint hint,
+        bool atHand,
+        Component tint
     )
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
@@ -117,7 +155,106 @@ internal static class Affordance
             $"[ui.affordance] denied {reason} ({(left ? "left" : "right")} hand) at {worldPos}"
         );
         AffordanceRuntime.Show(left, worldPos, reason, hint, atHand: atHand);
+        if (tint != null)
+            DenyTint.Target(tint);
+        // Both hands are needed: the free one feels where to go.
+        if (reason == DenyReason.NeedsTwoHands)
+            Feel(!left, CueFeel.Contact, CueHaptics.Contact);
         return true;
+    }
+
+    private static Vector3 HandPosition(bool left)
+    {
+        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+        return hand != null ? hand.position : Vector3.zero;
+    }
+
+    /// <summary>The game's stamina bar backing (StaminaBar.cs:10), which vanilla itself flashes when out of
+    /// stamina (OutOfStaminaPulse, :188).</summary>
+    private static Component StaminaBar()
+    {
+        var gui = GUIManager.instance;
+        return gui != null && gui.bar != null ? gui.bar.backing : null;
+    }
+
+    private static bool RaiseWrist(bool shown)
+    {
+        if (shown)
+            PeakXR.UI.Spatial.StatusAlerts.Raise();
+        return shown;
+    }
+
+    /// <summary>Per frame while an action fills (a hold, a pull, a charge): a light tick at its own pace, stronger
+    /// toward done (<paramref name="fraction"/> 0..1). Not a refusal.</summary>
+    public static void Progress(bool left, float fraction)
+    {
+        if (Enabled && Ramps[left ? 0 : 1].TryTick(Time.unscaledTime, fraction, out var p))
+            Feel(left, CueFeel.Progress, p);
+    }
+
+    /// <summary>One tick as the hand meets something (a hold, a handle, a friend's hand). Not a refusal.</summary>
+    public static void Contact(bool left)
+    {
+        if (Enabled)
+            Feel(left, CueFeel.Contact, CueHaptics.Contact);
+    }
+
+    /// <summary>An attempt was called off (released early, pulled away): a soft tick and the soft falling note at
+    /// the hand. Not a refusal; pair it with a <see cref="Deny"/> when the game gave a reason.</summary>
+    public static void Cancel(bool left)
+    {
+        if (!Enabled)
+            return;
+        Feel(left, CueFeel.Cancel, CueHaptics.Cancel);
+        CueAudio.Play(CueSound.Cancel, HandPosition(left), 1f);
+    }
+
+    /// <summary>A gesture hit its limit (spool length, zoom, cannon angle, a slider's end): one hard thunk and a
+    /// dull knock at the hand. Call it on reaching the limit; repeats within 0.3 s are dropped.</summary>
+    public static void EndStop(bool left)
+    {
+        if (!Enabled)
+            return;
+        float now = Time.unscaledTime;
+        ref float at = ref EndStopAt[left ? 0 : 1];
+        if (now - at < EndStopRepeat)
+            return;
+        at = now;
+        Feel(left, CueFeel.EndStop, CueHaptics.EndStop);
+        CueAudio.Play(CueSound.EndStop, HandPosition(left), 1f);
+    }
+
+    /// <summary>
+    /// Per frame while harm nears (food about to burn, a lit fuse, a lethal item): pulses that speed up and
+    /// strengthen with <paramref name="urgency"/> (0..1), a trembling note now and then, and a red ring with the
+    /// "!" glyph at <paramref name="worldPos"/>. A warning, not a refusal.
+    /// </summary>
+    public static void Danger(bool left, Vector3 worldPos, float urgency)
+    {
+        if (!Enabled)
+            return;
+        float now = Time.unscaledTime;
+        if (Dangers[left ? 0 : 1].TryTick(now, urgency, out var p))
+        {
+            Feel(left, CueFeel.Danger, p);
+            if (now - dangerSoundAt >= DangerSoundRepeat)
+            {
+                dangerSoundAt = now;
+                CueAudio.Play(CueSound.Danger, worldPos, 1f);
+            }
+        }
+        AffordanceRuntime.Hover(left, worldPos, DenyReason.DangerSoon, default, silent: true);
+    }
+
+    /// <summary>Plays a cue sound at <paramref name="worldPos"/> (<see cref="CueSound.Transmit"/> for a ping or
+    /// call that went out). False in flat play or when nothing could play it.</summary>
+    public static bool Play(CueSound sound, Vector3 worldPos, float volume = 1f) =>
+        Enabled && CueAudio.Play(sound, worldPos, volume);
+
+    private static void Feel(bool left, CueFeel feel, HapticPulse p)
+    {
+        bool delivered = Haptics.Pulse(left, p.Amplitude, p.Seconds);
+        CueLog.Capture.Feel(left, feel, p.Amplitude, delivered, Haptics.Muted, Time.unscaledTime);
     }
 
     /// <summary>
@@ -150,11 +287,16 @@ internal static class Affordance
     }
 
     /// <summary>Deny at the hand itself, for refusals with no spot in the world (two-handed use, a throw).</summary>
-    public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint = default)
+    public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint = default) =>
+        DenyAtHand(left, reason, hint, null);
+
+    /// <summary>As above, with the refused thing to turn red (see the tint <see cref="Deny"/> overload); without one,
+    /// the item in that hand turns red.</summary>
+    public static bool DenyAtHand(bool left, DenyReason reason, DenyHint hint, Component tint)
     {
         var rig = VRRig.Instance;
         var hand = rig != null ? rig.Hand(left) : null;
-        return hand != null && Deny(left, hand.position, reason, hint, atHand: true);
+        return hand != null && DenyCore(left, hand.position, reason, hint, true, tint);
     }
 
     /// <summary>

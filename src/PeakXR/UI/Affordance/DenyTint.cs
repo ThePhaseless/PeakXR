@@ -17,12 +17,25 @@ internal static class DenyTint
 {
     private static readonly int TintId = Shader.PropertyToID("_Tint");
     private static readonly int PreviewColorId = Shader.PropertyToID("_Color0");
+    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     private static readonly List<Renderer> Targets = new(16);
     private static readonly List<System.Numerics.Vector4> Bases = new(16);
 
-    /// <summary>Per target: the colour it is tinted through, <c>_Tint</c> (items) or <c>_Color0</c> (a preview ghost).</summary>
+    /// <summary>Per target: the colour it is tinted through, <c>_Tint</c> (items, most world props), <c>_Color0</c>
+    /// (a preview ghost) or <c>_BaseColor</c> (URP shaders without <c>_Tint</c>).</summary>
     private static readonly List<int> Props = new(16);
+
+    /// <summary>Per target that is not the item (world props, the ghost): its block before the tint, restored at the
+    /// end; null when it had none. Pooled blocks, so a refusal allocates only the first time.</summary>
+    private static readonly List<MaterialPropertyBlock> Saved = new(16);
+    private static readonly List<MaterialPropertyBlock> SavedPool = new(16);
+    private static readonly List<Renderer> Scratch = new(16);
+
+    /// <summary>UI parts tinted (the wrist stamina bar, a button), their colour before and the colour last written.</summary>
+    private static readonly List<UnityEngine.UI.Graphic> GraphicTargets = new(4);
+    private static readonly List<Color> GraphicBases = new(4);
+    private static readonly List<Color> GraphicWritten = new(4);
     private static MaterialPropertyBlock block;
 
     /// <summary>Item.mpb (Item.cs:207), resolved by <see cref="AffordanceFeature"/>.</summary>
@@ -35,7 +48,56 @@ internal static class DenyTint
     private static GameObject ghost;
     private static GameObject ghostPrefab;
 
-    public static bool Active => Targets.Count > 0;
+    public static bool Active => Targets.Count > 0 || GraphicTargets.Count > 0;
+
+    /// <summary>
+    /// The red preview on <paramref name="target"/>: an <see cref="Item"/> through the game's highlight
+    /// (<see cref="HeldItem"/>), a UI <see cref="UnityEngine.UI.Graphic"/> by its colour (<see cref="Graphic"/>),
+    /// anything else by its renderers (<see cref="Renderers"/>). A part of a character's body is never tinted
+    /// (decision D10: a refusal about another player shows the ring only). Null clears.
+    /// </summary>
+    public static void Target(Component target)
+    {
+        switch (target)
+        {
+            case null:
+                Clear();
+                break;
+            case Item i:
+                HeldItem(i);
+                break;
+            case UnityEngine.UI.Graphic g:
+                Graphic(g);
+                break;
+            default:
+                Renderers(target);
+                break;
+        }
+    }
+
+    /// <summary>Tint every renderer under <paramref name="root"/> (a world prop: a luggage lid, campfire logs, a
+    /// rope). Allocation-free after the first refusal. Skips anything on a character (D10).</summary>
+    public static void Renderers(Component root)
+    {
+        Clear();
+        if (root == null || root.GetComponentInParent<Character>() != null)
+            return;
+        root.GetComponentsInChildren(Scratch);
+        for (int i = 0; i < Scratch.Count; i++)
+            Add(Scratch[i]);
+        Scratch.Clear();
+    }
+
+    /// <summary>Tint a UI part (the wrist stamina bar's backing, a menu control) toward red by its colour.</summary>
+    public static void Graphic(UnityEngine.UI.Graphic target)
+    {
+        Clear();
+        if (target == null)
+            return;
+        GraphicTargets.Add(target);
+        GraphicBases.Add(target.color);
+        GraphicWritten.Add(target.color);
+    }
 
     /// <summary>The renderers tinted now, for the self-test (do not modify).</summary>
     public static List<Renderer> Tinted => Targets;
@@ -92,14 +154,25 @@ internal static class DenyTint
             block.SetFloat(global::Item.PROPERTY_INTERACTABLE, 1f);
             int prop = Props[i];
             var c =
-                prop == TintId
-                    ? DenyTintMath.Tint(Bases[i], strength)
-                    : DenyTintMath.Preview(Bases[i], strength);
+                prop == PreviewColorId
+                    ? DenyTintMath.Preview(Bases[i], strength)
+                    : DenyTintMath.Tint(Bases[i], strength);
             var set = new Color(c.X, c.Y, c.Z, c.W);
             block.SetColor(prop, set);
             r.SetPropertyBlock(block);
             if (!logged && strength >= 1f)
                 LogReadBack(r, i, set);
+        }
+        for (int i = 0; i < GraphicTargets.Count; i++)
+        {
+            var g = GraphicTargets[i];
+            if (g == null)
+                continue;
+            var b = GraphicBases[i];
+            var c = DenyTintMath.Flat(new System.Numerics.Vector4(b.r, b.g, b.b, b.a), strength);
+            var set = new Color(c.X, c.Y, c.Z, c.W);
+            g.color = set;
+            GraphicWritten[i] = set;
         }
         logged |= strength >= 1f;
     }
@@ -112,7 +185,7 @@ internal static class DenyTint
         int prop = Props[i];
         var back = block.GetColor(prop);
         Plugin.Log.LogInfo(
-            $"[ui.affordance] tint {r.name} {(prop == TintId ? "_Tint" : "_Color0")}: base {Bases[i]}, wrote {set}, "
+            $"[ui.affordance] tint {r.name} {(prop == TintId ? "_Tint" : prop == PreviewColorId ? "_Color0" : "_BaseColor")}: base {Bases[i]}, wrote {set}, "
                 + $"read {back} (as gamma {back.gamma}), _Interactable {block.GetFloat(global::Item.PROPERTY_INTERACTABLE):0.##}, "
                 + $"block stores linear {StoresLinear()}, tinted {IsTinted(r, i)}, "
                 + $"gap to target {TargetGap(i, back):0.###}"
@@ -122,15 +195,24 @@ internal static class DenyTint
     /// <summary>Ends the preview: the item gets the game's own block back, the ghost hides.</summary>
     public static void Clear()
     {
-        if (item != null)
+        var own = item != null && ItemBlock != null ? ItemBlock(item) : null;
+        for (int i = 0; i < Targets.Count; i++)
         {
-            var own = ItemBlock != null ? ItemBlock(item) : null;
-            for (int i = 0; i < Targets.Count; i++)
-            {
-                if (Targets[i] != null)
-                    Targets[i].SetPropertyBlock(own);
-            }
+            if (Targets[i] != null)
+                Targets[i].SetPropertyBlock(item != null ? own : Saved[i]);
+            if (Saved[i] != null)
+                SavedPool.Add(Saved[i]);
         }
+        for (int i = 0; i < GraphicTargets.Count; i++)
+        {
+            // Only our own colour goes back: if the game recoloured it meanwhile, its colour stays.
+            var g = GraphicTargets[i];
+            if (g != null && g.color == GraphicWritten[i])
+                g.color = GraphicBases[i];
+        }
+        GraphicTargets.Clear();
+        GraphicBases.Clear();
+        GraphicWritten.Clear();
         item = null;
         logged = false;
         if (ghost != null)
@@ -138,6 +220,7 @@ internal static class DenyTint
         Targets.Clear();
         Bases.Clear();
         Props.Clear();
+        Saved.Clear();
     }
 
     /// <summary>Clears the tint and destroys the ghost (scene unload, VR stop).</summary>
@@ -155,9 +238,9 @@ internal static class DenyTint
     {
         var now = new System.Numerics.Vector4(c.r, c.g, c.b, c.a);
         var target =
-            Props[i] == TintId
-                ? DenyTintMath.Tint(Bases[i], 1f)
-                : DenyTintMath.Preview(Bases[i], 1f);
+            Props[i] == PreviewColorId
+                ? DenyTintMath.Preview(Bases[i], 1f)
+                : DenyTintMath.Tint(Bases[i], 1f);
         return DenyTintMath.Gap(now, target);
     }
 
@@ -175,7 +258,7 @@ internal static class DenyTint
         if (StoresLinear())
             c = c.gamma;
         var now = new System.Numerics.Vector4(c.r, c.g, c.b, c.a);
-        if (prop != TintId)
+        if (prop == PreviewColorId)
             return DenyTintMath.IsPreview(Bases[index], now);
         return block.GetFloat(global::Item.PROPERTY_INTERACTABLE) > 0.5f
             && DenyTintMath.IsTinted(Bases[index], now);
@@ -210,14 +293,30 @@ internal static class DenyTint
         if (r == null)
             return;
         var m = r.sharedMaterial;
-        // _Tint where the shader has it (W/Peak_Standard, W/Character); else the preview shader's _Color0.
+        // _Tint where the shader has it (W/Peak_Standard, W/Character); else the preview shader's _Color0; else
+        // URP's _BaseColor. A shader with none of them still gets _Tint written (harmless) and the read-back log.
         int prop =
-            m == null || m.HasProperty(TintId) || !m.HasProperty(PreviewColorId)
-                ? TintId
-                : PreviewColorId;
+            m == null || m.HasProperty(TintId) ? TintId
+            : m.HasProperty(PreviewColorId) ? PreviewColorId
+            : m.HasProperty(BaseColorId) ? BaseColorId
+            : TintId;
         var c = m != null && m.HasProperty(prop) ? m.GetColor(prop) : Color.white;
+        MaterialPropertyBlock saved = null;
+        if (item == null && r.HasPropertyBlock())
+        {
+            int last = SavedPool.Count - 1;
+            if (last >= 0)
+            {
+                saved = SavedPool[last];
+                SavedPool.RemoveAt(last);
+            }
+            else
+                saved = new MaterialPropertyBlock();
+            r.GetPropertyBlock(saved);
+        }
         Targets.Add(r);
         Props.Add(prop);
         Bases.Add(new System.Numerics.Vector4(c.r, c.g, c.b, c.a));
+        Saved.Add(saved);
     }
 }

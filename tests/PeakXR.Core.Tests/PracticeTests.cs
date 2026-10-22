@@ -159,6 +159,6 @@ public class PracticeTests
     {
         Assert.Equal("Not here", DenyText.Label(DenyReason.NotHere));
         Assert.Equal("Start it from the title", DenyText.Hint(DenyReason.NotHere));
-        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.NotHere));
+        Assert.Equal(CueGlyph.Padlock, DenyGlyph.For(DenyReason.NotHere));
     }
 }
