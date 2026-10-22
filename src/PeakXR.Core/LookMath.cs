@@ -31,6 +31,39 @@ namespace PeakXR.Core
             return new Vector2(yaw, Math.Clamp(pitch, -MaxPitch, MaxPitch));
         }
 
+        /// <summary>Headings (degrees from the game's spawn look) a new body may face, nearest first, round the
+        /// whole circle: the spawn turn happens behind the loading screen, so any of them is free.</summary>
+        public static readonly float[] SpawnYawSteps =
+        {
+            0f,
+            30f,
+            -30f,
+            60f,
+            -60f,
+            90f,
+            -90f,
+            120f,
+            -120f,
+            150f,
+            -150f,
+            180f,
+        };
+
+        /// <summary>The first of several headings (ordered by preference) whose nearest wall is at least
+        /// <paramref name="enough"/> metres away, else the most open one.</summary>
+        public static int PickOpen(float[] wallDepths, float enough)
+        {
+            int best = 0;
+            for (int i = 0; i < wallDepths.Length; i++)
+            {
+                if (wallDepths[i] >= enough)
+                    return i;
+                if (wallDepths[i] > wallDepths[best])
+                    best = i;
+            }
+            return best;
+        }
+
         /// <summary>Past this yaw the synced half float steps 8 degrees or more (CharacterSyncData.cs:62).</summary>
         public const float YawSafetyLimit = 8192f;
 

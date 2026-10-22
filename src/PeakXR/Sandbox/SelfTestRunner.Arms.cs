@@ -179,8 +179,16 @@ internal sealed partial class SelfTestRunner
         float targetMax = 0f;
         bool detached = false;
         bool shot = false;
+        // Seen from outside, the own head must not stay ghosted (first-person hide) once the view has detached; the
+        // body shows from the frame after (HideTheBody.Update runs before the rig's LateUpdate).
+        var hide = c.GetComponentInChildren<HideTheBody>();
+        int detachedFrames = 0;
+        int hiddenWhileDetached = 0;
         while ((c.data.fallSeconds > 0f || Now - start < 0.5f) && Now - start < 4f)
         {
+            detachedFrames = Rig.RigDriver.ViewDetached ? detachedFrames + 1 : 0;
+            if (detachedFrames > 2 && hide != null && !AvatarPatches.BodyShowing(hide))
+                hiddenWhileDetached++;
             var chest = torso.Rig.position;
             handMax = Mathf.Max(handMax, Vector3.Distance(handL.Rig.position, chest));
             handMax = Mathf.Max(handMax, Vector3.Distance(handR.Rig.position, chest));
@@ -218,10 +226,18 @@ internal sealed partial class SelfTestRunner
             && Rig.CameraFeature.TakeoverViewEntry.Value == TakeoverView.ThirdPerson;
         if (expectDetach && !detached)
             fails.Add("view never detached during the fall with DetachOnRagdoll on");
+        if (hiddenWhileDetached > 0)
+            fails.Add(
+                F(
+                    $"own head hidden (ghosted) for {hiddenWhileDetached} frames of the detached view"
+                )
+            );
 
         float upAt = Now;
         yield return WaitFor(() => driver.ArmWeight >= 1f, 6f);
         notes.Add(F($"arms tracked again {Now - upAt:0.00} s after the fall"));
+        if (hide != null && Rig.RigDriver.ViewOnBody && AvatarPatches.BodyShowing(hide))
+            fails.Add("own head still shown after the view came back to the body");
         if (driver.ArmWeight < 1f)
         {
             fails.Add(F($"arm weight {driver.ArmWeight:0.00} 6 s after the fall"));

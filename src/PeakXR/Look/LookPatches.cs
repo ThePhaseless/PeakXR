@@ -29,6 +29,7 @@ internal static class LookPatches
     internal static float ScriptedLookWeight => Override.Weight;
     private static Character lastCharacter;
     private static bool faceSpawnLook;
+    private static float spawnYaw;
     private static int tickFrame = -10;
 
     /// <summary>Smooth turning speed (deg/s) from this or the previous frame, for the comfort vignette (its update
@@ -79,6 +80,9 @@ internal static class LookPatches
             Override.Reset();
             Turn.Reset();
             faceSpawnLook = true;
+            // Kept from the first tick: the writes below overwrite lookValues every frame, also while the turn
+            // waits out an OriginOverride.
+            spawnYaw = c.data.lookValues.x;
         }
         float dt = Time.deltaTime;
         tickFrame = Time.frameCount;
@@ -107,7 +111,11 @@ internal static class LookPatches
             // recenter then keeps that yaw (it reads the look this write produced).
             faceSpawnLook = false;
             var hmdYaw = (VRInput.HeadRotation * Vector3.forward).HeadingDegrees();
-            rig.Origin.rotation = Quaternion.Euler(0f, RigMath.RecenterYaw(current.x, hmdYaw), 0f);
+            rig.Origin.rotation = Quaternion.Euler(
+                0f,
+                RigMath.RecenterYaw(OpenSpawnYaw(c, spawnYaw), hmdYaw),
+                0f
+            );
         }
         var head = (rig.Origin.rotation * VRInput.HeadRotation).N();
         var look = Override.Update(
@@ -120,6 +128,52 @@ internal static class LookPatches
             look.Y
         );
         Recalculate(c);
+    }
+
+    /// <summary>A wall nearer than this (m) along the spawn look turns the new body toward open space.</summary>
+    private const float SpawnOpenDepth = 2.5f;
+
+    /// <summary>How far (m) each spawn heading is probed.</summary>
+    private const float SpawnProbeLength = 10f;
+
+    private static readonly float[] spawnDepths = new float[LookMath.SpawnYawSteps.Length];
+
+    /// <summary>
+    /// The heading a new body faces: the game's spawn look (lookValues, never set at spawn, so +Z for every seat:
+    /// in the Airport that is a wall or a door half a metre away), else the nearest heading with
+    /// <see cref="SpawnOpenDepth"/> of room, else the most open one. The same wall layers and back-face rays as
+    /// ui.world's menu placement (<see cref="UI.World.WorldCanvases.WallAlong"/>). Runs once per body.
+    /// </summary>
+    private static float OpenSpawnYaw(Character c, float lookYaw)
+    {
+        var eye = c.Head;
+        var backfaces = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        try
+        {
+            for (int i = 0; i < spawnDepths.Length; i++)
+            {
+                var dir =
+                    Quaternion.Euler(0f, lookYaw + LookMath.SpawnYawSteps[i], 0f) * Vector3.forward;
+                spawnDepths[i] = UI.World.WorldCanvases.WallAlong(
+                    eye,
+                    dir * SpawnProbeLength,
+                    out _
+                );
+            }
+        }
+        finally
+        {
+            Physics.queriesHitBackfaces = backfaces;
+        }
+        int pick = LookMath.PickOpen(spawnDepths, SpawnOpenDepth);
+        float step = LookMath.SpawnYawSteps[pick];
+        Plugin.Log.LogInfo(
+            FormattableString.Invariant(
+                $"[player.look] spawn facing: game look {lookYaw:0} deg has {spawnDepths[0]:0.0} m of room; facing {lookYaw + step:0} deg ({step:+0;-0;0} deg) with {spawnDepths[pick]:0.0} m"
+            )
+        );
+        return lookYaw + step;
     }
 
     /// <summary>No peer sees this avatar's look: offline or alone in the room, or dead, which parks the body at

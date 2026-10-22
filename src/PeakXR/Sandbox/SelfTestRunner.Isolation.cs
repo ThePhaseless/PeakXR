@@ -214,12 +214,8 @@ internal sealed partial class SelfTestRunner
             var eye = rig.Head.position;
             eyeGap = Vector3.Distance(eye, c.Head);
             detached = !PeakXR.Rig.RigDriver.ViewOnBody;
-            buried = Physics.CheckSphere(
-                eye,
-                0.1f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            );
+            // Inside rock and not hidden behind black (rig.camera's eye guard).
+            buried = PeakXR.Rig.RigDriver.EyeInside(eye) && PeakXR.VR.VRFade.Target < 0.99f;
             view =
                 $"eye {eyeGap:0.00} m from the head{(detached ? " (view detached)" : "")}{(buried ? ", inside terrain" : "")}";
         }

@@ -14,6 +14,8 @@ internal static class AvatarPatches
     private static AccessTools.FieldRef<CharacterRagdoll, Character> ragdollCharacter;
     private static AccessTools.FieldRef<CharacterItems, Character> itemsCharacter;
     private static AccessTools.FieldRef<HideTheBody, Character> hideCharacter;
+    private static AccessTools.FieldRef<HideTheBody, bool> hideShowing;
+    private static System.Action<HideTheBody, bool> hideToggle;
 
     public static void Resolve()
     {
@@ -21,7 +23,17 @@ internal static class AvatarPatches
         ragdollCharacter = GameMember.Field<CharacterRagdoll, Character>("character");
         itemsCharacter = GameMember.Field<CharacterItems, Character>("character");
         hideCharacter = GameMember.Field<HideTheBody, Character>("character");
+        hideShowing = GameMember.Field<HideTheBody, bool>("isShowing");
+        hideToggle = GameMember.Delegate<System.Action<HideTheBody, bool>>(
+            typeof(HideTheBody),
+            "Toggle",
+            new[] { typeof(bool) }
+        );
     }
+
+    /// <summary>Whether <paramref name="hide"/> shows the whole body, head included (HideTheBody.isShowing,
+    /// HideTheBody.cs:27). Read by the self-test (vr.33).</summary>
+    internal static bool BodyShowing(HideTheBody hide) => hideShowing(hide);
 
     private static AvatarPoseDriver Driver(Character c) =>
         AvatarPoseDriver.Of(c) is { HasFreshPose: true } d ? d : null;
@@ -162,6 +174,29 @@ internal static class AvatarPatches
                 __instance.SetShowing(hat, 0f);
             if (__instance.shadowCasterHat != null)
                 __instance.shadowCasterHat.SetActive(false);
+        }
+    }
+
+    /// <summary>HideTheBody.Update (HideTheBody.cs:39-50, private) shows a body only for remote, passed-out or dead
+    /// characters. While rig.camera shows the local body from outside (a detached takeover view: tumbling, rocket),
+    /// show all of it, head included, as vanilla does for a body seen from outside; when the view returns, vanilla's
+    /// Update hides it again through <see cref="HideBody"/>.</summary>
+    [HarmonyPatch]
+    internal static class ShowBodyWhenDetached
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(HideTheBody), "Update");
+
+        private static bool Prefix(HideTheBody __instance)
+        {
+            if (!VRSession.Active || !Rig.RigDriver.ViewDetached)
+                return true;
+            var c = hideCharacter(__instance);
+            if (c == null || !c.IsLocal)
+                return true;
+            if (!hideShowing(__instance))
+                hideToggle(__instance, true);
+            return false;
         }
     }
 

@@ -92,6 +92,94 @@ internal sealed class RigDriver : MonoBehaviour
     /// rocket, cutscene) or held by the title stage: the tracked hands are then near the view, not the body.</summary>
     internal static bool ViewOnBody = true;
 
+    /// <summary>A takeover view is off the own head (the chase view, or another player's eyes while spectating),
+    /// not the title stage, a rocket's own-eyes view or a cutscene shot: avatar.local shows the whole body, head
+    /// included, meanwhile.</summary>
+    internal static bool ViewDetached;
+
+    /// <summary>The eye guard (finding: warps into rock) wants black; read by the self-test.</summary>
+    internal static bool EyeGuardBlack => instance != null && instance.eyeGuard.Black;
+
+    /// <summary>Whether a point is inside level geometry: within <see cref="EyeRadius"/> of a surface, or inside a
+    /// closed mesh (the first face above it is a back face, and the same collider shows a back face below it too).
+    /// Also read by the self-test.</summary>
+    internal static bool EyeInside(Vector3 eye)
+    {
+        if (
+            Physics.CheckSphere(
+                eye,
+                EyeRadius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return true;
+        // A point inside a non-convex mesh collider overlaps nothing, and a default ray from it passes the faces
+        // turned away from it; with back faces on, the first face above is a back face (normal up). A one-sided
+        // surface overhead (thin platform, ledge, upper floor) looks the same from below, so the same collider must
+        // also close the point in from underneath: a back face (normal down) on a ray straight down.
+        var backfaces = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        try
+        {
+            if (
+                !Physics.Raycast(
+                    eye,
+                    Vector3.up,
+                    out var above,
+                    InsideProbeLength,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || above.normal.y <= 0f
+            )
+                return false;
+            int count = Physics.RaycastNonAlloc(
+                eye,
+                Vector3.down,
+                insideHits,
+                InsideProbeLength,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
+            for (int i = 0; i < count; i++)
+                if (insideHits[i].collider == above.collider && insideHits[i].normal.y < 0f)
+                    return true;
+            return false;
+        }
+        finally
+        {
+            Physics.queriesHitBackfaces = backfaces;
+        }
+    }
+
+    private static readonly RaycastHit[] insideHits = new RaycastHit[16];
+
+    /// <summary>An eye closer than this (m) to rock sees the inside of it (near clip 0.03 m).</summary>
+    private const float EyeRadius = 0.05f;
+
+    /// <summary>How far up (m) the inside probe looks for the back face of the rock around the eye.</summary>
+    private const float InsideProbeLength = 30f;
+
+    /// <summary>A view goal that moves this far (m) in one frame jumped (warp, revive, segment jump).</summary>
+    private const float JumpDistance = 1.5f;
+
+    /// <summary>The chase view stays this far (m) in front of rock between it and the watched body.</summary>
+    private const float ChaseMargin = 0.3f;
+
+    /// <summary>A chase view pulled closer than this (m) to the watched body rises above it instead.</summary>
+    private const float ChaseMinDistance = 1f;
+
+    private readonly EyeGuard eyeGuard = new();
+    private readonly ChaseBlock chaseBlock = new();
+
+    /// <summary>This frame's view goal before the chase pull-in: a jump of it is a warp, a pull-in is not.</summary>
+    private Vector3 rawGoal;
+    private Vector3 lastRawGoal;
+    private Vector3 lastGoal;
+    private bool haveLastGoal;
+    private bool wasLoading;
+
     private readonly TrackedDevices devices = new();
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
@@ -253,6 +341,10 @@ internal sealed class RigDriver : MonoBehaviour
         VRFade.Clear(this);
         VRFade.Clear(wallFadeOwner);
         headBlocked = false;
+        eyeGuard.Reset();
+        chaseBlock.Reset();
+        haveLastGoal = false;
+        ViewDetached = false;
         BodyAnchor = null;
     }
 
@@ -282,6 +374,9 @@ internal sealed class RigDriver : MonoBehaviour
             torsoEyes.Reset();
             needInitialRecenter = c != null;
             snap = true;
+            // A spawn or respawn can put the body (and the eyes) in rock.
+            if (c != null)
+                eyeGuard.Arm();
         }
         UpdateEyeOffset(c, dt);
         HandleRecenterInput(c, dt);
@@ -295,8 +390,18 @@ internal sealed class RigDriver : MonoBehaviour
         else
             PlaceOrigin(c, dt);
         ViewOnBody = !rig.OriginOverride && shownKind == ViewKind.FirstPerson;
+        // Off the own head only: the chase view, or another player's eyes. A rocket's FollowFirstPerson rides the
+        // own eyes (target is the local player), and Static cutscene shots keep vanilla's hidden body.
+        ViewDetached =
+            !rig.OriginOverride
+            && (
+                shownKind == ViewKind.ThirdPerson
+                || shownKind == ViewKind.FollowFirstPerson
+                    && shownTarget != null
+                    && shownTarget != c
+            );
 
-        CheckHeadInWall(c);
+        CheckHeadInWall(c, dt);
         DriveCamera();
         TraceTurn(c);
         TraceLeanView(c);
@@ -605,7 +710,11 @@ internal sealed class RigDriver : MonoBehaviour
         takeover.Update(want, dt);
         if (takeover.SwitchedThisFrame)
         {
-            shownKind = takeover.Detached ? kind : ViewKind.FirstPerson;
+            var newKind = takeover.Detached ? kind : ViewKind.FirstPerson;
+            // A new view (not a re-placing blink, which the eye guard itself can ask for) may start in rock.
+            if (newKind != shownKind || target != shownTarget)
+                eyeGuard.Arm();
+            shownKind = newKind;
             shownTarget = target;
             staticSource = source;
             staticPoint = source != null ? source.position : anchor;
@@ -629,8 +738,18 @@ internal sealed class RigDriver : MonoBehaviour
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
         {
             spectateFloor.Hide();
+            haveLastGoal = false;
             return;
         }
+        // Warps, revives and segment jumps move the body (and the goal) metres in one frame; the chase pull-in
+        // starting or stopping moves only the pulled goal, which is not a jump.
+        if (shownKind != ViewKind.ThirdPerson)
+            rawGoal = goal;
+        if (haveLastGoal && (rawGoal - lastRawGoal).sqrMagnitude > JumpDistance * JumpDistance)
+            eyeGuard.Arm();
+        lastGoal = goal;
+        lastRawGoal = rawGoal;
+        haveLastGoal = true;
         float verticalRate =
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything
                 ? Mathf.Min(rate, GroundedVerticalRate)
@@ -755,14 +874,28 @@ internal sealed class RigDriver : MonoBehaviour
     /// The head can lean up to 1 m from a blocked body before room-scale recenters, so it can enter rock or a wall.
     /// Then the view fades to black and the camera stays on the body's side of the surface; the game's interact,
     /// thorn and climb-start rays start at the camera (Interaction.cs:204, :158, CharacterClimbing.cs:541), so a
-    /// VR player cannot see, grab or climb through geometry.
+    /// VR player cannot see, grab or climb through geometry. The chase view does the same against the watched
+    /// body, and when its anchor still trails behind the rock it is re-placed (in front of it) behind a blink.
+    /// After a jump (<see cref="EyeGuard"/>: warp, revive, segment jump, spawn, new takeover view) an eye found
+    /// inside rock also holds black, without moving the view, until the body settles out of it.
     /// </summary>
-    private void CheckHeadInWall(Character c)
+    private void CheckHeadInWall(Character c, float dt)
     {
         headBlocked = false;
-        if (c != null && !rig.OriginOverride && shownKind == ViewKind.FirstPerson && headTracked)
+        bool chase = shownKind == ViewKind.ThirdPerson;
+        bool onBody = shownKind == ViewKind.FirstPerson || shownKind == ViewKind.FollowFirstPerson;
+        var watched = shownTarget != null ? shownTarget : c;
+        // Spawns land while the loading screen still shows (yieldForCharacterSpawn): watch from when it lifts.
+        bool loading = LoadingScreenHandler.loading;
+        if (wasLoading && !loading && c != null)
+            eyeGuard.Arm();
+        wasLoading = loading;
+        bool live = c != null && !rig.OriginOverride && headTracked && !loading;
+        // A dead body is parked out of the world (Character.DeathPos, Character.cs:561): nothing to test against.
+        bool chaseLive = chase && watched != null && !watched.data.dead;
+        if (live && (shownKind == ViewKind.FirstPerson || chaseLive))
         {
-            var from = c.Center;
+            var from = chase ? watched.VirtualCenter : c.Center;
             if (
                 Physics.Linecast(
                     from,
@@ -777,11 +910,48 @@ internal sealed class RigDriver : MonoBehaviour
                 blockedEye = Vector3.MoveTowards(hit.point, from, WallMargin);
             }
         }
-        if (headBlocked)
+        if (chase)
+        {
+            // A body tumbling past boulders or a climber on a ledge passes behind rock for a moment all the time:
+            // only a lasting block hides the view, and a trailing view re-places at most once per interval.
+            if (
+                chaseBlock.Update(dt, headBlocked, Vector3.Distance(anchor, lastGoal) > ChaseMargin)
+            )
+                takeover.Blink();
+            headBlocked = chaseBlock.Blocked;
+        }
+        else
+        {
+            chaseBlock.Update(dt, false, false);
+        }
+        bool wasBlack = eyeGuard.Black;
+        bool inside = live && (onBody || chase) && eyeGuard.Watching && EyeInside(EyePosition());
+        eyeGuard.Update(dt, inside);
+        if (eyeGuard.Black != wasBlack)
+            Plugin.Log.LogInfo(
+                eyeGuard.Black ? $"{Tag} Eye inside rock after a jump ({shownKind}): holding black"
+                : inside
+                    ? $"{Tag} Eye still inside rock after {eyeGuard.MaxHoldSeconds:0} s: view back anyway"
+                : $"{Tag} Eye clear of rock: view back"
+            );
+        if (headBlocked || eyeGuard.Black)
             VRFade.Set(wallFadeOwner, 1f);
         else
             VRFade.Clear(wallFadeOwner);
     }
+
+    /// <summary><paramref name="to"/>, or pulled toward <paramref name="from"/> to stop <see cref="ChaseMargin"/>
+    /// short of rock between them.</summary>
+    private static Vector3 ClearChase(Vector3 from, Vector3 to) =>
+        Physics.Linecast(
+            from,
+            to,
+            out var wall,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? RigMath.PullIn(from.N(), to.N(), wall.distance, ChaseMargin).U()
+            : to;
 
     /// <summary>Where the player's calibrated eyes go this frame, and how the anchor follows it.</summary>
     private bool TryGoal(Character c, float yaw, out Vector3 goal, out float rate, out float maxLag)
@@ -814,6 +984,17 @@ internal sealed class RigDriver : MonoBehaviour
                         CameraFeature.ThirdPersonHeight.Value
                     )
                     .U();
+                // Rock between the body and the chase point: the point comes in front of it, so a view re-placed
+                // behind a fade (CheckHeadInWall) never lands inside the rock. Pulled in to the body (a wall at its
+                // back), it rises above the body instead, so the view never sits inside the watched character.
+                rawGoal = goal;
+                var from = target.VirtualCenter;
+                goal = ClearChase(from, goal);
+                if (Vector3.Distance(from, goal) < ChaseMinDistance)
+                    goal = ClearChase(
+                        from,
+                        from + Vector3.up * Mathf.Max(ChaseMinDistance, distance)
+                    );
                 rate = CameraFeature.ThirdPersonFollow.Value;
                 maxLag = -1f;
                 // A still or slow view that lost the body re-places itself behind a fade.

@@ -194,6 +194,19 @@ namespace PeakXR.Core
             + new Vector3(0f, height, 0f);
 
         /// <summary>
+        /// <paramref name="to"/> pulled toward <paramref name="from"/> so it stops <paramref name="margin"/> metres
+        /// short of a wall hit <paramref name="hitDistance"/> metres along the line (infinity: no wall). Keeps the
+        /// chase view on the watched body's side of rock.
+        /// </summary>
+        public static Vector3 PullIn(Vector3 from, Vector3 to, float hitDistance, float margin)
+        {
+            float length = Vector3.Distance(from, to);
+            if (!(hitDistance < length) || length < 1e-6f)
+                return to;
+            return from + (to - from) * (MathF.Max(0f, hitDistance - margin) / length);
+        }
+
+        /// <summary>
         /// Whether a still cutscene viewpoint fades and re-places itself at the cutscene camera. A cut (the camera
         /// jumped more than 3 m this frame) re-places at once; a shot that glided more than 3 m away re-places only
         /// after a 3 s dwell, so a camera that keeps moving cannot strobe the view black.

@@ -97,4 +97,28 @@ public class LookMathTests
         float yaw = LookMath.ContinueYaw(LookMath.YawSafetyLimit - 1f, 10f);
         Assert.InRange(yaw, -180f, 180f);
     }
+
+    [Fact]
+    public void SpawnYawSteps_StartAhead_CoverTheCircle()
+    {
+        Assert.Equal(0f, LookMath.SpawnYawSteps[0]);
+        var seen = new System.Collections.Generic.HashSet<int>();
+        foreach (var step in LookMath.SpawnYawSteps)
+            seen.Add((int)MathF.Round(LookMath.WrapDegrees(step)));
+        Assert.Equal(12, seen.Count);
+        Assert.Equal(12, LookMath.SpawnYawSteps.Length);
+    }
+
+    [Fact]
+    public void PickOpen_FirstHeadingWithRoomWins()
+    {
+        Assert.Equal(0, LookMath.PickOpen(new[] { 3f, 10f }, 2.5f));
+        Assert.Equal(2, LookMath.PickOpen(new[] { 0.4f, 1f, 3f, 10f }, 2.5f));
+    }
+
+    [Fact]
+    public void PickOpen_NoRoom_TakesTheDeepest()
+    {
+        Assert.Equal(1, LookMath.PickOpen(new[] { 0.4f, 2f, 1f }, 2.5f));
+    }
 }
