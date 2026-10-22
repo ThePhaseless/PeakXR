@@ -12,7 +12,9 @@ internal sealed class SocialConfig
         feedAtMouth,
         struggle,
         giveUpGuard,
-        graspHaptics;
+        graspHaptics,
+        pullToPluck,
+        shoveKick;
     private ConfigEntry<float> reach;
 
     public bool HandInteract => handInteract?.Value ?? true;
@@ -21,6 +23,8 @@ internal sealed class SocialConfig
     public bool Struggle => struggle?.Value ?? true;
     public bool GiveUpGuard => giveUpGuard?.Value ?? true;
     public bool GraspHaptics => graspHaptics?.Value ?? true;
+    public bool PullToPluck => pullToPluck?.Value ?? true;
+    public bool ShoveKick => shoveKick?.Value ?? true;
     public float Reach => reach?.Value ?? 0.2f;
 
     public static void Bind(ConfigFile file)
@@ -34,7 +38,7 @@ internal sealed class SocialConfig
                 true,
                 "Close your grip on a friend to interact through the game's own actions: pull a stuck or climbing "
                     + "friend up (empty hand), carry or drop a passed-out friend, open their backpack from behind, "
-                    + "pluck thorns and arrows (yours or theirs) and pull off stuck items. Hold the grip as long as "
+                    + "pluck thorns, arrows and ticks (yours or theirs) and pull off stuck items. Hold the grip as long as "
                     + "the game's hold time."
             ),
             reach = file.Bind(
@@ -78,6 +82,20 @@ internal sealed class SocialConfig
                 "GraspHaptics",
                 true,
                 "Vibrate when your reach catches a friend or a ledge's helping hand catches you."
+            ),
+            pullToPluck = file.Bind(
+                s,
+                "PullToPluck",
+                true,
+                "Pinch a thorn or arrow, then pull your hand back a few centimetres to start pulling it out. Off: the "
+                    + "grip alone starts it."
+            ),
+            shoveKick = file.Bind(
+                s,
+                "ShoveKick",
+                true,
+                "In a custom run with the helping hand set to kick, push both open palms at a friend to kick them. "
+                    + "Gripping a friend never kicks."
             ),
         };
     }

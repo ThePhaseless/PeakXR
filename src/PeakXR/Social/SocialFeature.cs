@@ -23,6 +23,9 @@ public sealed class SocialFeature : Feature
         Patch(typeof(SocialPatches.SampleTick));
         Patch(typeof(SocialPatches.SampleLast));
         Patch(typeof(SocialPatches.Raycasts));
+        Patch(typeof(SocialPatches.HandPick));
+        Patch(typeof(SocialPatches.PackPick));
+        Patch(typeof(SocialPatches.CarryDropsPack));
         Patch(typeof(SocialPatches.FeedAngle));
         Patch(typeof(SocialPatches.Grasp));
         GripHooks.Register(SocialHands.Instance);
