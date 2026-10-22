@@ -86,6 +86,10 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     internal static bool CinemaShowing =>
         instance != null && instance.cinemaRunning && instance.cinema.Showing;
 
+    /// <summary>A campfire segment swap is armed or holding its fade; the self-test watches the fade through it.</summary>
+    internal static bool SegmentPending =>
+        instance != null && (instance.segmentArmed || instance.segmentBusy);
+
     private static bool? comfortViewpoint;
 
     /// <summary>
