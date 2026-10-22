@@ -61,6 +61,7 @@ sealed class OpenXRBackend : ManagedXRBackend
 
     protected override XRLoader CreateLoader(XRStartOptions options)
     {
+        // Settings API: https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.16/api/UnityEngine.XR.OpenXR.OpenXRSettings.html
         // Awake of a new OpenXRSettings registers it as OpenXRSettings.Instance in a player build.
         var settings = ScriptableObject.CreateInstance<OpenXRSettings>();
         settings.renderMode = OpenXRSettings.RenderMode.MultiPass;
@@ -85,7 +86,7 @@ sealed class OpenXRBackend : ManagedXRBackend
         features.Add(
             MakeFeature(
                 typeof(PeakXRSessionFeature),
-                "PeakXR Session Monitor",
+                "PeakXR Session State",
                 "com.thephaseless.peakxr.session",
                 "",
                 1000
@@ -164,11 +165,12 @@ sealed class OpenXRBackend : ManagedXRBackend
 
 /// <summary>
 /// Hidden OpenXR feature whose only job is to report session state changes (focus loss when the
-/// runtime dashboard opens, exit and loss events) to <see cref="XRSessionState"/>.
+/// runtime dashboard opens, exit and loss events) to <see cref="XRSessionState"/>. Callbacks:
+/// https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.16/api/UnityEngine.XR.OpenXR.Features.OpenXRFeature.html
 /// </summary>
 sealed class PeakXRSessionFeature : OpenXRFeature
 {
-    // XrSessionState values from the OpenXR spec.
+    // XrSessionState values: https://registry.khronos.org/OpenXR/specs/1.1/man/html/XrSessionState.html
     const int Exiting = 8;
     const int LossPending = 7;
 

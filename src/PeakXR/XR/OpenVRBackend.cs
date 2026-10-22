@@ -12,7 +12,8 @@ namespace PeakXR.XR;
 /// Valve OpenVR provider (unity-xr-plugin), the fallback when OpenXR does not start. In a player the
 /// native plugin normally reads its settings from StreamingAssets/SteamVR/OpenVRSettings.asset, which
 /// the game does not have; we pass MultiPass and "no mirror" through the plugin's own
-/// SetUserDefinedSettings entry point instead (the managed side only calls it in the editor).
+/// SetUserDefinedSettings entry point instead (the managed side only calls it in the editor), see
+/// https://github.com/ValveSoftware/unity-xr-plugin/blob/master/com.valve.openvr/Runtime/OpenVRLoader.cs
 /// </summary>
 sealed class OpenVRBackend : ManagedXRBackend
 {

@@ -13,7 +13,8 @@ namespace PeakXR.Rig;
 /// <c>XRMirrorView</c> shader has no compiled code in the build (docs/research/stack.md section 4), so
 /// xr.bootstrap turns URP's mirror off and this copies the eye after all cameras have rendered. The
 /// provider's native blit is used when it offers one; otherwise the eye texture is copied (one array
-/// slice in MultiPass) and drawn whole, upright and letterboxed into the window.
+/// slice in MultiPass) and drawn whole, upright and letterboxed into the window. API:
+/// https://docs.unity3d.com/6000.3/Documentation/ScriptReference/XR.XRDisplaySubsystem.GetMirrorViewBlitDesc.html
 /// </summary>
 internal sealed class DesktopMirror
 {
