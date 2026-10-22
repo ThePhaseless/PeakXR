@@ -34,5 +34,6 @@ public sealed class PhysicalInteractionFeature : Feature
         Patch(typeof(InteractPatches.Dropping));
         Climb.ClimbHands.Bind(Plugin.Settings);
         GripHooks.Register(Climb.ClimbHands.Extension);
+        GripHooks.Register(Climb.TraversalGrips.Instance);
     }
 }

@@ -2,6 +2,7 @@ using System;
 using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 using NVector3 = System.Numerics.Vector3;
@@ -16,6 +17,9 @@ namespace PeakXR.Interact.Climb;
 /// regrip grace, the player lets go through the game's own stop. Jump still lets go, and the stick still climbs.
 /// The first grab still goes through the grip interact (<c>RopeSegment.Interact</c>, <c>JungleVine.Interact</c>,
 /// <c>ClimbHandle.Interact</c>); the hand that made it counts as holding on.
+/// Along the way the hands feel the line: a knock at either end of a rope, a slow fill while a handle rests them, a
+/// growing warning while a fragile piton cracks, and a hard beat when the game tears them off. Leaning the head
+/// along a swing pumps it (decision D7, <see cref="RopePump"/>).
 /// </summary>
 internal static class ClimbHands
 {
@@ -37,10 +41,16 @@ internal static class ClimbHands
     }
 
     /// <summary>Distance (metres) from the rope or vine within which a closing grip holds it.</summary>
-    private const float LineRadius = 0.12f;
+    internal const float LineRadius = 0.12f;
 
     /// <summary>Distance (metres) from a handle within which a closing grip holds it.</summary>
-    private const float HandleRadius = 0.1f;
+    internal const float HandleRadius = 0.1f;
+
+    /// <summary>Rope pump tuning: head speed deadzone (m/s), gain (m/s² per m/s), cap (m/s²). The game's own climber
+    /// weight on the segment is 1 m/s² (Rope.cs:23, :167-171).</summary>
+    private const float PumpDeadzone = 0.25f,
+        PumpGain = 4f,
+        PumpMax = 3f;
 
     /// <summary>Percent step either side of the climb point used to read the line's direction.</summary>
     private const float PercentProbe = 0.02f;
@@ -53,12 +63,21 @@ internal static class ClimbHands
 
     private static ConfigEntry<bool> ropeHands;
     private static ConfigEntry<bool> handleHands;
+    private static ConfigEntry<bool> ropePump;
 
     private static Mode mode;
     private static UnityEngine.Object held;
     private static bool engaged;
     private static float stickY;
     private static float lastSign;
+
+    /// <summary>The rope's end was reached on the last frame (one knock per arrival).</summary>
+    private static bool atEnd;
+    private static Vector3 lastHead;
+    private static bool headValid;
+    private static Transform pumpSegment;
+    private static Rigidbody pumpBody;
+    private static ShittyPiton piton;
 
     /// <summary>An exception was logged for the current rope, vine or handle; quiet until the next one.</summary>
     private static bool faulted;
@@ -71,6 +90,10 @@ internal static class ClimbHands
 
     internal static bool RopeHands => ropeHands?.Value ?? true;
     internal static bool HandleHands => handleHands?.Value ?? true;
+    internal static bool RopePumping => ropePump?.Value ?? true;
+
+    /// <summary>Last pump acceleration put on the held rope segment (self-test vr.42b).</summary>
+    internal static float LastPump { get; private set; }
 
     public static void Bind(ConfigFile file)
     {
@@ -88,6 +111,13 @@ internal static class ClimbHands
             true,
             "Hang from a piton or pickaxe handle while your grip holds it; open the hand to let go. Off: interact again "
                 + "or jump to let go."
+        );
+        ropePump = file.Bind(
+            s,
+            "RopeSwingPump",
+            true,
+            "On a rope you put out yourself, lean your head along the swing to pump it higher, as shifting your weight "
+                + "would. Still: the rope swings as in the flat game."
         );
     }
 
@@ -122,14 +152,25 @@ internal static class ClimbHands
 
         var now = Current(c, out var obj);
         if (now != mode || obj != held)
+        {
+            // The game let go of the line or handle while a hand still held it (stamina, a ragdoll, a broken piton,
+            // the rope gone): torn off. A hand-made release goes through LetGo, which has already left the mode.
+            if (now == Mode.None)
+            {
+                TornIfHeld(LeftHand);
+                TornIfHeld(RightHand);
+            }
             Enter(c, rig, now, obj);
+        }
         if (mode == Mode.None || dt <= 0f)
             return;
 
         // With a menu or wheel open, or a controller lost, the hands' state is frozen: nobody falls off a rope
         // because a menu ate the grip or tracking blinked.
         bool frozen = !active || !VRInput.Left.Tracked || !VRInput.Right.Tracked;
-        if (!frozen)
+        if (frozen)
+            headValid = false;
+        else
         {
             Release(LeftHand);
             Release(RightHand);
@@ -146,7 +187,11 @@ internal static class ClimbHands
             }
         }
         if (mode == Mode.Handle)
+        {
+            if (!frozen)
+                HandleFeel(c, l, r);
             return;
+        }
 
         var d = Arms.Update(
                 l && VRInput.Left.Tracked,
@@ -161,6 +206,11 @@ internal static class ClimbHands
         float smoothed = ClimbInput.Smooth(new(0f, stickY), new(0f, target), 12f, dt).Y;
         // Smoothing never reaches zero, and any residue would keep climbing (and paying up-stamina) with still hands.
         stickY = Mathf.Abs(smoothed) < 0.05f ? 0f : smoothed;
+        if (mode == Mode.Rope && !frozen)
+        {
+            RopeEnd(c, l, r);
+            Pump(c, rig, l || r, dt);
+        }
 
         if (cfg.StaminaHaptics && (l || r))
         {
@@ -215,6 +265,12 @@ internal static class ClimbHands
         stickY = 0f;
         lastSign = 0f;
         LeftHand.Anchored = RightHand.Anchored = false;
+        atEnd = false;
+        headValid = false;
+        pumpSegment = null;
+        pumpBody = null;
+        LastPump = 0f;
+        piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
         Arms.Reset();
         Grace.Reset();
         StaminaBeat.Reset();
@@ -350,29 +406,41 @@ internal static class ClimbHands
             return handle != null && (handle.transform.position - pos).sqrMagnitude <= h * h;
         }
         float r = LineRadius * scale;
+        return mode == Mode.Rope
+            ? NearRope(c.data.heldRope, pos, r)
+            : NearVine(c.data.heldVine, pos, r);
+    }
+
+    /// <summary>The point is within <paramref name="r"/> of the rope's axis (its segment transforms, Rope.cs:186).</summary>
+    internal static bool NearRope(Rope rope, Vector3 pos, float r)
+    {
         float r2 = r * r;
         var p = pos.N();
-        if (mode == Mode.Rope)
-        {
-            var segments = c.data.heldRope.GetRopeSegments();
-            if (segments == null)
-                return false;
-            for (int i = 1; i < segments.Count; i++)
-            {
-                if (
-                    segments[i - 1] != null
-                    && segments[i] != null
-                    && RopeClimb.SegmentDistanceSq(
-                        p,
-                        segments[i - 1].position.N(),
-                        segments[i].position.N()
-                    ) <= r2
-                )
-                    return true;
-            }
+        var segments = rope.GetRopeSegments();
+        if (segments == null)
             return false;
+        for (int i = 1; i < segments.Count; i++)
+        {
+            if (
+                segments[i - 1] != null
+                && segments[i] != null
+                && RopeClimb.SegmentDistanceSq(
+                    p,
+                    segments[i - 1].position.N(),
+                    segments[i].position.N()
+                ) <= r2
+            )
+                return true;
         }
-        var vine = c.data.heldVine;
+        return false;
+    }
+
+    /// <summary>The point is within <paramref name="r"/> of the drawn vine: its collider children lowered by
+    /// <c>colliderOffset</c> (JungleVine.cs:286-297).</summary>
+    internal static bool NearVine(JungleVine vine, Vector3 pos, float r)
+    {
+        float r2 = r * r;
+        var p = pos.N();
         var root = vine.colliderRoot;
         if (root == null)
             return false;
@@ -389,6 +457,104 @@ internal static class ClimbHands
                 return true;
         }
         return false;
+    }
+
+    private static void TornIfHeld(Hand hand)
+    {
+        if (hand.Anchored && hand.Grip.Held)
+            PhysicalInteraction.TearOff(hand.Left, Time.time);
+    }
+
+    /// <summary>
+    /// While hanging from a handle: the gripping hands feel stamina refill (the game regenerates it there,
+    /// CharacterClimbing.cs:160-227) as a slow progress fill, so hanging is learnt as rest. A fragile piton that has
+    /// started to crack (ShittyPiton.cs:57-93; its <c>crack</c> grows 0.75 per crack, 4 cracks break it) turns that
+    /// into a warning at the handle that speeds up with each crack.
+    /// </summary>
+    private static void HandleFeel(Character c, bool l, bool r)
+    {
+        var handle = c.data.currentClimbHandle;
+        if (handle == null)
+            return;
+        if (piton != null && piton.crack != null && piton.crack.activeSelf)
+        {
+            float urgency = Mathf.Clamp01(piton.crack.transform.localScale.x / 3f);
+            var at = handle.transform.position;
+            if (l)
+                Affordance.Danger(true, at, urgency);
+            if (r)
+                Affordance.Danger(false, at, urgency);
+            return;
+        }
+        float max = c.GetMaxStamina();
+        float fill = max > 0f ? c.GetTotalStamina() / max : 1f;
+        if (fill >= 0.999f)
+            return;
+        if (l)
+            Affordance.Progress(true, fill);
+        if (r)
+            Affordance.Progress(false, fill);
+    }
+
+    /// <summary>
+    /// A knock as the climb point reaches either end of the rope while the arms still pull that way:
+    /// <c>ropePercent</c> clamps to 0..1 with no event (CharacterRopeHandling.cs:64-65), and stick +Y moves it toward 0
+    /// (<c>GetMove</c> is negative).
+    /// </summary>
+    private static void RopeEnd(Character c, bool l, bool r)
+    {
+        float p = c.data.ropePercent;
+        bool end = (stickY > 0f && p <= 0.001f) || (stickY < 0f && p >= 0.999f);
+        if (end && !atEnd)
+        {
+            if (l)
+                Affordance.EndStop(true);
+            if (r)
+                Affordance.EndStop(false);
+        }
+        atEnd = end;
+    }
+
+    /// <summary>
+    /// D7: the head leaning along the swing pushes the held segment (<see cref="RopePump"/>). Only the rope's owner
+    /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent.
+    /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner.
+    /// </summary>
+    private static void Pump(Character c, VRRig rig, bool holding, float dt)
+    {
+        var head = VRInput.HeadPosition;
+        bool valid = headValid;
+        var velocity = valid ? (head - lastHead) / dt : Vector3.zero;
+        lastHead = head;
+        headValid = VRInput.HeadTracked;
+        LastPump = 0f;
+        var rope = c.data.heldRope;
+        if (
+            !RopePumping
+            || !holding
+            || !valid
+            || rope.photonView == null
+            || !rope.photonView.IsMine
+        )
+            return;
+        var api = rope.climbingAPI;
+        var segments = rope.GetRopeSegments();
+        if (api == null || segments == null || segments.Count < 2)
+            return;
+        var segment = api.GetSegmentFromPercent(c.data.ropePercent);
+        if (segment != pumpSegment)
+        {
+            pumpSegment = segment;
+            pumpBody = segment != null ? segment.GetComponent<Rigidbody>() : null;
+        }
+        if (pumpBody == null)
+            return;
+        if (rig.Origin != null)
+            velocity = rig.Origin.TransformVector(velocity);
+        var push = RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax).U();
+        LastPump = push.magnitude;
+        if (LastPump > 0f)
+            pumpBody.AddForce(push * dt, ForceMode.VelocityChange);
     }
 
     /// <summary>
