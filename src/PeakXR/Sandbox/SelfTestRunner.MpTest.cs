@@ -36,6 +36,9 @@ internal sealed partial class SelfTestRunner
 
     const float NearItems = 40f;
 
+    /// <summary>How far (m) from the head a scripted hand may reach toward a friend: about a real arm.</summary>
+    const float MpArmReach = 0.85f;
+
     /// <summary>Set by <see cref="MpTestFeature"/>; non-null switches this runner to the mp script.</summary>
     internal static string MpDirectory;
 
@@ -136,7 +139,7 @@ internal sealed partial class SelfTestRunner
             WriteCheckpoint(id, "skip", "VR not active");
             yield break;
         }
-        yield return Run(id, timeout, body);
+        yield return Run(id, timeout, vr && MpReady ? MpSettled(body) : body);
         var r = report.Steps[report.Steps.Count - 1];
         WriteCheckpoint(
             id,
@@ -149,6 +152,51 @@ internal sealed partial class SelfTestRunner
         yield return Wait(CheckpointHold);
         if (VRInput.TestOverride == applyHands)
             yield return Guard(r.Passed ? MpRest() : HandsRelease(), Now + 3f, _ => { });
+    }
+
+    /// <summary>
+    /// The online counterpart of the self-test's <see cref="Settle"/>, without warps (nothing here warps online): A
+    /// awake (the game's own revive on its own character), pause closed, buttons and sticks at rest, any head dip
+    /// undone, then the rig recentred and the body grounded, under its own control (not ragdolled or climbing) and
+    /// still for <see cref="SettleHold"/>. A body that never settles fails the step with the reason, so a step never
+    /// starts on a body a previous step left falling, sliding or in the detached ragdoll view (MP run 7: holster and
+    /// climb ran with the view 2.9 m behind the torso).
+    /// </summary>
+    IEnumerator MpSettled(IEnumerator body)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        if (c == null || rig == null)
+        {
+            Fail("not settled: no character or rig");
+            yield break;
+        }
+        if (c.data.dead || c.data.fullyPassedOut)
+        {
+            Wake(c);
+            yield return WaitFor(() => !c.data.dead && !c.data.fullyPassedOut, 5f);
+        }
+        ClosePause();
+        Calm(ref scriptLeft);
+        Calm(ref scriptRight);
+        if (VRInput.TestOverride != null && VRInput.TestOverride != applyHands)
+            VRInput.TestOverride = applyHands;
+        // A climb left on: let go, the body drops to its feet.
+        if (c.data.isClimbingAnything)
+        {
+            scriptLeft.Grip = scriptRight.Grip = 0f;
+            yield return WaitFor(() => !c.data.isClimbingAnything, 3f);
+        }
+        yield return SettleRecenter(rig);
+        if (!stepOk)
+            yield break;
+        yield return StandStill(c);
+        if (settledFor < SettleHold)
+        {
+            Fail("not settled: " + SettleProblem(c, needSpot: false));
+            yield break;
+        }
+        yield return body;
     }
 
     void WriteCheckpoint(string id, string status, string note)
@@ -564,10 +612,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator Holster()
     {
-        var item = HeldItem() == null ? OnGround(mpItem) ?? NearestGround(_ => true) : null;
-        if (item != null)
-            yield return GrabWorld(item);
-        if (!stepOk)
+        if (HeldItem() == null)
+            yield return GrabReachable(_ => true, OnGround(mpItem));
+        if (!stepOk || stepSkip != null)
             yield break;
         if (HeldItem() == null)
         {
@@ -722,6 +769,36 @@ internal sealed partial class SelfTestRunner
         rig.RotateYaw(
             Vector3.SignedAngle(Flat(rig.Head.forward), Flat(world - rig.Head.position), Vector3.up)
         );
+    }
+
+    /// <summary>
+    /// Grabs the first of up to three ground items (<paramref name="first"/>, then the nearest matching
+    /// <paramref name="ok"/>) that the walk actually reaches; one on a ledge or behind rock is passed over (MP run 7:
+    /// holster walked into rock 4.2 m short of the thrown drink). SKIP when none can be reached.
+    /// </summary>
+    IEnumerator GrabReachable(Func<Item, bool> ok, Item first = null)
+    {
+        var tried = new HashSet<Item>();
+        for (int i = 0; i < 3; i++)
+        {
+            var item =
+                i == 0 && first != null ? first : NearestGround(x => ok(x) && !tried.Contains(x));
+            if (item == null)
+                break;
+            tried.Add(item);
+            yield return WalkTo(
+                () => item != null ? item.Center() : Character.localCharacter.Center,
+                0.55f,
+                false
+            );
+            var to = item != null ? item.Center() - Character.localCharacter.Center : Vector3.zero;
+            to.y = 0f;
+            if (item == null || to.magnitude > 0.8f)
+                continue;
+            yield return GrabWorld(item);
+            yield break;
+        }
+        stepSkip = $"no reachable item among {tried.Count} tried within {NearItems:0} m";
     }
 
     /// <summary>Walks to a ground item and closes the right hand on it (vr.10's grab, on an item the level spawned).</summary>
@@ -1076,29 +1153,45 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        var rock = NearestGround(i => !i.canUseOnFriend && !IsFood(i));
-        if (rock == null)
-        {
-            stepSkip = $"no non-food item within {NearItems:0} m";
-            yield break;
-        }
-        yield return GrabWorld(rock);
-        if (!stepOk)
+        // A small one-handed thing (MP run 7 took the two-hand step's Guidebook, whose two-hand hold kept it from the
+        // host's mouth).
+        var info = new ItemHoldInfo();
+        yield return GrabReachable(i =>
+            !i.canUseOnFriend
+            && !IsFood(i)
+            && info.Bind(i)
+            && info.Profile.Handedness == Handedness.OneHanded
+        );
+        if (!stepOk || stepSkip != null)
             yield break;
         var item = HeldItem();
-        yield return WalkTo(HostCenter, 0.75f, true);
+        yield return WalkTo(HostCenter, 0.6f, true);
         if (!stepOk)
             yield break;
         var host = Host();
+        var rig = VRRig.Instance;
+        // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
+        // 1.4 m under the floor toward a host down the slope).
+        float gap = Vector3.Distance(rig.Head.position, host.Head);
+        if (gap > MpArmReach)
+        {
+            stepSkip = $"the host's head is {gap:0.00} m from A's, out of arm's reach";
+            yield break;
+        }
         Face(host.Head);
         bool left = LocalHold.ItemInLeftHand;
         float mark = CueMark();
         float end = Now + 3f;
+        float best = float.MaxValue;
         while (Now < end && HeldItem() == item)
         {
+            best = Mathf.Min(best, Vector3.Distance(item.Center(), host.Head));
             var goal =
                 Script(left).Position
-                + VRRig.Instance.Origin.InverseTransformVector(host.Head - item.Center());
+                + rig.Origin.InverseTransformVector(host.Head - item.Center());
+            goal =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
             SetHand(
                 left,
                 HandScript
@@ -1109,6 +1202,9 @@ internal sealed partial class SelfTestRunner
                 break;
             yield return null;
         }
+        bool fired = CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _);
+        if (!fired)
+            Note($"{item.name} came within {best:0.00} m of the host's head");
         yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0f);
         if (stepOk)
             stepNote = $"{item.name} at the host's mouth refused; {cueNote}";
@@ -1353,10 +1449,15 @@ internal sealed partial class SelfTestRunner
             float mark = CueMark();
             yield return Wait(1.2f);
             bool felt = CueLog.Capture.Felt(true, CueFeel.Progress, mark, out _);
-            bool jumper = !VRInput.LeftHanded;
+            // Jump is the dominant hand's primary (Bindings: VRAction.Jump); Script takes "left" (MP run 7 pressed the
+            // off hand's, so A never jumped and B was never boosted).
+            bool jumper = VRInput.LeftHanded;
             Script(jumper).Primary = true;
             yield return Wait(0.15f);
             Script(jumper).Primary = false;
+            yield return Until(() => c.data.sinceJump < 1f, 1f, "A did not jump");
+            if (!stepOk)
+                yield break;
             yield return Wait(0.5f);
             stepNote = $"crouched under the host and jumped; pressure felt on A: {felt}";
         }
@@ -1403,7 +1504,7 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         Face(fire.Center());
-        bool left = !VRInput.LeftHanded;
+        bool left = VRInput.LeftHanded; // the dominant hand
         var logs = fire.Center();
         yield return MoveTo(left, () => logs, 0.5f);
         float mark = CueMark();
@@ -1420,16 +1521,17 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// spectate (MainCameraMovement.cs:77-84, HandleSpecSelection :175-205): A passes out with the game's own command
-    /// on its own character (Character.PassOut, :986), so the game spectates the host. With one friend there is
-    /// nobody to switch to: a flick of the stick (SpectateNext) keeps the view on the host and must say so
-    /// (CantSwitch on the dominant hand). A stays down until after the checkpoint, so B sees it passed out.
+    /// spectate (MainCameraMovement.cs:77-84): A passes out with the game's own command on its own character
+    /// (Character.PassOut, :986). A passed-out player still counts as spectatable (CharacterData.canBeSpectated,
+    /// :323-331), so the game watches A's own body (GetSpecPlayer, :257-260; MP run 7 waited for the host in vain),
+    /// and HandleSpecSelection returns before it reads the switch presses (:189): a flick of the stick
+    /// (SpectateNext) keeps the view on A and must say so (CantSwitch, player.locomotion's DenyLoneSpectate, at the
+    /// hand the action's label names). A stays down until after the checkpoint, so B sees it passed out.
     /// </summary>
     IEnumerator MpSpectate()
     {
         var c = Character.localCharacter;
-        var host = Host();
-        if (host == null)
+        if (Host() == null)
         {
             stepSkip = "no host";
             yield break;
@@ -1442,25 +1544,37 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return Until(
-            () => MainCameraMovement.specCharacter == host,
+            () => MainCameraMovement.specCharacter == c,
             5f,
-            "the view never went to the host"
+            "the view never settled on A's own body"
         );
         if (!stepOk)
             yield break;
-        bool dominant = !VRInput.LeftHanded;
+        // SpectateNext is the dominant stick up (Bindings); Script takes "left".
+        bool stick = VRInput.LeftHanded;
+        bool cueLeft = VRInput.LeftHanded;
+        if (
+            ControllerLabels.ForAction(
+                VRAction.SpectateNext,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out var actionLeft,
+                out _
+            )
+        )
+            cueLeft = actionLeft;
         float mark = CueMark();
-        Script(dominant).Stick = Vector2.up;
+        Script(stick).Stick = Vector2.up;
         yield return Wait(0.2f);
-        Script(dominant).Stick = Vector2.zero;
+        Script(stick).Stick = Vector2.zero;
         yield return Wait(0.5f);
-        if (MainCameraMovement.specCharacter != host)
+        if (MainCameraMovement.specCharacter != c)
         {
-            Fail("the flick left the only friend");
+            Fail("the flick moved the view off A's own body");
             yield break;
         }
-        yield return ExpectCue(dominant, DenyReason.CantSwitch, mark, false, 0.5f);
+        yield return ExpectCue(cueLeft, DenyReason.CantSwitch, mark, false, 0.5f);
         if (stepOk)
-            stepNote = "spectating the host; single-target flick refused: " + cueNote;
+            stepNote = "spectating A's own body; flick refused: " + cueNote;
     }
 }

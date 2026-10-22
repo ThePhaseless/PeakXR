@@ -251,26 +251,15 @@ internal sealed class SocialHands : IGripExtension
             return true;
         }
 
-        var other = NearestBody(c, pos, reach, out var part);
-        if (other == null)
-            return Skeleton(c, pos, small, ref refusal, ref at);
-        who = other;
-        at = part.transform.position;
-
-        var pack =
-            other.refs.backpackHandler != null
-                ? other.refs.backpackHandler.activeBackpackVisuals
-                : null;
-        if (
-            pack != null
-            && pack.isActiveAndEnabled
-            && (pack.transform.position - pos).sqrMagnitude < reach * reach * 1.6f
-            && Vector3.Dot(pos - other.Center, other.data.lookDirection_Flat) < 0f
-        )
+        // A worn pack sits behind the back, often farther than the reach from any body part (MP run 7: a grip on the
+        // host's pack fell through to the head's interact), so packs are found on their own, before bodies.
+        var pack = NearestPack(c, pos, reach * reach * 1.6f, out var wearer);
+        if (pack != null)
         {
+            who = wearer;
             // A worn rocket already lit or flying: the hold would end in a light the game ignores
             // (CharacterBackpackHandler.RPCA_Light, :209-212).
-            var movement = other.refs.movement;
+            var movement = wearer.refs.movement;
             if (
                 pack.backpackType == BackpackSlot.BackpackType.Rocketpack
                 && movement != null
@@ -285,6 +274,12 @@ internal sealed class SocialHands : IGripExtension
             target = pack;
             return true;
         }
+
+        var other = NearestBody(c, pos, reach, out var part);
+        if (other == null)
+            return Skeleton(c, pos, small, ref refusal, ref at);
+        who = other;
+        at = part.transform.position;
 
         var od = other.data;
         var cd = c.data;
@@ -363,6 +358,42 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>Run setting HelpingHand = 1 (CharacterGrabbing.isKickMode, CharacterGrabbing.cs:33).</summary>
     private static bool KickMode => RunSettings.GetValue(RunSettings.SETTINGTYPE.HelpingHand) == 1;
+
+    /// <summary>The nearest pack another character wears (CharacterBackpackHandler.activeBackpackVisuals) within
+    /// <paramref name="maxSq"/> of a hand behind that character (a hand in front reaches their chest, not the pack).</summary>
+    private static BackpackOnBackVisuals NearestPack(
+        Character self,
+        Vector3 pos,
+        float maxSq,
+        out Character wearer
+    )
+    {
+        BackpackOnBackVisuals best = null;
+        wearer = null;
+        var all = Character.AllCharacters;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var ch = all[i];
+            if (
+                ch == null
+                || ch == self
+                || !ch.gameObject.activeInHierarchy
+                || ch.refs.backpackHandler == null
+            )
+                continue;
+            var pack = ch.refs.backpackHandler.activeBackpackVisuals;
+            if (pack == null || !pack.isActiveAndEnabled)
+                continue;
+            float sq = (pack.transform.position - pos).sqrMagnitude;
+            if (sq < maxSq && Vector3.Dot(pos - ch.Center, ch.data.lookDirection_Flat) < 0f)
+            {
+                maxSq = sq;
+                best = pack;
+                wearer = ch;
+            }
+        }
+        return best;
+    }
 
     /// <summary>Another player character with a bodypart within <paramref name="radius"/> of a world point.</summary>
     private static Character NearestBody(
