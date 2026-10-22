@@ -28,7 +28,12 @@ internal sealed class TraversalGrips : IGripExtension
 
     private const float VineRise = 1.5f;
 
-    private static readonly Collider[] Hits = new Collider[32];
+    // Jungle and camp scenes put many trigger and prop colliders around the hand: room for all of them, so the line is
+    // not cut off the end of the list.
+    private static readonly Collider[] Hits = new Collider[128];
+
+    /// <summary>What the last grip check found, for self-test notes (vr.57-59).</summary>
+    internal static string LastNote = "";
 
     private DenyReason reason;
     private Vector3 spot;
@@ -89,6 +94,9 @@ internal sealed class TraversalGrips : IGripExtension
         );
         bool found = false;
         bool outOfStamina = PhysicalInteraction.OutOfStamina(c);
+        int ropes = 0,
+            vines = 0,
+            handles = 0;
         for (int i = 0; i < n && !found; i++)
         {
             var col = Hits[i];
@@ -96,14 +104,26 @@ internal sealed class TraversalGrips : IGripExtension
             if (col == null)
                 continue;
             if (col.TryGetComponent<RopeSegment>(out var segment))
+            {
+                ropes++;
                 found = Rope(c, segment, pos, outOfStamina);
+            }
             else if (col.GetComponentInParent<ClimbHandle>() is { } handle)
+            {
+                handles++;
                 found = Handle(c, handle, pos);
+            }
             else if (col.GetComponentInParent<JungleVine>() is { } vine)
+            {
+                vines++;
                 found = Vine(c, vine, pos, outOfStamina);
+            }
         }
         for (int i = 0; i < n; i++)
             Hits[i] = null;
+        LastNote = System.FormattableString.Invariant(
+            $"grip check: {n} colliders, rope {ropes}, vine {vines}, handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
+        );
         return found;
     }
 

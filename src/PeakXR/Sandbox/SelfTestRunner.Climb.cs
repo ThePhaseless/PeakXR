@@ -988,6 +988,38 @@ internal sealed partial class SelfTestRunner
 
     /// <summary><see cref="ExpectFeel"/> with <see cref="cueNote"/> cleared first, so a failure's note never
     /// carries the previous step's cue (run 33's vr.50 quoted vr.49's Carried).</summary>
+    /// <summary>
+    /// Puts <paramref name="prefab"/> straight into a free slot and equips it (<c>Player.AddItem</c>, Player.cs:87;
+    /// <c>CharacterItems.EquipSlot</c>, CharacterItems.cs:482), master only. <c>GameUtils.InstantiateAndGrab</c>
+    /// spawns the item at the hip first (GameUtils.cs:263-271): run 35's cactus stuck to the body there ("Stuck to
+    /// Character", StickyItemComponent.cs:69-80) and never reached the hand.
+    /// </summary>
+    IEnumerator EquipDirect(Item prefab)
+    {
+        var c = Character.localCharacter;
+        if (prefab == null || c == null || c.player == null)
+        {
+            Fail("no item or player");
+            yield break;
+        }
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            stepSkip = "equipping straight into a slot needs the master client";
+            yield break;
+        }
+        if (!c.player.AddItem(prefab.itemID, null, out var slot) || slot == null)
+        {
+            Fail("no free slot for " + prefab.name);
+            yield break;
+        }
+        c.refs.items.EquipSlot(Zorro.Core.Optionable<byte>.Some(slot.itemSlotID));
+        yield return Until(() => Holding(prefab), 5f, "equipped item not in hand");
+        // One Update so PhysicalInteraction.TrackHeldItem has picked the holding hand.
+        yield return null;
+        if (stepOk)
+            spawned.Add(HeldItem().gameObject);
+    }
+
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
     /// before): which reason or notice fired and which ring was last captured, to tell a replaced cue from an undrawn
     /// one.</summary>
@@ -1197,10 +1229,12 @@ internal sealed partial class SelfTestRunner
         var onSlope = eye + forward * 0.6f + Vector3.down * 0.4f;
         PlaceSlab(slab, onSlope, slope);
         UI.Affordances.Affordance.ResetGate();
-        float mark = CueMark();
         yield return MoveTo(left, () => onSlope + slope * 0.03f, 0.5f);
         yield return Wait(0.3f);
         bool ringOnSlope = ClimbHover.Drawn(left);
+        // The clock starts at the grip: run 35's refusal came 0.96 s after a mark taken before the 0.8 s approach,
+        // too late for its ring to show inside the 1 s window.
+        float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.TooFlat, mark, false, 1f);
         // Run 33 had the reason but no ring: name the refusal that held the ring last, in case another replaced it.
@@ -1630,7 +1664,8 @@ internal sealed partial class SelfTestRunner
         float still = hi - lo;
         lo = float.MaxValue;
         hi = float.MinValue;
-        // Sway the head along the view at a 2 m pendulum's rate (about 0.35 Hz), 0.25 m each way.
+        // Pump as a person does: lean the head the way the swing is moving, up to 0.25 m each way at 1 m/s. Run 35's
+        // fixed 0.35 Hz sway ran out of phase with this rope's own swing and damped it (0.23 m still, 0.07 m pumped).
         var hands = applyHands;
         OnRestore(() =>
         {
@@ -1638,18 +1673,35 @@ internal sealed partial class SelfTestRunner
                 VRInput.TestOverride = finished ? null : IdleHands;
         });
         var baseHead = VRInput.HeadPosition;
-        float start = Now;
+        float offset = 0f;
+        float target = 0.25f;
         VRInput.TestOverride = () =>
         {
             hands();
-            VRInput.HeadPosition =
-                baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.35f * (Now - start)));
+            VRInput.HeadPosition = baseHead + along * offset;
         };
         float mark = CueMark();
         float push = 0f;
-        end = Now + 8f;
+        float lastX = Vector3.Dot(api.GetPosition(c.data.ropePercent), axis);
+        float measureFrom = Now + 6f;
+        bool measuring = false;
+        end = Now + 9f;
         while (Now < end && c.data.isRopeClimbing)
         {
+            float dt = Time.deltaTime;
+            float x = Vector3.Dot(api.GetPosition(c.data.ropePercent), axis);
+            float v = dt > 0f ? (x - lastX) / dt : 0f;
+            lastX = x;
+            if (Mathf.Abs(v) > 0.05f)
+                target = 0.25f * Mathf.Sign(v);
+            offset = Mathf.MoveTowards(offset, target, dt);
+            // The swing built up by pumping: its last 3 s.
+            if (!measuring && Now >= measureFrom)
+            {
+                measuring = true;
+                lo = float.MaxValue;
+                hi = float.MinValue;
+            }
             Track();
             push = Mathf.Max(push, ClimbHands.LastPump);
             yield return null;
@@ -1856,7 +1908,8 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool on = onLine();
         bool climbing = c.data.isClimbing;
-        var note = $"{reason}: {cueNote}; on the line {on}, wall climbing {climbing}";
+        var note =
+            $"{reason}: {cueNote}; on the line {on}, wall climbing {climbing}; {TraversalGrips.LastNote}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}";
         if (on || climbing)
             Fail("the refused grip still took hold: " + note);
         else
@@ -2122,7 +2175,17 @@ internal sealed partial class SelfTestRunner
         string settle = "no settle tick checked";
         if (mantled)
         {
-            yield return Feel(hand, CueFeel.Contact, mantleAt - 0.01f, 0.1f);
+            // The tick goes to whichever hand still gripped the lip when the mantle began; the loop may already have
+            // switched `hand` to the open one (run 35).
+            bool gripping = UI.Affordances.CueLog.Capture.Felt(
+                !hand,
+                CueFeel.Contact,
+                mantleAt - 0.01f,
+                out _
+            )
+                ? !hand
+                : hand;
+            yield return Feel(gripping, CueFeel.Contact, mantleAt - 0.01f, 0.1f);
             settle = cueNote;
         }
         var note = F(
