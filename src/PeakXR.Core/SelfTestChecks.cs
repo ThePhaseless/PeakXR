@@ -94,6 +94,46 @@ namespace PeakXR.Core
             float margin
         ) => stillFor > 0f ? MathF.Max(deadline, now - stillFor + hold + margin) : deadline;
 
+        /// <summary>Horizontal carry of a throw at <paramref name="horizontal"/> m/s and <paramref name="vertical"/> m/s up
+        /// from <paramref name="height"/> above flat ground, without drag.</summary>
+        public static float FlatRange(float horizontal, float vertical, float height, float gravity)
+        {
+            float t =
+                (vertical + MathF.Sqrt(vertical * vertical + 2f * gravity * MathF.Max(0f, height)))
+                / gravity;
+            return horizontal * t;
+        }
+
+        /// <summary>Launch pitch (deg) below which a throw counts as aimed down.</summary>
+        public const float AimedDownPitch = -5f;
+
+        /// <summary>
+        /// Why a throw landed short of <paramref name="minDistance"/>, in order: its first contact was the thrower's
+        /// own arm or body; it left the hand pointing down; its first contact was steep (over 45 deg from up) or came
+        /// before 60 % of its <paramref name="flatRange"/> (something in the way); else it fell short on open ground.
+        /// </summary>
+        public static ThrowVerdict JudgeThrow(
+            float distance,
+            float minDistance,
+            float pitchDeg,
+            bool firstContactOwnBody,
+            bool hadContact,
+            float contactSlopeDeg,
+            float contactDistance,
+            float flatRange
+        )
+        {
+            if (distance >= minDistance)
+                return ThrowVerdict.Ok;
+            if (firstContactOwnBody)
+                return ThrowVerdict.OwnBody;
+            if (pitchDeg < AimedDownPitch)
+                return ThrowVerdict.AimedDown;
+            if (hadContact && (contactSlopeDeg > 45f || contactDistance < 0.6f * flatRange))
+                return ThrowVerdict.HitOnTheWay;
+            return ThrowVerdict.ShortOnFlat;
+        }
+
         /// <summary>Seconds to fall <paramref name="height"/> from rest: free fall up to
         /// <paramref name="terminalSpeed"/>, then at that speed.</summary>
         public static float FallSeconds(float height, float gravity, float terminalSpeed)
@@ -164,5 +204,15 @@ namespace PeakXR.Core
             float d = to.Length();
             return d <= step || d < 1e-6f ? target : current + to * (step / d);
         }
+    }
+
+    /// <summary>vr.13's verdict on a throw (<see cref="SelfTestChecks.JudgeThrow"/>).</summary>
+    public enum ThrowVerdict
+    {
+        Ok,
+        OwnBody,
+        AimedDown,
+        HitOnTheWay,
+        ShortOnFlat,
     }
 }
