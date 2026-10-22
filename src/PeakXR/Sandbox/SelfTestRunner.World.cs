@@ -870,10 +870,62 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.89b-amulet-socket", 40f, AmuletSocketStep());
         yield return HandStep("vr.90-soul-pillar", 30f, PillarStep());
         yield return HandStep("vr.91-portal", 30f, PortalStep());
-        yield return HandStep("vr.93-summit-flare", 40f, FlareStep());
-        yield return HandStep("vr.86-end-screen", 300f, EndScreenStep());
+        yield return PeakHandStep("vr.93-summit-flare", 180f, FlareStep());
+        yield return PeakHandStep("vr.86-end-screen", 420f, EndScreenStep());
         watchFlat = false;
         yield return Run("vr.86b-no-flat-screens", 5f, FlatScreensVerdict());
+    }
+
+    /// <summary>
+    /// A scripted-hands step on the summit (<see cref="HandStep"/> without its settle): the Peak sits in TheKiln's
+    /// segment slot, so the shared settle warps a body that strayed back to TheKiln's home spot, 375 m down (vr38:
+    /// vr.93 and vr.86 ran there, the latter ungrounded). Jumps to the Peak instead, whose landing the jump itself
+    /// checks, then runs <paramref name="body"/> with the usual teardown.
+    /// </summary>
+    IEnumerator PeakHandStep(string id, float timeout, IEnumerator body)
+    {
+        if (!VRRun)
+            yield break;
+        if (!VRSession.Active)
+        {
+            Skip(id, "VR not active");
+            yield break;
+        }
+        yield return Run(id, timeout, PeakSetup(id, body));
+        yield return Guard(
+            HandsRelease(),
+            Now + 5f,
+            e =>
+                Plugin.Log.LogWarning(
+                    $"[selftest] {id} teardown: {(e == null ? "timeout" : e.Message)}"
+                )
+        );
+        EndHands();
+        ClosePause();
+        yield return Guard(DropHeld(), Now + 4f, _ => { });
+        yield return Wait(0.3f);
+        Safe("hands.despawn", Despawn);
+        Safe("hands.sweep", SweepNewItems);
+        Recover();
+        yield return Wait(0.5f);
+    }
+
+    IEnumerator PeakSetup(string id, IEnumerator body)
+    {
+        Recover();
+        ClosePause();
+        yield return DropHeld();
+        if (!stepOk)
+            yield break;
+        yield return Jump(Segment.Peak, id.Replace('.', '-') + "-peak");
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        EmptyHotbar(c);
+        SnapshotItems();
+        BeginHands();
+        yield return Wait(0.3f);
+        yield return body;
     }
 
     readonly HashSet<string> flatScreens = new(StringComparer.Ordinal);
@@ -908,10 +960,18 @@ internal sealed partial class SelfTestRunner
         foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
         {
             int id = canvas.GetInstanceID();
+            // A screen-space-camera canvas whose camera draws into a texture is not on screen: the texture is shown
+            // elsewhere (Canvas_Hero draws the biome title through heroCamera into heroImage, GUIManager.cs:144-160,
+            // which ui.spatial places as a world sign). That texture's RawImage is checked below where it is shown.
             if (
                 !canvas.isActiveAndEnabled
                 || !canvas.isRootCanvas
                 || canvas.renderMode == RenderMode.WorldSpace
+                || (
+                    canvas.renderMode == RenderMode.ScreenSpaceCamera
+                    && canvas.worldCamera != null
+                    && canvas.worldCamera.targetTexture != null
+                )
             )
             {
                 since.Remove(id);
@@ -931,7 +991,9 @@ internal sealed partial class SelfTestRunner
             if (!since.TryGetValue(id, out float first))
                 since[id] = Now;
             else if (Now - first > 1f)
-                flatScreens.Add($"'{canvas.name}' {canvas.renderMode} ({kind}) in {where}");
+                flatScreens.Add(
+                    $"'{canvas.name}' {canvas.renderMode} ({kind}, camera {(canvas.worldCamera != null ? canvas.worldCamera.name : "none")}) in {where}"
+                );
             foreach (var raw in canvas.GetComponentsInChildren<RawImage>())
             {
                 if (!raw.isActiveAndEnabled || raw.texture is not RenderTexture)
@@ -1304,12 +1366,19 @@ internal sealed partial class SelfTestRunner
         Script(left).Trigger = 0f;
         yield return WaitFor(() => peak.summonedHelicopter, 2f);
         bool sent = false;
-        if (!peak.summonedHelicopter && held != null)
+        // The flare in hand now: a given trackable item can be replaced by its reconnected copy (vr38: "Reconnected
+        // to trackable object ... timed out. Destroying"), leaving the first reference dead.
+        var flareNow = HeldItem() != null ? HeldItem().GetComponent<Flare>() : null;
+        if (!peak.summonedHelicopter && flareNow != null)
         {
             sent = true;
-            held.photonView.RPC("TriggerHelicopter", Photon.Pun.RpcTarget.AllBuffered);
+            flareNow.item.photonView.RPC("TriggerHelicopter", Photon.Pun.RpcTarget.AllBuffered);
         }
-        yield return Until(() => WorldHolds.Notices > before, 3f, "no notice for the summon");
+        yield return Until(
+            () => WorldHolds.Notices > before,
+            3f,
+            $"no notice for the summon (helicopter summoned {peak.summonedHelicopter}, flare in hand {(flareNow != null ? flareNow.name : "none")}, call sent {sent})"
+        );
         if (!stepOk)
             yield break;
         yield return ExpectFeel(left, CueFeel.Contact, mark, within: 0f);

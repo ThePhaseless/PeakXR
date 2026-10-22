@@ -217,8 +217,12 @@ internal static class WorldCanvases
             if (canvas == null)
                 continue;
             var root = canvas.isRootCanvas ? canvas : canvas.rootCanvas;
-            if (!known.Add(root.GetInstanceID()) || !ShouldConvert(root))
+            // Only a placed canvas is remembered: one left alone (drawn into a texture, already world space) is
+            // looked at again on every rescan, so a canvas that later draws to the screen still gets placed and no
+            // game canvas can stay flat in the headset.
+            if (known.Contains(root.GetInstanceID()) || !ShouldConvert(root))
                 continue;
+            known.Add(root.GetInstanceID());
             Add(root);
         }
         pending.Clear();
