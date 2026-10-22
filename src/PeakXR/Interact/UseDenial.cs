@@ -25,6 +25,41 @@ internal static class UseDenial
         Affordance.DenyAtHand(left, reason, hint);
     }
 
+    /// <summary>A held rope spool's press that cannot tie off: <c>RopeTier.Update</c> (RopeTier.cs:97-111) only takes
+    /// terrain its aim meets within <c>maxAnchorGhostDistance</c> that lies within <c>maxAnchorDistance</c> of the
+    /// body, and otherwise holding the trigger does nothing at all. Says where the press went and, for terrain too far
+    /// from the body, how much closer.</summary>
+    public static bool SpoolRefused(Character c, Item item, out Vector3 spot, out DenyHint hint)
+    {
+        spot = default;
+        hint = default;
+        if (
+            !item.TryGetComponent<RopeTier>(out var tier)
+            || !HandAim.TryHeld(out var origin, out var rotation)
+        )
+            return false;
+        var dir = rotation * Vector3.forward;
+        if (
+            !Physics.Raycast(
+                origin,
+                dir,
+                out var hit,
+                tier.maxAnchorGhostDistance,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap),
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            spot = origin + dir * tier.maxAnchorGhostDistance;
+            return true;
+        }
+        if (Vector3.Distance(hit.point, c.Center) < tier.maxAnchorDistance)
+            return false;
+        spot = hit.point;
+        hint = DenyHint.Range(c.Center, hit.point, tier.maxAnchorDistance);
+        return true;
+    }
+
     /// <summary>The reason and, for an aim the vine shooter refuses, the aim it would take. Also read every frame by the
     /// aim line while it is red.</summary>
     public static DenyReason Why(Character c, Item item, out DenyHint hint)

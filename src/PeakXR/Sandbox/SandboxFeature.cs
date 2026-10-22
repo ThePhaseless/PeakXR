@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Configuration;
 using PeakXR.Framework;
 using UnityEngine;
@@ -62,6 +63,19 @@ public sealed class SandboxFeature : Feature
         // Optional: the window still works without them, it just cannot free the mouse or block game input.
         TryPatch(typeof(WindowInputPatch));
         TryPatch(typeof(WindowCursorPatch));
+        // Optional: without it a jump back to a visited segment throws midway (see RespawnPatch).
+        try
+        {
+            RespawnPatch.HistoryRef = GameMember.Field<
+                Peak.SpawnedItemTracker,
+                List<Peak.SpawnedItemTracker.SpawnRecord>
+            >("_historyFromSave");
+            TryPatch(typeof(RespawnPatch));
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning($"[sandbox] optional patch RespawnPatch skipped: {e.Message}");
+        }
 
         var go = new GameObject("PeakXR.Sandbox") { hideFlags = HideFlags.HideAndDontSave };
         Driver = go.AddComponent<SandboxDriver>();

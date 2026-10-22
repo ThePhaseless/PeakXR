@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -25,6 +27,43 @@ static class FallDamagePatch
             return true;
         var character = CharacterRef(__instance);
         return character == null || !character.IsLocal;
+    }
+}
+
+/// <summary>
+/// Lets a sandbox segment jump revisit a segment. <c>JumpToSegmentLogic</c> (decomp Assembly-CSharp/MapHandler.cs:928-937)
+/// calls <c>TrySpawnItems</c> on every spawner of the target segment, its campfire and, when skipping ahead, the
+/// previous segment's campfire. A <c>SingleItemSpawner</c> that already spawned this session has
+/// <c>HasSpawnHistory</c> set by <c>TrackSpawnedItems</c> (Peak/SpawnedItemTracker.cs:106-108) but no saved
+/// history, so <c>SpawnAndTrackFromItemHistory</c> returns null (:127) and <c>TrySpawnItems</c> throws on its
+/// <c>Count</c> (SingleItemSpawner.cs:26-27), which aborts the jump before the warp. A normal run never revisits
+/// a segment; the sandbox does (VR run 27: Caldera back to Beach, and Alpine after Beach to Caldera had spawned
+/// Alpine's campfire). Such a spawner now spawns nothing, as
+/// <c>Spawner.TrySpawnItems</c> already does for the same case (Spawner.cs:168-171).
+/// Target: <c>SingleItemSpawner.TrySpawnItems()</c>, SingleItemSpawner.cs:16.
+/// </summary>
+[HarmonyPatch]
+static class RespawnPatch
+{
+    internal static AccessTools.FieldRef<
+        Peak.SpawnedItemTracker,
+        List<Peak.SpawnedItemTracker.SpawnRecord>
+    > HistoryRef;
+
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(SingleItemSpawner), "TrySpawnItems", System.Type.EmptyTypes);
+
+    static bool Prefix(SingleItemSpawner __instance, ref List<PhotonView> __result)
+    {
+        if (
+            !SandboxActions.Active
+            || !__instance.TryGetComponent<Peak.SpawnedItemTracker>(out var tracker)
+            || !tracker.HasSpawnHistory
+            || HistoryRef(tracker) != null
+        )
+            return true;
+        __result = new List<PhotonView>();
+        return false;
     }
 }
 

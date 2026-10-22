@@ -440,14 +440,15 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.24: a grip on the top of the nearest closed suitcase holds the open timer at the lid
     /// (<c>Interaction.constantInteractableProgress</c>, Interaction.cs:57) while the hand stays still, and lifting
-    /// it opens the case (<c>Luggage.IsOpen</c>, Luggage.cs:37).</summary>
+    /// it opens the case (<c>Luggage.IsOpen</c>, Luggage.cs:37). The nearest closed case anywhere in the active
+    /// segment: the daily map puts them anywhere, and the warp reaches any of them.</summary>
     IEnumerator LiftLidStep()
     {
         var c = Character.localCharacter;
         var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
-        if (lug == null || (lug.transform.position - c.Center).sqrMagnitude > 200f * 200f)
+        if (lug == null)
         {
-            stepSkip = "no closed suitcase within 200 m";
+            stepSkip = "no closed suitcase in the active segment";
             yield break;
         }
         if (!Setting("Interaction", "LiftLidToOpen", true))
@@ -850,5 +851,155 @@ internal sealed partial class SelfTestRunner
             Fail("no warm pulse: " + note);
         else
             stepNote = note;
+    }
+
+    // ---------------------------------------------------------------- rope spool
+
+    bool spoolAimed;
+
+    /// <summary>
+    /// use.RopeSpool: a spool ties off only where its aim (the holding hand in VR, interact.aim; the camera in flat
+    /// play) meets terrain within <c>maxAnchorGhostDistance</c> lying within <c>maxAnchorDistance</c> of the body,
+    /// and only after use is held there for <c>castTime</c> (RopeTier.cs:97-128). In VR the spool is first aimed at
+    /// open sky, where the trigger press must get interact.physical's NoWall refusal cue; then at ground in reach,
+    /// where holding use must tie the rope (<c>Rope.AttachToAnchor_Rpc</c>, Rope.cs:259-270).
+    /// </summary>
+    IEnumerator SpoolUse(Item held, RopeTier tier)
+    {
+        var c = Character.localCharacter;
+        var spool = held.GetComponent<RopeSpool>();
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        bool left = LocalHold.ItemInLeftHand;
+        string refusal = vr ? "refusal cue off (UI.ActionHints)" : "refusal not checked (flat)";
+        if (vr)
+        {
+            BeginHands();
+            HeadFrame(out var head, out var forward, out _);
+            SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+            if (UI.Affordances.Affordance.Enabled)
+            {
+                yield return AimSpool(c, tier, left, valid: false);
+                if (!spoolAimed)
+                    refusal = "no aim free of terrain for the refusal";
+                else
+                {
+                    yield return PressAndExpect(left, DenyReason.NoWall);
+                    refusal = "aimed at nothing: " + stepNote;
+                    stepNote = null;
+                }
+            }
+        }
+        yield return AimSpool(c, tier, left, valid: true);
+        if (!spoolAimed)
+        {
+            Fail(
+                $"no terrain within {tier.maxAnchorDistance:0.0} m of the body to aim the spool at; {refusal}"
+            );
+            yield break;
+        }
+        var rope = spool.rope;
+        var anchors = Ids<RopeAnchor>();
+        if (vr)
+        {
+            Script(left).TriggerTouch = true;
+            Script(left).Trigger = 1f;
+        }
+        else
+            SelfTestInputPatch.HoldPrimary = true;
+        float progress = 0f;
+        float end = Now + GameTiming.Budget(tier.castTime);
+        bool Tied() => rope != null && rope.attachmenState == Rope.ATTACHMENT.anchored;
+        while (Now < end && !Tied() && held != null)
+        {
+            progress = Mathf.Max(progress, held.progress);
+            yield return null;
+        }
+        bool tied = Tied();
+        yield return Shot("use-RopeSpool");
+        if (vr)
+        {
+            Script(left).Trigger = 0f;
+            Script(left).TriggerTouch = false;
+        }
+        else
+        {
+            SelfTestInputPatch.HoldPrimary = false;
+            c.data.lookValues.y = 0f;
+        }
+        if (rope != null)
+            spawned.Add(rope.gameObject);
+        var anchor = Fresh<RopeAnchor>(anchors);
+        if (anchor != null)
+            spawned.Add(anchor.gameObject);
+        yield return Wait(0.3f);
+        if (vr)
+            EndHands();
+        var note =
+            $"tied {tied}, tie progress {progress:0.00} of {tier.castTime:0.0} s, anchor {(anchor != null ? Vector3.Distance(anchor.transform.position, c.Center).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m from the body" : "none")}; {refusal}";
+        if (!tied)
+            Fail("the rope was not tied: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>Turns the spool's aim (scripted hand in VR, the look in flat play) until the game's own ray
+    /// (RopeTier.cs:99-111) would take the anchor (<paramref name="valid"/>), or until it meets no terrain within
+    /// 60 m. Sets <see cref="spoolAimed"/>.</summary>
+    IEnumerator AimSpool(Character c, RopeTier tier, bool left, bool valid)
+    {
+        spoolAimed = false;
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        HeadFrame(out _, out var forward, out _);
+        float lookYaw = c.data.lookValues.x;
+        var pitches = valid ? new[] { 45f, 60f, 30f, 75f } : new[] { -90f, -60f, -45f };
+        foreach (float yaw in valid ? new[] { 0f, 90f, -90f, 180f } : new[] { 0f, 90f, -90f })
+        {
+            foreach (float down in pitches)
+            {
+                // Pitched below level (negative: above) from forward turned by the yaw.
+                var heading = Quaternion.AngleAxis(yaw, Vector3.up) * forward;
+                var axis = Vector3.Cross(Vector3.up, heading);
+                var dir = Quaternion.AngleAxis(down, axis) * heading;
+                if (vr)
+                    Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.Cross(dir, axis));
+                else
+                    c.data.lookValues = new Vector2(lookYaw + yaw, -down);
+                yield return Wait(0.15f);
+                if (!SpoolRay(vr, out var origin, out var aim))
+                    continue;
+                bool hit = Physics.Raycast(
+                    origin,
+                    aim,
+                    out var at,
+                    valid ? tier.maxAnchorGhostDistance : 60f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                );
+                if (
+                    valid
+                        ? hit
+                            && Vector3.Distance(at.point, c.Center) < tier.maxAnchorDistance - 0.3f
+                        : !hit
+                )
+                {
+                    spoolAimed = true;
+                    yield break;
+                }
+            }
+        }
+    }
+
+    /// <summary>The ray the spool's RopeTier.Update casts: the camera, which interact.aim moves to the held hand.</summary>
+    static bool SpoolRay(bool vr, out Vector3 origin, out Vector3 dir)
+    {
+        if (vr && HandAim.TryHeld(out origin, out var rotation))
+        {
+            dir = rotation * Vector3.forward;
+            return true;
+        }
+        var cam = MainCamera.instance;
+        origin = cam != null ? cam.transform.position : default;
+        dir = cam != null ? cam.transform.forward : default;
+        return cam != null;
     }
 }

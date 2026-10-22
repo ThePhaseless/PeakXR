@@ -1027,6 +1027,8 @@ internal static class PhysicalInteraction
                 && !held.TryGetComponent<ClimbingSpikeComponent>(out _)
             )
                 UseDenial.Deny(c, held, primaryHand.Left);
+            else if (handsOk && UseDenial.SpoolRefused(c, held, out var spot, out var hint))
+                Affordance.Deny(primaryHand.Left, spot, DenyReason.NoWall, hint);
             else if (handsOk)
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
         }

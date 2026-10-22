@@ -576,7 +576,8 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var c = Character.localCharacter;
-        if (!FindWall(c, out var wall, out var stand))
+        // On foot, so only a wall near the player (FindWall also looks across the whole segment).
+        if (!FindWall(c, out var wall, out var stand) || Vector3.Distance(stand, c.Center) > 40f)
         {
             stepSkip = "no climbable wall with walkable ground in front within 40 m";
             yield break;

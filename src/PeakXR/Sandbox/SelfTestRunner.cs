@@ -341,13 +341,19 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Skip("use." + fragment, "no item name contains it");
                 continue;
             }
-            // Setup (drop, give, settle) plus the item's own use time.
+            // Setup (drop, give, settle) plus the item's own use time; a spool also aims twice and ties off.
+            var tier = item.GetComponent<RopeTier>();
             yield return Run(
                 "use." + item.name,
-                10f + GameTiming.Budget(GameTiming.UseSeconds(item)),
+                10f
+                    + GameTiming.Budget(GameTiming.UseSeconds(item))
+                    + (tier != null ? 10f + GameTiming.Budget(tier.castTime) : 0f),
                 UseItem(item)
             );
             SelfTestInputPatch.HoldPrimary = false;
+            // SpoolUse scripts the hands; a failed or timed-out step leaves them scripted.
+            if (VRRun)
+                EndHands();
             Interact.Binoculars.BinocularsConfig.ForceHold = false;
             Safe("use.despawn", Despawn);
         }
@@ -383,6 +389,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         var held = HeldItem();
         spawned.Add(held.gameObject);
         yield return Wait(0.5f);
+        // A rope spool's use is the tie-off, which needs an anchor in aim (RopeTier.Update).
+        if (held.TryGetComponent<RopeTier>(out var tier))
+        {
+            yield return SpoolUse(held, tier);
+            yield return DropHeld();
+            yield break;
+        }
         // Item.StartUsePrimary sets isUsingPrimary (Item.cs:849-855); an eaten or spent item leaves the hand.
         // Held through the item's own use time, so a slow cast gets to finish (finishedCast, Item.cs:883).
         bool started = false;
@@ -405,6 +418,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             started |= held.isUsingPrimary || held.finishedCast;
             progress = Mathf.Max(progress, held.castProgress);
             yield return null;
+        }
+        // A use with no cast time starts and finishes in one frame (Item.cs:893-898), which ends the loop unsampled.
+        if (held != null && held.finishedCast)
+        {
+            started = true;
+            progress = Mathf.Max(progress, held.castProgress);
         }
         bool raisedWhileHeld = false;
         if (binoculars != null)
@@ -718,6 +737,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             return;
         }
         Fail("threw");
+        // A reflected game call wraps the real failure.
+        if (e is System.Reflection.TargetInvocationException { InnerException: { } inner })
+            e = inner;
         report.Exception($"{e.GetType().Name}: {e.Message} @ {FirstLine(e.StackTrace)}");
     }
 
@@ -953,8 +975,16 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         return held != null && held.itemID == item.itemID;
     }
 
+    /// <summary>The item named exactly <paramref name="fragment"/>, else the first whose name contains it. "Compass"
+    /// matched "Cheat Compass" first, whose use warps to Caldera (Action_WarpToBiome.cs:33) and shut the beach
+    /// segment for the rest of VR run 27.</summary>
     static Item FindItem(List<Item> items, string fragment)
     {
+        foreach (var item in items)
+        {
+            if (string.Equals(item.name, fragment, StringComparison.OrdinalIgnoreCase))
+                return item;
+        }
         var terms = NameFilter.Parse(fragment);
         foreach (var item in items)
         {
