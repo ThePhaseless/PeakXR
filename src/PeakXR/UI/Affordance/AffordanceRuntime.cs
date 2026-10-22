@@ -112,10 +112,15 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private readonly HapticPatternPlayer leftBuzz = new();
     private readonly HapticPatternPlayer rightBuzz = new();
+
     /// <summary>One refusal cue per hand (0 left, 1 right): a refusal on one hand never replaces the other's, so a
     /// cue for both hands at once (a slide, the feet) or a free hand's refusal right after keeps both drawn
     /// (VR run 33).</summary>
-    private readonly Cue[] denials = { new() { Left = true }, new() };
+    private readonly Cue[] denials =
+    {
+        new() { Left = true },
+        new(),
+    };
 
     /// <summary>The refusal shown last: the label and the self-test's <see cref="DeniedRing"/> follow it.</summary>
     private Cue denied;
