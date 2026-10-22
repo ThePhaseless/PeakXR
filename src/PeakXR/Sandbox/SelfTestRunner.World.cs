@@ -979,7 +979,7 @@ internal sealed partial class SelfTestRunner
                 slots[i] = -1;
             // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
             // root: vr34 stood by the root and ended 2.16 m short.
-            var target = statue.amuletObjects[amulet.amuletIndex].transform.position;
+            var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
             yield return WarpBeside(target, 0.7f);
             yield return GiveAndHold(amulet.GetComponent<Item>());
             if (!stepOk)
@@ -994,7 +994,7 @@ internal sealed partial class SelfTestRunner
             );
             if (!stepOk)
                 yield break;
-            var socketAt = statue.amuletObjects[WorldHolds.SocketTarget].transform.position;
+            var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[WorldHolds.SocketTarget]);
             var socket = WorldHolds.SocketSpot(socketAt);
             float socketUp = socketAt.y - Feet(Character.localCharacter).y;
             var interaction = Interaction.instance;
@@ -1020,7 +1020,7 @@ internal sealed partial class SelfTestRunner
             if (progress <= 0f)
             {
                 Fail(
-                    $"the amulet at the socket did not start the hold ({(held != null ? Vector3.Distance(held.Center(), socket) : -1f):0.00} m from its spot; socket {socketUp:0.00} m over the feet, body {FlatDistance(Character.localCharacter.Center, socketAt):0.00} m from it)"
+                    $"the amulet at the socket did not start the hold ({(held != null ? Vector3.Distance(held.Center(), socket) : -1f):0.00} m from its spot; socket {socketUp:0.00} m over the feet, body {FlatDistance(Character.localCharacter.Center, socketAt):0.00} m from it; socket mesh {(socketAt - statue.amuletObjects[WorldHolds.SocketTarget].transform.position).y:0.00} m over its transform)"
                 );
                 yield break;
             }
@@ -1324,13 +1324,14 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var stand = target + Flat(c.Center - target) * distance;
-        float top = Mathf.Max(stand.y, c.Center.y) + 3f;
+        // From just above the target, not far above: a ray from high up lands on top of the prop itself.
+        float top = target.y + 0.5f;
         if (
             Physics.Raycast(
                 new Vector3(stand.x, top, stand.z),
                 Vector3.down,
                 out var ground,
-                top - stand.y + 6f,
+                8f,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
             )

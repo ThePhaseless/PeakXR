@@ -126,6 +126,7 @@ internal static partial class WorldHolds
             return;
         }
         var sockets = statue.amuletObjects;
+        var centers = SocketCenters(statue);
         var point = item.Center();
         bool left = LocalHold.ItemInLeftHand;
         int socket = AltarSocket.For(amulet.amuletIndex, slots, sockets.Length);
@@ -133,29 +134,26 @@ internal static partial class WorldHolds
         if (socket < 0 || sockets[socket] == null)
         {
             Socket.Reset();
-            float near = NearestSocket(sockets, point, out var at);
+            float near = NearestSocket(centers, point, out var at);
             bool was = AltarNear.Active;
             if (AltarNear.Update(near, Time.deltaTime) && !was)
                 Affordance.Deny(left, at, DenyReason.Occupied, default, statue);
             return;
         }
         AltarNear.Reset();
-        var spot = SocketSpot(sockets[socket].transform.position);
+        var spot = SocketSpot(centers[socket]);
         if (!Socket.Update(Vector3.Distance(point, spot), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
         HeldProgress(left, statue);
     }
 
-    private static float NearestSocket(GameObject[] sockets, Vector3 point, out Vector3 at)
+    private static float NearestSocket(Vector3[] centers, Vector3 point, out Vector3 at)
     {
         float best = float.MaxValue;
         at = point;
-        foreach (var s in sockets)
+        foreach (var p in centers)
         {
-            if (s == null)
-                continue;
-            var p = s.transform.position;
             float d = Vector3.Distance(p, point);
             if (d < best)
             {
@@ -164,6 +162,36 @@ internal static partial class WorldHolds
             }
         }
         return best;
+    }
+
+    private static ScoutStatue centersOf;
+    private static Vector3[] socketCenters = System.Array.Empty<Vector3>();
+
+    /// <summary>Each socket's visible centre, cached per altar (it does not move).</summary>
+    private static Vector3[] SocketCenters(ScoutStatue altar)
+    {
+        if (ReferenceEquals(centersOf, altar))
+            return socketCenters;
+        centersOf = altar;
+        var sockets = altar.amuletObjects;
+        socketCenters = new Vector3[sockets.Length];
+        for (int i = 0; i < sockets.Length; i++)
+            socketCenters[i] = sockets[i] != null ? SocketCenter(sockets[i]) : altar.Center();
+        return socketCenters;
+    }
+
+    /// <summary>
+    /// Where a socket's amulet shows: the centre of its mesh's local bounds, placed by its renderer's transform.
+    /// The <c>amuletObjects</c> (Peak/ScoutStatue.cs:12, shown per filled slot by OnAmuletsChanged :99) are inactive
+    /// while empty, so their world renderer bounds are not kept; and their own transforms are not at the slot (vr35
+    /// found one 1.47 m under the feet of a player standing beside the altar).
+    /// </summary>
+    internal static Vector3 SocketCenter(GameObject socket)
+    {
+        var r = socket.GetComponentInChildren<Renderer>(true);
+        return r != null
+            ? r.transform.TransformPoint(r.localBounds.center)
+            : socket.transform.position;
     }
 
     private static void TickPillar(Character c, bool on)
