@@ -209,6 +209,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             // End-of-run slot (WP5): steps that advance the segment or end the run, ending at the airport.
             yield return EndOfRunSteps();
         }
+        yield return Run("99-save-untouched", 5f, SaveUntouched());
         Finish();
     }
 

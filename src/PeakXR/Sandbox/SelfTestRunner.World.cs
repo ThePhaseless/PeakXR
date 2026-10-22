@@ -809,6 +809,26 @@ internal sealed partial class SelfTestRunner
     /// end the run. A real campfire advances the segment; then the summit props on the Peak; last the end screen,
     /// which wins the run and returns to the airport, where the summary and quit run as after any test.
     /// </summary>
+    /// <summary>99-save-untouched (last step of the self-test and the MP script): the player's quicksave is exactly
+    /// as it was when the guard armed (<see cref="SelfTestProgressGuard"/>): same presence, size, last write and
+    /// SHA-256, after a run that lit a real campfire and won.</summary>
+    IEnumerator SaveUntouched()
+    {
+        yield return null;
+        if (!SelfTestProgressGuard.Active)
+        {
+            Fail("progress and save guard not armed");
+            yield break;
+        }
+        var now = FileFingerprint.Of(SelfTestProgressGuard.SavePath);
+        var note =
+            $"{SelfTestProgressGuard.SavePath}: at start {SelfTestProgressGuard.SaveAtStart}, now {now}";
+        if (!SelfTestProgressGuard.SaveAtStart.Same(now))
+            Fail("the player's quicksave changed: " + note);
+        else
+            Note(note);
+    }
+
     /// <summary>Opt-in for the end-of-run slot when the progress guard is not in place.</summary>
     const string EndRunFlag = "-peakxr-selftest-endrun";
 
