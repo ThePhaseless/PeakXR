@@ -143,7 +143,7 @@ Entities made in their game context:
 | `mob.ChainShootable` | The chain shooter turns until its own `WillAttach` accepts the terrain ahead, fires, and the chain must have colliders; `JungleVine.Interact` must start a vine climb |
 | `mob.ScoutmasterGhostOrbiter` | Spawned 4 m away with `SetOrbitCharacter(local)`, the soul pillar's call; it must reach the player within 2 s |
 | `mob.TiedBalloon` | A balloon item used from the hand ties a balloon (`CharacterBalloons.TieNewBalloon`); popping it unties it |
-| `mob.Tornado` | After the first segment jump that reaches a running `TornadoSpawner`: its own `SpawnTornado`; the tornado must move and catch the player warped beside it (VR: the comfort vignette pulses). When today's map has none, the very last steps go back to the airport, pick a Mesa level with the game's `MapDebugUI.SetMapNumber` (`08-mesa-level`), jump its segments (`08-mesa-<Segment>`) and try there; the run ends on that level. `SKIP` when no level has one |
+| `mob.Tornado` | After the first segment jump that reaches a running `TornadoSpawner`: its own `SpawnTornado`; the tornado must move and catch the player warped beside it (VR: the comfort vignette pulses once caught; pulses before the capture do not count). When today's map has none, the very last steps go back to the airport, pick a Mesa level with the game's `MapDebugUI.SetMapNumber` (`08-mesa-level`), jump its segments (`08-mesa-<Segment>`) and try there; the run ends on that level. `SKIP` when no level has one |
 | `mob.MushroomZombie_Player`, `mob.PetrifiedScout`, `mob.PlayerGhost` | Last in the run. `Character.Zombify`, petrify 100 plus `Character.Die`, and `Character.Die`; the zombie, statue or ghost must appear, then `RPCA_ReviveAtPosition` revives the player where they stood, which must remove the zombie and the ghost (VR: the fade clears, no spectate nameplate for your own body). The solo game over (`Character.CheckEndGame`) is held back meanwhile |
 
 VR runs only:
@@ -317,19 +317,19 @@ Each step turns its `UI.*` setting on for the step and puts it back afterwards, 
 
 | Step id | Runs | Checks |
 |---|---|---|
-| `vr.80-campfire-far` | beach, world steps | A grip on the nearest unlit campfire with `moraleBoostRadius` shrunk to 0.05 m gets the FriendsFar cue with the logs red within 2 s, and the fire stays off. The radius is restored. `SKIP` with no unlit campfire |
+| `vr.80-campfire-far` | beach, world steps | A grip on the nearest unlit campfire with `moraleBoostRadius` shrunk to 0.05 m gets the FriendsFar cue with the logs red within 2 s, and the fire stays off. The radius is restored. The note has the eye-to-hand distance at the grip. `SKIP` with no unlit campfire |
 | `vr.81-chest-two-hands` | beach, world steps | One hand on a closed respawn chest lid gets the NeedsTwoHands cue (red) within 2 s and the hold progress stays at 0.05 or below. Both hands lifting must raise progress or open the chest. `SKIP` with no closed chest or `Interaction.LiftLidToOpen` off |
 | `vr.82-lid-progress` | beach, world steps | Lifting a closed suitcase lid logs a Progress feel, then a Contact feel at the open, on the dominant hand. `SKIP` with no closed suitcase or `LiftLidToOpen` off |
 | `vr.82b-lid-low-grip` | beach, world steps | A grip 8 cm below the case centre gets the AimHigher cue (no tint) within 2 s, and the case stays the held interactable, so the vanilla hold is kept. `SKIP` with `UI.ActionHints` or `LiftLidToOpen` off |
-| `vr.83-cook-cant-use` | beach, world steps | A Rope held in the heat column of a lit fire gets the CantUse cue with the item red within 0.5 s. `SKIP` with no campfire or `Interaction.CookOverFire` off |
+| `vr.83-cook-cant-use` | beach, world steps | The first item whose cooking is disabled (not a light or a placeable) held in the heat column of a lit fire gets the CantUse cue with the item red within 0.5 s. `SKIP` with no campfire or `Interaction.CookOverFire` off |
 | `vr.83b-cook-not-lit` | beach, world steps | An Apple held over an unlit campfire gets the NotLit cue (red) and the fire stays off |
 | `vr.83c-cook-warmth` | beach, world steps | Food carried to 0.85 m out and 0.55 m up, short of the cook column, gives a Progress feel. Fails if the fire became the held interactable or the food cooked |
-| `vr.84-book-of-bones` | beach, world steps | The Book of Bones held 0.25 m above a spawned skeleton's hips starts the revive hold: progress above 0 on the skeleton plus a Progress feel. `SKIP` with `Interaction.BookOverBones` off |
+| `vr.84-book-of-bones` | beach, world steps | The Book of Bones hand held 0.4 m above a spawned skeleton's hips starts the revive hold: progress above 0 on the skeleton plus a Progress feel. `SKIP` with `Interaction.BookOverBones` off |
 | `vr.84b-book-used-up` | beach, world steps | The same setup with the book's uses at 0 gets the UsedUp cue (red) within 0.5 s and no hold progress |
 | `vr.87-fuse-lit` | beach, world steps | A lit torch carried to a ghost fire or a cannon or rocket fuse that cannot be lit again gets UsedUp (or Occupied), red, within 0.5 s. `SKIP` with none loaded |
 | `vr.88-scout-cannon` | beach, world steps | Standing 2 m from an unlit scout cannon, `Light()` gives a Progress ramp within 1.5 s. After the shot, a notice, a Contact tick and the notice note follow |
 | `vr.92-checkpoint` | beach, world steps | Planting a checkpoint flag with the hand aimed at the ground, then `Character.TryCheckpoint()` succeeds, a notice shows, a Contact feel fires and the notice sound sits within 0.5 m of the flag |
-| `vr.94-effigy-nobody-down` | beach, world steps | A scout effigy with nobody down cannot be used: the trigger gets the CantUse cue and the effigy stays in hand. `SKIP` with `Interaction.GuardWastedItems` off or someone down |
+| `vr.94-effigy-nobody-down` | beach, world steps | A scout effigy with nobody down cannot be used: the trigger gets the NotInTrouble cue (red) and the effigy stays in hand. `SKIP` with `Interaction.GuardWastedItems` off or someone down |
 
 #### End-of-run slot
 
@@ -337,14 +337,14 @@ These steps run last in the VR run, after `TornadoTrip` (which may load another 
 
 | Step id | Checks |
 |---|---|
-| `vr.85-campfire-segment` | A bare-hand grip on the nearest unlit campfire that advances the segment lights it for real, with no FriendsFar cue. The segment advances within 40 s, and `VRFade.Target` reaches 0.5 or more when `UI.FadeOnSegmentChange` is on. `SKIP` with no unlit campfire ahead |
+| `vr.85-campfire-segment` | A bare-hand grip on the nearest unlit campfire that advances the segment lights it for real, with no refusal cue on that hand. Run flow must arm its segment fade within 3 s; while the swap is pending (up to 60 s) and 1 s after, the drawn fade (`FadeView.Alpha`, not just the requested `VRFade.Target`) must reach 0.5 when `UI.FadeOnSegmentChange` is on, and the segment must advance. `SKIP` with no unlit campfire ahead |
 | `vr.89-to-peak` | Jumps the run to the Peak segment (screenshot `vr-89-peak`) |
-| `vr.89-altar-full` | With every altar slot filled locally, using a held amulet gets the Occupied cue (red) and the amulet stays in hand after 1 s. `SKIP` with `GuardWastedItems` off |
+| `vr.89-altar-full` | With every altar slot filled locally, the held amulet carried up to a socket gets the Occupied cue (red) within 2 s; a finished vanilla hold (`Interact_CastFinished`) is refused the same way, and the amulet stays in hand after 1 s. `SKIP` with `GuardWastedItems` off |
 | `vr.89b-amulet-socket` | With the altar emptied locally, an amulet carried to the socket starts the interact hold (progress above 0) plus a Progress feel. `SKIP` with `Interaction.AmuletInSocket` off |
-| `vr.90-soul-pillar` | Both open palms on the soul pillar start its hold (progress 0.3 or more), then are withdrawn; a Progress feel must be logged. `SKIP` with no pillar or `PalmsOnPillar` off |
-| `vr.91-portal` | A hand pushed into the summit portal starts the hold (progress 0.3), then is pulled out; the character is not dead and no loading screen shows. `SKIP` with no active portal or `HandIntoPortal` off |
+| `vr.90-soul-pillar` | Both open palms on the soul pillar start its hold (progress 0.3 or more), then are withdrawn; a Progress feel must be logged. `SKIP` with no pillar or `PalmsOnPillar` off; the note says whether an inactive pillar is in the scene and whether the level has the Nadir (`VoidBiome`) |
+| `vr.91-portal` | A hand pushed into the summit portal starts the hold (progress 0.3), then is pulled out; the character is not dead and no loading screen shows. `SKIP` with no active portal or `HandIntoPortal` off; the note says the same for the portal |
 | `vr.93-summit-flare` | A lit flare held when the helicopter is summoned (the step sends the RPC itself if it must): a notice shows, a Contact feel fires and the notice sound plays |
-| `vr.86-end-screen` | Forces a win, laser-presses Next on the end screen. During credits an early press gets TooSoon, both hands feel Contact once the skip delay has passed, then the press returns to the Airport scene |
+| `vr.86-end-screen` | Forces a win, laser-presses Next on the end screen. A forced win must roll the credits. During credits an early press gets TooSoon, both hands feel Contact once the skip delay has passed, then the press must start the airport load within the game's 0.5 s hold plus the margin (the credits end by themselves 80 s in, so reaching the airport alone proves nothing) |
 
 The existing `use.<name>` steps now check the real effect: food must change `lastConsumedItem` and lower Hunger by half the item's change, lanterns and torches must be lit with fuel falling, flares lit and tracked, rope and chain launchers must spawn their projectile or vine, and binoculars must raise and lower in `Hold` mode.
 
