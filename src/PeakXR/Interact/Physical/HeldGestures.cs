@@ -13,10 +13,12 @@ namespace PeakXR.Interact.Physical;
 /// (BugleSFX.cs:43-61). Its pitch argument comes from the bell direction via <see cref="BeforeTooting"/>.</item>
 /// <item>Body press (G8): an item applied to the body (<see cref="UseGesture.Apply"/>) held against your own torso or
 /// other forearm holds primary. Feeding a friend's body is in <c>SocialHands</c>.</item>
-/// <item>Face: a book (<see cref="UseGesture.Read"/>) held open in front of the eyes, or a lethal or warping item
-/// (<see cref="UseGesture.Commune"/>) held eye to eye, holds primary for the game's own cast. A bare trigger on a
-/// commune item is refused (interact.physical asks <see cref="ItemGestures.TriggerRefused"/>) with a warning ring at
-/// the face, where it has to go.</item>
+/// <item>Face: the Book of Bones (<see cref="UseGesture.Read"/>, which turns its reader into a skeleton) held open at
+/// eye level, or a lethal or warping item (<see cref="UseGesture.Commune"/>) held eye to eye, holds primary for the
+/// game's own cast after a deliberate dwell, with a danger warning as it starts and the progress feel after. A bare
+/// trigger on them is refused (interact.physical asks <see cref="ItemGestures.TriggerRefused"/>) with a warning ring
+/// at the face, where it has to go. Near a skeleton the read is off: the book there revives (interact.world), and
+/// the two never overlap (<see cref="ReadZone"/>).</item>
 /// </list>
 /// The holding hand's tracked grip is used, not the physics item: held items collide with the holder's own body.
 /// </summary>
@@ -45,13 +47,9 @@ internal static class HeldGestures
     {
         Enter = 0f,
         Exit = 0.06f,
-        Dwell = 0.3f,
+        // Deliberate: both uses are dangerous, so a hand passing the face never starts one.
+        Dwell = 0.5f,
     };
-
-    /// <summary>Reading distance: this far in front of the eyes and <see cref="ReadBelow"/> below them, metres.</summary>
-    private const float ReadAhead = 0.35f;
-    private const float ReadBelow = 0.12f;
-    private const float ReadRadius = 0.16f;
 
     /// <summary>Eye to eye: the holding hand within this of a point just in front of the eyes, metres.</summary>
     private const float CommuneAhead = 0.12f;
@@ -116,24 +114,30 @@ internal static class HeldGestures
         }
         var head = rig.Head;
         var spot = read
-            ? head.position + head.forward * ReadAhead - Vector3.up * ReadBelow
+            ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
             : head.position + head.forward * CommuneAhead;
         float distance = Mathf.Max(
-            Vector3.Distance(hand.position, spot) - (read ? ReadRadius : CommuneRadius),
+            Vector3.Distance(hand.position, spot) - (read ? ReadZone.Radius : CommuneRadius),
             0f
         );
+        // The book over bones revives (interact.world); it must never read there.
+        if (read && !ReadZone.Allowed(hand.position.N(), ItemGestures.NearHips))
+            distance = float.PositiveInfinity;
         bool on = Face.Update(distance, dt);
+        var item = ItemGestures.Held;
         if (on && !facing)
-            Affordance.Contact(left);
+        {
+            // It starts: warn once that this harms (the warning's tick is the start tick), then the cast's progress.
+            Affordance.Danger(left, spot, 0.5f);
+        }
         facing = on;
         if (on)
         {
             GestureRequests.Primary();
-            var item = ItemGestures.Held;
-            if (commune && item != null)
+            if (item != null)
                 Affordance.Progress(left, item.castProgress);
         }
-        else if (commune && Trigger.Pressed && InteractConfig.Instance.TriggerUse)
+        else if (Trigger.Pressed && InteractConfig.Instance.TriggerUse)
         {
             // The trigger is refused for it: warn, and ring the face where it has to go.
             Affordance.DenyAtHand(

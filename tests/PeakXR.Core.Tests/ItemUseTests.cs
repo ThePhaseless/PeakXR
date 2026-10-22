@@ -141,10 +141,11 @@ public class ItemUseTests
         Assert.Equal(mouth, ItemUse.AtMouth(g));
 
     [Fact]
-    public void OnlyCommuneRefusesTheBareTrigger()
+    public void OnlyCommuneAndReadRefuseTheBareTrigger()
     {
+        // Reading the Book of Bones turns the reader into a skeleton (Action_BecomeSkeleton.cs:7).
         for (var g = UseGesture.Button; g < UseGesture.Count; g++)
-            Assert.Equal(g == UseGesture.Commune, ItemUse.NeedsGesture(g));
+            Assert.Equal(g is UseGesture.Commune or UseGesture.Read, ItemUse.NeedsGesture(g));
     }
 
     [Fact]
@@ -212,4 +213,45 @@ public class CookRiskTests
     [Fact]
     public void ItemsWithoutDefaultCookingNeverBurn() =>
         Assert.False(CookRisk.NextHarms(6, wreck: false, explodeAt: 0, defaults: false));
+}
+
+public class ReadZoneTests
+{
+    private static readonly System.Numerics.Vector3 Eyes = new(0f, 1.6f, 0f);
+    private static readonly System.Numerics.Vector3 Forward = new(0f, 0f, 1f);
+
+    [Fact]
+    public void NoSkeletonLetsTheBookBeRead() =>
+        Assert.True(ReadZone.Allowed(ReadZone.Spot(Eyes, Forward), null));
+
+    [Fact]
+    public void StandingOverABodyOnTheGroundStillReadsAtEyeLevel()
+    {
+        var hips = new System.Numerics.Vector3(0f, 0.15f, 0.5f);
+        Assert.True(ReadZone.Allowed(ReadZone.Spot(Eyes, Forward), hips));
+    }
+
+    [Fact]
+    public void BookOverTheBonesNeverReads()
+    {
+        var hips = new System.Numerics.Vector3(0f, 0.15f, 0.5f);
+        // Held low over the hips, where the revive runs.
+        Assert.False(ReadZone.Allowed(new(0f, 0.6f, 0.5f), hips));
+    }
+
+    [Fact]
+    public void BonesUpOnALedgeBlockTheReadEvenAtEyeLevel()
+    {
+        // A skeleton on a ledge at chest height: its revive zone reaches the read spot, and the revive wins.
+        var hips = new System.Numerics.Vector3(0f, 1.0f, 0.4f);
+        Assert.False(ReadZone.Allowed(ReadZone.Spot(Eyes, Forward), hips));
+    }
+
+    [Fact]
+    public void ABookDriftingUpAsItOpensStaysOutOfTheRead()
+    {
+        // vr32: the opening book rose about 0.5 m over the hips; still inside the revive zone and its clearance.
+        var hips = new System.Numerics.Vector3(0f, 0.15f, 0.5f);
+        Assert.False(ReadZone.Allowed(new(0f, 1.15f, 0.5f), hips));
+    }
 }

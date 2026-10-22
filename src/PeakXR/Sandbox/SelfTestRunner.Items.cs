@@ -1449,7 +1449,7 @@ internal sealed partial class SelfTestRunner
     /// below, a commune item 0.12 m ahead).</summary>
     static Vector3 FaceSpot(Transform head, bool read) =>
         read
-            ? head.position + head.forward * 0.35f - Vector3.up * 0.12f
+            ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
             : head.position + head.forward * 0.12f;
 
     /// <summary>Highest cast progress <see cref="FaceCastUntil"/> saw.</summary>
@@ -1457,6 +1457,9 @@ internal sealed partial class SelfTestRunner
 
     /// <summary><see cref="HeldGestures.AtFace"/> was on during <see cref="FaceCastUntil"/>.</summary>
     bool faceSeen;
+
+    /// <summary>The danger warning (<see cref="CueFeel.Danger"/>) came as the face hold started.</summary>
+    bool faceDanger;
 
     /// <summary>Carries the held item to its face spot and holds it there until the cast (<c>Item.castProgress</c>,
     /// Item.cs:344) passes <paramref name="stopAt"/>, then pulls the hand away in that same frame, long before the
@@ -1468,6 +1471,8 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         faceProgress = 0f;
         faceSeen = false;
+        faceDanger = false;
+        float dangerMark = CueMark();
         float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item) * stopAt, 2f);
         while (
             Now < end && item != null && c.data.currentItem == item && item.castProgress < stopAt
@@ -1480,6 +1485,7 @@ internal sealed partial class SelfTestRunner
         }
         if (item != null)
             faceProgress = Mathf.Max(faceProgress, item.castProgress);
+        faceDanger = CueLog.Capture.Felt(left, CueFeel.Danger, dangerMark, out _);
         PullAway(left);
     }
 
@@ -1758,6 +1764,8 @@ internal sealed partial class SelfTestRunner
             $"{prefab.name}: trigger refused ({triggerCue}); eye to eye AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, pulled away: alive {!c.data.dead}, still held {kept}";
         if (faceProgress < 0.4f)
             Fail("the cast did not run eye to eye: " + note);
+        else if (Affordance.Enabled && !faceDanger)
+            Fail("no danger warning as the face hold started: " + note);
         else if (!faceSeen)
             Fail("HeldGestures.AtFace never set: " + note);
         else if (c.data.dead)
@@ -1805,6 +1813,8 @@ internal sealed partial class SelfTestRunner
             $"{prefab.name} ({ItemGestures.UseOf(item)}, usable {canUse}): AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, lowered: skeleton {c.data.isSkeleton}, still held {kept}";
         if (faceProgress < 0.3f)
             Fail("the cast did not run in front of the eyes: " + note);
+        else if (Affordance.Enabled && !faceDanger)
+            Fail("no danger warning as the face hold started: " + note);
         else if (!faceSeen)
             Fail("HeldGestures.AtFace never set: " + note);
         else if (c.data.isSkeleton)
