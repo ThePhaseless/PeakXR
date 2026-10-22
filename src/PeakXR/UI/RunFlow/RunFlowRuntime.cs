@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.Menu;
@@ -80,6 +81,33 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     /// <summary>Unscaled seconds since the credits started (PeakHandler.cs:229-231 ignores keys for 20 s).</summary>
     internal static float CreditsAge { get; private set; }
+
+    /// <summary>The cinema screen shows a camera feed now; the self-test checks it stays off unless chosen.</summary>
+    internal static bool CinemaShowing =>
+        instance != null && instance.cinemaRunning && instance.cinema.Showing;
+
+    private static bool? comfortViewpoint;
+
+    /// <summary>
+    /// The VR view is already in the cutscene's 3D scene, so no cinema screen or black hold. comfort.events reports
+    /// it during the cutscene (<see cref="RunFlowFeature.CutsceneViewHandled"/>) but not while the credits roll, and
+    /// rig.camera keeps the view at the credits camera then too: the cinema screen showed the same shot inside the
+    /// view (a flat screen over the world, user report). So with comfort.events' CutsceneView other than Screen the
+    /// credits and the airport load after them stay in the scene (ui.menu's loading room takes the load).
+    /// </summary>
+    private static bool ViewInScene
+    {
+        get
+        {
+            if (RunFlowFeature.CutsceneViewHandled)
+                return true;
+            // Resolved once: comfort.events installs after ui.runflow (Order 60 vs 54).
+            comfortViewpoint ??= FeatureManager.IsActive<PeakXR.Comfort.ComfortEventsFeature>();
+            return comfortViewpoint.Value
+                && PeakXR.Comfort.ComfortEventsConfig.Cutscene
+                    != PeakXR.Comfort.CutsceneView.Screen;
+        }
+    }
 
     /// <summary>True on a frame where any VR trigger, primary or secondary button went down.</summary>
     public static bool AnyButtonPressedThisFrame =>
@@ -249,7 +277,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
             instance == null
             || !VRSession.Active
             || !instance.cfg.BlackDuringCutscene.Value
-            || RunFlowFeature.CutsceneViewHandled
+            || ViewInScene
             || !handler.isPlayingCinematic
             || instance.cinema.Showing
         )
@@ -456,7 +484,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         var handler = Singleton<PeakHandler>.Instance;
         var wanted =
             cfg.CutsceneScreen.Value
-            && !RunFlowFeature.CutsceneViewHandled
+            && !ViewInScene
             && ((handler != null && handler.isPlayingCinematic) || CreditsWaiting);
         if (wanted)
         {
@@ -490,7 +518,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     {
         if (
             !cfg.BlackDuringCutscene.Value
-            || RunFlowFeature.CutsceneViewHandled
+            || ViewInScene
             || cinema.Showing
             || peak == null
             || !peak.isPlayingCinematic
