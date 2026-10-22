@@ -23,8 +23,11 @@ internal sealed partial class SelfTestRunner
     /// (<see cref="StillWindow"/>, shared with the MP settle).</summary>
     const float SettleDrift = 0.03f;
 
-    /// <summary>Seconds the body must stay grounded and still.</summary>
-    const float SettleHold = 1f;
+    /// <summary>Seconds over which the hip's net travel is judged (<see cref="StillWindow.Hold"/>).</summary>
+    const float SettleHold = 2f;
+
+    /// <summary>Seconds each end of that travel is averaged over: longer than PEAK 3.0's ~1 s idle sway.</summary>
+    const float SettleSmooth = 1f;
 
     /// <summary>Farther than this (m) from the home spot, the step starts with a warp back to it.</summary>
     const float SettleRadius = 2f;
@@ -43,7 +46,7 @@ internal sealed partial class SelfTestRunner
     /// to the segment's home spot when the body strayed from it (the game's <c>WarpPlayerRPC</c>, Character.cs:1824,
     /// whose <c>WarpPlayer</c> also stops climbing, :1853); then waits until the body is grounded
     /// (<c>CharacterData.isGrounded</c>, CharacterData.cs:59), not sprinting (:88) and still (<see cref="StillTick"/>)
-    /// for <see cref="SettleHold"/>, and recentres the rig. Without a home spot yet,
+    /// for <see cref="StillWindow.Required"/>, and recentres the rig. Without a home spot yet,
     /// the spot the body settles on becomes it when flat and open; otherwise the segment's base camp spawn
     /// (<c>MapHandler.CurrentBaseCampSpawnPoint</c>, MapHandler.cs:231, the target of the game's own segment jump,
     /// :1076) is tried. A body that never settles fails the step with "not settled".
@@ -102,7 +105,7 @@ internal sealed partial class SelfTestRunner
                 why = SettleProblem(c, needSpot: !hasHome);
             }
         }
-        if (why != null && settledFor < SettleHold)
+        if (why != null && settledFor < stillWindow.Required)
         {
             Fail($"not settled: {why}");
             yield break;
@@ -193,6 +196,9 @@ internal sealed partial class SelfTestRunner
         rig.Recentered -= onRecenter;
         if (!recentered)
             Fail("not settled: the rig did not recentre within 3 s");
+        // The eye guard watches for 3 s after this very recentre (run 45: 47 of vr.32's 123 settle frames were
+        // "view settling"); wait it out once, so the stillness window judges the body, not our own recentre.
+        yield return WaitFor(() => !Rig.RigDriver.ViewSettling, 4f);
         // The recentre runs under a short fade; let it clear before the step looks.
         yield return Wait(0.5f);
     }
@@ -229,14 +235,18 @@ internal sealed partial class SelfTestRunner
     /// <summary>Seconds the body has been grounded and still, as of the last <see cref="StandStill"/>.</summary>
     float settledFor;
 
-    /// <summary>Waits until the body has been still (<see cref="StillTick"/>) for <see cref="SettleHold"/>; the
+    /// <summary>Waits until the body has been still (<see cref="StillTick"/>) for <see cref="StillWindow.Required"/>; the
     /// deadline is the fall to the ground under it plus that hold, pushed back while a stillness that started in time
     /// runs (run 30's vr.32 ran out still 0.6 of 1 s, every condition holding).</summary>
     IEnumerator StandStill(Character c)
     {
         float drop = GroundBelow(c.Center, 200f);
         float deadline =
-            Now + GameTiming.Budget(GameTiming.FallSeconds(Mathf.Max(0f, drop)) + SettleHold, 1f);
+            Now
+            + GameTiming.Budget(
+                GameTiming.FallSeconds(Mathf.Max(0f, drop)) + stillWindow.Required,
+                1f
+            );
         settledFor = 0f;
         stillWindow.Reset();
         System.Array.Clear(blocked, 0, blocked.Length);
@@ -248,7 +258,7 @@ internal sealed partial class SelfTestRunner
                 deadline,
                 Now,
                 settledFor,
-                SettleHold,
+                stillWindow.Required,
                 SelfTestChecks.GameMargin
             )
         )
@@ -263,7 +273,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The one stillness rule of both settles (offline <see cref="StandStill"/>, MP
     /// <c>MpStandStill</c>).</summary>
-    readonly StillWindow stillWindow = new(SettleDrift, SettleHold);
+    readonly StillWindow stillWindow = new(SettleDrift, SettleHold, SettleSmooth);
 
     /// <summary>
     /// One frame of the shared stillness rule: grounded (<c>CharacterData.isGrounded</c>), under control
@@ -272,7 +282,7 @@ internal sealed partial class SelfTestRunner
     /// <see cref="SettleDrift"/>. Not hip speed: PEAK 3.0's idle sway moves a standing hip at 0.05-0.10 m/s around a
     /// fixed point (run 42: vr.32, vr.40 and vr.41 "not settled"; MP run 9 the same), while a walk, follow, slide or
     /// lean push carries it past the drift and restarts the window. <paramref name="why"/> is what restarted it this
-    /// frame, or null. Counts frames per reason for the note. True once still for <see cref="SettleHold"/>.
+    /// frame, or null. Counts frames per reason for the note. True once still for <see cref="StillWindow.Required"/>.
     /// </summary>
     bool StillTick(Character c, out string why)
     {
@@ -319,14 +329,14 @@ internal sealed partial class SelfTestRunner
     {
         var d = c.data;
         var v = c.refs.hip.Rig.linearVelocity;
-        if (settledFor < SettleHold)
+        if (settledFor < stillWindow.Required)
         {
             var driver = AvatarPoseDriver.Of(c);
             var rig = VRRig.Instance;
             float eyeGap =
                 rig != null && rig.Head != null ? Vector3.Distance(rig.Head.position, c.Head) : -1f;
             return F(
-                $"grounded {d.isGrounded}, control {d.currentRagdollControll:0.00}, climbing {d.isClimbingAnything}, sprinting {d.isSprinting}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s (peak {hipPeak:0.00}), net drift {stillWindow.Drift:0.000} m, view settling {Rig.RigDriver.ViewSettling}, lean {(driver != null ? driver.LeanDegrees : 0f):0.0} deg, body hold {driver != null && driver.BodyHeld}, eye {eyeGap:0.00} m from the head, still {settledFor:0.00} of {SettleHold:0.0} s at {c.Center}; frames of {standFrames} blocked by grounded {blocked[0]}, control {blocked[1]}, climbing {blocked[2]}, sprinting {blocked[3]}, hip drift {blocked[4]}, view settling {blocked[5]}"
+                $"grounded {d.isGrounded}, control {d.currentRagdollControll:0.00}, climbing {d.isClimbingAnything}, sprinting {d.isSprinting}, hip {new Vector2(v.x, v.z).magnitude:0.00} m/s (peak {hipPeak:0.00}), net drift {stillWindow.Drift:0.000} m, view settling {Rig.RigDriver.ViewSettling}, lean {(driver != null ? driver.LeanDegrees : 0f):0.0} deg, body hold {driver != null && driver.BodyHeld}, eye {eyeGap:0.00} m from the head, still {settledFor:0.00} of {stillWindow.Required:0.0} s at {c.Center}; frames of {standFrames} blocked by grounded {blocked[0]}, control {blocked[1]}, climbing {blocked[2]}, sprinting {blocked[3]}, hip drift {blocked[4]}, view settling {blocked[5]}"
             );
         }
         if (!needSpot)

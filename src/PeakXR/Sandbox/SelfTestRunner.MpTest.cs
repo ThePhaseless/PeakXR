@@ -158,7 +158,7 @@ internal sealed partial class SelfTestRunner
     /// The online counterpart of the self-test's <see cref="Settle"/>, without warps (nothing here warps online): A
     /// awake (the game's own revive on its own character), pause closed, buttons and sticks at rest, any head dip
     /// undone, then the rig recentred and the body grounded, under its own control (not ragdolled or climbing) and
-    /// still for <see cref="SettleHold"/>. A body that never settles fails the step with the reason, so a step never
+    /// still for <see cref="StillWindow.Required"/>. A body that never settles fails the step with the reason, so a step never
     /// starts on a body a previous step left falling, sliding or in the detached ragdoll view (MP run 7: holster and
     /// climb ran with the view 2.9 m behind the torso).
     /// </summary>
