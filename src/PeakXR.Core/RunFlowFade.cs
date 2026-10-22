@@ -196,3 +196,55 @@ public sealed class RunFlowRumble
     public static float FromShake(float amount, float strength) =>
         Math.Clamp(amount / FullShake, 0f, 1f) * Math.Clamp(strength, 0f, 1f);
 }
+
+/// <summary>
+/// A campfire segment swap never shows unfaded. <see cref="Arm"/> when the game starts a segment advance; the fade
+/// starts when the game's own wait for the fog ends (<see cref="FogCaughtUp"/>; the swap follows 1 s later), however
+/// long that takes; if the swap comes first, it snaps to black (<see cref="Swap"/>). <see cref="Timeout"/> only
+/// disarms an advance whose swap never comes.
+/// </summary>
+public sealed class SegmentSwapGate
+{
+    public float Timeout = 600f;
+
+    private float armedAt;
+    private bool faded;
+
+    public bool Armed { get; private set; }
+
+    public void Arm(float now)
+    {
+        Armed = true;
+        faded = false;
+        armedAt = now;
+    }
+
+    /// <summary>The wait before the swap ended: true once, when the fade must start.</summary>
+    public bool FogCaughtUp()
+    {
+        if (!Armed || faded)
+            return false;
+        faded = true;
+        return true;
+    }
+
+    /// <summary>The view swaps now: true when the fade had not started, so it must snap to black.</summary>
+    public bool Swap()
+    {
+        if (!Armed)
+            return false;
+        Armed = false;
+        return !faded;
+    }
+
+    /// <summary>True once when an armed advance got no swap within <see cref="Timeout"/>.</summary>
+    public bool Expired(float now)
+    {
+        if (!Armed || now - armedAt <= Timeout)
+            return false;
+        Armed = false;
+        return true;
+    }
+
+    public void Reset() => Armed = false;
+}

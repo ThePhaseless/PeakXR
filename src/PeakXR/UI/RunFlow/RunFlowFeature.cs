@@ -45,6 +45,8 @@ public sealed class RunFlowFeature : Feature
 
         Patch(typeof(WarpPlayerPatch));
         Patch(typeof(GoToSegmentPatch));
+        Patch(typeof(FogCatchUpPatch));
+        Patch(typeof(SegmentSwapPatch));
         Patch(typeof(SegmentTitlePatch));
         Patch(typeof(EndGamePatch));
         Patch(typeof(CreditsStartPatch));
