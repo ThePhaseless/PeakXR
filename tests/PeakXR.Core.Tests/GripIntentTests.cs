@@ -13,12 +13,24 @@ public class GripIntentTests
     }
 
     [Fact]
-    public void HoldingItem_OtherHandNearDifferentItem_DoesNotPickItUp()
+    public void HoldingItem_OtherHandNearDifferentItem_PocketsIt()
     {
+        // The game pockets an item picked up while another is held (Item.Interact, Item.cs:578-591): the free hand
+        // takes the one it touched instead of whatever the head aims at.
         var c = Empty();
         c.HoldingItem = true;
         c.Candidate = GrabCandidate.Item;
-        Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
+        Assert.Equal(GripPressAction.GrabItem, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void HoldingHand_NearDifferentItem_Regrips()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Item;
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
     }
 
     [Fact]
