@@ -170,9 +170,12 @@ internal sealed partial class SelfTestRunner
         float viewLean = Vector3.Dot(rig.Origin.position - originStart, worldForward);
         var originUp = rig.Origin.position;
         // Standing up and the 3.5 s after it: the body stays put (no walk back, no shuffle), the view never moves.
-        leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
+        var upRoot = RigDriver.ViewRoot(c);
+        leanRoot = new Bounds(upRoot, Vector3.zero);
         yield return Track(c, rig, Vector3.zero, 0.6f, 3.5f);
         float back = leanRoot.size.magnitude;
+        // Run 31: the far lean's walk coasted onto the head, and standing up walked the body 0.44 m back.
+        float walkedBack = -Vector3.Dot(RigDriver.ViewRoot(c) - upRoot, worldForward);
         float origin = leanOrigin.size.magnitude;
         notes.Add(
             F(
@@ -180,7 +183,13 @@ internal sealed partial class SelfTestRunner
             )
         );
         if (walked < 0.1f)
-            fails.Add(F($"far lean walked only {walked:0.000} m"));
+            fails.Add(F($"far lean walked only {walked:0.000} m while leaning past the limit"));
+        if (walkedBack > MaxLeanDrift)
+            fails.Add(
+                F(
+                    $"body walked {walkedBack:0.000} m back after standing up (a follow on standing up)"
+                )
+            );
         if (back > MaxLeanDrift)
             fails.Add(F($"body moved {back:0.000} m after standing up"));
         if (origin > MaxLeanDrift)

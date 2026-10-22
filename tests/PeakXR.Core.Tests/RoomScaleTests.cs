@@ -48,7 +48,13 @@ public class RoomScaleTests
     /// eases toward input times 1.5 m/s with a 0.12 s time constant, CharacterMovement drag 0.85 per tick). Returns
     /// the body's forward travel per frame.
     /// </summary>
-    static List<float> Walk(RoomScaleFollow f, Func<float, Vector2> head, float seconds)
+    static List<float> Walk(
+        RoomScaleFollow f,
+        Func<float, Vector2> head,
+        float seconds,
+        float speed = 1.5f,
+        float tau = 0.12f
+    )
     {
         const float dt = 1f / 90f;
         var travel = new List<float>();
@@ -58,7 +64,7 @@ public class RoomScaleTests
         for (float t = 0f; t < seconds; t += dt)
         {
             var request = f.Update(head(t), delta, canFollow: true, dt);
-            v += (request * 1.5f - v) * (1f - MathF.Exp(-dt / 0.12f));
+            v += (request * speed - v) * (1f - MathF.Exp(-dt / tau));
             delta = v * dt;
             body += delta.Y;
             travel.Add(body);
@@ -102,6 +108,36 @@ public class RoomScaleTests
         // Instead the avatar's own lean eases to neutral: the stance it stood back up into counts as upright.
         TestUtil.Near(f.Offset.Y, f.Neutral.Y, 0.01f);
         Assert.True(f.Offset.Y < -0.2f, $"offset {f.Offset.Y:0.000} m");
+    }
+
+    [Fact]
+    public void FollowThatCoastsOntoTheHead_StillNeverWalksBack()
+    {
+        // Run 31: the far lean's walk coasted until the anchor reached the head (offset 0.007 m), so standing back
+        // up left the head 0.43 m behind, past the lean radius, and the body walked 0.44 m back.
+        var f = new RoomScaleFollow();
+        Walk(f, Lean(0f, 0.5f, 0f, 0.5f), 3f, speed: 3f, tau: 0.5f);
+        Assert.True(
+            f.Offset.Y < 0.1f,
+            $"the walk did not coast onto the head: offset {f.Offset.Y:0.000}"
+        );
+        var up = Walk(f, Lean(0.5f, 0f, 0f, 0.5f), 5f, speed: 3f, tau: 0.5f);
+        Assert.True(
+            up.Max() - up.Min() < 0.005f,
+            $"body walked {up.Max() - up.Min():0.000} m back after standing up"
+        );
+    }
+
+    [Fact]
+    public void AfterAFollow_AStepFarBehindIt_StillFollows()
+    {
+        // Only the stance the follow walked away from counts as a lean; stepping well behind it walks the body back.
+        var f = new RoomScaleFollow();
+        Walk(f, Lean(0f, 0.5f, 0f, 0.5f), 3f);
+        float before = f.Anchor.Y;
+        var back = Walk(f, Lean(0.5f, -1.0f, 0f, 1f), 4f);
+        Assert.True(back[^1] < -0.3f, $"walked only {back[^1]:0.000} m after stepping 1.5 m back");
+        Assert.True(f.Anchor.Y < before);
     }
 
     [Fact]
