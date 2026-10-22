@@ -376,8 +376,9 @@ internal static class LocomotionInput
             return;
         warnedFar = true;
         var feet = c.data.isGrounded ? c.data.groundPos : c.Center;
-        // One hand: ui.affordance draws one refusal ring at a time, and a second Deny would replace it.
-        Affordance.Deny(VRInput.LeftHanded, feet, DenyReason.NotNow, DenyHint.At(feet));
+        // One hand, and not one busy with its own action (BodyFeedback.BodyHand): one refusal ring shows at a time.
+        if (BodyFeedback.BodyHand(VRInput.LeftHanded, out bool hand))
+            Affordance.Deny(hand, feet, DenyReason.NotNow, DenyHint.At(feet));
     }
 
     /// <summary>Widest angle (degrees) between the pointing hand and a teammate it picks.</summary>

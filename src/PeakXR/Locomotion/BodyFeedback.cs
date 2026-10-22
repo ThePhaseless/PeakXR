@@ -54,7 +54,10 @@ internal static class BodyFeedback
 
     private static Character tracked;
     private static bool wasCrouching;
-    private static bool wasSliding;
+    private static readonly SlideCue Slide = new();
+
+    /// <summary>Seconds a hand's own refusal keeps priority over a body refusal (its ring is still up).</summary>
+    private const float OwnCueSeconds = 1.5f;
     private static int jumps;
     private static float lastPassOut;
     private static int refusedFrame = -10;
@@ -131,7 +134,6 @@ internal static class BodyFeedback
         {
             tracked = c;
             wasCrouching = d.isCrouching;
-            wasSliding = false;
         }
 
         // A6: the crouch latching or letting go, so a half-crouched or seated player knows it flipped.
@@ -174,7 +176,10 @@ internal static class BodyFeedback
         if (refusedFrame >= 0 && Time.frameCount > refusedFrame)
         {
             if (!d.isClimbingAnything && Time.frameCount - refusedFrame <= 3)
-                Affordance.Deny(DominantLeft, feet, DenyReason.TooSoon);
+            {
+                if (BodyHand(DominantLeft, out bool hand))
+                    Affordance.Deny(hand, feet, DenyReason.TooSoon);
+            }
             refusedFrame = -10;
         }
 
@@ -198,15 +203,45 @@ internal static class BodyFeedback
             }
         }
 
-        // A12: ground steeper than the game's max angle resets sinceFallSlide every frame on it
-        // (CharacterMovement.cs:906-917): the feet slip, once per slide.
-        bool sliding = d.sinceFallSlide < 0.1f && !d.isClimbingAnything;
-        if (sliding && !wasSliding)
-        {
-            // One hand: ui.affordance draws one refusal ring at a time, and a second Deny would replace it.
-            Affordance.Deny(DominantLeft, feet, DenyReason.TooSteep);
-        }
-        wasSliding = sliding;
+        // A12: ground steeper than the game's max angle resets sinceFallSlide (CharacterMovement.cs:906-919), but
+        // so does a steep edge under feet that stand (run 34: a beach lip during vr.63). Only a real slide (off the
+        // ground, moving down, for 0.2 s) slips the feet, once.
+        if (
+            Slide.Update(
+                d.sinceFallSlide < 0.1f && !d.isClimbingAnything,
+                d.isGrounded,
+                -d.avarageVelocity.y,
+                Time.deltaTime
+            ) && BodyHand(DominantLeft, out bool slipHand)
+        )
+            Affordance.Deny(slipHand, feet, DenyReason.TooSteep);
+    }
+
+    /// <summary>
+    /// The hand that shows a body refusal (<see cref="BodyCueHand"/>): one that is not holding the item or
+    /// gripping or pulling a trigger, and has no refusal of its own up, so a body cue never replaces the ring of what
+    /// that hand is doing. False when both hands are busy and the preferred one's own cue is showing.
+    /// </summary>
+    internal static bool BodyHand(bool preferLeft, out bool left)
+    {
+        float now = Time.unscaledTime;
+        return BodyCueHand.Pick(
+            preferLeft,
+            Busy(true),
+            Busy(false),
+            now - CueLog.Capture.Hand(true).ReasonAt < OwnCueSeconds,
+            now - CueLog.Capture.Hand(false).ReasonAt < OwnCueSeconds,
+            out left
+        );
+    }
+
+    private static bool Busy(bool left)
+    {
+        var c = Character.localCharacter;
+        ref var hand = ref VRInput.Hand(left);
+        bool holds =
+            c != null && c.data.currentItem != null && Avatar.LocalHold.ItemInLeftHand == left;
+        return holds || hand.Grip > 0.5f || hand.Trigger > 0.5f;
     }
 
     /// <summary>
@@ -339,7 +374,10 @@ internal static class BodyFeedback
                 && (input.sprintIsPressed || input.sprintToggleWasPressed);
             bool exerting = body && (__state || d.sinceJump < 0.5f);
             if (StaminaOut.Update(empty, exerting, wanted, Time.unscaledTime))
-                Affordance.DenyStamina(!DominantLeft);
+            {
+                if (BodyHand(!DominantLeft, out bool hand))
+                    Affordance.DenyStamina(hand);
+            }
         }
     }
 

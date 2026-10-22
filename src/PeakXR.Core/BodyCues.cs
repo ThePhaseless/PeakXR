@@ -235,6 +235,78 @@ public sealed class Shiver
     }
 }
 
+/// <summary>
+/// A real slope slide: the game's slide flag (sinceFallSlide reset, CharacterMovement.cs:906-919) while off the
+/// ground and moving down, held for <see cref="Hold"/>. The game also resets the flag when its hip ray meets a steep
+/// edge under feet that stand (a rock lip, debris): that is no slide. Fires once; re-arms after
+/// <see cref="Rearm"/> seconds without one.
+/// </summary>
+public sealed class SlideCue
+{
+    public float Hold = 0.2f;
+    public float Rearm = 1f;
+    public float DownSpeed = 0.5f;
+
+    float _for;
+    float _quiet = float.PositiveInfinity;
+    bool _armed = true;
+
+    /// <param name="flag">The game's slide flag this frame.</param>
+    /// <param name="grounded">CharacterData.isGrounded.</param>
+    /// <param name="downSpeed">Downward speed (m/s, positive down).</param>
+    public bool Update(bool flag, bool grounded, float downSpeed, float dt)
+    {
+        if (flag && !grounded && downSpeed > DownSpeed)
+        {
+            _for += dt;
+            _quiet = 0f;
+        }
+        else
+        {
+            _for = 0f;
+            _quiet += dt;
+            if (_quiet >= Rearm)
+                _armed = true;
+        }
+        if (!_armed || _for < Hold)
+            return false;
+        _armed = false;
+        return true;
+    }
+}
+
+/// <summary>
+/// Which hand shows a body refusal (a slide, a refused jump, out of breath). ui.affordance draws one refusal ring
+/// at a time, so the body's cue goes to a hand that is not busy (holding or gripping) and has no cue of its own up;
+/// with both hands busy it takes the preferred one only when that hand's own cue is not showing, else it yields.
+/// </summary>
+public static class BodyCueHand
+{
+    public static bool Pick(
+        bool preferLeft,
+        bool leftBusy,
+        bool rightBusy,
+        bool leftCueUp,
+        bool rightCueUp,
+        out bool left
+    )
+    {
+        bool prefBusy = preferLeft ? leftBusy : rightBusy;
+        bool prefCue = preferLeft ? leftCueUp : rightCueUp;
+        bool otherBusy = preferLeft ? rightBusy : leftBusy;
+        bool otherCue = preferLeft ? rightCueUp : leftCueUp;
+        left = preferLeft;
+        if (!prefBusy && !prefCue)
+            return true;
+        if (!otherBusy && !otherCue)
+        {
+            left = !preferLeft;
+            return true;
+        }
+        return !prefCue;
+    }
+}
+
 /// <summary>Footing back: ragdoll control (CharacterData.currentRagdollControll) climbs past
 /// <see cref="Regained"/> after it fell below <see cref="Lost"/>. A wobble above <see cref="Lost"/> is no fall.</summary>
 public sealed class FootingCue
