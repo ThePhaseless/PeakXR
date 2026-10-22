@@ -118,6 +118,22 @@ public class AffordanceVocabularyTests
     }
 
     [Fact]
+    public void EveryReason_HasADrawableGlyph()
+    {
+        for (var r = DenyReason.None + 1; r < DenyReason.Count; r++)
+        {
+            var g = DenyGlyph.For(r);
+            Assert.True(Enum.IsDefined(g), $"{r}: glyph {g} undefined");
+            // Wait is drawn by the runtime's sweeping arc; every other glyph needs a stroke of its own.
+            int points = GlyphShape.Stroke(g, 0).Length;
+            Assert.True(
+                g == CueGlyph.Wait || (points >= 2 && points <= GlyphShape.MaxPoints),
+                $"{r}: glyph {g} has no stroke to draw"
+            );
+        }
+    }
+
+    [Fact]
     public void EveryGlyph_ButWait_HasAStroke_InsideTheRing()
     {
         foreach (var g in Enum.GetValues<CueGlyph>())
