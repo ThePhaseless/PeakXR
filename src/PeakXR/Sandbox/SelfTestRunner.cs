@@ -798,6 +798,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             if (Now > deadline)
             {
                 fail(null);
+                Unwind(stack);
                 yield break;
             }
             var top = stack.Peek();
@@ -812,6 +813,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             catch (Exception e)
             {
                 fail(e);
+                Unwind(stack);
                 yield break;
             }
             if (!more)
@@ -820,6 +822,28 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 stack.Push(nested);
             else
                 yield return current;
+        }
+    }
+
+    /// <summary>
+    /// Disposes a cut-off tree innermost first, so the steps' <c>finally</c> blocks still restore the settings
+    /// and body state they changed; a timed-out step would otherwise leak them into every later step.
+    /// </summary>
+    static void Unwind(Stack<IEnumerator> stack)
+    {
+        while (stack.Count > 0)
+        {
+            try
+            {
+                (stack.Pop() as IDisposable)?.Dispose();
+            }
+            catch (Exception e)
+            {
+                // The step has already failed; a second report would overwrite its cause (or abort twice).
+                Plugin.Log.LogWarning(
+                    $"[selftest] cleanup after a cut-off step threw: {e.Message}"
+                );
+            }
         }
     }
 
