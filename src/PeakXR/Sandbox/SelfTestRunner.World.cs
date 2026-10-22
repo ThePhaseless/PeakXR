@@ -842,6 +842,7 @@ internal sealed partial class SelfTestRunner
         "vr.91-portal",
         "vr.93-summit-flare",
         "vr.86-end-screen",
+        "vr.86b-no-flat-screens",
     };
 
     IEnumerator EndOfRunSteps()
@@ -859,6 +860,9 @@ internal sealed partial class SelfTestRunner
                 Skip(id, $"needs {EndRunFlag} (grants real progress)");
             yield break;
         }
+        flatScreens.Clear();
+        watchFlat = true;
+        StartCoroutine(WatchFlatScreens());
         yield return HandStep("vr.85-campfire-segment", 120f, CampfireSegmentStep());
         yield return WarpBack();
         yield return Run("vr.89-to-peak", 150f, Jump(Segment.Peak, "vr-89-peak"));
@@ -868,6 +872,101 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.91-portal", 30f, PortalStep());
         yield return HandStep("vr.93-summit-flare", 40f, FlareStep());
         yield return HandStep("vr.86-end-screen", 300f, EndScreenStep());
+        watchFlat = false;
+        yield return Run("vr.86b-no-flat-screens", 5f, FlatScreensVerdict());
+    }
+
+    readonly HashSet<string> flatScreens = new(StringComparer.Ordinal);
+    bool watchFlat;
+
+    /// <summary>
+    /// Watches the end-of-run slot for screens that are not placed in the world: in VR every menu and screen is a
+    /// world panel or the view is in the 3D scene. Twice a second, while <see cref="watchFlat"/>: the cinema screen
+    /// showing a camera feed though comfort.events puts the view in the cutscene (the credits did, user report); a
+    /// screen-space canvas ui.world should have placed (not its mirror-only Hidden or Fade kinds) visible for over
+    /// 1 s; and a RawImage of a RenderTexture covering most of a screen-space canvas.
+    /// </summary>
+    IEnumerator WatchFlatScreens()
+    {
+        var since = new Dictionary<int, float>();
+        while (watchFlat)
+        {
+            if (VRSession.Active)
+                Safe("world.flat-scan", () => ScanFlat(since));
+            yield return Wait(0.5f);
+        }
+    }
+
+    void ScanFlat(Dictionary<int, float> since)
+    {
+        var where = SceneManager.GetActiveScene().name;
+        if (
+            RunFlowRuntime.CinemaShowing
+            && PeakXR.Comfort.ComfortEventsConfig.Cutscene != PeakXR.Comfort.CutsceneView.Screen
+        )
+            flatScreens.Add($"cinema screen showing a camera feed ({where})");
+        foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+        {
+            int id = canvas.GetInstanceID();
+            if (
+                !canvas.isActiveAndEnabled
+                || !canvas.isRootCanvas
+                || canvas.renderMode == RenderMode.WorldSpace
+            )
+            {
+                since.Remove(id);
+                continue;
+            }
+            var kind = CanvasRules.Classify(
+                canvas,
+                canvas.GetComponentInChildren<Selectable>() != null,
+                false,
+                out _
+            );
+            if (kind is CanvasKind.Hidden or CanvasKind.Fade || !Drawn(canvas))
+            {
+                since.Remove(id);
+                continue;
+            }
+            if (!since.TryGetValue(id, out float first))
+                since[id] = Now;
+            else if (Now - first > 1f)
+                flatScreens.Add($"'{canvas.name}' {canvas.renderMode} ({kind}) in {where}");
+            foreach (var raw in canvas.GetComponentsInChildren<RawImage>())
+            {
+                if (!raw.isActiveAndEnabled || raw.texture is not RenderTexture)
+                    continue;
+                var canvasRect = ((RectTransform)canvas.transform).rect;
+                var rect = raw.rectTransform.rect;
+                if (rect.width * rect.height >= 0.6f * canvasRect.width * canvasRect.height)
+                    flatScreens.Add($"camera feed '{raw.name}' on '{canvas.name}' in {where}");
+            }
+        }
+    }
+
+    /// <summary>Some graphic of <paramref name="canvas"/> actually draws (enabled, not faded out).</summary>
+    static bool Drawn(Canvas canvas)
+    {
+        foreach (var g in canvas.GetComponentsInChildren<Graphic>())
+        {
+            if (
+                g.isActiveAndEnabled
+                && g.color.a > 0.01f
+                && g.canvasRenderer.GetInheritedAlpha() > 0.01f
+            )
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>vr.86b: nothing in the end-of-run slot was a flat screen (see <see cref="WatchFlatScreens"/>).</summary>
+    IEnumerator FlatScreensVerdict()
+    {
+        yield return null;
+        if (flatScreens.Count > 0)
+            Fail("flat screens in VR: " + string.Join("; ", flatScreens));
+        else
+            Note("no flat screen, overlay or camera feed during the end-of-run slot");
     }
 
     /// <summary>
