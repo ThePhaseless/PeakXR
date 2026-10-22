@@ -1518,6 +1518,11 @@ internal sealed partial class SelfTestRunner
                 0
             );
             var vine = built.GetComponent<JungleVine>();
+            // The shooter's vine is a climbing vine: trigger capsules (JungleVine.cs:284-290). A bridge is the same
+            // vine built with solid boxes (:293, sized boxShape.x x length/meshLength wide, boxShape.y deep),
+            // which run 41's search found missing ("no plank"). About 1.2 m by 1.2 m here, walkable.
+            vine.colliderType = JungleVine.ColliderType.Box;
+            vine.boxShape = new Vector2(1.2f * vine.meshLength / Vector3.Distance(from, to), 1.2f);
             vine.photonView.RPC("ForceBuildVine_RPC", RpcTarget.All, from, to, hang, mid);
             yield return Wait(0.2f);
             bridge = built.AddComponent<BreakableBridge>();
