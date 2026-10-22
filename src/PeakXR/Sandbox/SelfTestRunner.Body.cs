@@ -33,40 +33,46 @@ internal sealed partial class SelfTestRunner
     /// <summary>The move stick's hand, which is also the wrist with the stamina bar's refusal.</summary>
     static bool OffLeft => !VRInput.LeftHanded;
 
+    /// <summary>A step's timeout covers the shared settle before it (SelfTestRunner.Settle.cs: revive, warp home,
+    /// recentre, stand still, once more on a poor spot) as well as the body: run 38 timed out vr.149 inside the
+    /// settle and vr.211 in its own 8 s wait. <paramref name="body"/> is the step body's worst case, every wait in
+    /// it bounded.</summary>
+    static float Budget(float body) => 20f + body;
+
     IEnumerator MovementSteps()
     {
-        yield return Restoring("vr.140-roomscale-blocked", 20f, RoomScaleBlockedStep());
-        yield return HandStep("vr.141-forced-look-side", 15f, ForcedLookSideStep());
-        yield return Restoring("vr.142-sprint-out", 20f, SprintOutStep());
-        yield return Restoring("vr.154-jump-out", 15f, JumpOutStep());
-        yield return Restoring("vr.143-crouch-walk", 25f, CrouchWalkStep());
-        yield return HandStep("vr.144-jump", 15f, JumpStep());
-        yield return Restoring("vr.155-hop-jump", 30f, HopStep());
-        yield return Restoring("vr.158-arm-swing-still", 20f, SwingStillStep());
-        yield return HandStep("vr.145-landing", 25f, LandingStep());
+        yield return Restoring("vr.140-roomscale-blocked", Budget(8f), RoomScaleBlockedStep());
+        yield return HandStep("vr.141-forced-look-side", Budget(3f), ForcedLookSideStep());
+        yield return Restoring("vr.142-sprint-out", Budget(7f), SprintOutStep());
+        yield return Restoring("vr.154-jump-out", Budget(4f), JumpOutStep());
+        yield return Restoring("vr.143-crouch-walk", Budget(12f), CrouchWalkStep());
+        yield return HandStep("vr.144-jump", Budget(4f), JumpStep());
+        yield return Restoring("vr.155-hop-jump", Budget(14f), HopStep());
+        yield return Restoring("vr.158-arm-swing-still", Budget(6f), SwingStillStep());
+        yield return HandStep("vr.145-landing", Budget(18f), LandingStep());
         yield return WarpBack();
-        yield return Restoring("vr.146-slope", 30f, SlopeStep());
+        yield return Restoring("vr.146-slope", Budget(10f), SlopeStep());
         yield return WarpBack();
-        yield return HandStep("vr.148-ragdoll-getup", 15f, GetUpStep());
-        yield return HandStep("vr.149-knockback-side", 10f, KnockbackSideStep());
-        yield return HandStep("vr.150-pre-pass-out", 20f, PrePassOutStep());
-        yield return HandStep("vr.147-morale-glow", 10f, MoraleGlowStep());
-        yield return Restoring("vr.153-spectate-single", 30f, SpectateSingleStep());
-        yield return Restoring("vr.157-spectate-point", 30f, SpectatePointStep());
-        yield return Restoring("vr.156-head-near-wall", 25f, HeadNearWallStep());
-        yield return Restoring("vr.159-amulet-pips", 20f, AmuletStep());
-        yield return HandStep("vr.210-heartbeat", 20f, HeartbeatStep());
-        yield return HandStep("vr.211-shiver", 15f, ShiverStep());
-        yield return HandStep("vr.151-wind-pressure", 10f, WindPressureStep());
-        yield return HandStep("vr.212-tornado-brace", 10f, TornadoBraceStep());
-        yield return HandStep("vr.152-bounce", 30f, BounceStep());
+        yield return HandStep("vr.148-ragdoll-getup", Budget(10f), GetUpStep());
+        yield return HandStep("vr.149-knockback-side", Budget(6f), KnockbackSideStep());
+        yield return HandStep("vr.150-pre-pass-out", Budget(16f), PrePassOutStep());
+        yield return HandStep("vr.147-morale-glow", Budget(3f), MoraleGlowStep());
+        yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
+        yield return Restoring("vr.157-spectate-point", Budget(15f), SpectatePointStep());
+        yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
+        yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
+        yield return HandStep("vr.210-heartbeat", Budget(11f), HeartbeatStep());
+        yield return Restoring("vr.211-shiver", Budget(10f), ShiverStep());
+        yield return HandStep("vr.151-wind-pressure", Budget(4f), WindPressureStep());
+        yield return HandStep("vr.212-tornado-brace", Budget(5f), TornadoBraceStep());
+        yield return HandStep("vr.152-bounce", Budget(10f), BounceStep());
         yield return WarpBack();
-        yield return HandStep("vr.213-lava-sting", 10f, LavaStingStep());
-        yield return HandStep("vr.214-balloon", 15f, BalloonTieStep());
-        yield return HandStep("vr.215-parachute", 10f, ParachuteStep());
-        yield return HandStep("vr.216-sugar-crash", 10f, SugarCrashStep());
-        yield return HandStep("vr.217-float-end", 15f, FloatEndStep());
-        yield return HandStep("vr.218-bridge", 30f, BridgeStep());
+        yield return HandStep("vr.213-lava-sting", Budget(2f), LavaStingStep());
+        yield return HandStep("vr.214-balloon", Budget(8f), BalloonTieStep());
+        yield return HandStep("vr.215-parachute", Budget(2f), ParachuteStep());
+        yield return HandStep("vr.216-sugar-crash", Budget(2f), SugarCrashStep());
+        yield return HandStep("vr.217-float-end", Budget(10f), FloatEndStep());
+        yield return HandStep("vr.218-bridge", Budget(10f), BridgeStep());
         yield return WarpBack();
     }
 
@@ -1086,6 +1092,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ShiverStep()
     {
         var c = Character.localCharacter;
+        bodyRestore = () => SandboxActions.ClearStatus(STATUS.Cold);
         int before = BodyFeedback.Shivers;
         for (int i = 0; i < 4; i++)
         {
@@ -1097,27 +1104,26 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
         }
         int rising = BodyFeedback.Shivers - before;
-        // Steady means the game's own Cold has not moved for the shiver's hold and a margin: night cold
-        // (CharacterAfflictions.cs:509-511) keeps adding 0.025 steps, and each is a real rise that shivers.
+        // Steady means the game's own Cold has not risen for the shiver's hold and a margin: night cold
+        // (CharacterAfflictions.cs:509-511) keeps adding 0.025 steps, and each is a real rise that shivers. Cold
+        // falling (warming) is steady for the shiver. Bounded: 5 s, then the step skips.
         var a = c.refs.afflictions;
         float cold = a.GetCurrentStatus(STATUS.Cold);
         float still = Now;
         int steady = -1;
-        float until = Now + 8f;
+        float until = Now + 5f;
         while (Now < until && steady < 0)
         {
             float now = a.GetCurrentStatus(STATUS.Cold);
-            if (now != cold)
-            {
-                cold = now;
+            if (now > cold)
                 still = Now;
-            }
-            if (Now - still >= 1.3f)
+            cold = now;
+            if (Now - still >= 1.3f && until - Now >= 0.8f)
             {
                 int held = BodyFeedback.Shivers;
                 float from = cold;
                 yield return Wait(0.8f);
-                if (a.GetCurrentStatus(STATUS.Cold) == from)
+                if (a.GetCurrentStatus(STATUS.Cold) <= from)
                     steady = BodyFeedback.Shivers - held;
                 continue;
             }
@@ -1126,7 +1132,7 @@ internal sealed partial class SelfTestRunner
         SandboxActions.ClearStatus(STATUS.Cold);
         var note = $"shiver pulses while rising {rising}, while steady {steady} (cold {cold:0.00})";
         if (steady < 0)
-            stepSkip = "Cold never held still for 2 s (night cold rising): " + note;
+            stepSkip = "Cold kept rising for 5 s (night cold): " + note;
         else if (rising < 5 || steady > 0)
             Fail(note);
         else
