@@ -274,4 +274,38 @@ public class GripIntentTests
         at = GripIntent.DeferPointedInteract(at, pointing: false, 1.1f, FingerGun.DefaultWindow);
         TestUtil.Near(1f + FingerGun.DefaultWindow, at);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HoldingHand_TighteningNearUnprobedRock_Keeps(bool bodyClimbing)
+    {
+        // VR run 38: the holding hand's grip closed with only the grip sphere touching something, was read as a climb,
+        // and the climb start put the sticky item down.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.NearClimbable = true;
+        c.BodyClimbing = bodyClimbing;
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void HoldingHand_OnAProbedHold_StillCatchesTheWall()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.NearClimbable = true;
+        c.HoldConfirmed = true;
+        c.BodyClimbing = true;
+        Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void HoldingHand_GripOpen_KeepsTheItem() =>
+        Assert.Equal(
+            GripReleaseAction.Keep,
+            GripIntent.OnRelease(true, true, 0.1f, 2f, true, releaseToDrop: false)
+        );
 }

@@ -40,10 +40,15 @@ internal sealed class TraversalGrips : IGripExtension
     private Component tint;
     private DenyHint hint;
 
+    // The last vine looked at, for LastNote.
+    private float vineGap = float.PositiveInfinity;
+    private bool vineCapsule;
+
     public bool ClaimPress(in GripHookContext ctx)
     {
         tint = null;
         hint = default;
+        vineGap = float.PositiveInfinity;
         reason = DenyReason.None;
         if (ctx.ThisHandHolds || !InteractConfig.Instance.PhysicalGrab)
             return false;
@@ -122,7 +127,7 @@ internal sealed class TraversalGrips : IGripExtension
         for (int i = 0; i < n; i++)
             Hits[i] = null;
         LastNote = System.FormattableString.Invariant(
-            $"grip check: {n} colliders, rope {ropes}, vine {vines}, handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
+            $"grip check: {n} colliders, rope {ropes}, vine {vines} (capsule {vineCapsule}, hand {vineGap:0.00} m off it), handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
         );
         return found;
     }
@@ -159,10 +164,12 @@ internal sealed class TraversalGrips : IGripExtension
     private bool Vine(Character c, JungleVine vine, Vector3 pos, bool outOfStamina)
     {
         var d = c.data;
+        vineGap = ClimbHands.VineDistance(vine, pos);
+        vineCapsule = vine.colliderType == JungleVine.ColliderType.Capsule;
         if (
-            vine.colliderType != JungleVine.ColliderType.Capsule
+            !vineCapsule
             || (d.isVineClimbing && d.heldVine == vine)
-            || !ClimbHands.NearVine(vine, pos, ClimbHands.LineRadius)
+            || vineGap > ClimbHands.LineRadius
         )
             return false;
         reason = TraversalRefusal.Vine(outOfStamina);

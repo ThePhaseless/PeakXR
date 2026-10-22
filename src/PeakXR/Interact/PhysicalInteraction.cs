@@ -280,6 +280,30 @@ internal static class PhysicalInteraction
             OnGripRelease(hand, c, rig, cfg, active);
     }
 
+    /// <summary>
+    /// Terrain or map geometry within <paramref name="radius"/> of the hand, not counting the held item: some items
+    /// carry colliders on those layers, and run 38's held cactus read as rock under its own hand.
+    /// </summary>
+    private static bool NearRock(Vector3 pos, float radius, Item held)
+    {
+        int n = Physics.OverlapSphereNonAlloc(
+            pos,
+            radius,
+            Overlap,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+        bool rock = false;
+        for (int i = 0; i < n; i++)
+        {
+            var col = Overlap[i];
+            Overlap[i] = null;
+            if (!rock && col != null && (held == null || col.GetComponentInParent<Item>() != held))
+                rock = true;
+        }
+        return rock;
+    }
+
     private static Framework.Feature pingFeature;
     private static bool pingLooked;
 
@@ -329,23 +353,18 @@ internal static class PhysicalInteraction
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, cfg.GrabRadius * 1.5f),
             NearClimbable =
-                cfg.PhysicalClimb
-                && Physics.CheckSphere(
-                    pos,
-                    cfg.ClimbRadius,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                ),
+                cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
         };
         var kind = HoldKind.Normal;
         probeHit = probeRefused = false;
-        if (
-            ctx.NearClimbable
-            && !ProbeHold(rig, pos, t, cfg.ClimbRadius, out kind)
-            && !c.data.isClimbing
-        )
-            ctx.NearClimbable = false;
+        if (ctx.NearClimbable)
+        {
+            bool holdOk = ProbeHold(rig, pos, t, cfg.ClimbRadius, out kind);
+            if (!holdOk && !c.data.isClimbing)
+                ctx.NearClimbable = false;
+            ctx.HoldConfirmed = holdOk && probeHit;
+        }
         IInteractible target = null;
         if (cfg.PhysicalGrab)
             ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
