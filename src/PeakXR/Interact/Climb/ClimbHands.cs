@@ -571,7 +571,8 @@ internal static class ClimbHands
             return;
         if (piton != null && piton.crack != null && piton.crack.activeSelf)
         {
-            float urgency = Mathf.Clamp01(piton.crack.transform.localScale.x / 3f);
+            // From the first crack on, never a faint warning: the crack grows from zero scale (ShittyPiton.cs:110-111).
+            float urgency = 0.3f + 0.7f * Mathf.Clamp01(piton.crack.transform.localScale.x / 3f);
             var at = handle.transform.position;
             if (l)
                 Affordance.Danger(true, at, urgency);
