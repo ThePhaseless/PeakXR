@@ -84,6 +84,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         VR.VRInput.TestOverride = null;
         SandboxActions.Forced = false;
         SelfTestEndGamePatch.Hold = false;
+        Interact.Binoculars.BinocularsConfig.ForceHold = false;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
     }
@@ -347,6 +348,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 UseItem(item)
             );
             SelfTestInputPatch.HoldPrimary = false;
+            Interact.Binoculars.BinocularsConfig.ForceHold = false;
             Safe("use.despawn", Despawn);
         }
     }
@@ -386,6 +388,11 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         bool started = false;
         float progress = 0f;
         float useTime = GameTiming.UseSeconds(held);
+        // Binoculars in VR run in Hold mode: raised while use is held, lowered by the release alone.
+        var binoculars = VRSession.Active
+            ? held.GetComponentInChildren<Action_ShowBinocularOverlay>()
+            : null;
+        Interact.Binoculars.BinocularsConfig.ForceHold = binoculars != null;
         SelfTestInputPatch.HoldPrimary = true;
         float end = Now + GameTiming.Budget(useTime);
         while (Now < end && !held.finishedCast)
@@ -399,13 +406,27 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             progress = Mathf.Max(progress, held.castProgress);
             yield return null;
         }
+        bool raisedWhileHeld = false;
+        if (binoculars != null)
+        {
+            yield return Wait(0.3f);
+            raisedWhileHeld = binoculars != null && binoculars.binocularsActive;
+        }
         SelfTestInputPatch.HoldPrimary = false;
         yield return Wait(1f);
         bool gone = held == null || HeldItem() != held;
         var note =
             $"primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
+        Interact.Binoculars.BinocularsConfig.ForceHold = false;
+        if (binoculars != null)
+        {
+            note +=
+                $", Hold mode: raised while held {raisedWhileHeld}, raised after release {binoculars != null && binoculars.binocularsActive}";
+        }
         if (!started)
             Fail("primary use never started: " + note);
+        else if (binoculars != null && (!raisedWhileHeld || binoculars.binocularsActive))
+            Fail("binoculars Hold mode: " + note);
         else
             stepNote = note;
         // Eaten or spent items leave the hand on their own.
