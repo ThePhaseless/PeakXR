@@ -5,6 +5,7 @@ using Peak;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.Interact;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.UI.Affordances;
@@ -584,18 +585,33 @@ internal sealed partial class SelfTestRunner
         var flame = FireGestures.FlamePoint(torch);
         if (flame == null)
             flame = torch.transform;
+        // The flame has to touch the fuse's own collider (FireGestures: within 0.12 m of it), not its transform:
+        // vr43 carried it toward the transform and never got a refusal.
+        var fuseCol = fuse.GetComponentInChildren<Collider>();
+        Vector3 Touch() => fuseCol != null ? fuseCol.bounds.center : at;
         Affordance.ResetGate();
         float mark = CueMark();
-        float end = Now + 4f;
+        float end = Now + 6f;
         BeginCarry();
         while (Now < end && flame != null && !CueLog.Capture.Fired(left, reason, mark, true, out _))
         {
-            CarryToward(left, flame.position, at);
+            CarryToward(left, flame.position, Touch());
             yield return null;
         }
         if (flame == null)
         {
             Fail("the torch left the hand while carried to the fuse");
+            yield break;
+        }
+        float gap =
+            fuseCol != null
+                ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
+                : Vector3.Distance(at, flame.position);
+        if (!CueLog.Capture.Fired(left, reason, mark, true, out var why))
+        {
+            Fail(
+                $"no {reason} cue: flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({why})"
+            );
             yield break;
         }
         yield return ExpectCue(left, reason, mark, tint: true, within: 0.5f);
@@ -712,11 +728,33 @@ internal sealed partial class SelfTestRunner
         }
         yield return WarpFacing(lug.Center(), 0.8f);
         bool left = VRInput.LeftHanded;
-        var low = NearSide(lug, Character.localCharacter.Center, -0.08f);
+        // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
+        var rig = VRRig.Instance;
+        var low = NearSide(lug, rig.Head.position, -0.08f);
+        if (Vector3.Distance(low, rig.Head.position) > 1f)
+        {
+            yield return WarpFacing(lug.Center(), 0.6f);
+            low = NearSide(lug, rig.Head.position, -0.08f);
+        }
         yield return MoveTo(left, () => low, 0.5f);
         Affordance.ResetGate();
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
+        var interaction0 = Interaction.instance;
+        yield return WaitFor(
+            () => ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen,
+            1f
+        );
+        if (!ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) && !lug.IsOpen)
+        {
+            Fail(
+                $"the low grip did not take {lug.name}: grip {PhysicalInteraction.HandAction(left)} on "
+                    + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(rig.Hand(left).position, lug):0.00} m "
+                    + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, hovered "
+                    + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}"
+            );
+            yield break;
+        }
         yield return ExpectCue(left, DenyReason.AimHigher, mark, tint: false, within: 2f);
         var cue = cueNote;
         var interaction = Interaction.instance;
