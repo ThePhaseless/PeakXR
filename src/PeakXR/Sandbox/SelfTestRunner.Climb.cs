@@ -1841,8 +1841,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.42d: the vr.42b sway on a rope someone else owns (forced: offline every rope is the player's). Only the owner
-    /// simulates a rope (Rope.cs:155), so nothing is pushed; the gripping hand gets one NotHere refusal for the hold.
+    /// vr.42d: on a rope someone else owns (forced: offline every rope is the player's), only the owner simulates it
+    /// (Rope.cs:155), so nothing is pushed. Looking around (head turns with a little drift) and one lean to grab get no
+    /// refusal at all; a clear pump (a 0.25 m lean back and forth at 0.5 Hz, <see cref="PumpIntent"/>) gets exactly one
+    /// NotHere for the hold.
     /// </summary>
     IEnumerator RopePumpNotMineStep()
     {
@@ -1875,23 +1877,61 @@ internal sealed partial class SelfTestRunner
         });
         ClimbHands.SelfTestNotMine = true;
         Affordance.ResetGate();
-        int denies = Affordance.Count;
-        float mark = CueMark();
         var baseHead = VRInput.HeadPosition;
+        var baseTurn = VRInput.HeadRotation;
+        var side = Vector3.Cross(Vector3.up, along);
+        float push = 0f;
+        // Head pose by phase: 0 look around, 1 one lean to grab, 2 a clear pump.
+        int phase = 0;
         float start = Now;
         VRInput.TestOverride = () =>
         {
             hands();
-            VRInput.HeadPosition =
-                baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.35f * (Now - start)));
+            float t = Now - start;
+            switch (phase)
+            {
+                case 0:
+                    // Turn to look 60 degrees either way; the tracked eye drifts a few cm about the neck.
+                    VRInput.HeadRotation =
+                        Quaternion.AngleAxis(60f * Mathf.Sin(1.2f * t), Vector3.up) * baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead
+                        + side * (0.04f * Mathf.Sin(1.2f * t))
+                        + along * (0.03f * Mathf.Cos(1.7f * t));
+                    break;
+                case 1:
+                    VRInput.HeadRotation = baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead + along * (0.3f * Mathf.Sin(Mathf.PI * Mathf.Min(t, 2f) / 2f));
+                    break;
+                default:
+                    VRInput.HeadRotation = baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.5f * t));
+                    break;
+            }
         };
-        float push = 0f;
-        float end = Now + 4f;
-        while (Now < end && c.data.isRopeClimbing)
+        IEnumerator Hold(float seconds)
         {
-            push = Mathf.Max(push, ClimbHands.LastPump);
-            yield return null;
+            for (float end = Now + seconds; Now < end && c.data.isRopeClimbing; )
+            {
+                push = Mathf.Max(push, ClimbHands.LastPump);
+                yield return null;
+            }
         }
+        int denies = Affordance.Count;
+        float quietMark = CueMark();
+        yield return Hold(4f);
+        phase = 1;
+        start = Now;
+        yield return Hold(3f);
+        int quietDenies = Affordance.Count - denies;
+        yield return ExpectNoCue(left, quietMark, 0f);
+        phase = 2;
+        start = Now;
+        denies = Affordance.Count;
+        float mark = CueMark();
+        yield return Hold(6f);
         VRInput.TestOverride = hands;
         ClimbHands.SelfTestNotMine = false;
         yield return ExpectCue(left, DenyReason.NotHere, mark, tint: false, within: 0f);
@@ -1902,10 +1942,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         if (push > 0f)
             Fail($"pushed a rope someone else owns ({push:0.0} m/s²)");
+        else if (quietDenies > 0)
+            Fail($"looking around or one lean refused {quietDenies} times");
         else if (count > 1)
             Fail($"refused {count} times in one hold: {cue}");
         else
-            Note(cue);
+            Note($"looking around and one lean: no refusal; clear pump: {cue}");
     }
 
     /// <summary>
