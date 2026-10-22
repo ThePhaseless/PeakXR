@@ -39,6 +39,16 @@ internal sealed partial class SelfTestRunner
     /// it bounded.</summary>
     static float Budget(float body) => 20f + body;
 
+    /// <summary>
+    /// WP3 steps that need the Tropics segment (breakable bridges hang in the jungle). Run once the run has jumped
+    /// there, next to the vine steps (SelfTestRunner.cs, the Tropics branch).
+    /// </summary>
+    IEnumerator TropicsBodySteps()
+    {
+        yield return HandStep("vr.218-bridge", Budget(14f), BridgeStep());
+        yield return WarpBack();
+    }
+
     IEnumerator MovementSteps()
     {
         yield return Restoring("vr.140-roomscale-blocked", Budget(8f), RoomScaleBlockedStep());
@@ -63,17 +73,15 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
         yield return HandStep("vr.210-heartbeat", Budget(11f), HeartbeatStep());
         yield return Restoring("vr.211-shiver", Budget(10f), ShiverStep());
-        yield return HandStep("vr.151-wind-pressure", Budget(4f), WindPressureStep());
-        yield return HandStep("vr.212-tornado-brace", Budget(5f), TornadoBraceStep());
-        yield return HandStep("vr.152-bounce", Budget(10f), BounceStep());
+        yield return Restoring("vr.151-wind-pressure", Budget(3f), WindPressureStep());
+        yield return Restoring("vr.212-tornado-brace", Budget(5f), TornadoBraceStep());
+        yield return Restoring("vr.152-bounce", Budget(14f), BounceStep());
         yield return WarpBack();
-        yield return HandStep("vr.213-lava-sting", Budget(2f), LavaStingStep());
+        yield return Restoring("vr.213-lava-sting", Budget(7f), LavaStingStep());
         yield return HandStep("vr.214-balloon", Budget(8f), BalloonTieStep());
         yield return HandStep("vr.215-parachute", Budget(2f), ParachuteStep());
         yield return HandStep("vr.216-sugar-crash", Budget(2f), SugarCrashStep());
         yield return HandStep("vr.217-float-end", Budget(10f), FloatEndStep());
-        yield return HandStep("vr.218-bridge", Budget(10f), BridgeStep());
-        yield return WarpBack();
     }
 
     // ---------------------------------------------------------------- scripted head
@@ -1139,143 +1147,235 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.151: inside an active wind zone, the wind presses faintly on the windward hand. Skips where no
-    /// wind blows on the player.</summary>
+    /// <summary>
+    /// vr.151: the wind presses faintly on the windward hand. Deterministic on any level: the game's own wind push,
+    /// <c>WindChillZone.AddWindForceToCharacter</c> (WindChillZone.cs:215), run on a zone object that is never
+    /// activated (so its Awake, timers and RPCs never run), blowing from the player's right at full strength and
+    /// unsheltered for 1 s. The force goes through the game's RPCA_AddForceAtPosition, where comfort.events feels it.
+    /// </summary>
     IEnumerator WindPressureStep()
     {
-        bool windy = false;
-        foreach (
-            var z in UnityEngine.Object.FindObjectsByType<WindChillZone>(FindObjectsSortMode.None)
-        )
-            windy |= z.windActive && z.localCharacterInsideBounds;
-        if (!windy)
+        if (!ComfortEventsConfig.Pressure || !ComfortEventsConfig.Haptics)
         {
-            stepSkip = "no active wind zone around the player";
+            stepSkip = "ComfortEvents.WindPressure or Haptics off";
             yield break;
         }
-        float at = ComfortEventsRuntime.PressureAt;
-        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 3f);
-        float l = ComfortEventsRuntime.PressureLeft;
-        float r = ComfortEventsRuntime.PressureRight;
-        var note = $"pressure left {l:0.000} right {r:0.000}";
-        if (ComfortEventsRuntime.PressureAt <= at)
-            stepSkip = "sheltered or calm: no push now (" + note + ")";
-        else if (Mathf.Max(l, r) > BodyCues.PressureMax + 1e-3f)
-            Fail("too strong: " + note);
-        else
-            stepNote = note;
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var host = new GameObject("PeakXR_TestWind");
+        host.SetActive(false);
+        bodyRestore = () =>
+        {
+            if (host != null)
+                UnityEngine.Object.Destroy(host);
+        };
+        try
+        {
+            var zone = host.AddComponent<WindChillZone>();
+            var right = Flat(rig.Head.right);
+            // Blowing from the right: the wind travels toward the left.
+            Framework.GameMember.Field<WindChillZone, Vector3>("currentWindDirection")(zone) =
+                -right;
+            zone.windForce = 15f;
+            zone.windPlayerFactor = 1f;
+            zone.useIntensityCurve = false;
+            zone.useRaycast = false;
+            var push = Framework.GameMember.Method(
+                typeof(WindChillZone),
+                "AddWindForceToCharacter",
+                new[] { typeof(Character), typeof(float) }
+            );
+            var args = new object[] { c, 1f };
+            float at = ComfortEventsRuntime.PressureAt;
+            float start = Now;
+            while (Now - start < 1f)
+            {
+                push.Invoke(zone, args);
+                yield return null;
+            }
+            float l = ComfortEventsRuntime.PressureLeft;
+            float r = ComfortEventsRuntime.PressureRight;
+            var note = $"pressure left {l:0.000} right {r:0.000}";
+            if (ComfortEventsRuntime.PressureAt <= at)
+                Fail("no pressure tap: " + note);
+            else if (!(r > l))
+                Fail("not stronger on the windward (right) hand: " + note);
+            else if (Mathf.Max(l, r) > BodyCues.PressureMax + 1e-3f)
+                Fail("too strong: " + note);
+            else
+                stepNote = note;
+        }
+        finally
+        {
+            UnityEngine.Object.Destroy(host);
+        }
     }
 
-    /// <summary>vr.212: in a tornado's reach the pull presses on the hand facing it; crouching drops it to a
-    /// quarter. Skips without a tornado reaching the player.</summary>
+    /// <summary>
+    /// vr.212: a tornado's pull presses on the hand facing it, and crouching (the game pulls a quarter as hard,
+    /// Tornado.cs:296-300) eases it. Deterministic: the game's own <c>Tornado.AttractCharacters</c> (:279) run on a
+    /// tornado object that is never activated (no Start, lifetime, movement or RPCs), 10 m to the player's right,
+    /// with a gentle force and a capture distance too small to grab.
+    /// </summary>
     IEnumerator TornadoBraceStep()
     {
-        var c = Character.localCharacter;
-        bool near = false;
-        foreach (var t in UnityEngine.Object.FindObjectsByType<Tornado>(FindObjectsSortMode.None))
-            near |=
-                FlatDistance(t.transform.position, c.Center) < t.transform.localScale.x * t.range;
-        if (!near)
+        if (!ComfortEventsConfig.Pressure || !ComfortEventsConfig.Haptics)
         {
-            stepSkip = "no tornado reaching the player";
+            stepSkip = "ComfortEvents.WindPressure or Haptics off";
             yield break;
         }
-        var setting = LocomotionConfig.RoomScaleSetting;
-        float at = ComfortEventsRuntime.PressureAt;
-        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 1f);
-        float standing = Mathf.Max(
-            ComfortEventsRuntime.PressureLeft,
-            ComfortEventsRuntime.PressureRight
-        );
+        var c = Character.localCharacter;
         var rig = VRRig.Instance;
-        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
-        var head = VRInput.HeadPosition;
-        ScriptHead(new Vector3(head.x, eye - 0.7f, head.z), VRInput.HeadRotation);
-        yield return WaitFor(() => c.data.isCrouching, 1.5f);
-        at = ComfortEventsRuntime.PressureAt;
-        yield return WaitFor(() => ComfortEventsRuntime.PressureAt > at, 1f);
-        float crouched = Mathf.Max(
-            ComfortEventsRuntime.PressureLeft,
-            ComfortEventsRuntime.PressureRight
-        );
-        ReleaseHead();
-        var note = $"pull standing {standing:0.000}, crouched {crouched:0.000}";
-        if (!(standing > 0f) || !(crouched < standing) || setting == null)
-            Fail(note);
-        else
-            stepNote = note;
+        var host = new GameObject("PeakXR_TestTornado");
+        host.SetActive(false);
+        bodyRestore = () =>
+        {
+            ReleaseHead();
+            if (host != null)
+                UnityEngine.Object.Destroy(host);
+        };
+        try
+        {
+            var right = Flat(rig.Head.right);
+            host.transform.position = c.Center + right * 10f;
+            host.transform.localScale = Vector3.one;
+            var tornado = host.AddComponent<Tornado>();
+            tornado.force = 1f;
+            tornado.range = 25f;
+            tornado.captureDistance = 0.1f;
+            tornado.inStrC = AnimationCurve.Linear(0f, 0f, 1f, 1f);
+            tornado.upStrC = AnimationCurve.Constant(0f, 1f, 0f);
+            var attract = Framework.GameMember.Method(typeof(Tornado), "AttractCharacters");
+            float standing = 0f,
+                crouched = 0f,
+                standLeft = 0f;
+            yield return Pull(attract, tornado, 1f, (l, r) => (standLeft, standing) = (l, r));
+            float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+            var head = VRInput.HeadPosition;
+            ScriptHead(new Vector3(head.x, eye - 0.7f, head.z), VRInput.HeadRotation);
+            yield return WaitFor(() => c.data.isCrouching, 1.5f);
+            bool crouching = c.data.isCrouching;
+            yield return Pull(attract, tornado, 1f, (_, r) => crouched = r);
+            ReleaseHead();
+            var note =
+                $"pull standing left {standLeft:0.000} right {standing:0.000}, crouched right {crouched:0.000} (crouching {crouching})";
+            if (!(standing > standLeft))
+                Fail("not stronger on the tornado's (right) side: " + note);
+            else if (!crouching || !(crouched < standing * 0.5f))
+                Fail("crouching did not ease the pull: " + note);
+            else
+                stepNote = note;
+        }
+        finally
+        {
+            ReleaseHead();
+            UnityEngine.Object.Destroy(host);
+        }
     }
 
-    /// <summary>vr.152: dropping onto a bounce shroom (a CollisionModifier with knockback) springs: a contact
-    /// spring on both hands. Skips without a shroom within 60 m.</summary>
+    /// <summary>Runs the tornado's pull every frame for <paramref name="seconds"/>; reports the last pressure tap
+    /// per hand, or zeros when none went out.</summary>
+    static IEnumerator Pull(
+        System.Reflection.MethodInfo attract,
+        Tornado tornado,
+        float seconds,
+        Action<float, float> taps
+    )
+    {
+        float at = ComfortEventsRuntime.PressureAt;
+        float start = Now;
+        while (Now - start < seconds)
+        {
+            attract.Invoke(tornado, null);
+            yield return null;
+        }
+        bool tapped = ComfortEventsRuntime.PressureAt > at;
+        taps(
+            tapped ? ComfortEventsRuntime.PressureLeft : 0f,
+            tapped ? ComfortEventsRuntime.PressureRight : 0f
+        );
+    }
+
+    /// <summary>
+    /// vr.152: dropping onto a bounce pad springs: a contact spring on both hands. Deterministic: a 2 m pad on the Map
+    /// layer carrying the game's own <c>CollisionModifier</c> (bounce knockback 20, as the shrooms ship), 2.5 m
+    /// under the warped body. The game's collision path (CharacterMovement.OnCollision, :944) runs the bounce
+    /// (CollisionModifier.cs:92-135). Removed after.
+    /// </summary>
     IEnumerator BounceStep()
     {
         var c = Character.localCharacter;
-        CollisionModifier pad = null;
-        float best = 60f;
-        foreach (
-            var m in UnityEngine.Object.FindObjectsByType<CollisionModifier>(
-                FindObjectsSortMode.None
-            )
-        )
+        var rig = VRRig.Instance;
+        var pad = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        bodyRestore = () =>
         {
-            float d = Vector3.Distance(m.transform.position, c.Center);
-            if (m.knockback > 0f && d < best && m.GetComponentInParent<BreakableBridge>() == null)
-            {
-                best = d;
-                pad = m;
-            }
-        }
-        if (pad == null)
-        {
-            stepSkip = "no bounce shroom within 60 m";
-            yield break;
-        }
-        var col = pad.GetComponent<Collider>();
-        var top =
-            col != null
-                ? col.bounds.center + Vector3.up * (col.bounds.extents.y + 2.5f)
-                : pad.transform.position + Vector3.up * 3f;
+            if (pad != null)
+                UnityEngine.Object.Destroy(pad);
+        };
+        pad.name = "PeakXR_TestBouncePad";
+        pad.layer = LayerMask.NameToLayer("Map");
+        var spot = c.data.groundPos + Flat(rig.Head.forward) * 3f;
+        pad.transform.SetPositionAndRotation(spot + Vector3.up * 0.2f, Quaternion.identity);
+        pad.transform.localScale = new Vector3(2f, 0.4f, 2f);
+        var mod = pad.AddComponent<CollisionModifier>();
+        mod.knockback = 20f;
+        Physics.SyncTransforms();
         int bounces = EnvironmentCues.Bounces;
         float since = CueMark();
+        float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
         warpedForProp = true;
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, top, false);
-        yield return WaitFor(() => EnvironmentCues.Bounces > bounces, 5f);
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            spot + Vector3.up * (0.4f + stand + 2.5f),
+            false
+        );
+        yield return WaitFor(() => EnvironmentCues.Bounces > bounces, 6f);
         if (EnvironmentCues.Bounces == bounces)
         {
-            Fail($"no bounce off {pad.name} ({best:0} m away)");
+            Fail("no bounce off the test pad");
             yield break;
         }
         yield return ExpectFeel(true, CueFeel.Contact, since, 0.5f);
         if (stepOk)
-            stepNote = $"spring {EnvironmentCues.LastBounce:0.00} off {pad.name}: {cueNote}";
+            stepNote = $"spring {EnvironmentCues.LastBounce:0.00}: {cueNote}";
+        UnityEngine.Object.Destroy(pad);
         yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
-    /// <summary>vr.213: a lava burn (Lava.HitPlayer, the game's once-a-second touch, run here on the local body)
-    /// stings both hands. Skips without lava in the level.</summary>
+    /// <summary>
+    /// vr.213: touching lava stings both hands. Deterministic: a thin slab carrying the game's own <c>Lava</c>
+    /// component (no collider; Lava's touch is its renderer's bounds, Lava.cs:29-33, :68-92) at the body's height,
+    /// so its FixedUpdate runs the real touch: the lift, then HitPlayer once a second (:89-110). Removed at the
+    /// first sting. God mode keeps the statuses off.
+    /// </summary>
     IEnumerator LavaStingStep()
     {
         var c = Character.localCharacter;
-        var lava = UnityEngine.Object.FindFirstObjectByType<Lava>();
-        if (lava == null)
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        bodyRestore = () =>
         {
-            stepSkip = "no lava in this level";
-            yield break;
-        }
+            if (slab != null)
+                UnityEngine.Object.Destroy(slab);
+        };
+        UnityEngine.Object.Destroy(slab.GetComponent<Collider>());
+        slab.name = "PeakXR_TestLava";
+        slab.transform.SetPositionAndRotation(c.Center, Quaternion.identity);
+        slab.transform.localScale = new Vector3(3f, 0.02f, 3f);
         int stings = EnvironmentCues.Stings;
         float since = CueMark();
-        SandboxActions.SetGodMode(false);
-        Framework
-            .GameMember.Method(typeof(Lava), "HitPlayer", new[] { typeof(Character) })
-            .Invoke(lava, new object[] { c });
+        slab.AddComponent<Lava>();
+        yield return WaitFor(() => EnvironmentCues.Stings > stings, 2f);
+        UnityEngine.Object.Destroy(slab);
+        if (EnvironmentCues.Stings == stings)
+        {
+            Fail("the lava's touch never burned");
+            yield break;
+        }
         yield return ExpectFeel(true, CueFeel.Danger, since, 0.5f);
-        SandboxActions.ClearStatus(STATUS.Injury);
-        SandboxActions.ClearStatus(STATUS.Hot);
-        if (stepOk && EnvironmentCues.Stings == stings)
-            Fail("no sting counted");
-        else if (stepOk)
+        if (stepOk)
             stepNote = cueNote;
+        yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
     /// <summary>vr.214: tying a balloon (CharacterBalloons.TieNewBalloon) gives a lift tick on the item hand;
@@ -1364,30 +1464,45 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
-    /// <summary>vr.218: standing on a breakable bridge whose countdown started (BreakableBridge.isBreaking, as the
-    /// owner sets it when too many stand on it), danger pulses build at the feet. The countdown is stopped again
-    /// before the bridge shakes. Skips without a bridge within 80 m.</summary>
+    /// <summary>
+    /// vr.218: standing on a breakable bridge whose countdown started (BreakableBridge.isBreaking, as its owner sets
+    /// it when too many stand on it, :186-189), danger pulses build at the feet. Offline the local player owns it.
+    /// The body lands on a plank (one of the bridge's own colliders, :160-167); the countdown is stopped again before
+    /// the bridge shakes. Runs in Tropics (<see cref="TropicsBodySteps"/>).
+    /// </summary>
     IEnumerator BridgeStep()
     {
         var c = Character.localCharacter;
         BreakableBridge bridge = null;
+        float best = float.MaxValue;
         foreach (
             var b in UnityEngine.Object.FindObjectsByType<BreakableBridge>(FindObjectsSortMode.None)
         )
         {
-            if (Vector3.Distance(b.transform.position, c.Center) < 80f && !b.isShaking)
+            float d = Vector3.Distance(b.transform.position, c.Center);
+            if (!b.isShaking && b.photonView.IsMine && d < best)
+            {
+                best = d;
                 bridge = b;
+            }
         }
-        if (bridge == null || !bridge.photonView.IsMine)
+        if (bridge == null)
         {
-            stepSkip = "no breakable bridge we own within 80 m";
+            Fail("no breakable bridge in this segment");
             yield break;
         }
-        yield return WarpTo(bridge.transform.position);
-        yield return WaitFor(() => EnvironmentCues.Bridge == bridge, 2f);
+        if (!Plank(bridge, out var plank))
+        {
+            Fail($"no plank to stand on found on {bridge.name}");
+            yield break;
+        }
+        float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
+        warpedForProp = true;
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, plank + Vector3.up * stand, false);
+        yield return WaitFor(() => EnvironmentCues.Bridge == bridge, 5f);
         if (EnvironmentCues.Bridge != bridge)
         {
-            stepSkip = "the warp did not land on the bridge planks";
+            Fail($"the body never touched {bridge.name} after landing at {plank}");
             yield break;
         }
         float since = CueMark();
@@ -1396,6 +1511,29 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(true, CueFeel.Danger, since, 1.5f);
         EnvironmentCues.BridgeBreaking(bridge) = false;
         if (stepOk)
-            stepNote = cueNote;
+            stepNote = $"{bridge.name} {best:0} m away: {cueNote}";
+    }
+
+    /// <summary>The top of the bridge collider nearest its middle: a raycast down onto that collider.</summary>
+    static bool Plank(BreakableBridge bridge, out Vector3 top)
+    {
+        top = default;
+        float best = float.MaxValue;
+        foreach (var col in bridge.GetComponentsInChildren<Collider>())
+        {
+            if (col.isTrigger)
+                continue;
+            var b = col.bounds;
+            var ray = new Ray(b.center + Vector3.up * (b.extents.y + 2f), Vector3.down);
+            if (!col.Raycast(ray, out var hit, b.size.y + 4f))
+                continue;
+            float d = Vector3.Distance(b.center, bridge.transform.position);
+            if (d < best)
+            {
+                best = d;
+                top = hit.point;
+            }
+        }
+        return best < float.MaxValue;
     }
 }
