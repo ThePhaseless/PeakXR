@@ -199,35 +199,65 @@ public class BindingTests
     }
 
     [Fact]
-    public void PushToTalk_LongPressOfMoveStickClick_KeepsSprintPress()
+    public void PushToTalk_NoLongerOnTheMoveStickClick()
     {
+        // D4: holding the sprint click to talk also toggled sprint. Hand-to-mouth is the default way to talk.
+        Assert.DoesNotContain(BindingTable.Default, b => b.Action == VRAction.PushToTalk);
         var m = new ActionMapper { LongPressSeconds = 0.5f };
-        m.Update(Pressed(VRControl.StickClick), Idle, Dt);
-        Assert.True(m.Pressed(VRAction.Sprint));
-        Assert.False(m.Held(VRAction.PushToTalk));
-        for (int i = 0; i < 50; i++)
+        for (int i = 0; i < 60; i++)
             m.Update(Pressed(VRControl.StickClick), Idle, Dt);
-        Assert.True(m.Held(VRAction.PushToTalk));
-        Assert.False(m.Held(VRAction.Crouch));
+        Assert.False(m.Held(VRAction.PushToTalk));
+        Assert.True(m.Held(VRAction.Sprint));
+    }
 
-        m.Update(Idle, Idle, Dt);
-        Assert.True(m.Released(VRAction.PushToTalk));
+    [Theory]
+    [InlineData("OffHandStickClick", false, VRAction.Sprint)]
+    [InlineData("DominantStickClick", false, VRAction.Crouch)]
+    [InlineData("RightPrimary", false, VRAction.Jump)]
+    [InlineData("LeftSecondary", false, VRAction.Ping)]
+    [InlineData("RightStickClick", true, VRAction.Sprint)]
+    public void Conflict_NamesTheActionAlreadyOnThatButton(
+        string button,
+        bool dominantLeft,
+        VRAction expected
+    )
+    {
+        Assert.True(ButtonName.TryParse(button, dominantLeft, out bool left, out var control));
+        Assert.True(
+            BindingTable.Conflict(BindingTable.Default, left, control, dominantLeft, out var action)
+        );
+        Assert.Equal(expected, action);
     }
 
     [Fact]
-    public void PushToTalk_FollowsTheMoveHandWhenLeftHanded()
+    public void Conflict_EveryNamedButtonIsTaken_SoPushToTalkHasNoFreeDefault()
     {
-        var m = new ActionMapper { DominantLeft = true, LongPressSeconds = 0.5f };
-        for (int i = 0; i < 50; i++)
-            m.Update(Idle, Pressed(VRControl.StickClick), Dt);
-        Assert.True(m.Held(VRAction.PushToTalk));
+        foreach (var name in ButtonName.All)
+        {
+            if (!ButtonName.TryParse(name, false, out bool left, out var control))
+                continue;
+            Assert.True(
+                BindingTable.Conflict(BindingTable.Default, left, control, false, out _),
+                name
+            );
+        }
+    }
+
+    [Fact]
+    public void Conflict_FalseOnAnEmptyTable()
+    {
+        Assert.False(
+            BindingTable.Conflict(Array.Empty<Binding>(), true, VRControl.Primary, false, out _)
+        );
     }
 
     [Fact]
     public void DefaultTable_EveryActionHasABinding()
     {
+        // Push-to-talk is bound only by Voice.PushToTalkButton (D4).
         foreach (var action in Enum.GetValues<VRAction>())
-            Assert.Contains(BindingTable.Default, b => b.Action == action);
+            if (action != VRAction.PushToTalk)
+                Assert.Contains(BindingTable.Default, b => b.Action == action);
     }
 
     [Fact]

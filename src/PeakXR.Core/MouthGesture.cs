@@ -45,4 +45,44 @@ namespace PeakXR.Core
             Active = false;
         }
     }
+
+    /// <summary>
+    /// A flat palm over the mouth: mute while held. The hand must be at the mouth (<see cref="MouthGesture"/>'s dwell
+    /// and exit hysteresis), its fingers open and its palm turned onto the face, so a closed walkie-talkie hand at the
+    /// mouth stays "talk". Call <see cref="Update"/> once per frame.
+    /// </summary>
+    public sealed class PalmMute
+    {
+        /// <summary>Mean curl of index to pinky at or under this is an open hand.</summary>
+        public float OpenCurl = 0.35f;
+
+        /// <summary>Cosine between the palm normal and the face's backward direction: about 50 degrees.</summary>
+        public float FacingCos = 0.64f;
+
+        readonly MouthGesture _mouth = new MouthGesture();
+
+        public bool Active => _mouth.Active;
+
+        /// <param name="palmNormal">Out of the palm, unit length.</param>
+        /// <param name="curl">Mean curl of index to pinky, 0 open to 1 closed.</param>
+        public bool Update(
+            Vector3 headPosition,
+            Quaternion headRotation,
+            Vector3 hand,
+            Vector3 palmNormal,
+            float curl,
+            float dt
+        )
+        {
+            var back = UnityQuat.Rotate(headRotation, new Vector3(0f, 0f, -1f));
+            if (curl > OpenCurl || Vector3.Dot(palmNormal, back) < FacingCos)
+            {
+                _mouth.Reset();
+                return false;
+            }
+            return _mouth.Update(headPosition, headRotation, hand, dt);
+        }
+
+        public void Reset() => _mouth.Reset();
+    }
 }

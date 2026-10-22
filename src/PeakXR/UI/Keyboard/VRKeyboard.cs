@@ -1,5 +1,6 @@
 using System;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -127,6 +128,28 @@ internal sealed class VRKeyboard : MonoBehaviour
             instance.CloseDialogOnly();
     }
 
+    /// <summary>The open dialog's text so far, for the self-test.</summary>
+    internal static string DialogText => instance != null ? instance.entry.Text : string.Empty;
+
+    /// <summary>World centre of the first key that types <paramref name="c"/> (unshifted) or, with
+    /// <paramref name="c"/> '\0', of the <paramref name="kind"/> key; for the self-test's poke.</summary>
+    internal static bool TryKey(char c, KeyKind kind, out Vector3 world)
+    {
+        world = default;
+        if (instance == null || instance.keys == null)
+            return false;
+        for (int i = 0; i < instance.keys.Length; i++)
+        {
+            var k = instance.keys[i];
+            if (c != '\0' ? k.Kind == KeyKind.Character && k.Lower == c : k.Kind == kind)
+            {
+                world = instance.keyImages[i].transform.position;
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void Awake()
     {
         instance = this;
@@ -248,7 +271,7 @@ internal sealed class VRKeyboard : MonoBehaviour
                 colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f, 1f);
                 colors.pressedColor = new Color(1.6f, 1.6f, 1.8f, 1f);
                 button.colors = colors;
-                button.onClick.AddListener(() => Press(i));
+                button.onClick.AddListener(() => Press(i, LaserPointer.PressLeft));
 
                 var label = Label(
                     image.rectTransform,
@@ -450,7 +473,7 @@ internal sealed class VRKeyboard : MonoBehaviour
             Close(submitted: false);
     }
 
-    private void Press(int index)
+    private void Press(int index, bool left)
     {
         if (!open)
             return;
@@ -458,7 +481,8 @@ internal sealed class VRKeyboard : MonoBehaviour
         switch (key.Kind)
         {
             case KeyKind.Character:
-                Insert(key.Output(shift));
+                if (!Type(index, key.Output(shift), left))
+                    return;
                 if (shift)
                 {
                     shift = false;
@@ -466,7 +490,8 @@ internal sealed class VRKeyboard : MonoBehaviour
                 }
                 break;
             case KeyKind.Space:
-                Insert(' ');
+                if (!Type(index, ' ', left))
+                    return;
                 break;
             case KeyKind.Backspace:
                 Erase();
@@ -483,6 +508,25 @@ internal sealed class VRKeyboard : MonoBehaviour
                 break;
         }
         Flash(index);
+    }
+
+    /// <summary>Types <paramref name="c"/>; a key whose character the field rejects (full, or its own validation)
+    /// refuses with the usual cue at that key, tinted, instead of flashing as if it typed.</summary>
+    private bool Type(int index, char c, bool left)
+    {
+        var before = field != null ? field.text : entry.Text;
+        Insert(c);
+        var after = field != null ? field.text : entry.Text;
+        var reason = KeyRefusal.For(
+            !string.Equals(before, after, StringComparison.Ordinal),
+            after.Length,
+            field != null ? field.characterLimit : entry.Limit
+        );
+        if (reason == DenyReason.None)
+            return true;
+        var image = keyImages[index];
+        Affordance.Deny(left, image.transform.position, reason, default, image);
+        return false;
     }
 
     private void Insert(char c)
@@ -551,7 +595,7 @@ internal sealed class VRKeyboard : MonoBehaviour
         // The panel faces away from the player, so "in front" is toward -Z.
         if (poke.Update(-local.z * scale, hit >= 0) && hit >= 0)
         {
-            Press(hit);
+            Press(hit, left);
             UIHaptics.Tick(left, UIKeyboardFeature.Haptics.Value, PokeTickSeconds);
         }
     }

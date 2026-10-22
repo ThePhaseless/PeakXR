@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using PeakXR.Core;
 
 namespace PeakXR.Voice;
 
@@ -6,6 +7,8 @@ namespace PeakXR.Voice;
 internal sealed class VoiceSettings
 {
     public ConfigEntry<bool> HandToMouthTalk;
+    public ConfigEntry<bool> PalmMute;
+    public ConfigEntry<string> PushToTalkButton;
     public ConfigEntry<bool> PreferHeadsetMic;
     public ConfigEntry<bool> SpeakingIcons;
     public ConfigEntry<float> SpeakingIconRange;
@@ -19,10 +22,24 @@ internal sealed class VoiceSettings
             HandToMouthTalk = cfg.Bind(
                 section,
                 "HandToMouthTalk",
-                // On by default next to the move-stick long press (docs/controls.md): it needs no free button
-                // and only matters in the game's push-to-talk modes.
+                // The main way to talk (D4): it needs no button, and every button already has a job.
                 true,
-                "Push-to-talk also by holding a free hand at your mouth like a walkie-talkie, next to holding the move-stick click. Only matters when the game's microphone mode is Push To Talk or Push To Mute."
+                "Push-to-talk by holding a free hand at your mouth like a walkie-talkie. A click and a mic icon by the hand show the mic is open. Only matters when the game's microphone mode is Push To Talk; in Voice Activation the mic is always open."
+            ),
+            PalmMute = cfg.Bind(
+                section,
+                "PalmMute",
+                true,
+                "Mute while a flat, open palm covers your mouth: a muffled click and a red mic icon show it. Works in every microphone mode without changing the game's setting."
+            ),
+            PushToTalkButton = cfg.Bind(
+                section,
+                "PushToTalkButton",
+                "None",
+                new ConfigDescription(
+                    "A button that also works as the game's push-to-talk key while held. None by default: every button already has a job (jump, crouch, sprint, ping, drop, pocket), so the button you pick still does that too. The log names the clash.",
+                    new AcceptableValueList<string>(ButtonName.All)
+                )
             ),
             PreferHeadsetMic = cfg.Bind(
                 section,
