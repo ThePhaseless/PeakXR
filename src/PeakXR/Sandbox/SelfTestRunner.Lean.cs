@@ -16,7 +16,7 @@ namespace PeakXR.Sandbox;
 /// then makes a fast 0.15 s lean, and finally leans 0.5 m (past the limit) and stands back up. The body is the
 /// view's root (<see cref="RigDriver.ViewRoot"/>, the ragdoll's mass centre; the hip itself slides back when the
 /// upper body bends, which is only reported). Every frame, ramps and returns included, is tracked. Fails when: inside
-/// the limit, the body or the rig origin (the view's offset from the scripted head) moves more than
+/// the limit, the body (horizontally: its height follows the bend) or the rig origin (the view's offset from the scripted head) moves more than
 /// <see cref="MaxLeanDrift"/> peak to peak; the fast lean moves the rig origin more than
 /// <see cref="MaxFastViewDrift"/>; the far lean does not walk the body at least 0.1 m forward, moves the rig origin,
 /// or the body moves at all (beyond <see cref="MaxLeanDrift"/>) while the head stands up and for 3.5 s after; or an arm fails the vr.08 judgement during a lean (hand more than
@@ -163,6 +163,7 @@ internal sealed partial class SelfTestRunner
         StartTrack(c, rig);
         var start = RigDriver.ViewRoot(c);
         var originStart = rig.Origin.position;
+        float groundStart = GroundY(start);
         // forward is tracking space (the scripted head); the body moves in the world, under the rig's yaw. Run 24
         // projected the world walk on the tracking axis and read a forward walk as "-0.287 m".
         var worldForward = rig.Origin.TransformDirection(forward);
@@ -174,13 +175,20 @@ internal sealed partial class SelfTestRunner
         var upRoot = RigDriver.ViewRoot(c);
         leanRoot = new Bounds(upRoot, Vector3.zero);
         yield return Track(c, rig, Vector3.zero, 0.6f, 3.5f);
-        float back = leanRoot.size.magnitude;
+        // Travel is horizontal: the hip's height changes with the bend (the stand force holds the bent head lower).
+        float back = FlatSize(leanRoot);
         // Run 31: the far lean's walk coasted onto the head, and standing up walked the body 0.44 m back.
         float walkedBack = -Vector3.Dot(RigDriver.ViewRoot(c) - upRoot, worldForward);
-        float origin = leanOrigin.size.magnitude;
+        // Run 40: x/z of the view held to the millimetre while it rose 0.042 m with the hip (+0.127 m): the walk
+        // went up the beach's slope, and the view must follow the ground the body stands on. So: the view's
+        // horizontal range, and its height change against the ground's under the body.
+        float origin = FlatSize(leanOrigin);
+        float groundRise = GroundY(RigDriver.ViewRoot(c)) - groundStart;
+        float viewRise = rig.Origin.position.y - originStart.y;
+        float offGround = Mathf.Abs(viewRise - groundRise);
         notes.Add(
             F(
-                $"far lean: walked {walked:0.000} m, body {back:0.000} m while standing up and after, view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up)"
+                $"far lean: walked {walked:0.000} m, body {back:0.000} m while standing up and after (height {leanRoot.size.y:0.000} m), view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up), view rose {viewRise:0.000} m on ground rising {groundRise:0.000} m"
             )
         );
         if (walked < 0.1f)
@@ -195,6 +203,10 @@ internal sealed partial class SelfTestRunner
             fails.Add(F($"body moved {back:0.000} m after standing up"));
         if (origin > MaxLeanDrift)
             fails.Add(F($"far lean moved the view {origin:0.000} m"));
+        if (!float.IsNaN(groundRise) && offGround > MaxLeanDrift)
+            fails.Add(
+                F($"far lean view height {viewRise:0.000} m off the ground's {groundRise:0.000} m")
+            );
 
         RigDriver.TraceLeanUntil = 0f;
         if (leanContacts.Count > 0)
@@ -354,13 +366,29 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>Horizontal peak-to-peak size of a tracked range.</summary>
+    static float FlatSize(Bounds b) => new Vector2(b.size.x, b.size.z).magnitude;
+
+    /// <summary>Ground height under <paramref name="at"/>, NaN without ground within 3 m.</summary>
+    static float GroundY(Vector3 at) =>
+        Physics.Raycast(
+            at + Vector3.up * 1f,
+            Vector3.down,
+            out var hit,
+            4f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? hit.point.y
+            : float.NaN;
+
     void Drift(string phase, List<string> fails, List<string> notes)
     {
-        float body = leanRoot.size.magnitude;
+        float body = FlatSize(leanRoot);
         float view = leanOrigin.size.magnitude;
         notes.Add(
             F(
-                $"{phase}: body {body:0.000} m, view {view:0.000} m, hip {leanHip.size.magnitude:0.000} m peak to peak"
+                $"{phase}: body {body:0.000} m (height {leanRoot.size.y:0.000} m), view {view:0.000} m, hip {leanHip.size.magnitude:0.000} m peak to peak"
             )
         );
         if (body > MaxLeanDrift)
