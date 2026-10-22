@@ -89,35 +89,37 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// The right fingertip (4 cm ahead of the aim pose, as the keyboard and passport pokes use) relative to the scripted
+    /// A hand's fingertip (4 cm ahead of the aim pose, as the keyboard and passport pokes use) relative to the scripted
     /// grip, in tracking space, for the current scripted rotation. The rig shows a scripted pose only two frames after
     /// the step sets it (the sampler copies it before the step runs, the rig poses in LateUpdate), so a per-frame
     /// closed loop on the tip overshoots and oscillates; set the rotation, wait, measure once, then place open loop.
     /// </summary>
-    IEnumerator MeasureTip(Quaternion trackingRotation)
+    IEnumerator MeasureTip(bool left, Quaternion trackingRotation)
     {
-        Script(false).Rotation = trackingRotation;
+        tipLeft = left;
+        Script(left).Rotation = trackingRotation;
         for (int i = 0; i < 3; i++)
             yield return null;
         var rig = VRRig.Instance;
-        var aim = rig.Aim(false);
+        var aim = rig.Aim(left);
         tipOffset =
             rig.Origin.InverseTransformPoint(aim.position + aim.forward * 0.04f)
-            - Script(false).Position;
+            - Script(left).Position;
     }
 
     Vector3 tipOffset;
+    bool tipLeft;
 
     /// <summary>
     /// One frame of passport evidence for vr.118 and vr.129 (run 34 failed both without saying why): the window and
     /// canvas state, where <paramref name="cell"/> is on the canvas, the right aim ray and fingertip, what the laser
     /// is over and what the poke last saw.
     /// </summary>
-    static void LogPassport(string tag, PassportButton cell)
+    static void LogPassport(string tag, PassportButton cell, bool left)
     {
         var passport = PassportManager.instance;
         var canvas = HandBook.PassportCanvas;
-        var aim = VRRig.Instance != null ? VRRig.Instance.Aim(false) : null;
+        var aim = VRRig.Instance != null ? VRRig.Instance.Aim(left) : null;
         if (passport == null || canvas == null || aim == null || cell == null)
         {
             Plugin.Log.LogInfo(
@@ -141,9 +143,9 @@ internal sealed partial class SelfTestRunner
         );
     }
 
-    /// <summary>Puts the right fingertip on <paramref name="world"/> (after <see cref="MeasureTip"/>).</summary>
+    /// <summary>Puts the measured hand's fingertip on <paramref name="world"/> (after <see cref="MeasureTip"/>).</summary>
     void TipTo(Vector3 world) =>
-        Script(false).Position = VRRig.Instance.Origin.InverseTransformPoint(world) - tipOffset;
+        Script(tipLeft).Position = VRRig.Instance.Origin.InverseTransformPoint(world) - tipOffset;
 
     /// <summary>A short right-trigger pull: the laser click.</summary>
     IEnumerator PullRight()
@@ -229,27 +231,28 @@ internal sealed partial class SelfTestRunner
                 break;
             yield return Wait(0.1f);
         }
+        bool free = !HandBook.BookInLeftHand();
         if (locked != null)
         {
-            // Only the free right hand aims: the book rides on the left hand (HandBook.BookInLeftHand), so moving
-            // that hand would carry the cell away from the aimed point.
+            // Only the free hand aims. The book rides on the hand that holds the passport item
+            // (HandBook.BookInLeftHand: the right hand in vr35), so aiming that hand carried the cell along with it.
             var rect = (RectTransform)locked.transform;
-            AimLaser(false, rect.TransformPoint(rect.rect.center));
+            AimLaser(free, rect.TransformPoint(rect.rect.center));
             for (float until = Now + 0.3f; Now < until; )
             {
-                LogPassport("vr.118 aim", locked);
+                LogPassport("vr.118 aim", locked, free);
                 yield return null;
             }
             float since = CueMark();
-            Script(false).Trigger = 1f;
+            Script(free).Trigger = 1f;
             for (float until = Now + 0.15f; Now < until; )
             {
-                LogPassport("vr.118 pull", locked);
+                LogPassport("vr.118 pull", locked, free);
                 yield return null;
             }
-            Script(false).Trigger = 0f;
+            Script(free).Trigger = 0f;
             yield return Wait(0.1f);
-            LogPassport("vr.118 after", locked);
+            LogPassport("vr.118 after", locked, free);
             yield return ExpectCue(LaserPointer.PressLeft, DenyReason.Locked, since, true);
             if (!stepOk)
                 yield break;
@@ -266,7 +269,7 @@ internal sealed partial class SelfTestRunner
         }
         for (int i = 0; i < 60 && HandBook.FlipPage(1); i++)
             yield return Wait(0.05f);
-        // The free (right) hand strokes right to left across the book, a little in front of the page.
+        // The free hand strokes right to left across the book, a little in front of the page.
         var canvas = HandBook.PassportCanvas;
         var origin = VRRig.Instance.Origin;
         float half = HandBook.HalfExtents(true).x * 0.7f;
@@ -274,12 +277,12 @@ internal sealed partial class SelfTestRunner
             origin.InverseTransformPoint(
                 canvas.transform.position + canvas.transform.rotation * new Vector3(x, 0f, -0.06f)
             );
-        Script(false).Trigger = 0f;
-        Script(false).Position = Along(half);
+        Script(free).Trigger = 0f;
+        Script(free).Position = Along(half);
         yield return Wait(0.2f);
         float swiped = CueMark();
-        yield return MoveTrack(false, Along(-half), 0.15f);
-        yield return ExpectFeel(false, CueFeel.EndStop, swiped, 1.5f);
+        yield return MoveTrack(free, Along(-half), 0.15f);
+        yield return ExpectFeel(free, CueFeel.EndStop, swiped, 1.5f);
         if (!stepOk)
             yield break;
         notes.Add($"last page: {cueNote}");
@@ -352,7 +355,10 @@ internal sealed partial class SelfTestRunner
         }
         var rig = VRRig.Instance;
         var into = VRKeyboard.PanelRotation * Vector3.forward;
-        yield return MeasureTip(Quaternion.Inverse(rig.Origin.rotation) * VRKeyboard.PanelRotation);
+        yield return MeasureTip(
+            false,
+            Quaternion.Inverse(rig.Origin.rotation) * VRKeyboard.PanelRotation
+        );
         float[] depths =
         {
             -0.05f,
@@ -426,7 +432,7 @@ internal sealed partial class SelfTestRunner
             .GetPlayerData(Photon.Pun.PhotonNetwork.LocalPlayer)
             .customizationData.currentSkin;
 
-    /// <summary>vr.129: the free (right) hand points and pokes an unlocked, unworn skin cell of the hand-held passport;
+    /// <summary>vr.129: the free hand (not the one holding the book) points and pokes an unlocked, unworn skin cell of the hand-held passport;
     /// the cell's own Click equips it (PassportButton.cs:63-68, PassportManager.SetOption :277), the worn skin changes
     /// and the hand gets a Contact tick. The original skin is put back.</summary>
     IEnumerator PassportTryOnStep()
@@ -464,8 +470,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         int equips = PassportPoke.Equips;
+        bool free = !HandBook.BookInLeftHand();
         float since = CueMark();
-        yield return PokeCell(cell);
+        yield return PokeCell(cell, free);
         bool pressed = PassportPoke.Equips > equips;
         int after = WornSkin();
         CharacterCustomization.SetCharacterSkinColor(before);
@@ -474,7 +481,7 @@ internal sealed partial class SelfTestRunner
             Fail("the poke did not press the cell");
             yield break;
         }
-        yield return ExpectFeel(false, CueFeel.Contact, since);
+        yield return ExpectFeel(free, CueFeel.Contact, since);
         if (!stepOk)
             yield break;
         if (after == before)
@@ -483,16 +490,16 @@ internal sealed partial class SelfTestRunner
             stepNote = $"skin {before} to {after} by poke, restored; {cueNote}";
     }
 
-    /// <summary>One poke of the right fingertip (4 cm ahead of the aim pose, as <see cref="PassportPoke"/>) on a passport
+    /// <summary>One poke of the free hand's fingertip (4 cm ahead of the aim pose, as <see cref="PassportPoke"/>) on a passport
     /// cell, with the index straight (grip closed, no trigger touch): from 5 cm in front of the page to 1.5 cm past it.
     /// Placed open loop from the measured tip offset (<see cref="MeasureTip"/>), on the cell re-read each step.</summary>
-    IEnumerator PokeCell(PassportButton cell)
+    IEnumerator PokeCell(PassportButton cell, bool left)
     {
         var rig = VRRig.Instance;
         var canvas = HandBook.PassportCanvas.transform;
-        Script(false).TriggerTouch = false;
-        Script(false).Trigger = 0f;
-        yield return GripTo(false, 1f, 0.1f);
+        Script(left).TriggerTouch = false;
+        Script(left).Trigger = 0f;
+        yield return GripTo(left, 1f, 0.1f);
         float[] depths =
         {
             -0.05f,
@@ -506,19 +513,19 @@ internal sealed partial class SelfTestRunner
             -0.05f,
             -0.05f,
         };
-        yield return MeasureTip(Quaternion.Inverse(rig.Origin.rotation) * canvas.rotation);
+        yield return MeasureTip(left, Quaternion.Inverse(rig.Origin.rotation) * canvas.rotation);
         var rect = (RectTransform)cell.transform;
         foreach (var d in depths)
         {
-            // Re-read each step: the book rides on the left hand. The page faces the eyes along -Z: +Z goes into it.
+            // Re-read each step: the book rides on the other hand. The page faces the eyes along -Z: +Z goes into it.
             TipTo(rect.TransformPoint(rect.rect.center) + canvas.forward * d);
             yield return null;
-            LogPassport($"vr.129 d {d:0.000}", cell);
+            LogPassport($"vr.129 d {d:0.000}", cell, left);
             yield return null;
-            LogPassport($"vr.129 d {d:0.000}", cell);
+            LogPassport($"vr.129 d {d:0.000}", cell, left);
         }
-        yield return GripTo(false, 0f, 0.1f);
-        Script(false).TriggerTouch = true;
+        yield return GripTo(left, 0f, 0.1f);
+        Script(left).TriggerTouch = true;
         yield return Wait(0.1f);
     }
 
