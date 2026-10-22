@@ -809,10 +809,36 @@ internal sealed partial class SelfTestRunner
     /// end the run. A real campfire advances the segment; then the summit props on the Peak; last the end screen,
     /// which wins the run and returns to the airport, where the summary and quit run as after any test.
     /// </summary>
+    /// <summary>Opt-in for the end-of-run slot when the progress guard is not in place.</summary>
+    const string EndRunFlag = "-peakxr-selftest-endrun";
+
+    static readonly string[] EndOfRunIds =
+    {
+        "vr.85-campfire-segment",
+        "vr.89-to-peak",
+        "vr.89-altar-full",
+        "vr.89b-amulet-socket",
+        "vr.90-soul-pillar",
+        "vr.91-portal",
+        "vr.93-summit-flare",
+        "vr.86-end-screen",
+    };
+
     IEnumerator EndOfRunSteps()
     {
         if (!VRRun || !Ready || Singleton<MapHandler>.Instance == null)
             yield break;
+        // These win the run, light a real campfire, summon the helicopter and visit the summit: never without the
+        // self-test's progress guard, unless the user opts in to granting real progress.
+        if (
+            !SelfTestProgressGuard.Active
+            && Array.IndexOf(Environment.GetCommandLineArgs(), EndRunFlag) < 0
+        )
+        {
+            foreach (var id in EndOfRunIds)
+                Skip(id, $"needs {EndRunFlag} (grants real progress)");
+            yield break;
+        }
         yield return HandStep("vr.85-campfire-segment", 120f, CampfireSegmentStep());
         yield return WarpBack();
         yield return Run("vr.89-to-peak", 150f, Jump(Segment.Peak, "vr-89-peak"));
@@ -931,7 +957,10 @@ internal sealed partial class SelfTestRunner
         {
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = -1;
-            yield return WarpFacing(statue.Center(), 1f);
+            // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
+            // root: vr34 stood by the root and ended 2.16 m short.
+            var target = statue.amuletObjects[amulet.amuletIndex].transform.position;
+            yield return WarpBeside(target, 0.7f);
             yield return GiveAndHold(amulet.GetComponent<Item>());
             if (!stepOk)
                 yield break;
@@ -945,7 +974,9 @@ internal sealed partial class SelfTestRunner
             );
             if (!stepOk)
                 yield break;
-            var socket = statue.amuletObjects[WorldHolds.SocketTarget].transform.position;
+            var socketAt = statue.amuletObjects[WorldHolds.SocketTarget].transform.position;
+            var socket = WorldHolds.SocketSpot(socketAt);
+            float socketUp = socketAt.y - Feet(Character.localCharacter).y;
             var interaction = Interaction.instance;
             float progress = 0f;
             float mark = CueMark();
@@ -969,14 +1000,14 @@ internal sealed partial class SelfTestRunner
             if (progress <= 0f)
             {
                 Fail(
-                    $"the amulet at the socket did not start the hold ({(held != null ? Vector3.Distance(held.Center(), socket) : -1f):0.00} m from it)"
+                    $"the amulet at the socket did not start the hold ({(held != null ? Vector3.Distance(held.Center(), socket) : -1f):0.00} m from its spot; socket {socketUp:0.00} m over the feet, body {FlatDistance(Character.localCharacter.Center, socketAt):0.00} m from it)"
                 );
                 yield break;
             }
             yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
             if (stepOk)
                 stepNote =
-                    $"socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {cueNote}";
+                    $"socket {WorldHolds.SocketTarget} {socketUp:0.00} m over the feet: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {cueNote}";
         }
         finally
         {
@@ -1177,13 +1208,33 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         c.photonView.RPC("RPCEndGame_ForceWin", Photon.Pun.RpcTarget.All);
-        yield return Until(
-            () => end.nextButton.gameObject.activeInHierarchy && end.nextButton.interactable,
-            150f,
-            "the end screen's Next did not show"
-        );
-        if (!stepOk)
+        // The report holds on each unlock popup (a cosmetic, new ascents, a promotion) until its own Next is pressed
+        // (EndScreen.cs:598-641, PopupNext :573); a forced win unlocks some, and vr34 waited on one for 150 s.
+        int popups = 0;
+        float until = Now + 150f;
+        while (Now < until && !Usable(end.nextButton))
+        {
+            var popup =
+                Usable(end.cosmeticNextButton) ? end.cosmeticNextButton
+                : Usable(end.ascentsNextButton) ? end.ascentsNextButton
+                : Usable(end.promotionNextButton) ? end.promotionNextButton
+                : null;
+            if (popup == null)
+            {
+                yield return null;
+                continue;
+            }
+            // Let the popup's panel settle before aiming at it.
+            yield return Wait(0.8f);
+            yield return LaserPress(popup);
+            popups++;
+            yield return Wait(0.6f);
+        }
+        if (!Usable(end.nextButton))
+        {
+            Fail($"the end screen's Next did not show ({popups} unlock popups pressed)");
             yield break;
+        }
         yield return Wait(1f);
         yield return Shot("vr-86-end-screen");
         // Up to three presses: the panel may still be settling into place on the first (ui.world placement).
@@ -1242,6 +1293,39 @@ internal sealed partial class SelfTestRunner
         );
         if (stepOk)
             stepNote = credits;
+    }
+
+    static bool Usable(Button b) => b != null && b.gameObject.activeInHierarchy && b.interactable;
+
+    /// <summary>Warps onto the ground <paramref name="distance"/> from <paramref name="target"/> on the side the player
+    /// came from, centre over the spot (<see cref="CentreOver"/>, the warp moves the body's centre,
+    /// Character.cs:1905-1911), facing it. Sets <see cref="warpedForProp"/>.</summary>
+    IEnumerator WarpBeside(Vector3 target, float distance)
+    {
+        var c = Character.localCharacter;
+        var stand = target + Flat(c.Center - target) * distance;
+        float top = Mathf.Max(stand.y, c.Center.y) + 3f;
+        if (
+            Physics.Raycast(
+                new Vector3(stand.x, top, stand.z),
+                Vector3.down,
+                out var ground,
+                top - stand.y + 6f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            stand = ground.point + Vector3.up * 0.1f;
+        warpedForProp = true;
+        c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, stand), false);
+        yield return Wait(0.5f);
+        yield return WaitFor(() => !c.warping, 3f);
+        yield return Wait(1.5f);
+        var rig = VRRig.Instance;
+        rig.RotateYaw(
+            Vector3.SignedAngle(Flat(rig.Head.forward), Flat(target - c.Center), Vector3.up)
+        );
+        yield return Wait(0.6f);
     }
 
     /// <summary>One trigger click of the scripted hand.</summary>
