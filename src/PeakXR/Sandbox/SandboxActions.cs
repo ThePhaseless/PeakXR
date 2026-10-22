@@ -17,7 +17,7 @@ namespace PeakXR.Sandbox;
 /// flat IMGUI window and the future VR panel all call these. Every action checks <see cref="Active"/>
 /// first and reports through <see cref="Say"/>, so a caller only has to show <see cref="LastMessage"/>.
 /// </summary>
-public static class SandboxActions
+public static partial class SandboxActions
 {
     const float TestLineSpacing = 0.8f;
     const int TestLinePerRow = 12;
@@ -519,16 +519,25 @@ public static class SandboxActions
             c.illegalStatusAction?.Invoke(fx.statusName, 0f);
     }
 
-    /// <summary>Revive the local character at the spot they died (game command <c>Character.Revive</c>).</summary>
+    /// <summary>Revive the local character at the spot they died (game command <c>Character.Revive</c>); a
+    /// passed-out one wakes where the body lies, with no revive curse.</summary>
     public static bool Revive()
     {
         if (!Guard())
             return false;
-        var data = Character.localCharacter.data;
+        var c = Character.localCharacter;
+        var data = c.data;
         if (!data.dead && !data.fullyPassedOut)
         {
             Say("You are not dead or passed out.");
             return false;
+        }
+        if (!data.dead)
+        {
+            // The game's command warps to the last death spot (Character.cs:1770), which a pass-out never set.
+            c.photonView.RPC("RPCA_ReviveAtPosition", RpcTarget.All, c.Center, false, -1);
+            Say("Woke up where you lay.");
+            return true;
         }
         Character.Revive();
         Say("Revived.");

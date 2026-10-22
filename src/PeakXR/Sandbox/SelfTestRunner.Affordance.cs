@@ -143,8 +143,9 @@ internal sealed partial class SelfTestRunner
             stepNote = $"released (charge requirement {sticky.throwChargeRequirement:0.00})";
     }
 
-    /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for a denial with
-    /// <paramref name="expected"/> on that hand; other denials meanwhile do not end the wait.</summary>
+    /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for the cue of
+    /// <paramref name="expected"/> on that hand on every channel (<see cref="ExpectCue"/>); other denials meanwhile
+    /// do not end the wait.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected)
     {
         if (!Affordance.Enabled)
@@ -154,15 +155,15 @@ internal sealed partial class SelfTestRunner
         }
         Affordance.ResetGate();
         int before = Affordance.Count;
+        float mark = CueMark();
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
-        float end = Now + 1f;
         bool Got() =>
             Affordance.Count > before
             && Affordance.LastReason == expected
             && Affordance.LastLeft == left;
-        while (Now < end && !Got())
-            yield return null;
+        // Reason, readable ring, refused sound and a haptic pulse on that hand.
+        yield return ExpectCue(left, expected, mark);
         // Keep holding past the one-shot fade: the cue must stay for as long as the attempt is held.
         if (Got())
             yield return Wait(DenyFade.Duration + 0.3f);
@@ -194,7 +195,8 @@ internal sealed partial class SelfTestRunner
         }
         var note =
             $"denials {Affordance.Count - before}, last {Affordance.LastReason} "
-            + $"({(Affordance.LastLeft ? "left" : "right")}) at {Affordance.LastPosition}";
+            + $"({(Affordance.LastLeft ? "left" : "right")}) at {Affordance.LastPosition}"
+            + (cueNote != null ? "; " + cueNote : "");
         if (Affordance.Count == before)
             Fail($"no denial for {expected}: {note}");
         else if (!Got())

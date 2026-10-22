@@ -67,6 +67,37 @@ public static class SandboxCommands
     [ConsoleCommand]
     public static void FreeCam() => SandboxActions.ToggleFreeCam();
 
+    [ConsoleCommand]
+    public static void Stamina(float current, float extra) =>
+        SandboxActions.SetStamina(current, extra);
+
+    [ConsoleCommand]
+    public static void MaxStamina(float max) => SandboxActions.SetMaxStamina(max);
+
+    [ConsoleCommand]
+    public static void AddStatus(CharacterAfflictions.STATUSTYPE type, float amount) =>
+        SandboxActions.AddStatus(type, amount);
+
+    [ConsoleCommand]
+    public static void ClearStatus(CharacterAfflictions.STATUSTYPE type) =>
+        SandboxActions.ClearStatus(type);
+
+    [ConsoleCommand]
+    public static void PassOut() => SandboxActions.PassOut();
+
+    [ConsoleCommand]
+    public static void RunSetting(RunSettings.SETTINGTYPE type, int value) =>
+        SandboxActions.SetRunSetting(type, value);
+
+    [ConsoleCommand]
+    public static void GiveLeft(Item item) => SandboxActions.GiveItem(item, left: true);
+
+    [ConsoleCommand]
+    public static void GiveRight(Item item) => SandboxActions.GiveItem(item, left: false);
+
+    [ConsoleCommand]
+    public static void Wall() => SandboxActions.PlaceWall();
+
     /// <summary>Add the commands above to the live console list. False until the console has initialised.</summary>
     internal static bool Register()
     {

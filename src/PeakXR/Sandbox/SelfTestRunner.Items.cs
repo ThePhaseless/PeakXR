@@ -899,6 +899,7 @@ internal sealed partial class SelfTestRunner
         }
         var rope = spool.rope;
         var anchors = Ids<RopeAnchor>();
+        float quietFrom = CueMark();
         if (vr)
         {
             Script(left).TriggerTouch = true;
@@ -915,6 +916,9 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         bool tied = Tied();
+        // A tie that works gets no refusal cue on the spool's hand.
+        if (vr && tied)
+            yield return ExpectNoCue(left, quietFrom, 0f);
         yield return Shot("use-RopeSpool");
         if (vr)
         {

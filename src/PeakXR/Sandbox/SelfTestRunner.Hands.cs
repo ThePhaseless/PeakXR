@@ -1458,6 +1458,9 @@ internal sealed partial class SelfTestRunner
             WallsFrom(lug.transform.position, home, ref best, ref wall, ref stand);
         foreach (var fire in FindObjectsByType<Campfire>(FindObjectsSortMode.None))
             WallsFrom(fire.transform.position, home, ref best, ref wall, ref stand);
+        // Nothing on today's map: the sandbox's test wall ahead of the player.
+        if (best == float.MaxValue && SandboxActions.PlaceWall() != null)
+            WallsFrom(home, home, ref best, ref wall, ref stand);
         return best < float.MaxValue;
     }
 

@@ -125,7 +125,8 @@ internal sealed partial class SelfTestRunner
         string refusal = "refusal not checked (UI.ActionHints off)";
         if (UI.Affordances.Affordance.Enabled && caught)
         {
-            SandboxActions.SetGodMode(false);
+            // God mode off (Run turns it back on) and the bar empty; the loop holds it there against regeneration.
+            SandboxActions.SetStamina(0f, 0f);
             float drainEnd = Now + 3f;
             while (
                 Now < drainEnd && (c.data.outOfStaminaFor < 0.6f || c.data.sinceClimbJump < 1.1f)
@@ -140,19 +141,21 @@ internal sealed partial class SelfTestRunner
             float noJumpBefore = c.data.sinceClimbJump;
             bool climbingAtThrow = c.data.isClimbing;
             from = Script(left).Position;
+            float mark = CueMark();
             yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
             bool Denied() =>
                 UI.Affordances.Affordance.Count > denials
                 && UI.Affordances.Affordance.LastReason == DenyReason.NoStamina
                 && UI.Affordances.Affordance.LastLeft == left;
-            yield return WaitFor(Denied, 0.5f);
+            // Every channel of the stamina refusal on the throwing hand.
+            yield return ExpectCue(left, DenyReason.NoStamina, mark, 1.5f);
             bool denied = Denied();
             string cue = denied ? CueCheck() : null;
             bool noJump = c.data.sinceClimbJump >= noJumpBefore;
             SandboxActions.SetGodMode(true);
             refusal =
                 $"out of stamina {c.data.outOfStaminaFor:0.0} s (climbing {climbingAtThrow}): denied {denied}"
-                + $" ({UI.Affordances.Affordance.LastReason}), no jump {noJump}";
+                + $" ({UI.Affordances.Affordance.LastReason}), no jump {noJump}; {cueNote}";
             if (!denied)
                 Fail("no NoStamina refusal for a lunge without stamina: " + refusal);
             else if (cue != null)

@@ -144,7 +144,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             return;
         var now = Time.unscaledTime;
         if (notice)
-            Haptics.Pulse(left, 0.25f, 0.04f);
+            CueLog.Capture.Pulse(left, 0.25f, 0.04f, Haptics.Pulse(left, 0.25f, 0.04f), now);
         else
             (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
         self.denied.Notice = notice;
@@ -272,7 +272,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private static void Buzz(HapticPatternPlayer player, bool left, float now)
     {
         while (player.TryNext(now, out var pulse))
-            Haptics.Pulse(left, pulse.Amplitude, pulse.Seconds);
+            CueLog.Capture.Pulse(
+                left,
+                pulse.Amplitude,
+                pulse.Seconds,
+                Haptics.Pulse(left, pulse.Amplitude, pulse.Seconds),
+                now
+            );
     }
 
     private void LateUpdate()
@@ -431,6 +437,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         if (denied.AtHand && denyHand != null)
             denied.Position = CueLayout.HandAnchor(denyHand.position.N(), eye.N()).U();
         PoseCue(denied, eye, denyAlpha);
+        CaptureRing(eye, denyAlpha, now);
         if (DenyTint.Active)
         {
             // Shown this frame (age 0, alpha 0): applied from the next pose on, never cleared here.
@@ -459,6 +466,29 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
 
         PoseLabel(rig, eye, now, denyAlpha);
+    }
+
+    /// <summary>The refusal's ring (a notice's teal one when it has no red one) as the eye sees it, while clearly
+    /// visible: for <see cref="CueLog"/>.</summary>
+    private void CaptureRing(Vector3 eye, float alpha, float now)
+    {
+        var ring =
+            denied.Deny.enabled ? denied.Deny
+            : denied.Hint.enabled ? denied.Hint
+            : null;
+        if (ring == null || alpha < 0.3f)
+            return;
+        var t = ring.transform;
+        var center = t.position;
+        CueLog.Capture.Ring(
+            denyLeft,
+            denied.Reason,
+            denied.Glyph,
+            center.N(),
+            CueLayout.AngularDegrees(t.localScale.x, Vector3.Distance(center, eye)),
+            DenyTint.Active,
+            now
+        );
     }
 
     private static float HoverAlpha(Cue h, float now)
