@@ -65,7 +65,7 @@ internal static partial class WorldHolds
     };
 
     private static ScoutStatue statue;
-    private static int statueFrame = -10;
+    private static float nextStatueLook;
     private static PeakGatePortal portal;
     private static int portalFrame = -10;
     private static PeakGatePortal portalColliderOf;
@@ -82,15 +82,23 @@ internal static partial class WorldHolds
     private static void TickSocket(Character c, bool on)
     {
         var item = c.data.currentItem;
+        bool amuletHeld =
+            on
+            && WorldHoldsFeature.AmuletInSocket.Value
+            && item != null
+            && (item.itemTags & Item.ItemTags.ScoutAmulet) != 0;
+        // Looked up only while an amulet is held, at most every 2 s, so finding it does not depend on the altar's
+        // own Update running (vr33 found no socket through an Update postfix).
+        if (amuletHeld && statue == null && Time.unscaledTime >= nextStatueLook)
+        {
+            nextStatueLook = Time.unscaledTime + PillarLookSeconds;
+            statue = Object.FindFirstObjectByType<ScoutStatue>();
+        }
         AmuletBase amulet = null;
         int[] slots = null;
         if (
-            !on
-            || !WorldHoldsFeature.AmuletInSocket.Value
+            !amuletHeld
             || statue == null
-            || !Seen(statueFrame)
-            || item == null
-            || (item.itemTags & Item.ItemTags.ScoutAmulet) == 0
             || !item.TryGetComponent(out amulet)
             || (slots = HasAmulets(statue)) == null
             || statue.amuletObjects == null
@@ -247,21 +255,6 @@ internal static partial class WorldHolds
         var interaction = Interaction.instance;
         if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, target))
             Affordance.Progress(left, Mathf.Clamp01(interaction.constantInteractableProgress));
-    }
-
-    /// <summary>ScoutStatue.Update (Peak/ScoutStatue.cs:51, private): the altar reports itself while loaded, so the
-    /// socket gesture needs no scene search.</summary>
-    [HarmonyPatch]
-    internal static class StatueSeen
-    {
-        private static MethodBase TargetMethod() =>
-            GameMember.Method(typeof(ScoutStatue), "Update");
-
-        private static void Postfix(ScoutStatue __instance)
-        {
-            statue = __instance;
-            statueFrame = Time.frameCount;
-        }
     }
 
     /// <summary>PeakGatePortal.Update (Peak/PeakGatePortal.cs:95, private): the portal reports itself while

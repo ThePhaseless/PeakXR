@@ -9,6 +9,7 @@ using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.RunFlow;
+using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -28,6 +29,7 @@ internal sealed partial class SelfTestRunner
 {
     IEnumerator WorldSteps()
     {
+        yield return SettleIn();
         yield return HandStep("vr.80-campfire-far", 30f, CampfireFarStep());
         yield return WarpBack();
         yield return HandStep("vr.81-chest-two-hands", 40f, ChestTwoHandsStep());
@@ -50,6 +52,22 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return HandStep("vr.92-checkpoint", 40f, CheckpointStep());
         yield return HandStep("vr.94-effigy-nobody-down", 20f, EffigyStep());
+    }
+
+    /// <summary>The steps before this package can leave the player passed out (vr.105 gives up); the revive warps,
+    /// and a step whose settle starts during that warp fails it (vr33: "a new warp before the old one wrapped up").
+    /// Revive first and wait for the warp and the body to finish.</summary>
+    static IEnumerator SettleIn()
+    {
+        Recover();
+        var c = Character.localCharacter;
+        if (c == null)
+            yield break;
+        yield return WaitFor(
+            () => !c.warping && !c.data.passedOut && !c.data.fullyPassedOut && !c.data.dead,
+            10f
+        );
+        yield return Wait(2f);
     }
 
     /// <summary>
@@ -335,8 +353,18 @@ internal sealed partial class SelfTestRunner
             var held = HeldItem();
             bool left = LocalHold.ItemInLeftHand;
             yield return GripTo(left, 1f, 0.1f);
+            // A given item can have its ItemUses entry created empty (HasData false, Value 0) by a GetData call
+            // before Item.Start fills it (Item.cs:458-468, GetData :1223 creates the entry), and Skelleton wants
+            // Value > 0 (Skelleton.cs:45-55): vr33 refused a fresh book UsedUp. Fill it as Start would.
+            var uses = held.GetData<OptionableIntItemData>(DataEntryKey.ItemUses);
+            if (!uses.HasData && held.totalUses > 0)
+            {
+                uses.HasData = true;
+                uses.Value = held.totalUses;
+            }
             if (usedUp)
-                held.GetData<OptionableIntItemData>(DataEntryKey.ItemUses).Value = 0;
+                uses.Value = 0;
+            string usesNote = $"uses {(uses.HasData ? uses.Value : -1)} of {held.totalUses}";
             Affordance.ResetGate();
             float mark = CueMark();
             var interaction = Interaction.instance;
@@ -377,7 +405,7 @@ internal sealed partial class SelfTestRunner
             {
                 Fail(
                     $"book over the bones did not start the revive hold: book hand {above:0.00} m above the hips, "
-                        + $"gesture over the skeleton {over}, hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}"
+                        + $"gesture over the skeleton {over}, hold on {Label(interaction != null ? interaction.currentHeldInteractible : null)}, {usesNote}, last cue {CueLog.Capture.Hand(left).Reason}"
                 );
                 yield break;
             }
@@ -502,8 +530,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.94: a scout effigy held with nobody down (Character.PlayerIsDeadOrDown, Character.cs:1979) stays
-    /// unusable (ScoutEffigy.cs:8-21, guarded against Constructable.Update's overwrite): the trigger gets CantUse and
-    /// the effigy stays in the hand.</summary>
+    /// unusable (ScoutEffigy.cs:8-21, guarded against Constructable.Update's overwrite): the trigger gets NotInTrouble
+    /// ("nobody is down", UseDenial.Other) with the effigy red, and the effigy stays in the hand.</summary>
     IEnumerator EffigyStep()
     {
         if (!Setting("Interaction", "GuardWastedItems", true))
@@ -527,21 +555,28 @@ internal sealed partial class SelfTestRunner
             Fail("effigy usable with nobody down");
             yield break;
         }
-        yield return PressAndExpect(LocalHold.ItemInLeftHand, DenyReason.CantUse);
+        yield return PressAndExpect(LocalHold.ItemInLeftHand, DenyReason.NotInTrouble);
         if (stepOk && !ReferenceEquals(HeldItem(), held))
             Fail("effigy left the hand");
     }
 
-    /// <summary>vr.82b: a grip low on a closed suitcase keeps the vanilla hold and, after 0.5 s, gets the "grab the
-    /// lid" notice (AimHigher, ring on the lid edge above the hand). A would-work hint: needs UI.ActionHints.</summary>
+    /// <summary>vr.82b: a grip low on a closed slow suitcase (open time at least <see cref="LidGesture.LowGripMinOpen"/>)
+    /// keeps the vanilla hold and, after 0.5 s, gets the "grab the lid" notice (AimHigher, ring on the lid edge above
+    /// the hand). A would-work hint: needs UI.ActionHints.</summary>
     IEnumerator LidLowGripStep()
     {
         var c = Character.localCharacter;
-        var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
+        var lug = Nearest<Luggage>(
+            c.Center,
+            l =>
+                !l.IsOpen
+                && l is not RespawnChest
+                && l.GetInteractTime(c) >= LidGesture.LowGripMinOpen
+        );
         if (lug == null || !Affordance.Hints || !Setting("Interaction", "LiftLidToOpen", true))
         {
             stepSkip =
-                lug == null ? "no closed suitcase in the active segment"
+                lug == null ? "no slow closed suitcase in the active segment"
                 : !Affordance.Hints ? "UI.ActionHints is off"
                 : "Interaction.LiftLidToOpen is off";
             yield break;
@@ -556,8 +591,10 @@ internal sealed partial class SelfTestRunner
         yield return ExpectCue(left, DenyReason.AimHigher, mark, tint: false, within: 2f);
         var cue = cueNote;
         var interaction = Interaction.instance;
+        // Kept: still held, or the plain vanilla hold already finished and opened it.
         bool holding =
-            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, lug);
+            lug.IsOpen
+            || interaction != null && ReferenceEquals(interaction.currentHeldInteractible, lug);
         yield return GripTo(left, 0f, 0.1f);
         if (!stepOk)
             yield break;
@@ -704,21 +741,31 @@ internal sealed partial class SelfTestRunner
         var item = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
-        // The constructable aims from the hand (AimPatches): point it at the ground 1.5 m ahead.
-        var rig = VRRig.Instance;
+        // The constructable aims from the hand (interact.aim): turn it until the game's own preview check passes
+        // (Constructable.cs:62-69), as vr.163 does; a fixed aim at the ground was refused in vr33.
+        var build = item.GetComponent<Constructable>();
         HeadFrame(out var head, out var forward, out _);
-        var ground = head + forward * 1.5f + Vector3.down * 1.6f;
-        var hand = rig.Hand(left).position;
-        Script(left).Rotation =
-            Quaternion.Inverse(rig.Origin.rotation)
-            * Quaternion.LookRotation(ground - hand, Vector3.up);
-        yield return Wait(0.5f);
+        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        yield return AimHeld(
+            c,
+            left,
+            BuildPitches,
+            AllYaws,
+            () => item != null && item.CanUsePrimary() && build.currentPreview != null
+        );
+        if (!aimFound)
+        {
+            Fail($"no ground within {build.maxConstructDistance:0.0} m that the flag would take");
+            yield break;
+        }
+        Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
         yield return WaitFor(
             () => c.data.checkpointFlags.Count > flags,
             GameTiming.Budget(GameTiming.UseSeconds(item), 3f)
         );
         Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
         if (c.data.checkpointFlags.Count <= flags)
         {
             Fail("the flag was not planted");
@@ -841,10 +888,21 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var statue = Object.FindFirstObjectByType<ScoutStatue>();
+        var slots =
+            statue != null ? GameMember.Field<ScoutStatue, int[]>("hasAmulets")(statue) : null;
         AmuletBase amulet = null;
+        // An amulet the altar takes: the ScoutAmulet tag (ScoutStatue.cs:288-295) and a socket index
+        // (RPC_InsertAmulet ignores any other, :172-175).
         foreach (var it in SandboxActions.Items)
         {
-            if (it != null && it.TryGetComponent(out AmuletBase a) && a.amuletIndex != 99)
+            if (
+                slots != null
+                && it != null
+                && (it.itemTags & Item.ItemTags.ScoutAmulet) != 0
+                && it.TryGetComponent(out AmuletBase a)
+                && a.amuletIndex >= 0
+                && a.amuletIndex < slots.Length
+            )
             {
                 amulet = a;
                 break;
@@ -852,10 +910,12 @@ internal sealed partial class SelfTestRunner
         }
         if (statue == null || amulet == null || statue.amuletObjects == null)
         {
-            stepSkip = statue == null ? "no scout statue loaded (Peak only)" : "no amulet item";
+            stepSkip =
+                statue == null
+                    ? "no scout statue loaded (Peak only)"
+                    : "no amulet with a socket index";
             yield break;
         }
-        var slots = GameMember.Field<ScoutStatue, int[]>("hasAmulets")(statue);
         var saved = (int[])slots.Clone();
         try
         {
@@ -871,7 +931,7 @@ internal sealed partial class SelfTestRunner
             yield return Until(
                 () => WorldHolds.SocketTarget >= 0,
                 2f,
-                "no socket picked for the amulet"
+                $"no socket picked for {amulet.name} (index {amulet.amuletIndex}, statue enabled {statue.isActiveAndEnabled}, {statue.amuletObjects.Length} sockets)"
             );
             if (!stepOk)
                 yield break;
@@ -1116,14 +1176,28 @@ internal sealed partial class SelfTestRunner
             yield break;
         yield return Wait(1f);
         yield return Shot("vr-86-end-screen");
-        yield return LaserPress(end.nextButton);
-        yield return Until(
-            () => RunFlowRuntime.CreditsWaiting || LoadingScreenHandler.loading,
-            20f,
-            "Next did not close the end screen"
-        );
-        if (!stepOk)
+        // Up to three presses: the panel may still be settling into place on the first (ui.world placement).
+        string pressed = "nothing";
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            yield return LaserPress(end.nextButton);
+            pressed =
+                LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing";
+            yield return WaitFor(
+                () => RunFlowRuntime.CreditsWaiting || LoadingScreenHandler.loading,
+                6f
+            );
+            if (RunFlowRuntime.CreditsWaiting || LoadingScreenHandler.loading)
+                break;
+        }
+        if (!RunFlowRuntime.CreditsWaiting && !LoadingScreenHandler.loading)
+        {
+            Fail(
+                $"Next did not close the end screen after 3 laser presses (last press on {pressed}, "
+                    + $"Next active {end.nextButton.gameObject.activeInHierarchy}, interactable {end.nextButton.interactable})"
+            );
             yield break;
+        }
         string credits = "no credits (lost run)";
         if (RunFlowRuntime.CreditsWaiting)
         {
