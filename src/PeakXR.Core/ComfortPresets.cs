@@ -43,15 +43,15 @@ namespace PeakXR.Core
             switch (preset)
             {
                 case ComfortPreset.Comfortable:
-                    // Snap-only turning, strong vignette, gentle acceleration.
+                    // Snap-only turning, strong vignette, instant start and stop (constant speed beats a ramp).
                     return new ComfortProfile
                     {
                         Turn = TurnMode.Snap,
                         SnapAngle = 30f,
-                        SmoothTurnSpeed = 90f,
+                        SmoothTurnSpeed = 45f,
                         Vignette = true,
                         VignetteStrength = 0.8f,
-                        MoveSmoothing = 0.3f,
+                        MoveSmoothing = 0f,
                     };
                 case ComfortPreset.Intense:
                     return new ComfortProfile
@@ -64,17 +64,66 @@ namespace PeakXR.Core
                         MoveSmoothing = 0f,
                     };
                 default:
-                    // Moderate: the design defaults (snap 30 deg, medium vignette).
+                    // Moderate: the design defaults (snap 30 deg, medium vignette, instant moves; smooth turn when
+                    // chosen at 60 deg/s, the research ceiling).
                     return new ComfortProfile
                     {
                         Turn = TurnMode.Snap,
                         SnapAngle = 30f,
-                        SmoothTurnSpeed = 120f,
+                        SmoothTurnSpeed = 60f,
                         Vignette = true,
                         VignetteStrength = 0.5f,
-                        MoveSmoothing = 0.15f,
+                        MoveSmoothing = 0f,
                     };
             }
+        }
+
+        /// <summary>A preset as it shipped before the vr-practices review (Comfortable ramped 0.3 s and Moderate
+        /// 0.15 s; Moderate smooth-turned 120 deg/s, Comfortable 90): what a config still holds if nobody changed
+        /// it. Intense did not change.</summary>
+        public static ComfortProfile Old(ComfortPreset preset)
+        {
+            var p = Get(preset);
+            switch (preset)
+            {
+                case ComfortPreset.Comfortable:
+                    p.SmoothTurnSpeed = 90f;
+                    p.MoveSmoothing = 0.3f;
+                    break;
+                case ComfortPreset.Moderate:
+                    p.SmoothTurnSpeed = 120f;
+                    p.MoveSmoothing = 0.15f;
+                    break;
+            }
+            return p;
+        }
+
+        /// <summary>
+        /// A saved config that still holds <paramref name="preset"/>'s old values exactly (every setting, the unused
+        /// ones too) was never changed by the player: it moves to the preset's current values. Anything else is the
+        /// player's choice and stays. False for Custom, Intense, or any edited value.
+        /// </summary>
+        public static bool FromOld(
+            ComfortPreset preset,
+            ComfortProfile saved,
+            out ComfortProfile updated
+        )
+        {
+            updated = saved;
+            if (preset != ComfortPreset.Comfortable && preset != ComfortPreset.Moderate)
+                return false;
+            var old = Old(preset);
+            if (
+                old.Turn != saved.Turn
+                || old.Vignette != saved.Vignette
+                || !Near(old.SnapAngle, saved.SnapAngle)
+                || !Near(old.SmoothTurnSpeed, saved.SmoothTurnSpeed)
+                || !Near(old.VignetteStrength, saved.VignetteStrength)
+                || !Near(old.MoveSmoothing, saved.MoveSmoothing)
+            )
+                return false;
+            updated = Get(preset);
+            return true;
         }
 
         /// <summary>The preset <paramref name="profile"/> matches, ignoring settings its turn and vignette modes do
@@ -139,8 +188,9 @@ namespace PeakXR.Core
     /// <summary>Opening of the comfort vignette ring, as half-angles from the view centre in degrees.</summary>
     public static class VignetteShape
     {
-        /// <summary>Clear-view half-angle at intensity 0 (outside a typical headset field of view).</summary>
-        public const float OpenAngle = 70f;
+        /// <summary>Clear-view half-angle at intensity 0: just at a typical headset's edge (50-55 degrees to each
+        /// side), so the ring shows from the first bit of motion (vr-practices-review P0-1).</summary>
+        public const float OpenAngle = 55f;
 
         /// <summary>Clear-view half-angle at full intensity.</summary>
         public const float ClosedAngle = 22f;

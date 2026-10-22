@@ -12,12 +12,13 @@ public class ComfortTests
     }
 
     [Fact]
-    public void Comfortable_IsSnapOnlyWithSmoothing()
+    public void Comfortable_IsSnapOnly_WithInstantStartAndStop()
     {
+        // Constant speed beats a ramp: acceleration is what makes vection sick (vr-practices-review P1-1).
         var p = ComfortPresets.Get(ComfortPreset.Comfortable);
         Assert.Equal(TurnMode.Snap, p.Turn);
         Assert.True(p.Vignette);
-        Assert.True(p.MoveSmoothing > 0f);
+        Assert.Equal(0f, p.MoveSmoothing);
     }
 
     [Fact]
@@ -27,6 +28,58 @@ public class ComfortTests
         Assert.Equal(TurnMode.Snap, p.Turn);
         Assert.Equal(30f, p.SnapAngle);
         Assert.True(p.Vignette);
+        Assert.Equal(0f, p.MoveSmoothing);
+        // Smooth turn, when chosen, inside the 60-75 deg/s band (P2-2).
+        Assert.InRange(p.SmoothTurnSpeed, 60f, 75f);
+    }
+
+    [Theory]
+    [InlineData(ComfortPreset.Moderate, 45f)]
+    [InlineData(ComfortPreset.Comfortable, 32f)]
+    public void Vignette_ShowsAtWalkingSpeed(ComfortPreset preset, float maxClearDegrees)
+    {
+        // vr.17 walked 2.69 m/s; a typical headset shows 50-55 degrees to each side (P0-1).
+        var v = new ComfortVignette { Strength = ComfortPresets.Get(preset).VignetteStrength };
+        for (int i = 0; i < 300; i++)
+            v.Update(2.69f, 0f, 1f / 90f);
+        Assert.True(
+            VignetteShape.InnerAngle(v.Intensity) <= maxClearDegrees,
+            $"clear to {VignetteShape.InnerAngle(v.Intensity):0} deg"
+        );
+    }
+
+    [Fact]
+    public void Vignette_StartsWithAnyArtificialMotion()
+    {
+        var v = new ComfortVignette { Strength = 0.5f };
+        for (int i = 0; i < 90; i++)
+            v.Update(0.4f, 0f, 1f / 90f);
+        Assert.True(v.Intensity > 0.01f);
+    }
+
+    [Theory]
+    [InlineData(ComfortPreset.Comfortable)]
+    [InlineData(ComfortPreset.Moderate)]
+    public void Migration_MovesAnOldPresetsUntouchedValues(ComfortPreset preset)
+    {
+        var old = ComfortPresets.Old(preset);
+        Assert.True(ComfortPresets.FromOld(preset, old, out var updated));
+        Assert.Equal(preset, ComfortPresets.Identify(updated));
+    }
+
+    [Fact]
+    public void Migration_KeepsAPlayersOwnValues()
+    {
+        var mine = ComfortPresets.Old(ComfortPreset.Comfortable);
+        mine.MoveSmoothing = 0.5f;
+        Assert.False(ComfortPresets.FromOld(ComfortPreset.Comfortable, mine, out _));
+        Assert.False(
+            ComfortPresets.FromOld(
+                ComfortPreset.Custom,
+                ComfortPresets.Old(ComfortPreset.Moderate),
+                out _
+            )
+        );
     }
 
     [Fact]

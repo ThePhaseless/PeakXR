@@ -13,9 +13,10 @@ namespace PeakXR.Core
         /// <summary>Maximum intensity, 0..1.</summary>
         public float Strength = 0.6f;
 
-        /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength.</summary>
-        public float LinearMin = 1f,
-            LinearMax = 4f;
+        /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength: any artificial
+        /// motion starts it, and it is full at walking speed (vr.17 walked 2.7 m/s).</summary>
+        public float LinearMin = 0.2f,
+            LinearMax = 2.5f;
 
         /// <summary>Angular speed (deg/s) where the vignette starts and where it reaches full strength.</summary>
         public float AngularMin = 30f,
