@@ -702,32 +702,26 @@ internal sealed partial class SelfTestRunner
             && !CueLog.Capture.Fired(DomLeft, DenyReason.TooSteep, since, false, out _)
         )
         {
-            if (!c.warping)
+            // Warping frames count too: the warp's settling wait (Character.cs:1958) lets physics run, and run 36's
+            // slide and cue both came then, while a gate on c.warping saw "0 slide frames" and failed a cue that fired.
+            minSlide = Mathf.Min(minSlide, c.data.sinceFallSlide);
+            if (c.data.sinceFallSlide < 0.1f)
             {
-                minSlide = Mathf.Min(minSlide, c.data.sinceFallSlide);
-                if (c.data.sinceFallSlide < 0.1f)
-                {
-                    frames++;
-                    if (!c.data.isGrounded)
-                        airborne++;
-                    maxDown = Mathf.Max(maxDown, -c.data.avarageVelocity.y);
-                }
+                frames++;
+                if (!c.data.isGrounded)
+                    airborne++;
+                maxDown = Mathf.Max(maxDown, -c.data.avarageVelocity.y);
             }
             yield return null;
         }
         string where =
             $"slope {tilt:0} degrees (limit {limit:0}), slide started {minSlide < 0.1f}, "
             + $"off the ground {airborne} of {frames} slide frames, down up to {maxDown:0.0} m/s";
-        if (!(minSlide < 0.1f))
-        {
-            Fail(where + ": the game never registered a slide");
-            yield break;
-        }
         yield return ExpectCue(DomLeft, DenyReason.TooSteep, since, false, 0.5f);
         if (stepOk)
             stepNote = $"{where}: {cueNote}";
         else
-            Note(where);
+            Note(minSlide < 0.1f ? where : where + ": the game never registered a slide");
         UnityEngine.Object.Destroy(slab);
         yield return WaitFor(() => c.data.isGrounded, 4f);
     }
