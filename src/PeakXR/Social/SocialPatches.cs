@@ -250,9 +250,13 @@ internal static class SocialPatches
                 && c.player != null;
         }
 
-        private static void Prefix(CharacterCarrying __instance, out bool __state) =>
-            __state =
-                IsLocal(__instance) && !Character.localCharacter.player.backpackSlot.IsEmpty();
+        private static void Prefix(CharacterCarrying __instance, out bool __state)
+        {
+            bool local = IsLocal(__instance);
+            if (local)
+                SocialHands.CarryStarts++;
+            __state = local && !Character.localCharacter.player.backpackSlot.IsEmpty();
+        }
 
         private static void Postfix(
             CharacterCarrying __instance,

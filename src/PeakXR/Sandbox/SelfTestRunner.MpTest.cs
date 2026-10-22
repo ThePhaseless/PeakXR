@@ -1376,7 +1376,16 @@ internal sealed partial class SelfTestRunner
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
         // 1.4 m under the floor toward a host down the slope).
         float gap = Vector3.Distance(rig.Head.position, Mouth());
+        // Still more than a bent arm away (MP run 13: 0.87 m, the walk stopped against the host): one more, closer step.
         if (gap > MpArmReach - 0.15f)
+        {
+            yield return MpWalkBounded(HostCenter, 0.3f, 4f);
+            Face(Mouth());
+            yield return Wait(0.3f);
+            gap = Vector3.Distance(rig.Head.position, Mouth());
+        }
+        // The item reaches past the hand, so a mouth up to a full arm plus the item away is in reach.
+        if (gap > MpArmReach + 0.1f)
         {
             stepSkip = $"the host's head is {gap:0.00} m from A's, out of arm's reach";
             yield break;
@@ -1553,13 +1562,30 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(false, () => HostPart(host, BodypartType.Hip), 0.5f);
         Script(true).Grip = Script(false).Grip = 1f;
         float hold = GameTiming.InteractSeconds(host.refs.interactible, c);
-        yield return Until(
-            () => c.data.carriedPlayer == host,
-            GameTiming.Budget(hold, 1f),
-            "the host was not lifted"
-        );
-        if (!stepOk)
+        // Watch the lift frame by frame (MP run 13: B logged RPCA_StartCarry and RPCA_Drop from A 1 ms apart, so A
+        // lifted and dropped at once): on a drop, say what the game's own drop paths would have seen
+        // (CharacterCarrying.Update :28-32, CharacterInteractible.Interact :116-119, CharacterItems.OnPickupAccepted
+        // slot 3 :459-462).
+        float liftEnd = Now + GameTiming.Budget(hold, 1f);
+        int startsBefore = SocialHands.CarryStarts;
+        string dropped = null;
+        while (Now < liftEnd && c.data.carriedPlayer != host)
+        {
+            bool lifted = SocialHands.CarryStarts > startsBefore;
+            if (c.data.carriedPlayer == null && lifted && dropped == null)
+                dropped = F(
+                    $"lifted then dropped: host fully passed out {host.data.fullyPassedOut}, dead {host.data.dead}, A down {c.data.fullyPassedOut}, A slot {(c.refs.items.currentSelectedSlot.IsSome ? c.refs.items.currentSelectedSlot.Value.ToString(CultureInfo.InvariantCulture) : "none")}, A wore a pack {pack}, interact held {c.input.interactIsPressed}"
+                );
+            yield return null;
+        }
+        if (c.data.carriedPlayer != host)
+        {
+            Fail(
+                dropped
+                    ?? $"the host was not lifted (host fully passed out {host.data.fullyPassedOut})"
+            );
             yield break;
+        }
         if (pack)
             yield return ExpectCue(SocialHands.Instance.CarryLeft, DenyReason.Dropped, mark);
         if (!stepOk)
@@ -1596,7 +1622,9 @@ internal sealed partial class SelfTestRunner
             host != null && host.refs.backpackHandler != null
                 ? host.refs.backpackHandler.activeBackpackVisuals
                 : null;
-        if (visuals == null || !visuals.isActiveAndEnabled)
+        // The visuals component answers even with an empty backpack slot (SocialHands.WearsPack; MP run 13 "held" an
+        // invisible pack on a host who had none).
+        if (visuals == null || !SocialHands.WearsPack(host))
         {
             stepSkip = "the host wears no pack";
             yield break;
