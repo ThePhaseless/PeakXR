@@ -19,6 +19,9 @@ internal static class LocomotionConfig
     public static bool RoomScale => roomScale?.Value ?? true;
     public static float LeanRadius => leanRadius?.Value ?? 0.35f;
 
+    /// <summary>The room-scale setting, so the self-test can hold the body still for its blocked step.</summary>
+    internal static ConfigEntry<bool> RoomScaleSetting => roomScale;
+
     public static void Bind(ConfigFile file)
     {
         const string s = "Locomotion";
