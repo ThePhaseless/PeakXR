@@ -60,7 +60,8 @@ internal sealed class VoiceRuntime : MonoBehaviour
         LogConflict(button.Value);
     }
 
-    /// <summary>The picked button still does its own job: say which (Bindings.cs BindingTable.Conflict).</summary>
+    /// <summary>Logs which job the picked button gives up while it talks (Bindings.cs BindingTable.Conflict;
+    /// LocomotionInput reserves the control).</summary>
     private static void LogConflict(string name)
     {
         bool dominantLeft = VRInput.LeftHanded;
@@ -74,8 +75,8 @@ internal sealed class VoiceRuntime : MonoBehaviour
                 out var action
             )
         )
-            Plugin.Log.LogWarning(
-                $"[voice] Voice.PushToTalkButton {name} also presses {action}; both happen on that button"
+            Plugin.Log.LogInfo(
+                $"[voice] Voice.PushToTalkButton {name} replaces {action} while that button talks"
             );
     }
 
