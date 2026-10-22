@@ -89,6 +89,12 @@ public static class PromptGlyph
     /// else it is a held item used on a friend.</summary>
     public static PromptVerb Secondary(bool piton) => piton ? PromptVerb.Piton : PromptVerb.Use;
 
+    /// <summary>Whether <paramref name="verb"/>'s glyph shows at the target. With target names off
+    /// (<c>UI.TargetNames</c>) a plain pickup is shown by the game's glow alone, so the obvious grab glyph goes;
+    /// every other verb still needs its glyph.</summary>
+    public static bool InPlace(PromptVerb verb, bool targetNames) =>
+        targetNames || verb != PromptVerb.Grab;
+
     // Indexed by PromptVerb.
     private static readonly Vector2[][] First =
     {

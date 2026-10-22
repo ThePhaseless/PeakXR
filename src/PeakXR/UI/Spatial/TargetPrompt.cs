@@ -24,7 +24,9 @@ namespace PeakXR.UI.Spatial;
 /// interaction (ui.hand) goes just below the label through <see cref="TryRing"/>.
 /// D8: in VR the verb text (GRAB, CARRY, DROP, EAT, SETPITON, lunge, struggle) gives way to a glyph drawn where the
 /// text was (<see cref="PromptGlyph"/>), the struggle glyph on both wrists, with a tick (and for lunge and struggle a
-/// notice) when a hand prompt appears. The item or object name stays. <c>UI.ActionHintText</c> brings the text back.
+/// notice) when a hand prompt appears. <c>UI.ActionHintText</c> brings the verb text back. The item or object name
+/// shows only with <c>UI.TargetNames</c>; without it a plain pickup has no grab glyph either, only the game's glow
+/// on what the hand would grab (<see cref="GripGlow"/>).
 /// </summary>
 internal sealed class TargetPrompt
 {
@@ -85,6 +87,10 @@ internal sealed class TargetPrompt
     }
 
     private readonly List<CanvasRenderer> verbTexts = new();
+
+    /// <summary>The target's name (<c>interactName</c>), hidden in VR unless <c>UI.TargetNames</c>.</summary>
+    private readonly List<CanvasRenderer> nameTexts = new();
+    private readonly GripGlow glow = new();
     private readonly Vector3[] partCentre = new Vector3[Parts];
     private readonly GlyphView[] views = new GlyphView[Glyphs];
     private readonly PromptVerb[] verbs = new PromptVerb[Glyphs];
@@ -93,11 +99,15 @@ internal sealed class TargetPrompt
         holdDrawn = -1f;
     private GameObject glyphRoot;
     private bool textHidden,
+        nameHidden,
         lungeShown,
         pitonShown;
 
     /// <summary>For the self-test: the prompt's verb text is hidden now (VR, <c>UI.ActionHintText</c> off).</summary>
     public static bool TextHidden => current != null && current.textHidden;
+
+    /// <summary>For the self-test: the target's name is hidden now (VR, <c>UI.TargetNames</c> off).</summary>
+    public static bool NameHidden => current != null && current.nameHidden;
 
     /// <summary>For the self-test: a glyph for <paramref name="verb"/> is drawn now.</summary>
     public static bool Drawn(PromptVerb verb)
@@ -139,7 +149,10 @@ internal sealed class TargetPrompt
     public void Release()
     {
         SetTextAlpha(1f);
+        SetAlpha(nameTexts, 1f);
+        glow.Release();
         verbTexts.Clear();
+        nameTexts.Clear();
         ClearGlyphs();
         box.Restore();
         target = null;
@@ -149,7 +162,9 @@ internal sealed class TargetPrompt
 
     public void Forget()
     {
+        glow.Release();
         verbTexts.Clear();
+        nameTexts.Clear();
         ClearGlyphs();
         box.Forget();
         target = null;
@@ -194,6 +209,9 @@ internal sealed class TargetPrompt
         box.SetVisible(target != null || anyShown);
         textHidden = VRSession.Active && !(AffordanceFeature.ActionHintText?.Value ?? false);
         SetTextAlpha(textHidden ? 0f : 1f);
+        nameHidden = VRSession.Active && !SpatialFeature.Settings.TargetNames.Value;
+        SetAlpha(nameTexts, nameHidden ? 0f : 1f);
+        glow.Tick();
         PickVerbs(rig);
         Pose(rig);
     }
@@ -296,9 +314,11 @@ internal sealed class TargetPrompt
 
     /// <summary>The game's prompt texts (GUIManager.cs:1049, :1065, :1083, the lunge and struggle prompts) through
     /// the renderer alpha, so the game's own writes still land and <see cref="Release"/> shows them again.</summary>
-    private void SetTextAlpha(float alpha)
+    private void SetTextAlpha(float alpha) => SetAlpha(verbTexts, alpha);
+
+    private static void SetAlpha(List<CanvasRenderer> list, float alpha)
     {
-        foreach (var r in verbTexts)
+        foreach (var r in list)
         {
             if (r != null && r.GetAlpha() != alpha)
                 r.SetAlpha(alpha);
@@ -328,7 +348,9 @@ internal sealed class TargetPrompt
         }
         pitonShown = piton;
         lungeShown = lunge;
-        verbs[0] = inPlace && shown[1] ? PrimaryVerb() : PromptVerb.None;
+        var primary = inPlace && shown[1] ? PrimaryVerb() : PromptVerb.None;
+        // Names off: a plain pickup is shown by its glow alone (GripGlow), not a grab glyph.
+        verbs[0] = PromptGlyph.InPlace(primary, !nameHidden) ? primary : PromptVerb.None;
         verbs[1] = inPlace && shown[2] ? PromptGlyph.Secondary(piton) : PromptVerb.None;
         verbs[2] = inPlace && lunge ? PromptVerb.Lunge : PromptVerb.None;
         verbs[3] = verbs[4] = struggle;
@@ -578,6 +600,7 @@ internal sealed class TargetPrompt
     private void Grab(GUIManager gui, RectTransform hudRoot)
     {
         verbTexts.Clear();
+        nameTexts.Clear();
         // Stack order, top to bottom.
         parts[0] = gui.interactName;
         parts[1] = gui.interactPromptPrimary;
@@ -597,13 +620,10 @@ internal sealed class TargetPrompt
                 if (i <= 3)
                     box.HideBackings(parts[i].transform);
                 // Every part but the name carries a verb (D8).
-                if (i > 0)
-                {
-                    parts[i].GetComponentsInChildren(true, texts);
-                    foreach (var t in texts)
-                        verbTexts.Add(t.canvasRenderer);
-                    texts.Clear();
-                }
+                parts[i].GetComponentsInChildren(true, texts);
+                foreach (var t in texts)
+                    (i > 0 ? verbTexts : nameTexts).Add(t.canvasRenderer);
+                texts.Clear();
             }
         }
         if (

@@ -124,4 +124,15 @@ public class PromptGlyphTests
         foreach (var p in ring)
             Assert.Equal(PromptGlyph.HoldRadius, p.Length(), 3);
     }
+
+    [Fact]
+    public void TargetNamesOff_DropsOnlyTheObviousGrab()
+    {
+        // UI.TargetNames off: a plain pickup shows only the game's glow; every other verb still needs its glyph.
+        Assert.False(PromptGlyph.InPlace(PromptVerb.Grab, targetNames: false));
+        Assert.True(PromptGlyph.InPlace(PromptVerb.Grab, targetNames: true));
+        foreach (var verb in Enum.GetValues<PromptVerb>())
+            if (verb != PromptVerb.Grab)
+                Assert.True(PromptGlyph.InPlace(verb, targetNames: false));
+    }
 }
