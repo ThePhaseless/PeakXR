@@ -1296,30 +1296,32 @@ internal sealed partial class SelfTestRunner
         if (!stepOk || stepSkip != null)
             yield break;
         var item = HeldItem();
-        yield return WalkTo(HostCenter, 0.6f, true);
-        if (!stepOk)
-            yield break;
+        // Close enough that the item reaches the mouth with the arm short of full stretch (MP run 10: from 0.6 m the
+        // hand, capped at arm's reach, held the Frisbee 0.45 m from the head, outside the 0.22 m mouth zone).
+        // Not a must-arrive: the host's own body can stop the walk a little short; the reach check below decides.
+        yield return WalkTo(HostCenter, 0.45f, false);
         var host = Host();
         var rig = VRRig.Instance;
+        // The zone SocialHands.UpdateFeed tests: the item's centre within FeedRadius of the Head bodypart.
+        Vector3 Mouth() => HostPart(host, BodypartType.Head);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
         // 1.4 m under the floor toward a host down the slope).
-        float gap = Vector3.Distance(rig.Head.position, host.Head);
-        if (gap > MpArmReach)
+        float gap = Vector3.Distance(rig.Head.position, Mouth());
+        if (gap > MpArmReach - 0.15f)
         {
             stepSkip = $"the host's head is {gap:0.00} m from A's, out of arm's reach";
             yield break;
         }
-        Face(host.Head);
+        Face(Mouth());
         bool left = LocalHold.ItemInLeftHand;
         float mark = CueMark();
-        float end = Now + 3f;
+        float end = Now + 4f;
         float best = float.MaxValue;
         while (Now < end && HeldItem() == item)
         {
-            best = Mathf.Min(best, Vector3.Distance(item.Center(), host.Head));
+            best = Mathf.Min(best, Vector3.Distance(item.Center(), Mouth()));
             var goal =
-                Script(left).Position
-                + rig.Origin.InverseTransformVector(host.Head - item.Center());
+                Script(left).Position + rig.Origin.InverseTransformVector(Mouth() - item.Center());
             goal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
@@ -1524,9 +1526,31 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        yield return WalkTo(() => host.Center - host.data.lookDirection_Flat * 0.8f, 0.3f, true);
-        if (!stepOk)
+        // A spot behind the host: straight behind, else 45° to either side of behind (the pack still faces
+        // the hand from there). MP run 10: straight behind was blocked 1.2 m short.
+        var c = Character.localCharacter;
+        bool behind = false;
+        foreach (float yaw in new[] { 0f, 45f, -45f })
+        {
+            var back = Quaternion.Euler(0f, yaw, 0f) * -host.data.lookDirection_Flat.normalized;
+            Vector3 Spot() => host.Center + back * 0.8f;
+            yield return WalkTo(Spot, 0.3f, false);
+            var miss = Spot() - c.Center;
+            miss.y = 0f;
+            if (
+                miss.magnitude <= 0.5f
+                && Vector3.Dot(c.Center - host.Center, host.data.lookDirection_Flat) < 0f
+            )
+            {
+                behind = true;
+                break;
+            }
+        }
+        if (!behind)
+        {
+            stepSkip = "no reachable spot behind the host";
             yield break;
+        }
         Face(visuals.transform.position);
         // Turn away: vanilla needs the look within 110° of the pack's facing (BackpackOnBackVisuals.cs:99-104).
         VRRig.Instance.RotateYaw(150f);
