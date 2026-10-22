@@ -220,7 +220,7 @@ internal sealed partial class SelfTestRunner
             Fail("no right foot");
             yield break;
         }
-        // The game refuses a new stick within 3 s of the last unstick (Character.cs:2170).
+        // The game refuses a new stick within 3 s of the last unstick (Character.cs:2166).
         float end = Now + 5f;
         while (!c.IsStuck() && Now < end)
         {
@@ -292,7 +292,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.104: webbed (sandbox AddStatus Web 0.5; isStruggling, CharacterAfflictions.cs:199), hands shaken up and
-    /// down: each stroke is a jump press, which tears 0.05 of the web (CharacterMovement.cs:663), and each is felt as
+    /// down: each stroke is a jump press, which tears 0.05 of the web (CharacterMovement.cs:657), and each is felt as
     /// a progress tick.
     /// </summary>
     IEnumerator StruggleStep()
@@ -342,7 +342,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.105: passed out (sandbox PassOut, Character.PassOut), a single grip must not speed up dying
-    /// (Character.cs:1177-1181): it is refused with NeedsTwoHands and interact stays up. Both grips and both triggers
+    /// (Character.cs:1174-1178): it is refused with NeedsTwoHands and interact stays up. Both grips and both triggers
     /// give up on purpose: interact is held and the progress ramp follows the death timer.
     /// </summary>
     IEnumerator GiveUpStep()

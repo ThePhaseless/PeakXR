@@ -59,6 +59,10 @@ public static partial class SandboxActions
     // Resolved by SandboxFeature.Install; null makes the free camera report "unavailable".
     internal static AccessTools.FieldRef<MainCameraMovement, bool> GodCamRef;
 
+    // Character.statusesLocked's setter, public up to 2.6.b and private since 3.0 (Character.cs:286), so it is
+    // resolved by name. Set by SandboxFeature.Install.
+    internal static Action<Character, bool> SetStatusesLocked;
+
     // ---------------------------------------------------------------- state
 
     /// <summary>Config switch <c>Sandbox.Enabled</c>, or forced on for this run by the self-test.</summary>
@@ -459,7 +463,7 @@ public static partial class SandboxActions
         if (c == null)
             return;
         c.infiniteStam = on;
-        c.statusesLocked = on;
+        SetStatusesLocked?.Invoke(c, on);
     }
 
     /// <summary>Called by the driver a few times a second.</summary>
@@ -503,7 +507,7 @@ public static partial class SandboxActions
     /// <summary>
     /// Everything a status or affliction leaves on <paramref name="c"/>: statuses, afflictions, and the timed screen
     /// statuses such as BLIND (<c>IllegalScreenEffect.AddStatus</c>, IllegalScreenEffect.cs:65, reached through
-    /// <c>Character.illegalStatusAction</c>, Character.cs:186), which ClearAll leaves running.
+    /// <c>Character.illegalStatusAction</c>, Character.cs:189), which ClearAll leaves running.
     /// </summary>
     internal static void ClearAll(Character c)
     {
@@ -534,7 +538,7 @@ public static partial class SandboxActions
         }
         if (!data.dead)
         {
-            // The game's command warps to the last death spot (Character.cs:1770), which a pass-out never set.
+            // The game's command warps to the last death spot (Character.cs:1767), which a pass-out never set.
             c.photonView.RPC("RPCA_ReviveAtPosition", RpcTarget.All, c.Center, false, -1);
             Say("Woke up where you lay.");
             return true;

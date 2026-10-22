@@ -32,7 +32,7 @@ internal static class GameTiming
         item != null ? item.totalSecondaryUsingTime : 0f;
 
     /// <summary>Interact hold: <c>GetInteractTime</c> (IInteractibleConstant.cs:7, read at Interaction.cs:122):
-    /// a campfire's <c>cookTime</c> to light or cook (Campfire.cs:429), a suitcase's <c>timeToOpen</c>
+    /// a campfire's <c>cookTime</c> to light or cook (Campfire.cs:441), a suitcase's <c>timeToOpen</c>
     /// (Luggage.cs:214).</summary>
     internal static float InteractSeconds(IInteractibleConstant target, Character c) =>
         target != null ? target.GetInteractTime(c) : 0f;

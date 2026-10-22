@@ -158,7 +158,7 @@ internal static class LocomotionInput
         // Real time, like rig.camera's recenter hold, so the menu tap and hold share one clock at any timeScale.
         Mapper.Update(Controller(VRInput.Left), Controller(VRInput.Right), Time.unscaledDeltaTime);
 
-        // Vanilla samples these even while input is blocked (CharacterInput.cs:215-219, :262-264): the emote wheel
+        // Vanilla samples these even while input is blocked (CharacterInput.cs:215-219, :269-271): the emote wheel
         // stays open only while Emote is held, and Pause must reach an open menu.
         input.pauseWasPressed |= Mapper.Pressed(VRAction.Pause);
         input.emoteIsPressed |= Mapper.Held(VRAction.Emote);
@@ -523,7 +523,7 @@ internal static class LocomotionInput
         || item.OnScrollBackwardHeld != null;
 
     /// <summary>
-    /// ResetInput does not clear these while input is blocked (CharacterInput.cs:297 vs :212), so a press written on
+    /// ResetInput does not clear these while input is blocked (CharacterInput.cs:304 vs :212), so a press written on
     /// the last unblocked frame would repeat every frame a menu stays open. Clear them once on that transition.
     /// </summary>
     private static void ClearSticky(CharacterInput input)

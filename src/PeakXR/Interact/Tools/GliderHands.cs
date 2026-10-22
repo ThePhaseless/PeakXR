@@ -10,7 +10,7 @@ namespace PeakXR.Interact.Tools;
 /// so looking around would steer. With both grips closed on the wing, the push follows the heading of the spread
 /// arms instead (<see cref="GliderSteer"/>): the player turns the glide with the arms and looks freely. The held
 /// wing's pose already comes from the holding hand (avatar.local replaces the look-based item frame of
-/// CharacterRagdoll.cs:226-235), so only the force needs redirecting.
+/// CharacterRagdoll.cs:234-243), so only the force needs redirecting.
 /// </summary>
 internal static class GliderHands
 {

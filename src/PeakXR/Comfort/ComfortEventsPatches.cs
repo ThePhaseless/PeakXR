@@ -72,7 +72,7 @@ internal static class ComfortEventsPatches
     }
 
     /// <summary>
-    /// Character.RPCA_Fall(float, float) (Character.cs:1752, [PunRPC] on every client; Character.Fall :1735 feeds it):
+    /// Character.RPCA_Fall(float, float) (Character.cs:1749, [PunRPC] on every client; Character.Fall :1732 feeds it):
     /// the body starts tumbling (CH-30, CH-31, IT-05, IT-47, EN-03, EN-11, EN-14, EN-15, EN-30, EN-42, EN-44).
     /// </summary>
     [HarmonyPatch]
@@ -89,7 +89,7 @@ internal static class ComfortEventsPatches
     }
 
     /// <summary>
-    /// Character.RPCA_AddForceAtPosition(Vector3, Vector3, float) (Character.cs:461, [PunRPC] on every client):
+    /// Character.RPCA_AddForceAtPosition(Vector3, Vector3, float) (Character.cs:458, [PunRPC] on every client):
     /// impulse knockbacks from mobs, bonks, arrows, axes, rollers, explosions (CH-32, IT-47, EN-02, EN-03, EN-30,
     /// EN-44, EN-46, EN-48, EN-56). Vanilla impulses run 200 to 500+.
     /// </summary>
@@ -127,7 +127,7 @@ internal static class ComfortEventsPatches
     }
 
     /// <summary>
-    /// Character.RPCA_AddForceToBodyPart(BodypartType, Vector3, Vector3) (Character.cs:2086, [PunRPC]): drags by
+    /// Character.RPCA_AddForceToBodyPart(BodypartType, Vector3, Vector3) (Character.cs:2082, [PunRPC]): drags by
     /// tongue, web, flytrap and rescue hook every frame, breakable pushes and the bad-mushroom launch (IN-18, EN-04,
     /// EN-07, EN-14, IC-53).
     /// </summary>
@@ -190,7 +190,7 @@ internal static class ComfortEventsPatches
         }
     }
 
-    /// <summary>CharacterMovement.DoSuperJump(float, float, int, float) (CharacterMovement.cs:493): super jump
+    /// <summary>CharacterMovement.DoSuperJump(float, float, int, float) (CharacterMovement.cs:487): super jump
     /// amulet and mass super jump (IT-52, ST-39).</summary>
     [HarmonyPatch]
     internal static class SuperJump
@@ -561,8 +561,8 @@ internal static class ComfortEventsPatches
     }
 
     /// <summary>
-    /// Hard cuts to Title (MF-19): NetworkConnector.LeaveRoom (NetworkConnector.cs:394, the quit path from
-    /// PauseMenuMainPage.Quit :199) starts a fade while the room is left; NetworkConnector.OnLeftRoom (:217) and
+    /// Hard cuts to Title (MF-19): NetworkConnector.LeaveRoom (NetworkConnector.cs:407, the quit path from
+    /// PauseMenuMainPage.Quit :206) starts a fade while the room is left; NetworkConnector.OnLeftRoom (:220) and
     /// KickedState.Enter (KickedState.cs:22) call SceneManager.LoadScene at once, so the view goes black right
     /// before. ui.menu fades back in after the new scene (UIMenuRuntime.FadeInAfterCut).
     /// </summary>

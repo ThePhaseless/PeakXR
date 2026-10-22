@@ -431,7 +431,7 @@ public partial class AvatarPoseDriver
     /// <summary>
     /// Bends the animated spine (<see cref="spine"/>, about its own joint) so the avatar's eyes swing toward the
     /// tracked head within <see cref="BodyLean"/>'s limits; the head keeps its world rotation (the neck takes it).
-    /// Runs in the animated pose before <c>SaveAnimationData</c> (CharacterRagdoll.cs:166-169), so the ragdoll is
+    /// Runs in the animated pose before <c>SaveAnimationData</c> (CharacterRagdoll.cs:170-174), so the ragdoll is
     /// driven into the lean like any animation, for remote characters as well. Every gate fades the lean over
     /// <see cref="LeanFadeSeconds"/> (the last swing is held while it fades): climbing, a piton or rope hang
     /// (<c>currentClimbHandle</c>, set by <c>StartHang</c>), gliding, a full-body emote, the setting, the head below

@@ -45,7 +45,7 @@ public static partial class SandboxActions
             return false;
         LiftGodMode();
         var c = Character.localCharacter;
-        // AddStamina clamps to the max and redraws the bar (Character.cs:1601); SetExtraStamina too (:1621).
+        // AddStamina clamps to the max and redraws the bar (Character.cs:1598); SetExtraStamina too (:1618).
         c.AddStamina(current - c.data.currentStamina);
         c.SetExtraStamina(extra);
         Say(
@@ -54,7 +54,7 @@ public static partial class SandboxActions
         return true;
     }
 
-    /// <summary>Max stamina is 1 minus the status sum (Character.cs:1616): set through Hunger, so the bar shows
+    /// <summary>Max stamina is 1 minus the status sum (Character.cs:1613): set through Hunger, so the bar shows
     /// it as the game would. Rounded to the game's 1/40 status step.</summary>
     public static bool SetMaxStamina(float max)
     {
@@ -101,7 +101,7 @@ public static partial class SandboxActions
         return true;
     }
 
-    /// <summary>The game's <c>Character.PassOut</c> command (Character.cs:986): full Hunger, so the body stays out,
+    /// <summary>The game's <c>Character.PassOut</c> command (Character.cs:983): full Hunger, so the body stays out,
     /// then <c>RPCA_PassOut</c>. Outside the airport only (no statuses there, so it wakes again in 3 s).</summary>
     public static bool PassOut()
     {

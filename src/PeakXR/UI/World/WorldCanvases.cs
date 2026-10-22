@@ -458,7 +458,7 @@ internal static class WorldCanvases
         if (t.Modal != null && !t.Modal.Visible)
             return false;
         // A page handler (pause menu) is shown while it is active; its windows are popups such as the
-        // quit confirm (PauseMenuMainPage.cs:32), closed most of the time. Zorro OverlayUIHandler.IsOpen agrees.
+        // quit confirm (PauseMenuMainPage.cs:38), closed most of the time. Zorro OverlayUIHandler.IsOpen agrees.
         if (t.Pages != null)
             return t.Pages.isActiveAndEnabled;
         if (t.Windows.Length == 0)

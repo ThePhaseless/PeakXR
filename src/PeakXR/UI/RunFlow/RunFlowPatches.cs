@@ -12,8 +12,8 @@ namespace PeakXR.UI.RunFlow;
 
 /// <summary>Every teleport of the local character goes through one method: warp items
 /// (Action_WarpToRandomPlayer.cs:33 WarpPlayerRPC), segment jumps and biome warps
-/// (MapHandler.cs:971), revives (Character.cs:1806), checkpoints (Character.cs:664), throw warps.
-/// Blink to black around it. A/Character.cs:1847 <c>internal void WarpPlayer(Vector3, bool)</c>.</summary>
+/// (MapHandler.cs:1094), revives (Character.cs:1803), checkpoints (Character.cs:661), throw warps.
+/// Blink to black around it. A/Character.cs:1849 <c>internal void WarpPlayer(Vector3, bool)</c>.</summary>
 [HarmonyPatch]
 internal static class WarpPlayerPatch
 {
@@ -28,8 +28,8 @@ internal static class WarpPlayerPatch
 }
 
 /// <summary>Campfire segment advance: arm the fade; it starts once the fog has caught up, 1 s before
-/// the old segment is swapped out (MapHandler.cs:594-598). A/MapHandler.cs:578
-/// <c>public void GoToSegment(Segment s)</c>, advancing only when <c>s &gt; currentSegment</c> (L580).</summary>
+/// the old segment is swapped out (MapHandler.cs:703-714). A/MapHandler.cs:680
+/// <c>public void GoToSegment(Segment s)</c>, advancing only when <c>s &gt; currentSegment</c> (L682).</summary>
 [HarmonyPatch]
 internal static class GoToSegmentPatch
 {
@@ -43,7 +43,7 @@ internal static class GoToSegmentPatch
     }
 }
 
-/// <summary>Title card of the new segment, the end of the segment swap (MapHandler.cs:707):
+/// <summary>Title card of the new segment, the end of the segment swap (MapHandler.cs:830):
 /// A/MountainProgressHandler.cs:67 <c>public void SetSegmentComplete(int segment)</c>.</summary>
 [HarmonyPatch]
 internal static class SegmentTitlePatch
@@ -58,9 +58,9 @@ internal static class SegmentTitlePatch
     private static void Postfix() => RunFlowRuntime.OnSegmentTitle();
 }
 
-/// <summary>Run end on every client, before MenuWindow.CloseAllWindows (L914) and the switch to the end
-/// screen or cutscene (L915-941); also reached through RPCEndGame_ForceWin (L885).
-/// A/Character.cs:893 <c>private void RPCEndGame()</c>.</summary>
+/// <summary>Run end on every client, before MenuWindow.CloseAllWindows (L911) and the switch to the end
+/// screen or cutscene (L912-938); also reached through RPCEndGame_ForceWin (L882).
+/// A/Character.cs:890 <c>private void RPCEndGame()</c>.</summary>
 [HarmonyPatch]
 internal static class EndGamePatch
 {
@@ -70,7 +70,7 @@ internal static class EndGamePatch
     private static void Prefix() => RunFlowRuntime.OnRunEnd();
 }
 
-/// <summary>Credits start after the end screen (win path, MapHandler.cs:541).
+/// <summary>Credits start after the end screen (win path, MapHandler.cs:643).
 /// A/PeakHandler.cs:223 <c>public void EndScreenComplete()</c>.</summary>
 [HarmonyPatch]
 internal static class CreditsStartPatch
@@ -190,9 +190,9 @@ internal static class SoulShakeOwnerPatch
 }
 
 /// <summary>Run-start wake-up on the beach: Fade mode holds black until the character is up, Skip
-/// mode drops the Fall(7) ragdoll the way the game's SkipWakeup tag does (L2036; Fall sends
-/// RPCA_Fall, so skipping it sends nothing new). A/Character.cs:2034
-/// <c>internal void StartPassedOutOnTheBeach()</c>, called for the local character only (CharacterSpawner.cs:247).</summary>
+/// mode drops the Fall(7) ragdoll the way the game's SkipWakeup tag does (L2032; Fall sends
+/// RPCA_Fall, so skipping it sends nothing new). A/Character.cs:2030
+/// <c>internal void StartPassedOutOnTheBeach()</c>, called for the local character only (CharacterSpawner.cs:249).</summary>
 [HarmonyPatch]
 internal static class BeachWakeupPatch
 {
@@ -222,7 +222,7 @@ internal static class BeachWakeupPatch
     }
 }
 
-/// <summary>Skip mode only: drop the beach Fall(7). A/Character.cs:1735
+/// <summary>Skip mode only: drop the beach Fall(7). A/Character.cs:1732
 /// <c>internal void Fall(float seconds, float screenShake = 0f)</c>.</summary>
 [HarmonyPatch]
 internal static class BeachFallPatch

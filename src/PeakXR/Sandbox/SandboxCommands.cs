@@ -7,9 +7,9 @@ namespace PeakXR.Sandbox;
 
 /// <summary>
 /// Sandbox commands for the game's built-in console (unlocked by the sandbox). The console finds
-/// <c>[ConsoleCommand]</c> methods by scanning all assemblies once in <c>GameHandler.Awake</c>
-/// (decomp Zorro.Core.Runtime/Zorro.Core.CLI/ConsoleHandler.cs:40, Assembly-CSharp/GameHandler.cs:154); <see cref="Register"/>
-/// also adds them to <c>ConsoleHandler.ConsoleCommands</c> in case that scan ran before this plugin loaded.
+/// <c>[ConsoleCommand]</c> methods by scanning all assemblies once (decomp Zorro.Core.Runtime/Zorro.Core.CLI/ConsoleHandler.cs:40):
+/// in <c>GameHandler.Awake</c> up to 2.6.b, before the splash screen since 3.0 (Assembly-CSharp/PlatformBootstrap.cs:13-21).
+/// <see cref="Register"/> also adds them to <c>ConsoleHandler.ConsoleCommands</c> in case that scan ran before this plugin loaded.
 /// Type commands as <c>Sandbox.Spawn Rope</c>. Parameters are limited to what the console parses
 /// (string, int, float, bool, enums, <c>Item</c>).
 /// </summary>

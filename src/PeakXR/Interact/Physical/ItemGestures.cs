@@ -179,7 +179,7 @@ internal static class ItemGestures
 
     /// <summary>
     /// Danger while the held item cooks toward harm (<see cref="CookRisk"/>): the campfire hold (cook gesture or grip,
-    /// Campfire.cs:300-337) is under way and finishing it would burn, wreck or blow up the item. Urgency follows the
+    /// Campfire.cs:312-349) is under way and finishing it would burn, wreck or blow up the item. Urgency follows the
     /// hold, so the warning speeds up as the cook nears done.
     /// </summary>
     private static void CookWarning(Character c)

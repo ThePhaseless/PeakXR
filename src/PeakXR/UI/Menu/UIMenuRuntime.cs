@@ -87,7 +87,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         stage.OnSceneLoaded();
         if (splash)
         {
-            // Pretitle activates Title directly (Pretitle.cs:22); the cut-and-fade below covers the swap.
+            // Pretitle activates Title directly (Pretitle.cs:24); the cut-and-fade below covers the swap.
             splash = false;
             space.Hide();
         }
@@ -116,7 +116,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>Hold trigger or a face button to skip, as the game's skip keys do (Pretitle.Update sets the
-    /// same flag, A/Pretitle.cs:54). Those keys are keyboard or gamepad only, unreachable from XR. A hold, not
+    /// same flag, A/Pretitle.cs:61). Those keys are keyboard or gamepad only, unreachable from XR. A hold, not
     /// a press, so picking up a controller never skips.</summary>
     private void UpdateSplashSkip()
     {
@@ -150,7 +150,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     /// LoadingScreenHandler.LoadSceneProcess was built for <paramref name="sceneName"/>. Every client builds it:
     /// the load RPCs run on all (A/AirportCheckInKiosk.cs:151 BeginIslandLoadRPC, A/GameOverHandler.cs:44
     /// BeginAirportLoadRPC). Built before a load starts, it is held until the load really starts
-    /// (<see cref="OnLoadingStart"/>); built inside a running load (solo play, A/MainMenu.cs:151) it applies at once,
+    /// (<see cref="OnLoadingStart"/>); built inside a running load (solo play, A/MainMenu.cs:153) it applies at once,
     /// unless a Load call rejects it as "already loading" in the same frame (<see cref="OnLoadRejected"/>).
     /// </summary>
     public void OnLoadDestination(string sceneName)
@@ -206,7 +206,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>A kick, ban or disconnect destroys the loading screen mid-load (KickedState.DisplayModal,
-    /// A/KickedState.cs:13; NetworkConnector.cs:127,134). That kills its process coroutine, so the loading
+    /// A/KickedState.cs:13; NetworkConnector.cs:130,134). That kills its process coroutine, so the loading
     /// routine never ends and <see cref="OnLoadingDone"/> never fires: leave the loading space here.</summary>
     public void OnLoadingScreenKilled()
     {

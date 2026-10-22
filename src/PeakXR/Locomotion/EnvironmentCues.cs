@@ -214,7 +214,7 @@ internal static class EnvironmentCues
     }
 
     /// <summary>CharacterBalloons.SetParachute(bool) (CharacterBalloons.cs:117): the auto-open after 1.5 s of
-    /// falling (Character.cs:1125-1130) gives a strong tug on both hands, like the harness catching.</summary>
+    /// falling (Character.cs:1122-1127) gives a strong tug on both hands, like the harness catching.</summary>
     [HarmonyPatch]
     internal static class ParachuteTug
     {

@@ -24,7 +24,7 @@ namespace PeakXR.Net;
 /// the game's <c>CustomCommandType</c> (1-4, 18; CustomCommandType.cs:1-9) sent through
 /// Zorro's <c>CustomCommands</c> (CustomCommands.cs:26) and <c>PhotonShim.Kick</c> (18, PhotonShim.cs:157);
 /// Zorro's <c>CustomCommandListener.OnEvent</c> (CustomCommandListener.cs:52) ignores unregistered codes
-/// at or above 6 silently; <c>PlayerHandler.OnNetworkEvent</c> (PlayerHandler.cs:161) only reads the code;
+/// at or above 6 silently; <c>PlayerHandler.OnNetworkEvent</c> (PlayerHandler.cs:163) only reads the code;
 /// PUN internals use 200-212 (<c>PunEvent</c>), Photon Realtime 210-255 (<c>EventCode</c>), Photon Voice
 /// 202/203 on its own client; PUN's TurnManager (1-2) is unused. 198/199 are avoided because the
 /// unrelated PeakVR mod uses them, so the two mods never feed each other's decoders.
@@ -407,7 +407,7 @@ internal sealed class NetPoseSync
 
     /// <summary>
     /// The player character owned by <paramref name="actor"/>. Respawning registers a new Character and
-    /// deactivates the old one (PlayerHandler.RegisterCharacter, PlayerHandler.cs:167), and scene loads
+    /// deactivates the old one (PlayerHandler.RegisterCharacter, PlayerHandler.cs:169), and scene loads
     /// destroy it, so the cache is checked before use and rebuilt from Character.AllCharacters on a miss.
     /// </summary>
     static Character Resolve(int actor, ref Character cached)
@@ -439,7 +439,7 @@ internal sealed class NetPoseSync
 
     /// <summary>
     /// Dead, passed out, falling, carried or low-control characters are ragdolls (CharacterData.GetTargetRagdollControll,
-    /// CharacterData.cs:485); a tracked pose would fight the physics, so it is not applied or sent.
+    /// CharacterData.cs:486); a tracked pose would fight the physics, so it is not applied or sent.
     /// </summary>
     static bool IsRagdolled(Character c) => !AvatarPoseDriver.ArmsTracked(c);
 

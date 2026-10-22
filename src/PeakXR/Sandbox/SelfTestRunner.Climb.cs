@@ -126,7 +126,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>A warp target for standing on <paramref name="stand"/> (ground + 0.1 m): the game's warp moves the
-    /// body's centre there (Character.cs:1905-1911), so it is raised by the centre's height over the feet. A centre
+    /// body's centre there (Character.cs:1904-1910), so it is raised by the centre's height over the feet. A centre
     /// sunk to the ground pops back up and lands off the spot (0.3 m at spawn, 1.1 m beside the test wall in run 32).</summary>
     static Vector3 CentreOver(Character c, Vector3 stand) =>
         stand + Vector3.up * Mathf.Clamp(c.Center.y - Feet(c).y - 0.1f, 0f, 1.2f);
@@ -475,7 +475,7 @@ internal sealed partial class SelfTestRunner
     /// <c>RopeAnchorProjectile.GetShot</c> and <c>RopeAnchorWithRope.SpawnRope</c>, hanging 0.7 m in front from 2.6 m up;
     /// <see cref="testRope"/> once it has spooled out and settled, else null with the step skipped or failed. The
     /// local player owns it, so it simulates here (Rope.cs:155). A warp to open sky sets <see cref="WarpBack"/>.
-    /// <paramref name="height"/> and <paramref name="segments"/> (0.25 m each, Rope.cs:287-290; 0 for the shooter's
+    /// <paramref name="height"/> and <paramref name="segments"/> (0.25 m each, Rope.cs:291-294; 0 for the shooter's
     /// own length) hang a shorter rope higher, clear of the ground, so it can swing.
     /// </summary>
     IEnumerator HangRope(float height = 2.6f, float segments = 0f)
@@ -979,7 +979,7 @@ internal sealed partial class SelfTestRunner
             {
                 c.data.currentStamina = 0f;
                 c.data.extraStamina = 0f;
-                // Regeneration waits 2 s after a use when empty (Character.cs:1288-1289); without this it refills
+                // Regeneration waits 2 s after a use when empty (Character.cs:1285-1286); without this it refills
                 // in FixedUpdate before the next input sample, and a grip sees stamina (run 33's vr.57 and vr.59).
                 c.data.sinceUseStamina = 0f;
             }
@@ -990,7 +990,7 @@ internal sealed partial class SelfTestRunner
     /// <summary><see cref="ExpectFeel"/> with <see cref="cueNote"/> cleared first, so a failure's note never
     /// carries the previous step's cue (run 33's vr.50 quoted vr.49's Carried).</summary>
     /// <summary>
-    /// Puts <paramref name="prefab"/> straight into a free slot and equips it (<c>Player.AddItem</c>, Player.cs:87;
+    /// Puts <paramref name="prefab"/> straight into a free slot and equips it (<c>Player.AddItem</c>, Player.cs:91;
     /// <c>CharacterItems.EquipSlot</c>, CharacterItems.cs:482), master only. <c>GameUtils.InstantiateAndGrab</c>
     /// spawns the item at the hip first (GameUtils.cs:263-271): run 35's cactus stuck to the body there ("Stuck to
     /// Character", StickyItemComponent.cs:69-80) and never reached the hand.

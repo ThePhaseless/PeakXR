@@ -41,9 +41,9 @@ internal static class MenuWait
 
 /// <summary>
 /// Title buttons that do nothing while a room is being entered (<c>NetworkingUtilities.EnteringRoom</c>):
-/// A/MainMenuMainPage.cs:215-218 SettingsClicked, :234-236 ContinueFromQuicksaveClicked, :250-254
-/// StartMultiplayerLobby (Play), :276-280 JoinClicked; A/MainMenuJoinRoomPage.cs:90-100 OnJoinButtonClicked,
-/// :102-112 OnBackButtonClicked. Read-only: the vanilla early return still runs.
+/// A/MainMenuMainPage.cs:218-221 SettingsClicked, :237-239 ContinueFromQuicksaveClicked, :253-258
+/// StartMultiplayerLobby (Play), :344-349 JoinClicked; A/MainMenuJoinRoomPage.cs:104-114 OnJoinButtonClicked,
+/// :116-126 OnBackButtonClicked. Read-only: the vanilla early return still runs.
 /// </summary>
 [HarmonyPatch]
 internal static class EnteringRoomWaitPatch

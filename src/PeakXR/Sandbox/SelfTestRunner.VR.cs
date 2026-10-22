@@ -590,7 +590,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.07: a knockback through the game's RPC (<c>Character.RPCA_AddForceAtPosition</c>, decomp
-    /// Assembly-CSharp/Character.cs:461, sent the way <c>AddForceAtPosition</c> :455 does) pulses comfort.events'
+    /// Assembly-CSharp/Character.cs:458, sent the way <c>AddForceAtPosition</c> :452 does) pulses comfort.events'
     /// vignette, which is open again within 2 s; then a warp to spawn (<c>Character.WarpToSpawn</c>) leaves <see cref="VRFade.Target"/> at 0.
     /// </summary>
     IEnumerator ComfortCheck()

@@ -469,7 +469,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.112: Push To Talk. A closed hand held at the mouth presses the game's key (<c>pushToTalkPressed</c>, read by
-    /// CharacterVoiceHandler.cs:250), plays the radio click, ticks the hand and lights the mic icon; taking it away
+    /// CharacterVoiceHandler.cs:269), plays the radio click, ticks the hand and lights the mic icon; taking it away
     /// plays the closing click and hides the icon. In Voice Activation the same move gets the one-time notice
     /// (MicAlwaysOn: the key does nothing there). The game's mode is set without saving and restored.
     /// </summary>

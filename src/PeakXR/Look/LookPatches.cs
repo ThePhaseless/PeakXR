@@ -18,7 +18,7 @@ internal static class LookPatches
     /// <summary><c>CharacterMovement.character</c> (CharacterMovement.cs:32, private).</summary>
     public static AccessTools.FieldRef<CharacterMovement, Character> Movement;
 
-    /// <summary><c>Character.RecalculateLookDirections</c> (Character.cs:1347, internal).</summary>
+    /// <summary><c>Character.RecalculateLookDirections</c> (Character.cs:1344, internal).</summary>
     public static Action<Character> Recalculate;
 
     private static readonly TurnInput Turn = new();
@@ -43,8 +43,8 @@ internal static class LookPatches
     /// <summary>
     /// CharacterMovement.CameraLook (CharacterMovement.cs:283, private): called from CharacterMovement.Update
     /// (:201) right after CharacterInput.Sample (:198) whenever no wheel is open (CanMoveCamera, :174). It adds the
-    /// look stick to <c>data.lookValues</c> and recalculates the look directions that movement (Character.cs:1311),
-    /// aiming, interaction, body yaw (Character.cs:1529) and the sync to peers (CharacterSyncData.cs:62) read.
+    /// look stick to <c>data.lookValues</c> and recalculates the look directions that movement (Character.cs:1308),
+    /// aiming, interaction, body yaw (Character.cs:1526) and the sync to peers (CharacterSyncData.cs:62) read.
     /// The prefix zeroes the stick so only the headset moves the view; the postfix applies turning and writes the
     /// headset look.
     /// </summary>
@@ -110,7 +110,7 @@ internal static class LookPatches
         if (faceSpawnLook && !rig.OriginOverride)
         {
             // A new body starts with the game's spawn look: nothing sets lookValues at spawn
-            // (CharacterSpawner.cs:243), so flat players face +Z. The first write below would otherwise hand it
+            // (CharacterSpawner.cs:245), so flat players face +Z. The first write below would otherwise hand it
             // whatever yaw the tracking space kept from the title stage or loading room, and rig.camera's
             // recenter then keeps that yaw (it reads the look this write produced).
             faceSpawnLook = false;
@@ -180,14 +180,14 @@ internal static class LookPatches
     }
 
     /// <summary>No peer sees this avatar's look: offline or alone in the room, or dead, which parks the body at
-    /// <c>Character.DeathPos</c> (Character.cs:561, :761). Only then may the synced yaw jump by whole turns.</summary>
+    /// <c>Character.DeathPos</c> (Character.cs:558, :758). Only then may the synced yaw jump by whole turns.</summary>
     private static bool Unobserved(Character c)
     {
         var room = PhotonNetwork.CurrentRoom;
         return PhotonNetwork.OfflineMode || room == null || room.PlayerCount <= 1 || c.data.dead;
     }
 
-    /// <summary>No turning while a menu or wheel takes the sticks (the game's own gate, Character.cs:1714).</summary>
+    /// <summary>No turning while a menu or wheel takes the sticks (the game's own gate, Character.cs:1711).</summary>
     private static bool CanTurn()
     {
         var gui = GUIManager.instance;

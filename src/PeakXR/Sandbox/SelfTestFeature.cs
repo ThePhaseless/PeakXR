@@ -74,9 +74,9 @@ public sealed class SelfTestFeature : Feature
 /// (EndScreen.cs:480-492, :508-570). The game's own guard, a custom run (<c>RunSettings.blockingAchievements</c>,
 /// RunSettings.cs:136-146), covers the same four but never in the airport, where the self-test also reads the
 /// guidebook and uses items, so the self-test blocks them itself for the whole run.
-/// <para>The player's quicksave (<c>quicksave.peak</c> in the persistent data path, Peak/Quicksave.cs:253-265) is
-/// kept too: a campfire light writes it (<c>SaveNow</c>, :333-347, from Campfire.cs:485) and the run's end deletes it
-/// (<c>DestroySaveData</c>, :424-434, from Character.cs:896). Both are skipped and logged; nothing in a test run loads
+/// <para>The player's quicksave (<c>quicksave.peak</c> in the persistent data path, Peak/Quicksave.cs:272-284) is
+/// kept too: a campfire light writes it (<c>SaveNow</c>, :352-366, from Campfire.cs:505) and the run's end deletes it
+/// (<c>DestroySaveData</c>, :459-469, from Character.cs:893). Both are skipped and logged; nothing in a test run loads
 /// the save back. <see cref="Arm"/> records the file's fingerprint so the run's last step can prove it unchanged.
 /// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>.</para>
 /// </summary>
@@ -196,8 +196,8 @@ static class SelfTestProgressGuard
 
 /// <summary>
 /// Lets vr.26 finish a campfire light hold without the run moving on. A finished hold on an unlit campfire sends
-/// <c>Light_Rpc(true)</c> (decomp Assembly-CSharp/Campfire.cs:309-325), which advances the map segment and quicksaves
-/// (:478-486). While <see cref="Hold"/> is set the fire is lit the way <c>LightWithoutReveal</c> (:456) lights it
+/// <c>Light_Rpc(true)</c> (decomp Assembly-CSharp/Campfire.cs:321-337), which advances the map segment and quicksaves
+/// (:491-506). While <see cref="Hold"/> is set the fire is lit the way <c>LightWithoutReveal</c> (:468) lights it
 /// instead, so the step still sees the game's own hold complete and the fire go <c>Lit</c>.
 /// </summary>
 [HarmonyPatch]
@@ -219,8 +219,8 @@ static class SelfTestCampfirePatch
 
 /// <summary>
 /// Holds back the solo game over while a self-test death step runs. <c>Character.CheckEndGame</c> (decomp
-/// Assembly-CSharp/Character.cs:838) ends the run the moment every character is dead, which solo is the moment the
-/// step kills the player, and <c>RPCEndGame</c> (:893) then deletes the quicksave and opens the end screen for good.
+/// Assembly-CSharp/Character.cs:835) ends the run the moment every character is dead, which solo is the moment the
+/// step kills the player, and <c>RPCEndGame</c> (:890) then deletes the quicksave and opens the end screen for good.
 /// </summary>
 [HarmonyPatch]
 static class SelfTestEndGamePatch

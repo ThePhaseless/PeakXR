@@ -64,5 +64,5 @@ description = "Re-decompile Assembly-CSharp and Zorro.* into decomp/ (after a ga
 run = "bash tools/decompile.sh"
 
 [tasks.compat-check]
-description = "Print game, Unity and XR deps versions; later: diff patch targets"
+description = "Print game, Unity and XR deps versions; check patch targets against decomp/ (and decomp.prev/)"
 run = "bash tools/compat-check.sh"

@@ -346,7 +346,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Warps onto the ground <paramref name="distance"/> from <paramref name="target"/>, on the side the
-    /// player came from, and turns the rig to face it (<c>Character.WarpPlayerRPC</c>, Character.cs:1822).</summary>
+    /// player came from, and turns the rig to face it (<c>Character.WarpPlayerRPC</c>, Character.cs:1824).</summary>
     IEnumerator WarpFacing(Vector3 target, float distance)
     {
         var c = Character.localCharacter;
@@ -573,7 +573,7 @@ internal sealed partial class SelfTestRunner
         : it.GetType().Name;
 
     /// <summary>vr.26: a held torch, lit with its trigger, held to an unlit campfire runs the game's light hold on it
-    /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121) for its <c>GetInteractTime</c> (Campfire.cs:429)
+    /// (<c>Interaction.currentHeldInteractible</c>, Interaction.cs:121) for its <c>GetInteractTime</c> (Campfire.cs:441)
     /// until the fire is lit. <see cref="SelfTestCampfirePatch"/> lights it without the segment advance.</summary>
     IEnumerator LightStep(Item torchPrefab)
     {
@@ -619,7 +619,7 @@ internal sealed partial class SelfTestRunner
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
         var interaction = Interaction.instance;
         float progress = 0f;
-        // The fire's own hold (GetInteractTime, Campfire.cs:429), after up to 3 s carrying the flame in.
+        // The fire's own hold (GetInteractTime, Campfire.cs:441), after up to 3 s carrying the flame in.
         float holdTime = GameTiming.InteractSeconds(fire, c);
         float end = Now + GameTiming.Budget(holdTime, 3f);
         bool shot = false;
@@ -680,7 +680,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.25: a cookable item held in the heat column over a lit campfire cooks through the game's hold
     /// (<c>DataEntryKey.CookedAmount</c> +1, ItemCooking.cs:264). Lights the nearest campfire first with
-    /// <c>Campfire.LightWithoutReveal</c> (Campfire.cs:456: no segment advance) when it is still unlit.</summary>
+    /// <c>Campfire.LightWithoutReveal</c> (Campfire.cs:468: no segment advance) when it is still unlit.</summary>
     IEnumerator CookStep(Item foodPrefab)
     {
         var c = Character.localCharacter;
@@ -722,7 +722,7 @@ internal sealed partial class SelfTestRunner
         float progress = 0f;
         bool shot = false;
         string state = "";
-        // The fire's interact hold, cookTime (Campfire.cs:429), after up to 3 s carrying the food into the heat.
+        // The fire's interact hold, cookTime (Campfire.cs:441), after up to 3 s carrying the food into the heat.
         float cookTime = GameTiming.InteractSeconds(fire, c);
         float end = Now + GameTiming.Budget(cookTime, 3f);
         BeginCarry();
@@ -940,7 +940,7 @@ internal sealed partial class SelfTestRunner
     /// time (<c>Item.StartUsePrimary</c>/<c>ContinueUsePrimary</c>, Item.cs:849-901), release, and prove what the use
     /// did in the game, in VR and flat:
     /// <list type="bullet">
-    /// <item>food: eaten (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:169) and Hunger down, after
+    /// <item>food: eaten (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:170) and Hunger down, after
     /// <c>AddStatus</c> (CharacterAfflictions.cs:712) gave it room;</item>
     /// <item>lantern and torch: lit (<c>FlareActive</c>, Lantern.cs:207-208) and burning fuel
     /// (<c>DataEntryKey.Fuel</c>, Lantern.cs:162-171);</item>
@@ -1245,7 +1245,7 @@ internal sealed partial class SelfTestRunner
     /// flat play) meets terrain within <c>maxAnchorGhostDistance</c> lying within <c>maxAnchorDistance</c> of the
     /// body, after use is held there for <c>castTime</c> (RopeTier.cs:97-128). In VR the spool is first aimed at open
     /// sky, where the trigger press must get interact.physical's NoWall refusal cue; then at ground in reach, where
-    /// holding use must tie the rope (<c>Rope.AttachToAnchor_Rpc</c>, Rope.cs:259-270).
+    /// holding use must tie the rope (<c>Rope.AttachToAnchor_Rpc</c>, Rope.cs:259-269).
     /// </summary>
     IEnumerator SpoolUse(Item held, RopeTier tier)
     {
@@ -1761,7 +1761,7 @@ internal sealed partial class SelfTestRunner
     /// cue and starts no cast (<c>Item.isUsingPrimary</c>, Item.cs:301); held eye to eye its cast runs
     /// (<c>castProgress</c>, Item.cs:344) with the progress feel and <see cref="HeldGestures.AtFace"/>; pulled away
     /// at 0.4 it is called off (<c>CancelUsePrimary</c> on release, CharacterItems.cs:209-211, Item.cs:918) with the
-    /// cancel feel, the player alive (<c>CharacterData.dead</c>, CharacterData.cs:335) and the skull still held.
+    /// cancel feel, the player alive (<c>CharacterData.dead</c>, CharacterData.cs:336) and the skull still held.
     /// The cast is never let near 1.
     /// </summary>
     IEnumerator CommuneGuardStep(Item prefab)
@@ -1843,7 +1843,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.165: a Book of Bones (<c>ItemTags.BookOfBones</c>, Item.cs:31) held open in front of the eyes
     /// runs its cast (<c>castProgress</c>, Item.cs:344) with <see cref="HeldGestures.AtFace"/>; lowered at 0.3 it is
     /// called off (<c>CancelUsePrimary</c>, Item.cs:918) with the cancel feel, the player not a skeleton
-    /// (<c>CharacterData.isSkeleton</c>, CharacterData.cs:307, set by Action_BecomeSkeleton.cs:7) and the book
+    /// (<c>CharacterData.isSkeleton</c>, CharacterData.cs:308, set by Action_BecomeSkeleton.cs:7) and the book
     /// still held.</summary>
     IEnumerator ReadCancelStep(Item prefab)
     {
@@ -1891,7 +1891,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.166: food at the mouth runs its cast (<c>castProgress</c>, Item.cs:344); pulled away at half it is
     /// called off (<c>CancelUsePrimary</c>, Item.cs:918) with the cancel feel: not eaten
-    /// (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:169), still held, Hunger not lowered.</summary>
+    /// (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:170), still held, Hunger not lowered.</summary>
     IEnumerator EatCancelStep(Item prefab)
     {
         if (!Affordance.Enabled)

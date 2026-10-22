@@ -208,7 +208,7 @@ internal static class BodyGestures
 
     /// <summary>
     /// The hip's drop (the view root's height, <see cref="RigDriver.ViewRoot"/>) below its learned upright height above the ground (<c>CharacterData.groundPos</c>, written
-    /// by CharacterMovement.cs:757) while a physical crouch holds; after it ends, the lift only shrinks as the torso
+    /// by CharacterMovement.cs:752) while a physical crouch holds; after it ends, the lift only shrinks as the torso
     /// rises, and in the air it fades out.
     /// </summary>
     private static void UpdateLift(Character c, VRRig rig, float dt)

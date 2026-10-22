@@ -125,8 +125,8 @@ internal sealed class InviteNote : MonoBehaviour
         return code == null ? message : message + "\nRoom code: " + code;
     }
 
-    /// <summary>The room code the vanilla pause menu shows (A/PauseMenuMainPage.cs:108), honouring the
-    /// game's hide-room-code setting (A/PauseMenuMainPage.cs:116).</summary>
+    /// <summary>The room code the vanilla pause menu shows (A/PauseMenuMainPage.cs:116), honouring the
+    /// game's hide-room-code setting (A/PauseMenuMainPage.cs:126).</summary>
     private static string RoomCode()
     {
         if (PhotonNetwork.OfflineMode || !PhotonNetwork.InRoom || PhotonNetwork.CurrentRoom == null)

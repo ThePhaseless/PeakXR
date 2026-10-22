@@ -354,7 +354,7 @@ internal sealed class GuideStage : MonoBehaviour
     {
         if (handler == null)
             yield break;
-        // MainMenuMainPage.SettingsClicked (MainMenuMainPage.cs:215) does the same transition.
+        // MainMenuMainPage.SettingsClicked (MainMenuMainPage.cs:218) does the same transition.
         var page = handler.TransistionToPage<MainMenuSettingsPage>(new SetActivePageTransistion());
         yield return null;
         GuideRows.ComfortFirst = true;

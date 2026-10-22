@@ -501,8 +501,8 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>
     /// Learns where the character's eyes are relative to the torso (forward and up in its facing frame) while the
     /// body stands upright and looks level, as a slow average so walk bob does not reach the view. The eyes are the
-    /// face's eye renderers (CustomizationRefs.EyeRenderers, CharacterCustomization.cs:286). Not the vanilla camera
-    /// point <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1358): that sits on top of the head,
+    /// face's eye renderers (CustomizationRefs.EyeRenderers, CharacterCustomization.cs:282). Not the vanilla camera
+    /// point <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1355): that sits on top of the head,
     /// about 0.2 m above the eyes, and straight over the torso, so looking down showed the top of your own body.
     /// </summary>
     private void UpdateEyeOffset(Character c, float dt)
@@ -798,7 +798,7 @@ internal sealed class RigDriver : MonoBehaviour
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
 
         // Spectating: the watched player's head and body never fill the eyes (a lean or a slow follow can carry the
-        // view into them); a dead one is parked out of the world (Character.DeathPos, Character.cs:561), so skipped.
+        // view into them); a dead one is parked out of the world (Character.DeathPos, Character.cs:558), so skipped.
         bool watching = state == CameraState.Spectate && shownKind != ViewKind.FirstPerson;
         var push = Vector3.zero;
         if (watching && shownTarget != null && shownTarget != c && !shownTarget.data.dead)
@@ -861,7 +861,7 @@ internal sealed class RigDriver : MonoBehaviour
         }
         else if (Time.unscaledTime < turnHoldUntil && move <= 0.1f)
         {
-            // SetRotation turns the animated rig at once (Character.cs:1545); the ragdoll torso the eye hangs on
+            // SetRotation turns the animated rig at once (Character.cs:1542); the ragdoll torso the eye hangs on
             // follows over several frames and swings sideways. Hold the eye through that swing too.
             turnShift = RigMath.HoldLevel(turnShift.N(), lastBodyEye.N(), bodyEye.N()).U();
         }
@@ -912,7 +912,7 @@ internal sealed class RigDriver : MonoBehaviour
             eyeGuard.Arm();
         wasLoading = loading;
         bool live = c != null && !rig.OriginOverride && headTracked && !loading;
-        // A dead body is parked out of the world (Character.DeathPos, Character.cs:561): nothing to test against.
+        // A dead body is parked out of the world (Character.DeathPos, Character.cs:558): nothing to test against.
         bool chaseLive = chase && watched != null && !watched.data.dead;
         if (live && (shownKind == ViewKind.FirstPerson || chaseLive))
         {
@@ -1100,12 +1100,12 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>
     /// The point the first-person view rides: the ragdoll's level mass centre at hip height (<see cref="MassCentre"/>).
-    /// Under control the parts are slippery (CharacterRagdoll.cs:89-96) and only pull on each other, with half of each
+    /// Under control the parts are slippery (CharacterRagdoll.cs:93-100) and only pull on each other, with half of each
     /// pull pushed back onto the hip (Bodypart.cs:193-205), so bending forward (the game's look-down pose or
     /// avatar.local's lean) slides the hips back and the torso forward while this point stays: the view never moves
     /// unless the head or the whole body does. Height comes from the hip, which the stand force holds
-    /// (CharacterMovement.cs:716-725). Dead or warping characters keep the game's stand-in point
-    /// (<c>Character.VirtualCenter</c>, Character.cs:257). A held item welded to a hand (CharacterItems.cs:647-650,
+    /// (CharacterMovement.cs:711-720). Dead or warping characters keep the game's stand-in point
+    /// (<c>Character.VirtualCenter</c>, Character.cs:256). A held item welded to a hand (CharacterItems.cs:647-650,
     /// or avatar.local's one-hand weld) is part of the same system and counts. Outside forces do move it, as they
     /// should: walking, a push, or a wall or rock the body leans against; nothing here fights that contact.
     /// Computed once per frame (cached for the last character asked).

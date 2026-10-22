@@ -38,7 +38,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
     /// <summary>The mic glyph drawn now, for the self-test.</summary>
     public static MicGlyph GlyphShown => instance != null ? instance.icon.Shown : MicGlyph.Off;
 
-    /// <summary>The game's microphone mode (PushToTalkSetting, read by CharacterVoiceHandler.cs:250).</summary>
+    /// <summary>The game's microphone mode (PushToTalkSetting, read by CharacterVoiceHandler.cs:269).</summary>
     public static MicMode Mode => instance != null ? instance.ReadMode() : MicMode.VoiceActivation;
 
     /// <summary>Lets the self-test see the Voice Activation notice again.</summary>

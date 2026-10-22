@@ -198,7 +198,7 @@ internal static class PhysicalInteraction
         TornBeat(LeftHand, now);
         TornBeat(RightHand, now);
         // A grip on a ground backpack opens its wheel (Backpack.Interact, Backpack.cs:34), which makes CanDoInput
-        // false (Character.cs:1716) so Inject stops; the wheel then closes on interact up (BackpackWheel.cs:96) and
+        // false (Character.cs:1713) so Inject stops; the wheel then closes on interact up (BackpackWheel.cs:96) and
         // the still-closed grip reopens it every other frame. The grip that opened it holds interact until it opens.
         // A wheel opened during this frame's grips (the shoulder reach, BodyInventory) holds interact itself.
         bool wheel = c.data.usingBackpackWheel;
@@ -459,7 +459,7 @@ internal static class PhysicalInteraction
         hand.Confirmed = true;
         hand.Retried = false;
         hand.RetryAt = now + PickupRetry;
-        // A worn backpack's slot is the one HasEmptySlot checks for a Backpack (Player.cs:274); the ground one is no pickup.
+        // A worn backpack's slot is the one HasEmptySlot checks for a Backpack (Player.cs:278); the ground one is no pickup.
         if (target is Backpack)
             Haptics.Pulse(hand.Left, 0.6f, 0.05f);
         else if (target is Item wanted && c.player != null && !c.player.HasEmptySlot(wanted.itemID))
@@ -560,7 +560,7 @@ internal static class PhysicalInteraction
             Affordance.DenyStamina(left, wall);
     }
 
-    /// <summary><c>Character.OutOfStamina</c> (Character.cs:1683-1693, internal): no stamina and no bonus stamina.</summary>
+    /// <summary><c>Character.OutOfStamina</c> (Character.cs:1680-1690, internal): no stamina and no bonus stamina.</summary>
     internal static bool OutOfStamina(Character c) =>
         !c.infiniteStam && c.data.currentStamina < 0.005f && c.data.extraStamina < 0.001f;
 

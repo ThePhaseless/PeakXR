@@ -8,8 +8,8 @@ namespace PeakXR.UI.Status;
 /// <summary>
 /// A9: the double-jump amulet's charges as small gold beads on the back of the wrist. One bead per charge the
 /// amulet grants (<c>CharacterAfflictions.totalExtraJumps</c>, CharacterAfflictions.cs:190), lit while that air
-/// jump is still left (<c>CharacterData.extraJumps</c>, CharacterData.cs:247; refilled on landing,
-/// CharacterMovement.cs:753). No text; nothing shows without an amulet.
+/// jump is still left (<c>CharacterData.extraJumps</c>, CharacterData.cs:248; refilled on landing,
+/// CharacterMovement.cs:748). No text; nothing shows without an amulet.
 /// </summary>
 internal sealed class AmuletPips
 {

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Compatibility check after a game update.
-# Now: prints the game and Unity versions and warns when deps/ was built for another Unity version.
-# TODO: diff the Harmony patch targets (types/method signatures PeakXR patches) against decomp/.
+# Prints the game and Unity versions, warns when deps/ was built for another Unity version, then
+# checks every game member PeakXR resolves by name (tools/compat-targets.pl) against a decompile.
+# usage: compat-check.sh [decomp dir (default decomp/)] [baseline dir (default decomp.prev/ if present)]
+# The baseline is the decompile the mod was last tested on; `mise run decompile` keeps it in decomp.prev/.
+# Exits 1 when a target is missing, ambiguous or changed parameter types.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,6 +12,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 die() { printf '\033[1;31m[compat] error:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [[ -n "${PEAK_DIR:-}" && -d "$PEAK_DIR" ]] || die "PEAK_DIR is not set or does not exist (${PEAK_DIR:-unset})"
+DECOMP="${1:-$ROOT/decomp}"
+BASELINE="${2:-}"
+[[ -z "$BASELINE" && -d "$ROOT/decomp.prev" && "$DECOMP" == "$ROOT/decomp" ]] && BASELINE="$ROOT/decomp.prev"
+[[ -d "$DECOMP" ]] || die "no decompile at $DECOMP; run 'mise run decompile'"
 
 game_version="$(head -n1 "$PEAK_DIR/version.txt" 2>/dev/null || echo unknown)"
 game_commit="$(sed -n 2p "$PEAK_DIR/version.txt" 2>/dev/null || echo unknown)"
@@ -37,3 +44,9 @@ if [[ -f "$ROOT/decomp/VERSION" ]]; then
     echo "decomp/      : game $decomp_version"
     [[ "$decomp_version" == "$game_version" ]] || echo "WARNING: decomp/ is from game $decomp_version; run 'mise run decompile'" >&2
 fi
+
+echo
+echo "Patch targets and name lookups in src/PeakXR vs $DECOMP${BASELINE:+ (baseline $BASELINE)}:"
+echo "  MISSING-*, PARAMS-MISMATCH, AMBIGUOUS break a feature; SIGNATURE-CHANGED and body-changed need a read."
+# pipefail: the script exits with the checker's status.
+perl "$ROOT/tools/compat-targets.pl" "$ROOT/src/PeakXR" "$DECOMP" ${BASELINE:+"$BASELINE"} | grep -v '^ok '

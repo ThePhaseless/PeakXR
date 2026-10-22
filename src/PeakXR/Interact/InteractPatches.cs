@@ -181,7 +181,7 @@ internal static class InteractPatches
             if (c == null || c.refs.items != __instance || !c.input.dropWasReleased)
                 return;
             var sticky = c.data.currentStickyItem;
-            // currentStickyItem follows the currentItem setter (CharacterData.cs:417-436); read the held item itself
+            // currentStickyItem follows the currentItem setter (CharacterData.cs:418-437); read the held item itself
             // too, so no path that equips a sticky item can miss the cue.
             var held = c.data.currentItem;
             if (sticky == null && held != null)

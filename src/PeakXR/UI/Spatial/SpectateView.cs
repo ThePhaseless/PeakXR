@@ -10,17 +10,17 @@ namespace PeakXR.UI.Spatial;
 
 /// <summary>
 /// U6 and spectating: while you watch a friend (<c>MainCameraMovement.specCharacter</c>, A/MainCameraMovement.cs:49;
-/// <c>Character.observedCharacter</c>, A/Character.cs:210), what the HUD says about them goes on them. Their name
+/// <c>Character.observedCharacter</c>, A/Character.cs:209), what the HUD says about them goes on them. Their name
 /// (<c>spectatingNameText</c>, A/GUIManager.cs:136, set in <c>UpdateSpectate</c> :599) and the status bar, which
 /// already shows the observed character (A/StaminaBar.cs:104-181, A/BarAffliction.cs:42), float above their head as
 /// a nameplate; their hotbar (<c>Player.itemSlots</c>, temporary slot and <c>backpackSlot</c>, A/Player.cs:17-21, the slots
 /// <c>GUIManager.UpdateItems</c> :1109 shows) becomes icons around their belt; the switch hint
-/// (<c>spectatingInputs</c>, :134, shown while dead at :614) becomes up/down arrows on the stick that switches.
+/// (<c>spectatingInputs</c>, :138, shown while dead at :614) becomes up/down arrows on the stick that switches.
 /// Your own dying bar stays on your wrist (ui.world). The name goes with its whole "spectating" block
-/// (<c>spectatingObject</c>, :132) minus the monitor pill behind it. Watching your own body (solo, or the last one
+/// (<c>spectatingObject</c>, :136) minus the monitor pill behind it. Watching your own body (solo, or the last one
 /// alive) shows just that block, "spectating YOURSELF", over where you fell. A dead body is parked far out of the
-/// world (<c>Character.DeathPos</c>, A/Character.cs:561), so a dead player's plate sits over
-/// <c>Character.VirtualCenter</c> (:257) and gets no belt.
+/// world (<c>Character.DeathPos</c>, A/Character.cs:558), so a dead player's plate sits over
+/// <c>Character.VirtualCenter</c> (:256) and gets no belt.
 /// </summary>
 internal sealed class SpectateView
 {
@@ -39,7 +39,7 @@ internal sealed class SpectateView
     private const int Slots = 5;
 
     /// <summary>Belt order, left to right as you see it: hotbar 0-2, the overflow slot, the backpack
-    /// (<c>Player.GetItemSlot</c>, A/Player.cs:246: 3 is the backpack, 250 the temporary slot).</summary>
+    /// (<c>Player.GetItemSlot</c>, A/Player.cs:250: 3 is the backpack, 250 the temporary slot).</summary>
     private static readonly byte[] SlotIds = { 0, 1, 2, 250, 3 };
 
     /// <summary>The nameplate holds the status bar: ui.world's HUD split leaves it alone meanwhile.</summary>
@@ -93,7 +93,7 @@ internal sealed class SpectateView
         if (!root.activeSelf)
             root.SetActive(true);
 
-        // A dead body is parked far out of the world (Character.DeathPos, Character.cs:561): no belt there.
+        // A dead body is parked far out of the world (Character.DeathPos, Character.cs:558): no belt there.
         var player = spec != null && !self && !spec.data.dead ? spec.player : null;
         for (int i = 0; i < Slots; i++)
         {
@@ -129,7 +129,7 @@ internal sealed class SpectateView
 
         if (plate.Holding)
         {
-            // Dead: over where they fell (VirtualCenter, Character.cs:257), not the parked body; just above the body
+            // Dead: over where they fell (VirtualCenter, Character.cs:256), not the parked body; just above the body
             // as you see it and in front of it, like a target label, so it never lands on a wall behind it. A fixed
             // 1.2 m lift put it on the wall 1.5 m above a body lying on the floor.
             var p = spec.data.dead

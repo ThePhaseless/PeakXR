@@ -250,7 +250,7 @@ internal sealed partial class SelfTestRunner
             stepNote = $"sprint {speed:0.0} m/s, stopped empty: {cueNote}";
     }
 
-    /// <summary>vr.154: a jump that spends the last of the stamina (JumpRpc's UseStamina, CharacterMovement.cs:673)
+    /// <summary>vr.154: a jump that spends the last of the stamina (JumpRpc's UseStamina, CharacterMovement.cs:667)
     /// gives the same NoStamina cue at the wrist hand.</summary>
     IEnumerator JumpOutStep()
     {
@@ -262,7 +262,7 @@ internal sealed partial class SelfTestRunner
         }
         int before = BodyFeedback.TakeOffs;
         float since = CueMark();
-        // Resting regenerates (Character.cs:1289): a fresh spend keeps the bar at the set value until the jump.
+        // Resting regenerates (Character.cs:1286): a fresh spend keeps the bar at the set value until the jump.
         c.data.sinceUseStamina = 0f;
         yield return PressJump();
         float start = Now;
@@ -282,7 +282,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.143: a real crouch latches with a soft tick on both hands, the crouched walk covers about half
-    /// the standing walk (CharacterMovement.cs:408), and standing up ticks again.</summary>
+    /// the standing walk (CharacterMovement.cs:402), and standing up ticks again.</summary>
     IEnumerator CrouchWalkStep()
     {
         var c = Character.localCharacter;
@@ -410,7 +410,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.144: the jump button takes off within 0.3 s with a take-off tick; pressed again before the game
-    /// allows another (sinceJump under 0.3 s, CharacterMovement.cs:418), it refuses with TooSoon at the feet.</summary>
+    /// allows another (sinceJump under 0.3 s, CharacterMovement.cs:412), it refuses with TooSoon at the feet.</summary>
     IEnumerator JumpStep()
     {
         var c = Character.localCharacter;
@@ -702,7 +702,7 @@ internal sealed partial class SelfTestRunner
         float tilt = Vector3.Angle(Vector3.up, top.normal);
         float since = CueMark();
         warpedForProp = true;
-        // The warp moves Character.Center (about the hip) there (Character.cs:1905-1958): lifted by the standing hip
+        // The warp moves Character.Center (about the hip) there (Character.cs:1904-1957): lifted by the standing hip
         // height so the feet, not the hip, meet the slope and the hip ray finds it (run 34).
         float stand = Mathf.Clamp(c.Center.y - c.data.groundPos.y, 0.7f, 1.5f);
         c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, top.point + Vector3.up * stand, false);
@@ -716,7 +716,7 @@ internal sealed partial class SelfTestRunner
             && !CueLog.Capture.Fired(DomLeft, DenyReason.TooSteep, since, false, out _)
         )
         {
-            // Warping frames count too: the warp's settling wait (Character.cs:1958) lets physics run, and run 36's
+            // Warping frames count too: the warp's settling wait (Character.cs:1957) lets physics run, and run 36's
             // slide and cue both came then, while a gate on c.warping saw "0 slide frames" and failed a cue that fired.
             minSlide = Mathf.Min(minSlide, c.data.sinceFallSlide);
             if (c.data.sinceFallSlide < 0.1f)
@@ -740,7 +740,7 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
-    /// <summary>vr.148: a 2 s ragdoll (RPCA_Fall, Character.cs:1752): when control returns past 0.9 both hands get
+    /// <summary>vr.148: a 2 s ragdoll (RPCA_Fall, Character.cs:1749): when control returns past 0.9 both hands get
     /// the footing tick, and the stick walks again.</summary>
     IEnumerator GetUpStep()
     {
@@ -762,7 +762,7 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.149: a knockback from the right (RPCA_AddForceAtPosition, Character.cs:461, applied locally)
+    /// <summary>vr.149: a knockback from the right (RPCA_AddForceAtPosition, Character.cs:458, applied locally)
     /// rumbles the right hand harder than the left.</summary>
     IEnumerator KnockbackSideStep()
     {
@@ -787,7 +787,7 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.currentRagdollControll > 0.9f, 4f);
     }
 
-    /// <summary>vr.150: statuses over the top (Injury 1) start passOutValue rising (Character.cs:1043): danger
+    /// <summary>vr.150: statuses over the top (Injury 1) start passOutValue rising (Character.cs:1040): danger
     /// pulses on the hands before the pass-out. Cleared again before it completes.</summary>
     IEnumerator PrePassOutStep()
     {

@@ -169,13 +169,13 @@ public static class MobCatalog
             "MushroomZombie_Player",
             EntityKind.Character,
             SpawnStyle.Unsupported,
-            "Character.cs:811, needs a dying player (RPC_Arise)"
+            "Character.cs:808, needs a dying player (RPC_Arise)"
         ),
         (
             "PetrifiedScout",
             EntityKind.Entity,
             SpawnStyle.Unsupported,
-            "Character.cs:785, needs a killed player"
+            "Character.cs:782, needs a killed player"
         ),
         (
             "PlayerGhost",

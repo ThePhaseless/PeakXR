@@ -126,7 +126,7 @@ public sealed class BootstrapFeature : Feature
 
 /// <summary>
 /// Blocks the local character's input while the runtime has focus (dashboard open).
-/// Target: <c>Character.CanDoInput()</c> (internal, bool), decomp Assembly-CSharp/Character.cs:1714;
+/// Target: <c>Character.CanDoInput()</c> (internal, bool), decomp Assembly-CSharp/Character.cs:1711;
 /// it gates <c>character.input.Sample(...)</c> at CharacterMovement.cs:198.
 /// </summary>
 [HarmonyPatch]

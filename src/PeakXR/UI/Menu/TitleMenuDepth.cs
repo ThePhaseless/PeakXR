@@ -15,7 +15,7 @@ namespace PeakXR.UI.Menu;
 /// <summary>
 /// Gives the converted title canvas depth, using only what the game shows at runtime:
 /// <list type="bullet">
-/// <item>Each direct child of the current <see cref="UIPage"/> (MainMenuPageHandler, A/MainMenuPageHandler.cs:12) that
+/// <item>Each direct child of the current <see cref="UIPage"/> (MainMenuPageHandler, A/MainMenuPageHandler.cs:14) that
 /// holds a <see cref="Selectable"/> and is hand-sized (<see cref="TitleLayout.IsHandSized"/>) slides along its sight
 /// line to arm's reach and turns to face the eye: the signpost and the studio logos come to hand, the logo, timer and
 /// credits stay out in the scene, and big pages (settings) stay a reading panel.</item>
@@ -158,7 +158,7 @@ internal sealed class TitleMenuDepth
         pages =
             canvas.GetComponentInParent<UIPageHandler>(true)
             ?? canvas.GetComponentInChildren<UIPageHandler>(true);
-        // MainMenuPageHandler.IntroAnimation (A/MainMenuPageHandler.cs:18) is the Animator on the canvas itself.
+        // MainMenuPageHandler.IntroAnimation (A/MainMenuPageHandler.cs:20) is the Animator on the canvas itself.
         intro = canvas.GetComponent<Animator>();
         introState = 0;
         // A root CanvasGroup the game owns is left alone: no fades then.

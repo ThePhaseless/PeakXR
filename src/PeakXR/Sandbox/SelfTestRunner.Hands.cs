@@ -54,7 +54,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.29-ground-backpack", 25f, GroundBackpackStep());
         yield return HandStep("vr.32-shoulder-stash", 30f, ShoulderStashStep());
         // Later steps expect no worn pack (the over-the-shoulder slot would claim grips); Player.EmptySlot(3) takes
-        // it off (Player.cs:211, GetItemSlot :250).
+        // it off (Player.cs:215, GetItemSlot :254).
         Safe(
             "hands.unwear",
             () =>
@@ -135,7 +135,7 @@ internal sealed partial class SelfTestRunner
     // ---------------------------------------------------------------- steps
 
     /// <summary>vr.10 / vr.11: a hand reaches an Apple on the ground and grips; the game equips it in that hand
-    /// (<c>CharacterData.currentItem</c>, CharacterData.cs:417). A slow release keeps it unless
+    /// (<c>CharacterData.currentItem</c>, CharacterData.cs:418). A slow release keeps it unless
     /// <c>Interaction.ReleaseToDrop</c>.</summary>
     IEnumerator GrabStep(bool left)
     {
@@ -201,7 +201,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.12: the hand holding an Apple, steered to the mouth point (<see cref="MouthGesture.MouthPoint"/>),
     /// eats it: the game's <c>Item.Consume</c> RPC stamps <c>CharacterData.lastConsumedItem</c> (Item.cs:1096,
-    /// CharacterData.cs:169). The gesture reads the tracked grip; the note also gives the physics item's closest
+    /// CharacterData.cs:170). The gesture reads the tracked grip; the note also gives the physics item's closest
     /// approach, which the holder's own head collider keeps away from the mouth. Eating must also move the status the
     /// item changes (<see cref="StatusEffect"/>) the right way, so the step sets that status first.</summary>
     IEnumerator EatStep()
@@ -499,9 +499,9 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.15: at the nearest steep terrain face (rays on <c>HelperFunctions.terrainMapMask</c>, HelperFunctions.cs:27),
-    /// a gripping hand on the surface starts the game's wall climb (<c>CharacterData.isClimbing</c>, CharacterData.cs:118),
+    /// a gripping hand on the surface starts the game's wall climb (<c>CharacterData.isClimbing</c>, CharacterData.cs:119),
     /// pulling it down lifts the body, and letting go ends the climb. Warps there with <c>Character.WarpPlayerRPC</c>
-    /// (Character.cs:1822) and back to spawn after. Skips when no such face is within 40 m of the spawn or a ring of points around it.
+    /// (Character.cs:1824) and back to spawn after. Skips when no such face is within 40 m of the spawn or a ring of points around it.
     /// </summary>
     IEnumerator ClimbStep()
     {
@@ -628,7 +628,7 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.17: the move stick held forward for 1 s walks the character (<c>Character.Center</c>, Character.cs:273).</summary>
+    /// <summary>vr.17: the move stick held forward for 1 s walks the character (<c>Character.Center</c>, Character.cs:272).</summary>
     IEnumerator MoveStep()
     {
         var c = Character.localCharacter;
@@ -790,7 +790,7 @@ internal sealed partial class SelfTestRunner
         spot.y = c.Center.y;
 
         // Wear a pack: the wheel's Wear slice calls Backpack.Wear (BackpackWheel.cs:133), the plain pickup into
-        // Player.backpackSlot (Player.cs:274).
+        // Player.backpackSlot (Player.cs:278).
         if (!SandboxActions.SpawnItemAt(packPrefab, spot))
         {
             Fail(SandboxActions.LastMessage);
@@ -1042,7 +1042,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.19: both aim rays on the pause menu's Resume button (<c>PauseMenuMainPage.resumeButton</c>,
-    /// PauseMenuMainPage.cs:50) and a trigger pull close the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304).</summary>
+    /// PauseMenuMainPage.cs:56) and a trigger pull close the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304).</summary>
     IEnumerator LaserStep()
     {
         var c = Character.localCharacter;
@@ -1094,7 +1094,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.20: the holding hand opened over its belt slot holsters the item into that hotbar slot
-    /// (<c>Player.GetItemSlot</c>, Player.cs:246, <c>ItemSlot.prefab</c>), and a grip there draws it back into the same hand.
+    /// (<c>Player.GetItemSlot</c>, Player.cs:250, <c>ItemSlot.prefab</c>), and a grip there draws it back into the same hand.
     /// The game's 2D hotbar must be hidden meanwhile.
     /// </summary>
     IEnumerator HolsterStep()
@@ -1354,7 +1354,7 @@ internal sealed partial class SelfTestRunner
         return driver != null ? driver.Pose : default;
     }
 
-    /// <summary>Empties hotbar slots 0-2 (<c>Player.EmptySlot</c>, Player.cs:212) so a given or grabbed item gets a
+    /// <summary>Empties hotbar slots 0-2 (<c>Player.EmptySlot</c>, Player.cs:216) so a given or grabbed item gets a
     /// real slot, not the overflow one. Only with empty hands.</summary>
     static void EmptyHotbar(Character c)
     {

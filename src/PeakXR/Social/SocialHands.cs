@@ -32,7 +32,7 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>How far (m) the hand pulls away from a gripped thorn before the game's removal hold starts.</summary>
     private const float PluckPull = 0.08f;
 
-    /// <summary>How long (s) a shove holds the reach button, so the game's FixedUpdate sees it (Character.cs:1203).</summary>
+    /// <summary>How long (s) a shove holds the reach button, so the game's FixedUpdate sees it (Character.cs:1200).</summary>
     private const float ShoveTap = 0.1f;
 
     /// <summary>How near (m) an open hand must be to a helpable friend's hand for the "grab here" ring.</summary>
@@ -326,7 +326,7 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>
     /// A dead friend's body is gone (inactive); what is left is their skeleton (Character.SpawnSkeletonOnDeath,
-    /// Character.cs:766). A bare grip on it does nothing in the game: only a held Book of Bones with uses revives
+    /// Character.cs:763). A bare grip on it does nothing in the game: only a held Book of Bones with uses revives
     /// (Skelleton.IsInteractible, Skelleton.cs:58-63; interact.items handles the book). Refused as CantUse, ring only.
     /// </summary>
     private static bool Skeleton(
@@ -672,7 +672,7 @@ internal sealed class SocialHands : IGripExtension
     }
 
     /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
-    /// which speeds up dying (Character.cs:1177). Both grips and both triggers give up on purpose; a single grip says
+    /// which speeds up dying (Character.cs:1174). Both grips and both triggers give up on purpose; a single grip says
     /// so, and holding all four ramps on both hands as the death timer fills.</summary>
     public void GuardGiveUp(Character c, CharacterInput input)
     {
@@ -940,7 +940,7 @@ internal sealed class SocialHands : IGripExtension
         return best;
     }
 
-    /// <summary>Webs and fly traps (CharacterMovement.cs:663): each shake stroke is one jump press, felt as a tick on
+    /// <summary>Webs and fly traps (CharacterMovement.cs:657): each shake stroke is one jump press, felt as a tick on
     /// both hands that gets lighter as the web or trap lets go.</summary>
     private void UpdateStruggle(Character c, CharacterInput input, SocialConfig cfg, float dt)
     {
@@ -968,7 +968,7 @@ internal sealed class SocialHands : IGripExtension
         Affordance.Progress(false, hold);
     }
 
-    /// <summary>A sticky item glued to the hand (CharacterData.cs:98) cannot be put away: say so once.</summary>
+    /// <summary>A sticky item glued to the hand (CharacterData.cs:99) cannot be put away: say so once.</summary>
     private void UpdateStickyCue(Character c)
     {
         bool sticky = c.data.currentStickyItem != null;
