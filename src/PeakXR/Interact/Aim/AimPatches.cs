@@ -2,7 +2,9 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Avatar;
+using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -112,23 +114,100 @@ internal static class AimPatches
         private static void Prefix(VineShooter __instance, out CameraSwap __state) =>
             __state = Held(__instance.item);
 
+        // Inside the fire below, a passing aim check means the game goes on to its path tries.
+        private static void Postfix(bool __result)
+        {
+            if (__result)
+                VineWatch.Aimed();
+        }
+
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
             CameraSwap.Restore(__exception, __state);
     }
 
+    /// <summary>The local player's vine or chain shot, from cast end to its last path try (<see cref="CastWatch"/>).</summary>
+    internal static readonly CastWatch VineWatch = new();
+
+    /// <summary>Self-test only: every path try of the next local shot fails, as when no hang finds open air.</summary>
+    internal static bool SelfTestNoPath;
+
     /// <summary>VineShooter.OnPrimaryFinishedCast (VineShooter.cs:36, private): vine start 1 m ahead of the
-    /// camera at :52-57.</summary>
+    /// camera at :52-57. When all ten path tries fail (:49-69) the cast just ends; the local holder gets NoPath at
+    /// the aimed spot with the shooter red.</summary>
     [HarmonyPatch]
     internal static class VineShooterFire
     {
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(VineShooter), "OnPrimaryFinishedCast");
 
-        private static void Prefix(VineShooter __instance, out CameraSwap __state) =>
+        private static void Prefix(VineShooter __instance, out CameraSwap __state)
+        {
+            if (HandAim.IsLocalHeld(__instance.item))
+                VineWatch.Begin();
             __state = Held(__instance.item);
+        }
+
+        private static void Postfix(VineShooter __instance)
+        {
+            if (!VineWatch.Open)
+                return;
+            var reason = VineWatch.End(DenyReason.NoPath);
+            SelfTestNoPath = false;
+            if (reason == DenyReason.None)
+                return;
+            var item = __instance.item;
+            var spot = AimSpot(item);
+            Affordance.Deny(LocalHold.ItemInLeftHand, spot, reason, default, item);
+        }
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
             CameraSwap.Restore(__exception, __state);
+
+        /// <summary>Where the hand aim meets terrain within the shooter's range, else the item.</summary>
+        private static Vector3 AimSpot(Item item)
+        {
+            if (
+                HandAim.TryHeld(out var origin, out var rotation)
+                && Physics.Raycast(
+                    origin,
+                    rotation * Vector3.forward,
+                    out var hit,
+                    item.GetComponent<VineShooter>().maxLength,
+                    HelperFunctions.LayerType.TerrainMap.ToLayerMask()
+                )
+            )
+                return hit.point;
+            return item.Center();
+        }
+    }
+
+    /// <summary>JungleVine.CheckVinePath (JungleVine.cs:234, static): one path try of a vine shot.</summary>
+    [HarmonyPatch]
+    internal static class VinePathTry
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(JungleVine),
+                "CheckVinePath",
+                new[]
+                {
+                    typeof(Vector3),
+                    typeof(Vector3),
+                    typeof(float),
+                    typeof(Vector3).MakeByRefType(),
+                    typeof(float),
+                }
+            );
+
+        private static void Postfix(ref bool __result)
+        {
+            if (!VineWatch.Open)
+                return;
+            if (SelfTestNoPath)
+                __result = false;
+            if (__result)
+                VineWatch.Built();
+        }
     }
 
     /// <summary>RescueHook.GetMiddleScreenRay (RescueHook.cs:261-269): ScreenPointToRay(screen centre) is the only

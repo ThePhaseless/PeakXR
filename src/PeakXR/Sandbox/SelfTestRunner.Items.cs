@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Interact.Aim;
 using PeakXR.Interact.Binoculars;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
@@ -37,6 +38,8 @@ internal sealed partial class SelfTestRunner
         // Light_Rpc is buffered. So the fire stays lit for the rest of the run (vr.27 uses it).
         yield return ItemStep("vr.25-cook-over-fire", AppleFragment, 40f, CookStep);
         yield return WarpBack();
+        yield return ItemStep("vr.25b-cook-danger", AppleFragment, 40f, CookDangerStep);
+        yield return WarpBack();
         yield return HandStep("vr.27-warm-hands", 30f, WarmStep());
         yield return WarpBack();
         yield return HandStep("vr.160-use-routes", 40f, UseRoutesStep());
@@ -51,6 +54,9 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
         // vr.169 raises the binoculars in Hold mode; a failed or timed-out step leaves it forced.
         BinocularsConfig.ForceHold = false;
+        yield return ItemStep("vr.170-throw-mid-cast", AppleFragment, 25f, ThrowMidCastStep);
+        yield return HandStep("vr.171-vine-no-path", 30f, VineNoPathStep());
+        yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
     }
 
     IEnumerator ItemStep(string id, string fragment, float timeout, Func<Item, IEnumerator> body)
@@ -743,6 +749,64 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
 
         static string NameOf(Item it) => it != null ? it.name : "item (gone)";
+    }
+
+    /// <summary>vr.25b: food already cooked twice (CookedAmount 2, so one more burns it: CookRisk, ItemCooking.cs:174-257)
+    /// held over the fire lit by vr.25/26. While the game's cook hold runs, the food hand gets the Danger feel; the
+    /// hand then pulls back out of the heat before the hold ends, so the food stays unburnt.</summary>
+    IEnumerator CookDangerStep(Item foodPrefab)
+    {
+        var c = Character.localCharacter;
+        var fire = Nearest<Campfire>(c.Center, f => f.Lit);
+        if (fire == null || !Affordance.Enabled || !Setting("Interaction", "CookOverFire", true))
+        {
+            stepSkip =
+                fire == null ? "no lit campfire (vr.25/26 light it)"
+                : !Affordance.Enabled ? "ui.affordance not installed"
+                : "Interaction.CookOverFire is off";
+            yield break;
+        }
+        var fireBase = ItemGestures.FireBase(fire);
+        yield return ApproachFire(fireBase);
+        yield return GiveAndHold(foodPrefab);
+        if (!stepOk)
+            yield break;
+        var food = HeldItem();
+        if (food.cooking == null || !food.cooking.canBeCooked)
+        {
+            stepSkip = food.name + " cannot be cooked";
+            yield break;
+        }
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        food.GetData<IntItemData>(DataEntryKey.CookedAmount).Value = 2;
+        var goal = fireBase + Flat(c.Center - fireBase) * 0.35f + Vector3.up * 0.55f;
+        float cookTime = GameTiming.InteractSeconds(fire, c);
+        float mark = CueMark();
+        float end = Now + GameTiming.Budget(cookTime * 0.8f, 3f);
+        BeginCarry();
+        while (
+            Now < end
+            && food != null
+            && Cooked(food) == 2
+            && !CueLog.Capture.Felt(left, CueFeel.Danger, mark, out _)
+        )
+        {
+            CarryToward(left, food.Center(), goal);
+            yield return null;
+        }
+        var back = c.Center + Flat(c.Center - fireBase) * 0.3f + Vector3.up * 0.3f;
+        yield return MoveTo(left, () => back, 0.3f);
+        yield return ExpectFeel(left, CueFeel.Danger, mark, within: 0f);
+        if (!stepOk)
+            yield break;
+        int after = food != null ? Cooked(food) : -1;
+        var note =
+            $"{foodPrefab.name} at cook level 2 over {fire.name}: {cueNote}; cooked after {after}";
+        if (after != 2)
+            Fail("the danger came too late to pull the food back: " + note);
+        else
+            Note(note);
     }
 
     /// <summary>How close the fire steps' body gets to the fire base. The item hangs off a 0.6 m ragdoll arm: from
@@ -2072,5 +2136,122 @@ internal sealed partial class SelfTestRunner
             Fail("the end stop came before the widest zoom: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>vr.171: a vine or chain shooter aimed where the game's aim check passes (WillAttach,
+    /// VineShooter.cs:71-92) but every path try fails (CheckVinePath forced false, as when no hang finds open air,
+    /// :49-69). The vanilla cast ends with nothing built; VR gets NoPath with the shooter red, and no vine
+    /// appears.</summary>
+    IEnumerator VineNoPathStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        var prefab = FirstItem(i => i.GetComponent<VineShooter>() != null);
+        if (prefab == null)
+        {
+            stepSkip = "no vine or chain shooter item";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        var shooter = item.GetComponent<VineShooter>();
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(() => c.data.isGrounded, 3f);
+        bool aimed = false;
+        for (int i = 0; i < 24 && !aimed; i++)
+        {
+            Turn(c, i == 0 ? 0f : 15f, 0f);
+            yield return null;
+            yield return null;
+            aimed = shooter.WillAttach(out _);
+        }
+        if (!aimed)
+        {
+            stepSkip =
+                $"no terrain within the shooter's {shooter.maxLength:0} m and elevation window here";
+            yield break;
+        }
+        var before = Ids<JungleVine>();
+        AimPatches.SelfTestNoPath = true;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        SelfTestInputPatch.HoldPrimary = true;
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item), 1f);
+        while (Now < end && !CueLog.Capture.Fired(left, DenyReason.NoPath, mark, true, out _))
+            yield return null;
+        SelfTestInputPatch.HoldPrimary = false;
+        AimPatches.SelfTestNoPath = false;
+        yield return ExpectCue(left, DenyReason.NoPath, mark, tint: true, within: 0.5f);
+        var cue = cueNote;
+        var vine = Fresh<JungleVine>(before);
+        if (vine != null)
+            spawned.Add(vine.gameObject);
+        if (!stepOk)
+            yield break;
+        if (vine != null)
+            Fail("a vine was built although every path try failed");
+        else
+            Note($"{prefab.name}: {cue}");
+    }
+
+    /// <summary>vr.172: the warp compass (Action_WarpToRandomPlayer) used with nobody alive farther than its
+    /// <c>minimumDistance</c>: RunAction gives the use back (IncreaseUsesRPC, Action_WarpToRandomPlayer.cs:27-31)
+    /// after its warp sound. VR gets NeedsFriend at the hand with the compass red; the player does not move.
+    /// SKIP when someone is far enough to warp to.</summary>
+    IEnumerator WarpRefundStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        var prefab = FirstItem(i => i.GetComponent<Action_WarpToRandomPlayer>() != null);
+        if (prefab == null)
+        {
+            stepSkip = "no warp compass item";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        float min = prefab.GetComponent<Action_WarpToRandomPlayer>().minimumDistance;
+        foreach (var other in Character.AllCharacters)
+        {
+            if (other != c && !other.data.dead && Vector3.Distance(c.Center, other.Center) > min)
+            {
+                stepSkip = $"{other.characterName} is a warp target";
+                yield break;
+            }
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        var from = c.Center;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item), 1f);
+        while (Now < end && !CueLog.Capture.Fired(left, DenyReason.NeedsFriend, mark, true, out _))
+            yield return null;
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return ExpectCue(left, DenyReason.NeedsFriend, mark, tint: true, within: 0.5f);
+        var cue = cueNote;
+        float moved = Vector3.Distance(from, c.Center);
+        if (!stepOk)
+            yield break;
+        if (moved > 2f)
+            Fail($"warped {moved:0.0} m with nobody to warp to");
+        else
+            Note($"{prefab.name}: moved {moved:0.0} m; {cue}");
     }
 }

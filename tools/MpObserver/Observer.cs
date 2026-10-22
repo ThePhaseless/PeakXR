@@ -319,7 +319,15 @@ internal sealed class Observer : MonoBehaviour
                 .Num(
                     "localHunger",
                     local.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Hunger)
-                );
+                )
+                // A friend's reach clears Web on the helped client (CharacterGrabbing.Reach, :247-276).
+                .Num(
+                    "localWeb",
+                    local.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Web)
+                )
+                .Num("localSinceGrab", local.data.sinceGrabFriend)
+                // Player.backpackSlot (Player.cs:21): still worn after A held it from behind.
+                .Bool("localPack", local.player != null && !local.player.backpackSlot.IsEmpty());
         }
         j.Raw("rpcs", "[" + string.Join(",", rpcsSince) + "]");
         rpcsSince.Clear();

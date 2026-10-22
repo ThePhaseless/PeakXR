@@ -5,6 +5,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact.Climb;
 using PeakXR.Locomotion;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using PeakXR.XR;
 using Photon.Pun;
@@ -57,6 +58,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
         yield return Restoring("vr.42b-rope-pump", 45f, RopePumpStep());
+        yield return WarpBack();
+        yield return Restoring("vr.42d-pump-not-mine", 40f, RopePumpNotMineStep());
         yield return WarpBack();
         yield return Restoring("vr.42c-rope-end-stop", 40f, RopeEndStep());
         yield return WarpBack();
@@ -1665,6 +1668,74 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
         yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.42d: the vr.42b sway on a rope someone else owns (forced: offline every rope is the player's). Only the owner
+    /// simulates a rope (Rope.cs:155), so nothing is pushed; the gripping hand gets one NotHere refusal for the hold.
+    /// </summary>
+    IEnumerator RopePumpNotMineStep()
+    {
+        var c = Character.localCharacter;
+        if (!ClimbHands.RopeHands || !ClimbHands.RopePumping || !Affordance.Enabled)
+        {
+            stepSkip = !Affordance.Enabled
+                ? "ui.affordance not installed"
+                : "Interaction.RopeHandOverHand or Interaction.RopeSwingPump off";
+            yield break;
+        }
+        yield return HangRope(4.2f, 10f);
+        if (testRope == null)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        yield return GrabRope(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return Wait(1f);
+        var along = Flat(VRInput.HeadRotation * Vector3.forward);
+        var hands = applyHands;
+        OnRestore(() =>
+        {
+            ClimbHands.SelfTestNotMine = false;
+            if (VRInput.TestOverride != hands && VRInput.TestOverride != IdleHands)
+                VRInput.TestOverride = finished ? null : IdleHands;
+        });
+        ClimbHands.SelfTestNotMine = true;
+        Affordance.ResetGate();
+        int denies = Affordance.Count;
+        float mark = CueMark();
+        var baseHead = VRInput.HeadPosition;
+        float start = Now;
+        VRInput.TestOverride = () =>
+        {
+            hands();
+            VRInput.HeadPosition =
+                baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.35f * (Now - start)));
+        };
+        float push = 0f;
+        float end = Now + 4f;
+        while (Now < end && c.data.isRopeClimbing)
+        {
+            push = Mathf.Max(push, ClimbHands.LastPump);
+            yield return null;
+        }
+        VRInput.TestOverride = hands;
+        ClimbHands.SelfTestNotMine = false;
+        yield return ExpectCue(left, DenyReason.NotHere, mark, tint: false, within: 0f);
+        var cue = cueNote;
+        int count = Affordance.Count - denies;
+        yield return LetGoAll(c);
+        if (!stepOk)
+            yield break;
+        if (push > 0f)
+            Fail($"pushed a rope someone else owns ({push:0.0} m/s²)");
+        else if (count > 1)
+            Fail($"refused {count} times in one hold: {cue}");
+        else
+            Note(cue);
     }
 
     /// <summary>

@@ -148,6 +148,47 @@ public class GripIntentTests
         Assert.Equal(GripReleaseAction.Keep, GripIntent.OnRelease(true, false, 9f, 2f, true, true));
     }
 
+    [Theory]
+    [InlineData(GripReleaseAction.Throw)]
+    [InlineData(GripReleaseAction.Drop)]
+    public void ReleaseRefusal_MidCast_IsTooSoon(GripReleaseAction result)
+    {
+        // CharacterItems.DoDropping (CharacterItems.cs:254-258) ignores drop and throw while the item casts.
+        Assert.Equal(DenyReason.TooSoon, GripIntent.ReleaseRefusal(result, true, 0.3f));
+    }
+
+    [Fact]
+    public void ReleaseRefusal_MidCastOnUnthrowable_StillTooSoon()
+    {
+        Assert.Equal(
+            DenyReason.TooSoon,
+            GripIntent.ReleaseRefusal(GripReleaseAction.Throw, false, 0.1f)
+        );
+    }
+
+    [Fact]
+    public void ReleaseRefusal_ThrowUnthrowable_CantThrow()
+    {
+        Assert.Equal(
+            DenyReason.CantThrow,
+            GripIntent.ReleaseRefusal(GripReleaseAction.Throw, false, 0f)
+        );
+    }
+
+    [Theory]
+    [InlineData(GripReleaseAction.Throw, true, 0f)]
+    [InlineData(GripReleaseAction.Drop, false, 0f)]
+    [InlineData(GripReleaseAction.Keep, true, 0.5f)]
+    [InlineData(GripReleaseAction.Extension, true, 0.5f)]
+    public void ReleaseRefusal_Otherwise_None(
+        GripReleaseAction result,
+        bool canThrow,
+        float progress
+    )
+    {
+        Assert.Equal(DenyReason.None, GripIntent.ReleaseRefusal(result, canThrow, progress));
+    }
+
     [Fact]
     public void Release_EmptyHand_DoesNothing()
     {

@@ -186,6 +186,7 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | Step id | Runs | Checks |
 |---|---|---|
 | `vr.42b-rope-pump` | beach, after vr.56 (before vr.42c) | Hangs a rope, grips it, measures sway with a still head, then sways the head 0.25 m at 0.35 Hz. Asserts ClimbHands.LastPump above 0, pumped swing at least 0.1 m beyond still swing, no refusal cue. SKIP if RopeHandOverHand or RopeSwingPump off. |
+| `vr.42d-pump-not-mine` | beach, after vr.42b | Hangs and grips a rope and treats it as someone else's (offline, every rope belongs to the player), then sways the head as in vr.42b. Asserts ClimbHands.LastPump stays 0 and the gripping hand gets exactly one NotHere cue. SKIP if ui.affordance is not installed, or RopeHandOverHand or RopeSwingPump is off. |
 | `vr.42c-rope-end-stop` | beach, after vr.42b | Grips the test rope, pokes ropePercent to 0.02, pulls the hand down 0.4 m. Expects the EndStop feel on the hand. SKIP if Interaction.RopeHandOverHand off. |
 | `vr.43b-vine-look-back` | tropics, after vr.43 | Attaches the vine via the game's Interact, turns the rig 180 degrees, grips and pulls the hand back along the vine 0.4 m. Asserts the body moves at least 0.1 m along the pull (ClimbHands re-signs GetSign) and no cue. SKIP if RopeHandOverHand off. |
 | `vr.43c-vine-slide` | tropics, after vr.43b | Attaches the vine, pokes CharacterVineClimbing.attachVel to 10 so Sliding() is true. Asserts the ClimbCue.Whirr cue reaches the main hand within 1 s. SKIP if RopeHandOverHand or ClimbSurfaceFeel off. |
@@ -257,6 +258,10 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | `vr.167-secondary-deny` | VR run, Items steps | With a must-use-on-friend food held and nobody in front, off-hand trigger gives NeedsFriend with tint on the off hand and starts no use or cast. SKIP: ui.affordance not installed, or no such item. |
 | `vr.168-shoot-hand` | VR run, ItemStep RopeShooter | Aimed at open sky the trigger gives NoWall. Aimed at terrain or the test wall within maxLength, holding the trigger spawns a RopeAnchorProjectile with no refusal cue. SKIP: ui.affordance not installed. |
 | `vr.169-zoom-endstop` | VR run, ItemStep Binoculars | In forced Hold mode with the trigger held, binocularsActive turns on. Twisting the hand 270 degrees per second drives lerpedFOV to maxFov and gives one EndStop feel. SKIP: ui.affordance not installed, or TwistZoom off. |
+| `vr.25b-cook-danger` | VR run, ItemStep apple fragment, after vr.25 | Food set to cook level 2 (one more cook burns it) is held over the lit fire. The cook hold gives a Danger feel on the food hand, then the hand pulls back and the cook level stays 2. SKIP: no lit campfire, ui.affordance not installed, or CookOverFire off. |
+| `vr.170-throw-mid-cast` | VR run, ItemStep apple fragment | The trigger starts the eat cast, then the hand swings and lets go as in vr.13. The release gives TooSoon with the item red, the item stays in the hand and PhysicalInteraction.ThrowCount does not change. SKIP: ui.affordance not installed, or cast under 0.5 s. |
+| `vr.171-vine-no-path` | VR run, items steps | A vine or chain shooter turned until WillAttach passes fires with every path try forced to fail. The cast gives NoPath with the shooter red and no new JungleVine. SKIP: ui.affordance not installed, no shooter item, or no terrain in its window. |
+| `vr.172-warp-refund` | VR run, items steps | The warp compass held on the trigger with nobody alive beyond its minimumDistance gives NeedsFriend with the compass red when the game refunds the use, and the player moves less than 2 m. SKIP: ui.affordance not installed, no compass item, or someone to warp to. |
 
 #### Friends
 
@@ -377,6 +382,8 @@ BepInEx only loads under Proton when Wine prefers the native `winhttp.dll`. Pick
 
 Check the setup by launching B once. `BepInEx/LogOutput.log` in B's copy must list `MpObserver` and nothing from PeakXR.
 
+MpObserver puts B under the same progress and save guard as the self-test: B earns no achievements or stats, completes no ascent, and never writes or deletes its quicksave. The log names each call it blocks. If a guarded game method is missing, the observer refuses to start. It records a fingerprint of B's quicksave at the start and at the end, and `tools/mp-check.sh` fails when the two differ. On A, the progress guard is `SelfTestProgressGuard`: the self-test ends with `99-save-untouched` and the MP script with `save-untouched`.
+
 ### Launch
 
 Start B first, before SteamVR, because Steam can block game launches while SteamVR runs (the VR Theater prompt):
@@ -430,7 +437,7 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `reach` (VR) | Asks B to web itself, then grips B's hand; `sinceGrabFriend` must start within 3 s | B's web status |
 | `kick-mode` (VR) | Grips B's hand (no kick for 1 s), then shoves with both open palms; `isKicking` must turn on | A local `RPCA_Fall` |
 | `carry` (VR) | Asks B to pass out, then lifts B with both hands and puts B down | Remote `RPCA_StartCarry` and `RPCA_Drop` |
-| `pack` (VR) | Walks behind B and grips B's worn pack | Generic position and held-item checks |
+| `pack` (VR) | Walks behind B and grips B's worn pack | B still wears its pack, no `PutInBackpackRPC` or `RPCAddItemToBackpack` |
 | `pal-jump` (VR) | Crouches by lowering the head to 0.6 of its height, asks B to stand on A, then jumps | A local `JumpRpc` with `isPalJump` |
 | `campfire-far` (VR) | Grips the logs of an unlit campfire out of B's morale radius; expects FriendsFar and the fire stays off | No `Light_Rpc` |
 | `spectate` (VR) | Passes out, waits until the view follows B, flicks the stick up; expects CantSwitch. Then wakes itself | B sees A passed out |
@@ -468,7 +475,8 @@ It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 w
 - B logged no exceptions and no unknown-event errors, and received no event 151.
 - A sent no event 151 (with a vanilla host, net.pose has no peers).
 - `feed-refuse`: B got no `GetFedItemRPC` or `SendFeedDataRPC`. `reach-deny`: B got no local `RPCA_Fall`. `scene-button`: no `RPCA_Trigger` reached B. `campfire-far`: B saw no `Light_Rpc`.
-- `kick-mode`: B logged a local `RPCA_Fall` from the shove. `carry`: B logged a remote `RPCA_StartCarry` and `RPCA_Drop`. `pal-jump`: B logged a local `JumpRpc` with `isPalJump`. `spectate`: B's checkpoint shows A passed out. `reach` and `pack` have no rule of their own.
+- `kick-mode`: B logged a local `RPCA_Fall` from the shove. `carry`: B logged a remote `RPCA_StartCarry` and `RPCA_Drop`. `pal-jump`: B logged a local `JumpRpc` with `isPalJump`. `spectate`: B's checkpoint shows A passed out. `reach`: B's own Web status is 0.05 or less, so the reach freed B. `pack`: B still wears its pack and got no `PutInBackpackRPC` or `RPCAddItemToBackpack`.
+- B's quicksave fingerprint is the same at the end as at the start.
 
 The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and B's `rpc` lines in `b-observer.jsonl` for emote, ping, eat and feed.
 

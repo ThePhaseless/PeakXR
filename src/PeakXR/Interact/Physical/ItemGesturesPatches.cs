@@ -111,6 +111,19 @@ internal static class ItemGesturesPatches
             ItemGestures.PickupRefused(__instance, DenyReason.Occupied);
     }
 
+    /// <summary>Action_WarpToRandomPlayer.IncreaseUsesRPC (Action_WarpToRandomPlayer.cs:35-46): RunAction (:13-31)
+    /// found nobody alive farther than <c>minimumDistance</c> and gave the use back after the warp sound. Runs on every
+    /// client; only the local holder gets NeedsFriend at the hand with the compass red.</summary>
+    [HarmonyPatch]
+    internal static class WarpRefund
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(Action_WarpToRandomPlayer), "IncreaseUsesRPC");
+
+        private static void Postfix(Action_WarpToRandomPlayer __instance) =>
+            ItemGestures.WarpRefunded(__instance.GetComponent<Item>());
+    }
+
     /// <summary>Skelleton.Update (Skelleton.cs:31, private): each skeleton, every frame. Reports its hips
     /// (Skelleton.Center, :80) so the book's read zone stays off where the book revives instead.</summary>
     [HarmonyPatch]

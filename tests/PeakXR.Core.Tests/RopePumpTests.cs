@@ -33,4 +33,22 @@ public class RopePumpTests
         var a = RopePump.Push(new Vector3(3f, 0f, 4f), 0.25f, 4f, 3f);
         TestUtil.Near(3f, a.Length());
     }
+
+    [Fact]
+    public void PumpOnSomeoneElsesRope_RefusedOncePerHold()
+    {
+        bool refused = false;
+        Assert.True(RopePump.RefuseOnce(false, 1f, ref refused));
+        Assert.False(RopePump.RefuseOnce(false, 1f, ref refused));
+        Assert.True(refused);
+    }
+
+    [Fact]
+    public void OwnRopeOrNoPump_NeverRefused()
+    {
+        bool refused = false;
+        Assert.False(RopePump.RefuseOnce(true, 1f, ref refused));
+        Assert.False(RopePump.RefuseOnce(false, 0f, ref refused));
+        Assert.False(refused);
+    }
 }
