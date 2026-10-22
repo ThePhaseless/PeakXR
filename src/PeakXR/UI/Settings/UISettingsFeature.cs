@@ -105,6 +105,8 @@ internal static class ShowSettingsPatch
 
     private static void Postfix(SharedSettingsMenu __instance, SettingsCategory category)
     {
+        foreach (var spawned in UISettingsFeature.CellsRef(__instance))
+            World.RowStripReport.Born(spawned);
         // Every tab switch spawns new rows into the open page; their row backings would stay drawn until the
         // next page change.
         World.WorldCanvases.Restrip(__instance);
@@ -135,6 +137,7 @@ internal static class ShowSettingsPatch
             .Instantiate(menu.m_settingsCellPrefab, menu.m_settingsContentParent)
             .GetComponent<SettingsUICell>();
         UISettingsFeature.CellsRef(menu).Add(cell);
+        World.RowStripReport.Born(cell);
         try
         {
             cell.Setup(setting);

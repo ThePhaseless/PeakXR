@@ -19,6 +19,9 @@ internal struct HiddenBackdrop
     /// <summary>Its renderer's <c>cullTransparentMesh</c> before it was hidden.</summary>
     public bool Cull;
     public bool Panel;
+
+    /// <summary>A list row's strip: hidden with its row, never a card whose overlapping fills go with it.</summary>
+    public bool Row;
 }
 
 /// <summary>
@@ -65,7 +68,9 @@ internal static class BackdropStrip
         {
             foreach (var h in t.Hidden)
             {
-                if (!h.Panel || h.Graphic == null)
+                // Row strips are no cards: as panels they hid whichever new rows happened to overlap them (the
+                // last page's rows until their deferred Destroy), so a page kept the strips of rows that did not.
+                if (!h.Panel || h.Row || h.Graphic == null)
                     continue;
                 var pr = CanvasRect(t, h.Graphic);
                 if (pr.width > 0f && pr.height > 0f)
@@ -164,26 +169,37 @@ internal static class BackdropStrip
         for (int i = 0; i < graphics.Count; i++)
         {
             var g = graphics[i];
-            if (rects[i].width <= 0f || IndexOf(t, g) >= 0)
+            if (IndexOf(t, g) >= 0)
                 continue;
+            if (rects[i].width <= 0f)
+            {
+                RowStripReport.Judged(g, BackdropRole.Content, "no area", "kept", parts);
+                continue;
+            }
             var traits = Traits(i, bounds);
             if (parts)
             {
                 traits.PanelShare = PanelShare(rects[i]);
                 traits.InPanelGroup = InPanelGroup(g.transform);
             }
-            var role = BackdropRules.Classify(traits);
+            var role = BackdropRules.Classify(traits, out var rule);
             if (role == BackdropRole.Content || (role == BackdropRole.Panel && !panels))
+            {
+                RowStripReport.Judged(g, role, rule, panels ? "kept" : "kept, panels shown", parts);
                 continue;
+            }
             // Switched off on its own (a selection highlight), or already hidden by another system: state, not ours.
             // A dimmer is watched instead, and hidden once it shows (Reassert).
             if (!g.enabled || !g.gameObject.activeSelf || g.canvasRenderer.GetAlpha() <= 0f)
             {
+                RowStripReport.Judged(g, role, rule, "skipped, off or alpha 0", parts);
                 if (role == BackdropRole.Dimmer && !t.PendingDimmers.Contains(g))
                     t.PendingDimmers.Add(g);
                 continue;
             }
-            if (!Hide(t, g, role == BackdropRole.Panel))
+            bool hid = Hide(t, g, role == BackdropRole.Panel, traits.RowBacking);
+            RowStripReport.Judged(g, role, rule, hid ? "hidden" : "skipped, already hidden", parts);
+            if (!hid)
                 continue;
             log.Append(log.Length == 0 ? "" : ", ")
                 .Append(role)
@@ -237,11 +253,23 @@ internal static class BackdropStrip
         traits.Flat = g is Image img
             ? img.sprite == null || img.type is Image.Type.Sliced or Image.Type.Tiled
             : ((RawImage)g).texture == null;
+        traits.RowBacking = FillsRow(g.rectTransform);
         for (int j = i + 1; j < graphics.Count; j++)
             // Hierarchy order is draw order within one canvas: later graphics sit on top.
             if (rects[j].width > 0f && r.Contains(rects[j].center))
                 traits.ContentAbove++;
         return traits;
+    }
+
+    /// <summary>Spans the settings row it sits in (SettingsCell's "Image": the row's strip). Measured in the row's own
+    /// space, so a row the layout has not placed yet, or one off the canvas, is judged the same.</summary>
+    private static bool FillsRow(RectTransform rt)
+    {
+        if (rt.parent is not RectTransform row || !row.TryGetComponent<SettingsUICell>(out _))
+            return false;
+        var r = rt.rect;
+        var p = row.rect;
+        return r.width >= 0.9f * p.width && r.height >= 0.9f * p.height;
     }
 
     /// <summary>Largest share of a hidden panel's area that <paramref name="r"/> covers, counting only panels it
@@ -272,9 +300,14 @@ internal static class BackdropStrip
     }
 
     /// <summary>Hides one graphic. False when it was already hidden by someone else (nothing recorded).</summary>
-    private static bool Hide(TrackedCanvas t, Graphic g, bool panel)
+    private static bool Hide(TrackedCanvas t, Graphic g, bool panel, bool row = false)
     {
-        var h = new HiddenBackdrop { Graphic = g, Panel = panel };
+        var h = new HiddenBackdrop
+        {
+            Graphic = g,
+            Panel = panel,
+            Row = row,
+        };
         // A mask graphic at alpha 0 stops writing its stencil and would hide everything it masks.
         if (g.TryGetComponent<Mask>(out var mask))
         {

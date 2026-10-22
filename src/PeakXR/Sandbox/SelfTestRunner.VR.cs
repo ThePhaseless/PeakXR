@@ -277,7 +277,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.04: the pause menu with the VR tab is a world panel in front of the head (ui.world PlaceMenu), with
-    /// its flat-screen backdrops hidden (BackdropStrip).</summary>
+    /// its flat-screen backdrops hidden (BackdropStrip): no row strip drawn on any page of the VR tab, on the longest
+    /// game tab (scrolled to its end when it scrolls), or on the VR tab again after that tab change.</summary>
     IEnumerator SettingsPanel()
     {
         yield return OpenVRTab();
@@ -302,7 +303,7 @@ internal sealed partial class SelfTestRunner
             );
             // The pause menu's full-canvas BG dimmer is a backdrop whatever UI.MenuPanels says.
             int hidden = WorldCanvases.HiddenBackdrops(root, out int unraycastable);
-            int strips = VisibleRowStrips(root);
+            int strips = RowStripReport.Count(root, "VR tab as opened");
             var note =
                 $"canvas '{root.name}' {root.renderMode}, {distance:0.00} m, {angle:0} deg off the view, "
                 + $"{hidden} backdrops hidden, {unraycastable} of them dropped from raycasts, {strips} row strips drawn";
@@ -321,37 +322,84 @@ internal sealed partial class SelfTestRunner
         yield return root != null
             ? ShotAt("vr-04-settings", CentreOf(root.transform))
             : Shot("vr-04-settings");
-        if (stepOk && root != null)
-            yield return ScrolledRows(root);
+        // Every page runs even after a failure: each one logs its row strip diagnostics (RowStripReport).
+        if (root != null)
+        {
+            yield return VRTabStrips(root);
+            yield return GameTabStrips(root);
+        }
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
     }
 
-    /// <summary>vr.04, second half: the longest game tab scrolled to its end. Rows that sat below the canvas or the
-    /// list's mask when the tab filled must lose their strips once they scroll into view (WorldCanvases.Scrolled).</summary>
-    IEnumerator ScrolledRows(Canvas root)
+    /// <summary>vr.04: every page of every rail entry, each filled by a category switch or page turn, draws no row
+    /// strip. The rail entry and page on show before are restored.</summary>
+    IEnumerator VRTabStrips(Canvas root)
+    {
+        var menu = vrTabMenu;
+        if (menu == null || !VRTabGrid.Shown)
+        {
+            stepNote += "; VR tab grid not shown, only the page as opened checked";
+            yield break;
+        }
+        string group = VRTab.Group;
+        int page = VRTab.Page;
+        var bad = new List<string>();
+        int pages = 0;
+        foreach (var g in VRTab.BuildGroups())
+        {
+            for (int p = 0; ; p++)
+            {
+                VRTabGrid.Select(menu, g.Key, p);
+                yield return Wait(0.25f);
+                pages++;
+                int n = RowStripReport.Count(
+                    root,
+                    $"VR '{g.Title}' page {p + 1}/{VRTabGrid.Pages}"
+                );
+                if (n > 0)
+                    bad.Add($"{g.Title} p{p + 1}: {n}");
+                if (p + 1 >= VRTabGrid.Pages)
+                    break;
+            }
+        }
+        VRTabGrid.Select(menu, group, page);
+        yield return Wait(0.25f);
+        var note = $"; {pages} VR tab pages";
+        if (bad.Count > 0)
+            Fail($"row strips drawn on VR tab pages: {string.Join(", ", bad)}" + note);
+        else
+            stepNote += note + " without strips";
+    }
+
+    /// <summary>vr.04: the longest game tab (a tab change from the VR tab) draws no row strip, scrolled to its end when
+    /// its list scrolls (rows that sat below the canvas or the list's mask when the tab filled,
+    /// WorldCanvases.Scrolled); then the VR tab again, after that tab change.</summary>
+    IEnumerator GameTabStrips(Canvas root)
     {
         var menu = root.GetComponentInChildren<SharedSettingsMenu>();
         var tabs = menu != null ? UISettingsFeature.TabsRef(menu) : null;
-        var list =
-            menu != null && menu.m_settingsContentParent != null
-                ? menu.m_settingsContentParent.GetComponentInParent<ScrollRect>()
-                : null;
         var all =
             GameHandler.Instance != null
                 ? GameHandler.Instance.SettingsHandler.GetSettingsThatImplements<IExposedSetting>()
                 : null;
-        if (tabs == null || list == null || all == null)
+        if (tabs == null || all == null)
         {
-            Fail("vr.04 scroll: no settings tabs, scroll list or settings");
+            Fail("vr.04 game tab: no settings tabs or settings");
             yield break;
         }
         SettingsTABSButton longest = null;
+        SettingsTABSButton vr = null;
         int most = 0;
         foreach (var b in tabs.buttons)
         {
-            if (b == null || b.category == VRTab.Category)
+            if (b == null)
                 continue;
+            if (b.category == VRTab.Category)
+            {
+                vr = b;
+                continue;
+            }
             int n = 0;
             foreach (var s in all)
                 if (s.GetCategory() == b.category.ToString())
@@ -368,40 +416,39 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.8f);
         // The game's own tabs keep their single column in VR; they are short enough to fit the window.
         int outside = RowsOutside(menu);
-        var viewport = list.viewport != null ? list.viewport : (RectTransform)list.transform;
-        bool scrolls = list.content != null && list.content.rect.height > viewport.rect.height + 1f;
-        list.verticalNormalizedPosition = 0f;
-        yield return Wait(0.5f);
-        int strips = VisibleRowStrips(root);
+        int strips = RowStripReport.Count(root, $"game tab {longest.category}");
+        var list =
+            menu.m_settingsContentParent != null
+                ? menu.m_settingsContentParent.GetComponentInParent<ScrollRect>()
+                : null;
+        var viewport =
+            list == null ? null
+            : list.viewport != null ? list.viewport
+            : (RectTransform)list.transform;
+        bool scrolls =
+            list != null
+            && list.content != null
+            && list.content.rect.height > viewport.rect.height + 1f;
+        if (scrolls)
+        {
+            list.verticalNormalizedPosition = 0f;
+            yield return Wait(0.5f);
+            strips += RowStripReport.Count(root, $"game tab {longest.category} scrolled");
+        }
+        int back = 0;
+        if (vr != null)
+        {
+            tabs.Select(vr);
+            yield return Wait(0.5f);
+            back = RowStripReport.Count(root, "VR tab after a game tab");
+        }
         var note =
-            $"; {longest.category} tab ({most} rows{(scrolls ? "" : ", fits without scrolling")}) "
-            + $"scrolled to its end: {strips} row strips drawn, {outside} rows outside the window";
-        if (strips > 0)
-            Fail("row strips drawn after scrolling" + note);
+            $"; {longest.category} tab ({most} rows, {(scrolls ? "scrolled to its end" : "no scrolling")}): "
+            + $"{strips} row strips drawn, {outside} rows outside the window; VR tab again: {back}";
+        if (strips > 0 || back > 0)
+            Fail("row strips drawn after a tab change" + note);
         else
             stepNote += note;
-    }
-
-    /// <summary>Settings rows on <paramref name="root"/> still drawing their own backing: a plain image across most of
-    /// the row that is not a control (the game's SettingsCell strip).</summary>
-    static int VisibleRowStrips(Canvas root)
-    {
-        int count = 0;
-        foreach (var cell in root.GetComponentsInChildren<SettingsUICell>(false))
-        {
-            var width = ((RectTransform)cell.transform).rect.width;
-            foreach (var image in cell.GetComponentsInChildren<Image>(false))
-                if (
-                    image.enabled
-                    && image.canvasRenderer.GetAlpha() > 0f
-                    // Scrolled out of the list's RectMask2D: not drawn.
-                    && !image.canvasRenderer.cull
-                    && image.GetComponentInParent<Selectable>() == null
-                    && image.rectTransform.rect.width >= 0.8f * width
-                )
-                    count++;
-        }
-        return count;
     }
 
     /// <summary>Samples the next level load in the background for vr.05; its own coroutine, so 04-beach is untouched.</summary>

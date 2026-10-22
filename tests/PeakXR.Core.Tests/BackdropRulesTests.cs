@@ -208,4 +208,50 @@ public class BackdropRulesTests
         // Saturated yellow reads as light (luma, not the channel average).
         Assert.False(BackdropRules.NeedsLightHalo(1f, 0.85f, 0.2f));
     }
+
+    // A settings row's strip in the VR grid: 657x90 of a 1920x1080 canvas, nowhere near a hidden panel.
+    private static BackdropTraits RowStrip() =>
+        new()
+        {
+            IsImage = true,
+            WidthFraction = 657f / 1920f,
+            HeightFraction = 90f / 1080f,
+            ContentAbove = 3,
+            Flat = true,
+            RowBacking = true,
+        };
+
+    [Fact]
+    public void RowStrip_IsAPanelWhereverItSits()
+    {
+        // Judged by the row alone: no hidden panel under it, too small to frame a page.
+        Assert.Equal(BackdropRole.Panel, BackdropRules.Classify(RowStrip(), out var rule));
+        Assert.Equal(BackdropRules.RuleRow, rule);
+    }
+
+    [Fact]
+    public void HeaderRowStrip_UnderOneLabel_IsAPanel()
+    {
+        var t = RowStrip();
+        t.ContentAbove = 1;
+        Assert.Equal(BackdropRole.Panel, BackdropRules.Classify(t));
+    }
+
+    [Fact]
+    public void RowPicture_Stays()
+    {
+        var t = RowStrip();
+        t.Flat = false;
+        Assert.Equal(BackdropRole.Content, BackdropRules.Classify(t));
+    }
+
+    [Fact]
+    public void SameStripWithoutItsRow_StaysContent()
+    {
+        // The old outcome: off every hidden panel, a row-sized fill has no rule that hides it.
+        var t = RowStrip();
+        t.RowBacking = false;
+        Assert.Equal(BackdropRole.Content, BackdropRules.Classify(t, out var rule));
+        Assert.Equal(BackdropRules.RuleSmall, rule);
+    }
 }
