@@ -79,6 +79,9 @@ internal static class ClimbHands
     private static Vector3 lastHead;
     private static bool headValid;
     private static Transform pumpSegment;
+
+    /// <summary>This hold already got its refusal for pumping a rope someone else owns.</summary>
+    private static bool pumpRefused;
     private static Rigidbody pumpBody;
     private static ShittyPiton piton;
     private static BreakableRopeAnchor breakable;
@@ -107,6 +110,9 @@ internal static class ClimbHands
 
     /// <summary>Last pump acceleration put on the held rope segment (self-test vr.42b).</summary>
     internal static float LastPump { get; private set; }
+
+    /// <summary>Self-test only (vr.42d): treat the held rope as someone else's, which offline play never has.</summary>
+    internal static bool SelfTestNotMine;
 
     public static void Bind(ConfigFile file)
     {
@@ -284,6 +290,7 @@ internal static class ClimbHands
         atEnd = false;
         headValid = false;
         pumpSegment = null;
+        pumpRefused = false;
         pumpBody = null;
         LastPump = 0f;
         piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
@@ -598,7 +605,8 @@ internal static class ClimbHands
     /// <summary>
     /// D7: the head leaning along the swing pushes the held segment (<see cref="RopePump"/>). Only the rope's owner
     /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent.
-    /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner.
+    /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner. The
+    /// first pump on such a rope in a hold gets NotHere at the gripping hand instead of nothing.
     /// </summary>
     private static void Pump(Character c, VRRig rig, bool holding, float dt)
     {
@@ -609,14 +617,20 @@ internal static class ClimbHands
         headValid = VRInput.HeadTracked;
         LastPump = 0f;
         var rope = c.data.heldRope;
-        if (
-            !RopePumping
-            || !holding
-            || !valid
-            || rope.photonView == null
-            || !rope.photonView.IsMine
-        )
+        if (!RopePumping || !holding || !valid || rope.photonView == null)
             return;
+        if (!rope.photonView.IsMine || SelfTestNotMine)
+        {
+            if (rig.Origin != null)
+                velocity = rig.Origin.TransformVector(velocity);
+            float would = RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax).Length();
+            if (RopePump.RefuseOnce(false, would, ref pumpRefused))
+            {
+                bool left = LeftHand.Anchored || !RightHand.Anchored;
+                Affordance.DenyAtHand(left, DenyReason.NotHere);
+            }
+            return;
+        }
         var api = rope.climbingAPI;
         var segments = rope.GetRopeSegments();
         if (api == null || segments == null || segments.Count < 2)

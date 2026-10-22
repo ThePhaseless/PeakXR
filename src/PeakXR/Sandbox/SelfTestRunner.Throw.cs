@@ -2,6 +2,7 @@ using System.Collections;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -245,6 +246,71 @@ internal sealed partial class SelfTestRunner
                 Fail("throw too short on flat ground: " + note);
                 break;
         }
+    }
+
+    /// <summary>vr.170: food held on the trigger until its cast is under way (Item.progress above 0, Item.cs:346), then
+    /// swung and let go like vr.13. The game ignores a throw mid-cast (CharacterItems.DoDropping,
+    /// CharacterItems.cs:254-258), so the release gets TooSoon with the item red, the item stays in the hand and no
+    /// throw is counted. The trigger lets go after, so the cast stops unfinished.</summary>
+    IEnumerator ThrowMidCastStep(Item prefab)
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        float useTime = GameTiming.UseSeconds(item);
+        if (useTime < MinCancelSeconds)
+        {
+            stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to throw part way";
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out var right);
+        var side = left ? -right : right;
+        var windup = head + side * 0.25f + Vector3.down * 0.15f;
+        var release = windup + forward * 0.9f + Vector3.up * 0.15f;
+        yield return MoveTrack(left, windup, 0.4f);
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        float end = Now + GameTiming.Budget(useTime * 0.3f, 2f);
+        while (Now < end && item != null && item.castProgress < 0.15f)
+            yield return null;
+        float progress = item != null ? item.progress : 0f;
+        if (progress <= 0f)
+        {
+            Script(left).Trigger = 0f;
+            Fail($"the trigger started no cast on {prefab.name}");
+            yield break;
+        }
+        int throwsBefore = PhysicalInteraction.ThrowCount;
+        float consumedBefore = c.data.lastConsumedItem;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        yield return SwingRelease(left, windup, release);
+        yield return ExpectCue(left, DenyReason.TooSoon, mark, tint: true);
+        var cue = cueNote;
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.3f);
+        bool kept = item != null && ReferenceEquals(c.data.currentItem, item);
+        int throws = PhysicalInteraction.ThrowCount - throwsBefore;
+        var note =
+            $"{prefab.name}: cast {progress:0.00} at the release, still held {kept}, throws {throws}, eaten {c.data.lastConsumedItem != consumedBefore}";
+        if (!stepOk)
+            yield break;
+        if (!kept)
+            Fail("left the hand on a mid-cast throw: " + note);
+        else if (throws != 0)
+            Fail("counted a throw the game ignored: " + note);
+        else
+            Note($"{note}; {cue}");
     }
 
     /// <summary>Records a thrown item's first contact (point, normal, collider, time) and whether it was the

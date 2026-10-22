@@ -144,6 +144,26 @@ namespace PeakXR.Core
             return releaseToDrop ? GripReleaseAction.Drop : GripReleaseAction.Keep;
         }
 
+        /// <summary>
+        /// Why a release that <see cref="OnRelease"/> made a throw or drop must keep the item instead, or None. The
+        /// game ignores both while the item casts (progress above 0, CharacterItems.DoDropping); a throw also needs
+        /// <c>canThrow</c>.
+        /// </summary>
+        public static DenyReason ReleaseRefusal(
+            GripReleaseAction result,
+            bool canThrow,
+            float castProgress
+        )
+        {
+            if (result is not (GripReleaseAction.Throw or GripReleaseAction.Drop))
+                return DenyReason.None;
+            if (castProgress > 0f)
+                return DenyReason.TooSoon;
+            return result == GripReleaseAction.Throw && !canThrow
+                ? DenyReason.CantThrow
+                : DenyReason.None;
+        }
+
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
         public static bool IsPointing(in FingerCurls c) =>
             c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;

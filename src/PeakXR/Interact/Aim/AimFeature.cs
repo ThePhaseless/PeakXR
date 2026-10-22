@@ -29,6 +29,7 @@ public sealed class AimFeature : Feature
         Patch(typeof(AimPatches.RopeShooterFire));
         Patch(typeof(AimPatches.VineShooterWillAttach));
         Patch(typeof(AimPatches.VineShooterFire));
+        Patch(typeof(AimPatches.VinePathTry));
         Patch(typeof(AimPatches.RescueHookRay));
         Patch(typeof(AimPatches.RescueHookFire));
         Patch(typeof(AimPatches.ConstructableUpdate));

@@ -576,11 +576,17 @@ internal static class PhysicalInteraction
                     cfg.ReleaseToDrop,
                     action != GripPressAction.Extension && GripHooks.HeldRelease(hook)
                 );
-                if (result == GripReleaseAction.Throw && !item.UIData.canThrow)
+                // Item.ItemUIData.canThrow (Item.cs:71; the flat game hides its throw prompt, GUIManager.cs:1183), and
+                // Item.progress (Item.cs:346): mid-cast, CharacterItems.DoDropping (CharacterItems.cs:254-258) keeps it.
+                var refusal = GripIntent.ReleaseRefusal(
+                    result,
+                    item.UIData.canThrow,
+                    item.progress
+                );
+                if (refusal != DenyReason.None)
                 {
-                    // Item.ItemUIData.canThrow (Item.cs:71; the flat game hides its throw prompt, GUIManager.cs:1183).
                     result = GripReleaseAction.Keep;
-                    Affordance.DenyAtHand(hand.Left, DenyReason.CantThrow);
+                    Affordance.DenyAtHand(hand.Left, refusal);
                 }
                 if (result == GripReleaseAction.Throw)
                 {

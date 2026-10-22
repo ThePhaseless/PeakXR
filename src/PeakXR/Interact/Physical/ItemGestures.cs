@@ -166,6 +166,14 @@ internal static class ItemGestures
         Affordance.Deny(useLeft, at, reason, default, item);
     }
 
+    /// <summary>The warp compass in the local player's hand found nobody to warp to and got its use back: without
+    /// this the warp sound plays and nothing happens.</summary>
+    public static void WarpRefunded(Item item)
+    {
+        if (item != null && HandAim.IsLocalHeld(item))
+            Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.NeedsFriend, default, item);
+    }
+
     private static ItemCooking cooking;
     private static int explodeAt;
 

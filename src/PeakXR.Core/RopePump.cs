@@ -30,4 +30,16 @@ public static class RopePump
             accel = maxAcceleration;
         return level * (accel / speed);
     }
+
+    /// <summary>
+    /// A pump (<paramref name="push"/> above 0, from <see cref="Push"/>) on a rope this player cannot push, since
+    /// only its owner simulates it: true once per hold, so the lean gets one refusal instead of silence or a stream.
+    /// </summary>
+    public static bool RefuseOnce(bool canPush, float push, ref bool refusedThisHold)
+    {
+        if (canPush || push <= 0f || refusedThisHold)
+            return false;
+        refusedThisHold = true;
+        return true;
+    }
 }

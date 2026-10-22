@@ -69,6 +69,18 @@ def r2: . * 100 | round / 100;
       elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) == 0
       then "PASS reach-deny: B was not knocked down"
       else "FAIL reach-deny: B fell (RPCA_Fall) from a refused grip" end),
+    ($a[] | select(.status == "pass" and .name == "reach") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif $y.localWeb == null then "FAIL reach: B logged no Web status (old observer?)"
+      elif $y.localWeb <= 0.05 then "PASS reach: the reach from A freed B (Web \($y.localWeb | r2))"
+      else "FAIL reach: B still webbed (\($y.localWeb | r2)) after the reach from A" end),
+    ($a[] | select(.status == "pass" and .name == "pack") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif $y.localPack == null then "FAIL pack: B logged no pack state (old observer?)"
+      elif $y.localPack and ([$y.rpcs[]? | select(.name == "PutInBackpackRPC" or .name == "RPCAddItemToBackpack")] | length) == 0
+      then "PASS pack: B still wears its pack and nothing went in"
+      elif $y.localPack then "FAIL pack: an item went into the pack of B from a plain hold"
+      else "FAIL pack: B lost its pack to the hold from A" end),
     ($a[] | select(.status == "pass" and .name == "kick-mode") | $bcp[.name] as $y |
       if $y == null then empty
       elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) > 0
