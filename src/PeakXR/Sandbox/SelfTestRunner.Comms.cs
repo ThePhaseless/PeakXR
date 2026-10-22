@@ -43,8 +43,41 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.123: the finger gun aimed at the ground ahead draws its aim as a row of dots from the hand to the
     /// landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone refuses nothing.</summary>
+    /// <summary>Ground items within this distance of the body can be in reach of a pointing grip's interact.</summary>
+    const float StrayItemRadius = 3f;
+
+    /// <summary>
+    /// The finger-gun pose is a pointing grip: held past its trigger window (FingerGun.DefaultWindow) it interacts
+    /// with what the hand points at, as interact.physical intends. vr37's vr.110 aimed at the ground where an earlier
+    /// step's Compass lay (dropped at the end of use.Compass and never swept), picked it up, and the squeeze used the
+    /// compass instead of pinging. The ping steps start from clear ground: world items near the body that no step
+    /// holds are removed, each one logged.
+    /// </summary>
+    static void ClearStrayItems()
+    {
+        var c = Character.localCharacter;
+        if (c == null)
+            return;
+        foreach (var item in FindObjectsByType<Item>(FindObjectsSortMode.None))
+        {
+            if (
+                item.itemState != ItemState.Ground
+                || Vector3.Distance(item.transform.position, c.Center) > StrayItemRadius
+            )
+                continue;
+            var view = item.GetComponent<Photon.Pun.PhotonView>();
+            if (view == null || !(view.IsMine || Photon.Pun.PhotonNetwork.IsMasterClient))
+                continue;
+            Plugin.Log.LogInfo(
+                $"[selftest] ping steps: removed stray {item.name} {Vector3.Distance(item.transform.position, c.Center):0.0} m from the body"
+            );
+            Photon.Pun.PhotonNetwork.Destroy(item.gameObject);
+        }
+    }
+
     IEnumerator PingDottedStep()
     {
+        ClearStrayItems();
         bool left = false;
         var aim = PingGround();
         float mark = CueMark();
@@ -71,6 +104,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator ButtonPingPreviewStep()
     {
+        ClearStrayItems();
         var pinger = LocalPinger();
         if (pinger == null || PingInput.LastPinged == null)
         {
@@ -307,6 +341,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator PingAimStep()
     {
+        ClearStrayItems();
         var pinger = LocalPinger();
         if (pinger == null || PingInput.LastPinged == null)
         {
@@ -351,6 +386,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator PingRefusedStep()
     {
+        ClearStrayItems();
         var pinger = LocalPinger();
         if (pinger == null || PingInput.LastPinged == null)
         {
