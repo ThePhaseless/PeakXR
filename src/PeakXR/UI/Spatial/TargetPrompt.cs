@@ -43,8 +43,14 @@ internal sealed class TargetPrompt
     private const float GlyphDegrees = 1.8f;
     private const float WristGlyphDegrees = 2.4f;
 
-    /// <summary>Glyph slots: primary, secondary, lunge (in place of their text), struggle on the left and right wrist.</summary>
-    private const int Glyphs = 5;
+    /// <summary>Glyph slots: primary, secondary, lunge (in place of their text), struggle on the left and right wrist,
+    /// and the hold ring beside the primary glyph.</summary>
+    private const int Glyphs = 6;
+
+    private const int HoldSlot = 5;
+
+    /// <summary>Points of the hold ring's fill (<see cref="PromptGlyph.HoldFill"/>).</summary>
+    private const int HoldPoints = 17;
 
     /// <summary>The part whose text each in-place glyph slot replaces.</summary>
     private static readonly int[] GlyphPart = { 1, 2, 4 };
@@ -82,6 +88,9 @@ internal sealed class TargetPrompt
     private readonly Vector3[] partCentre = new Vector3[Parts];
     private readonly GlyphView[] views = new GlyphView[Glyphs];
     private readonly PromptVerb[] verbs = new PromptVerb[Glyphs];
+    private readonly System.Numerics.Vector2[] holdPoints = new System.Numerics.Vector2[HoldPoints];
+    private float holdProgress,
+        holdDrawn = -1f;
     private GameObject glyphRoot;
     private bool textHidden,
         lungeShown,
@@ -98,11 +107,15 @@ internal sealed class TargetPrompt
             return false;
         foreach (var v in prompt.views)
         {
-            if (v != null && v.Verb == verb && v.First.enabled)
+            if (v != null && v.Verb == verb && (v.First.enabled || v.FirstRim.enabled))
                 return true;
         }
         return false;
     }
+
+    /// <summary>For the self-test: how full the drawn hold ring is (0..1), or -1 when none is drawn.</summary>
+    public static float HoldFillShown =>
+        current != null && Drawn(PromptVerb.Hold) ? current.holdDrawn : -1f;
 
     /// <summary>
     /// Where ui.hand puts the progress ring of a held interaction: under the target's label. Computed on demand from
@@ -319,6 +332,31 @@ internal sealed class TargetPrompt
         verbs[1] = inPlace && shown[2] ? PromptGlyph.Secondary(piton) : PromptVerb.None;
         verbs[2] = inPlace && lunge ? PromptVerb.Lunge : PromptVerb.None;
         verbs[3] = verbs[4] = struggle;
+        verbs[HoldSlot] =
+            inPlace && shown[1] && HoldTarget(c, out holdProgress)
+                ? PromptVerb.Hold
+                : PromptVerb.None;
+    }
+
+    /// <summary>
+    /// The hovered target takes a held interaction (<c>IInteractibleConstant.IsConstantlyInteractable</c>,
+    /// IInteractibleConstant.cs:5; Interaction.cs:120-123 starts the hold), and how far the running hold is
+    /// (<c>constantInteractableProgress</c>, Interaction.cs:57; it fills only for the held target, :130-136).
+    /// </summary>
+    private bool HoldTarget(Character c, out float progress)
+    {
+        progress = 0f;
+        var interaction = Interaction.instance;
+        if (target is not IInteractibleConstant constant || interaction == null)
+            return false;
+        bool held = ReferenceEquals(interaction.currentHeldInteractible, constant);
+        if (held)
+        {
+            float p = interaction.constantInteractableProgress;
+            // A zero hold time divides to infinity or NaN.
+            progress = float.IsNaN(p) ? 0f : Mathf.Clamp01(p);
+        }
+        return held || constant.IsConstantlyInteractable(c);
     }
 
     private static void Appeared(bool left, VRRig rig)
@@ -372,10 +410,21 @@ internal sealed class TargetPrompt
         for (int i = 0; i < Glyphs; i++)
         {
             var verb = verbs[i];
-            Transform hand = i >= GlyphPart.Length ? rig.Hand(i == 3) : null;
-            if (verb == PromptVerb.None || (i >= GlyphPart.Length && hand == null))
+            bool wrist = i is 3 or 4;
+            Transform hand = wrist ? rig.Hand(i == 3) : null;
+            if (verb == PromptVerb.None || (wrist && hand == null))
             {
                 Show(views[i], PromptVerb.None, default, default, 0f);
+                continue;
+            }
+            if (i == HoldSlot)
+            {
+                // Beside the primary glyph, on the side away from the name: a ring that fills while you hold.
+                var primary = box.Rect.TransformPoint(partCentre[GlyphPart[0]]);
+                float hr =
+                    SpatialMath.SpanMeters(Vector3.Distance(primary, eye), GlyphDegrees) * 0.5f;
+                var facing = SpatialRuntime.FaceEye(primary, eye);
+                ShowHold(views[i], primary + facing * Vector3.right * (hr * 2.6f), facing, hr);
                 continue;
             }
             // In place of the text it replaces, or (struggle) just above each wrist.
@@ -417,6 +466,36 @@ internal sealed class TargetPrompt
         Enable(view.FirstRim, first);
         Enable(view.Second, second);
         Enable(view.SecondRim, second);
+    }
+
+    /// <summary>The hold glyph: a thin white track ring on its dark rim, and a bold white fill over it from the top,
+    /// clockwise, as far as the hold has gone. The fill is re-stroked only when it moves.</summary>
+    private void ShowHold(GlyphView view, Vector3 at, Quaternion facing, float r)
+    {
+        if (view.Verb != PromptVerb.Hold)
+        {
+            var ring = PromptGlyph.Stroke(PromptVerb.Hold, 0);
+            Stroke(view.Second, view.FirstRim, ring);
+            view.Verb = PromptVerb.Hold;
+            holdDrawn = -1f;
+        }
+        if (holdProgress != holdDrawn)
+        {
+            int n = PromptGlyph.HoldFill(holdProgress, holdPoints);
+            view.First.positionCount = n;
+            for (int i = 0; i < n; i++)
+                view.First.SetPosition(i, new Vector3(holdPoints[i].X, holdPoints[i].Y, 0f));
+            holdDrawn = holdProgress;
+        }
+        view.Root.SetPositionAndRotation(at, facing);
+        view.Root.localScale = new Vector3(r, r, r);
+        view.First.widthMultiplier = r * 0.16f;
+        view.Second.widthMultiplier = r * 0.05f;
+        view.FirstRim.widthMultiplier = r * 0.3f;
+        Enable(view.FirstRim, true);
+        Enable(view.Second, true);
+        Enable(view.First, view.First.positionCount > 1);
+        Enable(view.SecondRim, false);
     }
 
     private static void Enable(LineRenderer line, bool on)

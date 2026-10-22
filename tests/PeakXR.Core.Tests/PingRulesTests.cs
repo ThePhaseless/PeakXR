@@ -57,4 +57,45 @@ public class PingRulesTests
     {
         Assert.Equal(notice, PingRules.UseFreeHand(gesture, itemHasUse, otherHandFree));
     }
+
+    [Theory]
+    // Short ray: one dot per spacing, the first half a spacing out.
+    [InlineData(1f, 0.1f, 40, 10, 0.1f)]
+    // Long ray: capped, spread evenly over the whole length.
+    [InlineData(30f, 0.1f, 40, 40, 0.75f)]
+    [InlineData(0f, 0.1f, 40, 0, 0.1f)]
+    [InlineData(0.04f, 0.1f, 40, 0, 0.1f)]
+    public void Dots_SpaceTheRayEvenly(
+        float length,
+        float spacing,
+        int max,
+        int expectedCount,
+        float expectedStep
+    )
+    {
+        PingRules.Dots(length, spacing, max, out int count, out float step);
+        Assert.Equal(expectedCount, count);
+        Assert.Equal(expectedStep, step, 4);
+        // The last dot never passes the end of the ray.
+        Assert.True(count == 0 || step * (count - 0.5f) <= length + 1e-4f);
+    }
+
+    [Fact]
+    public void ButtonPreview_ShowsOnTouchAndShortPress_HidesForTheLongPressUntilLetGo()
+    {
+        var p = new PingButtonPreview();
+        const float longPress = 0.5f;
+        Assert.False(p.Update(false, false, 0f, longPress));
+        Assert.True(p.Update(true, false, 0f, longPress));
+        Assert.True(p.Update(true, true, 0.2f, longPress));
+        // The emote long press took over: hidden, and stays hidden while the thumb rests on the button.
+        Assert.False(p.Update(true, true, 0.5f, longPress));
+        Assert.False(p.Update(true, false, 0f, longPress));
+        // Thumb off, then back: shows again.
+        Assert.False(p.Update(false, false, 0f, longPress));
+        Assert.True(p.Update(true, false, 0f, longPress));
+        // A press without a touch sensor still previews.
+        p.Reset();
+        Assert.True(p.Update(false, true, 0.1f, longPress));
+    }
 }

@@ -32,7 +32,125 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.115-gesture-emote", 20f, GestureEmoteStep());
         yield return HandStep("vr.117-pause-refused", 20f, PauseRefusedStep());
         yield return PromptGlyphSteps();
+        // ---- WP6 gap round: ping
+        yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
+        yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
+        // ---- WP6 gap round: wheels
     }
+
+    // ================================================================ WP6 gap round: ping
+
+    /// <summary>vr.123: the finger gun aimed at the ground ahead draws its aim as a row of dots from the hand to the
+    /// landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone refuses nothing.</summary>
+    IEnumerator PingDottedStep()
+    {
+        bool left = false;
+        var aim = PingGround();
+        float mark = CueMark();
+        yield return FingerGunAim(left, aim, 0.5f);
+        int dots = PingPreview.RayDots;
+        bool landing = PingPreview.DotShown && !PingPreview.DotRed;
+        yield return ShotAt("vr-123-ping-dotted", aim);
+        yield return ExpectNoCue(left, mark, 0f);
+        if (!stepOk)
+            yield break;
+        var note =
+            $"{dots} ray dots, landing dot {landing}, from the {(PingPreview.FromLeft ? "left" : "right")} hand";
+        if (dots < 3 || !landing || PingPreview.FromLeft != left)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.124: the thumb resting on the layout's ping button (Ping, off-hand B/Y tap in BindingTable.Default) shows the
+    /// aim preview from the hand a tap pings from (<c>PingRules.ButtonHandLeft</c>); the tap pings
+    /// (<c>_timeLastPinged</c>, PointPinger.cs:68-71) with a contact tick and no refusal. A long press (the emote
+    /// wheel on the same button) hides the preview until the thumb lets go.
+    /// </summary>
+    IEnumerator ButtonPingPreviewStep()
+    {
+        var pinger = LocalPinger();
+        if (pinger == null || PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        if (
+            !ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out bool button,
+                out var control
+            )
+            || control != VRControl.Secondary
+        )
+        {
+            stepSkip = "the layout's ping is not on an upper face button";
+            yield break;
+        }
+        // No hand points, so the tap aims from the button's own hand.
+        bool aimLeft = button;
+        var rig = VRRig.Instance;
+        var aim = PingGround();
+        yield return PingCooldownOver(pinger);
+        Script(button).SecondaryTouch = true;
+        for (float until = Now + 0.4f; Now < until; )
+        {
+            AimHand(rig, aimLeft, aim);
+            yield return null;
+        }
+        bool previewed = PingInput.ButtonAiming(out bool fromLeft) && PingPreview.DotShown;
+        int dots = PingPreview.RayDots;
+        yield return ShotAt("vr-124-button-ping-preview", aim);
+        Affordance.ResetGate();
+        float mark = CueMark();
+        float gameMark = Time.time;
+        Script(button).Secondary = true;
+        for (float until = Now + 0.15f; Now < until; )
+        {
+            AimHand(rig, aimLeft, aim);
+            yield return null;
+        }
+        Script(button).Secondary = false;
+        yield return Until(
+            () => PingInput.LastPinged(pinger) >= gameMark,
+            2f,
+            "the button tap did not ping (PointPinger._timeLastPinged unchanged)"
+        );
+        if (!stepOk)
+            yield break;
+        yield return ExpectFeel(aimLeft, CueFeel.Contact, mark);
+        string feel = cueNote;
+        yield return ExpectNoCue(aimLeft, mark, 0.3f);
+        if (!stepOk)
+            yield break;
+
+        // The long press opens the emote wheel instead: the preview goes and stays gone while the thumb rests.
+        Script(button).Secondary = true;
+        yield return Wait(new ActionMapper().LongPressSeconds + 0.2f);
+        bool hiddenHeld = !PingInput.ButtonAiming(out _);
+        Script(button).Secondary = false;
+        yield return Wait(0.2f);
+        bool hiddenAfter = !PingInput.ButtonAiming(out _);
+        Script(button).SecondaryTouch = false;
+        yield return Wait(0.3f);
+
+        var note =
+            $"preview {previewed} from the {(fromLeft ? "left" : "right")} hand ({dots} dots), pinged; {feel}; "
+            + $"long press hid it {hiddenHeld}, still hidden after {hiddenAfter}";
+        if (!previewed || fromLeft != aimLeft)
+            Fail(
+                "no aim preview from the tap's hand while the thumb rested on the button: " + note
+            );
+        else if (!hiddenHeld || !hiddenAfter)
+            Fail("the preview stayed on through the emote long press: " + note);
+        else
+            stepNote = note;
+    }
+
+    // ================================================================ end WP6 gap round: ping
 
     // ---------------------------------------------------------------- WP6 slice B: emotes, pause, spectate
 
