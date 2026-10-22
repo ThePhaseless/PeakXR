@@ -228,6 +228,59 @@ public partial class AvatarPoseDriver
         }
     }
 
+    private readonly BodyHold bodyHold = new();
+
+    /// <summary>The lean's <see cref="BodyHold"/> is holding the body this tick. Traced.</summary>
+    internal bool BodyHeld => bodyHold.Holding;
+
+    /// <summary>
+    /// Local player only (a remote body follows the network): while the lean bends the avatar on the ground with
+    /// no move input, <see cref="BodyHold"/> pulls the ragdoll's mass centre back to where the lean started, with the
+    /// same acceleration on every part (<c>Bodypart.AddForce</c>, Bodypart.cs:262, applied in the movement loop,
+    /// Bodypart.cs:286), so the pose is untouched.
+    /// </summary>
+    private void HoldBody()
+    {
+        var c = Owner;
+        var parts = c.refs.ragdoll.partList;
+        var d = c.data;
+        bool free =
+            d.isGrounded
+            && !c.warping
+            && Rig.RigDriver.Upright(c)
+            && c.input != null
+            && c.input.movementInput.sqrMagnitude < 1e-4f;
+        var sum = Vector3.zero;
+        var momentum = Vector3.zero;
+        float mass = 0f;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            var body = parts[i] != null ? parts[i].Rig : null;
+            if (body == null)
+                continue;
+            sum += body.worldCenterOfMass * body.mass;
+            momentum += body.linearVelocity * body.mass;
+            mass += body.mass;
+        }
+        if (mass <= 0f)
+            return;
+        var centre = sum / mass;
+        var velocity = momentum / mass;
+        var a = bodyHold.Update(
+            new System.Numerics.Vector2(centre.x, centre.z),
+            new System.Numerics.Vector2(velocity.x, velocity.z),
+            LeanDegrees >= 1f,
+            free,
+            Time.fixedDeltaTime
+        );
+        if (a == System.Numerics.Vector2.Zero)
+            return;
+        var accel = new Vector3(a.X, 0f, a.Y);
+        for (int i = 0; i < parts.Count; i++)
+            if (parts[i] != null)
+                parts[i].AddForce(accel, ForceMode.Acceleration);
+    }
+
     private static bool IsArmEnd(BodypartType t) =>
         t
             is BodypartType.Elbow_L
@@ -294,6 +347,8 @@ public partial class AvatarPoseDriver
         var tipL = TipRotation(refs.ikLeft);
         var tipR = TipRotation(refs.ikRight);
         bool leaned = ApplyLean(w);
+        if (Owner.IsLocal)
+            HoldBody();
         if (
             cfg.ArmIK
             && !ArmsSuspended
@@ -484,7 +539,7 @@ public partial class AvatarPoseDriver
                 : torsoPhys;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? 1 : 0)} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.z:0.000}) anim-offset {AnimatedOffset().magnitude:0.000}"
             )
         );
     }
