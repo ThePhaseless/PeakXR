@@ -84,7 +84,21 @@ namespace PeakXR.Core
         Vector2 _stillAt;
         float _stillFor;
 
-        public bool RecenterNeeded => Offset.Length() > RecenterDistance;
+        /// <summary>A follow that closes less than <see cref="StallProgress"/> m of the offset in this many seconds is
+        /// blocked (a wall, a rock, a friend in the way): it gives up and asks for the recentre fade. Before, an offset
+        /// between <see cref="LeanRadius"/> and <see cref="RecenterDistance"/> that the body could not close walked it
+        /// into the obstacle for as long as the head stayed there.</summary>
+        public float StallSeconds = 1.5f;
+
+        public float StallProgress = 0.03f;
+
+        /// <summary>The current follow stalled; cleared by <see cref="Recenter"/>.</summary>
+        public bool Stalled { get; private set; }
+
+        float _stallBest;
+        float _stallFor;
+
+        public bool RecenterNeeded => Stalled || Offset.Length() > RecenterDistance;
 
         /// <param name="head">HMD position in tracking space (x, z).</param>
         /// <param name="bodyDelta">The body's horizontal movement since the last update, in tracking space.</param>
@@ -128,6 +142,18 @@ namespace PeakXR.Core
                 _sinceFollow = float.MaxValue;
             else if (_sinceFollow < float.MaxValue)
                 _sinceFollow += dt;
+            if (_following)
+            {
+                if (start || dist < _stallBest - StallProgress)
+                {
+                    _stallBest = dist;
+                    _stallFor = 0f;
+                }
+                else if ((_stallFor += dt) >= StallSeconds)
+                    Stalled = true;
+            }
+            if (Stalled)
+                _following = false;
             if (_following)
             {
                 if (start)
@@ -192,6 +218,8 @@ namespace PeakXR.Core
             Offset = Vector2.Zero;
             _absorbed = 0f;
             _following = false;
+            Stalled = false;
+            _stallFor = 0f;
             _followDir = Vector2.Zero;
             _followTravel = 0f;
             _neutralGoal = Vector2.Zero;

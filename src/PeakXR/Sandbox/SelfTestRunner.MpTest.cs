@@ -187,10 +187,22 @@ internal sealed partial class SelfTestRunner
             scriptLeft.Grip = scriptRight.Grip = 0f;
             yield return WaitFor(() => !c.data.isClimbingAnything, 3f);
         }
-        yield return SettleRecenter(rig);
-        if (!stepOk)
-            yield break;
-        yield return StandStill(c);
+        // Hands back to rest in front of the head as it is now (grips kept, so a held item stays held), then the
+        // recentre with the head and hands where the step will start; the lean trace logs the room-scale follow.
+        yield return MpRest();
+        Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 10f;
+        // Twice, as the offline settle does after its warp: a follow still running at the first recentre (or one
+        // that stalled and faded) gets a second, clean start.
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            yield return SettleRecenter(rig);
+            if (!stepOk)
+                yield break;
+            yield return StandStill(c);
+            if (settledFor >= SettleHold)
+                break;
+        }
+        Rig.RigDriver.TraceLeanUntil = 0f;
         if (settledFor < SettleHold)
         {
             Fail("not settled: " + SettleProblem(c, needSpot: false));
