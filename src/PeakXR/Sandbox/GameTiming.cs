@@ -37,9 +37,17 @@ internal static class GameTiming
     internal static float InteractSeconds(IInteractibleConstant target, Character c) =>
         target != null ? target.GetInteractTime(c) : 0f;
 
-    /// <summary>Wake-up of a level zombie: <c>initialWakeUpTime</c> (MushroomZombie.cs:38, counted at :649), then
-    /// the idle before it picks a target.</summary>
+    /// <summary>A spawned zombie stays hidden, and cannot be woken, this long (<c>RevealZombie</c>,
+    /// MushroomZombie.cs:493-501, started in <c>Start</c>, :238-239; <c>DoSleeping</c> needs <c>visible</c>, :507).</summary>
+    private const float ZombieRevealSeconds = 1f;
+
+    /// <summary>Spawn to target of a level zombie seen at once: the reveal, then <see cref="ZombieRiseSeconds"/>.</summary>
     internal static float ZombieWakeSeconds(MushroomZombie zombie) =>
+        ZombieRevealSeconds + ZombieRiseSeconds(zombie);
+
+    /// <summary>From waking to a target: <c>initialWakeUpTime</c> (MushroomZombie.cs:38, counted at :649), then the
+    /// idle before it picks one (:590-596).</summary>
+    internal static float ZombieRiseSeconds(MushroomZombie zombie) =>
         zombie.initialWakeUpTime + ZombieIdleSeconds;
 
     /// <summary>Time for a vine to grow <paramref name="meters"/> at its <c>growingSpeed</c> (MagicBeanVine.cs:15,

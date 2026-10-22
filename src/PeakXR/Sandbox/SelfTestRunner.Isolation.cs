@@ -100,6 +100,9 @@ internal sealed partial class SelfTestRunner
             : vineOrigin != null ? GameTiming.Budget(GameTiming.VineGrowSeconds(vine, MinGrowth))
             : 3f;
         float end = Now + window;
+        // The wake waits on the player's look (MushroomZombie.cs:517), so the rise is timed from the wake itself.
+        float wokeAfter = -1f;
+        float spawnedAt = Now;
         while (
             Now < end
             && go != null
@@ -126,6 +129,16 @@ internal sealed partial class SelfTestRunner
                 && thief == raven;
             if (wash != null && c.data.isBlind)
                 washed |= BlindWashedOut(wash);
+            if (
+                zombie != null
+                && wokeAfter < 0f
+                && zombie.currentState != MushroomZombie.State.Sleeping
+            )
+            {
+                wokeAfter = Now - spawnedAt;
+                end = Mathf.Max(end, Now + GameTiming.Budget(GameTiming.ZombieRiseSeconds(zombie)));
+                window = end - spawnedAt;
+            }
             yield return null;
         }
         bool gone = go == null;
@@ -139,7 +152,7 @@ internal sealed partial class SelfTestRunner
                     ? $", vine {vineStart:0.00} m at the start, growingSpeed {vine.growingSpeed:0.0} m/s"
                     : ""
             )
-            + (zombie != null ? $", zombie {zombie.currentState}" : "")
+            + (zombie != null ? $", zombie {zombie.currentState}, {ZombieWoke(wokeAfter)}" : "")
             + (raven != null ? $", stealing the player's voice {stole}" : "");
         bool spawnOnly = false;
         foreach (var s in SpawnOnly)
@@ -161,6 +174,9 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
     }
+
+    static string ZombieWoke(float after) =>
+        after < 0f ? "never woke" : F($"woke after {after:0.0} s");
 
     /// <summary>Growth (m) that counts as a sign of life.</summary>
     const float MinGrowth = 0.2f;
