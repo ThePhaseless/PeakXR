@@ -43,6 +43,38 @@ internal static class GoToSegmentPatch
     }
 }
 
+/// <summary>The segment swap's wait for the fog (MapHandler.cs:594, the only caller): its enumerator is wrapped so
+/// run flow learns the moment it ends, 1 s before the swap, however long the fog takes.
+/// A/OrbFogHandler.cs:145 <c>public IEnumerator WaitForFogCatchUp()</c>.</summary>
+[HarmonyPatch]
+internal static class FogCatchUpPatch
+{
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(OrbFogHandler), "WaitForFogCatchUp", Type.EmptyTypes);
+
+    private static void Postfix(ref System.Collections.IEnumerator __result) =>
+        __result = Then(__result);
+
+    private static System.Collections.IEnumerator Then(System.Collections.IEnumerator wait)
+    {
+        while (wait.MoveNext())
+            yield return wait.Current;
+        RunFlowRuntime.OnFogCaughtUp();
+    }
+}
+
+/// <summary>The segment swap itself: the coroutine shows the new segment here right after hiding the old one
+/// (MapHandler.cs:596-598); its only other caller is the same coroutine's re-activation (:631), by then disarmed.
+/// A/MapHandler.cs:573 <c>private void ActivateCurrentSegment()</c>.</summary>
+[HarmonyPatch]
+internal static class SegmentSwapPatch
+{
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(MapHandler), "ActivateCurrentSegment", Type.EmptyTypes);
+
+    private static void Prefix() => RunFlowRuntime.OnSegmentSwap();
+}
+
 /// <summary>Title card of the new segment, the end of the segment swap (MapHandler.cs:830):
 /// A/MountainProgressHandler.cs:67 <c>public void SetSegmentComplete(int segment)</c>.</summary>
 [HarmonyPatch]

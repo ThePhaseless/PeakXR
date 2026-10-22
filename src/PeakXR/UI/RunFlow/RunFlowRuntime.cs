@@ -21,7 +21,6 @@ namespace PeakXR.UI.RunFlow;
 internal sealed class RunFlowRuntime : MonoBehaviour
 {
     private const float MinWarpDistance = 1.5f;
-    private const float SegmentArmTimeout = 60f;
     private const float RumblePulseInterval = 0.1f;
     private const float PortalRumble = 0.4f;
 
@@ -62,10 +61,8 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     private CinemaScreen cinema;
     private bool cinemaRunning;
 
-    private bool segmentArmed;
-    private float segmentArmedAt;
+    private readonly SegmentSwapGate segmentGate = new();
     private bool segmentBusy;
-    private OrbFogHandler fog;
     private PeakHandler peak;
     private bool creditsBlack;
     private Character beachCharacter;
@@ -88,7 +85,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     /// <summary>A campfire segment swap is armed or holding its fade; the self-test watches the fade through it.</summary>
     internal static bool SegmentPending =>
-        instance != null && (instance.segmentArmed || instance.segmentBusy);
+        instance != null && (instance.segmentGate.Armed || instance.segmentBusy);
 
     private static bool? comfortViewpoint;
 
@@ -251,9 +248,29 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     {
         if (instance == null || !VRSession.Active || !instance.cfg.FadeOnSegmentChange.Value)
             return;
-        instance.fog = Singleton<OrbFogHandler>.Instance;
-        instance.segmentArmed = true;
-        instance.segmentArmedAt = Time.unscaledTime;
+        instance.segmentGate.Arm(Time.unscaledTime);
+    }
+
+    /// <summary>OrbFogHandler.WaitForFogCatchUp ended (OrbFogHandler.cs:145): the segment swap waits on it and
+    /// follows 1 s later (MapHandler.cs:594-596), so the fade starts now, however long the fog took.</summary>
+    public static void OnFogCaughtUp()
+    {
+        if (instance != null && instance.segmentGate.FogCaughtUp())
+            instance.StartSegmentHold(snap: false);
+    }
+
+    /// <summary>MapHandler.ActivateCurrentSegment, the segment swap itself (MapHandler.cs:596-598): an armed swap
+    /// whose fade has not started goes black at once, so it never shows.</summary>
+    public static void OnSegmentSwap()
+    {
+        if (instance != null && instance.segmentGate.Swap())
+            instance.StartSegmentHold(snap: true);
+    }
+
+    private void StartSegmentHold(bool snap)
+    {
+        segmentBusy = true;
+        Request(segment, snap);
     }
 
     /// <summary>MountainProgressHandler.SetSegmentComplete, the title-card trigger (MapHandler.cs:830).</summary>
@@ -377,20 +394,9 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     private void UpdateSegmentWatch()
     {
-        if (!segmentArmed)
-            return;
-        if (Time.unscaledTime - segmentArmedAt > SegmentArmTimeout)
-        {
-            segmentArmed = false;
-            return;
-        }
-        // Same exit condition as OrbFogHandler.WaitForFogCatchUp (OrbFogHandler.cs:148); the swap
-        // follows 1 s later (MapHandler.cs:711), enough for the fade-out.
-        if (fog != null && fog.currentSize > 30f && fog.isMoving && !fog.hasArrived)
-            return;
-        segmentArmed = false;
-        segmentBusy = true;
-        Request(segment, snap: false);
+        // Only an advance whose swap never comes is dropped; a slow fog keeps it armed.
+        if (segmentGate.Expired(Time.unscaledTime))
+            Plugin.Log.LogInfo("[ui.runflow] segment advance armed but no swap came: disarmed");
     }
 
     private void UpdateBeach()
@@ -555,11 +561,10 @@ internal sealed class RunFlowRuntime : MonoBehaviour
     /// <summary>A level switch takes over (ui.menu fades into its loading space): end every hold.</summary>
     private void EndTransitions()
     {
-        segmentArmed = false;
+        segmentGate.Reset();
         segmentBusy = false;
         creditsBlack = false;
         peak = null;
-        fog = null;
         if (channels != null)
             foreach (var channel in channels)
                 channel.Fade.Release();
