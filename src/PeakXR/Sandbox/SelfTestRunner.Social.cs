@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
 using STATUS = CharacterAfflictions.STATUSTYPE;
@@ -18,6 +19,9 @@ internal sealed partial class SelfTestRunner
 {
     /// <summary>Off the vanilla thorn cone: 5° plus 15° solo (ThornOnMe.cs:131-133), with margin.</summary>
     const float OffViewDegrees = 25f;
+
+    /// <summary>A thorn a hand can pinch without reaching behind the head (run 34 drew one at 168°).</summary>
+    const float OffViewMaxDegrees = 120f;
 
     IEnumerator SocialSteps()
     {
@@ -102,25 +106,44 @@ internal sealed partial class SelfTestRunner
         SandboxActions.SetGodMode(true);
     }
 
-    /// <summary>A thorn stuck in the local body farther than <paramref name="minAngle"/> from the camera's aim,
-    /// adding thorns (CharacterAfflictions.AddThorn, :1695) until one is.</summary>
-    static ThornOnMe OffViewThorn(Character c, float minAngle, out float angle)
+    /// <summary>
+    /// The only thorn stuck in the local body, between <paramref name="minAngle"/> and <paramref name="maxAngle"/>
+    /// from the camera's aim. Thorns are added (CharacterAfflictions.AddThorn, :1695, a random free spot) and any
+    /// other stuck thorn is taken out (RemoveThorn, :1771), so the hand's nearest-thorn pick
+    /// (SocialHands.Find) cannot take a neighbour instead of the one the step watches.
+    /// </summary>
+    static ThornOnMe OffViewThorn(Character c, float minAngle, float maxAngle, out float angle)
     {
         angle = 0f;
         var cam = MainCamera.instance != null ? MainCamera.instance.transform : null;
         if (cam == null)
             return null;
-        for (int tries = 0; tries < 6; tries++)
+        var a = c.refs.afflictions;
+        var stuck = new List<ThornOnMe>();
+        for (int tries = 0; tries < 16; tries++)
         {
-            foreach (var thorn in c.refs.afflictions.physicalThorns)
+            ThornOnMe pick = null;
+            stuck.Clear();
+            foreach (var thorn in a.physicalThorns)
             {
-                if (thorn == null || !thorn.stuckIn || thorn.isArrow)
+                if (thorn == null || !thorn.stuckIn)
                     continue;
-                angle = Vector3.Angle(thorn.transform.position - cam.position, cam.forward);
-                if (angle > minAngle)
-                    return thorn;
+                stuck.Add(thorn);
+                float off = Vector3.Angle(thorn.transform.position - cam.position, cam.forward);
+                if (pick == null && !thorn.isArrow && off > minAngle && off <= maxAngle)
+                {
+                    pick = thorn;
+                    angle = off;
+                }
             }
-            c.refs.afflictions.AddThorn(0);
+            foreach (var thorn in stuck)
+            {
+                if (thorn != pick)
+                    a.RemoveThorn(thorn, removedByPlayer: false);
+            }
+            if (pick != null)
+                return pick;
+            a.AddThorn(0);
         }
         return null;
     }
@@ -134,7 +157,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ThornPluckStep()
     {
         var c = Character.localCharacter;
-        var thorn = OffViewThorn(c, OffViewDegrees, out float angle);
+        var thorn = OffViewThorn(c, OffViewDegrees, OffViewMaxDegrees, out float angle);
         if (thorn == null)
         {
             stepSkip = "no thorn off the view (AddThorn refused: invincible or none free)";
@@ -151,13 +174,23 @@ internal sealed partial class SelfTestRunner
         away = away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward;
         float pull = CueMark();
         yield return MoveTo(left, () => thorn.transform.position + away * 0.14f, 0.3f);
-        yield return Until(
-            () => !thorn.stuckIn,
-            GameTiming.Budget(GameTiming.InteractSeconds(thorn, c), 1f),
-            $"thorn {angle:0}° off the view still stuck after the pull"
-        );
-        if (!stepOk)
+        bool held = false;
+        float end = Now + GameTiming.Budget(GameTiming.InteractSeconds(thorn, c), 1f);
+        while (thorn.stuckIn && Now < end)
+        {
+            held |=
+                Interaction.instance != null
+                && ReferenceEquals(Interaction.instance.currentHeldInteractible, thorn);
+            yield return null;
+        }
+        if (thorn.stuckIn)
+        {
+            var hand = VRRig.Instance.Hand(left).position;
+            Fail(
+                $"thorn {angle:0}° off the view still stuck after the pull (hand {Vector3.Distance(hand, thorn.transform.position):0.00} m from it, game hold started {held})"
+            );
             yield break;
+        }
         yield return ExpectFeel(left, CueFeel.Progress, pull);
         if (stepOk)
             stepNote = $"thorn {angle:0}° off the view plucked by pinch and pull; {cueNote}";
@@ -171,7 +204,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ThornStuckStep()
     {
         var c = Character.localCharacter;
-        var thorn = OffViewThorn(c, 0f, out _);
+        var thorn = OffViewThorn(c, 0f, 180f, out _);
         if (thorn == null)
         {
             stepSkip = "no thorn could be added";
