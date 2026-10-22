@@ -72,6 +72,13 @@ public sealed class BodyHold
 
     float _sinceLean = Never;
     float _sinceBlocked = Never;
+    float _sinceBend = Never;
+
+    /// <summary>Bend rate (deg/s) below which the bend counts as steady, and the seconds after a faster bend during
+    /// which a jolt is not taken for an outside force.</summary>
+    public float BendRateQuiet = 20f;
+
+    public float BendSettleSeconds = 0.3f;
     float _spent;
     Vector2 _lastVelocity;
     bool _haveVelocity;
@@ -81,7 +88,15 @@ public sealed class BodyHold
     /// <param name="leaning">The avatar is bent by the lean this tick.</param>
     /// <param name="free"><see cref="HoldGate.Free"/>: nothing but the lean is moving the body.</param>
     /// <returns>Acceleration (x, z) to add to every part.</returns>
-    public Vector2 Update(Vector2 centre, Vector2 velocity, bool leaning, bool free, float dt)
+    /// <param name="bendRate">How fast the lean's bend is changing (deg/s): its contact jolt is not an outside force.</param>
+    public Vector2 Update(
+        Vector2 centre,
+        Vector2 velocity,
+        bool leaning,
+        bool free,
+        float dt,
+        float bendRate = 0f
+    )
     {
         if (!float.IsFinite(centre.X) || !float.IsFinite(centre.Y))
         {
@@ -92,8 +107,17 @@ public sealed class BodyHold
         if (!float.IsFinite(velocity.X) || !float.IsFinite(velocity.Y))
             velocity = Vector2.Zero;
         // An acceleration the creep (and the capped push) cannot make is someone else's: let it act.
+        // A bend changing fast (run 36's 0.15 s lean: 110 deg/s) jolts the body through the feet; that, and the
+        // contacts ringing for BendSettleSeconds after, is the lean's own.
+        if (!(MathF.Abs(bendRate) < BendRateQuiet))
+            _sinceBend = 0f;
+        else if (_sinceBend < Never)
+            _sinceBend += dt;
         bool kicked =
-            _haveVelocity && dt > 0f && (velocity - _lastVelocity).Length() > ExternalAccel * dt;
+            _haveVelocity
+            && dt > 0f
+            && _sinceBend >= BendSettleSeconds
+            && (velocity - _lastVelocity).Length() > ExternalAccel * dt;
         _lastVelocity = velocity;
         _haveVelocity = true;
         if (!free || kicked)

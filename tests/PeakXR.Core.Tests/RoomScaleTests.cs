@@ -213,8 +213,8 @@ public class RoomScaleTests
         var head = new Vector2(0f, 0.5f);
         f.Update(head, Vector2.Zero, true);
         f.Update(head, new Vector2(0.05f, 0.3f), true);
-        // Following: the walk's sideways sway is taken too (run 35), so the view stays put.
-        TestUtil.Near(0.05f, f.Anchor.X);
+        // 0.3 m in one update is a jump, not a walk's frame: only the part toward the head is taken.
+        TestUtil.Near(0f, f.Anchor.X);
         TestUtil.Near(0.3f, f.Anchor.Y);
         f.Update(head, new Vector2(0f, 1f), true);
         TestUtil.Near(0.5f, f.Anchor.Y);
@@ -272,6 +272,37 @@ public class RoomScaleTests
         }
         Assert.True(maxX - minX < 0.005f, $"view swayed {maxX - minX:0.000} m sideways");
         Assert.True(maxY - minY < 0.005f, $"view moved {maxY - minY:0.000} m along the walk");
+    }
+
+    [Fact]
+    public void FollowWalk_OvershootingTheHead_NeverMovesTheView()
+    {
+        // Run 36: the origin was the same at every trace sample, yet moved 0.077 m within the far lean: the walk
+        // coasted onto the head (head offset 0.027 m at 538.69) and past it, and the anchor stopped at the head, so the
+        // overshoot reached the view until the body settled back.
+        var f = new RoomScaleFollow();
+        const float dt = 1f / 90f;
+        var head = new Vector2(0f, 0.4f);
+        float view = 0f,
+            min = 0f,
+            max = 0f,
+            last = 0f;
+        for (float t = 0f; t < 3f; t += dt)
+        {
+            // 0.48 m out (0.08 m past the head) by 0.6 s, then 0.08 m back by 1.2 s.
+            float pos =
+                t < 0.6f ? 0.48f * MathF.Sin(t / 0.6f * MathF.PI / 2f)
+                : t < 1.2f ? 0.48f - 0.08f * (t - 0.6f) / 0.6f
+                : 0.4f;
+            var delta = new Vector2(0f, pos - last);
+            last = pos;
+            float before = f.Anchor.Y;
+            f.Update(head, delta, true, dt);
+            view += delta.Y - (f.Anchor.Y - before);
+            min = MathF.Min(min, view);
+            max = MathF.Max(max, view);
+        }
+        Assert.True(max - min < 0.005f, $"view moved {max - min:0.000} m");
     }
 
     [Fact]

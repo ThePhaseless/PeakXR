@@ -244,6 +244,7 @@ public partial class AvatarPoseDriver
 
     /// <summary>This tick's closed <see cref="HoldGate"/>, or null. Traced.</summary>
     private string holdGateWhy;
+    private float lastLeanDegrees;
 
     private void HoldBody()
     {
@@ -289,12 +290,16 @@ public partial class AvatarPoseDriver
             return;
         var centre = sum / mass;
         var velocity = momentum / mass;
+        float dt = Time.fixedDeltaTime;
+        float bendRate = dt > 0f ? (LeanDegrees - lastLeanDegrees) / dt : 0f;
+        lastLeanDegrees = LeanDegrees;
         var a = bodyHold.Update(
             new System.Numerics.Vector2(centre.x, centre.z),
             new System.Numerics.Vector2(velocity.x, velocity.z),
             LeanDegrees >= 1f,
             free,
-            Time.fixedDeltaTime
+            dt,
+            bendRate
         );
         if (a == System.Numerics.Vector2.Zero)
             return;
