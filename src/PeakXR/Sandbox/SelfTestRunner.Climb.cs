@@ -1016,8 +1016,29 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => Holding(prefab), 5f, "equipped item not in hand");
         // One Update so PhysicalInteraction.TrackHeldItem has picked the holding hand.
         yield return null;
-        if (stepOk)
-            spawned.Add(HeldItem().gameObject);
+        if (!stepOk)
+            yield break;
+        var held = HeldItem();
+        spawned.Add(held.gameObject);
+        // Run 36's cactus was gone from the hand by the drop tap ("drop release: nothing") and a "Stuck to Character"
+        // was logged: watch it stay in hand, and name its state if it does not.
+        float start = Now;
+        while (Now - start < 0.5f && c.data.currentItem == held)
+            yield return null;
+        if (c.data.currentItem != held)
+        {
+            string stuck =
+                held != null
+                && held.TryGetComponent<StickyItemComponent>(out var s)
+                && s.stuckToCharacter != null
+                    ? s.stuckToCharacter.name
+                    : "nobody";
+            Fail(
+                F(
+                    $"{prefab.name} left the hand {Now - start:0.00} s after equipping: state {(held != null ? held.itemState.ToString() : "destroyed")}, stuck to {stuck}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                )
+            );
+        }
     }
 
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
@@ -1903,7 +1924,10 @@ internal sealed partial class SelfTestRunner
         UI.Affordances.Affordance.ResetGate();
         float mark = CueMark();
         yield return MoveTo(left, () => at.position, 0.4f);
-        yield return GripTo(left, 1f, 0.1f);
+        // Close the grip while the hand keeps tracking the line: under a vine the body is falling, and a hand left
+        // still in tracking space falls with it (run 36's vr.59: the vine was found but the hand had dropped off it).
+        Script(left).Grip = 1f;
+        yield return MoveTo(left, () => at.position, 0.15f);
         yield return ExpectCue(left, reason, mark, true, 1f);
         yield return Wait(0.3f);
         bool on = onLine();

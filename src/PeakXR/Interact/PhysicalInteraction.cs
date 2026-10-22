@@ -185,6 +185,7 @@ internal static class PhysicalInteraction
 
         bool wheelAtStart = c.data.usingBackpackWheel;
         TrackHeldItem(c, now);
+        TrackFall(c, dt);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
         UpdateHover(LeftHand, c, rig, cfg, now);
@@ -361,7 +362,7 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.Climb:
                 // The fall this grab stops, read before the climb start resets the body's motion.
-                float fall = c.data.isClimbing ? 0f : FallSpeed(c);
+                float fall = c.data.isClimbing ? 0f : recentFall;
                 LastCatchFall = fall;
                 if (StartClimb(c, rig, pos, cfg))
                     CatchPulse(hand.Left, kind, fall, cfg);
@@ -1126,6 +1127,16 @@ internal static class PhysicalInteraction
     /// </summary>
     /// <summary>The fall speed the last wall grab stopped (0 when already climbing), for the self-test (vr.51b).</summary>
     internal static float LastCatchFall { get; private set; }
+
+    /// <summary>The fastest recent fall, fading at 8 m/s per second: a hand that brushes the rock on the way in brakes
+    /// the body before the grip closes (run 36 read 0.7 m/s at the grab after a 3.7 m/s fall), so the catch is felt
+    /// from the speed the body actually fell at.</summary>
+    private static float recentFall;
+
+    private static void TrackFall(Character c, float dt)
+    {
+        recentFall = c.data.isClimbingAnything ? 0f : Mathf.Max(FallSpeed(c), recentFall - 8f * dt);
+    }
 
     /// <summary>Downward speed now: the faster of the game's smoothed <c>avarageVelocity</c> and the hip's own, so a
     /// grab mid-fall is not read from a lagging average.</summary>
