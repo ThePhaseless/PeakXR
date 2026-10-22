@@ -29,10 +29,13 @@ public sealed class AffordanceFeature : Feature
             "UI",
             "ActionHints",
             true,
-            "When something you try does nothing (out of reach, wall too steep, no stamina, needs both hands...), "
-                + "the controller gives a soft triple tick, a quiet falling note plays there and a ring marks it "
-                + "(slash: no, bar: full, sweeping arc: wait). Where it would work gets a double ring, a rising note "
-                + "and a chevron moving toward it. Uses the Interaction haptic strength and the game's sound volume."
+            // Before WP1 this setting switched off every refusal cue; now refusals always cue and it covers only the
+            // "would work" hints. The key and the player's saved value are kept as they are (no flip): someone who
+            // turned it off still gets fewer marks, and never a silent failure.
+            "Show where an action would work: after a refusal, a double ring, a rising note and a chevron moving "
+                + "toward the spot that works, and the reach ray (ReachRay). Refusals themselves always cue, on or "
+                + "off: a soft triple tick, a quiet falling note and a ring with a shape (slash: no, bar: full, "
+                + "sweeping arc: wait, bolt: stamina...), with the refused thing turned red."
         );
         ReachRay = Plugin.Settings.Bind(
             "UI",
@@ -46,7 +49,7 @@ public sealed class AffordanceFeature : Feature
             "ActionHintText",
             false,
             "Also show a short text reason and next step by the hand or target. The rings, shapes, sounds and "
-                + "haptics already say what is wrong and what would work; this adds words. Needs ActionHints."
+                + "haptics already say what is wrong and what would work; this adds words."
         );
         DenyTint.ItemBlock = GameMember.Field<Item, UnityEngine.MaterialPropertyBlock>("mpb");
         AffordanceRuntime.Create();

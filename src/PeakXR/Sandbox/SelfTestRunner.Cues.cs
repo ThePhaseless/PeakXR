@@ -10,8 +10,12 @@ namespace PeakXR.Sandbox;
 /// <item><c>float CueMark()</c>: the cue clock now. Take it just before the attempt.</item>
 /// <item><c>IEnumerator ExpectCue(bool left, DenyReason reason, float since, float within = 1f)</c>: waits until
 /// <c>since + within</c> for the reason, a readable ring, the refused (or notice) sound and a delivered haptic pulse
-/// on that hand (<see cref="CueCapture.Fired"/>); fails the step naming the missing channel. On a pass,
+/// on that hand (<see cref="CueCapture.Fired(bool, DenyReason, float, out string)"/>); fails the step naming the missing channel. On a pass,
 /// <see cref="cueNote"/> describes the cue.</item>
+/// <item><c>IEnumerator ExpectCue(bool left, DenyReason reason, float since, bool tint, float within = 1f)</c>: the
+/// same, and with <c>tint</c> the red preview must have shown.</item>
+/// <item><c>IEnumerator ExpectFeel(bool left, CueFeel feel, float since, float within = 1f)</c>: a non-refusal feel
+/// (progress, contact, cancel, end stop, danger) reached that hand.</item>
 /// <item><c>IEnumerator ExpectNoCue(bool left, float since, float within = 1f)</c>: for paths that must stay quiet;
 /// fails on any reason, ring or pulse on that hand since <c>since</c> (<see cref="CueCapture.Quiet"/>). Waits
 /// until <c>since + within</c>; pass 0 to check at once.</item>
@@ -25,18 +29,39 @@ internal sealed partial class SelfTestRunner
 
     static float CueMark() => CueLog.Now;
 
-    IEnumerator ExpectCue(bool left, DenyReason reason, float since, float within = 1f)
+    IEnumerator ExpectCue(bool left, DenyReason reason, float since, float within = 1f) =>
+        ExpectCue(left, reason, since, false, within);
+
+    /// <summary>As above; with <paramref name="tint"/> the red preview of the refused thing must also have shown
+    /// while the ring was drawn (<see cref="CueHand.TintAt"/>). Pass false for refusals with nothing to tint (a jump,
+    /// another player: D10).</summary>
+    IEnumerator ExpectCue(bool left, DenyReason reason, float since, bool tint, float within = 1f)
     {
         cueNote = null;
         string why;
-        while (!CueLog.Capture.Fired(left, reason, since, out why) && CueLog.Now < since + within)
+        while (
+            !CueLog.Capture.Fired(left, reason, since, tint, out why) && CueLog.Now < since + within
+        )
             yield return null;
-        if (CueLog.Capture.Fired(left, reason, since, out why))
+        if (CueLog.Capture.Fired(left, reason, since, tint, out why))
             cueNote = why;
         else
             Fail(
                 $"{reason} cue on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}"
             );
+    }
+
+    /// <summary>Waits until <c>since + within</c> for a non-refusal feel (progress, contact, cancel, end stop,
+    /// danger) on that hand (<see cref="CueCapture.Felt"/>); fails the step naming what is missing.</summary>
+    IEnumerator ExpectFeel(bool left, CueFeel feel, float since, float within = 1f)
+    {
+        string why;
+        while (!CueLog.Capture.Felt(left, feel, since, out why) && CueLog.Now < since + within)
+            yield return null;
+        if (CueLog.Capture.Felt(left, feel, since, out why))
+            cueNote = why;
+        else
+            Fail($"{feel} on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}");
     }
 
     IEnumerator ExpectNoCue(bool left, float since, float within = 1f)

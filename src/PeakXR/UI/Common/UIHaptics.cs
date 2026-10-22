@@ -4,12 +4,13 @@ using UnityEngine.XR;
 namespace PeakXR.UI.Common;
 
 /// <summary>Short UI ticks through <see cref="InputDevices"/>, independent of the interaction feature so
-/// menus still tick when it is disabled. Does nothing without impulse support and never throws.</summary>
+/// menus still tick when it is disabled. Muted with every other vibration by <c>Interaction.Haptics</c> off (one gate,
+/// decision D9). Does nothing without impulse support and never throws.</summary>
 internal static class UIHaptics
 {
     public static void Tick(bool left, float amplitude, float seconds)
     {
-        if (amplitude <= 0f)
+        if (amplitude <= 0f || Interact.Haptics.Muted)
             return;
         try
         {

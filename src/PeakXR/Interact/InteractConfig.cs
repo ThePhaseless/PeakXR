@@ -210,7 +210,7 @@ internal sealed class InteractConfig
                 s,
                 "Haptics",
                 true,
-                "Controller vibration on grab, use and climb grip."
+                "Controller vibration: grab, use, climb grip, refusal cues and menu ticks. Off mutes them all; refusal rings and sounds still show."
             ),
             hapticStrength = file.Bind(
                 s,

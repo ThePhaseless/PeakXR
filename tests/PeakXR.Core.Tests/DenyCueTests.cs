@@ -35,7 +35,7 @@ public class DenyCueTests
             Assert.True(Enum.IsDefined(g), r.ToString());
         }
         Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.NoWall));
-        Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.NeedsTwoHands));
+        Assert.Equal(CueGlyph.TwoHands, DenyGlyph.For(DenyReason.NeedsTwoHands));
         Assert.Equal(CueGlyph.Slash, DenyGlyph.For(DenyReason.CantUse));
     }
 

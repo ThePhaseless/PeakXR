@@ -48,6 +48,61 @@ public enum DenyReason : byte
     /// <summary>The laser shows a control through an invisible blocker in front (a window fading in) that takes the click.</summary>
     Blocked,
 
+    // Appended only: values above are kept so logs and reports stay comparable.
+
+    /// <summary>Someone else holds or uses it (a handle, a seat, a rope end).</summary>
+    Occupied,
+
+    /// <summary>A rope that is not tied off yet: it cannot take weight.</summary>
+    Unanchored,
+
+    /// <summary>Being carried (the condor, a friend): the action needs your own footing.</summary>
+    Carried,
+
+    /// <summary>A helping action with nobody who needs it: the friend aimed at is fine (not down, not hanging), or
+    /// nobody is down at all (an effigy).</summary>
+    NotInTrouble,
+
+    /// <summary>Climbing or this action would drop the worn backpack.</summary>
+    PackWouldDrop,
+
+    /// <summary>A control or door that is locked for now.</summary>
+    Locked,
+
+    /// <summary>Refused for the moment by game state (pause, a wheel or a screen is up).</summary>
+    NotNow,
+
+    /// <summary>A wall, or ground to build on, too steep: the hand slides off, the build will not stand.</summary>
+    TooSteep,
+
+    /// <summary>Too heavy to lift or carry this way (the big snowball).</summary>
+    TooHeavy,
+
+    /// <summary>Food that went bad or was wrecked by cooking.</summary>
+    Spoiled,
+
+    /// <summary>Held over a fire, but it does not cook (or the fire is spent).</summary>
+    CantCook,
+
+    /// <summary>The use needs a friend in front of the item (feeding, bandaging another).</summary>
+    NeedsFriend,
+
+    /// <summary>The shot or line found no way through (a vine with nowhere to grow).</summary>
+    NoPath,
+
+    /// <summary>The aimed-at thing cannot be copied.</summary>
+    CantClone,
+
+    /// <summary>You are turned to stone: nothing can be used.</summary>
+    Petrified,
+
+    /// <summary>Its fuse is lit: it cannot be put away or switched.</summary>
+    FuseLit,
+
+    /// <summary>A warning, not a refusal: about to burn, explode or hurt (over-cooking, a lethal item). Drawn by
+    /// <c>Affordance.Danger</c>.</summary>
+    DangerSoon,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
 }
@@ -89,6 +144,23 @@ public static class DenyText
             DenyReason.Dropped => "Your item fell here",
             DenyReason.NotLit => "Not lit",
             DenyReason.Blocked => "Blocked",
+            DenyReason.Occupied => "In use",
+            DenyReason.Unanchored => "Not tied off",
+            DenyReason.Carried => "Being carried",
+            DenyReason.NotInTrouble => "Nobody needs help",
+            DenyReason.PackWouldDrop => "Drops your backpack",
+            DenyReason.Locked => "Locked",
+            DenyReason.NotNow => "Not now",
+            DenyReason.TooSteep => "Too steep",
+            DenyReason.TooHeavy => "Too heavy",
+            DenyReason.Spoiled => "Spoiled",
+            DenyReason.CantCook => "Won't cook",
+            DenyReason.NeedsFriend => "Needs a friend",
+            DenyReason.NoPath => "No way through",
+            DenyReason.CantClone => "Can't copy that",
+            DenyReason.Petrified => "Turned to stone",
+            DenyReason.FuseLit => "Fuse is lit",
+            DenyReason.DangerSoon => "Careful",
             _ => "",
         };
 
@@ -123,6 +195,19 @@ public static class DenyText
             DenyReason.TooSoon => "Wait a moment",
             DenyReason.NotLit => "Pull trigger to light it",
             DenyReason.Blocked => "Use the window in front",
+            DenyReason.Occupied => "Wait until it's free",
+            DenyReason.Unanchored => "Tie it off first",
+            DenyReason.Carried => "Grab a hold first",
+            DenyReason.PackWouldDrop => "Take the pack off first",
+            DenyReason.Locked => "Open it another way",
+            DenyReason.NotNow => "Close the menu first",
+            DenyReason.TooSteep => "Find a flatter spot",
+            DenyReason.TooHeavy => "Push or roll it",
+            DenyReason.CantCook => "Try another food",
+            DenyReason.NeedsFriend => "Bring it to a friend",
+            DenyReason.NoPath => "Aim at open ground",
+            DenyReason.FuseLit => "Let it go off first",
+            DenyReason.DangerSoon => "Pull it away now",
             _ => "",
         };
 
@@ -213,7 +298,100 @@ public static class DenyHaptics
     };
 
     public static HapticPulse[] For(DenyReason reason) =>
-        reason is DenyReason.Overhang or DenyReason.TooFlat ? Slip : Deny;
+        reason
+            is DenyReason.Overhang
+                or DenyReason.TooFlat
+                or DenyReason.TooSteep
+                or DenyReason.TooHeavy
+            ? Slip
+            : Deny;
+}
+
+/// <summary>
+/// A cue that is not a refusal, felt in the hand: <see cref="Progress"/> ramps up while something fills,
+/// <see cref="Contact"/> is one tick as the hand meets a thing, <see cref="Cancel"/> a softer tick as an attempt is
+/// called off, <see cref="EndStop"/> one hard thunk at a gesture's limit (spool length, zoom, cannon angle) and
+/// <see cref="Danger"/> pulses that speed up as harm nears. None is a soft triple, so none reads as "denied".
+/// </summary>
+public enum CueFeel : byte
+{
+    Progress,
+    Contact,
+    Cancel,
+    EndStop,
+    Danger,
+}
+
+/// <summary>The single-pulse feels (<see cref="CueFeel"/>); the ramps are <see cref="ProgressRamp"/> and
+/// <see cref="DangerPulse"/>.</summary>
+public static class CueHaptics
+{
+    public static readonly HapticPulse Contact = new(0f, 0.3f, 0.02f);
+    public static readonly HapticPulse Cancel = new(0f, 0.14f, 0.03f);
+
+    /// <summary>Hard and short, like a knob hitting its stop.</summary>
+    public static readonly HapticPulse EndStop = new(0f, 0.8f, 0.02f);
+}
+
+/// <summary>
+/// The "danger soon" pulse: while harm nears (food about to burn, a lit fuse), a tick that comes faster and harder
+/// as <c>urgency</c> (0..1) rises. Called every frame; ticks at its own pace. Allocation-free.
+/// </summary>
+public sealed class DangerPulse
+{
+    public const float Seconds = 0.03f;
+
+    private float last = float.NegativeInfinity;
+
+    /// <summary>Seconds between ticks: 0.5 s when far off, 0.12 s when imminent.</summary>
+    public static float Interval(float urgency) =>
+        0.5f - 0.38f * System.Math.Clamp(urgency, 0f, 1f);
+
+    public static float Amplitude(float urgency) =>
+        0.2f + 0.35f * System.Math.Clamp(urgency, 0f, 1f);
+
+    /// <summary>A tick is due at <paramref name="now"/>; the wait is measured at the current urgency, so a rise
+    /// shortens a wait already running.</summary>
+    public bool TryTick(float now, float urgency, out HapticPulse pulse)
+    {
+        pulse = default;
+        if (now - last < Interval(urgency))
+            return false;
+        last = now;
+        pulse = new HapticPulse(0f, Amplitude(urgency), Seconds);
+        return true;
+    }
+
+    public void Reset() => last = float.NegativeInfinity;
+}
+
+/// <summary>
+/// The progress ramp: while an action fills (a hold, a pull, a charge), a light tick every <see cref="Step"/>
+/// seconds, stronger as it nears done. Called every frame; ticks at its own pace. Allocation-free.
+/// </summary>
+public sealed class ProgressRamp
+{
+    public const float Step = 0.12f;
+    public const float Seconds = 0.015f;
+
+    private float last = float.NegativeInfinity;
+
+    /// <summary>Amplitude at <paramref name="fraction"/> done (0..1, clamped).</summary>
+    public static float Amplitude(float fraction) =>
+        0.06f + 0.34f * System.Math.Clamp(fraction, 0f, 1f);
+
+    /// <summary>A tick is due at <paramref name="now"/>; <paramref name="pulse"/> is it.</summary>
+    public bool TryTick(float now, float fraction, out HapticPulse pulse)
+    {
+        pulse = default;
+        if (now - last < Step)
+            return false;
+        last = now;
+        pulse = new HapticPulse(0f, Amplitude(fraction), Seconds);
+        return true;
+    }
+
+    public void Reset() => last = float.NegativeInfinity;
 }
 
 /// <summary>Plays a <see cref="HapticPulse"/> pattern over frames. Allocation-free.</summary>

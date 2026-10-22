@@ -5,8 +5,10 @@ namespace PeakXR.Core;
 
 /// <summary>
 /// The shape drawn inside a cue's ring, so a cue reads without colour or text: a slash for "no", a bar for "full",
-/// a sweeping arc for "wait", a pin for a notice ("here it is"). The valid spot of a hint is always a double ring
-/// with a chevron travelling toward it, a shape none of these use.
+/// a sweeping arc for "wait", a pin for a notice ("here it is"), and a picture for the common causes (a bolt for
+/// stamina, two inward chevrons for both hands, arrows for aim, a person for friends, a padlock, an empty cup, a
+/// weight, wavy lines for spoiled, "!" for danger). The valid spot of a hint is always a double ring with a chevron
+/// travelling toward it, a shape none of these use. Appended only.
 /// </summary>
 public enum CueGlyph : byte
 {
@@ -14,14 +16,33 @@ public enum CueGlyph : byte
     Bar,
     Wait,
     Pin,
+    Stamina,
+    TwoHands,
+    ArrowUp,
+    ArrowDown,
+    Ground,
+    People,
+    Padlock,
+    Empty,
+    Weight,
+    Wavy,
+    Danger,
 }
 
-/// <summary>Which sound a cue plays: refused (falling two notes), would-work (rising two notes), notice (one soft bell).</summary>
+/// <summary>
+/// Which sound a cue plays: refused (falling two notes), would-work (rising two notes), notice (one soft bell),
+/// transmit (two quick high blips: a ping or call went out), cancel (a soft, small fall: called off, not refused),
+/// end stop (a dull low knock at a limit), danger (a trembling note: harm is near). Appended only.
+/// </summary>
 public enum CueSound : byte
 {
     Refused,
     WouldWork,
     Notice,
+    Transmit,
+    Cancel,
+    EndStop,
+    Danger,
 }
 
 public static class DenyGlyph
@@ -33,10 +54,163 @@ public static class DenyGlyph
             or DenyReason.PackFull
             or DenyReason.HandsFull
             or DenyReason.CantHolster => CueGlyph.Bar,
-            DenyReason.TooSoon or DenyReason.KeepHolding or DenyReason.CantSwitch => CueGlyph.Wait,
+            DenyReason.TooSoon
+            or DenyReason.KeepHolding
+            or DenyReason.CantSwitch
+            or DenyReason.Unanchored
+            or DenyReason.NotNow => CueGlyph.Wait,
             DenyReason.Stowed or DenyReason.Dropped => CueGlyph.Pin,
+            DenyReason.NoStamina => CueGlyph.Stamina,
+            DenyReason.NeedsTwoHands => CueGlyph.TwoHands,
+            DenyReason.AimHigher => CueGlyph.ArrowUp,
+            DenyReason.AimLower => CueGlyph.ArrowDown,
+            DenyReason.NeedsGround => CueGlyph.Ground,
+            DenyReason.FriendsFar or DenyReason.NeedsFriend => CueGlyph.People,
+            DenyReason.NotHere or DenyReason.Blocked or DenyReason.Locked or DenyReason.Petrified =>
+                CueGlyph.Padlock,
+            DenyReason.UsedUp or DenyReason.NotLit => CueGlyph.Empty,
+            DenyReason.TooHeavy => CueGlyph.Weight,
+            DenyReason.Spoiled => CueGlyph.Wavy,
+            DenyReason.FuseLit or DenyReason.DangerSoon => CueGlyph.Danger,
             _ => CueGlyph.Slash,
         };
+}
+
+/// <summary>
+/// The strokes of each glyph, in units of the ring's radius (x right, y up, ring centre at 0). At most two
+/// polylines, so the runtime draws any glyph with two line renderers and no allocation. <see cref="CueGlyph.Wait"/>
+/// has none: its arc sweeps (<see cref="CueMotion.Sweep"/>). The pin stands above the ring.
+/// </summary>
+public static class GlyphShape
+{
+    /// <summary>Most points in any stroke.</summary>
+    public const int MaxPoints = 9;
+
+    private static readonly Vector2[] None = Array.Empty<Vector2>();
+
+    // Indexed by CueGlyph.
+    private static readonly Vector2[][] First =
+    {
+        new Vector2[] { new(-0.55f, -0.55f), new(0.55f, 0.55f) },
+        new Vector2[] { new(-0.7f, 0f), new(0.7f, 0f) },
+        None,
+        new Vector2[] { new(0f, 1f), new(0f, 2.4f) },
+        // Stamina: a bolt.
+        new Vector2[]
+        {
+            new(0.15f, 0.65f),
+            new(-0.25f, 0.02f),
+            new(0.25f, -0.02f),
+            new(-0.15f, -0.65f),
+        },
+        // TwoHands: ">" of "> <".
+        new Vector2[] { new(-0.65f, 0.38f), new(-0.2f, 0f), new(-0.65f, -0.38f) },
+        // Arrow shafts, up then down.
+        new Vector2[] { new(0f, -0.6f), new(0f, 0.6f) },
+        new Vector2[] { new(0f, 0.6f), new(0f, -0.6f) },
+        // Ground: the line.
+        new Vector2[] { new(-0.6f, -0.45f), new(0.6f, -0.45f) },
+        // People: the head.
+        Circle(0f, 0.3f, 0.2f),
+        // Padlock: the body.
+        new Vector2[]
+        {
+            new(-0.4f, -0.55f),
+            new(0.4f, -0.55f),
+            new(0.4f, 0.02f),
+            new(-0.4f, 0.02f),
+            new(-0.4f, -0.55f),
+        },
+        // Empty: an open cup.
+        new Vector2[]
+        {
+            new(-0.42f, 0.4f),
+            new(-0.42f, -0.45f),
+            new(0.42f, -0.45f),
+            new(0.42f, 0.4f),
+        },
+        // Weight: a trapezoid.
+        new Vector2[]
+        {
+            new(-0.3f, 0.2f),
+            new(0.3f, 0.2f),
+            new(0.5f, -0.5f),
+            new(-0.5f, -0.5f),
+            new(-0.3f, 0.2f),
+        },
+        // Wavy: the upper wave.
+        Wave(0.22f),
+        // Danger: the "!" stem.
+        new Vector2[] { new(0f, 0.6f), new(0f, -0.15f) },
+    };
+
+    private static readonly Vector2[][] Second =
+    {
+        None,
+        None,
+        None,
+        None,
+        None,
+        new Vector2[] { new(0.65f, 0.38f), new(0.2f, 0f), new(0.65f, -0.38f) },
+        // Arrow heads, up then down.
+        new Vector2[] { new(-0.4f, 0.2f), new(0f, 0.6f), new(0.4f, 0.2f) },
+        new Vector2[] { new(-0.4f, -0.2f), new(0f, -0.6f), new(0.4f, -0.2f) },
+        // Ground: a chevron down onto the line.
+        new Vector2[] { new(-0.3f, 0.25f), new(0f, -0.1f), new(0.3f, 0.25f) },
+        // People: the shoulders.
+        Arc(0f, -0.55f, 0.45f),
+        // Padlock: the shackle.
+        Arc(0f, 0.02f, 0.26f),
+        None,
+        // Weight: the handle.
+        Arc(0f, 0.2f, 0.16f),
+        Wave(-0.22f),
+        // Danger: the "!" dot.
+        new Vector2[] { new(0f, -0.42f), new(0f, -0.55f) },
+    };
+
+    /// <summary>Stroke <paramref name="index"/> (0 or 1) of <paramref name="glyph"/>; empty when it has none.
+    /// Shared arrays: never modify.</summary>
+    public static Vector2[] Stroke(CueGlyph glyph, int index)
+    {
+        int g = (int)glyph;
+        var set = index == 0 ? First : Second;
+        return g < set.Length && index is 0 or 1 ? set[g] : None;
+    }
+
+    private static Vector2[] Circle(float x, float y, float r)
+    {
+        var p = new Vector2[MaxPoints];
+        for (int i = 0; i < p.Length; i++)
+        {
+            float a = i * 2f * MathF.PI / (p.Length - 1);
+            p[i] = new Vector2(x + r * MathF.Cos(a), y + r * MathF.Sin(a));
+        }
+        return p;
+    }
+
+    /// <summary>The upper half circle, left to right.</summary>
+    private static Vector2[] Arc(float x, float y, float r)
+    {
+        var p = new Vector2[7];
+        for (int i = 0; i < p.Length; i++)
+        {
+            float a = MathF.PI * (1f - (float)i / (p.Length - 1));
+            p[i] = new Vector2(x + r * MathF.Cos(a), y + r * MathF.Sin(a));
+        }
+        return p;
+    }
+
+    private static Vector2[] Wave(float y)
+    {
+        var p = new Vector2[7];
+        for (int i = 0; i < p.Length; i++)
+        {
+            float t = (float)i / (p.Length - 1);
+            p[i] = new Vector2(-0.55f + 1.1f * t, y + 0.1f * MathF.Sin(t * 2f * MathF.PI));
+        }
+        return p;
+    }
 }
 
 /// <summary>
@@ -53,8 +227,52 @@ public static class CueTones
         {
             CueSound.Refused => TwoNotes(sampleRate, 520f, 390f, 0.07f, 0.03f),
             CueSound.WouldWork => TwoNotes(sampleRate, 523f, 784f, 0.06f, 0.025f),
+            CueSound.Transmit => TwoNotes(sampleRate, 1175f, 1175f, 0.035f, 0.02f),
+            CueSound.Cancel => Soft(TwoNotes(sampleRate, 440f, 392f, 0.05f, 0.015f), 0.6f),
+            CueSound.EndStop => Knock(sampleRate, 170f, 0.05f),
+            CueSound.Danger => Tremble(sampleRate, 660f, 0.2f),
             _ => Bell(sampleRate, 880f, 0.22f),
         };
+
+    private static float[] Soft(float[] samples, float gain)
+    {
+        for (int i = 0; i < samples.Length; i++)
+            samples[i] *= gain;
+        return samples;
+    }
+
+    /// <summary>A low note with a fast decay and a touch of its octave: a dull knock, not a tone.</summary>
+    private static float[] Knock(int rate, float hz, float seconds)
+    {
+        int n = (int)(rate * seconds);
+        int attack = rate / 500;
+        var samples = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / rate;
+            float env =
+                (i < attack ? (float)i / attack : 1f) * MathF.Exp(-t * 60f) * (1f - (float)i / n);
+            float s =
+                MathF.Sin(2f * MathF.PI * hz * t) + 0.5f * MathF.Sin(2f * MathF.PI * hz * 2f * t);
+            samples[i] = Peak * env * s / 1.5f;
+        }
+        return samples;
+    }
+
+    /// <summary>One note trembling at 18 Hz under a raised-cosine envelope: unsettled, never a click.</summary>
+    private static float[] Tremble(int rate, float hz, float seconds)
+    {
+        int n = (int)(rate * seconds);
+        var samples = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / rate;
+            float env = 0.5f - 0.5f * MathF.Cos(2f * MathF.PI * i / (n - 1));
+            float trem = 0.6f + 0.4f * MathF.Sin(2f * MathF.PI * 18f * t);
+            samples[i] = Peak * env * trem * MathF.Sin(2f * MathF.PI * hz * t);
+        }
+        return samples;
+    }
 
     private static float[] TwoNotes(int rate, float first, float second, float note, float gap)
     {
@@ -228,6 +446,21 @@ public static class DenyTintMath
         var red = new Vector4(glow * 0.99f, glow * 0.1f, glow * 0.08f, baseColor.W);
         return Vector4.Lerp(baseColor, red, Math.Clamp(strength, 0f, 1f));
     }
+
+    /// <summary>Full-strength red of a flat UI colour (a bar, a button): a multiply would leave a dark bar dark.</summary>
+    public static readonly Vector4 FlatRed = new(0.92f, 0.24f, 0.2f, 0.9f);
+
+    /// <summary>A UI colour (a <c>Graphic</c>) pulled toward <see cref="FlatRed"/> by <paramref name="strength"/>;
+    /// alpha never drops below the original.</summary>
+    public static Vector4 Flat(Vector4 baseColor, float strength)
+    {
+        var red = new Vector4(FlatRed.X, FlatRed.Y, FlatRed.Z, MathF.Max(baseColor.W, FlatRed.W));
+        return Vector4.Lerp(baseColor, red, Math.Clamp(strength, 0f, 1f));
+    }
+
+    /// <summary>The UI colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
+    public static bool IsFlat(Vector4 baseColor, Vector4 now) =>
+        Gap(now, Flat(baseColor, 1f)) < 0.02f && Gap(now, baseColor) > 0.02f;
 
     /// <summary>The ghost colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
     public static bool IsPreview(Vector4 baseColor, Vector4 now) =>

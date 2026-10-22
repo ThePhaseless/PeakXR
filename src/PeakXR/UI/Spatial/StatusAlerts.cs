@@ -17,6 +17,12 @@ internal sealed class StatusAlerts
         Ignore = (int)CharacterAfflictions.STATUSTYPE.Weight,
     };
 
+    private static bool raise;
+
+    /// <summary>A stamina refusal (<c>Affordance.DenyStamina</c>): pulse the bar and tick its wrist on the next
+    /// tick, as a low-stamina alert would, so the wrist comes up.</summary>
+    public static void Raise() => raise = true;
+
     public void Release()
     {
         alert.Reset();
@@ -27,6 +33,11 @@ internal sealed class StatusAlerts
     {
         if (c == null)
             return;
+        if (raise)
+        {
+            raise = false;
+            alert.Kick();
+        }
         bool fire = alert.Update(c.data.currentStamina, c.refs.afflictions.currentStatuses, dt);
         HudSplit.WristPulse = alert.Pulse;
         if (!fire)
