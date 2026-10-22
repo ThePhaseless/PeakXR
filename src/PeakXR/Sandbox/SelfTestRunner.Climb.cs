@@ -34,6 +34,10 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.46-lunge", 40f, LungeStep());
     }
 
+    /// <summary>Face above the grip vr.46 needs: the 0.4 m pull, the ~1.4 m jump and the catch above the body. Run 29's
+    /// wall (1.2 m proven) ran out under the jump, the game ended the climb and there was nothing left to catch.</summary>
+    const float LungeHeadroom = 2.8f;
+
     /// <summary>
     /// vr.46: the climb lunge (interact.physical <c>TryLunge</c>, <see cref="ClimbInput.Lunge"/>). Climbing on one hand,
     /// that hand thrown upward faster than <c>Interaction.LungeSpeed</c> as it lets go queues the sprint press the
@@ -52,7 +56,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.ArmLunge off";
             yield break;
         }
-        if (!FindWall(c, out var wall, out var stand))
+        if (!FindWall(c, out var wall, out var stand, LungeHeadroom))
         {
             stepSkip = NoWall;
             yield break;
@@ -84,6 +88,18 @@ internal sealed partial class SelfTestRunner
         // The game takes a climb jump at most once a second (CharacterClimbing.cs:122).
         yield return WaitFor(() => c.data.sinceClimbJump > 1.1f, 2f);
         yield return Wait(0.3f);
+        // The jump carries the body about 1.4 m up the wall (playerSlide 8 decays to 0 in ~0.4 s, CharacterClimbing.cs:242,
+        // :343-344) and the catch reaches 0.3 m above the centre. FindWall only proves 1.2 m of face, so on a lower wall
+        // the requested position leaves the face, the game ends the climb (:266-271) and the body tops out: nothing to catch.
+        bool roomy =
+            Physics.Raycast(
+                c.Center + Vector3.up * 2f,
+                -Flat(wall.normal),
+                out var top,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            ) && ClimbRules.GrabAngleOk(Vector3.Angle(top.normal, Vector3.up));
 
         // The throw: 0.15 s straight up, let go 70 % of the way at twice the lunge speed (at least 4 m/s).
         float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
@@ -95,6 +111,18 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
         bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
         float jumpAfter = Now - released;
+        if (!roomy)
+        {
+            if (!jumped)
+                Fail(
+                    $"the throw did not make the game's climb jump ({speed:0.0} m/s throw, lunge from {cfg.LungeSpeed:0.0})"
+                );
+            else
+                stepSkip =
+                    $"climb jump True {jumpAfter:0.00} s after the release, catch not tested: no climbable face 2 m above the body, the lunge tops out this wall";
+            yield return LetGoAll(c);
+            yield break;
+        }
         // Catch: the same hand back on the wall in front of the body, inside the grace.
         // The body rises with the jump: the catch point is the wall in front of it, read every frame.
         var catchAt = hit.point + hit.normal * 0.04f;
@@ -115,9 +143,13 @@ internal sealed partial class SelfTestRunner
         bool caught =
             PeakXR.Interact.PhysicalInteraction.HandAction(left) == GripPressAction.Climb
             && c.data.isClimbing;
-        // A climb that ended and started again on the catch restarts the game's own clock (CharacterClimbing.cs:107).
+        // A climb that ended and started again on the catch restarts the game's own clock (CharacterClimbing.cs:107);
+        // that clock keeps running after a climb ends (:106), so an ended climb is read from isClimbing.
         var sinceStart = PeakXR.Interact.PhysicalInteraction.SinceLastClimbStarted;
-        bool unbroken = sinceStart == null || sinceStart(c.refs.climbing) > caughtAfter - 0.05f;
+        bool unbroken =
+            c.data.isClimbing
+            && (sinceStart == null || sinceStart(c.refs.climbing) > caughtAfter - 0.05f);
+        string gripNote = PeakXR.Interact.PhysicalInteraction.LastGripNote;
         float rise = c.Center.y - y0;
         yield return Shot("vr-46-lunge");
 
@@ -169,7 +201,7 @@ internal sealed partial class SelfTestRunner
         if (!jumped)
             Fail("the throw did not make the game's climb jump: " + note);
         else if (!caught)
-            Fail("the hand did not catch the wall after the lunge: " + note);
+            Fail($"the hand did not catch the wall after the lunge: {note}; last grip: {gripNote}");
         else if (!unbroken)
             Fail("the climb ended between the lunge and the catch: " + note);
         Note(note);
