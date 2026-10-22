@@ -1,6 +1,8 @@
 using System.Collections;
+using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
+using PeakXR.UI.Guide;
 using PeakXR.UI.Keyboard;
 using PeakXR.UI.Passport;
 using PeakXR.UI.World;
@@ -34,6 +36,21 @@ internal sealed partial class SelfTestRunner
         yield return ScreenHandStep("vr.119-keyboard-type", 25f, KeyboardTypeStep());
         VRKeyboard.CancelDialog();
         yield return ScreenHandStep("vr.120-invite-offline", 10f, InviteOfflineStep());
+        // WP6 gap round: try-on by touch, the wait refusal, the modal bell and the communication guide rows.
+        yield return ScreenHandStep("vr.129-passport-try-on", 20f, PassportTryOnStep());
+        if (PassportManager.instance != null && PassportManager.instance.isOpen)
+            PassportManager.instance.ToggleOpen();
+        yield return Wait(0.6f);
+        yield return ScreenHandStep("vr.130-connecting-wait", 15f, LoadingWaitStep());
+        if (fakeLoading)
+            LoadingFlag(false);
+        MenuWindow.CloseAllWindows();
+        yield return ScreenHandStep("vr.131-modal-bell", 10f, ModalBellStep());
+        if (Zorro.UI.Modal.Modal.IsOpen)
+            Zorro.UI.Modal.Modal.CloseModal();
+        yield return VRStep("vr.132-guide-comms-rows", 25f, GuideCommsStep());
+        if (guideStage != null)
+            Destroy(guideStage);
     }
 
     /// <summary>A screen step driven by scripted hands, which go back to the idle pose afterwards; no settle or
@@ -314,6 +331,223 @@ internal sealed partial class SelfTestRunner
         yield return ExpectCue(left, DenyReason.Blocked, since, shown);
         if (stepOk)
             stepNote = $"kiosk {(shown ? "shown" : "hidden offline")}: {cueNote}";
+    }
+
+    // ---------------------------------------------------------------- WP6 gap round
+
+    /// <summary>The fake load flag vr.130 set, cleared again whatever the step's verdict.</summary>
+    bool fakeLoading;
+
+    /// <summary>vr.132's demo stage, destroyed whatever the step's verdict.</summary>
+    GameObject guideStage;
+
+    /// <summary>LoadingScreenHandler's private load flag (A/LoadingScreenHandler.cs:26, read by <c>loading</c> :30).</summary>
+    void LoadingFlag(bool on)
+    {
+        Traverse.Create<LoadingScreenHandler>().Field("_loading").SetValue(on);
+        fakeLoading = on;
+    }
+
+    /// <summary>The local player's worn skin (what PassportManager.SetActiveButton reads, PassportManager.cs:239-240).</summary>
+    static int WornSkin() =>
+        GameHandler
+            .GetService<PersistentPlayerDataService>()
+            .GetPlayerData(Photon.Pun.PhotonNetwork.LocalPlayer)
+            .customizationData.currentSkin;
+
+    /// <summary>vr.129: the free (right) hand points and pokes an unlocked, unworn skin cell of the hand-held passport;
+    /// the cell's own Click equips it (PassportButton.cs:63-68, PassportManager.SetOption :277), the worn skin changes
+    /// and the hand gets a Contact tick. The original skin is put back.</summary>
+    IEnumerator PassportTryOnStep()
+    {
+        var passport = PassportManager.instance;
+        if (passport == null || Character.localCharacter == null)
+        {
+            stepSkip = "no PassportManager or character here";
+            yield break;
+        }
+        if (!passport.isOpen)
+            passport.ToggleOpen();
+        yield return Until(() => HandBook.PassportOpen, 2f, "passport did not open");
+        if (!stepOk)
+            yield break;
+        passport.OpenTab(Customization.Type.Skin);
+        yield return Wait(0.8f);
+        int before = WornSkin();
+        PassportButton cell = null;
+        foreach (var b in passport.buttons)
+            if (
+                b != null
+                && b.gameObject.activeInHierarchy
+                && (b.lockedIcon == null || !b.lockedIcon.gameObject.activeSelf)
+                && b.border != null
+                && b.border.color != passport.activeBorderColor
+            )
+            {
+                cell = b;
+                break;
+            }
+        if (cell == null || HandBook.PassportCanvas == null)
+        {
+            stepSkip = "no unlocked, unworn skin on the first page";
+            yield break;
+        }
+        int equips = PassportPoke.Equips;
+        float since = CueMark();
+        yield return PokeCell(cell);
+        bool pressed = PassportPoke.Equips > equips;
+        int after = WornSkin();
+        CharacterCustomization.SetCharacterSkinColor(before);
+        if (!pressed)
+        {
+            Fail("the poke did not press the cell");
+            yield break;
+        }
+        yield return ExpectFeel(false, CueFeel.Contact, since);
+        if (!stepOk)
+            yield break;
+        if (after == before)
+            Fail($"worn skin stayed {before}");
+        else
+            stepNote = $"skin {before} to {after} by poke, restored; {cueNote}";
+    }
+
+    /// <summary>One poke of the right fingertip (4 cm ahead of the aim pose, as <see cref="PassportPoke"/>) on a passport
+    /// cell, with the index straight (grip closed, no trigger touch): from 5 cm in front of the page to 1.5 cm past it.
+    /// Closed loop on the tip, since the book moves with the left hand.</summary>
+    IEnumerator PokeCell(PassportButton cell)
+    {
+        var rig = VRRig.Instance;
+        var canvas = HandBook.PassportCanvas.transform;
+        Script(false).TriggerTouch = false;
+        Script(false).Trigger = 0f;
+        yield return GripTo(false, 1f, 0.1f);
+        float[] depths =
+        {
+            -0.05f,
+            -0.05f,
+            -0.05f,
+            -0.03f,
+            -0.01f,
+            0.005f,
+            0.015f,
+            0.015f,
+            -0.05f,
+            -0.05f,
+        };
+        foreach (var d in depths)
+        {
+            for (int k = 0; k < 2; k++)
+            {
+                var rect = (RectTransform)cell.transform;
+                var at = rect.TransformPoint(rect.rect.center);
+                Script(false).Rotation = Quaternion.Inverse(rig.Origin.rotation) * canvas.rotation;
+                var aim = rig.Aim(false);
+                var tip = aim.position + aim.forward * 0.04f;
+                // The page faces the eyes along -Z: +Z goes into it.
+                Script(false).Position += rig.Origin.InverseTransformVector(
+                    at + canvas.forward * d - tip
+                );
+                yield return null;
+            }
+        }
+        yield return GripTo(false, 0f, 0.1f);
+        Script(false).TriggerTouch = true;
+        yield return Wait(0.1f);
+    }
+
+    /// <summary>vr.130: the boarding pass's Start pressed by laser while a load runs (the load flag set for the press)
+    /// does nothing in vanilla (AirportCheckInKiosk.cs:117-123) and refuses with NotNow, the button red.</summary>
+    IEnumerator LoadingWaitStep()
+    {
+        var kiosk = FindAnyObjectByType<AirportCheckInKiosk>();
+        var pass = GUIManager.instance != null ? GUIManager.instance.boardingPass : null;
+        if (kiosk == null || pass == null || Character.localCharacter == null)
+        {
+            stepSkip = "no kiosk or boarding pass here";
+            yield break;
+        }
+        kiosk.Interact_CastFinished(Character.localCharacter);
+        yield return Until(() => pass.isOpen, 2f, "boarding pass did not open");
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.8f);
+        var start = pass.startGameButton;
+        if (start == null || !start.interactable)
+        {
+            stepSkip = "Start not pressable here";
+            yield break;
+        }
+        var rect = (RectTransform)start.transform;
+        AimLasers(rect.TransformPoint(rect.rect.center));
+        yield return Wait(0.3f);
+        LoadingFlag(true);
+        float since = CueMark();
+        yield return PullRight();
+        LoadingFlag(false);
+        yield return ExpectCue(LaserPointer.PressLeft, DenyReason.NotNow, since, true);
+        if (stepOk)
+            stepNote = cueNote;
+    }
+
+    /// <summary>vr.131: a game modal opened through its own console test (Modal.cs:84-87, Open :64) rings the notice
+    /// (NotNow) once ui.world has placed it, the ring on its first button.</summary>
+    IEnumerator ModalBellStep()
+    {
+        float since = CueMark();
+        Zorro.UI.Modal.Modal.TestModal();
+        yield return Until(() => Zorro.UI.Modal.Modal.IsOpen, 1f, "modal did not open");
+        if (!stepOk)
+            yield break;
+        yield return ExpectCue(LaserPointer.PressLeft, DenyReason.NotNow, since, false, 1.5f);
+        if (stepOk)
+            stepNote = cueNote;
+    }
+
+    /// <summary>vr.132: the VR Guide demos for ping, talk, mute and spectate each play a loop on a ghost stage in front
+    /// of you (the stage a guide row opens, <see cref="GhostDemo"/>) and sound their cue at least once.</summary>
+    IEnumerator GuideCommsStep()
+    {
+        var rig = VRRig.Instance;
+        if (rig == null || rig.Head == null)
+        {
+            Fail("no rig");
+            yield break;
+        }
+        guideStage = new GameObject("PeakXR_SelfTestGuide");
+        var flat = Vector3.ProjectOnPlane(rig.Head.forward, Vector3.up).normalized;
+        guideStage.transform.SetPositionAndRotation(
+            rig.Head.position + flat * 0.8f,
+            Quaternion.LookRotation(-flat, Vector3.up)
+        );
+        var demo = new GhostDemo("Demo", guideStage.transform);
+        var fails = new System.Collections.Generic.List<string>();
+        var notes = new System.Collections.Generic.List<string>();
+        foreach (
+            var topic in new[]
+            {
+                GuideTopic.Ping,
+                GuideTopic.Mic,
+                GuideTopic.Mute,
+                GuideTopic.Spectate,
+            }
+        )
+        {
+            demo.Play(topic);
+            float until = Now + GuideTable.Get(topic).Loop + 0.2f;
+            while (Now < until)
+            {
+                demo.Tick(Time.unscaledDeltaTime, 1f, rig.Head);
+                yield return null;
+            }
+            notes.Add($"{topic}: {demo.SoundsPlayed} cue sounds");
+            if (!demo.Alive || demo.Topic != topic)
+                fails.Add($"{topic} demo not showing");
+            else if (demo.SoundsPlayed < 1)
+                fails.Add($"{topic} played no cue sound in a loop");
+        }
+        demo.Destroy();
+        Conclude(fails, notes);
     }
 
     /// <summary>vr.70: the passport through <c>PassportManager.ToggleOpen</c> (PassportManager.cs:113, what using the
