@@ -3,12 +3,12 @@ namespace PeakXR.Core.Tests;
 public class ClimbFeelTests
 {
     [Fact]
-    public void CleanGrab_IsNoCatch() => Assert.Equal(0f, ClimbFeel.Catch(0.3f).Amplitude);
+    public void CleanGrab_IsNoCatch() => Assert.Equal(0f, ClimbFeel.Catch(1f).Amplitude);
 
     [Fact]
     public void HardCatch_IsStrongerAndLongerThanASoftOne()
     {
-        var soft = ClimbFeel.Catch(1f);
+        var soft = ClimbFeel.Catch(2f);
         var hard = ClimbFeel.Catch(6f);
         Assert.True(soft.Amplitude > 0f);
         Assert.True(hard.Amplitude > soft.Amplitude);

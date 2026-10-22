@@ -12,20 +12,20 @@ public enum ClimbSound
 /// <summary>How a climb feels in the hand beyond the grab itself.</summary>
 public static class ClimbFeel
 {
-    /// <summary>Slide speed (m/s, <c>-playerSlide.y</c> right after <c>StartClimbRpc</c>) below which a grab is clean.</summary>
-    public const float CleanCatch = 0.5f;
+    /// <summary>Fall speed (m/s, down) below which a grab is clean: a step or a hop, not a fall.</summary>
+    public const float CleanCatch = 1.5f;
 
     /// <summary>
     /// A falling catch: the game turns the fall into a slide down the wall (CharacterClimbing.cs:371-374), so the
-    /// hold pulse grows into a long, hard ratchet with the slide speed. No pulse (amplitude 0) for a clean grab, which
+    /// hold pulse grows into a long, hard ratchet with the fall speed. No pulse (amplitude 0) for a clean grab, which
     /// keeps its surface feel.
     /// </summary>
-    public static HapticPulse Catch(float slideSpeed)
+    public static HapticPulse Catch(float fallSpeed)
     {
-        if (slideSpeed < CleanCatch)
+        if (fallSpeed < CleanCatch)
             return default;
-        float amplitude = MathF.Min(1f, 0.6f + 0.08f * slideSpeed);
-        float seconds = MathF.Min(0.5f, 0.08f + 0.06f * slideSpeed);
+        float amplitude = MathF.Min(1f, 0.6f + 0.06f * fallSpeed);
+        float seconds = MathF.Min(0.5f, 0.08f + 0.04f * fallSpeed);
         return new HapticPulse(0f, amplitude, seconds);
     }
 }

@@ -967,9 +967,20 @@ internal sealed partial class SelfTestRunner
             {
                 c.data.currentStamina = 0f;
                 c.data.extraStamina = 0f;
+                // Regeneration waits 2 s after a use when empty (Character.cs:1288-1289); without this it refills
+                // in FixedUpdate before the next input sample, and a grip sees stamina (run 33's vr.57 and vr.59).
+                c.data.sinceUseStamina = 0f;
             }
             yield return null;
         }
+    }
+
+    /// <summary><see cref="ExpectFeel"/> with <see cref="cueNote"/> cleared first, so a failure's note never
+    /// carries the previous step's cue (run 33's vr.50 quoted vr.49's Carried).</summary>
+    IEnumerator Feel(bool left, CueFeel feel, float since, float within)
+    {
+        cueNote = null;
+        yield return ExpectFeel(left, feel, since, within);
     }
 
     /// <summary>
@@ -1166,7 +1177,12 @@ internal sealed partial class SelfTestRunner
         bool ringOnSlope = ClimbHover.Drawn(left);
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.TooFlat, mark, false, 1f);
-        string slopeCue = cueNote;
+        // Run 33 had the reason but no ring: name the refusal that held the ring last, in case another replaced it.
+        string slopeCue =
+            cueNote
+            ?? F(
+                $"last refusal {UI.Affordances.Affordance.LastReason} ({(UI.Affordances.Affordance.LastLeft ? "left" : "right")}), {UI.Affordances.Affordance.Count} since start; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            );
         bool climbedSlope = c.data.isClimbing;
         yield return GripTo(left, 0f, 0.1f);
         yield return Wait(0.5f);
@@ -1258,13 +1274,19 @@ internal sealed partial class SelfTestRunner
         if (!wallReady)
             yield break;
         bool left = VRInput.LeftHanded;
-        float mark = CueMark();
         var hold = WallHold;
+        // The rest pose can already touch a wall this close: start 0.35 m off it, past the retouch time, so the
+        // first touch is the one measured.
+        var off = hold + wallFace.normal * 0.35f;
+        yield return MoveTo(left, () => off, 0.3f);
+        yield return Wait(0.5f);
+        bool drawnBefore = ClimbHover.Drawn(left);
+        float mark = CueMark();
         yield return MoveTo(left, () => hold, 0.5f);
         yield return WaitFor(() => ClimbHover.Drawn(left), 1f);
         bool drawn = ClimbHover.Drawn(left);
-        yield return ExpectFeel(left, CueFeel.Contact, mark, 0.5f);
-        string contact = cueNote;
+        yield return Feel(left, CueFeel.Contact, mark, 0.5f);
+        string contact = $"{cueNote} (ring off the wall {drawnBefore})";
         yield return ExpectNoCue(left, mark, 0f);
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isClimbing, 2f);
@@ -1283,7 +1305,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.51: jump and grab. The player is dropped from 1.5 m above the ground in front of the wall; the hand catches
+    /// vr.51: jump and grab. The player is dropped from 2.5 m above the ground in front of the wall; the hand catches
     /// the face while airborne, and the grip climb starts mid-fall (forced attempt, CharacterClimbing.cs:567).
     /// </summary>
     IEnumerator AirGripStep()
@@ -1293,7 +1315,7 @@ internal sealed partial class SelfTestRunner
         if (!wallReady)
             yield break;
         bool left = VRInput.LeftHanded;
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, wallStand + Vector3.up * 1.5f, false);
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, wallStand + Vector3.up * 2.5f, false);
         yield return WaitFor(() => !c.warping, 2f);
         var hold = WallHold;
         yield return MoveTo(
@@ -1382,7 +1404,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         float mark = CueMark();
         c.refs.climbing.StopAnyClimbing();
-        yield return ExpectFeel(left, CueFeel.Cancel, mark, 1f);
+        yield return Feel(left, CueFeel.Cancel, mark, 1f);
         Note($"torn off while gripping: {cueNote}");
         yield return LetGoAll(c);
     }
@@ -1436,7 +1458,7 @@ internal sealed partial class SelfTestRunner
         OnRestore(() => SandboxActions.SetGodMode(true));
         var piton = testHandle.GetComponent<ShittyPiton>();
         float mark = CueMark();
-        yield return ExpectFeel(left, CueFeel.Progress, mark, 1.5f);
+        yield return Feel(left, CueFeel.Progress, mark, 1.5f);
         if (!stepOk && piton != null && piton.crack != null && piton.crack.activeSelf)
             stepSkip =
                 "the piton began to crack before the rest was felt (vr.56 covers the warning)";
@@ -1524,13 +1546,13 @@ internal sealed partial class SelfTestRunner
         }
         float mark = CueMark();
         yield return WaitFor(() => piton == null || piton.crack.activeSelf, 8f);
-        yield return ExpectFeel(left, CueFeel.Danger, mark, 1f);
+        yield return Feel(left, CueFeel.Danger, mark, 1f);
         string warning = cueNote;
         float broke = CueMark();
         yield return WaitFor(() => c.data.currentClimbHandle == null, 8f);
         bool fell = c.data.currentClimbHandle == null;
         if (fell)
-            yield return ExpectFeel(left, CueFeel.Cancel, broke, 1f);
+            yield return Feel(left, CueFeel.Cancel, broke, 1f);
         Note($"cracking: {warning}; broke {fell}{(fell ? ": " + cueNote : "")}");
         yield return LetGoAll(c);
     }
@@ -1560,20 +1582,27 @@ internal sealed partial class SelfTestRunner
         }
         yield return Wait(1f);
         var api = testRope.climbingAPI;
-        var top = api.GetPosition(0f);
-        float Sway()
+        // The swing is the climb point's travel along the sway axis (peak to peak). Run 33 measured its distance from
+        // GetPosition(0), which is not always the anchor (segment order varies), and read a constant 2.24 m.
+        var along = Flat(VRInput.HeadRotation * Vector3.forward);
+        var axis = Flat(rig.Origin.TransformDirection(along));
+        float lo = float.MaxValue,
+            hi = float.MinValue;
+        void Track()
         {
-            var d = api.GetPosition(c.data.ropePercent) - top;
-            d.y = 0f;
-            return d.magnitude;
+            float x = Vector3.Dot(api.GetPosition(c.data.ropePercent), axis);
+            lo = Mathf.Min(lo, x);
+            hi = Mathf.Max(hi, x);
         }
-        float still = 0f;
         float end = Now + 3f;
         while (Now < end)
         {
-            still = Mathf.Max(still, Sway());
+            Track();
             yield return null;
         }
+        float still = hi - lo;
+        lo = float.MaxValue;
+        hi = float.MinValue;
         // Sway the head along the view at a 2 m pendulum's rate (about 0.35 Hz), 0.25 m each way.
         var hands = applyHands;
         OnRestore(() =>
@@ -1582,7 +1611,6 @@ internal sealed partial class SelfTestRunner
                 VRInput.TestOverride = finished ? null : IdleHands;
         });
         var baseHead = VRInput.HeadPosition;
-        var along = Flat(VRInput.HeadRotation * Vector3.forward);
         float start = Now;
         VRInput.TestOverride = () =>
         {
@@ -1591,20 +1619,20 @@ internal sealed partial class SelfTestRunner
                 baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.35f * (Now - start)));
         };
         float mark = CueMark();
-        float pumped = 0f;
         float push = 0f;
         end = Now + 8f;
         while (Now < end && c.data.isRopeClimbing)
         {
-            pumped = Mathf.Max(pumped, Sway());
+            Track();
             push = Mathf.Max(push, ClimbHands.LastPump);
             yield return null;
         }
+        float pumped = hi > lo ? hi - lo : 0f;
         VRInput.TestOverride = hands;
         yield return ExpectNoCue(left, mark, 0f);
         bool owned = testRope.photonView != null && testRope.photonView.IsMine;
         var note = F(
-            $"swing still {still:0.00} m, pumped {pumped:0.00} m (push up to {push:0.0} m/s²), rope owned {owned}"
+            $"swing peak to peak still {still:0.00} m, pumped {pumped:0.00} m (push up to {push:0.0} m/s²), rope owned {owned}"
         );
         if (push <= 0f)
             Fail("the head sway never pushed the rope: " + note);
@@ -1637,12 +1665,21 @@ internal sealed partial class SelfTestRunner
             yield return LetGoAll(c);
             yield break;
         }
-        c.data.ropePercent = 0.02f;
+        // Near the anchor: the higher end. Percent follows segment order, which varies (RopeClimbingAPI.cs:20-25), and
+        // run 33 poked 0.02 at the end lying on the ground, where the steep segment dropped the climber (:57-61).
+        var api = testRope.climbingAPI;
+        bool zeroIsTop = api.GetPosition(0f).y > api.GetPosition(1f).y;
+        float topEnd = zeroIsTop ? 0f : 1f;
+        c.data.ropePercent = zeroIsTop ? 0.02f : 0.98f;
         yield return Wait(0.6f);
         float mark = CueMark();
         yield return MoveTrack(left, Script(left).Position + Vector3.down * 0.4f, 0.6f);
-        yield return ExpectFeel(left, CueFeel.EndStop, mark, 1f);
-        Note(F($"rope percent {c.data.ropePercent:0.000} after the pull: {cueNote}"));
+        yield return Feel(left, CueFeel.EndStop, mark, 1f);
+        Note(
+            F(
+                $"rope percent {c.data.ropePercent:0.000} after the pull (top end {topEnd:0}), on the rope {c.data.isRopeClimbing}: {cueNote}"
+            )
+        );
         yield return LetGoAll(c);
     }
 
@@ -1990,7 +2027,7 @@ internal sealed partial class SelfTestRunner
         string settle = "no settle tick checked";
         if (mantled)
         {
-            yield return ExpectFeel(hand, CueFeel.Contact, mantleAt - 0.01f, 0.1f);
+            yield return Feel(hand, CueFeel.Contact, mantleAt - 0.01f, 0.1f);
             settle = cueNote;
         }
         var note = F(
@@ -2035,7 +2072,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float mark = CueMark();
-        yield return ExpectFeel(left, CueFeel.Danger, mark, 9f);
+        yield return Feel(left, CueFeel.Danger, mark, 9f);
         Note($"anchor {(added ? "added" : "from the prefab")}: {cueNote}");
         yield return LetGoAll(c);
     }
@@ -2088,5 +2125,7 @@ internal sealed partial class SelfTestRunner
             c.refs.climbing.StopAnyClimbing();
         SandboxActions.WarpToSpawn();
         yield return Wait(2f);
+        // A body still falling from a vine or rope warp fails the next step's settle (run 33's vr.43b).
+        yield return WaitFor(() => c.data.isGrounded, 3f);
     }
 }

@@ -181,6 +181,15 @@ internal static class InteractPatches
             if (c == null || c.refs.items != __instance || !c.input.dropWasReleased)
                 return;
             var sticky = c.data.currentStickyItem;
+            // currentStickyItem follows the currentItem setter (CharacterData.cs:417-436); read the held item itself
+            // too, so no path that equips a sticky item can miss the cue.
+            var held = c.data.currentItem;
+            if (sticky == null && held != null)
+                held.TryGetComponent(out sticky);
+            if (sticky != null && VRSession.Active)
+                Plugin.Log.LogInfo(
+                    $"[interact] sticky drop release: {held?.name}, currentStickyItem {c.data.currentStickyItem != null}, charge {__instance.throwChargeLevel:0.00} of {sticky.throwChargeRequirement:0.00}, hand throw {PhysicalInteraction.ThrowPending}"
+                );
             if (!PhysicalInteraction.ThrowPending)
             {
                 if (
@@ -224,5 +233,46 @@ internal static class InteractPatches
                     );
             __instance.throwChargeLevel = charge;
         }
+    }
+
+    /// <summary>
+    /// CharacterItems.OnPickupAccepted (CharacterItems.cs:440-465, the master's answer to a pickup): vanilla equips
+    /// the new slot (:457), which would swap a VR player's held item out of the hand holding it when the other, free
+    /// hand only pocketed something. While such a pocketing pickup is pending
+    /// (<see cref="PhysicalInteraction.TakePocketing"/>) that equip is skipped: the item stays in the pocket slot
+    /// <c>Player.AddItem</c> gave it (Item.cs:617) and the held item stays in hand. Local only: the equip is the
+    /// owner's own call.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class KeepHeldOnPocket
+    {
+        /// <summary>The pocketing pickup's answer is running: <see cref="SkipEquip"/> drops its equip.</summary>
+        internal static bool Active;
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "OnPickupAccepted");
+
+        private static void Prefix(CharacterItems __instance)
+        {
+            var c = Character.localCharacter;
+            Active = c != null && __instance == c.refs.items && PhysicalInteraction.TakePocketing();
+        }
+
+        private static Exception Finalizer(Exception __exception)
+        {
+            Active = false;
+            return __exception;
+        }
+    }
+
+    /// <summary>CharacterItems.EquipSlot (CharacterItems.cs:482): skipped only inside a pocketing pickup's answer
+    /// (<see cref="KeepHeldOnPocket"/>).</summary>
+    [HarmonyPatch]
+    internal static class SkipEquip
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "EquipSlot");
+
+        private static bool Prefix() => !KeepHeldOnPocket.Active;
     }
 }
