@@ -227,7 +227,8 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no sticky item";
             yield break;
         }
-        yield return GiveAndHold(sticky.GetComponent<Item>());
+        // Straight into a slot: the hip spawn of GiveAndHold let the cactus stick to the body first (run 35).
+        yield return EquipDirect(sticky.GetComponent<Item>());
         if (!stepOk)
             yield break;
         bool left = LocalHold.ItemInLeftHand;
