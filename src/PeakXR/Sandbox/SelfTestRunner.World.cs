@@ -192,10 +192,10 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var fire = Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent);
-        var raw = FindItem(new List<Item>(SandboxActions.Items), "Rope");
-        if (fire == null || raw == null || raw.cooking == null || raw.cooking.canBeCooked)
+        var raw = Uncookable();
+        if (fire == null || raw == null)
         {
-            stepSkip = fire == null ? "no campfire loaded" : "no uncookable Rope item";
+            stepSkip = fire == null ? "no campfire loaded" : "no item with cooking disabled";
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
@@ -208,6 +208,27 @@ internal sealed partial class SelfTestRunner
                 yield break;
         }
         yield return HoldInHeat(raw, fireBase, DenyReason.CantUse);
+    }
+
+    /// <summary>The first item prefab whose <c>ItemCooking.disableCooking</c> is set (<c>canBeCooked</c> false,
+    /// ItemCooking.cs:48), leaving out held lights (over a fire they are the light gesture) and placeables.</summary>
+    static Item Uncookable()
+    {
+        foreach (var item in SandboxActions.Items)
+        {
+            if (
+                item != null
+                && item.TryGetComponent(out ItemCooking cooking)
+                && !cooking.canBeCooked
+                && !item.TryGetComponent(out Flare _)
+                && !item.TryGetComponent(out Candle _)
+                && !item.TryGetComponent(out Lantern _)
+                && item.GetComponentInChildren<Action_Torch>() == null
+                && !item.TryGetComponent(out Constructable _)
+            )
+                return item;
+        }
+        return null;
     }
 
     /// <summary>vr.83b: food held where the heat column of an unlit campfire would be is refused with NotLit, the
