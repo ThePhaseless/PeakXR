@@ -45,11 +45,14 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
+        yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
         yield return Restoring("vr.50-climb-hover", 30f, ClimbHoverStep());
         yield return Restoring("vr.51-air-grip", 30f, AirGripStep());
+        yield return Restoring("vr.51b-falling-catch", 30f, FallingCatchStep());
         yield return Restoring("vr.52-climb-empty", 40f, ClimbEmptyStep());
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
+        yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
@@ -60,6 +63,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.57-rope-deny-stamina", 40f, RopeDenyStaminaStep());
         yield return WarpBack();
         yield return Restoring("vr.58-rope-deny-unanchored", 40f, RopeUnanchoredStep());
+        yield return WarpBack();
+        yield return Restoring("vr.58b-breakable-anchor", 45f, BreakableAnchorStep());
         yield return WarpBack();
     }
 
@@ -184,6 +189,7 @@ internal sealed partial class SelfTestRunner
         var from = Script(left).Position;
         float jumpBefore = c.data.sinceClimbJump;
         float y0 = c.Center.y;
+        float whooshMark = CueMark();
         yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
         float released = Now;
         yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
@@ -229,6 +235,7 @@ internal sealed partial class SelfTestRunner
             && (sinceStart == null || sinceStart(c.refs.climbing) > caughtAfter - 0.05f);
         string gripNote = PeakXR.Interact.PhysicalInteraction.LastGripNote;
         float rise = c.Center.y - y0;
+        bool whoosh = ClimbCues.Since(ClimbCue.Whoosh, left, whooshMark, out _);
         yield return Shot("vr-46-lunge");
 
         // Out of stamina: the same throw is refused with the stamina cue, and the game takes no jump.
@@ -274,10 +281,12 @@ internal sealed partial class SelfTestRunner
                 Fail("the game took the climb jump without stamina: " + refusal);
         }
         var note = F(
-            $"climb jump {jumped} {jumpAfter:0.00} s after the release ({speed:0.0} m/s throw, lunge from {cfg.LungeSpeed:0.0}), caught {caught} after {caughtAfter:0.00} s (grace 0.6 s), climb unbroken {unbroken}, rose {rise:0.00} m; {refusal}"
+            $"climb jump {jumped} {jumpAfter:0.00} s after the release ({speed:0.0} m/s throw, lunge from {cfg.LungeSpeed:0.0}), whoosh {whoosh}, caught {caught} after {caughtAfter:0.00} s (grace 0.6 s), climb unbroken {unbroken}, rose {rise:0.00} m; {refusal}"
         );
         if (!jumped)
             Fail("the throw did not make the game's climb jump: " + note);
+        else if (!whoosh)
+            Fail("the lunge made no whoosh: " + note);
         else if (!caught)
             Fail($"the hand did not catch the wall after the lunge: {note}; last grip: {gripNote}");
         else if (!unbroken)
@@ -305,6 +314,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return HandStep("vr.43-vine", 45f, VineStep());
         yield return HandStep("vr.43b-vine-look-back", 45f, VineLookBackStep());
+        yield return HandStep("vr.43c-vine-slide", 30f, VineSlideStep());
         yield return Restoring("vr.59-vine-deny-stamina", 40f, VineDenyStaminaStep());
     }
 
@@ -452,6 +462,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator HangRope()
     {
         testRope = null;
+        testAnchor = null;
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
         var shooter = FindItemComponent<RopeShooter>();
@@ -497,6 +508,7 @@ internal sealed partial class SelfTestRunner
         // Spool-out (RopeAnchorWithRope.spoolOutTime) and settling.
         yield return Wait(anchor.spoolOutTime + 1.5f);
         testRope = anchor.rope;
+        testAnchor = go;
     }
 
     /// <summary>The <paramref name="left"/> hand grips the test rope's segment nearest its reach and the game grabs it
@@ -832,6 +844,7 @@ internal sealed partial class SelfTestRunner
     Vector3 wallStand;
     bool wallReady;
     Rope testRope;
+    GameObject testAnchor;
     JungleVine testVine;
     ClimbHandle testHandle;
 
@@ -1032,8 +1045,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.47b: with an Apple in the right hand, the free left hand grips a second Apple on the ground. The game pockets
-    /// an item picked up while another is held (Item.Interact, Item.cs:578-591): the second one leaves the world, the
-    /// first stays in the right hand, and no refusal fires.
+    /// an item picked up while another is held (Item.Interact, Item.cs:578-591): the second one leaves the world with
+    /// the Stowed notice at the left hand (pin, bell, light tick), and the first stays in the right hand.
     /// </summary>
     IEnumerator FreeHandPocketStep()
     {
@@ -1089,10 +1102,10 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(true, 1f, 0.1f);
         yield return WaitFor(() => !InWorld(), 2f);
         bool pocketed = !InWorld();
-        yield return ExpectNoCue(true, mark, 0.3f);
+        yield return ExpectCue(true, DenyReason.Stowed, mark, false, 1f);
         bool kept = HeldItem() == held && !LocalHold.ItemInLeftHand;
         var note =
-            $"second Apple pocketed {pocketed}; first still in the right hand {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}";
+            $"second Apple pocketed {pocketed} ({cueNote}); first still in the right hand {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}";
         if (!pocketed)
             Fail("the free hand did not take the second Apple: " + note);
         else if (!kept)
@@ -1799,6 +1812,255 @@ internal sealed partial class SelfTestRunner
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
         marker.position = vine.GetPosition(0.5f, 1, 1) + Vector3.down * vine.colliderOffset;
         yield return GripRefusedLine(DenyReason.NoStamina, () => c.data.isVineClimbing, marker);
+    }
+
+    /// <summary>
+    /// vr.48b: an easy "ladder" hold (a <c>ClimbModifierSurface</c> with stamina use 0.3, the game's ladder reticle
+    /// threshold, CharacterClimbing.cs:140-143) added to the wall: while the hand holds it, the soft texture ticks
+    /// reach that hand (<see cref="SurfaceTexture"/>).
+    /// </summary>
+    IEnumerator SurfaceTextureStep()
+    {
+        var c = Character.localCharacter;
+        if (!Interact.InteractConfig.Instance.ClimbSurfaceFeel)
+        {
+            stepSkip = "Interaction.ClimbSurfaceFeel off";
+            yield break;
+        }
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        var surface = wallFace.collider.gameObject.AddComponent<ClimbModifierSurface>();
+        surface.staminaUsageMultiplier = 0.3f;
+        OnRestore(() =>
+        {
+            if (surface != null)
+                UnityEngine.Object.Destroy(surface);
+        });
+        bool left = VRInput.LeftHanded;
+        yield return GripWall(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float mark = CueMark();
+        yield return WaitFor(() => ClimbCues.Since(ClimbCue.Texture, left, mark, out _), 2f);
+        bool felt = ClimbCues.Since(ClimbCue.Texture, left, mark, out float amplitude);
+        bool easy = c.data.climbMod == surface;
+        yield return ExpectNoCue(left, mark, 0f);
+        var note = F($"on the easy hold {easy}: texture felt {felt} at {amplitude:0.00}");
+        if (!felt)
+            Fail("no surface texture under the climbing hand: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.51b: a falling catch. Dropped from 2.5 m in front of the wall, the hand grabs once the body falls faster than
+    /// 3 m/s; the game turns the fall into a slide (CharacterClimbing.cs:371-374) and the hand feels the hard ratchet
+    /// (<see cref="ClimbFeel.Catch"/>), stronger than a clean grab's.
+    /// </summary>
+    IEnumerator FallingCatchStep()
+    {
+        var c = Character.localCharacter;
+        if (!Interact.InteractConfig.Instance.ClimbSurfaceFeel)
+        {
+            stepSkip = "Interaction.ClimbSurfaceFeel off";
+            yield break;
+        }
+        yield return ToWall(headroom: LungeHeadroom);
+        if (!wallReady)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, wallStand + Vector3.up * 2.5f, false);
+        yield return WaitFor(() => !c.warping, 2f);
+        yield return WaitFor(() => c.data.avarageVelocity.y < -3f, 1f);
+        float fall = -c.data.avarageVelocity.y;
+        var hold = WallHold;
+        yield return MoveTo(
+            left,
+            () =>
+                hold = WallInFront(c, wallBase, 0.3f, out var face)
+                    ? face.point + face.normal * 0.04f
+                    : hold,
+            0.08f
+        );
+        float mark = CueMark();
+        yield return GripTo(left, 1f, 0.03f);
+        yield return WaitFor(() => c.data.isClimbing, 1.5f);
+        bool climbed = c.data.isClimbing;
+        bool felt = ClimbCues.Since(ClimbCue.Catch, left, mark, out float amplitude);
+        var note = F(
+            $"falling {fall:0.0} m/s at the grip: climbing {climbed}, catch felt {felt} at {amplitude:0.00}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
+        if (!climbed)
+            Fail("the falling grab did not catch: " + note);
+        else if (!felt || amplitude < ClimbFeel.Catch(ClimbFeel.CleanCatch).Amplitude)
+            Fail("the catch did not ratchet: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.54: a 1.7 m ledge (a Map-layer block, its top walkable) climbed hand over hand. The pull that tops out ends
+    /// the game's climb on the flat top (CharacterClimbing.cs:265-271) and starts the mantle (<c>TryStartMantle</c>):
+    /// the body walks onto the ledge and the gripping hand feels the settle tick.
+    /// </summary>
+    IEnumerator MantleStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        if (!Interact.InteractConfig.Instance.PhysicalClimb)
+        {
+            stepSkip = "Interaction.GrabToClimb off";
+            yield break;
+        }
+        var forward = Flat(rig.Head.forward);
+        var feet = Feet(c);
+        float top = feet.y + 1.7f;
+        var block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        block.name = "PeakXR_TestLedge";
+        block.layer = LayerMask.NameToLayer("Map");
+        OnRestore(() =>
+        {
+            if (block != null)
+                UnityEngine.Object.Destroy(block);
+        });
+        var center = feet + forward * (0.55f + 0.75f);
+        center.y = top - 1.5f;
+        block.transform.SetPositionAndRotation(center, Quaternion.LookRotation(forward));
+        block.transform.localScale = new Vector3(2f, 3f, 1.5f);
+        Physics.SyncTransforms();
+        yield return Wait(0.3f);
+
+        float mark = CueMark();
+        bool hand = VRInput.LeftHanded;
+        bool started = false;
+        for (int i = 0; i < 6; i++)
+        {
+            if (
+                !Physics.Raycast(
+                    c.Center + Vector3.up * 0.5f,
+                    forward,
+                    out var face,
+                    1.5f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || face.collider.gameObject != block
+            )
+                break;
+            var at = face.point + face.normal * 0.04f;
+            yield return MoveTo(hand, () => at, 0.25f);
+            yield return GripTo(hand, 1f, 0.08f);
+            if (!started)
+            {
+                yield return WaitFor(() => c.data.isClimbing, 1.5f);
+                started = c.data.isClimbing;
+                if (!started)
+                    break;
+            }
+            yield return GripTo(!hand, 0f, 0.05f);
+            yield return MoveTrack(hand, Script(hand).Position + Vector3.down * 0.45f, 0.45f);
+            if (!c.data.isClimbing)
+                break;
+            hand = !hand;
+        }
+        yield return Wait(1f);
+        float mantleAt = PeakXR.Interact.PhysicalInteraction.LastMantleAt;
+        bool mantled = mantleAt >= mark;
+        bool onTop = Feet(c).y >= top - 0.3f;
+        string settle = "no settle tick checked";
+        if (mantled)
+        {
+            yield return ExpectFeel(hand, CueFeel.Contact, mantleAt - 0.01f, 0.1f);
+            settle = cueNote;
+        }
+        var note = F(
+            $"climb started {started}, mantle {mantled}, feet {Feet(c).y - top:0.00} m from the top; {settle}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
+        if (!started)
+            Fail("the ledge face did not climb: " + note);
+        else if (!mantled)
+            Fail("topping out did not start the mantle: " + note);
+        else if (!onTop)
+            Fail("the mantle did not carry the body onto the ledge: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.58b: a breakable rope anchor (<c>BreakableRopeAnchor</c>, BreakableRopeAnchor.cs:34-70, added to the test
+    /// rope's anchor when its prefab has none) gives way 3-8 s into the climb. In its last seconds the gripping hand
+    /// feels the danger warning at the anchor.
+    /// </summary>
+    IEnumerator BreakableAnchorStep()
+    {
+        var c = Character.localCharacter;
+        if (!ClimbHands.RopeHands)
+        {
+            stepSkip = "Interaction.RopeHandOverHand off";
+            yield break;
+        }
+        yield return HangRope();
+        if (testRope == null || testAnchor == null)
+            yield break;
+        bool added = !testAnchor.TryGetComponent<BreakableRopeAnchor>(out _);
+        if (added)
+            testAnchor.AddComponent<BreakableRopeAnchor>();
+        yield return null;
+        bool left = VRInput.LeftHanded;
+        yield return GrabRope(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float mark = CueMark();
+        yield return ExpectFeel(left, CueFeel.Danger, mark, 9f);
+        Note($"anchor {(added ? "added" : "from the prefab")}: {cueNote}");
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.43c: a fast grab slides along the vine with input ignored (<c>Sliding</c>, CharacterVineClimbing.cs:102-127;
+    /// the slide speed <c>attachVel</c> poked to 10). The hands feel and hear the whirr.
+    /// </summary>
+    IEnumerator VineSlideStep()
+    {
+        var c = Character.localCharacter;
+        if (!ClimbHands.RopeHands || !Interact.InteractConfig.Instance.ClimbSurfaceFeel)
+        {
+            stepSkip = "Interaction.RopeHandOverHand or Interaction.ClimbSurfaceFeel off";
+            yield break;
+        }
+        yield return ToVine();
+        if (testVine == null)
+            yield break;
+        testVine.Interact(c);
+        yield return Until(() => c.data.isVineClimbing, 2f, "the game's vine grab did not attach");
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float mark = CueMark();
+        // CharacterVineClimbing.attachVel (CharacterVineClimbing.cs:32, private): Sliding() is |attachVel| > 3.
+        Framework.GameMember.Field<CharacterVineClimbing, float>("attachVel")(c.refs.vineClimbing) =
+            10f;
+        bool left = VRInput.LeftHanded;
+        yield return WaitFor(() => ClimbCues.Since(ClimbCue.Whirr, left, mark, out _), 1f);
+        bool felt = ClimbCues.Since(ClimbCue.Whirr, left, mark, out float amplitude);
+        var note = F($"sliding: whirr felt {felt} at {amplitude:0.00}");
+        if (!felt)
+            Fail("a sliding vine made no whirr: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
     }
 
     /// <summary>Opens both hands, ends any rope, vine, handle or wall climb, and goes back to the spawn.</summary>
