@@ -35,7 +35,22 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>How long (s) a shove holds the reach button, so the game's FixedUpdate sees it (Character.cs:1203).</summary>
     private const float ShoveTap = 0.1f;
 
+    /// <summary>How near (m) an open hand must be to a helpable friend's hand for the "grab here" ring.</summary>
+    private const float GlowRadius = 0.45f;
+
+    /// <summary>Carried sway: one light tick per <see cref="SwayPeriod"/> s, alternating hands, while moving.</summary>
+    private const float SwayPeriod = 0.6f;
+    private const float SwayMinSpeed = 0.5f;
+    private const float SwayStrength = 0.15f;
+
+    /// <summary>Progress-ramp strength of the pal-jump pressure (a friend underfoot or on your back).</summary>
+    private const float PalPressure = 0.3f;
+
     private readonly SocialKind[] kinds = new SocialKind[2];
+    private Vector3 lastCenter;
+    private float swayAt;
+    private bool swayLeft;
+    private bool palBoosted;
     private readonly IInteractible[] targets = new IInteractible[2];
     private readonly Character[] characters = new Character[2];
     private readonly ButtonEdge interactEdge = new();
@@ -238,7 +253,7 @@ internal sealed class SocialHands : IGripExtension
 
         var other = NearestBody(c, pos, reach, out var part);
         if (other == null)
-            return false;
+            return Skeleton(c, pos, small, ref refusal, ref at);
         who = other;
         at = part.transform.position;
 
@@ -253,6 +268,19 @@ internal sealed class SocialHands : IGripExtension
             && Vector3.Dot(pos - other.Center, other.data.lookDirection_Flat) < 0f
         )
         {
+            // A worn rocket already lit or flying: the hold would end in a light the game ignores
+            // (CharacterBackpackHandler.RPCA_Light, :209-212).
+            var movement = other.refs.movement;
+            if (
+                pack.backpackType == BackpackSlot.BackpackType.Rocketpack
+                && movement != null
+                && (movement.rocketLit || movement.rocketActive)
+            )
+            {
+                refusal = DenyReason.UsedUp;
+                at = pack.transform.position;
+                return true;
+            }
             kind = SocialKind.Interact;
             target = pack;
             return true;
@@ -297,6 +325,40 @@ internal sealed class SocialHands : IGripExtension
         if (kind is SocialKind.Interact or SocialKind.Carry)
             target = other.refs.interactible;
         return kind != SocialKind.None || refusal != DenyReason.None;
+    }
+
+    private static readonly Collider[] Touching = new Collider[16];
+
+    /// <summary>
+    /// A dead friend's body is gone (inactive); what is left is their skeleton (Character.SpawnSkeletonOnDeath,
+    /// Character.cs:766). A bare grip on it does nothing in the game: only a held Book of Bones with uses revives
+    /// (Skelleton.IsInteractible, Skelleton.cs:58-63; interact.items handles the book). Refused as CantUse, ring only.
+    /// </summary>
+    private static bool Skeleton(
+        Character c,
+        Vector3 pos,
+        float radius,
+        ref DenyReason refusal,
+        ref Vector3 at
+    )
+    {
+        int n = Physics.OverlapSphereNonAlloc(
+            pos,
+            radius,
+            Touching,
+            ~0,
+            QueryTriggerInteraction.Ignore
+        );
+        for (int i = 0; i < n; i++)
+        {
+            var skeleton = Touching[i].GetComponentInParent<Skelleton>();
+            if (skeleton == null || skeleton.IsInteractible(c))
+                continue;
+            refusal = DenyReason.CantUse;
+            at = skeleton.Center();
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Run setting HelpingHand = 1 (CharacterGrabbing.isKickMode, CharacterGrabbing.cs:33).</summary>
@@ -411,6 +473,136 @@ internal sealed class SocialHands : IGripExtension
 
         UpdateStruggle(c, input, cfg, dt);
         UpdateStickyCue(c);
+        UpdateGlow(c, cfg);
+        UpdateCarried(c, cfg, dt);
+        UpdatePalJump(c, cfg);
+    }
+
+    /// <summary>
+    /// "Grab here": an open, empty hand within <see cref="GlowRadius"/> of the hand of a friend the game would let you
+    /// pull up (CharacterGrabbing.TargetCanBeHelped, :293) gets a teal ring on that friend's hand. A hint, so only with
+    /// <c>UI.ActionHints</c>; never in kick mode, where a grip does not reach.
+    /// </summary>
+    private void UpdateGlow(Character c, SocialConfig cfg)
+    {
+        var rig = VRRig.Instance;
+        var cd = c.data;
+        if (
+            !Affordance.Hints
+            || !cfg.HandInteract
+            || rig == null
+            || cd.currentItem != null
+            || cd.isClimbing
+            || cd.isRopeClimbing
+            || cd.isVineClimbing
+        )
+            return;
+        var all = Character.AllCharacters;
+        for (int h = 0; h < 2; h++)
+        {
+            var hand = rig.Hand(h == 0);
+            if (kinds[h] != SocialKind.None || hand == null)
+                continue;
+            float bestSq = GlowRadius * GlowRadius;
+            Vector3 best = default;
+            bool found = false;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var ch = all[i];
+                if (
+                    ch == null
+                    || ch == c
+                    || ch.refs.ragdoll == null
+                    || !ch.gameObject.activeInHierarchy
+                    || (ch.Center - hand.position).sqrMagnitude > 4f
+                    || !CharacterGrabbing.TargetCanBeHelped(ch, c)
+                )
+                    continue;
+                found |= Closer(ch, BodypartType.Hand_L, hand.position, ref bestSq, ref best);
+                found |= Closer(ch, BodypartType.Hand_R, hand.position, ref bestSq, ref best);
+            }
+            if (found && !KickMode)
+                Affordance.Mark(h == 0, best, DenyReason.NeedsFriend, DenyHint.At(best));
+        }
+    }
+
+    private static bool Closer(
+        Character ch,
+        BodypartType type,
+        Vector3 from,
+        ref float bestSq,
+        ref Vector3 best
+    )
+    {
+        if (!ch.refs.ragdoll.partDict.TryGetValue(type, out var part))
+            return false;
+        var p = part.transform.position;
+        float sq = (p - from).sqrMagnitude;
+        if (sq >= bestSq)
+            return false;
+        bestSq = sq;
+        best = p;
+        return true;
+    }
+
+    /// <summary>
+    /// Carried by a friend (CharacterData.carrier, CharacterCarrying.cs:76) or a condor (carrierCondor,
+    /// Condor.cs:300): a slow, light sway felt in the hands, left then right, while the carrier moves. Never camera
+    /// motion: the view stays the game's spectate takeover.
+    /// </summary>
+    private void UpdateCarried(Character c, SocialConfig cfg, float dt)
+    {
+        var d = c.data;
+        bool carried = d.carrier != null || d.carrierCondor != null;
+        var center = c.Center;
+        float speed = dt > 0f ? (center - lastCenter).magnitude / dt : 0f;
+        lastCenter = center;
+        if (!cfg.CarriedSway || !carried || speed < SwayMinSpeed)
+        {
+            swayAt = 0f;
+            return;
+        }
+        swayAt += dt;
+        if (swayAt < SwayPeriod)
+            return;
+        swayAt = 0f;
+        swayLeft = !swayLeft;
+        Affordance.Progress(swayLeft, SwayStrength);
+    }
+
+    /// <summary>
+    /// Pal jump (CharacterMovement.StandOnPlayer :992-1022, CheckForPalJump :1024-1034): standing on a crouched friend,
+    /// or a friend standing on you, is a light pressure ramp in both hands; the boost itself (JumpRpc with
+    /// isPalJump, :626-635, sincePalJump reset) is a thump in both hands and a rising note.
+    /// </summary>
+    private void UpdatePalJump(Character c, SocialConfig cfg)
+    {
+        if (!cfg.PalJumpFeel)
+            return;
+        var d = c.data;
+        bool boosted = d.sincePalJump < 0.2f;
+        if (boosted && !palBoosted)
+        {
+            Affordance.Contact(true);
+            Affordance.Contact(false);
+            Affordance.Play(CueSound.WouldWork, c.Center);
+        }
+        palBoosted = boosted;
+        bool pressed = d.lastStoodOnPlayer != null && d.sinceStandOnPlayer < 0.3f;
+        var all = Character.AllCharacters;
+        for (int i = 0; !pressed && i < all.Count; i++)
+        {
+            var ch = all[i];
+            pressed =
+                ch != null
+                && ch != c
+                && ch.data.lastStoodOnPlayer == c
+                && ch.data.sinceStandOnPlayer < 0.3f;
+        }
+        if (!pressed)
+            return;
+        Affordance.Progress(true, PalPressure);
+        Affordance.Progress(false, PalPressure);
     }
 
     /// <summary>The game's hold on a hand-chosen constant interactible (Interaction.cs:119-138) fills: ramp on that hand.</summary>
