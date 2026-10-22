@@ -361,7 +361,8 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.Climb:
                 // The fall this grab stops, read before the climb start resets the body's motion.
-                float fall = c.data.isClimbing ? 0f : -c.data.avarageVelocity.y;
+                float fall = c.data.isClimbing ? 0f : FallSpeed(c);
+                LastCatchFall = fall;
                 if (StartClimb(c, rig, pos, cfg))
                     CatchPulse(hand.Left, kind, fall, cfg);
                 else
@@ -1102,6 +1103,19 @@ internal static class PhysicalInteraction
     /// <c>avarageVelocity</c>, <c>StartClimbRpc</c>, CharacterClimbing.cs:371-374): the hold ratchets, longer and
     /// harder the faster the fall (<see cref="ClimbFeel.Catch"/>). A clean grab keeps its surface pulse.
     /// </summary>
+    /// <summary>The fall speed the last wall grab stopped (0 when already climbing), for the self-test (vr.51b).</summary>
+    internal static float LastCatchFall { get; private set; }
+
+    /// <summary>Downward speed now: the faster of the game's smoothed <c>avarageVelocity</c> and the hip's own, so a
+    /// grab mid-fall is not read from a lagging average.</summary>
+    private static float FallSpeed(Character c)
+    {
+        float fall = -c.data.avarageVelocity.y;
+        if (c.refs.hip != null)
+            fall = Mathf.Max(fall, -c.refs.hip.Rig.linearVelocity.y);
+        return fall;
+    }
+
     private static void CatchPulse(bool left, HoldKind kind, float fallSpeed, InteractConfig cfg)
     {
         var p = cfg.ClimbSurfaceFeel ? ClimbFeel.Catch(fallSpeed) : default;

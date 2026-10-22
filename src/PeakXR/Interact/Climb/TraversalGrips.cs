@@ -26,6 +26,8 @@ internal sealed class TraversalGrips : IGripExtension
     /// vine (JungleVine.cs:286-297), so the search is wider than the grip radius.</summary>
     private const float SearchRadius = 0.5f;
 
+    private const float VineRise = 1.5f;
+
     private static readonly Collider[] Hits = new Collider[32];
 
     private DenyReason reason;
@@ -75,8 +77,11 @@ internal sealed class TraversalGrips : IGripExtension
     /// <summary>A refused (or timed-out) line or handle under the hand; fills <see cref="reason"/>.</summary>
     private bool Find(Character c, Vector3 pos)
     {
-        int n = Physics.OverlapSphereNonAlloc(
+        // Up to VineRise above the hand: a vine's trigger capsules sit colliderOffset above the drawn vine the hand
+        // holds, more than SearchRadius on some vines (run 34's vr.59 found none).
+        int n = Physics.OverlapCapsuleNonAlloc(
             pos,
+            pos + Vector3.up * VineRise,
             SearchRadius,
             Hits,
             Physics.AllLayers,
