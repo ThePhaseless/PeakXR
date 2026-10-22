@@ -61,6 +61,7 @@ internal sealed class BinocularLens : MonoBehaviour
     }
 
     private readonly TwistKnob knob = new();
+    private readonly LimitStop zoomStop = new();
 
     private Action_ShowBinocularOverlay overlay;
     private Item item;
@@ -262,6 +263,11 @@ internal sealed class BinocularLens : MonoBehaviour
         // Positive twist about the hand's forward is counter-clockwise seen from behind the hand: zoom out.
         // AdjustFOV clamps to the item's own range (CameraOverride_Binoculars.cs:27-30).
         float range = zoom.maxFov - zoom.minFov;
+        // Twisting further at the end of the zoom: one end-stop thunk, then a dead knob.
+        if (zoomStop.Update(zoom.lerpedFOV, zoom.minFov, zoom.maxFov, steps > 0 ? 1 : -1))
+            UI.Affordances.Affordance.EndStop(left);
+        if (zoomStop.Pressing)
+            return;
         zoom.AdjustFOV(steps * (range > 0f ? range / TwistZoomSteps : 5f));
         Haptics.Pulse(left, 0.3f, 0.02f);
     }

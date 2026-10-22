@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -40,9 +41,18 @@ internal sealed class AimReticle : MonoBehaviour
     private ClimbingSpikeComponent spike;
     private Material material;
     private bool red;
+    private bool spool;
+    private Constructable build;
+    private global::Peak.Action_CloneSelectedItem clone;
+    private bool cloneRefused;
+    private float cloneCheckAt;
 
-    /// <summary>The held tool's usability comes from its aim (the shooters write overrideUsability from
-    /// WillAttach every frame, RopeShooter.cs:69, VineShooter.cs:33).</summary>
+    /// <summary>The clone pick runs the game's interact casts, so it is sampled, not run every frame.</summary>
+    private const float CloneCheckSeconds = 0.1f;
+
+    /// <summary>The held tool's usability comes from its aim: the shooters write overrideUsability from WillAttach
+    /// every frame (RopeShooter.cs:69, VineShooter.cs:33), the rescue claw from its hit (RescueHook.cs:108-116) and
+    /// a build from its preview spot (Constructable.cs:62-69; ScoutEffigy.cs:8-19).</summary>
     private bool aimUsability;
 
     private void LateUpdate()
@@ -54,17 +64,41 @@ internal sealed class AimReticle : MonoBehaviour
         }
         if (!built && !Build())
             return;
-        // A piton aimed past its real range (SpikeCue): the line turns the ui.affordance "can't" colour.
-        bool outOfRange =
-            spike != null ? Tools.SpikeCue.OutOfRange : aimUsability && !cachedItem.CanUsePrimary();
-        if (outOfRange && spike == null)
+        // A refused aim turns the line the ui.affordance "can't" colour and, before the press, rings the reason
+        // where it points (for a vine aimed too steep, also the ring an accepted aim would hit). A piton's own
+        // range cue is SpikeCue's.
+        var c = Character.localCharacter;
+        bool outOfRange;
+        var reason = DenyReason.None;
+        DenyHint hint = default;
+        if (spike != null)
+            outOfRange = Tools.SpikeCue.OutOfRange;
+        else if (spool)
         {
-            // Before the press: the reason and, for a vine aimed too steep, the ring an accepted aim would hit.
-            var c = Character.localCharacter;
-            bool left = LocalHold.ItemInLeftHand;
-            var reason = UseDenial.Why(c, cachedItem, out var hint);
-            UI.Affordances.Affordance.Hover(left, end, reason, hint);
+            outOfRange = UseDenial.SpoolRefused(c, cachedItem, out hint);
+            reason = DenyReason.NoWall;
         }
+        else if (clone != null)
+        {
+            if (Time.unscaledTime >= cloneCheckAt)
+            {
+                cloneCheckAt = Time.unscaledTime + CloneCheckSeconds;
+                cloneRefused = UseDenial.CloneRefused(cachedItem, clone, out _);
+            }
+            outOfRange = cloneRefused;
+            reason = DenyReason.CantClone;
+        }
+        else
+        {
+            // A build with no preview spot is refused too (ItemGestures.BeforeUsing).
+            outOfRange =
+                aimUsability
+                && (!cachedItem.CanUsePrimary() || (build != null && build.currentPreview == null));
+            if (outOfRange)
+                reason = UseDenial.Why(c, cachedItem, out hint);
+        }
+        if (outOfRange && spike == null)
+            UI.Affordances.Affordance.Hover(LocalHold.ItemInLeftHand, end, reason, hint);
         if (outOfRange != red)
         {
             red = outOfRange;
@@ -134,6 +168,10 @@ internal sealed class AimReticle : MonoBehaviour
         rangeDown = 0f;
         spike = null;
         aimUsability = false;
+        spool = false;
+        build = null;
+        clone = null;
+        cloneRefused = false;
         if (item.TryGetComponent<RopeShooter>(out var ropeShooter))
         {
             range = ropeShooter.maxLength;
@@ -148,18 +186,25 @@ internal sealed class AimReticle : MonoBehaviour
         {
             range = Usable(hook.range);
             rangeDown = Usable(hook.rangeDownward);
+            aimUsability = true;
             return;
         }
         else if (item.TryGetComponent<Action_RaycastDart>(out var dart))
             range = dart.maxDistance;
         else if (item.TryGetComponent<global::Peak.Action_RaycastSpawnSomething>(out var spawner))
             range = spawner.maxDistance;
-        else if (item.TryGetComponent<global::Peak.Action_CloneSelectedItem>(out var clone))
+        else if (item.TryGetComponent(out clone))
             range = clone.range;
         else if (item.TryGetComponent<RopeTier>(out var tier))
+        {
             range = tier.maxAnchorGhostDistance;
-        else if (item.TryGetComponent<Constructable>(out var constructable))
-            range = constructable.maxConstructDistance;
+            spool = true;
+        }
+        else if (item.TryGetComponent(out build))
+        {
+            range = build.maxConstructDistance;
+            aimUsability = true;
+        }
         else if (item.TryGetComponent(out spike))
             range = Mathf.Max(
                 spike.climbingSpikeStartDistance,

@@ -14,7 +14,9 @@ internal sealed class ItemGesturesConfig
         lightWithFlame,
         pressToBody,
         warmHands,
-        parasolRunner;
+        parasolRunner,
+        readAtFace,
+        communeAtFace;
 
     public bool CookOverFire => cookOverFire?.Value ?? true;
     public bool LiftLid => liftLid?.Value ?? true;
@@ -23,6 +25,8 @@ internal sealed class ItemGesturesConfig
     public bool PressToBody => pressToBody?.Value ?? true;
     public bool WarmHands => warmHands?.Value ?? true;
     public bool ParasolRunner => parasolRunner?.Value ?? true;
+    public bool ReadAtFace => readAtFace?.Value ?? true;
+    public bool CommuneAtFace => communeAtFace?.Value ?? true;
 
     public static void Bind(ConfigFile file)
     {
@@ -77,6 +81,20 @@ internal sealed class ItemGesturesConfig
                 true,
                 "Grip a held parasol's shaft with your free hand and push up to open it, pull down to close it. "
                     + "The trigger still toggles it."
+            ),
+            readAtFace = file.Bind(
+                s,
+                "ReadAtFace",
+                true,
+                "Hold a book you can read (the Book of Bones) open in front of your eyes to read it; lowering it "
+                    + "stops. The trigger still works."
+            ),
+            communeAtFace = file.Bind(
+                s,
+                "CommuneAtFace",
+                true,
+                "Items that kill or warp you when used (Cursed Skull, Scout's Honor) start only when held eye to eye "
+                    + "for the whole use; the trigger alone is refused with a warning. Off: the trigger uses them."
             ),
         };
     }

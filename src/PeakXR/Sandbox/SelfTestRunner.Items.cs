@@ -4,11 +4,15 @@ using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Interact.Binoculars;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
+using PeakXR.Interact.Tools;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
+using STATUS = CharacterAfflictions.STATUSTYPE;
 using Vector3 = UnityEngine.Vector3;
 
 namespace PeakXR.Sandbox;
@@ -35,6 +39,18 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return HandStep("vr.27-warm-hands", 30f, WarmStep());
         yield return WarpBack();
+        yield return HandStep("vr.160-use-routes", 40f, UseRoutesStep());
+        yield return ItemStep("vr.161-drink", "Antidote", 25f, DrinkStep);
+        yield return ItemStep("vr.162-build-not-at-mouth", "Checkpoint Flag", 20f, NotAtMouthStep);
+        yield return ItemStep("vr.163-build", "Checkpoint Flag", 30f, BuildStep);
+        yield return ItemStep("vr.164-commune-guard", "Cursed Skull", 25f, CommuneGuardStep);
+        yield return ItemStep("vr.165-read-cancel", "Book of Bones", 20f, ReadCancelStep);
+        yield return ItemStep("vr.166-eat-cancel", AppleFragment, 20f, EatCancelStep);
+        yield return HandStep("vr.167-secondary-deny", 20f, SecondaryDenyStep());
+        yield return ItemStep("vr.168-shoot-hand", "RopeShooter", 30f, ShootHandStep);
+        yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
+        // vr.169 raises the binoculars in Hold mode; a failed or timed-out step leaves it forced.
+        BinocularsConfig.ForceHold = false;
     }
 
     IEnumerator ItemStep(string id, string fragment, float timeout, Func<Item, IEnumerator> body)
@@ -853,16 +869,319 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    // ---------------------------------------------------------------- rope spool
-
-    bool spoolAimed;
+    // ---------------------------------------------------------------- use.* (one item per category)
 
     /// <summary>
-    /// use.RopeSpool: a spool ties off only where its aim (the holding hand in VR, interact.aim; the camera in flat
-    /// play) meets terrain within <c>maxAnchorGhostDistance</c> lying within <c>maxAnchorDistance</c> of the body,
-    /// and only after use is held there for <c>castTime</c> (RopeTier.cs:97-128). In VR the spool is first aimed at
-    /// open sky, where the trigger press must get interact.physical's NoWall refusal cue; then at ground in reach,
-    /// where holding use must tie the rope (<c>Rope.AttachToAnchor_Rpc</c>, Rope.cs:259-270).
+    /// use.*: give to the hand (<c>GameUtils.InstantiateAndGrab</c>), hold primary use through the item's own use
+    /// time (<c>Item.StartUsePrimary</c>/<c>ContinueUsePrimary</c>, Item.cs:849-901), release, and prove what the use
+    /// did in the game, in VR and flat:
+    /// <list type="bullet">
+    /// <item>food: eaten (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:169) and Hunger down, after
+    /// <c>AddStatus</c> (CharacterAfflictions.cs:712) gave it room;</item>
+    /// <item>lantern and torch: lit (<c>FlareActive</c>, Lantern.cs:207-208) and burning fuel
+    /// (<c>DataEntryKey.Fuel</c>, Lantern.cs:162-171);</item>
+    /// <item>flare: lit (Flare.cs:57) with its flame spawned (<c>TrackableNetworkObject.hasTracker</c>,
+    /// Flare.cs:32-34);</item>
+    /// <item>rope cannon and chain launcher: aimed where their own <c>WillAttach</c> accepts (RopeShooter.cs:122-138,
+    /// VineShooter.cs:71-92, read through <c>Item.CanUsePrimary</c>, Item.cs:797-801), a new rope anchor
+    /// (RopeShooter.cs:104) or vine (VineShooter.cs:61);</item>
+    /// <item>spool (<see cref="SpoolUse"/>), compass (<see cref="CompassHeading"/>) and binoculars (Hold mode in VR)
+    /// get checks of their own.</item>
+    /// </list>
+    /// </summary>
+    IEnumerator UseItem(Item item)
+    {
+        yield return DropHeld();
+        if (!SandboxActions.GiveItem(item))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        yield return Until(() => Holding(item), 5f, "not in hand");
+        if (!stepOk)
+            yield break;
+        var held = HeldItem();
+        spawned.Add(held.gameObject);
+        yield return Wait(0.5f);
+        // A rope spool's use is the tie-off, which needs an anchor in aim (RopeTier.Update).
+        if (held.TryGetComponent<RopeTier>(out var tier))
+        {
+            yield return SpoolUse(held, tier);
+            yield return DropHeld();
+            yield break;
+        }
+        // An item with no primary use (Item.CanUsePrimary, Item.cs:797-805) gets a check of its own mechanic.
+        var compass = held.GetComponentInChildren<CompassPointer>();
+        if (compass != null && !held.CanUsePrimary())
+        {
+            yield return CompassHeading(compass);
+            yield return DropHeld();
+            yield break;
+        }
+        if (!held.UIData.hasMainInteract)
+        {
+            Fail(
+                "no primary use (UIData.hasMainInteract off, Item.cs:803) and no check of its own mechanic"
+            );
+            yield return DropHeld();
+            yield break;
+        }
+        var c = Character.localCharacter;
+        var afflictions = c.refs.afflictions;
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        bool left = LocalHold.ItemInLeftHand;
+
+        // Food gets room to lower Hunger (god mode keeps it at 0; Run restores god mode after the step).
+        bool food =
+            StatusEffect(held, out var status, out float change)
+            && status == STATUS.Hunger
+            && change < 0f;
+        if (food)
+            SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
+        float hungerBefore = food ? afflictions.GetCurrentStatus(status) : 0f;
+        float consumedBefore = c.data.lastConsumedItem;
+        var lantern = held.GetComponent<Lantern>();
+        var flare = held.GetComponent<Flare>();
+        var ropeShooter = held.GetComponent<RopeShooter>();
+        var vineShooter = held.GetComponent<VineShooter>();
+        bool shooter = ropeShooter != null || vineShooter != null;
+        HashSet<int> shotsBefore = null;
+        if (shooter)
+        {
+            shotsBefore = ropeShooter != null ? Ids<RopeAnchorProjectile>() : Ids<JungleVine>();
+            if (vr)
+            {
+                BeginHands();
+                HeadFrame(out var head, out var forward, out _);
+                SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+            }
+            yield return AimHeld(c, left, ShooterPitches, AllYaws, () => held.CanUsePrimary());
+            if (!aimFound)
+            {
+                float range = ropeShooter != null ? ropeShooter.maxLength : vineShooter.maxLength;
+                Fail(
+                    $"no terrain within {range:0} m that {held.name} would attach to (its WillAttach refused every aim; grounded {c.data.isGrounded})"
+                );
+                ResetFlatLook(c, vr);
+                yield return DropHeld();
+                yield break;
+            }
+        }
+
+        // Item.StartUsePrimary sets isUsingPrimary (Item.cs:849-855); an eaten or spent item leaves the hand.
+        // Held through the item's own use time, so a slow cast gets to finish (finishedCast, Item.cs:883).
+        bool started = false;
+        float progress = 0f;
+        float useTime = GameTiming.UseSeconds(held);
+        // Binoculars in VR run in Hold mode: raised while use is held, lowered by the release alone.
+        var binoculars = vr ? held.GetComponentInChildren<Action_ShowBinocularOverlay>() : null;
+        BinocularsConfig.ForceHold = binoculars != null;
+        SelfTestInputPatch.HoldPrimary = true;
+        float end = Now + GameTiming.Budget(useTime);
+        while (Now < end && !held.finishedCast)
+        {
+            if (held == null || HeldItem() != held)
+            {
+                started = true;
+                break;
+            }
+            started |= held.isUsingPrimary || held.finishedCast;
+            progress = Mathf.Max(progress, held.castProgress);
+            yield return null;
+        }
+        // A use with no cast time starts and finishes in one frame (Item.cs:893-898), which ends the loop unsampled.
+        if (held != null && held.finishedCast)
+        {
+            started = true;
+            progress = Mathf.Max(progress, held.castProgress);
+        }
+        bool raisedWhileHeld = false;
+        if (binoculars != null)
+        {
+            yield return Wait(0.3f);
+            raisedWhileHeld = binoculars != null && binoculars.binocularsActive;
+        }
+        SelfTestInputPatch.HoldPrimary = false;
+        ResetFlatLook(c, vr);
+        bool lit = held != null && (lantern != null || flare != null) && HandLights.IsLit(held);
+        float fuelBefore = Fuel(held);
+        yield return Wait(1f);
+        float fuelAfter = Fuel(held);
+        bool flame =
+            flare != null
+            && held != null
+            && held.TryGetComponent<TrackableNetworkObject>(out var track)
+            && track.hasTracker;
+        Component shot = null;
+        if (shooter)
+        {
+            shot =
+                ropeShooter != null
+                    ? Fresh<RopeAnchorProjectile>(shotsBefore)
+                    : Fresh<JungleVine>(shotsBefore);
+            if (shot != null)
+                spawned.Add(shot.gameObject);
+            yield return KeepRope(shot);
+        }
+        bool gone = held == null || HeldItem() != held;
+        var note =
+            $"primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
+        BinocularsConfig.ForceHold = false;
+        if (binoculars != null)
+        {
+            note +=
+                $", Hold mode: raised while held {raisedWhileHeld}, raised after release {binoculars != null && binoculars.binocularsActive}";
+        }
+        bool consumed = c.data.lastConsumedItem != consumedBefore;
+        float hungerAfter = food ? afflictions.GetCurrentStatus(status) : 0f;
+        if (food)
+            note +=
+                $", eaten {consumed}, Hunger {hungerBefore:0.00} -> {hungerAfter:0.00} (item changes it by {change:+0.00;-0.00})";
+        if (lantern != null || flare != null)
+            note += $", lit {lit}";
+        if (lantern != null)
+            note += $", fuel {fuelBefore:0.0} -> {fuelAfter:0.0} in 1 s";
+        if (flare != null)
+            note += $", flame {flame}";
+        if (shooter)
+            note += $", {(ropeShooter != null ? "rope anchor" : "vine")} spawned {shot != null}";
+        if (!started)
+            Fail("primary use never started: " + note);
+        else if (binoculars != null && (!raisedWhileHeld || binoculars.binocularsActive))
+            Fail("binoculars Hold mode: " + note);
+        else if (food && !consumed)
+            Fail("not eaten: " + note);
+        // Half the amount: statuses creep between the reads, and the start value caps a large change.
+        else if (food && hungerBefore - hungerAfter < Mathf.Min(-change, hungerBefore) * 0.5f)
+            Fail("eaten but Hunger did not fall: " + note);
+        else if ((lantern != null || flare != null) && !lit)
+            Fail("not lit: " + note);
+        else if (lantern != null && !(fuelAfter < fuelBefore))
+            Fail("lit but burns no fuel: " + note);
+        else if (flare != null && !flame)
+            Fail("flare lit but no flame spawned: " + note);
+        else if (shooter && shot == null)
+            Fail("nothing fired where it was aimed: " + note);
+        else
+            stepNote = note;
+        // Eaten or spent items leave the hand on their own.
+        yield return DropHeld();
+    }
+
+    /// <summary>A rope cannon's anchor flies to the hit, then spawns its rope (RopeAnchorProjectile.cs:40-68,
+    /// RopeAnchorWithRope.cs:26-37): waits for that rope and hands it to teardown with the anchor.</summary>
+    IEnumerator KeepRope(Component shot)
+    {
+        var withRope = shot != null ? shot.GetComponent<RopeAnchorWithRope>() : null;
+        if (withRope == null)
+            yield break;
+        yield return WaitFor(() => withRope == null || withRope.ropeInstance != null, 2f);
+        if (withRope != null && withRope.ropeInstance != null)
+            spawned.Add(withRope.ropeInstance);
+    }
+
+    /// <summary>A lantern's fuel entry (<c>DataEntryKey.Fuel</c>, Lantern.cs:171); -1 when it has none.</summary>
+    static float Fuel(Item item) =>
+        item != null
+        && item.data != null
+        && item.data.TryGetDataEntry<FloatItemData>(DataEntryKey.Fuel, out var entry)
+            ? entry.Value
+            : -1f;
+
+    /// <summary>Flat play aims with the look; a use step leaves it level again.</summary>
+    static void ResetFlatLook(Character c, bool vr)
+    {
+        if (!vr)
+            c.data.lookValues.y = 0f;
+    }
+
+    // ---------------------------------------------------------------- aiming the held item
+
+    /// <summary>Pitches below level (negative: above) and yaws off the head's forward that the aim search tries.</summary>
+    static readonly float[] GroundPitches = { 45f, 60f, 30f, 75f };
+    static readonly float[] SkyPitches = { -90f, -60f, -45f };
+
+    /// <summary>A launcher shoots far: shallow first, inside the vine's elevation window (VineShooter.cs:82-90).</summary>
+    static readonly float[] ShooterPitches = { 15f, 25f, 35f, 45f };
+
+    /// <summary>A build goes on the ground 1.5-2.5 m ahead of a hand at chest height.</summary>
+    static readonly float[] BuildPitches = { 30f, 40f, 20f, 50f };
+
+    /// <summary>Level at the test wall straight ahead.</summary>
+    static readonly float[] WallPitches = { 0f, 10f, -10f };
+    static readonly float[] AllYaws = { 0f, 90f, -90f, 180f };
+    static readonly float[] SkyYaws = { 0f, 90f, -90f };
+    static readonly float[] AheadYaw = { 0f };
+
+    /// <summary>Set by <see cref="AimHeld"/>: an aim met its condition.</summary>
+    bool aimFound;
+
+    /// <summary>Turns the held item's aim (the holding hand in VR, which interact.aim gives the game camera; the look
+    /// in flat play) through <paramref name="yaws"/> by <paramref name="pitches"/> until <paramref name="ok"/> holds
+    /// 0.15 s after the turn. Sets <see cref="aimFound"/>.</summary>
+    IEnumerator AimHeld(Character c, bool left, float[] pitches, float[] yaws, Func<bool> ok)
+    {
+        aimFound = false;
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        HeadFrame(out _, out var forward, out _);
+        float lookYaw = c.data.lookValues.x;
+        foreach (float yaw in yaws)
+        {
+            foreach (float down in pitches)
+            {
+                // Pitched below level (negative: above) from forward turned by the yaw.
+                var heading = Quaternion.AngleAxis(yaw, Vector3.up) * forward;
+                var axis = Vector3.Cross(Vector3.up, heading);
+                var dir = Quaternion.AngleAxis(down, axis) * heading;
+                if (vr)
+                    Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.Cross(dir, axis));
+                else
+                    c.data.lookValues = new Vector2(lookYaw + yaw, -down);
+                yield return Wait(0.15f);
+                if (ok())
+                {
+                    aimFound = true;
+                    yield break;
+                }
+            }
+        }
+    }
+
+    /// <summary>The held item's aim meets no terrain within 60 m (farther than any launcher or build reaches).</summary>
+    static bool OpenSky(bool vr) =>
+        SpoolRay(vr, out var origin, out var dir)
+        && !Physics.Raycast(
+            origin,
+            dir,
+            60f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+
+    /// <summary>The ray the held item's game code casts: the camera, which interact.aim moves to the held hand.</summary>
+    static bool SpoolRay(bool vr, out Vector3 origin, out Vector3 dir)
+    {
+        if (vr && HandAim.TryHeld(out origin, out var rotation))
+        {
+            dir = rotation * Vector3.forward;
+            return true;
+        }
+        var cam = MainCamera.instance;
+        origin = cam != null ? cam.transform.position : default;
+        dir = cam != null ? cam.transform.forward : default;
+        return cam != null;
+    }
+
+    // ---------------------------------------------------------------- rope spool
+
+    /// <summary>
+    /// use.RopeSpool. In VR first the spool's own mechanic (<see cref="SpoolPayout"/>): the wrist-twist knob pays
+    /// rope out and gives an end stop at the minimum. Flat play skips it: the self-test input patch has no scroll
+    /// field. Then the tie-off: a spool ties only where its aim (the holding hand in VR, interact.aim; the camera in
+    /// flat play) meets terrain within <c>maxAnchorGhostDistance</c> lying within <c>maxAnchorDistance</c> of the
+    /// body, after use is held there for <c>castTime</c> (RopeTier.cs:97-128). In VR the spool is first aimed at open
+    /// sky, where the trigger press must get interact.physical's NoWall refusal cue; then at ground in reach, where
+    /// holding use must tie the rope (<c>Rope.AttachToAnchor_Rpc</c>, Rope.cs:259-270).
     /// </summary>
     IEnumerator SpoolUse(Item held, RopeTier tier)
     {
@@ -871,15 +1190,18 @@ internal sealed partial class SelfTestRunner
         bool vr = VRSession.Active && VRRig.Instance != null;
         bool left = LocalHold.ItemInLeftHand;
         string refusal = vr ? "refusal cue off (UI.ActionHints)" : "refusal not checked (flat)";
+        string payout = "payout not checked (flat: the self-test input patch has no scroll field)";
         if (vr)
         {
             BeginHands();
             HeadFrame(out var head, out var forward, out _);
             SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
-            if (UI.Affordances.Affordance.Enabled)
+            yield return SpoolPayout(spool, left);
+            payout = spoolNote;
+            if (Affordance.Enabled)
             {
                 yield return AimSpool(c, tier, left, valid: false);
-                if (!spoolAimed)
+                if (!aimFound)
                     refusal = "no aim free of terrain for the refusal";
                 else
                 {
@@ -890,10 +1212,10 @@ internal sealed partial class SelfTestRunner
             }
         }
         yield return AimSpool(c, tier, left, valid: true);
-        if (!spoolAimed)
+        if (!aimFound)
         {
             Fail(
-                $"no terrain within {tier.maxAnchorDistance:0.0} m of the body to aim the spool at; {refusal}"
+                $"no terrain within {tier.maxAnchorDistance:0.0} m of the body to aim the spool at; {payout}; {refusal}"
             );
             yield break;
         }
@@ -939,71 +1261,801 @@ internal sealed partial class SelfTestRunner
         if (vr)
             EndHands();
         var note =
-            $"tied {tied}, tie progress {progress:0.00} of {tier.castTime:0.0} s, anchor {(anchor != null ? Vector3.Distance(anchor.transform.position, c.Center).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m from the body" : "none")}; {refusal}";
+            $"tied {tied}, tie progress {progress:0.00} of {tier.castTime:0.0} s, anchor {(anchor != null ? Vector3.Distance(anchor.transform.position, c.Center).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m from the body" : "none")}; {payout}; {refusal}";
         if (!tied)
             Fail("the rope was not tied: " + note);
         else
             Note(note);
     }
 
-    /// <summary>Turns the spool's aim (scripted hand in VR, the look in flat play) until the game's own ray
-    /// (RopeTier.cs:99-111) would take the anchor (<paramref name="valid"/>), or until it meets no terrain within
-    /// 60 m. Sets <see cref="spoolAimed"/>.</summary>
-    IEnumerator AimSpool(Character c, RopeTier tier, bool left, bool valid)
+    /// <summary>What <see cref="SpoolPayout"/> measured, for the spool step's note.</summary>
+    string spoolNote;
+
+    /// <summary>
+    /// The spool's knob in VR: the holding hand's twist about its forward (interact.tools, one scroll step per
+    /// <see cref="ToolsConfig.TwistStepDegrees"/>) holds the game's scroll buttons (RopeSpool.cs:113-120). Twisted
+    /// inward with the rope at <c>minSegments</c> (RopeSpool.cs:9, clamped at :140) it must give one end-stop thunk
+    /// (<see cref="Affordance.EndStop"/>); twisted outward it must pay rope out (<c>Segments</c>, RopeSpool.cs:58,
+    /// grown at :139). Twisted faster than the knob's hold rate (<c>TwistKnob.HoldRate</c>, 90 deg/s) so the scroll
+    /// button stays held. Sets <see cref="spoolNote"/>.
+    /// </summary>
+    IEnumerator SpoolPayout(RopeSpool spool, bool left)
     {
-        spoolAimed = false;
-        bool vr = VRSession.Active && VRRig.Instance != null;
-        HeadFrame(out _, out var forward, out _);
-        float lookYaw = c.data.lookValues.x;
-        var pitches = valid ? new[] { 45f, 60f, 30f, 75f } : new[] { -90f, -60f, -45f };
-        foreach (float yaw in valid ? new[] { 0f, 90f, -90f, 180f } : new[] { 0f, 90f, -90f })
+        // The rope spawns on the spool's first held Update (RopeSpool.cs:102-111) and is clamped to minSegments on
+        // the next FixedUpdate (RopeSpool.cs:140).
+        yield return WaitFor(() => spool.rope != null, 1f);
+        yield return Wait(0.2f);
+        float rate = Mathf.Max(180f, ToolsConfig.Instance.TwistStepDegrees * 6f);
+        float start = spool.Segments;
+        string stop = "end stop not checked (ui.affordance off)";
+        if (Affordance.Enabled)
         {
-            foreach (float down in pitches)
-            {
-                // Pitched below level (negative: above) from forward turned by the yaw.
-                var heading = Quaternion.AngleAxis(yaw, Vector3.up) * forward;
-                var axis = Vector3.Cross(Vector3.up, heading);
-                var dir = Quaternion.AngleAxis(down, axis) * heading;
-                if (vr)
-                    Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.Cross(dir, axis));
-                else
-                    c.data.lookValues = new Vector2(lookYaw + yaw, -down);
-                yield return Wait(0.15f);
-                if (!SpoolRay(vr, out var origin, out var aim))
-                    continue;
-                bool hit = Physics.Raycast(
-                    origin,
-                    aim,
-                    out var at,
-                    valid ? tier.maxAnchorGhostDistance : 60f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                );
-                if (
-                    valid
-                        ? hit
-                            && Vector3.Distance(at.point, c.Center) < tier.maxAnchorDistance - 0.3f
-                        : !hit
-                )
-                {
-                    spoolAimed = true;
-                    yield break;
-                }
-            }
+            float mark = CueMark();
+            yield return TwistHand(
+                left,
+                -rate,
+                () => CueLog.Capture.Felt(left, CueFeel.EndStop, mark, out _),
+                1f
+            );
+            yield return ExpectFeel(left, CueFeel.EndStop, mark, 0f);
+            stop = CueLog.Capture.Felt(left, CueFeel.EndStop, mark, out _)
+                ? "end stop at the minimum"
+                : "no end stop at the minimum";
+        }
+        yield return TwistHand(left, rate, () => spool.Segments > spool.minSegments + 1f, 1.5f);
+        float paid = spool.Segments;
+        spoolNote =
+            $"twist payout {start:0.0} -> {paid:0.0} segments (min {spool.minSegments:0.0}); {stop}";
+        if (paid <= spool.minSegments + 0.5f)
+            Fail("twisting the spool paid out no rope: " + spoolNote);
+    }
+
+    /// <summary>Turns the scripted hand about its own forward at <paramref name="degreesPerSecond"/> until
+    /// <paramref name="done"/> or <paramref name="seconds"/> pass. The knobs read that twist
+    /// (<c>TwistKnob.TwistAngle</c> about the controller's forward): positive pays rope out and zooms out.</summary>
+    IEnumerator TwistHand(bool left, float degreesPerSecond, Func<bool> done, float seconds)
+    {
+        float end = Now + seconds;
+        while (Now < end && !done())
+        {
+            Script(left).Rotation *= Quaternion.AngleAxis(
+                degreesPerSecond * Time.unscaledDeltaTime,
+                Vector3.forward
+            );
+            yield return null;
         }
     }
 
-    /// <summary>The ray the spool's RopeTier.Update casts: the camera, which interact.aim moves to the held hand.</summary>
-    static bool SpoolRay(bool vr, out Vector3 origin, out Vector3 dir)
+    /// <summary>Turns the spool's aim until the game's own ray (RopeTier.cs:99-111) would take the anchor
+    /// (<paramref name="valid"/>), or until it meets no terrain within 60 m. Sets <see cref="aimFound"/>.</summary>
+    IEnumerator AimSpool(Character c, RopeTier tier, bool left, bool valid)
     {
-        if (vr && HandAim.TryHeld(out origin, out var rotation))
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        if (!valid)
+            return AimHeld(c, left, SkyPitches, SkyYaws, () => OpenSky(vr));
+        return AimHeld(
+            c,
+            left,
+            GroundPitches,
+            AllYaws,
+            () =>
+                SpoolRay(vr, out var origin, out var aim)
+                && Physics.Raycast(
+                    origin,
+                    aim,
+                    out var at,
+                    tier.maxAnchorGhostDistance,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && Vector3.Distance(at.point, c.Center) < tier.maxAnchorDistance - 0.3f
+        );
+    }
+
+    // ---------------------------------------------------------------- use routes (interact.items)
+
+    /// <summary>One item per use route, by name (the first one found), and the route it must get.</summary>
+    static readonly (string[] Names, UseGesture Route)[] Routes =
+    {
+        (new[] { "Granola", AppleFragment }, UseGesture.Eat),
+        (new[] { "Antidote" }, UseGesture.Drink),
+        (new[] { "Bandage" }, UseGesture.Apply),
+        (new[] { "Heat Pack" }, UseGesture.Apply),
+        (new[] { "Book of Bones" }, UseGesture.Read),
+        (new[] { "Cursed Skull" }, UseGesture.Commune),
+        (new[] { "Checkpoint Flag" }, UseGesture.Build),
+        (new[] { "RopeShooter" }, UseGesture.Aim),
+    };
+
+    /// <summary>A cast shorter than this cannot be stopped part way with margin: the cancel steps skip it rather
+    /// than risk finishing a lethal or skeleton cast.</summary>
+    const float MinCancelSeconds = 0.5f;
+
+    /// <summary>vr.160: each route's item, given to the hand, gets that route from <see cref="ItemGestures.UseOf"/>,
+    /// which reads the game's own data (<c>UIData.hasMainInteract</c>/<c>mainInteractPrompt</c>, Item.cs:39-75;
+    /// <c>ItemUseFeedback.useAnimation</c>, ItemUseFeedback.cs:5; the item's actions and components). Items missing
+    /// from this game version are listed, not failed.</summary>
+    IEnumerator UseRoutesStep()
+    {
+        var all = new List<Item>(SandboxActions.Items);
+        var right = new List<string>();
+        var wrong = new List<string>();
+        var missing = new List<string>();
+        foreach (var (names, route) in Routes)
         {
-            dir = rotation * Vector3.forward;
-            return true;
+            Item prefab = null;
+            foreach (var fragment in names)
+                prefab ??= FindItem(all, fragment);
+            if (prefab == null)
+            {
+                missing.Add(names[0]);
+                continue;
+            }
+            yield return GiveAndHold(prefab);
+            if (!stepOk)
+                yield break;
+            var held = HeldItem();
+            var got = ItemGestures.UseOf(held);
+            if (got == route)
+                right.Add($"{held.name} {got}");
+            else
+                wrong.Add($"{held.name} {got} (expected {route})");
+            yield return DropHeld();
+            if (!stepOk)
+                yield break;
         }
-        var cam = MainCamera.instance;
-        origin = cam != null ? cam.transform.position : default;
-        dir = cam != null ? cam.transform.forward : default;
-        return cam != null;
+        var note =
+            $"right [{string.Join(", ", right)}], wrong [{string.Join(", ", wrong)}], not in the game [{string.Join(", ", missing)}]";
+        if (wrong.Count > 0)
+            Fail("wrong use route: " + note);
+        else if (right.Count == 0)
+            stepSkip = "none of the route items exist: " + note;
+        else
+            stepNote = note;
+    }
+
+    /// <summary>The mouth point interact.physical routes eating to, in tracking space (<see cref="MouthGesture"/>).</summary>
+    static Vector3 MouthGoal() =>
+        MouthGesture
+            .MouthPoint(
+                VRInput.HeadPosition.N(),
+                VRInput.HeadRotation.N(),
+                MouthGesture.DefaultOffset
+            )
+            .U();
+
+    /// <summary>One frame of the scripted hand's 1.5 m/s approach to a tracking-space point.</summary>
+    void ApproachHand(bool left, Vector3 tracking) =>
+        SetHand(
+            left,
+            HandScript
+                .Approach(Script(left).Position.N(), tracking.N(), 1.5f, Time.unscaledDeltaTime)
+                .U()
+        );
+
+    /// <summary>The hand straight back to its rest beside the body, in one frame.</summary>
+    void PullAway(bool left)
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        SetHand(left, Rest(head, forward, left ? -right : right).Position);
+    }
+
+    /// <summary>interact.items' face spots in world space (HeldGestures: a book 0.35 m ahead of the eyes and 0.12 m
+    /// below, a commune item 0.12 m ahead).</summary>
+    static Vector3 FaceSpot(Transform head, bool read) =>
+        read
+            ? head.position + head.forward * 0.35f - Vector3.up * 0.12f
+            : head.position + head.forward * 0.12f;
+
+    /// <summary>Highest cast progress <see cref="FaceCastUntil"/> saw.</summary>
+    float faceProgress;
+
+    /// <summary><see cref="HeldGestures.AtFace"/> was on during <see cref="FaceCastUntil"/>.</summary>
+    bool faceSeen;
+
+    /// <summary>Carries the held item to its face spot and holds it there until the cast (<c>Item.castProgress</c>,
+    /// Item.cs:344) passes <paramref name="stopAt"/>, then pulls the hand away in that same frame, long before the
+    /// cast could finish (a finished Cursed Skull kills, Action_Die.cs:7; a finished Book of Bones makes a skeleton,
+    /// Action_BecomeSkeleton.cs:7). Sets <see cref="faceProgress"/> and <see cref="faceSeen"/>.</summary>
+    IEnumerator FaceCastUntil(Item item, bool left, bool read, float stopAt)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        faceProgress = 0f;
+        faceSeen = false;
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item) * stopAt, 2f);
+        while (
+            Now < end && item != null && c.data.currentItem == item && item.castProgress < stopAt
+        )
+        {
+            ApproachHand(left, rig.Origin.InverseTransformPoint(FaceSpot(rig.Head, read)));
+            faceSeen |= HeldGestures.AtFace;
+            faceProgress = Mathf.Max(faceProgress, item.castProgress);
+            yield return null;
+        }
+        if (item != null)
+            faceProgress = Mathf.Max(faceProgress, item.castProgress);
+        PullAway(left);
+    }
+
+    /// <summary>Skips a face step when a feature it needs is off. True when it can run.</summary>
+    bool FaceReady(bool read)
+    {
+        if (!Affordance.Enabled)
+            stepSkip = "ui.affordance not installed";
+        else if (!ItemGestures.Installed)
+            stepSkip = "interact.items not installed";
+        else if (
+            read
+                ? !ItemGesturesConfig.Instance.ReadAtFace
+                : !ItemGesturesConfig.Instance.CommuneAtFace
+        )
+            stepSkip = (read ? "ReadAtFace" : "CommuneAtFace") + " is off";
+        return stepSkip == null;
+    }
+
+    /// <summary>vr.161: a drink raised to the mouth (interact.physical's mouth route for Drink) is drunk through its
+    /// cast (<c>lastFinishedCast</c>, Item.cs:272): the status it cures (Poison for the Antidote,
+    /// <c>Action_ModifyStatus</c>, Action_ModifyStatus.cs:21, set up with <c>AddStatus</c>,
+    /// CharacterAfflictions.cs:712) falls, and no refusal cue fires.</summary>
+    IEnumerator DrinkStep(Item prefab)
+    {
+        if (!InteractConfig.Instance.EatAtMouth)
+        {
+            stepSkip = "EatAtMouth is off";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        if (!StatusEffect(item, out var status, out float change) || change >= 0f)
+        {
+            Fail($"{item.name} lowers no status (Action_ModifyStatus), nothing to measure");
+            yield break;
+        }
+        if (!ItemGestures.AtMouth(item))
+        {
+            Fail($"{item.name} routes to {ItemGestures.UseOf(item)}, not to the mouth");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        var afflictions = c.refs.afflictions;
+        SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
+        float before = afflictions.GetCurrentStatus(status);
+        float finishedBefore = item.lastFinishedCast;
+        float useTime = GameTiming.UseSeconds(item);
+        float quietFrom = CueMark();
+        float progress = 0f;
+        bool drunk = false;
+        // The item's own use time after up to 3 s bringing it to the mouth.
+        float end = Now + GameTiming.Budget(useTime, 3f);
+        while (Now < end)
+        {
+            if (
+                item == null
+                || c.data.currentItem != item
+                || item.lastFinishedCast > finishedBefore
+            )
+            {
+                drunk = true;
+                break;
+            }
+            ApproachHand(left, MouthGoal());
+            progress = Mathf.Max(progress, item.castProgress);
+            yield return null;
+        }
+        PullAway(left);
+        yield return ExpectNoCue(left, quietFrom, 0f);
+        yield return Wait(0.5f);
+        float after = afflictions.GetCurrentStatus(status);
+        var note =
+            $"{prefab.name}: drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
+        if (!drunk)
+            Fail("not drunk at the mouth: " + note);
+        // Half the amount: statuses creep between the reads, and the start value caps a large change.
+        else if (before - after < Mathf.Min(-change, before) * 0.5f)
+            Fail($"drunk but {status} did not fall: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.162: a build item (Checkpoint Flag) held at the mouth for longer than its use time starts no cast
+    /// (<c>Item.isUsingPrimary</c>, Item.cs:301; <c>castProgress</c>, Item.cs:344) and stays in hand: builds go to
+    /// the hand-aimed preview, never the mouth.</summary>
+    IEnumerator NotAtMouthStep(Item prefab)
+    {
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        var route = ItemGestures.UseOf(item);
+        yield return GripTo(left, 1f, 0.1f);
+        // Bringing it up, the mouth dwell, then a whole cast and more.
+        float hold = GameTiming.UseSeconds(item) + 1f;
+        bool used = false;
+        float progress = 0f;
+        float end = Now + hold;
+        while (Now < end && item != null && c.data.currentItem == item)
+        {
+            ApproachHand(left, MouthGoal());
+            used |= item.isUsingPrimary;
+            progress = Mathf.Max(progress, item.castProgress);
+            yield return null;
+        }
+        bool kept = item != null && c.data.currentItem == item;
+        PullAway(left);
+        var note =
+            $"{prefab.name} ({route}) at the mouth {hold:0.0} s: use started {used}, cast progress {progress:0.00}, still held {kept}";
+        if (used || progress > 0f)
+            Fail("a build started at the mouth: " + note);
+        else if (!kept)
+            Fail("left the hand at the mouth: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.163: a Checkpoint Flag aimed with the holding hand at open sky is refused on the trigger
+    /// (OutOfReach, its red preview on the item: <c>Constructable.CurrentHitIsValid</c>, Constructable.cs:137-148,
+    /// measured along the hand aim); aimed at ground in reach, where the game's preview check passes
+    /// (<c>overrideUsability</c>, Constructable.cs:62-69), holding the trigger through its use time builds a flag
+    /// (<c>FinishConstruction</c>, Constructable.cs:158-191; <c>CheckpointFlag.Initialize</c>,
+    /// CheckpointConstructable.cs:7-10) and the item leaves the hand (Constructable.cs:185-190).</summary>
+    IEnumerator BuildStep(Item prefab)
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        var build = item.GetComponent<Constructable>();
+        if (build == null)
+        {
+            Fail(item.name + " has no Constructable");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        yield return AimHeld(c, left, SkyPitches, SkyYaws, () => OpenSky(true));
+        if (!aimFound)
+        {
+            Fail("no aim free of terrain for the refusal");
+            yield break;
+        }
+        yield return PressAndExpect(left, DenyReason.OutOfReach);
+        string refusal = "aimed at the sky: " + stepNote;
+        stepNote = null;
+        yield return AimHeld(
+            c,
+            left,
+            BuildPitches,
+            AllYaws,
+            () => item != null && item.CanUsePrimary() && build.currentPreview != null
+        );
+        if (!aimFound)
+        {
+            Fail(
+                $"no ground within {build.maxConstructDistance:0.0} m that the build would take; {refusal}"
+            );
+            yield break;
+        }
+        var flags = Ids<CheckpointFlag>();
+        float quietFrom = CueMark();
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        float useTime = GameTiming.UseSeconds(item);
+        float progress = 0f;
+        CheckpointFlag flag = null;
+        float end = Now + GameTiming.Budget(useTime, 1f);
+        while (Now < end && (flag = Fresh<CheckpointFlag>(flags)) == null)
+        {
+            if (item != null)
+                progress = Mathf.Max(progress, item.castProgress);
+            yield return null;
+        }
+        if (flag != null)
+            spawned.Add(flag.gameObject);
+        yield return ExpectNoCue(left, quietFrom, 0f);
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.3f);
+        bool gone = item == null || HeldItem() != item;
+        var note =
+            $"{prefab.name}: build progress {progress:0.00} of {useTime:0.0} s, flag {(flag != null ? Vector3.Distance(flag.transform.position, c.Center).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m from the body" : "none")}, item left the hand {gone}; {refusal}";
+        if (flag == null)
+            Fail("no checkpoint flag built: " + note);
+        else if (!gone)
+            Fail("built but the item stayed in hand: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>
+    /// vr.164: a Cursed Skull (Commune: <c>Action_Die</c>, Action_Die.cs:7) refuses the bare trigger with the danger
+    /// cue and starts no cast (<c>Item.isUsingPrimary</c>, Item.cs:301); held eye to eye its cast runs
+    /// (<c>castProgress</c>, Item.cs:344) with the progress feel and <see cref="HeldGestures.AtFace"/>; pulled away
+    /// at 0.4 it is called off (<c>CancelUsePrimary</c> on release, CharacterItems.cs:209-211, Item.cs:918) with the
+    /// cancel feel, the player alive (<c>CharacterData.dead</c>, CharacterData.cs:335) and the skull still held.
+    /// The cast is never let near 1.
+    /// </summary>
+    IEnumerator CommuneGuardStep(Item prefab)
+    {
+        if (!FaceReady(read: false))
+            yield break;
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        float useTime = GameTiming.UseSeconds(item);
+        var route = ItemGestures.UseOf(item);
+        if (route != UseGesture.Commune)
+        {
+            Fail($"{item.name} routes to {route}, not Commune");
+            yield break;
+        }
+        if (useTime < MinCancelSeconds)
+        {
+            stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to stop safely";
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+
+        // The bare trigger: refused at the hand, and released at once should a cast start anyway.
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        bool Casting() => item.isUsingPrimary || item.castProgress > 0f;
+        float until = Now + 1f;
+        while (
+            Now < until
+            && !Casting()
+            && !CueLog.Capture.Fired(left, DenyReason.DangerSoon, mark, out _)
+        )
+            yield return null;
+        // A moment longer: the refused press must still start nothing.
+        until = Now + 0.3f;
+        while (Now < until && !Casting())
+            yield return null;
+        bool castOnTrigger = Casting();
+        Script(left).Trigger = 0f;
+        yield return ExpectCue(left, DenyReason.DangerSoon, mark, tint: true, within: 0f);
+        string triggerCue = cueNote ?? "no cue";
+        yield return Wait(0.3f);
+        if (castOnTrigger)
+        {
+            Fail($"the bare trigger started {item.name}'s cast; trigger cue: {triggerCue}");
+            yield break;
+        }
+
+        // Eye to eye: the cast runs; pulled away at 0.4 it is called off.
+        float faceMark = CueMark();
+        yield return FaceCastUntil(item, left, read: false, 0.4f);
+        float cancelMark = CueMark();
+        yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
+        yield return ExpectFeel(left, CueFeel.Progress, faceMark, 0f);
+        yield return Wait(0.3f);
+        bool kept = item != null && c.data.currentItem == item;
+        var note =
+            $"{prefab.name}: trigger refused ({triggerCue}); eye to eye AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, pulled away: alive {!c.data.dead}, still held {kept}";
+        if (faceProgress < 0.4f)
+            Fail("the cast did not run eye to eye: " + note);
+        else if (!faceSeen)
+            Fail("HeldGestures.AtFace never set: " + note);
+        else if (c.data.dead)
+            Fail("died: " + note);
+        else if (!kept)
+            Fail("the skull left the hand: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.165: a Book of Bones (<c>ItemTags.BookOfBones</c>, Item.cs:31) held open in front of the eyes
+    /// runs its cast (<c>castProgress</c>, Item.cs:344) with <see cref="HeldGestures.AtFace"/>; lowered at 0.3 it is
+    /// called off (<c>CancelUsePrimary</c>, Item.cs:918) with the cancel feel, the player not a skeleton
+    /// (<c>CharacterData.isSkeleton</c>, CharacterData.cs:307, set by Action_BecomeSkeleton.cs:7) and the book
+    /// still held.</summary>
+    IEnumerator ReadCancelStep(Item prefab)
+    {
+        if (!FaceReady(read: true))
+            yield break;
+        var c = Character.localCharacter;
+        if (c.data.isSkeleton)
+        {
+            stepSkip = "the player is already a skeleton";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        float useTime = GameTiming.UseSeconds(item);
+        if (useTime < MinCancelSeconds)
+        {
+            stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to stop safely";
+            yield break;
+        }
+        bool canUse = item.CanUsePrimary();
+        yield return GripTo(left, 1f, 0.1f);
+        yield return FaceCastUntil(item, left, read: true, 0.3f);
+        float cancelMark = CueMark();
+        yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
+        yield return Wait(0.3f);
+        bool kept = item != null && c.data.currentItem == item;
+        var note =
+            $"{prefab.name} ({ItemGestures.UseOf(item)}, usable {canUse}): AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, lowered: skeleton {c.data.isSkeleton}, still held {kept}";
+        if (faceProgress < 0.3f)
+            Fail("the cast did not run in front of the eyes: " + note);
+        else if (!faceSeen)
+            Fail("HeldGestures.AtFace never set: " + note);
+        else if (c.data.isSkeleton)
+            Fail("became a skeleton: " + note);
+        else if (!kept)
+            Fail("the book left the hand: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.166: food at the mouth runs its cast (<c>castProgress</c>, Item.cs:344); pulled away at half it is
+    /// called off (<c>CancelUsePrimary</c>, Item.cs:918) with the cancel feel: not eaten
+    /// (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:169), still held, Hunger not lowered.</summary>
+    IEnumerator EatCancelStep(Item prefab)
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        float useTime = GameTiming.UseSeconds(item);
+        if (useTime < MinCancelSeconds)
+        {
+            stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to stop part way";
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        var afflictions = c.refs.afflictions;
+        SandboxActions.AddStatus(STATUS.Hunger, 0.3f);
+        float before = afflictions.GetCurrentStatus(STATUS.Hunger);
+        float consumedBefore = c.data.lastConsumedItem;
+        float progress = 0f;
+        float end = Now + GameTiming.Budget(useTime * 0.5f, 3f);
+        while (Now < end && item != null && c.data.currentItem == item && item.castProgress < 0.5f)
+        {
+            ApproachHand(left, MouthGoal());
+            progress = Mathf.Max(progress, item.castProgress);
+            yield return null;
+        }
+        if (item != null)
+            progress = Mathf.Max(progress, item.castProgress);
+        PullAway(left);
+        float cancelMark = CueMark();
+        yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
+        yield return Wait(0.5f);
+        float after = afflictions.GetCurrentStatus(STATUS.Hunger);
+        bool eaten = c.data.lastConsumedItem != consumedBefore;
+        bool kept = item != null && c.data.currentItem == item;
+        var note =
+            $"{prefab.name}: cast {progress:0.00} of {useTime:0.0} s at the mouth, pulled away: eaten {eaten}, still held {kept}, Hunger {before:0.00} -> {after:0.00}";
+        if (progress < 0.5f)
+            Fail("the cast did not reach half at the mouth: " + note);
+        else if (eaten)
+            Fail("eaten although pulled away: " + note);
+        else if (!kept)
+            Fail("left the hand: " + note);
+        else if (after < before - 0.02f)
+            Fail("Hunger fell although not eaten: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.167: food that must be fed to a friend (<c>canUseOnFriend</c> and <c>mustUseOnFriend</c>,
+    /// Item.cs:260-262) held with nobody in front (<c>Interaction.hasValidTargetCharacter</c>, Interaction.cs:71):
+    /// the off-hand trigger (the game's secondary use, refused by <c>Item.CanUseSecondary</c>, Item.cs:819-845)
+    /// gets the NeedsFriend cue on the off hand with the item red, and starts no cast.</summary>
+    IEnumerator SecondaryDenyStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        var prefab =
+            FirstItem(i =>
+                i.canUseOnFriend
+                && i.mustUseOnFriend
+                && i.GetComponent<Action_RestoreHunger>() != null
+            ) ?? FirstItem(i => i.canUseOnFriend && i.mustUseOnFriend);
+        if (prefab == null)
+        {
+            stepSkip = "no item that must be used on a friend";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        bool off = !left;
+        yield return GripTo(left, 1f, 0.1f);
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Script(off).TriggerTouch = true;
+        Script(off).Trigger = 1f;
+        yield return ExpectCue(off, DenyReason.NeedsFriend, mark, tint: true);
+        bool cast = item.isUsingSecondary || item.isUsingPrimary || item.castProgress > 0f;
+        Script(off).Trigger = 0f;
+        yield return Wait(0.3f);
+        var note =
+            $"{prefab.name}: off-hand trigger with nobody in front, cast started {cast}; {cueNote ?? "no cue"}";
+        if (cast)
+            Fail("the refused secondary started a cast: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.168: the rope cannon aimed with the holding hand at open sky is refused on the trigger (NoWall:
+    /// <c>RopeShooter.WillAttach</c>, RopeShooter.cs:122-138, along the hand aim); aimed at terrain (or the test
+    /// wall) within <c>maxLength</c> (RopeShooter.cs:29), holding the trigger through its use time fires a rope
+    /// anchor (<c>OnPrimaryFinishedCast</c>, RopeShooter.cs:72-120) with no refusal cue.</summary>
+    IEnumerator ShootHandStep(Item prefab)
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        var shooter = item.GetComponent<RopeShooter>();
+        if (shooter == null)
+        {
+            Fail(item.name + " has no RopeShooter");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        yield return AimHeld(c, left, SkyPitches, SkyYaws, () => OpenSky(true));
+        if (!aimFound)
+        {
+            Fail("no aim free of terrain for the refusal");
+            yield break;
+        }
+        yield return PressAndExpect(left, DenyReason.NoWall);
+        string refusal = "aimed at the sky: " + stepNote;
+        stepNote = null;
+        yield return AimHeld(c, left, ShooterPitches, AllYaws, () => item.CanUsePrimary());
+        string target = "terrain";
+        if (!aimFound)
+        {
+            // No terrain in reach: the sandbox's test wall ahead (SandboxActions.PlaceWall).
+            var wall = SandboxActions.PlaceWall();
+            if (wall != null)
+                spawned.Add(wall);
+            target = "the test wall";
+            yield return AimHeld(c, left, WallPitches, AheadYaw, () => item.CanUsePrimary());
+        }
+        if (!aimFound)
+        {
+            Fail(
+                $"no terrain or test wall within {shooter.maxLength:0} m that the cannon would attach to (grounded {c.data.isGrounded}); {refusal}"
+            );
+            yield break;
+        }
+        var anchors = Ids<RopeAnchorProjectile>();
+        float quietFrom = CueMark();
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        float useTime = GameTiming.UseSeconds(item);
+        RopeAnchorProjectile anchor = null;
+        float end = Now + GameTiming.Budget(useTime, 1f);
+        while (Now < end && (anchor = Fresh<RopeAnchorProjectile>(anchors)) == null)
+            yield return null;
+        yield return ExpectNoCue(left, quietFrom, 0f);
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        if (anchor != null)
+            spawned.Add(anchor.gameObject);
+        yield return KeepRope(anchor);
+        var note =
+            $"{prefab.name} at {target}: anchor {(anchor != null ? Vector3.Distance(anchor.transform.position, c.Center).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m from the body" : "none")} within {GameTiming.Budget(useTime, 1f):0.0} s; {refusal}";
+        if (anchor == null)
+            Fail("no rope anchor fired: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.169: binoculars raised in Hold mode (the trigger held, <c>binocularsActive</c>,
+    /// Action_ShowBinocularOverlay.cs:7, :23-25) and the holding hand twisted outward: the zoom runs to
+    /// <c>maxFov</c> (<c>AdjustFOV</c> clamps <c>lerpedFOV</c>, CameraOverride_Binoculars.cs:27-31) and twisting on
+    /// past it gives one end-stop thunk.</summary>
+    IEnumerator ZoomEndStopStep(Item prefab)
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        if (!BinocularsConfig.TwistZoom)
+        {
+            stepSkip = "TwistZoom is off";
+            yield break;
+        }
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        var binoculars = item.GetComponentInChildren<Action_ShowBinocularOverlay>();
+        var zoom =
+            binoculars != null ? binoculars.cameraOverride as CameraOverride_Binoculars : null;
+        if (zoom == null)
+        {
+            Fail(item.name + " has no binocular zoom (CameraOverride_Binoculars)");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.25f + Vector3.down * 0.05f);
+        BinocularsConfig.ForceHold = true;
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        yield return WaitFor(
+            () => binoculars.binocularsActive,
+            GameTiming.Budget(GameTiming.UseSeconds(item), 1f)
+        );
+        if (!binoculars.binocularsActive)
+        {
+            Script(left).Trigger = 0f;
+            BinocularsConfig.ForceHold = false;
+            Fail("binoculars did not raise with the trigger held (Hold mode)");
+            yield break;
+        }
+        yield return Wait(0.3f);
+        float fovBefore = zoom.lerpedFOV;
+        float mark = CueMark();
+        // 270 deg/s: past the knob's hold rate, and the whole range (8 steps of 30 deg) in about a second.
+        yield return TwistHand(
+            left,
+            270f,
+            () => CueLog.Capture.Felt(left, CueFeel.EndStop, mark, out _),
+            4f
+        );
+        float fovAt = zoom.lerpedFOV;
+        yield return ExpectFeel(left, CueFeel.EndStop, mark, 0f);
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.3f);
+        BinocularsConfig.ForceHold = false;
+        var note =
+            $"{prefab.name}: zoom {fovBefore:0.0} -> {fovAt:0.0} deg (range {zoom.minFov:0.0}-{zoom.maxFov:0.0})";
+        if (fovAt < zoom.maxFov - 0.01f)
+            Fail("the end stop came before the widest zoom: " + note);
+        else
+            Note(note);
     }
 }
