@@ -21,7 +21,6 @@ public sealed class UIMenuFeature : Feature
         Patch(typeof(KillLoadingScreenPatch));
         Patch(typeof(LoadSceneProcessPatch));
         Patch(typeof(LoadRejectedPatch));
-        Patch(typeof(SpectateRefusalPatch));
         // The splash's own skip flag, set by its skip keys (A/Pretitle.cs:12, set at :54).
         var skipSplash = GameMember.Field<Pretitle, bool>("allowedToSwitch");
         var stage = new TitleStage(cfg);

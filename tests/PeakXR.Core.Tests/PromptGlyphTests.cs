@@ -47,7 +47,7 @@ public class PromptGlyphTests
     [Fact]
     public void EveryVerbButNone_HasAStroke_WithinTheRing()
     {
-        foreach (PromptVerb verb in Enum.GetValues(typeof(PromptVerb)))
+        foreach (var verb in Enum.GetValues<PromptVerb>())
         {
             var first = PromptGlyph.Stroke(verb, 0);
             Assert.Equal(verb == PromptVerb.None, first.Length == 0);
@@ -77,7 +77,7 @@ public class PromptGlyphTests
     [Fact]
     public void Verbs_LookDifferent()
     {
-        var verbs = (PromptVerb[])Enum.GetValues(typeof(PromptVerb));
+        var verbs = Enum.GetValues<PromptVerb>();
         for (int a = 1; a < verbs.Length; a++)
         for (int b = a + 1; b < verbs.Length; b++)
             Assert.False(

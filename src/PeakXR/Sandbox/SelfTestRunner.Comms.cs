@@ -31,7 +31,6 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.114-emote-refused", 20f, EmoteRefusedStep());
         yield return HandStep("vr.115-gesture-emote", 20f, GestureEmoteStep());
         yield return HandStep("vr.117-pause-refused", 20f, PauseRefusedStep());
-        yield return HandStep("vr.122-spectate-single", 30f, SpectateSingleStep());
         yield return PromptGlyphSteps();
     }
 
@@ -178,35 +177,6 @@ internal sealed partial class SelfTestRunner
             Fail("pause menu opened over the emote wheel");
         else if (stepOk)
             stepNote = cueNote;
-    }
-
-    /// <summary>
-    /// vr.122: solo and fully passed out, vanilla spectates yourself (MainCameraMovement.cs:257-259) and ignores a
-    /// next flick (:189-191); the flicking (dominant) hand gets NeedsFriend.
-    /// </summary>
-    IEnumerator SpectateSingleStep()
-    {
-        var c = Character.localCharacter;
-        if (!SandboxActions.PassOut())
-        {
-            stepSkip = "sandbox pass-out unavailable: " + SandboxActions.LastMessage;
-            yield break;
-        }
-        yield return Until(() => c.data.fullyPassedOut, 8f, "did not fully pass out");
-        if (!stepOk)
-            yield break;
-        yield return Wait(0.5f);
-        bool hand = VRInput.LeftHanded;
-        float mark = CueMark();
-        Script(hand).Stick = new Vector2(0f, 1f);
-        yield return Wait(0.2f);
-        Script(hand).Stick = Vector2.zero;
-        yield return ExpectCue(hand, DenyReason.NeedsFriend, mark, 1f);
-        if (stepOk)
-            stepNote =
-                $"spectating {(MainCameraMovement.specCharacter == c ? "self" : "other")}: {cueNote}";
-        SandboxActions.Revive();
-        yield return Until(() => !c.data.fullyPassedOut && !c.data.dead, 6f, "did not revive");
     }
 
     // ================================================================ WP6 slice A: ping and voice
