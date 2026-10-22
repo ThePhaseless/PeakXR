@@ -326,6 +326,8 @@ internal sealed partial class SelfTestRunner
         var skeleton = Object
             .Instantiate(prefab, spot + Vector3.up * 0.3f, Quaternion.identity)
             .GetComponent<Skelleton>();
+        var me = Character.localCharacter;
+        bool wasSkeleton = me != null && me.data.isSkeleton;
         try
         {
             yield return Wait(1f);
@@ -390,6 +392,14 @@ internal sealed partial class SelfTestRunner
         {
             if (skeleton != null)
                 Object.Destroy(skeleton.gameObject);
+            // Holding the book over bones must never turn the holder into a skeleton (a finished read does,
+            // Action_BecomeSkeleton.cs:7; a finished revive does to the bones' owner, Skelleton.cs:118). Run 33 left
+            // the body bone-white between vr.65 and vr.110, the window holding these book steps.
+            if (me != null && !wasSkeleton && me.data.isSkeleton)
+            {
+                Fail("the book turned the local body into a skeleton: " + BodyState(me));
+                me.data.SetSkeleton(false);
+            }
         }
     }
 

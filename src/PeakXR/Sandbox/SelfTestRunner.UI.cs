@@ -45,7 +45,11 @@ internal sealed partial class SelfTestRunner
         // its tick clears Cold, so VR run 27 read Cold 0.00 and the segment stayed hidden (BarAffliction.cs:43-55).
         // The sandbox's status actions lift it; Run puts god mode back after the step.
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
-        SandboxActions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f);
+        if (!SandboxActions.AddStatus(CharacterAfflictions.STATUSTYPE.Cold, 0.25f))
+        {
+            Fail("game refused Cold: " + BodyState(Character.localCharacter));
+            yield break;
+        }
         yield return MoveTo(
             left,
             // The display sits 12 cm down the forearm from the grip: the hand a little above eye level puts it in
