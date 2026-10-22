@@ -3,6 +3,7 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
+using Photon.Voice.Unity;
 
 namespace PeakXR.Voice;
 
@@ -31,5 +32,44 @@ internal static class PushToTalkSamplePatch
             playerMovementActive,
             ref forced
         );
+    }
+}
+
+/// <summary>
+/// The palm-over-mouth mute where the game's key cannot mute (Voice Activation): after
+/// <c>CharacterVoiceHandler.PushToTalk</c> (CharacterVoiceHandler.cs:248, private; called from Update :222) decided to
+/// send, the local character's recorder is held shut. It clears <c>m_currentlyTransmitting</c> (:56) too, so the
+/// first frame after the palm leaves sees a change and vanilla opens the recorder again (:251-255). Local only: no
+/// setting is written and nothing new goes over the network.
+/// </summary>
+[HarmonyPatch]
+internal static class MicGatePatch
+{
+    internal static AccessTools.FieldRef<CharacterVoiceHandler, Character> Owner;
+    internal static AccessTools.FieldRef<CharacterVoiceHandler, Recorder> Recorder;
+    internal static AccessTools.FieldRef<CharacterVoiceHandler, bool> Transmitting;
+
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(CharacterVoiceHandler), "PushToTalk");
+
+    internal static void Resolve()
+    {
+        Owner = GameMember.Field<CharacterVoiceHandler, Character>("m_character");
+        Recorder = GameMember.Field<CharacterVoiceHandler, Recorder>("m_Recorder");
+        Transmitting = GameMember.Field<CharacterVoiceHandler, bool>("m_currentlyTransmitting");
+    }
+
+    private static void Postfix(CharacterVoiceHandler __instance)
+    {
+        if (!VRSession.Active || !VoiceInput.Gate)
+            return;
+        var owner = Owner(__instance);
+        if (owner == null || !owner.IsLocal)
+            return;
+        var recorder = Recorder(__instance);
+        if (recorder != null)
+            recorder.TransmitEnabled = false;
+        Transmitting(__instance) = false;
+        __instance.transmitting = false;
     }
 }

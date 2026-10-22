@@ -48,4 +48,30 @@ public class FingerGunTests
         g.Update(false, false, false, 0.01f);
         Assert.False(g.Update(false, true, true, 0.01f));
     }
+
+    [Fact]
+    public void Aiming_WhilePointingAndThroughTheSqueeze_NotAfterFiring()
+    {
+        var g = new FingerGun();
+        Assert.False(g.Aiming);
+        g.Update(true, true, false, 0.1f);
+        Assert.True(g.Aiming);
+        // The index curls onto the trigger: still aiming for the window, so the preview does not blink off.
+        g.Update(false, true, false, 0.1f);
+        Assert.True(g.Aiming);
+        Assert.True(g.Update(false, true, true, 0.05f));
+        Assert.False(g.Aiming);
+    }
+
+    [Fact]
+    public void Aiming_EndsWhenTheGripOpensOrTheWindowPasses()
+    {
+        var g = new FingerGun { Window = 0.3f };
+        g.Update(true, true, false, 0.1f);
+        g.Update(false, false, false, 0.01f);
+        Assert.False(g.Aiming);
+        g.Update(true, true, false, 0.1f);
+        g.Update(false, true, false, 0.4f);
+        Assert.False(g.Aiming);
+    }
 }
