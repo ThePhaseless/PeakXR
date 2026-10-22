@@ -1,5 +1,6 @@
 using Peak.Network;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using Photon.Pun;
@@ -45,13 +46,26 @@ internal sealed class InviteNote : MonoBehaviour
     public void Show(AirportInviteFriendsKiosk pressed)
     {
         var rig = VRRig.Instance;
-        if (
-            !VRSession.Active
-            || !cfg.InviteNote.Value
-            || pressed == null
-            || rig == null
-            || rig.Head == null
-        )
+        if (!VRSession.Active || pressed == null || rig == null || rig.Head == null)
+            return;
+
+        // The cue first, for the hand nearer the kiosk: offline the invite cannot work (the Blocked refusal, the
+        // kiosk turned red); online the dialog opened on the desktop, where the headset cannot show it (a notice).
+        var matchmaking = NetCode.Matchmaking;
+        bool offline = matchmaking == null || !matchmaking.InLobby;
+        var at = pressed.transform.position;
+        bool left =
+            rig.LeftHand != null
+            && rig.RightHand != null
+            && (rig.LeftHand.position - at).sqrMagnitude
+                < (rig.RightHand.position - at).sqrMagnitude;
+        if (offline)
+            Affordance.Deny(left, at, DenyReason.Blocked, default, pressed);
+        else
+            Affordance.Inform(left, at, DenyReason.NotHere, default);
+
+        // The written note is opt-in text, like every other cue's label.
+        if (!cfg.InviteNote.Value || AffordanceFeature.ActionHintText?.Value != true)
             return;
 
         if (!fontSet)

@@ -30,6 +30,11 @@ internal static class FireGestures
     private const float CookMinUp = 0.2f;
     private const float CookMaxUp = 1f;
 
+    /// <summary>Food within this of the heat column feels the warmth ramp (WS-W12), up to this fraction of the
+    /// progress ramp at the column's edge, so the cook ramp that follows still feels like a new, stronger stage.</summary>
+    private const float HeatSearch = 0.5f;
+    private const float HeatSearchMax = 0.25f;
+
     /// <summary>Light zone over an unlit campfire's base: its log pile plus a reach margin. A torch held at full
     /// reach from a body stopped by the fire ring got its flame to 0.47-0.49 m out, 0.24 m up (vr11); the old
     /// 0.35 m zone sat at the edge of what an arm can reach.</summary>
@@ -65,10 +70,18 @@ internal static class FireGestures
     private static readonly Dictionary<int, IInteractible> LightableByCollider = new(256);
     private static readonly float[] NextWarm = new float[2];
 
+    /// <summary>Dwell before a refused cook (item in the column of a fire that will not cook it) is reported.</summary>
+    private static readonly ContactDwell CookRefused = new()
+    {
+        Enter = 0f,
+        Exit = 0.1f,
+        Dwell = 0.2f,
+    };
+
     private static Campfire cookFire;
     private static IInteractible touchTarget;
-    private static float nextCookPulse;
-    private static float nextCrackle;
+    private static IInteractible refusedTouch;
+    private static Campfire farFire;
     private static float nextShiver;
 
     /// <summary>Warm pulses sent so far; the self-test reads it (vr.27).</summary>
@@ -81,37 +94,69 @@ internal static class FireGestures
     public static void Reset()
     {
         Cook.Reset();
+        CookRefused.Reset();
         Touch.Reset();
         cookFire = null;
         touchTarget = null;
+        refusedTouch = null;
+        farFire = null;
     }
 
     public static void Tick(Character c, VRRig rig, ItemGesturesConfig cfg, float dt)
     {
         float now = Time.time;
-        UpdateCook(c, cfg, dt, now);
-        UpdateLight(c, cfg, dt, now);
+        UpdateCook(c, cfg, dt);
+        UpdateLight(c, cfg, dt);
+        UpdateFriendsFar();
         UpdateWarmth(c, rig, cfg, now);
     }
 
-    private static void UpdateCook(Character c, ItemGesturesConfig cfg, float dt, float now)
+    /// <summary>
+    /// Any hold on an unlit campfire, by flame or bare grip (WS-W11): with a living scout outside
+    /// <c>moraleBoostRadius</c> the hold ends in nothing (Campfire.cs:315-326), so it is refused as it starts.
+    /// </summary>
+    private static void UpdateFriendsFar()
+    {
+        var interaction = Interaction.instance;
+        var fire = interaction != null ? interaction.currentHeldInteractible as Campfire : null;
+        if (fire == null || fire.state != Campfire.FireState.Off)
+        {
+            farFire = null;
+            return;
+        }
+        if (ReferenceEquals(fire, farFire))
+            return;
+        farFire = fire;
+        if (!fire.EveryoneInRange())
+            WarnFriendsFar(fire, WorldHolds.HandOn(fire, ItemGestures.HoldLeft));
+    }
+
+    private static void UpdateCook(Character c, ItemGesturesConfig cfg, float dt)
     {
         var item = ItemGestures.Held;
-        if (!cfg.CookOverFire || item == null || item.cooking == null || !item.cooking.canBeCooked)
+        if (!cfg.CookOverFire || item == null || item.cooking == null)
         {
             Cook.Reset();
+            CookRefused.Reset();
             cookFire = null;
             return;
         }
+        bool cookable = item.cooking.canBeCooked;
         var point = item.Center();
-        var fire = ItemGestures.NearestCampfire(point, 2f, litOnly: true);
+        var fire = cookable ? ItemGestures.NearestCampfire(point, 2f, litOnly: true) : null;
+        if (fire == null)
+        {
+            Cook.Reset();
+            cookFire = null;
+            RefuseCook(item, point, cookable, dt);
+            return;
+        }
+        CookRefused.Reset();
         if (!ReferenceEquals(fire, cookFire))
         {
             Cook.Reset();
             cookFire = fire;
         }
-        if (fire == null)
-            return;
         float distance = HeatZone.Distance(
             point.N(),
             ItemGestures.FireBase(fire).N(),
@@ -121,22 +166,62 @@ internal static class FireGestures
         );
         // Vanilla: a lit campfire takes interact only while the held item can be cooked (Campfire.cs:341-356).
         if (!Cook.Update(distance, dt) || !fire.IsInteractible(c))
+        {
+            // Outside the column: a faint ramp that firms up toward it, to find the heat by feel.
+            float warm = HeatGradient.Closeness(distance, HeatSearch);
+            if (warm > 0f)
+                Affordance.Progress(ItemGestures.HoldLeft, HeatSearchMax * warm);
             return;
+        }
         GestureRequests.Interact(fire);
 
         // Only once the game holds this campfire: the warmth is the cook progress, not just the zone.
         var interaction = Interaction.instance;
         if (interaction == null || !ReferenceEquals(interaction.currentHeldInteractible, fire))
             return;
-        float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
-        if (now >= nextCookPulse)
-        {
-            nextCookPulse = now + 0.12f;
-            Haptics.Pulse(ItemGestures.HoldLeft, 0.08f + 0.35f * progress, 0.08f);
-        }
+        Affordance.Progress(
+            ItemGestures.HoldLeft,
+            Mathf.Clamp01(interaction.constantInteractableProgress)
+        );
     }
 
-    private static void UpdateLight(Character c, ItemGesturesConfig cfg, float dt, float now)
+    /// <summary>
+    /// Something held in the heat column that will not cook there (WS-W12): food over an unlit fire (NotLit) or a
+    /// spent one (UsedUp), the fire red; anything else over a lit fire (CantUse, Campfire.cs:341-356), the item red.
+    /// A held light is skipped: over an unlit fire it is the light gesture. Refused once the item has dwelt there,
+    /// then the red ring stays while it does.
+    /// </summary>
+    private static void RefuseCook(Item item, Vector3 point, bool cookable, float dt)
+    {
+        var fire = ItemGestures.NearestCampfire(point, 2f, litOnly: false);
+        bool light = ReferenceEquals(item, flameItem) && flameKind != HeldLightKind.None;
+        if (fire == null || light)
+        {
+            CookRefused.Reset();
+            return;
+        }
+        var reason = CookCheck.Reason(cookable, fire.Lit, fire.state == Campfire.FireState.Spent);
+        float distance = HeatZone.Distance(
+            point.N(),
+            ItemGestures.FireBase(fire).N(),
+            CookRadius,
+            CookMinUp,
+            CookMaxUp
+        );
+        bool was = CookRefused.Active;
+        if (reason == DenyReason.None || !CookRefused.Update(distance, dt))
+            return;
+        bool left = ItemGestures.HoldLeft;
+        var at = ItemGestures.FireBase(fire);
+        if (!was)
+        {
+            Component tint = reason == DenyReason.CantUse ? item : fire;
+            Affordance.Deny(left, at, reason, default, tint);
+        }
+        Affordance.Hover(left, at, reason);
+    }
+
+    private static void UpdateLight(Character c, ItemGesturesConfig cfg, float dt)
     {
         var item = ItemGestures.Held;
         if (ItemGestures.ItemChanged)
@@ -147,16 +232,18 @@ internal static class FireGestures
                 WarnUnlit(c, item);
             Touch.Reset();
             touchTarget = null;
+            refusedTouch = null;
             return;
         }
         var flame = flamePoint != null ? flamePoint.position : item.Center();
-        var target = FindLightable(c, flame, out float distance);
+        var target = FindLightable(c, flame, out float distance, out var refused);
+        RefuseTouch(c, flame, refused);
         if (!ReferenceEquals(target, touchTarget))
         {
             Touch.Reset();
             touchTarget = target;
             if (target != null)
-                Haptics.Pulse(ItemGestures.HoldLeft, 0.4f, 0.04f);
+                Affordance.Contact(ItemGestures.HoldLeft);
         }
         if (target is Campfire near && distance > TouchEnter && distance <= LightHintRange)
             Affordance.Hover(
@@ -180,18 +267,32 @@ internal static class FireGestures
         TraceLight(item, flame, target, distance, touching, lit: true);
         if (!touching)
             return;
-        if (target is Campfire campfire && campfire.state == Campfire.FireState.Off)
-            WarnFriendsFar(campfire);
         GestureRequests.Interact(target);
-        // Crackle while the fuse takes (the game holds it): short uneven ticks like HandLights' strike.
+        // The progress ramp while the fuse or fire takes (the game holds it).
         var interaction = Interaction.instance;
-        bool held =
-            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, target);
-        if (held && now >= nextCrackle)
-        {
-            nextCrackle = now + 0.05f + 0.1f * Random.value;
-            Haptics.Pulse(ItemGestures.HoldLeft, 0.15f + 0.25f * Random.value, 0.03f);
-        }
+        if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, target))
+            Affordance.Progress(
+                ItemGestures.HoldLeft,
+                Mathf.Clamp01(interaction.constantInteractableProgress)
+            );
+    }
+
+    /// <summary>
+    /// A flame touched to a fuse or ghost fire that no longer takes one (WS-W17): lit or burning (UsedUp), or a
+    /// rocket pack someone holds (Occupied, RocketFuse.cs:134-139). Refused once per touch, the fuse red.
+    /// </summary>
+    private static void RefuseTouch(Character c, Vector3 flame, IInteractible refused)
+    {
+        if (ReferenceEquals(refused, refusedTouch))
+            return;
+        refusedTouch = refused;
+        if (refused is not Component comp)
+            return;
+        var reason =
+            refused is GhostFire || refused.IsInteractible(c)
+                ? DenyReason.UsedUp
+                : DenyReason.Occupied;
+        Affordance.Deny(ItemGestures.HoldLeft, flame, reason, default, comp);
     }
 
     /// <summary>
@@ -271,9 +372,11 @@ internal static class FireGestures
     /// <summary>
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it
     /// (Campfire.cs:322, EveryoneInRange :375-386, distances from the fire to <c>Center</c> :364); otherwise the
-    /// whole hold ends in nothing. The farthest missing friend gets the teal ring, joined to the fire, if in sight.
+    /// whole hold ends in nothing. The logs turn red. The farthest missing friend gets the teal ring, joined to the
+    /// fire, if in sight; out of sight, the ring sits a hand's length from the hand in their direction. Every other
+    /// missing friend in sight gets a teal ring of their own.
     /// </summary>
-    private static void WarnFriendsFar(Campfire fire)
+    private static void WarnFriendsFar(Campfire fire, bool left)
     {
         var at = fire.transform.position;
         float radius = fire.moraleBoostRadius;
@@ -294,21 +397,37 @@ internal static class FireGestures
             return;
         // The friend's ring only when you can see them: a ring through a cliff would read as the wrong place.
         var cam = MainCamera.instance;
-        bool seen =
-            cam != null
-            && !Physics.Linecast(
-                cam.transform.position,
-                far.Center,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            );
-        Affordance.Deny(
-            ItemGestures.HoldLeft,
-            ItemGestures.FireBase(fire),
-            DenyReason.FriendsFar,
-            seen ? DenyHint.At(far.Center) : default
-        );
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(left) : null;
+        var hint =
+            InSight(cam, far) ? DenyHint.At(far.Center)
+            : hand != null
+                ? DenyHint.At(FriendBearing.Spot(hand.position.N(), far.Center.N(), 0.25f).U())
+            : default;
+        // Every other missing friend in sight gets a ring too (up to SpotSet.Capacity), so the cue shows who is
+        // missing, not only the farthest.
+        foreach (var ch in PlayerHandler.GetAllPlayerCharacters())
+        {
+            if (
+                ch != null
+                && ch != far
+                && !ch.data.dead
+                && Vector3.Distance(at, ch.Center) > radius
+                && InSight(cam, ch)
+            )
+                hint = hint.And(ch.Center);
+        }
+        Affordance.Deny(left, ItemGestures.FireBase(fire), DenyReason.FriendsFar, hint, fire);
     }
+
+    private static bool InSight(MainCamera cam, Character ch) =>
+        cam != null
+        && !Physics.Linecast(
+            cam.transform.position,
+            ch.Center,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
 
     private static void BindFlame(Item item)
     {
@@ -361,8 +480,20 @@ internal static class FireGestures
         };
 
     /// <summary>The closest fuse, ghost fire or unlit campfire the flame touches that still takes a light.</summary>
-    private static IInteractible FindLightable(Character c, Vector3 flame, out float distance)
+    private static IInteractible FindLightable(Character c, Vector3 flame, out float distance) =>
+        FindLightable(c, flame, out distance, out _);
+
+    /// <summary>As above; <paramref name="refused"/> is the closest fuse or ghost fire within touch that no longer
+    /// takes a light (lit, or a rocket pack someone holds), or null.</summary>
+    private static IInteractible FindLightable(
+        Character c,
+        Vector3 flame,
+        out float distance,
+        out IInteractible refused
+    )
     {
+        refused = null;
+        float refusedDistance = TouchEnter;
         IInteractible best = null;
         distance = float.MaxValue;
         int hits = Physics.OverlapSphereNonAlloc(
@@ -398,9 +529,16 @@ internal static class FireGestures
                 continue;
             if (it is Campfire touched && touched.state != Campfire.FireState.Off)
                 continue;
-            if (!Lightable(c, it))
-                continue;
             float d = (col.bounds.ClosestPoint(flame) - flame).magnitude;
+            if (!Lightable(c, it))
+            {
+                if (it is not Campfire && d <= refusedDistance)
+                {
+                    refusedDistance = d;
+                    refused = it;
+                }
+                continue;
+            }
             if (d < distance)
             {
                 distance = d;

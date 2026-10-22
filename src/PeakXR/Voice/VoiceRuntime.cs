@@ -1,31 +1,83 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Voice;
 
 /// <summary>
-/// Per-frame driver for VR voice: the optional hand-to-mouth push-to-talk gesture, the one-time headset
-/// mic choice and the speaking icons. Runs late, after the rig is posed, and does nothing outside VR,
-/// so flat play keeps the vanilla voice chat untouched.
+/// Per-frame driver for VR voice: the hand-to-mouth talk gesture, the palm-over-mouth mute, the optional
+/// push-to-talk button, the feedback for your own mic (a radio click and a tick when it opens or closes, a muffled
+/// click when muted, the mic icon at the hand and wrist), the one-time headset mic choice and the speaking icons.
+/// Runs late, after the rig is posed, and does nothing outside VR, so flat play keeps the vanilla voice chat
+/// untouched.
 /// </summary>
 [DefaultExecutionOrder(31000)]
 internal sealed class VoiceRuntime : MonoBehaviour
 {
     private readonly MouthGesture leftMouth = new();
     private readonly MouthGesture rightMouth = new();
+    private readonly PalmMute leftPalm = new();
+    private readonly PalmMute rightPalm = new();
     private readonly HeadsetMic headsetMic = new();
     private SpeakingIndicators indicators;
+    private MicIcon icon;
+    private PushToTalkSetting modeSetting;
+    private AnimatedMouth mouth;
+    private Character mouthOwner;
+    private MicGlyph lastGlyph;
+    private bool lastAsk;
+    private bool lastMute;
+
+    private static VoiceRuntime instance;
+
+    /// <summary>The Voice Activation notice was shown this session (it shows once).</summary>
+    private static bool toldVoiceActivation;
+
+    /// <summary>The mic glyph drawn now, for the self-test.</summary>
+    public static MicGlyph GlyphShown => instance != null ? instance.icon.Shown : MicGlyph.Off;
+
+    /// <summary>The game's microphone mode (PushToTalkSetting, read by CharacterVoiceHandler.cs:250).</summary>
+    public static MicMode Mode => instance != null ? instance.ReadMode() : MicMode.VoiceActivation;
+
+    /// <summary>Lets the self-test see the Voice Activation notice again.</summary>
+    public static void ResetNotice() => toldVoiceActivation = false;
 
     public static void Create()
     {
         var go = new GameObject("PeakXR_Voice");
         DontDestroyOnLoad(go);
-        go.AddComponent<VoiceRuntime>();
+        instance = go.AddComponent<VoiceRuntime>();
     }
 
-    private void Awake() => indicators = new SpeakingIndicators(transform);
+    private void Awake()
+    {
+        indicators = new SpeakingIndicators(transform);
+        icon = new MicIcon(transform);
+        var button = VoiceFeature.Settings.PushToTalkButton;
+        button.SettingChanged += (_, _) => LogConflict(button.Value);
+        LogConflict(button.Value);
+    }
+
+    /// <summary>The picked button still does its own job: say which (Bindings.cs BindingTable.Conflict).</summary>
+    private static void LogConflict(string name)
+    {
+        bool dominantLeft = VRInput.LeftHanded;
+        if (
+            ButtonName.TryParse(name, dominantLeft, out bool left, out var control)
+            && BindingTable.Conflict(
+                BindingTable.Default,
+                left,
+                control,
+                dominantLeft,
+                out var action
+            )
+        )
+            Plugin.Log.LogWarning(
+                $"[voice] Voice.PushToTalkButton {name} also presses {action}; both happen on that button"
+            );
+    }
 
     private void LateUpdate()
     {
@@ -34,22 +86,33 @@ internal sealed class VoiceRuntime : MonoBehaviour
         if (!VRSession.Active || rig == null)
         {
             ClearGesture();
+            icon.Hide();
             indicators.HideAll();
             return;
         }
 
         var dt = Time.unscaledDeltaTime;
-        TickGesture(cfg.HandToMouthTalk.Value, rig, dt);
+        TickControls(cfg, rig, dt);
         headsetMic.Tick(cfg.PreferHeadsetMic.Value);
         indicators.Tick(cfg, rig, dt);
     }
 
-    private void TickGesture(bool enabled, VRRig rig, float dt)
+    private MicMode ReadMode()
+    {
+        if (modeSetting == null)
+        {
+            var settings =
+                GameHandler.Instance != null ? GameHandler.Instance.SettingsHandler : null;
+            modeSetting = settings != null ? settings.GetSetting<PushToTalkSetting>() : null;
+        }
+        return modeSetting != null ? (MicMode)(int)modeSetting.Value : MicMode.VoiceActivation;
+    }
+
+    private void TickControls(VoiceSettings cfg, VRRig rig, float dt)
     {
         var local = Character.localCharacter;
         if (
-            !enabled
-            || local == null
+            local == null
             || local.data.dead
             || rig.Head == null
             || rig.LeftHand == null
@@ -57,18 +120,132 @@ internal sealed class VoiceRuntime : MonoBehaviour
         )
         {
             ClearGesture();
+            icon.Hide();
             return;
         }
 
-        // Only an empty hand talks: a held item at the mouth means eating (interact.physical).
+        // Only an empty hand talks or mutes: a held item at the mouth means eating (interact.physical).
         var holding = local.data.currentItem != null;
         var leftFree = !holding || (!LocalHold.TwoHand && !LocalHold.ItemInLeftHand);
         var rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
         var headPos = rig.Head.position.N();
         var headRot = rig.Head.rotation.N();
-        var left = Track(leftMouth, leftFree, headPos, headRot, rig.LeftHand.position, dt);
-        var right = Track(rightMouth, rightFree, headPos, headRot, rig.RightHand.position, dt);
-        VoiceInput.GestureHeld = left || right;
+        bool talkOn = cfg.HandToMouthTalk.Value;
+        bool muteOn = cfg.PalmMute.Value;
+        bool leftMute = Palm(leftPalm, muteOn && leftFree, true, rig, headPos, headRot, dt);
+        bool rightMute = Palm(rightPalm, muteOn && rightFree, false, rig, headPos, headRot, dt);
+        bool leftTalk =
+            Track(leftMouth, talkOn && leftFree, headPos, headRot, rig.LeftHand.position, dt)
+            && !leftMute;
+        bool rightTalk =
+            Track(rightMouth, talkOn && rightFree, headPos, headRot, rig.RightHand.position, dt)
+            && !rightMute;
+        bool talk = leftTalk || rightTalk;
+        bool mute = leftMute || rightMute;
+        bool button = ButtonHeld(cfg.PushToTalkButton.Value);
+
+        var mode = ReadMode();
+        bool key = VoiceKeys.Key(mode, button, talk, mute);
+        VoiceInput.GestureHeld = key;
+        VoiceInput.MuteHeld = mute;
+        VoiceInput.Gate = VoiceKeys.Gate(mode, mute);
+
+        if (mouthOwner != local)
+        {
+            mouthOwner = local;
+            mouth = local.GetComponent<AnimatedMouth>();
+        }
+        bool speaking = mouth != null && mouth.isSpeaking;
+        var glyph = VoiceKeys.Glyph(mode, key || VoiceInput.PushToTalkHeld, mute, speaking);
+
+        // The hand the cue belongs to: the one at the mouth, else the wrist.
+        var ui = PeakXR.UI.World.UIWorldFeature.Settings;
+        bool wristLeft = ui != null ? ui.WristLeft : !VRInput.LeftHanded;
+        bool cueLeft =
+            leftMute || leftTalk ? true
+            : rightMute || rightTalk ? false
+            : wristLeft;
+        var cueHand = rig.Hand(cueLeft);
+        Transform atMouth =
+            leftMute || leftTalk ? rig.LeftHand
+            : rightMute || rightTalk ? rig.RightHand
+            : null;
+        Cues(mode, glyph, mute, talk || button, cueLeft, cueHand);
+        icon.Tick(
+            glyph,
+            atMouth,
+            rig.Hand(wristLeft),
+            rig.Head.position,
+            mouth != null ? mouth.amplitudeIndex : 0
+        );
+    }
+
+    /// <summary>The radio click and tick when Push To Talk opens and closes the mic, the muffled click when the palm
+    /// mutes, and once a session the notice that Voice Activation needs no key.</summary>
+    private void Cues(MicMode mode, MicGlyph glyph, bool mute, bool ask, bool left, Transform hand)
+    {
+        var at = hand != null ? hand.position : Vector3.zero;
+        if (mode == MicMode.PushToTalk)
+        {
+            bool open = glyph == MicGlyph.Open;
+            bool wasOpen = lastGlyph == MicGlyph.Open;
+            if (open != wasOpen && !mute)
+            {
+                Affordance.Play(CueSound.Transmit, at);
+                if (open)
+                    Affordance.Contact(left);
+            }
+        }
+        if (mute && !lastMute)
+            Affordance.Cancel(left);
+        if (mode == MicMode.VoiceActivation && ask && !lastAsk && !mute && !toldVoiceActivation)
+            // The key does nothing in this mode: the mic is always open.
+            toldVoiceActivation = Affordance.Inform(
+                left,
+                at,
+                DenyReason.MicAlwaysOn,
+                DenyHint.On(hand)
+            );
+        lastGlyph = glyph;
+        lastMute = mute;
+        lastAsk = ask;
+    }
+
+    private static bool ButtonHeld(string name)
+    {
+        if (!ButtonName.TryParse(name, VRInput.LeftHanded, out bool left, out var control))
+            return false;
+        ref var h = ref VRInput.Hand(left);
+        return control switch
+        {
+            VRControl.Primary => h.Primary,
+            VRControl.Secondary => h.Secondary,
+            VRControl.StickClick => h.StickClick,
+            _ => false,
+        };
+    }
+
+    private static bool Palm(
+        PalmMute gesture,
+        bool enabled,
+        bool left,
+        VRRig rig,
+        System.Numerics.Vector3 headPos,
+        System.Numerics.Quaternion headRot,
+        float dt
+    )
+    {
+        var t = rig.Hand(left);
+        if (!enabled || t == null || !VRInput.Hand(left).Tracked)
+        {
+            gesture.Reset();
+            return false;
+        }
+        // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
+        var palm = left ? t.right : -t.right;
+        var c = LocalAvatar.ControllerCurls(left);
+        float curl = (c.Index + c.Middle + c.Ring + c.Pinky) * 0.25f;
+        return gesture.Update(headPos, headRot, t.position.N(), palm.N(), curl, dt);
     }
 
     private static bool Track(
@@ -90,6 +267,12 @@ internal sealed class VoiceRuntime : MonoBehaviour
     {
         leftMouth.Reset();
         rightMouth.Reset();
+        leftPalm.Reset();
+        rightPalm.Reset();
         VoiceInput.GestureHeld = false;
+        VoiceInput.MuteHeld = false;
+        VoiceInput.Gate = false;
+        lastGlyph = MicGlyph.Off;
+        lastMute = lastAsk = false;
     }
 }

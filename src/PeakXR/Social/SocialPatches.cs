@@ -1,9 +1,12 @@
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Avatar;
+using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Social;
@@ -70,7 +73,9 @@ internal static class SocialPatches
     /// <c>interact.physical</c>'s postfix; a hand-chosen social target replaces the head ray's pick. Other callers
     /// (Action_CloneSelectedItem.cs:28) pass an override distance and are left alone. The target must pass the
     /// game's own <c>IsInteractible</c> (CharacterInteractible.cs:126), as the ray's pick does (Interaction.cs:233),
-    /// so an item with <c>overrideFeedAngle</c> (CharacterInteractible.cs:167-172) keeps its vanilla feed window.
+    /// so an item with <c>overrideFeedAngle</c> (CharacterInteractible.cs:167-172) keeps its vanilla feed window. The
+    /// head-aim parts of that check for thorns, ticks and packs follow the hand (<see cref="HandPick"/>,
+    /// <see cref="PackPick"/>).
     /// </summary>
     [HarmonyPatch]
     internal static class Raycasts
@@ -102,6 +107,135 @@ internal static class SocialPatches
                     target.Center(),
                     ParityFeedback.WrongAngle
                 );
+        }
+    }
+
+    /// <summary>
+    /// ThornOnMe.IsInteractible (ThornOnMe.cs:121-138) and Bugfix.IsInteractible (Bugfix.cs:123-132) also demand the
+    /// camera aim within 5° of a thorn, 2° of a tick (+15° solo). For the target a hand picked, the camera looks from
+    /// the eye at it for that one call, so the pick follows the hand; a flat player could turn to look there too.
+    /// Restored in a finalizer, so an exception cannot leave the camera turned.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class HandPick
+    {
+        private static MethodBase[] TargetMethods() =>
+            [
+                GameMember.Method(typeof(ThornOnMe), "IsInteractible", [typeof(Character)]),
+                GameMember.Method(typeof(Bugfix), "IsInteractible", [typeof(Character)]),
+            ];
+
+        private static void Prefix(
+            Component __instance,
+            Character interactor,
+            out CameraSwap __state
+        )
+        {
+            __state = default;
+            var mc = MainCamera.instance;
+            if (
+                !VRSession.Active
+                || mc == null
+                || interactor != Character.localCharacter
+                || !ReferenceEquals(SocialHands.Instance.RaycastTarget, __instance)
+            )
+                return;
+            var eye = mc.transform.position;
+            var to = __instance.transform.position - eye;
+            if (to.sqrMagnitude > 1e-6f)
+                __state = CameraSwap.Begin(eye, Quaternion.LookRotation(to));
+        }
+
+        private static System.Exception Finalizer(
+            System.Exception __exception,
+            CameraSwap __state
+        ) => CameraSwap.Restore(__exception, __state);
+    }
+
+    /// <summary>BackpackOnBackVisuals.IsInteractible (BackpackOnBackVisuals.cs:99-104) wants the interactor's look
+    /// within 110° of the pack's facing; it also gates the hold's start (IsConstantlyInteractable, :152, read at
+    /// Interaction.cs:119). For a pack a hand grips, the look points from the head at the pack for that call.</summary>
+    [HarmonyPatch]
+    internal static class PackPick
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(BackpackOnBackVisuals), "IsInteractible", [typeof(Character)]);
+
+        private static void Prefix(
+            BackpackOnBackVisuals __instance,
+            Character interactor,
+            out Vector3 __state
+        )
+        {
+            __state = Vector3.zero;
+            if (
+                !VRSession.Active
+                || interactor != Character.localCharacter
+                || !ReferenceEquals(SocialHands.Instance.RaycastTarget, __instance)
+            )
+                return;
+            var to = __instance.transform.position - interactor.Head;
+            if (to.sqrMagnitude < 1e-6f)
+                return;
+            __state = interactor.data.lookDirection;
+            interactor.data.lookDirection = to.normalized;
+        }
+
+        private static System.Exception Finalizer(
+            System.Exception __exception,
+            Character interactor,
+            Vector3 __state
+        )
+        {
+            if (__state != Vector3.zero)
+                interactor.data.lookDirection = __state;
+            return __exception;
+        }
+    }
+
+    /// <summary>CharacterCarrying.RPCA_StartCarry (CharacterCarrying.cs:56-84) drops the carrier's worn pack at the
+    /// lifted friend's torso (:59-67). For the local VR player, a notice marks where it lies.</summary>
+    [HarmonyPatch]
+    internal static class CarryDropsPack
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterCarrying), "RPCA_StartCarry", [typeof(PhotonView)]);
+
+        private static bool IsLocal(CharacterCarrying carrying)
+        {
+            var c = Character.localCharacter;
+            return VRSession.Active
+                && c != null
+                && c.refs.carriying == carrying
+                && c.player != null;
+        }
+
+        private static void Prefix(CharacterCarrying __instance, out bool __state) =>
+            __state =
+                IsLocal(__instance) && !Character.localCharacter.player.backpackSlot.IsEmpty();
+
+        private static void Postfix(
+            CharacterCarrying __instance,
+            PhotonView targetView,
+            bool __state
+        )
+        {
+            if (!__state || !IsLocal(__instance) || targetView == null)
+                return;
+            var friend = targetView.GetComponent<Character>();
+            if (friend == null || !Character.localCharacter.player.backpackSlot.IsEmpty())
+                return;
+            var at =
+                friend.refs.ragdoll != null
+                && friend.refs.ragdoll.partDict.TryGetValue(BodypartType.Torso, out var torso)
+                    ? torso.transform.position
+                    : friend.Center;
+            Affordance.Inform(
+                SocialHands.Instance.CarryLeft,
+                at,
+                DenyReason.Dropped,
+                DenyHint.At(at)
+            );
         }
     }
 

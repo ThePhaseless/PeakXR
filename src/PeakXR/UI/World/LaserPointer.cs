@@ -52,6 +52,15 @@ internal sealed class LaserPointer
     /// <summary>Show the laser although no interactive panel is open (an open radial wheel on the HUD).</summary>
     public static bool ForceShow;
 
+    /// <summary>The hand whose trigger made the last laser press, so a click handler can cue on that hand.</summary>
+    public static bool PressLeft { get; private set; }
+
+    /// <summary>The control under the last laser press (null over none), for a refusal that tints it.</summary>
+    public static Selectable PressedControl { get; private set; }
+
+    // A dim dot over a disabled control: it is there, but it will not take the press.
+    private static readonly Color LockedColor = new(0.55f, 0.55f, 0.55f, 0.7f);
+
     private readonly PointerHands hands = new();
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;
@@ -70,6 +79,10 @@ internal sealed class LaserPointer
     private bool visible = true;
     private GameObject hoverObject;
     private Selectable hoverSelectable;
+
+    // The hovered control is disabled (a boarding-pass arrow at its limit, kick for a non-host, a locked setting).
+    private Selectable lockedSelectable;
+    private bool lockedLook;
 
     public LaserPointer(Transform parent)
     {
@@ -129,7 +142,9 @@ internal sealed class LaserPointer
         SetVisible(false, false);
         hoverObject = null;
         hoverSelectable = null;
+        lockedSelectable = null;
         SetHoverLook(false);
+        SetLockedLook(false);
     }
 
     public void Process(bool show, UIWorldSettings cfg, VRRig rig, float dt)
@@ -173,6 +188,10 @@ internal sealed class LaserPointer
         HandleEnterExit(over);
         TickOnHover(over, cfg.HoverHaptics.Value);
         SetHoverLook(hoverSelectable != null && !blocked);
+        bool locked = lockedSelectable != null && !blocked && IsLocked(lockedSelectable);
+        SetLockedLook(locked);
+        if (locked)
+            Affordance.Hover(hands.ActiveLeft, shown, DenyReason.Locked);
         if (hands.Pressed)
             Press(system, over, aim);
         if (hands.Held)
@@ -232,11 +251,27 @@ internal sealed class LaserPointer
         ApplyLook();
     }
 
+    private static bool IsLocked(Selectable s) =>
+        s != null && s.isActiveAndEnabled && !s.IsInteractable();
+
+    /// <summary>What turns red on a locked control: its own target graphic, else any graphic on it.</summary>
+    private static Component LockTint(Selectable s) =>
+        s.targetGraphic != null ? s.targetGraphic : s.GetComponent<Graphic>();
+
+    private void SetLockedLook(bool value)
+    {
+        if (lockedLook == value)
+            return;
+        lockedLook = value;
+        ApplyLook();
+    }
+
     private void ApplyLook()
     {
         cursorMaterial.color =
             blocked ? Affordance.DenyColor
             : hoverLook ? HoverColor
+            : lockedLook ? LockedColor
             : CursorColor;
         beamMaterial.color = hoverLook && !blocked ? BeamHoverColor : BeamColor;
     }
@@ -249,7 +284,8 @@ internal sealed class LaserPointer
             return;
         hoverObject = over;
         var selectable = over != null ? over.GetComponentInParent<Selectable>() : null;
-        if (selectable != null && !selectable.IsInteractable())
+        lockedSelectable = selectable != null && !selectable.IsInteractable() ? selectable : null;
+        if (lockedSelectable != null)
             selectable = null;
         if (selectable == hoverSelectable)
             return;
@@ -290,9 +326,20 @@ internal sealed class LaserPointer
         data.pressPosition = data.position;
         data.pointerPressRaycast = data.pointerCurrentRaycast;
         pressForward = aim.forward;
+        PressLeft = hands.ActiveLeft;
+        PressedControl = over != null ? over.GetComponentInParent<Selectable>() : null;
         // The blocker in front takes the press, as in vanilla; say why the control behind does not react.
         if (blocked)
             Affordance.Deny(hands.ActiveLeft, visualPoint, DenyReason.Blocked);
+        // A disabled control ignores the press in vanilla too; the cue says it is locked, on the control itself.
+        else if (lockedSelectable != null && IsLocked(lockedSelectable))
+            Affordance.Deny(
+                hands.ActiveLeft,
+                visualPoint,
+                DenyReason.Locked,
+                default,
+                LockTint(lockedSelectable)
+            );
         if (over == null)
             return;
 

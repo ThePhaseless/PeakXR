@@ -2,6 +2,7 @@ using System.Reflection;
 using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -35,7 +36,9 @@ internal static class PingPatches
     /// casts <c>Camera.main.ScreenPointToRay</c> through the mouse or screen centre (PointPinger.cs:58), which has
     /// no meaning for a stereo headset camera. In VR the ray starts at the pinging hand's aim pose (the head when
     /// that hand is untracked) with the same TerrainMap mask, so DoPing sends ReceivePoint_Rpc with the hand-aimed
-    /// point (PointPinger.cs:71). Only the local player's DoPing calls this.</summary>
+    /// point (PointPinger.cs:71). Only the local player's DoPing calls this. A miss (the sky) is dropped silently by
+    /// vanilla (PointPinger.cs:68); in VR it is refused as NoWall at the ray end, with the preview's red dot left there
+    /// as the refused marker. A hit gets a contact tick on the pinging hand.</summary>
     [HarmonyPatch]
     internal static class PingHit
     {
@@ -58,8 +61,15 @@ internal static class PingPatches
                 float.PositiveInfinity,
                 HelperFunctions.LayerType.TerrainMap.ToLayerMask()
             );
+            bool left = PingInput.PingLeft;
             if (__result)
-                Haptics.Pulse(PingInput.PingLeft, 0.4f, 0.05f);
+                Affordance.Contact(left);
+            else
+            {
+                var end = origin + direction * PingPreview.SkyMeters;
+                var marker = PingPreview.Refused(end);
+                Affordance.Deny(left, end, DenyReason.NoWall, default, marker);
+            }
             return false;
         }
 

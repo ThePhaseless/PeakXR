@@ -79,9 +79,47 @@ public class GuideTests
                 GuideTopic.Laser,
                 GuideTopic.Wrist,
                 GuideTopic.Refused,
+                GuideTopic.Ping,
+                GuideTopic.Mic,
+                GuideTopic.Mute,
+                GuideTopic.Spectate,
             }
         )
             Assert.Equal(t, GuideTable.Get(t).Topic);
+    }
+
+    [Theory]
+    [InlineData(GuideTopic.Ping, CueSound.Notice)]
+    [InlineData(GuideTopic.Mic, CueSound.Transmit)]
+    [InlineData(GuideTopic.Mute, CueSound.Cancel)]
+    [InlineData(GuideTopic.Spectate, CueSound.Notice)]
+    public void CommsDemos_PlayTheCueTheGameUses(GuideTopic topic, CueSound sound)
+    {
+        var demo = GuideTable.Get(topic);
+        Assert.Contains(demo.Sounds, s => s.Sound == sound);
+    }
+
+    [Fact]
+    public void MicDemo_ClicksOnOpenAndClose_AtTheHand()
+    {
+        var demo = GuideTable.Get(GuideTopic.Mic);
+        Assert.Equal(2, Array.FindAll(demo.Sounds, s => s.Sound == CueSound.Transmit).Length);
+        Assert.All(demo.Sounds, s => Assert.NotEqual(GuideAnchor.Free, s.Anchor));
+    }
+
+    [Fact]
+    public void PingAndSpectateDemos_UseTheirControls()
+    {
+        bool Pressed(GuideTrack track, System.Func<GuideKey, bool> test) =>
+            track != null && Array.Exists(track.Keys, k => test(k));
+        var ping = GuideTable.Get(GuideTopic.Ping);
+        Assert.True(
+            Pressed(ping.Right, k => k.Grip > 0.5f && k.Trigger > 0.5f),
+            "finger gun squeeze"
+        );
+        var spectate = GuideTable.Get(GuideTopic.Spectate);
+        Assert.True(Pressed(spectate.Right, k => k.Stick.Y > 0.5f), "stick flick up");
+        Assert.True(Pressed(spectate.Right, k => k.Stick.Y < -0.5f), "stick flick down");
     }
 
     [Fact]

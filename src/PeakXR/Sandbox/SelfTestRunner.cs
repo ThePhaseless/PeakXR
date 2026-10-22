@@ -206,6 +206,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 yield return Run("06-segment-Peak", 120f, Jump(Segment.Peak));
             // Loads another level when this one had no tornado spawner, so it goes last.
             yield return TornadoTrip();
+            // End-of-run slot (WP5): steps that advance the segment or end the run, ending at the airport.
+            yield return EndOfRunSteps();
         }
         Finish();
     }

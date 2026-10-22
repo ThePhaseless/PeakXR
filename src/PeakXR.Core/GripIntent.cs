@@ -76,7 +76,7 @@ namespace PeakXR.Core
 
     /// <summary>
     /// Decides what a grip press or release means. The rules keep hands independent and allow only one held
-    /// item: a free hand may join the held item, climb or interact, but never pick up a second item.
+    /// item: a free hand may join the held item, climb or interact, and a second item it grabs goes to the pockets.
     /// </summary>
     public static class GripIntent
     {
@@ -110,6 +110,10 @@ namespace PeakXR.Core
 
             if (c.PhysicalClimb && c.NearClimbable)
                 return GripPressAction.Climb;
+            // A free hand on a second item: the game pockets it (Item.Interact, Item.cs:578-591), so the hand takes the
+            // item it touched rather than whatever the head aims at.
+            if (c.PhysicalGrab && c.Candidate == GrabCandidate.Item && !c.ThisHandHolds)
+                return GripPressAction.GrabItem;
             if (c.ThisHandHolds)
                 return GripPressAction.Regrip;
             return GripPressAction.Interact;

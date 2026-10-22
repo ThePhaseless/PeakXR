@@ -1,4 +1,6 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -11,6 +13,10 @@ namespace PeakXR.Interact.Physical;
 /// prefix. The open itself stays vanilla: <c>Interact_CastFinished</c> sends <c>OpenLuggageRPC</c>
 /// (Luggage.cs:243-247) and the lid animates on completion. Respawn chests (RespawnChest.cs:6) need both hands on
 /// the lid. A grip low on the case keeps the plain vanilla hold.
+/// <para>Feel (WS-W8, W10): a contact tick as the hand takes the lid edge, the progress ramp while the game's timer
+/// runs, a firm tick when it opens. One hand alone on a respawn chest for 0.6 s is refused (NeedsTwoHands, the chest
+/// red, a teal ring at the lid's opposite corner), or HandsFull with the held item red when the other hand is busy.
+/// A chest that revives someone (RespawnChest.cs:51-55) also gives the Revived notice, or NoRevive when the ascent allows no revives.</para>
 /// </summary>
 internal static class LidGesture
 {
@@ -20,10 +26,36 @@ internal static class LidGesture
     private static readonly Luggage[] Grabbed = new Luggage[2];
     private static readonly bool[] OnLid = new bool[2];
     private static readonly float[] StartY = new float[2];
+    private static readonly TwoHandGate ChestGate = new();
+
+    /// <summary>Per hand: a low grip held long enough for the "grab the lid" hint.</summary>
+    private static readonly ContactDwell[] Low =
+    {
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+        new()
+        {
+            Enter = 0f,
+            Exit = 0.5f,
+            Dwell = 0.5f,
+        },
+    };
+
+    /// <summary>Height of the lid edge over the case's render centre (Luggage.Center, Luggage.cs:148); the hint
+    /// ring sits there above the low hand. Tune against the prefabs in game.</summary>
+    private const float LidEdgeUp = 0.1f;
 
     private static Luggage target;
     private static float fraction;
     private static int frame = -10;
+
+    /// <summary>The case the game's timer runs on, and whether someone was down when it started (a chest revives).</summary>
+    private static Luggage opening;
+    private static bool openingRevives;
 
     public static void Reset()
     {
@@ -33,10 +65,13 @@ internal static class LidGesture
             OnLid[h] = false;
         }
         target = null;
+        opening = null;
+        ChestGate.Update(0, 0f);
     }
 
     public static void Tick(ItemGesturesConfig cfg)
     {
+        Opened();
         target = null;
         var rig = VRRig.Instance;
         if (!cfg.LiftLid || rig == null)
@@ -46,15 +81,24 @@ internal static class LidGesture
         }
         float left = Track(rig, 0);
         float right = Track(rig, 1);
+        LowGrip(rig, 0);
+        LowGrip(rig, 1);
         var lug =
             OnLid[0] ? Grabbed[0]
             : OnLid[1] ? Grabbed[1]
             : null;
         if (lug == null)
+        {
+            ChestGate.Update(0, 0f);
             return;
+        }
         bool both = OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
-        if (lug is RespawnChest)
+        if (lug is RespawnChest chest)
+        {
             fraction = both ? Mathf.Min(left, right) : 0f;
+            if (ChestGate.Update(both ? 2 : 1, Time.deltaTime))
+                RefuseOneHand(rig, chest, OnLid[0]);
+        }
         else
             fraction = Mathf.Max(
                 OnLid[0] ? left : 0f,
@@ -62,6 +106,7 @@ internal static class LidGesture
             );
         target = lug;
         frame = Time.frameCount;
+        Feel(lug);
     }
 
     /// <summary>One hand's lift fraction of its grabbed lid, 0 when it holds none.</summary>
@@ -83,9 +128,103 @@ internal static class LidGesture
             // Tracking-space height, so walking or the body settling does not count as lifting.
             StartY[h] = state.Position.y;
             if (OnLid[h])
-                Haptics.Pulse(left, 0.5f, 0.03f);
+                Affordance.Contact(left);
         }
         return OnLid[h] ? LidLift.Fraction(state.Position.y - StartY[h], LiftHeight) : 0f;
+    }
+
+    /// <summary>
+    /// A grip low on a closed case keeps the plain hold, but lifting the lid is the faster, physical way (WS-W8): held
+    /// for 0.5 s, it gets a teal "higher" ring (ArrowUp) on the lid edge above the hand, once as a notice and then
+    /// while the grip stays. A "would work" hint, so only with <c>UI.ActionHints</c>.
+    /// </summary>
+    private static void LowGrip(VRRig rig, int h)
+    {
+        var lug = Grabbed[h];
+        bool low = lug != null && !OnLid[h] && Affordance.Hints;
+        bool was = Low[h].Active;
+        if (!Low[h].Update(low ? 0f : 1f, Time.deltaTime))
+            return;
+        bool left = h == 0;
+        var hand = rig.Hand(left);
+        if (hand == null)
+            return;
+        var lid = hand.position;
+        lid.y = lug.Center().y + LidEdgeUp;
+        if (!was)
+            Affordance.Inform(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+        Affordance.Mark(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+    }
+
+    /// <summary>The progress ramp on each lifting hand while the game's timer runs on this case.</summary>
+    private static void Feel(Luggage lug)
+    {
+        var interaction = Interaction.instance;
+        if (interaction == null || !ReferenceEquals(interaction.currentHeldInteractible, lug))
+            return;
+        if (!ReferenceEquals(opening, lug))
+        {
+            opening = lug;
+            openingRevives = lug is RespawnChest && Character.PlayerIsDeadOrDown();
+        }
+        float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
+        for (int h = 0; h < 2; h++)
+        {
+            if (OnLid[h] && ReferenceEquals(Grabbed[h], lug))
+                Affordance.Progress(h == 0, progress);
+        }
+    }
+
+    /// <summary>The case being lifted opened (Luggage.IsOpen, Luggage.cs:37): a firm tick on the hands that lifted
+    /// it; a chest that revived someone also gives the Revived or NoRevive notice there.</summary>
+    private static void Opened()
+    {
+        if (opening == null)
+            return;
+        if (!opening.IsOpen)
+        {
+            // Let go before it opened: nothing to report.
+            if (!ReferenceEquals(Grabbed[0], opening) && !ReferenceEquals(Grabbed[1], opening))
+                opening = null;
+            return;
+        }
+        bool chest = opening is RespawnChest;
+        for (int h = 0; h < 2; h++)
+        {
+            if (chest || OnLid[h])
+                Affordance.Contact(h == 0);
+        }
+        // RespawnChest.SpawnItems (RespawnChest.cs:51-55) revives only when the ascent allows it (Ascents.cs:207);
+        // otherwise it gives items, and the notice says why nobody came back.
+        if (openingRevives)
+            Affordance.Inform(
+                ReferenceEquals(Grabbed[0], opening) || OnLid[0],
+                opening.Center(),
+                Ascents.canReviveDead ? DenyReason.Revived : DenyReason.NoRevive,
+                default
+            );
+        opening = null;
+    }
+
+    /// <summary>One hand alone on the chest lid (W10): the other hand busy with an item (HandsFull, that item red) or
+    /// free (NeedsTwoHands, the chest red, the would-work ring at the lid's opposite corner).</summary>
+    private static void RefuseOneHand(VRRig rig, RespawnChest chest, bool left)
+    {
+        var item = ItemGestures.Held;
+        if (item != null && (LocalHold.TwoHand || ItemGestures.HoldLeft != left))
+        {
+            Affordance.DenyAtHand(left, DenyReason.HandsFull, default, item);
+            return;
+        }
+        var hand = rig.Hand(left);
+        if (hand == null)
+            return;
+        var center = chest.Center();
+        var across = center - hand.position;
+        across.y = 0f;
+        var corner = center + across;
+        corner.y = hand.position.y;
+        Affordance.Deny(left, hand.position, DenyReason.NeedsTwoHands, DenyHint.At(corner), chest);
     }
 
     /// <summary>Interaction.DoInteraction prefix body: before the game adds this frame's time to the held luggage,

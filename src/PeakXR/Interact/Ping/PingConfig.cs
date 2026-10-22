@@ -1,15 +1,8 @@
 using BepInEx.Configuration;
+using PeakXR.Core;
 using PeakXR.VR;
 
 namespace PeakXR.Interact.Ping;
-
-/// <summary>Which hand aims (and may fire) the ping.</summary>
-internal enum PingHand
-{
-    Pointing,
-    Right,
-    Left,
-}
 
 /// <summary>Ping settings, bound by <see cref="PingFeature"/>.</summary>
 internal sealed class PingConfig
@@ -33,17 +26,19 @@ internal sealed class PingConfig
 
     private ConfigEntry<string> hand,
         pingButton;
-    private ConfigEntry<bool> fingerGun;
+    private ConfigEntry<bool> fingerGun,
+        aimPreview;
     private ConfigEntry<float> markerAngle;
 
-    public PingHand Hand =>
+    public PingAimHand Hand =>
         (hand?.Value ?? "Pointing") switch
         {
-            "Left" => PingHand.Left,
-            "Right" => PingHand.Right,
-            _ => PingHand.Pointing,
+            "Left" => PingAimHand.Left,
+            "Right" => PingAimHand.Right,
+            _ => PingAimHand.Pointing,
         };
     public bool FingerGun => fingerGun?.Value ?? true;
+    public bool AimPreview => aimPreview?.Value ?? true;
     public float MarkerAngle => markerAngle?.Value ?? 8f;
 
     /// <summary>State of the configured ping fallback button this frame (false for None).</summary>
@@ -89,6 +84,13 @@ internal sealed class PingConfig
                 true,
                 "Point (grip closed, index straight), then squeeze the trigger while the grip stays closed to ping. "
                     + "That trigger squeeze does not also use the held item."
+            ),
+            aimPreview = file.Bind(
+                Section,
+                "AimPreview",
+                true,
+                "While a hand makes the finger gun, a thin line runs from it to a small dot where the ping would land, "
+                    + "so you see the spot before you squeeze. The dot turns red where the ray finds no ground (the sky)."
             ),
             pingButton = file.Bind(
                 Section,

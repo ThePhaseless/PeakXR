@@ -182,15 +182,40 @@ namespace PeakXR.Core
             ),
             new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
-            // Every control already has a press; a long press of the move-stick click is the one gap. Its
-            // first frame still toggles sprint, which does nothing while standing still.
-            new Binding(
-                VRAction.PushToTalk,
-                BindingHand.OffHand,
-                VRControl.StickClick,
-                PressKind.LongPress
-            ),
+            // Push-to-talk has no row (D4): every button already has a press, and the old move-stick long press also
+            // toggled sprint. Hand-to-mouth is the default; Voice.PushToTalkButton binds a button on request.
         };
+
+        /// <summary>
+        /// True when a row of <paramref name="table"/> already presses <paramref name="control"/> on that controller
+        /// (with the item in either hand); <paramref name="action"/> is the first such action. For a button picked in a
+        /// setting, so the player learns what else it does.
+        /// </summary>
+        public static bool Conflict(
+            Binding[] table,
+            bool left,
+            VRControl control,
+            bool dominantLeft,
+            out VRAction action
+        )
+        {
+            foreach (var b in table)
+            {
+                if (
+                    b.Control == control
+                    && (
+                        ResolveLeft(b.Hand, dominantLeft, true) == left
+                        || ResolveLeft(b.Hand, dominantLeft, false) == left
+                    )
+                )
+                {
+                    action = b.Action;
+                    return true;
+                }
+            }
+            action = default;
+            return false;
+        }
 
         /// <summary>True when <paramref name="role"/> means the left controller.</summary>
         public static bool ResolveLeft(BindingHand role, bool dominantLeft, bool itemInLeft)

@@ -4,8 +4,11 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.Interact.Physical;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Settings;
+using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
 using Zorro.UI;
@@ -287,6 +290,224 @@ internal sealed partial class SelfTestRunner
         Plugin.Log.LogInfo($"[selftest] title VR tab open, {rows} VR Guide rows");
         if (rows == 0)
             Fail("the VR tab has no VR Guide rows (see the [ui.guide] VR tab line)");
+    }
+
+    // ---------------------------------------------------------------- WP6 slice D: prompt glyphs (D8)
+
+    /// <summary>Prompt steps for the level's hand steps; the lead wires <c>yield return PromptGlyphSteps();</c> into
+    /// <c>CommsSteps</c>.</summary>
+    IEnumerator PromptGlyphSteps()
+    {
+        yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
+        yield return HandStep("vr.125-hold-glyph", 40f, HoldGlyphStep());
+        yield return WarpBack();
+    }
+
+    /// <summary>
+    /// vr.125: a hand on the lid of the nearest closed suitcase starts its held open (Luggage is an
+    /// <c>IInteractibleConstant</c>, Interaction.cs:120-123). With <c>UI.ActionHintText</c> off the OPEN text is hidden
+    /// and the hold glyph (a ring) is drawn beside the open glyph; raising the lid halfway fills the ring as far as the
+    /// game's own timer (<c>constantInteractableProgress</c>, Interaction.cs:57) and the hand feels the progress ramp.
+    /// </summary>
+    IEnumerator HoldGlyphStep()
+    {
+        if (!SpatialFeature.Settings.TargetPrompt.Value)
+        {
+            stepNote = "UI.TargetPrompt is off";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
+        if (lug == null)
+        {
+            stepSkip = "no closed suitcase in the active segment";
+            yield break;
+        }
+        var interaction = Interaction.instance;
+        var hintText = AffordanceFeature.ActionHintText;
+        bool hintWas = hintText != null && hintText.Value;
+        bool left = VRInput.LeftHanded;
+        var notes = new List<string>();
+        var fails = new List<string>();
+        try
+        {
+            if (hintText != null)
+                hintText.Value = false;
+            yield return WarpFacing(lug.Center(), 0.8f);
+            var top = LidPoint(lug);
+            yield return MoveTo(left, () => top, 0.5f);
+            float mark = CueMark();
+            yield return GripTo(left, 1f, 0.1f);
+            yield return WaitFor(
+                () => ReferenceEquals(interaction.currentHeldInteractible, lug),
+                2f
+            );
+            if (!ReferenceEquals(interaction.currentHeldInteractible, lug))
+            {
+                Fail(
+                    $"grip did not hold the suitcase: hovered {Label(interaction.currentHovered)}, held {Label(interaction.currentHeldInteractible)}"
+                );
+                yield break;
+            }
+            yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Hold), 1f);
+            bool ring = TargetPrompt.Drawn(PromptVerb.Hold);
+            bool hidden = TargetPrompt.TextHidden;
+            notes.Add($"hold ring {ring}, text hidden {hidden}");
+            if (!ring)
+                fails.Add("no hold ring while the suitcase's open is held");
+            if (!hidden)
+                fails.Add("the prompt text still shows with UI.ActionHintText off");
+
+            // Half the lid's open time (Luggage timeToOpen, Luggage.cs:214); the lift gesture caps the timer at the
+            // height reached, so half the lift height.
+            float openTime = GameTiming.InteractSeconds(lug, c);
+            float until = Now + Mathf.Max(0.8f, 0.6f * openTime);
+            var at = Script(left).Position;
+            bool lift = Setting("Interaction", "LiftLidToOpen", true);
+            while (Now < until && !lug.IsOpen)
+            {
+                if (lift)
+                    SetHand(left, at + Vector3.up * (LidGesture.LiftHeight * 0.5f));
+                yield return null;
+            }
+            float fill = TargetPrompt.HoldFillShown;
+            float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
+            yield return ShotAt("vr-125-hold-glyph", lug.Center());
+            notes.Add($"progress {progress:0.00}, ring filled {fill:0.00}");
+            if (progress > 0.05f && (fill <= 0f || Mathf.Abs(fill - progress) > 0.1f))
+                fails.Add("the ring does not follow the hold's progress");
+            yield return ExpectFeel(left, CueFeel.Progress, mark);
+            if (stepOk)
+                notes.Add(cueNote);
+            yield return GripTo(left, 0f, 0.1f);
+        }
+        finally
+        {
+            if (hintText != null)
+                hintText.Value = hintWas;
+        }
+        if (stepOk)
+            Conclude(fails, notes);
+    }
+
+    /// <summary>
+    /// vr.121 (D8): an Apple on the head's interact ray (<c>Interaction.currentHovered</c>, Interaction.cs:15) shows
+    /// its name and, in place of the PICKUP text (Item.cs:680, GUIManager.cs:1049), the grab glyph; the text is
+    /// hidden, and comes back (glyph gone) with <c>UI.ActionHintText</c>. Then a web (CharacterAfflictions.cs:803,
+    /// the struggle prompt) draws the shake glyph on both wrists with a contact tick on each hand.
+    /// </summary>
+    IEnumerator PromptGlyphStep()
+    {
+        if (!SpatialFeature.Settings.TargetPrompt.Value)
+        {
+            stepNote = "UI.TargetPrompt is off";
+            yield break;
+        }
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var head = VRRig.Instance.Head;
+        var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
+        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail("spawned Apple has no Item");
+            yield break;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        var gui = GUIManager.instance;
+        var verbText = gui.interactPromptText.canvasRenderer;
+        var fails = new List<string>();
+        var notes = new List<string>();
+        var hintText = AffordanceFeature.ActionHintText;
+        bool hintWas = hintText != null && hintText.Value;
+        try
+        {
+            if (hintText != null)
+                hintText.Value = false;
+            float until = Now + 5f;
+            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+            {
+                Fail("the Apple never became the hovered target");
+                yield break;
+            }
+            for (float t = Now + 0.4f; Now < t; )
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            bool hidden = TargetPrompt.TextHidden && verbText.GetAlpha() <= 0.001f;
+            bool grab = TargetPrompt.Drawn(PromptVerb.Grab);
+            bool named = gui.interactName.activeInHierarchy;
+            notes.Add($"text hidden {hidden}, grab glyph {grab}, name shown {named}");
+            if (!hidden)
+                fails.Add("PICKUP text still drawn with UI.ActionHintText off");
+            if (!grab)
+                fails.Add("no grab glyph in place of the PICKUP text");
+            if (!named)
+                fails.Add("the Apple's name is gone");
+            yield return ShotAt("vr-121-prompt-glyphs", world.Center());
+
+            if (hintText != null)
+            {
+                hintText.Value = true;
+                for (float t = Now + 0.3f; Now < t; )
+                {
+                    HoldOnHeadRay(world, head);
+                    yield return null;
+                }
+                bool back = !TargetPrompt.TextHidden && verbText.GetAlpha() >= 0.99f;
+                notes.Add(
+                    $"with ActionHintText: text back {back}, glyph {TargetPrompt.Drawn(PromptVerb.Grab)}"
+                );
+                if (!back)
+                    fails.Add("UI.ActionHintText on did not bring the PICKUP text back");
+                if (TargetPrompt.Drawn(PromptVerb.Grab))
+                    fails.Add("grab glyph drawn over the PICKUP text");
+                hintText.Value = false;
+            }
+        }
+        finally
+        {
+            if (hintText != null)
+                hintText.Value = hintWas;
+        }
+
+        // Struggle: the game shows its prompt only for a web added from zero (CharacterAfflictions.cs:799-806).
+        SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Web);
+        yield return Wait(0.2f);
+        float mark = CueMark();
+        if (!SandboxActions.AddStatus(CharacterAfflictions.STATUSTYPE.Web, 0.3f))
+            fails.Add("the game refused a web: " + SandboxActions.LastMessage);
+        else
+        {
+            yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Struggle), 2f);
+            bool shake = TargetPrompt.Drawn(PromptVerb.Struggle);
+            notes.Add($"struggle glyph {shake}");
+            if (!shake)
+                fails.Add("no shake glyph on the wrists while webbed");
+            yield return ExpectFeel(true, CueFeel.Contact, mark);
+            if (stepOk)
+                yield return ExpectFeel(false, CueFeel.Contact, mark);
+            SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Web);
+            if (!stepOk)
+                yield break;
+            notes.Add(cueNote);
+        }
+        Conclude(fails, notes);
     }
 
     static GuideRow GuideRowOf(GuideAction action, GuideTopic topic)

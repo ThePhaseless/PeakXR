@@ -58,6 +58,47 @@ def r2: . * 100 | round / 100;
          else ([$y.groundItems[] | dist(.; $x.landing)] | min) as $d
            | "\(if $d <= $land then "PASS" else "FAIL" end) \($x.name) landing: nearest item \($d | r2) m from where A saw it" end)
       end),
+    # Social checkpoints: what B received while A acted (the RPCs since the previous checkpoint).
+    ($a[] | select(.status == "pass" and .name == "feed-refuse") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "GetFedItemRPC" or .name == "SendFeedDataRPC")] | length) == 0
+      then "PASS feed-refuse: B got no feed RPC"
+      else "FAIL feed-refuse: B got a feed RPC for a refused item" end),
+    ($a[] | select(.status == "pass" and .name == "reach-deny") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) == 0
+      then "PASS reach-deny: B was not knocked down"
+      else "FAIL reach-deny: B fell (RPCA_Fall) from a refused grip" end),
+    ($a[] | select(.status == "pass" and .name == "kick-mode") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_Fall" and .local)] | length) > 0
+      then "PASS kick-mode: the shove knocked B down"
+      else "FAIL kick-mode: B logged no RPCA_Fall from the shove" end),
+    ($a[] | select(.status == "pass" and .name == "carry") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_StartCarry" and (.local | not))] | length) > 0
+           and ([$y.rpcs[]? | select(.name == "RPCA_Drop" and (.local | not))] | length) > 0
+      then "PASS carry: B saw A lift and put it down (RPCA_StartCarry, RPCA_Drop)"
+      else "FAIL carry: B missed RPCA_StartCarry or RPCA_Drop from A" end),
+    ($a[] | select(.status == "pass" and .name == "pal-jump") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "JumpRpc" and .local and .args[0] == true)] | length) > 0
+      then "PASS pal-jump: B was boosted (JumpRpc isPalJump)"
+      else "FAIL pal-jump: B logged no pal-jump JumpRpc" end),
+    ($a[] | select(.status == "pass" and .name == "campfire-far") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "Light_Rpc")] | length) == 0
+      then "PASS campfire-far: the fire stayed unlit on B"
+      else "FAIL campfire-far: B saw Light_Rpc with the host away" end),
+    ($a[] | select(.status == "pass" and .name == "spectate") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif $y.fullyPassedOut == true then "PASS spectate: B sees A passed out"
+      else "FAIL spectate: B does not see A passed out" end),
+    ($a[] | select(.status == "pass" and .name == "scene-button") | $bcp[.name] as $y |
+      if $y == null then empty
+      elif ([$y.rpcs[]? | select(.name == "RPCA_Trigger")] | length) == 0
+      then "PASS scene-button: no trigger reached B"
+      else "FAIL scene-button: B saw RPCA_Trigger from a refused press" end),
     (if $sum.exceptions == 0 then "PASS B logged no exceptions"
      else "FAIL B logged \($sum.exceptions) exception(s): \($sum.firstExceptions | map(.e) | join(" | "))" end),
     (if $sum.unknownEventErrors == 0 then "PASS B logged no unknown-event errors"

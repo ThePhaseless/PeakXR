@@ -55,7 +55,7 @@ internal sealed class UILobbySettings
                 Section,
                 "InviteNote",
                 true,
-                "After pressing the invite kiosk, show a note at the kiosk: the Steam invite dialog opens on the desktop overlay, which may not appear in the headset."
+                "With UI.ActionHintText on, also show a written note at the invite kiosk after a press: the Steam invite dialog opens on the desktop overlay, which may not appear in the headset. The press always gets a cue: a notice when the dialog opened, the Blocked refusal when not in a Steam lobby."
             ),
             InviteNoteSeconds = cfg.Bind(
                 Section,

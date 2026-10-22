@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -33,6 +34,10 @@ internal sealed class RadialWheels : MonoBehaviour
     private readonly WheelDriver backpack = new("PeakXR_BackpackWheel", handDriven: false);
     private GUIManager gui;
     private EmoteWheel emoteWheel;
+    private bool emoteHeld;
+
+    /// <summary>The controller whose menu button was down last, for a refused pause (WheelPatches.PauseRefused).</summary>
+    public static bool MenuLeft { get; private set; }
 
     public static void Create()
     {
@@ -120,6 +125,9 @@ internal sealed class RadialWheels : MonoBehaviour
             return;
         }
 
+        if (VRInput.Left.Menu != VRInput.Right.Menu)
+            MenuLeft = VRInput.Left.Menu;
+        DenyRefusedOpen();
         emote.Update(gui.emoteWheel, emoteWheel, rig, VRAction.Emote);
         backpack.Update(
             gui.backpackWheel != null ? gui.backpackWheel.gameObject : null,
@@ -131,6 +139,29 @@ internal sealed class RadialWheels : MonoBehaviour
         // Hand travel has priority: while the hand is over the ring the laser is hidden, so the two never fight
         // over the hovered slice.
         LaserPointer.ForceShow = emote.IsOpen && !emote.HandPicking;
+    }
+
+    /// <summary>
+    /// The Emote binding went down but the game keeps the wheel shut (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:563-569):
+    /// the opening hand gets the refusal cue instead of nothing.
+    /// </summary>
+    private void DenyRefusedOpen()
+    {
+        var c = Character.localCharacter;
+        bool held = c != null && c.input.emoteIsPressed;
+        if (held && !emoteHeld)
+        {
+            var reason = EmoteGestures.WheelRefusal(
+                c.data.dead,
+                c.refs.stats.won,
+                c.data.isClimbing,
+                gui.backpackWheel != null && gui.backpackWheel.gameObject.activeSelf,
+                gui.windowBlockingInput
+            );
+            if (reason != DenyReason.None)
+                Affordance.DenyAtHand(OpeningHandLeft(VRAction.Emote), reason);
+        }
+        emoteHeld = held;
     }
 
     /// <summary>
@@ -238,6 +269,7 @@ internal sealed class WheelDriver
         {
             if (open)
             {
+                CueClose();
                 selector.Reset();
                 OnTop.Set(drawn, false);
             }
@@ -284,6 +316,39 @@ internal sealed class WheelDriver
         }
         else if (stickVector.LengthSquared() >= RadialSelector.StickThresholdSq)
             Steer(stickVector, authoritative: true);
+    }
+
+    /// <summary>
+    /// A wheel closed. Emote (EmoteWheel.OnDisable runs Choose, EmoteWheel.cs:52-94). Nothing chosen: a soft cancel
+    /// tick. A greyed slice under the hand (an on-the-ground emote while airborne, EmoteWheelSlice.cs:31-34, which
+    /// ignores the hover :39) is refused, not cancelled.
+    /// </summary>
+    private void CueClose()
+    {
+        // The backpack wheel commits its hovered pocket on interact up (BackpackWheel.Update, A/BackpackWheel.cs:96-99;
+        // Choose :122-126 does nothing without one). No pocket hovered: the grip let go on nothing.
+        if (wheel is BackpackWheel b)
+        {
+            if (b.chosenSlice.IsNone)
+                Affordance.Cancel(left);
+            return;
+        }
+        if (wheel is not EmoteWheel e || e.selectedEmoteName == null)
+            return;
+        if (!string.IsNullOrEmpty(e.selectedEmoteName.text))
+            return;
+        if (
+            selected >= 0
+            && selected < slices.Length
+            && slices[selected] is EmoteWheelSlice s
+            && s.image != null
+            && s.image.enabled
+            && s.button != null
+            && !s.button.interactable
+        )
+            Affordance.DenyAtHand(left, DenyReason.NeedsGround, default, s.image);
+        else
+            Affordance.Cancel(left);
     }
 
     private bool Open(Transform root, UIWheel current, VRRig rig, bool handLeft)

@@ -176,6 +176,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         if (!VRSession.Active)
             return;
         stage.ApplyOrigin(VRRig.Instance);
+        ModalBellPatch.Tick();
         if (splash)
             UpdateSplashSkip();
     }
