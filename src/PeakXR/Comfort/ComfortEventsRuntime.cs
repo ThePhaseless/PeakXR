@@ -37,6 +37,21 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     private Vector3 sideFrom;
     private float sideUntil = -1f;
 
+    /// <summary>Seconds between pressure taps: a lean, not a buzz.</summary>
+    private const float PressureInterval = 0.2f;
+
+    private Vector3 pressureFrom;
+    private float pressureAmplitude;
+    private int pressureFrame = -10;
+    private float nextPressure;
+
+    /// <summary>The last pressure tap per hand, and when (self-test).</summary>
+    internal static float PressureLeft { get; private set; }
+
+    internal static float PressureRight { get; private set; }
+
+    internal static float PressureAt { get; private set; } = -1f;
+
     /// <summary>Amplitudes of the last comfort rumble per hand (self-test: a hit from the right is stronger on
     /// the right).</summary>
     internal static float LastLeftAmplitude { get; private set; }
@@ -101,6 +116,57 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         instance.sideFrom = towardSource;
         instance.sideUntil = Time.unscaledTime + SideSeconds;
         Raise(e, magnitude);
+    }
+
+    /// <summary>
+    /// A steady push this frame (wind, a tornado's pull) from <paramref name="towardSource"/> (world), at
+    /// <paramref name="amplitude"/> (<see cref="BodyCues.PullAmplitude"/>): light taps on the hand facing it while
+    /// the push lasts. The strongest push of the frame wins. Off with <c>ComfortEvents.WindPressure</c>.
+    /// </summary>
+    internal static void Pressure(Vector3 towardSource, float amplitude)
+    {
+        if (instance == null || !VRSession.Active || !ComfortEventsConfig.Pressure)
+            return;
+        var i = instance;
+        if (i.pressureFrame == Time.frameCount && amplitude <= i.pressureAmplitude)
+            return;
+        i.pressureFrame = Time.frameCount;
+        i.pressureAmplitude = amplitude;
+        i.pressureFrom = towardSource;
+    }
+
+    private void TickPressure()
+    {
+        // FixedUpdate may skip a render frame: a push from the last two frames still counts.
+        if (
+            Time.frameCount - pressureFrame > 2
+            || pressureAmplitude <= 0f
+            || !ComfortEventsConfig.Haptics
+        )
+            return;
+        float now = Time.unscaledTime;
+        if (now < nextPressure)
+            return;
+        nextPressure = now + PressureInterval;
+        float left = 1f,
+            right = 1f;
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (head != null)
+        {
+            var r = head.right;
+            BodyCues.SideGains(
+                new System.Numerics.Vector2(pressureFrom.x, pressureFrom.z),
+                System.Numerics.Vector2.Normalize(new System.Numerics.Vector2(r.x, r.z)),
+                out left,
+                out right
+            );
+        }
+        float a = pressureAmplitude * ComfortEventsConfig.Intensity;
+        PressureLeft = a * left;
+        PressureRight = a * right;
+        PressureAt = now;
+        Haptics.Pulse(true, PressureLeft, 0.05f);
+        Haptics.Pulse(false, PressureRight, 0.05f);
     }
 
     /// <summary>A camera shake: rumble length follows the shake, capped so long quakes pulse instead.</summary>
@@ -205,6 +271,7 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         Poll(c, dt);
 
         pulses.Update(dt);
+        TickPressure();
         VignetteBoost = pulses.Vignette;
         if (pulses.SnapBlack)
             FadeView.Snap(1f);

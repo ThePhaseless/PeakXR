@@ -132,7 +132,10 @@ public class BodyCuesTests
     [Fact]
     public void Brace_CrouchingCutsThePullToAQuarter()
     {
-        TestUtil.Near(0.25f * BodyCues.PullAmplitude(1f), BodyCues.PullAmplitude(1f, crouched: true));
+        TestUtil.Near(
+            0.25f * BodyCues.PullAmplitude(1f),
+            BodyCues.PullAmplitude(1f, crouched: true)
+        );
         Assert.True(BodyCues.PullAmplitude(1f) <= BodyCues.PressureMax);
         Assert.Equal(0f, BodyCues.PullAmplitude(0f));
     }

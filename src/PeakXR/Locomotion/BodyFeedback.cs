@@ -3,6 +3,7 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -28,6 +29,25 @@ internal static class BodyFeedback
 
     private static readonly StaminaOutCue StaminaOut = new();
     private static readonly FootingCue Footing = new();
+    private static readonly Heartbeat Beat = new();
+    private static readonly Shiver Chill = new();
+
+    /// <summary>Head this close (m) to rock: the wall is felt before the view would fade (RigDriver).</summary>
+    private const float WallNear = 0.3f;
+
+    /// <summary>A further approach this much closer (m) ticks again.</summary>
+    private const float WallStep = 0.03f;
+
+    /// <summary>Seconds of the low-gravity end countdown (Affliction_LowGravity.cs:44 warns 1.5 s early).</summary>
+    private const float FloatEndWarning = 1.5f;
+
+    private static readonly Vector3[] WallProbes =
+    {
+        Vector3.forward,
+        Vector3.back,
+        Vector3.right,
+        Vector3.left,
+    };
 
     private static AccessTools.FieldRef<CharacterMovement, Character> owner;
     private static AccessTools.FieldRef<CharacterMovement, float> fallDamageTime;
@@ -38,6 +58,9 @@ internal static class BodyFeedback
     private static int jumps;
     private static float lastPassOut;
     private static int refusedFrame = -10;
+    private static float wallNearest = float.PositiveInfinity;
+    private static float floatEndAt = -1f;
+    private static float lastBeatAt = -1f;
 
     /// <summary>Jumps the local body took off (self-test).</summary>
     internal static int TakeOffs => jumps;
@@ -47,6 +70,21 @@ internal static class BodyFeedback
 
     /// <summary>Landings felt (self-test).</summary>
     internal static int Landings { get; private set; }
+
+    /// <summary>Heartbeats felt (lub only) and the gap before the last one (self-test).</summary>
+    internal static int Beats { get; private set; }
+
+    internal static float LastBeatPeriod { get; private set; }
+
+    /// <summary>Shiver pulses felt (self-test).</summary>
+    internal static int Shivers { get; private set; }
+
+    /// <summary>Air jumps (double-jump amulet charges) spent (self-test).</summary>
+    internal static int AirJumps { get; private set; }
+
+    /// <summary>The low gravity is about to end (CharacterAfflictions.WarnStopWhirlwind, :1833): a 1.5 s
+    /// countdown on the hands. Called by its patch.</summary>
+    internal static void FloatEnding() => floatEndAt = Time.unscaledTime + FloatEndWarning;
 
     /// <summary>The game's fall damage time (CharacterMovement.cs:126), 1.5 s in this build.</summary>
     internal static float FallDamageTime(Character c) =>
@@ -71,7 +109,7 @@ internal static class BodyFeedback
         c.data.isGrounded ? c.data.groundPos : c.Center + Vector3.down * 0.9f;
 
     /// <summary>A non-refusal feel at a chosen strength, recorded like ui.affordance's own.</summary>
-    private static void Feel(bool left, CueFeel feel, float amplitude, float seconds)
+    internal static void Feel(bool left, CueFeel feel, float amplitude, float seconds)
     {
         if (!Affordance.Enabled)
             return;
@@ -79,7 +117,7 @@ internal static class BodyFeedback
         CueLog.Capture.Feel(left, feel, amplitude, delivered, Haptics.Muted, Time.unscaledTime);
     }
 
-    private static void FeelBoth(CueFeel feel, float amplitude, float seconds)
+    internal static void FeelBoth(CueFeel feel, float amplitude, float seconds)
     {
         Feel(true, feel, amplitude, seconds);
         Feel(false, feel, amplitude, seconds);
@@ -111,8 +149,27 @@ internal static class BodyFeedback
             FeelBoth(CueFeel.Contact, FootingAmplitude, 0.06f);
 
         if (d.fullyPassedOut || d.passedOut)
+        {
+            Beat.Reset();
             return;
+        }
         var feet = Feet(c);
+        BodyBeat(c);
+        NearWall(c);
+
+        // G9: the float ends soon: progress ticks fill toward the moment gravity returns.
+        if (floatEndAt > 0f)
+        {
+            float left = floatEndAt - Time.unscaledTime;
+            if (left <= 0f)
+                floatEndAt = -1f;
+            else
+            {
+                float u = BodyCues.CountdownUrgency(left, FloatEndWarning);
+                Affordance.Progress(true, u);
+                Affordance.Progress(false, u);
+            }
+        }
 
         // A7: a jump press the game turned down (see JumpTry), unless it became a climb grab.
         if (refusedFrame >= 0 && Time.frameCount > refusedFrame)
@@ -151,6 +208,95 @@ internal static class BodyFeedback
             Affordance.Deny(false, feet, DenyReason.TooSteep);
         }
         wasSliding = sliding;
+    }
+
+    /// <summary>
+    /// B1/B5: the body breathing. A lub-dub heartbeat while stamina is spent off the wall (climbing has its own),
+    /// faster as the bar empties, slower and heavier under the Weight status; fine shivers while Cold rises.
+    /// Plain haptics on both hands, not a refusal.
+    /// </summary>
+    private static void BodyBeat(Character c)
+    {
+        var d = c.data;
+        var a = c.refs.afflictions;
+        float dt = Time.deltaTime;
+        bool exerting = d.sinceUseStamina < 0.5f && !d.isClimbingAnything && !c.infiniteStam;
+        float max = Mathf.Max(c.GetMaxStamina(), 0.05f);
+        float weight = a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Weight);
+        if (Beat.Update(exerting, d.currentStamina / max, weight, dt, out var pulse))
+        {
+            Haptics.Pulse(true, pulse.Amplitude, pulse.Seconds);
+            Haptics.Pulse(false, pulse.Amplitude, pulse.Seconds);
+            if (pulse.Beat)
+            {
+                float now = Time.unscaledTime;
+                LastBeatPeriod = lastBeatAt > 0f ? now - lastBeatAt : 0f;
+                lastBeatAt = now;
+                Beats++;
+            }
+        }
+        float shiver = Chill.Update(a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold), dt);
+        if (shiver > 0f)
+        {
+            Haptics.Pulse(true, shiver, 0.03f);
+            Haptics.Pulse(false, shiver, 0.03f);
+            Shivers++;
+        }
+    }
+
+    /// <summary>
+    /// A2: the real head coming within <see cref="WallNear"/> of rock, before RigDriver's fade would black the view:
+    /// a soft contact tick on the hand on that side (both for ahead or behind), again for each further approach.
+    /// Only the hands react; the view never moves. Quiet while climbing, where the head is at the rock on purpose.
+    /// </summary>
+    private static void NearWall(Character c)
+    {
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (head == null || c.data.isClimbingAnything || c.data.currentClimbHandle != null)
+        {
+            wallNearest = float.PositiveInfinity;
+            return;
+        }
+        var eye = head.position;
+        var mask = HelperFunctions.terrainMapMask;
+        if (!Physics.CheckSphere(eye, WallNear, mask, QueryTriggerInteraction.Ignore))
+        {
+            wallNearest = float.PositiveInfinity;
+            return;
+        }
+        var yaw = Quaternion.Euler(0f, head.eulerAngles.y, 0f);
+        float best = float.PositiveInfinity;
+        int side = 0;
+        for (int i = 0; i < WallProbes.Length; i++)
+        {
+            if (
+                Physics.Raycast(
+                    eye,
+                    yaw * WallProbes[i],
+                    out var hit,
+                    WallNear,
+                    mask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && hit.distance < best
+            )
+            {
+                best = hit.distance;
+                side = i;
+            }
+        }
+        if (float.IsPositiveInfinity(best) || best > wallNearest - WallStep)
+        {
+            if (float.IsPositiveInfinity(best))
+                wallNearest = float.PositiveInfinity;
+            return;
+        }
+        wallNearest = best;
+        float amplitude = Mathf.Lerp(0.08f, 0.3f, 1f - best / WallNear);
+        if (side != 3)
+            Feel(false, CueFeel.Contact, amplitude, 0.03f);
+        if (side != 2)
+            Feel(true, CueFeel.Contact, amplitude, 0.03f);
     }
 
     /// <summary>
@@ -229,11 +375,28 @@ internal static class BodyFeedback
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterMovement), "JumpRpc", new[] { typeof(bool) });
 
-        private static void Postfix(CharacterMovement __instance, bool isPalJump)
+        // JumpRpc spends a ground jump first, then an amulet charge (CharacterMovement.cs:640-650).
+        private static void Prefix(CharacterMovement __instance, out bool __state) =>
+            __state =
+                Mine(__instance, out var c) && c.data.jumpsRemaining <= 0 && c.data.extraJumps > 0;
+
+        private static void Postfix(CharacterMovement __instance, bool isPalJump, bool __state)
         {
             if (!Mine(__instance, out _))
                 return;
             jumps++;
+            if (__state)
+            {
+                // A9: an air jump is a double tick, so a spent charge is felt apart from a jump.
+                AirJumps++;
+                FeelBoth(CueFeel.Contact, BoostAmplitude, 0.03f);
+                PeakXR.UI.Affordances.Affordance.Play(
+                    CueSound.WouldWork,
+                    __instance.transform.position,
+                    0.6f
+                );
+                return;
+            }
             FeelBoth(CueFeel.Contact, isPalJump ? BoostAmplitude : TakeOffAmplitude, 0.04f);
         }
     }

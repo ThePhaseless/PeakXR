@@ -114,11 +114,12 @@ internal static class ComfortEventsPatches
             if (inPushZone)
             {
                 if (size > 0.5f)
-                    ComfortEventsRuntime.RaiseFrom(
-                        ComfortEvent.WindPush,
-                        Mathf.Min(size / 30f, 1f),
-                        -force
-                    );
+                {
+                    float strength = Mathf.Min(size / 30f, 1f);
+                    ComfortEventsRuntime.RaiseFrom(ComfortEvent.WindPush, strength, -force);
+                    // Shelter scales the force to 0 (WindChillZone.cs:202, :250), so the pressure fades behind rock.
+                    ComfortEventsRuntime.Pressure(-force, BodyCues.PullAmplitude(strength));
+                }
             }
             else if (size >= 50f)
                 ComfortEventsRuntime.RaiseFrom(ComfortEvent.Knockback, size / 800f, -force);
@@ -289,8 +290,17 @@ internal static class ComfortEventsPatches
             float reach = __instance.transform.localScale.x * __instance.range;
             var d = __instance.transform.position - c.Center;
             float h = Height(__instance, c);
-            if (d.x * d.x + d.z * d.z <= reach * reach && h >= -10f && h <= 50f)
+            float flat = d.x * d.x + d.z * d.z;
+            if (flat <= reach * reach && h >= -10f && h <= 50f)
+            {
                 ComfortEventsRuntime.Raise(ComfortEvent.WindPush, 0.7f);
+                // G2: the pull grows toward the funnel (Tornado.cs:293-301); crouched it is a quarter (:296-300).
+                float strength = reach > 0f ? 1f - Mathf.Sqrt(flat) / reach : 1f;
+                ComfortEventsRuntime.Pressure(
+                    d,
+                    BodyCues.PullAmplitude(0.5f + 0.5f * strength, c.data.isCrouching)
+                );
+            }
         }
     }
 
