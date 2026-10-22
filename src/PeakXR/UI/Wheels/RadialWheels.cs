@@ -319,7 +319,7 @@ internal sealed class WheelDriver
     }
 
     /// <summary>
-    /// A wheel closed. Emote (EmoteWheel.OnDisable runs Choose, EmoteWheel.cs:52-94). Nothing chosen: a soft cancel
+    /// A wheel closed. Emote (EmoteWheel.OnDisable runs Choose, EmoteWheel.cs:48-88). Nothing chosen: a soft cancel
     /// tick. A greyed slice under the hand (an on-the-ground emote while airborne, EmoteWheelSlice.cs:31-34, which
     /// ignores the hover :39) is refused, not cancelled.
     /// </summary>
@@ -426,7 +426,7 @@ internal sealed class WheelDriver
     /// <summary>
     /// The wheel's full-screen dimmer ("BG", a black 69% Image stretched over the canvas, first child of both
     /// wheel prefabs) would float at the hand as a dark slab. EmoteWheel and BackpackWheel keep no reference to it
-    /// (fields A/EmoteWheel.cs:9-26, A/BackpackWheel.cs:9-25), so it is found by shape: an enabled dark Image or
+    /// (fields A/EmoteWheel.cs:8-23, A/BackpackWheel.cs:9-25), so it is found by shape: an enabled dark Image or
     /// RawImage outside every slice and button, larger than the wheel. Disabled, so it neither draws nor catches
     /// the pointer; <see cref="Restore"/> turns it back on. Nothing found: nothing hidden.
     /// </summary>
@@ -476,7 +476,7 @@ internal sealed class WheelDriver
         );
     }
 
-    /// <summary>The slices the game's gamepad path considers (EmoteWheel.cs:120, BackpackWheel.cs:253).</summary>
+    /// <summary>The slices the game's gamepad path considers (EmoteWheel.cs:106, BackpackWheel.cs:253).</summary>
     private static UIWheelSlice[] CollectSlices(UIWheel current)
     {
         switch (current)
@@ -541,7 +541,7 @@ internal sealed class WheelDriver
         }
         else if (next >= 0 && handDriven)
         {
-            // A page flip re-inits the emote slices and clears the choice (EmoteWheel.cs:60); hovering every
+            // A page flip re-inits the emote slices and clears the choice (EmoteWheel.cs:56); hovering every
             // frame like the gamepad path picks the new page's emote up.
             Hover(slices[next]);
         }

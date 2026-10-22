@@ -17,7 +17,7 @@ internal static class AvatarPatches
     private static AccessTools.FieldRef<HideTheBody, bool> hideShowing;
     private static System.Action<HideTheBody, bool> hideToggle;
 
-    /// <summary><c>CharacterMovement.maxAngle</c> (CharacterMovement.cs:130, private): the walkable slope limit.</summary>
+    /// <summary><c>CharacterMovement.maxAngle</c> (CharacterMovement.cs:132, private): the walkable slope limit.</summary>
     internal static AccessTools.FieldRef<CharacterMovement, float> MaxAngle;
 
     public static void Resolve()
@@ -43,7 +43,7 @@ internal static class AvatarPatches
         AvatarPoseDriver.Of(c) is { HasFreshPose: true } d ? d : null;
 
     /// <summary>CharacterAnimations.ConfigureIK (CharacterAnimations.cs:390): runs in the physics tick right after
-    /// the animated pose is evaluated (CharacterRagdoll.cs:166), for local and remote characters.</summary>
+    /// the animated pose is evaluated (CharacterRagdoll.cs:170), for local and remote characters.</summary>
     [HarmonyPatch]
     internal static class ConfigureIK
     {
@@ -66,7 +66,7 @@ internal static class AvatarPatches
             Driver(animationsCharacter(__instance))?.OnHandleIK();
     }
 
-    /// <summary>CharacterRagdoll.SaveAdditionalTransformPositions (CharacterRagdoll.cs:207, private): writes
+    /// <summary>CharacterRagdoll.SaveAdditionalTransformPositions (CharacterRagdoll.cs:212, private): writes
     /// animationItemTransform, the frame that GetItemHoldPos and GetItemPosLeft/Right read.</summary>
     [HarmonyPatch]
     internal static class SaveAdditional
@@ -204,7 +204,7 @@ internal static class AvatarPatches
         }
     }
 
-    /// <summary>Character.Start (Character.cs:497): attach the local pose builder to the local character.</summary>
+    /// <summary>Character.Start (Character.cs:494): attach the local pose builder to the local character.</summary>
     [HarmonyPatch]
     internal static class CharacterStart
     {

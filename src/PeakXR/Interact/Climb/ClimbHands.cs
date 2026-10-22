@@ -662,7 +662,7 @@ internal static class ClimbHands
         }
     }
 
-    /// <summary>The simulated segment bodies of the held rope (owner only, Rope.cs:309-373); rebuilt when the rope or
+    /// <summary>The simulated segment bodies of the held rope (owner only, Rope.cs:313-377); rebuilt when the rope or
     /// its segment count changes, never per frame.</summary>
     private static void CachePumpBodies(
         Rope rope,

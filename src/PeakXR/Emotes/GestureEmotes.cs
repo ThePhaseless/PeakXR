@@ -11,7 +11,7 @@ namespace PeakXR.Emotes;
 /// <summary>
 /// Gesture emotes (D5): wave a raised open hand side to side to play the game's wave emote, hold both open hands
 /// over your head to cheer, hold a fist out with the thumb up for the thumbs-up. They play through vanilla CharacterAnimations.PlayEmote (A/CharacterAnimations.cs:410,
-/// the call the emote wheel makes, EmoteWheel.cs:91), so every peer sees them. The emotes are found by name in the
+/// the call the emote wheel makes, EmoteWheel.cs:87), so every peer sees them. The emotes are found by name in the
 /// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing, passed out, dead, in
 /// a menu or with a wheel open (a climber's reaching hands look like a cheer); an emote the game only plays on the
 /// ground (EmoteWheelData.requireGrounded, greyed on the wheel by EmoteWheelSlice.cs:31-34) gets a NeedsGround cue.

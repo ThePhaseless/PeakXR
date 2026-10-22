@@ -227,7 +227,7 @@ internal sealed partial class SelfTestRunner
         Note(note);
     }
 
-    /// <summary>Turns the view: the rig in VR, the look values in flat play (CharacterMovement.cs:286-288).</summary>
+    /// <summary>Turns the view: the rig in VR, the look values in flat play (CharacterMovement.cs:287-289).</summary>
     static void Turn(Character c, float yaw, float pitch)
     {
         if (VRSession.Active && VRRig.Instance != null)
@@ -242,8 +242,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// mob.ScoutmasterGhostOrbiter: the soul pillar's own call as master (ScoutmasterSoulPillar.cs:176-178),
-    /// <c>SetOrbitCharacter</c> (ScoutmasterGhostOrbiter.cs:48) with the local character. Spawned 4 m off rather
-    /// than on the body, so following it (:21-31) shows.
+    /// <c>SetOrbitCharacter</c> (ScoutmasterGhostOrbiter.cs:50) with the local character. Spawned 4 m off rather
+    /// than on the body, so following it (:22-33) shows.
     /// </summary>
     IEnumerator OrbiterStep()
     {
@@ -391,8 +391,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// mob.Tornado when today's map had no spawner: a Mesa level (biome id letter 'M', TodaysBiomes.cs:58) is loaded
-    /// the game's way, back to the airport as after the peak (MapHandler.cs:560-562), the console map picker
-    /// <c>MapDebugUI.SetMapNumber</c> (MapDebugUI.cs:131-135, read by the kiosk at AirportCheckInKiosk.cs:142) and
+    /// the game's way, back to the airport as after the peak (MapHandler.cs:662-664), the console map picker
+    /// <c>MapDebugUI.SetMapNumber</c> (MapDebugUI.cs:145-149, read by the kiosk at AirportCheckInKiosk.cs:142) and
     /// the kiosk. Then the segments are jumped until one has a running spawner. Last in the script: the run ends
     /// on that level, so nothing needs the old map back; the level offset is restored.
     /// </summary>
@@ -559,8 +559,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// The death steps, last in the script. Each kills the solo player through the game's own path and revives
-    /// them with the game's revive RPC. A solo death ends the run at once (<c>CheckEndGame</c>, Character.cs:838,
-    /// then <c>RPCEndGame</c> :893 deletes the quicksave and opens the end screen), so <see cref="SelfTestEndGamePatch"/>
+    /// them with the game's revive RPC. A solo death ends the run at once (<c>CheckEndGame</c>, Character.cs:835,
+    /// then <c>RPCEndGame</c> :890 deletes the quicksave and opens the end screen), so <see cref="SelfTestEndGamePatch"/>
     /// holds that back for the step. God mode is off meanwhile: its tick clears petrify.
     /// </summary>
     IEnumerator DeathSteps()
@@ -599,9 +599,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// mob.MushroomZombie_Player: the console <c>Character.Zombify</c> (Character.cs:788) sends <c>RPCA_Zombify</c>
-    /// (:805), the RPC the game's spore death sends (:604-610); as master it spawns the zombie and <c>RPC_Arise</c>
-    /// (:811, MushroomZombie.cs:344), which runs <c>FinishZombifying</c> (Character.cs:817). The revive must then
+    /// mob.MushroomZombie_Player: the console <c>Character.Zombify</c> (Character.cs:785) sends <c>RPCA_Zombify</c>
+    /// (:802), the RPC the game's spore death sends (:601-607); as master it spawns the zombie and <c>RPC_Arise</c>
+    /// (:808, MushroomZombie.cs:344), which runs <c>FinishZombifying</c> (Character.cs:814). The revive must then
     /// remove the zombie (MushroomZombie.cs:417).
     /// </summary>
     IEnumerator ZombieStep(Vector3 home)
@@ -630,9 +630,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// mob.PetrifiedScout: petrify at 100 (the console <c>PetrifyFully</c>, CharacterAfflictions.cs:1328) and
-    /// <c>Character.Die</c> (Character.cs:695): <c>RPCA_Die</c> (:736) takes <c>SpawnSkeletonOnDeath</c> (:766) to
-    /// <c>SpawnStatue</c> (:783-785). The game never removes a statue; the step does.
+    /// mob.PetrifiedScout: petrify at 100 (the console <c>PetrifyFully</c>, CharacterAfflictions.cs:1348) and
+    /// <c>Character.Die</c> (Character.cs:692): <c>RPCA_Die</c> (:733) takes <c>SpawnSkeletonOnDeath</c> (:763) to
+    /// <c>SpawnStatue</c> (:780-782). The game never removes a statue; the step does.
     /// </summary>
     IEnumerator PetrifyStep(Vector3 home)
     {
@@ -661,8 +661,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// mob.PlayerGhost: <c>Character.Die</c> (Character.cs:695); while the dead player can still be spectated (5 s,
-    /// CharacterData.cs:323-333), <c>MainCameraMovement.Spectate</c> spawns the ghost (MainCameraMovement.cs:146).
+    /// mob.PlayerGhost: <c>Character.Die</c> (Character.cs:692); while the dead player can still be spectated (5 s,
+    /// CharacterData.cs:324-334), <c>MainCameraMovement.Spectate</c> spawns the ghost (MainCameraMovement.cs:146).
     /// Solo, the spectated character is the player's own body. In VR the rig takes the spectate view and fades;
     /// ui.spatial's nameplate shows only for a friend (SpatialRuntime <c>wantSpectate</c>), so solo it must stay
     /// off. The revive must remove the ghost (<c>StopSpectating</c>, :120) and clear the fade.
@@ -742,7 +742,7 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => !c.data.dead, 3f);
     }
 
-    /// <summary>The game's revive RPC (Character.cs:1802) as the console <c>Character.Revive</c> (:1765) sends it,
+    /// <summary>The game's revive RPC (Character.cs:1799) as the console <c>Character.Revive</c> (:1762) sends it,
     /// at the step's start and without the revive curse.</summary>
     static void ReviveAt(Character c, Vector3 at)
     {

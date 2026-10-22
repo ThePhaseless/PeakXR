@@ -38,7 +38,7 @@ internal sealed class BodyInventory : IGripExtension
     /// <summary><c>CharacterItems.lockedFromSwitching</c> getter (CharacterItems.cs:84, private).</summary>
     public static Func<CharacterItems, bool> LockedFromSwitching;
 
-    /// <summary><c>Character.CanDoInput</c> (Character.cs:1714, internal).</summary>
+    /// <summary><c>Character.CanDoInput</c> (Character.cs:1711, internal).</summary>
     public static Func<Character, bool> CanDoInput;
 
     /// <summary><c>BackpackWheel.TestSelectSliceGamepad</c> (BackpackWheel.cs:253, protected): hovers the slice

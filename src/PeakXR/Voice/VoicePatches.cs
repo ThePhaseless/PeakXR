@@ -8,7 +8,7 @@ using Photon.Voice.Unity;
 namespace PeakXR.Voice;
 
 /// <summary>Merges VR push-to-talk into the game's own flag after it samples input, so the voice
-/// transmit gate (CharacterVoiceHandler.cs:250) and the mouth mute (AnimatedMouth.cs:136) both follow it.
+/// transmit gate (CharacterVoiceHandler.cs:269) and the mouth mute (AnimatedMouth.cs:136) both follow it.
 /// A/CharacterInput.cs:212 <c>internal void Sample(bool playerMovementActive)</c>; push-to-talk is read
 /// at L259 only while movement is active. Called for the local character only (CharacterMovement.cs:198).
 /// Low priority: runs after player.locomotion's postfix, which writes the binding-table press for this frame.</summary>
@@ -37,9 +37,9 @@ internal static class PushToTalkSamplePatch
 
 /// <summary>
 /// The palm-over-mouth mute where the game's key cannot mute (Voice Activation): after
-/// <c>CharacterVoiceHandler.PushToTalk</c> (CharacterVoiceHandler.cs:248, private; called from Update :222) decided to
+/// <c>CharacterVoiceHandler.PushToTalk</c> (CharacterVoiceHandler.cs:267, private; called from Update :241) decided to
 /// send, the local character's recorder is held shut. It clears <c>m_currentlyTransmitting</c> (:56) too, so the
-/// first frame after the palm leaves sees a change and vanilla opens the recorder again (:251-255). Local only: no
+/// first frame after the palm leaves sees a change and vanilla opens the recorder again (:270-274). Local only: no
 /// setting is written and nothing new goes over the network.
 /// </summary>
 [HarmonyPatch]

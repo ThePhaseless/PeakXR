@@ -144,7 +144,7 @@ internal sealed partial class SelfTestRunner
 
     static readonly byte[] PocketSlots = { 0, 1, 2, 250 };
 
-    /// <summary>Hotbar slots and the overflow slot (<c>Player.GetItemSlot</c>, Player.cs:246-259) holding
+    /// <summary>Hotbar slots and the overflow slot (<c>Player.GetItemSlot</c>, Player.cs:250-263) holding
     /// <paramref name="id"/>.</summary>
     static int SlotsHolding(Character c, ushort id)
     {

@@ -58,6 +58,10 @@ public sealed class SandboxFeature : Feature
         // Required: without these the god mode and free camera would silently do nothing.
         FallDamagePatch.CharacterRef = GameMember.Field<CharacterMovement, Character>("character");
         SandboxActions.GodCamRef = GameMember.Field<MainCameraMovement, bool>("isGodCam");
+        SandboxActions.SetStatusesLocked = GameMember.Delegate<System.Action<Character, bool>>(
+            typeof(Character),
+            "set_statusesLocked"
+        );
         Patch(typeof(FallDamagePatch));
 
         // Optional: the window still works without them, it just cannot free the mouse or block game input.

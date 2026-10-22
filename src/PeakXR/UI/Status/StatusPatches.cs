@@ -31,7 +31,7 @@ internal static class StatusHaptics
 }
 
 /// <summary>Campfire morale boost (IN-28, ST-04): the bar animates MORALEBOOST, the hands feel it.
-/// A/Character.cs:1595 <c>public void MoraleBoost(float staminaAdd, int scoutCount)</c> [PunRPC].</summary>
+/// A/Character.cs:1592 <c>public void MoraleBoost(float staminaAdd, int scoutCount)</c> [PunRPC].</summary>
 [HarmonyPatch]
 internal static class MoraleBoostPatch
 {
@@ -46,7 +46,7 @@ internal static class MoraleBoostPatch
 }
 
 /// <summary>Bonus stamina from energy items and mushrooms (IC-48, ST-04): a short tick as the extra bar grows.
-/// A/Character.cs:1630 <c>public void AddExtraStamina(float add)</c>.</summary>
+/// A/Character.cs:1627 <c>public void AddExtraStamina(float add)</c>.</summary>
 [HarmonyPatch]
 internal static class ExtraStaminaPatch
 {

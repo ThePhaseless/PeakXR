@@ -9,9 +9,9 @@ namespace PeakXR.Sandbox;
 
 /// <summary>
 /// Skips fall damage for the local character while god mode is on.
-/// Target: <c>CharacterMovement.CheckFallDamage()</c> (private, no arguments), decomp Assembly-CSharp/CharacterMovement.cs:831,
-/// called from <c>Land()</c> at :821. It is where a landing adds Injury. Skipping it also skips
-/// the "Fall" reaction at :843, which is wanted for a no-damage mode.
+/// Target: <c>CharacterMovement.CheckFallDamage()</c> (private, no arguments), decomp Assembly-CSharp/CharacterMovement.cs:826,
+/// called from <c>Land()</c> at :816. It is where a landing adds Injury. Skipping it also skips
+/// the "Fall" reaction at :838, which is wanted for a no-damage mode.
 /// </summary>
 [HarmonyPatch]
 static class FallDamagePatch
@@ -31,7 +31,7 @@ static class FallDamagePatch
 }
 
 /// <summary>
-/// Lets a sandbox segment jump revisit a segment. <c>JumpToSegmentLogic</c> (decomp Assembly-CSharp/MapHandler.cs:928-937)
+/// Lets a sandbox segment jump revisit a segment. <c>JumpToSegmentLogic</c> (decomp Assembly-CSharp/MapHandler.cs:1044-1053)
 /// calls <c>TrySpawnItems</c> on every spawner of the target segment, its campfire and, when skipping ahead, the
 /// previous segment's campfire. A <c>SingleItemSpawner</c> that already spawned this session has
 /// <c>HasSpawnHistory</c> set by <c>TrackSpawnedItems</c> (Peak/SpawnedItemTracker.cs:106-108) but no saved
@@ -69,7 +69,7 @@ static class RespawnPatch
 
 /// <summary>
 /// While the sandbox window is open the local character gets no input, the way the game's own menus do it.
-/// Target: <c>Character.CanDoInput()</c> (internal, bool), decomp Assembly-CSharp/Character.cs:1714, which feeds
+/// Target: <c>Character.CanDoInput()</c> (internal, bool), decomp Assembly-CSharp/Character.cs:1711, which feeds
 /// <c>character.input.Sample(...)</c> at CharacterMovement.cs:198.
 /// </summary>
 [HarmonyPatch]

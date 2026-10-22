@@ -20,10 +20,10 @@ internal static class CameraPatches
     internal static AccessTools.FieldRef<MainCameraMovement, bool> IsRocketing;
 
     /// <summary>CharacterVoiceHandler._audioListener (CharacterVoiceHandler.cs:20, private), cached from
-    /// MainCamera in Start (CharacterVoiceHandler.cs:143) and used for voice distance (:218).</summary>
+    /// MainCamera in Start (CharacterVoiceHandler.cs:143) and used for voice distance (:237).</summary>
     internal static AccessTools.FieldRef<CharacterVoiceHandler, AudioListener> VoiceListener;
 
-    /// <summary>Character.GetBodypart(BodypartType) (Character.cs:1301, internal).</summary>
+    /// <summary>Character.GetBodypart(BodypartType) (Character.cs:1298, internal).</summary>
     internal static Func<Character, BodypartType, Bodypart> GetBodypart;
 
     public static void Resolve()

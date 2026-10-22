@@ -13,14 +13,14 @@ namespace PeakXR.Interact.Physical;
 /// RPCs are vanilla:
 /// <list type="bullet">
 /// <item>Cook (G3): a cookable held item in the heat column over a lit campfire holds interact on that campfire.
-/// <c>Campfire.Interact</c> starts the cooking visuals (Campfire.cs:300-306) and the hold finishes after
-/// <c>cookTime</c> (Campfire.cs:40, :309-320); pulling the item out releases interact, which is the vanilla
-/// <c>CancelCast</c> (Campfire.cs:328, Interaction.cs:109-112).</item>
+/// <c>Campfire.Interact</c> starts the cooking visuals (Campfire.cs:312-318) and the hold finishes after
+/// <c>cookTime</c> (Campfire.cs:40, :321-332); pulling the item out releases interact, which is the vanilla
+/// <c>CancelCast</c> (Campfire.cs:340, Interaction.cs:109-112).</item>
 /// <item>Light (G6): a lit held flame touched to a scout cannon fuse (ScoutCannonFuse.cs:99), rocket fuse
-/// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:322; its own solid colliders, or the
+/// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:334; its own solid colliders, or the
 /// zone over its fire base) holds interact on it.</item>
 /// <item>Warm hands (G10): open palms toward a lit campfire give a slow warm pulse; cold (status Cold) a faint
-/// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:225).</item>
+/// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:237).</item>
 /// </list>
 /// </summary>
 internal static class FireGestures
@@ -113,7 +113,7 @@ internal static class FireGestures
 
     /// <summary>
     /// Any hold on an unlit campfire, by flame or bare grip (WS-W11): with a living scout outside
-    /// <c>moraleBoostRadius</c> the hold ends in nothing (Campfire.cs:315-326), so it is refused as it starts.
+    /// <c>moraleBoostRadius</c> the hold ends in nothing (Campfire.cs:327-338), so it is refused as it starts.
     /// </summary>
     private static void UpdateFriendsFar()
     {
@@ -164,7 +164,7 @@ internal static class FireGestures
             CookMinUp,
             CookMaxUp
         );
-        // Vanilla: a lit campfire takes interact only while the held item can be cooked (Campfire.cs:341-356).
+        // Vanilla: a lit campfire takes interact only while the held item can be cooked (Campfire.cs:353-368).
         if (!Cook.Update(distance, dt) || !fire.IsInteractible(c))
         {
             // Outside the column: a faint ramp that firms up toward it, to find the heat by feel.
@@ -187,7 +187,7 @@ internal static class FireGestures
 
     /// <summary>
     /// Something held in the heat column that will not cook there (WS-W12): food over an unlit fire (NotLit) or a
-    /// spent one (UsedUp), the fire red; anything else over a lit fire (CantUse, Campfire.cs:341-356), the item red.
+    /// spent one (UsedUp), the fire red; anything else over a lit fire (CantUse, Campfire.cs:353-368), the item red.
     /// A held light is skipped: over an unlit fire it is the light gesture. Refused once the item has dwelt there,
     /// then the red ring stays while it does.
     /// </summary>
@@ -371,7 +371,7 @@ internal static class FireGestures
 
     /// <summary>
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it
-    /// (Campfire.cs:322, EveryoneInRange :375-386, distances from the fire to <c>Center</c> :364); otherwise the
+    /// (Campfire.cs:334, EveryoneInRange :387-398, distances from the fire to <c>Center</c> :376); otherwise the
     /// whole hold ends in nothing. The logs turn red. The farthest missing friend gets the teal ring, joined to the
     /// fire, if in sight; out of sight, the ring sits a hand's length from the hand in their direction. Every other
     /// missing friend in sight gets a teal ring of their own.

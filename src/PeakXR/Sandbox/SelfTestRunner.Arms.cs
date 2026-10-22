@@ -65,7 +65,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool idle = VRInput.TestOverride == IdleHands;
-        // The beach spawn ragdolls the body (Fall(7f), Character.cs:2039) and the arms only take the tracked hands
+        // The beach spawn ragdolls the body (Fall(7f), Character.cs:2035) and the arms only take the tracked hands
         // once the body is up again.
         float waitStart = Now;
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
@@ -133,7 +133,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// <c>vr.33-ragdoll-arms</c>: a 2 s fall sent the way <c>Character.Fall</c> does (<c>RPCA_Fall</c>, decomp
-    /// Assembly-CSharp/Character.cs:1735, :1752). While the game ragdolls the body its arm joints keep chasing the
+    /// Assembly-CSharp/Character.cs:1732, :1749). While the game ragdolls the body its arm joints keep chasing the
     /// animated pose, so tracked IK must let go: <see cref="AvatarPoseDriver.ArmWeight"/> reaches 0 within 1 s, the
     /// ragdoll hands stay within <see cref="MaxRagdollHandFromChest"/> of the chest, the tracked hand targets stay
     /// within <see cref="MaxHandTargetFromHip"/> of the hip even when the view detaches, and the arms are tracked

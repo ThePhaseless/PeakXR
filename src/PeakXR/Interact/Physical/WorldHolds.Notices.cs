@@ -17,7 +17,7 @@ namespace PeakXR.Interact.Physical;
 /// <item>Scout cannon (WS-C1): from the light to the shot (<c>fireTime</c>, ScoutCannon.cs:170-182) a rising
 /// progress ramp on both hands of anyone within 4 m; standing by it unlaunched when it fires gets the notice at
 /// the barrel's entry.</item>
-/// <item>Checkpoint flag (WS-D6): a death the flag saved (Character.TryCheckpoint, Character.cs:644) gets the notice
+/// <item>Checkpoint flag (WS-D6): a death the flag saved (Character.TryCheckpoint, Character.cs:641) gets the notice
 /// at the flag once the warp has landed.</item>
 /// <item>Summit flare (WS-R12): the helicopter summoned by your held flare (Flare.TriggerHelicopter, Flare.cs:43)
 /// gets the notice at the flare; the last 10 s of the summit countdown tick on the wrist hand.</item>
@@ -121,7 +121,7 @@ internal static partial class WorldHolds
         }
     }
 
-    /// <summary>Character.TryCheckpoint (Character.cs:644): the prefix notes the flag (WillDoCheckpoint, :626) before
+    /// <summary>Character.TryCheckpoint (Character.cs:641): the prefix notes the flag (WillDoCheckpoint, :623) before
     /// it is destroyed; the postfix schedules the notice when it saved the local player.</summary>
     [HarmonyPatch]
     internal static class CheckpointUsed

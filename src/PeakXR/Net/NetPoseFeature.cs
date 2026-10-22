@@ -12,8 +12,8 @@ namespace PeakXR.Net;
 /// and are never targeted by the event. What vanilla does see (head direction via <c>lookValues</c>)
 /// is owned by <c>player.look</c>.
 /// No Harmony patches: everything goes through public Photon callbacks and public game members
-/// (Character.AllCharacters Character.cs:128, Character.localCharacter :118, data.lookValues
-/// CharacterData.cs:77, refs.hip Character.cs:41 + Bodypart.Rig Bodypart.cs:72, and the ragdoll
+/// (Character.AllCharacters Character.cs:131, Character.localCharacter :121, data.lookValues
+/// CharacterData.cs:78, refs.hip Character.cs:42 + Bodypart.Rig Bodypart.cs:72, and the ragdoll
 /// state fields passedOut/fullyPassedOut :18-20, fallSeconds :230, isCarried :265, dead :335).
 /// </summary>
 public sealed class NetPoseFeature : Feature

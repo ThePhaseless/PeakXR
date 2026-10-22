@@ -351,7 +351,7 @@ internal static partial class WorldHolds
     }
 
     /// <summary>
-    /// Campfire.GetInteractionText (Campfire.cs:260-275): an unlit fire with friends away lists every missing name and
+    /// Campfire.GetInteractionText (Campfire.cs:272-287): an unlit fire with friends away lists every missing name and
     /// distance. In VR that list is opt-in text (<c>UI.ActionHintText</c>); the refusal cue shows who is missing.
     /// </summary>
     [HarmonyPatch]

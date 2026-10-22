@@ -138,7 +138,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// use.(warp compass): hold primary use. <c>Action_WarpToBiome.RunAction</c> (Action_WarpToBiome.cs:8-11, fired
     /// on press, hold, cast end, release or cancel, ItemAction.cs:33-57) RPCs <c>RPC_Warp</c>, which on the master
-    /// jumps to <c>segmentToWarpTo</c> through <c>MapHandler.JumpToSegment</c> (:31-33, MapHandler.cs:805). Passes
+    /// jumps to <c>segmentToWarpTo</c> through <c>MapHandler.JumpToSegment</c> (:31-33, MapHandler.cs:921). Passes
     /// when the current segment is the target and the body moved; the loop's 06-segment step then checks the landing.
     /// </summary>
     IEnumerator WarpUse(Item item, Segment target)

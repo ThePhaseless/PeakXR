@@ -5,7 +5,7 @@ namespace PeakXR.Voice;
 
 /// <summary>
 /// Selects the headset microphone once per session through the game's own setting (MicrophoneSetting.cs:97
-/// <c>SetValue</c>, which saves it); CharacterVoiceHandler.cs:239-244 then hands the new device to the
+/// <c>SetValue</c>, which saves it); CharacterVoiceHandler.cs:258-263 then hands the new device to the
 /// recorder. Retries for a while because the HMD's audio device can appear after the game starts.
 /// </summary>
 internal sealed class HeadsetMic

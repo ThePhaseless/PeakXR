@@ -265,7 +265,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// The game's Peak warp target, <c>MapHandler.respawnThePeak</c> (MapHandler.cs:101, used only by the debug
-    /// <c>JumpToSegmentLogic</c>, :958), sat over no ground in vr24 and vr25: (0.3, 826.8, 1699.0), behind TheKiln's
+    /// <c>JumpToSegmentLogic</c>, :1074), sat over no ground in vr24 and vr25: (0.3, 826.8, 1699.0), behind TheKiln's
     /// camp (z 1979), where the body fell for 10 s through 430 m of void. The game itself counts the Peak from its
     /// last progress point on (<c>IsAtPeak</c>: z past <c>progressPoints.Last()</c>, MountainProgressHandler.cs:198-205),
     /// so when the warp target has no ground within a short drop, this stands the player on the ground under that
@@ -278,7 +278,7 @@ internal sealed partial class SelfTestRunner
         if (c == null || map == null || map.respawnThePeak == null)
             yield break;
         var respawn = map.respawnThePeak.position;
-        // A spawn drops the body a few metres at most (base camp spawns sit 6-7 m up, CharacterSpawner.cs:64).
+        // A spawn drops the body a few metres at most (base camp spawns sit 6-7 m up, CharacterSpawner.cs:65).
         if (GroundBelow(respawn, 20f) >= 0f)
             yield break;
         var progress = Singleton<MountainProgressHandler>.Instance;

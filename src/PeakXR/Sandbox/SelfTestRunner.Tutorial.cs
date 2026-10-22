@@ -70,7 +70,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
     }
 
-    /// <summary>vr.30: the title's settings (MainMenuMainPage.cs:215), the VR tab on its VR Guide page (the demo list
+    /// <summary>vr.30: the title's settings (MainMenuMainPage.cs:218), the VR tab on its VR Guide page (the demo list
     /// opened in the single-column fallback), and the Grab and Climb demos each played for a loop beside their row
     /// with their cue sounds.</summary>
     IEnumerator GuideStep()
@@ -265,7 +265,7 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>The title's settings page (MainMenuMainPage.cs:215) on the VR tab, in its normal view.</summary>
+    /// <summary>The title's settings page (MainMenuMainPage.cs:218) on the VR tab, in its normal view.</summary>
     IEnumerator OpenTitleGuide()
     {
         var handler = FindAnyObjectByType<MainMenuPageHandler>();

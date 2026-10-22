@@ -72,7 +72,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.80: a bare-hand grip on an unlit campfire's logs with a scout outside <c>moraleBoostRadius</c>
-    /// (Campfire.cs:315-326, EveryoneInRange :375-386) is refused (FriendsFar, logs red) and the fire stays unlit.
+    /// (Campfire.cs:327-338, EveryoneInRange :387-398) is refused (FriendsFar, logs red) and the fire stays unlit.
     /// Solo, the radius is shrunk for the step so the player counts as the one away.
     /// </summary>
     IEnumerator CampfireFarStep()
@@ -113,8 +113,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// The nearest campfire a step can use unlit: an unlit one, else a lit one set back to unlit locally
-    /// (<c>Campfire.state</c>, Campfire.cs:97-108; its flames stay drawn). vr.26 lights the beach's own fire and every
-    /// segment jump lights the one behind it (<c>PreviousCampfire.LightWithoutReveal</c>, MapHandler.cs:811), so a
+    /// (<c>Campfire.state</c>, Campfire.cs:105-116; its flames stay drawn). vr.26 lights the beach's own fire and every
+    /// segment jump lights the one behind it (<c>PreviousCampfire.LightWithoutReveal</c>, MapHandler.cs:927), so a
     /// run otherwise has no unlit fire left. Restore with <see cref="RestoreFire"/>.
     /// </summary>
     static Campfire UnlitCampfire(
@@ -129,7 +129,7 @@ internal sealed partial class SelfTestRunner
         was = fire != null ? (fire.state, fire.forceLit) : (Campfire.FireState.Off, false);
         if (fire != null)
         {
-            // Lit is state Lit or forceLit (Campfire.cs:112-122): clear both (vr40 still cooked on a reset fire).
+            // Lit is state Lit or forceLit (Campfire.cs:120-130): clear both (vr40 still cooked on a reset fire).
             fire.state = Campfire.FireState.Off;
             fire.forceLit = false;
         }
@@ -247,8 +247,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.83: an item that cannot cook (<c>ItemCooking.canBeCooked</c> false) held in the heat column of a
-    /// lit campfire is refused with CantUse, the item red (Campfire.cs:341-356). Lights the fire without the segment
-    /// advance first when needed (<c>LightWithoutReveal</c>, Campfire.cs:456).</summary>
+    /// lit campfire is refused with CantUse, the item red (Campfire.cs:353-368). Lights the fire without the segment
+    /// advance first when needed (<c>LightWithoutReveal</c>, Campfire.cs:468).</summary>
     IEnumerator CookCantUseStep()
     {
         var c = Character.localCharacter;
@@ -352,7 +352,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.84 / vr.84b: the Book of Bones held open just above a skeleton's hips (a local <c>Resources/Skeleton</c>,
-    /// as Character.cs:778 spawns one, with no owner so a finished hold revives nobody) starts the game's revive hold
+    /// as Character.cs:775 spawns one, with no owner so a finished hold revives nobody) starts the game's revive hold
     /// (<c>Skelleton.GetInteractTime</c>, Skelleton.cs:113) with the progress ramp on the book hand. With no uses left
     /// (Skelleton.cs:45-55) it is refused with UsedUp, the book red.
     /// </summary>
@@ -633,7 +633,7 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.94: a scout effigy held with nobody down (Character.PlayerIsDeadOrDown, Character.cs:1979) stays
+    /// <summary>vr.94: a scout effigy held with nobody down (Character.PlayerIsDeadOrDown, Character.cs:1975) stays
     /// unusable (ScoutEffigy.cs:8-21, guarded against Constructable.Update's overwrite): the trigger gets NotInTrouble
     /// ("nobody is down", UseDenial.Other) with the effigy red, and the effigy stays in the hand.</summary>
     IEnumerator EffigyStep()
@@ -895,7 +895,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.92: a checkpoint flag planted by the hand-aimed use (CheckpointConstructable, CheckpointFlag.Initialize
-    /// :25-41) and then used (<c>Character.TryCheckpoint</c>, Character.cs:644, the call a death makes at :600) gives
+    /// :25-41) and then used (<c>Character.TryCheckpoint</c>, Character.cs:641, the call a death makes at :597) gives
     /// the notice at the flag after the warp. The death itself is not staged: DeathSteps owns that.
     /// </summary>
     IEnumerator CheckpointStep()
@@ -1196,8 +1196,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.85: a bare-hand grip on the next unlit campfire with everyone in range lights it for real
-    /// (Campfire.cs:315-326 <c>Light_Rpc(true)</c>, :461-488): the segment advances (<c>MapHandler.GoToSegment</c>,
-    /// MapHandler.cs:578) under ui.runflow's fade, and no refusal cue fires.
+    /// (Campfire.cs:327-338 <c>Light_Rpc(true)</c>, :473-508): the segment advances (<c>MapHandler.GoToSegment</c>,
+    /// MapHandler.cs:680) under ui.runflow's fade, and no refusal cue fires.
     /// </summary>
     IEnumerator CampfireSegmentStep()
     {
@@ -1567,7 +1567,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.86: the run won (<c>RPCEndGame_ForceWin</c>, Character.cs:885) plays the end cutscene, then the end screen
+    /// vr.86: the run won (<c>RPCEndGame_ForceWin</c>, Character.cs:882) plays the end cutscene, then the end screen
     /// (EndScreen.cs:293-354). Next pressed by the laser (:286) starts the credits; a press in their first 20 s gets
     /// TooSoon, the moment skipping works both hands get a contact tick, and the next press returns to the airport
     /// (PeakHandler.cs:223-257). Last step of the run.
@@ -1673,7 +1673,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Warps onto the ground <paramref name="distance"/> from <paramref name="target"/> on the side the player
     /// came from, centre over the spot (<see cref="CentreOver"/>, the warp moves the body's centre,
-    /// Character.cs:1905-1911), facing it. Sets <see cref="warpedForProp"/>.</summary>
+    /// Character.cs:1904-1910), facing it. Sets <see cref="warpedForProp"/>.</summary>
     IEnumerator WarpBeside(Vector3 target, float distance, Vector3 side = default)
     {
         var c = Character.localCharacter;

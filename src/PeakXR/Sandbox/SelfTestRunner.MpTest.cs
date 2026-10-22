@@ -424,7 +424,7 @@ internal sealed partial class SelfTestRunner
     /// Join by id the way the game does: <c>SteamLobbyHandler.TryJoinLobby</c> (SteamLobbyHandler.cs:374) requests the
     /// lobby data, compares <c>PeakVersion</c> (:306, :332-349, mismatch modal otherwise), joins (:357, :107), asks the
     /// host for the Photon room over lobby chat (:169, :246, :279-281), and NetworkConnector joins it
-    /// (NetworkConnector.cs:155-167). Then it checks the version, the lobby and that the master is the host.
+    /// (NetworkConnector.cs:158-170). Then it checks the version, the lobby and that the master is the host.
     /// </summary>
     IEnumerator MpJoin()
     {
@@ -871,8 +871,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Food held at the host's head: interact.social's feed (Social/SocialHands.cs UpdateFeed) holds use-secondary, the
-    /// game's feed path runs (Item.SendFeedDataRPC, Item.cs:996; Character.FeedItem, Character.cs:1640 ->
-    /// GetFedItemRPC :1646 on the host, who needs to do nothing).
+    /// game's feed path runs (Item.SendFeedDataRPC, Item.cs:996; Character.FeedItem, Character.cs:1637 ->
+    /// GetFedItemRPC :1643 on the host, who needs to do nothing).
     /// </summary>
     IEnumerator Feed()
     {
@@ -1104,7 +1104,7 @@ internal sealed partial class SelfTestRunner
 
     // ---------------------------------------------------------------- world queries
 
-    /// <summary>The other player: the first non-bot remote character (Character.cs:128 AllCharacters).</summary>
+    /// <summary>The other player: the first non-bot remote character (Character.cs:131 AllCharacters).</summary>
     static Character Host()
     {
         foreach (var c in Character.AllCharacters)
@@ -1308,7 +1308,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The game's own wake for a character we own: statuses cleared, then the revive RPC
-    /// (RPCA_ReviveAtPosition, Character.cs:1802) where it lies.</summary>
+    /// (RPCA_ReviveAtPosition, Character.cs:1799) where it lies.</summary>
     static void Wake(Character c)
     {
         if (c == null || !(c.data.passedOut || c.data.dead))
@@ -1701,7 +1701,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// campfire-far (Campfire.cs:315-326, EveryoneInRange :375-386): A grips an unlit campfire within reach while the
+    /// campfire-far (Campfire.cs:327-338, EveryoneInRange :387-398): A grips an unlit campfire within reach while the
     /// host stays outside its <c>moraleBoostRadius</c>: FriendsFar with the logs red (interact.items), the fire stays
     /// unlit and B sees no Light_Rpc. SKIP when no unlit fire is within walking range.
     /// </summary>

@@ -234,8 +234,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     }
 
     /// <summary>
-    /// The Play Solo button: MainMenu.cs:43 wires it to <c>PlaySoloClicked</c> -> <c>StartSoloSession</c> (:131),
-    /// which goes offline (<c>DisconnectForOfflineMode</c>, :137) and loads "Airport" (:154).
+    /// The Play Solo button: MainMenu.cs:45 wires it to <c>PlaySoloClicked</c> -> <c>StartSoloSession</c> (:133),
+    /// which goes offline (<c>DisconnectForOfflineMode</c>, :139) and loads "Airport" (:156).
     /// </summary>
     IEnumerator Airport()
     {
@@ -600,7 +600,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         || Comfort.ComfortEventsRuntime.HazeAlpha > ComfortPolicy.MaxWashAlpha + 0.001f;
 
     /// <summary>
-    /// vr.34: BLIND (Character.illegalStatusAction, Character.cs:186, handled by IllegalScreenEffect.AddStatus
+    /// vr.34: BLIND (Character.illegalStatusAction, Character.cs:189, handled by IllegalScreenEffect.AddStatus
     /// IllegalScreenEffect.cs:65) reads as blindness without washing the view out: the game's white quad is not
     /// drawn and the haze that replaces it peaks above zero but at most at the cap.
     /// </summary>
@@ -661,7 +661,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         Recover();
         var now = Singleton<MapHandler>.Instance.GetCurrentSegment();
         // The game keeps the Peak in TheKiln's segment slot: JumpToSegmentLogic drops the index by one for Peak
-        // (MapHandler.cs:889-892) and warps to respawnThePeak (MapHandler.cs:958), so GetCurrentSegment says TheKiln.
+        // (MapHandler.cs:1005-1008) and warps to respawnThePeak (MapHandler.cs:1074), so GetCurrentSegment says TheKiln.
         var expected = segment == Segment.Peak ? Segment.TheKiln : segment;
         if (now != expected)
             Fail("in " + now + " after the jump");
@@ -1087,7 +1087,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     {
         if (!GUIManager.InPauseMenu)
             return;
-        // The game's own close (PauseMenuHandler.cs:58).
+        // The game's own close (PauseMenuHandler.cs:59).
         var handler = FindAnyObjectByType<PauseMenuHandler>();
         if (handler != null)
             handler.gameObject.SetActive(false);

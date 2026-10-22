@@ -79,7 +79,7 @@ internal static class ToolPatches
             );
     }
 
-    /// <summary>CharacterMovement.ApplyGlider (CharacterMovement.cs:373, public, called from Glider.FixedUpdate,
+    /// <summary>CharacterMovement.ApplyGlider (CharacterMovement.cs:374, public, called from Glider.FixedUpdate,
     /// Glider.cs:72-76): pushes every ragdoll part along the flattened hip forward with soarForwardForce
     /// (CharacterMovement.cs:380-388). The postfix adds the difference to the hand heading, so the net push follows
     /// the arms. Local physics only; nothing synced changes and the camera is never touched.</summary>

@@ -29,7 +29,7 @@ internal static class KillLoadingScreenPatch
 }
 
 /// <summary>Learns where a load is heading, so a black or white loading screen gets a room that fits the
-/// destination. Callers build this process as a Load argument (A/AirportCheckInKiosk.cs:158, A/GameHandler.cs:319,
+/// destination. Callers build this process as a Load argument (A/AirportCheckInKiosk.cs:158, A/GameHandler.cs:375,
 /// A/EndScreen.cs:718), so it runs just before the loading screen appears.
 /// A/LoadingScreenHandler.cs:132 <c>public IEnumerator LoadSceneProcess(string sceneName, bool networked,
 /// bool yieldForCharacterSpawn = false, float extraYieldTimeOnEnd = 3f)</c>.</summary>

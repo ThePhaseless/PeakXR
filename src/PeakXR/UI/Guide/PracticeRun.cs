@@ -101,7 +101,7 @@ internal sealed class PracticeRun : MonoBehaviour
                 );
                 return false;
             }
-            // The Play Solo button (MainMenu.cs:43 -> StartSoloSession, :131): offline mode, then the Airport.
+            // The Play Solo button (MainMenu.cs:45 -> StartSoloSession, :133): offline mode, then the Airport.
             // StartSoloSession sets EnteringRoom and starts the load at once; without that, nothing is coming.
             menu.playSoloButton.onClick.Invoke();
             if (!NetworkingUtilities.EnteringRoom && !LoadingScreenHandler.loading)
@@ -238,9 +238,9 @@ internal sealed class PracticeRun : MonoBehaviour
         }
     }
 
-    /// <summary>The pause menu's own quit (PauseMenuMainPage.cs:199): disconnecting state, then leave the room, which
-    /// loads the title (NetworkConnector.cs:217). comfort.events fades that cut. Outside a room (a load that broke half
-    /// way) the title loads directly, as the game's own error paths do (NetworkConnector.cs:260).</summary>
+    /// <summary>The pause menu's own quit (PauseMenuMainPage.cs:206): disconnecting state, then leave the room, which
+    /// loads the title (NetworkConnector.cs:220). comfort.events fades that cut. Outside a room (a load that broke half
+    /// way) the title loads directly, as the game's own error paths do (NetworkConnector.cs:263).</summary>
     private void Leave()
     {
         if (!leaving)
@@ -285,7 +285,7 @@ internal sealed class PracticeRun : MonoBehaviour
     {
         if (!GUIManager.InPauseMenu)
             return;
-        // The game's own close (PauseMenuHandler.cs:58).
+        // The game's own close (PauseMenuHandler.cs:59).
         var handler = FindAnyObjectByType<PauseMenuHandler>();
         if (handler != null)
             handler.gameObject.SetActive(false);

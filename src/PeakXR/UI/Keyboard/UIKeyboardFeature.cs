@@ -82,7 +82,7 @@ public sealed class UIKeyboardFeature : Feature
 /// <summary>
 /// Steam's gamepad text dialog (Big Picture, Steam Deck; a no-op on desktop) cannot be seen in a headset. In VR
 /// the keyboard takes its place and answers the game's callback with Succeeded or Aborted. Callers:
-/// A/MainMenuJoinRoomPage.cs:117, A/Portningsbolaget/ReportPlayerPopup.cs:204,
+/// A/MainMenuJoinRoomPage.cs:131, A/Portningsbolaget/ReportPlayerPopup.cs:216,
 /// A/Portningsbolaget/ReportPlayerReasonField.cs:47. Target: SteamCommon.dll
 /// <c>SteamRuntimeManager.OpenDialog(string title, DialogType dialogType, Action&lt;string, DialogueResult&gt; onDone)</c>.
 /// Skipped (logged) when the platform layer is not Steam's.
@@ -122,7 +122,7 @@ internal static class PlatformDialogPatch
         return !VRKeyboard.TryOpenDialog(title, limit, (text, ok) => Answer(callback, text, ok));
     }
 
-    /// <summary>The join page caps its field at the room code length (A/MainMenuJoinRoomPage.cs:32), the same
+    /// <summary>The join page caps its field at the room code length (A/MainMenuJoinRoomPage.cs:40), the same
     /// cap Steam's dialog uses.</summary>
     private static int JoinCodeLength()
     {

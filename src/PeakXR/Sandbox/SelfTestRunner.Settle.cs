@@ -39,13 +39,13 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Releases grips, triggers, sticks and the scripted use; ends any wall, rope, vine or piton climb; warps back
-    /// to the segment's home spot when the body strayed from it (the game's <c>WarpPlayerRPC</c>, Character.cs:1822,
-    /// whose <c>WarpPlayer</c> also stops climbing, :1851); then waits until the body is grounded
-    /// (<c>CharacterData.isGrounded</c>, CharacterData.cs:58), not sprinting (:87) and at rest (<see cref="AtRest"/>)
+    /// to the segment's home spot when the body strayed from it (the game's <c>WarpPlayerRPC</c>, Character.cs:1824,
+    /// whose <c>WarpPlayer</c> also stops climbing, :1853); then waits until the body is grounded
+    /// (<c>CharacterData.isGrounded</c>, CharacterData.cs:59), not sprinting (:88) and at rest (<see cref="AtRest"/>)
     /// for <see cref="SettleHold"/>, and recentres the rig. Without a home spot yet,
     /// the spot the body settles on becomes it when flat and open; otherwise the segment's base camp spawn
     /// (<c>MapHandler.CurrentBaseCampSpawnPoint</c>, MapHandler.cs:231, the target of the game's own segment jump,
-    /// :960) is tried. A body that never settles fails the step with "not settled".
+    /// :1076) is tried. A body that never settles fails the step with "not settled".
     /// </summary>
     IEnumerator Settle()
     {
@@ -120,8 +120,8 @@ internal sealed partial class SelfTestRunner
     /// A normal living body before every step (run 33: ui.05's Cold was refused by a body left a skeleton, whose
     /// statuses only take Injury, Curse, Petrify, FlyTrap and Web, CharacterAfflictions.cs:685-692, :722-727). Dead
     /// or passed out: the game's revive (<see cref="SandboxActions.Revive"/>). A skeleton: the game's own
-    /// <c>CharacterData.SetSkeleton(false)</c> (CharacterData.cs:688, as a skeleton's death does, Character.cs:754).
-    /// Statuses and afflictions (an invincibility one refuses statuses too, :745): cleared. A local zombie body has no
+    /// <c>CharacterData.SetSkeleton(false)</c> (CharacterData.cs:699, as a skeleton's death does, Character.cs:751).
+    /// Statuses and afflictions (an invincibility one refuses statuses too, :742): cleared. A local zombie body has no
     /// game path back, so the step fails. The note says what was restored.
     /// </summary>
     IEnumerator RestoreBody(Character c)
@@ -161,7 +161,7 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>CharacterData.isInvincible (internal) as RecalculateInvincibility sets it (CharacterData.cs:541-555).</summary>
+    /// <summary>CharacterData.isInvincible (internal) as RecalculateInvincibility sets it (CharacterData.cs:542-556).</summary>
     static bool Invincible(Character c) =>
         c.refs.afflictions.HasAfflictionType(
             Peak.Afflictions.Affliction.AfflictionType.BingBongShield,
@@ -352,7 +352,7 @@ internal sealed partial class SelfTestRunner
         return null;
     }
 
-    /// <summary>The game's warp (as its own segment jump sends it, MapHandler.cs:971), then its end.</summary>
+    /// <summary>The game's warp (as its own segment jump sends it, MapHandler.cs:1094), then its end.</summary>
     static IEnumerator SettleWarp(Character c, Vector3 to)
     {
         c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, to + Vector3.up * 0.1f, false);

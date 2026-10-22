@@ -13,6 +13,12 @@ command -v ilspycmd >/dev/null || die "ilspycmd not on PATH; run through 'mise r
 MANAGED="$(find "$PEAK_DIR" -mindepth 2 -maxdepth 2 -type d -path '*_Data/Managed' -print -quit)"
 [[ -n "$MANAGED" ]] || die "no *_Data/Managed under $PEAK_DIR"
 
+# Keep the previous game version's decompile as the compat-check baseline (body and signature diffs).
+old_version="$(grep -oP '^game_version=\K.*' "$OUT/VERSION" 2>/dev/null || echo unknown)"
+if [[ -d "$OUT/Assembly-CSharp" && "$old_version" != "$(head -n1 "$PEAK_DIR/version.txt" 2>/dev/null)" ]]; then
+    rm -rf "${OUT:?}.prev"
+    cp -a "$OUT" "$OUT.prev"
+fi
 mkdir -p "$OUT"
 shopt -s nullglob
 targets=("$MANAGED"/Assembly-CSharp.dll "$MANAGED"/Assembly-CSharp-firstpass.dll "$MANAGED"/Zorro.*.dll)

@@ -229,7 +229,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     // ---- events reported by the patches ----
 
-    /// <summary>Character.WarpPlayer on the local character (Character.cs:1847).</summary>
+    /// <summary>Character.WarpPlayer on the local character (Character.cs:1849).</summary>
     public static void OnLocalWarp(Character character, Vector3 target)
     {
         if (instance == null || !VRSession.Active || !instance.cfg.FadeOnWarp.Value)
@@ -242,7 +242,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         Request(instance.warp, snap: true);
     }
 
-    /// <summary>MapHandler.GoToSegment advancing (MapHandler.cs:578-582).</summary>
+    /// <summary>MapHandler.GoToSegment advancing (MapHandler.cs:680-684).</summary>
     public static void OnSegmentAdvance()
     {
         if (instance == null || !VRSession.Active || !instance.cfg.FadeOnSegmentChange.Value)
@@ -252,14 +252,14 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         instance.segmentArmedAt = Time.unscaledTime;
     }
 
-    /// <summary>MountainProgressHandler.SetSegmentComplete, the title-card trigger (MapHandler.cs:707).</summary>
+    /// <summary>MountainProgressHandler.SetSegmentComplete, the title-card trigger (MapHandler.cs:830).</summary>
     public static void OnSegmentTitle()
     {
         if (instance != null)
             instance.segmentBusy = false;
     }
 
-    /// <summary>Character.RPCEndGame (Character.cs:893), before windows close and the mode switches.</summary>
+    /// <summary>Character.RPCEndGame (Character.cs:890), before windows close and the mode switches.</summary>
     public static void OnRunEnd()
     {
         if (instance == null || !VRSession.Active || !instance.cfg.FadeOnRunEnd.Value)
@@ -286,7 +286,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         Request(instance.credits, snap: false);
     }
 
-    /// <summary>Character.StartPassedOutOnTheBeach (Character.cs:2034) in Fade mode: hold black once loading ends.</summary>
+    /// <summary>Character.StartPassedOutOnTheBeach (Character.cs:2030) in Fade mode: hold black once loading ends.</summary>
     public static void OnBeachWakeup(Character character)
     {
         if (instance == null || !VRSession.Active)
@@ -381,7 +381,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
             return;
         }
         // Same exit condition as OrbFogHandler.WaitForFogCatchUp (OrbFogHandler.cs:148); the swap
-        // follows 1 s later (MapHandler.cs:595), enough for the fade-out.
+        // follows 1 s later (MapHandler.cs:711), enough for the fade-out.
         if (fog != null && fog.currentSize > 30f && fog.isMoving && !fog.hasArrived)
             return;
         segmentArmed = false;
@@ -528,7 +528,7 @@ internal sealed class RunFlowRuntime : MonoBehaviour
         return gui == null || gui.endScreen == null || !gui.endScreen.isOpen;
     }
 
-    /// <summary>Character lies on the sand: passedOutOnTheBeach (3 s) and the Fall(7) ragdoll (Character.cs:2038-2039).</summary>
+    /// <summary>Character lies on the sand: passedOutOnTheBeach (3 s) and the Fall(7) ragdoll (Character.cs:2034-2035).</summary>
     private bool BeachFalling() =>
         beachCharacter != null
         && (beachCharacter.data.passedOutOnTheBeach > 0f || beachCharacter.data.fallSeconds > 0f);

@@ -21,7 +21,7 @@ internal static class BodyFeedback
     /// <summary>Take-off tick: light, both hands, like the push of the feet.</summary>
     private const float TakeOffAmplitude = 0.35f;
 
-    /// <summary>A pal jump's boost (CharacterMovement.cs:631) is the strong version.</summary>
+    /// <summary>A pal jump's boost (CharacterMovement.cs:625) is the strong version.</summary>
     private const float BoostAmplitude = 0.75f;
 
     private const float CrouchAmplitude = 0.15f;
@@ -84,7 +84,7 @@ internal static class BodyFeedback
     /// <summary>Air jumps (double-jump amulet charges) spent (self-test).</summary>
     internal static int AirJumps { get; private set; }
 
-    /// <summary>The game's fall damage time (CharacterMovement.cs:126), 1.5 s in this build.</summary>
+    /// <summary>The game's fall damage time (CharacterMovement.cs:128), 1.5 s in this build.</summary>
     internal static float FallDamageTime(Character c) =>
         fallDamageTime != null && c.refs.movement != null ? fallDamageTime(c.refs.movement) : 1.5f;
 
@@ -183,7 +183,7 @@ internal static class BodyFeedback
             refusedFrame = -10;
         }
 
-        // F3a: the status sum is over the top and passOutValue climbs to 1 over 5 s (Character.cs:1043-1063).
+        // F3a: the status sum is over the top and passOutValue climbs to 1 over 5 s (Character.cs:1040-1060).
         bool rising = d.passOutValue > lastPassOut;
         lastPassOut = d.passOutValue;
         if (rising && d.passOutValue > 0.02f)
@@ -192,7 +192,7 @@ internal static class BodyFeedback
             Affordance.Danger(false, c.Center, d.passOutValue);
         }
 
-        // A11: falling long enough to get hurt (CharacterMovement.cs:830-880): danger builds before the damage.
+        // A11: falling long enough to get hurt (CharacterMovement.cs:825-875): danger builds before the damage.
         if (!d.isGrounded && !d.isClimbingAnything && c.refs.movement != null)
         {
             float u = BodyCues.FallUrgency(c.refs.movement.FallTime(), FallDamageTime(c));
@@ -203,7 +203,7 @@ internal static class BodyFeedback
             }
         }
 
-        // A12: ground steeper than the game's max angle resets sinceFallSlide (CharacterMovement.cs:906-919), but
+        // A12: ground steeper than the game's max angle resets sinceFallSlide (CharacterMovement.cs:901-914), but
         // so does a steep edge under feet that stand (run 34: a beach lip during vr.63). Only a real slide (off the
         // ground, moving down, for 0.2 s) slips the feet, once.
         if (
@@ -382,7 +382,7 @@ internal static class BodyFeedback
     }
 
     /// <summary>
-    /// CharacterMovement.TryToJump (CharacterMovement.cs:415, private): a press the game turns down (past the 0.2 s
+    /// CharacterMovement.TryToJump (CharacterMovement.cs:409, private): a press the game turns down (past the 0.2 s
     /// coyote time, within 0.3 s of the last jump) sends no JumpRpc. That refusal gets TooSoon at the feet (next
     /// frame, in <see cref="Tick"/>), so
     /// mashing jump in the air feels different from a jump. Climbing, a handle, struggling, passed out, a jetpack
@@ -416,7 +416,7 @@ internal static class BodyFeedback
         }
     }
 
-    /// <summary>CharacterMovement.JumpRpc(bool) (CharacterMovement.cs:626, [PunRPC], runs at once on the sender):
+    /// <summary>CharacterMovement.JumpRpc(bool) (CharacterMovement.cs:620, [PunRPC], runs at once on the sender):
     /// the local body takes off; a pal jump boost is the strong tick.</summary>
     [HarmonyPatch]
     internal static class TakeOff
@@ -424,7 +424,7 @@ internal static class BodyFeedback
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterMovement), "JumpRpc", new[] { typeof(bool) });
 
-        // JumpRpc spends a ground jump first, then an amulet charge (CharacterMovement.cs:640-650).
+        // JumpRpc spends a ground jump first, then an amulet charge (CharacterMovement.cs:634-644).
         private static void Prefix(CharacterMovement __instance, out bool __state) =>
             __state =
                 Mine(__instance, out var c) && c.data.jumpsRemaining <= 0 && c.data.extraJumps > 0;
@@ -450,8 +450,8 @@ internal static class BodyFeedback
         }
     }
 
-    /// <summary>CharacterMovement.Land (CharacterMovement.cs:817, private): after half a second in the air, a thump
-    /// on both hands scaled by the impact speed (the same velocity fall damage reads, :853).</summary>
+    /// <summary>CharacterMovement.Land (CharacterMovement.cs:812, private): after half a second in the air, a thump
+    /// on both hands scaled by the impact speed (the same velocity fall damage reads, :848).</summary>
     [HarmonyPatch]
     internal static class Landing
     {

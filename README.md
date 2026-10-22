@@ -23,7 +23,8 @@ mise run package    # dist/PeakXR-<version>.zip (Thunderstore layout) and dist/P
 ```
 
 Other tasks: `mise run deploy` copies `dist/PeakXR/BepInEx` into the game, `mise run decompile` refreshes
-`decomp/` after a game update, and `mise run compat-check` prints the game and Unity versions.
+`decomp/` after a game update (keeping the old one in `decomp.prev/`), and `mise run compat-check` prints the game and
+Unity versions and checks every patch target and name lookup against the decompile.
 
 ## Install
 
