@@ -47,15 +47,10 @@ internal static class VRTab
             configRow.Refresh();
     }
 
-    public static List<Setting> BuildRows()
+    /// <summary>Every visible entry by config section, sections in the order they were bound.</summary>
+    private static List<KeyValuePair<string, List<ConfigEntryBase>>> Sections()
     {
-        if (!Refilling)
-            Page = 0;
-        Refilling = false;
-        Loc.Set(TabKey, "VR");
-        if (Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
-            return Guide.GuideRows.Comfort(RowFor);
-        var sections = new List<string>();
+        var sections = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
         var bySection = new Dictionary<string, List<ConfigEntryBase>>(StringComparer.Ordinal);
         foreach (var pair in Plugin.Settings)
         {
@@ -66,22 +61,120 @@ internal static class VRTab
             if (!bySection.TryGetValue(section, out var list))
             {
                 bySection[section] = list = new List<ConfigEntryBase>();
-                sections.Add(section);
+                sections.Add(new KeyValuePair<string, List<ConfigEntryBase>>(section, list));
             }
             list.Add(entry);
         }
+        return sections;
+    }
+
+    public static List<Setting> BuildRows()
+    {
+        if (!Refilling)
+            Page = 0;
+        Refilling = false;
+        Loc.Set(TabKey, "VR");
+        if (Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
+            return Guide.GuideRows.Comfort(RowFor);
 
         var result = new List<Setting>();
         Guide.GuideRows.Append(result);
-        foreach (var section in sections)
+        foreach (var section in Sections())
         {
-            result.Add(Header("PEAKXR_SECTION_" + section, section));
-            foreach (var entry in bySection[section])
+            result.Add(Header("PEAKXR_SECTION_" + section.Key, section.Key));
+            foreach (var entry in section.Value)
                 if (RowFor(entry) is { } row)
                     result.Add(row);
         }
 
         result.Add(Header("PEAKXR_SECTION_COMPAT", "Compatibility"));
+        AppendCompat(result);
+        return VRSession.Active ? OnePage(result) : result;
+    }
+
+    /// <summary>Rail key of the VR Guide page.</summary>
+    public const string GuideGroup = "PEAKXR_GROUP_GUIDE";
+
+    /// <summary>Rail key of the compatibility report page.</summary>
+    public const string CompatGroup = "PEAKXR_GROUP_COMPAT";
+
+    /// <summary>The rail entry on show in VR; kept for the session, so the menu reopens where you left it.</summary>
+    public static string Group;
+
+    /// <summary>
+    /// The VR layout's rail entries: the VR Guide, one per config group (the section up to its first dot, so
+    /// <c>UI.HUD</c> joins <c>UI</c>, and a feature's new section joins or adds an entry by itself), then the
+    /// compatibility report. Inside a group with several sections each section starts with its own header.
+    /// </summary>
+    public static List<VRGroup> BuildGroups()
+    {
+        if (!Refilling)
+            Page = 0;
+        Refilling = false;
+        Loc.Set(TabKey, "VR");
+        var groups = new List<VRGroup>();
+        if (Guide.GuideRows.Shown)
+        {
+            var guide = new VRGroup(GuideGroup, "VR Guide");
+            Guide.GuideRows.AppendAll(guide.Rows);
+            groups.Add(guide);
+        }
+
+        var byGroup = new Dictionary<string, VRGroup>(StringComparer.Ordinal);
+        var sectionCount = new Dictionary<VRGroup, int>();
+        var sections = Sections();
+        foreach (var section in sections)
+        {
+            var name = SettingsGrid.GroupOf(section.Key);
+            if (!byGroup.TryGetValue(name, out var group))
+            {
+                byGroup[name] = group = new VRGroup(
+                    "PEAKXR_GROUP_" + name,
+                    SettingsRows.Prettify(name)
+                );
+                groups.Add(group);
+                sectionCount[group] = 0;
+            }
+            sectionCount[group]++;
+        }
+        foreach (var section in sections)
+        {
+            var group = byGroup[SettingsGrid.GroupOf(section.Key)];
+            if (sectionCount[group] > 1)
+            {
+                var sub = SettingsGrid.SubsectionOf(section.Key);
+                group.Rows.Add(
+                    Header(
+                        "PEAKXR_SUBSECTION_" + section.Key,
+                        sub.Length == 0 ? group.Title : SettingsRows.Prettify(sub.Replace('.', ' '))
+                    )
+                );
+            }
+            foreach (var entry in section.Value)
+                if (RowFor(entry) is { } row)
+                    group.Rows.Add(row);
+        }
+        groups.RemoveAll(g => !HasSetting(g.Rows));
+
+        var compat = new VRGroup(CompatGroup, "Compatibility");
+        int failed = AppendCompat(compat.Rows);
+        if (failed > 0)
+            compat.Title = $"Compat: {failed} failed";
+        groups.Add(compat);
+        return groups;
+    }
+
+    private static bool HasSetting(List<Setting> rows)
+    {
+        foreach (var row in rows)
+            if (row is not InfoRow { IsHeader: true })
+                return true;
+        return false;
+    }
+
+    /// <summary>The runtime, then every feature with failed ones first; returns how many failed.</summary>
+    private static int AppendCompat(List<Setting> result)
+    {
         result.Add(
             new InfoRow(
                 Loc.Set("PEAKXR_RUNTIME", "Runtime"),
@@ -90,6 +183,7 @@ internal static class VRTab
                 false
             )
         );
+        int failed = 0;
         // Failed features first, so a broken install is visible without scrolling.
         foreach (
             var feature in FeatureManager
@@ -108,16 +202,19 @@ internal static class VRTab
                 FeatureState.Failed => Failed,
                 _ => Muted,
             };
+            if (feature.State == FeatureState.Failed)
+                failed++;
             result.Add(
                 new InfoRow(Loc.Set("PEAKXR_FEATURE_" + feature.Id, feature.Id), text, color, false)
             );
         }
-        return VRSession.Active ? OnePage(result) : result;
+        return failed;
     }
 
-    /// <summary>Rows per page in VR: the settings window has no scroll view, and on a world panel the rows past the
-    /// screen's bottom edge hang below it into the scene instead of being cut off.</summary>
-    public const int PageRows = 12;
+    /// <summary>Rows per page of the single-column VR fallback (<see cref="VRTabGrid"/> could not lay the tab out):
+    /// the settings window has no scroll view, and on a world panel the rows past the screen's bottom edge hang below
+    /// it into the scene instead of being cut off. Measured from the window when it fills.</summary>
+    public static int PageRows = 7;
 
     /// <summary>The VR tab page on show; kept while the tab is refilled (<see cref="Refilling"/>), clamped when the
     /// list shrinks, and back to the first page whenever the tab is opened.</summary>
@@ -284,6 +381,20 @@ internal static class VRTab
     /// <summary>The game's own Off/On strings when it has them, so the tab matches the other tabs.</summary>
     private static string OnOff(string id, string fallback) =>
         LocalizedText.mainTable.ContainsKey(id) ? LocalizedText.GetText(id) : fallback;
+}
+
+/// <summary>One rail entry of the VR layout and its rows (section headers included).</summary>
+internal sealed class VRGroup
+{
+    public readonly string Key;
+    public string Title;
+    public readonly List<Setting> Rows = new();
+
+    public VRGroup(string key, string title)
+    {
+        Key = key;
+        Title = title;
+    }
 }
 
 /// <summary>

@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
+using PeakXR.VR;
 using UnityEngine;
+using Zorro.Settings;
 
 namespace PeakXR.UI.Settings;
 
@@ -106,41 +108,57 @@ internal static class ShowSettingsPatch
         // Every tab switch spawns new rows into the open page; their row backings would stay drawn until the
         // next page change.
         World.WorldCanvases.Restrip(__instance);
+        VRTabGrid.Clear(__instance);
         if (category != VRTab.Category)
             return;
         Guide.GuideRows.Menu = __instance;
-        var cells = UISettingsFeature.CellsRef(__instance);
+        // VR: category rail and a grid of pages; the comfort-first practice view stays its short single column.
+        if (VRSession.Active)
+        {
+            if (
+                !(Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
+                && VRTabGrid.TryShow(__instance)
+            )
+                return;
+            VRTab.PageRows = VRTabGrid.FallbackRows(__instance);
+        }
         var first = true;
         foreach (var setting in VRTab.BuildRows())
+            Spawn(__instance, setting, ref first);
+    }
+
+    /// <summary>One row in the game's own cell prefab, registered in its cell list so the next tab switch clears it;
+    /// null when the game cannot draw it.</summary>
+    internal static SettingsUICell Spawn(SharedSettingsMenu menu, Setting setting, ref bool first)
+    {
+        var cell = Object
+            .Instantiate(menu.m_settingsCellPrefab, menu.m_settingsContentParent)
+            .GetComponent<SettingsUICell>();
+        UISettingsFeature.CellsRef(menu).Add(cell);
+        try
         {
-            var cell = Object
-                .Instantiate(__instance.m_settingsCellPrefab, __instance.m_settingsContentParent)
-                .GetComponent<SettingsUICell>();
-            cells.Add(cell);
-            try
-            {
-                cell.Setup(setting);
-            }
-            catch (System.Exception e)
-            {
-                // One row the game can't draw (missing cell prefab in a future build) must not empty the tab.
-                Plugin.Log.LogWarning(
-                    $"[ui.settings] Row {setting.GetType().Name} failed: {e.GetBaseException().Message}"
-                );
-                continue;
-            }
-            if (setting is IConfigRow configRow)
-                SettingPreviews.Track(configRow.Entry, cell);
-            else if (setting is Guide.GuideRow guideRow)
-                Guide.GuideRows.Spawned(guideRow, cell);
-            // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
-            var sfx = cell.fadeInSFX;
-            if (!first)
-                cell.fadeInSFX = null;
-            cell.FadeIn();
-            cell.fadeInSFX = sfx;
-            first = false;
+            cell.Setup(setting);
         }
+        catch (System.Exception e)
+        {
+            // One row the game can't draw (missing cell prefab in a future build) must not empty the tab.
+            Plugin.Log.LogWarning(
+                $"[ui.settings] Row {setting.GetType().Name} failed: {e.GetBaseException().Message}"
+            );
+            return null;
+        }
+        if (setting is IConfigRow configRow)
+            SettingPreviews.Track(configRow.Entry, cell);
+        else if (setting is Guide.GuideRow guideRow)
+            Guide.GuideRows.Spawned(guideRow, cell);
+        // The game staggers fade-ins 50 ms apart; all at once, only the first cell plays its sound.
+        var sfx = cell.fadeInSFX;
+        if (!first)
+            cell.fadeInSFX = null;
+        cell.FadeIn();
+        cell.fadeInSFX = sfx;
+        first = false;
+        return cell;
     }
 }
 

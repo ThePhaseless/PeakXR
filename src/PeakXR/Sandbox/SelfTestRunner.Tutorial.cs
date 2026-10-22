@@ -67,21 +67,26 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
     }
 
-    /// <summary>vr.30: the title's settings (MainMenuMainPage.cs:215), the VR tab, the demo list opened, and the Grab and
-    /// Climb demos each played for a loop beside their row with their cue sounds.</summary>
+    /// <summary>vr.30: the title's settings (MainMenuMainPage.cs:215), the VR tab on its VR Guide page (the demo list
+    /// opened in the single-column fallback), and the Grab and Climb demos each played for a loop beside their row
+    /// with their cue sounds.</summary>
     IEnumerator GuideStep()
     {
         yield return OpenTitleGuide();
         if (!stepOk)
             yield break;
+        // The VR layout lists every demo on the guide page; the single-column fallback folds them behind Demos.
         var expand = GuideRowOf(GuideAction.Expand, GuideTopic.Count);
-        if (expand == null)
+        if (expand == null && GuideRowOf(GuideAction.Practice, GuideTopic.Count) == null)
         {
             Fail("no VR Guide rows in the VR tab");
             yield break;
         }
-        GuideRows.Click(expand);
-        yield return Wait(1f);
+        if (expand != null)
+        {
+            GuideRows.Click(expand);
+            yield return Wait(1f);
+        }
 
         var fails = new List<string>();
         var notes = new List<string>();
@@ -104,8 +109,8 @@ internal sealed partial class SelfTestRunner
                 );
                 continue;
             }
-            // The ghost stands 0.3 m past the row's right edge, 0.15 m up and 0.08 m toward you (GuideStage.Place).
-            PreviewStage.RowRightEdge(
+            // The ghost stands 0.3 m past the row's outer edge, 0.15 m up and 0.08 m toward you (GuideStage.Place).
+            VRTabGrid.RowOuterEdge(
                 (RectTransform)row.Cell.transform,
                 edgeCorners,
                 out var edge,
@@ -116,11 +121,15 @@ internal sealed partial class SelfTestRunner
             if (demo.SoundsPlayed < 1)
                 fails.Add($"{topic} played no cue sound in a loop");
             if (d > 0.6f)
-                fails.Add($"{topic} demo {d:0.00} m from its row's right edge");
-            // Row and demo together: the ghost stands past the panel's right edge.
-            yield return ShotAt("vr-30-guide-" + topic, 0.5f * (edge + demo.Root.position));
+                fails.Add($"{topic} demo {d:0.00} m from its row's outer edge");
+            // Row and demo together: the ghost stands past the panel's edge on the row's free side.
+            yield return ShotAt(
+                "vr-30-guide-" + topic,
+                0.5f * (CentreOf(row.Cell.transform) + demo.Root.position)
+            );
         }
-        GuideRows.Click(expand);
+        if (expand != null)
+            GuideRows.Click(expand);
         Conclude(fails, notes);
     }
 
@@ -128,8 +137,7 @@ internal sealed partial class SelfTestRunner
     /// airport; the right stick flicks until the turn station passes; a hand rests in the exit orb; the title returns.</summary>
     IEnumerator PracticeStep()
     {
-        // vr.30's cleanup put the title back on its main page: open the VR tab again, on its first page (Practice).
-        VRTab.Page = 0;
+        // vr.30's cleanup put the title back on its main page: open the VR tab again (OpenTitleGuide: guide page 1).
         yield return OpenTitleGuide();
         if (!stepOk)
             yield break;
@@ -266,6 +274,9 @@ internal sealed partial class SelfTestRunner
         var page = handler.TransistionToPage<MainMenuSettingsPage>(new SetActivePageTransistion());
         yield return Wait(0.5f);
         GuideRows.ComfortFirst = false;
+        // The VR layout's guide page, first page (Practice and the first demos).
+        VRTab.Group = VRTab.GuideGroup;
+        VRTab.Page = 0;
         if (!GuideStage.OpenVRTab(page != null ? page.SharedSettingsMenu : null))
         {
             Fail("VR tab not found on the title settings page");

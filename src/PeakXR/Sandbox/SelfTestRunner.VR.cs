@@ -366,6 +366,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         tabs.Select(longest);
         yield return Wait(0.8f);
+        // The game's own tabs keep their single column in VR; they are short enough to fit the window.
+        int outside = RowsOutside(menu);
         var viewport = list.viewport != null ? list.viewport : (RectTransform)list.transform;
         bool scrolls = list.content != null && list.content.rect.height > viewport.rect.height + 1f;
         list.verticalNormalizedPosition = 0f;
@@ -373,7 +375,7 @@ internal sealed partial class SelfTestRunner
         int strips = VisibleRowStrips(root);
         var note =
             $"; {longest.category} tab ({most} rows{(scrolls ? "" : ", fits without scrolling")}) "
-            + $"scrolled to its end: {strips} row strips drawn";
+            + $"scrolled to its end: {strips} row strips drawn, {outside} rows outside the window";
         if (strips > 0)
             Fail("row strips drawn after scrolling" + note);
         else

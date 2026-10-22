@@ -141,14 +141,15 @@ internal sealed class GuideStage : MonoBehaviour
             captionText.alpha = clock.Alpha;
     }
 
-    /// <summary>The ghost stands beside the row's right edge, a little toward the viewer, facing the way you face.</summary>
+    /// <summary>The ghost stands beside the row's outer edge (<see cref="VRTabGrid.RowOuterEdge"/>), a little toward the
+    /// viewer, facing the way you face.</summary>
     private void Place(RectTransform cell)
     {
-        PreviewStage.RowRightEdge(cell, corners, out var edge, out var right);
+        VRTabGrid.RowOuterEdge(cell, corners, out var edge, out var outward);
         var facing = Vector3.ProjectOnPlane(cell.forward, Vector3.up);
         if (facing.sqrMagnitude < 1e-4f)
             facing = Vector3.forward;
-        var eye = edge + right * 0.3f + Vector3.up * 0.15f - cell.forward * 0.08f;
+        var eye = edge + outward * 0.3f + Vector3.up * 0.15f - cell.forward * 0.08f;
         demo.Root.SetPositionAndRotation(eye, Quaternion.LookRotation(facing, Vector3.up));
         if (caption != null)
             caption.transform.SetPositionAndRotation(eye + Vector3.down * 0.6f, cell.rotation);

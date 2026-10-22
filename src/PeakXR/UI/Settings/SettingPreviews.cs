@@ -422,14 +422,15 @@ internal sealed class PreviewStage : MonoBehaviour
         return line;
     }
 
-    /// <summary>Beside the row's right edge, in the menu's plane and pixel scale, so it reads like the menu.</summary>
+    /// <summary>Beside the row's outer edge (<see cref="VRTabGrid.RowOuterEdge"/>), in the menu's plane and pixel scale,
+    /// so it reads like the menu.</summary>
     private void PlaceCard(RectTransform row, float alpha)
     {
-        RowRightEdge(row, corners, out var edge, out var right);
+        VRTabGrid.RowOuterEdge(row, corners, out var edge, out var outward);
         var mpp = row.lossyScale.x;
         var t = card.transform;
         t.SetPositionAndRotation(
-            edge + right * (0.04f + CardWidth * 0.5f * mpp) - row.forward * 0.002f,
+            edge + outward * (0.04f + CardWidth * 0.5f * mpp) - row.forward * 0.002f,
             row.rotation
         );
         t.localScale = new Vector3(mpp, mpp, mpp);

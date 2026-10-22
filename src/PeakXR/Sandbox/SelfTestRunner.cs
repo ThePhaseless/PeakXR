@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using BepInEx;
+using BepInEx.Configuration;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.UI.Common;
@@ -253,6 +254,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return menu != null
             ? ShotAt("02-settings-vr", CentreOf(menu.transform))
             : Shot("02-settings-vr");
+        if (VRSession.Active && vrTabMenu != null)
+            yield return VRTabPages(vrTabMenu);
 
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
@@ -304,8 +307,114 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("no VR tab");
             yield break;
         }
+        vrTabMenu = settings;
         tabs.Select(vr);
         yield return Wait(1f);
+    }
+
+    /// <summary>The settings window <see cref="OpenVRTab"/> opened last.</summary>
+    SharedSettingsMenu vrTabMenu;
+
+    /// <summary>
+    /// 02-settings-vr in VR: every rail entry's first page, and a later page of the longest one, fits the settings
+    /// window (rows hanging below it are what the VR layout fixes). Aimed shots of the Comfort page, that later page,
+    /// and a preview opening beside a left-column row.
+    /// </summary>
+    IEnumerator VRTabPages(SharedSettingsMenu settings)
+    {
+        var outside = new List<string>();
+        string longest = null;
+        int most = 0;
+        var groups = VRTab.BuildGroups();
+        foreach (var group in groups)
+        {
+            VRTabGrid.Select(settings, group.Key);
+            yield return Wait(0.3f);
+            if (!VRTabGrid.Shown)
+            {
+                Fail("the VR tab fell back to one column (see the [ui.settings] warning)");
+                yield break;
+            }
+            int n = RowsOutside(settings);
+            if (n > 0)
+                outside.Add($"{group.Title} {n}");
+            if (VRTabGrid.Pages > most)
+            {
+                most = VRTabGrid.Pages;
+                longest = group.Key;
+            }
+        }
+        VRTabGrid.Select(settings, "PEAKXR_GROUP_Comfort");
+        yield return Wait(0.8f);
+        yield return ShotAt("02-settings-vr-comfort", CentreOf(settings.transform));
+
+        // A preview opening on the left: a row of the left column while the right one is filled.
+        ConfigEntryBase hovered = null;
+        foreach (var pair in Plugin.Settings)
+        {
+            var cell = SettingPreviews.CellOf(pair.Value);
+            if (cell != null && cell.TryGetComponent<VRTabSlot>(out var slot) && slot.OpensLeft)
+            {
+                hovered = pair.Value;
+                break;
+            }
+        }
+        if (hovered != null && PreviewStage.Instance != null)
+        {
+            PreviewStage.Instance.HoverEnter(hovered);
+            yield return Wait(1.2f);
+            var row = SettingPreviews.CellOf(hovered);
+            if (row != null)
+            {
+                VRTabGrid.RowOuterEdge(
+                    (RectTransform)row.transform,
+                    edgeCorners,
+                    out var edge,
+                    out _
+                );
+                yield return ShotAt("02-settings-vr-preview", edge);
+            }
+            PreviewStage.Instance.HoverExit(hovered);
+        }
+
+        if (longest != null && most > 1)
+        {
+            VRTabGrid.Select(settings, longest, 1);
+            yield return Wait(0.8f);
+            int n = RowsOutside(settings);
+            if (n > 0)
+                outside.Add($"{longest} page 2 {n}");
+            yield return ShotAt("02-settings-vr-page2", CentreOf(settings.transform));
+        }
+        var note =
+            $"{groups.Count} rail entries, longest {longest} ({most} pages), preview row {hovered?.Definition.Key ?? "none"}";
+        if (outside.Count > 0)
+            Fail($"rows outside the settings window: {string.Join(", ", outside)}; {note}");
+        else
+            stepNote = note;
+    }
+
+    /// <summary>Spawned rows of <paramref name="settings"/> that reach below or past its row area.</summary>
+    int RowsOutside(SharedSettingsMenu settings)
+    {
+        var content = settings.m_settingsContentParent as RectTransform;
+        var cells =
+            UISettingsFeature.CellsRef != null ? UISettingsFeature.CellsRef(settings) : null;
+        if (content == null || cells == null)
+            return 0;
+        var area = content.rect;
+        int count = 0;
+        foreach (var cell in cells)
+        {
+            if (cell == null || !cell.gameObject.activeInHierarchy)
+                continue;
+            ((RectTransform)cell.transform).GetWorldCorners(edgeCorners);
+            var lo = content.InverseTransformPoint(edgeCorners[0]);
+            var hi = content.InverseTransformPoint(edgeCorners[2]);
+            if (lo.y < area.yMin - 2f || hi.x > area.xMax + 2f)
+                count++;
+        }
+        return count;
     }
 
     /// <summary>Spawn every item in rows, one step each.</summary>
