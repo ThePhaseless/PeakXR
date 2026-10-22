@@ -172,7 +172,10 @@ internal static class Affordance
         );
         AffordanceRuntime.Show(left, worldPos, reason, hint, atHand: atHand);
         if (tint != null)
+        {
             DenyTint.Target(tint);
+            AffordanceRuntime.ClaimTint();
+        }
         // Both hands are needed: the free one feels where to go.
         if (reason == DenyReason.NeedsTwoHands)
             Feel(!left, CueFeel.Contact, CueHaptics.Contact);
@@ -299,7 +302,10 @@ internal static class Affordance
     public static void Preview(GameObject prefab, Vector3 position, Quaternion rotation)
     {
         if (Enabled)
+        {
             DenyTint.Ghost(prefab, position, rotation);
+            AffordanceRuntime.ClaimTint();
+        }
     }
 
     /// <summary>Deny at the hand itself, for refusals with no spot in the world (two-handed use, a throw).</summary>

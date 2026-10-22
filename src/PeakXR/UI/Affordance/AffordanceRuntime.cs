@@ -83,6 +83,18 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public int Frame = -10;
         public float Since,
             SeenAt = -100f;
+
+        // Refusal bookkeeping (one refusal cue per hand). The refused attempt is still held (the trigger, else the
+        // grip, that was down when it was refused): the cue stays.
+        public bool Left;
+        public float At = -100f;
+        public bool Holding;
+        public bool ByTrigger;
+        public float HeldUntil = -100f;
+        public float HoldCap;
+
+        /// <summary>This frame's opacity of a refusal cue.</summary>
+        public float Alpha;
     }
 
     private static AffordanceRuntime instance;
@@ -100,7 +112,21 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private readonly HapticPatternPlayer leftBuzz = new();
     private readonly HapticPatternPlayer rightBuzz = new();
-    private readonly Cue denied = new();
+
+    /// <summary>One refusal cue per hand (0 left, 1 right): a refusal on one hand never replaces the other's, so a
+    /// cue for both hands at once (a slide, the feet) or a free hand's refusal right after keeps both drawn
+    /// (VR run 33).</summary>
+    private readonly Cue[] denials =
+    {
+        new() { Left = true },
+        new(),
+    };
+
+    /// <summary>The refusal shown last: the label and the self-test's <see cref="DeniedRing"/> follow it.</summary>
+    private Cue denied;
+
+    /// <summary>The refusal whose red preview <see cref="DenyTint"/> shows (one at a time).</summary>
+    private Cue tintOwner;
     private readonly Cue[] hovers = { new(), new() };
     private LineRenderer ray;
     private GameObject labelRoot;
@@ -108,15 +134,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private GUIManager fontFrom;
     private Material fontClone;
     private bool built;
-
-    private bool denyLeft;
-    private float denyAt = -100f;
-
-    // The refused attempt is still held (the trigger, else the grip, that was down when it was refused): the cue stays.
-    private bool denyHolding;
-    private bool denyByTrigger;
-    private float denyHeldUntil = -100f;
-    private float denyHoldCap;
 
     // What the label shows now: the denial (-1) or a hover (hand index), its reason and distance step.
     private int labelOwner = -1;
@@ -129,6 +146,15 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var go = new GameObject("PeakXR_Affordance");
         DontDestroyOnLoad(go);
         instance = go.AddComponent<AffordanceRuntime>();
+        instance.denied = instance.denials[1];
+    }
+
+    /// <summary>The red preview the caller just set (a placement ghost, a tint target) belongs to the refusal shown
+    /// last, and ends with it.</summary>
+    public static void ClaimTint()
+    {
+        if (instance != null)
+            instance.tintOwner = instance.denied;
     }
 
     /// <param name="notice">Information, not a refusal: no red ring, a single soft tick, the label in the hint colour.</param>
@@ -157,37 +183,42 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             );
         else
             (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
-        self.denied.Notice = notice;
-        self.denied.Glyph = DenyGlyph.For(reason);
-        self.denied.Text = text;
-        self.PlayCue(notice, pos, hint, 1f);
+        var d = self.denials[left ? 0 : 1];
         // The same refusal repeated while its cue is up (a check every frame, rate-limited) keeps it lit: no ramp
         // from zero, which would blink.
-        bool live =
-            self.denied.Reason == reason
-            && self.denyLeft == left
-            && DenyFade.Alpha(now - self.denyAt, self.denyHeldUntil - self.denyAt) > 0f;
+        bool live = d.Reason == reason && DenyFade.Alpha(now - d.At, d.HeldUntil - d.At) > 0f;
+        d.Notice = notice;
+        d.Glyph = DenyGlyph.For(reason);
+        d.Text = text;
+        self.PlayCue(notice, pos, hint, 1f);
         // The source decides, not distance: a refusal of the hand's own action (Affordance.DenyAtHand) rides the hand
         // and is about the item in it; a world target 30 cm away stays a world cue.
-        self.denied.AtHand = atHand;
+        d.AtHand = atHand;
         var held =
             Character.localCharacter != null ? Character.localCharacter.data.currentItem : null;
         bool carrying = held != null && LocalHold.ItemInLeftHand == left;
-        // The red preview: the held item. A placement ghost comes from the caller (Affordance.Preview).
+        // The red preview: the held item. A placement ghost or tint target comes from the caller (ClaimTint). This
+        // hand's new refusal ends its own old preview, never the other hand's.
         if (!notice && atHand && carrying)
+        {
             DenyTint.HeldItem(held);
-        else
+            self.tintOwner = d;
+        }
+        else if (self.tintOwner == d || self.tintOwner == null || !DenyTint.Active)
+        {
             DenyTint.Clear();
-        self.denied.Position = pos;
-        self.denied.Reason = reason;
-        self.denied.Spot = hint;
-        self.denyLeft = left;
-        self.denyAt = live ? now - DenyFade.In : now;
+            self.tintOwner = null;
+        }
+        d.Position = pos;
+        d.Reason = reason;
+        d.Spot = hint;
+        d.At = live ? now - DenyFade.In : now;
         ref var input = ref VRInput.Hand(left);
-        self.denyByTrigger = input.Trigger > 0.5f;
-        self.denyHolding = !notice && (self.denyByTrigger || input.Grip > 0.5f);
-        self.denyHoldCap = DenyFade.HoldCap(self.denyByTrigger, carrying);
-        self.denyHeldUntil = now;
+        d.ByTrigger = input.Trigger > 0.5f;
+        d.Holding = !notice && (d.ByTrigger || input.Grip > 0.5f);
+        d.HoldCap = DenyFade.HoldCap(d.ByTrigger, carrying);
+        d.HeldUntil = now;
+        self.denied = d;
         self.SetLabel(-1, reason, hint.Meters, text);
     }
 
@@ -231,10 +262,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             if (self == null || !self.built)
                 return 0;
             int n = 0;
-            foreach (var ring in self.denied.Marks)
+            foreach (var d in self.denials)
             {
-                if (ring.enabled)
-                    n++;
+                foreach (var ring in d.Marks)
+                {
+                    if (ring.enabled)
+                        n++;
+                }
             }
             return n;
         }
@@ -247,7 +281,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     /// <summary>The reach ray is drawn now, for the self-test.</summary>
     public static bool RayShown => instance != null && instance.built && instance.ray.enabled;
 
-    private Cue[] All => all ??= new[] { denied, hovers[0], hovers[1] };
+    private Cue[] All => all ??= new[] { denials[0], denials[1], hovers[0], hovers[1] };
     private Cue[] all;
 
     /// <param name="silent">No sound on a new hover (a danger warning plays its own).</param>
@@ -481,38 +515,47 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var eye = rig.Head.position;
         var now = Time.unscaledTime;
 
-        if (denyHolding)
+        for (int i = 0; i < 2; i++)
         {
-            ref var input = ref VRInput.Hand(denyLeft);
-            if (
-                (denyByTrigger ? input.Trigger > 0.5f : input.Grip > 0.5f)
-                && now - denyAt < denyHoldCap
-            )
-                denyHeldUntil = now;
-            else
-                denyHolding = false;
+            var d = denials[i];
+            if (d.Holding)
+            {
+                ref var input = ref VRInput.Hand(d.Left);
+                if (
+                    (d.ByTrigger ? input.Trigger > 0.5f : input.Grip > 0.5f)
+                    && now - d.At < d.HoldCap
+                )
+                    d.HeldUntil = now;
+                else
+                    d.Holding = false;
+            }
+            d.Alpha = DenyFade.Alpha(now - d.At, d.HeldUntil - d.At);
+            var hand = rig.Hand(d.Left);
+            if (d.AtHand && hand != null)
+                d.Position = CueLayout.HandAnchor(hand.position.N(), eye.N()).U();
+            PoseCue(d, eye, d.Alpha);
+            CaptureRing(d, eye, now);
         }
-        float denyAlpha = DenyFade.Alpha(now - denyAt, denyHeldUntil - denyAt);
-        var denyHand = rig.Hand(denyLeft);
-        if (denied.AtHand && denyHand != null)
-            denied.Position = CueLayout.HandAnchor(denyHand.position.N(), eye.N()).U();
-        PoseCue(denied, eye, denyAlpha);
-        CaptureRing(eye, denyAlpha, now);
-        if (DenyTint.Active)
+        var owner = tintOwner;
+        if (DenyTint.Active && owner != null)
         {
             // Shown this frame (age 0, alpha 0): applied from the next pose on, never cleared here.
-            if (DenyFade.Over(now - denyAt, denyHeldUntil - denyAt))
+            if (DenyFade.Over(now - owner.At, owner.HeldUntil - owner.At))
+            {
                 DenyTint.Clear();
-            else if (denyAlpha > 0.001f)
-                DenyTint.Apply(denyAlpha);
+                tintOwner = null;
+            }
+            else if (owner.Alpha > 0.001f)
+                DenyTint.Apply(owner.Alpha);
         }
+        float denyAlpha = denied.Alpha;
 
         for (int i = 0; i < 2; i++)
         {
             var h = hovers[i];
             float alpha = HoverAlpha(h, now);
             // The live refusal of this hand already says it, bigger: no second ring inside it.
-            if (denyAlpha > 0f && denyLeft == (i == 0) && h.Reason == denied.Reason)
+            if (denials[i].Alpha > 0f && h.Reason == denials[i].Reason)
                 alpha = 0f;
             PoseCue(h, eye, alpha);
             // A steady hover earns the label, but only once the current owner's label is gone (or it is the owner):
@@ -530,23 +573,23 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     /// <summary>The refusal's ring (a notice's teal one when it has no red one) as the eye sees it, while clearly
     /// visible: for <see cref="CueLog"/>.</summary>
-    private void CaptureRing(Vector3 eye, float alpha, float now)
+    private void CaptureRing(Cue d, Vector3 eye, float now)
     {
         var ring =
-            denied.Deny.enabled ? denied.Deny
-            : denied.Hint.enabled ? denied.Hint
+            d.Deny.enabled ? d.Deny
+            : d.Hint.enabled ? d.Hint
             : null;
-        if (ring == null || alpha < 0.3f)
+        if (ring == null || d.Alpha < 0.3f)
             return;
         var t = ring.transform;
         var center = t.position;
         CueLog.Capture.Ring(
-            denyLeft,
-            denied.Reason,
-            denied.Glyph,
+            d.Left,
+            d.Reason,
+            d.Glyph,
             center.N(),
             CueLayout.AngularDegrees(t.localScale.x, Vector3.Distance(center, eye)),
-            DenyTint.Active,
+            DenyTint.Active && tintOwner == d,
             now
         );
     }
@@ -573,7 +616,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         else
         {
             alpha = denyAlpha;
-            var hand = rig.Hand(denyLeft);
+            var hand = rig.Hand(denied.Left);
             // A refusal of the hand's own action: ride above the hand. A world target or wall: sit above the spot.
             atHand = hand != null && denied.AtHand;
             anchor = atHand ? hand.position : denied.Position;
@@ -857,7 +900,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             return;
         // VR stopped or hints off: the tint goes and the ghost is destroyed, not just hidden.
         DenyTint.Dispose();
-        Hide(denied);
+        Hide(denials[0]);
+        Hide(denials[1]);
         Hide(hovers[0]);
         Hide(hovers[1]);
         ray.enabled = false;
@@ -888,11 +932,11 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private void Build()
     {
         built = true;
-        foreach (var cue in new[] { denied, hovers[0], hovers[1] })
+        foreach (var cue in All)
         {
             // A refused attempt draws over the world: the hand that tried, the item it holds or a rock would hide it.
             // Hovers stay depth-tested, so a "can't" ring behind a rock stays behind it.
-            bool top = cue == denied;
+            bool top = cue == denials[0] || cue == denials[1];
             cue.Degrees = top ? CueLayout.DenyDegrees : CueLayout.HoverDegrees;
             cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, top);
             // Rims render first (lower queue), so the coloured stroke lies on a dark edge, not on a plate.
