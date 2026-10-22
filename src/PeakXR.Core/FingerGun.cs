@@ -21,6 +21,12 @@ namespace PeakXR.Core
 
         float _sincePoint = float.MaxValue;
 
+        /// <summary>
+        /// The hand is aiming a ping now: grip closed and pointing within <see cref="Window"/>, so it stays true while
+        /// the index curls onto the trigger. False once the gesture fired or the grip opened. Drives the aim preview.
+        /// </summary>
+        public bool Aiming => _sincePoint <= Window;
+
         /// <returns>True on the frame the gesture fires.</returns>
         public bool Update(bool pointing, bool gripHeld, bool triggerPressed, float dt)
         {

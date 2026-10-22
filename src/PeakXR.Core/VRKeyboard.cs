@@ -141,6 +141,21 @@ namespace PeakXR.Core
     }
 
     /// <summary>
+    /// Why a key press typed nothing, so the key refuses visibly instead of silently: a field already at its
+    /// length limit is full (the bar glyph); any other rejected character (the field's own validation) is locked.
+    /// </summary>
+    public static class KeyRefusal
+    {
+        /// <param name="changed">The text changed after the key.</param>
+        /// <param name="length">Text length after the key.</param>
+        /// <param name="limit">The field's character limit; 0 or less means unlimited.</param>
+        public static DenyReason For(bool changed, int length, int limit) =>
+            changed ? DenyReason.None
+            : limit > 0 && length >= limit ? DenyReason.PackFull
+            : DenyReason.Locked;
+    }
+
+    /// <summary>
     /// Press detection for poking a flat panel with a fingertip. The finger must first be at least
     /// <see cref="ArmDistance"/> in front of the panel, then reach <see cref="PressDepth"/> over it; one press
     /// per approach, so resting a finger on the panel or reaching through it from behind never repeats.
