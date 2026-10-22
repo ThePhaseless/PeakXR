@@ -143,4 +143,17 @@ public class VRKeyboardTests
                 return key;
         throw new InvalidOperationException($"no key {lower}");
     }
+
+    [Theory]
+    [InlineData(true, 4, 4, DenyReason.None)]
+    [InlineData(false, 4, 4, DenyReason.PackFull)]
+    [InlineData(false, 5, 4, DenyReason.PackFull)]
+    [InlineData(false, 2, 4, DenyReason.Locked)]
+    [InlineData(false, 2, 0, DenyReason.Locked)]
+    public void KeyRefusal_FullFieldIsBarElseLocked(
+        bool changed,
+        int length,
+        int limit,
+        DenyReason expected
+    ) => Assert.Equal(expected, KeyRefusal.For(changed, length, limit));
 }

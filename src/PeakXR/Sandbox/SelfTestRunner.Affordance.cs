@@ -232,20 +232,21 @@ internal sealed partial class SelfTestRunner
             yield break;
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
-        // A gentle release stays stuck, as in vanilla (InteractPatches.Dropping): the StuckToHand cue with the item red.
+        // A gentle drop stays stuck, as in vanilla (InteractPatches.Dropping): the StuckToHand cue with the item red.
+        // A drop button tap is the gentle drop that reaches DoDropping by default. A slow grip open only does with
+        // Interaction.ReleaseToDrop on; off (the default) it keeps any item, so it is no refusal (VR run 31).
         Affordance.ResetGate();
         float mark = CueMark();
-        yield return GripTo(left, 0f, 0.3f);
+        yield return TapDrop();
         yield return ExpectCue(left, DenyReason.StuckToHand, mark, tint: true, within: 1.5f);
         string gentle = cueNote;
         if (!stepOk)
             yield break;
         if (HeldItem() == null)
         {
-            Fail("sticky item left the hand on a gentle release");
+            Fail("sticky item left the hand on a drop button tap");
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
         HeadFrame(out var head, out var forward, out var right);
         var windup = head + (left ? -right : right) * 0.25f + Vector3.down * 0.15f;
         yield return MoveTrack(left, windup, 0.4f);

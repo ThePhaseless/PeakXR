@@ -2,6 +2,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.Rig;
+using PeakXR.UI.Affordances;
 using PeakXR.Voice;
 using PeakXR.VR;
 using UnityEngine;
@@ -34,6 +35,7 @@ internal static class LocomotionInput
     private static bool wroteSticky;
     private static Vector3 lastBody;
     private static bool hadBody;
+    private static bool warnedFar;
     private static bool hasReserved;
     private static bool reservedLeft;
     private static VRControl reservedControl;
@@ -184,6 +186,13 @@ internal static class LocomotionInput
         // Spectating reads its own next/previous (CharacterInput.cs:254-255).
         input.spectateRightWasPressed |= Mapper.Pressed(VRAction.SpectateNext);
         input.spectateLeftWasPressed |= Mapper.Pressed(VRAction.SpectatePrevious);
+        if (spectating)
+        {
+            if (Mapper.Pressed(VRAction.SpectateNext))
+                DenyLoneSpectate(c, VRAction.SpectateNext, dominantLeft);
+            if (Mapper.Pressed(VRAction.SpectatePrevious))
+                DenyLoneSpectate(c, VRAction.SpectatePrevious, dominantLeft);
+        }
         input.unselectSlotWasPressed |= canSwitch && Mapper.Pressed(VRAction.PutAway);
         if (Mapper.Pressed(VRAction.Backpack))
         {
@@ -283,6 +292,7 @@ internal static class LocomotionInput
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
         var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
+        WarnFar(c, canFollow, stickIdle);
         if (Fade.Update(Follow.RecenterNeeded, dt))
             Follow.Recenter(head);
         rig.RoomAnchor = Follow.Anchor;
@@ -302,6 +312,64 @@ internal static class LocomotionInput
     }
 
     private static float nextLeanTrace;
+
+    /// <summary>Head this far (m) from a body that cannot follow: warned before the 1 m recenter fade.</summary>
+    private const float FarWarning = 0.8f;
+
+    /// <summary>
+    /// The head drifted from a body that cannot step after it (climbing, hanging, airborne, carried): before the
+    /// recenter fade, a NotNow refusal on both hands with a ring at the body's feet, the spot to come back to.
+    /// Once per drift; armed again back inside half the distance.
+    /// </summary>
+    private static void WarnFar(Character c, bool canFollow, bool stickIdle)
+    {
+        float far = Follow.Offset.Length();
+        if (far < FarWarning * 0.5f)
+            warnedFar = false;
+        if (warnedFar || canFollow || !stickIdle || far < FarWarning)
+            return;
+        warnedFar = true;
+        var feet = c.data.isGrounded ? c.data.groundPos : c.Center;
+        var hint = DenyHint.At(feet);
+        Affordance.Deny(true, feet, DenyReason.NotNow, hint);
+        Affordance.Deny(false, feet, DenyReason.NotNow, hint);
+    }
+
+    /// <summary>
+    /// A spectate flick with nobody else to watch: your own body (solo, or the last one standing) cannot be
+    /// switched away from (MainCameraMovement.HandleSpecSelection, :189), and a lone teammate has no next one
+    /// (SwapSpecPlayer, :221). CantSwitch at the hand whose stick flicked.
+    /// </summary>
+    private static void DenyLoneSpectate(Character c, VRAction action, bool dominantLeft)
+    {
+        var spec = MainCameraMovement.specCharacter;
+        bool other = false;
+        if (spec != null && spec != c)
+        {
+            foreach (var ch in PlayerHandler.GetAllPlayerCharacters())
+            {
+                if (ch != spec && ch.data.canBeSpectated && !ch.isBot)
+                {
+                    other = true;
+                    break;
+                }
+            }
+        }
+        if (other)
+            return;
+        bool left = !dominantLeft;
+        if (
+            ControllerLabels.ForAction(
+                action,
+                dominantLeft,
+                LocalHold.ItemInLeftHand,
+                out var actionLeft,
+                out _
+            )
+        )
+            left = actionLeft;
+        Affordance.DenyAtHand(left, DenyReason.CantSwitch);
+    }
 
     /// <summary>
     /// The held item reacts to scroll: the game's own scroll prompt flag (GUIManager.cs:1181) or a subscribed
