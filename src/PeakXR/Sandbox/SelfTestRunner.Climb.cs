@@ -1172,7 +1172,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.47: standing 1.6 m from the face, a hand stretched onto it touches rock past the game's 1.25 m reach from the
+    /// vr.47: standing 1.9 m from the face (the face check reaches 2 m), a hand stretched onto it touches rock past the game's 1.35 m reach (1.25 m thickened) from the
     /// camera (CharacterClimbing.cs:534; D3 keeps that cap for the hand-cast grab). The grip gets the OutOfReach cue
     /// and no climb.
     /// </summary>
@@ -1184,12 +1184,12 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.GrabToClimb off";
             yield break;
         }
-        yield return ToWall(back: 1f);
+        yield return ToWall(back: 1.3f);
         if (!wallReady)
             yield break;
         bool left = VRInput.LeftHanded;
         float eyeToHold = Vector3.Distance(EyeNow(), wallFace.point);
-        if (eyeToHold <= 1.35f)
+        if (eyeToHold <= TraversalRefusal.GameWallReach + 0.05f)
         {
             stepSkip = F($"the head ended {eyeToHold:0.00} m from the face, inside the reach");
             yield break;
@@ -1676,11 +1676,38 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var piton = testHandle.GetComponent<ShittyPiton>();
+        string source = "from the prefab";
         if (piton == null || piton.crack == null)
         {
-            stepSkip = "the hammered piton is not a fragile one (no ShittyPiton)";
-            yield return LetGoAll(c);
-            yield break;
+            // The hammered piton is sturdy, and the fragile ones are scenery props with no prefab to spawn
+            // (PSM_PitonNormal.cs). Fit the game's own ShittyPiton to it: its timer, cracks and break run unchanged;
+            // only the crack and burst visuals are empty stand-ins. It must sit beside the handle's PhotonView.
+            var host = testHandle.gameObject;
+            if (!host.TryGetComponent<PhotonView>(out _))
+            {
+                Fail("the hammered piton's handle has no PhotonView beside it for a ShittyPiton");
+                yield return LetGoAll(c);
+                yield break;
+            }
+            var crack = new GameObject("PeakXR_TestCrack");
+            var burst = new GameObject("PeakXR_TestBreak");
+            crack.SetActive(false);
+            burst.SetActive(false);
+            crack.transform.SetParent(host.transform, false);
+            burst.transform.SetParent(host.transform, false);
+            OnRestore(() =>
+            {
+                UnityEngine.Object.Destroy(crack);
+                UnityEngine.Object.Destroy(burst);
+            });
+            piton = host.AddComponent<ShittyPiton>();
+            piton.crack = crack;
+            piton.vfx = burst;
+            piton.cracKSFX = Array.Empty<SFX_Instance>();
+            piton.breakSFX = Array.Empty<SFX_Instance>();
+            source = "fitted";
+            // Start subscribes to the handle's hang events (ShittyPiton.cs:37-43) before the hang.
+            yield return null;
         }
         bool left = VRInput.LeftHanded;
         yield return HangOnHandle(left);
@@ -1698,7 +1725,9 @@ internal sealed partial class SelfTestRunner
         bool fell = c.data.currentClimbHandle == null;
         if (fell)
             yield return Feel(left, CueFeel.Cancel, broke, 1f);
-        Note($"cracking: {warning}; broke {fell}{(fell ? ": " + cueNote : "")}");
+        Note(
+            $"fragile piton {source}; cracking: {warning}; broke {fell}{(fell ? ": " + cueNote : "")}"
+        );
         yield return LetGoAll(c);
     }
 
@@ -2100,15 +2129,24 @@ internal sealed partial class SelfTestRunner
         var marker = new GameObject("PeakXR_TestVineSpot").transform;
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
         marker.position = vine.GetPosition(0.5f, 1, 1) + Vector3.down * vine.colliderOffset;
-        // ToVine places the body by the vine's colliders, which sit colliderOffset above the drawn vine: run 38's hand
-        // reached 3.56 m from the eye. Warp again with the drawn vine just above the head, within arm's reach.
-        c.photonView.RPC(
-            "WarpPlayerRPC",
-            RpcTarget.All,
-            marker.position + Vector3.down * 1.8f,
-            false
-        );
+        // Stand on a test ledge under the drawn vine, which hangs 0.3 m above the head. Run 39 warped into the air under
+        // it: the body fell, and the hand, placed a frame behind the fall, closed 0.9 m off the vine.
+        var feet = marker.position + Vector3.down * 2f;
+        var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ledge.name = "PeakXR_TestVineLedge";
+        ledge.layer = LayerMask.NameToLayer("Map");
+        OnRestore(() =>
+        {
+            if (ledge != null)
+                UnityEngine.Object.Destroy(ledge);
+        });
+        ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
+        ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
+        Physics.SyncTransforms();
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, feet + Vector3.up * 0.1f, false);
         yield return WaitFor(() => !c.warping, 2f);
+        yield return WaitFor(() => c.data.isGrounded, 2f);
+        yield return Wait(0.5f);
         yield return GripRefusedLine(DenyReason.NoStamina, () => c.data.isVineClimbing, marker);
     }
 
