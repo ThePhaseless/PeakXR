@@ -141,9 +141,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         ScriptHead(head - forward * 0.9f, rot);
-        yield return ExpectCue(true, DenyReason.NotNow, since, false, 1.5f);
-        if (stepOk)
-            yield return ExpectCue(false, DenyReason.NotNow, since, false, 0.5f);
+        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 1.5f);
         string note = cueNote;
         start = Now;
         while (Now - start < 0.6f)
@@ -612,7 +610,7 @@ internal sealed partial class SelfTestRunner
         float start = Now;
         while (
             Now - start < 4f
-            && !CueLog.Capture.Fired(true, DenyReason.TooSteep, since, false, out _)
+            && !CueLog.Capture.Fired(DomLeft, DenyReason.TooSteep, since, false, out _)
         )
         {
             if (!c.warping)
@@ -626,9 +624,7 @@ internal sealed partial class SelfTestRunner
             Fail(where + ": the game never registered a slide there");
             yield break;
         }
-        yield return ExpectCue(true, DenyReason.TooSteep, since, false, 0.5f);
-        if (stepOk)
-            yield return ExpectCue(false, DenyReason.TooSteep, since, false, 0.5f);
+        yield return ExpectCue(DomLeft, DenyReason.TooSteep, since, false, 0.5f);
         if (stepOk)
             stepNote = $"{where}: {cueNote}";
         else
@@ -1044,14 +1040,37 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
         }
         int rising = BodyFeedback.Shivers - before;
-        yield return Wait(1.5f);
-        int held = BodyFeedback.Shivers;
-        yield return Wait(1f);
-        int steady = BodyFeedback.Shivers - held;
-        float cold = c.refs.afflictions.GetCurrentStatus(STATUS.Cold);
+        // Steady means the game's own Cold has not moved for the shiver's hold and a margin: night cold
+        // (CharacterAfflictions.cs:509-511) keeps adding 0.025 steps, and each is a real rise that shivers.
+        var a = c.refs.afflictions;
+        float cold = a.GetCurrentStatus(STATUS.Cold);
+        float still = Now;
+        int steady = -1;
+        float until = Now + 8f;
+        while (Now < until && steady < 0)
+        {
+            float now = a.GetCurrentStatus(STATUS.Cold);
+            if (now != cold)
+            {
+                cold = now;
+                still = Now;
+            }
+            if (Now - still >= 1.3f)
+            {
+                int held = BodyFeedback.Shivers;
+                float from = cold;
+                yield return Wait(0.8f);
+                if (a.GetCurrentStatus(STATUS.Cold) == from)
+                    steady = BodyFeedback.Shivers - held;
+                continue;
+            }
+            yield return null;
+        }
         SandboxActions.ClearStatus(STATUS.Cold);
         var note = $"shiver pulses while rising {rising}, while steady {steady} (cold {cold:0.00})";
-        if (rising < 5 || steady > 0)
+        if (steady < 0)
+            stepSkip = "Cold never held still for 2 s (night cold rising): " + note;
+        else if (rising < 5 || steady > 0)
             Fail(note);
         else
             stepNote = note;

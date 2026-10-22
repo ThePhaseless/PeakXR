@@ -221,24 +221,6 @@ internal static class EnvironmentCues
         }
     }
 
-    /// <summary>CharacterAfflictions.WarnStopWhirlwind() (CharacterAfflictions.cs:1833), sent by the owner's
-    /// Affliction_LowGravity.Tick 1.5 s before the float ends (Affliction_LowGravity.cs:44-46).</summary>
-    [HarmonyPatch]
-    internal static class FloatEnd
-    {
-        private static MethodBase TargetMethod() =>
-            GameMember.Method(
-                typeof(CharacterAfflictions),
-                nameof(CharacterAfflictions.WarnStopWhirlwind)
-            );
-
-        private static void Postfix(CharacterAfflictions __instance)
-        {
-            if (Local(__instance.character))
-                BodyFeedback.FloatEnding();
-        }
-    }
-
     /// <summary>BreakableBridge.OnBridgeCollision (BreakableBridge.cs:170, private), hooked to its planks'
     /// CollisionModifier.onCollide: the postfix runs even while breaking (the body returns early there), so the
     /// local body standing on it is known through the countdown.</summary>
