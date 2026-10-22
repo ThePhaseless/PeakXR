@@ -647,6 +647,21 @@ internal static class PhysicalInteraction
     private static Vector3 Eye(VRRig rig) =>
         MainCamera.instance != null ? MainCamera.instance.transform.position : rig.Head.position;
 
+    /// <summary>What a grip of the <paramref name="left"/> hand would take right now: the same search as a grip press
+    /// (<see cref="FindCandidate"/>), for the pre-grip glow (ui.spatial GripGlow). Null when nothing, or physical grab
+    /// is off.</summary>
+    internal static IInteractible GripPreview(bool left)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var cfg = InteractConfig.Instance;
+        var t = rig != null ? rig.Hand(left) : null;
+        if (c == null || t == null || rig.Head == null || !cfg.PhysicalGrab)
+            return null;
+        FindCandidate(c, Eye(rig), t.position, t.forward, cfg.GrabRadius, out var target);
+        return target;
+    }
+
     private static GrabCandidate FindCandidate(
         Character c,
         Vector3 eye,

@@ -300,6 +300,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
         yield return HandStep("vr.125-hold-glyph", 40f, HoldGlyphStep());
+        yield return HandStep("vr.133-target-names", 25f, TargetNamesStep());
         yield return WarpBack();
     }
 
@@ -391,9 +392,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.121 (D8): an Apple on the head's interact ray (<c>Interaction.currentHovered</c>, Interaction.cs:15) shows
-    /// its name and, in place of the PICKUP text (Item.cs:680, GUIManager.cs:1049), the grab glyph; the text is
-    /// hidden, and comes back (glyph gone) with <c>UI.ActionHintText</c>. Then a web (CharacterAfflictions.cs:803,
+    /// vr.121 (D8): an Apple on the head's interact ray (<c>Interaction.currentHovered</c>, Interaction.cs:15), with
+    /// the defaults (<c>UI.TargetNames</c> and <c>UI.ActionHintText</c> off), shows neither the PICKUP text
+    /// (Item.cs:680, GUIManager.cs:1049) nor its name nor a grab glyph: only the game's glow (<c>_Interactable</c> 1,
+    /// Item.cs:1147). <c>UI.ActionHintText</c> brings the text back. Then a web (CharacterAfflictions.cs:803,
     /// the struggle prompt) draws the shake glyph on both wrists with a contact tick on each hand.
     /// </summary>
     IEnumerator PromptGlyphStep()
@@ -451,14 +453,28 @@ internal sealed partial class SelfTestRunner
             }
             bool hidden = TargetPrompt.TextHidden && verbText.GetAlpha() <= 0.001f;
             bool grab = TargetPrompt.Drawn(PromptVerb.Grab);
-            bool named = gui.interactName.activeInHierarchy;
-            notes.Add($"text hidden {hidden}, grab glyph {grab}, name shown {named}");
+            bool namesOn = SpatialFeature.Settings.TargetNames.Value;
+            bool named = NameShown(gui);
+            float glow = Glow(world);
+            notes.Add(
+                $"text hidden {hidden}, grab glyph {grab}, name shown {named} (UI.TargetNames {namesOn}), glow {glow:0.##}"
+            );
             if (!hidden)
                 fails.Add("PICKUP text still drawn with UI.ActionHintText off");
-            if (!grab)
-                fails.Add("no grab glyph in place of the PICKUP text");
-            if (!named)
-                fails.Add("the Apple's name is gone");
+            if (grab != namesOn)
+                fails.Add(
+                    namesOn
+                        ? "no grab glyph with UI.TargetNames on"
+                        : "grab glyph drawn with UI.TargetNames off"
+                );
+            if (named != namesOn)
+                fails.Add(
+                    namesOn
+                        ? "the Apple's name is gone"
+                        : "the Apple's name shows with UI.TargetNames off"
+                );
+            if (glow < 0.5f)
+                fails.Add("the hovered Apple does not glow (_Interactable 0)");
             yield return ShotAt("vr-121-prompt-glyphs", world.Center());
 
             if (hintText != null)
@@ -508,6 +524,115 @@ internal sealed partial class SelfTestRunner
             notes.Add(cueNote);
         }
         Conclude(fails, notes);
+    }
+
+    /// <summary>
+    /// vr.133: an Apple off the head's ray, low beside you, with an empty hand reaching it (no grip): it glows through
+    /// the game's highlight (<c>_Interactable</c> 1, Item.cs:1147) and, by default (<c>UI.TargetNames</c> off), no
+    /// name shows; the hand moved away turns the glow off (Item.HoverExit, :1155). With <c>UI.TargetNames</c> on, the
+    /// Apple on the head's ray shows its name.
+    /// </summary>
+    IEnumerator TargetNamesStep()
+    {
+        if (!SpatialFeature.Settings.TargetPrompt.Value)
+        {
+            stepNote = "UI.TargetPrompt is off";
+            yield break;
+        }
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var head = VRRig.Instance.Head;
+        var c = Character.localCharacter;
+        var right = Vector3.Cross(Vector3.up, Flat(head.forward)).normalized;
+        var spot = head.position + Flat(head.forward) * 0.35f + right * 0.3f;
+        spot.y = c.Center.y;
+        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail("spawned Apple has no Item");
+            yield break;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        var gui = GUIManager.instance;
+        var names = SpatialFeature.Settings.TargetNames;
+        bool namesWas = names.Value;
+        var fails = new List<string>();
+        var notes = new List<string>();
+        try
+        {
+            names.Value = false;
+            yield return Wait(0.3f);
+            float before = Glow(world);
+            var restAt = Script(false).Position;
+            yield return MoveTo(false, () => world != null ? world.Center() : spot, 0.5f);
+            yield return Wait(0.3f);
+            float reached = Glow(world);
+            bool headHover = ReferenceEquals(Interaction.instance.currentHovered, world);
+            bool named = headHover && NameShown(gui);
+            notes.Add(
+                $"glow {before:0.##} before, {reached:0.##} at the hand (head hover {headHover}), name shown {named}"
+            );
+            if (reached < 0.5f)
+                fails.Add("the Apple at the empty hand does not glow (_Interactable 0)");
+            if (named)
+                fails.Add("the Apple's name shows with UI.TargetNames off");
+            yield return ShotAt("vr-133-target-names", world.Center());
+            yield return MoveTrack(false, restAt, 0.3f);
+            yield return Wait(0.3f);
+            float left = Glow(world);
+            notes.Add($"glow {left:0.##} after the hand left");
+            if (!ReferenceEquals(Interaction.instance.currentHovered, world) && left > 0.5f)
+                fails.Add("the Apple still glows after the hand left");
+
+            names.Value = true;
+            float until = Now + 5f;
+            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            for (float t = Now + 0.4f; Now < t; )
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            bool shown = NameShown(gui);
+            notes.Add($"UI.TargetNames on: name shown {shown}");
+            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+                fails.Add("the Apple never became the hovered target");
+            else if (!shown)
+                fails.Add("no name with UI.TargetNames on");
+        }
+        finally
+        {
+            names.Value = namesWas;
+        }
+        Conclude(fails, notes);
+    }
+
+    /// <summary>The target name is drawn: the game shows it (GUIManager.cs:1050) and ui.spatial has not hidden it.</summary>
+    static bool NameShown(GUIManager gui) =>
+        gui.interactName.activeInHierarchy && !TargetPrompt.NameHidden;
+
+    static readonly MaterialPropertyBlock glowBlock = new();
+
+    /// <summary>The game's highlight on <paramref name="item"/>: <c>_Interactable</c> in its main renderer's block
+    /// (Item.HoverEnter, Item.cs:1145-1153).</summary>
+    static float Glow(Item item)
+    {
+        if (item == null || item.mainRenderer == null)
+            return 0f;
+        item.mainRenderer.GetPropertyBlock(glowBlock);
+        return glowBlock.GetFloat(Item.PROPERTY_INTERACTABLE);
     }
 
     static GuideRow GuideRowOf(GuideAction action, GuideTopic topic)

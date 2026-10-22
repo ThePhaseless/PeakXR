@@ -30,6 +30,7 @@ public sealed class SpatialFeature : Feature
 internal sealed class SpatialSettings
 {
     public ConfigEntry<bool> TargetPrompt,
+        TargetNames,
         ButtonLabels,
         WorldBanners,
         HeldItemGauges,
@@ -47,6 +48,12 @@ internal sealed class SpatialSettings
                 true,
                 "The interact prompt (name and action) floats at the thing you point at, and a held interaction's "
                     + "progress ring shows there too. Off: they stay on the HUD."
+            ),
+            TargetNames = cfg.Bind(
+                ui,
+                "TargetNames",
+                false,
+                "In VR, show the name of the item or object you are about to pick up or use. Off: it just glows."
             ),
             ButtonLabels = cfg.Bind(
                 ui,
