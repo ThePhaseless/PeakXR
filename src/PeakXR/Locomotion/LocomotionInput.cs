@@ -35,6 +35,27 @@ internal static class LocomotionInput
     private static bool wroteSticky;
     private static Vector3 lastBody;
     private static bool hadBody;
+    private static bool lastCanFollow;
+    private static readonly System.Action<Vector3> AbsorbNowAction = AbsorbNow;
+
+    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: absorbs the eye anchor's travel into the room
+    /// anchor in the frame it moves, so the origin placed right after carries no frame of body motion (run 32: the
+    /// view moved 0.044 m at the end of a far-lean walk). The next <see cref="RoomScale"/> then sees no delta.</summary>
+    private static void AbsorbNow(Vector3 anchor)
+    {
+        var rig = VRRig.Instance;
+        if (!hadBody || !lastCanFollow || rig == null || rig.Origin == null || !VRInput.HeadTracked)
+            return;
+        var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
+        lastBody = anchor;
+        Follow.Anchor = rig.RoomAnchor;
+        Follow.Absorb(
+            new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z),
+            new NVector2(delta.x, delta.z)
+        );
+        rig.RoomAnchor = Follow.Anchor;
+    }
+
     private static bool warnedFar;
     private static bool pointTrigger;
     private static Character watchGoal;
@@ -283,8 +304,8 @@ internal static class LocomotionInput
     {
         var rig = VRRig.Instance;
         // The smoothed eye anchor the view rides, not a raw body part: absorbing anything else moves the view.
-        // shortcut: the anchor is from the last LateUpdate, so about one frame of body travel (1 cm at walking
-        // speed) shows as view motion while the body starts or stops; absorb inside RigDriver if that is felt.
+        // The anchor is from the last LateUpdate, where AbsorbNow already took its travel (delta 0 here).
+        RigDriver.BodyAnchorMoved = AbsorbNowAction;
         var anchor = RigDriver.BodyAnchor;
         if (rig == null || rig.Origin == null || !VRInput.HeadTracked)
         {
@@ -316,6 +337,7 @@ internal static class LocomotionInput
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
         var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
+        lastCanFollow = canFollow;
         WarnFar(c, canFollow, stickIdle);
         if (Fade.Update(Follow.RecenterNeeded, dt))
             Follow.Recenter(head);

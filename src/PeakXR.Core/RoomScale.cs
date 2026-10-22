@@ -92,21 +92,10 @@ namespace PeakXR.Core
             }
             else
                 _stillFor += dt;
+            if (canFollow)
+                Absorb(head, bodyDelta);
             var d = head - Anchor;
             float dist = d.Length();
-            if (canFollow && dist > 1e-5f)
-            {
-                // Absorb the body's net travel toward the head, never past it: a step's back-swing returns what its
-                // forward swing took, so gait sway cannot ratchet the anchor (and the view) toward the head. Below
-                // the start point, pushes away from the head still move the view.
-                var dir = d / dist;
-                float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
-                Anchor += dir * along;
-                _absorbed += along;
-                _followTravel += MathF.Max(0f, along * Vector2.Dot(dir, _followDir));
-                d = head - Anchor;
-                dist = d.Length();
-            }
             Offset = d;
             if (!canFollow)
                 _absorbed = 0f;
@@ -147,6 +136,27 @@ namespace PeakXR.Core
                 return Vector2.Zero;
             float amount = RampDistance > 0f ? (dist - StopRadius) / RampDistance : 1f;
             return d / dist * MathF.Min(amount, 1f);
+        }
+
+        /// <summary>
+        /// Absorbs the body's net travel toward the head into <see cref="Anchor"/>, never past it: a step's
+        /// back-swing returns what its forward swing took, so gait sway cannot ratchet the anchor (and the view)
+        /// toward the head. Below the start point, pushes away from the head still move the view. <see cref="Update"/>
+        /// does this itself; the camera calls it in the same frame it moves the eye anchor, so a moving body never
+        /// shows as a frame of view motion (run 32: 0.044 m at the end of a follow walk). Only while following is
+        /// allowed (the last <see cref="Update"/>'s <c>canFollow</c>).
+        /// </summary>
+        public void Absorb(Vector2 head, Vector2 bodyDelta)
+        {
+            var d = head - Anchor;
+            float dist = d.Length();
+            if (dist <= 1e-5f)
+                return;
+            var dir = d / dist;
+            float along = Math.Clamp(Vector2.Dot(bodyDelta, dir), -_absorbed, dist);
+            Anchor += dir * along;
+            _absorbed += along;
+            _followTravel += MathF.Max(0f, along * Vector2.Dot(dir, _followDir));
         }
 
         public void Recenter(Vector2 head)

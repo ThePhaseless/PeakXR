@@ -74,6 +74,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// elsewhere or jumped this frame. Room-scale following absorbs its movement.</summary>
     internal static Vector3? BodyAnchor;
 
+    /// <summary>Called with <see cref="BodyAnchor"/> the frame it is set, before the rig origin is placed, so
+    /// player.locomotion can absorb the body's travel into <see cref="VRRig.RoomAnchor"/> in the same frame.</summary>
+    internal static System.Action<Vector3> BodyAnchorMoved;
+
     /// <summary>World offset of the first-person view from the avatar's calibrated eyes that is not the player's head
     /// motion: follow lag, the turn shift and the crouch lift. avatar.local leans the body from the head minus this,
     /// so stick walking or a snap turn does not lean the avatar; also <see cref="LeanNeutral"/>. Zero while the view
@@ -767,7 +771,11 @@ internal sealed class RigDriver : MonoBehaviour
             ? goal
             : RigMath.Follow(anchor.N(), goal.N(), dt, rate, verticalRate, maxLag).U();
         if (shownKind == ViewKind.FirstPerson && !snap)
+        {
             BodyAnchor = anchor;
+            // Room-scale absorbs this frame's body travel before the origin is placed from its anchor.
+            BodyAnchorMoved?.Invoke(anchor);
+        }
         if (shownKind == ViewKind.FirstPerson)
         {
             LeanEye = BodyEye(c, yaw);

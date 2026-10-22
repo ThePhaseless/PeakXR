@@ -111,6 +111,24 @@ public class RoomScaleTests
     }
 
     [Fact]
+    public void AbsorbInTheCameraFrame_SameAsInUpdate()
+    {
+        // The camera absorbs the body's travel the frame it moves the eye; the next Update then sees no delta.
+        var a = new RoomScaleFollow();
+        var b = new RoomScaleFollow();
+        var head = new Vector2(0f, 0.5f);
+        a.Update(head, Vector2.Zero, true, 0.01f);
+        b.Update(head, Vector2.Zero, true, 0.01f);
+        var step = new Vector2(0.01f, 0.03f);
+        var ra = a.Update(head, step, true, 0.01f);
+        b.Absorb(head, step);
+        var rb = b.Update(head, Vector2.Zero, true, 0.01f);
+        TestUtil.Near(a.Anchor.X, b.Anchor.X, 1e-6f);
+        TestUtil.Near(a.Anchor.Y, b.Anchor.Y, 1e-6f);
+        TestUtil.Near(ra.Y, rb.Y, 1e-6f);
+    }
+
+    [Fact]
     public void FollowThatCoastsOntoTheHead_StillNeverWalksBack()
     {
         // Run 31: the far lean's walk coasted until the anchor reached the head (offset 0.007 m), so standing back
