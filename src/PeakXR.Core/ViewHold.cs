@@ -42,6 +42,17 @@ public sealed class ViewHold
     /// <summary>The view's offset from the body (m), for tracing.</summary>
     public float Offset { get; private set; }
 
+    /// <summary>
+    /// The eye anchor moved under a still body (a snap or smooth turn swings it round the torso, and the turn shift
+    /// cancels that swing): carry the held point with it, keeping the offset, so the turn pivots on the eye. Call
+    /// before <see cref="Update"/> on every frame the turn shift is being set.
+    /// </summary>
+    public void Rebase(Vector3 body)
+    {
+        if (have)
+            output = body + off;
+    }
+
     /// <summary>Forget the held point: the next update starts on the body (recenter, new view, warp).</summary>
     public void Reset()
     {
