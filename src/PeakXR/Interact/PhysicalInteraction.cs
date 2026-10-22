@@ -988,7 +988,11 @@ internal static class PhysicalInteraction
         // Use: the holding hand's trigger (right when empty-handed) is primary, the other trigger secondary.
         bool holding = Holding(c, out _);
         var primaryHand = holding && LocalHold.ItemInLeftHand ? LeftHand : RightHand;
-        bool primaryDown = cfg.TriggerUse && primaryHand.Trigger.Held;
+        // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
+        bool primaryDown =
+            cfg.TriggerUse
+            && primaryHand.Trigger.Held
+            && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
         bool secondaryDown = cfg.TriggerUse && Other(primaryHand).Trigger.Held;
 
         bool atMouth = false;
@@ -996,7 +1000,7 @@ internal static class PhysicalInteraction
         if (
             cfg.EatAtMouth
             && holding
-            && Hold.Edible
+            && Physical.ItemGestures.AtMouth(c.data.currentItem)
             && VRInput.HeadTracked
             && rig.Head != null
             && mouthHand != null

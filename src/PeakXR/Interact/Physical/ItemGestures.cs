@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using PeakXR.Avatar;
+using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -25,8 +27,11 @@ internal static class ItemGestures
     public static BugleSFX Bugle { get; private set; }
     public static Parasol Parasol { get; private set; }
 
-    /// <summary>A non-food item whose use heals or clears a status (bandage, cure-all, antidote).</summary>
-    public static bool StatusItem { get; private set; }
+    /// <summary>The held item's real-life use gesture (<see cref="ItemUse"/>).</summary>
+    public static UseGesture Use { get; private set; }
+
+    /// <summary>Applied to the body (bandage, heat pack): also where social feeding puts it on a friend.</summary>
+    public static bool StatusItem => Use == UseGesture.Apply;
 
     /// <summary>The held item changed this frame.</summary>
     public static bool ItemChanged { get; private set; }
@@ -55,6 +60,123 @@ internal static class ItemGestures
         LidGesture.Tick(cfg);
         HeldGestures.Tick(c, rig, cfg, dt);
         ParasolRunner.Instance.Tick(c, input, cfg, dt);
+        CookWarning(c);
+    }
+
+    /// <summary>Patched before Item.CancelUsePrimary/CancelUseSecondary: a cast of the local VR player's held
+    /// item that was under way and not finished is being called off. A primary the game called off because the item
+    /// became unusable also says why.</summary>
+    public static void BeforeCancel(Item item, bool secondary)
+    {
+        if (
+            !VRSession.Active
+            || item == null
+            || item.finishedCast
+            || item.castProgress <= 0f
+            || !(secondary ? item.isUsingSecondary : item.isUsingPrimary)
+        )
+            return;
+        var c = Character.localCharacter;
+        if (c == null || !ReferenceEquals(item.holderCharacter, c))
+            return;
+        bool left = LocalHold.ItemInLeftHand;
+        Affordance.Cancel(left);
+        if (!secondary && !item.CanUsePrimary())
+            UseDenial.Deny(c, item, left);
+    }
+
+    /// <summary>Patched before CharacterItems.DoUsing for the local VR player: the off-hand trigger the game will
+    /// refuse (<see cref="UseDenial.DenySecondary"/>) and a primary press that would do nothing.</summary>
+    public static void BeforeUsing(Character c)
+    {
+        if (
+            !VRSession.Active
+            || c == null
+            || !c.IsLocal
+            || c.data.passedOut
+            || c.data.fullyPassedOut
+        )
+            return;
+        var item = c.data.currentItem;
+        if (item == null)
+            return;
+        var input = c.input;
+        bool left = LocalHold.ItemInLeftHand;
+        if (input.useSecondaryWasPressed && !item.isUsingPrimary && !item.CanUseSecondary())
+            UseDenial.DenySecondary(item, !left);
+        if (input.usePrimaryWasPressed && item.CanUsePrimary())
+            UseDenial.DenyEmptyPress(item, left);
+    }
+
+    /// <summary>Patched before Item.Interact: the game's equip cooldown (Item.cs:580) would drop this pickup
+    /// silently.</summary>
+    public static void BeforePickup(Item item, Character interactor)
+    {
+        if (
+            interactor == null
+            || !interactor.IsLocal
+            || interactor.player == null
+            || !interactor.player.HasEmptySlot(item.itemID)
+            || interactor.refs.items.lastEquippedSlotTime + 0.25f <= Time.time
+        )
+            return;
+        PickupRefused(item, DenyReason.TooSoon);
+    }
+
+    /// <summary>A pickup of <paramref name="item"/> by the local VR player that did not happen: refused at the
+    /// item from the hand nearest it, which is the one that reached for it.</summary>
+    public static void PickupRefused(Item item, DenyReason reason)
+    {
+        var rig = VRRig.Instance;
+        if (!VRSession.Active || rig == null || item == null)
+            return;
+        var at = item.Center();
+        var left = rig.Hand(true);
+        var right = rig.Hand(false);
+        bool useLeft =
+            left != null
+            && (
+                right == null
+                || (left.position - at).sqrMagnitude < (right.position - at).sqrMagnitude
+            );
+        Affordance.Deny(useLeft, at, reason, default, item);
+    }
+
+    private static ItemCooking cooking;
+    private static int explodeAt;
+
+    /// <summary>
+    /// Danger while the held item cooks toward harm (<see cref="CookRisk"/>): the campfire hold (cook gesture or grip,
+    /// Campfire.cs:300-337) is under way and finishing it would burn, wreck or blow up the item. Urgency follows the
+    /// hold, so the warning speeds up as the cook nears done.
+    /// </summary>
+    private static void CookWarning(Character c)
+    {
+        var interaction = Interaction.instance;
+        if (
+            cooking == null
+            || !cooking.canBeCooked
+            || interaction == null
+            || interaction.currentHeldInteractible is not Campfire
+            || interaction.currentConstantInteractableTime <= 0f
+        )
+            return;
+        if (
+            Held.data == null
+            || !Held.data.TryGetDataEntry<IntItemData>(DataEntryKey.CookedAmount, out var cooked)
+            || !CookRisk.NextHarms(
+                cooked.Value,
+                cooking.wreckWhenCooked,
+                explodeAt,
+                !cooking.ignoreDefaultCookBehavior
+            )
+        )
+            return;
+        Affordance.Danger(
+            HoldLeft,
+            Held.transform.position,
+            Mathf.Clamp01(interaction.constantInteractableProgress)
+        );
     }
 
     private static void Bind(Item item)
@@ -66,23 +188,116 @@ internal static class ItemGestures
         boundItem = item;
         Bugle = item != null ? item.GetComponent<BugleSFX>() : null;
         Parasol = item != null ? item.GetComponent<Parasol>() : null;
-        StatusItem = item != null && IsStatusItem(item);
+        Use = UseOf(item);
+        cooking = item != null ? item.GetComponent<ItemCooking>() : null;
+        explodeAt = 0;
+        if (cooking != null)
+        {
+            foreach (var behaviour in cooking.additionalCookingBehaviors)
+            {
+                if (
+                    behaviour is CookingBehavior_Explode
+                    && (explodeAt == 0 || behaviour.cookedAmountToTrigger < explodeAt)
+                )
+                    explodeAt = behaviour.cookedAmountToTrigger;
+            }
+        }
     }
 
-    /// <summary>Heals or clears a status on use (Action_ModifyStatus.cs:4 with a negative amount,
-    /// Action_ClearAllStatus.cs:6) and restores no hunger (Action_RestoreHunger), so it is not food.</summary>
-    private static bool IsStatusItem(Item item)
+    private static Item classifiedItem;
+    private static UseGesture classifiedUse;
+
+    /// <summary>The use gesture of <paramref name="item"/> (Button for null), cached for the last item asked, so
+    /// interact.physical can route the mouth with it every frame even when this feature does not tick.</summary>
+    public static UseGesture UseOf(Item item)
     {
-        if (item.GetComponent<Action_RestoreHunger>() != null)
-            return false;
-        if (item.GetComponent<Action_ClearAllStatus>() != null)
-            return true;
-        foreach (var modify in item.GetComponents<Action_ModifyStatus>())
+        if (item == null)
+            return UseGesture.Button;
+        if (!ReferenceEquals(item, classifiedItem))
         {
-            if (modify.changeAmount < 0f)
-                return true;
+            classifiedItem = item;
+            classifiedUse = ItemUse.Classify(Facts(item));
         }
-        return false;
+        return classifiedUse;
+    }
+
+    /// <summary>Set by <see cref="ItemGesturesFeature"/>: the face gesture exists, so the trigger may be refused.</summary>
+    public static bool Installed;
+
+    /// <summary>The bare trigger must not use <paramref name="item"/>: it kills or warps you, and the eye-to-eye
+    /// gesture (<see cref="HeldGestures"/>) is how it is used in VR.</summary>
+    public static bool TriggerRefused(Item item) =>
+        Installed
+        && VRSession.Active
+        && ItemGesturesConfig.Instance.CommuneAtFace
+        && ItemUse.NeedsGesture(UseOf(item));
+
+    /// <summary>The held item goes to the mouth to be used (eat, drink, blow up): interact.physical's eat route.</summary>
+    public static bool AtMouth(Item item) => ItemUse.AtMouth(UseOf(item));
+
+    /// <summary>The game data <see cref="ItemUse.Classify"/> reads: Item.cs:39-75 (UIData), ItemUseFeedback.cs:5,
+    /// and the item's action and behaviour components.</summary>
+    public static ItemUseFacts Facts(Item item)
+    {
+        var parts = ItemParts.None;
+        foreach (var action in item.GetComponents<ItemAction>())
+        {
+            if (
+                action.OnPressed
+                || action.OnHeld
+                || action.OnReleased
+                || action.OnCastFinished
+                || action.OnConsumed
+            )
+                parts |= ItemParts.Acts;
+            parts |= action switch
+            {
+                Action_Consume or Action_ConsumeAndSpawn => ItemParts.Consume,
+                Action_RestoreHunger => ItemParts.Hunger,
+                Action_ModifyStatus m when m.changeAmount < 0f => ItemParts.SelfCare,
+                Action_ClearAllStatus or Action_ApplyAffliction or Action_AddOrRemoveThorns =>
+                    ItemParts.SelfCare,
+                Action_Die => ItemParts.Lethal,
+                Action_LightLantern or Action_LightCandle or Action_Flare => ItemParts.Light,
+                Action_Balloon => ItemParts.Balloon,
+                Action_WarpToBiome
+                or Action_WarpToRandomPlayer
+                or global::Peak.Action_WarpToShadowRealm => ItemParts.Warp,
+                Action_RaycastDart
+                or global::Peak.Action_Antizooka
+                or global::Peak.Action_RaycastSpawnSomething => ItemParts.Shooter,
+                Action_ShowBinocularOverlay => ItemParts.Binoculars,
+                Action_Parasol => ItemParts.Parasol,
+                Action_Passport or Action_Guidebook => ItemParts.Book,
+                Action_StrangeGem => ItemParts.Gem,
+                _ => ItemParts.None,
+            };
+        }
+        if (item.GetComponent<Constructable>() != null)
+            parts |= ItemParts.Construct;
+        if (
+            item.GetComponent<RopeShooter>() != null
+            || item.GetComponent<VineShooter>() != null
+            || item.GetComponent<RescueHook>() != null
+        )
+            parts |= ItemParts.Shooter;
+        if (item.GetComponent<RopeSpool>() != null)
+            parts |= ItemParts.Spool;
+        if (item.GetComponent<BugleSFX>() != null)
+            parts |= ItemParts.Bugle;
+        if (item.GetComponent<Parasol>() != null)
+            parts |= ItemParts.Parasol;
+        if (item is Guidebook)
+            parts |= ItemParts.Book;
+        if (item.GetComponent<global::Peak.AmuletBase>() != null)
+            parts |= ItemParts.Gem;
+        var feedback = item.GetComponent<ItemUseFeedback>();
+        return new ItemUseFacts(
+            item.UIData != null && item.UIData.hasMainInteract,
+            item.UIData?.mainInteractPrompt,
+            feedback != null ? feedback.useAnimation : null,
+            parts
+        );
     }
 
     /// <summary>The nearest campfire whose <see cref="FireBase"/> is within <paramref name="range"/>, or null; with

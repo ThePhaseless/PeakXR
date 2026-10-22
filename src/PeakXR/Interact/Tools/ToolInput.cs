@@ -39,6 +39,8 @@ internal static class ToolInput
     private static readonly Knob RightKnob = new();
     private static readonly RopePull Pull = new();
     private static readonly AnalogButton PullGrip = new(0.6f, 0.4f);
+    private static readonly LimitStop SpoolStop = new();
+    private static readonly LimitStop CannonStop = new();
 
     private static Item cachedItem;
     private static RopeSpool spool;
@@ -107,7 +109,8 @@ internal static class ToolInput
         {
             stepHold = StepHoldSeconds;
             stepHoldDir = steps > 0 ? 1 : -1;
-            Haptics.Pulse(holdLeft, 0.15f, 0.02f);
+            if (!SpoolStop.Pressing)
+                Haptics.Pulse(holdLeft, 0.15f, 0.02f);
         }
         else if (stepHold > 0f)
         {
@@ -120,6 +123,7 @@ internal static class ToolInput
             input.scrollForwardIsPressed = true;
         else if (dir < 0)
             input.scrollBackwardIsPressed = true;
+        SpoolEndStop(holdLeft, dir);
 
         bool freeLeft = !holdLeft;
         ref var free = ref VRInput.Hand(freeLeft);
@@ -136,8 +140,29 @@ internal static class ToolInput
         if (!Pull.Active)
             return;
         input.scrollInput += scroll;
-        if (ticks != 0)
+        if (dir == 0)
+            SpoolEndStop(
+                freeLeft,
+                scroll > 0f ? 1
+                    : scroll < 0f ? -1
+                    : 0
+            );
+        if (ticks != 0 && !SpoolStop.Pressing)
             Haptics.Pulse(freeLeft, 0.2f, 0.02f);
+    }
+
+    /// <summary>The rope can go no further (RopeSpool.cs:136-138 clamps the length to <c>minSegments</c> and to the
+    /// rope left, at most <c>Rope.MaxSegments</c>): one end-stop thunk on the hand that pushed it there.</summary>
+    private static void SpoolEndStop(bool left, int push)
+    {
+        if (push == 0)
+        {
+            SpoolStop.Update(0f, 0f, 0f, 0);
+            return;
+        }
+        float max = Mathf.Min(spool.RopeFuel, Rope.MaxSegments);
+        if (SpoolStop.Update(spool.Segments, spool.minSegments, max, push))
+            UI.Affordances.Affordance.EndStop(left);
     }
 
     private static void DriveCannon(CharacterInput input, int holdSteps, int freeSteps)
@@ -150,6 +175,7 @@ internal static class ToolInput
         if (pendingSteps == 0)
             return;
 
+        int push = pendingSteps > 0 ? 1 : -1;
         if (pendingSteps > 0)
         {
             input.scrollForwardWasPressed = true;
@@ -161,8 +187,17 @@ internal static class ToolInput
             pendingSteps++;
         }
         var constructable = cannon.constructable;
-        if (constructable != null && constructable.currentPreview != null)
-            Haptics.Pulse(freeSteps != 0 ? !holdLeft : holdLeft, 0.2f, 0.02f);
+        if (constructable == null || constructable.currentPreview == null)
+            return;
+        bool left = freeSteps != 0 ? !holdLeft : holdLeft;
+        // Action_ConstructableScoutCannonScroll.Scrolled clamps the angle to +-maxAngle (:52-58).
+        if (CannonStop.Update(constructable.angleOffset, -cannon.maxAngle, cannon.maxAngle, push))
+        {
+            pendingSteps = 0;
+            UI.Affordances.Affordance.EndStop(left);
+        }
+        else if (!CannonStop.Pressing)
+            Haptics.Pulse(left, 0.2f, 0.02f);
     }
 
     /// <summary>Feeds one hand's twist since last frame into its knob; returns whole steps.</summary>
@@ -199,5 +234,7 @@ internal static class ToolInput
         pendingSteps = 0;
         stepHold = 0f;
         stepHoldDir = 0;
+        SpoolStop.Reset();
+        CannonStop.Reset();
     }
 }
