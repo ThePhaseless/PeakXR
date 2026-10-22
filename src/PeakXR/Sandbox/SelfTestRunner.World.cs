@@ -521,6 +521,22 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>Where a given item went when it left the hand: destroyed, or its state, place and holder.</summary>
+    static string Whereabouts(Item item, Transform entry)
+    {
+        if (item == null)
+            return "the given item was destroyed";
+        var p = item.transform.position;
+        var c = Character.localCharacter;
+        return $"{item.name} {item.itemState} at {p}, {Vector3.Distance(p, c.Center):0.00} m from the body"
+            + (
+                entry != null
+                    ? $", {Vector3.Distance(p, entry.position):0.00} m from the cannon entry"
+                    : ""
+            )
+            + $", holder {(item.holderCharacter != null ? item.holderCharacter.name : "none")}";
+    }
+
     IEnumerator FuseRefused(Item torchPrefab, Component fuse)
     {
         var c = Character.localCharacter;
@@ -534,26 +550,35 @@ internal sealed partial class SelfTestRunner
         var cannon = fuse.GetComponentInParent<ScoutCannon>();
         var entry =
             cannon != null ? GameMember.Field<ScoutCannon, Transform>("entry")(cannon) : null;
-        if (entry != null)
-            yield return WarpBeside(at, 0.8f, at - entry.position);
-        else
-            yield return WarpFacing(at, 0.8f);
+        // The torch is given and lit where the player stands, as vr.26 lights it, and only then carried to the
+        // prop: vr41 lost it given and lit beside the placed cannon.
         yield return GiveAndHold(torchPrefab);
         if (!stepOk)
             yield break;
-        var torch = HeldItem();
+        var given = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
-        float lightUse = GameTiming.Budget(GameTiming.UseSeconds(torch));
+        float lightUse = GameTiming.Budget(GameTiming.UseSeconds(given));
         Script(left).Trigger = 1f;
         // The torch in hand each time: a given trackable item can be swapped for its reconnected copy, which left
         // the first reference destroyed (vr40 threw on it; vr38 lost a flare the same way).
         yield return WaitFor(() => HeldItem() != null && HandLights.IsLit(HeldItem()), lightUse);
         Script(left).Trigger = 0f;
-        torch = HeldItem();
+        if (HeldItem() == null)
+        {
+            Fail("no torch in hand after lighting it: " + Whereabouts(given, entry));
+            yield break;
+        }
+        if (entry != null)
+            yield return WarpBeside(at, 0.8f, at - entry.position);
+        else
+            yield return WarpFacing(at, 0.8f);
+        var torch = HeldItem();
         if (torch == null)
         {
-            Fail("no torch in hand after lighting it");
+            Fail(
+                "the lit torch left the hand on the warp to the fuse: " + Whereabouts(given, entry)
+            );
             yield break;
         }
         var flame = FireGestures.FlamePoint(torch);
@@ -1245,24 +1270,38 @@ internal sealed partial class SelfTestRunner
             Fail("FriendsFar fired with everyone in range");
             yield break;
         }
+        // The segment index moves at the start of the game's swap coroutine, but the view swaps only after the fog
+        // catches up plus 1 s (MapHandler.cs:578-597), and run flow fades for that moment: watch the fade through
+        // its whole arm-and-hold (vr41 stopped looking when the index moved and saw no fade).
         float fade = 0f;
-        float end = Now + 40f;
-        while (Now < end && map.GetCurrentSegment() <= from)
+        bool armed = false;
+        float end = Now + 3f;
+        while (Now < end && !armed)
+        {
+            armed = RunFlowRuntime.SegmentPending;
+            fade = Mathf.Max(fade, VRFade.Target);
+            yield return null;
+        }
+        for (float until = Now + 60f; Now < until && RunFlowRuntime.SegmentPending; )
         {
             fade = Mathf.Max(fade, VRFade.Target);
             yield return null;
         }
-        // The fade holds through the swap; give it a moment to show after the segment index moves.
-        for (float t = Now + 2f; Now < t; )
+        for (float t = Now + 1f; Now < t; )
         {
             fade = Mathf.Max(fade, VRFade.Target);
             yield return null;
+        }
+        if (!armed && Setting("UI.RunFlow", "FadeOnSegmentChange", true))
+        {
+            Fail($"run flow never armed its segment fade for {fire.name}");
+            yield break;
         }
         var note =
             $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00}";
         if (map.GetCurrentSegment() <= from)
             Fail("segment did not advance: " + note);
-        else if (Setting("UI", "FadeOnSegmentChange", true) && fade < 0.5f)
+        else if (Setting("UI.RunFlow", "FadeOnSegmentChange", true) && fade < 0.5f)
             Fail("no fade over the segment swap: " + note);
         else
             stepNote = note;
