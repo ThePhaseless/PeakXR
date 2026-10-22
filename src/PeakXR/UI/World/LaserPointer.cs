@@ -55,6 +55,9 @@ internal sealed class LaserPointer
     /// <summary>The hand whose trigger made the last laser press, so a click handler can cue on that hand.</summary>
     public static bool PressLeft { get; private set; }
 
+    /// <summary>The control under the last laser press (null over none), for a refusal that tints it.</summary>
+    public static Selectable PressedControl { get; private set; }
+
     // A dim dot over a disabled control: it is there, but it will not take the press.
     private static readonly Color LockedColor = new(0.55f, 0.55f, 0.55f, 0.7f);
 
@@ -324,6 +327,7 @@ internal sealed class LaserPointer
         data.pointerPressRaycast = data.pointerCurrentRaycast;
         pressForward = aim.forward;
         PressLeft = hands.ActiveLeft;
+        PressedControl = over != null ? over.GetComponentInParent<Selectable>() : null;
         // The blocker in front takes the press, as in vanilla; say why the control behind does not react.
         if (blocked)
             Affordance.Deny(hands.ActiveLeft, visualPoint, DenyReason.Blocked);

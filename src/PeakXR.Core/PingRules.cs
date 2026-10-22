@@ -1,3 +1,5 @@
+using System;
+
 namespace PeakXR.Core;
 
 /// <summary>What a ping press gets: the ping, or the reason PointPinger would drop it silently.</summary>
@@ -60,4 +62,40 @@ public static class PingRules
     /// </summary>
     public static bool UseFreeHand(bool gesture, bool itemHasUse, bool otherHandFree) =>
         gesture && !itemHasUse && otherHandFree;
+
+    /// <summary>
+    /// The dotted aim ray: dots every <paramref name="spacing"/> metres (the first half a spacing out), at most
+    /// <paramref name="max"/>; a longer ray spreads <paramref name="max"/> dots evenly over its whole length. Dot i
+    /// sits at <c>step * (i + 0.5)</c>.
+    /// </summary>
+    public static void Dots(float length, float spacing, int max, out int count, out float step)
+    {
+        step = spacing;
+        count = length > 0f && spacing > 0f ? (int)MathF.Floor(length / spacing + 1e-4f) : 0;
+        if (count > max)
+        {
+            count = max;
+            step = length / max;
+        }
+    }
+}
+
+/// <summary>
+/// When the layout's ping button shows the aim preview: while the thumb rests on it or presses it, until the press
+/// becomes the long press (the emote wheel on the same button), which hides it until the thumb lets go.
+/// </summary>
+public sealed class PingButtonPreview
+{
+    private bool longPressed;
+
+    public bool Update(bool touched, bool held, float heldSeconds, float longPressSeconds)
+    {
+        if (held && heldSeconds >= longPressSeconds)
+            longPressed = true;
+        if (!touched && !held)
+            longPressed = false;
+        return !longPressed && (touched || held);
+    }
+
+    public void Reset() => longPressed = false;
 }

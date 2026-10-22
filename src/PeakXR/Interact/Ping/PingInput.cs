@@ -38,6 +38,16 @@ internal static class PingInput
     private static readonly Hand LeftHand = new(true);
     private static readonly Hand RightHand = new(false);
     private static readonly ButtonEdge Button = new();
+    private static readonly PingButtonPreview ButtonPreview = new();
+
+    /// <summary>The layout's long press (the emote wheel shares the ping button), the same threshold as
+    /// player.locomotion's binding table.</summary>
+    private static readonly float LongPressSeconds = new ActionMapper().LongPressSeconds;
+
+    private static float buttonHeldFor;
+    private static bool buttonAiming,
+        buttonAimLeft;
+    private static int buttonFrame = -10;
 
     /// <summary>The private <c>PointPinger._timeLastPinged</c> (PointPinger.cs:18), resolved by <see cref="PingFeature"/>;
     /// the cooldown itself is the public <c>coolDown</c> (:10), a prefab value.</summary>
@@ -54,6 +64,62 @@ internal static class PingInput
     {
         var h = left ? LeftHand : RightHand;
         return h.Armed && h.Gun.Aiming;
+    }
+
+    /// <summary>The thumb rests on or presses the layout's ping button (not yet the emote long press): the aim
+    /// preview shows from <paramref name="left"/>, the hand a tap would ping from.</summary>
+    public static bool ButtonAiming(out bool left)
+    {
+        left = buttonAimLeft;
+        return buttonAiming && Time.frameCount - buttonFrame <= 1;
+    }
+
+    /// <summary>Thumb on the button that carries the table's Ping (BindingTable.Default), like a finger resting on a
+    /// laser pointer's switch: the preview shows before the tap.</summary>
+    private static void TickButtonPreview(Character c, bool active, float dt)
+    {
+        buttonFrame = Time.frameCount;
+        bool touched = false,
+            held = false;
+        if (
+            active
+            && c.data.fullyConscious
+            && ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out bool onLeft,
+                out var control
+            )
+        )
+        {
+            ref var state = ref VRInput.Hand(onLeft);
+            if (state.Tracked)
+            {
+                switch (control)
+                {
+                    case VRControl.Primary:
+                        touched = state.PrimaryTouch;
+                        held = state.Primary;
+                        break;
+                    case VRControl.Secondary:
+                        touched = state.SecondaryTouch;
+                        held = state.Secondary;
+                        break;
+                    case VRControl.StickClick:
+                        held = state.StickClick;
+                        break;
+                }
+            }
+        }
+        buttonHeldFor = held ? buttonHeldFor + dt : 0f;
+        buttonAiming = ButtonPreview.Update(touched, held, buttonHeldFor, LongPressSeconds);
+        buttonAimLeft = PingRules.ButtonHandLeft(
+            PingConfig.Instance.Hand,
+            LeftHand.Pointing,
+            RightHand.Pointing,
+            VRInput.LeftHanded
+        );
     }
 
     public static void Tick(Character c, CharacterInput input, bool playerMovementActive)
@@ -99,6 +165,7 @@ internal static class PingInput
             firedLeft = false;
         }
 
+        TickButtonPreview(c, playerMovementActive, Time.unscaledDeltaTime);
         Button.Update(cfg.PingButtonDown(), dt);
         if (fired)
             PingLeft = firedLeft;

@@ -11,6 +11,19 @@ public static class EmoteGestures
     public static bool Raised(float handY, float headY, float margin) => handY > headY + margin;
 
     /// <summary>
+    /// A thumbs-up on a controller: the grip closed and the index on the trigger (a fist), the thumb lifted off every
+    /// button, and the thumb side of the hand (<paramref name="thumbUp"/>: the controller's up axis dotted with world
+    /// up) pointing up.
+    /// </summary>
+    public static bool ThumbsUp(in FingerCurls c, float thumbUp) =>
+        c.Thumb < 0.3f
+        && c.Index >= FingerCurlMapper.TriggerTouchCurl
+        && c.Middle > 0.6f
+        && c.Ring > 0.6f
+        && c.Pinky > 0.5f
+        && thumbUp > 0.7f;
+
+    /// <summary>
     /// Why the game will not open the emote wheel (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:561-569, and
     /// canEmote :312-322), or <see cref="DenyReason.None"/> when it opens.
     /// </summary>
@@ -113,9 +126,9 @@ public sealed class WaveGesture
     }
 }
 
-/// <summary>A cheer: both hands raised for <see cref="Dwell"/> seconds. Fires once, then waits for the hands to
-/// come down before it can fire again.</summary>
-public sealed class CheerGesture
+/// <summary>A pose held for <see cref="Dwell"/> seconds (both hands raised for a cheer, a thumbs-up). Fires once,
+/// then waits for the pose to break before it can fire again.</summary>
+public sealed class DwellGesture
 {
     public float Dwell = 0.4f;
 

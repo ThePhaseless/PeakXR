@@ -34,6 +34,10 @@ public enum PromptVerb : byte
 
     /// <summary>Struggle out of a web (CharacterAfflictions.cs:803).</summary>
     Struggle,
+
+    /// <summary>Keep holding: an <c>IInteractibleConstant</c> target (IInteractibleConstant.cs:5-7), whose ring fills
+    /// with <c>Interaction.constantInteractableProgress</c> (Interaction.cs:57).</summary>
+    Hold,
 }
 
 /// <summary>Kind of hovered interactible, as far as the prompt verb cares.</summary>
@@ -56,6 +60,9 @@ public enum PromptTarget : byte
 public static class PromptGlyph
 {
     public const int MaxPoints = GlyphShape.MaxPoints;
+
+    /// <summary>Radius of the hold glyph's track ring and of its fill.</summary>
+    public const float HoldRadius = 0.7f;
 
     private static readonly Vector2[] None = Array.Empty<Vector2>();
 
@@ -103,6 +110,8 @@ public static class PromptGlyph
         new Vector2[] { new(-0.45f, -0.55f), new(0.2f, 0.25f) },
         // Struggle: "<" of "< >", shaking outward.
         new Vector2[] { new(-0.3f, 0.35f), new(-0.65f, 0f), new(-0.3f, -0.35f) },
+        // Hold: the empty track ring; the fill is drawn over it (HoldFill).
+        Circle(0f, 0f, HoldRadius),
     };
 
     private static readonly Vector2[][] Second =
@@ -123,6 +132,7 @@ public static class PromptGlyph
         // Piton: the hammer's head.
         new Vector2[] { new(-0.05f, 0.55f), new(0.5f, -0.05f) },
         new Vector2[] { new(0.3f, 0.35f), new(0.65f, 0f), new(0.3f, -0.35f) },
+        None,
     };
 
     /// <summary>Stroke <paramref name="index"/> (0 or 1) of <paramref name="verb"/>; empty when it has none.
@@ -132,6 +142,24 @@ public static class PromptGlyph
         int v = (int)verb;
         var set = index == 0 ? First : Second;
         return v < set.Length && index is 0 or 1 ? set[v] : None;
+    }
+
+    /// <summary>
+    /// The hold glyph's fill for <paramref name="progress"/> (0..1): an arc on the track ring from the top, clockwise,
+    /// written into <paramref name="into"/> (allocation-free); returns its point count, 0 before any progress.
+    /// </summary>
+    public static int HoldFill(float progress, Vector2[] into)
+    {
+        float p = progress > 1f ? 1f : progress;
+        if (!(p > 0f) || into.Length < 2)
+            return 0;
+        int n = Math.Max(2, (int)MathF.Round(1f + p * (into.Length - 1)));
+        for (int i = 0; i < n; i++)
+        {
+            float a = MathF.PI * 0.5f - 2f * MathF.PI * p * i / (n - 1);
+            into[i] = new Vector2(HoldRadius * MathF.Cos(a), HoldRadius * MathF.Sin(a));
+        }
+        return n;
     }
 
     private static Vector2[] Circle(float x, float y, float r) => Arc(x, y, r, 0f, 2f);

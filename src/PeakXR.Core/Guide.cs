@@ -30,6 +30,18 @@ public enum GuideTopic : byte
     Wrist,
     Refused,
 
+    /// <summary>Finger-gun ping: point, then squeeze the trigger.</summary>
+    Ping,
+
+    /// <summary>Talk: a free hand at the mouth like a walkie-talkie.</summary>
+    Mic,
+
+    /// <summary>Mute: a flat palm over the mouth.</summary>
+    Mute,
+
+    /// <summary>Spectate: flick the stick to watch the next or previous teammate.</summary>
+    Spectate,
+
     /// <summary>Number of topics; not a topic.</summary>
     Count,
 }
@@ -1067,10 +1079,149 @@ public static class GuideTable
             )
         );
 
+        AddComms(Add, restLeft);
+
         for (int i = 0; i < d.Length; i++)
             if (d[i] == null)
                 throw new InvalidOperationException($"no guide demo for {(GuideTopic)i}");
         return d;
+    }
+
+    /// <summary>Ping, talk, mute and spectate: the communication mechanics, with the cues the game gives them.</summary>
+    static void AddComms(Action<GuideDemo> add, GuideTrack restLeft)
+    {
+        // Finger gun pitched down at the floor ahead: the aim line ends where the dot lands, then the squeeze pings.
+        var aim = RestR + V(0f, 0f, 0.02f);
+        var land = RestR + V(0f, -1.15f, 1.64f);
+        add(
+            new GuideDemo(
+                GuideTopic.Ping,
+                "Ping",
+                "Point, then squeeze the trigger to ping.",
+                2.8f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.4f, aim, grip: 1f, pitch: 35f),
+                    K(1.3f, aim, grip: 1f, pitch: 35f),
+                    K(1.4f, aim, grip: 1f, trigger: 1f, button: GuideButton.Trigger, pitch: 35f),
+                    K(1.7f, aim, grip: 1f, pitch: 35f),
+                    K(2.3f, RestR),
+                    K(2.8f, RestR)
+                ),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Laser,
+                        2f,
+                        T(K(0f, Vector3.Zero, anchor: R)),
+                        0.5f,
+                        1.7f
+                    ),
+                    P(GuideShape.Target, 0.1f, land, 0.5f, 1.4f),
+                    P(GuideShape.Notice, 0.14f, land, 1.4f, 2.6f),
+                },
+                new[] { S(1.4f, CueSound.Notice, land) }
+            )
+        );
+
+        // Walkie-talkie: a closed hand held at the mouth opens the mic with a click; taking it away closes it.
+        add(
+            new GuideDemo(
+                GuideTopic.Mic,
+                "Talk",
+                "Hold a hand at your mouth to talk.",
+                3f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.9f, MouthHand, grip: 1f),
+                    K(2.2f, MouthHand, grip: 1f),
+                    K(2.8f, RestR),
+                    K(3f, RestR)
+                ),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Notice,
+                        0.06f,
+                        T(K(0f, V(0f, 0.08f, 0f), anchor: R)),
+                        1.15f,
+                        2.3f
+                    ),
+                },
+                new[] { S(1.15f, CueSound.Transmit, R), S(2.3f, CueSound.Transmit, R) }
+            )
+        );
+
+        // A flat open palm over the mouth mutes while it stays there: a muffled click and a red mic ring.
+        var cover = Mouth + V(0.01f, 0f, 0.05f);
+        add(
+            new GuideDemo(
+                GuideTopic.Mute,
+                "Mute",
+                "Cover your mouth with a flat palm to mute.",
+                3f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.9f, cover, roll: 90f),
+                    K(2.2f, cover, roll: 90f),
+                    K(2.8f, RestR),
+                    K(3f, RestR)
+                ),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Refused,
+                        0.06f,
+                        T(K(0f, V(0f, 0.09f, 0f), anchor: R)),
+                        1.15f,
+                        2.3f
+                    ),
+                },
+                new[] { S(1.15f, CueSound.Cancel, R) }
+            )
+        );
+
+        // Two teammates ahead; each flick of the stick moves the watched ring to the other one.
+        var mateA = V(-0.45f, -0.9f, 1.4f);
+        var mateB = V(0.45f, -0.9f, 1.4f);
+        var over = V(0f, 0.55f, 0f);
+        add(
+            new GuideDemo(
+                GuideTopic.Spectate,
+                "Spectate",
+                "Flick the stick up or down to watch another friend.",
+                3.2f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.6f, RestR, button: GuideButton.Stick, stickY: 1f),
+                    K(0.8f, RestR),
+                    K(2.2f, RestR, button: GuideButton.Stick, stickY: -1f),
+                    K(2.4f, RestR),
+                    K(3.2f, RestR)
+                ),
+                new[]
+                {
+                    P(GuideShape.Ball, 0.3f, mateA),
+                    P(GuideShape.Ball, 0.3f, mateB),
+                    P(GuideShape.Target, 0.12f, mateA + over, 0f, 0.8f),
+                    P(GuideShape.Target, 0.12f, mateB + over, 0.8f, 2.4f),
+                    P(GuideShape.Target, 0.12f, mateA + over, 2.4f, 3.2f),
+                },
+                new[]
+                {
+                    S(0.8f, CueSound.Notice, mateB + over),
+                    S(2.4f, CueSound.Notice, mateA + over),
+                }
+            )
+        );
     }
 
     /// <summary>Hand over hand: each hand grips high and pulls down while the body rises by <paramref name="rise"/>.</summary>

@@ -10,7 +10,7 @@ namespace PeakXR.Emotes;
 
 /// <summary>
 /// Gesture emotes (D5): wave a raised open hand side to side to play the game's wave emote, hold both open hands
-/// over your head to cheer. They play through vanilla CharacterAnimations.PlayEmote (A/CharacterAnimations.cs:410,
+/// over your head to cheer, hold a fist out with the thumb up for the thumbs-up. They play through vanilla CharacterAnimations.PlayEmote (A/CharacterAnimations.cs:410,
 /// the call the emote wheel makes, EmoteWheel.cs:91), so every peer sees them. The emotes are found by name in the
 /// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing, passed out, dead, in
 /// a menu or with a wheel open (a climber's reaching hands look like a cheer); an emote the game only plays on the
@@ -25,6 +25,12 @@ internal sealed class GestureEmotes : MonoBehaviour
     /// <summary>A cheer needs both hands over the head.</summary>
     private const float CheerMargin = 0.1f;
 
+    /// <summary>A thumbs-up is held out at chest height or above: 45 cm under the eyes.</summary>
+    private const float ThumbMargin = -0.45f;
+
+    /// <summary>...and at least this far in front of the head, so a fist at the side while walking is not one.</summary>
+    private const float ThumbReach = 0.2f;
+
     /// <summary>An open hand: the grip let go.</summary>
     private const float OpenGrip = 0.3f;
 
@@ -35,10 +41,13 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     private readonly WaveGesture leftWave = new();
     private readonly WaveGesture rightWave = new();
-    private readonly CheerGesture cheer = new();
+    private readonly DwellGesture cheer = new();
+    private readonly DwellGesture leftThumb = new() { Dwell = 0.5f };
+    private readonly DwellGesture rightThumb = new() { Dwell = 0.5f };
     private GUIManager gui;
     private Emote wave,
-        cheerEmote;
+        cheerEmote,
+        thumbsUp;
     private float nextAt;
 
     /// <summary>The last emote a gesture played (its animation name), for the self-test.</summary>
@@ -49,6 +58,9 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>The wave emote's animation found in the wheel data, or null.</summary>
     public static string WaveAnim { get; private set; }
+
+    /// <summary>The thumbs-up emote's animation found in the wheel data, or null.</summary>
+    public static string ThumbsUpAnim { get; private set; }
 
     private struct Emote
     {
@@ -131,12 +143,34 @@ internal sealed class GestureEmotes : MonoBehaviour
             Vector3.Dot(r - head, side),
             dt
         );
+        var forward = rig.Head.forward;
+        bool thumbLeft = leftThumb.Update(leftFree && Thumb(true, rig.LeftHand, head, forward), dt);
+        bool thumbRight = rightThumb.Update(
+            rightFree && Thumb(false, rig.RightHand, head, forward),
+            dt
+        );
         if (Time.time < nextAt)
             return;
         if (cheered)
             Play(c, cheerEmote, !VRInput.LeftHanded);
         else if (wavedLeft || wavedRight)
             Play(c, wave, wavedLeft);
+        else if (thumbLeft || thumbRight)
+            Play(c, thumbsUp, thumbLeft);
+    }
+
+    /// <summary>A tracked fist held out in front, thumb lifted and pointing up (EmoteGestures.ThumbsUp).</summary>
+    private static bool Thumb(bool left, Transform hand, Vector3 head, Vector3 forward)
+    {
+        ref var state = ref VRInput.Hand(left);
+        var p = hand.position;
+        return state.Tracked
+            && EmoteGestures.Raised(p.y, head.y, ThumbMargin)
+            && Vector3.Dot(p - head, forward) > ThumbReach
+            && EmoteGestures.ThumbsUp(
+                LocalAvatar.ControllerCurls(left),
+                Vector3.Dot(hand.up, Vector3.up)
+            );
     }
 
     private void Play(Character c, Emote emote, bool left)
@@ -156,8 +190,8 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     private void Find(GUIManager current)
     {
-        wave = cheerEmote = default;
-        WaveAnim = null;
+        wave = cheerEmote = thumbsUp = default;
+        WaveAnim = ThumbsUpAnim = null;
         var wheel =
             current.emoteWheel != null
                 ? current.emoteWheel.GetComponentInChildren<EmoteWheel>(true)
@@ -172,10 +206,13 @@ internal sealed class GestureEmotes : MonoBehaviour
                 wave = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
             if (cheerEmote.Anim == null && Names(d, "cheer"))
                 cheerEmote = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
+            if (thumbsUp.Anim == null && Names(d, "thumb"))
+                thumbsUp = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
         }
         WaveAnim = wave.Anim;
+        ThumbsUpAnim = thumbsUp.Anim;
         Plugin.Log.LogInfo(
-            $"[avatar.emotes] gesture emotes: wave '{wave.Anim ?? "none"}', cheer '{cheerEmote.Anim ?? "none"}'"
+            $"[avatar.emotes] gesture emotes: wave '{wave.Anim ?? "none"}', cheer '{cheerEmote.Anim ?? "none"}', thumbs-up '{thumbsUp.Anim ?? "none"}'"
         );
     }
 
@@ -188,5 +225,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         leftWave.Reset();
         rightWave.Reset();
         cheer.Reset();
+        leftThumb.Reset();
+        rightThumb.Reset();
     }
 }

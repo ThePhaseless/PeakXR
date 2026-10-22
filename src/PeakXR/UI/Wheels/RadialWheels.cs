@@ -269,8 +269,7 @@ internal sealed class WheelDriver
         {
             if (open)
             {
-                if (handDriven)
-                    CueClose();
+                CueClose();
                 selector.Reset();
                 OnTop.Set(drawn, false);
             }
@@ -320,12 +319,20 @@ internal sealed class WheelDriver
     }
 
     /// <summary>
-    /// The emote wheel closed (EmoteWheel.OnDisable runs Choose, EmoteWheel.cs:52-94). Nothing chosen: a soft cancel
+    /// A wheel closed. Emote (EmoteWheel.OnDisable runs Choose, EmoteWheel.cs:52-94). Nothing chosen: a soft cancel
     /// tick. A greyed slice under the hand (an on-the-ground emote while airborne, EmoteWheelSlice.cs:31-34, which
     /// ignores the hover :39) is refused, not cancelled.
     /// </summary>
     private void CueClose()
     {
+        // The backpack wheel commits its hovered pocket on interact up (BackpackWheel.Update, A/BackpackWheel.cs:96-99;
+        // Choose :122-126 does nothing without one). No pocket hovered: the grip let go on nothing.
+        if (wheel is BackpackWheel b)
+        {
+            if (b.chosenSlice.IsNone)
+                Affordance.Cancel(left);
+            return;
+        }
         if (wheel is not EmoteWheel e || e.selectedEmoteName == null)
             return;
         if (!string.IsNullOrEmpty(e.selectedEmoteName.text))

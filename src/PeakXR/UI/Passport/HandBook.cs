@@ -269,6 +269,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
         if (!VRSession.Active || rig == null || rig.Head == null)
         {
             Forget();
+            PassportPoke.Reset();
             return;
         }
 
@@ -285,6 +286,16 @@ internal sealed class HandBookRuntime : MonoBehaviour
             && UIWorldRuntime.Ready
             && HandBook.PassportCanvas != null;
         UnityEngine.Object book = passport ? PassportManager.instance : guidebook;
+        // Try-on by touch: the free hand pokes a cosmetic cell (swipe setting or not).
+        if (passport)
+            PassportPoke.Tick(
+                rig,
+                PassportManager.instance,
+                HandBook.PassportCanvas.transform,
+                !left
+            );
+        else
+            PassportPoke.Reset();
         if (book == null || !cfg.SwipeToFlip.Value)
         {
             Forget();
@@ -316,7 +327,10 @@ internal sealed class HandBookRuntime : MonoBehaviour
         if (free == null)
             return;
         var local = Quaternion.Inverse(rotation) * (free.position - position);
-        var blocked = VRInput.Hand(freeLeft).Trigger > TriggerBlock;
+        // A pointing index presses a cell (PassportPoke), it does not turn the page.
+        var blocked =
+            VRInput.Hand(freeLeft).Trigger > TriggerBlock
+            || (passport && PassportPoke.Pointing(freeLeft));
         var dir = swipe.Update(local.ToNumerics(), blocked, Time.unscaledDeltaTime);
         if (dir == 0)
             return;

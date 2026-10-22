@@ -10,8 +10,8 @@ namespace PeakXR.UI.Passport;
 
 /// <summary>
 /// A locked cosmetic in the passport: vanilla's click does nothing (A/PassportButton.cs:63-69 <c>Click</c>, the lock
-/// test at :65), so in VR it refuses with the padlock cue on the hand that pressed, the cell's border turned red.
-/// The lock icon is shown exactly when the option is locked (A/PassportButton.cs:27-29), so it stands in for the
+/// test at :65), so in VR it refuses with the padlock cue on the hand that pressed (laser or poke), the cell's border
+/// turned red. The lock icon is shown exactly when the option is locked (A/PassportButton.cs:27-29), so it stands in for the
 /// private option. The vanilla click still runs and still does nothing.
 /// </summary>
 [HarmonyPatch]
@@ -32,7 +32,7 @@ internal static class PassportLockPatch
                 ? (UnityEngine.Component)__instance.border
                 : __instance.lockedIcon;
         Affordance.Deny(
-            LaserPointer.PressLeft,
+            PassportPoke.Active ? PassportPoke.Left : LaserPointer.PressLeft,
             __instance.transform.position,
             DenyReason.Locked,
             default,

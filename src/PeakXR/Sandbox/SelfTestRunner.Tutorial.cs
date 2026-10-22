@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.Interact.Physical;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Settings;
@@ -298,6 +299,95 @@ internal sealed partial class SelfTestRunner
     IEnumerator PromptGlyphSteps()
     {
         yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
+        yield return HandStep("vr.125-hold-glyph", 40f, HoldGlyphStep());
+        yield return WarpBack();
+    }
+
+    /// <summary>
+    /// vr.125: a hand on the lid of the nearest closed suitcase starts its held open (Luggage is an
+    /// <c>IInteractibleConstant</c>, Interaction.cs:120-123). With <c>UI.ActionHintText</c> off the OPEN text is hidden
+    /// and the hold glyph (a ring) is drawn beside the open glyph; raising the lid halfway fills the ring as far as the
+    /// game's own timer (<c>constantInteractableProgress</c>, Interaction.cs:57) and the hand feels the progress ramp.
+    /// </summary>
+    IEnumerator HoldGlyphStep()
+    {
+        if (!SpatialFeature.Settings.TargetPrompt.Value)
+        {
+            stepNote = "UI.TargetPrompt is off";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        var lug = Nearest<Luggage>(c.Center, l => !l.IsOpen && l is not RespawnChest);
+        if (lug == null)
+        {
+            stepSkip = "no closed suitcase in the active segment";
+            yield break;
+        }
+        var interaction = Interaction.instance;
+        var hintText = AffordanceFeature.ActionHintText;
+        bool hintWas = hintText != null && hintText.Value;
+        bool left = VRInput.LeftHanded;
+        var notes = new List<string>();
+        var fails = new List<string>();
+        try
+        {
+            if (hintText != null)
+                hintText.Value = false;
+            yield return WarpFacing(lug.Center(), 0.8f);
+            var top = LidPoint(lug);
+            yield return MoveTo(left, () => top, 0.5f);
+            float mark = CueMark();
+            yield return GripTo(left, 1f, 0.1f);
+            yield return WaitFor(
+                () => ReferenceEquals(interaction.currentHeldInteractible, lug),
+                2f
+            );
+            if (!ReferenceEquals(interaction.currentHeldInteractible, lug))
+            {
+                Fail(
+                    $"grip did not hold the suitcase: hovered {Label(interaction.currentHovered)}, held {Label(interaction.currentHeldInteractible)}"
+                );
+                yield break;
+            }
+            yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Hold), 1f);
+            bool ring = TargetPrompt.Drawn(PromptVerb.Hold);
+            bool hidden = TargetPrompt.TextHidden;
+            notes.Add($"hold ring {ring}, text hidden {hidden}");
+            if (!ring)
+                fails.Add("no hold ring while the suitcase's open is held");
+            if (!hidden)
+                fails.Add("the prompt text still shows with UI.ActionHintText off");
+
+            // Half the lid's open time (Luggage timeToOpen, Luggage.cs:214); the lift gesture caps the timer at the
+            // height reached, so half the lift height.
+            float openTime = GameTiming.InteractSeconds(lug, c);
+            float until = Now + Mathf.Max(0.8f, 0.6f * openTime);
+            var at = Script(left).Position;
+            bool lift = Setting("Interaction", "LiftLidToOpen", true);
+            while (Now < until && !lug.IsOpen)
+            {
+                if (lift)
+                    SetHand(left, at + Vector3.up * (LidGesture.LiftHeight * 0.5f));
+                yield return null;
+            }
+            float fill = TargetPrompt.HoldFillShown;
+            float progress = Mathf.Clamp01(interaction.constantInteractableProgress);
+            yield return ShotAt("vr-125-hold-glyph", lug.Center());
+            notes.Add($"progress {progress:0.00}, ring filled {fill:0.00}");
+            if (progress > 0.05f && (fill <= 0f || Mathf.Abs(fill - progress) > 0.1f))
+                fails.Add("the ring does not follow the hold's progress");
+            yield return ExpectFeel(left, CueFeel.Progress, mark);
+            if (stepOk)
+                notes.Add(cueNote);
+            yield return GripTo(left, 0f, 0.1f);
+        }
+        finally
+        {
+            if (hintText != null)
+                hintText.Value = hintWas;
+        }
+        if (stepOk)
+            Conclude(fails, notes);
     }
 
     /// <summary>
