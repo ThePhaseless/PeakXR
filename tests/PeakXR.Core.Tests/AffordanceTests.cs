@@ -153,6 +153,38 @@ public class AffordanceTests
     }
 
     [Fact]
+    public void Fade_ARefusalRepeatedEveryFrame_KeepsOneLiveRing()
+    {
+        // Reported again each 1/90 s from its first frame on: it must ramp in once and stay up, never restart at 0.
+        const float dt = 1f / 90f;
+        float at = 10f;
+        float held = at;
+        float seenFull = 0f;
+        for (float now = 10f; now < 11f; now += dt)
+        {
+            at = DenyFade.Refresh(at, held, now, same: true);
+            held = now;
+            float a = DenyFade.Alpha(now - at, held - at);
+            if (now - 10f > DenyFade.In + dt)
+                Assert.True(a > 0.99f, $"alpha {a} at {now - 10f:0.000} s");
+            seenFull = MathF.Max(seenFull, a);
+        }
+        Assert.True(seenFull > 0.99f);
+    }
+
+    [Fact]
+    public void Fade_RefreshKeepsTheRamp_StartsOverForANewOrEndedRefusal()
+    {
+        // Still ramping in: the start stays, so the ramp is not cut short (no pop).
+        Assert.Equal(10f, DenyFade.Refresh(10f, 10f, 10.05f, same: true));
+        // Up at full: back to the start of the hold, still full.
+        Assert.Equal(11f - 2f * DenyFade.In, DenyFade.Refresh(10f, 10.5f, 11f, same: true));
+        // Another reason, or one that already faded out: a fresh start.
+        Assert.Equal(11f, DenyFade.Refresh(10f, 10.5f, 11f, same: false));
+        Assert.Equal(20f, DenyFade.Refresh(10f, 10f, 20f, same: true));
+    }
+
+    [Fact]
     public void NotLit_PointsAtTheTrigger()
     {
         Assert.Equal("Not lit", DenyText.Label(DenyReason.NotLit));

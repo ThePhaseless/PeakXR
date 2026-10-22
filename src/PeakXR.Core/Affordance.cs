@@ -555,6 +555,21 @@ public static class DenyFade
     /// <summary>The refusal has run and faded out. Not at age 0: alpha is 0 in the frame the refusal is shown,
     /// which must not end it (its red preview would be cleared before it was ever drawn).</summary>
     public static bool Over(float age, float heldFor) => age > 0f && Alpha(age, heldFor) <= 0.001f;
+
+    /// <summary>
+    /// The start time of a refusal shown at <paramref name="at"/> when it is reported again at <paramref name="now"/>.
+    /// The <paramref name="same"/> refusal (reason and hand) still up keeps one live cue: while it ramps in its start
+    /// stays, so a report every frame never sends it back to 0 (VR run 34); once full it holds at full. Another
+    /// refusal, or one already faded out, starts fresh.
+    /// </summary>
+    public static float Refresh(float at, float heldUntil, float now, bool same)
+    {
+        float age = now - at;
+        if (!same || age < 0f || Over(age, heldUntil - at))
+            return now;
+        // Past the ramp: a little into the hold, so float rounding never lands it back on the ramp.
+        return age < In ? at : now - 2f * In;
+    }
 }
 
 /// <summary>Range check for a pre-emptive "can't" cue with hysteresis on the "can" side only: it never shows
