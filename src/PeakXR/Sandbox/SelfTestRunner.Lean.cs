@@ -65,6 +65,7 @@ internal sealed partial class SelfTestRunner
         rig.Recentered -= onRecenter;
         yield return Wait(0.8f);
         RigDriver.TraceLeanUntil = Time.unscaledTime + 60f;
+        extremeLines = 0;
 
         // The head on the calibrated spot at the calibrated eye height: there the view sits on the avatar's eyes.
         var home = new Vector3(
@@ -215,6 +216,31 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
     /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
+    int extremeLines;
+
+    /// <summary>
+    /// Runs 35-37 failed on body and view peaks that the 0.25 s lean trace never caught (the origin read the same at
+    /// every sample). Logs the frame each time the tracked body or view range grows by 5 mm or more (at most 40
+    /// lines a run), with what may cause it: the frame time (a hitch), grounding, the room anchor, head and hip.
+    /// </summary>
+    void NoteExtreme(Character c, VRRig rig, float rootBefore, float originBefore)
+    {
+        float root = leanRoot.size.magnitude;
+        float origin = leanOrigin.size.magnitude;
+        if (extremeLines >= 40 || root - rootBefore < 0.005f && origin - originBefore < 0.005f)
+            return;
+        extremeLines++;
+        var r = RigDriver.ViewRoot(c);
+        var o = rig.Origin.position;
+        var hip = c.refs.hip.Rig.position;
+        var head = VRInput.HeadPosition;
+        Plugin.Log.LogInfo(
+            F(
+                $"[selftest] lean extreme f{Time.frameCount} t{Time.unscaledTime:0.000} dt {Time.unscaledDeltaTime * 1000f:0.0} ms body {root:0.000} view {origin:0.000} root ({r.x:0.000},{r.z:0.000}) origin ({o.x:0.000},{o.z:0.000}) room ({rig.RoomAnchor.X:0.000},{rig.RoomAnchor.Y:0.000}) head ({head.x:0.000},{head.z:0.000}) hip ({hip.x:0.000},{hip.z:0.000}) grounded {c.data.isGrounded} since {c.data.sinceGrounded:0.00} input {c.input.movementInput.y:0.00}"
+            )
+        );
+    }
+
     IEnumerator Track(Character c, VRRig rig, Vector3 to, float seconds, float hold)
     {
         var from = leanOffset;
@@ -224,9 +250,12 @@ internal sealed partial class SelfTestRunner
             float t = seconds > 0f ? Mathf.Clamp01((Now - start) / seconds) : 1f;
             leanOffset = Vector3.Lerp(from, to, Mathf.SmoothStep(0f, 1f, t));
             yield return null;
+            float rootSize = leanRoot.size.magnitude;
+            float originSize = leanOrigin.size.magnitude;
             leanRoot.Encapsulate(RigDriver.ViewRoot(c));
             leanOrigin.Encapsulate(rig.Origin.position);
             leanHip.Encapsulate(c.refs.hip.Rig.position);
+            NoteExtreme(c, rig, rootSize, originSize);
             var driver = AvatarPoseDriver.Of(c);
             if (driver != null)
             {

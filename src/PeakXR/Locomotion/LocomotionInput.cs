@@ -327,7 +327,9 @@ internal static class LocomotionInput
             hadBody
             && LocomotionConfig.RoomScale
             && stickIdle
-            && data.isGrounded
+            // A walking stride can leave the ground for a frame; that must not end a follow (and its settle) or
+            // drop what the anchor absorbed, which hands the walk's travel to the view.
+            && (data.isGrounded || data.sinceGrounded < 0.25f)
             && data.fullyConscious
             && !data.isClimbing
             && !data.isRopeClimbing
