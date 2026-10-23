@@ -419,7 +419,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.222: the pause menu's VR tab has a dark plate behind it (<c>UI.MenuBackplate</c>, ui.world
     /// BackplateView) that hugs what the menu draws: each edge <see cref="MenuBackplate.MarginPixels"/> outside the
-    /// drawn content, within 2 px, never a full-canvas 16:9 panel, never wider than
+    /// drawn content, within 2 px, never a full-canvas 16:9 panel around smaller content (the settings window really
+    /// draws about 1700x990 px of its 1920x1080 canvas, VR run 47, so its plate is that big), never wider than
     /// <see cref="MenuBackplate.MaxSpanDegrees"/> of view and never a raycast target. Checked again on the
     /// Compatibility page, whose content differs, so the plate follows a page change.</summary>
     IEnumerator BackplateCheck()
@@ -493,6 +494,8 @@ internal sealed partial class SelfTestRunner
         );
         bool full = MenuBackplate.IsFullPanel(
             size,
+            new System.Numerics.Vector2(hi.x - lo.x, hi.y - lo.y),
+            MenuBackplate.MarginPixels,
             new System.Numerics.Vector2(canvas.x, canvas.y)
         );
         notes.Add(
@@ -501,7 +504,7 @@ internal sealed partial class SelfTestRunner
         );
         return !fits
                 ? $"{page}: plate edges not {MenuBackplate.MarginPixels:0} px outside the content"
-            : full ? $"{page}: plate is a full-canvas panel"
+            : full ? $"{page}: plate is a full-canvas panel around smaller content"
             : raycast ? $"{page}: plate takes raycasts"
             : span > MenuBackplate.MaxSpanDegrees
                 ? $"{page}: plate spans {span:0} deg, over the {MenuBackplate.MaxSpanDegrees:0} deg cap"

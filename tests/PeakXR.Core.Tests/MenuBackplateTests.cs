@@ -45,13 +45,29 @@ public class MenuBackplateTests
     }
 
     [Fact]
-    public void IsFullPanel_OnlyWhenThePlateSpansTheCanvasBothWays()
+    public void IsFullPanel_APlateSpanningTheCanvasAroundSmallerContent()
     {
         var canvas = new Vector2(1920, 1080);
-        Assert.True(MenuBackplate.IsFullPanel(new Vector2(1900, 1060), canvas));
-        Assert.False(MenuBackplate.IsFullPanel(new Vector2(1900, 500), canvas));
-        Assert.False(MenuBackplate.IsFullPanel(new Vector2(700, 1060), canvas));
+        // A pause menu's button column on a 16:9 plate.
+        Assert.True(
+            MenuBackplate.IsFullPanel(new Vector2(1900, 1060), new Vector2(600, 500), 24f, canvas)
+        );
+        Assert.False(
+            MenuBackplate.IsFullPanel(new Vector2(1900, 500), new Vector2(1852, 452), 24f, canvas)
+        );
     }
+
+    [Fact]
+    public void IsFullPanel_NotWhenTheDrawnContentReallyFillsTheCanvas() =>
+        // VR run 47: the settings window (tabs, rail, rows) draws 1705x991 px; its fitted plate is no panel.
+        Assert.False(
+            MenuBackplate.IsFullPanel(
+                new Vector2(1753, 1039),
+                new Vector2(1705, 991),
+                24f,
+                new Vector2(1920, 1080)
+            )
+        );
 
     [Fact]
     public void DefaultOpacity_KeepsWhiteTextAtLeast4p5To1_OverAWhiteBackground() =>
