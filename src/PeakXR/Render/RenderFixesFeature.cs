@@ -62,8 +62,9 @@ public sealed class RenderFixesFeature : Feature
             "MSAA",
             4,
             new ConfigDescription(
-                "Hardware anti-aliasing samples on the eye buffers in VR. Forced to 1 while the game's renderer is "
-                    + "in Deferred mode (URP cannot use MSAA there); then Antialiasing below is what smooths edges.",
+                "Hardware anti-aliasing samples on the eye buffers in VR. Has no effect while the game's renderer is "
+                    + "in Deferred mode (URP cannot use MSAA there, so it is forced to 1); then Antialiasing below is "
+                    + "what smooths edges. The log line '[render.fixes] Applied' shows the effective count.",
                 new AcceptableValueList<int>(1, 2, 4, 8)
             )
         );
