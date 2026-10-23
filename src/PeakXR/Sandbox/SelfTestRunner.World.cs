@@ -1682,7 +1682,10 @@ internal sealed partial class SelfTestRunner
             // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
             // root: vr34 stood by the root and ended 2.16 m short.
             var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
-            yield return WarpBeside(target, 0.7f);
+            // 1.3 m back from the socket's foot: a hand next to the statue's rock is a climb grip, not a pointed one
+            // (GripIntent: a climbable surface in reach wins over the fallback interact; vr50's grip pressed nothing),
+            // and the socket stays well inside vanilla's interact reach from the camera.
+            yield return WarpBeside(target, 1.3f);
             yield return GiveAndHold(amulet.GetComponent<Item>());
             if (!stepOk)
                 yield break;
@@ -1701,12 +1704,13 @@ internal sealed partial class SelfTestRunner
             var rig = VRRig.Instance;
             var interaction = Interaction.instance;
             // The player path: the socket sits past a hand's reach (2.7 m up, vr36), so as vanilla's camera ray takes
-            // the statue from 2 m (Interaction.cs:7, :203), the free hand points at it from in front of the chest and
-            // grips (interact.physical's hand-aimed interact). The hand never leaves arm's reach of the eye.
+            // the statue within Interaction.distance (field default 2 m, Interaction.cs:7, :203; 2.5 m in the scene),
+            // the free hand points at it, held out at shoulder height clear of the body's slots, and grips
+            // (interact.physical's hand-aimed interact). The hand never leaves arm's reach of the eye.
             bool free = !left;
             HeadFrame(out var head, out var forward, out var right);
             var handAt =
-                head + forward * 0.35f + (free ? -right : right) * 0.15f + Vector3.down * 0.25f;
+                head + forward * 0.45f + (free ? -right : right) * 0.1f + Vector3.down * 0.15f;
             void Aim()
             {
                 var from = rig.Origin.TransformPoint(Script(free).Position);
@@ -1757,7 +1761,9 @@ internal sealed partial class SelfTestRunner
             Script(free).TriggerTouch = true;
             if (progress <= 0f)
             {
-                Fail($"the pointed grip did not start the statue's hold: {where}");
+                Fail(
+                    $"the pointed grip did not start the statue's hold (grip took {PhysicalInteraction.HandAction(free)}, aim hand {PhysicalInteraction.AimHand}): {where}"
+                );
                 yield break;
             }
             yield return ExpectFeel(free, CueFeel.Progress, mark, within: 0f);
