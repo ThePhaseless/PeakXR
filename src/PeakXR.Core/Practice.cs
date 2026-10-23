@@ -12,6 +12,12 @@ public enum PracticeStation : byte
     Throw,
     Climb,
     Emote,
+
+    /// <summary>Reach for an apple just out of reach: the refusal cue.</summary>
+    Refused,
+
+    /// <summary>Hold Menu to recenter.</summary>
+    Recenter,
 }
 
 public enum PracticePhase : byte
@@ -50,6 +56,8 @@ public sealed class PracticeFlow
         PracticeStation.Throw,
         PracticeStation.Climb,
         PracticeStation.Emote,
+        PracticeStation.Refused,
+        PracticeStation.Recenter,
     };
 
     float timer;
@@ -70,6 +78,8 @@ public sealed class PracticeFlow
             PracticeStation.Eat => GuideTopic.Eat,
             PracticeStation.Throw => GuideTopic.Throw,
             PracticeStation.Climb => GuideTopic.Climb,
+            PracticeStation.Refused => GuideTopic.Refused,
+            PracticeStation.Recenter => GuideTopic.PauseRecenter,
             _ => GuideTopic.Emote,
         };
 
