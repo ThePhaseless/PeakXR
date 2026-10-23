@@ -20,11 +20,13 @@ internal static class BackplateView
 
     private static Sprite sprite;
 
-    /// <summary>Whether <paramref name="g"/> is drawn on the panel and so sits on the plate.</summary>
+    /// <summary>Whether <paramref name="g"/> is drawn on the panel and so sits on the plate. A panel with its own plate
+    /// (<see cref="PanelPlate"/>: the VR tab's column and rail) keeps its graphics off the canvas plate.</summary>
     public static bool Counts(TrackedCanvas t, Graphic g) =>
         g != t.Plate
         && g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() > 0.01f
-        && Mathf.Abs(t.Rect.InverseTransformPoint(g.rectTransform.position).z) < OffPlanePixels;
+        && Mathf.Abs(t.Rect.InverseTransformPoint(g.rectTransform.position).z) < OffPlanePixels
+        && g.GetComponentInParent<PanelPlate>() == null;
 
     /// <summary>Fits the plate to <paramref name="min"/>..<paramref name="max"/> (canvas pixels about the pivot), or
     /// hides it when off, out of VR or nothing is drawn. Allocates only when the plate is first made.</summary>
@@ -129,7 +131,7 @@ internal static class BackplateView
         rt.SetParent(t.Rect, false);
         rt.pivot = new Vector2(0.5f, 0.5f);
         var image = go.GetComponent<Image>();
-        image.sprite = Sprite();
+        image.sprite = PlateSprite();
         image.type = Image.Type.Sliced;
         image.raycastTarget = false;
         Plugin.Log.LogInfo($"[ui.world] canvas '{t.Canvas.name}': menu backplate added");
@@ -137,7 +139,7 @@ internal static class BackplateView
     }
 
     /// <summary>A white rounded square, 9-sliced so any plate size keeps the same corner radius.</summary>
-    private static Sprite Sprite()
+    internal static Sprite PlateSprite()
     {
         if (sprite != null)
             return sprite;

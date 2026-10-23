@@ -12,47 +12,35 @@ using Object = UnityEngine.Object;
 namespace PeakXR.UI.Settings;
 
 /// <summary>
-/// The VR tab laid out for a headset. A rail of category chips runs down the free side of the settings window (one
-/// chip per config group, plus the VR Guide and the compatibility report); the chosen category fills a grid of the
-/// game's own row cells, two columns where the window is wide enough, a page at a time with Previous and Next chips
-/// under it. Every page fits the window: on a world panel nothing cuts off rows that would hang below it.
-/// Chips are clones of the game's own tab button, rows its own cells, so a game update restyles both. Anything
-/// missing (no tab button, no row prefab, a window too small) falls back to the single paged column.
+/// The VR tab laid out for a headset instead of the game's 16:9 page: the chosen category's rows in one column about
+/// 30 degrees wide at the menu's distance, scrolled vertically (thumbstick or laser drag, through a plain
+/// <see cref="ScrollRect"/>), and the category rail as its own small panel beside it, turned toward the eye. Both are
+/// scaled so their smallest text meets <see cref="ReadableText.MinDegrees"/>, and each gets its own plate
+/// (<see cref="World.PanelPlate"/>). Rows are the game's own cells and chips clones of its tab button, so a game
+/// update restyles both. The game's own tabs keep the game's layout. Anything missing falls back to the single paged
+/// column. Built once per fill; nothing here runs per frame.
 /// </summary>
 internal static class VRTabGrid
 {
-    private const float ColumnGap = 48f;
-    private const float MinColumn = 560f;
-    private const int MaxColumns = 2;
-
     /// <summary>A narrowed row gives its control at most this share of the column.</summary>
     private const float ControlShare = 0.5f;
     private const float LabelGap = 16f;
     private const float RailGap = 24f;
-    private const float RailMaxWidth = 320f;
-    private const float RailMinWidth = 200f;
-    private const float ChipColumnGap = 8f;
-    private const float ChipMaxPitch = 52f;
-    private const float ChipMinPitch = 34f;
-    private const float ChipFill = 0.84f;
-    private const float PagerHeight = 56f;
-    private const float PagerChipWidth = 220f;
-    private const float PagerLabelWidth = 260f;
+    private const float ChipPad = 20f;
+    private const float ChipGap = 6f;
+    private const float ChipFallbackHeight = 44f;
 
-    private static readonly Vector3[] corners = new Vector3[4];
-    private static readonly List<Selectable> selectables = new();
-    private static readonly List<float> lows = new();
-    private static readonly List<float> highs = new();
-    private static readonly List<bool> headers = new();
+    private static readonly List<TMP_Text> texts = new();
+    private static readonly List<RectTransform> spawned = new();
     private static string lastFallback;
 
     /// <summary>The last VR fill used this layout (false: the single-column fallback); for the self-test.</summary>
     public static bool Shown { get; private set; }
 
-    /// <summary>Pages of the category on show after the last fill; for the self-test.</summary>
+    /// <summary>Pages of the category on show: always one, the column scrolls. Kept for the self-test.</summary>
     public static int Pages { get; private set; }
 
-    /// <summary>Removes the rail and grid of the last fill; every tab switch calls it before filling.</summary>
+    /// <summary>Removes the rail and column of the last fill; every tab switch calls it before filling.</summary>
     public static void Clear(SharedSettingsMenu menu)
     {
         var parent = menu != null ? menu.m_settingsContentParent : null;
@@ -69,46 +57,23 @@ internal static class VRTabGrid
         return Math.Max(4, SettingsGrid.Fit(content.rect.height, cellHeight, spacing) - 3);
     }
 
-    /// <summary>Fills the VR tab as rail and grid; false (nothing spawned) when the window lacks what it needs.</summary>
+    /// <summary>Fills the VR tab as rail and column; false (nothing spawned) when the window lacks what it needs.</summary>
     public static bool TryShow(SharedSettingsMenu menu)
     {
         var content = menu.m_settingsContentParent as RectTransform;
-        var window = menu.transform as RectTransform;
-        var tabs = UISettingsFeature.TabsRef(menu);
-        var chip = ChipSource(tabs);
-        if (
-            window == null
-            || chip == null
-            || !Measure(menu, content, out float cellHeight, out float spacing)
-        )
+        var chip = ChipSource(UISettingsFeature.TabsRef(menu));
+        if (chip == null || !Measure(menu, content, out float cellHeight, out float spacing))
             return Fallback("no content parent, tab button or row prefab");
         var area = content.rect;
-        if (area.width < MinColumn || area.height < 2f * cellHeight)
+        float mpu = Mathf.Abs(content.lossyScale.x);
+        if (area.height < 2f * cellHeight || mpu < 1e-6f)
             return Fallback($"window {area.width:0}x{area.height:0} for {cellHeight:0} px rows");
-
-        // The rail: left of the rows, in the window's free margin between its own buttons (Back above, the
-        // blocklist toggle below). Too narrow a margin puts it inside, ahead of the rows.
-        window.GetWorldCorners(corners);
-        float windowLeft = content.InverseTransformPoint(corners[0]).x;
-        float railRight = area.xMin - RailGap;
-        float railLeft = Mathf.Max(windowLeft + RailGap, railRight - RailMaxWidth);
-        bool inside = railRight - railLeft < RailMinWidth;
-        if (inside)
-        {
-            railLeft = area.xMin;
-            railRight = area.xMin + RailMinWidth;
-        }
-        Obstacles(menu, content, tabs, railLeft, railRight);
-        SettingsGrid.FreeSpan(
-            area.yMin,
-            area.yMax,
-            lows,
-            highs,
-            out float railBottom,
-            out float railTop
-        );
-        if (railTop - railBottom < 2f * ChipMinPitch)
-            return Fallback($"no room for the category rail ({railTop - railBottom:0} px)");
+        // Angles are judged where the menu stands now; a wall that pulls it closer shrinks it to the same angles.
+        var head = VR.VRRig.Instance != null ? VR.VRRig.Instance.Head : null;
+        float distance =
+            head != null
+                ? Vector3.Distance(head.position, content.TransformPoint(area.center))
+                : World.UIWorldFeature.Settings.MenuDistance.Value;
 
         var groups = VRTab.BuildGroups();
         int selected = groups.FindIndex(g =>
@@ -118,111 +83,126 @@ internal static class VRTabGrid
             selected = 0;
         var group = groups[selected];
         VRTab.Group = group.Key;
-
-        float gridLeft = inside ? railRight + RailGap : area.xMin;
-        float gridWidth = area.xMax - gridLeft;
-        int columns = SettingsGrid.Columns(gridWidth, MinColumn, ColumnGap, MaxColumns);
-        float columnWidth = SettingsGrid.ColumnWidth(gridWidth, columns, ColumnGap);
-        headers.Clear();
-        foreach (var row in group.Rows)
-            headers.Add(row is InfoRow { IsHeader: true });
-        int perColumn = SettingsGrid.Fit(area.height, cellHeight, spacing);
-        var pages = SettingsGrid.Paginate(headers, perColumn, columns);
-        if (pages.Count > 1)
-        {
-            perColumn = SettingsGrid.Fit(area.height - PagerHeight - spacing, cellHeight, spacing);
-            pages = SettingsGrid.Paginate(headers, perColumn, columns);
-        }
-        int page = Mathf.Clamp(VRTab.Page, 0, pages.Count - 1);
-        VRTab.Page = page;
+        VRTab.Page = 0;
 
         var layout = content.GetComponent<VRTabLayout>();
         if (layout == null)
             layout = content.gameObject.AddComponent<VRTabLayout>();
         var cells = UISettingsFeature.CellsRef(menu);
         int before = cells.Count;
+        float columnScale,
+            railScale,
+            rowWidth;
         try
         {
-            var grid = NewRoot("PeakXR_VRGrid", content);
-            layout.Grid = grid.gameObject;
+            // The column: its plate, then a masked viewport that scrolls the rows.
+            var column = NewRoot("PeakXR_VRColumn", content);
+            layout.Grid = column.gameObject;
+            var viewport = NewRect("PeakXR_VRViewport", column);
+            Stretch(viewport);
+            // Invisible, but it takes the laser between rows, so a drag or the stick scrolls there too.
+            viewport.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+            viewport.gameObject.AddComponent<World.PanelPart>();
+            viewport.gameObject.AddComponent<RectMask2D>();
+            var rows = NewRect("PeakXR_VRRows", viewport);
+            rows.anchorMin = new Vector2(0f, 1f);
+            rows.anchorMax = Vector2.one;
+            rows.pivot = new Vector2(0.5f, 1f);
+
+            bool first = true;
+            float minFont = float.MaxValue;
+            spawned.Clear();
+            foreach (var row in group.Rows)
+            {
+                var cell = ShowSettingsPatch.Spawn(menu, row, ref first);
+                if (cell == null)
+                    continue;
+                var rt = (RectTransform)cell.transform;
+                rt.SetParent(rows, false);
+                spawned.Add(rt);
+                cell.GetComponentsInChildren(false, texts);
+                foreach (var t in texts)
+                    if (t.fontSize > 1f)
+                        minFont = Mathf.Min(minFont, t.fontSize);
+                texts.Clear();
+            }
+            if (minFont == float.MaxValue)
+                minFont = cellHeight * 0.5f;
+
+            columnScale = VRTabColumn.TextScale(minFont, distance, mpu);
+            rowWidth = VRTabColumn.Width(VRTabColumn.ColumnDegrees, distance, mpu) / columnScale;
+            float pitch = cellHeight + spacing;
+            for (int i = 0; i < spawned.Count; i++)
+            {
+                var rt = spawned[i];
+                rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+                rt.pivot = new Vector2(0f, 1f);
+                rt.sizeDelta = new Vector2(rowWidth, cellHeight);
+                rt.anchoredPosition = new Vector2(0f, -i * pitch);
+                Narrow(rt.GetComponent<SettingsUICell>(), rowWidth);
+            }
+            float rowsHeight = Mathf.Max(0f, spawned.Count * pitch - spacing);
+            rows.sizeDelta = new Vector2(0f, rowsHeight);
+            rows.anchoredPosition = Vector2.zero;
+            spawned.Clear();
+            var scroll = viewport.gameObject.AddComponent<ScrollRect>();
+            scroll.viewport = viewport;
+            scroll.content = rows;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+
+            // The rail: as wide as its longest chip, hinged on the edge next to the column.
+            railScale = VRTabColumn.TextScale(chip.text.fontSize, distance, mpu);
+            float chipWidth = 0f;
+            foreach (var g in groups)
+                chipWidth = Mathf.Max(
+                    chipWidth,
+                    chip.text.GetPreferredValues(g.Title.ToUpperInvariant()).x + 2f * ChipPad
+                );
+            var chipRect = ((RectTransform)chip.transform).rect;
+            float chipHeight = chipRect.height > 1f ? chipRect.height : ChipFallbackHeight;
+            float railWidth = chipWidth * railScale;
+            float left = area.center.x - (railWidth + RailGap + rowWidth * columnScale) * 0.5f;
+            // As tall as the window allows, or as the rows when they are fewer: the plate hugs what is there.
+            float viewHeight = Mathf.Min(area.height / columnScale, rowsHeight);
+            Place(column, area, left + railWidth + RailGap, area.yMax, rowWidth, viewHeight);
+            column.localScale = new Vector3(columnScale, columnScale, columnScale);
+            World.PanelPlate.Add(column, columnScale);
+
             var rail = NewRoot("PeakXR_VRRail", content);
             layout.Rail = rail.gameObject;
-
-            // Rail chips, column by column when the rail needs more than one.
-            SettingsGrid.Rail(
-                railTop - railBottom,
-                groups.Count,
-                ChipMaxPitch,
-                ChipMinPitch,
-                out int railColumns,
-                out float pitch
+            rail.anchorMin = rail.anchorMax = new Vector2(0f, 1f);
+            rail.pivot = Vector2.one;
+            rail.sizeDelta = new Vector2(
+                chipWidth,
+                groups.Count * (chipHeight + ChipGap) - ChipGap
             );
-            int perRail = (groups.Count + railColumns - 1) / railColumns;
-            float chipWidth =
-                (railRight - railLeft - ChipColumnGap * (railColumns - 1)) / railColumns;
-            var railEdge = Place(
-                NewRect("PeakXR_RailEdge", rail),
-                area,
-                railLeft,
-                railTop,
-                railRight - railLeft,
-                railTop - railBottom
-            );
+            rail.anchoredPosition = new Vector2(left + railWidth - area.xMin, 0f);
+            rail.localScale = new Vector3(railScale, railScale, railScale);
+            rail.localRotation = Quaternion.Euler(0f, VRTabColumn.RailYaw(left: true), 0f);
+            World.PanelPlate.Add(rail, railScale);
             for (int i = 0; i < groups.Count; i++)
             {
                 var key = groups[i].Key;
-                var button = Chip(
-                    chip,
-                    rail,
-                    key,
-                    groups[i].Title,
-                    i == selected,
-                    () => Select(menu, key)
-                );
-                Place(
-                    (RectTransform)button.transform,
-                    area,
-                    railLeft + (i / perRail) * (chipWidth + ChipColumnGap),
-                    railTop - (i % perRail) * pitch,
-                    chipWidth,
-                    pitch * ChipFill
-                );
+                var rt = (RectTransform)
+                    Chip(
+                        chip,
+                        rail,
+                        key,
+                        groups[i].Title,
+                        i == selected,
+                        () => Select(menu, key)
+                    ).transform;
+                rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+                rt.pivot = new Vector2(0f, 1f);
+                rt.sizeDelta = new Vector2(chipWidth, chipHeight);
+                rt.anchoredPosition = new Vector2(0f, -i * (chipHeight + ChipGap));
             }
-
-            // The page's rows, the game's own cells, in their column slots.
-            var shown = pages[page];
-            bool first = true;
-            for (int c = 0; c < shown.Columns.Count; c++)
-            {
-                bool opensLeft = SettingsGrid.OpensLeft(shown, c);
-                var column = shown.Columns[c];
-                for (int r = 0; r < column.Count; r++)
-                {
-                    var cell = ShowSettingsPatch.Spawn(menu, group.Rows[column[r]], ref first);
-                    if (cell == null)
-                        continue;
-                    var rt = (RectTransform)cell.transform;
-                    rt.SetParent(grid, false);
-                    Place(
-                        rt,
-                        area,
-                        gridLeft + c * (columnWidth + ColumnGap),
-                        area.yMax - r * (cellHeight + spacing),
-                        columnWidth,
-                        cellHeight
-                    );
-                    Narrow(cell, columnWidth);
-                    var slot = cell.gameObject.AddComponent<VRTabSlot>();
-                    slot.OpensLeft = opensLeft;
-                    slot.LeftEdge = railEdge;
-                }
-            }
-
-            if (pages.Count > 1)
-                Pager(menu, chip, grid, area, gridLeft + gridWidth * 0.5f, page, pages.Count);
         }
         catch (Exception e)
         {
+            spawned.Clear();
             for (int i = cells.Count - 1; i >= before; i--)
             {
                 if (cells[i] != null)
@@ -235,12 +215,20 @@ internal static class VRTabGrid
 
         lastFallback = null;
         Shown = true;
-        Pages = pages.Count;
+        Pages = 1;
         Plugin.Log.LogInfo(
-            $"[ui.settings] VR tab: '{group.Title}' page {page + 1}/{pages.Count}, {columns} columns of {perColumn} rows "
-                + $"({columnWidth:0} px), rail of {groups.Count} {(inside ? "inside" : "beside")} the rows"
+            $"[ui.settings] VR tab: '{group.Title}', {group.Rows.Count} rows in a {VRTabColumn.ColumnDegrees:0} deg "
+                + $"column ({rowWidth:0} px at x{columnScale:0.00}), rail of {groups.Count} at x{railScale:0.00} "
+                + $"turned {VRTabColumn.RailDegrees:0} deg, {distance:0.00} m away"
         );
         return true;
+    }
+
+    private static void Stretch(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
     }
 
     /// <summary>Row height from the game's row prefab, and the gap its list leaves between rows.</summary>
@@ -283,35 +271,6 @@ internal static class VRTabGrid
         return null;
     }
 
-    /// <summary>The window's own controls outside the rows and tabs that share the rail's width, as vertical spans in
-    /// the content's space, padded by the rail gap.</summary>
-    private static void Obstacles(
-        SharedSettingsMenu menu,
-        RectTransform content,
-        SettingsTABS tabs,
-        float left,
-        float right
-    )
-    {
-        lows.Clear();
-        highs.Clear();
-        menu.GetComponentsInChildren(false, selectables);
-        foreach (var s in selectables)
-        {
-            var t = s.transform;
-            if (t.IsChildOf(content) || (tabs != null && t.IsChildOf(tabs.transform)))
-                continue;
-            ((RectTransform)t).GetWorldCorners(corners);
-            var a = content.InverseTransformPoint(corners[0]);
-            var b = content.InverseTransformPoint(corners[2]);
-            if (Mathf.Max(a.x, b.x) < left || Mathf.Min(a.x, b.x) > right)
-                continue;
-            lows.Add(Mathf.Min(a.y, b.y) - RailGap);
-            highs.Add(Mathf.Max(a.y, b.y) + RailGap);
-        }
-        selectables.Clear();
-    }
-
     private static RectTransform NewRect(string name, Transform parent)
     {
         var go = new GameObject(name, typeof(RectTransform));
@@ -351,7 +310,7 @@ internal static class VRTabGrid
 
     /// <summary>
     /// A row narrower than the game drew it for: the control keeps at most half the column, the label takes the rest
-    /// and wraps (shrinking a little before it would spill). Only rects anchored to one edge are touched.
+    /// and wraps. Only rects anchored to one edge are touched.
     /// </summary>
     private static void Narrow(SettingsUICell cell, float width)
     {
@@ -367,13 +326,8 @@ internal static class VRTabGrid
         SetWidth(input, control, keepLeft: false);
         SetWidth(label, room, keepLeft: true);
         text.textWrappingMode = TextWrappingModes.Normal;
+        // Never shrinks: the column's scale holds the text at the size floor; a label too long ends in an ellipsis.
         text.overflowMode = TextOverflowModes.Ellipsis;
-        if (!text.enableAutoSizing)
-        {
-            text.fontSizeMax = text.fontSize;
-            text.fontSizeMin = text.fontSize * 0.75f;
-            text.enableAutoSizing = true;
-        }
     }
 
     private static bool OneEdge(RectTransform rt) =>
@@ -420,6 +374,9 @@ internal static class VRTabGrid
             else
                 text.text = title.ToUpperInvariant();
             text.color = selected ? Color.black : Color.white;
+            // Kept at the size the rail's scale was measured for.
+            text.enableAutoSizing = false;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
         }
         if (!go.TryGetComponent<Button>(out var button))
             button = go.AddComponent<Button>();
@@ -429,85 +386,11 @@ internal static class VRTabGrid
         return button;
     }
 
-    /// <summary>Previous and Next chips under the rows with "Page x of y" between them; a chip shows only where there
-    /// is a page to go to.</summary>
-    private static void Pager(
-        SharedSettingsMenu menu,
-        SettingsTABSButton source,
-        RectTransform grid,
-        Rect area,
-        float centre,
-        int page,
-        int pages
-    )
-    {
-        float top = area.yMin + PagerHeight * ChipFill;
-        float height = PagerHeight * ChipFill;
-        if (page > 0)
-            Place(
-                (RectTransform)
-                    Chip(
-                        source,
-                        grid,
-                        "PEAKXR_PAGE_PREVIOUS",
-                        "Previous",
-                        false,
-                        () => Turn(menu, -1)
-                    ).transform,
-                area,
-                centre - PagerLabelWidth * 0.5f - PagerChipWidth,
-                top,
-                PagerChipWidth,
-                height
-            );
-        if (page < pages - 1)
-            Place(
-                (RectTransform)
-                    Chip(
-                        source,
-                        grid,
-                        "PEAKXR_PAGE_NEXT",
-                        "Next",
-                        false,
-                        () => Turn(menu, 1)
-                    ).transform,
-                area,
-                centre + PagerLabelWidth * 0.5f,
-                top,
-                PagerChipWidth,
-                height
-            );
-        var label = Place(
-            NewRect("PeakXR_PageOf", grid),
-            area,
-            centre - PagerLabelWidth * 0.5f,
-            top,
-            PagerLabelWidth,
-            height
-        );
-        var text = label.gameObject.AddComponent<TextMeshProUGUI>();
-        if (source.text != null)
-        {
-            text.font = source.text.font;
-            text.fontSize = source.text.fontSize;
-        }
-        text.text = $"PAGE {page + 1} OF {pages}";
-        text.alignment = TextAlignmentOptions.Center;
-        text.color = Color.white;
-        text.raycastTarget = false;
-    }
-
     /// <summary>Shows <paramref name="page"/> of rail entry <paramref name="key"/> (a chip click, or the self-test).</summary>
     internal static void Select(SharedSettingsMenu menu, string key, int page = 0)
     {
         VRTab.Group = key;
         VRTab.Page = page;
-        Refill(menu);
-    }
-
-    private static void Turn(SharedSettingsMenu menu, int delta)
-    {
-        VRTab.Page += delta;
         Refill(menu);
     }
 
@@ -519,11 +402,8 @@ internal static class VRTabGrid
         menu.ShowSettings(VRTab.Category);
     }
 
-    /// <summary>
-    /// Middle of the row's outer edge and the direction away from the panel there: the right edge, or for a row
-    /// whose right side is taken by the next column, the left edge of the rail at the row's height. Previews and guide
-    /// demos stand there, beside the row they belong to and clear of the other rows.
-    /// </summary>
+    /// <summary>Middle of the row's right edge and the direction away from the column there: previews and guide
+    /// demos stand beside the row they belong to, clear of the rail on the column's left.</summary>
     internal static void RowOuterEdge(
         RectTransform row,
         Vector3[] scratch,
@@ -532,24 +412,18 @@ internal static class VRTabGrid
     )
     {
         row.GetWorldCorners(scratch);
-        var right = (scratch[3] - scratch[0]).normalized;
-        if (row.TryGetComponent<VRTabSlot>(out var slot) && slot.OpensLeft && slot.LeftEdge != null)
-        {
-            var mid = (scratch[0] + scratch[1]) * 0.5f;
-            slot.LeftEdge.GetWorldCorners(scratch);
-            edge = mid - right * Vector3.Dot(mid - scratch[0], right);
-            outward = -right;
-            return;
-        }
+        outward = (scratch[3] - scratch[0]).normalized;
         edge = (scratch[2] + scratch[3]) * 0.5f;
-        outward = right;
     }
 }
 
 /// <summary>The VR layout's objects on a settings window, so the next fill removes them.</summary>
 internal sealed class VRTabLayout : MonoBehaviour
 {
+    /// <summary>The row column (its plate, the scrolled viewport and rows).</summary>
     public GameObject Grid;
+
+    /// <summary>The category rail, a panel of its own beside the column.</summary>
     public GameObject Rail;
 
     public void Clear()
@@ -560,13 +434,4 @@ internal sealed class VRTabLayout : MonoBehaviour
             Destroy(Rail);
         Grid = Rail = null;
     }
-}
-
-/// <summary>Which side of a grid row its preview and demo open on (<see cref="VRTabGrid.RowOuterEdge"/>).</summary>
-internal sealed class VRTabSlot : MonoBehaviour
-{
-    public bool OpensLeft;
-
-    /// <summary>The rail's outline: a left-opening preview stands past its left edge.</summary>
-    public RectTransform LeftEdge;
 }
