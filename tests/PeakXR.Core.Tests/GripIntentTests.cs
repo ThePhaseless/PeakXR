@@ -358,4 +358,59 @@ public class GripIntentTests
             GripIntent.OnRelease(true, true, 9f, 2f, true, releaseToDrop: true, armed: armed)
         );
     }
+
+    static GripContext HoldingTwoHanded()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.TwoHanded;
+        return c;
+    }
+
+    [Fact]
+    public void FreeHandAwayFromTheHeldItem_AtAClimbable_Climbs()
+    {
+        // VR run 51: a free hand on a chain 0.45 m from the held launcher joined the launcher instead.
+        var c = HoldingTwoHanded();
+        c.NearClimbable = true;
+        Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void FreeHandBesideTheHeldItem_OnARopeOrChain_GrabsIt()
+    {
+        // Brushing the launcher's body is not taking its second grip when the hand closes on a line.
+        var c = HoldingTwoHanded();
+        c.NearHeldItem = true;
+        c.Candidate = GrabCandidate.Interactible;
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void FreeHandBesideTheHeldItem_AtAWall_Climbs()
+    {
+        var c = HoldingTwoHanded();
+        c.NearHeldItem = true;
+        c.NearClimbable = true;
+        Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void FreeHandAtTheOffHandGrip_IsSecondHand_EvenByAWall()
+    {
+        var c = HoldingTwoHanded();
+        c.AtSecondGrip = true;
+        c.NearHeldItem = true;
+        c.NearClimbable = true;
+        c.Candidate = GrabCandidate.Interactible;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void FreeHandOnTheHeldItem_NothingElseThere_IsSecondHand()
+    {
+        var c = HoldingTwoHanded();
+        c.NearHeldItem = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
 }
