@@ -34,7 +34,10 @@ internal sealed class LocomotionDriver : MonoBehaviour
         LocomotionInput.Watchdog();
         var rig = VRRig.Instance;
         if (rig != null)
+        {
             rig.SeatedMode = ComfortConfig.Seated;
+            rig.SeatedReachGain = ComfortConfig.SeatedReachGain;
+        }
 
         float dt = Time.deltaTime;
         var c = Character.localCharacter;

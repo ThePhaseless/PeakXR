@@ -520,13 +520,36 @@ internal sealed class RigDriver : MonoBehaviour
     private void UpdateHand(bool left, Transform grip, Transform aim)
     {
         ref var h = ref VRInput.Hand(left);
+        // The one place tracked hands become the rig's: grabs, gestures, the avatar arm and the net pose all read
+        // these transforms, so the seated reach gain lands everywhere once. The aim moves with the grip.
+        var drop = Vector3.zero;
         if (h.Tracked)
-            grip.SetLocalPositionAndRotation(h.Position, h.Rotation);
+        {
+            drop.y = SeatedReachY(h.Position.y) - h.Position.y;
+            grip.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
+        }
         // Scripted self-test hands have no aim pose of their own: aim along the grip pose like a runtime without one.
         if (VRInput.TestOverride == null && devices.TryGetAim(left, out var p, out var r))
-            aim.SetLocalPositionAndRotation(p, r);
+            aim.SetLocalPositionAndRotation(p + drop, r);
         else if (h.Tracked)
-            aim.SetLocalPositionAndRotation(h.Position, h.Rotation);
+            aim.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
+    }
+
+    /// <summary>Tracking-space hand Y after the seated reach gain (identity standing, at gain 1 or outside VR).</summary>
+    private float SeatedReachY(float y)
+    {
+        if (!VRSession.Active || !rig.SeatedMode)
+            return y;
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        // shortcut: the virtual floor assumes the avatar's eyes 1.65 m over its feet, as the height calibration does;
+        // read the feet if a character's proportions ever differ.
+        return SeatedReach.Y(
+            y,
+            eye,
+            eye - HeightCalibration.DefaultStandingEyeHeight,
+            rig.SeatedReachGain,
+            true
+        );
     }
 
     /// <summary>
