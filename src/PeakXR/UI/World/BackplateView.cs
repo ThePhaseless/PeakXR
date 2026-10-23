@@ -28,7 +28,9 @@ internal static class BackplateView
 
     /// <summary>Fits the plate to <paramref name="min"/>..<paramref name="max"/> (canvas pixels about the pivot), or
     /// hides it when off, out of VR or nothing is drawn. Allocates only when the plate is first made.</summary>
-    public static void Apply(TrackedCanvas t, Vector2 min, Vector2 max)
+    /// <param name="placed">The canvas stands where it will be drawn. False for the measure taken before a menu that
+    /// just opened is placed: its old pose would misjudge the spread, so the last verdict holds (no one-frame blink).</param>
+    public static void Apply(TrackedCanvas t, Vector2 min, Vector2 max, bool placed)
     {
         t.PlateContentMin = min;
         t.PlateContentMax = max;
@@ -43,7 +45,7 @@ internal static class BackplateView
                 out var center,
                 out var size
             )
-            || Scattered(t, center, size)
+            || (placed ? Scattered(t, center, size) : t.PlateScattered)
         )
         {
             if (t.Plate != null && t.Plate.gameObject.activeSelf)
