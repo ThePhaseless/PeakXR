@@ -43,14 +43,17 @@ public sealed class ViewHold
     public float Offset { get; private set; }
 
     /// <summary>
-    /// The eye anchor moved under a still body (a snap or smooth turn swings it round the torso, and the turn shift
-    /// cancels that swing): carry the held point with it, keeping the offset, so the turn pivots on the eye. Call
-    /// before <see cref="Update"/> on every frame the turn shift is being set.
+    /// Instead of <see cref="Update"/> on every frame the turn shift is being set (a snap or smooth turn, and the
+    /// torso swing after it). The turn shift alone keeps the eye still there, so the view rides the body with its
+    /// offset frozen: no hold (that would cancel the swing twice) and no release (the turn's swing closes the gate,
+    /// and decaying the offset then slid the eye up to 5 cm: run 47, vr.16, 3.8 cm). The engage timer is kept.
     /// </summary>
-    public void Rebase(Vector3 body)
+    public Vector3 Carry(Vector3 body)
     {
-        if (have)
-            output = body + off;
+        if (!have)
+            return Update(body, false, 0f);
+        output = body + off;
+        return output;
     }
 
     /// <summary>Forget the held point: the next update starts on the body (recenter, new view, warp).</summary>

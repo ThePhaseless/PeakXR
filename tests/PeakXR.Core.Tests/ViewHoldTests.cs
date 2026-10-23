@@ -131,29 +131,60 @@ public class ViewHoldTests
     }
 
     [Theory]
-    [InlineData(30f)]
-    [InlineData(-30f)]
-    [InlineData(90f)]
-    public void SnapTurnWithAHeldOffset_PivotsOnTheEye(float snap)
+    [InlineData(30f, 0f)]
+    [InlineData(30f, 0.37f)]
+    [InlineData(30f, 0.71f)]
+    [InlineData(-30f, 0.2f)]
+    [InlineData(90f, 0.55f)]
+    public void SnapTurn_EyeStaysPut_UnderSwayAndAHeldOffset(float snap, float phase)
     {
-        // rig.camera's first-person view: the eye anchor ahead of the torso along the rig heading, the turn shift
-        // that cancels its swing, and the hold on the anchor (run 45, vr.16: the eye slid 3.2 cm in a 30 degree snap).
-        var eyes = new Vector2(0.19f, 1.0f);
+        // rig.camera's first-person frame, in its order: the eye anchor ahead of the swaying torso along the rig
+        // heading, the turn shift (TurnShift on the turn frame, HoldLevel through the torso's swing after it), the
+        // hold carried through the turn window, then held again. The turn's swing closes the hold's gate in game
+        // (run 47, vr.16: the release then slid the eye 3.8 cm); Carry ignores the gate.
+        var eyes = new Vector2(0.244f, 0.98f);
         var hold = new ViewHold();
         var shift = Vector3.Zero;
         Vector3 view = default;
-        float t = 0f;
-        for (; t < 3f; t += Dt)
-            view = hold.Update(RigMath.EyeAnchor(Sway(t), 0f, eyes), true, Dt) + shift;
-        Assert.True(hold.Holding && hold.Offset > 0.005f, "no held offset to carry");
+        Vector3 bodyEye = default;
+        float t = phase;
+        for (; t < phase + 3f; t += Dt)
+        {
+            bodyEye = RigMath.EyeAnchor(Sway(t), 0f, eyes);
+            view = hold.Update(bodyEye, true, Dt) + shift;
+        }
+        Assert.True(hold.Holding && hold.Offset > 0.003f, "no held offset to carry");
+        var eye = view;
+        float slide = 0f;
 
+        // The turn frame.
         shift = RigMath.TurnShift(shift, 0f, snap, eyes.X);
-        var body = RigMath.EyeAnchor(Sway(t), snap, eyes);
-        hold.Rebase(body);
-        var after = hold.Update(body, true, Dt) + shift;
-        float slide = new Vector2(after.X - view.X, after.Z - view.Z).Length();
-        Assert.True(slide < 0.005f, $"eye slid {slide:0.0000} m");
+        var last = RigMath.EyeAnchor(Sway(t), snap, eyes);
+        slide = MathF.Max(slide, Slide(hold.Carry(last) + shift, eye));
+        // The turn window: the ragdoll torso swings 3 cm onto its new heading while the body sways.
+        float end = t + 0.6f;
+        for (float s = 0f; t < end; t += Dt, s += Dt)
+        {
+            var swing = new Vector3(0.03f, 0f, -0.01f) * MathF.Min(s / 0.3f, 1f);
+            bodyEye = RigMath.EyeAnchor(Sway(t) + swing, snap, eyes);
+            shift = RigMath.HoldLevel(shift, last, bodyEye);
+            last = bodyEye;
+            slide = MathF.Max(slide, Slide(hold.Carry(bodyEye) + shift, eye));
+        }
+        // Across the snap and its window the eye moves only by one frame of the sway the turn frame carries.
+        Assert.True(slide < 0.002f, $"eye slid {slide:0.0000} m in the turn");
+        // Standing on after the window: held again. The window's sway is now in the turn shift, so the body can
+        // reach the deadband sooner and carry the view a few millimetres, slowly; never a slide.
+        float after = 0f;
+        for (end = t + 1f; t < end; t += Dt)
+        {
+            bodyEye = RigMath.EyeAnchor(Sway(t) + new Vector3(0.03f, 0f, -0.01f), snap, eyes);
+            after = MathF.Max(after, Slide(hold.Update(bodyEye, true, Dt) + shift, eye));
+        }
+        Assert.True(after < 0.01f, $"eye moved {after:0.0000} m standing after the turn");
     }
+
+    static float Slide(Vector3 a, Vector3 b) => new Vector2(a.X - b.X, a.Z - b.Z).Length();
 
     [Fact]
     public void Teleport_Snaps()
