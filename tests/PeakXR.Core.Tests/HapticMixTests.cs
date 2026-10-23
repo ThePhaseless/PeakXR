@@ -110,4 +110,46 @@ public class HapticMixTests
         }
         Assert.Equal(pattern.Length, sent);
     }
+
+    /// <summary>The laser's hover tick (UI scale): the loudest routine UI feel a refusal must beat.</summary>
+    const float HoverTick = 0.2f;
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void Alert_IsFeltAboveAHoverTick_AtAnySlider(float strength)
+    {
+        float hover = HapticScale.Felt(HoverTick, strength, HapticScale.Ui);
+        foreach (var p in DenyHaptics.Deny)
+            Assert.True(HapticScale.Felt(p.Amplitude, strength, HapticScale.Cue) > hover, "deny");
+        foreach (var p in DenyHaptics.Slip)
+            Assert.True(HapticScale.Felt(p.Amplitude, strength, HapticScale.Cue) > hover, "slip");
+        Assert.True(
+            HapticScale.Felt(DangerPulse.Amplitude(0f), strength, HapticScale.Cue) > hover,
+            "danger"
+        );
+    }
+
+    [Fact]
+    public void Deny_DeliversAboutHalf_At30Ms_KeepingItsRhythm()
+    {
+        foreach (var p in DenyHaptics.Deny)
+        {
+            Assert.Equal(0.5f, HapticScale.Felt(p.Amplitude, 1f, HapticScale.Cue), 2);
+            Assert.Equal(0.03f, p.Seconds, 3);
+        }
+        Assert.Equal(new[] { 0f, 0.07f, 0.14f }, Array.ConvertAll(DenyHaptics.Deny, p => p.At));
+    }
+
+    [Fact]
+    public void Alert_IsTheStrongestCueFeel()
+    {
+        float deny = DenyHaptics.Deny[0].Amplitude;
+        Assert.True(deny >= CueHaptics.EndStop.Amplitude);
+        Assert.True(deny >= CueHaptics.Contact.Amplitude);
+        Assert.True(deny >= ProgressRamp.Amplitude(1f));
+        Assert.True(DangerPulse.Amplitude(1f) >= ProgressRamp.Amplitude(1f));
+    }
 }
