@@ -975,15 +975,19 @@ internal sealed partial class SelfTestRunner
         }
         // A player steps up to the face before placing a piton; the stand spot can leave it up to 2 m off, and a
         // handle 1.18 m from the eye (run 47, vr.44) is out of any reach. Step to about 0.4 m from it (run 53, vr.56: 0.5 m left the handle 0.85 m out).
-        var gap = hit.point - rig.Head.position;
-        gap.y = 0f;
-        if (gap.magnitude > 0.55f)
+        // Toward the hit itself, and again if the face found after the step is still out: WallInFront can fall back
+        // to a ray at the far point FindWall started from (run 55, vr.44b: the handle placed 1.37 m out after the step).
+        for (int step = 0; step < 2; step++)
         {
+            var gap = hit.point - rig.Head.position;
+            gap.y = 0f;
+            if (gap.magnitude <= 0.55f)
+                break;
             c.photonView.RPC(
                 "WarpPlayerRPC",
                 RpcTarget.All,
                 new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
-                    - normal * (gap.magnitude - 0.4f),
+                    + gap.normalized * (gap.magnitude - 0.4f),
                 false
             );
             yield return Wait(0.5f);
@@ -996,6 +1000,13 @@ internal sealed partial class SelfTestRunner
                 );
                 yield break;
             }
+            rig.RotateYaw(
+                Vector3.SignedAngle(
+                    Flat(rig.Head.forward),
+                    Flat(hit.point - rig.Head.position),
+                    Vector3.up
+                )
+            );
         }
         var go = PhotonNetwork.InstantiateItemRoom(
             spike.hammeredVersionPrefab.name,
