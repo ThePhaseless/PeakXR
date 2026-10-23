@@ -679,13 +679,22 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => Zorro.UI.Modal.Modal.IsOpen, 1f, "modal did not open");
         if (!stepOk)
             yield break;
-        yield return Wait(0.5f);
         var notes = new System.Collections.Generic.List<string>();
         foreach (bool left in new[] { true, false })
         {
             string hand = left ? "left" : "right";
+            // Every modal gets the same settle the first had: a reopened one is answered as soon as its ring shows,
+            // and the old modal's button can still be in the body then (run 48: the right click did nothing).
+            yield return Wait(0.5f);
+            UnityEngine.UI.Button button = null;
             var body = Zorro.UI.Modal.Modal.Instance.bodyParent;
-            var button = body != null ? body.GetComponentInChildren<UnityEngine.UI.Button>() : null;
+            if (body != null)
+                foreach (var b in body.GetComponentsInChildren<UnityEngine.UI.Button>(false))
+                    if (b.IsInteractable() && b.isActiveAndEnabled)
+                    {
+                        button = b;
+                        break;
+                    }
             if (button == null)
             {
                 Fail("the modal has no button to answer");
@@ -698,7 +707,7 @@ internal sealed partial class SelfTestRunner
             yield return Until(
                 () => !Zorro.UI.Modal.Modal.IsOpen,
                 1f,
-                $"the {hand} laser click did not answer the modal"
+                $"the {hand} laser click did not answer the modal (button '{button.name}'; laser over '{(LaserPointer.Over != null ? LaserPointer.Over.name : "nothing")}' from the {(LaserPointer.OverLeft ? "left" : "right")}, pressed '{(LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing")}')"
             );
             if (!stepOk)
                 yield break;
@@ -936,13 +945,25 @@ internal sealed partial class SelfTestRunner
         return ignore == null || hit.collider.GetComponentInParent<AirportCheckInKiosk>() != ignore;
     }
 
-    /// <summary>The kiosk's collider bounds, the shape the hand touches (PhysicalInteraction's grab search).</summary>
+    /// <summary>The kiosk's solid collider bounds, the shape the hand touches (PhysicalInteraction's grab search).
+    /// Triggers and the pivot are left out: either can sit well off the body, and run 48 stood the player 0.19 m
+    /// from the kiosk centre, inside its footprint, so the hand line began behind the face.</summary>
     static Bounds KioskBounds(AirportCheckInKiosk kiosk)
     {
-        var bounds = new Bounds(kiosk.transform.position, Vector3.zero);
+        Bounds? bounds = null;
         foreach (var col in kiosk.GetComponentsInChildren<Collider>())
-            bounds.Encapsulate(col.bounds);
-        return bounds;
+        {
+            if (col.isTrigger || !col.enabled)
+                continue;
+            if (bounds is { } b)
+            {
+                b.Encapsulate(col.bounds);
+                bounds = b;
+            }
+            else
+                bounds = col.bounds;
+        }
+        return bounds ?? new Bounds(kiosk.transform.position, Vector3.zero);
     }
 
     /// <summary>
@@ -1042,8 +1063,11 @@ internal sealed partial class SelfTestRunner
             )
         );
         yield return Wait(0.6f);
+        var gap =
+            bounds.ClosestPoint(new Vector3(c.Center.x, bounds.center.y, c.Center.z)) - c.Center;
+        gap.y = 0f;
         kioskNote =
-            $"stood {Vector3.Distance(Flat(c.Center), Flat(centre)):0.00} m from the kiosk centre, {heading:0} deg from its forward";
+            $"stood {gap.magnitude:0.00} m from the kiosk face ({Vector3.Distance(Flat(c.Center), Flat(bounds.center)):0.00} m from its centre, body {bounds.size.x:0.00} x {bounds.size.z:0.00} m), {heading:0} deg from its forward";
     }
 
     /// <summary>
@@ -1060,17 +1084,24 @@ internal sealed partial class SelfTestRunner
             yield break;
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
-        KioskDock.Measure(kiosk.transform, out var centre, out var top);
+        KioskDock.Measure(kiosk.transform, out _, out var top);
+        var bounds = KioskBounds(kiosk);
         var eye = rig.Head.position;
-        // A hand held out at chest height (or just under the kiosk top) toward its centre: where it meets the kiosk.
-        float y = Mathf.Min(eye.y - 0.35f, top - 0.1f);
+        // A hand held out at chest height (or just under the kiosk top) from where the player stands toward the
+        // kiosk's solid body, cast from the player's side so it meets the near face, not the inside of the kiosk.
+        float y = Mathf.Min(eye.y - 0.35f, top - 0.1f, bounds.max.y - 0.1f);
+        var from = new Vector3(eye.x, y, eye.z);
+        var toward = new Vector3(bounds.center.x, y, bounds.center.z) - from;
+        RaycastHit face = default;
         if (
-            !Physics.Linecast(
-                new Vector3(eye.x, y, eye.z),
-                new Vector3(centre.x, y, centre.z),
-                out var face,
+            toward.sqrMagnitude < 1e-4f
+            || !Physics.Raycast(
+                from,
+                toward.normalized,
+                out face,
+                toward.magnitude + bounds.extents.magnitude,
                 HelperFunctions.AllPhysicalExceptCharacter,
-                QueryTriggerInteraction.Collide
+                QueryTriggerInteraction.Ignore
             )
             || face.collider.GetComponentInParent<AirportCheckInKiosk>() != kiosk
         )

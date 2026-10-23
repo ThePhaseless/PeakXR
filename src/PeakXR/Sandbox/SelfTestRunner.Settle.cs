@@ -106,14 +106,30 @@ internal sealed partial class SelfTestRunner
         yield return SettleRecenter(rig);
         yield return StandStill(c);
         string why = SettleProblem(c, needSpot: !hasHome);
+        if (
+            why != null
+            && settledFor < stillWindow.Required
+            && hasHome
+            && Vector3.Distance(Feet(c), home) <= SettleRadius
+        )
+        {
+            // The home spot itself does not hold a body still. Run 47: TheKiln's home put the eye in rock after each
+            // warp ("Eye inside rock"), and the body crept off it at 1-1.5 cm/s, so vr.85, vr.90 and vr.91 failed
+            // with the drift at the 3 cm limit (the window restarts the frame it crosses, so the note always reads
+            // about 0.030). Drop it and find open ground instead of warping back onto it.
+            settleHome.Remove(segment);
+            hasHome = false;
+            warped = false;
+            Note(F($"home spot {home} dropped: the body would not stay still on it ({why})"));
+        }
         if (why != null && !warped)
         {
-            // Off the home spot, or no good one yet: the home spot, else the game's own spawn for this segment.
+            // Off the home spot, or no good one yet: the home spot, else open ground nearby, else the game's own
+            // spawn for this segment.
             var spawn = MapHandler.CurrentBaseCampSpawnPoint;
-            Vector3? target =
-                hasHome ? home
-                : spawn != null ? spawn.position
-                : null;
+            Vector3? target = hasHome
+                ? home
+                : OpenSpotNear(Feet(c)) ?? (spawn != null ? spawn.position : null);
             if (target is { } to)
             {
                 yield return SettleWarp(c, to);
@@ -370,24 +386,80 @@ internal sealed partial class SelfTestRunner
             )
         )
             return "no ground within 3 m under the body";
+        return OpenProblem(ground);
+    }
+
+    /// <summary>Heights (m over the ground) the open-ground ring is cast at: chest, and the head, which a chest-only
+    /// check missed under TheKiln's overhang (run 47).</summary>
+    static readonly float[] ClearHeights = { 1.1f, 1.75f };
+
+    /// <summary>Head room (m over the ground) a spot needs straight up.</summary>
+    const float SettleHeadroom = 2.2f;
+
+    /// <summary>Why <paramref name="ground"/> is not flat, open ground to stand on, or null.</summary>
+    static string OpenProblem(RaycastHit ground)
+    {
         float slope = Vector3.Angle(ground.normal, Vector3.up);
         if (slope > SettleSlope)
             return F($"ground {slope:0} deg from level at {ground.point}");
-        var chest = ground.point + Vector3.up * 1.1f;
-        for (int i = 0; i < 8; i++)
+        RaycastHit hit;
+        foreach (float h in ClearHeights)
         {
-            var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
-            if (
-                Physics.Raycast(
-                    chest,
-                    dir,
-                    out var hit,
-                    SettleClear,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
+            var at = ground.point + Vector3.up * h;
+            for (int i = 0; i < 8; i++)
+            {
+                var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
+                if (
+                    Physics.Raycast(
+                        at,
+                        dir,
+                        out hit,
+                        SettleClear,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
                 )
+                    return F($"{hit.collider.name} {hit.distance:0.00} m away {h:0.0} m up");
+            }
+        }
+        if (
+            Physics.Raycast(
+                ground.point + Vector3.up * 0.5f,
+                Vector3.up,
+                out hit,
+                SettleHeadroom - 0.5f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
             )
-                return F($"{hit.collider.name} {hit.distance:0.00} m away at chest height");
+        )
+            return F($"{hit.collider.name} overhead, {hit.distance + 0.5f:0.00} m up");
+        return null;
+    }
+
+    static readonly float[] OpenSpotRings = { 1.5f, 3f, 5f };
+
+    /// <summary>Flat, open ground (<see cref="OpenProblem"/>) in rings 1.5, 3 and 5 m around
+    /// <paramref name="around"/>, nearest first, or null.</summary>
+    static Vector3? OpenSpotNear(Vector3 around)
+    {
+        foreach (float r in OpenSpotRings)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
+                if (
+                    Physics.Raycast(
+                        around + dir * r + Vector3.up * 3f,
+                        Vector3.down,
+                        out var ground,
+                        6f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                    && OpenProblem(ground) == null
+                )
+                    return ground.point;
+            }
         }
         return null;
     }
