@@ -725,9 +725,17 @@ internal sealed partial class SelfTestRunner
         // A climber reaches up for a hold about eye height and pulls it down to the chest: from a chest-height hold
         // the arm ran out after a 0.25 m pull, and the rise sat on the 0.1 m line (vr.15 passed and failed in turn,
         // runs 49-54). Grip at eye height where the face goes that high.
+        // Its own level ray from just under the eye: WallInFront falls back to rays at the far point FindWall started
+        // from, and run 57's "high" hold came from one of those, 0.97 m under the eye.
         if (
-            WallInFront(c, wall, 0.6f, out var high)
-            && Vector3.Distance(high.point, hit.point) < 1f
+            Physics.Raycast(
+                rig.Head.position + Vector3.down * 0.1f,
+                -Flat(hit.normal),
+                out var high,
+                0.9f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            ) && ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
         )
             hit = high;
         var hold = hit.point + hit.normal * 0.04f;
@@ -1561,6 +1569,27 @@ internal sealed partial class SelfTestRunner
             headDrop = Mathf.SmoothStep(from, low, (Now - start) / seconds);
             yield return hand.Current;
         }
+    }
+
+    /// <summary>
+    /// One frame of a hand steered in a closed loop (a flame onto a fuse): when it heads past a player's reach of the
+    /// eye, the head stoops deeper toward it, at a squat's pace, as a player crouches lower to follow their hand. Run
+    /// 57's vr.88 carried the flame down onto the fuse from above with the head barely stooped, 1.17 m from the eye.
+    /// </summary>
+    void StoopToFollow(bool left)
+    {
+        const float R = MaxHandFromEye * 0.95f;
+        var hand = Script(left).Position;
+        var eye = ScriptedEye();
+        var outward = hand - eye;
+        outward.y = 0f;
+        if ((hand - eye).magnitude <= R || outward.magnitude >= R)
+            return;
+        if (headDrop <= 0f)
+            stoopFrom = VRInput.HeadPosition.y;
+        float eyeY = hand.y + Mathf.Sqrt(R * R - outward.sqrMagnitude);
+        float want = Mathf.Clamp(stoopFrom - eyeY, headDrop, MaxStoop);
+        headDrop = Mathf.MoveTowards(headDrop, want, 1.5f * Time.unscaledDeltaTime);
     }
 
     /// <summary>Stands back up from <see cref="ReachDown"/>, bringing the <paramref name="left"/> hand (and what it
