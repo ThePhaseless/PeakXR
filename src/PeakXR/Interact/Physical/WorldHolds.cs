@@ -151,6 +151,7 @@ internal static partial class WorldHolds
         TickBook(c, active);
         bool on = active && VRSession.Active;
         TickSocket(c, on);
+        TickStatuePoint(c, on);
         TickPillar(c, on);
         TickPortal(on);
         TickNotices(c);
