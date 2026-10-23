@@ -48,6 +48,38 @@ public static class SettingMigration
         return Math.Clamp(saved * factor, min, max);
     }
 
+    /// <summary>
+    /// <see cref="Rescaled"/> from the text the config file held (<paramref name="raw"/>, null when it held none).
+    /// True with the value to write when it should change. An unparseable value is left alone: BepInEx already fell
+    /// back to the new default for it, and rescaling that would be wrong.
+    /// </summary>
+    public static bool RescaleSaved(
+        string raw,
+        float oldDefault,
+        float newDefault,
+        float factor,
+        float min,
+        float max,
+        bool alreadyRan,
+        out float value
+    )
+    {
+        value = 0f;
+        if (
+            alreadyRan
+            || raw == null
+            || !float.TryParse(
+                raw.Trim(),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out float saved
+            )
+        )
+            return false;
+        value = Rescaled(saved, oldDefault, newDefault, factor, min, max, true, false);
+        return true;
+    }
+
     /// <summary>Config key that records one migration ran: the setting and the default it moved off, so a later
     /// default change of the same setting gets its own marker.</summary>
     public static string MarkerKey(string section, string key, float oldDefault) =>

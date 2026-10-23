@@ -80,7 +80,7 @@ internal sealed class InteractConfig
     {
         const string s = "Interaction";
         // Read before Bind consumes it: was a strength saved on the old scale?
-        bool strengthSaved = ConfigMigration.Saved(file, s, "HapticStrength");
+        string strengthSaved = ConfigMigration.SavedText(file, s, "HapticStrength");
         Instance = new InteractConfig
         {
             physicalGrab = file.Bind(
