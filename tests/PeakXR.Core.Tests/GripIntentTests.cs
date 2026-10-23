@@ -478,4 +478,28 @@ public class GripIntentTests
         c.BodyClimbing = false;
         Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
     }
+
+    static GripContext ItemHandByAPiton(float toHandle, float toRock)
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Interactible;
+        c.CandidateIsHandle = true;
+        c.HandleDistance = toHandle;
+        c.RockDistance = toRock;
+        c.NearClimbable = true;
+        c.HoldConfirmed = true;
+        c.BodyClimbing = true;
+        return c;
+    }
+
+    [Fact]
+    public void ItemHand_ClosingOnTheHandle_RockBehind_Regrips() =>
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(ItemHandByAPiton(0.02f, 0.06f)));
+
+    [Fact]
+    public void ItemHand_OnRockAwayFromAHandle_Climbs() =>
+        // Vanilla climbs and puts the item away (CharacterClimbing.cs:569); a piton 0.3 m off changes nothing.
+        Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(ItemHandByAPiton(0.3f, 0.01f)));
 }

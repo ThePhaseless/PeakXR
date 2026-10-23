@@ -491,6 +491,13 @@ internal static class PhysicalInteraction
         if (cfg.PhysicalGrab)
             ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
         ctx.CandidateIsHandle = target is ClimbHandle;
+        if (target is ClimbHandle near)
+        {
+            ctx.HandleDistance = Vector3.Distance(pos, near.transform.position);
+            ctx.RockDistance = probeHit
+                ? Vector3.Distance(pos, probePoint)
+                : float.PositiveInfinity;
+        }
         ctx.OneHanded = VRInput.OneHanded;
 
         var action = GripIntent.OnPress(ctx);

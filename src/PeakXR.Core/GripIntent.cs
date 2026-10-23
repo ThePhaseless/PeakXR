@@ -69,6 +69,11 @@ namespace PeakXR.Core
         /// <summary>The interactible candidate is a climb handle (a piton or pickaxe), held by the free hand only.</summary>
         public bool CandidateIsHandle;
 
+        /// <summary>Metres from the hand to that handle, and to the probed rock (infinity when none was probed): the
+        /// hand closes on whichever is nearer.</summary>
+        public float HandleDistance,
+            RockDistance;
+
         /// <summary>One-handed play (<c>Accessibility.OneHanded</c>): no free hand, so the item hand takes a climb
         /// handle and keeps the item, as vanilla hangs.</summary>
         public bool OneHanded;
@@ -176,7 +181,14 @@ namespace PeakXR.Core
                 return GripPressAction.Extension;
             // The item hand on a piton or handle keeps its item: no hang, and no wall catch on the rock behind it
             // either, which would put the item away (VR run 59). The press is a Regrip, refused with HandsFull.
-            if (c.ThisHandHolds && c.CandidateIsHandle && !c.OneHanded)
+            // Only when the hand is closing on the handle itself: on rock nearer than the handle the climb wins as in
+            // vanilla, which puts the item away (CharacterClimbing.cs:569).
+            if (
+                c.ThisHandHolds
+                && c.CandidateIsHandle
+                && !c.OneHanded
+                && c.HandleDistance <= c.RockDistance
+            )
                 return GripPressAction.Regrip;
             // Tightening the grip on a held item is never a climb attempt (climbing puts the item away, and a sticky one
             // falls, CharacterItems.cs:498): the holding hand climbs only when it is on a real hold, as a falling
