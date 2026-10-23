@@ -16,7 +16,8 @@ internal sealed class ItemGesturesConfig
         warmHands,
         parasolRunner,
         readAtFace,
-        communeAtFace;
+        communeAtFace,
+        triggerEats;
 
     public bool CookOverFire => cookOverFire?.Value ?? true;
     public bool LiftLid => liftLid?.Value ?? true;
@@ -27,6 +28,7 @@ internal sealed class ItemGesturesConfig
     public bool ParasolRunner => parasolRunner?.Value ?? true;
     public bool ReadAtFace => readAtFace?.Value ?? true;
     public bool CommuneAtFace => communeAtFace?.Value ?? true;
+    public bool TriggerEats => triggerEats?.Value ?? false;
 
     public static void Bind(ConfigFile file)
     {
@@ -89,6 +91,13 @@ internal sealed class ItemGesturesConfig
                 "Reading the Book of Bones turns you into a skeleton, so it starts only when you hold it open at eye "
                     + "level for a moment, and lowering it stops. The trigger alone is refused with a warning, and near "
                     + "a skeleton the book never reads (there it revives). Off: the trigger reads it."
+            ),
+            triggerEats = file.Bind(
+                s,
+                "TriggerEats",
+                false,
+                "Also eat and drink with the trigger, for seated or one-handed play. Off: food and drink are used "
+                    + "by raising them to your mouth, and the trigger alone points you there."
             ),
             communeAtFace = file.Bind(
                 s,

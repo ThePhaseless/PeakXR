@@ -140,6 +140,41 @@ public class ItemUseTests
     public void OnlyFoodDrinkAndBalloonGoToTheMouth(UseGesture g, bool mouth) =>
         Assert.Equal(mouth, ItemUse.AtMouth(g));
 
+    [Theory]
+    [InlineData(UseGesture.Eat)]
+    [InlineData(UseGesture.Drink)]
+    public void FoodAwayFromTheMouthIsNotEatenByTheTrigger(UseGesture g)
+    {
+        // Setting off (the default): the trigger alone does not eat; the refusal points at the mouth.
+        Assert.Equal(TriggerUse.Mouth, ItemUse.Trigger(g, triggerEats: false));
+        // At the mouth it is eaten.
+        Assert.True(ItemUse.AtMouth(g));
+        // Setting on (seated or one-handed play): the trigger eats too.
+        Assert.Equal(TriggerUse.Use, ItemUse.Trigger(g, triggerEats: true));
+    }
+
+    [Theory]
+    [InlineData(UseGesture.Apply)]
+    [InlineData(UseGesture.Inflate)]
+    [InlineData(UseGesture.Build)]
+    [InlineData(UseGesture.Aim)]
+    [InlineData(UseGesture.Light)]
+    [InlineData(UseGesture.Button)]
+    public void OtherUsesStayOnTheTrigger(UseGesture g)
+    {
+        Assert.Equal(TriggerUse.Use, ItemUse.Trigger(g, triggerEats: false));
+        Assert.Equal(TriggerUse.Use, ItemUse.Trigger(g, triggerEats: true));
+    }
+
+    [Theory]
+    [InlineData(UseGesture.Commune)]
+    [InlineData(UseGesture.Read)]
+    public void DangerousUsesNeedTheirGestureWhateverTheSetting(UseGesture g)
+    {
+        Assert.Equal(TriggerUse.Gesture, ItemUse.Trigger(g, triggerEats: false));
+        Assert.Equal(TriggerUse.Gesture, ItemUse.Trigger(g, triggerEats: true));
+    }
+
     [Fact]
     public void OnlyCommuneAndReadRefuseTheBareTrigger()
     {
