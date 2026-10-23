@@ -168,6 +168,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
+            yield return VRStep("vr.231-frame-budget", 15f, FrameBudgetCheck());
             yield return VRStep("vr.08-arm-reach", 15f, ArmReachCheck());
             yield return VRStep("vr.09-belt-view", 10f, BeltViewCheck());
             yield return VRStep("vr.33-ragdoll-arms", 20f, RagdollArmsCheck());
@@ -766,8 +767,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         failNote = null;
         stepSkip = null;
         report.Begin(id, Now);
+        Render.FrameClock.Step.Reset();
         bool god = SandboxActions.GodMode;
         yield return Guard(body, Now + timeout, OnStepFailure);
+        LogStepFrames(id);
         // A step that lifts god mode or holds a campfire light (vr.12, vr.26) and ends early leaves both as they were.
         if (god && !SandboxActions.GodMode)
             SandboxActions.SetGodMode(true);
@@ -994,6 +997,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         sb.Append(
             $"summary: {report.Passed} pass, {report.Failed} fail, {skipped} skip, {Now:0}s\n"
         );
+        sb.Append(FramesSummary()).Append('\n');
         sb.Append($"vanilla-exceptions: {report.VanillaExceptions}\n");
         foreach (var f in FeatureManager.Features)
         {

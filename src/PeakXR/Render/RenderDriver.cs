@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
+using PeakXR.UI.Common;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
@@ -24,6 +26,18 @@ internal sealed class RenderDriver : MonoBehaviour
     private static RenderDriver instance;
 
     private readonly ViewportScaler scaler = new();
+    private readonly AdaptiveScale adaptive = new();
+
+    /// <summary>The adaptive multiplier on the URP asset's render scale right now; <see cref="adaptive"/> holds the
+    /// wanted one until a fade or scene load lets it land.</summary>
+    private float appliedAdaptive = 1f;
+
+    /// <summary>Seconds per adaptive quality window: one p95 per window feeds <see cref="AdaptiveScale"/>.</summary>
+    private const float AdaptWindowSeconds = 5f;
+
+    /// <summary>Without GPU time only missed frames are visible: step down when the p95 interval is a quarter past
+    /// the budget (frames shown twice), never up.</summary>
+    private const float IntervalOnlyTarget = 1.25f;
     private readonly HashSet<VolumeComponent> disabledComponents = new();
     private readonly List<ScriptableRendererFeature> toggledFeatures = new();
     private readonly List<bool> toggledFeatureStates = new();
@@ -96,6 +110,9 @@ internal sealed class RenderDriver : MonoBehaviour
         {
             Plugin.Log.LogWarning($"{Tag} No URP asset active; render scale and MSAA left alone");
         }
+        adaptive.Reset();
+        appliedAdaptive = 1f;
+        FrameClock.ResetAll();
         ApplyQuality();
         ApplyScene();
 
@@ -176,8 +193,14 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        if (applied)
-            ApplyScene();
+        if (!applied)
+            return;
+        ApplyScene();
+        // A new scene has its own load: start it at the full render scale, reallocated while it loads.
+        adaptive.Reset();
+        if (appliedAdaptive != 1f && urp != null)
+            ApplyAdaptive("scene load");
+        FrameClock.Adapt.Reset();
     }
 
     /// <summary>URP asset and renderer features: render scale once (it reallocates eye buffers), MSAA,
@@ -188,7 +211,7 @@ internal sealed class RenderDriver : MonoBehaviour
     {
         if (urp == null)
             return;
-        urp.renderScale = RenderFixesFeature.RenderScale.Value;
+        urp.renderScale = RenderFixesFeature.RenderScale.Value * appliedAdaptive;
         urp.upscalingFilter = UpscalingFilterSelection.Linear;
         // Deferred renders without MSAA, but XR would still allocate multisampled eye textures and resolve them.
         urp.msaaSampleCount = IsDeferred(urp) ? 1 : RenderFixesFeature.Msaa.Value;
@@ -347,6 +370,90 @@ internal sealed class RenderDriver : MonoBehaviour
             return;
         BindCamera();
         UpdateDynamicResolution();
+        FrameClock.Tick();
+        LogFrameTiming();
+        UpdateAdaptiveQuality();
+    }
+
+    private static void LogFrameTiming()
+    {
+        float every = RenderFixesFeature.FrameTimingLogSeconds.Value;
+        if (!(every > 0f) || FrameClock.Log.Seconds < every)
+            return;
+        var report = FrameClock.Summarize(FrameClock.Log);
+        FrameClock.Log.Reset();
+        Plugin.Log.LogInfo($"{Tag} frames: {report.Line(CurrentScale)}");
+    }
+
+    /// <summary>Eye resolution now: the URP render scale times the OpenVR viewport scale.</summary>
+    internal static float CurrentScale =>
+        (instance != null && instance.urp != null ? instance.urp.renderScale : 1f)
+        * XRSettings.renderViewportScale;
+
+    /// <summary>
+    /// OpenXR: <c>XRSettings.renderViewportScale</c> showed the game in a corner (<see cref="UpdateDynamicResolution"/>),
+    /// so the URP asset's render scale, which sizes the eye textures, is the knob. Unity: "Changing the render scale
+    /// reallocates the eye texture, which is an expensive operation", and <c>XRSettings.eyeTextureResolutionScale</c>
+    /// is not supported in URP (https://docs.unity.com/en-us/engine/6000.3/manual/xr/graphics/resolution-scaling,
+    /// API https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.3/api/UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset.html).
+    /// So the controller moves at most once per 5 s window, and a step lands only behind a full fade to black or at
+    /// a scene load, where the reallocation hitch is never seen.
+    /// </summary>
+    private void UpdateAdaptiveQuality()
+    {
+        bool on =
+            RenderFixesFeature.AdaptiveQuality.Value
+            && VRSession.Running == VRRuntime.OpenXR
+            && urp != null;
+        if (!on)
+            adaptive.Reset();
+        else if (FrameClock.Adapt.Seconds >= AdaptWindowSeconds)
+            FeedAdaptive();
+        if (urp != null && adaptive.Scale != appliedAdaptive && FadeView.Alpha >= 0.99f)
+            ApplyAdaptive("fade");
+    }
+
+    private void FeedAdaptive()
+    {
+        var report = FrameClock.Summarize(FrameClock.Adapt);
+        FrameClock.Adapt.Reset();
+        // A step still waiting for its fade would be measured at the old scale and stepped again.
+        if (adaptive.Scale != appliedAdaptive || report.BudgetMs <= 0f || report.Interval.Empty)
+            return;
+        bool gpu = !report.Gpu.Empty;
+        adaptive.Min = RenderFixesFeature.AdaptiveQualityMin.Value;
+        adaptive.Target = gpu ? RenderFixesFeature.AdaptiveQualityTarget.Value : IntervalOnlyTarget;
+        float load = (gpu ? report.Gpu.P95 : report.Interval.P95) / report.BudgetMs;
+        if (adaptive.Feed(load, canRaise: gpu))
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"{Tag} adaptive quality wants {adaptive.Scale:0.00} of RenderScale ({(gpu ? "GPU" : "frame")} p95 load {load:0.00}, target {adaptive.Target:0.00}); it lands at the next fade"
+                )
+            );
+    }
+
+    /// <summary>Resizes the eye textures to the wanted adaptive scale; called only while nothing is visible.</summary>
+    private void ApplyAdaptive(string when)
+    {
+        appliedAdaptive = adaptive.Scale;
+        urp.renderScale = RenderFixesFeature.RenderScale.Value * appliedAdaptive;
+        FrameClock.Adapt.Reset();
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"{Tag} adaptive quality: render scale {urp.renderScale:0.00} ({appliedAdaptive:0.00} of RenderScale), applied at {when}"
+            )
+        );
+        var rig = VRRig.Instance;
+        bool left = !VRInput.LeftHanded;
+        var hand = rig != null ? rig.Hand(left) : null;
+        if (hand != null)
+            Affordance.Inform(
+                left,
+                hand.position,
+                DenyReason.HappenedHere,
+                DenyHint.Wrist(),
+                System.FormattableString.Invariant($"Render scale {appliedAdaptive:0.00}")
+            );
     }
 
     /// <summary>Headset camera: no TAA (temporal smearing, and URP cannot run it with XR dynamic resolution),
