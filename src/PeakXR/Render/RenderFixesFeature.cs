@@ -19,7 +19,7 @@ public enum VRAntialiasing
 /// and the fixed vignette are switched off in every Volume (found by component type), head bob is removed and
 /// photosensitive mode (half shake, dimmer flashes) is on. Quality and pacing: linear upscaling instead of STP
 /// (temporal, needs TAA), no TAA, MSAA and render scale from our settings, a dynamic
-/// <c>XRSettings.renderViewportScale</c>, and the game's FPS cap and VSync are ignored (the runtime paces
+/// <c>XRSettings.renderViewportScale</c> on OpenVR and an adaptive render scale on OpenXR, frame-time logging, and the game's FPS cap and VSync are ignored (the runtime paces
 /// frames). Screen-space passes are kept: MultiPass renders each eye as an ordinary camera pass with that
 /// eye's matrices, so HBAO, edge detection, the fog pass and the full-screen passes see a normal mono view.
 /// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
@@ -31,6 +31,10 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<VRAntialiasing> Antialiasing;
     internal static ConfigEntry<bool> DynamicResolution;
     internal static ConfigEntry<float> DynamicResolutionMin;
+    internal static ConfigEntry<bool> AdaptiveQuality;
+    internal static ConfigEntry<float> AdaptiveQualityMin;
+    internal static ConfigEntry<float> AdaptiveQualityTarget;
+    internal static ConfigEntry<float> FrameTimingLogSeconds;
     internal static ConfigEntry<bool> AmbientOcclusion;
     internal static ConfigEntry<bool> EdgeDetection;
     internal static ConfigEntry<float> ShadowDistance;
@@ -79,7 +83,7 @@ public sealed class RenderFixesFeature : Feature
             new ConfigDescription(
                 "Lower the rendered part of the eye buffers when the GPU misses the headset's frame time, and raise "
                     + "it again slowly when there is headroom (XRSettings.renderViewportScale). OpenVR only: under OpenXR it stays off, "
-                    + "because the runtime would show the unscaled frame."
+                    + "because the runtime would show the unscaled frame; AdaptiveQuality does this job there."
             )
         );
         DynamicResolutionMin = Plugin.Settings.Bind(
@@ -89,6 +93,46 @@ public sealed class RenderFixesFeature : Feature
             new ConfigDescription(
                 "Lowest viewport scale dynamic resolution may use.",
                 new AcceptableValueRange<float>(0.5f, 1f)
+            )
+        );
+        AdaptiveQuality = Plugin.Settings.Bind(
+            section,
+            "AdaptiveQuality",
+            true,
+            new ConfigDescription(
+                "OpenXR: lower the render scale when the GPU keeps missing the headset's frame time, and raise it again "
+                    + "after a long spell with room to spare. A change reallocates the eye buffers, so it waits for the "
+                    + "next fade to black (a segment change, a death, a recenter) or a scene load; you get a notice when "
+                    + "it lands. Each new scene starts at your full RenderScale."
+            )
+        );
+        AdaptiveQualityMin = Plugin.Settings.Bind(
+            section,
+            "AdaptiveQualityMin",
+            0.7f,
+            new ConfigDescription(
+                "Lowest fraction of RenderScale adaptive quality may drop to.",
+                new AcceptableValueRange<float>(0.5f, 1f)
+            )
+        );
+        AdaptiveQualityTarget = Plugin.Settings.Bind(
+            section,
+            "AdaptiveQualityTarget",
+            0.85f,
+            new ConfigDescription(
+                "Share of the headset's frame time the GPU may use before adaptive quality steps down. Lower keeps "
+                    + "more headroom for busy moments; higher keeps more detail.",
+                new AcceptableValueRange<float>(0.6f, 0.95f)
+            )
+        );
+        FrameTimingLogSeconds = Plugin.Settings.Bind(
+            section,
+            "FrameTimingLogSeconds",
+            10f,
+            new ConfigDescription(
+                "In VR, write frame-time percentiles, GPU time and dropped frames to the log this often (seconds). "
+                    + "0 turns the log line off.",
+                new AcceptableValueRange<float>(0f, 120f)
             )
         );
         AmbientOcclusion = Plugin.Settings.Bind(
