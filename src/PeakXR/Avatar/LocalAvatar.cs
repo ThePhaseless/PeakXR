@@ -24,6 +24,12 @@ internal sealed class LocalAvatar : MonoBehaviour
     private string lastBodyMode;
     private bool lastActive;
 
+    /// <summary>The W/Character shader's first-person ghost (HideTheBody.cs:31).</summary>
+    private static readonly int BodyGhostId = Shader.PropertyToID("_VertexGhost");
+    private readonly System.Collections.Generic.List<Material> materials = new();
+    private bool loggedReghost;
+    private string ghostedName;
+
     /// <summary>Last fully tracked head and hands in the body frame (physical hip, look yaw), held while the view is
     /// detached.</summary>
     private BodyPoint heldHead;
@@ -187,15 +193,60 @@ internal sealed class LocalAvatar : MonoBehaviour
     }
 
     /// <summary>Re-run the game's body hiding when VR starts or the setting changes, so the
-    /// <c>HideTheBody.Toggle</c> postfix applies the current mode.</summary>
+    /// <c>HideTheBody.Toggle</c> postfix applies the current mode. Also when the hidden body carries the game's
+    /// first-person ghost again outside Vanilla mode: that ghost leaves only hands and feet (<see cref="BodyGhost"/>).</summary>
     private void RefreshBodyVisibility(bool active)
     {
         var mode = AvatarConfig.Instance.OwnBody;
-        if (active == lastActive && ReferenceEquals(mode, lastBodyMode))
+        var hide = character.refs.hideTheBody;
+        bool reghosted = active && hide != null && OutfitGhosted(hide, mode);
+        if (active == lastActive && ReferenceEquals(mode, lastBodyMode) && !reghosted)
             return;
+        if (reghosted && !loggedReghost)
+        {
+            loggedReghost = true;
+            Plugin.Log.LogWarning(
+                $"[avatar.local] own body ghosted again in mode {mode} ({ghostedName}); body hiding re-applied"
+            );
+        }
         lastActive = active;
         lastBodyMode = mode;
-        if (character.refs.hideTheBody != null)
-            character.refs.hideTheBody.Refresh();
+        if (hide != null)
+            hide.Refresh();
+    }
+
+    /// <summary>Whether the hidden local body or its costumes still ghost (<c>_VertexGhost</c> above 0, set by
+    /// HideTheBody.SetShowing, HideTheBody.cs:104-112) in a mode that shows them. Allocation-free.</summary>
+    private bool OutfitGhosted(HideTheBody hide, string mode)
+    {
+        if (
+            string.Equals(mode, AvatarConfig.ShowVanilla, System.StringComparison.Ordinal)
+            || AvatarPatches.BodyShowing(hide)
+        )
+            return false;
+        if (Ghosted(hide.body))
+            return true;
+        for (int i = 0; i < hide.costumes.Length; i++)
+            if (Ghosted(hide.costumes[i]))
+                return true;
+        return false;
+    }
+
+    private bool Ghosted(Renderer r)
+    {
+        if (r == null)
+            return false;
+        r.GetSharedMaterials(materials);
+        for (int i = 0; i < materials.Count; i++)
+        {
+            var m = materials[i];
+            if (m != null && m.HasProperty(BodyGhostId) && m.GetFloat(BodyGhostId) > 0f)
+            {
+                if (!loggedReghost)
+                    ghostedName = r.name + "/" + m.name;
+                return true;
+            }
+        }
+        return false;
     }
 }
