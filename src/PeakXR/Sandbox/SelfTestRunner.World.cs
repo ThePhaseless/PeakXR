@@ -726,6 +726,12 @@ internal sealed partial class SelfTestRunner
         // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left. A
         // flame not yet at the hand leads by nothing, so the goal stays at the fuse.
         var lead = inHand < TorchInHand ? rig.Hand(left).position - flame.position : Vector3.zero;
+        // The cue window opens before the reach: the reach can already put the flame on the fuse, and FireGestures
+        // refuses a touch once, as it begins, so a refusal during the reach would land before a later mark (vr57: flame
+        // 0.00 m from the fuse, no UsedUp after the mark).
+        Affordance.ResetGate();
+        LookAtHand(torchLeft);
+        carryMark = CueMark();
         yield return ReachDown(left, () => Touch() + lead, 0.6f);
         if (flame == null)
         {
@@ -747,9 +753,6 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        Affordance.ResetGate();
-        LookAtHand(torchLeft);
-        carryMark = CueMark();
         float end = Now + seconds;
         BeginCarry();
         // Over the fuse first, then down onto it, as a player lowers a flame onto a fuse: carried in level, the torch
@@ -764,12 +767,14 @@ internal sealed partial class SelfTestRunner
         )
         {
             CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f);
+            StoopToFollow(left);
             yield return null;
         }
         BeginCarry();
         while (Now < end && flame != null && !done())
         {
             CarryToward(left, flame.position, Touch());
+            StoopToFollow(left);
             yield return null;
         }
         if (flame == null)
@@ -805,7 +810,11 @@ internal sealed partial class SelfTestRunner
             yield break;
         if (!CueLog.Capture.Fired(torchLeft, reason, carryMark, true, out var why))
         {
-            Fail($"no {reason} cue: {flameNote} ({why})");
+            var cannon = fuse.GetComponentInParent<ScoutCannon>();
+            var held = HeldItem();
+            Fail(
+                $"no {reason} cue: {flameNote} ({why}); fuse takes a flame {((IInteractibleConstant)fuse).IsConstantlyInteractable(c)}, cannon lit {(cannon != null && cannon.lit)}, torch lit {(held != null && HandLights.IsLit(held))}"
+            );
             yield break;
         }
         yield return ExpectCue(torchLeft, reason, carryMark, tint: true, within: 0.5f);
@@ -1836,16 +1845,16 @@ internal sealed partial class SelfTestRunner
             Fail("reach guard: the pointing hand is out of arm's reach: " + where);
             yield break;
         }
-        if (!ReferenceEquals(interaction.currentHovered, statue))
-        {
-            Fail(
-                $"pointing at the socket does not reach the statue (hovered {Label(interaction.currentHovered)}): {where}"
-            );
-            yield break;
-        }
+        // The pointing pose is the grip itself (middle and ring closed, index off the trigger: GripIntent.IsPointing),
+        // so before the grip nothing aims from the hand and the hover is the head's: no gate here (vr57 failed one at
+        // 2.1 m). The player looks where they point, then grips; the hover is checked once the hand aims.
+        LookAtPoint(socketAt);
+        yield return Wait(0.3f);
         float progress = 0f;
         float mark = CueMark();
         yield return GripTo(free, 1f, 0.1f);
+        yield return Wait(0.15f);
+        var hoveredAtGrip = interaction.currentHovered;
         float end =
             Now
             + GameTiming.Budget(GameTiming.InteractSeconds(statue, Character.localCharacter), 3f);
@@ -1862,7 +1871,7 @@ internal sealed partial class SelfTestRunner
         if (progress <= 0f)
         {
             Fail(
-                $"the pointed grip did not start the statue's hold at {back:0.0} m back ({PhysicalInteraction.LastGripNote}): {where}"
+                $"the pointed grip did not start the statue's hold at {back:0.0} m back ({PhysicalInteraction.LastGripNote}; hovered at the grip {Label(hoveredAtGrip)}, aim hand {PhysicalInteraction.AimHand}): {where}"
             );
             yield break;
         }

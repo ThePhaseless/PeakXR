@@ -47,7 +47,7 @@ public class RoomScaleStallTests
         {
             var step = request * 1f * 0.02f;
             body += step;
-            request = f.Update(head(t) - body + f.Anchor, step, true, 0.02f, standingTall);
+            request = f.Update(head(t), step, true, 0.02f, standingTall);
         }
         return request;
     }
@@ -76,7 +76,7 @@ public class RoomScaleStallTests
         // exemption, and standing up walked the body 0.155 m back. A held lean is not standing tall.
         var f = new RoomScaleFollow { LeanRadius = 0.35f };
         var body = Vector2.Zero;
-        var lean = new Vector2(0f, 0.5f);
+        var lean = new Vector2(0f, 0.6f); // the walk ends 0.4 m forward, as run 57s coasted 0.38 m
         Walk(f, _ => lean, 3f, ref body, standingTall: false); // lean, the body follows, hold still
         var before = body;
         Walk(f, t => lean * (1f - MathF.Min(1f, t / 0.6f)), 0.6f, ref body, standingTall: false);

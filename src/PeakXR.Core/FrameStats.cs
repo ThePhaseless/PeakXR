@@ -83,9 +83,61 @@ namespace PeakXR.Core
         Fail,
     }
 
+    /// <summary>Where <see cref="FrameBudget.PickRefresh"/> found the refresh rate.</summary>
+    public enum RefreshSource
+    {
+        None,
+
+        /// <summary><c>XRDisplaySubsystem.TryGetDisplayRefreshRate</c>.</summary>
+        Display,
+
+        /// <summary><c>XRDevice.refreshRate</c>.</summary>
+        Device,
+
+        /// <summary>The last sane headset reading this session.</summary>
+        LastGood,
+
+        /// <summary>The desktop monitor (<c>Screen.currentResolution</c>), when the headset never reported one.</summary>
+        Screen,
+    }
+
     /// <summary>The display's frame budget and the self-test's rule for it.</summary>
     public static class FrameBudget
     {
+        /// <summary>Headset refresh rates outside this range are not real: SteamVR's OpenXR runtime reports the
+        /// throttled rate (72 Hz as 36, 24 or 18 in run 57 over ALVR), which would set a 41.67 ms budget.</summary>
+        public const float MinRefresh = 60f;
+
+        public const float MaxRefresh = 240f;
+
+        public static bool Sane(float hz) => hz >= MinRefresh && hz <= MaxRefresh;
+
+        /// <summary>The first sane rate of the headset display, the XR device, the last sane headset reading and the
+        /// desktop monitor, or 0 (unknown).</summary>
+        public static float PickRefresh(
+            float display,
+            float device,
+            float lastGood,
+            float screen,
+            out RefreshSource source
+        )
+        {
+            source =
+                Sane(display) ? RefreshSource.Display
+                : Sane(device) ? RefreshSource.Device
+                : Sane(lastGood) ? RefreshSource.LastGood
+                : Sane(screen) ? RefreshSource.Screen
+                : RefreshSource.None;
+            return source switch
+            {
+                RefreshSource.Display => display,
+                RefreshSource.Device => device,
+                RefreshSource.LastGood => lastGood,
+                RefreshSource.Screen => screen,
+                _ => 0f,
+            };
+        }
+
         /// <summary>A frame interval this many budgets long missed its vsync: the runtime showed the previous frame
         /// again or reprojected it.</summary>
         public const float DroppedFactor = 1.5f;
@@ -134,6 +186,9 @@ namespace PeakXR.Core
 
         const float UpMargin = 1.1f;
 
+        /// <summary>Load over the target by this factor jumps to the fitting scale instead of one step.</summary>
+        const float FarOver = 1.5f;
+
         int _over;
         int _under;
         int _cooldown;
@@ -164,7 +219,15 @@ namespace PeakXR.Core
             if (load > Target)
             {
                 _under = 0;
-                return ++_over >= DownWindows && Step(-DownStep);
+                if (++_over < DownWindows)
+                    return false;
+                // Far over (a step of DownStep cannot fit): go straight to the scale whose pixel count fits the
+                // target, rounded down to 0.05, so a slow GPU reaches it at the first fade instead of one step each.
+                float fits = Scale * MathF.Sqrt(Target / load);
+                float next = Scale - DownStep;
+                if (load > FarOver * Target)
+                    next = Math.Min(next, MathF.Floor(fits * 20f + 1e-3f) / 20f);
+                return Step(next - Scale);
             }
             float up = Math.Min(1f, Scale + UpStep) / Scale;
             if (canRaise && Scale < 1f && load * up * up * UpMargin < Target)

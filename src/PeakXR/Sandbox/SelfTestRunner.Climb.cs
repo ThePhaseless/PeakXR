@@ -985,20 +985,40 @@ internal sealed partial class SelfTestRunner
         {
             var gap = hit.point - rig.Head.position;
             gap.y = 0f;
-            if (gap.magnitude <= 0.55f)
+            // 0.65 m out is still a comfortable reach to a hold at chest height; nearer the face the ground is often
+            // steeper (run 57, vr.44b: stepped 0.21 m in from 0.61 m, the body then slid 3 m down the slope).
+            if (gap.magnitude <= 0.65f)
                 break;
             var bodyBefore = c.Center;
+            var standBefore = new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z);
+            var hitBefore = hit;
             steps.Append(F($"step {step + 1}: face {gap.magnitude:0.00} m out"));
             c.photonView.RPC(
                 "WarpPlayerRPC",
                 RpcTarget.All,
-                new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
-                    + gap.normalized * (gap.magnitude - 0.4f),
+                standBefore + gap.normalized * (gap.magnitude - 0.5f),
                 false
             );
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(0.5f);
+            // A spot the body will not stay on is no step: go back to where it stood.
+            var landed = c.Center;
             yield return Wait(1f);
+            if (FlatDistance(landed, c.Center) > 0.2f)
+            {
+                steps.Append(
+                    F(
+                        $", slid {FlatDistance(landed, c.Center):0.00} m off the stepped-to spot, stepped back; "
+                    )
+                );
+                c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, standBefore, false);
+                yield return Wait(0.5f);
+                yield return WaitFor(() => !c.warping, 3f);
+                yield return Wait(1f);
+                hit = hitBefore;
+                break;
+            }
             if (!WallInFront(c, wall, 0.4f, out hit))
             {
                 Fail(
@@ -1015,7 +1035,7 @@ internal sealed partial class SelfTestRunner
             );
             steps.Append(
                 F(
-                    $", body moved {FlatDistance(bodyBefore, c.Center):0.00} m of {gap.magnitude - 0.4f:0.00} asked; "
+                    $", body moved {FlatDistance(bodyBefore, c.Center):0.00} m of {gap.magnitude - 0.5f:0.00} asked; "
                 )
             );
         }
@@ -1024,7 +1044,7 @@ internal sealed partial class SelfTestRunner
         var outNow = hit.point - rig.Head.position;
         outNow.y = 0f;
         if (
-            outNow.magnitude > 0.55f
+            outNow.magnitude > 0.75f
             && Physics.Raycast(
                 rig.Head.position + Vector3.down * 0.3f,
                 Flat(rig.Head.forward),

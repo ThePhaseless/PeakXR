@@ -32,6 +32,9 @@ internal sealed class RenderDriver : MonoBehaviour
     /// wanted one until a fade or scene load lets it land.</summary>
     private float appliedAdaptive = 1f;
 
+    /// <summary>Adaptive scale changes applied this session (self-test vr.231 reports it).</summary>
+    internal static int AdaptiveSteps { get; private set; }
+
     /// <summary>Seconds per adaptive quality window: one p95 per window feeds <see cref="AdaptiveScale"/>.</summary>
     private const float AdaptWindowSeconds = 5f;
 
@@ -197,10 +200,11 @@ internal sealed class RenderDriver : MonoBehaviour
         if (!applied)
             return;
         ApplyScene();
-        // A new scene has its own load: start it at the full render scale, reallocated while it loads.
-        adaptive.Reset();
-        if (appliedAdaptive != 1f && urp != null)
+        // The load screen hides the reallocation, so a step still waiting for its fade lands now. The scale is kept:
+        // run 57 reset it to full at each load and a slow GPU never stayed down.
+        if (adaptive.Scale != appliedAdaptive && urp != null)
             ApplyAdaptive("scene load");
+        // Loading frames say nothing about the new scene.
         FrameClock.Adapt.Reset();
     }
 
@@ -437,6 +441,7 @@ internal sealed class RenderDriver : MonoBehaviour
     private void ApplyAdaptive(string when)
     {
         appliedAdaptive = adaptive.Scale;
+        AdaptiveSteps++;
         urp.renderScale = RenderFixesFeature.RenderScale.Value * appliedAdaptive;
         FrameClock.Adapt.Reset();
         Plugin.Log.LogInfo(
@@ -512,7 +517,9 @@ internal sealed class RenderDriver : MonoBehaviour
         var display = XRRuntimeInfo.Display;
         if (display == null || !display.TryGetAppGPUTimeLastFrame(out float gpu) || !(gpu > 0f))
             return;
-        if (!display.TryGetDisplayRefreshRate(out float hz) || !(hz > 0f))
+        // The sanity-checked rate (FrameClock): a throttled runtime's 36 Hz would be a 27.8 ms budget.
+        float hz = FrameClock.RefreshHz;
+        if (!(hz > 0f))
             return;
         // Providers report seconds or milliseconds; no real GPU frame takes under half a millisecond.
         float gpuMs = gpu < 0.5f ? gpu * 1000f : gpu;
