@@ -266,8 +266,13 @@ internal sealed partial class SelfTestRunner
                 yield return Wait(0.5f);
                 yield return WaitFor(() => !c.warping, 3f);
                 yield return Wait(1f);
-                spot = NearestVineSpot(vine, VRRig.Instance.Head.position);
             }
+            // Away from the face and from the launcher in the other hand, so the grip lands on the chain.
+            spot = NearestVineSpot(
+                vine,
+                VRRig.Instance.Head.position,
+                VRRig.Instance.Hand(left).position
+            );
             yield return MoveTo(free, () => spot, 0.5f);
             if (OverReach(free) is { } far)
             {
@@ -311,16 +316,28 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The drawn point of <paramref name="vine"/> nearest <paramref name="eye"/>, where a hand grips it (the
     /// same drawn-point offset as the vine steps' spot, <c>colliderOffset</c>, JungleVine.cs:296).</summary>
-    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye)
+    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye) =>
+        NearestVineSpot(vine, eye, null);
+
+    /// <summary>The vine's point nearest <paramref name="eye"/>, skipping points in the face (under 0.3 m) and,
+    /// with <paramref name="avoid"/>, within 0.45 m of it: run 49's free hand gripped the chain beside the held
+    /// launcher, and the grip read as a second hand on the launcher instead of the chain.</summary>
+    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye, Vector3? avoid)
     {
-        var best = vine.GetPosition(0f, 1, 1);
-        for (int i = 1; i <= 50; i++)
+        Vector3? best = null;
+        var nearest = vine.GetPosition(0f, 1, 1);
+        for (int i = 0; i <= 50; i++)
         {
             var p = vine.GetPosition(i / 50f, 1, 1);
-            if ((p - eye).sqrMagnitude < (best - eye).sqrMagnitude)
+            if ((p - eye).sqrMagnitude < (nearest - eye).sqrMagnitude)
+                nearest = p;
+            bool clear =
+                (p - eye).sqrMagnitude >= 0.3f * 0.3f
+                && (avoid is not { } a || (p - a).sqrMagnitude >= 0.45f * 0.45f);
+            if (clear && (best is not { } b || (p - eye).sqrMagnitude < (b - eye).sqrMagnitude))
                 best = p;
         }
-        return best + Vector3.down * vine.colliderOffset;
+        return (best ?? nearest) + Vector3.down * vine.colliderOffset;
     }
 
     /// <summary>Turns the view: the rig in VR, the look values in flat play (CharacterMovement.cs:287-289).</summary>

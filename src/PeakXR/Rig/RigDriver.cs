@@ -785,7 +785,7 @@ internal sealed class RigDriver : MonoBehaviour
             // holds nor releases then, or the turn pivots off the eye (vr.16: 3.2 cm in run 45, 3.8 cm in run 47).
             viewGoal =
                 (
-                    Time.unscaledTime < turnHoldUntil
+                    Time.unscaledTime < turnHoldUntil || ViewHoldGate.CarriesThrough(viewHoldWhy)
                         ? viewHold.Carry(body)
                         : viewHold.Update(body, viewHoldWhy == null, dt)
                 ).U() + extra;

@@ -137,38 +137,61 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest out (m, level from the eye) a dropped prop may come to rest for a stooped reach.</summary>
     const float PropRestOut = 0.7f;
 
+    /// <summary>Nearest (m, level from the eye) a prop may rest: closer, it lies under the toes, where the stooping
+    /// body kicks it (run 49: the hand went to an Apple 5 cm ahead of the eye, and vr.32's was knocked 2.2 m off).</summary>
+    const float PropRestIn = 0.35f;
+
+    /// <summary>Where a prop is set down when it rests outside that band: in front of the feet, in a squat's reach.</summary>
+    const float PropSetOut = 0.55f;
+
     /// <summary>
-    /// Waits (up to 2 s) for a dropped prop to stop rolling; one that came to rest more than
-    /// <see cref="PropRestOut"/> out from the eye is set back on <paramref name="spot"/> and waited for again, as a
-    /// player would step over to it: the step is the grab, not a chase. Run 47-48: Apples that bounced or rolled
-    /// 1.0-3.2 m away failed vr.10, vr.11 and vr.32 on the reach guard.
+    /// Waits (up to 2 s) for a dropped prop to stop rolling. One that rests outside <see cref="PropRestIn"/> to
+    /// <see cref="PropRestOut"/> out from the eye is set down on the ground <see cref="PropSetOut"/> ahead, as a player
+    /// would step to it: the step is the grab, not a chase. Then it is held still (kinematic, a named shortcut in the
+    /// note) so the stooping body cannot roll or kick it before the hand closes; the pickup takes it out of the world
+    /// anyway. Run 47-49: Apples that rolled 1.0-3.2 m away, or under the toes, failed vr.10, vr.11, vr.32 and vr.47b.
     /// </summary>
     IEnumerator RestWithinReach(Item world, Vector3 spot)
     {
-        for (int round = 0; round < 2 && world != null && world.rig != null; round++)
+        if (world == null || world.rig == null)
+            yield break;
+        for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
         {
-            for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
-            {
-                if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
-                    break;
-                yield return null;
-            }
-            if (world == null || world.rig == null)
-                yield break;
-            var outward = world.Center() - VRRig.Instance.Head.position;
-            outward.y = 0f;
-            if (outward.magnitude <= PropRestOut)
-                yield break;
-            world.rig.linearVelocity = Vector3.zero;
-            world.rig.angularVelocity = Vector3.zero;
-            world.rig.position = spot + Vector3.up * 0.1f;
-            Note(
-                F(
-                    $"{world.name} rolled to {outward.magnitude:0.00} m out; set back at the drop spot"
-                )
-            );
-            yield return Wait(0.3f);
+            if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
+                break;
+            yield return null;
         }
+        if (world == null || world.rig == null)
+            yield break;
+        var head = VRRig.Instance.Head;
+        var outward = world.Center() - head.position;
+        outward.y = 0f;
+        world.rig.linearVelocity = Vector3.zero;
+        world.rig.angularVelocity = Vector3.zero;
+        world.rig.isKinematic = true;
+        string how = F($"rested {outward.magnitude:0.00} m out");
+        if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut)
+        {
+            var ahead = head.position + Flat(head.forward) * PropSetOut;
+            if (
+                Physics.Raycast(
+                    ahead + Vector3.up * 0.5f,
+                    Vector3.down,
+                    out var ground,
+                    4f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                ahead = ground.point + Vector3.up * 0.06f;
+            else
+                ahead = spot;
+            world.rig.position = ahead;
+            world.transform.position = ahead;
+            how += F($", set down {PropSetOut:0.00} m ahead");
+        }
+        Note($"{world.name} {how}; shortcut: held still (kinematic) until the grab");
+        yield return Wait(0.2f);
     }
 
     /// <summary>vr.10 / vr.11: the player stoops (<see cref="ReachDown"/>), a hand reaches an Apple on the ground and
