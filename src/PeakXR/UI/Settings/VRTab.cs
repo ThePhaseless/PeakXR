@@ -96,7 +96,8 @@ internal static class VRTab
             configRow.Refresh();
     }
 
-    /// <summary>Every visible entry by config section, sections in the order they were bound.</summary>
+    /// <summary>Every visible entry by display section (<see cref="SettingsGrid.DisplaySection"/>), in the order they
+    /// were bound.</summary>
     private static List<KeyValuePair<string, List<ConfigEntryBase>>> Sections()
     {
         var sections = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
@@ -106,7 +107,11 @@ internal static class VRTab
             var entry = pair.Value;
             if (IsHidden(entry))
                 continue;
-            var section = entry.Definition.Section;
+            // Display grouping only (all vibration under Haptics, item gestures under Items); keys stay where saved.
+            var section = SettingsGrid.DisplaySection(
+                entry.Definition.Section,
+                entry.Definition.Key
+            );
             if (!bySection.TryGetValue(section, out var list))
             {
                 bySection[section] = list = new List<ConfigEntryBase>();

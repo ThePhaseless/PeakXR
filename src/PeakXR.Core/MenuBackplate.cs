@@ -72,11 +72,12 @@ public static class MenuBackplate
 
     /// <summary>WCAG contrast of white text on the plate at <paramref name="opacity"/> over a white background, the
     /// worst case (sun on snow). Blended in linear light, as URP does.</summary>
-    public static float WorstContrast(float opacity)
-    {
-        float under = opacity * Contrast.Luminance(Color) + (1f - opacity);
-        return Contrast.Ratio(1f, under);
-    }
+    public static float WorstContrast(float opacity) => Contrast.Ratio(1f, WorstUnder(opacity));
+
+    /// <summary>Luminance under text on the plate at <paramref name="opacity"/> with a white background behind
+    /// it, the worst case.</summary>
+    public static float WorstUnder(float opacity) =>
+        opacity * Contrast.Luminance(Color) + (1f - opacity);
 
     /// <summary>Widest a plate may look: past this the content is scattered over the view (the title's sign, logo and
     /// credits) and one plate around it all would be the full-view 2D panel, so none is drawn.</summary>

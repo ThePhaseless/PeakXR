@@ -14,7 +14,7 @@ namespace PeakXR.UI.Spatial;
 internal sealed class SpatialRuntime : MonoBehaviour
 {
     /// <summary>Never smaller than this per canvas pixel: 30 px HUD text stays about 1.35 degrees tall.</summary>
-    private const float MinDegreesPerPixel = 0.045f;
+    internal const float MinDegreesPerPixel = 0.045f;
 
     /// <summary>Angular size of one HUD pixel for world-placed parts: the body panel's, or the floor above.</summary>
     public static float DegreesPerPixel { get; private set; } = MinDegreesPerPixel;

@@ -23,9 +23,15 @@ namespace PeakXR.UI.Spatial;
 /// </summary>
 internal sealed class ButtonLabels
 {
-    /// <summary>Smallest text, in HUD pixels (about 1.2 degrees at the floor <see cref="SpatialRuntime.DegreesPerPixel"/>):
-    /// the game's prompts are sized for a monitor and came out 6 to 10 px tall in the headset.</summary>
-    private const float MinFontPixels = 26f;
+    /// <summary>Smallest text, in HUD pixels: <see cref="ReadableText.MinDegrees"/> at the smallest HUD pixel
+    /// (<see cref="SpatialRuntime.MinDegreesPerPixel"/>). The game's prompts are sized for a monitor and came out 6 to
+    /// 10 px tall in the headset.</summary>
+    private static readonly float MinFontPixels = ReadableText.MinPixels(
+        SpatialRuntime.MinDegreesPerPixel
+    );
+
+    /// <summary>Space between a label's text and the edge of its plate, in box pixels.</summary>
+    private const float PlatePadPixels = 8f;
 
     /// <summary>The game's hand mesh around the grip pose is chunky; this clears it.</summary>
     private const float HandRadius = 0.08f;
@@ -34,9 +40,6 @@ internal sealed class ButtonLabels
 
     /// <summary>Gap between the button name and the label text, in box pixels.</summary>
     private const float GlyphGapPixels = 10f;
-
-    /// <summary>Button name size relative to the label text.</summary>
-    private const float GlyphScale = 0.8f;
 
     private const float LeaderWidth = 0.0012f;
     private const float LeaderAlpha = 0.55f;
@@ -48,7 +51,12 @@ internal sealed class ButtonLabels
     private const int RestackFrames = 3;
     private const int Count = 5;
 
-    private static readonly Color GlyphColor = new(0.45f, 0.85f, 1f, 1f);
+    private static readonly Color GlyphColor = new(
+        ButtonLabelStyle.GlyphColor.X,
+        ButtonLabelStyle.GlyphColor.Y,
+        ButtonLabelStyle.GlyphColor.Z,
+        1f
+    );
 
     private static ButtonLabels instance;
 
@@ -66,6 +74,10 @@ internal sealed class ButtonLabels
     private readonly VRControl[] controls = new VRControl[Count];
     private readonly bool[] hasGlyph = new bool[Count];
     private readonly TMP_Text[] glyphs = new TMP_Text[Count];
+
+    /// <summary>The dark plate under each label and its button name: the game's prompt text over fog or a coloured
+    /// controller read at 1.2:1 in run 43.</summary>
+    private readonly UnityEngine.UI.Image[] plates = new UnityEngine.UI.Image[Count];
     private readonly float[] glyphWidths = new float[Count];
     private readonly CanvasGroup[] groups = new CanvasGroup[Count];
     private readonly float[] emphasis = new float[Count];
@@ -104,6 +116,7 @@ internal sealed class ButtonLabels
         for (int i = 0; i < Count; i++)
         {
             glyphs[i] = null;
+            plates[i] = null;
             groups[i] = null;
             hasGlyph[i] = false;
         }
@@ -332,12 +345,30 @@ internal sealed class ButtonLabels
         glyph.fontStyle = FontStyles.Bold;
         glyph.color = GlyphColor;
         glyphs[i] = glyph;
+        plates[i] = Plate(rect);
         groups[i] = rect.TryGetComponent<CanvasGroup>(out var g)
             ? g
             : rect.gameObject.AddComponent<CanvasGroup>();
         groups[i].blocksRaycasts = false;
         groups[i].interactable = false;
         return glyph;
+    }
+
+    /// <summary>A dark rounded plate as the box's first child, drawn on top of the hand like the label.</summary>
+    private static UnityEngine.UI.Image Plate(RectTransform rect)
+    {
+        var go = new GameObject("PeakXR_ButtonPlate", typeof(RectTransform));
+        go.transform.SetParent(rect, false);
+        go.transform.SetAsFirstSibling();
+        var image = go.AddComponent<UnityEngine.UI.Image>();
+        image.sprite = World.BackplateView.PlateSprite();
+        image.type = UnityEngine.UI.Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 2f;
+        image.raycastTarget = false;
+        var c = MenuBackplate.Color;
+        image.color = new Color(c.X, c.Y, c.Z, ButtonLabelStyle.PlateOpacity);
+        OnTop.Set(go.transform, true);
+        return image;
     }
 
     /// <summary>Centres each label's text on its box origin, measures it and places its button name beside it, in box
@@ -363,7 +394,10 @@ internal sealed class ButtonLabels
             glyph.fontSharedMaterial = text.fontSharedMaterial;
             float boxScale = Mathf.Max(1e-9f, Mathf.Abs(box.Rect.lossyScale.x));
             glyph.fontSize =
-                text.fontSize * Mathf.Abs(text.transform.lossyScale.x) / boxScale * GlyphScale;
+                text.fontSize
+                * Mathf.Abs(text.transform.lossyScale.x)
+                / boxScale
+                * ButtonLabelStyle.GlyphScale;
             glyphWidths[i] = glyph.GetPreferredValues(glyph.text).x;
             var r = glyph.rectTransform;
             r.sizeDelta = new Vector2(glyphWidths[i], glyph.fontSize * 1.4f);
@@ -372,6 +406,17 @@ internal sealed class ButtonLabels
                 side * (widths[i] * 0.5f + GlyphGapPixels + glyphWidths[i] * 0.5f),
                 0f
             );
+            // The plate covers the text and the button name beside it.
+            float extra = GlyphGapPixels + glyphWidths[i];
+            var plate = plates[i] != null ? plates[i].rectTransform : null;
+            if (plate != null)
+            {
+                plate.anchoredPosition = new Vector2(side * extra * 0.5f, 0f);
+                plate.sizeDelta = new Vector2(
+                    widths[i] + extra + 2f * PlatePadPixels,
+                    Mathf.Max(heights[i], r.sizeDelta.y) + 2f * PlatePadPixels
+                );
+            }
         }
     }
 
@@ -440,6 +485,19 @@ internal sealed class ButtonLabels
 
     private static float Gaze(Transform head, Transform hand) =>
         hand != null ? Vector3.Angle(head.forward, hand.position - head.position) : 180f;
+
+    /// <summary>For the self-test: label <paramref name="prompt"/>'s button name and plate, once made.</summary>
+    internal static bool TryParts(
+        ItemPrompt prompt,
+        out TMP_Text glyph,
+        out UnityEngine.UI.Image plate
+    )
+    {
+        var self = instance;
+        glyph = self != null ? self.glyphs[(int)prompt] : null;
+        plate = self != null ? self.plates[(int)prompt] : null;
+        return glyph != null && plate != null;
+    }
 
     /// <summary>Self-test: prompt <paramref name="prompt"/>'s button name, emphasis 0..1 and leader ends while it shows.</summary>
     internal static bool TryShown(

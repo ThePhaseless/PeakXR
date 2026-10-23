@@ -196,7 +196,7 @@ internal sealed partial class SelfTestRunner
             // The title's button groups come to arm's reach (UI/Menu/TitleMenuDepth.cs), measured from the stage eye.
             float reach = Plugin.Settings.TryGetEntry<float>("UI", "TitleReach", out var r)
                 ? r.Value
-                : 0.55f;
+                : TitleLayout.TouchReach;
             yield return WaitFor(() => stage.Depth.NearGroups > 0, 5f);
             float nearest = stage.Depth.NearestButton(stage.Eye);
             notes.Add(
@@ -207,6 +207,11 @@ internal sealed partial class SelfTestRunner
             else if (nearest > reach + 0.25f)
                 fails.Add(
                     $"nearest title button {nearest:0.00} m from the eye, reach is {reach:0.00}"
+                );
+            // Meta's 0.5-0.8 m band is neither touch nor comfortable ray; a reach set outside it must land outside.
+            else if (!TitleLayout.InAvoidBand(reach) && TitleLayout.InAvoidBand(nearest))
+                fails.Add(
+                    $"nearest title button {nearest:0.00} m from the eye, in the 0.5-0.8 m avoid band"
                 );
             // Past the depth fade (TitleMenuDepth.FadeSeconds 0.35), every labelled button on the page reads from
             // the head as it looks: one button within reach says nothing about the rest.
