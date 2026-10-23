@@ -222,4 +222,58 @@ public class GuideTests
         Assert.True(window.VisibleAt(1f));
         Assert.False(window.VisibleAt(2f));
     }
+
+    /// <summary>Review row 12: the mechanics added since the guide was written, and the co-op verbs and tool gestures.</summary>
+    public static TheoryData<GuideTopic, CueSound> NewTopics() =>
+        new()
+        {
+            { GuideTopic.Socket, CueSound.WouldWork },
+            { GuideTopic.ReleaseDrop, CueSound.Notice },
+            { GuideTopic.EdgeRing, CueSound.Refused },
+            { GuideTopic.FirstLabel, CueSound.Refused },
+            { GuideTopic.RopePump, CueSound.WouldWork },
+            { GuideTopic.Chest, CueSound.Refused },
+            { GuideTopic.GroundPickup, CueSound.WouldWork },
+            { GuideTopic.HelpUp, CueSound.WouldWork },
+            { GuideTopic.Carry, CueSound.WouldWork },
+            { GuideTopic.Feed, CueSound.WouldWork },
+            { GuideTopic.Struggle, CueSound.WouldWork },
+            { GuideTopic.Hammer, CueSound.WouldWork },
+            { GuideTopic.Glider, CueSound.WouldWork },
+            { GuideTopic.GiveUp, CueSound.Notice },
+        };
+
+    [Theory]
+    [MemberData(nameof(NewTopics))]
+    public void NewTopics_AreThere_AndPlayTheirCue(GuideTopic topic, CueSound sound)
+    {
+        var demo = GuideTable.Get(topic);
+        Assert.Equal(topic, demo.Topic);
+        Assert.Contains(demo.Sounds, s => s.Sound == sound);
+    }
+
+    [Fact]
+    public void EatDemo_TheTriggerAloneIsRefused_TheMouthEats()
+    {
+        var eat = GuideTable.Get(GuideTopic.Eat);
+        Assert.Contains(eat.Sounds, s => s.Sound == CueSound.Refused);
+        Assert.Contains(eat.Sounds, s => s.Sound == CueSound.WouldWork);
+        Assert.Contains(eat.Right.Keys, k => k.Trigger > 0.5f);
+    }
+
+    [Fact]
+    public void ChestDemo_OneHandRefused_ThenBothHandsGrip()
+    {
+        var chest = GuideTable.Get(GuideTopic.Chest);
+        Assert.Contains(chest.Left.Keys, k => k.Grip > 0.5f);
+        Assert.Contains(chest.Right.Keys, k => k.Grip > 0.5f);
+    }
+
+    [Fact]
+    public void GiveUpDemo_BothGripsAndBothTriggers()
+    {
+        var giveUp = GuideTable.Get(GuideTopic.GiveUp);
+        Assert.Contains(giveUp.Left.Keys, k => k.Grip > 0.5f && k.Trigger > 0.5f);
+        Assert.Contains(giveUp.Right.Keys, k => k.Grip > 0.5f && k.Trigger > 0.5f);
+    }
 }

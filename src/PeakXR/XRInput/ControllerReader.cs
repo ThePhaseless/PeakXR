@@ -197,14 +197,25 @@ internal sealed class ControllerReader
         s.SecondaryTouch = Bool(secondaryTouch);
 
         bool click = Bool(stickClick);
-        if (emulateFaceButtons)
+        if (emulateFaceButtons && padIsStick)
+        {
+            // Vive wand: the pad is the only stick and it reports a resting thumb, so everything takes a click.
+            var wand = WandPad.Map(
+                XRInputSampler.N(s.Stick),
+                Bool(padClick),
+                moveHand: left != VRInput.LeftHanded
+            );
+            s.Stick = new Vector2(wand.Stick.X, wand.Stick.Y);
+            s.Primary = wand.Primary;
+            s.Secondary = wand.Secondary;
+            click = wand.StickClick;
+        }
+        else if (emulateFaceButtons)
         {
             bool padDown = Bool(padClick);
             var zone = TrackpadButtons.Zone(XRInputSampler.N(Vec2(pad)));
             s.Secondary = padDown && zone == PadZone.Up;
             s.Primary = padDown && zone == PadZone.Down;
-            if (padIsStick)
-                click = padDown && zone == PadZone.Center;
         }
         else
         {

@@ -68,8 +68,9 @@ internal sealed class SocialConfig
                 s,
                 "FeedAtMouth",
                 true,
-                "Hold food or medicine at a friend's mouth to feed it to them (the game's use-on-friend). "
-                    + "Your hand replaces the face-each-other check; items with their own angle rule keep it."
+                "Bring food to a friend's mouth (a bandage or medicine to their chest) and squeeze the trigger to give "
+                    + "it to them (the game's use-on-friend); let go to stop. Standing close never uses it. Your hand "
+                    + "replaces the face-each-other check; items with their own angle rule keep it."
             ),
             struggle = file.Bind(
                 s,

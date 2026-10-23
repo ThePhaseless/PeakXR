@@ -14,6 +14,11 @@ public static class ReadableText
     /// legibility floor for headset text.</summary>
     public const float MinDegrees = 1.3f;
 
+    /// <summary>Smallest whole font size, in pixels of <paramref name="degreesPerPixel"/>, that meets
+    /// <see cref="MinDegrees"/>.</summary>
+    public static int MinPixels(float degreesPerPixel) =>
+        (int)MathF.Ceiling(MinDegrees / MathF.Max(degreesPerPixel, 1e-4f) - 1e-4f);
+
     /// <summary>Angle in degrees that <paramref name="height"/> metres spans at <paramref name="distance"/>;
     /// 180 when the eye is on it.</summary>
     public static float Degrees(float height, float distance) =>

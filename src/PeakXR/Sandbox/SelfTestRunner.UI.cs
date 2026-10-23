@@ -346,6 +346,25 @@ internal sealed partial class SelfTestRunner
         // Read the way a player does: looking at the hand (the labels show while you do, ButtonLabels.cs:22).
         var head = VRRig.Instance.Head;
         string read = Readable("use label", prompt, hand.position - head.position, fails);
+        // The mod's own floor (ReadableText.MinDegrees) for the label and its button name, both on a dark plate.
+        float Em(TMPro.TMP_Text t) =>
+            ReadableText.Degrees(
+                t.fontSize * Mathf.Abs(t.transform.lossyScale.y),
+                Vector3.Distance(head.position, t.transform.position)
+            );
+        float labelDeg = Em(prompt);
+        bool parts = ButtonLabels.TryParts(ItemPrompt.Main, out var glyphText, out var plate);
+        float glyphDeg = parts ? Em(glyphText) : 0f;
+        bool plateOn = parts && plate.isActiveAndEnabled && plate.color.a >= 0.9f;
+        read += $", label {labelDeg:0.00} deg, button name {glyphDeg:0.00} deg, plate {plateOn}";
+        if (labelDeg < ReadableText.MinDegrees - 0.05f)
+            fails.Add($"label {labelDeg:0.00} deg, under the {ReadableText.MinDegrees} deg floor");
+        if (parts && glyphDeg < ReadableText.MinDegrees - 0.05f)
+            fails.Add(
+                $"button name {glyphDeg:0.00} deg, under the {ReadableText.MinDegrees} deg floor"
+            );
+        if (!plateOn)
+            fails.Add("no dark plate under the use label");
         bool onTop = UI.Common.OnTop.IsOnTop(prompt);
         if (!onTop)
             fails.Add("label is depth tested: the hand can cover it");

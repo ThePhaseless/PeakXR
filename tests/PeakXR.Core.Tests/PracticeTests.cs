@@ -81,6 +81,15 @@ public class PracticeTests
     }
 
     [Fact]
+    public void Stations_IncludeTheRefusedAndRecenterDrills()
+    {
+        Assert.Contains(PracticeStation.Refused, PracticeFlow.Stations);
+        Assert.Contains(PracticeStation.Recenter, PracticeFlow.Stations);
+        Assert.Equal(GuideTopic.Refused, PracticeFlow.TopicOf(PracticeStation.Refused));
+        Assert.Equal(GuideTopic.PauseRecenter, PracticeFlow.TopicOf(PracticeStation.Recenter));
+    }
+
+    [Fact]
     public void Stations_StartWithTurning_AndEachHasADemo()
     {
         Assert.Equal(PracticeStation.Turn, PracticeFlow.Stations[0]);

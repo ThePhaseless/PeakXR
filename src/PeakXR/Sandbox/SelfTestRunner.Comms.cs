@@ -274,7 +274,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.115: an open hand raised to the side of the head and swung side to side (WaveGesture) plays the game's wave
-    /// emote through CharacterAnimations.PlayEmote (CharacterAnimations.cs:410; emoting :432), with no refusal cue.
+    /// emote through CharacterAnimations.PlayEmote (CharacterAnimations.cs:410; emoting :432), confirmed on that hand
+    /// by the notice (HappenedHere: tick, bell, pin ring), no refusal.
     /// </summary>
     IEnumerator GestureEmoteStep()
     {
@@ -319,9 +320,9 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectNoCue(hand, mark, 0f);
+        yield return ExpectCue(hand, DenyReason.HappenedHere, mark);
         if (stepOk)
-            stepNote = $"waved: played {GestureEmotes.LastPlayed}";
+            stepNote = $"waved: played {GestureEmotes.LastPlayed}; confirmed: {cueNote}";
     }
 
     /// <summary>
@@ -421,7 +422,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.186: both open hands raised over the head and held there (GestureEmotes cheer: grip under OpenGrip, both
     /// over the eyes by CheerMargin) play the game's cheer emote through CharacterAnimations.PlayEmote
-    /// (A/CharacterAnimations.cs:410; emoting :432), not the wave, with no refusal cue.
+    /// (A/CharacterAnimations.cs:410; emoting :432), not the wave, confirmed on the dominant hand (HappenedHere), the
+    /// other hand quiet.
     /// </summary>
     IEnumerator CheerStep()
     {
@@ -467,10 +469,12 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectNoCue(true, mark, 0f);
-        yield return ExpectNoCue(false, mark, 0f);
+        bool dominant = !VRInput.LeftHanded;
+        yield return ExpectCue(dominant, DenyReason.HappenedHere, mark);
+        string confirmed = cueNote;
+        yield return ExpectNoCue(!dominant, mark, 0f);
         if (stepOk)
-            stepNote = $"cheered: played {GestureEmotes.LastPlayed}";
+            stepNote = $"cheered: played {GestureEmotes.LastPlayed}; confirmed: {confirmed}";
     }
 
     /// <summary>

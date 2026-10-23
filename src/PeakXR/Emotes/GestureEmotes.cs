@@ -16,8 +16,8 @@ namespace PeakXR.Emotes;
 /// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing (rope and vine too),
 /// carrying a friend, passed out, dead, in a menu or with a wheel open, nor on a hand whose grip is busy (a climber's
 /// reaching hands look like a cheer, an ordinary grip like a thumbs-up). The thumbs-up also needs an empty-handed fist
-/// held still out in front, on a controller that senses the thumb (EmoteGestures.ThumbIntent); an emote the game only plays on the
-/// ground (EmoteWheelData.requireGrounded, greyed on the wheel by EmoteWheelSlice.cs:31-34) gets a NeedsGround cue.
+/// held still out in front, on a controller that senses the thumb (EmoteGestures.ThumbIntent). Gestures track only on
+/// the ground and away from holds, so noise is never refused; a played emote is confirmed on the hand (HappenedHere).
 /// </summary>
 [DefaultExecutionOrder(31060)]
 internal sealed class GestureEmotes : MonoBehaviour
@@ -72,7 +72,6 @@ internal sealed class GestureEmotes : MonoBehaviour
     private struct Emote
     {
         public string Anim;
-        public bool Grounded;
     }
 
     public static void Create()
@@ -104,6 +103,8 @@ internal sealed class GestureEmotes : MonoBehaviour
             || c.data.dead
             || c.data.passedOut
             || c.data.fullyPassedOut
+            // Airborne: a jump or a fall, where arms fly about and the ground-only emotes would only be refused.
+            || !c.data.isGrounded
             || EmoteGestures.Busy(c.data.isClimbingAnything, c.data.IsCarryingCharacter, false)
             || c.refs.stats.won
             || current.wheelActive
@@ -130,9 +131,10 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
         var l = rig.LeftHand.position;
         var r = rig.RightHand.position;
-        // A grip that took or started something (a handle, a friend, a lid) is busy, not gesturing.
-        bool leftBusy = MidGrab(true);
-        bool rightBusy = MidGrab(false);
+        // A grip that took or started something (a handle, a friend, a lid), or a hand at a hold where it would
+        // climb (the climb ring shows), is busy, not gesturing: reaching up a rock face looks like a cheer.
+        bool leftBusy = MidGrab(true) || AtHold(l);
+        bool rightBusy = MidGrab(false) || AtHold(r);
         bool leftOpen =
             leftFree && !leftBusy && VRInput.Left.Tracked && VRInput.Left.Grip < OpenGrip;
         bool rightOpen =
@@ -172,11 +174,11 @@ internal sealed class GestureEmotes : MonoBehaviour
         if (Time.time < nextAt)
             return;
         if (cheered)
-            Play(c, cheerEmote, !VRInput.LeftHanded);
+            Play(c, cheerEmote, !VRInput.LeftHanded, rig.Hand(!VRInput.LeftHanded));
         else if (wavedLeft || wavedRight)
-            Play(c, wave, wavedLeft);
+            Play(c, wave, wavedLeft, rig.Hand(wavedLeft));
         else if (thumbLeft || thumbRight)
-            Play(c, thumbsUp, thumbLeft);
+            Play(c, thumbsUp, thumbLeft, rig.Hand(thumbLeft));
     }
 
     /// <summary>A deliberate thumbs-up (EmoteGestures.ThumbIntent): a tracked fist, thumb lifted and up, held still out
@@ -227,19 +229,32 @@ internal sealed class GestureEmotes : MonoBehaviour
             || PhysicalInteraction.HandTarget(left) != null;
     }
 
-    private void Play(Character c, Emote emote, bool left)
+    /// <summary>Plays the emote and confirms it on the gesturing hand: the notice tick, bell and pin ring
+    /// (HappenedHere), so the sender knows the peers saw it. Gestures are only tracked on the ground, so a
+    /// ground-only emote (EmoteWheelData.requireGrounded) is never refused from a gesture.</summary>
+    private void Play(Character c, Emote emote, bool left, Transform hand)
     {
         if (emote.Anim == null)
             return;
-        if (emote.Grounded && !c.data.isGrounded)
-        {
-            Affordance.DenyAtHand(left, DenyReason.NeedsGround);
-            return;
-        }
         nextAt = Time.time + Cooldown;
         LastPlayed = emote.Anim;
         PlayCount++;
         playEmote(c.refs.animations, emote.Anim);
+        Affordance.Inform(left, hand.position, DenyReason.HappenedHere, default);
+    }
+
+    /// <summary>The hand is within reach of terrain it would climb (interact.physical's climb probe: a sphere of
+    /// <c>Interaction.ClimbRadius</c> on the terrain map).</summary>
+    private static bool AtHold(Vector3 hand)
+    {
+        var cfg = InteractConfig.Instance;
+        return cfg.PhysicalClimb
+            && Physics.CheckSphere(
+                hand,
+                cfg.ClimbRadius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
     }
 
     private void Find(GUIManager current)
@@ -257,11 +272,11 @@ internal sealed class GestureEmotes : MonoBehaviour
             if (d == null || string.IsNullOrEmpty(d.anim))
                 continue;
             if (wave.Anim == null && Names(d, "wave"))
-                wave = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
+                wave = new Emote { Anim = d.anim };
             if (cheerEmote.Anim == null && Names(d, "cheer"))
-                cheerEmote = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
+                cheerEmote = new Emote { Anim = d.anim };
             if (thumbsUp.Anim == null && Names(d, "thumb"))
-                thumbsUp = new Emote { Anim = d.anim, Grounded = d.requireGrounded };
+                thumbsUp = new Emote { Anim = d.anim };
         }
         WaveAnim = wave.Anim;
         ThumbsUpAnim = thumbsUp.Anim;

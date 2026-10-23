@@ -42,6 +42,48 @@ public enum GuideTopic : byte
     /// <summary>Spectate: flick the stick to watch the next or previous teammate.</summary>
     Spectate,
 
+    /// <summary>An item into a taker such as an altar socket: held up under it.</summary>
+    Socket,
+
+    /// <summary>A slow grip release drops the held item.</summary>
+    ReleaseDrop,
+
+    /// <summary>A refusal out of sight shows its ring at the edge of the view.</summary>
+    EdgeRing,
+
+    /// <summary>The first refusal of each kind carries a short label; later ones the ring only.</summary>
+    FirstLabel,
+
+    /// <summary>Rope swing: lean along the swing to pump it.</summary>
+    RopePump,
+
+    /// <summary>Respawn chest: one hand on the lid is refused, both hands lift it.</summary>
+    Chest,
+
+    /// <summary>Stoop to pick an item up from the ground.</summary>
+    GroundPickup,
+
+    /// <summary>Grip a hanging friend's hand and pull them up.</summary>
+    HelpUp,
+
+    /// <summary>Grip a passed-out friend with both hands to carry them.</summary>
+    Carry,
+
+    /// <summary>Hold food at a friend's mouth to feed them.</summary>
+    Feed,
+
+    /// <summary>Shake both hands to break out of a web.</summary>
+    Struggle,
+
+    /// <summary>Strike a piton with the hammer to set it.</summary>
+    Hammer,
+
+    /// <summary>Steer the glider by banking the spread arms.</summary>
+    Glider,
+
+    /// <summary>Passed out: both grips and both triggers give up.</summary>
+    GiveUp,
+
     /// <summary>Number of topics; not a topic.</summary>
     Count,
 }
@@ -518,23 +560,26 @@ public static class GuideTable
             new GuideDemo(
                 GuideTopic.Eat,
                 "Eat",
-                "Hold food at your mouth to eat it.",
-                2.8f,
+                "The trigger won't eat: hold food at your mouth.",
+                3.6f,
                 null,
                 restLeft,
                 T(
                     K(0f, RestR, grip: 1f),
-                    K(0.9f, MouthHand, grip: 1f),
-                    K(1.9f, MouthHand, grip: 1f),
-                    K(2.5f, RestR, grip: 1f),
-                    K(2.8f, RestR, grip: 1f)
+                    K(0.4f, RestR, grip: 1f, trigger: 1f, button: GuideButton.Trigger),
+                    K(0.6f, RestR, grip: 1f),
+                    K(1.5f, MouthHand, grip: 1f),
+                    K(2.5f, MouthHand, grip: 1f),
+                    K(3.1f, RestR, grip: 1f),
+                    K(3.6f, RestR, grip: 1f)
                 ),
                 new[]
                 {
-                    Held(GuideShape.Ball, 0.08f, R, Vector3.Zero, 1.8f),
-                    P(GuideShape.Target, 0.12f, Mouth, 0f, 0.9f),
+                    Held(GuideShape.Ball, 0.08f, R, Vector3.Zero, 2.4f),
+                    P(GuideShape.Refused, 0.12f, Mouth, 0.4f, 1f),
+                    P(GuideShape.Target, 0.12f, Mouth, 1f, 1.5f),
                 },
-                new[] { S(1.8f, CueSound.WouldWork, Mouth) }
+                new[] { S(0.4f, CueSound.Refused, Mouth), S(2.4f, CueSound.WouldWork, Mouth) }
             )
         );
 
@@ -1080,6 +1125,7 @@ public static class GuideTable
         );
 
         AddComms(Add, restLeft);
+        AddNew(Add, restLeft);
 
         for (int i = 0; i < d.Length; i++)
             if (d[i] == null)
@@ -1220,6 +1266,503 @@ public static class GuideTable
                     S(0.8f, CueSound.Notice, mateB + over),
                     S(2.4f, CueSound.Notice, mateA + over),
                 }
+            )
+        );
+    }
+
+    /// <summary>
+    /// The mechanics added after the first guide (review row 12): item takers, release-to-drop, refusals out of view and
+    /// their first label, rope pump, the respawn chest, ground pickups, the co-op verbs (help up, carry, feed, struggle,
+    /// give up) and the tool gestures (hammer, glider). Each shows the motion and the cue the game gives it.
+    /// </summary>
+    static void AddNew(Action<GuideDemo> add, GuideTrack restLeft)
+    {
+        var floor = V(0.2f, -1.56f, 0.4f);
+
+        var socket = V(0.15f, 0.45f, 0.42f);
+        var under = V(0.15f, 0.3f, 0.38f);
+        add(
+            new GuideDemo(
+                GuideTopic.Socket,
+                "Altar socket",
+                "Hold the item up under its socket to place it.",
+                3f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR, grip: 1f),
+                    K(1.1f, under, grip: 1f),
+                    K(1.4f, under, grip: 1f),
+                    K(1.5f, under),
+                    K(2.4f, RestR),
+                    K(3f, RestR)
+                ),
+                new[]
+                {
+                    P(GuideShape.Box, 0.6f, V(0.15f, -0.2f, 0.7f)),
+                    new GuideProp(
+                        GuideShape.Ball,
+                        0.07f,
+                        T(
+                            K(0f, Vector3.Zero, anchor: R),
+                            K(1.4f, Vector3.Zero, anchor: R),
+                            K(1.6f, socket)
+                        )
+                    ),
+                    P(GuideShape.Target, 0.12f, socket, 0f, 1.4f),
+                },
+                new[] { S(1.5f, CueSound.WouldWork, socket) }
+            )
+        );
+
+        add(
+            new GuideDemo(
+                GuideTopic.ReleaseDrop,
+                "Release to drop",
+                "Open your hand slowly to set the item down.",
+                2.8f,
+                null,
+                restLeft,
+                T(K(0f, RestR, grip: 1f), K(0.6f, RestR, grip: 1f), K(1.3f, RestR), K(2.8f, RestR)),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Ball,
+                        0.08f,
+                        T(
+                            K(0f, Vector3.Zero, anchor: R),
+                            K(1.2f, Vector3.Zero, anchor: R),
+                            K(1.7f, floor)
+                        )
+                    ),
+                    P(GuideShape.Notice, 0.12f, floor, 1.7f, 2.6f),
+                },
+                new[] { S(1.7f, CueSound.Notice, floor) }
+            )
+        );
+
+        var behind = V(0.38f, -0.7f, -0.15f);
+        var edge = V(0.3f, -0.12f, 0.45f);
+        add(
+            new GuideDemo(
+                GuideTopic.EdgeRing,
+                "Refused out of view",
+                "A refusal you can't see rings at the edge of view.",
+                2.8f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.8f, behind),
+                    K(0.9f, behind, grip: 1f),
+                    K(1.3f, behind),
+                    K(2f, RestR),
+                    K(2.8f, RestR)
+                ),
+                new[] { P(GuideShape.Refused, 0.08f, edge, 0.9f, 2f) },
+                new[] { S(0.9f, CueSound.Refused, R) }
+            )
+        );
+
+        var far = V(0.2f, -0.25f, 0.98f);
+        var reach = V(0.2f, -0.25f, 0.6f);
+        add(
+            new GuideDemo(
+                GuideTopic.FirstLabel,
+                "First-time labels",
+                "The first refusal of each kind says why, once.",
+                3.2f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.6f, reach),
+                    K(0.7f, reach, grip: 1f),
+                    K(0.9f, reach),
+                    K(1.3f, RestR),
+                    K(1.9f, reach),
+                    K(2f, reach, grip: 1f),
+                    K(2.2f, reach),
+                    K(2.7f, RestR),
+                    K(3.2f, RestR)
+                ),
+                new[]
+                {
+                    P(GuideShape.Wall, 2f, V(0f, -0.6f, 1f)),
+                    P(GuideShape.Refused, 0.12f, far, 0.7f, 1.3f),
+                    P(GuideShape.Panel, 0.14f, far + V(0f, 0.14f, -0.02f), 0.7f, 1.3f),
+                    P(GuideShape.Refused, 0.12f, far, 2f, 2.6f),
+                },
+                new[] { S(0.7f, CueSound.Refused, far), S(2f, CueSound.Refused, far) }
+            )
+        );
+
+        var ropeL = V(-0.04f, 0.12f, 0.3f);
+        var ropeR = V(0.04f, 0.2f, 0.3f);
+        add(
+            new GuideDemo(
+                GuideTopic.RopePump,
+                "Rope swing pump",
+                "Lean along the swing, in time, to swing higher.",
+                3f,
+                T(
+                    K(0f, Vector3.Zero),
+                    K(0.5f, V(0f, 0f, 0.15f)),
+                    K(1f, V(0f, 0f, -0.15f)),
+                    K(1.5f, V(0f, 0f, 0.2f)),
+                    K(2f, V(0f, 0f, -0.2f)),
+                    K(2.5f, Vector3.Zero),
+                    K(3f, Vector3.Zero)
+                ),
+                T(K(0f, ropeL, grip: 1f)),
+                T(K(0f, ropeR, grip: 1f)),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Rope,
+                        2.6f,
+                        T(
+                            K(0f, V(0f, -0.2f, 0.3f)),
+                            K(0.5f, V(0f, -0.2f, 0.45f)),
+                            K(1f, V(0f, -0.2f, 0.15f)),
+                            K(1.5f, V(0f, -0.2f, 0.5f)),
+                            K(2f, V(0f, -0.2f, 0.1f)),
+                            K(2.5f, V(0f, -0.2f, 0.3f))
+                        )
+                    ),
+                },
+                new[] { S(2f, CueSound.WouldWork, R) }
+            )
+        );
+
+        var lid = V(0f, -1.1f, 0.5f);
+        var lidL = V(-0.12f, -0.8f, 0.38f);
+        var lidR = V(0.12f, -0.8f, 0.38f);
+        var lift = V(0f, 0.25f, 0f);
+        add(
+            new GuideDemo(
+                GuideTopic.Chest,
+                "Respawn chest",
+                "One hand can't lift it: grip the lid with both.",
+                3.6f,
+                T(
+                    K(0f, Vector3.Zero),
+                    K(0.5f, V(0f, -0.3f, 0f)),
+                    K(3f, V(0f, -0.3f, 0f)),
+                    K(3.6f, Vector3.Zero)
+                ),
+                T(
+                    K(0f, RestL),
+                    K(1.2f, RestL),
+                    K(1.7f, lidL),
+                    K(1.8f, lidL, grip: 1f),
+                    K(2.6f, lidL + lift, grip: 1f),
+                    K(2.8f, lidL + lift),
+                    K(3.6f, RestL)
+                ),
+                T(
+                    K(0f, RestR),
+                    K(0.8f, lidR),
+                    K(0.9f, lidR, grip: 1f),
+                    K(1.8f, lidR, grip: 1f),
+                    K(2.6f, lidR + lift, grip: 1f),
+                    K(2.8f, lidR + lift),
+                    K(3.6f, RestR)
+                ),
+                new[]
+                {
+                    P(GuideShape.Box, 0.4f, V(0f, -1.3f, 0.5f)),
+                    new GuideProp(
+                        GuideShape.Rod,
+                        0.4f,
+                        T(K(0f, lid), K(1.8f, lid), K(2.6f, lid + lift), K(3.2f, lid))
+                    ),
+                    P(GuideShape.Refused, 0.12f, lid, 0.9f, 1.6f),
+                },
+                new[] { S(0.9f, CueSound.Refused, lid), S(2.6f, CueSound.WouldWork, lid) }
+            )
+        );
+
+        add(
+            new GuideDemo(
+                GuideTopic.GroundPickup,
+                "Pick up from the ground",
+                "Stoop and grip an item on the ground.",
+                3.2f,
+                T(
+                    K(0f, Vector3.Zero),
+                    K(0.8f, V(0f, -0.6f, 0f)),
+                    K(1.8f, V(0f, -0.6f, 0f)),
+                    K(2.6f, Vector3.Zero),
+                    K(3.2f, Vector3.Zero)
+                ),
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(1.1f, floor + V(0f, 0.6f, 0f)),
+                    K(1.2f, floor + V(0f, 0.6f, 0f), grip: 1f),
+                    K(2.6f, RestR, grip: 1f),
+                    K(3.2f, RestR, grip: 1f)
+                ),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Ball,
+                        0.08f,
+                        T(K(0f, floor), K(1.2f, floor), K(1.2f, Vector3.Zero, anchor: R))
+                    ),
+                    P(GuideShape.Target, 0.12f, floor, 0f, 1.2f),
+                },
+                new[] { S(1.2f, CueSound.WouldWork, R) }
+            )
+        );
+
+        var friendHand = V(0.15f, -0.95f, 0.62f);
+        add(
+            new GuideDemo(
+                GuideTopic.HelpUp,
+                "Help a friend up",
+                "Grip a hanging friend's hand and pull them up.",
+                3f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR),
+                    K(0.9f, friendHand),
+                    K(1f, friendHand, grip: 1f),
+                    K(2f, RestR + V(0f, 0f, 0.1f), grip: 1f),
+                    K(2.2f, RestR + V(0f, 0f, 0.1f)),
+                    K(3f, RestR)
+                ),
+                new[]
+                {
+                    P(GuideShape.Wall, 2f, V(0f, -1.9f, 0.9f)),
+                    new GuideProp(
+                        GuideShape.Ball,
+                        0.1f,
+                        T(
+                            K(0f, friendHand),
+                            K(1f, friendHand),
+                            K(1f, Vector3.Zero, anchor: R),
+                            K(2.1f, Vector3.Zero, anchor: R),
+                            K(2.6f, friendHand)
+                        )
+                    ),
+                    P(GuideShape.Target, 0.12f, friendHand, 0f, 1f),
+                },
+                new[] { S(1f, CueSound.WouldWork, R) }
+            )
+        );
+
+        var body = V(0f, -1.45f, 0.6f);
+        add(
+            new GuideDemo(
+                GuideTopic.Carry,
+                "Carry a friend",
+                "Grip a passed-out friend with both hands to lift.",
+                3.4f,
+                T(
+                    K(0f, Vector3.Zero),
+                    K(0.8f, V(0f, -0.6f, 0f)),
+                    K(1.6f, V(0f, -0.6f, 0f)),
+                    K(2.6f, Vector3.Zero),
+                    K(3.4f, Vector3.Zero)
+                ),
+                T(
+                    K(0f, RestL),
+                    K(1.1f, body + V(-0.15f, 0.65f, -0.1f)),
+                    K(1.2f, body + V(-0.15f, 0.65f, -0.1f), grip: 1f),
+                    K(2.6f, RestL, grip: 1f),
+                    K(3f, RestL),
+                    K(3.4f, RestL)
+                ),
+                T(
+                    K(0f, RestR),
+                    K(1.1f, body + V(0.15f, 0.65f, -0.1f)),
+                    K(1.2f, body + V(0.15f, 0.65f, -0.1f), grip: 1f),
+                    K(2.6f, RestR, grip: 1f),
+                    K(3f, RestR),
+                    K(3.4f, RestR)
+                ),
+                new[]
+                {
+                    new GuideProp(
+                        GuideShape.Rod,
+                        0.6f,
+                        T(
+                            K(0f, body),
+                            K(1.2f, body),
+                            K(1.2f, V(-0.2f, 0f, 0.05f), anchor: R),
+                            K(3f, V(-0.2f, 0f, 0.05f), anchor: R),
+                            K(3.4f, body)
+                        )
+                    ),
+                    P(GuideShape.Target, 0.12f, body + V(0f, 0.1f, 0f), 0f, 1.2f),
+                },
+                new[] { S(1.2f, CueSound.WouldWork, R) }
+            )
+        );
+
+        var friendMouth = V(0.05f, -0.15f, 0.62f);
+        add(
+            new GuideDemo(
+                GuideTopic.Feed,
+                "Feed a friend",
+                "Hold food at a friend's mouth to feed them.",
+                3f,
+                null,
+                restLeft,
+                T(
+                    K(0f, RestR, grip: 1f),
+                    K(0.9f, friendMouth + V(0f, -0.03f, -0.05f), grip: 1f),
+                    K(1.9f, friendMouth + V(0f, -0.03f, -0.05f), grip: 1f),
+                    K(2.5f, RestR, grip: 1f),
+                    K(3f, RestR, grip: 1f)
+                ),
+                new[]
+                {
+                    P(GuideShape.Ball, 0.22f, friendMouth + V(0f, 0.12f, 0.1f)),
+                    Held(GuideShape.Ball, 0.08f, R, Vector3.Zero, 1.8f),
+                    P(GuideShape.Target, 0.12f, friendMouth, 0f, 0.9f),
+                },
+                new[] { S(1.8f, CueSound.WouldWork, friendMouth) }
+            )
+        );
+
+        var shakeL = RestL + V(0f, 0.15f, 0f);
+        var shakeR = RestR + V(0f, 0.15f, 0f);
+        var side = V(0.14f, 0f, 0f);
+        add(
+            new GuideDemo(
+                GuideTopic.Struggle,
+                "Shake off a web",
+                "Shake both hands hard to break free.",
+                2.6f,
+                null,
+                T(
+                    K(0f, RestL),
+                    K(0.3f, shakeL),
+                    K(0.5f, shakeL - side),
+                    K(0.7f, shakeL + side),
+                    K(0.9f, shakeL - side),
+                    K(1.1f, shakeL + side),
+                    K(1.3f, shakeL - side),
+                    K(1.5f, shakeL),
+                    K(2.2f, RestL),
+                    K(2.6f, RestL)
+                ),
+                T(
+                    K(0f, RestR),
+                    K(0.3f, shakeR),
+                    K(0.5f, shakeR + side),
+                    K(0.7f, shakeR - side),
+                    K(0.9f, shakeR + side),
+                    K(1.1f, shakeR - side),
+                    K(1.3f, shakeR + side),
+                    K(1.5f, shakeR),
+                    K(2.2f, RestR),
+                    K(2.6f, RestR)
+                ),
+                new[] { P(GuideShape.Disc, 0.7f, V(0f, -0.6f, 0f), 0f, 1.5f) },
+                new[] { S(1.5f, CueSound.WouldWork, V(0f, -0.3f, 0.3f)) }
+            )
+        );
+
+        var spike = V(-0.05f, -0.2f, 0.45f);
+        var back = V(0.2f, -0.05f, 0.3f);
+        var hit = spike + V(0.06f, 0f, -0.04f);
+        add(
+            new GuideDemo(
+                GuideTopic.Hammer,
+                "Hammer a piton",
+                "Strike the piton with the hammer to set it.",
+                3f,
+                null,
+                T(K(0f, spike + V(0f, -0.05f, -0.05f), grip: 1f)),
+                T(
+                    K(0f, back, grip: 1f),
+                    K(0.4f, hit, grip: 1f),
+                    K(0.8f, back, grip: 1f),
+                    K(1.2f, hit, grip: 1f),
+                    K(1.6f, back, grip: 1f),
+                    K(2f, hit, grip: 1f),
+                    K(2.5f, back, grip: 1f),
+                    K(3f, back, grip: 1f)
+                ),
+                new[]
+                {
+                    P(GuideShape.Wall, 2f, V(0f, -0.6f, 0.5f)),
+                    P(GuideShape.Rod, 0.12f, spike),
+                    Held(GuideShape.Rod, 0.3f, R, V(0f, 0.08f, 0.05f)),
+                },
+                new[]
+                {
+                    S(0.4f, CueSound.EndStop, spike),
+                    S(1.2f, CueSound.EndStop, spike),
+                    S(2f, CueSound.WouldWork, spike),
+                }
+            )
+        );
+
+        var wingL = V(-0.45f, -0.2f, 0.25f);
+        var wingR = V(0.45f, -0.2f, 0.25f);
+        var bank = V(0f, 0.15f, 0f);
+        add(
+            new GuideDemo(
+                GuideTopic.Glider,
+                "Steer the glider",
+                "Grip the wing with both hands; bank your arms to turn.",
+                3.6f,
+                T(
+                    K(0f, Vector3.Zero),
+                    K(1f, Vector3.Zero),
+                    K(2.2f, Vector3.Zero, yaw: 30f),
+                    K(3.6f, Vector3.Zero)
+                ),
+                T(
+                    K(0f, wingL, grip: 1f),
+                    K(1f, wingL, grip: 1f),
+                    K(1.6f, wingL + bank, grip: 1f),
+                    K(2.6f, wingL + bank, grip: 1f),
+                    K(3.2f, wingL, grip: 1f),
+                    K(3.6f, wingL, grip: 1f)
+                ),
+                T(
+                    K(0f, wingR, grip: 1f),
+                    K(1f, wingR, grip: 1f),
+                    K(1.6f, wingR - bank, grip: 1f),
+                    K(2.6f, wingR - bank, grip: 1f),
+                    K(3.2f, wingR, grip: 1f),
+                    K(3.6f, wingR, grip: 1f)
+                ),
+                new[] { Held(GuideShape.Rod, 0.9f, R, V(-0.45f, 0f, 0f)) },
+                new[] { S(0.2f, CueSound.WouldWork, V(0f, -0.2f, 0.3f)) }
+            )
+        );
+
+        add(
+            new GuideDemo(
+                GuideTopic.GiveUp,
+                "Give up",
+                "Passed out: hold both grips and triggers to give up.",
+                3f,
+                T(K(0f, V(0f, -1.1f, 0f))),
+                T(
+                    K(0f, RestL),
+                    K(0.5f, RestL, grip: 1f, trigger: 1f, button: GuideButton.Trigger),
+                    K(2.2f, RestL, grip: 1f, trigger: 1f, button: GuideButton.Trigger),
+                    K(2.4f, RestL),
+                    K(3f, RestL)
+                ),
+                T(
+                    K(0f, RestR),
+                    K(0.5f, RestR, grip: 1f, trigger: 1f, button: GuideButton.Trigger),
+                    K(2.2f, RestR, grip: 1f, trigger: 1f, button: GuideButton.Trigger),
+                    K(2.4f, RestR),
+                    K(3f, RestR)
+                ),
+                new[] { P(GuideShape.Notice, 0.12f, V(0f, -0.15f, 0.5f), 2.2f, 2.9f) },
+                new[] { S(2.2f, CueSound.Notice, V(0f, -0.15f, 0.5f)) }
             )
         );
     }
