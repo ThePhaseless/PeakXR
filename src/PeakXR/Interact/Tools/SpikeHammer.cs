@@ -6,8 +6,9 @@ namespace PeakXR.Interact.Tools;
 
 /// <summary>
 /// Hammering a climbing spike: while the game runs a spike cast, each strike of a tracked hand into the wall at the
-/// preview fills a share of the cast and the last one places the spike, never before the vanilla hold time has
-/// run (CharacterItems.cs:999-1000). The game's own checks (use button held,
+/// preview (a knock and a hard pulse) brings the placement forward. Holding alone still places it at the game's time;
+/// all strikes place it up to a third sooner (<see cref="HammerCast"/>, CharacterItems.cs:999-1000). The game's own
+/// checks (use button held,
 /// preview in range) still cancel it. With no tracked hand, or the setting off, the hold timer runs as usual.
 /// </summary>
 internal static class SpikeHammer
@@ -21,6 +22,15 @@ internal static class SpikeHammer
     // The timer a vanilla hold would show now: the game's start value plus every frame since.
     private static float elapsed;
     private static bool lastStrikeLeft;
+
+    /// <summary>A spike cast is running and being hammered (self-test vr.44c).</summary>
+    internal static bool Casting => casting;
+
+    /// <summary>Strikes landed in the running cast.</summary>
+    internal static int Strikes => strikes;
+
+    /// <summary>Where the running cast's preview sits on the wall.</summary>
+    internal static Vector3 Preview { get; private set; }
 
     private static StrikeGesture NewStrike() =>
         new()
@@ -64,6 +74,7 @@ internal static class SpikeHammer
             LeftStrike.Reset();
             RightStrike.Reset();
         }
+        Preview = hit.point;
         if (leftTracked)
             Strike(LeftStrike, true, rig, in hit);
         if (rightTracked)
@@ -72,7 +83,7 @@ internal static class SpikeHammer
         float castTime = slot.prefab.usingTimePrimary;
         tick = HammerCast.TickBeforeUpdate(strikes, needed, castTime, Time.deltaTime, elapsed);
         elapsed += Time.deltaTime;
-        // All strikes in before the vanilla hold time: tell the player to keep holding, not that it broke.
+        // All strikes in before the capped time (HammerCast.MaxSpeedup): keep holding, it is nearly in.
         if (strikes >= needed && tick + Time.deltaTime < castTime)
             ParityFeedback.Denied(lastStrikeLeft, hit.point, ParityFeedback.KeepHolding);
     }
@@ -92,5 +103,7 @@ internal static class SpikeHammer
         strikes++;
         lastStrikeLeft = left;
         Haptics.Pulse(left, 0.8f, 0.06f);
+        // Heard where it lands: a dull knock at the spike (the cue set's end-stop knock).
+        UI.Affordances.Affordance.Play(CueSound.EndStop, hit.point);
     }
 }

@@ -294,7 +294,7 @@ internal static class PhysicalInteraction
         )
             hand.InteractAt = GripIntent.DeferPointedInteract(
                 hand.InteractAt,
-                GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left)),
+                GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left)),
                 now,
                 FingerGun.DefaultWindow
             );
@@ -496,8 +496,12 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(hand.Left, 0.2f, 0.03f);
                 break;
             case GripPressAction.Interact:
-                // A pointing grip may be the start of a finger-gun ping: wait out its trigger window first.
-                hand.InteractAt = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left))
+                // A finger gun (pointing, thumb up) may be the start of a ping: wait out its trigger window first.
+                // Pointing with the thumb resting is a pointed interact, at once (external review #13).
+                hand.InteractAt = GripIntent.PointedInteractWaits(
+                    LocalAvatar.ControllerCurls(hand.Left),
+                    PingAims()
+                )
                     ? now + FingerGun.DefaultWindow
                     : now;
                 break;
@@ -1140,6 +1144,39 @@ internal static class PhysicalInteraction
         );
         if (stick == System.Numerics.Vector2.Zero)
             return;
+        // A fling, not a reach: let go at or above the shoulder (LungeIntent), then confirmed once the arm is seen
+        // still rising a moment later (ConfirmLunge).
+        float below = VRInput.HeadPosition.y - VRInput.Hand(hand.Left).Position.y;
+        if (!LungeIntent.AtRelease(cfg.LungeSpeed, cfg.LungeSpeed, below))
+            return;
+        lungeHand = hand;
+        lungeStick = stick;
+        lungeCheckAt = Time.time + LungeIntent.ConfirmDelay;
+        Grace.Extend(LungeIntent.ConfirmDelay + 0.05f);
+    }
+
+    private static Hand lungeHand;
+    private static System.Numerics.Vector2 lungeStick;
+    private static float lungeCheckAt = -10f;
+
+    /// <summary>
+    /// <see cref="LungeIntent.ConfirmDelay"/> after a fling-like release: the arm still rising and the grip still
+    /// open, so it was a throw and not a reach arriving at its next hold. Only then is it refused or turned into the
+    /// game's climb jump.
+    /// </summary>
+    private static void ConfirmLunge(Character c, VRRig rig, InteractConfig cfg, float now)
+    {
+        if (lungeCheckAt < 0f || now < lungeCheckAt)
+            return;
+        lungeCheckAt = -10f;
+        var hand = lungeHand;
+        lungeHand = null;
+        var d = c.data;
+        if (hand == null || !d.isClimbing)
+            return;
+        if (!LungeIntent.Confirm(HandVelocity(hand, rig).y, cfg.LungeSpeed, hand.Grip.Held))
+            return;
+        var stick = lungeStick;
         switch (TraversalRefusal.Lunge(d.sinceClimbJump, d.outOfStaminaFor))
         {
             case DenyReason.NoStamina:
@@ -1184,6 +1221,7 @@ internal static class PhysicalInteraction
 
     private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
+        ConfirmLunge(c, rig, cfg, now);
         if (physicalClimb && !c.data.isClimbing)
         {
             // The game ended the climb (top-out, jump, stamina, ragdoll): grips must close again to climb.
@@ -1625,7 +1663,11 @@ internal static class PhysicalInteraction
         if (PrimaryEdge.Pressed && holding)
         {
             var held = c.data.currentItem;
-            bool handsOk = ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand);
+            bool handsOk = ItemHoldTable.CanUse(
+                Hold.Profile.Handedness,
+                LocalHold.TwoHand,
+                cfg.RequireTwoHands
+            );
             // A press the game will not act on gets the denied cue instead of the success tick (a one-handed hold of
             // a two-handed item is denied below).
             if (!Affordance.Enabled)
@@ -1645,7 +1687,14 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
         }
 
-        if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand))
+        if (
+            holding
+            && !ItemHoldTable.CanUse(
+                Hold.Profile.Handedness,
+                LocalHold.TwoHand,
+                cfg.RequireTwoHands
+            )
+        )
         {
             // Two-handed item held in one hand: carry only. Cancel a use that was in progress.
             bool wasUsing =

@@ -35,10 +35,19 @@ public class ItemHoldTableTests
     }
 
     [Fact]
-    public void UnknownName_Long_IsTwoHandedPole()
+    public void UnknownName_Long_IsAPoleUsableOneHanded()
     {
+        // External review #19: the game needs no second hand for any item (it only joins one when the item is not
+        // rightHandOnly, CharacterItems.cs:647-651), so an unknown long item takes both hands but works with one.
         var p = ItemHoldTable.Classify("Mystery Stick", ItemTraits.Elongated);
-        Assert.Equal(new HoldProfile(Handedness.TwoHanded, GripPreset.TwoHandPole), p);
+        Assert.Equal(new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole), p);
+    }
+
+    [Fact]
+    public void RequireTwoHandsOff_LetsTwoHandedItemsWorkOneHanded()
+    {
+        Assert.False(ItemHoldTable.CanUse(Handedness.TwoHanded, false, requireTwoHands: true));
+        Assert.True(ItemHoldTable.CanUse(Handedness.TwoHanded, false, requireTwoHands: false));
     }
 
     [Fact]

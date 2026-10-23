@@ -232,7 +232,9 @@ internal static class PingInput
         bool tracked = state.Tracked;
         hand.Grip.Update(tracked ? state.Grip : 0f, dt);
         hand.Trigger.Update(tracked ? state.Trigger : 0f, dt);
-        hand.Pointing = tracked && GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
+        // The finger gun needs the thumb up (GripIntent.IsFingerGun): pointing with the thumb resting is the
+        // pointed interact's, so the two never take each other's grip (external review #13).
+        hand.Pointing = tracked && GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left));
         hand.Armed = enabled && free;
         bool fired = hand.Gun.Update(
             hand.Armed && hand.Pointing,

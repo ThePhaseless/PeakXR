@@ -44,11 +44,13 @@ internal sealed partial class SelfTestRunner
     IEnumerator ClimbSteps()
     {
         yield return Restoring("vr.46b-lunge-too-soon", 30f, LungeTooSoonStep());
+        yield return Restoring("vr.46c-reach-no-lunge", 30f, ReachNoLungeStep());
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
+        yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
@@ -59,6 +61,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
+        yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
         yield return Restoring("vr.42b-rope-pump", 45f, RopePumpStep());
@@ -221,7 +224,7 @@ internal sealed partial class SelfTestRunner
         float jumpBefore = c.data.sinceClimbJump;
         float y0 = c.Center.y;
         float whooshMark = CueMark();
-        yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+        yield return FlingRelease(left, from, speed);
         float released = Now;
         yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
         bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
@@ -290,7 +293,7 @@ internal sealed partial class SelfTestRunner
             bool climbingAtThrow = c.data.isClimbing;
             from = Script(left).Position;
             float mark = CueMark();
-            yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+            yield return FlingRelease(left, from, speed);
             bool Denied() =>
                 UI.Affordances.Affordance.Count > denials
                 && UI.Affordances.Affordance.LastReason == DenyReason.NoStamina
@@ -1310,7 +1313,23 @@ internal sealed partial class SelfTestRunner
             $"Apple {toApple:0.00} m from the pointing hand (ray {rayReach:0.00} m), on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (!keptWhileAiming || !kept)
+        {
             Fail("aiming a ping at an item picked it up: " + note);
+            yield break;
+        }
+        // External review #13: the same pointing grip with the thumb resting on the stick is a pointed interact, not
+        // a ping aim. It takes the Apple and pings nothing.
+        float pingBefore = Interact.Ping.PingInput.LastPinged(pinger);
+        Script(left).StickTouch = true;
+        OnRestore(() => Script(left).StickTouch = false);
+        yield return FingerGunAim(left, aim, 0.1f);
+        yield return WaitFor(() => Holding(apple), 2f);
+        bool taken = Holding(apple);
+        bool pinged = Interact.Ping.PingInput.LastPinged(pinger) != pingBefore;
+        Script(left).StickTouch = false;
+        note += F($"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}");
+        if (!taken || pinged)
+            Fail("a pointed grip with the thumb resting did not interact cleanly: " + note);
         else
             Note(note);
     }
@@ -1447,6 +1466,209 @@ internal sealed partial class SelfTestRunner
             Note(note);
     }
 
+    /// <summary>
+    /// vr.44d (external review #7): hammering a climbing spike is faster than holding. Holding the use button with the
+    /// spike aimed at the test wall starts the game's cast; the free hand strikes the preview <c>HammerStrikes</c>
+    /// times. The spike goes in sooner than the item's hold time, but no sooner than the cap
+    /// (<see cref="HammerCast.MaxSpeedup"/>).
+    /// </summary>
+    IEnumerator HammerSpikeStep()
+    {
+        var c = Character.localCharacter;
+        var tools = Interact.Tools.ToolsConfig.Instance;
+        if (!tools.HammerSpikes)
+        {
+            stepSkip = "Tools.HammerSpikes off";
+            yield break;
+        }
+        var spike = FindItemComponent<ClimbingSpikeComponent>();
+        if (spike == null)
+        {
+            stepSkip = "no climbing spike item";
+            yield break;
+        }
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        yield return GiveAndHold(spike.GetComponent<Item>());
+        if (!stepOk)
+            yield break;
+        float castTime = spike.GetComponent<Item>().usingTimePrimary;
+        bool holdLeft = LocalHold.ItemInLeftHand;
+        bool free = !holdLeft;
+        var rig = VRRig.Instance;
+        // The spike hand aims at the face in front.
+        var face = wallFace.point;
+        var spikeAim = rig.Origin.InverseTransformPoint(
+            rig.Head.position + Flat(face - rig.Head.position) * 0.3f + Vector3.down * 0.15f
+        );
+        SetHand(holdLeft, spikeAim);
+        Script(holdLeft).Rotation = Quaternion.LookRotation(
+            rig.Origin.InverseTransformDirection(face - rig.Origin.TransformPoint(spikeAim)),
+            Vector3.up
+        );
+        yield return Wait(0.3f);
+        int before = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length;
+        Script(holdLeft).Trigger = 1f;
+        yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
+        if (!Interact.Tools.SpikeHammer.Casting)
+        {
+            Script(holdLeft).Trigger = 0f;
+            Fail("holding the use button at the wall started no spike cast");
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float started = Now;
+        int needed = tools.HammerStrikes;
+        for (int i = 0; i < needed && Interact.Tools.SpikeHammer.Casting; i++)
+        {
+            var point = Interact.Tools.SpikeHammer.Preview;
+            var back = point + wallFace.normal * 0.3f;
+            yield return MoveTo(free, () => back, 0.12f);
+            // 0.3 m in 0.08 s: a strike at about 3.7 m/s into the wall.
+            yield return MoveTo(free, () => point, 0.08f);
+            yield return null;
+        }
+        int strikes = Interact.Tools.SpikeHammer.Strikes;
+        yield return WaitFor(
+            () => FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before,
+            castTime + 1f
+        );
+        float took = Now - started;
+        bool placed = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before;
+        Script(holdLeft).Trigger = 0f;
+        float earliest = castTime / HammerCast.MaxSpeedup;
+        var note = F(
+            $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s)"
+        );
+        if (!placed)
+            Fail("the hammered spike was not placed: " + note);
+        else if (took >= castTime - 0.05f)
+            Fail("hammering was not faster than holding: " + note);
+        else if (took < earliest - 0.15f)
+            Fail("hammering beat the cap: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// A climb lunge's fling (<see cref="LungeIntent"/>): the hand goes straight up at <paramref name="speed"/>, lets go
+    /// at or above the head, and keeps rising past the confirm delay, as a thrown arm does.
+    /// </summary>
+    IEnumerator FlingRelease(bool left, Vector3 from, float speed)
+    {
+        float start = Now;
+        float release = 0.25f;
+        while (true)
+        {
+            float t = Now - start;
+            SetHand(left, from + Vector3.up * (speed * Mathf.Min(t, release + 0.15f)));
+            if (t >= release)
+                Script(left).Grip = 0f;
+            if (t >= release + 0.15f)
+                yield break;
+            yield return null;
+        }
+    }
+
+    /// <summary>
+    /// vr.46c (external review #16): a brisk reach never lunges. Climbing on one hand, that hand lets go at chest height
+    /// moving up at the lunge speed and closes on the wall again 0.12 s later, as a hand-over-hand reach does: no climb
+    /// jump, no refusal.
+    /// </summary>
+    IEnumerator ReachNoLungeStep()
+    {
+        var c = Character.localCharacter;
+        var cfg = Interact.InteractConfig.Instance;
+        if (!cfg.ArmLunge)
+        {
+            stepSkip = "Interaction.ArmLunge off";
+            yield break;
+        }
+        yield return ToWall(headroom: LungeHeadroom);
+        if (!wallReady)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        yield return GripWall(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return MoveTrack(left, Script(left).Position + Vector3.down * 0.3f, 0.5f);
+        yield return WaitFor(() => c.data.sinceClimbJump > 1.1f, 2f);
+        UI.Affordances.Affordance.ResetGate();
+        float jumpBefore = c.data.sinceClimbJump;
+        float mark = CueMark();
+        var from = Script(left).Position;
+        float speed = Mathf.Max(1.2f * cfg.LungeSpeed, 3f);
+        // Up through chest height, open, then close on the face again.
+        float start = Now;
+        while (Now - start < 0.2f)
+        {
+            float t = Now - start;
+            SetHand(left, from + Vector3.up * (speed * t));
+            if (t >= 0.08f)
+                Script(left).Grip = 0f;
+            yield return null;
+        }
+        Script(left).Grip = 1f;
+        yield return Wait(0.5f);
+        bool jumped = c.data.sinceClimbJump < jumpBefore;
+        bool climbing = c.data.isClimbing;
+        yield return ExpectNoCue(left, mark, 0f);
+        var note = F(
+            $"reach at {speed:0.0} m/s from chest height: climb jump {jumped}, still climbing {climbing}"
+        );
+        if (jumped)
+            Fail("a brisk reach set off a climb lunge: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.61b (external review #19): with <c>Interaction.RequireTwoHands</c> off, a two-handed tool held in one hand
+    /// works as in the flat game: the use press reaches the game and no NeedsTwoHands refusal fires (vr.61 proves the
+    /// refusal with the setting on).
+    /// </summary>
+    IEnumerator TwoHandsOptionalStep()
+    {
+        var c = Character.localCharacter;
+        var entry = Interact.InteractConfig.Instance.RequireTwoHandsEntry;
+        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        if (entry == null || hook == null)
+        {
+            stepSkip = "interact.physical not bound or no RescueHook";
+            yield break;
+        }
+        bool was = entry.Value;
+        OnRestore(() => entry.Value = was);
+        entry.Value = false;
+        yield return GiveAndHold(hook);
+        if (!stepOk)
+            yield break;
+        bool left = LocalHold.ItemInLeftHand;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        bool reached = false;
+        Script(left).Trigger = 1f;
+        for (float end = Now + 0.4f; Now < end; )
+        {
+            reached |= c.input.usePrimaryIsPressed;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        yield return ExpectNoCue(left, mark, 0f);
+        entry.Value = was;
+        var note = $"{HeldItem()?.name} one-handed: use reached the game {reached}";
+        if (!reached)
+            Fail("the use press of a two-handed tool held one-handed was blocked: " + note);
+        else
+            Note(note);
+    }
+
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
     /// before): which reason or notice fired and which ring was last captured, to tell a replaced cue from an undrawn
     /// one.</summary>
@@ -1500,7 +1722,7 @@ internal sealed partial class SelfTestRunner
         float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
         var from = Script(left).Position;
         float mark = CueMark();
-        yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+        yield return FlingRelease(left, from, speed);
         yield return ExpectCue(left, DenyReason.TooSoon, mark, false, 1f, seen: false);
         bool noJump = c.data.sinceClimbJump >= 0.2f + (Time.time - poked) - 0.1f;
         var note = F(
