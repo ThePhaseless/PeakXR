@@ -1144,7 +1144,7 @@ internal sealed partial class SelfTestRunner
                 $"the low grip did not take {lug.name}: grip {PhysicalInteraction.HandAction(left)} on "
                     + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(rig.Hand(left).position, lug):0.00} m "
                     + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, hovered "
-                    + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}"
+                    + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}; {PhysicalInteraction.LastGripNote}"
             );
             yield break;
         }
@@ -1745,7 +1745,7 @@ internal sealed partial class SelfTestRunner
         yield return Until(
             () => fire.Lit,
             GameTiming.Budget(GameTiming.InteractSeconds(fire, c), 3f),
-            "the grip hold did not light " + fire.name
+            "the grip hold did not light " + fire.name + "; " + PhysicalInteraction.LastGripNote
         );
         yield return GripTo(left, 0f, 0.1f);
         // Not lit: put back what the local reset changed.

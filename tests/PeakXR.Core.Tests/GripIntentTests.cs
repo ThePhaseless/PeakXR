@@ -204,6 +204,17 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void Pointing_NotWithTheFingerResting_OnTheTrigger()
+    {
+        // A fist with the index on the trigger (touch, no pull) is a grip, not a finger gun: the thumbs-up pose
+        // (EmoteGestures.ThumbsUp) and a plain grip on Index or Touch controllers.
+        var fist = FingerCurlMapper.Map(0f, true, 1f, false);
+        Assert.False(GripIntent.IsPointing(fist));
+        Assert.False(GripIntent.IsFingerGun(fist));
+        Assert.True(GripIntent.IsPointing(FingerCurlMapper.Map(0f, false, 1f, false)));
+    }
+
+    [Fact]
     public void ExtensionClaim_BeatsGrabClimbAndInteract()
     {
         var c = Empty();
