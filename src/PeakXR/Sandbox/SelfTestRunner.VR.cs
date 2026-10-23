@@ -545,7 +545,18 @@ internal sealed partial class SelfTestRunner
         {
             foreach (var text in root.GetComponentsInChildren<TMPro.TMP_Text>())
             {
-                if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
+                // Only what is drawn: VR run 57 read a '0' at 0.19 deg that no frame shows (a template, placeholder or
+                // faded part); its place goes into the note if one ever fails again.
+                var cr = text.canvasRenderer;
+                if (
+                    !text.isActiveAndEnabled
+                    || string.IsNullOrWhiteSpace(text.text)
+                    || text.color.a * cr.GetAlpha() * cr.GetInheritedAlpha() < 0.1f
+                    || cr.cull
+                    || text.textInfo == null
+                    || text.textInfo.characterCount == 0
+                    || text.rectTransform.rect.width * text.rectTransform.rect.height < 1f
+                )
                     continue;
                 // Only what its scroll view shows: rows and chips scrolled away are not read.
                 var view = text.GetComponentInParent<RectMask2D>();
@@ -562,7 +573,9 @@ internal sealed partial class SelfTestRunner
                 if (deg < smallest)
                 {
                     smallest = deg;
-                    smallestText = text.text;
+                    smallestText =
+                        $"{text.text}' at {NameChain(text.transform, menu.transform)}, scale "
+                        + $"{text.transform.lossyScale.y:0.0000}, font {text.fontSize:0.#}";
                 }
             }
         }
@@ -601,6 +614,15 @@ internal sealed partial class SelfTestRunner
         }
         yield return ShotAt("vr-223-vr-tab", column.position);
         Conclude(fails, notes);
+    }
+
+    /// <summary>Names from <paramref name="root"/> down to <paramref name="t"/>, for a step's note.</summary>
+    static string NameChain(Transform t, Transform root)
+    {
+        var chain = t.name;
+        for (var up = t.parent; up != null && up != root; up = up.parent)
+            chain = up.name + "/" + chain;
+        return chain;
     }
 
     /// <summary>One vr.222 check of the plate on <paramref name="root"/>; null when it passes.</summary>
