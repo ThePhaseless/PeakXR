@@ -294,7 +294,7 @@ internal sealed partial class SelfTestRunner
                 && UI.Affordances.Affordance.LastReason == DenyReason.NoStamina
                 && UI.Affordances.Affordance.LastLeft == left;
             // Every channel of the stamina refusal on the throwing hand, the stamina bar turned red.
-            yield return ExpectCue(left, DenyReason.NoStamina, mark, true, 1.5f);
+            yield return ExpectCue(left, DenyReason.NoStamina, mark, true, 1.5f, seen: false);
             bool denied = Denied();
             // ExpectCue has proven the ring drawn and readable. CueCheck asks whether it is still drawn now, but a
             // refusal on a release (the grip already open) is not held, so it may have faded (run 34).
@@ -971,6 +971,29 @@ internal sealed partial class SelfTestRunner
             Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
             yield break;
         }
+        // A player steps up to the face before placing a piton; the stand spot can leave it up to 2 m off, and a
+        // handle 1.18 m from the eye (run 47, vr.44) is out of any reach. Step to about 0.5 m from it.
+        var gap = hit.point - rig.Head.position;
+        gap.y = 0f;
+        if (gap.magnitude > 0.65f)
+        {
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                RpcTarget.All,
+                stand - normal * (gap.magnitude - 0.5f),
+                false
+            );
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1f);
+            if (!WallInFront(c, wall, 0.4f, out hit))
+            {
+                Fail(
+                    $"wall not in front after stepping up to it (wall {wall.point}, body {c.Center})"
+                );
+                yield break;
+            }
+        }
         var go = PhotonNetwork.InstantiateItemRoom(
             spike.hammeredVersionPrefab.name,
             hit.point,
@@ -1332,7 +1355,7 @@ internal sealed partial class SelfTestRunner
         var from = Script(left).Position;
         float mark = CueMark();
         yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
-        yield return ExpectCue(left, DenyReason.TooSoon, mark, false, 1f);
+        yield return ExpectCue(left, DenyReason.TooSoon, mark, false, 1f, seen: false);
         bool noJump = c.data.sinceClimbJump >= 0.2f + (Time.time - poked) - 0.1f;
         var note = F(
             $"fling 0.2 s after a jump: {cueNote}; no jump {noJump} (since jump {c.data.sinceClimbJump:0.00} s)"
@@ -1418,6 +1441,7 @@ internal sealed partial class SelfTestRunner
         bool InWorld() => second != null && second.gameObject.activeInHierarchy;
         var last = second.Center();
         UI.Affordances.Affordance.ResetGate();
+        LookAtHand(true);
         float mark = CueMark();
         // The player stoops for it: a standing head put this hand 1.36 m from the eye in run 43.
         yield return ReachDown(
@@ -1487,6 +1511,7 @@ internal sealed partial class SelfTestRunner
         bool ringOnSlope = ClimbHover.Drawn(left);
         // The clock starts at the grip: run 35's refusal came 0.96 s after a mark taken before the 0.8 s approach,
         // too late for its ring to show inside the 1 s window.
+        LookAtHand(left);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.TooFlat, mark, false, 1f);
@@ -1565,7 +1590,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GripTo(left, 1f, 0.1f);
-        yield return ExpectCue(left, DenyReason.Carried, mark, false, 1f);
+        yield return ExpectCue(left, DenyReason.Carried, mark, false, 1f, seen: false);
         bool climbed = c.data.isClimbing;
         c.data.carrierCondor = null;
         var note =
@@ -1691,7 +1716,7 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         float y0 = c.Center.y;
         yield return PullDown(left, 0.4f, 0.6f);
-        yield return ExpectCue(left, DenyReason.NoStamina, mark, true, 1f);
+        yield return ExpectCue(left, DenyReason.NoStamina, mark, true, 1f, seen: false);
         float rise = c.Center.y - y0;
         var note = F(
             $"out of stamina {c.data.outOfStaminaFor:0.0} s: rose {rise:0.00} m for a 0.40 m pull; {cueNote}"
@@ -1827,7 +1852,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GripTo(left, 1f, 0.1f);
-        yield return ExpectCue(left, DenyReason.Occupied, mark, true, 1f);
+        yield return ExpectCue(left, DenyReason.Occupied, mark, true, 1f, seen: false);
         yield return Wait(0.3f);
         bool hung = c.data.currentClimbHandle != null;
         bool climbed = c.data.isClimbing;
@@ -2121,7 +2146,14 @@ internal sealed partial class SelfTestRunner
         yield return Hold(6f);
         VRInput.TestOverride = hands;
         ClimbHands.SelfTestNotMine = false;
-        yield return ExpectCue(left, DenyReason.NotHere, mark, tint: false, within: 0f);
+        yield return ExpectCue(
+            left,
+            DenyReason.NotHere,
+            mark,
+            tint: false,
+            within: 0f,
+            seen: false
+        );
         var cue = cueNote;
         int count = Affordance.Count - denies;
         yield return LetGoAll(c);
@@ -2250,6 +2282,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         UI.Affordances.Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         yield return MoveTo(left, () => at.position, 0.4f);
         if (OverReach(left) is { } far)

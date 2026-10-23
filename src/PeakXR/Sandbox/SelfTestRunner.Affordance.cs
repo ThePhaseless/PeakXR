@@ -166,6 +166,7 @@ internal sealed partial class SelfTestRunner
                 yield break;
             bool left = LocalHold.ItemInLeftHand;
             Affordance.ResetGate();
+            LookAtHand(left);
             float mark = CueMark();
             Script(left).TriggerTouch = true;
             Script(left).Trigger = 1f;
@@ -250,6 +251,7 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
             Affordance.ResetGate();
+            LookAtHand(false);
             float mark = CueMark();
             if (!Affordance.DenyAtHand(false, reason))
             {
@@ -478,6 +480,7 @@ internal sealed partial class SelfTestRunner
         // A drop button tap is the gentle drop that reaches DoDropping by default. A slow grip open only does with
         // Interaction.ReleaseToDrop on; off (the default) it keeps any item, so it is no refusal (VR run 31).
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         yield return TapDrop();
         yield return ExpectCue(left, DenyReason.StuckToHand, mark, tint: true, within: 1.5f);
@@ -526,6 +529,7 @@ internal sealed partial class SelfTestRunner
         var held = HeldItem();
         ushort heldId = held != null ? held.itemID : (ushort)0;
         int usesBefore = held != null ? UsesLeft(held) : -1;
+        LookAtHand(left);
         float mark = CueMark();
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
