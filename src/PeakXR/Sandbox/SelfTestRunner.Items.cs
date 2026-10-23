@@ -496,7 +496,7 @@ internal sealed partial class SelfTestRunner
     /// carries) reaches <paramref name="goal"/>; one frame of a 1.5 m/s approach. Once the item stops getting closer
     /// (out of reach or blocked) the hand goes back to where it held the item then and stays, as a player stops
     /// pushing; a hand that kept pushing shoved the body back from the fire (vr11, 0.95 to 1.12 m).</summary>
-    void CarryToward(bool left, Vector3 part, Vector3 goal)
+    void CarryToward(bool left, Vector3 part, Vector3 goal, float stall = CarryStallSeconds)
     {
         var rig = VRRig.Instance;
         var hand = rig.Hand(left).position;
@@ -507,7 +507,7 @@ internal sealed partial class SelfTestRunner
             carryBestAt = Now;
             carryLead = hand - part;
         }
-        else if (Now - carryBestAt > CarryStallSeconds)
+        else if (Now - carryBestAt > stall)
         {
             // Once: re-placing it relative to a sagging item every frame would walk the hand down.
             if (carryLead != Vector3.zero)
