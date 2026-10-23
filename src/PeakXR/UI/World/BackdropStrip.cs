@@ -404,6 +404,8 @@ internal static class BackdropStrip
                 && g.raycastTarget
                 && g.isActiveAndEnabled
                 && (g.canvasRenderer.cull || g.depth == -1)
+                // Culled by a scroll view's mask (the VR tab's rows past its viewport): out of view, nothing to block.
+                && !(g.canvasRenderer.cull && g.GetComponentInParent<RectMask2D>() != null)
             )
                 count++;
         }
