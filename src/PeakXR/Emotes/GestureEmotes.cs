@@ -28,6 +28,9 @@ internal sealed class GestureEmotes : MonoBehaviour
     /// <summary>A cheer needs both hands over the head.</summary>
     private const float CheerMargin = 0.1f;
 
+    /// <summary>Seconds the cheer pose is held (DwellGesture's default).</summary>
+    private const float CheerDwell = 0.4f;
+
     /// <summary>An open hand: the grip let go.</summary>
     private const float OpenGrip = 0.3f;
 
@@ -135,11 +138,16 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool rightOpen =
             rightFree && !rightBusy && VRInput.Right.Tracked && VRInput.Right.Grip < OpenGrip;
 
+        // One-handed play (Accessibility.OneHanded): one open hand held still over the head cheers, held twice as long
+        // so a hand raised to wave is not taken for one.
+        cheer.Dwell = VRInput.OneHanded ? 2f * CheerDwell : CheerDwell;
         bool cheered = cheer.Update(
-            leftOpen
-                && rightOpen
-                && EmoteGestures.Raised(l.y, head.y, CheerMargin)
-                && EmoteGestures.Raised(r.y, head.y, CheerMargin),
+            EmoteGestures.CheerPose(
+                VRInput.OneHanded,
+                leftOpen && EmoteGestures.Raised(l.y, head.y, CheerMargin),
+                rightOpen && EmoteGestures.Raised(r.y, head.y, CheerMargin),
+                VRInput.Hand(VRInput.LeftHanded).Velocity.magnitude
+            ),
             dt
         );
         bool wavedLeft = leftWave.Update(

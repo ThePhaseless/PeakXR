@@ -187,6 +187,61 @@ namespace PeakXR.Core
         };
 
         /// <summary>
+        /// One-handed play (<c>Accessibility.OneHanded</c>): every row on the one controller, which the caller makes the
+        /// dominant hand. Its stick walks forward and back and turns (<see cref="StickAxes.MoveY"/>), so the hotbar and
+        /// scroll flicks are gone (belt slots and wrist twist do those); A jumps, the stick click sprints and a long
+        /// click crouches, B taps pause (a Touch right controller has no menu button) and a long B opens the emote
+        /// wheel. Put away, backpack and ping have hand paths only (belt, shoulder, finger gun). docs/controls.md.
+        /// </summary>
+        public static readonly Binding[] OneHanded =
+        {
+            new Binding(VRAction.Jump, BindingHand.Dominant, VRControl.Primary, PressKind.Hold),
+            new Binding(
+                VRAction.Sprint,
+                BindingHand.Dominant,
+                VRControl.StickClick,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.Crouch,
+                BindingHand.Dominant,
+                VRControl.StickClick,
+                PressKind.LongPress
+            ),
+            new Binding(VRAction.Interact, BindingHand.Dominant, VRControl.Grip, PressKind.Hold),
+            new Binding(
+                VRAction.UsePrimary,
+                BindingHand.Dominant,
+                VRControl.Trigger,
+                PressKind.Hold
+            ),
+            new Binding(VRAction.Pause, BindingHand.Dominant, VRControl.Secondary, PressKind.Tap),
+            new Binding(
+                VRAction.Emote,
+                BindingHand.Dominant,
+                VRControl.Secondary,
+                PressKind.LongPress
+            ),
+            new Binding(
+                VRAction.SpectateNext,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.SpectatePrevious,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
+            new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
+            new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
+        };
+
+        /// <summary>The table in use: <see cref="Default"/>, or <see cref="OneHanded"/> while that mode is on.</summary>
+        public static Binding[] Active = Default;
+
+        /// <summary>
         /// True when a row of <paramref name="table"/> already presses <paramref name="control"/> on that controller
         /// (with the item in either hand); <paramref name="action"/> is the first such action. For a button picked in a
         /// setting, so the player learns what else it does.
@@ -311,6 +366,11 @@ namespace PeakXR.Core
         /// <summary>Stick X for turning, or 0 when the push is more up/down than sideways (a hotbar flick).</summary>
         public static float TurnX(Vector2 stick) =>
             MathF.Abs(stick.X) >= MathF.Abs(stick.Y) ? stick.X : 0f;
+
+        /// <summary>One-handed walking: the forward/back part of a push that <see cref="TurnX"/> leaves alone, so
+        /// one stick both walks and turns and a push never does both.</summary>
+        public static Vector2 MoveY(Vector2 stick) =>
+            new(0f, MathF.Abs(stick.Y) > MathF.Abs(stick.X) ? stick.Y : 0f);
     }
 
     /// <summary>
@@ -341,7 +401,8 @@ namespace PeakXR.Core
         /// <summary>Hand that holds the item (or the dominant hand when empty-handed).</summary>
         public bool ItemInLeft;
 
-        readonly Binding[] _bindings;
+        /// <summary>The layout read on each <see cref="Update"/>; swap it when the one-handed mode changes.</summary>
+        public Binding[] Bindings;
         readonly AnalogButton[] _analog = new AnalogButton[4];
         readonly ButtonEdge[] _controls = new ButtonEdge[2 * ControlCount];
         readonly bool[] _reserved = new bool[2 * ControlCount];
@@ -354,7 +415,7 @@ namespace PeakXR.Core
 
         public ActionMapper(Binding[] bindings)
         {
-            _bindings = bindings;
+            Bindings = bindings;
             for (int i = 0; i < _analog.Length; i++)
                 _analog[i] = new AnalogButton();
             for (int i = 0; i < _controls.Length; i++)
@@ -381,7 +442,7 @@ namespace PeakXR.Core
             UpdateControls(false, right, dt);
 
             Array.Clear(_down, 0, _down.Length);
-            foreach (var b in _bindings)
+            foreach (var b in Bindings)
             {
                 int a = (int)b.Action;
                 if (_disabled[a] || _down[a])

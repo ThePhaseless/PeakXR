@@ -86,7 +86,11 @@ internal static class LidGesture
         float right = Track(rig, 1);
         LowGrip(rig, 0);
         LowGrip(rig, 1);
-        bool both = OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
+        // One-handed play (Accessibility.OneHanded) has no second hand: one hand on the lid lifts a respawn chest.
+        bool one = VRInput.OneHanded;
+        bool both = one
+            ? OnLid[0] || OnLid[1]
+            : OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
         // A respawn chest takes both hands on its lid; a hand anywhere else on it counts as alone too (a low grip
         // holds it at 0 in BeforeInteraction), so it gets the same refusal instead of a silent hold.
         var gripped = Grabbed[0] as RespawnChest ?? Grabbed[1] as RespawnChest;
@@ -103,7 +107,7 @@ internal static class LidGesture
             : null;
         if (lug == null)
             return;
-        if (lug is RespawnChest)
+        if (lug is RespawnChest && !one)
             fraction = both ? Mathf.Min(left, right) : 0f;
         else
             fraction = Mathf.Max(

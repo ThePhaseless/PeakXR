@@ -142,6 +142,7 @@ internal static class LocomotionInput
         var item = c.data.currentItem;
 
         Mapper.DominantLeft = dominantLeft;
+        Mapper.Bindings = BindingTable.Active;
         Mapper.ItemInLeft = item != null ? LocalHold.ItemInLeftHand : dominantLeft;
         bool owns = PhysicalOwnsHands;
         Mapper.SetDisabled(VRAction.Interact, owns);
@@ -287,8 +288,11 @@ internal static class LocomotionInput
 
     private static NVector2 MoveStick(bool dominantLeft, float dt)
     {
-        ref var hand = ref VRInput.Hand(!dominantLeft);
-        var stick = Stick.Apply(Num2(hand.Stick), LocomotionConfig.Deadzone, 0.95f);
+        // One-handed, the one stick also turns (LookPatches): it walks only with the forward/back part.
+        bool one = VRInput.OneHanded;
+        ref var hand = ref VRInput.Hand(one ? dominantLeft : !dominantLeft);
+        var raw = Num2(hand.Stick);
+        var stick = Stick.Apply(one ? StickAxes.MoveY(raw) : raw, LocomotionConfig.Deadzone, 0.95f);
         if (LocomotionConfig.HandRelative && hand.Tracked && VRInput.HeadTracked)
             stick = MoveInput.HandRelative(
                 stick,

@@ -342,7 +342,7 @@ internal static partial class WorldHolds
             if (view == null || view.IsMine)
                 return;
             Affordance.Deny(
-                HandOn(__instance, !VRInput.LeftHanded),
+                HandOn(__instance, VRInput.OffHandLeft),
                 __instance.Center(),
                 DenyReason.Blocked,
                 default,

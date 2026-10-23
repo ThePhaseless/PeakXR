@@ -56,8 +56,8 @@ public sealed class EmotesFeature : Feature
             s,
             "GestureEmotes",
             true,
-            "In VR, wave a raised open hand side to side to wave, hold both open hands over your head to cheer, or hold "
-                + "a fist out in front with the thumb up for a thumbs-up. "
+            "In VR, wave a raised open hand side to side to wave, hold both open hands over your head to cheer (one-handed: one "
+                + "open hand held still over your head), or hold a fist out in front with the thumb up for a thumbs-up. "
                 + "They are the game's own emotes, so every player sees them, modded or not."
         );
         Patch(typeof(PlayEmote));

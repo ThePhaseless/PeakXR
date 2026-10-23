@@ -68,7 +68,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
         if (
             ButtonName.TryParse(name, dominantLeft, out bool left, out var control)
             && BindingTable.Conflict(
-                BindingTable.Default,
+                BindingTable.Active,
                 left,
                 control,
                 dominantLeft,
@@ -161,7 +161,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
 
         // The hand the cue belongs to: the one at the mouth, else the wrist.
         var ui = PeakXR.UI.World.UIWorldFeature.Settings;
-        bool wristLeft = ui != null ? ui.WristLeft : !VRInput.LeftHanded;
+        bool wristLeft = ui != null ? ui.WristLeft : VRInput.OffHandLeft;
         bool cueLeft =
             leftMute || leftTalk ? true
             : rightMute || rightTalk ? false

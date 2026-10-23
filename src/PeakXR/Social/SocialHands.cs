@@ -810,13 +810,17 @@ internal sealed class SocialHands : IGripExtension
         }
         var forward = VRInput.HeadRotation * Vector3.forward;
         forward.y = 0f;
-        bool open = VRInput.Left.Grip < 0.3f && VRInput.Right.Grip < 0.3f;
+        // One-handed play (Accessibility.OneHanded): the one open palm pushed is the shove, fed in as both hands.
+        bool one = VRInput.OneHanded;
+        ref var l = ref VRInput.Hand(one ? VRInput.LeftHanded : true);
+        ref var r = ref VRInput.Hand(one ? VRInput.LeftHanded : false);
+        bool open = l.Grip < 0.3f && r.Grip < 0.3f;
         if (
-            !VRInput.Left.Tracked
-            || !VRInput.Right.Tracked
+            !l.Tracked
+            || !r.Tracked
             || !shove.Update(
-                VRInput.Left.Velocity.N(),
-                VRInput.Right.Velocity.N(),
+                l.Velocity.N(),
+                r.Velocity.N(),
                 open,
                 forward.normalized.N(),
                 out var dirTracking

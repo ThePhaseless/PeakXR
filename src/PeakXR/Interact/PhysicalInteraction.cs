@@ -732,6 +732,13 @@ internal static class PhysicalInteraction
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
 
+    /// <summary>A two-handed item counts as held in both hands: the free hand joined it, or one-handed play has no
+    /// second hand to join it with (Accessibility.OneHanded), so its use is never refused for want of one.</summary>
+    private static bool SecondHand => LocalHold.TwoHand || VRInput.OneHanded;
+
+    /// <summary>One-handed: this trigger pull started with the stick clicked in, so it is the secondary use.</summary>
+    private static bool secondaryChord;
+
     /// <summary>World release velocity: the hand's velocity relative to the body plus the body's own velocity.</summary>
     private static Vector3 ReleaseVelocity(Vector3 handVelocity, Character c)
     {
@@ -1585,13 +1592,26 @@ internal static class PhysicalInteraction
 
         // Use: the holding hand's trigger (right when empty-handed) is primary, the other trigger secondary.
         bool holding = Holding(c, out _);
-        var primaryHand = holding && LocalHold.ItemInLeftHand ? LeftHand : RightHand;
+        // One-handed, an empty hand's trigger is that hand's (it climbs), and the trigger pulled with the stick
+        // clicked in is the secondary use (use on a friend, Item.cs:819; the empty-hand reach, Character.cs:1200),
+        // latched for the whole pull.
+        bool one = VRInput.OneHanded;
+        var primaryHand =
+            holding ? (LocalHold.ItemInLeftHand ? LeftHand : RightHand)
+            : one && VRInput.LeftHanded ? LeftHand
+            : RightHand;
+        if (primaryHand.Trigger.Pressed)
+            secondaryChord = one && VRInput.Hand(primaryHand.Left).StickClick;
+        bool chord = one && secondaryChord;
         // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
         bool primaryDown =
             cfg.TriggerUse
             && primaryHand.Trigger.Held
+            && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
-        bool secondaryDown = cfg.TriggerUse && Other(primaryHand).Trigger.Held;
+        bool secondaryDown =
+            cfg.TriggerUse
+            && (one ? chord && primaryHand.Trigger.Held : Other(primaryHand).Trigger.Held);
 
         bool atMouth = false;
         var mouthHand = rig.Hand(primaryHand.Left);
@@ -1625,7 +1645,7 @@ internal static class PhysicalInteraction
         if (PrimaryEdge.Pressed && holding)
         {
             var held = c.data.currentItem;
-            bool handsOk = ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand);
+            bool handsOk = ItemHoldTable.CanUse(Hold.Profile.Handedness, SecondHand);
             // A press the game will not act on gets the denied cue instead of the success tick (a one-handed hold of
             // a two-handed item is denied below).
             if (!Affordance.Enabled)
@@ -1645,7 +1665,7 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
         }
 
-        if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand))
+        if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, SecondHand))
         {
             // Two-handed item held in one hand: carry only. Cancel a use that was in progress.
             bool wasUsing =

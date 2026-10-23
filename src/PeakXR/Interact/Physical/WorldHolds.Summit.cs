@@ -324,8 +324,12 @@ internal static partial class WorldHolds
             && pillarCollider != null
             && pillarCollider.enabled
             && rig != null
-            && PalmOn(c, rig, true)
-            && PalmOn(c, rig, false);
+            // One-handed play (Accessibility.OneHanded): the one palm is enough.
+            && (
+                VRInput.OneHanded
+                    ? PalmOn(c, rig, VRInput.LeftHanded)
+                    : PalmOn(c, rig, true) && PalmOn(c, rig, false)
+            );
         if (!Palms.Update(both ? 0f : 1f, Time.deltaTime))
             return;
         GestureRequests.Interact(pillar);

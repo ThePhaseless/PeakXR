@@ -84,7 +84,7 @@ internal static partial class WorldHolds
         Notices++;
         Affordance.Contact(true);
         Affordance.Contact(false);
-        Affordance.Inform(!VRInput.LeftHanded, at, DenyReason.HappenedHere, default);
+        Affordance.Inform(VRInput.OffHandLeft, at, DenyReason.HappenedHere, default);
     }
 
     /// <summary>ScoutCannon.RPCA_Light (ScoutCannon.cs:170, PunRPC on every client): the fuse caught; the shot
