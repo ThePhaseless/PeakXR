@@ -47,6 +47,10 @@ public class VRRig : MonoBehaviour
     /// calibration maps the seated head height to the avatar's standing eye height.</summary>
     public bool SeatedMode;
 
+    /// <summary>Seated downward reach gain (setting <c>Comfort.SeatedReachGain</c>, written by player.locomotion); the
+    /// camera feature applies it to the hand transforms (<see cref="SeatedReach"/>). 1 = off.</summary>
+    public float SeatedReachGain = 1f;
+
     /// <summary>Metres the first-person view rises above the body's eye point. player.locomotion sets it to the torso's
     /// drop while a physical crouch lowers the body, so the view stays at the real head; 0 otherwise.</summary>
     public float CrouchLift;

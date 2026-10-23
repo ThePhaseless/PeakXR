@@ -72,6 +72,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
         yield return Restoring("vr.157-spectate-point", Budget(15f), SpectatePointStep());
         yield return Restoring("vr.230-stoop-reach", Budget(10f), StoopReachStep());
+        yield return Restoring("vr.239-seated-floor-reach", Budget(10f), SeatedReachStep());
         yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
@@ -2257,6 +2258,87 @@ internal sealed partial class SelfTestRunner
             Fail("the avatar hand did not reach the low controller: " + note);
         else if (released)
             Fail("the apple left its hand weld: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.239: seated mode with the head 0.45 m below standing (the seated height recalibrates), the right controller
+    /// 0.1 m above the real floor, 0.4 m ahead: <see cref="SeatedReach"/> puts the rig hand within
+    /// <c>Interaction.GrabRadius</c> of an Apple on the ground under it, and never below the virtual floor.
+    /// </summary>
+    IEnumerator SeatedReachStep()
+    {
+        var rig = VRRig.Instance;
+        var setting = ComfortConfig.SeatedSetting;
+        if (setting == null || rig.SeatedMode || rig.SeatedReachGain <= 1f)
+        {
+            stepSkip =
+                "player.locomotion not installed, run already seated, or Comfort.SeatedReachGain 1";
+            yield break;
+        }
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float realFloor = XRRuntimeInfo.FloorTracking
+            ? 0f
+            : eye - HeightCalibration.DefaultStandingEyeHeight;
+        HeadFrame(out var head, out var forward, out _);
+        var rot = VRInput.HeadRotation;
+        bodyRestore = () =>
+        {
+            setting.Value = false;
+            ReleaseHead();
+            Despawn();
+        };
+        ScriptHead(new Vector3(head.x, eye - 0.45f, head.z), rot);
+        yield return null;
+        float before = rig.HeightOffset;
+        setting.Value = true;
+        yield return WaitFor(() => rig.HeightOffset > before + 0.3f, 3f);
+        float seatedEye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float virtualFloor = seatedEye - HeightCalibration.DefaultStandingEyeHeight;
+        var controller = new Vector3(head.x, realFloor + 0.1f, head.z) + forward * 0.4f;
+        SetHand(false, controller);
+        yield return Wait(0.3f);
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var top = rig.Origin.TransformPoint(new Vector3(controller.x, seatedEye, controller.z));
+        if (
+            apple == null
+            || !Physics.Raycast(
+                top,
+                Vector3.down,
+                out var ground,
+                6f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            Fail("no apple or no ground under the hand");
+            yield break;
+        }
+        yield return SpawnItem(apple, ground.point + Vector3.up * 0.05f);
+        if (!stepOk)
+            yield break;
+        var item = spawned[spawned.Count - 1].GetComponent<Item>();
+        if (item.rig != null)
+            item.rig.isKinematic = true;
+        yield return Wait(0.3f);
+        var hand = rig.RightHand.position;
+        float reach = float.MaxValue;
+        foreach (var col in item.GetComponentsInChildren<Collider>())
+        {
+            if (col.enabled && !col.isTrigger)
+                reach = Mathf.Min(reach, Vector3.Distance(hand, col.ClosestPoint(hand)));
+        }
+        float local = rig.RightHand.localPosition.y;
+        float grab = Interact.InteractConfig.Instance.GrabRadius;
+        var note = F(
+            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00})"
+        );
+        if (local < virtualFloor - 0.01f)
+            Fail("the hand went below the virtual floor: " + note);
+        else if (reach > grab)
+            Fail("a hand at the real floor cannot reach a ground item: " + note);
         else
             stepNote = note;
     }

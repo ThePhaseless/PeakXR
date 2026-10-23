@@ -30,6 +30,7 @@ internal static class ComfortConfig
     private static ConfigEntry<float> vignetteStart;
     private static ConfigEntry<float> vignetteFull;
     private static ConfigEntry<bool> seated;
+    private static ConfigEntry<float> seatedReachGain;
     private static bool applying;
 
     /// <summary>The preset in force before the current change, for <see cref="ComfortPresets.ChaseFollowAfter"/>.</summary>
@@ -44,6 +45,10 @@ internal static class ComfortConfig
     public static float VignetteStartSpeed => vignetteStart?.Value ?? 0.2f;
     public static float VignetteFullSpeed => vignetteFull?.Value ?? 2.5f;
     public static bool Seated => seated?.Value ?? false;
+    public static float SeatedReachGain => seatedReachGain?.Value ?? 1f;
+
+    /// <summary>The seated-mode entry itself, for the self-test (vr.239) to switch and put back.</summary>
+    internal static ConfigEntry<bool> SeatedSetting => seated;
 
     public static void Bind(ConfigFile file)
     {
@@ -137,6 +142,18 @@ internal static class ComfortConfig
             "SeatedMode",
             false,
             "Play sitting down: your seated head height becomes the character's standing eye height."
+        );
+        // shortcut: 2 is a first guess from the seated geometry (hips 0.7 m under the eyes, the virtual floor 0.45 m
+        // under the real one); tune it in a headset.
+        seatedReachGain = file.Bind(
+            s,
+            "SeatedReachGain",
+            2f,
+            new ConfigDescription(
+                "Seated mode only: below your hips, a lowered hand reaches this many times further down, so a hand "
+                    + "near the real floor reaches the ground in game. 1 turns it off.",
+                new AcceptableValueRange<float>(1f, 3f)
+            )
         );
 
         // Configs written before the vr-practices review: a preset still holding its old values moves to the new
