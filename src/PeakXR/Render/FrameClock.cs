@@ -108,6 +108,7 @@ internal static class FrameClock
     public static readonly Window Adapt = new();
 
     private static readonly RefreshTracker Refresh = new();
+    private static readonly RefreshLogGate LogGate = new();
 
     /// <summary>The refresh rate for budgets (<see cref="RefreshTracker"/>); 0 when no source gives a real one.</summary>
     public static float RefreshHz => Refresh.Hz;
@@ -130,7 +131,6 @@ internal static class FrameClock
     /// </summary>
     private static void PickRefresh()
     {
-        float before = Refresh.Hz;
         float device = FrameBudget.Sane(displayHz) ? 0f : DeviceHz();
         // The monitor is read only when no headset rate is known (an internal call, not needed every frame).
         float screen =
@@ -138,7 +138,7 @@ internal static class FrameClock
                 ? 0f
                 : (float)Screen.currentResolution.refreshRateRatio.value;
         float hz = Refresh.Update(displayHz, device, screen);
-        if (hz == before)
+        if (!LogGate.Due(hz, Refresh.Source, Time.unscaledTime))
             return;
         Plugin.Log.LogInfo(
             FormattableString.Invariant(

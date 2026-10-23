@@ -261,6 +261,17 @@ public class AdaptiveScaleTests
 public class RefreshTrackerTests
 {
     [Fact]
+    public void JitterAroundTheSessionRate_KeepsItExactly()
+    {
+        // Run 59: the display reported 72 Hz give or take a hair every frame, and each new value was a "change".
+        var t = new RefreshTracker();
+        t.Update(72.0003f, 0f, 0f);
+        Assert.Equal(72.0003f, t.Update(71.9997f, 0f, 0f));
+        Assert.Equal(72.0003f, t.Update(72.0004f, 0f, 0f));
+        Assert.Equal(RefreshSource.Display, t.Source);
+    }
+
+    [Fact]
     public void HeadsetRate_IsTrusted()
     {
         var t = new RefreshTracker();
@@ -343,4 +354,37 @@ public class RefreshTrackerTests
     [InlineData(241f, false)]
     public void Sane_IsAHeadsetRate(float hz, bool sane) =>
         Assert.Equal(sane, FrameBudget.Sane(hz));
+}
+
+public class RefreshLogGateTests
+{
+    [Fact]
+    public void LogsTheFirstRate_ThenOnlyRealChanges()
+    {
+        var g = new RefreshLogGate();
+        Assert.True(g.Due(72f, RefreshSource.Display, 0f));
+        Assert.False(g.Due(72f, RefreshSource.Display, 0.1f));
+        Assert.False(g.Due(72.2f, RefreshSource.Display, 0.2f));
+        Assert.True(g.Due(90f, RefreshSource.Display, 0.3f));
+    }
+
+    [Fact]
+    public void SourceFlipsAtTheSameRate_AtMostEveryTenSeconds()
+    {
+        var g = new RefreshLogGate();
+        g.Due(72f, RefreshSource.Display, 0f);
+        Assert.False(g.Due(72f, RefreshSource.LastGood, 1f));
+        Assert.False(g.Due(72f, RefreshSource.Display, 2f));
+        Assert.True(g.Due(72f, RefreshSource.LastGood, 10.5f));
+        Assert.False(g.Due(72f, RefreshSource.Display, 11f));
+    }
+
+    [Fact]
+    public void ARateChange_LogsAtOnceEvenRightAfterAFlip()
+    {
+        var g = new RefreshLogGate();
+        g.Due(72f, RefreshSource.Display, 0f);
+        Assert.True(g.Due(0f, RefreshSource.None, 0.5f));
+        Assert.True(g.Due(144f, RefreshSource.Screen, 0.6f));
+    }
 }
