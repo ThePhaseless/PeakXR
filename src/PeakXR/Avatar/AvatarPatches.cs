@@ -151,7 +151,9 @@ internal static class AvatarPatches
         private static void Postfix(CharacterItems __instance)
         {
             var c = itemsCharacter(__instance);
-            AvatarPoseDriver.Of(c)?.DestroyItemJoint();
+            var d = AvatarPoseDriver.Of(c);
+            d?.DestroyItemJoint();
+            d?.EndPassBody();
         }
     }
 

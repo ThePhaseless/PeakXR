@@ -102,6 +102,12 @@ public partial class AvatarPoseDriver
     /// <summary>The local held item currently follows the controller free of the ragdoll hand.</summary>
     internal bool HeldItemFree => weldGate.Released;
 
+    /// <summary>The free item whose colliders ignore this body's, and those colliders (local physics only).</summary>
+    private Item passItem;
+    private Collider[] passItemColliders;
+    private Collider[] bodyColliders;
+    private float freeLogAt;
+
     /// <summary>How much the tracked hands drive the arms now (0 while the game ragdolls the body, eased back in).
     /// Read by the self-test.</summary>
     internal float ArmWeight => armBlend.Weight;
@@ -964,6 +970,7 @@ public partial class AvatarPoseDriver
         {
             followItem = item;
             weldGate.Reset();
+            EndPassBody();
             haveLastTarget = false;
         }
         float dt = Time.fixedDeltaTime;
@@ -981,12 +988,14 @@ public partial class AvatarPoseDriver
             DestroyItemJoint();
             DestroyHandJoint(BodypartType.Hand_L, body);
             DestroyHandJoint(BodypartType.Hand_R, body);
+            PassBody(item);
         }
         else if (
             HandBoneOnItem(item, left, out var bonePos, out _)
             && !weldGate.Update(Vector3.Distance(HandBody(left).position, bonePos), dt)
         )
         {
+            EndPassBody();
             AttachToHoldingHand(item);
             lastTarget = target;
             haveLastTarget = true;
@@ -999,7 +1008,78 @@ public partial class AvatarPoseDriver
             .Velocity(body.position.N(), target.N(), handVelocity.N(), dt)
             .U();
         body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
+        if (Time.unscaledTime >= freeLogAt)
+        {
+            freeLogAt = Time.unscaledTime + 0.5f;
+            // Whether a free item that lags sits against the world: its target inside terrain or props.
+            bool blocked = Physics.CheckSphere(
+                target,
+                0.03f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[avatar.local] {item.name} free of the hand: {HeldItemGap:0.00} m from its place, speed {body.linearVelocity.magnitude:0.0} m/s, target in geometry {blocked}"
+                )
+            );
+        }
         return true;
+    }
+
+    /// <summary>
+    /// A free held item passes through its holder's own body, as a real hand carries a torch past its own hip: the
+    /// scout's colliders are far larger than a person (the 0.38 m head sphere, a wide torso), so a free torch held
+    /// low beside the body was pinned 0.2-0.35 m off its hand (vr52, vr.88). Local physics only; undone when the item
+    /// rejoins the hand or leaves it (<see cref="EndPassBody"/>).
+    /// </summary>
+    private void PassBody(Item item)
+    {
+        EndPassBody();
+        if (bodyColliders == null)
+        {
+            var all = new System.Collections.Generic.List<Collider>();
+            foreach (var part in Owner.refs.ragdoll.partList)
+            {
+                if (part == null)
+                    continue;
+                foreach (var col in part.GetComponentsInChildren<Collider>())
+                {
+                    if (!col.isTrigger)
+                        all.Add(col);
+                }
+            }
+            bodyColliders = all.ToArray();
+        }
+        passItem = item;
+        passItemColliders = item.GetComponentsInChildren<Collider>();
+        SetPass(true);
+    }
+
+    /// <summary>Restores collisions between the last free item and the body. Also run when the item is unattached
+    /// (dropped, thrown, switched), from the UnAttachItem patch.</summary>
+    internal void EndPassBody()
+    {
+        if (passItem != null)
+            SetPass(false);
+        passItem = null;
+        passItemColliders = null;
+    }
+
+    private void SetPass(bool ignore)
+    {
+        if (passItemColliders == null || bodyColliders == null)
+            return;
+        foreach (var a in passItemColliders)
+        {
+            if (a == null || a.isTrigger)
+                continue;
+            foreach (var b in bodyColliders)
+            {
+                if (b != null)
+                    Physics.IgnoreCollision(a, b, ignore);
+            }
+        }
     }
 
     /// <summary>
