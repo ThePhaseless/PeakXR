@@ -182,7 +182,10 @@ internal sealed partial class SelfTestRunner
         rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(wall.normal), Vector3.up));
         yield return Wait(0.6f);
         bool left = VRInput.LeftHanded;
-        if (!WallInFront(c, wall, 0.1f, out var hit))
+        // A lunge starts from a hold up by the head: the arm then flings up and lets go above the shoulder
+        // (LungeIntent). Run 58 held at the chest, and the 0.25 s of rising grip before the release pushed the body
+        // down the wall until the climb broke.
+        if (!WallInFront(c, wall, LungeHoldUp, out var hit))
         {
             Fail($"wall not in front after the warp (wall {wall.point}, body {c.Center})");
             yield return LetGoAll(c);
@@ -1186,10 +1189,13 @@ internal sealed partial class SelfTestRunner
     Vector3 WallHold => wallFace.point + wallFace.normal * 0.04f;
 
     /// <summary>The hand closes on <see cref="wallFace"/> and the grip climb starts; fails the step otherwise.</summary>
-    IEnumerator GripWall(bool left)
+    IEnumerator GripWall(bool left, float up = 0f)
     {
         var c = Character.localCharacter;
         var hold = WallHold;
+        // A higher hold on the same face, <paramref name="up"/> above the body centre (a lunge's, by the head).
+        if (up > 0f && WallInFront(c, wallBase, up, out var higher))
+            hold = higher.point + higher.normal * 0.04f;
         yield return MoveTo(left, () => hold, 0.5f);
         if (OverReach(left) is { } far)
         {
@@ -1331,7 +1337,10 @@ internal sealed partial class SelfTestRunner
         }
         bool InWorld() => item != null && item.gameObject.activeInHierarchy;
         bool left = false;
-        var aim = item.Center();
+        // Aim at the Apple's visible top, as a player points at what they see. Its centre can sit below the uneven
+        // ground it settled into (the run-50 ground pickups): the game's interact line then meets the ground first,
+        // and its sphere-cast fallback stops there (Interaction.cs:214-241), so run 58 hovered nothing.
+        var aim = TopOf(item);
         yield return PingCooldownOver(pinger);
         yield return FingerGunAim(left, aim, 1f);
         // The precondition that makes the step mean something: a pointed interact could reach the Apple. The hand's
@@ -1392,14 +1401,42 @@ internal sealed partial class SelfTestRunner
         bool taken = Holding(apple);
         bool pinged = Interact.Ping.PingInput.LastPinged(pinger) != pingBefore;
         var hovered = Interaction.instance != null ? Interaction.instance.currentHovered : null;
+        // What the hand's own aim line meets first, the way the game's interact line runs from it.
+        var aimPose = rig.Aim(left);
+        string first =
+            aimPose != null
+            && Physics.Raycast(
+                aimPose.position,
+                aimPose.forward,
+                out var firstHit,
+                4f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                QueryTriggerInteraction.Collide
+            )
+                ? F($"{firstHit.collider.name} at {firstHit.distance:0.00} m")
+                : "nothing";
         Script(left).StickTouch = false;
         note += F(
-            $"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}, hovered {(hovered is UnityEngine.Object o && o != null ? o.name : "nothing")}, {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            $"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}, hovered {(hovered is UnityEngine.Object o && o != null ? o.name : "nothing")}, aim line meets {first}, aim hand {PeakXR.Interact.PhysicalInteraction.AimHand}, {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (!taken || pinged)
             Fail("a pointed grip with the thumb resting did not interact cleanly: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>A point near the top of an item's solid colliders, where the eye sees it on the ground.</summary>
+    static Vector3 TopOf(Item item)
+    {
+        foreach (var col in item.colliders)
+        {
+            if (col != null && col.enabled && !col.isTrigger)
+            {
+                var b = col.bounds;
+                return b.center + Vector3.up * (0.7f * b.extents.y);
+            }
+        }
+        return item.Center();
     }
 
     /// <summary>
@@ -1644,22 +1681,31 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator FlingRelease(bool left, Vector3 from, float speed)
     {
+        // A real fling lets go early: the grip opens as the hand passes the shoulder (or after 0.12 s at the latest),
+        // so the rising grip barely pushes the body down, and the arm carries on up past the confirm delay.
         float start = Now;
-        float release = 0.25f;
+        float released = float.MaxValue;
         while (true)
         {
             float t = Now - start;
-            SetHand(left, from + Vector3.up * (speed * Mathf.Min(t, release + 0.15f)));
-            if (t >= release && Script(left).Grip > 0f)
+            SetHand(left, from + Vector3.up * (speed * t));
+            bool atShoulder =
+                VRInput.HeadPosition.y - Script(left).Position.y
+                <= LungeIntent.ShoulderDrop - 0.05f;
+            if (released == float.MaxValue && (atShoulder || t >= 0.12f))
             {
                 Script(left).Grip = 0f;
                 flingReleaseY = Character.localCharacter.Center.y;
+                released = t;
             }
-            if (t >= release + 0.15f)
+            if (t >= released + 0.25f)
                 yield break;
             yield return null;
         }
     }
+
+    /// <summary>How far above the body centre a lunge's hold sits: about head height.</summary>
+    const float LungeHoldUp = 0.5f;
 
     /// <summary>
     /// vr.46c (external review #16): a brisk reach never lunges. Climbing on one hand, that hand lets go at chest height
@@ -1870,7 +1916,7 @@ internal sealed partial class SelfTestRunner
         if (!wallReady)
             yield break;
         bool left = VRInput.LeftHanded;
-        yield return GripWall(left);
+        yield return GripWall(left, LungeHoldUp);
         if (!stepOk)
         {
             yield return LetGoAll(c);
