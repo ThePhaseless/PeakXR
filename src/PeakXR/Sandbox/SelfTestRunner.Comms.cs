@@ -378,7 +378,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.185: holding a menu button for <c>Camera.RecenterHoldSeconds</c> recenters the view (RigDriver's recenter
     /// hold, <c>VRRig.Recentered</c>), not before the hold time, and letting go does not also pause (the pause binding
-    /// is a tap, ActionMapper.MenuHoldSeconds).
+    /// is a tap, ActionMapper.MenuHoldSeconds). Mid-hold the progress ring sits just above the held (left) controller,
+    /// not head-locked.
     /// </summary>
     IEnumerator MenuRecenterStep()
     {
@@ -400,6 +401,11 @@ internal sealed partial class SelfTestRunner
             Script(true).Menu = true;
             yield return Wait(hold * 0.6f);
             bool early = recentered > 0;
+            var cue = PeakXR.Rig.RigDriver.RecenterCue;
+            bool ringShown = cue != null && cue.Visible;
+            float ringToHand = ringShown
+                ? Vector3.Distance(cue.Position, rig.Hand(true).position)
+                : -1f;
             yield return WaitFor(() => recentered > 0, hold * 0.4f + 1.5f);
             Script(true).Menu = false;
             // A pause that would open on the release.
@@ -410,8 +416,13 @@ internal sealed partial class SelfTestRunner
                 Fail($"holding the menu button {hold + 1.5f:0.0} s did not recenter");
             else if (GUIManager.InPauseMenu)
                 Fail("the recenter hold also opened the pause menu");
+            else if (!ringShown)
+                Fail("no recenter hold ring mid-hold");
+            else if (ringToHand > 0.15f)
+                Fail($"the recenter hold ring sat {ringToHand:0.00} m from the held controller");
             else
-                stepNote = $"recentered after the {hold:0.0} s menu hold, no pause";
+                stepNote =
+                    $"recentered after the {hold:0.0} s menu hold, no pause; ring {ringToHand:0.00} m from the left controller";
         }
         finally
         {
