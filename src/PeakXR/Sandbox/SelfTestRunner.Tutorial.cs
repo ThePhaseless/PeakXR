@@ -300,7 +300,8 @@ internal sealed partial class SelfTestRunner
     {
         yield return HandStep("vr.121-prompt-glyphs", 25f, PromptGlyphStep());
         yield return HandStep("vr.125-hold-glyph", 40f, HoldGlyphStep());
-        yield return HandStep("vr.133-target-names", 25f, TargetNamesStep());
+        yield return HandStep("vr.133-target-names", 25f, TargetNamesStep(false));
+        yield return HandStep("vr.221-colorblind-names", 25f, TargetNamesStep(true));
         yield return WarpBack();
     }
 
@@ -531,8 +532,10 @@ internal sealed partial class SelfTestRunner
     /// the game's highlight (<c>_Interactable</c> 1, Item.cs:1147) and, by default (<c>UI.TargetNames</c> off), no
     /// name shows; the hand moved away turns the glow off (Item.HoverExit, :1155). With <c>UI.TargetNames</c> on, the
     /// Apple on the head's ray shows its name.
+    /// vr.221 (<paramref name="colourBlind"/>): with <c>UI.TargetNames</c> off and <c>UI.ColorBlindNames</c> On (as the
+    /// game's colour-blind mode does with FollowGame), the Apple on the head's ray shows its name.
     /// </summary>
-    IEnumerator TargetNamesStep()
+    IEnumerator TargetNamesStep(bool colourBlind)
     {
         if (!SpatialFeature.Settings.TargetPrompt.Value)
         {
@@ -565,58 +568,85 @@ internal sealed partial class SelfTestRunner
         var gui = GUIManager.instance;
         var names = SpatialFeature.Settings.TargetNames;
         bool namesWas = names.Value;
+        var cb = SpatialFeature.Settings.ColorBlindNames;
+        var cbWas = cb.Value;
         var fails = new List<string>();
         var notes = new List<string>();
         try
         {
             names.Value = false;
-            yield return Wait(0.3f);
-            float before = Glow(world);
-            var restAt = Script(false).Position;
-            yield return MoveTo(false, () => world != null ? world.Center() : spot, 0.5f);
-            yield return Wait(0.3f);
-            float reached = Glow(world);
-            bool headHover = ReferenceEquals(Interaction.instance.currentHovered, world);
-            bool named = headHover && NameShown(gui);
-            notes.Add(
-                $"glow {before:0.##} before, {reached:0.##} at the hand (head hover {headHover}), name shown {named}"
-            );
-            if (reached < 0.5f)
-                fails.Add("the Apple at the empty hand does not glow (_Interactable 0)");
-            if (named)
-                fails.Add("the Apple's name shows with UI.TargetNames off");
-            yield return ShotAt("vr-133-target-names", world.Center());
-            yield return MoveTrack(false, restAt, 0.3f);
-            yield return Wait(0.3f);
-            float left = Glow(world);
-            notes.Add($"glow {left:0.##} after the hand left");
-            if (!ReferenceEquals(Interaction.instance.currentHovered, world) && left > 0.5f)
-                fails.Add("the Apple still glows after the hand left");
+            // Names off means off here, whatever the game's colour-blind setting says.
+            cb.Value = ColorBlindNames.Off;
+            if (colourBlind)
+            {
+                cb.Value = ColorBlindNames.On;
+                yield return HoverOnHeadRay(world, head);
+                bool cbShown = NameShown(gui);
+                notes.Add($"UI.TargetNames off, UI.ColorBlindNames On: name shown {cbShown}");
+                if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+                    fails.Add("the Apple never became the hovered target");
+                else if (!cbShown)
+                    fails.Add("no name in colour-blind mode");
+                yield return ShotAt("vr-221-colorblind-names", world.Center());
+            }
+            else
+            {
+                yield return Wait(0.3f);
+                float before = Glow(world);
+                var restAt = Script(false).Position;
+                yield return MoveTo(false, () => world != null ? world.Center() : spot, 0.5f);
+                yield return Wait(0.3f);
+                float reached = Glow(world);
+                bool headHover = ReferenceEquals(Interaction.instance.currentHovered, world);
+                bool named = headHover && NameShown(gui);
+                notes.Add(
+                    $"glow {before:0.##} before, {reached:0.##} at the hand (head hover {headHover}), name shown {named}"
+                );
+                if (reached < 0.5f)
+                    fails.Add("the Apple at the empty hand does not glow (_Interactable 0)");
+                if (named)
+                    fails.Add("the Apple's name shows with UI.TargetNames off");
+                yield return ShotAt("vr-133-target-names", world.Center());
+                yield return MoveTrack(false, restAt, 0.3f);
+                yield return Wait(0.3f);
+                float left = Glow(world);
+                notes.Add($"glow {left:0.##} after the hand left");
+                if (!ReferenceEquals(Interaction.instance.currentHovered, world) && left > 0.5f)
+                    fails.Add("the Apple still glows after the hand left");
 
-            names.Value = true;
-            float until = Now + 5f;
-            while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
+                names.Value = true;
+                yield return HoverOnHeadRay(world, head);
+                bool shown = NameShown(gui);
+                notes.Add($"UI.TargetNames on: name shown {shown}");
+                if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+                    fails.Add("the Apple never became the hovered target");
+                else if (!shown)
+                    fails.Add("no name with UI.TargetNames on");
             }
-            for (float t = Now + 0.4f; Now < t; )
-            {
-                HoldOnHeadRay(world, head);
-                yield return null;
-            }
-            bool shown = NameShown(gui);
-            notes.Add($"UI.TargetNames on: name shown {shown}");
-            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
-                fails.Add("the Apple never became the hovered target");
-            else if (!shown)
-                fails.Add("no name with UI.TargetNames on");
         }
         finally
         {
             names.Value = namesWas;
+            cb.Value = cbWas;
         }
         Conclude(fails, notes);
+    }
+
+    /// <summary>Holds <paramref name="world"/> on the head's ray until it is the hovered target (5 s at most), then
+    /// 0.4 s more for the prompt to settle.</summary>
+    static IEnumerator HoverOnHeadRay(Item world, Transform head)
+    {
+        float until = Now + 5f;
+        while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        for (float t = Now + 0.4f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
     }
 
     /// <summary>The target name is drawn: the game shows it (GUIManager.cs:1050) and ui.spatial has not hidden it.</summary>

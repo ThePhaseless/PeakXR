@@ -77,6 +77,13 @@ internal sealed class TrackedCanvas
     public readonly List<Graphic> PendingDimmers = new();
     public readonly List<TMPro.TMP_Text> HaloTexts = new();
     public readonly List<Material> HaloOriginals = new();
+
+    /// <summary>The dark plate behind the menu (<see cref="BackplateView"/>), null until first fitted.</summary>
+    public Image Plate;
+
+    /// <summary>What the plate was last fitted around, in canvas pixels about the pivot (self-test).</summary>
+    public Vector2 PlateContentMin,
+        PlateContentMax;
 }
 
 /// <summary>
@@ -329,6 +336,7 @@ internal static class WorldCanvases
         t.Canvas.worldCamera = t.OriginalCamera;
         t.Rect.localScale = t.OriginalScale;
         BackdropStrip.Restore(t, panelsOnly: false);
+        BackplateView.Remove(t);
         t.Converted = false;
         if (t.Kind == CanvasKind.Names)
             ResetNameTags(t.Canvas);
@@ -732,17 +740,29 @@ internal static class WorldCanvases
         var bounds = t.Rect.rect;
         var min = new Vector2(float.MaxValue, float.MaxValue);
         var max = new Vector2(float.MinValue, float.MinValue);
+        // The plate's own bounds: only what still draws (hidden backdrops are out), open dropdown lists included.
+        var plateMin = min;
+        var plateMax = max;
         t.Canvas.GetComponentsInChildren(false, graphics);
         foreach (var g in graphics)
         {
-            if (!g.isActiveAndEnabled || g.color.a < 0.01f || IsPopup(t, g))
+            if (!g.isActiveAndEnabled || g.color.a < 0.01f || g == t.Plate)
                 continue;
             if (!Clip(t, g, bounds, out var lo, out var hi) || CoversCanvas(bounds, lo, hi))
+                continue;
+            if (BackplateView.Counts(t, g))
+            {
+                plateMin = Vector2.Min(plateMin, lo);
+                plateMax = Vector2.Max(plateMax, hi);
+            }
+            if (IsPopup(t, g))
                 continue;
             min = Vector2.Min(min, lo);
             max = Vector2.Max(max, hi);
         }
         graphics.Clear();
+        if (t.Strip)
+            BackplateView.Apply(t, plateMin, plateMax);
         if (max.x <= min.x)
         {
             t.ContentSize = bounds.size;
@@ -818,6 +838,42 @@ internal static class WorldCanvases
         var content = t.ScrollContent;
         t.ScrollContent = null;
         BackdropStrip.Scan(t, !UIWorldFeature.Settings.MenuPanels.Value, content);
+    }
+
+    /// <summary>UI.MenuBackplate or its opacity changed: refit every open menu's plate next frame.</summary>
+    public static void OnBackplateChanged()
+    {
+        foreach (var t in tracked)
+            t.NextMeasure = 0f;
+    }
+
+    /// <summary>A menu's plate and what it was fitted around, in canvas pixels about the pivot (self-test). False when
+    /// the canvas has no plate on show.</summary>
+    public static bool TryBackplate(
+        Canvas root,
+        out Rect plate,
+        out Vector2 contentMin,
+        out Vector2 contentMax,
+        out Vector2 canvasSize,
+        out bool raycastTarget
+    )
+    {
+        plate = default;
+        contentMin = contentMax = canvasSize = default;
+        raycastTarget = false;
+        var id = root.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id && t.Plate != null && t.Plate.isActiveAndEnabled)
+            {
+                var rt = t.Plate.rectTransform;
+                plate = new Rect(rt.anchoredPosition - rt.sizeDelta * 0.5f, rt.sizeDelta);
+                contentMin = t.PlateContentMin;
+                contentMax = t.PlateContentMax;
+                canvasSize = t.Rect.rect.size;
+                raycastTarget = t.Plate.raycastTarget;
+                return true;
+            }
+        return false;
     }
 
     /// <summary>UI.MenuPanels changed: show or hide the panels on every converted menu at once.</summary>
