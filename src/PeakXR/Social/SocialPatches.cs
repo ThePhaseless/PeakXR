@@ -62,8 +62,10 @@ internal static class SocialPatches
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(CharacterInput __instance)
         {
-            if (IsLocal(__instance, out var c))
-                SocialHands.Instance.GuardGiveUp(c, __instance);
+            if (!IsLocal(__instance, out var c))
+                return;
+            SocialHands.Instance.GuardGiveUp(c, __instance);
+            SocialHands.Instance.GuardHandOver(__instance);
         }
     }
 

@@ -950,9 +950,13 @@ internal sealed partial class SelfTestRunner
         // lost grip also takes the item from the hand, and only this tells them apart.
         float consumedBefore = c.data.lastConsumedItem;
         yield return GripTo(left, 1f, 0.1f);
-        // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head.
-        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 6f);
+        // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and 2 s
+        // held there first. A hand-over (SocialHands.UpdateFeed, HandOver): the food rests at the mouth for 2 s with
+        // the trigger up and must not be given (external review row 9), then the trigger squeeze gives it.
+        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 8f);
         float best = float.MaxValue;
+        float atMouth = 0f;
+        bool proximityFed = false;
         while (
             item != null
             && HeldItem() == item
@@ -961,8 +965,14 @@ internal sealed partial class SelfTestRunner
             && c.data.lastConsumedItem == consumedBefore
         )
         {
-            var miss = host.Head - item.Center();
+            var mouth = HostPart(host, BodypartType.Head);
+            var miss = mouth - item.Center();
             best = Mathf.Min(best, miss.magnitude);
+            atMouth = miss.magnitude <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            bool squeeze = atMouth >= 2f;
+            if (!squeeze && item.isUsingSecondary)
+                proximityFed = true;
+            Script(left).Trigger = squeeze ? 1f : 0f;
             var goal = Script(left).Position + rig.Origin.InverseTransformVector(miss);
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
             goal =
@@ -976,8 +986,11 @@ internal sealed partial class SelfTestRunner
             );
             yield return null;
         }
-        var note = $"item closest {best:0.00} m to the host's head";
-        if (c.data.lastConsumedItem == consumedBefore)
+        Script(left).Trigger = 0f;
+        var note = $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth";
+        if (proximityFed)
+            Fail("the feed started with the trigger up, by proximity alone: " + note);
+        else if (c.data.lastConsumedItem == consumedBefore)
             Fail(
                 (item != null && HeldItem() == item ? "not fed: " : "item left the hand unfed: ")
                     + note
@@ -1485,11 +1498,20 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         LookAtHand(left);
         float mark = CueMark();
-        float end = Now + 4f;
+        // A hand-over (HandOver): 1 s resting at the mouth with the trigger up refuses nothing (no feed was tried),
+        // then the trigger squeeze is refused.
+        float end = Now + 6f;
         float best = float.MaxValue;
+        float atMouth = 0f;
+        bool proximityRefused = false;
         while (Now < end && HeldItem() == item)
         {
             best = Mathf.Min(best, Vector3.Distance(item.Center(), Mouth()));
+            atMouth = best <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            bool squeeze = atMouth >= 1f;
+            if (!squeeze && CueLog.Capture.Fired(left, DenyReason.CantUse, mark, false, out _))
+                proximityRefused = true;
+            Script(left).Trigger = squeeze ? 1f : 0f;
             var goal =
                 Script(left).Position + rig.Origin.InverseTransformVector(Mouth() - item.Center());
             goal =
@@ -1505,9 +1527,17 @@ internal sealed partial class SelfTestRunner
                 break;
             yield return null;
         }
+        Script(left).Trigger = 0f;
+        if (proximityRefused)
+        {
+            Fail($"{item.name} was refused with the trigger up, before any feed was tried");
+            yield break;
+        }
         bool fired = CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _);
         if (!fired)
-            Note($"{item.name} came within {best:0.00} m of the host's head");
+            Note(
+                $"{item.name} came within {best:0.00} m of the host's head, {atMouth:0.0} s at the mouth"
+            );
         yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0f);
         if (stepOk)
             stepNote = $"{item.name} at the host's mouth refused; {cueNote}";

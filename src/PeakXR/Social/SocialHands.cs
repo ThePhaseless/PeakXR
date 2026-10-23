@@ -23,11 +23,7 @@ internal sealed class SocialHands : IGripExtension
 
     private const float FeedRadius = 0.22f;
     private const float FeedExitRadius = 0.3f;
-    private const float FeedDwell = 0.25f;
     private const float GraspPulseInterval = 0.3f;
-
-    /// <summary>A non-feedable item held this long at a friend's mouth is a refused feed, not a passing hand.</summary>
-    private const float FeedRefuseDwell = 0.5f;
 
     /// <summary>How far (m) the hand pulls away from a gripped thorn before the game's removal hold starts.</summary>
     private const float PluckPull = 0.08f;
@@ -59,8 +55,6 @@ internal sealed class SocialHands : IGripExtension
     private readonly ShoveGesture shove = new();
 
     private Character feedCandidate;
-    private float feedTimer;
-    private bool feedRefused;
     private bool wasSticky;
     private float lastGraspPulse = -10f;
     private readonly float[] carryAlone = new float[2];
@@ -697,6 +691,17 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
     /// which speeds up dying (Character.cs:1174). Both grips and both triggers give up on purpose; a single grip says
     /// so, and holding all four ramps on both hands as the death timer fills.</summary>
+    /// <summary>Last <c>CharacterInput.Sample</c> postfix: while the item is at a friend's mouth or chest, its trigger
+    /// is the hand-over's squeeze, so it must not also start the item's own use (eating it yourself,
+    /// usePrimary).</summary>
+    public void GuardHandOver(CharacterInput input)
+    {
+        if (!VRSession.Active || !handOver.SuppressPrimary)
+            return;
+        input.usePrimaryWasPressed = false;
+        input.usePrimaryIsPressed = false;
+    }
+
     public void GuardGiveUp(Character c, CharacterInput input)
     {
         if (!VRSession.Active || !SocialConfig.Instance.GiveUpGuard || !c.data.fullyPassedOut)
@@ -869,8 +874,13 @@ internal sealed class SocialHands : IGripExtension
         return best;
     }
 
-    /// <summary>Feed: a canUseOnFriend item held at another player's head (a healing item: at their torso) for a
-    /// moment. Any other item held there is refused (CharacterInteractible.HasItemCanUseOnFriend, :90).</summary>
+    /// <summary>
+    /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item brought to another player's head
+    /// (a healing item: their torso), then the holding hand's trigger squeezed, holds the game's use-on-friend while
+    /// the trigger stays down. Proximity alone never uses it (external review row 9: standing close to a friend
+    /// spent a bandage). A teal ring marks the mouth or chest while in range; any other item there is refused on the
+    /// squeeze, not on proximity (CharacterInteractible.HasItemCanUseOnFriend, :90).
+    /// </summary>
     private bool UpdateFeed(Character c, float dt)
     {
         var item = c.data.currentItem;
@@ -898,29 +908,50 @@ internal sealed class SocialHands : IGripExtension
         if (feedCandidate == null)
         {
             feedCandidate = NearestPart(c, part, point, FeedRadius + grow);
-            feedTimer = 0f;
             if (feedCandidate == null)
+            {
+                handOver.Reset();
+                return false;
+            }
+        }
+        bool left = LocalHold.ItemInLeftHand;
+        bool usable = item.canUseOnFriend && feedCandidate.refs.interactible != null;
+        var state = handOver.Update(true, VRInput.Hand(left).Trigger > HandOverTrigger, usable);
+        if (usable)
+            FeedTarget = feedCandidate.refs.interactible;
+        var spot = PartPosition(feedCandidate, part, point);
+        switch (state)
+        {
+            case HandOverState.Hint:
+                Affordance.Mark(left, spot, DenyReason.NeedsFriend, DenyHint.At(spot));
+                return false;
+            case HandOverState.Refuse:
+                Affordance.Deny(left, point, DenyReason.CantUse, default, item);
+                return false;
+            case HandOverState.Apply:
+                return FeedTarget != null;
+            default:
                 return false;
         }
-        feedTimer += dt;
-        if (!item.canUseOnFriend)
-        {
-            if (!feedRefused && feedTimer >= FeedRefuseDwell)
-            {
-                feedRefused = true;
-                Affordance.Deny(LocalHold.ItemInLeftHand, point, DenyReason.CantUse, default, item);
-            }
-            return false;
-        }
-        FeedTarget = feedCandidate.refs.interactible;
-        return feedTimer >= FeedDwell && FeedTarget != null;
     }
+
+    /// <summary>Trigger value that counts as the hand-over squeeze.</summary>
+    private const float HandOverTrigger = 0.6f;
+
+    private readonly HandOver handOver = new();
+
+    /// <summary>The hand-over owns the holding hand's trigger this frame (<see cref="HandOver.SuppressPrimary"/>).</summary>
+    public bool HandOverOwnsTrigger => handOver.SuppressPrimary;
+
+    private static Vector3 PartPosition(Character ch, BodypartType part, Vector3 fallback) =>
+        ch.refs.ragdoll != null && ch.refs.ragdoll.partDict.TryGetValue(part, out var body)
+            ? body.transform.position
+            : fallback;
 
     private void ResetFeed()
     {
         feedCandidate = null;
-        feedTimer = 0f;
-        feedRefused = false;
+        handOver.Reset();
     }
 
     private static bool NearPart(Character ch, BodypartType part, Vector3 point, float radius)
