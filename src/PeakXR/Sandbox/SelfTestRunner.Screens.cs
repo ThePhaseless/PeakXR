@@ -923,11 +923,15 @@ internal sealed partial class SelfTestRunner
         int hidden = 0;
         var corners = new Vector3[4];
         ((RectTransform)pass.panel.transform).GetWorldCorners(corners);
-        foreach (var corner in corners)
-            if (Blocked(eye, Vector3.Lerp(corner, at, 0.05f), null))
-                hidden++;
+        // A pass ui.world draws over the scene cannot be hidden by geometry: run 51's frame shows it whole over the
+        // kiosk's screen while one corner's line of sight met that screen. Only a pass drawn in depth is judged.
+        bool onTop = UI.Common.OnTop.AllOnTop(pass.panel.transform);
+        if (!onTop)
+            foreach (var corner in corners)
+                if (Blocked(eye, Vector3.Lerp(corner, at, 0.05f), null))
+                    hidden++;
         stepNote =
-            $"{kioskNote}; boarding pass {Vector3.Distance(eye, at):0.0} m from the eye, {hidden}/4 corners hidden by geometry";
+            $"{kioskNote}; boarding pass {Vector3.Distance(eye, at):0.0} m from the eye, drawn on top {onTop}, {hidden}/4 corners hidden by geometry";
         yield return ShotAt("vr-71-kiosk", at);
         if (hidden > 0)
             Fail($"the docked boarding pass is partly hidden: {stepNote}");
@@ -1126,6 +1130,39 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var touch = face.point + face.normal * 0.02f;
+        // The stand-off is from the kiosk's bounds, which its top overhangs: at hand height the face can sit 0.96 m
+        // out (run 51, vr.116: 1.014 m from the eye). Step in until it is 0.5 m ahead, as a player does.
+        var gap = touch - eye;
+        gap.y = 0f;
+        if (gap.magnitude > 0.6f)
+        {
+            // Not WarpTo: its ground ray starts 3 m up, which can be above the airport roof (as ToKiosk).
+            var to = c.Center + gap.normalized * (gap.magnitude - 0.5f);
+            if (
+                Physics.Raycast(
+                    to,
+                    Vector3.down,
+                    out var floor,
+                    3f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                to = floor.point;
+            warpedForProp = true;
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                Photon.Pun.RpcTarget.All,
+                to + Vector3.up * 0.1f,
+                false
+            );
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1f);
+            rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), gap.normalized, Vector3.up));
+            yield return Wait(0.6f);
+            kioskNote += F($", stepped {gap.magnitude - 0.5f:0.00} m in to reach the face");
+        }
         bool left = VRInput.LeftHanded;
         yield return MoveTo(left, () => touch, 0.5f);
         if (OverReach(left) is { } far)

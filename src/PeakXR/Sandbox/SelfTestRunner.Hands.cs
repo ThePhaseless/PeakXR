@@ -152,17 +152,31 @@ internal sealed partial class SelfTestRunner
     static Vector3 GroundAhead(float outward)
     {
         var head = VRRig.Instance.Head;
-        var ahead = head.position + Flat(head.forward) * outward;
-        return Physics.Raycast(
-            ahead + Vector3.up * 0.5f,
-            Vector3.down,
-            out var ground,
-            4f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? ground.point + Vector3.up * 0.08f
-            : ahead;
+        var c = Character.localCharacter;
+        // Ground level with the feet, the view's heading first, then 45 degrees either side in turn: run 51's spot
+        // ahead was a drop, the Apple came to rest 3 m under the eye and no squat could reach it.
+        float feet = c != null ? Feet(c).y : head.position.y - 1.6f;
+        var start = Flat(head.forward);
+        for (int i = 0; i < 8; i++)
+        {
+            float yaw = (i + 1) / 2 * 45f * (i % 2 == 0 ? 1f : -1f);
+            var ahead = head.position + Quaternion.Euler(0f, yaw, 0f) * start * outward;
+            if (
+                Physics.Raycast(
+                    new Vector3(ahead.x, feet + 0.6f, ahead.z),
+                    Vector3.down,
+                    out var ground,
+                    1.2f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && Mathf.Abs(ground.point.y - feet) <= 0.3f
+            )
+                return ground.point + Vector3.up * 0.08f;
+        }
+        var fallback = head.position + start * outward;
+        fallback.y = feet + 0.08f;
+        return fallback;
     }
 
     /// <summary>

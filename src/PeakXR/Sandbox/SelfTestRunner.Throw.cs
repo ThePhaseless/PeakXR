@@ -47,6 +47,43 @@ internal sealed partial class SelfTestRunner
     /// Turns the view to the first of eight headings (the current one first, then alternately 45 degrees either
     /// side) with nothing within <see cref="ThrowClear"/> of the eye level or 10 degrees above it, and says which.
     /// </summary>
+    /// <summary>
+    /// Something under eye level the thrown item would meet before it lands 3 m out: ground rising more than 0.3 m
+    /// above the feet within 3 m, or anything on the falling line from the release point to 3 m out just over the
+    /// ground. Run 51: a face rising 0.5 m off the ground 2.1 m ahead stopped the throw at 2.0 m, and the eye-level
+    /// rays passed over it.
+    /// </summary>
+    static bool LowObstacle(Vector3 eye, Vector3 dir)
+    {
+        var c = Character.localCharacter;
+        float feet = c != null ? Feet(c).y : eye.y - 1.6f;
+        for (float d = 0.75f; d <= 3f; d += 0.75f)
+        {
+            var at = eye + dir * d;
+            if (
+                Physics.Raycast(
+                    new Vector3(at.x, feet + 2f, at.z),
+                    Vector3.down,
+                    out var ground,
+                    3f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && ground.point.y > feet + 0.3f
+            )
+                return true;
+        }
+        var release = eye + dir * 0.3f + Vector3.down * 0.2f;
+        var landing = eye + dir * 3f;
+        landing.y = feet + 0.2f;
+        return Physics.Linecast(
+            release,
+            landing,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
     static string FaceOpenThrow()
     {
         var rig = VRRig.Instance;
@@ -71,7 +108,8 @@ internal sealed partial class SelfTestRunner
                     ThrowClear,
                     HelperFunctions.terrainMapMask,
                     QueryTriggerInteraction.Ignore
-                );
+                )
+                || LowObstacle(eye, dir);
             if (closed)
                 continue;
             rig.RotateYaw(yaw);
