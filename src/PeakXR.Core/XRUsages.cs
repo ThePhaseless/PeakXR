@@ -101,7 +101,15 @@ namespace PeakXR.Core
         /// <summary>Turn-hand clicks closer to the middle than this (sideways) are the stick click, not a turn.</summary>
         public const float TurnSide = 0.5f;
 
-        public static WandPadState Map(Vector2 pad, bool clicked, bool moveHand)
+        /// <param name="oneHanded">Accessibility.OneHanded: the one wand's top and bottom clicks walk forward and back
+        /// (the stick Y one-handed walking reads) instead of being B and A; the sides still turn and the centre still
+        /// clicks.</param>
+        public static WandPadState Map(
+            Vector2 pad,
+            bool clicked,
+            bool moveHand,
+            bool oneHanded = false
+        )
         {
             var s = default(WandPadState);
             if (!clicked)
@@ -114,6 +122,10 @@ namespace PeakXR.Core
             }
             switch (TrackpadButtons.Zone(pad))
             {
+                case PadZone.Up when oneHanded:
+                case PadZone.Down when oneHanded:
+                    s.Stick = new Vector2(0f, pad.Y);
+                    break;
                 case PadZone.Up:
                     s.Secondary = true;
                     break;
