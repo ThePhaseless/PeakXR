@@ -54,6 +54,8 @@ Notes:
 
 ## VR Guide and practice
 
+In VR the VR tab of the settings (title or pause menu) is laid out for the headset. The settings of the chosen category stand in one column about 30° wide; push the stick up or down while pointing at it, or drag it with the laser, to scroll. The categories are a small panel of their own to the left of the column, turned toward you, and each panel has its own plate. Text is at least 1.3° tall wherever the menu stands. The game's own tabs keep the game's layout.
+
 In VR the VR tab of the settings (title or pause menu) starts with a VR Guide section. It covers only what PeakXR adds or changes in VR; PEAK's own rules and items are left to the game.
 
 - Demos: press Show to list one row per VR mechanic: grab and drop, two-hand hold, throw, eat, belt holster, backpack, wall climb, rope and vine, piton, cook, light a fire, open a suitcase, bugle, bandage, parasol, turning, walk and sprint, crouch, emote wheel, ping, talk, mute, spectate, pause and recenter, menus and laser, wrist status and refused actions. Rest the laser on a row or click it and a small ghost of you acts it out beside the panel for two loops. Its controllers light the button it presses, the rings and notes are the same cues the game uses in play (a double ring and a rising note where an action works, a slashed ring and a falling note where it is refused), and the matching real controller ticks. With `UI.ActionHintText` on, a one-line caption sits under the ghost.

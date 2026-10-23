@@ -467,6 +467,135 @@ internal sealed partial class SelfTestRunner
             stepNote = string.Join("; ", notes);
     }
 
+    /// <summary>vr.223: the VR tab is laid out for a headset. On its longest category: the row column spans at most
+    /// <see cref="VRTabColumn.MaxColumnDegrees"/> from the eye; the rail is a panel of its own (not inside the column,
+    /// turned <see cref="VRTabColumn.RailDegrees"/> toward the eye, with its own plate); every text on show meets
+    /// <see cref="ReadableText.MinDegrees"/>; and scrolling to the end brings the last row fully into view.</summary>
+    IEnumerator VRTabLayoutCheck()
+    {
+        yield return OpenVRTab();
+        if (!stepOk)
+            yield break;
+        var menu = vrTabMenu;
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (menu == null || head == null)
+        {
+            Fail("no settings window or rig head");
+            yield break;
+        }
+        VRGroup longest = null;
+        foreach (var g in VRTab.BuildGroups())
+            if (longest == null || g.Rows.Count > longest.Rows.Count)
+                longest = g;
+        VRTabGrid.Select(menu, longest.Key);
+        yield return Wait(0.8f);
+        var layout = menu.m_settingsContentParent.GetComponent<VRTabLayout>();
+        if (!VRTabGrid.Shown || layout == null || layout.Grid == null || layout.Rail == null)
+        {
+            Fail("the VR tab fell back to one paged column (see the [ui.settings] warning)");
+            yield break;
+        }
+        var column = layout.Grid.transform;
+        var rail = layout.Rail.transform;
+        var scroll = column.GetComponentInChildren<ScrollRect>();
+        var viewport = scroll != null ? scroll.viewport : null;
+        if (viewport == null)
+        {
+            Fail("the VR column has no scroll view");
+            yield break;
+        }
+        var eye = head.position;
+        var fails = new List<string>();
+        var notes = new List<string>();
+
+        viewport.GetWorldCorners(edgeCorners);
+        float wide = Vector3.Angle(
+            (edgeCorners[0] + edgeCorners[1]) * 0.5f - eye,
+            (edgeCorners[2] + edgeCorners[3]) * 0.5f - eye
+        );
+        notes.Add($"'{longest.Title}' column {wide:0.0} deg wide");
+        if (wide > VRTabColumn.MaxColumnDegrees)
+            fails.Add($"column {wide:0.0} deg wide, over {VRTabColumn.MaxColumnDegrees:0}");
+
+        float turn = Quaternion.Angle(rail.rotation, column.rotation);
+        bool plates =
+            !UIWorldFeature.Settings.MenuBackplate.Value
+            || (
+                rail.TryGetComponent<PanelPlate>(out var railPlate)
+                && railPlate.Shown
+                && column.TryGetComponent<PanelPlate>(out var columnPlate)
+                && columnPlate.Shown
+            );
+        notes.Add($"rail turned {turn:0.0} deg, own plates {plates}");
+        if (rail.IsChildOf(column))
+            fails.Add("the rail sits inside the column");
+        if (Mathf.Abs(turn - VRTabColumn.RailDegrees) > 2f)
+            fails.Add($"rail turned {turn:0.0} deg, not {VRTabColumn.RailDegrees:0}");
+        if (!plates)
+            fails.Add("the column or the rail has no plate of its own");
+
+        float smallest = float.MaxValue;
+        string smallestText = null;
+        void Floor(Transform root, bool clip)
+        {
+            foreach (var text in root.GetComponentsInChildren<TMPro.TMP_Text>())
+            {
+                if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
+                    continue;
+                if (clip)
+                {
+                    var local = viewport.InverseTransformPoint(text.transform.position);
+                    if (!viewport.rect.Contains(local))
+                        continue;
+                }
+                float deg = ReadableText.Degrees(
+                    text.fontSize * text.transform.lossyScale.y,
+                    Vector3.Distance(eye, text.transform.position)
+                );
+                if (deg < smallest)
+                {
+                    smallest = deg;
+                    smallestText = text.text;
+                }
+            }
+        }
+        Floor(column, clip: true);
+        Floor(rail, clip: false);
+        notes.Add($"smallest text {smallest:0.00} deg ('{smallestText}')");
+        if (smallest < ReadableText.MinDegrees - 0.05f)
+            fails.Add(
+                $"text '{smallestText}' is {smallest:0.00} deg, under {ReadableText.MinDegrees}"
+            );
+
+        var rows = scroll.content;
+        RectTransform last = null;
+        foreach (RectTransform row in rows)
+            if (
+                row.gameObject.activeSelf
+                && (last == null || row.anchoredPosition.y < last.anchoredPosition.y)
+            )
+                last = row;
+        if (last != null)
+        {
+            scroll.verticalNormalizedPosition = 0f;
+            yield return Wait(0.3f);
+            last.GetWorldCorners(edgeCorners);
+            float top = viewport.InverseTransformPoint(edgeCorners[1]).y;
+            float bottom = viewport.InverseTransformPoint(edgeCorners[0]).y;
+            var view = viewport.rect;
+            bool reached = bottom >= view.yMin - 1f && top <= view.yMax + 1f;
+            notes.Add(
+                $"{rows.childCount} rows, {rows.rect.height:0} px in a {view.height:0} px view, last row shown at the end {reached}"
+            );
+            yield return ShotAt("vr-223-vr-tab-end", last.position);
+            scroll.verticalNormalizedPosition = 1f;
+            if (!reached)
+                fails.Add("scrolling to the end leaves the last row outside the view");
+        }
+        yield return ShotAt("vr-223-vr-tab", column.position);
+        Conclude(fails, notes);
+    }
+
     /// <summary>One vr.222 check of the plate on <paramref name="root"/>; null when it passes.</summary>
     static string JudgePlate(Canvas root, string page, List<string> notes)
     {

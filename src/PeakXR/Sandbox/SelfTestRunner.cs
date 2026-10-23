@@ -153,6 +153,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             ClosePause();
             yield return VRStep("vr.222-menu-backplate", 30f, BackplateCheck());
             ClosePause();
+            yield return VRStep("vr.223-vr-tab-layout", 30f, VRTabLayoutCheck());
+            ClosePause();
             yield return AirportScreenSteps();
         }
 
@@ -330,9 +332,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     SharedSettingsMenu vrTabMenu;
 
     /// <summary>
-    /// 02-settings-vr in VR: every rail entry's first page, and a later page of the longest one, fits the settings
-    /// window (rows hanging below it are what the VR layout fixes). Aimed shots of the Comfort page, that later page,
-    /// and a preview opening beside a left-column row.
+    /// 02-settings-vr in VR: every rail entry's column stays inside the settings window (rows past the column's
+    /// viewport are scrolled away, not hanging below it). Aimed shots of the Comfort column and a preview opening
+    /// beside one of its rows.
     /// </summary>
     IEnumerator VRTabPages(SharedSettingsMenu settings)
     {
@@ -352,22 +354,25 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             int n = RowsOutside(settings);
             if (n > 0)
                 outside.Add($"{group.Title} {n}");
-            if (VRTabGrid.Pages > most)
+            if (group.Rows.Count > most)
             {
-                most = VRTabGrid.Pages;
-                longest = group.Key;
+                most = group.Rows.Count;
+                longest = group.Title;
             }
         }
         VRTabGrid.Select(settings, "PEAKXR_GROUP_Comfort");
         yield return Wait(0.8f);
         yield return ShotAt("02-settings-vr-comfort", CentreOf(settings.transform));
 
-        // A preview opening on the left: a row of the left column while the right one is filled.
+        // A preview opening beside a Comfort row.
         ConfigEntryBase hovered = null;
         foreach (var pair in Plugin.Settings)
         {
-            var cell = SettingPreviews.CellOf(pair.Value);
-            if (cell != null && cell.TryGetComponent<VRTabSlot>(out var slot) && slot.OpensLeft)
+            if (
+                pair.Key.Section == "Comfort"
+                && SettingPreviews.CellOf(pair.Value) is { } cell
+                && cell.gameObject.activeInHierarchy
+            )
             {
                 hovered = pair.Value;
                 break;
@@ -391,24 +396,16 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             PreviewStage.Instance.HoverExit(hovered);
         }
 
-        if (longest != null && most > 1)
-        {
-            VRTabGrid.Select(settings, longest, 1);
-            yield return Wait(0.8f);
-            int n = RowsOutside(settings);
-            if (n > 0)
-                outside.Add($"{longest} page 2 {n}");
-            yield return ShotAt("02-settings-vr-page2", CentreOf(settings.transform));
-        }
         var note =
-            $"{groups.Count} rail entries, longest {longest} ({most} pages), preview row {hovered?.Definition.Key ?? "none"}";
+            $"{groups.Count} rail entries, longest {longest} ({most} rows), preview row {hovered?.Definition.Key ?? "none"}";
         if (outside.Count > 0)
             Fail($"rows outside the settings window: {string.Join(", ", outside)}; {note}");
         else
             stepNote = note;
     }
 
-    /// <summary>Spawned rows of <paramref name="settings"/> that reach below or past its row area.</summary>
+    /// <summary>Spawned rows of <paramref name="settings"/> that reach below or past its row area. A row in the VR
+    /// column's scrolled viewport is judged by that viewport, which clips it.</summary>
     int RowsOutside(SharedSettingsMenu settings)
     {
         var content = settings.m_settingsContentParent as RectTransform;
@@ -422,7 +419,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             if (cell == null || !cell.gameObject.activeInHierarchy)
                 continue;
-            ((RectTransform)cell.transform).GetWorldCorners(edgeCorners);
+            var mask = cell.GetComponentInParent<UnityEngine.UI.RectMask2D>();
+            var shown = mask != null ? mask.rectTransform : (RectTransform)cell.transform;
+            shown.GetWorldCorners(edgeCorners);
             var lo = content.InverseTransformPoint(edgeCorners[0]);
             var hi = content.InverseTransformPoint(edgeCorners[2]);
             if (lo.y < area.yMin - 2f || hi.x > area.xMax + 2f)

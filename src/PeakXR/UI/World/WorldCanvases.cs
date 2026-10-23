@@ -850,6 +850,7 @@ internal static class WorldCanvases
     /// <summary>UI.MenuBackplate or its opacity changed: refit every open menu's plate next frame.</summary>
     public static void OnBackplateChanged()
     {
+        PanelPlate.RefreshAll();
         foreach (var t in tracked)
             t.NextMeasure = 0f;
     }

@@ -170,7 +170,7 @@ internal static class BackdropStrip
         {
             var g = graphics[i];
             // Our own plate is a large flat fill under content, exactly what the rules hide: never judge it.
-            if (g == t.Plate || IndexOf(t, g) >= 0)
+            if (g == t.Plate || g.TryGetComponent<PanelPart>(out _) || IndexOf(t, g) >= 0)
                 continue;
             if (rects[i].width <= 0f)
             {
