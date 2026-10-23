@@ -924,7 +924,7 @@ internal sealed partial class SelfTestRunner
         }
         yield return Wait(1f);
         bool hanging = c.data.currentClimbHandle == handle;
-        yield return Shot("vr-44-piton");
+        yield return Shot(pickaxe ? "vr-44c-pickaxe" : "vr-44-piton");
         yield return GripTo(left, 0f, 0.1f);
         yield return WaitFor(() => c.data.currentClimbHandle == null, 1.5f);
         var note =
@@ -974,15 +974,16 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         // A player steps up to the face before placing a piton; the stand spot can leave it up to 2 m off, and a
-        // handle 1.18 m from the eye (run 47, vr.44) is out of any reach. Step to about 0.5 m from it.
+        // handle 1.18 m from the eye (run 47, vr.44) is out of any reach. Step to about 0.4 m from it (run 53, vr.56: 0.5 m left the handle 0.85 m out).
         var gap = hit.point - rig.Head.position;
         gap.y = 0f;
-        if (gap.magnitude > 0.65f)
+        if (gap.magnitude > 0.55f)
         {
             c.photonView.RPC(
                 "WarpPlayerRPC",
                 RpcTarget.All,
-                stand - normal * (gap.magnitude - 0.5f),
+                new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
+                    - normal * (gap.magnitude - 0.4f),
                 false
             );
             yield return Wait(0.5f);
@@ -1337,24 +1338,26 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var arrived = HeldItem();
+        // Read now: the thrown item is gone by the note (run 53 threw reading its name).
+        string arrivedName = arrived.name;
         spawned.Add(arrived.gameObject);
         yield return null;
-        HeadFrame(out var head, out var forward, out var right);
-        var windup = head + right * 0.25f + Vector3.down * 0.15f;
+        // vr.13's in-reach swing; the old arc ended about 1 m from the shoulder.
+        ThrowArc(left, out var windup, out var release);
         yield return MoveTrack(left, windup, 0.4f);
         yield return Wait(0.3f);
-        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        yield return SwingRelease(left, windup, release);
         yield return Wait(0.6f);
         bool kept = HeldItem() == arrived;
         // A fresh close on it arms the release again.
         yield return MoveTrack(left, windup, 0.3f);
         yield return GripTo(left, 1f, 0.1f);
         yield return Wait(0.3f);
-        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        yield return SwingRelease(left, windup, release);
         yield return WaitFor(() => HeldItem() == null, 1.5f);
         bool thrown = HeldItem() == null;
         var note =
-            $"{arrived.name} arrived in the closed grip: kept on the release {kept}; thrown after a fresh close {thrown}";
+            $"{arrivedName} arrived in the closed grip: kept on the release {kept}; thrown after a fresh close {thrown}";
         if (!kept)
             Fail("a release dropped an item that arrived in the closed grip: " + note);
         else if (!thrown)
@@ -1413,7 +1416,14 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool left = false;
         var at = item.Center();
-        yield return MoveTo(left, () => at, 0.5f);
+        // A player squats for an item on the ground; a standing reach to it was about 1.5 m from the eye.
+        LookAtHand(left);
+        yield return ReachDown(left, () => at, 0.6f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => Holding(apple), 3f);
         bool held = Holding(apple);

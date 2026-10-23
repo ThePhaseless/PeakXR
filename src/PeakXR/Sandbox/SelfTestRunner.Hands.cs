@@ -149,6 +149,10 @@ internal sealed partial class SelfTestRunner
     /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
     /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
     /// </summary>
+    /// <summary>Height (m) over the ground a prop is set at: clear of its own collider (8 cm started an Apple inside
+    /// the terrain, which it then fell through, run 53), low enough that it drops without bouncing away.</summary>
+    const float PropDrop = 0.25f;
+
     /// <summary>World height of the floor the tracked eye stands on: the head's world height less its tracked
     /// height over the tracking floor.</summary>
     static float TrackedFloorY() => VRRig.Instance.Head.position.y - VRInput.HeadPosition.y;
@@ -177,10 +181,10 @@ internal sealed partial class SelfTestRunner
                 )
                 && Mathf.Abs(ground.point.y - feet) <= 0.3f
             )
-                return ground.point + Vector3.up * 0.08f;
+                return ground.point + Vector3.up * PropDrop;
         }
         var fallback = head.position + start * outward;
-        fallback.y = feet + 0.08f;
+        fallback.y = feet + PropDrop;
         return fallback;
     }
 
@@ -206,10 +210,13 @@ internal sealed partial class SelfTestRunner
         var head = VRRig.Instance.Head;
         var outward = world.Center() - head.position;
         outward.y = 0f;
+        // Run 53: set 8 cm over the ground the Apple started inside it and fell through, to y -0.83, 2.4 m under the
+        // floor; only its level distance was checked, so the hand was sent down after it.
+        float under = TrackedFloorY() - world.Center().y;
         world.rig.linearVelocity = Vector3.zero;
         world.rig.angularVelocity = Vector3.zero;
-        string how = F($"rested {outward.magnitude:0.00} m out");
-        if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut)
+        string how = F($"rested {outward.magnitude:0.00} m out, {-under:0.00} m over the floor");
+        if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut || under > 0.3f)
         {
             var ahead = head.position + Flat(head.forward) * PropSetOut;
             if (
@@ -222,14 +229,18 @@ internal sealed partial class SelfTestRunner
                     QueryTriggerInteraction.Ignore
                 )
             )
-                ahead = ground.point + Vector3.up * 0.06f;
+                ahead = ground.point + Vector3.up * PropDrop;
             else
                 ahead = spot;
             world.rig.position = ahead;
             world.transform.position = ahead;
             how += F($", set down {PropSetOut:0.00} m ahead");
+            yield return Wait(0.6f);
+            if (world != null)
+                how += F($", now at {world.Center()}");
         }
-        Note($"{world.name} {how}");
+        if (world != null)
+            Note($"{world.name} {how}");
         yield return Wait(0.2f);
     }
 
@@ -473,10 +484,9 @@ internal sealed partial class SelfTestRunner
         float multiplier = held.throwForceMultiplier;
         yield return GripTo(left, 1f, 0.1f);
 
-        HeadFrame(out var head, out var forward, out var right);
-        var side = left ? -right : right;
-        var windup = head + side * 0.25f + Vector3.down * 0.15f;
-        var release = windup + forward * 0.9f + Vector3.up * 0.15f;
+        // The same in-reach swing as vr.13 (beside the ear to 0.6 m ahead of the eyes); the old arc ended about 1 m
+        // from the shoulder.
+        ThrowArc(left, out var windup, out var release);
         yield return MoveTrack(left, windup, 0.4f);
         yield return Wait(0.3f);
         SnapshotItems();
@@ -677,10 +687,25 @@ internal sealed partial class SelfTestRunner
         gap.y = 0f;
         if (gap.magnitude > 0.65f)
         {
-            yield return WarpTo(c.Center - Flat(hit.normal) * (gap.magnitude - 0.5f));
             rig.RotateYaw(
                 Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(hit.normal), Vector3.up)
             );
+            if (PhotonNetwork.OfflineMode)
+                yield return WarpTo(c.Center - Flat(hit.normal) * (gap.magnitude - 0.5f));
+            else
+            {
+                // Online a warp is a teleport the other players see: walk up to the face with the move stick.
+                for (float end = Now + 3f; Now < end; )
+                {
+                    var now = hit.point - rig.Head.position;
+                    now.y = 0f;
+                    if (now.magnitude <= 0.55f)
+                        break;
+                    Script(OffLeft).Stick = new Vector2(0f, 0.5f);
+                    yield return null;
+                }
+                Script(OffLeft).Stick = Vector2.zero;
+            }
             yield return Wait(0.6f);
             if (!WallInFront(c, wall, 0.1f, out hit))
             {

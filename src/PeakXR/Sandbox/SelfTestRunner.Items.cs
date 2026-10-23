@@ -840,6 +840,10 @@ internal sealed partial class SelfTestRunner
             + $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {cookTime:0.0} s, cooked {before} -> {after}; {ReachNote()}; at the end {state}";
         if (after <= before)
             Fail("not cooked: " + note);
+        // Cooked by the fire's own hold (Interaction.constantInteractableProgress on the campfire), not by any other
+        // path: a cook that skipped the hold would pass on the count alone.
+        else if (progress < 0.5f)
+            Fail("cooked without the fire's cook hold running: " + note);
         else
             stepNote = note;
 
@@ -1913,19 +1917,23 @@ internal sealed partial class SelfTestRunner
         float quietFrom = CueMark();
         float progress = 0f;
         bool drunk = false;
+        float consumedBefore = c.data.lastConsumedItem;
         // The item's own use time after up to 3 s bringing it to the mouth.
         float end = Now + GameTiming.Budget(useTime, 3f);
         while (Now < end)
         {
+            // Drunk is the game's own finish: the cast completing or the consume stamp (CharacterData.cs:170). An
+            // item that merely left the hand (dropped, thrown) is not drunk.
             if (
-                item == null
-                || c.data.currentItem != item
-                || item.lastFinishedCast > finishedBefore
+                (item != null && item.lastFinishedCast > finishedBefore)
+                || c.data.lastConsumedItem != consumedBefore
             )
             {
                 drunk = true;
                 break;
             }
+            if (item == null || c.data.currentItem != item)
+                break;
             ApproachHand(left, MouthGoal());
             progress = Mathf.Max(progress, item.castProgress);
             yield return null;
@@ -1937,7 +1945,13 @@ internal sealed partial class SelfTestRunner
         var note =
             $"{prefab.name}: drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
         if (!drunk)
-            Fail("not drunk at the mouth: " + note);
+            Fail(
+                (
+                    c.data.currentItem == null
+                        ? "the drink left the hand without being drunk: "
+                        : "not drunk at the mouth: "
+                ) + note
+            );
         // Half the amount: statuses creep between the reads, and the start value caps a large change.
         else if (before - after < Mathf.Min(-change, before) * 0.5f)
             Fail($"drunk but {status} did not fall: " + note);
