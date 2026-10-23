@@ -9,8 +9,22 @@ namespace PeakXR.Core
     /// </summary>
     public sealed class PhysicalCrouch
     {
-        public float EnterFraction = 0.30f;
-        public float ExitFraction = 0.22f;
+        /// <summary>A fifth of standing height: a 0.47 m stoop to the ground (29 %, vr.87) crouches the avatar, so its
+        /// hands reach the controllers there, while a nod or a glance at the floor (well under 15 %) does not.</summary>
+        public float EnterFraction = DefaultDepth;
+        public float ExitFraction = DefaultDepth * ExitShare;
+
+        public const float DefaultDepth = 0.20f;
+
+        /// <summary>Exit sits at this share of the entry depth: standing at the edge never flickers.</summary>
+        public const float ExitShare = 0.7f;
+
+        /// <summary>Sets the entry depth (fraction of standing height) and its exit.</summary>
+        public void SetDepth(float depth)
+        {
+            EnterFraction = depth;
+            ExitFraction = depth * ExitShare;
+        }
 
         public bool Crouched { get; private set; }
 

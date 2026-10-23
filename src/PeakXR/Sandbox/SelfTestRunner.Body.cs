@@ -70,6 +70,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.147-morale-glow", Budget(3f), MoraleGlowStep());
         yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
         yield return Restoring("vr.157-spectate-point", Budget(15f), SpectatePointStep());
+        yield return Restoring("vr.230-stoop-reach", Budget(10f), StoopReachStep());
         yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
@@ -2084,6 +2085,93 @@ internal sealed partial class SelfTestRunner
             Fail("the view moved faster than the chase cap: " + note);
         else if (chase && overshoot > 0.15f)
             Fail("the view overshot the body it follows: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.230: stooping 0.47 m with an apple in the right hand, its controller 0.35 m above the floor ahead (a fuse,
+    /// a fire, a pick-up): the avatar crouches (<see cref="PhysicalCrouch"/> at a fifth of standing height), its ragdoll
+    /// hand stays within 0.15 m of the controller and the apple stays welded to it (vr.87/vr.88 had a torch 1.2 m off
+    /// and the weld let go). The view stays at the real head (CrouchLift).
+    /// </summary>
+    IEnumerator StoopReachStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var driver = AvatarPoseDriver.Of(c);
+        if (!BodyGestures.CrouchOn || rig.SeatedMode || driver == null)
+        {
+            stepSkip = "Locomotion.PhysicalCrouch off, seated mode or no pose driver";
+            yield break;
+        }
+        Item apple = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it != null && it.name.Contains(AppleFragment))
+                apple = it;
+        }
+        if (apple == null || !SandboxActions.GiveItem(apple, false))
+        {
+            Fail("no apple to hold");
+            yield break;
+        }
+        bodyRestore = () => ReleaseHead();
+        yield return WaitFor(() => c.data.currentItem != null, 3f);
+        if (c.data.currentItem == null)
+        {
+            Fail("the apple never reached the hand");
+            yield break;
+        }
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float floor = XRRuntimeInfo.FloorTracking
+            ? 0f
+            : eye - HeightCalibration.DefaultStandingEyeHeight;
+        HeadFrame(out var head, out var forward, out var right);
+        var rot = VRInput.HeadRotation;
+        var low = new Vector3(head.x, eye - 0.47f, head.z) + forward * 0.15f;
+        var handFrom = Script(false).Position;
+        var handTo = new Vector3(head.x, floor + 0.35f, head.z) + forward * 0.45f + right * 0.2f;
+        float start = Now;
+        while (Now - start < 0.8f)
+        {
+            float t = (Now - start) / 0.8f;
+            ScriptHead(Vector3.Lerp(head, low, t), rot);
+            SetHand(false, Vector3.Lerp(handFrom, handTo, t));
+            yield return null;
+        }
+        yield return Wait(1.2f);
+        float worst = 0f;
+        bool released = false,
+            crouched = true;
+        start = Now;
+        var hand = c.refs.ragdoll.partDict[BodypartType.Hand_R].Rig;
+        while (Now - start < 0.6f)
+        {
+            if (driver.HandTarget(false, out var target))
+                worst = Mathf.Max(worst, Vector3.Distance(hand.position, target));
+            released |= driver.HeldReleased;
+            crouched &= c.data.isCrouching;
+            yield return null;
+        }
+        start = Now;
+        while (Now - start < 0.6f)
+        {
+            float t = (Now - start) / 0.6f;
+            ScriptHead(Vector3.Lerp(low, head, t), rot);
+            SetHand(false, Vector3.Lerp(handTo, handFrom, t));
+            yield return null;
+        }
+        ReleaseHead();
+        var note = F(
+            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller, weld released {released}"
+        );
+        if (!crouched)
+            Fail("the avatar did not crouch for the stoop: " + note);
+        else if (worst > 0.15f)
+            Fail("the avatar hand did not reach the low controller: " + note);
+        else if (released)
+            Fail("the apple left its hand weld: " + note);
         else
             stepNote = note;
     }

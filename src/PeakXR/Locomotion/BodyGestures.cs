@@ -25,6 +25,7 @@ internal static class BodyGestures
     private static readonly ArmSwing Swing = new();
     private static readonly JumpGesture Hop = new();
     private static ConfigEntry<bool> physicalCrouch;
+    private static ConfigEntry<float> crouchDepth;
     private static ConfigEntry<bool> armSwingSprint;
     private static ConfigEntry<bool> hopToJump;
     private static ConfigEntry<bool> heartbeat;
@@ -64,8 +65,18 @@ internal static class BodyGestures
             s,
             "PhysicalCrouch",
             true,
-            "Crouch for real (head about a third lower than your calibrated standing height) to crouch in game. "
-                + "Never in seated mode. The crouch button keeps working."
+            "Crouch for real (head lower than your calibrated standing height by Locomotion.CrouchDepth) to crouch "
+                + "in game. Never in seated mode. The crouch button keeps working."
+        );
+        crouchDepth = file.Bind(
+            s,
+            "CrouchDepth",
+            PhysicalCrouch.DefaultDepth,
+            new ConfigDescription(
+                "How far your head drops (share of your standing height) before your character crouches; the "
+                    + "default crouches it as you stoop to the ground, so its hands reach where yours are.",
+                new AcceptableValueRange<float>(0.1f, 0.45f)
+            )
         );
         armSwingSprint = file.Bind(
             s,
@@ -125,6 +136,7 @@ internal static class BodyGestures
             float standing = XRRuntimeInfo.FloorTracking
                 ? eye
                 : HeightCalibration.DefaultStandingEyeHeight;
+            Crouch.SetDepth(crouchDepth?.Value ?? PhysicalCrouch.DefaultDepth);
             crouch = Crouch.Update(
                 CrouchOn && !rig.SeatedMode && VRInput.HeadTracked,
                 VRInput.HeadPosition.y,

@@ -354,7 +354,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.40: a 15 % bow (a look at the belt, a nod) must not crouch; the head held 40 % of standing height
     /// low sets <c>CharacterData.isCrouching</c> (CharacterMovement.cs:241); back up, it clears. The physical crouch
-    /// enters at 30 % (<see cref="PhysicalCrouch.EnterFraction"/>).</summary>
+    /// enters at 20 % (<see cref="PhysicalCrouch.EnterFraction"/>).</summary>
     IEnumerator CrouchStep()
     {
         var c = Character.localCharacter;
