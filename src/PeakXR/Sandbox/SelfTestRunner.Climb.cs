@@ -1709,7 +1709,9 @@ internal sealed partial class SelfTestRunner
             bool atShoulder =
                 VRInput.HeadPosition.y - Script(left).Position.y
                 <= LungeIntent.ShoulderDrop - 0.05f;
-            if (released == float.MaxValue && (atShoulder || t >= 0.12f))
+            // At least 0.06 s of swing first, as a real fling has: a release one frame into the motion (run 59 started
+            // the no-stamina fling at the shoulder) gives the hand tracker no speed to fit, so no lunge was seen.
+            if (released == float.MaxValue && ((atShoulder && t >= 0.06f) || t >= 0.12f))
             {
                 Script(left).Grip = 0f;
                 flingReleaseY = Character.localCharacter.Center.y;

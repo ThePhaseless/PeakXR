@@ -460,4 +460,22 @@ public class GripIntentTests
         c.OneHanded = true;
         Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
     }
+
+    [Fact]
+    public void ItemHand_OnAPitonAgainstTheWall_KeepsItsItem_NoClimb()
+    {
+        // VR run 59: the piton sits on climbable rock, so the item hand's grip read as a wall catch, the climb start
+        // put the item away (Stowed). On a handle the item hand keeps its item; only HandsFull follows.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Interactible;
+        c.CandidateIsHandle = true;
+        c.NearClimbable = true;
+        c.HoldConfirmed = true;
+        c.BodyClimbing = true;
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
+        c.BodyClimbing = false;
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
+    }
 }
