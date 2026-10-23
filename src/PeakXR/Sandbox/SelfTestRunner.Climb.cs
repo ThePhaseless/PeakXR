@@ -64,6 +64,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
         yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
+        yield return Restoring("vr.44e-item-hand-no-hang", 35f, ItemHandNoHangStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
         yield return Restoring("vr.42b-rope-pump", 45f, RopePumpStep());
@@ -1762,6 +1763,72 @@ internal sealed partial class SelfTestRunner
             Fail("NeedsTwoHands with Interaction.RequireTwoHands off: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>
+    /// vr.44e: the hand holding an item does not hang from a piton; the free hand does. Vanilla keeps the item while
+    /// hanging (ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647, no unequip). With an Apple in the right hand, that
+    /// hand closing on the piton keeps the Apple, does not hang and gets HandsFull; the empty left hand then hangs,
+    /// and the Apple stays in the right hand.
+    /// </summary>
+    IEnumerator ItemHandNoHangStep()
+    {
+        var c = Character.localCharacter;
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        if (apple == null || !ClimbHands.HandleHands)
+        {
+            stepSkip = apple == null ? "no Apple item" : "Interaction.PitonGripHang off";
+            yield break;
+        }
+        yield return PlacePiton();
+        if (testHandle == null)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        var handle = testHandle;
+        const bool itemHand = false;
+        if (!SandboxActions.GiveItem(apple, itemHand))
+        {
+            stepSkip = SandboxActions.LastMessage;
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return Until(() => Holding(apple), 5f, "given Apple not in hand");
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        spawned.Add(HeldItem().gameObject);
+        yield return null;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        yield return MoveTo(itemHand, () => handle.transform.position, 0.5f);
+        yield return GripTo(itemHand, 1f, 0.1f);
+        yield return ExpectCue(itemHand, DenyReason.HandsFull, mark, true, 1f);
+        string cue = cueNote;
+        yield return Wait(0.4f);
+        bool hungByItemHand = c.data.currentClimbHandle != null;
+        bool keptAfterItemHand = Holding(apple);
+        yield return GripTo(itemHand, 0f, 0.1f);
+        yield return MoveTo(!itemHand, () => handle.transform.position, 0.5f);
+        yield return GripTo(!itemHand, 1f, 0.1f);
+        yield return WaitFor(() => c.data.currentClimbHandle == handle, 2f);
+        bool hungByFreeHand = c.data.currentClimbHandle == handle;
+        bool keptWhileHanging = Holding(apple);
+        var note =
+            $"item hand on the piton: hung {hungByItemHand}, kept the Apple {keptAfterItemHand} ({cue}); "
+            + $"free hand: hung {hungByFreeHand}, Apple still held {keptWhileHanging}";
+        if (hungByItemHand || !keptAfterItemHand)
+            Fail("the hand holding an item hung from the piton: " + note);
+        else if (!hungByFreeHand)
+            Fail("the free hand did not hang: " + note);
+        else if (!keptWhileHanging)
+            Fail("hanging with the free hand lost the held item: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
     }
 
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is

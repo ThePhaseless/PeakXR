@@ -484,6 +484,7 @@ internal static class PhysicalInteraction
         IInteractible target = null;
         if (cfg.PhysicalGrab)
             ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
+        ctx.CandidateIsHandle = target is ClimbHandle;
 
         var action = GripIntent.OnPress(ctx);
         IGripExtension extension = null;
@@ -535,6 +536,14 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.Regrip:
                 Haptics.Pulse(hand.Left, 0.2f, 0.03f);
+                // The item hand closed on a piton or handle: it keeps its item and does not hang. Say so, and show
+                // the handle as the free hand's (HandsFull, the held item red).
+                if (ctx.CandidateIsHandle && target is ClimbHandle handle)
+                    Affordance.DenyAtHand(
+                        hand.Left,
+                        DenyReason.HandsFull,
+                        Affordance.Hints ? DenyHint.On(handle.transform) : default
+                    );
                 break;
             case GripPressAction.Interact:
                 // A finger gun (pointing, thumb up) may be the start of a ping: wait out its trigger window first.
