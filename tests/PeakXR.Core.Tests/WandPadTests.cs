@@ -62,4 +62,38 @@ public class WandPadTests
         Assert.True(centre.StickClick);
         Assert.Equal(Vector2.Zero, centre.Stick);
     }
+
+    [Fact]
+    public void OneHanded_TopAndBottomClicksWalk()
+    {
+        // Accessibility.OneHanded on a wand: the one pad walks and turns, so its stick Y reaches MoveStick.
+        var forward = WandPad.Map(new Vector2(0.1f, 0.8f), true, moveHand: false, oneHanded: true);
+        Assert.Equal(0.8f, forward.Stick.Y);
+        Assert.Equal(0f, forward.Stick.X);
+        Assert.False(forward.Secondary || forward.Primary || forward.StickClick);
+        Assert.Equal(0.8f, StickAxes.MoveY(forward.Stick).Y);
+
+        var back = WandPad.Map(new Vector2(0f, -0.7f), true, moveHand: false, oneHanded: true);
+        Assert.Equal(-0.7f, back.Stick.Y);
+        Assert.False(back.Primary);
+    }
+
+    [Fact]
+    public void OneHanded_SidesTurn_CentreClicks()
+    {
+        var right = WandPad.Map(new Vector2(0.8f, 0.1f), true, moveHand: false, oneHanded: true);
+        Assert.Equal(new Vector2(0.8f, 0f), right.Stick);
+        Assert.Equal(0f, StickAxes.MoveY(right.Stick).Y);
+
+        var centre = WandPad.Map(new Vector2(0.1f, 0f), true, moveHand: false, oneHanded: true);
+        Assert.True(centre.StickClick);
+        Assert.Equal(Vector2.Zero, centre.Stick);
+    }
+
+    [Fact]
+    public void OneHanded_RestingThumbStillDoesNothing()
+    {
+        var p = WandPad.Map(new Vector2(0f, 0.9f), false, moveHand: false, oneHanded: true);
+        Assert.Equal(Vector2.Zero, p.Stick);
+    }
 }
