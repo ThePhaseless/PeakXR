@@ -33,6 +33,7 @@ internal sealed class InteractConfig
         lungeSpeed,
         hapticStrength;
     private ConfigEntry<string> dropButton;
+    private ConfigEntry<HapticDetail> hapticDetail;
 
     public bool PhysicalGrab => physicalGrab?.Value ?? true;
     public bool HandAimedInteract => handAim?.Value ?? true;
@@ -59,6 +60,10 @@ internal sealed class InteractConfig
     internal ConfigEntry<bool> RequireTwoHandsEntry => requireTwoHands;
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? HapticScale.DefaultStrength;
+    public HapticDetail HapticDetail => hapticDetail?.Value ?? HapticDetail.Full;
+
+    /// <summary>The setting itself, for the self-test (vr.233).</summary>
+    internal ConfigEntry<HapticDetail> HapticDetailEntry => hapticDetail;
 
     /// <summary>The configured drop button (<c>DominantSecondary</c>, <c>LeftPrimary</c> ... or <c>None</c>), so the
     /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.
@@ -265,6 +270,13 @@ internal sealed class InteractConfig
                         + "strong, 0 is off.",
                     new AcceptableValueRange<float>(0f, HapticScale.MaxStrength)
                 )
+            ),
+            hapticDetail = file.Bind(
+                s,
+                "HapticDetail",
+                HapticDetail.Full,
+                "Full: every vibration, including background feel (heartbeat, wind, rock texture, shivers, fire "
+                    + "warmth). Essential: only grabs, uses, progress, refusals and danger."
             ),
         };
         // Before hand roles existed the default was written to every config file as RightSecondary. That is the

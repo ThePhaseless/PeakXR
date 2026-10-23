@@ -29,6 +29,71 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.67-edge-ring", 15f, EdgeRingStep());
         yield return VRStep("vr.220-first-refusal-label", 20f, FirstRefusalLabelStep());
         yield return VRStep("vr.232-deny-retry-haptic", 10f, DenyRetryHapticStep());
+        yield return VRStep("vr.233-haptic-detail", 10f, HapticDetailStep());
+    }
+
+    /// <summary>vr.233: <c>Interaction.HapticDetail</c> Essential drops the ambient feel in the one haptic mixer
+    /// (Interact.Haptics): an Ambient beat asked for every frame for 0.5 s never goes out, while a Cue pulse and a
+    /// refusal's triple still reach the hand. Full again lets the beat through. The setting goes back.</summary>
+    IEnumerator HapticDetailStep()
+    {
+        var entry = Interact.InteractConfig.Instance.HapticDetailEntry;
+        if (!Affordance.Enabled || Interact.Haptics.Muted || entry == null)
+        {
+            stepSkip =
+                "ui.affordance not installed, Interaction.Haptics off or no HapticDetail setting";
+            yield break;
+        }
+        const bool left = false;
+        var saved = entry.Value;
+        string note = null;
+        try
+        {
+            entry.Value = HapticDetail.Full;
+            float end = CueMark() + 0.3f;
+            bool any = false;
+            while (CueMark() < end)
+            {
+                any |= Interact.Haptics.Pulse(left, 0.3f, 0.05f, HapticPriority.Ambient);
+                yield return null;
+            }
+            if (!any)
+            {
+                stepSkip = "no impulse-capable right controller";
+                yield break;
+            }
+            entry.Value = HapticDetail.Essential;
+            yield return Wait(0.1f);
+            float mark = CueMark();
+            end = mark + 0.5f;
+            int sent = 0;
+            while (CueMark() < end)
+            {
+                if (Interact.Haptics.Pulse(left, 0.3f, 0.05f, HapticPriority.Ambient))
+                    sent++;
+                yield return null;
+            }
+            bool cue = Interact.Haptics.Pulse(left, 0.3f, 0.05f);
+            yield return Wait(0.1f);
+            Affordance.ResetGate();
+            float denyMark = CueMark();
+            Affordance.DenyAtHand(left, DenyReason.NotNow);
+            yield return ExpectCue(left, DenyReason.NotNow, denyMark, seen: false);
+            note =
+                $"Essential: {sent} ambient pulses sent in 0.5 s, cue pulse {(cue ? "sent" : "dropped")}; refusal: {cueNote}";
+            if (!stepOk)
+                yield break;
+            if (sent > 0 || Interact.Haptics.LastSent(left, HapticPriority.Ambient) >= mark)
+                Fail("ambient feel went out at Essential; " + note);
+            else if (!cue)
+                Fail("a Cue pulse was dropped at Essential; " + note);
+        }
+        finally
+        {
+            entry.Value = saved;
+        }
+        if (stepOk)
+            stepNote = note;
     }
 
     /// <summary>vr.232: a quick retry of a refused action is felt again. A NotNow refusal at the right hand gets its
