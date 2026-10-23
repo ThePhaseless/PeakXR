@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 # Compare the two-client multiplayer test logs (docs/testing.md, "Two-client multiplayer test") and print one
 # PASS/FAIL/SKIP line per check. Exit status 1 when any check fails.
-#   tools/mp-check.sh [mp-dir]   (default: $HOME/.var/app/com.valvesoftware.Steam/peakxr-mp)
+#   tools/mp-check.sh [--modded-b] [mp-dir]   (default: $HOME/.var/app/com.valvesoftware.Steam/peakxr-mp)
 # Tolerances: POS_TOL (m, default 1.0) for the player's position, LAND_TOL (m, default 1.5) for dropped/thrown items
 # and the ping point, LAG_TOL (s, default 1.0) for B to receive what A did after the checkpoint, HOLD (s, default 2.0,
 # A's CheckpointHold) for how late B may answer a checkpoint while A still stands still.
+# --modded-b: B ran PeakXR flat (docs/testing.md, "Modded B"). Instead of "no event 151 anywhere" it checks B's
+# handshake, the 151 stream from A (mean rate over the seconds with packets between RATE_MIN and RATE_MAX per second,
+# defaults 2 and 30), A's avatar hands on B within HAND_TOL (m, default 0.25) of A's tracked hands, that B sent no 151,
+# ran flat and logged no mod errors. Every other check is the same as the default (vanilla B) mode.
 set -euo pipefail
 
+MODDED=false
+if [[ "${1:-}" == "--modded-b" ]]; then
+    MODDED=true
+    shift
+fi
 DIR="${1:-$HOME/.var/app/com.valvesoftware.Steam/peakxr-mp}"
 POS_TOL="${POS_TOL:-1.0}"
 LAND_TOL="${LAND_TOL:-1.5}"
 LAG_TOL="${LAG_TOL:-1.0}"
 HOLD="${HOLD:-2.0}"
+HAND_TOL="${HAND_TOL:-0.25}"
+RATE_MIN="${RATE_MIN:-2}"
+RATE_MAX="${RATE_MAX:-30}"
 A="$DIR/a-checkpoints.jsonl"
 B="$DIR/b-observer.jsonl"
 SUM="$DIR/b-summary.json"
@@ -27,11 +39,79 @@ checks() {
 # "seen" runs from B's previous checkpoint to this one plus LAG_TOL (an RPC can land just after B's snapshot), and
 # "after" runs on to B's next checkpoint, for the checks that something must never arrive.
 jq -nr --slurpfile a "$A" --slurpfile b "$B" --slurpfile s "$SUM" \
-    --argjson pos "$POS_TOL" --argjson land "$LAND_TOL" --argjson lag "$LAG_TOL" --argjson hold "$HOLD" '
+    --argjson pos "$POS_TOL" --argjson land "$LAND_TOL" --argjson lag "$LAG_TOL" --argjson hold "$HOLD" \
+    --argjson modded "$MODDED" --argjson handTol "$HAND_TOL" --argjson rateMin "$RATE_MIN" --argjson rateMax "$RATE_MAX" \
+    --slurpfile done <(if [[ -s "$DONE" ]]; then cat "$DONE"; else echo '{}'; fi) '
 def dist($p; $q): [range(0; 3) | ($p[.] - $q[.]) * ($p[.] - $q[.])] | add | sqrt;
 def flat($p; $q): [0, 2 | ($p[.] - $q[.]) * ($p[.] - $q[.])] | add | sqrt;
 def r2: . * 100 | round / 100;
 def letters: ascii_downcase | gsub("[^a-z]"; "");
+# The PeakXR handshake value (src/PeakXR.Core/PeerTable.cs Handshake): protocol in the low 16 bits, bit 16 = in VR.
+def hs_protocol: . % 65536;
+def hs_vr: ((. / 65536) | floor) % 2 == 1;
+# Checkpoints where A stands still with tracked arms (no ragdoll, emote, climb or carry), for the hand comparison.
+def handcps: ["walk-to-host", "ping", "regroup", "grab", "pickup", "holster", "two-hand"];
+# --modded-b: B runs PeakXR flat. Its own side of the pose sync, read from b-summary.json and the handshake and
+# checkpoint lines; replaces the vanilla "B received no event 151" check.
+def moddedb:
+  ($s[0]) as $sum | ($sum.peakxr // {}) as $px | ($px.pose151 // {}) as $ps | ($ps.results // {}) as $res
+  | ($done[0].sent151 // 0) as $sent
+  | [$b[] | select(.type == "handshake")] as $hs
+  | ([$b[] | select(.type == "checkpoint")] | map({key: .name, value: .}) | from_entries) as $bcp
+  | if $sum.peakxrLoaded == null then "FAIL b-summary.json has no modded-B fields (old observer? mise run build-observer)"
+    elif $sum.peakxrLoaded != true then "FAIL B has no PeakXR loaded: install it (docs/testing.md, Modded B) or drop --modded-b"
+    else
+    "PASS B runs PeakXR \($px.version) (PEAKXR_RUNTIME=\($px.runtime))",
+    (if $px.runtime == "Disabled" and ($px.vrEverActive | not) and ($sum.xrEverActive | not) and ($sum.stereoEver | not)
+     then "PASS B stayed flat: runtime Disabled, no VR session, no XR device, no stereo camera"
+     else "FAIL B did not stay flat: runtime \($px.runtime), VR session \($px.vrEverActive), XR device \($sum.xrEverActive), stereo camera \($sum.stereoEver)" end),
+    ([$px.features[]? | select(.state != "Active" and .reason != "VR disabled" and .reason != "not requested")] as $bad
+     | ([$px.features[]? | select(.id == "xr.bootstrap")] | first) as $xr
+     | if ($px.features // []) == [] then "FAIL B logged no PeakXR feature report"
+       elif $bad != [] then "FAIL PeakXR features on B: \($bad | map("\(.id) \(.state) (\(.reason))") | join(", "))"
+       elif $xr == null or $xr.state != "Skipped" then "FAIL xr.bootstrap on B is \($xr.state // "missing"), not Skipped"
+       else "PASS PeakXR features on B: every VR-only one skipped, none failed" end),
+    "INFO PeakXR active on B: \([$px.features[]? | select(.state == "Active") | .id] | join(", ")); patched methods per feature: \($px.patches // {} | to_entries | map("\(.key) \(.value)") | join(", "))",
+    (([$hs[] | select(.b != null and (.b | hs_protocol) > 0 and (.b | hs_vr | not))] | first) as $mine
+     | ([$hs[] | select(.a != null and (.a | hs_vr))] | first) as $theirs
+     | if $mine == null then "FAIL B never published a flat PeakXR handshake (the PeakXR property without the VR bit)"
+       elif $theirs == null then "FAIL B never saw a VR handshake from A"
+       elif ($mine.b | hs_protocol) != ($theirs.a | hs_protocol) then "FAIL handshake protocols differ: B \($mine.b | hs_protocol), A \($theirs.a | hs_protocol)"
+       else "PASS handshake: B \($mine.b) (flat), A \($theirs.a) (VR), protocol \($mine.b | hs_protocol)" end),
+    (($res.Accepted // 0) as $acc
+     | if ($px.acceptProbe | not) then "FAIL B could not probe PeakXR.Core.RemotePoseStream.Accept"
+       elif ($ps.received // 0) == 0 then "FAIL B received no event 151 from A"
+       elif $acc == 0 then "FAIL PeakXR on B accepted none of the \($ps.received) pose packets"
+       else "PASS B received \($ps.received) pose packets from A, PeakXR accepted \($acc)" end),
+    (if ($res.Malformed // 0) > 0 then "FAIL PeakXR on B rejected \($res.Malformed) pose packet(s) from A as malformed or implausible" else empty end),
+    (if ($ps.received // 0) == 0 then empty
+     elif $ps.meanBusy >= $rateMin and $ps.meanBusy <= $rateMax
+     then "PASS pose rate on B: \($ps.meanBusy | r2)/s over the \($ps.busySeconds) s with packets (limits \($rateMin) to \($rateMax))"
+     else "FAIL pose rate on B: \($ps.meanBusy | r2)/s over the \($ps.busySeconds) s with packets, outside \($rateMin) to \($rateMax)" end),
+    # Received time is B main-thread time: a screenshot or a level load bunches packets, and the bucket then limits them.
+    "INFO pose stream on B: peak \($ps.peak1s // 0) in 1 s (receiver cap 40/s, burst 10), \($res.RateLimited // 0) rate-limited, \($res.OutOfOrder // 0) out of order, \(($ps.received // 0) - ([$res[]] | add // 0)) dropped before the stream",
+    (if $sent == 0 then empty
+     elif ($ps.received // 0) * 2 >= $sent then "PASS B received \($ps.received) of the \($sent) pose packets A sent"
+     else "FAIL B received only \($ps.received) of the \($sent) pose packets A sent" end),
+    ([$a[] | select(.status == "pass" and (.name as $n | handcps | index($n)))
+      | . as $x | $bcp[$x.name] as $y
+      | if $x.poseL == null or $x.poseR == null then "SKIP \($x.name) hands: the arms of A were off the tracked pose"
+        elif $y == null then "FAIL \($x.name) hands: B logged no checkpoint"
+        elif ($y.vrDriven | not) then "FAIL \($x.name) hands: B did not drive the avatar of A from its pose"
+        elif $y.boneL == null or $y.boneR == null then "FAIL \($x.name) hands: B logged no hand bones of A"
+        else ([dist($y.boneL; $x.poseL), dist($y.boneR; $x.poseR)] | max) as $e
+          | (if $x.boneL == null or $x.boneR == null then "?" else [dist($y.boneL; $x.boneL), dist($y.boneR; $x.boneR)] | max | r2 end) as $eb
+          | (if $x.boneHead == null or $y.boneHead == null then "?" else dist($y.boneHead; $x.boneHead) | r2 end) as $eh
+          | "\(if $e <= $handTol then "PASS" else "FAIL" end) \($x.name) hands: on B \($e | r2) m from the tracked hands of A (\($eb) m from its own hand bones, head bone \($eh) m)"
+        end]) as $lines
+    | ($lines[], (if any($lines[]; startswith("PASS")) then empty
+                  else "FAIL hands: no checkpoint compared the avatar hands of A on B (\(handcps | join(", ")))" end)),
+    (if $sum.sent151 == 0 then "PASS B sent no event 151" else "FAIL B sent event 151 \($sum.sent151) time(s)" end),
+    (if $sum.bepinexErrors == 0 then "PASS B logged no PeakXR or BepInEx errors"
+     else "FAIL B logged \($sum.bepinexErrors) mod error(s): \($sum.firstBepinexErrors | map(.e) | join(" | "))" end),
+    (if ($px.warnings // 0) == 0 then empty
+     else "INFO PeakXR warned \($px.warnings) time(s) on B: \($px.firstWarnings | map(.e) | join(" | "))" end)
+    end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
 def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach",
@@ -202,8 +282,11 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
      else "FAIL B logged \($sum.exceptions) exception(s): \($sum.firstExceptions | map(.e) | join(" | "))" end),
     (if $sum.unknownEventErrors == 0 then "PASS B logged no unknown-event errors"
      else "FAIL B logged \($sum.unknownEventErrors) unknown-event error(s)" end),
-    (if $sum.event151 == 0 then "PASS B received no event 151"
+    (if $modded then moddedb
+     elif $sum.event151 == 0 then "PASS B received no event 151"
      else "FAIL B received event 151 \($sum.event151) time(s)" end),
+    (if $modded or $sum.peakxrLoaded != true then empty
+     else "FAIL B has PeakXR loaded: switch it back to vanilla (docs/testing.md, Modded B) or pass --modded-b" end),
     "INFO B ended: \($sum.endReason); \($sum.checkpoints) checkpoints, \($sum.samples) samples, \($sum.errors) logged errors"
   ]
 | .[]
@@ -211,7 +294,9 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
 
 if [[ -s "$DONE" ]]; then
     # A run without VR skips every VR step, and one that stopped early never reached the rest: neither proves the mod.
-    jq -r '"\(if .sent151 == 0 then "PASS" else "FAIL" end) A sent event 151 \(.sent151) time(s)",
+    # A modded B is a handshake peer, so net.pose on A streams to it; a vanilla B never is one.
+    jq -r --argjson modded "$MODDED" \
+        '"\(if (.sent151 == 0) != $modded then "PASS" else "FAIL" end) A sent event 151 \(.sent151) time(s)",
         (if .reason == "script done" then "PASS A finished its script" else "FAIL A stopped early: \(.reason)" end),
         (if .vr then "PASS A ran in VR" else "FAIL A ran without VR: every VR step skipped" end),
         (if .fail == 0 then empty else "FAIL A logged \(.fail) failed step(s) (see a-mptest.log)" end),

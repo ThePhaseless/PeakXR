@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     The vanilla peer's test plugin for the two-client multiplayer test (docs/testing.md, "Two-client multiplayer test").
-    It never references PeakXR: client B must stay a vanilla client. Built by `mise run build-observer`, not part of
+    It never references PeakXR: client B must stay a vanilla client, and in the modded-B mode it reaches a flat
+    PeakXR by name and reflection only (Observer.PeakXR.cs). Built by `mise run build-observer`, not part of
     the solution or of `mise run package`.
   -->
   <PropertyGroup>
@@ -26,6 +27,7 @@
   <ItemGroup>
     <Compile Include="../../src/PeakXR.Core/MpTestFiles.cs" Link="Shared/MpTestFiles.cs" />
     <Compile Include="../../src/PeakXR.Core/FileFingerprint.cs" Link="Shared/FileFingerprint.cs" />
+    <Compile Include="../../src/PeakXR.Core/MpPoseCheck.cs" Link="Shared/MpPoseCheck.cs" />
   </ItemGroup>
 
   <ItemGroup>
