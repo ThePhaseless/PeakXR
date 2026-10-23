@@ -190,6 +190,7 @@ internal sealed partial class SelfTestRunner
                 var label = F($"reach out {at.x:0.00} up {at.y:0.00} forward {at.z:0.00}");
                 JudgeReach(c, label + " L", left, fails, notes);
                 JudgeReach(c, label + " R", right, fails, notes);
+                notes.Add(label + ": " + ArmContacts(c));
             }
         }
         finally
@@ -671,6 +672,49 @@ internal sealed partial class SelfTestRunner
         float rigWeight = c.refs.ikRig != null ? c.refs.ikRig.weight : -1f;
         found.Add(F($"IK weight {ikWeight:0.00} (rig {rigWeight:0.00})"));
         return string.Join(", ", found);
+    }
+
+    /// <summary>Own-body colliders the arms overlap (the head, the torso) and whether the character layer collides
+    /// with itself: what can push a reaching ragdoll arm off its target.</summary>
+    static string ArmContacts(Character c)
+    {
+        var parts = c.refs.ragdoll.partDict;
+        var found = new List<string>();
+        foreach (var side in new[] { BodypartType.Arm_L, BodypartType.Arm_R })
+        {
+            if (!parts.TryGetValue(side, out var arm))
+                continue;
+            foreach (var a in arm.GetComponentsInChildren<Collider>())
+            {
+                foreach (var other in new[] { BodypartType.Head, BodypartType.Torso })
+                {
+                    if (!parts.TryGetValue(other, out var body))
+                        continue;
+                    foreach (var b in body.GetComponents<Collider>())
+                    {
+                        if (
+                            a != b
+                            && !Physics.GetIgnoreCollision(a, b)
+                            && Physics.ComputePenetration(
+                                a,
+                                a.transform.position,
+                                a.transform.rotation,
+                                b,
+                                b.transform.position,
+                                b.transform.rotation,
+                                out _,
+                                out float depth
+                            )
+                        )
+                            found.Add(F($"{a.name} in {other} {depth:0.00} m"));
+                    }
+                }
+            }
+        }
+        int layer = parts.TryGetValue(BodypartType.Head, out var head) ? head.gameObject.layer : 0;
+        return F(
+            $"arm contacts {(found.Count == 0 ? "none" : string.Join(", ", found))} (body layer self-collides {!Physics.GetIgnoreLayerCollision(layer, layer)})"
+        );
     }
 
     /// <summary>Rest lengths (x forearm, y upper arm) from the skin's bind pose, else from the joint anchors.</summary>
