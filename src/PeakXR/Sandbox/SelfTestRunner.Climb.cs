@@ -980,12 +980,15 @@ internal sealed partial class SelfTestRunner
         // handle 1.18 m from the eye (run 47, vr.44) is out of any reach. Step to about 0.4 m from it (run 53, vr.56: 0.5 m left the handle 0.85 m out).
         // Toward the hit itself, and again if the face found after the step is still out: WallInFront can fall back
         // to a ray at the far point FindWall started from (run 55, vr.44b: the handle placed 1.37 m out after the step).
+        var steps = new System.Text.StringBuilder();
         for (int step = 0; step < 2; step++)
         {
             var gap = hit.point - rig.Head.position;
             gap.y = 0f;
             if (gap.magnitude <= 0.55f)
                 break;
+            var bodyBefore = c.Center;
+            steps.Append(F($"step {step + 1}: face {gap.magnitude:0.00} m out"));
             c.photonView.RPC(
                 "WarpPlayerRPC",
                 RpcTarget.All,
@@ -1010,7 +1013,37 @@ internal sealed partial class SelfTestRunner
                     Vector3.up
                 )
             );
+            steps.Append(
+                F(
+                    $", body moved {FlatDistance(bodyBefore, c.Center):0.00} m of {gap.magnitude - 0.4f:0.00} asked; "
+                )
+            );
         }
+        // Still out after the steps (run 56, vr.56: 1.00 m out, the step's effect unlogged): place on the face where
+        // a player standing here would, straight ahead of the eyes at chest height, if there is one within reach.
+        var outNow = hit.point - rig.Head.position;
+        outNow.y = 0f;
+        if (
+            outNow.magnitude > 0.55f
+            && Physics.Raycast(
+                rig.Head.position + Vector3.down * 0.3f,
+                Flat(rig.Head.forward),
+                out var near,
+                0.75f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            steps.Append(
+                F(
+                    $"placed on the face ahead at {near.distance:0.00} m instead of {outNow.magnitude:0.00} m"
+                )
+            );
+            hit = near;
+        }
+        if (steps.Length > 0)
+            Note("piton step-in: " + steps);
         var go = PhotonNetwork.InstantiateItemRoom(
             spike.hammeredVersionPrefab.name,
             hit.point,

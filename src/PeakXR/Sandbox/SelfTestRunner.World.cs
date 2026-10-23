@@ -745,6 +745,21 @@ internal sealed partial class SelfTestRunner
         carryMark = CueMark();
         float end = Now + seconds;
         BeginCarry();
+        // Over the fuse first, then down onto it, as a player lowers a flame onto a fuse: carried in level, the torch
+        // met the cannon's body and the flame stalled 0.25 m short (run 56, vr.88) of the 0.12 m touch the light needs
+        // (FireGestures.TouchEnter; ScoutCannonFuse.Interact_CastFinished lights it, ScoutCannonFuse.cs:99-101).
+        float above = Now + Mathf.Min(1.5f, seconds * 0.4f);
+        while (
+            Now < above
+            && flame != null
+            && !done()
+            && Vector3.Distance(flame.position, Touch() + Vector3.up * 0.25f) > 0.08f
+        )
+        {
+            CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f);
+            yield return null;
+        }
+        BeginCarry();
         while (Now < end && flame != null && !done())
         {
             CarryToward(left, flame.position, Touch());
