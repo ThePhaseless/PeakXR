@@ -28,6 +28,10 @@ namespace PeakXR.Core
         /// <summary>A firm trackpad squeeze next to real face buttons is the menu button.</summary>
         public bool PadMenuForce;
 
+        /// <summary>Khronos simple profile: select (reported as PrimaryButton) is the only press, and with no grip
+        /// a player could never climb or grab, so a held select is the grip and not A/X.</summary>
+        public bool SelectIsGrip;
+
         public static ControllerLayout From(IReadOnlyList<string> usages)
         {
             bool Has(string name) => XRUsageNames.Find(usages, name) != null;
@@ -41,6 +45,12 @@ namespace PeakXR.Core
             // player would have no pause or recenter. A trackpad next to real face buttons is otherwise unbound.
             l.PadMenuClick = !l.EmulateFaceButtons && !l.PadIsStick;
             l.PadMenuForce = !l.EmulateFaceButtons && Has("Secondary2DAxisForce");
+            l.SelectIsGrip =
+                Has("PrimaryButton")
+                && !l.HasTrigger
+                && !l.HasGrip
+                && !Has("TriggerButton")
+                && !Has("GripButton");
             return l;
         }
     }
@@ -101,7 +111,10 @@ namespace PeakXR.Core
         {
             var b = default(ControllerButtons);
             b.Trigger = l.HasTrigger ? s.Trigger : (s.TriggerButton ? 1f : 0f);
-            b.Grip = l.HasGrip ? s.Grip : (s.GripButton ? 1f : 0f);
+            b.Grip =
+                l.HasGrip ? s.Grip
+                : l.SelectIsGrip ? (s.Primary ? 1f : 0f)
+                : (s.GripButton ? 1f : 0f);
             b.TriggerTouch = s.TriggerTouch || b.Trigger > TriggerTouchPull;
             b.Stick = s.Stick;
             b.StickTouch = s.StickTouch;
@@ -128,7 +141,7 @@ namespace PeakXR.Core
                 b.Secondary = s.PadClick && zone == PadZone.Up;
                 b.Primary = s.PadClick && zone == PadZone.Down;
             }
-            else
+            else if (!l.SelectIsGrip)
             {
                 b.Primary = s.Primary;
                 b.Secondary = s.Secondary;

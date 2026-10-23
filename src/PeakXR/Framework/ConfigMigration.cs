@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using BepInEx.Configuration;
 using PeakXR.Core;
 
@@ -26,6 +28,29 @@ internal static class ConfigMigration
         if (!move)
             return;
         entry.Value = (bool)entry.DefaultValue;
+        Plugin.Log.LogInfo(
+            $"[config] {def.Section}.{def.Key}: old default {oldDefault} moved to {entry.Value}"
+        );
+    }
+
+    /// <summary>A choice whose default changed, compared by its number (BepInEx saves the name, so a saved
+    /// value keeps its meaning).</summary>
+    public static void FromOldDefault<T>(ConfigEntry<T> entry, T oldDefault)
+        where T : struct, Enum
+    {
+        var def = entry.Definition;
+        float old = Convert.ToInt32(oldDefault, CultureInfo.InvariantCulture);
+        var marker = Marker(def, old);
+        var move = SettingMigration.ShouldMove(
+            Convert.ToInt32(entry.Value, CultureInfo.InvariantCulture),
+            old,
+            Convert.ToInt32(entry.DefaultValue, CultureInfo.InvariantCulture),
+            marker.Value
+        );
+        marker.Value = true;
+        if (!move)
+            return;
+        entry.Value = (T)entry.DefaultValue;
         Plugin.Log.LogInfo(
             $"[config] {def.Section}.{def.Key}: old default {oldDefault} moved to {entry.Value}"
         );

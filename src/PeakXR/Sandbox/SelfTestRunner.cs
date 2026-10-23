@@ -181,6 +181,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return Uses();
             yield return Mobs();
             yield return VRStep("vr.07-comfort", 100f, ComfortCheck());
+            yield return VRStep("vr.235-ragdoll-vignette", 15f, RagdollVignetteCheck());
             yield return VRStep("vr.34-blind", 15f, BlindCheck());
             yield return HandSteps();
             yield return SpatialSteps();

@@ -99,10 +99,11 @@ namespace PeakXR.Core
             {
                 case ComfortEvent.Knockback:
                 case ComfortEvent.WindPush:
+                // A tumble moves the body the player did not move; a rumble alone gave the eye no cue.
+                case ComfortEvent.Ragdoll:
                     return ComfortTreatment.VignettePulse;
                 case ComfortEvent.Launch:
                     return ComfortTreatment.ThirdPerson;
-                case ComfortEvent.Ragdoll:
                 case ComfortEvent.ForcedLook:
                 case ComfortEvent.Shake:
                     return ComfortTreatment.HapticPulse;
