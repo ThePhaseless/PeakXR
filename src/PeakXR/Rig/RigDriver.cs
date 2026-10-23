@@ -200,6 +200,10 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
     private readonly HoldCue holdCue = new();
+    private bool recenterLeft = true;
+
+    /// <summary>The recenter hold ring, for the self-test (vr.185); null without a rig driver.</summary>
+    internal static HoldCue RecenterCue => instance != null ? instance.holdCue : null;
     private readonly SpectateFloor spectateFloor = new();
     private readonly DesktopMirror mirror = new();
     private readonly List<Camera> silencedCameras = new();
@@ -371,7 +375,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
-        holdCue.Show(null, 0f, 0f);
+        holdCue.Show(null, null, 0f, 0f);
         spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
@@ -630,8 +634,18 @@ internal sealed class RigDriver : MonoBehaviour
     private void HandleRecenterInput(Character c, float dt)
     {
         recenterPress.Seconds = CameraFeature.RecenterSeconds;
-        bool fired = recenterPress.Update(VRInput.Left.Menu || VRInput.Right.Menu, dt);
-        holdCue.Show(rig.Head, recenterPress.HeldSeconds, recenterPress.Progress);
+        bool left = VRInput.Left.Menu,
+            right = VRInput.Right.Menu;
+        // The ring goes to the controller whose button is held; with both down it stays where it is.
+        if (left != right)
+            recenterLeft = left;
+        bool fired = recenterPress.Update(left || right, dt);
+        holdCue.Show(
+            rig.Hand(recenterLeft),
+            rig.Head,
+            recenterPress.HeldSeconds,
+            recenterPress.Progress
+        );
         if (fired || rig.RecenterRequested)
         {
             rig.RecenterRequested = false;

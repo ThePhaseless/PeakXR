@@ -209,7 +209,8 @@ internal sealed class SlotGhosts : MonoBehaviour
         return material;
     }
 
-    /// <summary>White ring with a faint filled middle, alpha in the texture so the material colour tints it.</summary>
+    /// <summary>White ring with a faint filled middle and a dark band outside (Core <see cref="SlotRing"/>), alpha in
+    /// the texture so the material colour tints it.</summary>
     private static Texture2D MakeRing(int size)
     {
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
@@ -224,14 +225,9 @@ internal sealed class SlotGhosts : MonoBehaviour
             for (int x = 0; x < size; x++)
             {
                 float d = new Vector2(x + 0.5f - half, y + 0.5f - half).magnitude / half;
-                float ring = Mathf.Clamp01(1f - Mathf.Abs(d - 0.88f) / 0.08f);
-                float fill = d < 0.82f ? 0.18f : 0f;
-                pixels[y * size + x] = new Color32(
-                    255,
-                    255,
-                    255,
-                    (byte)(255 * Mathf.Max(ring, fill))
-                );
+                SlotRing.Texel(d, out float value, out float alpha);
+                byte v = (byte)(255 * value);
+                pixels[y * size + x] = new Color32(v, v, v, (byte)(255 * alpha));
             }
         }
         tex.SetPixels32(pixels);

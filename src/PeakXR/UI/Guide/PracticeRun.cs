@@ -33,8 +33,6 @@ internal sealed class PracticeRun : MonoBehaviour
     private const float FarApple = 2.6f;
     private const float ReplaceDistance = 1.5f;
     private const float ReplaceAngle = 70f;
-    private static readonly Color SkipColor = new(0.45f, 0.9f, 0.82f, 0.8f);
-    private static readonly Color ExitColor = new(1f, 0.42f, 0.36f, 0.8f);
 
     public static PracticeRun Current { get; private set; }
 
@@ -577,8 +575,8 @@ internal sealed class PracticeRun : MonoBehaviour
             UIMaterials.Create(Affordance.HintColor, drawOnTop: false, renderQueue: 3120)
         );
         // Chevron on skip, cross on exit: the shapes say which is which without text.
-        skipOrb = new TouchOrb("PeakXR_PracticeSkip", SkipColor, cross: false, seconds: 0.6f);
-        exitOrb = new TouchOrb("PeakXR_PracticeExit", ExitColor, cross: true, seconds: 0.8f);
+        skipOrb = new TouchOrb("PeakXR_PracticeSkip", cross: false, seconds: 0.6f);
+        exitOrb = new TouchOrb("PeakXR_PracticeExit", cross: true, seconds: 0.8f);
         goalInner = Ring("GoalInner", hintMat);
         goalOuter = Ring("GoalOuter", hintMat);
 

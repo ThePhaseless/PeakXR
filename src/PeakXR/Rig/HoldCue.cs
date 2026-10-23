@@ -1,17 +1,21 @@
 using PeakXR.UI.Common;
+using PeakXR.UI.Spatial;
 using UnityEngine;
 
 namespace PeakXR.Rig;
 
 /// <summary>
-/// Small head-locked radial progress ring shown while the menu button is held toward a recenter, so the player
-/// sees that letting go now pauses and holding on recenters. A fixed ring mesh 0.8 m ahead and a little below the
-/// view centre; progress collapses the unfilled segments onto the fill edge, so only vertex positions change.
+/// Small radial progress ring shown while the menu button is held toward a recenter, so the player sees that letting
+/// go now pauses and holding on recenters. It sits just above the controller whose button is held, facing the eye
+/// (no head-locked UI), and draws on top at the hand-UI order like the other rings at the hands; progress collapses
+/// the unfilled segments onto the fill edge, so only vertex positions change.
 /// </summary>
 internal sealed class HoldCue
 {
     private const int Segments = 40;
-    private const float Distance = 0.8f;
+
+    /// <summary>Above the controller, clear of the hand as you see it.</summary>
+    private const float Above = 0.08f;
     private const float Radius = 0.025f;
     private const float Width = 0.006f;
 
@@ -25,22 +29,31 @@ internal sealed class HoldCue
     private Transform parent;
     private float shown = -1f;
 
-    /// <param name="head">Head-locked transform.</param>
+    /// <summary>The ring is drawn (self-test vr.185).</summary>
+    public bool Visible => go != null && go.activeSelf;
+
+    /// <summary>Where the ring is (self-test vr.185).</summary>
+    public Vector3 Position => go != null ? go.transform.position : default;
+
+    /// <param name="hand">The controller whose menu button is held.</param>
+    /// <param name="head">The eye the ring faces.</param>
     /// <param name="heldSeconds">Seconds the button has been down.</param>
     /// <param name="progress">0..1 toward the recenter.</param>
-    public void Show(Transform head, float heldSeconds, float progress)
+    public void Show(Transform hand, Transform head, float heldSeconds, float progress)
     {
-        bool visible = head != null && heldSeconds >= ShowAfter && progress < 1f;
+        bool visible = hand != null && head != null && heldSeconds >= ShowAfter && progress < 1f;
         if (!visible)
         {
             if (go != null && go.activeSelf)
                 go.SetActive(false);
             return;
         }
-        if (go == null || parent != head)
-            Attach(head);
+        if (go == null || parent != hand)
+            Attach(hand);
         if (!go.activeSelf)
             go.SetActive(true);
+        var at = hand.position + Vector3.up * Above;
+        go.transform.SetPositionAndRotation(at, SpatialRuntime.FaceEye(at, head.position));
         if (Mathf.Abs(progress - shown) < 0.005f)
             return;
         shown = progress;
@@ -73,18 +86,20 @@ internal sealed class HoldCue
         }
     }
 
-    private void Attach(Transform head)
+    private void Attach(Transform hand)
     {
         if (mesh == null)
             Build();
-        if (go != null)
-            Object.Destroy(go);
-        parent = head;
-        go = UIMaterials.MeshObject("PeakXR.RecenterCue", mesh, material, head);
-        // Over world-space labels and the comfort vignette, under the rim and the fade.
-        go.GetComponent<MeshRenderer>().sortingOrder = PeakXR.Core.DrawOrder.RecenterCue;
-        go.transform.localPosition = new Vector3(0f, -0.08f, Distance);
-        go.layer = head.gameObject.layer;
+        parent = hand;
+        if (go == null)
+        {
+            go = UIMaterials.MeshObject("PeakXR.RecenterCue", mesh, material, hand);
+            // Hand-UI order: over smoke and the player's own hand, under the comfort overlays.
+            go.GetComponent<MeshRenderer>().sortingOrder = PeakXR.Core.DrawOrder.HandUi;
+        }
+        else
+            go.transform.SetParent(hand, false);
+        go.layer = hand.gameObject.layer;
     }
 
     private void Build()
@@ -106,11 +121,10 @@ internal sealed class HoldCue
         mesh.MarkDynamic();
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
-        // Above the comfort vignette (4000), below the VR fade.
         material = UIMaterials.Create(
             new Color(1f, 1f, 1f, 0.85f),
             drawOnTop: true,
-            renderQueue: 4001
+            renderQueue: 3100
         );
     }
 }

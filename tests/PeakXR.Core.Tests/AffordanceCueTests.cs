@@ -5,6 +5,19 @@ public class AffordanceCueTests
     const int Rate = 44100;
 
     [Theory]
+    [InlineData(1f, 1f, 0.3f)]
+    [InlineData(1f, 0f, 0f)]
+    [InlineData(0.5f, 2f, 0.3f)]
+    [InlineData(1f, 2f, 0.6f)]
+    [InlineData(3f, 2f, 1f)]
+    [InlineData(1f, -1f, 0f)]
+    public void Volume_ScalesByCueVolumeAndClampsToOne(
+        float volume,
+        float cueVolume,
+        float expected
+    ) => Assert.Equal(expected, CueTones.Volume(volume, cueVolume), 4);
+
+    [Theory]
     [InlineData(CueSound.Refused)]
     [InlineData(CueSound.WouldWork)]
     [InlineData(CueSound.Notice)]

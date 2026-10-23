@@ -199,13 +199,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 Haptics.Muted
             );
         else
-        {
-            var pattern = DenyHaptics.For(reason);
-            (left ? self.leftBuzz : self.rightBuzz).Start(pattern, now);
-            // The whole triple holds the hand, gaps included: nothing lower cuts or slips into it.
-            var last = pattern[pattern.Length - 1];
-            Haptics.Hold(left, HapticPriority.Alert, last.At + last.Seconds);
-        }
+            self.StartBuzz(left, reason, now);
         var d = self.denials[left ? 0 : 1];
         // The same refusal reported again while its cue is up (even every frame) keeps one live cue: it never
         // restarts from 0, which would blink or never get drawn (DenyFade.Refresh).
@@ -418,6 +412,23 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         pendingAt = Time.unscaledTime + WouldWorkDelay;
         pendingPos = hint.SpotNow;
         pendingVolume = volume;
+    }
+
+    /// <summary>Only the denied haptic, for a quick retry of a refusal whose ring and sound are still rate-limited
+    /// (<see cref="DenyGate.AllowHaptic"/>).</summary>
+    public static void BuzzOnly(bool left, DenyReason reason)
+    {
+        if (instance != null)
+            instance.StartBuzz(left, reason, Time.unscaledTime);
+    }
+
+    private void StartBuzz(bool left, DenyReason reason, float now)
+    {
+        var pattern = DenyHaptics.For(reason);
+        (left ? leftBuzz : rightBuzz).Start(pattern, now);
+        // The whole triple holds the hand, gaps included: nothing lower cuts or slips into it.
+        var last = pattern[pattern.Length - 1];
+        Haptics.Hold(left, HapticPriority.Alert, last.At + last.Seconds);
     }
 
     private static void Buzz(HapticPatternPlayer player, bool left, float now)

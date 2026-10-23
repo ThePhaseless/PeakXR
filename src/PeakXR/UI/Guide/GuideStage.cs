@@ -43,8 +43,6 @@ internal sealed class GuideStage : MonoBehaviour
         offerNo;
     private GameObject offerCaption;
     private MainMenuPageHandler offerHandler;
-    private static readonly Color OfferYes = new(0.45f, 0.9f, 0.82f, 0.8f);
-    private static readonly Color OfferNo = new(1f, 0.42f, 0.36f, 0.8f);
 
     /// <summary>The demo on show, for the self-test; null when none.</summary>
     public GhostDemo Demo => demo;
@@ -193,7 +191,8 @@ internal sealed class GuideStage : MonoBehaviour
     // ---- the once-only offer ----
 
     /// <summary>Once a second while not yet offered: the first time VR reaches the title's main page and it has stayed
-    /// a moment, show the offer. It is marked offered as soon as it shows.</summary>
+    /// a moment, show the offer. It is marked offered only when answered (accept or dismiss), so leaving the title
+    /// without answering offers it again next launch; <c>offerTried</c> keeps it to once per launch.</summary>
     private void CheckOffer()
     {
         if (offerTried || Time.unscaledTime < nextOfferCheck)
@@ -251,7 +250,6 @@ internal sealed class GuideStage : MonoBehaviour
             offerTried = false;
             return;
         }
-        GuideFeature.Offered.Value = true;
         offerHandler = handler;
         var canvas = handler.GetComponentInParent<Canvas>();
         var panel = canvas != null ? (RectTransform)canvas.rootCanvas.transform : null;
@@ -276,8 +274,8 @@ internal sealed class GuideStage : MonoBehaviour
         offerDemo.Play(GuideTopic.Grab);
         offerDemo.Root.SetPositionAndRotation(edge + right * 0.3f + Vector3.up * 0.15f, rotation);
         var orbs = head.position + facing * 0.4f + Vector3.down * 0.12f;
-        offerYes = new TouchOrb("PeakXR_OfferPractice", OfferYes, cross: false, seconds: 0.6f);
-        offerNo = new TouchOrb("PeakXR_OfferDismiss", OfferNo, cross: true, seconds: 0.6f);
+        offerYes = new TouchOrb("PeakXR_OfferPractice", cross: false, seconds: 0.6f);
+        offerNo = new TouchOrb("PeakXR_OfferDismiss", cross: true, seconds: 0.6f);
         offerYes.Place(orbs + right * 0.28f, rotation);
         offerNo.Place(orbs + right * 0.42f, rotation);
         if (AffordanceFeature.ActionHintText != null && AffordanceFeature.ActionHintText.Value)
@@ -322,6 +320,7 @@ internal sealed class GuideStage : MonoBehaviour
         offerDemo.Tick(dt, 1f, rig.Head);
         if (offerNo.Tick(rig, dt))
         {
+            GuideFeature.Offered.Value = true;
             CueAudio.Play(CueSound.Notice, offerNo.Position, 0.6f);
             Plugin.Log.LogInfo("[ui.guide] practice offer dismissed");
             HideOffer();
@@ -329,6 +328,7 @@ internal sealed class GuideStage : MonoBehaviour
         }
         if (!offerYes.Tick(rig, dt))
             return;
+        GuideFeature.Offered.Value = true;
         CueAudio.Play(CueSound.WouldWork, offerYes.Position, 1f);
         var handler = offerHandler;
         HideOffer();

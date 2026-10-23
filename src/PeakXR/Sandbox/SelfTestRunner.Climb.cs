@@ -2061,8 +2061,11 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(left, () => hold, 0.5f);
         yield return WaitFor(() => ClimbHover.Drawn(left), 1f);
         bool drawn = ClimbHover.Drawn(left);
+        // Height of the ring over the wall's plane: lifted clear of rough rock (ClimbHover.Lift).
+        float lift = Vector3.Dot(ClimbHover.Position(left) - wallFace.point, wallFace.normal);
         yield return Feel(left, CueFeel.Contact, mark, 0.5f);
-        string contact = $"{cueNote} (ring off the wall {drawnBefore})";
+        string contact =
+            $"{cueNote} (ring off the wall {drawnBefore}, lifted {lift * 100f:0.0} cm)";
         yield return ExpectNoCue(left, mark, 0f);
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isClimbing, 2f);
@@ -2071,6 +2074,8 @@ internal sealed partial class SelfTestRunner
         var note = $"ring drawn {drawn}, {contact}; climbing on grip {climbed}, ring gone {gone}";
         if (!drawn)
             Fail("no chalk ring under the open hand: " + note);
+        else if (lift < ClimbHover.Lift - 0.005f)
+            Fail("the chalk ring sits too close to the rock: " + note);
         else if (!climbed)
             Fail($"grip did not climb: {note}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}");
         else if (!gone)
