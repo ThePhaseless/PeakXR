@@ -88,6 +88,9 @@ public partial class AvatarPoseDriver
 
     /// <summary>Lets the local held item leave a ragdoll hand that cannot reach the controller (<see cref="WeldGate"/>).</summary>
     private readonly WeldGate weldGate = new();
+
+    /// <summary>The held item has left its hand weld to follow the controller (self-test).</summary>
+    internal bool HeldReleased => weldGate.Released;
     private Item followItem;
     private Vector3 lastTarget;
     private bool haveLastTarget;

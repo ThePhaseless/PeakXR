@@ -12,7 +12,7 @@ public class PhysicalCrouchTests
     {
         var c = new PhysicalCrouch();
         Assert.False(Step(c, 1.6f));
-        Assert.False(Step(c, 1.3f)); // 19 % lower: a nod or a lean
+        Assert.False(Step(c, 1.35f)); // 16 % lower: a nod, a glance at the floor, a lean
     }
 
     [Fact]
@@ -23,14 +23,33 @@ public class PhysicalCrouchTests
     }
 
     [Fact]
+    public void AStoopToTheGround_Crouches()
+    {
+        // vr.87/vr.88: a 0.47 m stoop (29 %) to a fuse or a torch stayed under the old 30 % and left the avatar
+        // upright with its hands far above the controllers.
+        var c = new PhysicalCrouch();
+        Assert.True(Step(c, 1.6f - 0.47f));
+    }
+
+    [Fact]
     public void Hysteresis_HoldsBetweenThresholds()
     {
         var c = new PhysicalCrouch();
-        Assert.False(Step(c, 1.16f)); // 27.5 %: not in yet
-        Assert.True(Step(c, 1.1f)); // 31 %: in
-        Assert.True(Step(c, 1.2f)); // 25 %: still in
-        Assert.False(Step(c, 1.27f)); // 20.6 %: out
-        Assert.False(Step(c, 1.2f)); // 25 %: stays out
+        Assert.False(Step(c, 1.30f)); // 18.8 %: not in yet
+        Assert.True(Step(c, 1.26f)); // 21 %: in
+        Assert.True(Step(c, 1.36f)); // 15 %: still in
+        Assert.False(Step(c, 1.46f)); // 8.8 %: out
+        Assert.False(Step(c, 1.36f)); // 15 %: stays out
+    }
+
+    [Theory]
+    [InlineData(0.3f, 1.6f - 0.47f, false)] // a deeper setting keeps a stoop standing
+    [InlineData(0.15f, 1.6f - 0.3f, true)]
+    public void Depth_IsTheSetting(float depth, float head, bool crouched)
+    {
+        var c = new PhysicalCrouch();
+        c.SetDepth(depth);
+        Assert.Equal(crouched, Step(c, head));
     }
 
     [Fact]
