@@ -1524,6 +1524,16 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(true, 1f, 0.1f);
         yield return WaitFor(() => !InWorld(), 2f);
         bool pocketed = !InWorld();
+        // No pickup, no pocket notice: say which failed (run 50 read the missing pickup as a missing Stowed cue).
+        if (!pocketed)
+        {
+            Fail(
+                F(
+                    $"the free hand did not pick up the second Apple (hand {Vector3.Distance(rig.Hand(true).position, last):0.00} m from it, stooped {headDrop:0.00} m), so no Stowed notice was due; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                )
+            );
+            yield break;
+        }
         yield return ExpectCue(true, DenyReason.Stowed, mark, false, 1f);
         bool kept = HeldItem() == held && !LocalHold.ItemInLeftHand;
         var note =
