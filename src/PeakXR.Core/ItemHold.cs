@@ -96,7 +96,7 @@ namespace PeakXR.Core
             ("book", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
             ("passport", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
             ("binocular", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder)),
-            // A flag pole is planted with one hand; a second steadies it (inferred long items need two).
+            // A flag pole is planted with one hand; a second steadies it.
             ("checkpoint", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole)),
             ("compass", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
             ("firstaid", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
@@ -143,8 +143,11 @@ namespace PeakXR.Core
         {
             bool has(ItemTraits t) => (traits & t) != 0;
 
+            // A long item is held like a pole, but the game needs no second hand for any item (it only joins one when
+            // the item is not rightHandOnly, CharacterItems.cs:647-651): one hand still uses it. Only the named
+            // two-handed tools above require both.
             if (has(ItemTraits.Elongated))
-                return new HoldProfile(Handedness.TwoHanded, GripPreset.TwoHandPole);
+                return new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole);
             if (has(ItemTraits.Backpack))
                 return new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm);
             if (has(ItemTraits.Shooter))
@@ -161,9 +164,13 @@ namespace PeakXR.Core
             return new HoldProfile(Handedness.OptionalTwoHand, grip);
         }
 
-        /// <summary>Whether primary/secondary use is allowed right now.</summary>
-        public static bool CanUse(Handedness handedness, bool secondHandOnItem) =>
-            handedness != Handedness.TwoHanded || secondHandOnItem;
+        /// <summary>Whether primary/secondary use is allowed right now. <paramref name="requireTwoHands"/> off
+        /// (<c>Interaction.RequireTwoHands</c>) lets every item work one-handed, as in the flat game.</summary>
+        public static bool CanUse(
+            Handedness handedness,
+            bool secondHandOnItem,
+            bool requireTwoHands = true
+        ) => !requireTwoHands || handedness != Handedness.TwoHanded || secondHandOnItem;
 
         /// <summary>Whether the free hand gripping the held item becomes a two-hand hold.</summary>
         public static bool AcceptsSecondHand(Handedness handedness) =>

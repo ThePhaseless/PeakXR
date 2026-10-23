@@ -22,6 +22,7 @@ internal sealed class InteractConfig
         climbFromHand,
         climbHoverRing,
         climbSurfaceFeel,
+        requireTwoHands,
         haptics;
     private ConfigEntry<float> grabRadius,
         throwSpeed,
@@ -52,6 +53,10 @@ internal sealed class InteractConfig
     public bool ClimbFromHand => climbFromHand?.Value ?? true;
     public bool ClimbHoverRing => climbHoverRing?.Value ?? true;
     public bool ClimbSurfaceFeel => climbSurfaceFeel?.Value ?? true;
+    public bool RequireTwoHands => requireTwoHands?.Value ?? true;
+
+    /// <summary>The setting itself, for the self-test (vr.61b).</summary>
+    internal ConfigEntry<bool> RequireTwoHandsEntry => requireTwoHands;
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
     public float HapticStrength => hapticStrength?.Value ?? HapticScale.DefaultStrength;
 
@@ -234,6 +239,13 @@ internal sealed class InteractConfig
                 true,
                 "Feel the rock while climbing: a hard catch ratchets, easy holds tick softly, slides grit, hazards prickle, "
                     + "wind shudders, and a sliding vine whirrs."
+            ),
+            requireTwoHands = file.Bind(
+                s,
+                "RequireTwoHands",
+                true,
+                "Two-handed tools (the rescue hook, the antizooka) need your other hand on them before they work. "
+                    + "Off: they work one-handed, as in the flat game."
             ),
             haptics = file.Bind(
                 s,

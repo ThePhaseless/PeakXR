@@ -50,6 +50,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
+        yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
@@ -1609,6 +1610,47 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
         yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.61b (external review #19): with <c>Interaction.RequireTwoHands</c> off, a two-handed tool held in one hand
+    /// works as in the flat game: the use press reaches the game and no NeedsTwoHands refusal fires (vr.61 proves the
+    /// refusal with the setting on).
+    /// </summary>
+    IEnumerator TwoHandsOptionalStep()
+    {
+        var c = Character.localCharacter;
+        var entry = Interact.InteractConfig.Instance.RequireTwoHandsEntry;
+        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        if (entry == null || hook == null)
+        {
+            stepSkip = "interact.physical not bound or no RescueHook";
+            yield break;
+        }
+        bool was = entry.Value;
+        OnRestore(() => entry.Value = was);
+        entry.Value = false;
+        yield return GiveAndHold(hook);
+        if (!stepOk)
+            yield break;
+        bool left = LocalHold.ItemInLeftHand;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        bool reached = false;
+        Script(left).Trigger = 1f;
+        for (float end = Now + 0.4f; Now < end; )
+        {
+            reached |= c.input.usePrimaryIsPressed;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        yield return ExpectNoCue(left, mark, 0f);
+        entry.Value = was;
+        var note = $"{HeldItem()?.name} one-handed: use reached the game {reached}";
+        if (!reached)
+            Fail("the use press of a two-handed tool held one-handed was blocked: " + note);
+        else
+            Note(note);
     }
 
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is

@@ -1659,7 +1659,11 @@ internal static class PhysicalInteraction
         if (PrimaryEdge.Pressed && holding)
         {
             var held = c.data.currentItem;
-            bool handsOk = ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand);
+            bool handsOk = ItemHoldTable.CanUse(
+                Hold.Profile.Handedness,
+                LocalHold.TwoHand,
+                cfg.RequireTwoHands
+            );
             // A press the game will not act on gets the denied cue instead of the success tick (a one-handed hold of
             // a two-handed item is denied below).
             if (!Affordance.Enabled)
@@ -1679,7 +1683,14 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
         }
 
-        if (holding && !ItemHoldTable.CanUse(Hold.Profile.Handedness, LocalHold.TwoHand))
+        if (
+            holding
+            && !ItemHoldTable.CanUse(
+                Hold.Profile.Handedness,
+                LocalHold.TwoHand,
+                cfg.RequireTwoHands
+            )
+        )
         {
             // Two-handed item held in one hand: carry only. Cancel a use that was in progress.
             bool wasUsing =
