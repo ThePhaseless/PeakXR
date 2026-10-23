@@ -15,7 +15,11 @@ namespace PeakXR.Interact.Physical;
 /// Summit props driven by the hands instead of a grip anywhere on them, each ending in the prop's own interact hold:
 /// <list type="bullet">
 /// <item>Altar socket (WS-W14): the held amulet brought to the socket it would fill (<see cref="AltarSocket"/>)
-/// holds interact on the statue; near a full altar it is refused (Occupied, statue red).</item>
+/// holds interact on the statue; near a full altar it is refused (Occupied, statue red). The Peak altar's sockets sit
+/// 2.7 m up, past a hand's reach: as in vanilla, where the camera ray takes the statue from 2 m
+/// (<c>Interaction.distance</c>, Interaction.cs:7, :203), a grip pointed at the statue within that reach runs the
+/// same hold (interact.physical's hand-aimed interact). Pointing at it with an amulet shows the socket it fills
+/// (teal ring); a full altar is refused as the hold starts; a pointed grip without an amulet gets CantUse.</item>
 /// <item>Soul pillar (WS-W15): both open palms laid on it hold interact (2 s, ScoutmasterSoulPillar.cs:94).</item>
 /// <item>Summit portal (WS-W16): a hand pushed into it holds interact (2 s, Peak/PeakGatePortal.cs:71); pulling it
 /// out is the vanilla cancel, and run flow's fade follows the hold.</item>
@@ -119,6 +123,7 @@ internal static partial class WorldHolds
             Socket.Reset();
             AltarNear.Reset();
             SocketTarget = -1;
+            statueHeld = false;
             return;
         }
         var sockets = statue.amuletObjects;
@@ -129,20 +134,110 @@ internal static partial class WorldHolds
         var point = grip != null ? grip.position : item.Center();
         int socket = AltarSocket.For(amulet.amuletIndex, slots, sockets.Length);
         SocketTarget = socket;
+        var interaction = Interaction.instance;
+        bool heldNow =
+            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, statue);
+        bool holdStarted = heldNow && !statueHeld;
+        statueHeld = heldNow;
         if (socket < 0 || sockets[socket] == null)
         {
             Socket.Reset();
             float near = NearestSocket(centers, point, out var at);
             bool was = AltarNear.Active;
-            if (AltarNear.Update(near, Time.deltaTime) && !was)
+            // Brought near a full altar, or its hold started some other way (pointed at it, vanilla's 2 m
+            // interact ray): refused at once rather than after a hold that ends in nothing.
+            if ((AltarNear.Update(near, Time.deltaTime) && !was) || holdStarted)
                 Affordance.Deny(left, at, DenyReason.Occupied, default, statue);
             return;
         }
         AltarNear.Reset();
+        // Pointed at (or looked at) within vanilla's interact reach: the grip runs the game's own hold there, as a
+        // flat player's look does. Show which socket it fills.
+        if (
+            !Socket.Active
+            && Affordance.Hints
+            && interaction != null
+            && ReferenceEquals(interaction.currentHovered, statue)
+        )
+            Affordance.Mark(
+                left,
+                centers[socket],
+                AboveReach(centers[socket]) ? DenyReason.AimHigher : DenyReason.Dropped,
+                DenyHint.At(centers[socket])
+            );
+        // The pointed hold feels the same ramp, on the pointing hand (or the amulet hand for a head-aimed grip).
+        if (heldNow && !Socket.Active)
+            HeldProgress(
+                PhysicalInteraction.AimHand >= 0 ? PhysicalInteraction.AimHand == 0 : left,
+                statue
+            );
         if (!Socket.Update(SocketDistance(point, centers[socket]), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
         HeldProgress(left, statue);
+    }
+
+    private static bool statueHeld;
+    private static readonly bool[] PointGrip = new bool[2];
+
+    /// <summary>A socket higher than a raised hand reaches directly (<see cref="AltarSocket.RaisedReach"/> over
+    /// the head).</summary>
+    private static bool AboveReach(Vector3 socket)
+    {
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        return head != null && socket.y > head.position.y + AltarSocket.RaisedReach;
+    }
+
+    /// <summary>
+    /// A grip pointed at the scout statue within vanilla's interact reach (<c>Interaction.distance</c>, 2 m from the
+    /// camera, Interaction.cs:7, :203; the hand ray is shortened by the hand's offset, InteractPatches) while the
+    /// hand holds no amulet: the statue takes only amulets (ScoutStatue.IsConstantlyInteractable,
+    /// Peak/ScoutStatue.cs:288-295), so the game would ignore the grip. Refused with CantUse, the statue red.
+    /// </summary>
+    private static void TickStatuePoint(Character c, bool on)
+    {
+        for (int h = 0; h < 2; h++)
+        {
+            bool left = h == 0;
+            bool now = on && PhysicalInteraction.HandAction(left) == GripPressAction.Interact;
+            bool started = now && !PointGrip[h];
+            PointGrip[h] = now;
+            if (!started)
+                continue;
+            var item = c.data.currentItem;
+            if (item != null && (item.itemTags & Item.ItemTags.ScoutAmulet) != 0)
+                continue;
+            if (PointedStatue(left, out var at, out var pointed))
+                Affordance.Deny(left, at, DenyReason.CantUse, default, pointed);
+        }
+    }
+
+    private static bool PointedStatue(bool left, out Vector3 at, out ScoutStatue pointed)
+    {
+        at = default;
+        pointed = null;
+        var rig = VRRig.Instance;
+        var aim = rig != null ? rig.Aim(left) : null;
+        var cam = MainCamera.instance;
+        var interaction = Interaction.instance;
+        if (aim == null || cam == null || interaction == null)
+            return false;
+        float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
+        if (
+            reach <= 0f
+            || !Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var hit,
+                reach,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                QueryTriggerInteraction.Collide
+            )
+        )
+            return false;
+        pointed = hit.collider.GetComponentInParent<ScoutStatue>();
+        at = hit.point;
+        return pointed != null;
     }
 
     private static float NearestSocket(Vector3[] centers, Vector3 point, out Vector3 at)
