@@ -159,8 +159,10 @@ internal static class HeldGestures
     /// </summary>
     private static void MouthHint(VRRig rig, Transform hand, bool left, UseGesture use)
     {
+        // At a friend's mouth the trigger is the hand-over's squeeze (interact.social), not a try at eating here.
         if (
-            !Trigger.Pressed
+            Social.SocialHands.Instance.HandOverOwnsTrigger
+            || !Trigger.Pressed
             || !InteractConfig.Instance.TriggerUse
             || (use != UseGesture.Eat && use != UseGesture.Drink)
             || !ItemGestures.TriggerRefused(ItemGestures.Held)
