@@ -398,7 +398,8 @@ internal static class PhysicalInteraction
             HoldingItem = holding,
             ThisHandHolds = thisHolds,
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
-            NearHeldItem = holding && !thisHolds && NearItem(item, pos, cfg.GrabRadius * 1.5f),
+            NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
+            AtSecondGrip = holding && !thisHolds && AtSecondGrip(hand.Left, pos),
             NearClimbable =
                 cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
@@ -721,19 +722,43 @@ internal static class PhysicalInteraction
         return rig.Origin != null ? rig.Origin.TransformVector(local) : local;
     }
 
+    /// <summary>How close (metres) to the held item's surface a free hand counts as on it.</summary>
+    private const float HeldSurfaceReach = 0.2f;
+
+    /// <summary>How close (metres) to the held item's off-hand grip a free hand takes it.</summary>
+    private const float SecondGripReach = 0.25f;
+
+    /// <summary>
+    /// The hand is within <paramref name="radius"/> of the item's solid colliders, measured to their real surface. An
+    /// axis-aligned box around a long item held at a slant, or a large trigger on it, reached well past the item:
+    /// VR run 51's grab on a chain 0.45 m from the held launcher joined the launcher.
+    /// </summary>
     private static bool NearItem(Item item, Vector3 pos, float radius)
     {
         float r2 = radius * radius;
+        bool any = false;
         foreach (var col in item.colliders)
         {
-            if (
-                col != null
-                && col.enabled
-                && (col.bounds.ClosestPoint(pos) - pos).sqrMagnitude <= r2
-            )
+            if (col == null || !col.enabled || col.isTrigger)
+                continue;
+            any = true;
+            // Collider.ClosestPoint is exact for primitives and convex meshes only; a concave mesh uses its bounds.
+            var closest = col is MeshCollider { convex: false }
+                ? col.bounds.ClosestPoint(pos)
+                : col.ClosestPoint(pos);
+            if ((closest - pos).sqrMagnitude <= r2)
                 return true;
         }
-        return (item.Center() - pos).sqrMagnitude <= 4f * r2;
+        return !any && (item.Center() - pos).sqrMagnitude <= r2;
+    }
+
+    /// <summary>The free hand is at the held item's grip for it (<c>Hand_L</c> for the left hand, <c>Hand_R</c> for
+    /// the right, ItemHoldInfo); items without one have no second grip point.</summary>
+    private static bool AtSecondGrip(bool left, Vector3 pos)
+    {
+        var grip = left ? Hold.GripLeft : Hold.GripRight;
+        return grip != null
+            && (grip.position - pos).sqrMagnitude <= SecondGripReach * SecondGripReach;
     }
 
     /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists. While the head

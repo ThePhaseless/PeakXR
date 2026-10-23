@@ -59,8 +59,12 @@ namespace PeakXR.Core
         /// <summary>This hand is the one holding it.</summary>
         public bool ThisHandHolds;
 
-        /// <summary>This hand is within reach of the held item.</summary>
+        /// <summary>This hand is on or right by the held item's body (its colliders' surface).</summary>
         public bool NearHeldItem;
+
+        /// <summary>This hand is at the held item's off-hand grip point (its <c>Hand_L</c>/<c>Hand_R</c>): a join
+        /// even beside rock or a line.</summary>
+        public bool AtSecondGrip;
         public Handedness HeldHandedness;
 
         /// <summary>
@@ -116,11 +120,17 @@ namespace PeakXR.Core
     {
         public static GripPressAction OnPress(in GripContext c)
         {
+            // The free hand joins the held item at its second grip, or on its body when nothing else is at the hand:
+            // a chain, rope, ledge or item there wins over brushing the item (VR run 51's chain grab joined the
+            // launcher instead).
             if (
                 c.HoldingItem
                 && !c.ThisHandHolds
-                && c.NearHeldItem
                 && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
+                && (
+                    c.AtSecondGrip
+                    || (c.NearHeldItem && c.Candidate == GrabCandidate.None && !c.NearClimbable)
+                )
             )
                 return GripPressAction.SecondHand;
 
