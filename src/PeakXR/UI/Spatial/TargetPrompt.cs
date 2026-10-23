@@ -110,17 +110,21 @@ internal sealed class TargetPrompt
     public static bool NameHidden => current != null && current.nameHidden;
 
     /// <summary>For the self-test: a glyph for <paramref name="verb"/> is drawn now.</summary>
-    public static bool Drawn(PromptVerb verb)
+    public static bool Drawn(PromptVerb verb) => DrawnRoot(verb) != null;
+
+    /// <summary>For the self-test: the posed root of the glyph drawn now for <paramref name="verb"/> (its strokes
+    /// are its children, in units of its scale, facing the eye along its forward), or null.</summary>
+    public static Transform DrawnRoot(PromptVerb verb)
     {
         var prompt = current;
         if (prompt == null || verb == PromptVerb.None)
-            return false;
+            return null;
         foreach (var v in prompt.views)
         {
             if (v != null && v.Verb == verb && (v.First.enabled || v.FirstRim.enabled))
-                return true;
+                return v.Root;
         }
-        return false;
+        return null;
     }
 
     /// <summary>For the self-test: how full the drawn hold ring is (0..1), or -1 when none is drawn.</summary>

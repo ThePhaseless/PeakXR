@@ -259,6 +259,9 @@ internal sealed partial class SelfTestRunner
     {
         var bounds = default(Bounds);
         bool any = false;
+        // The figure's body: the material most of its parts draw with (torso, arms, rings).
+        var uses = new Dictionary<Material, int>();
+        Material body = null;
         foreach (var r in demo.Root.GetComponentsInChildren<Renderer>())
         {
             if (!r.enabled)
@@ -268,6 +271,12 @@ internal sealed partial class SelfTestRunner
             else
                 bounds = r.bounds;
             any = true;
+            var m = r.sharedMaterial;
+            if (m == null)
+                continue;
+            uses[m] = uses.TryGetValue(m, out int n) ? n + 1 : 1;
+            if (body == null || uses[m] > uses[body])
+                body = m;
         }
         if (!any)
         {
@@ -290,7 +299,14 @@ internal sealed partial class SelfTestRunner
         );
         if (why != null)
             fails.Add($"{topic} demo {why}");
-        return F($"drawn {degrees:0.0} deg tall at {distance:0.00} m, {off:0} deg off the view");
+        // Fully shown, the body draws at GhostDemo.Ghost's 0.32 alpha times the demo fade (1 while it plays):
+        // under 0.25 the fade never came in. Contrast against the scene behind is not measured.
+        float alpha = body != null ? body.color.a : 0f;
+        if (alpha < 0.25f)
+            fails.Add(F($"{topic} demo body faded (alpha {alpha:0.00})"));
+        return F(
+            $"drawn {degrees:0.0} deg tall at {distance:0.00} m, {off:0} deg off the view, body alpha {alpha:0.00}"
+        );
     }
 
     readonly Vector3[] edgeCorners = new Vector3[4];
@@ -395,7 +411,14 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => TargetPrompt.Drawn(PromptVerb.Hold), 1f);
         bool ring = TargetPrompt.Drawn(PromptVerb.Hold);
         bool hidden = TargetPrompt.TextHidden;
-        notes.Add($"hold ring {ring}, text hidden {hidden}");
+        // Read as the player does, looking at the suitcase they hold open.
+        string read = GlyphReadable(
+            "hold ring",
+            PromptVerb.Hold,
+            lug.Center() - VRRig.Instance.Head.position,
+            fails
+        );
+        notes.Add($"hold ring {ring}, text hidden {hidden}, {read}");
         if (!ring)
             fails.Add("no hold ring while the suitcase's open is held");
         if (!hidden)
@@ -510,6 +533,23 @@ internal sealed partial class SelfTestRunner
         if (glow < 0.5f)
             fails.Add("the hovered Apple does not glow (_Interactable 0)");
         yield return ShotAt("vr-121-prompt-glyphs", world.Center());
+
+        // The grab glyph shows only beside the name (PromptGlyph.InPlace): with names on, it must read from the eye.
+        var names = SpatialFeature.Settings.TargetNames;
+        bool namesWas = names.Value;
+        if (!namesWas)
+        {
+            names.Value = true;
+            bodyRestore += () => names.Value = namesWas;
+        }
+        for (float t = Now + 0.3f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        // The Apple sits on the head's ray, so the gaze is the view.
+        notes.Add(GlyphReadable("grab glyph", PromptVerb.Grab, head.forward, fails));
+        names.Value = namesWas;
 
         if (hintText != null)
         {
@@ -635,6 +675,46 @@ internal sealed partial class SelfTestRunner
         else if (!shown)
             fails.Add("no name with UI.TargetNames on");
         Conclude(fails, notes);
+    }
+
+    /// <summary>
+    /// vr.121, vr.125: the glyph for <paramref name="verb"/> is drawn where a player looking along
+    /// <paramref name="gaze"/> can make it out (<see cref="Readable(string, Vector3, Vector3, float, float, Vector3, List{string})"/>):
+    /// its stroke points' larger span as its size, its white stroke's opacity. <c>Drawn</c> alone passes a glyph posed
+    /// off-screen or at zero size.
+    /// </summary>
+    static string GlyphReadable(string what, PromptVerb verb, Vector3 gaze, List<string> fails)
+    {
+        var root = TargetPrompt.DrawnRoot(verb);
+        if (root == null)
+        {
+            fails.Add(what + " not drawn");
+            return what + " not drawn";
+        }
+        float size = 0f,
+            alpha = 0f;
+        foreach (var line in root.GetComponentsInChildren<LineRenderer>())
+        {
+            if (!line.enabled || line.positionCount < 2)
+                continue;
+            var points = new Vector3[line.positionCount];
+            line.GetPositions(points);
+            var min = points[0];
+            var max = points[0];
+            foreach (var p in points)
+            {
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+            var t = line.transform;
+            size = Mathf.Max(
+                size,
+                t.TransformVector(max.x - min.x, 0f, 0f).magnitude,
+                t.TransformVector(0f, max.y - min.y, 0f).magnitude
+            );
+            alpha = Mathf.Max(alpha, line.sharedMaterial.color.a * line.startColor.a);
+        }
+        return Readable(what, root.position, root.forward, size, alpha, gaze, fails);
     }
 
     /// <summary>The target name is drawn: the game shows it (GUIManager.cs:1050) and ui.spatial has not hidden it.</summary>
