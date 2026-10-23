@@ -68,6 +68,10 @@ namespace PeakXR.Core
 
         /// <summary>The interactible candidate is a climb handle (a piton or pickaxe), held by the free hand only.</summary>
         public bool CandidateIsHandle;
+
+        /// <summary>One-handed play (<c>Accessibility.OneHanded</c>): no free hand, so the item hand takes a climb
+        /// handle and keeps the item, as vanilla hangs.</summary>
+        public bool OneHanded;
         public Handedness HeldHandedness;
 
         /// <summary>
@@ -186,7 +190,7 @@ namespace PeakXR.Core
                 // item while hanging, ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647).
                 if (
                     c.Candidate == GrabCandidate.Interactible
-                    && !(c.ThisHandHolds && c.CandidateIsHandle)
+                    && !(c.ThisHandHolds && c.CandidateIsHandle && !c.OneHanded)
                 )
                     return GripPressAction.GrabInteractible;
             }
