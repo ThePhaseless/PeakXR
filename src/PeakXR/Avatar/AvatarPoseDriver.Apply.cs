@@ -977,37 +977,57 @@ public partial class AvatarPoseDriver
         var body = item.rig;
         HeldItemGap = Vector3.Distance(body.position, target);
         bool left = Pose.ItemInLeftHand;
-        if (!weldGate.Released)
+        // The arm, not the item: the ragdoll hand against where its controller puts the hand bone, and against where
+        // the item's grip puts it.
+        var hand = HandBody(left).position;
+        var rig = left ? leftRig : rightRig;
+        rig.BoneFromController(
+            left ? Pose.LeftHandPosition : Pose.RightHandPosition,
+            left ? Pose.LeftHandRotation : Pose.RightHandRotation,
+            out var ctrlBone,
+            out _
+        );
+        float toItem = HandBoneOnItem(item, left, out var itemBone, out _)
+            ? Vector3.Distance(hand, itemBone)
+            : float.PositiveInfinity;
+        bool wasFree = weldGate.Released;
+        bool free = weldGate.Update(Vector3.Distance(hand, ctrlBone), toItem, dt);
+        if (!free)
         {
-            if (!weldGate.Update(HeldItemGap, dt))
+            if (wasFree)
             {
-                lastTarget = target;
-                haveLastTarget = true;
-                return false;
+                EndPassBody();
+                AttachToHoldingHand(item);
             }
+            lastTarget = target;
+            haveLastTarget = true;
+            return false;
+        }
+        if (!wasFree)
+        {
             DestroyItemJoint();
             DestroyHandJoint(BodypartType.Hand_L, body);
             DestroyHandJoint(BodypartType.Hand_R, body);
             PassBody(item);
         }
-        else if (
-            HandBoneOnItem(item, left, out var bonePos, out _)
-            && !weldGate.Update(Vector3.Distance(HandBody(left).position, bonePos), dt)
-        )
-        {
-            EndPassBody();
-            AttachToHoldingHand(item);
-            lastTarget = target;
-            haveLastTarget = true;
-            return false;
-        }
         var handVelocity = haveLastTarget && dt > 0f ? (target - lastTarget) / dt : Vector3.zero;
         lastTarget = target;
         haveLastTarget = true;
-        body.linearVelocity = ItemFollow
-            .Velocity(body.position.N(), target.N(), handVelocity.N(), dt)
-            .U();
-        body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
+        if (ItemFollow.Snaps(HeldItemGap))
+        {
+            // Too far to chase: put it in its place, moving with the hand.
+            body.position = target;
+            body.rotation = targetRot;
+            body.linearVelocity = handVelocity;
+            body.angularVelocity = Vector3.zero;
+        }
+        else
+        {
+            body.linearVelocity = ItemFollow
+                .Velocity(body.position.N(), target.N(), handVelocity.N(), dt)
+                .U();
+            body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
+        }
         if (Time.unscaledTime >= freeLogAt)
         {
             freeLogAt = Time.unscaledTime + 0.5f;
