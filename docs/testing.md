@@ -425,9 +425,9 @@ Results:
 
 ## Two-client multiplayer test
 
-This run covers part of the live test plan in `docs/multiplayer-compat.md` without anyone at the keyboard. Client A is PeakXR in VR on the main Steam account. Its hands are scripted through `VRInput.TestOverride`, the same way as the self-test's `vr.*` steps. Client B is a second Steam account in Flatpak Steam, running vanilla PEAK plus one read-only plugin, `MpObserver`. The two accounts must be Steam friends.
+This run covers part of the live test plan in `docs/multiplayer-compat.md` without anyone at the keyboard. Client A is PeakXR in VR on the main Steam account. Its hands are scripted through `VRInput.TestOverride`, the same way as the self-test's `vr.*` steps. Client B is a second Steam account in Flatpak Steam, running vanilla PEAK plus one test plugin, `MpObserver`, that watches A and acts only on B's own character. The two accounts must be Steam friends.
 
-B hosts a lobby through the title menu's Host button and writes `lobby.json`. A joins that lobby through the game's own `SteamLobbyHandler.TryJoinLobby`, then plays a scripted sequence. After each step A appends a line to `a-checkpoints.jsonl`. B answers each line with its own snapshot of A's character under the same name. A sends nothing beyond what PeakXR always sends, and B sends no RPC or event and sets no property.
+B hosts a lobby through the title menu's Host button and writes `lobby.json`. A joins that lobby through the game's own `SteamLobbyHandler.TryJoinLobby`, then plays a scripted sequence. After each step A appends a line to `a-checkpoints.jsonl`. B answers each line with its own snapshot of A's character under the same name. A sends nothing beyond what PeakXR always sends. B sends no custom RPC or event, sets no property and never calls anything on A's character; it uses only the game's own methods on its own character, as a player could, and only when A asks (requests below).
 
 ### Shared directory
 
@@ -522,7 +522,17 @@ A step that finds nothing to do (no wall or no food within 40 m, no host-owned s
 
 ### Observer requests
 
-B obeys requests from A. A appends `{id, do, t}` lines to `a-requests.jsonl`; B ignores lines older than the lobby, runs each one and appends `{id, do, ok, note, t}` to `b-acks.jsonl` (and a `request` line to `b-observer.jsonl`). A waits 5 s for the ack by default, and a missing or failed ack skips the step. The requests are `passout` (the game's `Character.PassOut` console command), `web` (adds the Web status to B's own character, refused in the airport), `wake` (releases crouch, clears statuses and revives B on its own view if dead or passed out), `crouch` and `stand` (B's own crouch input) and `stand-on` (a `WarpPlayerRPC` on B's own view onto A's head). Apart from `web`, B uses only the game's console command, RPCs on its own view, or its own input. No current step sends `crouch` or `stand`.
+B obeys requests from A. A appends `{id, do, t}` lines to `a-requests.jsonl`; B ignores lines older than the lobby, runs each one and appends `{id, do, ok, note, t}` to `b-acks.jsonl` (and a `request` line to `b-observer.jsonl`). A waits 5 s for the ack by default, and a missing or failed ack skips the step. Every request uses only the game's own methods on B's own character, the calls a vanilla player triggers by playing:
+
+| Request | Vanilla calls on B's own character | Why |
+| --- | --- | --- |
+| `passout` | `Character.PassOut` (the game's console command: `CharacterAfflictions.Starve`, then the `RPCA_PassOut` RPC on B's view); `CharacterAfflictions.AddStatus(Injury, 1)` when a NoHunger buff refused the hunger | carry and spectate need a friend who is down and stays down |
+| `web` | `CharacterAfflictions.AddStatus(Web, 0.6)`, as a spider's web does; refused in the airport | the help-up reach needs a friend in trouble |
+| `wake` | B's own crouch input released, `CharacterAfflictions.ClearAllStatus`, then the `RPCA_ReviveAtPosition` RPC on B's view where it lies, when dead or passed out | puts B back on its feet between steps |
+| `crouch`, `stand` | B's own crouch input (`CharacterInput.crouchIsPressed`) | a pal jump from below; no current step sends them |
+| `stand-on` | the `WarpPlayerRPC` RPC on B's view, onto A's head | the pal jump needs B standing on A |
+
+B never sends a custom RPC or event, never sets a room or player property, and never calls anything on A's character. `tools/mp-check.sh` keeps B's own calls apart from A's traffic: the RPC lines carry `local` (true for B's own character) and every A check filters on `local` false; the event counts and unknown-event errors in `b-summary.json` count what B received, and Photon does not deliver B's own RPCs back to B as events.
 
 ### Files
 

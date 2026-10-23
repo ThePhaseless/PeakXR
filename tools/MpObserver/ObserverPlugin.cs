@@ -13,9 +13,10 @@ namespace MpObserver;
 /// <summary>
 /// Client B of the two-client multiplayer test: a vanilla PEAK peer that hosts a lobby through the title menu and
 /// records what it sees of the PeakXR player. It sends nothing a vanilla player could not: it clicks the game's own
-/// menu and turns its own camera, and on the VR side's request (<see cref="MpRequest"/>) acts on its own character
-/// only through the game's console command, the game's RPCs on its own view, or its own crouch input. No custom RPC,
-/// event or property. B's profile is kept (<see cref="ProgressGuard"/>): it refuses to start unguarded. Idle unless
+/// menu and turns its own camera, and on the VR side's request (<see cref="MpRequest"/>) uses only the game's own
+/// methods on its own character: <c>Character.PassOut</c> (Starve, then the RPCA_PassOut RPC), AddStatus Injury or Web,
+/// ClearAllStatus, the RPCA_ReviveAtPosition and WarpPlayerRPC RPCs on its own view, and its own crouch input (the
+/// full table is in docs/testing.md). No custom RPC, event or property, and nothing called on the VR player. B's profile is kept (<see cref="ProgressGuard"/>): it refuses to start unguarded. Idle unless
 /// the game starts with <c>-mpobs</c>.
 /// </summary>
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
