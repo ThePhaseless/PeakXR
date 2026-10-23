@@ -942,20 +942,59 @@ internal sealed partial class SelfTestRunner
         return c != null ? c.GetComponent<PointPinger>() : null;
     }
 
-    /// <summary>Ground about 4 m ahead, where a ping lands.</summary>
+    /// <summary>Yaw tries for <see cref="PingGround"/>, nearest the facing first.</summary>
+    static readonly float[] PingYaws = { 0f, 25f, -25f, 50f, -50f, 75f, -75f };
+
+    /// <summary>
+    /// Ground about 4 m ahead, where a ping lands, that both hands can see: nothing on the ping's TerrainMap layer
+    /// between either finger-gun hand (as <see cref="FingerGunAim"/> places it) and the spot. vr54 aimed past a glass
+    /// crate beside the right hand; the preview dot and the ping both stopped on the crate, 1.46 m short, which was
+    /// right, and the step failed on its own target. Turns up to 75 degrees off the facing to find a clear spot.
+    /// </summary>
     static Vector3 PingGround()
     {
-        var aim = SandboxActions.FrontPoint(4f);
-        return Physics.Raycast(
-            aim + Vector3.up * 2f,
-            Vector3.down,
-            out var ground,
-            6f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? ground.point
-            : aim;
+        var c = Character.localCharacter;
+        var head = VRRig.Instance.Head;
+        var forward = Flat(head.forward);
+        var right = Vector3.Cross(Vector3.up, forward).normalized;
+        var start = head.position + Vector3.down * 0.2f + forward * 0.3f;
+        Vector3 first = default;
+        for (int i = 0; i < PingYaws.Length; i++)
+        {
+            var dir = Quaternion.Euler(0f, PingYaws[i], 0f) * forward;
+            var aim = c.Center + dir * 4f;
+            if (
+                Physics.Raycast(
+                    aim + Vector3.up * 2f,
+                    Vector3.down,
+                    out var ground,
+                    6f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                aim = ground.point;
+            if (i == 0)
+                first = aim;
+            if (Clear(start - right * 0.2f, aim) && Clear(start + right * 0.2f, aim))
+                return aim;
+        }
+        Plugin.Log.LogInfo("[selftest] ping ground: no spot in sight of both hands; aiming ahead");
+        return first;
+
+        static bool Clear(Vector3 from, Vector3 to)
+        {
+            var d = to - from;
+            float len = d.magnitude;
+            return len < 0.2f
+                || !Physics.Raycast(
+                    from,
+                    d / len,
+                    len - 0.15f,
+                    HelperFunctions.LayerType.TerrainMap.ToLayerMask(),
+                    QueryTriggerInteraction.Ignore
+                );
+        }
     }
 
     /// <summary>Waits out what is left of <c>PointPinger.coolDown</c> (game time).</summary>
