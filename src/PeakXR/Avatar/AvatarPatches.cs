@@ -125,6 +125,22 @@ internal static class AvatarPatches
         }
     }
 
+    /// <summary>CharacterItems.HoldItem (CharacterItems.cs:170, private): the held item's spring toward its hold
+    /// point, every physics tick. A local held item the ragdoll arm cannot bring to the controller follows it free of
+    /// the hand instead (<see cref="AvatarPoseDriver.FollowHeld"/>).</summary>
+    [HarmonyPatch]
+    internal static class HoldItem
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "HoldItem");
+
+        private static bool Prefix(CharacterItems __instance, Item item)
+        {
+            var d = Driver(itemsCharacter(__instance));
+            return d == null || !d.FollowHeld(item);
+        }
+    }
+
     /// <summary>CharacterItems.UnAttachItem (CharacterItems.cs:~722, private): remove our single-hand weld too.</summary>
     [HarmonyPatch]
     internal static class UnAttachItem

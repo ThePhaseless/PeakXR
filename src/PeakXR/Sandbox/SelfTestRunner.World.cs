@@ -620,6 +620,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
     const float TorchInHand = 0.45f;
 
+    /// <summary>Farthest a held item may sit from its controller-held pose (m), standing or stooped.</summary>
+    const float ItemOnHand = 0.15f;
+
     IEnumerator FlameToFuse(Item torchPrefab, Component fuse, Func<bool> done, float seconds)
     {
         var c = Character.localCharacter;
@@ -668,12 +671,11 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         // The torch must ride the hand before the hand can carry it: run 48 carried a controller that ended 1.17 m
         // from the flame, so the flame never reached the fuse. Give the held copy up to 1.5 s to settle in the hand.
-        yield return WaitFor(
-            () =>
-                flame != null
-                && Vector3.Distance(rig.Hand(left).position, flame.position) < TorchInHand,
-            1.5f
-        );
+        // The measure is the item's own distance from its controller-held pose (avatar.local), not flame to hand,
+        // which is the torch's length.
+        var driver = AvatarPoseDriver.Of(c);
+        float Gap() => driver != null ? driver.HeldItemGap : -1f;
+        yield return WaitFor(() => flame != null && Gap() >= 0f && Gap() <= ItemOnHand, 1.5f);
         if (flame == null)
         {
             Fail("the torch left the hand after the warp to the fuse");
@@ -689,13 +691,17 @@ internal sealed partial class SelfTestRunner
             Fail("the torch left the hand while reaching for the fuse");
             yield break;
         }
-        float stoopedGap = Vector3.Distance(rig.Hand(left).position, flame.position);
-        if (stoopedGap > TorchInHand)
+        // A held item must stay on its stooped hand (avatar.local FollowHeld lets it leave a ragdoll arm that cannot
+        // reach): within ItemOnHand of its controller-held pose once the hand has settled.
+        float inHandGap = Gap();
+        yield return WaitFor(() => flame == null || (Gap() >= 0f && Gap() <= ItemOnHand), 0.5f);
+        float stoopedGap = Gap();
+        if (flame == null || stoopedGap < 0f || stoopedGap > ItemOnHand)
         {
             // A held item that does not follow its hand cannot be brought anywhere: say so instead of a fuse miss.
             Fail(
                 F(
-                    $"the held {torch.name} is {stoopedGap:0.00} m from the {(left ? "left" : "right")} hand holding it after the stoop ({inHand:0.00} m before it, stooped {headDrop:0.00} m); the held item does not follow a stooped hand"
+                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldItemFree}); the held item does not follow a stooped hand"
                 )
             );
             yield break;

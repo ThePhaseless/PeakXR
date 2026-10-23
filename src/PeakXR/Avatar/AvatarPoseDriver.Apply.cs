@@ -86,6 +86,19 @@ public partial class AvatarPoseDriver
     /// <summary>True while this tick's held-item frame comes from the tracked hand; read by the hold torque patch.</summary>
     internal bool ItemFrameOverridden { get; private set; }
 
+    /// <summary>Lets the local held item leave a ragdoll hand that cannot reach the controller (<see cref="WeldGate"/>).</summary>
+    private readonly WeldGate weldGate = new();
+    private Item followItem;
+    private Vector3 lastTarget;
+    private bool haveLastTarget;
+
+    /// <summary>The local held item's distance from its controller-held pose this physics tick, metres; -1 when it is
+    /// not hand-carried. Read by the self-test (vr.87).</summary>
+    internal float HeldItemGap { get; private set; } = -1f;
+
+    /// <summary>The local held item currently follows the controller free of the ragdoll hand.</summary>
+    internal bool HeldItemFree => weldGate.Released;
+
     /// <summary>How much the tracked hands drive the arms now (0 while the game ragdolls the body, eased back in).
     /// Read by the self-test.</summary>
     internal float ArmWeight => armBlend.Weight;
@@ -890,22 +903,9 @@ public partial class AvatarPoseDriver
         )
             return false;
         bool left = Pose.ItemInLeftHand;
-        var rig = left ? leftRig : rightRig;
-        if (!ItemInController(rig, out var xPos, out var xRot))
+        if (!HandBoneOnItem(item, left, out var bonePos, out var boneRot))
             return false;
-
-        // bone = item * X^-1 * T
-        var invRot = Quaternion.Inverse(xRot);
-        var itemToCtrlPos = invRot * -xPos;
-        var ctrlPos = item.transform.position + item.transform.rotation * itemToCtrlPos;
-        var ctrlRot = item.transform.rotation * invRot;
-        rig.BoneFromController(ctrlPos, ctrlRot, out var bonePos, out var boneRot);
-
-        var handBody = Owner
-            .refs
-            .ragdoll
-            .partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R]
-            .Rig;
+        var handBody = HandBody(left);
         handBody.transform.SetPositionAndRotation(bonePos, boneRot);
         DestroyItemJoint();
         DestroyHandJoint(BodypartType.Hand_L, item.rig);
@@ -913,6 +913,89 @@ public partial class AvatarPoseDriver
         itemJoint = handBody.gameObject.AddComponent<FixedJoint>();
         itemJoint.connectedBody = item.rig;
         itemJointLeft = left;
+        return true;
+    }
+
+    /// <summary>Where the <paramref name="left"/> hand bone sits on <paramref name="item"/> as it lies now: the
+    /// controller-held grip, mapped back (bone = item * X^-1 * T).</summary>
+    private bool HandBoneOnItem(Item item, bool left, out Vector3 bonePos, out Quaternion boneRot)
+    {
+        bonePos = default;
+        boneRot = Quaternion.identity;
+        var rig = left ? leftRig : rightRig;
+        if (!ItemInController(rig, out var xPos, out var xRot))
+            return false;
+        var invRot = Quaternion.Inverse(xRot);
+        var itemToCtrlPos = invRot * -xPos;
+        var ctrlPos = item.transform.position + item.transform.rotation * itemToCtrlPos;
+        var ctrlRot = item.transform.rotation * invRot;
+        rig.BoneFromController(ctrlPos, ctrlRot, out bonePos, out boneRot);
+        return true;
+    }
+
+    private Rigidbody HandBody(bool left) =>
+        Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
+
+    /// <summary>
+    /// Before <c>CharacterItems.HoldItem</c> (CharacterItems.cs:170-179, every physics tick): vanilla pulls the item
+    /// toward <c>GetItemHoldPos</c> (:707-717), which <see cref="OnSaveAdditional"/> already points at the controller,
+    /// while the weld ties it to the ragdoll hand. That hand only reaches as far as the arm from a shoulder at standing
+    /// height, so a stooped controller left the item up to 1.2 m behind (vr50, vr.87). Past that reach the weld lets
+    /// go and the item's own velocity carries it onto the controller-held pose; it rejoins the hand when the arm
+    /// catches up. Local player only: peers see the item's synced pose. True skips vanilla's spring.
+    /// </summary>
+    internal bool FollowHeld(Item item)
+    {
+        HeldItemGap = -1f;
+        if (
+            !Owner.IsLocal
+            || item == null
+            || item.rig == null
+            || !TryGetItemWorldPose(out var target, out var targetRot)
+        )
+        {
+            haveLastTarget = false;
+            return false;
+        }
+        if (!ReferenceEquals(item, followItem))
+        {
+            followItem = item;
+            weldGate.Reset();
+            haveLastTarget = false;
+        }
+        float dt = Time.fixedDeltaTime;
+        var body = item.rig;
+        HeldItemGap = Vector3.Distance(body.position, target);
+        bool left = Pose.ItemInLeftHand;
+        if (!weldGate.Released)
+        {
+            if (!weldGate.Update(HeldItemGap, dt))
+            {
+                lastTarget = target;
+                haveLastTarget = true;
+                return false;
+            }
+            DestroyItemJoint();
+            DestroyHandJoint(BodypartType.Hand_L, body);
+            DestroyHandJoint(BodypartType.Hand_R, body);
+        }
+        else if (
+            HandBoneOnItem(item, left, out var bonePos, out _)
+            && !weldGate.Update(Vector3.Distance(HandBody(left).position, bonePos), dt)
+        )
+        {
+            AttachToHoldingHand(item);
+            lastTarget = target;
+            haveLastTarget = true;
+            return false;
+        }
+        var handVelocity = haveLastTarget && dt > 0f ? (target - lastTarget) / dt : Vector3.zero;
+        lastTarget = target;
+        haveLastTarget = true;
+        body.linearVelocity = ItemFollow
+            .Velocity(body.position.N(), target.N(), handVelocity.N(), dt)
+            .U();
+        body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
         return true;
     }
 
