@@ -15,6 +15,14 @@ namespace PeakXR.Core
         /// of buttons to hold at hand: it stays on the panel.</summary>
         public const float HandSizedDegrees = 25f;
 
+        /// <summary>Default distance of the title's button groups from the eye: where a fingertip presses them
+        /// (direct touch works at 0.42-0.46 m, Meta's hands guidance).</summary>
+        public const float TouchReach = 0.45f;
+
+        /// <summary>Meta's band to avoid for interactive UI, 0.5 to 0.8 m: too far to touch, too near for a
+        /// comfortable ray.</summary>
+        public static bool InAvoidBand(float distance) => distance > 0.5f && distance < 0.8f;
+
         /// <summary>Factor that brings something <paramref name="distance"/> metres from the eye to
         /// <paramref name="reach"/>; never above 1, so nothing is pushed away.</summary>
         public static float PullFactor(float distance, float reach) =>

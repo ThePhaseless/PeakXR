@@ -17,6 +17,8 @@ public sealed class UIMenuFeature : Feature
     protected internal override void Install()
     {
         var cfg = UIMenuSettings.Bind(Plugin.Settings);
+        // 0.55 m sat in Meta's 0.5-0.8 m avoid band (vr-practices review P2-5).
+        ConfigMigration.FromOldDefault(cfg.TitleReach, 0.55f);
         // First, so a missing target leaves no runtime objects behind.
         Patch(typeof(KillLoadingScreenPatch));
         Patch(typeof(LoadSceneProcessPatch));
