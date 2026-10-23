@@ -52,7 +52,9 @@ public sealed class CameraFeature : Feature
             new ConfigDescription(
                 "View when the game takes the camera (ragdoll, passed out, spectating, rocket). ThirdPerson: a "
                     + "detached view behind the body that follows slowly. FirstPerson: stay at the eyes with the "
-                    + "horizon locked. Both keep your own rotation and switch behind a fade."
+                    + "horizon locked. Both keep your own rotation and switch behind a fade. Comfort warning: "
+                    + "FirstPerson rides the body while it tumbles, and a teammate's head while spectating, so the "
+                    + "view moves without you; ThirdPerson is the comfortable choice."
             )
         );
         DetachOnRagdoll = Plugin.Settings.Bind(

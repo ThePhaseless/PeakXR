@@ -193,3 +193,56 @@ public class ArmSwingTests
         Assert.False(Swing(s, 2f, 0.25f, 1.6f, true, ref t, y: 0f));
     }
 }
+
+public class LongCrouchHintTests
+{
+    const float Dt = 0.1f;
+
+    static int Run(LongCrouchHint h, float seconds, bool crouched, bool moving)
+    {
+        int fired = 0;
+        for (float t = 0f; t < seconds - 1e-4f; t += Dt)
+            if (h.Update(crouched, moving, Dt))
+                fired++;
+        return fired;
+    }
+
+    [Fact]
+    public void TenSecondsOfCrouchWalking_FiresOnce()
+    {
+        var h = new LongCrouchHint();
+        Assert.Equal(0, Run(h, 9.8f, true, true));
+        Assert.Equal(1, Run(h, 0.4f, true, true));
+        Assert.Equal(0, Run(h, 30f, true, true)); // once per episode
+    }
+
+    [Fact]
+    public void StandingStillCrouched_DoesNotCount()
+    {
+        // Working on something at the ground (a fuse, a fire) is a real crouch, not a forgotten one.
+        var h = new LongCrouchHint();
+        Assert.Equal(0, Run(h, 60f, true, false));
+        Assert.Equal(1, Run(h, 10.2f, true, true));
+    }
+
+    [Fact]
+    public void StandingUp_StartsANewEpisode()
+    {
+        var h = new LongCrouchHint();
+        Assert.Equal(1, Run(h, 10.2f, true, true));
+        Assert.Equal(0, Run(h, 0.1f, false, true));
+        Assert.Equal(0, Run(h, 9.8f, true, true));
+        Assert.Equal(1, Run(h, 0.4f, true, true));
+    }
+
+    [Fact]
+    public void ShortCrouches_DoNotAddUp()
+    {
+        var h = new LongCrouchHint();
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.Equal(0, Run(h, 5f, true, true));
+            Assert.Equal(0, Run(h, 0.1f, false, true));
+        }
+    }
+}

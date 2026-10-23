@@ -585,7 +585,7 @@ internal static class WorldCanvases
         if (turned != null || (!t.Retest && t.Moved))
         {
             t.Moved = false;
-            LogPlacement(t, depth, clear, turned);
+            LogPlacement(t, cfg, depth, clear, turned);
         }
     }
 
@@ -663,7 +663,38 @@ internal static class WorldCanvases
         return depth;
     }
 
-    private static void LogPlacement(TrackedCanvas t, float depth, float clear, float? turned)
+    private static readonly List<float> emDegrees = new();
+
+    /// <summary>Median em height (TMP font size) of the menu's visible text, in degrees from the eye at the panel
+    /// centre, so a menu size decision can come from numbers (P2-3). Wall pulls keep angular size, so this is the
+    /// size at <c>UI.MenuDistance</c>. Placement only: it walks the canvas.</summary>
+    private static string MedianEm(TrackedCanvas t, UIWorldSettings cfg)
+    {
+        if (t.Canvas == null)
+            return "no text";
+        var mpp = MenuMpp(t, cfg);
+        float canvasScale = Mathf.Max(t.Canvas.transform.lossyScale.y, 1e-6f);
+        emDegrees.Clear();
+        foreach (var text in t.Canvas.GetComponentsInChildren<TMPro.TMP_Text>())
+        {
+            if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
+                continue;
+            float px = text.fontSize * text.transform.lossyScale.y / canvasScale;
+            emDegrees.Add(ReadableText.Degrees(px * mpp, cfg.MenuDistance.Value));
+        }
+        if (emDegrees.Count == 0)
+            return "no text";
+        emDegrees.Sort();
+        return $"text em median {emDegrees[emDegrees.Count / 2]:0.00} deg of {emDegrees.Count}";
+    }
+
+    private static void LogPlacement(
+        TrackedCanvas t,
+        UIWorldSettings cfg,
+        float depth,
+        float clear,
+        float? turned
+    )
     {
         var name = t.Canvas != null ? t.Canvas.name : "?";
         var why =
@@ -673,7 +704,8 @@ internal static class WorldCanvases
                 : "nothing in the way";
         var turn = turned is { } deg && deg != 0f ? $", turned {deg:0} deg toward open space" : "";
         var line =
-            $"[ui.world] menu '{name}' {(turned != null ? "opened" : "resized")} at {clear:0.00} m{turn}: {why}";
+            $"[ui.world] menu '{name}' {(turned != null ? "opened" : "resized")} at {clear:0.00} m{turn}: {why}; "
+            + MedianEm(t, cfg);
         if (depth - PanelMath.WallGap < PanelMath.NearestMenuDistance)
             Plugin.Log.LogWarning(
                 line + $"; held at the {PanelMath.NearestMenuDistance:0.0} m minimum"

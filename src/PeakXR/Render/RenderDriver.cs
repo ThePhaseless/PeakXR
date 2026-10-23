@@ -119,7 +119,8 @@ internal sealed class RenderDriver : MonoBehaviour
         scaler.SetScale(1f);
         XRSettings.renderViewportScale = 1f;
         Plugin.Log.LogInfo(
-            $"{Tag} Applied: renderScale {RenderFixesFeature.RenderScale.Value:0.00}, MSAA {RenderFixesFeature.Msaa.Value}x, "
+            $"{Tag} Applied: renderScale {RenderFixesFeature.RenderScale.Value:0.00}, MSAA {(urp != null ? urp.msaaSampleCount : 0)}x "
+                + $"(configured {RenderFixesFeature.Msaa.Value}x{(urp != null && IsDeferred(urp) ? ", Deferred forces 1" : "")}), "
                 + $"upscaling Linear, AA {RenderFixesFeature.Antialiasing.Value}, dynamic resolution "
                 + $"{RenderFixesFeature.DynamicResolution.Value}, FPS cap and VSync off"
         );
