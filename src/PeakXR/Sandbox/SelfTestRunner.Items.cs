@@ -29,7 +29,8 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.22b-bandage-forearm", "Bandage", 30f, ForearmBandageStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
-        yield return ItemStep("vr.28-use-while-pointing", AppleFragment, 25f, UsePointingStep);
+        // A bandage: food is eaten at the mouth, not on the trigger (Interaction.TriggerEats off).
+        yield return ItemStep("vr.28-use-while-pointing", "Bandage", 25f, UsePointingStep);
         yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
         yield return WarpBack();
         // Light first: it needs the campfire unlit. Cooking then uses the fire it lit (or lights it when vr.26 failed).
@@ -55,7 +56,8 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
         // vr.169 raises the binoculars in Hold mode; a failed or timed-out step leaves it forced.
         BinocularsConfig.ForceHold = false;
-        yield return ItemStep("vr.170-throw-mid-cast", AppleFragment, 25f, ThrowMidCastStep);
+        // A bandage's trigger cast (4 s): food no longer casts on the trigger.
+        yield return ItemStep("vr.170-throw-mid-cast", "Bandage", 25f, ThrowMidCastStep);
         yield return HandStep("vr.171-vine-no-path", 30f, VineNoPathStep());
         yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
     }
@@ -322,15 +324,16 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.28: the hand holding an Apple points (grip closed, index off the trigger) at another Apple, then
-    /// squeezes the trigger. That is the item's use (<c>Item.isUsingPrimary</c>), never a ping: a holding hand's
+    /// <summary>vr.28: the hand holding an item with a trigger use (a bandage) points (grip closed, index off the
+    /// trigger) at an Apple, then squeezes the trigger. That is the item's use (<c>Item.isUsingPrimary</c>), never a ping: a holding hand's
     /// squeeze fired interact.ping's finger gun and swallowed the use (vr14, a held torch never lit).</summary>
     IEnumerator UsePointingStep(Item prefab)
     {
         var c = Character.localCharacter;
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        if (!SandboxActions.SpawnItemAt(prefab, spot) || SandboxActions.LastSpawned == null)
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment) ?? prefab;
+        if (!SandboxActions.SpawnItemAt(apple, spot) || SandboxActions.LastSpawned == null)
         {
             Fail(SandboxActions.LastMessage);
             yield break;
@@ -1777,10 +1780,21 @@ internal sealed partial class SelfTestRunner
                 yield break;
             var held = HeldItem();
             var got = ItemGestures.UseOf(held);
-            if (got == route)
-                right.Add($"{held.name} {got}");
+            // The bare trigger: refused for food and drink (they go to the mouth, unless TriggerEats) and for the
+            // dangerous gesture items, kept for every other use.
+            bool refused = ItemGestures.TriggerRefused(held);
+            bool expectRefused =
+                ItemUse.Trigger(route, ItemGesturesConfig.Instance.TriggerEats) != TriggerUse.Use
+                && (
+                    route is not (UseGesture.Eat or UseGesture.Drink)
+                    || InteractConfig.Instance.EatAtMouth
+                );
+            if (got == route && refused == expectRefused)
+                right.Add($"{held.name} {got}{(refused ? " (trigger refused)" : "")}");
             else
-                wrong.Add($"{held.name} {got} (expected {route})");
+                wrong.Add(
+                    $"{held.name} {got}, trigger refused {refused} (expected {route}, trigger refused {expectRefused})"
+                );
             yield return DropHeld();
             if (!stepOk)
                 yield break;
@@ -1793,6 +1807,45 @@ internal sealed partial class SelfTestRunner
             stepSkip = "none of the route items exist: " + note;
         else
             stepNote = note;
+    }
+
+    /// <summary>What <see cref="TriggerAwayFromMouth"/> found, for the step's note.</summary>
+    string mouthTriggerNote;
+
+    /// <summary>
+    /// Food or drink held at rest, away from the mouth, and the trigger squeezed: with <c>Interaction.TriggerEats</c>
+    /// off (the default) it is not eaten (no cast: <c>Item.isUsingPrimary</c>, Item.cs:849-855) and the hand gets the
+    /// NotHere refusal with the item red and the would-work ring at the mouth (HeldGestures.MouthHint). With the
+    /// setting on, nothing is checked here. Sets <see cref="mouthTriggerNote"/>.
+    /// </summary>
+    IEnumerator TriggerAwayFromMouth(Item item, bool left)
+    {
+        if (!ItemGestures.TriggerRefused(item))
+        {
+            mouthTriggerNote = "trigger eats (Interaction.TriggerEats on, or no mouth route)";
+            yield break;
+        }
+        Affordance.ResetGate();
+        float mark = CueMark();
+        bool cast = false;
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        float end = Now + 0.6f;
+        while (Now < end)
+        {
+            cast |= item != null && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        yield return ExpectCue(left, DenyReason.NotHere, mark, tint: true);
+        string cue = cueNote;
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.3f);
+        if (!stepOk)
+            yield break;
+        mouthTriggerNote = $"trigger away from the mouth: cast {cast}, {cue}";
+        if (cast)
+            Fail("the trigger ate it away from the mouth: " + mouthTriggerNote);
     }
 
     /// <summary>The mouth point interact.physical routes eating to, in tracking space (<see cref="MouthGesture"/>).</summary>
@@ -1909,6 +1962,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GripTo(left, 1f, 0.1f);
+        yield return TriggerAwayFromMouth(item, left);
+        if (!stepOk)
+            yield break;
+        string triggerNote = mouthTriggerNote;
         var afflictions = c.refs.afflictions;
         SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
         float before = afflictions.GetCurrentStatus(status);
@@ -1943,7 +2000,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         float after = afflictions.GetCurrentStatus(status);
         var note =
-            $"{prefab.name}: drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
+            $"{prefab.name}: {triggerNote}; drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
         if (!drunk)
             Fail(
                 (
@@ -2234,6 +2291,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GripTo(left, 1f, 0.1f);
+        yield return TriggerAwayFromMouth(item, left);
+        if (!stepOk)
+            yield break;
         var afflictions = c.refs.afflictions;
         SandboxActions.AddStatus(STATUS.Hunger, 0.3f);
         float before = afflictions.GetCurrentStatus(STATUS.Hunger);

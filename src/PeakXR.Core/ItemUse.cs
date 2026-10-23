@@ -44,6 +44,19 @@ public enum UseGesture : byte
     Count,
 }
 
+/// <summary>What the bare trigger does with a held item's use (<see cref="ItemUse.Trigger"/>).</summary>
+public enum TriggerUse : byte
+{
+    /// <summary>The trigger uses it.</summary>
+    Use,
+
+    /// <summary>Refused: bring it to the mouth (eat, drink).</summary>
+    Mouth,
+
+    /// <summary>Refused: only its own deliberate gesture starts it (commune, read).</summary>
+    Gesture,
+}
+
 /// <summary>What an item's prefab carries, read once per item from its components.</summary>
 [Flags]
 public enum ItemParts : uint
@@ -158,6 +171,13 @@ public static class ItemUse
     /// <summary>The bare trigger is refused: only the gesture (held for the game's own cast) starts the use. Commune
     /// kills or warps you; the one readable item, the Book of Bones, turns its reader into a skeleton.</summary>
     public static bool NeedsGesture(UseGesture g) => g is UseGesture.Commune or UseGesture.Read;
+
+    /// <summary>What the holding hand's trigger alone does with a use: eating and drinking go to the mouth unless
+    /// <paramref name="triggerEats"/> (seated or one-handed play); commune and read keep their gesture.</summary>
+    public static TriggerUse Trigger(UseGesture g, bool triggerEats) =>
+        NeedsGesture(g) ? TriggerUse.Gesture
+        : g is UseGesture.Eat or UseGesture.Drink && !triggerEats ? TriggerUse.Mouth
+        : TriggerUse.Use;
 
     private static bool Has(ItemParts parts, ItemParts any) => (parts & any) != 0;
 
