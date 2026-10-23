@@ -1357,9 +1357,10 @@ internal sealed partial class SelfTestRunner
         return eye;
     }
 
-    /// <summary><paramref name="tracking"/> moved in toward the eye until it lies within a player's reach (just inside
-    /// <see cref="MaxHandFromEye"/>): level first, so a pull keeps its downward travel and loses only its reach out
-    /// (along a wall's normal, which the climb ignores, <c>ClimbInput.FromBodyVelocity</c>).</summary>
+    /// <summary><paramref name="tracking"/> brought within a player's reach (just inside <see cref="MaxHandFromEye"/>)
+    /// by shortening its height off the eye: the hand keeps its distance out, so a pull stays on its hold and only
+    /// travels less, as a player's arm runs out. Pulling the hand in toward the chest instead took it 0.35 m off the
+    /// wall, and run 48's vr.46 lost the climb before its lunge (rose -0.45 m).</summary>
     static Vector3 InReach(Vector3 tracking)
     {
         const float R = MaxHandFromEye * 0.97f;
@@ -1368,8 +1369,10 @@ internal sealed partial class SelfTestRunner
         if (d.sqrMagnitude <= R * R)
             return tracking;
         var level = new Vector3(d.x, 0f, d.z);
-        if (Mathf.Abs(d.y) < R && level.sqrMagnitude > 1e-6f)
-            return eye + Vector3.up * d.y + level.normalized * Mathf.Sqrt(R * R - d.y * d.y);
+        if (level.magnitude < R)
+            return eye
+                + level
+                + Vector3.up * (Mathf.Sign(d.y) * Mathf.Sqrt(R * R - level.sqrMagnitude));
         return eye + d.normalized * R;
     }
 
