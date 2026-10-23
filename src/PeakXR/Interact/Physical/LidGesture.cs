@@ -86,22 +86,25 @@ internal static class LidGesture
         float right = Track(rig, 1);
         LowGrip(rig, 0);
         LowGrip(rig, 1);
+        bool both = OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
+        // A respawn chest takes both hands on its lid; a hand anywhere else on it counts as alone too (a low grip
+        // holds it at 0 in BeforeInteraction), so it gets the same refusal instead of a silent hold.
+        var gripped = Grabbed[0] as RespawnChest ?? Grabbed[1] as RespawnChest;
+        if (gripped != null)
+        {
+            if (ChestGate.Update(both ? 2 : 1, Time.deltaTime))
+                RefuseOneHand(rig, gripped, ReferenceEquals(Grabbed[0], gripped));
+        }
+        else
+            ChestGate.Update(0, 0f);
         var lug =
             OnLid[0] ? Grabbed[0]
             : OnLid[1] ? Grabbed[1]
             : null;
         if (lug == null)
-        {
-            ChestGate.Update(0, 0f);
             return;
-        }
-        bool both = OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
-        if (lug is RespawnChest chest)
-        {
+        if (lug is RespawnChest)
             fraction = both ? Mathf.Min(left, right) : 0f;
-            if (ChestGate.Update(both ? 2 : 1, Time.deltaTime))
-                RefuseOneHand(rig, chest, OnLid[0]);
-        }
         else
             fraction = Mathf.Max(
                 OnLid[0] ? left : 0f,
@@ -240,14 +243,20 @@ internal static class LidGesture
     /// cap it at the lid's lift.</summary>
     public static void BeforeInteraction(Interaction interaction)
     {
-        if (frame != Time.frameCount || target == null)
+        var held = interaction.currentHeldInteractible as Luggage;
+        var cfg = ItemGesturesConfig.Instance;
+        if (held == null || !VRSession.Active || cfg == null || !cfg.LiftLid)
             return;
-        if (!ReferenceEquals(interaction.currentHeldInteractible, target))
+        // Decided here, before the game adds this frame's time (LidCap). A respawn chest whose lid the hands are
+        // not both lifting right now holds at 0 however its hold started, so a frame where the hand tracking lags
+        // the grip can no longer let one hand run it (run 49: one hand ran it to 0.09).
+        bool tracked = ReferenceEquals(held, target) && Time.frameCount - frame <= 1;
+        if (!LidCap.TryFraction(tracked, fraction, held is RespawnChest, out float cap))
             return;
         interaction.currentInteractableHeldTime = LidLift.CapHeldTime(
             interaction.currentInteractableHeldTime,
             interaction.currentConstantInteractableTime,
-            fraction,
+            cap,
             Time.deltaTime
         );
     }

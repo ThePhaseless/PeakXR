@@ -175,3 +175,24 @@ public class AltarSocketReachTests
             AltarSocket.Reach(new Vector3(0.8f, 1.9f, 0), new Vector3(0, 2.7f, 0), Head) > 0.3f
         );
 }
+
+public class LidCapTests
+{
+    [Fact]
+    public void TrackedLidUsesItsLift()
+    {
+        Assert.True(LidCap.TryFraction(true, 0.4f, true, out var f));
+        Assert.Equal(0.4f, f);
+    }
+
+    [Fact]
+    public void TwoHandLidWithoutBothHandsTrackedHoldsAtZero()
+    {
+        Assert.True(LidCap.TryFraction(false, 0.7f, true, out var f));
+        Assert.Equal(0f, f);
+    }
+
+    [Fact]
+    public void OrdinaryCaseNotOnTheLidKeepsTheVanillaHold() =>
+        Assert.False(LidCap.TryFraction(false, 0.7f, false, out _));
+}

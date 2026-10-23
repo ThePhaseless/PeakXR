@@ -1089,7 +1089,10 @@ internal sealed partial class SelfTestRunner
         float leftGap = Vector3.Distance(rig.Hand(true).position, heat);
         float rightGap = Vector3.Distance(rig.Hand(false).position, heat);
         yield return Shot("vr-27-warm-hands");
-        // Backs of the hands to the fire: no warmth (PalmWarmth.MinFacing), so the pulses come from the palms.
+        // Backs of the hands to the fire: no warmth (PalmWarmth.MinFacing), so the pulses come from the palms. The
+        // turn reaches the tracked hands a frame or two after the script sets it, and a pulse due in those frames is
+        // still the right palm's (run 49 counted one): count only once the backs face the fire.
+        yield return HoldPalms(rightRot, leftRot, 0.3f);
         int away = FireGestures.WarmPulses;
         yield return HoldPalms(rightRot, leftRot, 1.5f);
         away = FireGestures.WarmPulses - away;
