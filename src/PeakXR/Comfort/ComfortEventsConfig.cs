@@ -83,6 +83,11 @@ internal static class ComfortEventsConfig
             ComfortEvent.Ragdoll,
             "Your body starts tumbling. The view itself follows Camera.TakeoverView and Camera.DetachOnRagdoll."
         );
+        // A config still on the old rumble-only default gets the vignette; a player's own choice stays.
+        Framework.ConfigMigration.FromOldDefault(
+            treatments[(int)ComfortEvent.Ragdoll],
+            ComfortTreatment.HapticPulse
+        );
         Bind(
             file,
             ComfortEvent.ForcedLook,
