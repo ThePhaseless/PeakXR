@@ -240,22 +240,30 @@ internal sealed partial class SelfTestRunner
         if (vr)
         {
             bool free = !left;
-            var spot = NearestVineSpot(vine, VRRig.Instance.Head.position);
-            var gap = spot - VRRig.Instance.Head.position;
-            gap.y = 0f;
-            // A player walks up to the chain before grabbing it; run 48's nearest point was 1.65 m out.
-            if (
-                gap.magnitude > 0.6f
-                && Physics.Raycast(
-                    spot - gap.normalized * 0.5f + Vector3.up * 2f,
-                    Vector3.down,
-                    out var ground,
-                    6f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            // A player walks up to the chain before grabbing it; run 48's nearest point was 1.65 m out. The spot is
+            // the one the hand will take (away from the face and the launcher hand): run 57 walked up to the nearest
+            // point, then that spot sat 0.95 m out. Twice at most, as the launcher hand moves with the body.
+            for (int walk = 0; walk < 2; walk++)
             {
+                var near = NearestVineSpot(
+                    vine,
+                    VRRig.Instance.Head.position,
+                    VRRig.Instance.Hand(left).position
+                );
+                var gap = near - VRRig.Instance.Head.position;
+                gap.y = 0f;
+                if (
+                    gap.magnitude <= 0.6f
+                    || !Physics.Raycast(
+                        near - gap.normalized * 0.5f + Vector3.up * 2f,
+                        Vector3.down,
+                        out var ground,
+                        6f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                )
+                    break;
                 warpedForProp = true;
                 c.photonView.RPC(
                     "WarpPlayerRPC",
@@ -268,7 +276,7 @@ internal sealed partial class SelfTestRunner
                 yield return Wait(1f);
             }
             // Away from the face and from the launcher in the other hand, so the grip lands on the chain.
-            spot = NearestVineSpot(
+            var spot = NearestVineSpot(
                 vine,
                 VRRig.Instance.Head.position,
                 VRRig.Instance.Hand(left).position
