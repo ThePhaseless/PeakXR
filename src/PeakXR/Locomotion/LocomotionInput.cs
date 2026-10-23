@@ -338,14 +338,25 @@ internal static class LocomotionInput
             // drop what the anchor absorbed, which hands the walk's travel to the view.
             && (data.isGrounded || data.sinceGrounded < 0.25f)
             && data.fullyConscious
-            && !data.isClimbing
-            && !data.isRopeClimbing
-            && !data.isVineClimbing
+            && !data.isClimbingAnything
+            && data.currentClimbHandle == null
+            // The top-out walk moves the body onto the ledge under its own input: a follow toward the head behind
+            // it fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
+            && !PhysicalInteraction.Mantling
             && data.carrier == null;
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
-        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
+        // At the calibrated standing eye height no lean is left to stand up from (RoomScaleFollow.Update).
+        bool standingTall =
+            Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.06f;
+        var request = Follow.Update(
+            head,
+            new NVector2(delta.x, delta.z),
+            canFollow,
+            dt,
+            standingTall
+        );
         if (!canFollow && stickIdle && Follow.Offset.Length() > Follow.LeanRadius)
             FollowDrops++;
         lastCanFollow = canFollow;

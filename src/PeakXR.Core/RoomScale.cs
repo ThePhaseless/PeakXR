@@ -112,8 +112,15 @@ namespace PeakXR.Core
         /// <param name="canFollow">The body is free to walk: grounded, conscious, not climbing and the move stick
         /// idle. Otherwise the offset is kept and nothing is requested.</param>
         /// <param name="dt">Seconds since the last update; 0 never eases <see cref="Neutral"/>.</param>
+        /// <param name="standingTall">The real head is at its standing height: no lean is left to stand up from.</param>
         /// <returns>Requested move input in tracking space, length 0..1.</returns>
-        public Vector2 Update(Vector2 head, Vector2 bodyDelta, bool canFollow, float dt = 0f)
+        public Vector2 Update(
+            Vector2 head,
+            Vector2 bodyDelta,
+            bool canFollow,
+            float dt = 0f,
+            bool standingTall = false
+        )
         {
             if (Vector2.Distance(head, _stillAt) > 0.03f)
             {
@@ -133,6 +140,10 @@ namespace PeakXR.Core
             // Hysteresis: start past the lean radius, stop only well inside it. Standing back up after a follow
             // points the head back by up to how far the body walked (more when the walk coasted onto the head, run
             // 31): that stance is not a step, so it never starts a walk back. Neutral then makes it upright.
+            // Standing tall and still, the stand-up is done: the last follow's travel stops excusing a step back
+            // (run 54, vr.140: an old follow's travel kept a 0.7 m step back from ever following).
+            if (!_following && standingTall && _stillFor >= StillSeconds)
+                _followTravel = 0f;
             bool start = !_following;
             if (start)
             {
