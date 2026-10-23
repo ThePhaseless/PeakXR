@@ -111,6 +111,10 @@ internal static class ClimbHands
     /// <summary>Arm-pulled stick input for the game's rope or vine climb this frame; zero otherwise.</summary>
     public static Vector2 StickInput => new(0f, stickY);
 
+    /// <summary>This hand holds the current rope, vine or handle (<see cref="GripToggle"/> latches it).</summary>
+    internal static bool HandAnchored(bool left) =>
+        mode != Mode.None && (left ? LeftHand : RightHand).Anchored;
+
     internal static bool RopeHands => ropeHands?.Value ?? true;
     internal static bool HandleHands => handleHands?.Value ?? true;
     internal static bool RopePumping => ropePump?.Value ?? true;

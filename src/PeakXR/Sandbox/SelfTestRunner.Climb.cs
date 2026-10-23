@@ -49,6 +49,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
+        yield return Restoring("vr.238-grip-toggle-item", 25f, GripToggleItemStep());
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
         yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
@@ -59,6 +60,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.51b-falling-catch", 30f, FallingCatchStep());
         yield return Restoring("vr.52-climb-empty", 40f, ClimbEmptyStep());
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
+        yield return Restoring("vr.237-grip-toggle-climb", 40f, GripToggleClimbStep());
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
         yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
