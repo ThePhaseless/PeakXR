@@ -61,6 +61,7 @@ internal sealed class SpatialBox
     private readonly List<TMP_Text> hiddenGlyphs = new();
     private readonly List<Faded> faded = new();
     private RectTransform root;
+    private CanvasGroup group;
 
     public SpatialBox(string name) => this.name = name;
 
@@ -148,6 +149,25 @@ internal sealed class SpatialBox
     {
         if (Rect != null && Rect.gameObject.activeSelf != visible)
             Rect.gameObject.SetActive(visible);
+    }
+
+    /// <summary>Fades everything in the box together, over each part's own alpha (a target prompt behind rock). The
+    /// group is added on the first fade and stays with the box.</summary>
+    public void SetAlpha(float alpha)
+    {
+        if (Rect == null)
+            return;
+        if (group == null || group.transform != Rect)
+        {
+            if (alpha >= 1f)
+                return;
+            if (!Rect.TryGetComponent(out group))
+                group = Rect.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
+        }
+        if (group.alpha != alpha)
+            group.alpha = alpha;
     }
 
     /// <summary>Puts every part back and hides the box.</summary>

@@ -45,4 +45,34 @@ public class ReadableTextTests
         Assert.Equal(0f, ReadableText.Median(sizes, 0));
         TestUtil.Near(0.01f, ReadableText.Median(new[] { 0.01f, 0.5f, 0.7f }, 1));
     }
+
+    [Theory]
+    [InlineData(1f, 1f)]
+    [InlineData(1.5f, 1.5f)]
+    [InlineData(2f, 2f)]
+    [InlineData(0.5f, 1f)]
+    [InlineData(0f, 1f)]
+    [InlineData(-3f, 1f)]
+    [InlineData(5f, 2f)]
+    [InlineData(float.NaN, 1f)]
+    public void TextScale_IsOneToTwoAndNeverShrinks(float setting, float expected)
+    {
+        Assert.Equal(expected, ReadableText.Scale(setting));
+    }
+
+    [Fact]
+    public void Scaled_NeverDropsBelowTheFloor()
+    {
+        // A size under the floor is raised to it first; a scale under 1 does not take it back down.
+        Assert.Equal(0.045f, ReadableText.Scaled(0.02f, 0.045f, 1f));
+        Assert.Equal(0.045f, ReadableText.Scaled(0.02f, 0.045f, 0.5f));
+    }
+
+    [Fact]
+    public void Scaled_GrowsLinearlyAboveTheFloor()
+    {
+        TestUtil.Near(0.045f * 1.5f, ReadableText.Scaled(0.02f, 0.045f, 1.5f), 1e-6f);
+        TestUtil.Near(0.06f * 1.5f, ReadableText.Scaled(0.06f, 0.045f, 1.5f), 1e-6f);
+        TestUtil.Near(0.06f * 2f, ReadableText.Scaled(0.06f, 0.045f, 2f), 1e-6f);
+    }
 }

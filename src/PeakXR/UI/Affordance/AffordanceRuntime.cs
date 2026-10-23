@@ -331,6 +331,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     public static string LabelText =>
         instance != null && instance.label != null ? instance.label.text : null;
 
+    /// <summary>The label's text component, for the self-test to measure its angular size.</summary>
+    public static TMP_Text Label => instance != null ? instance.label : null;
+
     /// <summary>The reach ray is drawn now, for the self-test.</summary>
     public static bool RayShown => instance != null && instance.built && instance.ray.enabled;
 

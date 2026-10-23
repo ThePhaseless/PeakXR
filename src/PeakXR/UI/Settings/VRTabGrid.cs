@@ -128,16 +128,23 @@ internal static class VRTabGrid
                     chipWidth,
                     chip.text.GetPreferredValues(g.Title.ToUpperInvariant()).x + 2f * ChipPad
                 );
+            // UI.TextScale on top of the floor: the column keeps its width, so its rows narrow and wrap instead.
+            float userScale = ReadableText.Scale(
+                World.UIWorldFeature.Settings?.TextScale.Value ?? 1f
+            );
             float columnMeters = VRTabColumn.Width(VRTabColumn.ColumnDegrees, distance, mpu) * mpu;
             float railMeters =
-                chipWidth * mpu * VRTabColumn.TextScale(chip.text.fontSize, distance, mpu);
+                chipWidth
+                * mpu
+                * VRTabColumn.TextScale(chip.text.fontSize, distance, mpu)
+                * userScale;
             float far = VRTabColumn.FarDistance(
                 distance,
                 columnMeters + railMeters,
                 area.height * mpu
             );
-            columnScale = VRTabColumn.TextScale(minFont, far, mpu);
-            railScale = VRTabColumn.TextScale(chip.text.fontSize, far, mpu);
+            columnScale = VRTabColumn.TextScale(minFont, far, mpu) * userScale;
+            railScale = VRTabColumn.TextScale(chip.text.fontSize, far, mpu) * userScale;
             rowWidth = columnMeters / mpu / columnScale;
             float pitch = cellHeight + spacing;
             for (int i = 0; i < spawned.Count; i++)

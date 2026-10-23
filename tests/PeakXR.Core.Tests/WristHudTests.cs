@@ -44,4 +44,20 @@ public class WristHudTests
     {
         Assert.Equal(1f, WristHud.Facing(90f, 1f));
     }
+
+    [Fact]
+    public void ScaledWidth_GrowsWithTheTextScale()
+    {
+        TestUtil.Near(0.16f, WristHud.ScaledWidth(0.16f, 1f), 1e-6f);
+        TestUtil.Near(0.24f, WristHud.ScaledWidth(0.16f, 1.5f), 1e-6f);
+    }
+
+    [Fact]
+    public void ScaledWidth_StaysWithinTheWristAndNeverShrinks()
+    {
+        // The setting's own largest width bounds the grown display; a wide setting is not cut back.
+        Assert.Equal(WristHud.MaxWidth, WristHud.ScaledWidth(0.3f, 2f));
+        Assert.Equal(0.4f, WristHud.ScaledWidth(0.4f, 2f));
+        Assert.Equal(0.16f, WristHud.ScaledWidth(0.16f, 0.5f));
+    }
 }

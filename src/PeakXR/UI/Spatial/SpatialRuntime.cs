@@ -16,8 +16,12 @@ internal sealed class SpatialRuntime : MonoBehaviour
     /// <summary>Never smaller than this per canvas pixel: 30 px HUD text stays about 1.35 degrees tall.</summary>
     internal const float MinDegreesPerPixel = 0.045f;
 
-    /// <summary>Angular size of one HUD pixel for world-placed parts: the body panel's, or the floor above.</summary>
+    /// <summary>Angular size of one HUD pixel for world-placed parts: the body panel's, or the floor above, grown by
+    /// <c>UI.TextScale</c>. Every placed text and cue label sizes from it, so the setting applies live.</summary>
     public static float DegreesPerPixel { get; private set; } = MinDegreesPerPixel;
+
+    /// <summary><c>UI.TextScale</c> as applied (<see cref="ReadableText.Scale"/>), for sizes set in degrees.</summary>
+    public static float TextScale { get; private set; } = 1f;
 
     private readonly TargetPrompt target = new();
     private readonly ButtonLabels labels = new();
@@ -116,9 +120,11 @@ internal sealed class SpatialRuntime : MonoBehaviour
         {
             var ui = UIWorldFeature.Settings;
             var hudMpp = PanelMath.MetersPerPixel(ui.HudWidth.Value, 1920f);
-            DegreesPerPixel = Mathf.Max(
+            TextScale = ReadableText.Scale(ui.TextScale.Value);
+            DegreesPerPixel = ReadableText.Scaled(
+                SpatialMath.DegreesPerPixel(hudMpp, ui.HudDistance.Value),
                 MinDegreesPerPixel,
-                SpatialMath.DegreesPerPixel(hudMpp, ui.HudDistance.Value)
+                TextScale
             );
         }
     }

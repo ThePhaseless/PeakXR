@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
 using PeakXR.VR;
@@ -574,5 +575,201 @@ internal sealed partial class SelfTestRunner
             read += $", on top {onTop}";
         }
         Conclude(fails, new List<string> { $"gauge {d:0.00} m from the spool, {read}" });
+    }
+
+    /// <summary>An Apple 0.8 m out on the head's ray, held still there and hovered, handed to
+    /// <paramref name="found"/>; a failed step instead if the game never makes it the target.</summary>
+    IEnumerator HoveredApple(System.Action<Item> found)
+    {
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var head = VRRig.Instance.Head;
+        var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
+        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
+        {
+            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
+            yield break;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail("spawned Apple has no Item");
+            yield break;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        yield return HoverOnHeadRay(world, head);
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            Fail("the Apple never became the hovered target");
+            yield break;
+        }
+        found(world);
+    }
+
+    /// <summary>Em height of <paramref name="t"/> in degrees from the eye: its font size through its world scale.</summary>
+    static float EmDegrees(TMP_Text t) =>
+        ReadableText.Degrees(
+            t.fontSize * Mathf.Abs(t.transform.lossyScale.y),
+            Vector3.Distance(VRRig.Instance.Head.position, t.transform.position)
+        );
+
+    /// <summary>vr.240: <c>UI.TextScale</c> 1.5 draws the target prompt's name (an Apple on the head's ray, with
+    /// <c>UI.TargetNames</c> on) and a refusal's reason label (Locked at the right hand, with <c>UI.ActionHintText</c>
+    /// on so it shows every time) 1.5 times the angular size they have at 1, both at or above
+    /// <see cref="ReadableText.MinDegrees"/>. The settings go back.</summary>
+    IEnumerator TextScaleStep()
+    {
+        var entry = UI.World.UIWorldFeature.Settings?.TextScale;
+        var hintText = AffordanceFeature.ActionHintText;
+        if (entry == null || !Affordance.Enabled || hintText == null)
+        {
+            stepSkip = "ui.world or ui.affordance not installed";
+            yield break;
+        }
+        float saved = entry.Value;
+        bool hintWas = hintText.Value;
+        bodyRestore += () =>
+        {
+            entry.Value = saved;
+            hintText.Value = hintWas;
+        };
+        hintText.Value = true;
+        entry.Value = 1f;
+        Item world = null;
+        yield return HoveredApple(w => world = w);
+        if (world == null)
+            yield break;
+        var head = VRRig.Instance.Head;
+        var nameText = GUIManager.instance.interactNameText;
+        var size = new float[4];
+        for (int pass = 0; pass < 2 && stepOk; pass++)
+        {
+            entry.Value = pass == 0 ? 1f : 1.5f;
+            for (float t = Now + 0.3f; Now < t; )
+            {
+                HoldOnHeadRay(world, head);
+                yield return null;
+            }
+            size[pass * 2] = EmDegrees(nameText);
+            Affordance.ResetGate();
+            if (!Affordance.DenyAtHand(false, DenyReason.Locked))
+            {
+                Fail("Locked refusal not accepted");
+                yield break;
+            }
+            yield return Until(() => AffordanceRuntime.LabelShown, 1f, "no reason label");
+            if (!stepOk)
+                yield break;
+            yield return null;
+            size[pass * 2 + 1] = EmDegrees(AffordanceRuntime.Label);
+        }
+        var fails = new List<string>();
+        for (int i = 0; i < 2; i++)
+        {
+            string what = i == 0 ? "prompt name" : "reason label";
+            float at1 = size[i],
+                at15 = size[i + 2];
+            if (at1 < ReadableText.MinDegrees - 0.05f)
+                fails.Add(
+                    F($"{what} {at1:0.00} deg at 1, under the {ReadableText.MinDegrees} deg floor")
+                );
+            if (Mathf.Abs(at15 / Mathf.Max(at1, 1e-4f) - 1.5f) > 0.08f)
+                fails.Add(F($"{what} {at1:0.00} deg at 1 but {at15:0.00} deg at 1.5"));
+        }
+        yield return ShotAt("vr-240-text-scale", world.Center());
+        Conclude(
+            fails,
+            new List<string>
+            {
+                F(
+                    $"name {size[0]:0.00} -> {size[2]:0.00} deg, reason label {size[1]:0.00} -> {size[3]:0.00} deg"
+                ),
+            }
+        );
+    }
+
+    /// <summary>vr.242 (P2-6): a slab on the game's Map layer (in <c>HelperFunctions.terrainMapMask</c>,
+    /// HelperFunctions.cs:27) across the line from the eye to the target prompt of an Apple on the head's ray, but
+    /// clear of the ray to the Apple so it stays hovered, dims the prompt to <see cref="PromptOcclusion.DimAlpha"/>
+    /// within 0.8 s; with the slab gone it comes back to full.</summary>
+    IEnumerator PromptOcclusionStep()
+    {
+        Item world = null;
+        yield return HoveredApple(w => world = w);
+        if (world == null)
+            yield break;
+        var head = VRRig.Instance.Head;
+        var label = GUIManager.instance.interactName.transform.parent;
+        if (label == null || label.name != "PeakXR_TargetPrompt")
+        {
+            Fail("the Apple's name is not on the target prompt");
+            yield break;
+        }
+        int map = LayerMask.NameToLayer("Map");
+        var eye = head.position;
+        var toLabel = (label.position - eye).normalized;
+        var toApple = (world.Center() - eye).normalized;
+        // 0.3 m out on the label's line; the gap to the Apple's line there decides how low the slab may reach.
+        var p = eye + toLabel * 0.3f;
+        var q = eye + toApple * Vector3.Dot(p - eye, toApple);
+        float gap = Vector3.Distance(p, q);
+        if (map < 0 || gap < 0.008f)
+        {
+            Fail(F($"no Map layer ({map}) or the label sits on the Apple's line ({gap:0.000} m)"));
+            yield break;
+        }
+        var up = (p - q) / gap;
+        var bottom = q + up * (gap * 0.4f);
+        var top = p + up * 0.2f;
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        slab.name = "PeakXR_TestOccluder";
+        slab.layer = map;
+        spawned.Add(slab);
+        slab.transform.SetPositionAndRotation(
+            (bottom + top) * 0.5f,
+            Quaternion.LookRotation(toLabel, up)
+        );
+        slab.transform.localScale = new Vector3(0.2f, Vector3.Distance(bottom, top), 0.02f);
+        Physics.SyncTransforms();
+        var fails = new List<string>();
+        var notes = new List<string>();
+        for (float t = Now + 0.8f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        bool hovered = ReferenceEquals(Interaction.instance.currentHovered, world);
+        float dimmed = TargetPrompt.Dim;
+        float drawn = Alpha(GUIManager.instance.interactNameText);
+        notes.Add(
+            F(
+                $"behind the slab: prompt alpha {dimmed:0.00}, name drawn at {drawn:0.00}, hovered {hovered}"
+            )
+        );
+        if (!hovered)
+            fails.Add("the slab took the Apple's hover: the test cannot see the prompt");
+        else if (
+            dimmed > PromptOcclusion.DimAlpha + 0.05f
+            || drawn > PromptOcclusion.DimAlpha + 0.05f
+        )
+            fails.Add(F($"prompt behind terrain still at {dimmed:0.00} (name {drawn:0.00})"));
+        yield return ShotAt("vr-242-prompt-occlusion", world.Center());
+        Object.Destroy(slab);
+        yield return null;
+        Physics.SyncTransforms();
+        for (float t = Now + 0.8f; Now < t; )
+        {
+            HoldOnHeadRay(world, head);
+            yield return null;
+        }
+        float open = TargetPrompt.Dim;
+        notes.Add(F($"in the open: {open:0.00}"));
+        if (open < 0.95f)
+            fails.Add(F($"prompt stayed at {open:0.00} with nothing in the way"));
+        Conclude(fails, notes);
     }
 }

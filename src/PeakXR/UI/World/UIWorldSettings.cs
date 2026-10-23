@@ -51,7 +51,8 @@ internal sealed class UIWorldSettings
         MenuWidth,
         MenuTilt,
         FadeSeconds,
-        NameTagScale;
+        NameTagScale,
+        TextScale;
     public ConfigEntry<bool> MenuPanels,
         MenuBackplate;
     public ConfigEntry<float> MenuBackplateOpacity;
@@ -141,6 +142,17 @@ internal sealed class UIWorldSettings
                 "NameTagScale",
                 1f,
                 Range("Size of player name tags.", 0.5f, 2f)
+            ),
+            TextScale = cfg.Bind(
+                ui,
+                "TextScale",
+                1f,
+                Range(
+                    "Size of the text the mod puts in the world: the target prompt, item labels by the buttons, "
+                        + "refusal labels and the wrist HUD. 1 is the readable minimum; it only grows from there.",
+                    1f,
+                    ReadableText.MaxTextScale
+                )
             ),
             StatusOverlays = cfg.Bind(
                 ui,

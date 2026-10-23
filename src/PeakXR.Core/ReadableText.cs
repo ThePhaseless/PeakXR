@@ -14,6 +14,19 @@ public static class ReadableText
     /// legibility floor for headset text.</summary>
     public const float MinDegrees = 1.3f;
 
+    /// <summary>Largest <c>UI.TextScale</c>.</summary>
+    public const float MaxTextScale = 2f;
+
+    /// <summary><c>UI.TextScale</c> as applied: 1 to <see cref="MaxTextScale"/>. It only ever grows text on top of
+    /// the floor, so anything under 1 (or NaN from a hand-edited config) is 1.</summary>
+    public static float Scale(float textScale) =>
+        float.IsNaN(textScale) ? 1f : Math.Clamp(textScale, 1f, MaxTextScale);
+
+    /// <summary>A text size (degrees, or degrees per pixel) raised to <paramref name="floor"/>, then grown by the
+    /// player's <paramref name="textScale"/>: never below the floor, linear above it.</summary>
+    public static float Scaled(float size, float floor, float textScale) =>
+        MathF.Max(size, floor) * Scale(textScale);
+
     /// <summary>Smallest whole font size, in pixels of <paramref name="degreesPerPixel"/>, that meets
     /// <see cref="MinDegrees"/>.</summary>
     public static int MinPixels(float degreesPerPixel) =>

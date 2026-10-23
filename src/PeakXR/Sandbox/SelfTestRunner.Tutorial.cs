@@ -366,6 +366,9 @@ internal sealed partial class SelfTestRunner
         yield return WithOn("vr.125-hold-glyph", 40f, HoldGlyphStep(), prompt);
         yield return WithOn("vr.133-target-names", 25f, TargetNamesStep(false), prompt);
         yield return WithOn("vr.221-colorblind-names", 25f, TargetNamesStep(true), prompt);
+        var names = SpatialFeature.Settings.TargetNames;
+        yield return WithOn("vr.240-text-scale", 25f, TextScaleStep(), prompt, names);
+        yield return WithOn("vr.242-prompt-occlusion", 25f, PromptOcclusionStep(), prompt, names);
         yield return WarpBack();
     }
 
