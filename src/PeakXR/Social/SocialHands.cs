@@ -691,9 +691,6 @@ internal sealed class SocialHands : IGripExtension
         return hand != null ? hand.position : fallback;
     }
 
-    /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
-    /// which speeds up dying (Character.cs:1174). Both grips and both triggers give up on purpose; a single grip says
-    /// so, and holding all four ramps on both hands as the death timer fills.</summary>
     /// <summary>Last <c>CharacterInput.Sample</c> postfix: while the item is at a friend's mouth or chest, its trigger
     /// is the hand-over's squeeze, so it must not also start the item's own use (eating it yourself,
     /// usePrimary).</summary>
@@ -705,6 +702,9 @@ internal sealed class SocialHands : IGripExtension
         input.usePrimaryIsPressed = false;
     }
 
+    /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
+    /// which speeds up dying (Character.cs:1174). Both grips and both triggers give up on purpose; a single grip says
+    /// so, and holding all four ramps on both hands as the death timer fills.</summary>
     public void GuardGiveUp(Character c, CharacterInput input)
     {
         if (!VRSession.Active || !SocialConfig.Instance.GiveUpGuard || !c.data.fullyPassedOut)
@@ -923,7 +923,12 @@ internal sealed class SocialHands : IGripExtension
         }
         bool left = LocalHold.ItemInLeftHand;
         bool usable = item.canUseOnFriend && feedCandidate.refs.interactible != null;
-        var state = handOver.Update(true, VRInput.Hand(left).Trigger > HandOverTrigger, usable);
+        var state = handOver.Update(
+            true,
+            VRInput.Hand(left).Trigger > HandOverTrigger,
+            usable,
+            ownUse: item.CanUsePrimary()
+        );
         if (usable)
             FeedTarget = feedCandidate.refs.interactible;
         var spot = PartPosition(feedCandidate, part, point);

@@ -30,9 +30,12 @@ public sealed class HandOver
     /// <summary>The trigger is the hand-over's this frame: the caller keeps it from the item's primary use.</summary>
     public bool SuppressPrimary { get; private set; }
 
-    public HandOverState Update(bool inZone, bool trigger, bool usable)
+    /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
+    /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
+    /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
+    public HandOverState Update(bool inZone, bool trigger, bool usable, bool ownUse = false)
     {
-        if (!inZone)
+        if (!inZone || (!usable && ownUse))
         {
             Reset();
             return HandOverState.None;
@@ -41,10 +44,11 @@ public sealed class HandOver
         {
             armed = true;
             refused = false;
-            SuppressPrimary = true;
+            // Only an item the friend can take claims the trigger; anything else keeps it until a refused press.
+            SuppressPrimary = usable;
             return usable ? HandOverState.Hint : HandOverState.None;
         }
-        SuppressPrimary = armed;
+        SuppressPrimary = armed && usable;
         if (!armed)
             return HandOverState.None;
         if (usable)

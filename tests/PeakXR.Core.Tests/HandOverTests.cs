@@ -47,6 +47,26 @@ public class HandOverTests
     }
 
     [Fact]
+    public void UnusableItemWithItsOwnUse_KeepsItsTrigger()
+    {
+        // A torch or a rope spool near a friend's head is no hand-over: its trigger stays its own, nothing refused.
+        var h = new HandOver();
+        Assert.Equal(HandOverState.None, h.Update(true, false, false, ownUse: true));
+        Assert.False(h.SuppressPrimary);
+        Assert.Equal(HandOverState.None, h.Update(true, true, false, ownUse: true));
+        Assert.False(h.SuppressPrimary);
+    }
+
+    [Fact]
+    public void UnusableItemWithoutAUse_DoesNotTakeTheTriggerUntilPressed()
+    {
+        var h = new HandOver();
+        h.Update(true, false, false);
+        Assert.False(h.SuppressPrimary);
+        Assert.Equal(HandOverState.Refuse, h.Update(true, true, false));
+    }
+
+    [Fact]
     public void LeavingTheZone_Disarms()
     {
         var h = new HandOver();

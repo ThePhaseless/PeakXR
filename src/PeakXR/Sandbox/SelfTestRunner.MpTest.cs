@@ -1041,6 +1041,7 @@ internal sealed partial class SelfTestRunner
         float best = float.MaxValue;
         float atMouth = 0f;
         bool proximityFed = false;
+        float squeezeMark = -1f;
         while (
             item != null
             && HeldItem() == item
@@ -1056,6 +1057,8 @@ internal sealed partial class SelfTestRunner
             bool squeeze = atMouth >= 2f;
             if (!squeeze && item.isUsingSecondary)
                 proximityFed = true;
+            if (squeeze && squeezeMark < 0f)
+                squeezeMark = CueMark();
             Script(left).Trigger = squeeze ? 1f : 0f;
             var goal = Script(left).Position + rig.Origin.InverseTransformVector(miss);
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
@@ -1072,8 +1075,14 @@ internal sealed partial class SelfTestRunner
         }
         Script(left).Trigger = 0f;
         var note = $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth";
+        // The squeeze is the hand-over, not a try at eating far from A's own mouth (HeldGestures.MouthHint's NotHere).
+        bool notHere =
+            squeezeMark >= 0f
+            && CueLog.Capture.Fired(left, DenyReason.NotHere, squeezeMark, false, out _);
         if (proximityFed)
             Fail("the feed started with the trigger up, by proximity alone: " + note);
+        else if (notHere)
+            Fail("the squeeze that fed the host was also refused as NotHere: " + note);
         else if (c.data.lastConsumedItem == consumedBefore)
             Fail(
                 (item != null && HeldItem() == item ? "not fed: " : "item left the hand unfed: ")
