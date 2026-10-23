@@ -83,6 +83,10 @@ internal static class ClimbHands
     private static int pumpCount;
     private static Rigidbody[] pumpBodies = Array.Empty<Rigidbody>();
 
+    private static readonly PumpIntent Intent = new();
+    private static Vector3 lastSwingPoint;
+    private static bool swingValid;
+
     /// <summary>This hold already got its refusal for pumping a rope someone else owns.</summary>
     private static bool pumpRefused;
 
@@ -248,9 +252,9 @@ internal static class ClimbHands
             if (amplitude > 0f)
             {
                 if (l)
-                    Haptics.Pulse(true, amplitude, 0.04f);
+                    Haptics.Pulse(true, amplitude, 0.04f, HapticPriority.Ambient);
                 if (r)
-                    Haptics.Pulse(false, amplitude, 0.04f);
+                    Haptics.Pulse(false, amplitude, 0.04f, HapticPriority.Ambient);
             }
         }
     }
@@ -294,6 +298,8 @@ internal static class ClimbHands
         headValid = false;
         pumpRope = null;
         pumpRefused = false;
+        Intent.Reset();
+        swingValid = false;
 
         LastPump = 0f;
         piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
@@ -614,7 +620,8 @@ internal static class ClimbHands
     /// D7: the head leaning along the swing pushes the whole rope (<see cref="RopePump"/>). Only the rope's owner
     /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent.
     /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner. The
-    /// first pump on such a rope in a hold gets NotHere at the gripping hand instead of nothing.
+    /// first clear pump on such a rope in a hold (<see cref="PumpIntent"/>: a rhythm of leans, never a look around)
+    /// gets NotHere at the gripping hand instead of nothing.
     /// </summary>
     private static void Pump(Character c, VRRig rig, bool holding, float dt)
     {
@@ -626,13 +633,24 @@ internal static class ClimbHands
         LastPump = 0f;
         var rope = c.data.heldRope;
         if (!RopePumping || !holding || !valid || rope.photonView == null)
+        {
+            swingValid = false;
             return;
+        }
         if (!rope.photonView.IsMine || SelfTestNotMine)
         {
             if (rig.Origin != null)
                 velocity = rig.Origin.TransformVector(velocity);
-            float would = RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax).Length();
-            if (RopePump.RefuseOnce(false, would, ref pumpRefused))
+            // Refuse only a clear pump (PumpIntent): looking around or leaning to grab on a friend's rope stays quiet.
+            var point =
+                rope.climbingAPI != null
+                    ? rope.climbingAPI.GetPosition(c.data.ropePercent)
+                    : c.Center;
+            var swing = swingValid ? (point - lastSwingPoint) / dt : Vector3.zero;
+            lastSwingPoint = point;
+            swingValid = true;
+            bool pumping = Intent.Update(velocity.N(), swing.N(), Time.time, dt);
+            if (RopePump.RefuseOnce(false, pumping ? 1f : 0f, ref pumpRefused))
             {
                 bool left = LeftHand.Anchored || !RightHand.Anchored;
                 Affordance.DenyAtHand(left, DenyReason.NotHere);

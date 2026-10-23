@@ -13,9 +13,10 @@ namespace PeakXR.Core
         /// <summary>Maximum intensity, 0..1.</summary>
         public float Strength = 0.6f;
 
-        /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength.</summary>
-        public float LinearMin = 1f,
-            LinearMax = 4f;
+        /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength: any artificial
+        /// motion starts it, and it is full at walking speed (vr.17 walked 2.7 m/s).</summary>
+        public float LinearMin = 0.2f,
+            LinearMax = 2.5f;
 
         /// <summary>Angular speed (deg/s) where the vignette starts and where it reaches full strength.</summary>
         public float AngularMin = 30f,
@@ -51,6 +52,10 @@ namespace PeakXR.Core
         }
 
         public void Reset() => Intensity = 0f;
+
+        /// <summary>How far the speed curve drives the vignette at <paramref name="v"/> (0..1): 0 below
+        /// <paramref name="min"/>, 1 from <paramref name="max"/>. Also the settings preview's curve.</summary>
+        public static float Drive(float v, float min, float max) => Ramp(v, min, max);
 
         static float Ramp(float v, float min, float max)
         {

@@ -213,7 +213,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
     static void ConfigureStereo()
     {
         // The game build has no XR occlusion-mesh or mirror shaders (stripped by URP, stack.md section 4):
-        // turn the visibility mesh off and let rig.camera draw the desktop mirror itself.
+        // turn the visibility mesh off and let rig.camera draw the desktop mirror itself. API:
+        // https://docs.unity3d.com/Packages/com.unity.render-pipelines.core@17.0/api/UnityEngine.Rendering.XRSRPSettings.html
+        // and https://docs.unity3d.com/6000.3/Documentation/ScriptReference/XR.XRSettings.html
         XRSRPSettings.useVisibilityMesh = false;
         XRSRPSettings.occlusionMeshScale = 0f;
         XRSRPSettings.mirrorViewMode = XRMirrorViewBlitMode.None;

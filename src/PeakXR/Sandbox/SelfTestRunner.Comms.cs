@@ -41,8 +41,6 @@ internal sealed partial class SelfTestRunner
 
     // ================================================================ WP6 gap round: ping
 
-    /// <summary>vr.123: the finger gun aimed at the ground ahead draws its aim as a row of dots from the hand to the
-    /// landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone refuses nothing.</summary>
     /// <summary>Ground items within this distance of the body can be in reach of a pointing grip's interact.</summary>
     const float StrayItemRadius = 3f;
 
@@ -75,6 +73,8 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>vr.123: the finger gun aimed at the ground ahead draws its aim as a row of dots from the hand to the
+    /// landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone refuses nothing.</summary>
     IEnumerator PingDottedStep()
     {
         ClearStrayItems();
@@ -142,6 +142,7 @@ internal sealed partial class SelfTestRunner
         Affordance.ResetGate();
         float mark = CueMark();
         float gameMark = Time.time;
+        var oldMarker = PingMarker(pinger);
         Script(button).Secondary = true;
         for (float until = Now + 0.15f; Now < until; )
         {
@@ -156,11 +157,18 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
             yield break;
+        var landing = PingLanding(pinger, oldMarker, aim, aimLeft, out float landed);
+        if (landing != null)
+        {
+            Fail("button tap: " + landing);
+            yield break;
+        }
         yield return ExpectFeel(aimLeft, CueFeel.Contact, mark);
         string feel = cueNote;
         yield return ExpectNoCue(aimLeft, mark, 0.3f);
         if (!stepOk)
             yield break;
+        float tapped = PingInput.LastPinged(pinger);
 
         // The long press opens the emote wheel instead: the preview goes and stays gone while the thumb rests.
         Script(button).Secondary = true;
@@ -171,9 +179,15 @@ internal sealed partial class SelfTestRunner
         bool hiddenAfter = !PingInput.ButtonAiming(out _);
         Script(button).SecondaryTouch = false;
         yield return Wait(0.3f);
+        // The long press is the emote wheel's, never a second ping (cooldown 0 in the prefab, so one would show).
+        if (PingInput.LastPinged(pinger) != tapped)
+        {
+            Fail("the emote long press on the ping button also pinged");
+            yield break;
+        }
 
         var note =
-            $"preview {previewed} from the {(fromLeft ? "left" : "right")} hand ({dots} dots), pinged; {feel}; "
+            $"preview {previewed} from the {(fromLeft ? "left" : "right")} hand ({dots} dots), pinged {landed:0.00} m from the aim; {feel}; "
             + $"long press hid it {hiddenHeld}, still hidden after {hiddenAfter}";
         if (!previewed || fromLeft != aimLeft)
             Fail(
@@ -206,6 +220,7 @@ internal sealed partial class SelfTestRunner
             Fail("no GUIManager emote wheel");
             yield break;
         }
+        var emoting = GameMember.Field<CharacterAnimations, bool>("emoting");
         bool hand = RadialWheels.OpeningHandLeft(VRAction.Emote);
         c.input.pauseWasPressed = true;
         gui.UpdatePaused();
@@ -220,9 +235,13 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         string refused = cueNote;
-        if (openedPaused)
+        if (openedPaused || emoting(c.refs.animations))
         {
-            Fail("emote wheel opened over the pause menu");
+            Fail(
+                openedPaused
+                    ? "emote wheel opened over the pause menu"
+                    : "an emote played over the pause menu"
+            );
             yield break;
         }
         ClosePause();
@@ -244,6 +263,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         if (Affordance.Count != denials)
             Fail($"centre release was refused ({Affordance.LastReason}), not cancelled");
+        else if (emoting(c.refs.animations))
+            Fail("the centre release played an emote");
         else
             stepNote = $"paused: {refused}; centre release: {cueNote}";
     }
@@ -302,7 +323,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.117: a menu tap while the emote wheel is open is refused by the game (GUIManager.cs:424); the hand that
-    /// pressed it gets NotNow and the pause menu stays shut.
+    /// pressed it gets NotNow and the pause menu stays shut. With the wheel closed the same tap pauses, so the refusal
+    /// is the wheel's and not a dead menu button.
     /// </summary>
     IEnumerator PauseRefusedStep()
     {
@@ -324,12 +346,29 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.15f);
         Script(true).Menu = false;
         yield return ExpectCue(true, DenyReason.NotNow, mark, 1f);
+        // A few frames for a pause that would open late.
+        yield return Wait(0.3f);
         bool paused = GUIManager.InPauseMenu;
         Script(hand).Secondary = false;
         if (stepOk && paused)
             Fail("pause menu opened over the emote wheel");
-        else if (stepOk)
-            stepNote = cueNote;
+        if (!stepOk)
+            yield break;
+        string refused = cueNote;
+        yield return Until(() => !gui.wheelActive, 1f, "emote wheel did not close");
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.2f);
+        Script(true).Menu = true;
+        yield return Wait(0.15f);
+        Script(true).Menu = false;
+        yield return Until(
+            () => GUIManager.InPauseMenu,
+            1.5f,
+            "the same menu tap with no wheel open did not pause"
+        );
+        if (stepOk)
+            stepNote = refused + "; unrefused tap paused";
     }
 
     // ================================================================ WP6 slice A: ping and voice
@@ -358,6 +397,7 @@ internal sealed partial class SelfTestRunner
         Affordance.ResetGate();
         float mark = CueMark();
         float gameMark = Time.time;
+        var oldMarker = PingMarker(pinger);
         yield return FingerGunSqueeze(left, aim);
         yield return Until(
             () => PingInput.LastPinged(pinger) >= gameMark,
@@ -366,17 +406,24 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
             yield break;
+        var landing = PingLanding(pinger, oldMarker, aim, left, out float landed);
         yield return ExpectFeel(left, CueFeel.Contact, mark);
         string feel = cueNote;
         yield return ExpectNoCue(left, mark, 0.5f);
         if (!stepOk)
             yield break;
+        var held = HeldItem();
         if (!shown)
             Fail("no aim preview dot while the finger gun was held");
-        else if (off > 1.5f)
+        else if (off > PingLandRadius)
             Fail($"preview dot {off:0.00} m from the aimed spot");
+        else if (landing != null)
+            Fail(landing);
+        else if (held != null)
+            Fail($"the finger-gun squeeze picked up {held.name} instead of only pinging");
         else
-            stepNote = $"preview dot {off:0.00} m from the aim, pinged; {feel}";
+            stepNote =
+                $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}";
     }
 
     /// <summary>
@@ -456,11 +503,14 @@ internal sealed partial class SelfTestRunner
         bool holdLeft = LocalHold.ItemInLeftHand;
         Affordance.ResetGate();
         mark = CueMark();
+        float heldBefore = PingInput.LastPinged(pinger);
         yield return FingerGunAim(holdLeft, ground, 0.3f);
         yield return FingerGunSqueeze(holdLeft, ground);
         yield return ExpectCue(!holdLeft, DenyReason.UseOtherHand, mark);
         if (HeldItem() != null)
             usability(HeldItem()) = Optionable<bool>.None;
+        if (stepOk && PingInput.LastPinged(pinger) != heldBefore)
+            Fail("the holding hand's finger gun pinged");
         if (!stepOk)
             yield break;
         notes.Add("holding: " + cueNote);
@@ -480,6 +530,12 @@ internal sealed partial class SelfTestRunner
         if (setting == null || VoiceFeature.Settings == null)
         {
             stepSkip = "no PushToTalkSetting or voice not installed";
+            yield break;
+        }
+        var voice = c != null ? c.refs.voice : null;
+        if (voice == null)
+        {
+            stepSkip = "no voice handler";
             yield break;
         }
         var mode = setting.Value;
@@ -507,10 +563,22 @@ internal sealed partial class SelfTestRunner
                 Fail($"mic icon shows {VoiceRuntime.GlyphShown}, not Open");
             if (!stepOk)
                 yield break;
+            // The key alone proves nothing: the game's gate (:265) must open the recorder that sends (:270).
+            yield return Until(
+                () => voice.transmitting && RecorderIs(voice, true),
+                0.5f,
+                $"push-to-talk pressed but the mic did not send (transmitting {voice.transmitting})"
+            );
+            if (!stepOk)
+                yield break;
             yield return ExpectFeel(left, CueFeel.Contact, mark);
             if (!stepOk)
                 yield break;
-            notes.Add("open: click, icon, " + cueNote);
+            notes.Add(
+                (VoiceAllowed(voice) ? "open: recorder sends, " : "open: platform blocks voice, ")
+                    + "click, icon, "
+                    + cueNote
+            );
             yield return ShotAt("vr-112-ptt", VRRig.Instance.Hand(left).position);
 
             float closeMark = CueMark();
@@ -529,7 +597,14 @@ internal sealed partial class SelfTestRunner
                 Fail("mic icon still open");
             if (!stepOk)
                 yield break;
-            notes.Add("closed: click, icon off");
+            yield return Until(
+                () => !voice.transmitting && RecorderIs(voice, false),
+                0.5f,
+                "the mic kept sending after the hand left"
+            );
+            if (!stepOk)
+                yield break;
+            notes.Add("closed: click, icon off, recorder off");
 
             SetMicMode(setting, PushToTalkSetting.PushToTalkType.VoiceActivation);
             VoiceRuntime.ResetNotice();
@@ -581,7 +656,7 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
             yield return Wait(0.1f);
-            if (voice.transmitting)
+            if (voice.transmitting || !RecorderIs(voice, false))
                 Fail("voice activation still transmitting under the palm");
             else if (VoiceRuntime.GlyphShown != MicGlyph.Muted)
                 Fail($"mic icon shows {VoiceRuntime.GlyphShown}, not Muted");
@@ -596,7 +671,7 @@ internal sealed partial class SelfTestRunner
             yield return ShotAt("vr-113-mute", VRRig.Instance.Hand(left).position);
             yield return HandAway(left);
             yield return Until(
-                () => voice.transmitting,
+                () => voice.transmitting && RecorderIs(voice, true),
                 1.5f,
                 "mic did not reopen after the palm left"
             );
@@ -612,7 +687,8 @@ internal sealed partial class SelfTestRunner
             );
             if (!stepOk)
                 yield break;
-            if (voice.transmitting)
+            yield return Wait(0.1f);
+            if (voice.transmitting || !RecorderIs(voice, false))
                 Fail("push to mute still transmitting under the palm");
             if (!stepOk)
                 yield break;
@@ -625,6 +701,53 @@ internal sealed partial class SelfTestRunner
             SetMicMode(setting, mode);
             VoiceFeature.Settings.PalmMute.Value = palmOn;
         }
+    }
+
+    /// <summary>How close the ping must land to the aimed spot: the aim pose looks straight at it, so only a bump in
+    /// the ground on the way can move it.</summary>
+    const float PingLandRadius = 0.3f;
+
+    /// <summary>The marker of the local player's last ping (PointPinger.pingInstance, PointPinger.cs:14, placed at the
+    /// hit point by ReceivePoint_Rpc :97), or null once it is gone (destroyed after 2 s, :104).</summary>
+    static GameObject PingMarker(PointPinger pinger) =>
+        GameMember.Field<PointPinger, GameObject>("pingInstance")(pinger);
+
+    /// <summary>Why the ping just sent did not land where <paramref name="left"/>'s hand aimed (it came from the other
+    /// hand, no new marker, or the marker is off the spot), or null; <paramref name="off"/> is the marker's miss.</summary>
+    static string PingLanding(
+        PointPinger pinger,
+        GameObject before,
+        Vector3 aim,
+        bool left,
+        out float off
+    )
+    {
+        off = -1f;
+        if (PingInput.PingLeft != left)
+            return $"the ping went out from the {(left ? "right" : "left")} hand";
+        var marker = PingMarker(pinger);
+        if (marker == null || marker == before)
+            return "no new ping marker (PointPinger.pingInstance)";
+        off = Vector3.Distance(marker.transform.position, aim);
+        return off > PingLandRadius
+            ? $"the ping marker landed {off:0.00} m from the aimed spot"
+            : null;
+    }
+
+    /// <summary>The platform lets this player talk (CharacterVoiceHandler.m_allowedToCommunicate, :66, set :149);
+    /// without it the game keeps the recorder off whatever the key does (:238-247).</summary>
+    static bool VoiceAllowed(CharacterVoiceHandler voice) =>
+        GameMember.Field<CharacterVoiceHandler, bool>("m_allowedToCommunicate")(voice);
+
+    /// <summary>The local recorder's send switch (CharacterVoiceHandler.m_Recorder :54, TransmitEnabled set :270 and
+    /// :246) is <paramref name="send"/>: what other players hear, not the game's <c>transmitting</c> flag alone.
+    /// True when the platform forbids voice, where there is nothing to send.</summary>
+    static bool RecorderIs(CharacterVoiceHandler voice, bool send)
+    {
+        if (!VoiceAllowed(voice))
+            return true;
+        var recorder = MicGatePatch.Recorder != null ? MicGatePatch.Recorder(voice) : null;
+        return recorder != null && recorder.TransmitEnabled == send;
     }
 
     static PointPinger LocalPinger()

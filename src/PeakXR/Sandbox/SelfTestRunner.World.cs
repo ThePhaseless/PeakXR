@@ -9,6 +9,7 @@ using PeakXR.Interact;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.UI.Affordances;
+using PeakXR.UI.Common;
 using PeakXR.UI.RunFlow;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -95,6 +96,11 @@ internal sealed partial class SelfTestRunner
             Affordance.ResetGate();
             float mark = CueMark();
             yield return GripTo(left, 1f, 0.1f);
+            // Logged so the pose can be judged: the logs sit low, a standing eye far above them.
+            float eyeHand = Vector3.Distance(
+                VRRig.Instance.Head.position,
+                VRRig.Instance.Hand(left).position
+            );
             yield return ExpectCue(left, DenyReason.FriendsFar, mark, tint: true, within: 2f);
             var cue = cueNote;
             yield return GripTo(left, 0f, 0.1f);
@@ -103,7 +109,7 @@ internal sealed partial class SelfTestRunner
             if (fire.state != Campfire.FireState.Off)
                 Fail($"{fire.name} changed to {fire.state} with a scout away");
             else
-                stepNote = $"{fire.name}: {cue}";
+                stepNote = F($"{fire.name}: {cue}; eye-hand {eyeHand:0.00} m");
         }
         finally
         {
@@ -620,9 +626,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.89: an amulet put into a full scout statue altar (every <c>hasAmulets</c> slot set, Peak/ScoutStatue.cs:10)
-    /// is refused with Occupied, the statue red, and stays in the hand instead of being consumed
-    /// (Interact_CastFinished, :302-310). The slots are filled locally for the step and restored. Peak segment only.
+    /// vr.89: an amulet carried up to a socket of a full scout statue altar (every <c>hasAmulets</c> slot set,
+    /// Peak/ScoutStatue.cs:10) is refused with Occupied, the statue red; a vanilla hold finishing there
+    /// (Interact_CastFinished, :302-310) is refused too, and the amulet stays in the hand instead of being consumed.
+    /// The slots are filled locally for the step and restored. Peak segment only.
     /// </summary>
     IEnumerator AltarFullStep()
     {
@@ -641,32 +648,48 @@ internal sealed partial class SelfTestRunner
                 break;
             }
         }
-        if (statue == null || amulet == null)
+        if (statue == null || amulet == null || statue.amuletObjects is not { Length: > 0 })
         {
-            stepSkip = statue == null ? "no scout statue loaded (Peak only)" : "no amulet item";
+            stepSkip =
+                statue == null ? "no scout statue loaded (Peak only)"
+                : amulet == null ? "no amulet item"
+                : "the scout statue has no sockets";
             yield break;
         }
-        yield return GiveAndHold(amulet.GetComponent<Item>());
-        if (!stepOk)
-            yield break;
-        var held = HeldItem();
-        bool left = LocalHold.ItemInLeftHand;
         var slots = GameMember.Field<ScoutStatue, int[]>("hasAmulets")(statue);
         var saved = (int[])slots.Clone();
         try
         {
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = i;
+            // The player's path first: the amulet carried up to a socket of the full altar (WorldHolds.Summit
+            // AltarNear, 0.35 m). vr43 only called Interact_CastFinished, the guard behind a finished vanilla hold.
+            int socket = Mathf.Clamp(amulet.amuletIndex, 0, statue.amuletObjects.Length - 1);
+            var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[socket]);
+            yield return WarpBeside(socketAt, 0.7f);
+            yield return GiveAndHold(amulet.GetComponent<Item>());
+            if (!stepOk)
+                yield break;
+            var held = HeldItem();
+            bool left = LocalHold.ItemInLeftHand;
+            yield return GripTo(left, 1f, 0.1f);
             Affordance.ResetGate();
             float mark = CueMark();
-            statue.Interact_CastFinished(Character.localCharacter);
-            yield return ExpectCue(left, DenyReason.Occupied, mark, tint: true);
+            yield return MoveTo(left, () => AmuletOffer(socketAt), 0.6f);
+            yield return ExpectCue(left, DenyReason.Occupied, mark, tint: true, within: 2f);
             var cue = cueNote;
+            if (!stepOk)
+                yield break;
+            // Then the guard a vanilla hold reaching its end meets (Interact_CastFinished, :302-310).
+            Affordance.ResetGate();
+            float guardMark = CueMark();
+            statue.Interact_CastFinished(Character.localCharacter);
+            yield return ExpectCue(left, DenyReason.Occupied, guardMark, tint: true);
             yield return Wait(1f);
             if (stepOk && !ReferenceEquals(HeldItem(), held))
                 Fail("the amulet left the hand at a full altar");
             else if (stepOk)
-                stepNote = cue;
+                stepNote = $"carried to socket {socket}: {cue}; finished hold guarded";
         }
         finally
         {
@@ -1293,6 +1316,10 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(left, () => logs, 0.5f);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
+        float eyeHand = Vector3.Distance(
+            VRRig.Instance.Head.position,
+            VRRig.Instance.Hand(left).position
+        );
         yield return Until(
             () => fire.Lit,
             GameTiming.Budget(GameTiming.InteractSeconds(fire, c), 3f),
@@ -1308,26 +1335,36 @@ internal sealed partial class SelfTestRunner
             Fail("FriendsFar fired with everyone in range");
             yield break;
         }
+        // Any refusal on the lighting hand is wrong, not only FriendsFar (notices are fine).
+        var grip = CueLog.Capture.Hand(left);
+        if (grip.ReasonAt >= mark && !grip.Notice)
+        {
+            Fail($"{grip.Reason} refused the grip that lit {fire.name}");
+            yield break;
+        }
         // The segment index moves at the start of the game's swap coroutine, but the view swaps only after the fog
         // catches up plus 1 s (MapHandler.cs:578-597), and run flow fades for that moment: watch the fade through
-        // its whole arm-and-hold (vr41 stopped looking when the index moved and saw no fade).
+        // its whole arm-and-hold (vr41 stopped looking when the index moved and saw no fade). The drawn fade
+        // (FadeView.Alpha), not the requested target, and only once the swap armed, so a leftover warp fade from
+        // the approach cannot pass for it.
         float fade = 0f;
+        float target = 0f;
         bool armed = false;
-        float end = Now + 3f;
-        while (Now < end && !armed)
+        for (float end = Now + 3f; Now < end && !armed; )
         {
             armed = RunFlowRuntime.SegmentPending;
-            fade = Mathf.Max(fade, VRFade.Target);
             yield return null;
         }
         for (float until = Now + 60f; Now < until && RunFlowRuntime.SegmentPending; )
         {
-            fade = Mathf.Max(fade, VRFade.Target);
+            fade = Mathf.Max(fade, FadeView.Alpha);
+            target = Mathf.Max(target, VRFade.Target);
             yield return null;
         }
-        for (float t = Now + 1f; Now < t; )
+        for (float t = Now + 1f; armed && Now < t; )
         {
-            fade = Mathf.Max(fade, VRFade.Target);
+            fade = Mathf.Max(fade, FadeView.Alpha);
+            target = Mathf.Max(target, VRFade.Target);
             yield return null;
         }
         if (!armed && Setting("UI.RunFlow", "FadeOnSegmentChange", true))
@@ -1336,7 +1373,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var note =
-            $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00}";
+            $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00} drawn ({target:0.00} asked), eye-hand {eyeHand:0.00} m at the grip";
         if (map.GetCurrentSegment() <= from)
             Fail("segment did not advance: " + note);
         else if (Setting("UI.RunFlow", "FadeOnSegmentChange", true) && fade < 0.5f)
@@ -1411,15 +1448,7 @@ internal sealed partial class SelfTestRunner
             var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[WorldHolds.SocketTarget]);
             float socketUp = socketAt.y - Feet(Character.localCharacter).y;
             var rig = VRRig.Instance;
-            // Where a player holds it: at the socket when it is within reach, else raised over the head straight
-            // under it (AltarSocket.Reach); the gesture reads the tracked hand, so the scripted hand goes there.
-            Vector3 Offer()
-            {
-                float headY = rig.Head.position.y;
-                return socketAt.y <= headY + AltarSocket.RaisedReach
-                    ? socketAt
-                    : new Vector3(socketAt.x, headY + 0.25f, socketAt.z);
-            }
+            Vector3 Offer() => AmuletOffer(socketAt);
             var interaction = Interaction.instance;
             float progress = 0f;
             float mark = CueMark();
@@ -1459,6 +1488,17 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>Where a player holds an amulet up to <paramref name="socketAt"/>: at the socket when it is within
+    /// reach, else raised over the head straight under it (AltarSocket.Reach); the gesture reads the tracked hand,
+    /// so the scripted hand goes there.</summary>
+    static Vector3 AmuletOffer(Vector3 socketAt)
+    {
+        float headY = VRRig.Instance.Head.position.y;
+        return socketAt.y <= headY + AltarSocket.RaisedReach
+            ? socketAt
+            : new Vector3(socketAt.x, headY + 0.25f, socketAt.z);
+    }
+
     /// <summary>vr.90: both open palms laid on the soul pillar (ScoutmasterSoulPillar.cs:51-106) start its 2 s hold
     /// with the progress ramp on both hands; taking them off cancels before it breaks. Nadir only.</summary>
     IEnumerator PillarStep()
@@ -1468,7 +1508,8 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 pillar == null
-                    ? "no soul pillar loaded: it is a Nadir scene object (Segment.Void, ascent 8+ runs, Ascents.cs:48) with no prefab to place offline"
+                    ? "no soul pillar loaded: it is a Nadir scene object (Segment.Void, ascent 8+ runs, Ascents.cs:48) with no prefab to place offline; "
+                        + NadirReach<ScoutmasterSoulPillar>()
                     : "Interaction.PalmsOnPillar is off";
             yield break;
         }
@@ -1478,6 +1519,16 @@ internal sealed partial class SelfTestRunner
                 : pillar.GetComponentInChildren<Collider>();
         yield return WarpFacing(col.bounds.center, 0.6f);
         yield return PressPalms(col, pillar);
+    }
+
+    /// <summary>For a Nadir-only SKIP: whether an inactive <typeparamref name="T"/> is in the loaded scene and whether
+    /// the level has the Nadir (<c>VoidBiome.instance</c>, which <c>JumpToSegment(Void)</c> activates,
+    /// MapHandler.cs:997-1000), so a later run can tell if a jump there would reach it.</summary>
+    static string NadirReach<T>()
+        where T : Object
+    {
+        var inactive = Object.FindFirstObjectByType<T>(FindObjectsInactive.Include);
+        return $"inactive one in the scene {(inactive != null ? inactive.name : "none")}, Nadir in the level {VoidBiome.instance != null}";
     }
 
     /// <summary>Both scripted hands open, palms flat on <paramref name="col"/> at chest height a shoulder apart,
@@ -1542,7 +1593,8 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 col == null || !portal.isActiveAndEnabled
-                    ? "no active summit portal: a scene object only the level switches on (no code enables PeakGatePortal) for the Nadir route, with no prefab to place offline"
+                    ? "no active summit portal: a scene object only the level switches on (no code enables PeakGatePortal) for the Nadir route, with no prefab to place offline; "
+                        + NadirReach<PeakGatePortal>()
                     : "Interaction.HandIntoPortal is off";
             yield break;
         }
@@ -1710,32 +1762,53 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        string credits = "no credits (lost run)";
-        if (RunFlowRuntime.CreditsWaiting)
+        // A won run always rolls the credits (MapHandler.cs:638-643); loading straight away means the win did not
+        // register, and the TooSoon and skip checks below would never run.
+        if (!RunFlowRuntime.CreditsWaiting)
         {
-            yield return Wait(1f);
-            Affordance.ResetGate();
-            float early = CueMark();
-            yield return Press(false);
-            yield return ExpectCue(false, DenyReason.TooSoon, early, tint: false);
-            if (!stepOk)
-                yield break;
-            var tooSoon = cueNote;
-            float ready = CueMark();
-            yield return Until(
-                () => RunFlowRuntime.CreditsAge >= CreditsSkip.Delay + 0.3f,
-                CreditsSkip.Delay + 5f,
-                "credits never became skippable"
+            Fail(
+                $"no credits after a forced win (won {c.refs.stats.won}): the end screen loaded the airport"
             );
-            if (!stepOk)
-                yield break;
-            yield return ExpectFeel(true, CueFeel.Contact, ready, within: 0f);
-            yield return ExpectFeel(false, CueFeel.Contact, ready, within: 0f);
-            if (!stepOk)
-                yield break;
-            credits = $"early press {tooSoon}; skippable {cueNote}";
-            yield return Wait(0.6f);
-            yield return Press(false);
+            yield break;
+        }
+        yield return Wait(1f);
+        Affordance.ResetGate();
+        float early = CueMark();
+        yield return Press(false);
+        yield return ExpectCue(false, DenyReason.TooSoon, early, tint: false);
+        if (!stepOk)
+            yield break;
+        var tooSoon = cueNote;
+        float ready = CueMark();
+        yield return Until(
+            () => RunFlowRuntime.CreditsAge >= CreditsSkip.Delay + 0.3f,
+            CreditsSkip.Delay + 5f,
+            "credits never became skippable"
+        );
+        if (!stepOk)
+            yield break;
+        yield return ExpectFeel(true, CueFeel.Contact, ready, within: 0f);
+        yield return ExpectFeel(false, CueFeel.Contact, ready, within: 0f);
+        if (!stepOk)
+            yield break;
+        var credits = $"early press {tooSoon}; skippable {cueNote}";
+        yield return Wait(0.6f);
+        float pressedAt = Now;
+        yield return Press(false);
+        // The credits end on their own 80 s in (PeakHandler.cs:230-257), so the airport alone does not prove the
+        // skip: a press must start the load CreditsSkipHold after it (PeakHandler.cs:249).
+        yield return WaitFor(
+            () => LoadingScreenHandler.loading || !RunFlowRuntime.CreditsWaiting,
+            GameTiming.Budget(CreditsSkipHold)
+        );
+        if (!LoadingScreenHandler.loading && RunFlowRuntime.CreditsWaiting)
+        {
+            Fail(
+                F(
+                    $"the press did not skip the credits: no load {Now - pressedAt:0.0} s after it (credits age {RunFlowRuntime.CreditsAge:0.0} s)"
+                )
+            );
+            yield break;
         }
         yield return Until(
             () => SceneManager.GetActiveScene().name == "Airport" && !LoadingScreenHandler.loading,
@@ -1745,6 +1818,9 @@ internal sealed partial class SelfTestRunner
         if (stepOk)
             stepNote = credits;
     }
+
+    /// <summary>A credits key press ends them once it has been held back this long (PeakHandler.cs:249).</summary>
+    const float CreditsSkipHold = 0.5f;
 
     static bool Usable(Button b) => b != null && b.gameObject.activeInHierarchy && b.interactable;
 

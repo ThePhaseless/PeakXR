@@ -192,7 +192,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 Haptics.Muted
             );
         else
-            (left ? self.leftBuzz : self.rightBuzz).Start(DenyHaptics.For(reason), now);
+        {
+            var pattern = DenyHaptics.For(reason);
+            (left ? self.leftBuzz : self.rightBuzz).Start(pattern, now);
+            // The whole triple holds the hand, gaps included: nothing lower cuts or slips into it.
+            var last = pattern[pattern.Length - 1];
+            Haptics.Hold(left, HapticPriority.Alert, last.At + last.Seconds);
+        }
         var d = self.denials[left ? 0 : 1];
         // The same refusal reported again while its cue is up (even every frame) keeps one live cue: it never
         // restarts from 0, which would blink or never get drawn (DenyFade.Refresh).
@@ -414,7 +420,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 left,
                 pulse.Amplitude,
                 pulse.Seconds,
-                Haptics.Pulse(left, pulse.Amplitude, pulse.Seconds),
+                Haptics.Pulse(left, pulse.Amplitude, pulse.Seconds, HapticPriority.Alert),
                 now,
                 Haptics.Muted
             );

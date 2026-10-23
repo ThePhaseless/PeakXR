@@ -135,6 +135,10 @@ internal sealed partial class SelfTestRunner
     /// wall (1.2 m proven) ran out under the jump, the game ended the climb and there was nothing left to catch.</summary>
     const float LungeHeadroom = 2.8f;
 
+    /// <summary>Least rise from the throw to the catch that proves the lunge moved the body (m), not only the jump
+    /// clock: about half of what run 43 measured (0.66 m in 0.24 s).</summary>
+    const float LungeMinRise = 0.3f;
+
     /// <summary>
     /// vr.46: the climb lunge (interact.physical <c>TryLunge</c>, <see cref="ClimbInput.Lunge"/>). Climbing on one hand,
     /// that hand thrown upward faster than <c>Interaction.LungeSpeed</c> as it lets go queues the sprint press the
@@ -176,6 +180,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MoveTo(left, () => hit.point + hit.normal * 0.04f, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield return LetGoAll(c);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isClimbing, 2f);
         if (!c.data.isClimbing)
@@ -308,6 +318,9 @@ internal sealed partial class SelfTestRunner
             Fail($"the hand did not catch the wall after the lunge: {note}; last grip: {gripNote}");
         else if (!unbroken)
             Fail("the climb ended between the lunge and the catch: " + note);
+        // The jump's slide lifts the body about 1.4 m (above); half of the 0.66 m run 43 rose by the catch.
+        else if (rise < LungeMinRise)
+            Fail("the climb jump did not carry the body up: " + note);
         Note(note);
         yield return LetGoAll(c);
     }
@@ -329,14 +342,16 @@ internal sealed partial class SelfTestRunner
     /// <summary>Run after the Tropics jump: the only biome with jungle vines.</summary>
     IEnumerator VineSteps()
     {
-        yield return HandStep("vr.43-vine", 45f, VineStep());
+        // Restoring: its test ledge must go before vr.43b drops the player under the same vine.
+        yield return Restoring("vr.43-vine", 45f, VineStep());
         yield return HandStep("vr.43b-vine-look-back", 45f, VineLookBackStep());
         yield return HandStep("vr.43c-vine-slide", 30f, VineSlideStep());
         yield return Restoring("vr.59-vine-deny-stamina", 40f, VineDenyStaminaStep());
     }
 
-    /// <summary>vr.40: the head held 40 % of standing height low sets <c>CharacterData.isCrouching</c>
-    /// (CharacterMovement.cs:241); back up, it clears.</summary>
+    /// <summary>vr.40: a 15 % bow (a look at the belt, a nod) must not crouch; the head held 40 % of standing height
+    /// low sets <c>CharacterData.isCrouching</c> (CharacterMovement.cs:241); back up, it clears. The physical crouch
+    /// enters at 30 % (<see cref="PhysicalCrouch.EnterFraction"/>).</summary>
     IEnumerator CrouchStep()
     {
         var c = Character.localCharacter;
@@ -351,6 +366,8 @@ internal sealed partial class SelfTestRunner
             ? eye
             : HeightCalibration.DefaultStandingEyeHeight;
         float low = eye - standing * 0.4f;
+        float bow = eye - standing * 0.15f;
+        float headY = bow;
         var hands = applyHands;
         bodyRestore = () =>
         {
@@ -361,9 +378,12 @@ internal sealed partial class SelfTestRunner
         {
             hands();
             var p = VRInput.HeadPosition;
-            p.y = low;
+            p.y = headY;
             VRInput.HeadPosition = p;
         };
+        yield return Wait(1f);
+        bool bowCrouched = c.data.isCrouching;
+        headY = low;
         yield return WaitFor(() => c.data.isCrouching, 2f);
         bool crouched = c.data.isCrouching;
         yield return Wait(0.6f);
@@ -372,9 +392,11 @@ internal sealed partial class SelfTestRunner
         VRInput.TestOverride = hands;
         yield return WaitFor(() => !c.data.isCrouching, 2f);
         var note =
-            $"head to {low:0.00} m (eye {eye:0.00}), crouched {crouched}, view lift {lift:0.00} m, "
+            $"bow to {bow:0.00} m crouched {bowCrouched}; head to {low:0.00} m (eye {eye:0.00}), crouched {crouched}, view lift {lift:0.00} m, "
             + $"crouching after standing {c.data.isCrouching}";
-        if (!crouched || c.data.isCrouching)
+        if (bowCrouched)
+            Fail("a 15 % bow crouched: " + note);
+        else if (!crouched || c.data.isCrouching)
             Fail(note);
         else
             stepNote = note;
@@ -427,7 +449,8 @@ internal sealed partial class SelfTestRunner
     /// vr.42: a rope from the rope shooter's anchor prefab (RopeShooter.cs:104), shot in place through
     /// <c>RopeAnchorProjectile.GetShot</c> and <c>RopeAnchorWithRope.SpawnRope</c>, hangs in front. A grip on a
     /// segment grabs it (<c>GrabRopeRpc</c>, CharacterRopeHandling.cs:144); pulling that hand down moves the climb
-    /// point up the rope; opening the hand lets go once the regrip grace runs out.
+    /// point up the rope; the other hand then takes over and its pull climbs on; opening the hands lets go once the
+    /// regrip grace runs out.
     /// </summary>
     IEnumerator RopeStep()
     {
@@ -456,13 +479,30 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool still = c.data.isRopeClimbing;
         float rise = still ? api.GetPosition(c.data.ropePercent).y - y0 : 0f;
+        // Hand over hand: the other hand takes the rope at its own reach, the first lets go, and that pull climbs on.
+        bool other = !left;
+        float y1 = api.GetPosition(c.data.ropePercent).y;
+        var next = RopeSegmentNear(other, out _, out _);
+        yield return MoveTo(other, () => next.position, 0.5f);
+        string far = OverReach(other);
+        yield return GripTo(other, 1f, 0.1f);
         yield return GripTo(left, 0f, 0.1f);
+        yield return MoveTrack(other, Script(other).Position + Vector3.down * 0.4f, 0.6f);
+        yield return Wait(0.3f);
+        bool still2 = c.data.isRopeClimbing;
+        float rise2 = still2 ? api.GetPosition(c.data.ropePercent).y - y1 : 0f;
+        yield return GripTo(other, 0f, 0.1f);
         yield return WaitFor(() => !c.data.isRopeClimbing, 1.5f);
         var note =
             $"climb point rose {rise:0.00} m for a 0.40 m pull, on the rope after the pull {still}, "
+            + $"then {rise2:0.00} m for the other hand's pull (on the rope {still2}), "
             + $"after letting go {c.data.isRopeClimbing}";
-        if (rise < 0.1f)
+        if (far != null)
+            Fail(far + ": " + note);
+        else if (rise < 0.1f)
             Fail("arm pull did not climb the rope: " + note);
+        else if (rise2 < 0.1f)
+            Fail("the second hand's pull did not climb on: " + note);
         else if (c.data.isRopeClimbing)
             Fail("letting go did not leave the rope: " + note);
         else
@@ -549,6 +589,11 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MoveTo(left, () => segment.position, 0.6f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return Until(
             () => c.data.isRopeClimbing,
@@ -642,8 +687,9 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.43: the nearest jungle vine of Capsule type (the only type <c>IsInteractible</c> accepts, JungleVine.cs:96).
-    /// The character is warped under it and grabs through the game's own <c>Interact</c> (the button path); then a
-    /// grip on the vine anchors and a pull along it moves <c>vinePercent</c> (CharacterVineClimbing.cs:118); opening
+    /// Standing on a test ledge under it (<see cref="VineLedge"/>), the hand reaches up and grips the drawn vine, and
+    /// the grip grabs it the way a player's does (the hand-picked interact, then <c>GrabVineRpc</c>,
+    /// CharacterVineClimbing.cs:155); a pull along it moves <c>vinePercent</c> (CharacterVineClimbing.cs:118); opening
     /// the hand lets go.
     /// </summary>
     IEnumerator VineStep()
@@ -655,12 +701,27 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.RopeHandOverHand off";
             yield break;
         }
-        yield return ToVine();
-        if (testVine == null)
+        yield return VineLedge();
+        if (vineSpot == null)
             yield break;
         var vine = testVine;
-        vine.Interact(c);
-        yield return Until(() => c.data.isVineClimbing, 2f, "the game's vine grab did not attach");
+        var spot = vineSpot;
+        bool left = VRInput.LeftHanded;
+        yield return MoveTo(left, () => spot.position, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Until(
+            () => c.data.isVineClimbing,
+            2f,
+            "the hand's grip on the vine did not grab it: "
+                + TraversalGrips.LastNote
+                + "; "
+                + PeakXR.Interact.PhysicalInteraction.LastGripNote
+        );
         if (!stepOk)
         {
             yield return LetGoAll(c);
@@ -669,13 +730,6 @@ internal sealed partial class SelfTestRunner
         // A grab carries the fall speed into a slide (CharacterVineClimbing.cs:167); input is ignored until it ends.
         yield return WaitFor(() => !c.refs.vineClimbing.Sliding(), 4f);
         yield return Wait(0.5f);
-
-        bool left = VRInput.LeftHanded;
-        var onVine =
-            vine.GetPosition(c.data.vinePercent, 1, 1) + Vector3.down * vine.colliderOffset;
-        yield return MoveTo(left, () => onVine, 0.5f);
-        yield return GripTo(left, 1f, 0.1f);
-        yield return Wait(0.3f);
         float p0 = c.data.vinePercent;
         var along =
             vine.GetPosition(Mathf.Clamp01(p0 + 0.05f), 1, 1)
@@ -707,8 +761,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The nearest jungle vine of Capsule type (the only type <c>IsInteractible</c> accepts, JungleVine.cs:96),
-    /// with the character warped 1.2 m under its middle; <see cref="testVine"/>, or null with the step skipped.</summary>
-    IEnumerator ToVine()
+    /// with the character warped 1.2 m under its middle unless <paramref name="warp"/> is false;
+    /// <see cref="testVine"/>, or null with the step skipped.</summary>
+    IEnumerator ToVine(bool warp = true)
     {
         testVine = null;
         var c = Character.localCharacter;
@@ -736,6 +791,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         testVine = vine;
+        if (!warp)
+            yield break;
         c.photonView.RPC(
             "WarpPlayerRPC",
             RpcTarget.All,
@@ -744,6 +801,50 @@ internal sealed partial class SelfTestRunner
         );
         yield return Wait(0.2f);
         yield return WaitFor(() => !c.warping, 3f);
+    }
+
+    /// <summary>The point on <see cref="testVine"/>'s drawn middle a hand grips, set by <see cref="VineLedge"/>.</summary>
+    Transform vineSpot;
+
+    /// <summary>
+    /// <see cref="ToVine"/>'s vine with the player standing on a Map-layer test ledge 2 m under its drawn middle, so
+    /// the vine hangs 0.4 m over the eye, in an overhead reach. <see cref="vineSpot"/> marks that point; both go when
+    /// the step's <see cref="Restoring"/> runs. Run 39 warped into the air under it: the body fell, and the hand,
+    /// placed a frame behind the fall, closed 0.9 m off the vine. Run 43 warped the body's centre onto the ledge top
+    /// (not <see cref="CentreOver"/>) and it sank under it: the grip sat 1.14 m above the eye (tracking y 2.74).
+    /// </summary>
+    IEnumerator VineLedge()
+    {
+        vineSpot = null;
+        var c = Character.localCharacter;
+        yield return ToVine(warp: false);
+        if (testVine == null)
+            yield break;
+        var marker = new GameObject("PeakXR_TestVineSpot").transform;
+        OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
+        marker.position = testVine.GetPosition(0.5f, 1, 1) + Vector3.down * testVine.colliderOffset;
+        var feet = marker.position + Vector3.down * 2f;
+        var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ledge.name = "PeakXR_TestVineLedge";
+        ledge.layer = LayerMask.NameToLayer("Map");
+        OnRestore(() =>
+        {
+            if (ledge != null)
+                UnityEngine.Object.Destroy(ledge);
+        });
+        ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
+        ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
+        Physics.SyncTransforms();
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            CentreOver(c, feet + Vector3.up * 0.1f),
+            false
+        );
+        yield return WaitFor(() => !c.warping, 2f);
+        yield return WaitFor(() => c.data.isGrounded, 2f);
+        yield return Wait(0.5f);
+        vineSpot = marker;
     }
 
     /// <summary>
@@ -769,6 +870,11 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         bool left = VRInput.LeftHanded;
         yield return MoveTo(left, () => handle.transform.position, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return Until(
             () => c.data.currentClimbHandle == handle,
@@ -948,6 +1054,11 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var hold = WallHold;
         yield return MoveTo(left, () => hold, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isClimbing, 2f);
         if (!c.data.isClimbing)
@@ -1086,6 +1197,28 @@ internal sealed partial class SelfTestRunner
         var aim = item.Center();
         yield return PingCooldownOver(pinger);
         yield return FingerGunAim(left, aim, 1f);
+        // The precondition that makes the step mean something: a pointed interact could reach the Apple. The hand's
+        // ray is the game's distance less the hand's offset from the head (InteractPatches.Raycasts), and the sphere
+        // cast behind it starts half its area out and reaches its area past the end (Interaction.cs:241).
+        var pointFrom = rig.Aim(left);
+        var interaction = Interaction.instance;
+        float rayReach =
+            pointFrom != null && interaction != null
+                ? interaction.distance
+                    - Vector3.Distance(EyeNow(), pointFrom.position)
+                    + 1.5f * interaction.area
+                : 0f;
+        float toApple =
+            pointFrom != null ? Vector3.Distance(pointFrom.position, aim) : float.MaxValue;
+        if (toApple >= rayReach)
+        {
+            Fail(
+                F(
+                    $"the Apple lies {toApple:0.00} m from the pointing hand, past the pointed interact's {rayReach:0.00} m: nothing could pick it up, the step would prove nothing"
+                )
+            );
+            yield break;
+        }
         bool keptWhileAiming = InWorld() && HeldItem() == null;
         float gameMark = Time.time;
         yield return FingerGunSqueeze(left, aim);
@@ -1097,8 +1230,9 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 0f, 0.1f);
         yield return Wait(0.5f);
         bool kept = InWorld() && HeldItem() == null;
-        var note =
-            $"Apple on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}";
+        var note = F(
+            $"Apple {toApple:0.00} m from the pointing hand (ray {rayReach:0.00} m), on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
         if (!keptWhileAiming || !kept)
             Fail("aiming a ping at an item picked it up: " + note);
         else
@@ -1172,9 +1306,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.47: standing 1.9 m from the face (the face check reaches 2 m), a hand stretched onto it touches rock past the game's 1.35 m reach (1.25 m thickened) from the
-    /// camera (CharacterClimbing.cs:534; D3 keeps that cap for the hand-cast grab). The grip gets the OutOfReach cue
-    /// and no climb.
+    /// vr.47: standing 1.9 m from the face (the face check reaches 2 m), a hand stretched onto it touches rock past the
+    /// game's 1.35 m reach (1.25 m thickened) from the camera (CharacterClimbing.cs:534, :552; D3 keeps that cap for
+    /// the hand-cast grab). The grip gets the OutOfReach cue and no climb. The hand pose is one no player can make.
     /// </summary>
     IEnumerator ClimbDenyReachStep()
     {
@@ -1198,11 +1332,14 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         var hold = WallHold;
         yield return MoveTo(left, () => hold, 0.5f);
+        // Deliberately past a player's reach (MaxHandFromEye): no real arm can put a hand on a hold 1.35 m out, so
+        // this proves the refusal's wiring, not a situation play meets (reported in the audit).
+        float handFromEye = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.OutOfReach, mark, false, 1.5f);
         bool climbed = c.data.isClimbing;
         var note = F(
-            $"hold {eyeToHold:0.00} m from the head: {cueNote}; climbing {climbed}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            $"hold {eyeToHold:0.00} m from the head, scripted hand {handFromEye:0.00} m from the eye (a player reaches {MaxHandFromEye:0.00}): {cueNote}; climbing {climbed}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (climbed)
             Fail("a hold past the reach was grabbed: " + note);
@@ -1257,7 +1394,8 @@ internal sealed partial class SelfTestRunner
         var last = second.Center();
         UI.Affordances.Affordance.ResetGate();
         float mark = CueMark();
-        yield return MoveTo(
+        // The player stoops for it: a standing head put this hand 1.36 m from the eye in run 43.
+        yield return ReachDown(
             true,
             () =>
             {
@@ -1265,8 +1403,13 @@ internal sealed partial class SelfTestRunner
                     last = second.Center();
                 return last;
             },
-            0.5f
+            0.6f
         );
+        if (OverReach(true) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(true, 1f, 0.1f);
         yield return WaitFor(() => !InWorld(), 2f);
         bool pocketed = !InWorld();
@@ -1561,6 +1704,11 @@ internal sealed partial class SelfTestRunner
         var handle = testHandle;
         yield return Wait(0.5f);
         yield return MoveTo(left, () => handle.transform.position, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return Until(
             () => c.data.currentClimbHandle == handle,
@@ -1717,18 +1865,21 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float mark = CueMark();
-        yield return WaitFor(() => piton == null || piton.crack.activeSelf, 8f);
-        // The crack starts 1-5 s into the hang: the window runs from the mark to 3 s after it showed (run 40 gave
-        // the warning only 1 s from the mark, long gone by the first crack).
+        // The crack starts 1-5 s into the hang (ShittyPiton.cs:42, :72-75).
+        yield return WaitFor(() => piton == null || piton.crack.activeSelf, GameTiming.Budget(5f));
+        // The window runs from the mark to 3 s after the crack showed (run 40 gave the warning only 1 s from the mark,
+        // long gone by the first crack).
         yield return Feel(left, CueFeel.Danger, mark, CueMark() - mark + 3f);
         string warning = cueNote;
         float broke = CueMark();
-        yield return WaitFor(() => c.data.currentClimbHandle == null, 8f);
+        // Four cracks 1.5 s apart, the first at once, break it (ShittyPiton.cs:20, :22, :63-66, :89-91): 4.5 s.
+        yield return WaitFor(() => c.data.currentClimbHandle == null, GameTiming.Budget(4.5f));
         bool fell = c.data.currentClimbHandle == null;
         if (fell)
-            // The break comes up to 4 cracks (6 s) after the warning: the window runs to 1.5 s past it (run 41 gave
-            // the Cancel only 1 s from the mark).
+            // The window runs to 1.5 s past the break (run 41 gave the Cancel only 1 s from the mark).
             yield return Feel(left, CueFeel.Cancel, broke, CueMark() - broke + 1.5f);
+        else
+            Fail("the cracking piton never broke under the hang");
         Note(
             $"fragile piton {source}; cracking: {warning}; broke {fell}{(fell ? ": " + cueNote : "")}"
         );
@@ -1841,8 +1992,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.42d: the vr.42b sway on a rope someone else owns (forced: offline every rope is the player's). Only the owner
-    /// simulates a rope (Rope.cs:155), so nothing is pushed; the gripping hand gets one NotHere refusal for the hold.
+    /// vr.42d: on a rope someone else owns (forced: offline every rope is the player's), only the owner simulates it
+    /// (Rope.cs:155), so nothing is pushed. Looking around (head turns with a little drift) and one lean to grab get no
+    /// refusal at all; a clear pump (a 0.25 m lean back and forth at 0.5 Hz, <see cref="PumpIntent"/>) gets exactly one
+    /// NotHere for the hold.
     /// </summary>
     IEnumerator RopePumpNotMineStep()
     {
@@ -1875,23 +2028,61 @@ internal sealed partial class SelfTestRunner
         });
         ClimbHands.SelfTestNotMine = true;
         Affordance.ResetGate();
-        int denies = Affordance.Count;
-        float mark = CueMark();
         var baseHead = VRInput.HeadPosition;
+        var baseTurn = VRInput.HeadRotation;
+        var side = Vector3.Cross(Vector3.up, along);
+        float push = 0f;
+        // Head pose by phase: 0 look around, 1 one lean to grab, 2 a clear pump.
+        int phase = 0;
         float start = Now;
         VRInput.TestOverride = () =>
         {
             hands();
-            VRInput.HeadPosition =
-                baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.35f * (Now - start)));
+            float t = Now - start;
+            switch (phase)
+            {
+                case 0:
+                    // Turn to look 60 degrees either way; the tracked eye drifts a few cm about the neck.
+                    VRInput.HeadRotation =
+                        Quaternion.AngleAxis(60f * Mathf.Sin(1.2f * t), Vector3.up) * baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead
+                        + side * (0.04f * Mathf.Sin(1.2f * t))
+                        + along * (0.03f * Mathf.Cos(1.7f * t));
+                    break;
+                case 1:
+                    VRInput.HeadRotation = baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead + along * (0.3f * Mathf.Sin(Mathf.PI * Mathf.Min(t, 2f) / 2f));
+                    break;
+                default:
+                    VRInput.HeadRotation = baseTurn;
+                    VRInput.HeadPosition =
+                        baseHead + along * (0.25f * Mathf.Sin(2f * Mathf.PI * 0.5f * t));
+                    break;
+            }
         };
-        float push = 0f;
-        float end = Now + 4f;
-        while (Now < end && c.data.isRopeClimbing)
+        IEnumerator Hold(float seconds)
         {
-            push = Mathf.Max(push, ClimbHands.LastPump);
-            yield return null;
+            for (float end = Now + seconds; Now < end && c.data.isRopeClimbing; )
+            {
+                push = Mathf.Max(push, ClimbHands.LastPump);
+                yield return null;
+            }
         }
+        int denies = Affordance.Count;
+        float quietMark = CueMark();
+        yield return Hold(4f);
+        phase = 1;
+        start = Now;
+        yield return Hold(3f);
+        int quietDenies = Affordance.Count - denies;
+        yield return ExpectNoCue(left, quietMark, 0f);
+        phase = 2;
+        start = Now;
+        denies = Affordance.Count;
+        float mark = CueMark();
+        yield return Hold(6f);
         VRInput.TestOverride = hands;
         ClimbHands.SelfTestNotMine = false;
         yield return ExpectCue(left, DenyReason.NotHere, mark, tint: false, within: 0f);
@@ -1902,10 +2093,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         if (push > 0f)
             Fail($"pushed a rope someone else owns ({push:0.0} m/s²)");
+        else if (quietDenies > 0)
+            Fail($"looking around or one lean refused {quietDenies} times");
         else if (count > 1)
             Fail($"refused {count} times in one hold: {cue}");
         else
-            Note(cue);
+            Note($"looking around and one lean: no refusal; clear pump: {cue}");
     }
 
     /// <summary>
@@ -2021,6 +2214,11 @@ internal sealed partial class SelfTestRunner
         UI.Affordances.Affordance.ResetGate();
         float mark = CueMark();
         yield return MoveTo(left, () => at.position, 0.4f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         // Close the grip while the hand keeps tracking the line: under a vine the body is falling, and a hand left
         // still in tracking space falls with it (run 36's vr.59: the vine was found but the hand had dropped off it).
         Script(left).Grip = 1f;
@@ -2126,32 +2324,11 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return WaitFor(() => PeakXR.Interact.PhysicalInteraction.OutOfStamina(c), 2f);
-        yield return ToVine();
-        if (testVine == null)
+        // Standing under the vine (VineLedge), as vr.43 grabs it.
+        yield return VineLedge();
+        if (vineSpot == null)
             yield break;
-        var vine = testVine;
-        var marker = new GameObject("PeakXR_TestVineSpot").transform;
-        OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
-        marker.position = vine.GetPosition(0.5f, 1, 1) + Vector3.down * vine.colliderOffset;
-        // Stand on a test ledge under the drawn vine, which hangs 0.3 m above the head. Run 39 warped into the air under
-        // it: the body fell, and the hand, placed a frame behind the fall, closed 0.9 m off the vine.
-        var feet = marker.position + Vector3.down * 2f;
-        var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        ledge.name = "PeakXR_TestVineLedge";
-        ledge.layer = LayerMask.NameToLayer("Map");
-        OnRestore(() =>
-        {
-            if (ledge != null)
-                UnityEngine.Object.Destroy(ledge);
-        });
-        ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
-        ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
-        Physics.SyncTransforms();
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, feet + Vector3.up * 0.1f, false);
-        yield return WaitFor(() => !c.warping, 2f);
-        yield return WaitFor(() => c.data.isGrounded, 2f);
-        yield return Wait(0.5f);
-        yield return GripRefusedLine(DenyReason.NoStamina, () => c.data.isVineClimbing, marker);
+        yield return GripRefusedLine(DenyReason.NoStamina, () => c.data.isVineClimbing, vineSpot);
     }
 
     /// <summary>
@@ -2190,7 +2367,9 @@ internal sealed partial class SelfTestRunner
         bool easy = c.data.climbMod == surface;
         yield return ExpectNoCue(left, mark, 0f);
         var note = F($"on the easy hold {easy}: texture felt {felt} at {amplitude:0.00}");
-        if (!felt)
+        if (!easy)
+            Fail("the climb did not read the easy hold, so the texture is not its: " + note);
+        else if (!felt)
             Fail("no surface texture under the climbing hand: " + note);
         else
             Note(note);
@@ -2279,6 +2458,7 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         bool hand = VRInput.LeftHanded;
         bool started = false;
+        string far = null;
         for (int i = 0; i < 6; i++)
         {
             if (
@@ -2295,6 +2475,7 @@ internal sealed partial class SelfTestRunner
                 break;
             var at = face.point + face.normal * 0.04f;
             yield return MoveTo(hand, () => at, 0.25f);
+            far ??= OverReach(hand);
             yield return GripTo(hand, 1f, 0.08f);
             if (!started)
             {
@@ -2332,7 +2513,9 @@ internal sealed partial class SelfTestRunner
         var note = F(
             $"climb started {started}, mantle {mantled}, feet {Feet(c).y - top:0.00} m from the top; {settle}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
-        if (!started)
+        if (far != null)
+            Fail(far + ": " + note);
+        else if (!started)
             Fail("the ledge face did not climb: " + note);
         else if (!mantled)
             Fail("topping out did not start the mantle: " + note);
@@ -2359,9 +2542,9 @@ internal sealed partial class SelfTestRunner
         yield return HangRope();
         if (testRope == null || testAnchor == null)
             yield break;
-        bool added = !testAnchor.TryGetComponent<BreakableRopeAnchor>(out _);
+        bool added = !testAnchor.TryGetComponent<BreakableRopeAnchor>(out var breakable);
         if (added)
-            testAnchor.AddComponent<BreakableRopeAnchor>();
+            breakable = testAnchor.AddComponent<BreakableRopeAnchor>();
         yield return null;
         bool left = VRInput.LeftHanded;
         yield return GrabRope(left);
@@ -2371,7 +2554,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float mark = CueMark();
-        yield return Feel(left, CueFeel.Danger, mark, 9f);
+        // Its timer runs only while someone climbs the rope, up to breakableTimeMinMax.y (BreakableRopeAnchor.cs:11,
+        // :31, :49-52).
+        yield return Feel(
+            left,
+            CueFeel.Danger,
+            mark,
+            GameTiming.Budget(breakable.breakableTimeMinMax.y)
+        );
         Note($"anchor {(added ? "added" : "from the prefab")}: {cueNote}");
         yield return LetGoAll(c);
     }

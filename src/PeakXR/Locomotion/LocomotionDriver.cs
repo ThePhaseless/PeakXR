@@ -51,6 +51,8 @@ internal sealed class LocomotionDriver : MonoBehaviour
             && c != null;
         vignette.Enabled = on;
         vignette.Strength = ComfortConfig.VignetteStrength;
+        vignette.LinearMin = ComfortConfig.VignetteStartSpeed;
+        vignette.LinearMax = Mathf.Max(ComfortConfig.VignetteFullSpeed, vignette.LinearMin + 0.1f);
         // Off the own body (spectating, passed out, carried, the chase view of a tumble or launch) the view's motion
         // is the rig origin's: the watched body's climbs and falls, not this body's velocity.
         bool detached =

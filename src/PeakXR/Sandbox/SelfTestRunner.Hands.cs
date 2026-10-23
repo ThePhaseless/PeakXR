@@ -134,9 +134,9 @@ internal sealed partial class SelfTestRunner
 
     // ---------------------------------------------------------------- steps
 
-    /// <summary>vr.10 / vr.11: a hand reaches an Apple on the ground and grips; the game equips it in that hand
-    /// (<c>CharacterData.currentItem</c>, CharacterData.cs:418). A slow release keeps it unless
-    /// <c>Interaction.ReleaseToDrop</c>.</summary>
+    /// <summary>vr.10 / vr.11: the player stoops (<see cref="ReachDown"/>), a hand reaches an Apple on the ground and
+    /// grips; the game equips it in that hand (<c>CharacterData.currentItem</c>, CharacterData.cs:418). Standing up
+    /// with it, a slow release keeps it unless <c>Interaction.ReleaseToDrop</c>.</summary>
     IEnumerator GrabStep(bool left)
     {
         var c = Character.localCharacter;
@@ -163,7 +163,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var last = world.Center();
-        yield return MoveTo(
+        yield return ReachDown(
             left,
             () =>
             {
@@ -171,8 +171,14 @@ internal sealed partial class SelfTestRunner
                     last = world.Center();
                 return last;
             },
-            0.5f
+            0.6f
         );
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
+        bool crouched = c.data.isCrouching;
         yield return GripTo(left, 1f, 0.1f);
         yield return Until(() => Holding(apple), 3f, "not picked up within 3 s");
         if (!stepOk)
@@ -182,13 +188,18 @@ internal sealed partial class SelfTestRunner
         var pose = PoseOf(c);
         var notes = new List<string>
         {
-            $"holding {HeldItem().name}, LocalHold left {LocalHold.ItemInLeftHand}, pose left {pose.ItemInLeftHand}",
+            F(
+                $"stooped {headDrop:0.00} m (crouched {crouched}), holding {HeldItem().name}, LocalHold left {LocalHold.ItemInLeftHand}, pose left {pose.ItemInLeftHand}"
+            ),
         };
         var fails = new List<string>();
         if (LocalHold.ItemInLeftHand != left || pose.ItemInLeftHand != left)
             fails.Add($"item not in the {(left ? "left" : "right")} hand");
         yield return ShotAt(left ? "vr-11-grab-left" : "vr-10-grab-right", HeldItem().Center());
 
+        yield return StandUp(left);
+        if (!Holding(apple))
+            fails.Add("standing up dropped it");
         yield return GripTo(left, 0f, 0.4f);
         yield return Wait(1f);
         bool dropExpected = InteractConfig.Instance.ReleaseToDrop;
@@ -547,6 +558,11 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 3.5f;
         yield return MoveTo(left, () => hold, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isClimbing, 2f);
         Rig.RigDriver.TraceLeanUntil = 0f;
@@ -577,14 +593,21 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.4f);
         float rise = c.Center.y - y0;
         bool stillClimbing = c.data.isClimbing;
+        float released = CueMark();
         yield return GripTo(left, 0f, 0.1f);
         yield return WaitFor(() => !c.data.isClimbing, 2f);
+        // The torn-off cancel comes 0.1 s after the game ends a climb the hand still grips (PhysicalInteraction.TornOff):
+        // a voluntary release must stay without it.
+        yield return Wait(0.3f);
+        bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
-            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}";
+            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}";
         if (rise < 0.1f)
             Fail("arm pull did not lift the body: " + note);
         else if (c.data.isClimbing)
             Fail("climb did not stop: " + note);
+        else if (torn)
+            Fail("letting go felt like being torn off: " + note);
         else
             stepNote = note;
     }
@@ -637,17 +660,44 @@ internal sealed partial class SelfTestRunner
         Script(hand).Stick = new Vector2(0f, 1f);
         yield return Wait(0.6f);
         yield return Shot("vr-17-move");
-        yield return Wait(0.4f);
+        // The comfort vignette shows at walking speed (vr-practices-review P0-1): its clear angle while walking.
+        float clear = 90f,
+            speed = 0f;
+        float start = Now;
+        while (Now - start < 0.4f)
+        {
+            clear = Mathf.Min(clear, VignetteShape.InnerAngle(LocomotionDriver.Intensity));
+            speed = Mathf.Max(speed, LocomotionDriver.ViewSpeed);
+            yield return null;
+        }
         Script(hand).Stick = Vector2.zero;
         yield return Wait(0.3f);
         var to = c.Center;
         float moved = Vector2.Distance(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
-        var note = $"walked {moved:0.00} m in 1 s";
+        // The bound holds for settings that close it at least that far at this speed (Moderate's do); weaker
+        // choices only get the note.
+        float expected = VignetteShape.InnerAngle(
+            ComfortConfig.VignetteStrength
+                * ComfortVignette.Drive(
+                    speed,
+                    ComfortConfig.VignetteStartSpeed,
+                    ComfortConfig.VignetteFullSpeed
+                )
+        );
+        bool bound = ComfortConfig.Vignette && expected <= MaxWalkClear;
+        var note =
+            $"walked {moved:0.00} m in 1 s; vignette clear to {clear:0} deg at {speed:0.0} m/s";
         if (moved < 0.5f)
             Fail(note);
+        else if (bound && clear > MaxWalkClear)
+            Fail($"vignette barely shows at walking speed (bound {MaxWalkClear:0} deg): {note}");
         else
             stepNote = note;
     }
+
+    /// <summary>Clear-view half-angle (degrees) the walking vignette must reach: a typical headset shows 50-55
+    /// to each side, Moderate clears about 38.</summary>
+    const float MaxWalkClear = 45f;
 
     /// <summary>
     /// vr.29: a grip on a ground backpack opens its wheel (<c>Backpack.Interact</c>, Backpack.cs:34) and the wheel stays
@@ -697,7 +747,12 @@ internal sealed partial class SelfTestRunner
         }
         bool left = !VRInput.LeftHanded;
         var at = pack.Center();
-        yield return MoveTo(left, () => at, 0.5f);
+        yield return ReachDown(left, () => at, 0.6f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         // The pack's own hold before its wheel opens (openRadialMenuTime, Backpack.cs:14, :262).
         float openTime = pack is Backpack bp ? bp.GetInteractTime(c) : 0f;
@@ -732,6 +787,7 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
             yield break;
+        yield return StandUp(left);
         // Turn away first, so the walk does not run into the pack.
         rig.RotateYaw(180f);
         yield return Wait(0.3f);
@@ -824,7 +880,12 @@ internal sealed partial class SelfTestRunner
         }
         var at = world != null ? world.Center() : spot;
         Vector3 Apple() => world != null ? at = world.Center() : at;
-        yield return MoveTo(hold, Apple, 0.5f);
+        yield return ReachDown(hold, Apple, 0.6f);
+        if (OverReach(hold) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return GripTo(hold, 1f, 0.1f);
         for (float pickEnd = Now + 3f; !Holding(apple) && Now < pickEnd; )
             yield return null;
@@ -836,8 +897,7 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        HeadFrame(out var headPos, out var forward, out var right);
-        yield return MoveTrack(hold, Rest(headPos, forward, hold ? -right : right).Position, 0.3f);
+        yield return StandUp(hold);
 
         int slot = -1;
         for (int i = 0; i < inv.Count; i++)
@@ -1139,6 +1199,11 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
         var rig = VRRig.Instance;
         yield return MoveTo(left, () => rig.Origin.TransformPoint(inv.Anchor(slot)), 0.6f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         yield return Wait(0.3f);
         yield return GripTo(left, 0f, 0.3f);
         yield return Until(() => HeldItem() == null, 2f, "not holstered on release");
@@ -1167,8 +1232,82 @@ internal sealed partial class SelfTestRunner
 
     ref HandState Script(bool left) => ref left ? ref scriptLeft : ref scriptRight;
 
+    /// <summary>Farthest a scripted grip may sit from the tracked eye (m): an adult's eye-to-shoulder offset (about
+    /// 0.27 m) plus a fully stretched arm (0.75 m). A pose past it is one no player can reach, so a step that passes
+    /// with it proves nothing about play.</summary>
+    const float MaxHandFromEye = 1f;
+
+    /// <summary>How high the stooping eye stays over a low point the hand reaches (m): a squatting adult's eye over
+    /// a hand on the ground in front of the feet.</summary>
+    const float StoopReach = 0.75f;
+
+    /// <summary>Metres the scripted hands lower the tracked head (a stoop, <see cref="ReachDown"/>), from the
+    /// real head height <see cref="stoopFrom"/>. 0 stands.</summary>
+    float headDrop;
+    float stoopFrom;
+
+    /// <summary>Null when the <paramref name="left"/> hand sits within <see cref="MaxHandFromEye"/> of the tracked
+    /// eye (both in tracking space), else what is wrong.</summary>
+    string OverReach(bool left)
+    {
+        float d = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
+        return d > MaxHandFromEye
+            ? F(
+                $"scripted {(left ? "left" : "right")} hand {d:0.00} m from the eye, past a player's {MaxHandFromEye:0.00} m reach"
+            )
+            : null;
+    }
+
+    /// <summary>
+    /// The hand reaches a low world point the way a player does: the head stoops (which also crouches the
+    /// character, <c>Locomotion.PhysicalCrouch</c>) until it is at most <see cref="StoopReach"/> above the point,
+    /// while the hand moves onto it. A standing head with the hand on the ground is 1.5 m of arm. Rise again with
+    /// <see cref="StandUp"/>.
+    /// </summary>
+    IEnumerator ReachDown(bool left, Func<Vector3> world, float seconds)
+    {
+        var rig = VRRig.Instance;
+        if (headDrop <= 0f)
+            stoopFrom = VRInput.HeadPosition.y;
+        float from = headDrop;
+        float start = Now;
+        var hand = MoveTo(left, world, seconds);
+        while (hand.MoveNext())
+        {
+            float low = Mathf.Max(
+                0f,
+                stoopFrom - rig.Origin.InverseTransformPoint(world()).y - StoopReach
+            );
+            headDrop = Mathf.SmoothStep(from, low, (Now - start) / seconds);
+            yield return hand.Current;
+        }
+    }
+
+    /// <summary>Stands back up from <see cref="ReachDown"/>, bringing the <paramref name="left"/> hand (and what it
+    /// grips) up to its rest pose.</summary>
+    IEnumerator StandUp(bool left, float seconds = 0.5f)
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        if (headDrop > 0f)
+            head.y = stoopFrom;
+        var rest = Rest(head, forward, left ? -right : right).Position;
+        var from = Script(left).Position;
+        float drop = headDrop;
+        float start = Now;
+        while (true)
+        {
+            float t = (Now - start) / seconds;
+            SetHand(left, HandScript.Along(from.N(), rest.N(), t).U());
+            headDrop = Mathf.SmoothStep(drop, 0f, t);
+            if (t >= 1f)
+                yield break;
+            yield return null;
+        }
+    }
+
     void BeginHands()
     {
+        headDrop = 0f;
         HeadFrame(out var head, out var forward, out var right);
         scriptLeft = Rest(head, forward, -right);
         scriptRight = Rest(head, forward, right);
@@ -1178,7 +1317,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Hands the controllers back to the idle pose (or to nobody once the run has finished).</summary>
-    void EndHands() => VRInput.TestOverride = finished ? null : IdleHands;
+    void EndHands()
+    {
+        headDrop = 0f;
+        VRInput.TestOverride = finished ? null : IdleHands;
+    }
 
     /// <summary>
     /// Between hand steps of a VR run (never in hold mode): both hands rest in front of the face, so the desktop
@@ -1222,6 +1365,12 @@ internal sealed partial class SelfTestRunner
         float dt = Time.unscaledDeltaTime;
         Emit(ref VRInput.Left, ref scriptLeft, ref lastLeft, dt);
         Emit(ref VRInput.Right, ref scriptRight, ref lastRight, dt);
+        if (headDrop > 0f)
+        {
+            var p = VRInput.HeadPosition;
+            p.y = stoopFrom - headDrop;
+            VRInput.HeadPosition = p;
+        }
     }
 
     static void Emit(ref HandState target, ref HandState script, ref Vector3 last, float dt)
@@ -1237,6 +1386,12 @@ internal sealed partial class SelfTestRunner
     {
         if (VRInput.TestOverride != applyHands || VRRig.Instance == null)
             yield break;
+        // A step that ended stooped stands first, so the rest poses are the standing ones.
+        if (headDrop > 0f)
+        {
+            headDrop = 0f;
+            yield return null;
+        }
         Calm(ref scriptLeft);
         Calm(ref scriptRight);
         HeadFrame(out var head, out var forward, out var right);

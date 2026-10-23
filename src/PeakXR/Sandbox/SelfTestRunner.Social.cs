@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
@@ -48,7 +49,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.106: after the social steps the player is clean (no thorn stuck in, no stuck part) and vanilla's hover is
     /// whole: GUIManager has caught up with Interaction's hover (GUIManager.LateUpdate, :363-366, which a throwing
-    /// HoverExit would stall every frame) and no vanilla exception is logged in a quiet 1.5 s.
+    /// HoverExit would stall every frame), no hold of the game's is left running with both hands open (a pluck the mod
+    /// never let go, Interaction.cs:128-143) and no vanilla exception is logged in a quiet 1.5 s. The thorn and stuck
+    /// counts only guard <see cref="RestoreSocial"/>, which clears both after every step.
     /// </summary>
     IEnumerator SocialCleanStep()
     {
@@ -68,9 +71,18 @@ internal sealed partial class SelfTestRunner
             || interaction == null
             || ReferenceEquals(GuiHovered(gui), interaction.currentHovered);
         int thrown = report.VanillaExceptions - before;
+        var lingering = interaction != null ? interaction.currentHeldInteractible : null;
+        bool pressed = c.input.interactIsPressed;
         var note =
-            $"thorns stuck {stuckThorns}, stuck {c.IsStuck()}, hover caught up {caughtUp}, vanilla exceptions {thrown}";
-        if (stuckThorns > 0 || c.IsStuck() || !caughtUp || thrown > 0)
+            $"thorns stuck {stuckThorns}, stuck {c.IsStuck()}, hover caught up {caughtUp}, hold left {(lingering != null ? lingering.GetType().Name : "none")}, interact held {pressed}, vanilla exceptions {thrown}";
+        if (
+            stuckThorns > 0
+            || c.IsStuck()
+            || !caughtUp
+            || lingering != null
+            || pressed
+            || thrown > 0
+        )
             Fail(note);
         else
             stepNote = note;
@@ -107,12 +119,47 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// The only thorn stuck in the local body, between <paramref name="minAngle"/> and <paramref name="maxAngle"/>
-    /// from the camera's aim. Thorns are added (CharacterAfflictions.AddThorn, :1695, a random free spot) and any
-    /// other stuck thorn is taken out (RemoveThorn, :1771), so the hand's nearest-thorn pick
-    /// (SocialHands.Find) cannot take a neighbour instead of the one the step watches.
+    /// A spot on the player's own body the <paramref name="left"/> hand can pinch: within arm's reach of the head
+    /// (<see cref="MpArmReach"/>; a thorn on the shin is 1.2 m down) and not on that hand's own arm, which no hand can
+    /// pinch. The nearest ragdoll part (CharacterRagdoll.partDict, :14) names where the spot is.
     /// </summary>
-    static ThornOnMe OffViewThorn(Character c, float minAngle, float maxAngle, out float angle)
+    static bool SelfReachable(Character c, Vector3 at, bool left, Vector3 head)
+    {
+        if (Vector3.Distance(at, head) > MpArmReach)
+            return false;
+        Bodypart nearest = null;
+        float bestSq = float.MaxValue;
+        foreach (var part in c.refs.ragdoll.partDict.Values)
+        {
+            float sq = part != null ? (part.transform.position - at).sqrMagnitude : float.MaxValue;
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                nearest = part;
+            }
+        }
+        if (nearest == null)
+            return true;
+        var t = nearest.partType;
+        return left
+            ? t is not (BodypartType.Arm_L or BodypartType.Elbow_L or BodypartType.Hand_L)
+            : t is not (BodypartType.Arm_R or BodypartType.Elbow_R or BodypartType.Hand_R);
+    }
+
+    /// <summary>
+    /// The only thorn stuck in the local body, between <paramref name="minAngle"/> and <paramref name="maxAngle"/>
+    /// from the camera's aim and within reach of the <paramref name="left"/> hand (<see cref="SelfReachable"/>).
+    /// Thorns are added (CharacterAfflictions.AddThorn, :1695, a random free spot) and any other stuck thorn is taken
+    /// out (RemoveThorn, :1771), so the hand's nearest-thorn pick (SocialHands.Find) cannot take a neighbour instead of
+    /// the one the step watches.
+    /// </summary>
+    static ThornOnMe OffViewThorn(
+        Character c,
+        float minAngle,
+        float maxAngle,
+        bool left,
+        out float angle
+    )
     {
         angle = 0f;
         var cam = MainCamera.instance != null ? MainCamera.instance.transform : null;
@@ -130,7 +177,13 @@ internal sealed partial class SelfTestRunner
                     continue;
                 stuck.Add(thorn);
                 float off = Vector3.Angle(thorn.transform.position - cam.position, cam.forward);
-                if (pick == null && !thorn.isArrow && off > minAngle && off <= maxAngle)
+                if (
+                    pick == null
+                    && !thorn.isArrow
+                    && off > minAngle
+                    && off <= maxAngle
+                    && SelfReachable(c, thorn.transform.position, left, cam.position)
+                )
                 {
                     pick = thorn;
                     angle = off;
@@ -152,18 +205,20 @@ internal sealed partial class SelfTestRunner
     /// vr.100: a thorn on the player's own body, well off the view, is pinched and pulled back 14 cm; it comes out
     /// in the game's hold time (ThornOnMe.GetInteractTime, :192; removal :201). Vanilla's 5° camera cone
     /// (ThornOnMe.cs:121-138) would refuse it; the hand pick (SocialPatches.HandPick) aims the check at the thorn.
-    /// Asserts the contact tick on the pinch, the progress ramp while it comes out, and the thorn gone.
+    /// Asserts the contact tick on the pinch, the game's hold on that thorn (a thorn can also pop out by itself,
+    /// ThornOnMe.cs:70-90), the progress ramp while it comes out, and the thorn gone.
     /// </summary>
     IEnumerator ThornPluckStep()
     {
         var c = Character.localCharacter;
-        var thorn = OffViewThorn(c, OffViewDegrees, OffViewMaxDegrees, out float angle);
+        const bool left = false;
+        var thorn = OffViewThorn(c, OffViewDegrees, OffViewMaxDegrees, left, out float angle);
         if (thorn == null)
         {
-            stepSkip = "no thorn off the view (AddThorn refused: invincible or none free)";
+            stepSkip =
+                "no thorn off the view within the right hand's reach (AddThorn refused: invincible or none free)";
             yield break;
         }
-        const bool left = false;
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
         float touch = CueMark();
         yield return GripTo(left, 1f, 0.1f);
@@ -191,6 +246,13 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        if (!held)
+        {
+            Fail(
+                $"thorn {angle:0}° off the view came out without the game's hold on it (popped out by itself?)"
+            );
+            yield break;
+        }
         yield return ExpectFeel(left, CueFeel.Progress, pull);
         if (stepOk)
             stepNote = $"thorn {angle:0}° off the view plucked by pinch and pull; {cueNote}";
@@ -204,10 +266,12 @@ internal sealed partial class SelfTestRunner
     IEnumerator ThornStuckStep()
     {
         var c = Character.localCharacter;
-        var thorn = OffViewThorn(c, 0f, 180f, out _);
+        const bool left = false;
+        // Any angle a hand can reach, never behind the head.
+        var thorn = OffViewThorn(c, 0f, OffViewMaxDegrees, left, out _);
         if (thorn == null)
         {
-            stepSkip = "no thorn could be added";
+            stepSkip = "no thorn within the right hand's reach could be added";
             yield break;
         }
         var stick = GameMember.Method(
@@ -232,7 +296,6 @@ internal sealed partial class SelfTestRunner
             Fail("could not stick the foot");
             yield break;
         }
-        const bool left = false;
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
@@ -277,6 +340,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         var cam = MainCamera.instance.transform;
         float angle = Vector3.Angle(tick.transform.position - cam.position, cam.forward);
+        // On the right knee (Bugfix.cs:103): a standing player bends for it; the note keeps the stretch on record.
+        float reach = Vector3.Distance(tick.transform.position, cam.position);
+        ushort bugId = tick.bugItem != null ? tick.bugItem.itemID : (ushort)0;
         const bool left = true;
         yield return MoveTo(left, () => tick != null ? tick.transform.position : c.Center, 0.6f);
         float mark = CueMark();
@@ -285,9 +351,18 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return Until(() => tick == null, 3f, $"tick {angle:0}° off the view not taken");
+        if (!stepOk)
+            yield break;
+        // The pluck is the game's Interact: the master spawns the bug item into the hand (GameUtils.cs:263-277), so a
+        // tick that only vanished (destroyed some other way) leaves the hand empty.
+        yield return Until(
+            () => HeldItem() != null && HeldItem().itemID == bugId,
+            2f,
+            $"tick gone but the hand holds {(HeldItem() != null ? HeldItem().name : "nothing")}, not the bug"
+        );
         if (stepOk)
             stepNote =
-                $"tick {angle:0}° off the view pinched off, holding {(HeldItem() != null ? HeldItem().name : "nothing")}";
+                $"tick {angle:0}° off the view, {reach:0.00} m from the head, pinched off; holding {HeldItem().name} in the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
     }
 
     /// <summary>

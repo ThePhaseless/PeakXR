@@ -11,7 +11,8 @@ namespace PeakXR.XR;
 /// XR Management plumbing shared by both providers. The game ships no XR settings asset, so the
 /// general settings, the manager and the loader are created at runtime; the manager's
 /// "registered loaders" set is filled by reflection because <see cref="XRManagerSettings.TryAddLoader"/>
-/// only accepts editor-registered loaders in a player.
+/// only accepts editor-registered loaders in a player. Manual init as documented in
+/// https://docs.unity3d.com/Packages/com.unity.xr.management@4.5/manual/EndUser.html
 /// </summary>
 abstract class ManagedXRBackend : XRBackend
 {

@@ -99,6 +99,9 @@ internal sealed class PreviewStage : MonoBehaviour
     private const float ReplaceDelay = 0.35f;
     private const float PulseInterval = 0.2f;
     private const float VignetteRamp = 0.15f;
+
+    /// <summary>Walking speed (m/s) the vignette preview shows: vr.17 walked 2.7 m/s.</summary>
+    private const float PreviewWalkSpeed = 2.7f;
     private const float HoverVignetteCap = 0.4f;
     private static readonly float CrouchEnter = new PhysicalCrouch().EnterFraction;
     private static readonly Color Accent = new(0.45f, 0.85f, 1f, 1f);
@@ -144,12 +147,13 @@ internal sealed class PreviewStage : MonoBehaviour
 
     private static ConfigEntry<bool> vignetteOn;
     private static ConfigEntry<float> vignetteStrength,
+        vignetteStart,
+        vignetteFull,
         snapAngle,
         smoothSpeed,
         statusIntensity,
         nameTagScale,
-        wristWidth,
-        interactStrength;
+        wristWidth;
     private static ConfigEntry<bool> physicalCrouch;
     private static ConfigEntry<string> turnMode,
         moveRelativeTo;
@@ -263,11 +267,13 @@ internal sealed class PreviewStage : MonoBehaviour
                 if (now - lastPulse < PulseInterval)
                     break;
                 lastPulse = now;
+                // UI ticks follow Interaction.HapticStrength themselves: a switch or the slider itself pulses a
+                // reference tick at the strength now set; an amplitude setting pulses its own value.
                 var amplitude = entry.BoxedValue switch
                 {
-                    float f => Mathf.Clamp01(f),
-                    bool b => b ? PairedStrength() : 0f,
-                    _ => 0.5f,
+                    float f when entry.Definition.Key != "HapticStrength" => Mathf.Clamp01(f),
+                    bool b => b ? ReferenceTick : 0f,
+                    _ => ReferenceTick,
                 };
                 UIHaptics.Tick(true, amplitude, 0.12f);
                 UIHaptics.Tick(false, amplitude, 0.12f);
@@ -302,21 +308,8 @@ internal sealed class PreviewStage : MonoBehaviour
     private static bool TriggerHeld() =>
         VRInput.Left.Trigger > 0.2f || VRInput.Right.Trigger > 0.2f;
 
-    /// <summary>A bool haptics switch pulses at the strength slider it goes with, when there is one.</summary>
-    private float PairedStrength()
-    {
-        if (
-            Plugin.Settings.TryGetEntry<float>(
-                entry.Definition.Section,
-                "HapticStrength",
-                out var own
-            )
-        )
-            return Mathf.Clamp01(own.Value);
-        return Mathf.Clamp01(
-            SettingPreviews.Value(ref interactStrength, "Interaction", "HapticStrength", 0.5f)
-        );
-    }
+    /// <summary>A typical cue's amplitude, for previews of the strength slider and the haptics switches.</summary>
+    private const float ReferenceTick = 0.5f;
 
     private void EndFade()
     {
@@ -470,6 +463,13 @@ internal sealed class PreviewStage : MonoBehaviour
                     "Comfort",
                     "VignetteStrength",
                     0.5f
+                );
+                // As it would close while walking (2.7 m/s, vr.17's walk) on the speed curve, so the start and full
+                // speed settings preview too.
+                strength *= ComfortVignette.Drive(
+                    PreviewWalkSpeed,
+                    SettingPreviews.Value(ref vignetteStart, "Comfort", "VignetteStartSpeed", 0.2f),
+                    SettingPreviews.Value(ref vignetteFull, "Comfort", "VignetteFullSpeed", 2.5f)
                 );
                 // Eased in, and a hover never tunnels the view further than a medium vignette.
                 if (clock.FromHover)

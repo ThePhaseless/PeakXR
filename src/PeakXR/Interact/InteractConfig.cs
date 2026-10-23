@@ -1,5 +1,6 @@
 using BepInEx.Configuration;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.VR;
 
 namespace PeakXR.Interact;
@@ -52,7 +53,7 @@ internal sealed class InteractConfig
     public bool ClimbHoverRing => climbHoverRing?.Value ?? true;
     public bool ClimbSurfaceFeel => climbSurfaceFeel?.Value ?? true;
     public float LungeSpeed => lungeSpeed?.Value ?? 2.5f;
-    public float HapticStrength => hapticStrength?.Value ?? 0.5f;
+    public float HapticStrength => hapticStrength?.Value ?? HapticScale.DefaultStrength;
 
     /// <summary>The configured drop button (<c>DominantSecondary</c>, <c>LeftPrimary</c> ... or <c>None</c>), so the
     /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.</summary>
@@ -78,6 +79,8 @@ internal sealed class InteractConfig
     public static void Bind(ConfigFile file)
     {
         const string s = "Interaction";
+        // Read before Bind consumes it: was a strength saved on the old scale?
+        bool strengthSaved = ConfigMigration.Saved(file, s, "HapticStrength");
         Instance = new InteractConfig
         {
             physicalGrab = file.Bind(
@@ -241,10 +244,11 @@ internal sealed class InteractConfig
             hapticStrength = file.Bind(
                 s,
                 "HapticStrength",
-                0.5f,
+                HapticScale.DefaultStrength,
                 new ConfigDescription(
-                    "Vibration strength.",
-                    new AcceptableValueRange<float>(0f, 1f)
+                    "Strength of every controller vibration, gameplay and menus alike. 1 is normal, 2 is twice as "
+                        + "strong, 0 is off.",
+                    new AcceptableValueRange<float>(0f, HapticScale.MaxStrength)
                 )
             ),
         };
@@ -260,6 +264,16 @@ internal sealed class InteractConfig
                 null,
                 UI.Settings.VRTab.HiddenTag
             )
+        );
+        // The default moved from 0.5 to 1 and the scale doubled: 0.5 becomes 1, any other value is doubled, so
+        // everyone feels what they felt before.
+        ConfigMigration.Rescale(
+            Instance.hapticStrength,
+            HapticScale.OldDefaultStrength,
+            HapticScale.DefaultStrength / HapticScale.OldDefaultStrength,
+            0f,
+            HapticScale.MaxStrength,
+            strengthSaved
         );
         var drop = Instance.dropButton;
         if (!migrated.Value)

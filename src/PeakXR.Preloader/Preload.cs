@@ -20,7 +20,9 @@ public enum RuntimeMode
 /// <summary>
 /// BepInEx 5 preloader patcher. It patches no assemblies. <see cref="Initialize"/> runs before Unity
 /// enumerates XR subsystems, which is the only point where the native runtime plugin and its
-/// UnitySubsystemsManifest.json can still be put in place.
+/// UnitySubsystemsManifest.json can still be put in place. Patcher contract:
+/// https://docs.bepinex.dev/articles/dev_guide/preloader_patchers.html; manifest:
+/// https://docs.unity3d.com/2023.1/Documentation/Manual/xrsdk-provider-setup.html
 /// </summary>
 public static class Preload
 {
