@@ -317,31 +317,55 @@ public static class DenyText
 
 /// <summary>
 /// Rate limit for denials: one per reason and hand per <see cref="SameSeconds"/>, so a refusal checked every frame
-/// never spams. Another reason or hand is never held back, so a one-shot denial is never lost.
+/// never spams. Another reason or hand is never held back, so a one-shot denial is never lost. The haptic alone has
+/// the shorter <see cref="HapticSeconds"/> (<see cref="AllowHaptic"/>), so a quick retry is felt again while the
+/// sound and ring wait.
 /// </summary>
 public sealed class DenyGate
 {
     public const float SameSeconds = 0.9f;
 
+    /// <summary>The deny triple (0.17 s) plus a clear gap: a per-frame refusal buzzes in bursts, never steadily.</summary>
+    public const float HapticSeconds = 0.4f;
+
     private readonly float[] last = new float[(int)DenyReason.Count * 2];
+    private readonly float[] lastHaptic = new float[(int)DenyReason.Count * 2];
 
     public DenyGate() => Reset();
 
+    /// <summary>The whole cue (ring, sound, haptic) may show. It counts as this hand's haptic too.</summary>
     public bool Allow(DenyReason reason, bool left, float now)
     {
         if (reason <= DenyReason.None || reason >= DenyReason.Count)
             return false;
         int i = (int)reason * 2 + (left ? 0 : 1);
-        if (now - last[i] < SameSeconds)
+        // The full cue buzzes too, so it also waits out the haptic gap: buzzes never come closer than that.
+        if (now - last[i] < SameSeconds || now - lastHaptic[i] < HapticSeconds)
             return false;
         last[i] = now;
+        lastHaptic[i] = now;
+        return true;
+    }
+
+    /// <summary>After <see cref="Allow"/> said no: the haptic alone may play again.</summary>
+    public bool AllowHaptic(DenyReason reason, bool left, float now)
+    {
+        if (reason <= DenyReason.None || reason >= DenyReason.Count)
+            return false;
+        int i = (int)reason * 2 + (left ? 0 : 1);
+        if (now - lastHaptic[i] < HapticSeconds)
+            return false;
+        lastHaptic[i] = now;
         return true;
     }
 
     public void Reset()
     {
         for (int i = 0; i < last.Length; i++)
+        {
             last[i] = float.NegativeInfinity;
+            lastHaptic[i] = float.NegativeInfinity;
+        }
     }
 }
 

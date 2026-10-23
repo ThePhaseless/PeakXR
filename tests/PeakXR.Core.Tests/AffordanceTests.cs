@@ -47,6 +47,43 @@ public class AffordanceTests
     }
 
     [Fact]
+    public void Gate_QuickRetryIsFeltWhileSoundAndRingWait()
+    {
+        var g = new DenyGate();
+        Assert.True(g.Allow(DenyReason.OutOfReach, true, 10f));
+        // A full cue counts as this hand's haptic too.
+        Assert.False(
+            g.AllowHaptic(DenyReason.OutOfReach, true, 10f + DenyGate.HapticSeconds - 0.01f)
+        );
+        float retry = 10f + DenyGate.HapticSeconds + 0.01f;
+        Assert.False(g.Allow(DenyReason.OutOfReach, true, retry));
+        Assert.True(g.AllowHaptic(DenyReason.OutOfReach, true, retry));
+        Assert.False(g.AllowHaptic(DenyReason.OutOfReach, true, retry + 0.1f));
+        Assert.True(g.AllowHaptic(DenyReason.OutOfReach, false, retry + 0.1f));
+        Assert.False(g.AllowHaptic(DenyReason.None, true, retry));
+    }
+
+    [Fact]
+    public void Gate_HapticWindowOutlastsTheDenyTriple()
+    {
+        var last = DenyHaptics.Deny[DenyHaptics.Deny.Length - 1];
+        // A refusal re-reported every frame buzzes in bursts with a clear gap, never continuously.
+        Assert.True(DenyGate.HapticSeconds >= last.At + last.Seconds + 0.2f);
+        Assert.True(DenyGate.HapticSeconds < DenyGate.SameSeconds);
+    }
+
+    [Fact]
+    public void Gate_PerFrameRefusalBuzzesAtMostOncePerHapticWindow()
+    {
+        var g = new DenyGate();
+        int buzzes = 0;
+        for (float t = 0f; t < 2f; t += 1f / 90f)
+            if (g.Allow(DenyReason.NoWall, true, t) || g.AllowHaptic(DenyReason.NoWall, true, t))
+                buzzes++;
+        Assert.InRange(buzzes, 2, (int)(2f / DenyGate.HapticSeconds) + 1);
+    }
+
+    [Fact]
     public void EveryReasonHasAShortLabel()
     {
         for (var r = DenyReason.None + 1; r < DenyReason.Count; r++)

@@ -28,6 +28,80 @@ internal sealed partial class SelfTestRunner
         yield return VRStep("vr.66-refusal-over-ambient", 10f, RefusalOverAmbientStep());
         yield return HandStep("vr.67-edge-ring", 15f, EdgeRingStep());
         yield return VRStep("vr.220-first-refusal-label", 20f, FirstRefusalLabelStep());
+        yield return VRStep("vr.232-deny-retry-haptic", 10f, DenyRetryHapticStep());
+    }
+
+    /// <summary>vr.232: a quick retry of a refused action is felt again. A NotNow refusal at the right hand gets its
+    /// whole cue; the same refusal again just past <see cref="DenyGate.HapticSeconds"/> (inside the 0.9 s
+    /// <see cref="DenyGate.SameSeconds"/>) gets a fresh haptic but no new reason or sound. Then the refusal reported
+    /// every frame for 1.5 s never buzzes closer than <see cref="DenyGate.HapticSeconds"/>.</summary>
+    IEnumerator DenyRetryHapticStep()
+    {
+        if (!Affordance.Enabled || Interact.Haptics.Muted)
+        {
+            stepSkip = "ui.affordance not installed or Interaction.Haptics off";
+            yield break;
+        }
+        const bool left = false;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Affordance.DenyAtHand(left, DenyReason.NotNow);
+        yield return ExpectCue(left, DenyReason.NotNow, mark, seen: false);
+        if (!stepOk)
+            yield break;
+        yield return Wait(DenyGate.HapticSeconds + 0.05f - (CueMark() - mark));
+        float sound = CueLog.Capture.LastSound(CueSound.Refused).At;
+        float reasonAt = CueLog.Capture.Hand(left).ReasonAt;
+        float retry = CueMark();
+        if (Affordance.DenyAtHand(left, DenyReason.NotNow))
+        {
+            Fail(F($"retry {retry - mark:0.00} s after the refusal got the whole cue again"));
+            yield break;
+        }
+        yield return Wait(0.25f);
+        float felt = CueLog.Capture.Hand(left).PulseAt;
+        if (felt < retry)
+            Fail(F($"no haptic for a retry {retry - mark:0.00} s after the refusal"));
+        else if (
+            CueLog.Capture.Hand(left).ReasonAt != reasonAt
+            || CueLog.Capture.LastSound(CueSound.Refused).At != sound
+        )
+            Fail("the retry replayed the reason or the sound, not only the haptic");
+        if (!stepOk)
+            yield break;
+        // Then every frame for 1.5 s: count bursts (a tick more than a triple's length after the last burst) and
+        // their closest spacing.
+        yield return Wait(DenyGate.SameSeconds);
+        int bursts = 0;
+        float lastBurst = float.NegativeInfinity;
+        float closest = float.PositiveInfinity;
+        float lastPulse = CueLog.Capture.Hand(left).PulseAt;
+        float end = CueMark() + 1.5f;
+        while (CueMark() < end)
+        {
+            Affordance.DenyAtHand(left, DenyReason.NotNow);
+            float at = CueLog.Capture.Hand(left).PulseAt;
+            if (at != lastPulse)
+            {
+                if (at - lastBurst > 0.2f)
+                {
+                    closest = Mathf.Min(closest, at - lastBurst);
+                    lastBurst = at;
+                    bursts++;
+                }
+                lastPulse = at;
+            }
+            yield return null;
+        }
+        string note = F(
+            $"retry felt {felt - retry:0.00} s after it, no new reason or sound; per-frame refusal: {bursts} bursts in 1.5 s, closest {closest:0.00} s apart"
+        );
+        if (bursts == 0)
+            Fail("per-frame refusal never buzzed; " + note);
+        else if (bursts > 1 && closest < DenyGate.HapticSeconds - 0.05f)
+            Fail("bursts closer than the haptic window; " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>vr.67: a refusal at a hand held behind the head. Its real ring is out of sight, so ui.affordance also

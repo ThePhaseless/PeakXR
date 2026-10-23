@@ -160,8 +160,15 @@ internal static class Affordance
         Component tint
     )
     {
-        if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
+        if (!Enabled)
             return false;
+        if (!Gate.Allow(reason, left, Time.unscaledTime))
+        {
+            // A quick retry is still felt; the ring and sound wait out the longer window.
+            if (Gate.AllowHaptic(reason, left, Time.unscaledTime))
+                AffordanceRuntime.BuzzOnly(left, reason);
+            return false;
+        }
         Count++;
         CueLog.Capture.Reason(left, reason, notice: false, Time.unscaledTime);
         LastReason = reason;
