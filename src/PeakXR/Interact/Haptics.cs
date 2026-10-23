@@ -67,7 +67,7 @@ internal static class Haptics
     )
     {
         var cfg = InteractConfig.Instance;
-        if (!cfg.Haptics || amplitude <= 0f)
+        if (!cfg.Haptics || amplitude <= 0f || !HapticScale.Plays(cfg.HapticDetail, priority))
             return false;
         try
         {

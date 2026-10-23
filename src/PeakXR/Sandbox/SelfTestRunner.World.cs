@@ -278,6 +278,8 @@ internal sealed partial class SelfTestRunner
         yield return WarpFacing(lug.Center(), 0.8f);
         bool left = VRInput.LeftHanded;
         float mark = CueMark();
+        int ringTicks = UI.HandWidgets.HandWidgetsRuntime.StepTicks;
+        int ringYielded = UI.HandWidgets.HandWidgetsRuntime.StepsYielded;
         yield return LiftLid(lug);
         if (!stepOk)
             yield break;
@@ -285,8 +287,13 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
         var progress = cueNote;
         yield return ExpectFeel(left, CueFeel.Contact, mark, within: 0f);
-        if (stepOk)
-            stepNote = $"{opened}; {progress}; {cueNote}";
+        // One hold, one progress haptic: the ramp owns it, the ring sends no quarter ticks.
+        int extra = UI.HandWidgets.HandWidgetsRuntime.StepTicks - ringTicks;
+        int yielded = UI.HandWidgets.HandWidgetsRuntime.StepsYielded - ringYielded;
+        if (stepOk && extra > 0)
+            Fail($"the progress ring ticked {extra} quarter steps beside the lid's ramp");
+        else if (stepOk)
+            stepNote = $"{opened}; {progress}; {cueNote}; ring left {yielded} quarter steps to it";
     }
 
     /// <summary>vr.83: an item that cannot cook (<c>ItemCooking.canBeCooked</c> false) held in the heat column of a

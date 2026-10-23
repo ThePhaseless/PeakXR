@@ -99,6 +99,7 @@ internal static class Affordance
     private static readonly DangerPulse[] Dangers = { new(), new() };
     private static readonly float[] EndStopAt = { float.NegativeInfinity, float.NegativeInfinity };
     private static float dangerSoundAt = float.NegativeInfinity;
+    private static float progressAt = float.NegativeInfinity;
 
     /// <summary>Accepted denials since start, for the self-test.</summary>
     public static int Count { get; private set; }
@@ -160,8 +161,15 @@ internal static class Affordance
         Component tint
     )
     {
-        if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
+        if (!Enabled)
             return false;
+        if (!Gate.Allow(reason, left, Time.unscaledTime))
+        {
+            // A quick retry is still felt; the ring and sound wait out the longer window.
+            if (Gate.AllowHaptic(reason, left, Time.unscaledTime))
+                AffordanceRuntime.BuzzOnly(left, reason);
+            return false;
+        }
         Count++;
         CueLog.Capture.Reason(left, reason, notice: false, Time.unscaledTime);
         LastReason = reason;
@@ -207,9 +215,16 @@ internal static class Affordance
     /// toward done (<paramref name="fraction"/> 0..1). Not a refusal.</summary>
     public static void Progress(bool left, float fraction)
     {
-        if (Enabled && Ramps[left ? 0 : 1].TryTick(Time.unscaledTime, fraction, out var p))
+        if (!Enabled)
+            return;
+        progressAt = Time.unscaledTime;
+        if (Ramps[left ? 0 : 1].TryTick(Time.unscaledTime, fraction, out var p))
             Feel(left, CueFeel.Progress, p);
     }
+
+    /// <summary>A <see cref="Progress"/> ramp ran on either hand in the last 0.2 s: it owns this hold's progress
+    /// feel, so the progress ring keeps only its completion tick (one hold, one progress haptic).</summary>
+    public static bool ProgressActive => Time.unscaledTime - progressAt < 0.2f;
 
     /// <summary>One tick as the hand meets something (a hold, a handle, a friend's hand). Not a refusal.</summary>
     public static void Contact(bool left)

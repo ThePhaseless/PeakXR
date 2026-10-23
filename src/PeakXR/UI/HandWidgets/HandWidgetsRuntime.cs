@@ -210,9 +210,21 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
             return;
         if (pulse == ProgressPulse.Complete)
             UIHaptics.Tick(ringLeft, Mathf.Min(1f, strength * 2f), CompleteSeconds);
+        // Holds with their own progress ramp (lid, book, summit, social) feel that; the rest (eating, a piton, a
+        // plain held interact) have no ramp and keep the quarter ticks.
+        else if (UI.Affordances.Affordance.ProgressActive)
+            StepsYielded++;
         else
+        {
+            StepTicks++;
             UIHaptics.Tick(ringLeft, strength * 0.5f, StepSeconds);
+        }
     }
+
+    /// <summary>Quarter-step ticks sent, and those left to an <c>Affordance.Progress</c> ramp (self-test).</summary>
+    public static int StepTicks { get; private set; }
+
+    public static int StepsYielded { get; private set; }
 
     /// <summary>One HUD widget re-parented into a box that is posed in the world each frame.</summary>
     private sealed class MovedWidget

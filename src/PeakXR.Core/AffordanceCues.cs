@@ -228,6 +228,14 @@ public static class CueTones
 {
     public const float Peak = 0.35f;
 
+    /// <summary>Source volume of a cue at full call volume and <c>UI.CueVolume</c> 1.</summary>
+    public const float BaseVolume = 0.3f;
+
+    /// <summary>The final source volume: <see cref="BaseVolume"/> times the call's <paramref name="volume"/> and the
+    /// player's <paramref name="cueVolume"/> (0..2), kept within 0..1, the most an AudioSource plays.</summary>
+    public static float Volume(float volume, float cueVolume) =>
+        Math.Min(1f, Math.Max(0f, BaseVolume * volume * cueVolume));
+
     public static float[] Make(CueSound sound, int sampleRate) =>
         sound switch
         {

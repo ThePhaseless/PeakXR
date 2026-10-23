@@ -152,4 +152,17 @@ public class HapticMixTests
         Assert.True(deny >= ProgressRamp.Amplitude(1f));
         Assert.True(DangerPulse.Amplitude(1f) >= ProgressRamp.Amplitude(1f));
     }
+
+    [Theory]
+    [InlineData(HapticDetail.Full, HapticPriority.Ambient, true)]
+    [InlineData(HapticDetail.Full, HapticPriority.Cue, true)]
+    [InlineData(HapticDetail.Full, HapticPriority.Alert, true)]
+    [InlineData(HapticDetail.Essential, HapticPriority.Ambient, false)]
+    [InlineData(HapticDetail.Essential, HapticPriority.Cue, true)]
+    [InlineData(HapticDetail.Essential, HapticPriority.Alert, true)]
+    public void Essential_DropsOnlyAmbientFeel(
+        HapticDetail detail,
+        HapticPriority priority,
+        bool plays
+    ) => Assert.Equal(plays, HapticScale.Plays(detail, priority));
 }

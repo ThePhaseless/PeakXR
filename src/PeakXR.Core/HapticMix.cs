@@ -18,6 +18,14 @@ public enum HapticPriority : byte
     Alert,
 }
 
+/// <summary><c>Interaction.HapticDetail</c>: Essential keeps only what the hand did and what it must know (cues,
+/// refusals, danger), for players who find constant background feel tiring or overwhelming.</summary>
+public enum HapticDetail
+{
+    Essential,
+    Full,
+}
+
 /// <summary>
 /// The one strength slider (<c>Interaction.HapticStrength</c>) for every vibration. Its default was 0.5, which
 /// halved every cue; it is now 1 with the cues' built-in amplitudes scaled by <see cref="Cue"/>, so a default player
@@ -37,6 +45,11 @@ public static class HapticScale
 
     /// <summary>UI tick amplitudes were sent unscaled, as at strength 1.</summary>
     public const float Ui = 1f / DefaultStrength;
+
+    /// <summary>A pulse of <paramref name="priority"/> plays at this <see cref="HapticDetail"/>: Essential drops the
+    /// Ambient feel (heartbeat, wind, texture, shiver, warmth).</summary>
+    public static bool Plays(HapticDetail detail, HapticPriority priority) =>
+        detail == HapticDetail.Full || priority != HapticPriority.Ambient;
 
     /// <summary>The impulse amplitude sent for <paramref name="amplitude"/> at slider <paramref name="strength"/>.</summary>
     public static float Felt(float amplitude, float strength, float scale) =>
