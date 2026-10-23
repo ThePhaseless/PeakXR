@@ -170,7 +170,7 @@ internal static class FireGestures
             // Outside the column: a faint ramp that firms up toward it, to find the heat by feel.
             float warm = HeatGradient.Closeness(distance, HeatSearch);
             if (warm > 0f)
-                Affordance.Progress(ItemGestures.HoldLeft, HeatSearchMax * warm);
+                Affordance.Progress(ItemGestures.HoldLeft, HeatSearchMax * warm, hold: false);
             return;
         }
         GestureRequests.Interact(fire);

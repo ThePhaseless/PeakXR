@@ -212,17 +212,20 @@ internal static class Affordance
     }
 
     /// <summary>Per frame while an action fills (a hold, a pull, a charge): a light tick at its own pace, stronger
-    /// toward done (<paramref name="fraction"/> 0..1). Not a refusal.</summary>
-    public static void Progress(bool left, float fraction)
+    /// toward done (<paramref name="fraction"/> 0..1). Not a refusal. <paramref name="hold"/> false for a ramp that
+    /// is not a hold's fill (stamina refilling on a grip, a countdown, a heat search), so it never silences the
+    /// progress ring's quarter ticks (<see cref="ProgressActive"/>).</summary>
+    public static void Progress(bool left, float fraction, bool hold = true)
     {
         if (!Enabled)
             return;
-        progressAt = Time.unscaledTime;
+        if (hold)
+            progressAt = Time.unscaledTime;
         if (Ramps[left ? 0 : 1].TryTick(Time.unscaledTime, fraction, out var p))
             Feel(left, CueFeel.Progress, p);
     }
 
-    /// <summary>A <see cref="Progress"/> ramp ran on either hand in the last 0.2 s: it owns this hold's progress
+    /// <summary>A hold's <see cref="Progress"/> ramp ran on either hand in the last 0.2 s: it owns this hold's progress
     /// feel, so the progress ring keeps only its completion tick (one hold, one progress haptic).</summary>
     public static bool ProgressActive => Time.unscaledTime - progressAt < 0.2f;
 

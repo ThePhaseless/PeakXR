@@ -61,8 +61,8 @@ internal static partial class WorldHolds
             {
                 if (near)
                 {
-                    Affordance.Progress(true, t / fire);
-                    Affordance.Progress(false, t / fire);
+                    Affordance.Progress(true, t / fire, hold: false);
+                    Affordance.Progress(false, t / fire, hold: false);
                 }
             }
             else if (t >= fire + LaunchGrace)

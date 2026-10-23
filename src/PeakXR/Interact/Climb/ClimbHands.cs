@@ -591,9 +591,9 @@ internal static class ClimbHands
         if (fill >= 0.999f)
             return;
         if (l)
-            Affordance.Progress(true, fill);
+            Affordance.Progress(true, fill, hold: false);
         if (r)
-            Affordance.Progress(false, fill);
+            Affordance.Progress(false, fill, hold: false);
     }
 
     /// <summary>

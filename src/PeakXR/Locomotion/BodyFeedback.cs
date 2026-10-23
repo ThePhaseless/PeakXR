@@ -172,8 +172,8 @@ internal static class BodyFeedback
             if (left > 0f && left < FloatEndWarning)
             {
                 float u = BodyCues.CountdownUrgency(left, FloatEndWarning);
-                Affordance.Progress(true, u);
-                Affordance.Progress(false, u);
+                Affordance.Progress(true, u, hold: false);
+                Affordance.Progress(false, u, hold: false);
             }
         }
 
