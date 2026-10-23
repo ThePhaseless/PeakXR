@@ -114,6 +114,9 @@ internal static class PhysicalInteraction
     private static bool hazardPulseLeft;
     private static float hazardPulseTime = -10f;
     private static float mantleUntil = -10f;
+
+    /// <summary>The top-out walk is carrying the body onto a ledge (room-scale follow stays out of it).</summary>
+    internal static bool Mantling => Time.time < mantleUntil;
     private static Vector3 mantleDir;
 
     /// <summary>Last grip press's hold probe (<see cref="ProbeHold"/>): a surface was found, and the game would refuse it.</summary>

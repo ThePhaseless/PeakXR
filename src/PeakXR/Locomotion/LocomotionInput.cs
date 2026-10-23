@@ -338,9 +338,11 @@ internal static class LocomotionInput
             // drop what the anchor absorbed, which hands the walk's travel to the view.
             && (data.isGrounded || data.sinceGrounded < 0.25f)
             && data.fullyConscious
-            && !data.isClimbing
-            && !data.isRopeClimbing
-            && !data.isVineClimbing
+            && !data.isClimbingAnything
+            && data.currentClimbHandle == null
+            // The top-out walk moves the body onto the ledge under its own input: a follow toward the head behind
+            // it fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
+            && !PhysicalInteraction.Mantling
             && data.carrier == null;
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
