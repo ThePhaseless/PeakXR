@@ -129,6 +129,22 @@ public class FrameStatsTests
 public class AdaptiveScaleTests
 {
     [Fact]
+    public void FarOverBudget_JumpsToTheScaleThatFits()
+    {
+        // Run 57: 38 ms GPU frames on a 72 Hz (13.9 ms) headset, load 2.8. One 0.1 step per fade would take the
+        // whole run; the pixel count says 0.55 fits.
+        var a = new AdaptiveScale { Min = 0.5f };
+        a.Feed(2.8f);
+        Assert.True(a.Feed(2.8f));
+        TestUtil.Near(0.55f, a.Scale, 1e-5f);
+
+        var floor = new AdaptiveScale { Min = 0.7f };
+        floor.Feed(2.8f);
+        floor.Feed(2.8f);
+        TestUtil.Near(0.7f, floor.Scale, 1e-5f);
+    }
+
+    [Fact]
     public void OneHotWindow_Holds_TwoStepDown()
     {
         var a = new AdaptiveScale();
@@ -228,4 +244,36 @@ public class AdaptiveScaleTests
             );
         }
     }
+}
+
+public class RefreshPickTests
+{
+    [Theory]
+    [InlineData(90f, 0f, 0f, 60f, 90f, RefreshSource.Display)]
+    [InlineData(24f, 72f, 0f, 60f, 72f, RefreshSource.Device)]
+    [InlineData(36f, 36f, 72f, 60f, 72f, RefreshSource.LastGood)]
+    [InlineData(0f, 0f, 0f, 144f, 144f, RefreshSource.Screen)]
+    [InlineData(18f, 24f, 0f, 30f, 0f, RefreshSource.None)]
+    [InlineData(500f, float.NaN, 0f, 0f, 0f, RefreshSource.None)]
+    public void Pick_TakesTheFirstSaneSource(
+        float display,
+        float device,
+        float lastGood,
+        float screen,
+        float hz,
+        RefreshSource source
+    )
+    {
+        Assert.Equal(hz, FrameBudget.PickRefresh(display, device, lastGood, screen, out var got));
+        Assert.Equal(source, got);
+    }
+
+    [Theory]
+    [InlineData(59.9f, false)]
+    [InlineData(60f, true)]
+    [InlineData(72f, true)]
+    [InlineData(240f, true)]
+    [InlineData(241f, false)]
+    public void Sane_IsAHeadsetRate(float hz, bool sane) =>
+        Assert.Equal(sane, FrameBudget.Sane(hz));
 }
