@@ -189,7 +189,13 @@ internal sealed class ControllerReader
             Stick = XRInputSampler.N(Vec2(stick)),
             Pad = XRInputSampler.N(Vec2(pad)),
         };
-        var b = ControllerMap.Map(layout, raw, moveHand: left != VRInput.LeftHanded);
+        // One-handed, the one controller is the dominant hand: moveHand stays false, and its wand pad walks too.
+        var b = ControllerMap.Map(
+            layout,
+            raw,
+            moveHand: left != VRInput.LeftHanded,
+            oneHanded: VRInput.OneHanded
+        );
         s.Trigger = b.Trigger;
         s.Grip = b.Grip;
         s.Stick = new Vector2(b.Stick.X, b.Stick.Y);

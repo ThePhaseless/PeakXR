@@ -103,10 +103,12 @@ namespace PeakXR.Core
         public const float TriggerTouchPull = 0.05f;
 
         /// <param name="moveHand">This hand walks (the off hand); only the Vive wand pad uses it.</param>
+        /// <param name="oneHanded">Accessibility.OneHanded; only the Vive wand pad uses it (<see cref="WandPad.Map"/>).</param>
         public static ControllerButtons Map(
             in ControllerLayout l,
             in ControllerSample s,
-            bool moveHand
+            bool moveHand,
+            bool oneHanded = false
         )
         {
             var b = default(ControllerButtons);
@@ -129,7 +131,7 @@ namespace PeakXR.Core
             if (l.EmulateFaceButtons && l.PadIsStick)
             {
                 // Vive wand: the pad is the only stick and it reports a resting thumb, so everything takes a click.
-                var wand = WandPad.Map(s.Stick, s.StickClick, moveHand);
+                var wand = WandPad.Map(s.Stick, s.StickClick, moveHand, oneHanded);
                 b.Stick = wand.Stick;
                 b.Primary = wand.Primary;
                 b.Secondary = wand.Secondary;
