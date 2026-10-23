@@ -19,6 +19,9 @@ static class XRRuntimeInfo
 
     /// <summary>True when the tracking space has its origin on the floor (eye height is measurable).</summary>
     public static bool FloorTracking;
+
+    /// <summary>The running runtime's name and version (<c>XRBackend.Describe</c>), for bug reports.</summary>
+    public static string Description = "none";
 }
 
 /// <summary>
@@ -175,6 +178,7 @@ sealed class XRBootstrapDriver : MonoBehaviour
         backend.OnRunning();
 
         VRSession.Running = backend.Runtime;
+        XRRuntimeInfo.Description = backend.Describe();
         Plugin.Log.LogInfo(
             $"{Tag} VR active: {backend.Describe()}; eye texture {XRSettings.eyeTextureWidth}x{XRSettings.eyeTextureHeight}, "
                 + $"stereo mode {XRSettings.stereoRenderingMode}, refresh {RefreshRate():0.#} Hz, floor tracking {XRRuntimeInfo.FloorTracking}"

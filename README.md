@@ -43,7 +43,8 @@ In the headset, hold the menu button for a second to recenter your view and reca
 Every other option is in `BepInEx/config/com.thephaseless.peakxr.cfg`, and in VR also in the VR tab of
 the game's settings: camera under `[Camera]`, rendering under `[Render]`, runtime start-up under `[XR]`,
 and comfort under `[Comfort]` and `[ComfortEvents]`. [docs/controls.md](docs/controls.md) lists the
-controls and the settings behind them.
+controls and the settings behind them. To report a bug, see [docs/debugging.md](docs/debugging.md): hold Menu
+on one controller and click the other stick for 1.5 s, then send the folder it saves.
 
 ### Linux (Proton)
 

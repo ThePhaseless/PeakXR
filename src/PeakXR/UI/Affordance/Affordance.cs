@@ -172,6 +172,7 @@ internal static class Affordance
         }
         Count++;
         CueLog.Capture.Reason(left, reason, notice: false, Time.unscaledTime);
+        Diagnostics.DebugLog.Refusal(left, reason, worldPos);
         LastReason = reason;
         LastLeft = left;
         LastPosition = worldPos;
@@ -303,19 +304,30 @@ internal static class Affordance
     /// <summary>
     /// Not a refusal but something the game did on its own that the hands did not show (the held item stowed when a
     /// climb started): a single soft tick, a teal ring at <paramref name="hint"/>'s spot and the label. Same rate limit.
+    /// <paramref name="forceText"/> shows <paramref name="text"/> even with <c>UI.ActionHintText</c> off, for a
+    /// confirmation the player asked for (a saved bug report).
     /// </summary>
     public static bool Inform(
         bool left,
         Vector3 worldPos,
         DenyReason reason,
         DenyHint hint,
-        string text = null
+        string text = null,
+        bool forceText = false
     )
     {
         if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
             return false;
         CueLog.Capture.Reason(left, reason, notice: true, Time.unscaledTime);
-        AffordanceRuntime.Show(left, worldPos, reason, hint, notice: true, text);
+        AffordanceRuntime.Show(
+            left,
+            worldPos,
+            reason,
+            hint,
+            notice: true,
+            text,
+            forceText: forceText
+        );
         return true;
     }
 

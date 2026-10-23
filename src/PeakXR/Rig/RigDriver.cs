@@ -287,7 +287,8 @@ internal sealed class RigDriver : MonoBehaviour
     internal static bool LeanTraceDue(ref float next)
     {
         float now = Time.unscaledTime;
-        if (now >= TraceLeanUntil || now < next)
+        // Debug mode (Debug.Mode) keeps the lean trace running.
+        if ((now >= TraceLeanUntil && !Diagnostics.DebugLog.Verbose) || now < next)
             return false;
         next = now + LeanTraceEvery;
         return true;
@@ -657,8 +658,9 @@ internal sealed class RigDriver : MonoBehaviour
     private void HandleRecenterInput(Character c, float dt)
     {
         recenterPress.Seconds = CameraFeature.RecenterSeconds;
-        bool left = VRInput.Left.Menu,
-            right = VRInput.Right.Menu;
+        // A Menu the bug-report chord holds is not a recenter hold.
+        bool left = VRInput.Left.Menu && !Diagnostics.DebugGesture.MenuTaken(true),
+            right = VRInput.Right.Menu && !Diagnostics.DebugGesture.MenuTaken(false);
         // The ring goes to the controller whose button is held; with both down it stays where it is.
         if (left != right)
             recenterLeft = left;

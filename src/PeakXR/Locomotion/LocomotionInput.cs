@@ -70,6 +70,7 @@ internal static class LocomotionInput
     private static int watchPressesLeft;
     private static readonly Reservation DropReserve = new();
     private static readonly Reservation TalkReserve = new();
+    private static readonly Reservation[] ChordReserve = { new(), new(), new(), new() };
 
     /// <summary>
     /// One-shot backpack press for the hotbar-key patch. Valid this frame and the next, because CharacterItems may
@@ -98,14 +99,22 @@ internal static class LocomotionInput
     /// <summary>Keeps layout actions off the buttons other features own, so one press never does two jobs: the
     /// button interact.physical uses for drop (e.g. a fixed <c>RightSecondary</c> for a left-handed player, which
     /// would also ping) and <c>Voice.PushToTalkButton</c> (which would also jump, ping or open a wheel while
-    /// talking). Both are cleared before either is set, so a shared control stays reserved.</summary>
+    /// talking), and the Menu and stick click the bug-report chord holds (<c>Diagnostics.DebugGesture</c>), so it
+    /// never pauses, sprints or crouches. All are cleared before any is set, so a shared control stays reserved.</summary>
     private static void ReserveButtons(bool owns, bool dominantLeft)
     {
         DropReserve.Clear();
         TalkReserve.Clear();
+        foreach (var r in ChordReserve)
+            r.Clear();
         DropReserve.Take(owns, InteractConfig.Instance.DropButton, dominantLeft);
         var talk = VoiceFeature.Settings?.PushToTalkButton;
         TalkReserve.Take(talk != null, talk?.Value, dominantLeft);
+        ChordReserve[0].Take(Diagnostics.DebugGesture.MenuTaken(true), true, VRControl.Menu);
+        ChordReserve[1].Take(Diagnostics.DebugGesture.MenuTaken(false), false, VRControl.Menu);
+        ChordReserve[2].Take(Diagnostics.DebugGesture.StickTaken(true), true, VRControl.StickClick);
+        ChordReserve[3]
+            .Take(Diagnostics.DebugGesture.StickTaken(false), false, VRControl.StickClick);
     }
 
     /// <summary>One control reserved in <see cref="Mapper"/> by name (<see cref="ButtonName"/>).</summary>
@@ -128,6 +137,15 @@ internal static class LocomotionInput
                 want
                 && name != null
                 && ButtonName.TryParse(name, dominantLeft, out left, out control);
+            if (has)
+                Mapper.SetReserved(left, control, true);
+        }
+
+        public void Take(bool want, bool isLeft, VRControl which)
+        {
+            has = want;
+            left = isLeft;
+            control = which;
             if (has)
                 Mapper.SetReserved(left, control, true);
         }

@@ -38,6 +38,9 @@ internal readonly struct CameraSwap
 
     public bool Active => main != null;
 
+    // Debug mode's aim log, at most 4 lines a second.
+    private static float nextAimLog;
+
     public static CameraSwap Begin(Vector3 position, Quaternion rotation)
     {
         var mc = MainCamera.instance;
@@ -47,6 +50,16 @@ internal readonly struct CameraSwap
         var cam = Camera.main;
         var otherT = cam != null && cam.transform != mainT ? cam.transform : null;
         var swap = new CameraSwap(mainT, otherT);
+        if (Diagnostics.DebugLog.Verbose && Time.unscaledTime >= nextAimLog)
+        {
+            nextAimLog = Time.unscaledTime + 0.25f;
+            var f = rotation * Vector3.forward;
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[interact.aim] game call aimed from ({position.x:0.00}, {position.y:0.00}, {position.z:0.00}) along ({f.x:0.00}, {f.y:0.00}, {f.z:0.00}), {Vector3.Distance(mainT.position, position):0.00} m from the eye"
+                )
+            );
+        }
         mainT.SetPositionAndRotation(position, rotation);
         otherT?.SetPositionAndRotation(position, rotation);
         return swap;

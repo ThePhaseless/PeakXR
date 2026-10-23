@@ -512,6 +512,7 @@ internal static class PhysicalInteraction
         LastGripNote = System.FormattableString.Invariant(
             $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight)"
         );
+        Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
         switch (action)
         {
             case GripPressAction.Extension:

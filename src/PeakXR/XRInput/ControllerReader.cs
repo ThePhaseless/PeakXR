@@ -60,6 +60,9 @@ internal sealed class ControllerReader
     private XRInputSampler.Usage<Quaternion> rotation;
     private XRInputSampler.Usage<UnityEngine.XR.Hand> handData;
 
+    /// <summary>The controller's device name (it carries the interaction profile), for bug reports.</summary>
+    public string Name => device.isValid ? device.name : "none";
+
     public ControllerReader(bool left)
     {
         this.left = left;
