@@ -1,6 +1,6 @@
 # PeakXR design
 
-PeakXR is a VR mod for PEAK 3.0, and still runs on 2.6.b (Unity 6000.3, Mono, URP, Photon PUN 2). It is a BepInEx 5 plugin plus a preloader patcher, MIT licensed and written clean-room: no code from PeakVR (Andrey04o), PEAK_VR, LCVR, CWVR or RepoXR. Research notes live in `docs/research/`.
+PeakXR is a VR mod for PEAK 3.0 and 3.0.1, and still runs on 2.6.b (Unity 6000.3, Mono, URP, Photon PUN 2). It is a BepInEx 5 plugin plus a preloader patcher, MIT licensed and written clean-room: no code from PeakVR (Andrey04o), PEAK_VR, LCVR, CWVR or RepoXR. Research notes live in `docs/research/`.
 
 ## Goals
 

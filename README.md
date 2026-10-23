@@ -2,7 +2,7 @@
 
 A VR mod for [PEAK](https://store.steampowered.com/app/3527290/PEAK/), built as a BepInEx 5 plugin. It
 loads Unity's OpenXR plugin into the game at startup, and can use Valve's OpenVR plugin instead.
-It supports PEAK 3.0 and still runs on 2.6.b. Work in progress.
+It supports PEAK 3.0 and 3.0.1 and still runs on 2.6.b. Work in progress.
 
 PeakXR is MIT licensed and written from scratch. It does not contain code from other PEAK or Unity VR
 mods. The XR runtime files it ships come from Unity's packages (Unity Companion License) and Valve's
