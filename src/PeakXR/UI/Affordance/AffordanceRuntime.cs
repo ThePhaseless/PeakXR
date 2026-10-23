@@ -490,7 +490,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     private void LateUpdate()
     {
         // A menu opening or closing is a still moment to save the seen set.
-        bool paused = GUIManager.InPauseMenu;
+        // GUIManager.InPauseMenu (GUIManager.cs:304) uses ?. on a static that outlives its destroyed object during
+        // scene loads, so check the instance with Unity's null first (run 59: 337 NREs on the way to the airport).
+        bool paused = GUIManager.instance != null && GUIManager.InPauseMenu;
         if (paused != wasPaused)
         {
             wasPaused = paused;
