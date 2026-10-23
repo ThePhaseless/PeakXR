@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Peak;
 using Peak.Island;
+using PeakXR.Framework;
 using Photon.Pun;
 using UnityEngine;
 using Zorro.Core;
@@ -52,9 +53,12 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// A plain spawn watched for 3 s, or for the game time its sign needs (<see cref="GameTiming"/>). It passes on
     /// any sign the game ran it: it moved or came closer, it targeted
-    /// the player (<c>Scoutmaster.currentTarget</c>, Scoutmaster.cs:61; <c>BeeSwarm.currentAggroCharacter</c>,
-    /// BeeSwarm.cs:22; <c>MushroomZombie._currentTarget</c>, MushroomZombie.cs:30), it blinded the player, it grew
-    /// (a vine), or it removed itself (an explosion). <see cref="SpawnOnly"/> names only have to spawn.
+    /// the player (<c>BeeSwarm.currentAggroCharacter</c>, BeeSwarm.cs:22; <c>MushroomZombie._currentTarget</c>,
+    /// MushroomZombie.cs:30), it blinded the player, it grew (a vine or an AOE: renderer bounds alone also grow
+    /// with an animated rig or particles), or it removed itself (an explosion). <see cref="SpawnOnly"/> names only
+    /// have to spawn. A mob that is a <c>Character</c> is tracked by its torso (<c>Character.Center</c>): its root stays
+    /// where it spawned while the ragdoll walks. The Scoutmaster and the bee swarm get the context they act in
+    /// (<see cref="StageMob"/>) and must come for the player.
     /// A level zombie sleeps until a player within 30 m looks at it (MushroomZombie.cs:517), gets up for 5 s
     /// (MushroomZombie.cs:649) and idles 2 s before it picks a target (MushroomZombie.cs:590-596), so it gets its
     /// <c>initialWakeUpTime</c> (MushroomZombie.cs:38) plus that idle. A vine gets the time to grow
@@ -65,7 +69,12 @@ internal sealed partial class SelfTestRunner
     IEnumerator MobBehaviour(MobEntry entry, GameObject go)
     {
         var c = Character.localCharacter;
-        var start = go.transform.position;
+        var body = go.GetComponentInChildren<Character>();
+        Vector3 Where() => body != null ? body.Center : go.transform.position;
+        var scout = go.GetComponentInChildren<Scoutmaster>();
+        var swarm = go.GetComponentInChildren<BeeSwarm>();
+        string staged = StageMob(scout, swarm, c);
+        var start = Where();
         float size = BoundsSize(go);
         float near = Vector3.Distance(start, c.Center);
         float moved = 0f;
@@ -73,8 +82,9 @@ internal sealed partial class SelfTestRunner
         float grew = 0f;
         bool targeted = false;
         bool blinded = false;
-        var scout = go.GetComponentInChildren<Scoutmaster>();
-        var swarm = go.GetComponentInChildren<BeeSwarm>();
+        bool grabbed = false;
+        var grabbedRef =
+            scout != null ? GameMember.Field<CharacterData, Character>("grabbedPlayer") : null;
         var zombie = go.GetComponentInChildren<MushroomZombie>();
         var raven = go.GetComponentInChildren<VoiceThief>();
         int actor = c.photonView.Owner.ActorNumber;
@@ -91,6 +101,7 @@ internal sealed partial class SelfTestRunner
         // "grew 0.00 m" (vr25) while its frame showed it grown.
         var vine = go.GetComponentInChildren<MagicBeanVine>();
         var vineOrigin = vine != null ? vine.vineOriginTransform : null;
+        bool grows = vineOrigin != null || go.GetComponentInChildren<AOE>(true) != null;
         float vineStart = vineOrigin != null ? vineOrigin.localScale.y : 0f;
         // BLIND (explosions, flash plants): in VR the view must never wash out (comfort.events, vr.34).
         var wash = PeakXR.VR.VRSession.Active ? BlindWashRenderer() : null;
@@ -98,6 +109,7 @@ internal sealed partial class SelfTestRunner
         float window =
             zombie != null ? GameTiming.Budget(GameTiming.ZombieWakeSeconds(zombie))
             : vineOrigin != null ? GameTiming.Budget(GameTiming.VineGrowSeconds(vine, MinGrowth))
+            : staged != null ? StagedWatch
             : 3f;
         float end = Now + window;
         // The wake waits on the player's look (MushroomZombie.cs:517), so the rise is timed from the wake itself.
@@ -108,9 +120,10 @@ internal sealed partial class SelfTestRunner
             && go != null
             && !(zombie != null && targeted)
             && !(vineOrigin != null && grew > MinGrowth)
+            && !(staged != null && Came(scout, swarm, near - closest, targeted, grabbed))
         )
         {
-            var p = go.transform.position;
+            var p = Where();
             moved = Mathf.Max(moved, Vector3.Distance(p, start));
             closest = Mathf.Min(closest, Vector3.Distance(p, c.Center));
             grew = Mathf.Max(
@@ -121,6 +134,7 @@ internal sealed partial class SelfTestRunner
                 (scout != null && scout.currentTarget == c)
                 || (swarm != null && swarm.currentAggroCharacter == c)
                 || (zombie != null && zombie._currentTarget == c);
+            grabbed |= body != null && grabbedRef != null && grabbedRef(body.data) == c;
             blinded |= c.data.isBlind;
             stole |=
                 raven != null
@@ -153,18 +167,22 @@ internal sealed partial class SelfTestRunner
                     : ""
             )
             + (zombie != null ? $", zombie {zombie.currentState}, {ZombieWoke(wokeAfter)}" : "")
-            + (raven != null ? $", stealing the player's voice {stole}" : "");
+            + (raven != null ? $", stealing the player's voice {stole}" : "")
+            + (staged != null ? $", {staged}" : "")
+            + (scout != null ? $", grabbed the player {grabbed}" : "");
         bool spawnOnly = false;
         foreach (var s in SpawnOnly)
             spawnOnly |= entry.Name.Contains(s, System.StringComparison.Ordinal);
         bool alive =
-            moved > 0.3f
-            || near - closest > 0.3f
-            || targeted
-            || blinded
-            || grew > MinGrowth
-            || gone
-            || stole;
+            staged != null
+                ? Came(scout, swarm, near - closest, targeted, grabbed)
+                : moved > 0.3f
+                    || near - closest > 0.3f
+                    || targeted
+                    || blinded
+                    || (grows && grew > MinGrowth)
+                    || gone
+                    || stole;
         if (washed)
             Fail("BLIND washed out the view: " + note);
         else if (spawnOnly)
@@ -174,6 +192,59 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
     }
+
+    /// <summary>Seconds a staged Scoutmaster or swarm gets to come for the player: a ragdoll spawned 0.5 m up
+    /// stands first, then walks (or flies) in.</summary>
+    const float StagedWatch = 6f;
+
+    /// <summary>Seconds a called Scoutmaster chases whoever called him (Action_CallScoutmaster.forcedChaseTime).</summary>
+    const float ScoutCallSeconds = 10f;
+
+    /// <summary>
+    /// The context the Scoutmaster and a bee swarm act in, or null for other mobs. Solo, the Scoutmaster never picks a
+    /// target (LookForTarget and VerifyTarget want two viable players, Scoutmaster.cs:329, :683), so he is called to
+    /// the player as <c>Action_CallScoutmaster</c> calls him (Action_CallScoutmaster.cs:9: <c>SetCurrentTarget</c> with a
+    /// forced time, whose RPC this sends, Scoutmaster.cs:120-147); a forced target chases (Chase, :505-545). A swarm
+    /// aggroes only a player within <c>defaultAggroDistance</c> (UpdateAggro, BeeSwarm.cs:251-273), and the 6 m spawn
+    /// left it idling back to its spawn point, so it is moved in to half that range, as a player walks up to bees.
+    /// </summary>
+    static string StageMob(Scoutmaster scout, BeeSwarm swarm, Character c)
+    {
+        if (scout != null)
+        {
+            scout
+                .GetComponent<PhotonView>()
+                .RPC("RPCA_SetCurrentTarget", RpcTarget.All, c.photonView.ViewID, ScoutCallSeconds);
+            return F(
+                $"called to the player for {ScoutCallSeconds:0} s (ascent {Ascents.currentAscent})"
+            );
+        }
+        if (swarm == null)
+            return null;
+        float range = swarm.defaultAggroDistance;
+        var away = swarm.transform.position - c.Center;
+        away.y = 0f;
+        var at =
+            c.Center
+            + (away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward) * (range * 0.5f);
+        swarm.transform.position = at;
+        if (swarm.TryGetComponent(out Rigidbody rb))
+        {
+            rb.position = at;
+            rb.linearVelocity = Vector3.zero;
+        }
+        return F($"moved to {range * 0.5f:0.0} m, inside its {range:0.0} m aggro range");
+    }
+
+    /// <summary>A staged mob came for the player: the Scoutmaster 0.3 m closer or holding the player; the swarm
+    /// aggroed on the player and 0.3 m closer.</summary>
+    static bool Came(
+        Scoutmaster scout,
+        BeeSwarm swarm,
+        float closer,
+        bool targeted,
+        bool grabbed
+    ) => scout != null ? closer > 0.3f || grabbed : swarm != null && targeted && closer > 0.3f;
 
     static string ZombieWoke(float after) =>
         after < 0f ? "never woke" : F($"woke after {after:0.0} s");

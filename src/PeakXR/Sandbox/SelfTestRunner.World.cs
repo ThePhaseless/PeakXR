@@ -50,7 +50,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.84b-book-used-up", 30f, BookStep(usedUp: true));
         yield return ItemStep("vr.87-fuse-lit", "Torch", 40f, FuseLitStep);
         yield return WarpBack();
-        yield return HandStep("vr.88-scout-cannon", 30f, CannonStep());
+        yield return ItemStep("vr.88-scout-cannon", "Torch", 40f, CannonStep);
         yield return WarpBack();
         yield return HandStep("vr.92-checkpoint", 40f, CheckpointStep());
         yield return HandStep("vr.94-effigy-nobody-down", 20f, EffigyStep());
@@ -75,7 +75,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.80: a bare-hand grip on an unlit campfire's logs with a scout outside <c>moraleBoostRadius</c>
     /// (Campfire.cs:327-338, EveryoneInRange :387-398) is refused (FriendsFar, logs red) and the fire stays unlit.
-    /// Solo, the radius is shrunk for the step so the player counts as the one away.
+    /// Solo, the radius is shrunk for the step so the player counts as the one away (a named shortcut: the real case,
+    /// another scout outside the radius, needs a second player and is the MP fire step's). The hand grips the near
+    /// side of the log pile with the head stooped, as a player kneels at a fire (<see cref="GripLogs"/>).
     /// </summary>
     IEnumerator CampfireFarStep()
     {
@@ -91,12 +93,12 @@ internal sealed partial class SelfTestRunner
             yield return ApproachFire(ItemGestures.FireBase(fire));
             fire.moraleBoostRadius = 0.05f;
             bool left = !VRInput.LeftHanded;
-            var logs = fire.Center();
-            yield return MoveTo(left, () => logs, 0.5f);
+            yield return GripLogs(left, fire);
+            if (!stepOk)
+                yield break;
             Affordance.ResetGate();
             float mark = CueMark();
             yield return GripTo(left, 1f, 0.1f);
-            // Logged so the pose can be judged: the logs sit low, a standing eye far above them.
             float eyeHand = Vector3.Distance(
                 VRRig.Instance.Head.position,
                 VRRig.Instance.Hand(left).position
@@ -109,7 +111,9 @@ internal sealed partial class SelfTestRunner
             if (fire.state != Campfire.FireState.Off)
                 Fail($"{fire.name} changed to {fire.state} with a scout away");
             else
-                stepNote = F($"{fire.name}: {cue}; eye-hand {eyeHand:0.00} m");
+                stepNote = F(
+                    $"{fire.name}: {cue}; eye-hand {eyeHand:0.00} m, stooped {headDrop:0.00} m; shortcut: moraleBoostRadius shrunk to 0.05 m so the lone player counts as the scout away"
+                );
         }
         finally
         {
@@ -141,6 +145,29 @@ internal sealed partial class SelfTestRunner
             fire.forceLit = false;
         }
         return fire;
+    }
+
+    /// <summary>
+    /// The bare hand onto an unlit fire's logs the way a player reaches them: the near side of the log pile (its
+    /// renderer, <c>Campfire.mainRenderer</c>, the first child renderer, Campfire.cs:143, whose bounds centre is
+    /// <c>Center</c>, :268) toward the eyes, at the pile's mid-height and 8 cm in so the grip sphere takes a log, with
+    /// the head stooped over it (<see cref="ReachDown"/>). The pile's centre from the stand distance was some 1.3 m from
+    /// a standing eye (round 1 audit). Fails past a player's reach (<see cref="OverReach"/>).
+    /// </summary>
+    IEnumerator GripLogs(bool left, Campfire fire)
+    {
+        var logs = fire.GetComponentInChildren<Renderer>();
+        var b = logs != null ? logs.bounds : new Bounds(fire.Center(), Vector3.zero);
+        var eye = VRRig.Instance.Head.position;
+        var near = b.ClosestPoint(new Vector3(eye.x, b.center.y, eye.z));
+        var grip = Vector3.MoveTowards(near, b.center, 0.08f);
+        yield return ReachDown(left, () => grip, 0.6f);
+        if (OverReach(left) is { } far)
+            Fail(
+                F(
+                    $"{far}: logs' near side {FlatDistance(Character.localCharacter.Center, grip):0.00} m from the body, stooped {headDrop:0.00} m"
+                )
+            );
     }
 
     /// <summary>Puts back what <see cref="UnlitCampfire"/> changed, unless the step lit the fire for real.</summary>
@@ -191,7 +218,14 @@ internal sealed partial class SelfTestRunner
         yield return ExpectCue(left, DenyReason.NeedsTwoHands, mark, tint: true, within: 2f);
         var cue = cueNote;
         var interaction = Interaction.instance;
-        float alone = interaction != null ? interaction.constantInteractableProgress : 0f;
+        // Read through a further second of the one-hand hold, not only at the cue: the timer must stay held after it.
+        float alone = 0f;
+        for (float end1 = Now + 1f; stepOk && Now < end1; )
+        {
+            if (interaction != null)
+                alone = Mathf.Max(alone, interaction.constantInteractableProgress);
+            yield return null;
+        }
         if (!stepOk)
             yield break;
         if (alone > 0.05f)
@@ -324,7 +358,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Holds <paramref name="prefab"/> in the near side of the heat column over <paramref name="fireBase"/>
-    /// and expects the <paramref name="reason"/> cue with the red preview.</summary>
+    /// and expects the <paramref name="reason"/> cue with the red preview. The goal is 0.45 m out and 0.85 m up, inside
+    /// FireGestures' column (0.6 m around the base, 0.2-1 m up): about waist height half an arm ahead, where a
+    /// standing player holds food over a fire. The old 0.55 m-up goal was some 1.1 m from a standing shoulder.</summary>
     IEnumerator HoldInHeat(Item prefab, Vector3 fireBase, DenyReason reason)
     {
         if (!Setting("Interaction", "CookOverFire", true))
@@ -339,7 +375,7 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         var c = Character.localCharacter;
-        var goal = fireBase + Flat(c.Center - fireBase) * 0.35f + Vector3.up * 0.55f;
+        var goal = fireBase + Flat(c.Center - fireBase) * 0.45f + Vector3.up * 0.85f;
         Affordance.ResetGate();
         float mark = CueMark();
         float end = Now + 4f;
@@ -350,6 +386,11 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         var trace = FireTrace("vr.83", item != null ? item.Center() : goal, fireBase, left);
+        if (OverReach(left) is { } far)
+        {
+            Fail($"{far}: {trace}");
+            yield break;
+        }
         yield return ExpectCue(left, reason, mark, tint: true, within: 0.5f);
         if (stepOk)
             stepNote = $"{prefab.name}: {cueNote}";
@@ -385,7 +426,9 @@ internal sealed partial class SelfTestRunner
             stepSkip = book == null ? "no Book of Bones item" : "no Resources/Skeleton prefab";
             yield break;
         }
-        var spot = SandboxActions.FrontPoint(0.7f);
+        // 0.55 m ahead: kneeling beside the bones with the book 0.4 m over the hips is in reach (0.7 m ahead with a
+        // standing head was 1.0-1.1 m from the shoulder).
+        var spot = SandboxActions.FrontPoint(0.55f);
         if (
             Physics.Raycast(
                 spot + Vector3.up * 2f,
@@ -431,7 +474,16 @@ internal sealed partial class SelfTestRunner
             // The gesture reads the book hand, as a player holds the book over the body: the hand goes 0.4 m above
             // the hips and stays (the book itself moves when the revive opens it).
             var rig = VRRig.Instance;
-            yield return MoveTo(left, () => skeleton.Center() + Vector3.up * 0.4f, 0.6f);
+            yield return ReachDown(left, () => skeleton.Center() + Vector3.up * 0.4f, 0.6f);
+            if (OverReach(left) is { } far)
+            {
+                Fail(
+                    F(
+                        $"{far}: bones {FlatDistance(me.Center, skeleton.Center()):0.00} m from the body, stooped {headDrop:0.00} m"
+                    )
+                );
+                yield break;
+            }
             float end = Now + 4f;
             while (Now < end && held != null && (usedUp || progress < 0.1f))
             {
@@ -469,8 +521,9 @@ internal sealed partial class SelfTestRunner
             }
             yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0.5f);
             if (stepOk)
-                stepNote =
-                    $"revive hold {progress:0.00}, book hand {above:0.00} m above; {cueNote}";
+                stepNote = F(
+                    $"revive hold {progress:0.00}, book hand {above:0.00} m above, stooped {headDrop:0.00} m; {cueNote}"
+                );
         }
         finally
         {
@@ -544,26 +597,35 @@ internal sealed partial class SelfTestRunner
             + $", holder {(item.holderCharacter != null ? item.holderCharacter.name : "none")}";
     }
 
-    IEnumerator FuseRefused(Item torchPrefab, Component fuse)
+    /// <summary>The hand that held the torch in the last <see cref="FlameToFuse"/>, the cue mark taken just before its
+    /// carry, and its pose for the note.</summary>
+    bool torchLeft;
+    float carryMark;
+    string flameNote = "";
+
+    /// <summary>
+    /// A lit torch's flame brought to a fuse the way a player lights one. The torch is given and lit where the player
+    /// stands, as vr.26 lights it (vr41 lost it given and lit beside the placed cannon); the body warps 0.8 m beside the
+    /// fuse, on the side away from a cannon's entry (it pulls in and launches whoever is within 1 m of it, dropping
+    /// what they hold, ScoutCannon.cs:66-110); the head stoops until it is at most <see cref="StoopReach"/> over the
+    /// hand's goal, as a player kneels at a fuse low on its prop (vr45 and vr46: a standing body's ragdoll arm stalled
+    /// the flame 0.96 m short and the hand never moved); then the hand carries the flame onto the fuse's collider
+    /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
+    /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
+    /// </summary>
+    IEnumerator FlameToFuse(Item torchPrefab, Component fuse, Func<bool> done, float seconds)
     {
         var c = Character.localCharacter;
-        var reason =
-            fuse is GhostFire || ((IInteractible)fuse).IsInteractible(c)
-                ? DenyReason.UsedUp
-                : DenyReason.Occupied;
         var at = fuse.transform.position;
-        // A cannon pulls in and launches whoever is within 1 m of its entry (ScoutCannon.cs:66-110), dropping what
-        // they hold: stand on the fuse's side away from the entry.
         var cannon = fuse.GetComponentInParent<ScoutCannon>();
         var entry =
             cannon != null ? GameMember.Field<ScoutCannon, Transform>("entry")(cannon) : null;
-        // The torch is given and lit where the player stands, as vr.26 lights it, and only then carried to the
-        // prop: vr41 lost it given and lit beside the placed cannon.
         yield return GiveAndHold(torchPrefab);
         if (!stepOk)
             yield break;
         var given = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
+        torchLeft = left;
         yield return GripTo(left, 1f, 0.1f);
         float lightUse = GameTiming.Budget(GameTiming.UseSeconds(given));
         Script(left).Trigger = 1f;
@@ -591,15 +653,22 @@ internal sealed partial class SelfTestRunner
         var flame = FireGestures.FlamePoint(torch);
         if (flame == null)
             flame = torch.transform;
-        // The flame has to touch the fuse's own collider (FireGestures: within 0.12 m of it), not its transform:
-        // vr43 carried it toward the transform and never got a refusal.
         var fuseCol = fuse.GetComponentInChildren<Collider>();
         Vector3 Touch() => fuseCol != null ? fuseCol.bounds.center : at;
+        var rig = VRRig.Instance;
+        // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left.
+        var lead = rig.Hand(left).position - flame.position;
+        yield return ReachDown(left, () => Touch() + lead, 0.6f);
+        if (flame == null)
+        {
+            Fail("the torch left the hand while reaching for the fuse");
+            yield break;
+        }
         Affordance.ResetGate();
-        float mark = CueMark();
-        float end = Now + 6f;
+        carryMark = CueMark();
+        float end = Now + seconds;
         BeginCarry();
-        while (Now < end && flame != null && !CueLog.Capture.Fired(left, reason, mark, true, out _))
+        while (Now < end && flame != null && !done())
         {
             CarryToward(left, flame.position, Touch());
             yield return null;
@@ -613,16 +682,36 @@ internal sealed partial class SelfTestRunner
             fuseCol != null
                 ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                 : Vector3.Distance(at, flame.position);
-        if (!CueLog.Capture.Fired(left, reason, mark, true, out var why))
+        flameNote = F(
+            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse"
+        );
+        if (OverReach(left) is { } far)
+            Fail($"{far}: {flameNote}");
+    }
+
+    IEnumerator FuseRefused(Item torchPrefab, Component fuse)
+    {
+        var c = Character.localCharacter;
+        var reason =
+            fuse is GhostFire || ((IInteractible)fuse).IsInteractible(c)
+                ? DenyReason.UsedUp
+                : DenyReason.Occupied;
+        yield return FlameToFuse(
+            torchPrefab,
+            fuse,
+            () => CueLog.Capture.Fired(torchLeft, reason, carryMark, true, out _),
+            6f
+        );
+        if (!stepOk)
+            yield break;
+        if (!CueLog.Capture.Fired(torchLeft, reason, carryMark, true, out var why))
         {
-            Fail(
-                $"no {reason} cue: flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({why})"
-            );
+            Fail($"no {reason} cue: {flameNote} ({why})");
             yield break;
         }
-        yield return ExpectCue(left, reason, mark, tint: true, within: 0.5f);
+        yield return ExpectCue(torchLeft, reason, carryMark, tint: true, within: 0.5f);
         if (stepOk)
-            stepNote = $"{fuse.name}: {cueNote}";
+            stepNote = $"{fuse.name}: {cueNote}; {flameNote}";
     }
 
     /// <summary>
@@ -749,17 +838,23 @@ internal sealed partial class SelfTestRunner
                 : "Interaction.LiftLidToOpen is off";
             yield break;
         }
-        yield return WarpFacing(lug.Center(), 0.8f);
+        // 0.6 m out and stooping, as a player crouches at a case on the ground: 8 cm under its centre is about knee
+        // height, 1.4 m under a standing eye.
+        yield return WarpFacing(lug.Center(), 0.6f);
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
         var low = NearSide(lug, rig.Head.position, -0.08f);
-        if (Vector3.Distance(low, rig.Head.position) > 1f)
+        yield return ReachDown(left, () => low, 0.5f);
+        if (OverReach(left) is { } far)
         {
-            yield return WarpFacing(lug.Center(), 0.6f);
-            low = NearSide(lug, rig.Head.position, -0.08f);
+            Fail(
+                F(
+                    $"{far}: low grip {FlatDistance(c.Center, low):0.00} m from the body, stooped {headDrop:0.00} m"
+                )
+            );
+            yield break;
         }
-        yield return MoveTo(left, () => low, 0.5f);
         Affordance.ResetGate();
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
@@ -791,7 +886,7 @@ internal sealed partial class SelfTestRunner
         if (!holding)
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
         else
-            stepNote = $"{lug.name}: {cue}";
+            stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m");
     }
 
     /// <summary>The point of <paramref name="lug"/>'s solid colliders nearest a probe on the side toward
@@ -846,8 +941,9 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         int before = Cooked(food);
-        // FireGestures: the column is 0.6 m around the base, 0.2 to 1 m up; the warmth reaches 0.5 m past it.
-        var goal = fireBase + Flat(c.Center - fireBase) * 0.85f + Vector3.up * 0.55f;
+        // FireGestures: the column is 0.6 m around the base, 0.2 to 1 m up; the warmth reaches 0.5 m past it. 0.85 m
+        // up is waist height, in reach of a standing player (0.55 m up was knee height, past an arm).
+        var goal = fireBase + Flat(c.Center - fireBase) * 0.85f + Vector3.up * 0.85f;
         var interaction = Interaction.instance;
         bool heldFire = false;
         float mark = CueMark();
@@ -863,6 +959,11 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         var trace = FireTrace("vr.83c", food != null ? food.Center() : goal, fireBase, left);
+        if (OverReach(left) is { } far)
+        {
+            Fail($"{far}: {trace}");
+            yield break;
+        }
         yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
         if (!stepOk)
             stepNote = trace;
@@ -873,11 +974,13 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.88: standing 2 m from a scout cannon's entry (outside the 0.75 m launch and 1 m pull ranges,
-    /// ScoutCannon.cs:66, :197-222) when its fuse is lit (<c>ScoutCannon.Light</c>, :164): the countdown is felt as a
-    /// rising progress ramp, and the shot that leaves you behind gives the notice (contact tick, notice note).
+    /// vr.88: an unlit scout cannon's fuse lit by a held flame (<see cref="FlameToFuse"/>: the light gesture holds
+    /// interact on the fuse, whose finished hold calls <c>ScoutCannon.Light</c>, ScoutCannonFuse.cs:48-51, :99-102).
+    /// Standing beside the fuse, away from the entry's 1 m pull (ScoutCannon.cs:66-110), within interact.world's 4 m:
+    /// the countdown is felt as a rising progress ramp on the free hand (the torch hand also feels the light hold's
+    /// own ramp), and the shot that leaves you behind gives the notice (contact tick, notice note).
     /// </summary>
-    IEnumerator CannonStep()
+    IEnumerator CannonStep(Item torchPrefab)
     {
         var c = Character.localCharacter;
         var cannon = Nearest<ScoutCannon>(c.Center, k => !k.lit);
@@ -886,15 +989,19 @@ internal sealed partial class SelfTestRunner
             cannon = SpawnCannon(out placed);
         var entry =
             cannon != null ? GameMember.Field<ScoutCannon, Transform>("entry")(cannon) : null;
-        if (entry == null)
+        var fuse = cannon != null ? cannon.GetComponentInChildren<ScoutCannonFuse>() : null;
+        if (entry == null || fuse == null)
         {
             DestroySpawned(placed);
-            stepSkip = "no scout cannon loaded or placeable";
+            stepSkip =
+                entry == null
+                    ? "no scout cannon loaded or placeable"
+                    : "the scout cannon has no fuse";
             yield break;
         }
         try
         {
-            yield return CannonFires(cannon, entry);
+            yield return CannonFires(torchPrefab, cannon, fuse, entry);
         }
         finally
         {
@@ -955,13 +1062,34 @@ internal sealed partial class SelfTestRunner
             Photon.Pun.PhotonNetwork.Destroy(placed);
     }
 
-    IEnumerator CannonFires(ScoutCannon cannon, Transform entry)
+    IEnumerator CannonFires(
+        Item torchPrefab,
+        ScoutCannon cannon,
+        ScoutCannonFuse fuse,
+        Transform entry
+    )
     {
-        yield return WarpFacing(entry.position, 2f);
+        var c = Character.localCharacter;
         int before = WorldHolds.Notices;
+        yield return FlameToFuse(
+            torchPrefab,
+            fuse,
+            () => cannon.lit,
+            GameTiming.Budget(fuse.GetInteractTime(c), 3f)
+        );
+        if (!stepOk)
+            yield break;
+        if (!cannon.lit)
+        {
+            Fail("the flame did not light the fuse: " + flameNote);
+            yield break;
+        }
         float mark = CueMark();
-        cannon.Light();
-        yield return ExpectFeel(!VRInput.LeftHanded, CueFeel.Progress, mark, within: 1.5f);
+        bool free = !torchLeft;
+        float fromEntry = Vector3.Distance(c.Center, entry.position);
+        // Pull the torch back off the fuse, as a player steps back from a lit cannon.
+        yield return StandUp(torchLeft);
+        yield return ExpectFeel(free, CueFeel.Progress, mark, within: 1.5f);
         var ramp = cueNote;
         if (!stepOk)
             yield break;
@@ -976,7 +1104,9 @@ internal sealed partial class SelfTestRunner
         if (stepOk && CueLog.Capture.LastSound(CueSound.Notice).At < mark)
             Fail("no notice note after the shot");
         if (stepOk)
-            stepNote = $"{cannon.name}: {ramp}; {cueNote}";
+            stepNote = F(
+                $"{cannon.name} lit by the flame ({flameNote}), body {fromEntry:0.00} m from the entry: {ramp}; {cueNote}"
+            );
     }
 
     /// <summary>
@@ -1047,8 +1177,9 @@ internal sealed partial class SelfTestRunner
         if (stepOk && (sound.At < mark || Vector3.Distance(sound.Position.U(), at) > 0.5f))
             Fail("no notice note at the flag");
         else if (stepOk)
-            stepNote =
-                $"flag at {at}, body {Vector3.Distance(c.Center, at):0.0} m from it; {cueNote}";
+            stepNote = F(
+                $"flag at {at}, body {Vector3.Distance(c.Center, at):0.0} m from it; {cueNote}; shortcut: Character.TryCheckpoint called directly, the death that calls it (Character.cs:597) is not staged"
+            );
     }
 
     // ---------------------------------------------------------------- end of run
@@ -1090,6 +1221,7 @@ internal sealed partial class SelfTestRunner
         "vr.90-soul-pillar",
         "vr.91-portal",
         "vr.93-summit-flare",
+        "vr.93b-summit-countdown",
         "vr.86-end-screen",
         "vr.86b-no-flat-screens",
     };
@@ -1115,11 +1247,22 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.85-campfire-segment", 240f, CampfireSegmentStep());
         yield return WarpBack();
         yield return Run("vr.89-to-peak", 150f, Jump(Segment.Peak, "vr-89-peak"));
-        yield return HandStep("vr.89-altar-full", 20f, AltarFullStep());
-        yield return HandStep("vr.89b-amulet-socket", 40f, AmuletSocketStep());
-        yield return HandStep("vr.90-soul-pillar", 30f, PillarStep());
-        yield return HandStep("vr.91-portal", 30f, PortalStep());
+        // The summit steps start from the Peak itself (PeakHandStep): the shared settle would warp them to TheKiln's
+        // home spot, the base camp 375 m below, where the body crept 2 cm/s off the spot in vr46 (vr.90 "not settled",
+        // net drift at the 3 cm limit after the warp; vr.91's settle there needed a second warp).
+        yield return PeakHandStep("vr.89-altar-full", 40f, AltarFullStep());
+        yield return PeakHandStep("vr.89b-amulet-socket", 60f, AmuletSocketStep());
+        // Without the scene object there is nothing to settle or jump for: skip before the setup.
+        if (Object.FindFirstObjectByType<ScoutmasterSoulPillar>() == null)
+            Skip("vr.90-soul-pillar", NoPillar());
+        else
+            yield return PeakHandStep("vr.90-soul-pillar", 50f, PillarStep());
+        if (!PortalActive(out _))
+            Skip("vr.91-portal", NoPortal());
+        else
+            yield return PeakHandStep("vr.91-portal", 50f, PortalStep());
         yield return PeakHandStep("vr.93-summit-flare", 180f, FlareStep());
+        yield return Run("vr.93b-summit-countdown", 40f, SummitCountdownStep());
         yield return PeakHandStep("vr.86-end-screen", 420f, EndScreenStep());
         watchFlat = false;
         yield return Run("vr.86b-no-flat-screens", 5f, FlatScreensVerdict());
@@ -1312,8 +1455,12 @@ internal sealed partial class SelfTestRunner
         yield return ApproachFire(ItemGestures.FireBase(fire));
         SelfTestCampfirePatch.Hold = false;
         bool left = !VRInput.LeftHanded;
-        var logs = fire.Center();
-        yield return MoveTo(left, () => logs, 0.5f);
+        yield return GripLogs(left, fire);
+        if (!stepOk)
+        {
+            RestoreFire(fire, was);
+            yield break;
+        }
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         float eyeHand = Vector3.Distance(
@@ -1373,7 +1520,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var note =
-            $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00} drawn ({target:0.00} asked), eye-hand {eyeHand:0.00} m at the grip";
+            $"{fire.name} (was {was}): {from} -> {map.GetCurrentSegment()}, fade peak {fade:0.00} drawn ({target:0.00} asked), eye-hand {eyeHand:0.00} m at the grip, stooped {headDrop:0.00} m";
         if (map.GetCurrentSegment() <= from)
             Fail("segment did not advance: " + note);
         else if (Setting("UI.RunFlow", "FadeOnSegmentChange", true) && fade < 0.5f)
@@ -1506,11 +1653,7 @@ internal sealed partial class SelfTestRunner
         var pillar = Object.FindFirstObjectByType<ScoutmasterSoulPillar>();
         if (pillar == null || !Setting("Interaction", "PalmsOnPillar", true))
         {
-            stepSkip =
-                pillar == null
-                    ? "no soul pillar loaded: it is a Nadir scene object (Segment.Void, ascent 8+ runs, Ascents.cs:48) with no prefab to place offline; "
-                        + NadirReach<ScoutmasterSoulPillar>()
-                    : "Interaction.PalmsOnPillar is off";
+            stepSkip = pillar == null ? NoPillar() : "Interaction.PalmsOnPillar is off";
             yield break;
         }
         var col =
@@ -1519,6 +1662,23 @@ internal sealed partial class SelfTestRunner
                 : pillar.GetComponentInChildren<Collider>();
         yield return WarpFacing(col.bounds.center, 0.6f);
         yield return PressPalms(col, pillar);
+    }
+
+    static string NoPillar() =>
+        "no soul pillar loaded: it is a Nadir scene object (Segment.Void, ascent 8+ runs, Ascents.cs:48) with no prefab to place offline; "
+        + NadirReach<ScoutmasterSoulPillar>();
+
+    static string NoPortal() =>
+        "no active summit portal: a scene object only the level switches on (no code enables PeakGatePortal) for the Nadir route, with no prefab to place offline; "
+        + NadirReach<PeakGatePortal>();
+
+    /// <summary>An active summit portal with a collider, the one <see cref="PortalStep"/> pushes a hand into.</summary>
+    static bool PortalActive(out PeakGatePortal portal)
+    {
+        portal = Object.FindFirstObjectByType<PeakGatePortal>();
+        return portal != null
+            && portal.isActiveAndEnabled
+            && portal.GetComponentInChildren<Collider>() != null;
     }
 
     /// <summary>For a Nadir-only SKIP: whether an inactive <typeparamref name="T"/> is in the loaded scene and whether
@@ -1583,21 +1743,13 @@ internal sealed partial class SelfTestRunner
     /// progress ramp and ui.runflow's fade; pulled out at 0.3, the hold cancels and the run goes on.</summary>
     IEnumerator PortalStep()
     {
-        var portal = Object.FindFirstObjectByType<PeakGatePortal>();
-        var col = portal != null ? portal.GetComponentInChildren<Collider>() : null;
-        if (
-            col == null
-            || !portal.isActiveAndEnabled
-            || !Setting("Interaction", "HandIntoPortal", true)
-        )
+        bool active = PortalActive(out var portal);
+        if (!active || !Setting("Interaction", "HandIntoPortal", true))
         {
-            stepSkip =
-                col == null || !portal.isActiveAndEnabled
-                    ? "no active summit portal: a scene object only the level switches on (no code enables PeakGatePortal) for the Nadir route, with no prefab to place offline; "
-                        + NadirReach<PeakGatePortal>()
-                    : "Interaction.HandIntoPortal is off";
+            stepSkip = !active ? NoPortal() : "Interaction.HandIntoPortal is off";
             yield break;
         }
+        var col = portal.GetComponentInChildren<Collider>();
         yield return WarpFacing(col.bounds.center, 0.6f);
         bool left = !VRInput.LeftHanded;
         var into = col.bounds.center;
@@ -1638,10 +1790,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.93: a lit flare held when the helicopter is summoned (Flare.cs:36-46, PeakHandler.SummonHelicopter
-    /// :58-62) gives the notice at the flare. The summon needs the holder at the peak (IsAtPeak,
-    /// MountainProgressHandler.cs:198); where the jump lands short of it, the flare's own TriggerHelicopter call is
-    /// sent, as the flare would.
+    /// vr.93: a lit flare held at the peak summons the helicopter by itself (Flare.Update, Flare.cs:36-39: holder
+    /// <c>IsAtPeak</c>, MountainProgressHandler.cs:198-205, and no Nadir required, Ascents.cs:48), and its
+    /// TriggerHelicopter (PeakHandler.SummonHelicopter :58-62) gives the notice at the flare. The body first stands on
+    /// the summit just past the last progress point (<see cref="SummitSide"/>): the Peak jump lands short of it (vr43
+    /// to vr46 "not at the peak"). Only when the flare's own call still does not come is it sent, as a named shortcut.
+    /// Afterwards the body steps back off the peak, so the summit countdown cannot end the run before vr.86.
     /// </summary>
     IEnumerator FlareStep()
     {
@@ -1655,6 +1809,11 @@ internal sealed partial class SelfTestRunner
                 : "helicopter already summoned";
             yield break;
         }
+        yield return SummitSide(past: true);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var progress = Singleton<MountainProgressHandler>.Instance;
         yield return GiveAndHold(flare.GetComponent<Item>());
         if (!stepOk)
             yield break;
@@ -1670,29 +1829,167 @@ internal sealed partial class SelfTestRunner
         );
         Script(left).Trigger = 0f;
         yield return WaitFor(() => peak.summonedHelicopter, 2f);
-        bool sent = false;
+        string sent = null;
         // The flare in hand now: a given trackable item can be replaced by its reconnected copy (vr38: "Reconnected
         // to trackable object ... timed out. Destroying"), leaving the first reference dead.
         var flareNow = HeldItem() != null ? HeldItem().GetComponent<Flare>() : null;
         if (!peak.summonedHelicopter && flareNow != null)
         {
-            sent = true;
+            sent = F(
+                $"shortcut: the flare's TriggerHelicopter sent by the step (holder at the peak {progress.IsAtPeak(c.Center)}, Nadir required {Ascents.shouldRequireNadir}, lit {HandLights.IsLit(HeldItem())})"
+            );
             flareNow.item.photonView.RPC("TriggerHelicopter", Photon.Pun.RpcTarget.AllBuffered);
         }
         yield return Until(
             () => WorldHolds.Notices > before,
             3f,
-            $"no notice for the summon (helicopter summoned {peak.summonedHelicopter}, flare in hand {(flareNow != null ? flareNow.name : "none")}, call sent {sent})"
+            $"no notice for the summon (helicopter summoned {peak.summonedHelicopter}, flare in hand {(flareNow != null ? flareNow.name : "none")}, {sent ?? "summoned by the flare"})"
         );
         if (!stepOk)
             yield break;
         yield return ExpectFeel(left, CueFeel.Contact, mark, within: 0f);
+        var feel = cueNote;
         if (stepOk && CueLog.Capture.LastSound(CueSound.Notice).At < mark)
             Fail("no notice note at the flare");
-        else if (stepOk)
+        yield return SummitSide(past: false);
+        if (stepOk)
+            stepNote = (sent ?? "summoned by the flare held at the peak") + "; " + feel;
+    }
+
+    /// <summary>Metres past (or short of) the last progress point's z that <see cref="SummitSide"/> tries.</summary>
+    static readonly float[] SummitSteps = { 2f, 4f, 7f };
+
+    /// <summary>
+    /// Warps onto summit ground just past (<paramref name="past"/>) or short of the last progress point in z, the line
+    /// the game's <c>IsAtPeak</c> draws (MountainProgressHandler.cs:198-205), and checks the body is on that side.
+    /// Ground more than 3 m off the height of the ground under the point is a ledge or the void and is not used.
+    /// </summary>
+    IEnumerator SummitSide(bool past)
+    {
+        var progress = Singleton<MountainProgressHandler>.Instance;
+        var points = progress != null ? progress.progressPoints : null;
+        var c = Character.localCharacter;
+        if (points == null || points.Length == 0 || points[points.Length - 1] == null)
+        {
+            Fail("no progress points: IsAtPeak cannot be met");
+            yield break;
+        }
+        var last = points[points.Length - 1].transform.position;
+        if (!GroundUnder(last, out var summit))
+        {
+            Fail($"no ground under the last progress point {last}");
+            yield break;
+        }
+        foreach (float dz in SummitSteps)
+        {
+            var probe = new Vector3(last.x, last.y, last.z + (past ? dz : -dz));
+            if (!GroundUnder(probe, out var ground) || Mathf.Abs(ground.y - summit.y) > 3f)
+                continue;
+            yield return WarpTo(ground);
+            if (progress.IsAtPeak(c.Center) == past)
+                yield break;
+        }
+        Fail(
+            F(
+                $"no summit ground {(past ? "past" : "short of")} the last progress point {last} (body at {c.Center}, at the peak {progress.IsAtPeak(c.Center)})"
+            )
+        );
+    }
+
+    /// <summary>Terrain or map ground straight under <paramref name="p"/>, cast from 200 m above it.</summary>
+    static bool GroundUnder(Vector3 p, out Vector3 ground)
+    {
+        bool hit = Physics.Raycast(
+            p + Vector3.up * 200f,
+            Vector3.down,
+            out var info,
+            1000f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+        ground = hit ? info.point : p;
+        return hit;
+    }
+
+    /// <summary>
+    /// vr.93b: the summit countdown's last ten seconds tick on the wrist hand (interact.world's SummitCountdown on
+    /// <c>PeakSequence.RPCUpdateTimer</c>, PeakSequence.cs:166). Driven by the game itself: with the helicopter
+    /// summoned (vr.93) and every player at the peak (<c>Character.CheckWinCondition</c>, Character.cs:943-958) the
+    /// countdown jumps to its last <c>totalWinningSeconds</c> and ticks once per <c>lengthOfASecond</c>
+    /// (PeakSequence.cs:98-150). The counter must show a value of 10 or less with a contact tick on the wrist hand;
+    /// then the body steps off the peak before the count ends the run (EndGame at :144-148) and the counter must hide.
+    /// </summary>
+    IEnumerator SummitCountdownStep()
+    {
+        var peak = Singleton<PeakHandler>.Instance;
+        var endgame = GUIManager.instance != null ? GUIManager.instance.endgame : null;
+        var seq =
+            peak != null && peak.peakSequence != null
+                ? peak.peakSequence.GetComponent<PeakSequence>()
+                : null;
+        if (!VRSession.Active || peak == null || !peak.summonedHelicopter || endgame == null)
+        {
+            stepSkip =
+                !VRSession.Active ? "VR not active"
+                : peak == null || !peak.summonedHelicopter
+                    ? "the helicopter was not summoned (vr.93)"
+                : "no endgame counter";
+            yield break;
+        }
+        if (seq == null || !seq.isActiveAndEnabled)
+        {
+            Fail("the summit sequence is not running after the summon");
+            yield break;
+        }
+        var ui = PeakXR.UI.World.UIWorldFeature.Settings;
+        bool wrist = ui == null || ui.WristLeft;
+        Recover();
+        yield return SummitSide(past: true);
+        if (!stepOk)
+            yield break;
+        float mark = CueMark();
+        int shown = -1;
+        yield return WaitFor(
+            () =>
+                endgame.counterGroup.gameObject.activeSelf
+                && int.TryParse(
+                    endgame.counter.text,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out shown
+                )
+                && shown > 0,
+            GameTiming.Budget(seq.timeToWait + 2f * seq.lengthOfASecond, 2f)
+        );
+        bool counting = endgame.counterGroup.gameObject.activeSelf && shown > 0;
+        // Off the peak at once: the count would end the run by itself a few seconds on.
+        yield return SummitSide(past: false);
+        if (!stepOk)
+            yield break;
+        if (!counting)
+        {
+            Fail(
+                F(
+                    $"the summit countdown never showed (at the peak {Singleton<MountainProgressHandler>.Instance.IsAtPeak(Character.localCharacter.Center)}, waited {seq.timeToWait:0} s plus 2 counts)"
+                )
+            );
+            yield break;
+        }
+        if (shown > 10)
+        {
+            Fail($"the countdown showed {shown}, not its last ten seconds");
+            yield break;
+        }
+        yield return ExpectFeel(wrist, CueFeel.Contact, mark, within: 0f);
+        if (!stepOk)
+            yield break;
+        var tick = cueNote;
+        yield return WaitFor(() => !endgame.counterGroup.gameObject.activeSelf, 3f);
+        if (endgame.counterGroup.gameObject.activeSelf)
+            Fail("the countdown kept running after the body left the peak");
+        else
             stepNote =
-                (sent ? "not at the peak: sent the flare's call; " : "summoned at the peak; ")
-                + cueNote;
+                $"counter at {shown}, {(wrist ? "left" : "right")} wrist hand {tick}; stopped off the peak";
     }
 
     /// <summary>

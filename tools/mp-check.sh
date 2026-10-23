@@ -68,7 +68,8 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
           | "\(if $d <= $land then "PASS" else "FAIL" end) ping: B got the point \($d | r2) m from where A saw it" end
     elif $x.name == "board" then
       (if $y.scene != null and $y.scene != "Airport" and $y.scene == $x.scene then "PASS board: B is on \($y.scene) too"
-       else "FAIL board: A on \($x.scene), B on \($y.scene)" end)
+       else "FAIL board: A on \($x.scene), B on \($y.scene)" end),
+      (if ($x.note // "") | test("shortcut") then "INFO board: A did not board by hand: \($x.note)" else empty end)
     elif $x.name == "luggage" then
       ((($x.note // "") | capture("opened (?<n>[0-9]+)") | .n | tonumber) // 0) as $n
       | ([seen($y)[] | select(.name == "OpenLuggageRPC")] | length) as $got
@@ -77,7 +78,18 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
         else "FAIL luggage: A opened \($n) case(s), B saw \($got) OpenLuggageRPC" end
     elif $x.name == "drop" or $x.name == "throw" then
       (if any(seen($y)[]; (.local | not) and .name == "DropItemRpc") then "PASS \($x.name): B got DropItemRpc from A"
-       else "FAIL \($x.name): B got no DropItemRpc from A" end)
+       else "FAIL \($x.name): B got no DropItemRpc from A" end),
+      # A threw facing B: where it landed lies on the line from A to where B stands (MP run 13: 2 degrees off).
+      (if $x.name != "throw" then empty
+       elif $x.landing == null or $y.localPos == null then "FAIL throw: no landing from A or no position of B"
+       else [$x.landing[0] - $x.pos[0], $x.landing[2] - $x.pos[2]] as $f
+         | [$y.localPos[0] - $x.pos[0], $y.localPos[2] - $x.pos[2]] as $t
+         | (($f[0] * $f[0] + $f[1] * $f[1]) | sqrt) as $fl
+         | (($t[0] * $t[0] + $t[1] * $t[1]) | sqrt) as $tl
+         | (if $fl * $tl == 0 then 180
+            else ((($f[0] * $t[0] + $f[1] * $t[1]) / ($fl * $tl)) | if . > 1 then 1 elif . < -1 then -1 else . end
+                  | acos * 180 / 3.14159265) end) as $off
+         | "\(if $fl >= 1.5 and $off <= 35 then "PASS" else "FAIL" end) throw: landed \($fl | r2) m out, \($off | round) deg off the line to B" end)
     elif $x.name == "eat" then
       (if any(seen($y)[]; (.local | not) and .name == "Consume") then "PASS eat: B saw A consume it"
        else "FAIL eat: B got no Consume from A" end)
@@ -122,8 +134,11 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
       ([seen($y)[] | from_a | select(.name == "RPCA_StartCarry") | .t] | min) as $lift
       | ([seen($y)[] | from_a | select(.name == "RPCA_Drop") | .t] | max) as $down
       | if $lift == null or $down == null then "FAIL carry: B missed RPCA_StartCarry or RPCA_Drop from A"
-        # MP run 13: lift and drop 1 ms apart, so B was never carried.
-        elif $down - $lift < 0.5 then "FAIL carry: A put B down \(($down - $lift) | r2) s after lifting"
+        # MP run 13: lift and drop 1 ms apart, so B was never carried (B woke 3 s after passing out and the game
+        # dropped it, CharacterCarrying.Update :29-31). A carries for 2 s (MpCarryHold) before the put-down.
+        elif any(seen($y)[]; .local and .name == "RPCA_UnPassOut" and .t >= $lift and .t <= $down)
+        then "FAIL carry: B woke (RPCA_UnPassOut) while carried"
+        elif $down - $lift < 1.5 then "FAIL carry: A put B down \(($down - $lift) | r2) s after lifting"
         else "PASS carry: B saw A lift it and put it down \(($down - $lift) | r2) s later" end
     elif $x.name == "pal-jump" then
       (if any(seen($y)[]; .name == "JumpRpc" and .local and .args[0] == true) then "PASS pal-jump: B was boosted (JumpRpc isPalJump)"

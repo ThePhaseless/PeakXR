@@ -14,6 +14,7 @@ using PeakXR.UI.World;
 using PeakXR.VR;
 using PeakXR.XR;
 using Photon.Pun;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
@@ -207,9 +208,54 @@ internal sealed partial class SelfTestRunner
                 fails.Add(
                     $"nearest title button {nearest:0.00} m from the eye, reach is {reach:0.00}"
                 );
+            // Past the depth fade (TitleMenuDepth.FadeSeconds 0.35), every labelled button on the page reads from
+            // the head as it looks: one button within reach says nothing about the rest.
+            yield return Wait(0.5f);
+            notes.Add(TitleButtonsReadable(stage.Eye, reach + 0.25f, fails));
         }
         Conclude(fails, notes);
         yield return Shot("vr-02-title");
+    }
+
+    /// <summary>vr.02: every labelled, interactable button on the title's page that was brought within
+    /// <paramref name="within"/> of the stage eye (the hand-sized groups, TitleMenuDepth) reads from the head along
+    /// its view (<see cref="Readable(string, TMP_Text, Vector3, List{string})"/>). The note gives the one farthest
+    /// off the view.</summary>
+    static string TitleButtonsReadable(Vector3 stageEye, float within, List<string> fails)
+    {
+        var handler = FindAnyObjectByType<MainMenuPageHandler>();
+        var page = handler != null ? handler.currentPage : null;
+        if (page == null)
+        {
+            fails.Add("no title page");
+            return "no title page";
+        }
+        var head = VRRig.Instance.Head;
+        int count = 0;
+        float worst = -1f;
+        string worstNote = "";
+        foreach (var button in page.GetComponentsInChildren<Selectable>(false))
+        {
+            if (
+                !button.IsInteractable()
+                || Vector3.Distance(stageEye, button.transform.position) > within
+            )
+                continue;
+            var label = button.GetComponentInChildren<TMP_Text>(false);
+            if (label == null || string.IsNullOrWhiteSpace(label.GetParsedText()))
+                continue;
+            count++;
+            string note = Readable($"button '{label.GetParsedText()}'", label, head.forward, fails);
+            float off = Vector3.Angle(head.forward, label.transform.position - head.position);
+            if (off > worst)
+            {
+                worst = off;
+                worstNote = note;
+            }
+        }
+        if (count == 0)
+            fails.Add("no labelled title button within reach");
+        return $"{count} title buttons read from the head, farthest off the view: {worstNote}";
     }
 
     /// <summary>
@@ -231,7 +277,8 @@ internal sealed partial class SelfTestRunner
         if (offenders.Count > 0)
             Fail("not world space: " + string.Join(", ", offenders) + "; " + counts);
         else
-            stepNote = counts;
+            // Conversion only: placement in view is checked by ui.05 (wrist HUD) and vr.04 (menu panel and its text).
+            stepNote = counts + "; placement checked by ui.05 and vr.04";
         yield return Shot("vr-03-airport");
     }
 
@@ -301,16 +348,29 @@ internal sealed partial class SelfTestRunner
                 out float distance,
                 out float angle
             );
+            // The shared rule allows 60 deg; a menu read without turning the head sits within Legibility's 45.
+            front &= angle <= Legibility.MaxOffViewDegrees;
+            // The text a player reads, not only the panel: the row label nearest the view, its size and angle.
+            var readFails = new List<string>();
+            var label = RowLabelNearView(root, head);
+            string read =
+                label != null
+                    ? Readable("row label", label, head.forward, readFails)
+                    : "no row label";
+            if (label == null)
+                readFails.Add("no settings row label drawn");
             // The pause menu's full-canvas BG dimmer is a backdrop whatever UI.MenuPanels says.
             int hidden = WorldCanvases.HiddenBackdrops(root, out int unraycastable);
             int strips = RowStripReport.Count(root, "VR tab as opened");
             var note =
-                $"canvas '{root.name}' {root.renderMode}, {distance:0.00} m, {angle:0} deg off the view, "
+                $"canvas '{root.name}' {root.renderMode}, {distance:0.00} m, {angle:0} deg off the view, {read}, "
                 + $"{hidden} backdrops hidden, {unraycastable} of them dropped from raycasts, {strips} row strips drawn";
             if (root.renderMode != RenderMode.WorldSpace)
                 Fail("not world space: " + note);
             else if (!front)
                 Fail("not in front of the head: " + note);
+            else if (readFails.Count > 0)
+                Fail(string.Join("; ", readFails) + ": " + note);
             else if (hidden == 0 || strips > 0)
                 Fail("flat-screen backdrop left on the menu: " + note);
             // GraphicRaycaster skips depth -1 or culled graphics: a hidden dimmer must still block clicks behind it.
@@ -330,6 +390,31 @@ internal sealed partial class SelfTestRunner
         }
         ClosePause();
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
+    }
+
+    /// <summary>vr.04: the drawn settings row label (<c>SettingsUICell.m_text</c>, SettingsUICell.cs:10) nearest the
+    /// head's view, or null.</summary>
+    static TMP_Text RowLabelNearView(Canvas root, Transform head)
+    {
+        TMP_Text best = null;
+        float bestOff = float.MaxValue;
+        foreach (var cell in root.GetComponentsInChildren<SettingsUICell>(false))
+        {
+            var text = cell.m_text;
+            if (
+                text == null
+                || !text.isActiveAndEnabled
+                || string.IsNullOrWhiteSpace(text.GetParsedText())
+            )
+                continue;
+            float off = Vector3.Angle(head.forward, text.transform.position - head.position);
+            if (off < bestOff)
+            {
+                bestOff = off;
+                best = text;
+            }
+        }
+        return best;
     }
 
     /// <summary>vr.222: the pause menu's VR tab has a dark plate behind it (<c>UI.MenuBackplate</c>, ui.world
@@ -661,7 +746,8 @@ internal sealed partial class SelfTestRunner
             fails.Add("no HUD canvas");
         else
         {
-            notes.Add("HUD " + hud.renderMode);
+            // World space only: ui.05 checks the HUD is placed in view and readable.
+            notes.Add("HUD " + hud.renderMode + " (placement: ui.05)");
             if (hud.renderMode != RenderMode.WorldSpace)
                 fails.Add("HUD not world space");
         }

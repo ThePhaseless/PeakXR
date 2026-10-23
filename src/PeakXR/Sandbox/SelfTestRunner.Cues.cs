@@ -1,6 +1,8 @@
 using System.Collections;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
+using PeakXR.VR;
 
 namespace PeakXR.Sandbox;
 
@@ -9,7 +11,7 @@ namespace PeakXR.Sandbox;
 /// <list type="bullet">
 /// <item><c>float CueMark()</c>: the cue clock now. Take it just before the attempt.</item>
 /// <item><c>IEnumerator ExpectCue(bool left, DenyReason reason, float since, float within = 1f)</c>: waits until
-/// <c>since + within</c> for the reason, a readable ring, the refused (or notice) sound and a delivered haptic pulse
+/// <c>since + within</c> for the reason, a readable ring inside the headset's view (<see cref="RingOutOfView"/>), the refused (or notice) sound and a delivered haptic pulse
 /// on that hand (<see cref="CueCapture.Fired(bool, DenyReason, float, out string)"/>); fails the step naming the missing channel. On a pass,
 /// <see cref="cueNote"/> describes the cue.</item>
 /// <item><c>IEnumerator ExpectCue(bool left, DenyReason reason, float since, bool tint, float within = 1f)</c>: the
@@ -43,11 +45,44 @@ internal sealed partial class SelfTestRunner
             !CueLog.Capture.Fired(left, reason, since, tint, out why) && CueLog.Now < since + within
         )
             yield return null;
-        if (CueLog.Capture.Fired(left, reason, since, tint, out why))
-            cueNote = why;
-        else
+        if (!CueLog.Capture.Fired(left, reason, since, tint, out why))
             Fail(
                 $"{reason} cue on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}"
+            );
+        else if (RingOutOfView(left, out var view) is { } outside)
+            Fail($"{reason} cue on the {(left ? "left" : "right")} hand: {why}; {outside}");
+        else
+            cueNote = why + view;
+    }
+
+    /// <summary>
+    /// Null when the hand's last drawn ring lies wholly inside the headset's view from the eye, else why not. The
+    /// field is the head camera's <c>fieldOfView</c>, which XR drives from the headset's projection and which is the
+    /// vertical (narrower) field (Unity Camera.fieldOfView docs); the margin is the ring's own half size, so all of it
+    /// shows. The head pose is this frame's, which a scripted head holds still through the wait. <paramref name="view"/> gives the angle off
+    /// the view for the note. Flat play, or no head camera, checks nothing.
+    /// </summary>
+    static string RingOutOfView(bool left, out string view)
+    {
+        view = "";
+        var rig = VRRig.Instance;
+        if (!VRSession.Active || rig == null || rig.Head == null || rig.HeadCamera == null)
+            return null;
+        ref var h = ref CueLog.Capture.Hand(left);
+        float fov = rig.HeadCamera.fieldOfView;
+        bool inside = Legibility.InFieldOfView(
+            rig.Head.position.N(),
+            rig.Head.forward.N(),
+            h.RingCenter,
+            fov,
+            h.RingDegrees,
+            out float off
+        );
+        view = F($", ring {off:0} deg off the view (field {fov:0} deg)");
+        return inside
+            ? null
+            : F(
+                $"ring out of view: {off:0} deg off the view, a {h.RingDegrees:0.0} deg ring not wholly inside the {fov * 0.5f:0} deg half field"
             );
     }
 

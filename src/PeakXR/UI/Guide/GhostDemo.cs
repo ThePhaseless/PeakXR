@@ -89,6 +89,7 @@ internal sealed class GhostDemo
     private float prevPhase;
     private float lastAlpha = -1f;
     private bool mirror;
+    private Quaternion facing = Quaternion.identity;
 
     public GhostDemo(string name, Transform parent)
     {
@@ -115,6 +116,28 @@ internal sealed class GhostDemo
     public bool Alive => root != null;
 
     public GuideTopic Topic => demo != null ? demo.Topic : GuideTopic.Count;
+
+    /// <summary>Self-test read-out: the ghost controller drawn for the player's <paramref name="isLeft"/> hand shows
+    /// and has <paramref name="button"/> lit this frame.</summary>
+    internal bool PadLit(bool isLeft, GuideButton button)
+    {
+        var pad = isLeft ? left : right;
+        return pad.Body.gameObject.activeSelf && pad.On[(int)button];
+    }
+
+    /// <summary>Self-test read-out: where that ghost controller is in the world.</summary>
+    internal Vector3 PadPosition(bool isLeft) => (isLeft ? left : right).Body.position;
+
+    /// <summary>Self-test read-out: the ghost's mouth (<see cref="MouthGesture.DefaultOffset"/> in its head space,
+    /// the point the real talk and mute gestures test) in the world.</summary>
+    internal Vector3 MouthPosition
+    {
+        get
+        {
+            var o = MouthGesture.DefaultOffset;
+            return World(head.localPosition + facing * new Vector3(o.X, o.Y, o.Z));
+        }
+    }
 
     /// <summary>Cue sounds the game's SFX player took since the demo started, for the self-test.</summary>
     public int SoundsPlayed { get; private set; }
@@ -157,6 +180,7 @@ internal sealed class GhostDemo
         if (mirror)
             yaw = -yaw;
         var bodyRot = Quaternion.Euler(0f, yaw, 0f);
+        facing = bodyRot;
         head.localPosition = body;
         nose.localPosition = body + bodyRot * new Vector3(0f, -0.02f, 0.11f);
         SetLine(torso, World(body + bodyRot * Neck), World(body + bodyRot * Hips));

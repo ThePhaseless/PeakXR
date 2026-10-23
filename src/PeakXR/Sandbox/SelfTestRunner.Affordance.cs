@@ -273,9 +273,11 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.60: a held climbing spike aimed at the open sky. The trigger press reaches
-    /// <c>RaycastClimbingSpikeStart</c> (CharacterItems.cs:1072-1076), which finds no terrain in range, so no cast
-    /// starts; SpikeCue denies it as <see cref="DenyReason.NoWall"/>.</summary>
+    /// <summary>vr.60: a held climbing spike aimed at the open sky, then level at a test wall just past the spike's
+    /// grounded reach. The trigger press reaches <c>RaycastClimbingSpikeStart</c> (CharacterItems.cs:1072-1076),
+    /// which finds no terrain within <c>climbingSpikeStartDistanceGrounded</c>, so no cast starts; SpikeCue denies both
+    /// as <see cref="DenyReason.NoWall"/>, and for the wall puts the ring on the wall itself (its Closer hint), so
+    /// the player sees how far off it is.</summary>
     IEnumerator DenyPitonStep()
     {
         var spike = FindItemComponent<ClimbingSpikeComponent>();
@@ -326,6 +328,78 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return PressAndExpect(left, DenyReason.NoWall);
+        if (!stepOk)
+            yield break;
+        string sky = "open sky: " + stepNote;
+        var wall = SandboxActions.PlaceWall();
+        if (wall == null)
+        {
+            Fail("no test wall for the out-of-range try: " + SandboxActions.LastMessage);
+            yield break;
+        }
+        try
+        {
+            yield return PitonPastRange(spike, left, wall);
+            if (stepOk)
+                stepNote = sky + "; " + stepNote;
+        }
+        finally
+        {
+            UnityEngine.Object.Destroy(wall);
+        }
+    }
+
+    /// <summary>The second half of vr.60: <paramref name="wall"/> moved so its face stands 1 m past the spike's
+    /// grounded reach straight ahead of the hand, the hand aimed level at it, the press refused with the ring on the
+    /// wall (SpikeCue: the wall point, not the end of the reach).</summary>
+    IEnumerator PitonPastRange(ClimbingSpikeComponent spike, bool left, GameObject wall)
+    {
+        var rig = VRRig.Instance;
+        float range = spike.climbingSpikeStartDistanceGrounded;
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        Script(left).Rotation = Quaternion.LookRotation(forward, Vector3.up);
+        yield return Wait(0.15f);
+        var aim = rig.Aim(left);
+        var ahead = rig.Origin.TransformDirection(forward);
+        // Half the wall's 0.5 m depth behind the face.
+        var at = aim.position + ahead * (range + 1.25f);
+        wall.transform.SetPositionAndRotation(
+            new Vector3(at.x, wall.transform.position.y, at.z),
+            Quaternion.LookRotation(ahead)
+        );
+        Physics.SyncTransforms();
+        yield return Wait(0.15f);
+        if (
+            !Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var face,
+                range + 4f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+            || face.collider.gameObject != wall
+            || face.distance <= range
+        )
+        {
+            Fail(
+                F(
+                    $"the aim does not meet the test wall past the {range:0.00} m reach (hit {(face.collider != null ? face.collider.name : "nothing")} at {face.distance:0.00} m)"
+                )
+            );
+            yield break;
+        }
+        yield return PressAndExpect(left, DenyReason.NoWall);
+        if (!stepOk)
+            yield break;
+        float off = Vector3.Distance(Affordance.LastPosition, face.point);
+        var note = F(
+            $"wall {face.distance:0.00} m away past the {range:0.00} m reach, ring {off:0.00} m from the wall point: {stepNote}"
+        );
+        if (off > 0.3f)
+            Fail("the out-of-range ring is not on the wall: " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>vr.61: a two-handed item (rescue hook, <see cref="ItemHoldTable"/>) held in one hand. interact.physical
@@ -347,7 +421,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.62: an Apple the game will not use (<c>Item.overrideUsability</c> false, read first by
     /// <c>CanUsePrimary</c>, Item.cs:797-802). The trigger press gets <see cref="DenyReason.CantUse"/> instead of
-    /// the success tick.</summary>
+    /// the success tick, and starts no use cast (<c>Item.StartUsePrimary</c>, counted by
+    /// <see cref="SelfTestUseProbe.Starts"/>). Set directly, named as a shortcut: the game sets the same field on a
+    /// spent biome warp (Action_WarpToBiome.cs:10), whose use would warp the run away, and every other unusable item
+    /// has its own reason (UseDenial.Why), covered by vr.94 and the vr.16x steps.</summary>
     IEnumerator DenyUnusableStep()
     {
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
@@ -356,9 +433,18 @@ internal sealed partial class SelfTestRunner
             yield break;
         var usability = GameMember.Field<Item, Optionable<bool>>("overrideUsability");
         usability(HeldItem()) = Optionable<bool>.Some(false);
+        int starts = SelfTestUseProbe.Starts;
         yield return PressAndExpect(LocalHold.ItemInLeftHand, DenyReason.CantUse);
         if (HeldItem() != null)
             usability(HeldItem()) = Optionable<bool>.None;
+        if (!stepOk)
+            yield break;
+        if (SelfTestUseProbe.Starts != starts)
+            Fail("the refused press still started a use cast (Item.StartUsePrimary): " + stepNote);
+        else
+            stepNote =
+                "shortcut: unusable through Item.overrideUsability (as Action_WarpToBiome.cs:10 leaves a spent warp); no use cast started; "
+                + stepNote;
     }
 
     /// <summary>vr.63: a sticky item (cactus ball, <c>StickyItemComponent</c>) thrown by a hand swing leaves the hand.

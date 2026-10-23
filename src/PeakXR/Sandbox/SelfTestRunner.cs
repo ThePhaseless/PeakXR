@@ -492,8 +492,24 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         spawned.Add(go);
         yield return null;
         yield return null;
+        // A hand grabs what its grip sphere overlaps (PhysicalInteraction.FindCandidate): an item with no enabled
+        // collider spawns but can never be picked up.
         if (go == null)
             Fail("destroyed right after spawning");
+        else if (go.GetComponent<Item>() == null)
+            Fail("spawned without an Item component");
+        else if (!HasEnabledCollider(go))
+            Fail("no enabled collider: a hand could never grab it");
+    }
+
+    static bool HasEnabledCollider(GameObject go)
+    {
+        foreach (var col in go.GetComponentsInChildren<Collider>())
+        {
+            if (col.enabled)
+                return true;
+        }
+        return false;
     }
 
     IEnumerator DropHeld()

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Avatar;
 using PeakXR.Comfort;
 using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
@@ -144,11 +145,28 @@ internal sealed partial class SelfTestRunner
     /// mob.ChainShootable: the chain shooter (the item whose <c>VineShooter.vinePrefab</c> is ChainShootable) fired
     /// at terrain. The game's own aim check <c>WillAttach</c> (VineShooter.cs:71-92; from the hand in VR, AimPatches)
     /// picks a heading, primary use fires on <c>OnPrimaryFinishedCast</c> (:36), which instantiates the chain and
-    /// builds it with <c>ForceBuildVine_RPC</c> (:61, JungleVine.cs:251). Then the interact path
-    /// <c>JungleVine.Interact</c> (:110) grabs it: <c>GrabVineRpc</c> (CharacterVineClimbing.cs:155) sets
-    /// <c>isVineClimbing</c> and <c>heldVine</c>.
+    /// builds it with <c>ForceBuildVine_RPC</c> (:61, JungleVine.cs:251). Then the chain is grabbed:
+    /// <c>GrabVineRpc</c> (CharacterVineClimbing.cs:155) sets <c>isVineClimbing</c> and <c>heldVine</c>. In VR the
+    /// player's path throughout: the holding hand's trigger fires, and the free hand reaches the chain's nearest drawn
+    /// point (it starts 1.5 m over the ground just ahead, VineShooter.cs:52-57) and grips it. Flat play fires with the
+    /// use button and grabs through <c>JungleVine.Interact</c> (:110), named in the note as a shortcut for the
+    /// look-and-press interact.
     /// </summary>
     IEnumerator ChainStep()
+    {
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        try
+        {
+            yield return ChainBody(vr);
+        }
+        finally
+        {
+            if (vr)
+                EndHands();
+        }
+    }
+
+    IEnumerator ChainBody(bool vr)
     {
         var prefab = FirstItem(i =>
             i.TryGetComponent<VineShooter>(out var v)
@@ -166,6 +184,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         var shooter = item.GetComponent<VineShooter>();
+        bool left = LocalHold.ItemInLeftHand;
+        if (vr)
+        {
+            yield return ReadyHand(left);
+            // Aim level ahead: WillAttach reads the hand (AimPatches), and Turn below swings the body round.
+            HeadFrame(out _, out var ahead, out _);
+            Script(left).Rotation = Quaternion.LookRotation(ahead, Vector3.up);
+        }
         yield return WaitFor(() => c.data.isGrounded, 3f);
 
         bool aimed = false;
@@ -191,12 +217,14 @@ internal sealed partial class SelfTestRunner
         }
 
         var before = Ids<JungleVine>();
-        SelfTestInputPatch.HoldPrimary = true;
-        yield return WaitFor(
-            () => Fresh<JungleVine>(before) != null,
-            GameTiming.Budget(GameTiming.UseSeconds(item), 1f)
-        );
-        SelfTestInputPatch.HoldPrimary = false;
+        var way = WayOf(item);
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item), 1f);
+        while (Now < end && Fresh<JungleVine>(before) == null)
+        {
+            HoldUse(way, left);
+            yield return null;
+        }
+        ReleaseUse(way, left);
         var vine = Fresh<JungleVine>(before);
         if (vine == null)
         {
@@ -208,10 +236,34 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
 
         yield return WaitFor(() => c.refs.vineClimbing.canInteractVine, 1f);
-        vine.Interact(c);
+        string grab;
+        if (vr)
+        {
+            bool free = !left;
+            var spot = NearestVineSpot(vine, VRRig.Instance.Head.position);
+            yield return MoveTo(free, () => spot, 0.5f);
+            if (OverReach(free) is { } far)
+            {
+                Fail($"the chain's nearest point is out of reach: {far}");
+                yield break;
+            }
+            yield return GripTo(free, 1f, 0.1f);
+            grab = F(
+                $"the {(free ? "left" : "right")} hand gripped the chain {Vector3.Distance(VRRig.Instance.Head.position, spot):0.00} m from the eye"
+            );
+        }
+        else
+        {
+            vine.Interact(c);
+            grab =
+                "shortcut: flat grab through JungleVine.Interact, not the look-and-press interact";
+        }
         yield return WaitFor(() => c.data.isVineClimbing && c.data.heldVine == vine, 2f);
         bool climbing = c.data.isVineClimbing && c.data.heldVine == vine;
         yield return Shot("05-mob-ChainShootable");
+        if (vr)
+            yield return GripTo(!left, 0f, 0.1f);
+        yield return WaitFor(() => !c.data.isVineClimbing, 1f);
         if (c.data.isVineClimbing)
             c.refs.vineClimbing.Stop();
         yield return Wait(1f);
@@ -219,12 +271,29 @@ internal sealed partial class SelfTestRunner
         EmptyHotbar(c);
 
         var note =
-            $"{vine.name} {hit.distance:0.0} m to {hit.collider.name}, {colliders} colliders, climbing {climbing}";
+            $"{vine.name} {hit.distance:0.0} m to {hit.collider.name}, fired by {UseWayText(way)}, {colliders} colliders; {grab}, climbing {climbing}";
         if (colliders == 0)
             Fail("chain built no colliders (JungleVine.ForceBuildVine, JungleVine.cs:256)");
         if (!climbing)
-            Fail("grabbing the chain did not start a vine climb");
+            Fail(
+                "grabbing the chain did not start a vine climb"
+                    + (vr ? "; " + PeakXR.Interact.PhysicalInteraction.LastGripNote : "")
+            );
         Note(note);
+    }
+
+    /// <summary>The drawn point of <paramref name="vine"/> nearest <paramref name="eye"/>, where a hand grips it (the
+    /// same drawn-point offset as the vine steps' spot, <c>colliderOffset</c>, JungleVine.cs:296).</summary>
+    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye)
+    {
+        var best = vine.GetPosition(0f, 1, 1);
+        for (int i = 1; i <= 50; i++)
+        {
+            var p = vine.GetPosition(i / 50f, 1, 1);
+            if ((p - eye).sqrMagnitude < (best - eye).sqrMagnitude)
+                best = p;
+        }
+        return best + Vector3.down * vine.colliderOffset;
     }
 
     /// <summary>Turns the view: the rig in VR, the look values in flat play (CharacterMovement.cs:287-289).</summary>
@@ -280,9 +349,25 @@ internal sealed partial class SelfTestRunner
     /// mob.TiedBalloon: a balloon item (the one with <c>Action_Balloon</c>) used from the hand. Its action ties
     /// balloons through <c>CharacterBalloons.TieNewBalloon</c> (Action_Balloon.cs:5-19, CharacterBalloons.cs:99-101),
     /// which runs <c>TiedBalloon.Init</c> (TiedBalloon.cs:36). Each one counts in <c>currentBalloonCount</c>; then
-    /// they are popped the game's way (<c>Pop</c>, :89), which unties them.
+    /// they are popped the game's way (<c>Pop</c>, :89), which unties them. In VR it is blown up as a player does,
+    /// raised to the mouth (interact.physical's Inflate route) or with the holding hand's trigger when
+    /// <c>Interaction.EatAtMouth</c> is off; flat play uses the use button.
     /// </summary>
     IEnumerator BalloonStep()
+    {
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        try
+        {
+            yield return BalloonBody(vr);
+        }
+        finally
+        {
+            if (vr)
+                EndHands();
+        }
+    }
+
+    IEnumerator BalloonBody(bool vr)
     {
         var prefab = FirstItem(i => i.GetComponent<Action_Balloon>() != null);
         if (prefab == null)
@@ -295,12 +380,18 @@ internal sealed partial class SelfTestRunner
         yield return HoldGiven(prefab);
         if (!stepOk)
             yield break;
-        SelfTestInputPatch.HoldPrimary = true;
-        yield return WaitFor(
-            () => Fresh<TiedBalloon>(before) != null,
-            GameTiming.Budget(GameTiming.UseSeconds(HeldItem()), 1f)
-        );
-        SelfTestInputPatch.HoldPrimary = false;
+        var balloon = HeldItem();
+        bool hand = LocalHold.ItemInLeftHand;
+        var way = WayOf(balloon);
+        if (vr)
+            yield return ReadyHand(hand);
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(balloon), 1.5f);
+        while (Now < end && Fresh<TiedBalloon>(before) == null)
+        {
+            HoldUse(way, hand);
+            yield return null;
+        }
+        ReleaseUse(way, hand);
         yield return Wait(1f);
         var balloons = c.refs.balloons;
         int tied = balloons.currentBalloonCount - balloons.heldBalloonCount;
@@ -324,7 +415,7 @@ internal sealed partial class SelfTestRunner
         else if (left > 0)
             Fail("popped balloons still counted");
         Note(
-            $"{prefab.name}: {tied} tied, first {distance:0.0} m from the body, {left} after popping"
+            $"{prefab.name}: blown up by {UseWayText(way)}, {tied} tied, first {distance:0.0} m from the body, {left} after popping"
         );
         yield return DropHeld();
     }

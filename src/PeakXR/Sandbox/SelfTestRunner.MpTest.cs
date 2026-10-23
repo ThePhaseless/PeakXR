@@ -533,8 +533,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// The boarding pass's Start (BoardingPass.cs:228) at the kiosk any player may open: AirportCheckInKiosk.StartGame
-    /// (AirportCheckInKiosk.cs:117-122) asks the master, here the vanilla host, to load the island (:135-152).
+    /// The kiosk any player may open, as a VR player boards: walk up, grip while looking at it (the grip's interact
+    /// holds the kiosk's cast, AirportCheckInKiosk.cs:94-112, which opens the boarding pass), then the laser presses
+    /// the pass's Start (BoardingPass.startGameButton, :111, :228), and AirportCheckInKiosk.StartGame (:117-122) asks
+    /// the master, here the vanilla host, to load the island (:135-152). Without VR, or when the hand path does not
+    /// start the load, StartGame is called directly and the note names that shortcut.
     /// </summary>
     IEnumerator Board()
     {
@@ -544,9 +547,19 @@ internal sealed partial class SelfTestRunner
             Fail("no AirportCheckInKiosk");
             yield break;
         }
+        string shortcut = "no VR";
         if (VRSession.Active)
-            yield return WalkTo(() => kiosk.transform.position, 2.5f, false);
-        kiosk.StartGame(0);
+        {
+            // Inside the game's 2 m interact reach (Interaction.cs:7).
+            yield return WalkTo(() => kiosk.transform.position, 1.6f, false);
+            yield return BoardByHand(kiosk, s => shortcut = s);
+        }
+        if (!LoadingScreenHandler.loading)
+        {
+            // shortcut: the island load is asked for directly; the note says which part of the hand path failed.
+            Note("shortcut: StartGame called directly, " + shortcut);
+            kiosk.StartGame(0);
+        }
         yield return Until(() => LoadingScreenHandler.loading, 30f, "level load did not start");
         if (!stepOk)
             yield break;
@@ -565,7 +578,45 @@ internal sealed partial class SelfTestRunner
             "still down after the beach wake-up"
         );
         yield return Wait(2f);
-        stepNote = "on " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        string scene = "on " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        stepNote = stepNote != null ? scene + "; " + stepNote : scene;
+    }
+
+    /// <summary>The player's path through the kiosk (see <see cref="Board"/>): the free hand's grip opens the pass, the
+    /// laser presses Start. <paramref name="failed"/> gets why when the load did not start.</summary>
+    IEnumerator BoardByHand(AirportCheckInKiosk kiosk, Action<string> failed)
+    {
+        var pass = GUIManager.instance != null ? GUIManager.instance.boardingPass : null;
+        if (pass == null)
+        {
+            failed("no boarding pass");
+            yield break;
+        }
+        // The airport hands A its passport: the other hand grips.
+        bool left = HeldItem() != null && !LocalHold.ItemInLeftHand;
+        Face(kiosk.Center());
+        yield return Wait(0.3f);
+        float cast = GameTiming.InteractSeconds(kiosk, Character.localCharacter);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
+        yield return GripTo(left, 0f, 0.1f);
+        if (!pass.isOpen)
+        {
+            failed(
+                F(
+                    $"the grip did not open the boarding pass ({Vector3.Distance(Character.localCharacter.Center, kiosk.Center()):0.0} m from the kiosk)"
+                )
+            );
+            yield break;
+        }
+        // BoardingPass.OnOpen fades it in over 0.5 s (BoardingPass.cs:147).
+        yield return Wait(0.8f);
+        yield return LaserPress(pass.startGameButton);
+        yield return WaitFor(() => LoadingScreenHandler.loading, 3f);
+        if (!LoadingScreenHandler.loading)
+            failed("the laser press on Start did not start the load");
+        else
+            Note("boarded by hand: grip opened the pass, laser pressed Start");
     }
 
     /// <summary>Lifts suitcase lids (<see cref="LiftLid"/>) until enough food and other items lie around, trying at
@@ -684,6 +735,8 @@ internal sealed partial class SelfTestRunner
         cpItemId = held.itemID;
         Face(HostCenter());
         yield return Wait(0.5f);
+        var from = Character.localCharacter.Center;
+        var toHost = HelperFunctions.ZeroY(HostCenter() - from);
         yield return ThrowHeld();
         if (lastLanding is { } landed)
         {
@@ -692,8 +745,30 @@ internal sealed partial class SelfTestRunner
             if (host != null)
                 cpExtra["landingToHost"] = F(Vector3.Distance(landed, host.Center));
             mpItem = NearestGround(i => i.itemID == cpItemId, landed);
+            // The throw goes where the player faced, toward the host: a release that dropped it at the feet or sent it
+            // off to the side would land the same way on B (mp-check checks B's copy against A's landing).
+            var flight = HelperFunctions.ZeroY(landed - from);
+            float off = Vector3.Angle(flight, toHost);
+            if (!stepOk)
+                yield break;
+            if (flight.magnitude < MpThrowMinFlight || off > MpThrowMaxOff)
+                Fail(
+                    F(
+                        $"landed {flight.magnitude:0.0} m out, {off:0}° off the line to the host (want {MpThrowMinFlight:0} m or more within {MpThrowMaxOff:0}°)"
+                    )
+                );
+            else
+                Note(F($"{stepNote ?? "thrown"}; {off:0}° off the line to the host"));
         }
     }
+
+    /// <summary>A throw toward the host lands at least this far (m, flat) from where A stood: a drop at the feet is not a
+    /// throw. The host stands about 1.5 m away (walk-to-host), so the item lands at or past them; MP run 13: 5.5 m.</summary>
+    const float MpThrowMinFlight = 1.5f;
+
+    /// <summary>How far (degrees) the landing may sit off the line from A to the host (a hand arc and a bounce); not yet
+    /// measured over runs.</summary>
+    const float MpThrowMaxOff = 35f;
 
     IEnumerator Eat()
     {
@@ -1550,9 +1625,18 @@ internal sealed partial class SelfTestRunner
             stepNote = $"grip kept stamina {stamina:0.00}; shove kicked";
     }
 
+    /// <summary>How long (s) A carries the host, grips open and standing, before putting them down: a player walks
+    /// off with a friend, so a carry the game ends at once (MP run 13: 1 ms) fails.</summary>
+    const float MpCarryHold = 2f;
+
     /// <summary>
-    /// carry: the host is passed out; both hands on their body lift them (RPCA_StartCarry, CharacterCarrying.cs:56).
-    /// A worn pack drops at their torso (:59-67), marked by a Dropped notice. A grip on the carried host drops them.
+    /// carry: the host is passed out and stays out (statuses at 1 or more; under 1 the game wakes them 3 s after passing
+    /// out, Character.HandlePassedOut :574-579, and a carried friend who wakes is dropped, CharacterCarrying.Update
+    /// :29-31). A stoops to the body on the ground (<see cref="ReachDown"/>, a player squats; standing it is 1.3 m of
+    /// arm) and both hands on it lift them (CharacterInteractible.Interact :114-124, RPCA_StartCarry,
+    /// CharacterCarrying.cs:56). A worn pack drops at their torso (:59-67), marked by a Dropped notice. A stands, grips
+    /// open, and the host stays carried for <see cref="MpCarryHold"/>; then a grip on the carried host drops them
+    /// (Interact :116-119).
     /// </summary>
     IEnumerator MpCarry()
     {
@@ -1575,44 +1659,48 @@ internal sealed partial class SelfTestRunner
             stepSkip = "the host is not passed out (pass-out request had no effect)";
             yield break;
         }
+        // The owner's statuses reach A by SyncStatusesRPC (CharacterAfflictions.cs:1107).
+        var statuses = host.refs.afflictions;
+        yield return WaitFor(() => statuses.statusSum >= 1f, 2f);
+        if (statuses.statusSum < 1f)
+        {
+            stepSkip = F(
+                $"the host's statuses sum {statuses.statusSum:0.00}, under 1: the game wakes them 3 s after passing out"
+            );
+            yield break;
+        }
         yield return ToHost(0.6f);
         if (!stepOk)
             yield break;
         bool pack = c.player != null && !c.player.backpackSlot.IsEmpty();
-        // shortcut: A lifts a body on the ground standing upright, so the hands may go past a real arm; a player
-        // crouches first. Logged until the step crouches like pal-jump does.
-        float stretch = Mathf.Max(
-            PastArm(true, HostPart(host, BodypartType.Torso)),
-            PastArm(false, HostPart(host, BodypartType.Hip))
-        );
-        if (stretch > 0f)
-            Note($"the hands reach {stretch:0.00} m past a real arm to the lying host");
         float mark = CueMark();
-        yield return MoveTo(true, () => HostPart(host, BodypartType.Torso), 0.5f);
-        yield return MoveTo(false, () => HostPart(host, BodypartType.Hip), 0.5f);
+        yield return ReachDown(true, () => HostPart(host, BodypartType.Torso), 0.6f);
+        yield return ReachDown(false, () => HostPart(host, BodypartType.Hip), 0.5f);
+        var over = OverReach(true) ?? OverReach(false);
+        if (over != null)
+        {
+            stepSkip = "stooped to the lying host, " + over;
+            yield break;
+        }
         Script(true).Grip = Script(false).Grip = 1f;
         float hold = GameTiming.InteractSeconds(host.refs.interactible, c);
-        // Watch the lift frame by frame (MP run 13: B logged RPCA_StartCarry and RPCA_Drop from A 1 ms apart, so A
-        // lifted and dropped at once): on a drop, say what the game's own drop paths would have seen
-        // (CharacterCarrying.Update :28-32, CharacterInteractible.Interact :116-119, CharacterItems.OnPickupAccepted
-        // slot 3 :459-462).
         float liftEnd = Now + GameTiming.Budget(hold, 1f);
         int startsBefore = SocialHands.CarryStarts;
-        string dropped = null;
         while (Now < liftEnd && c.data.carriedPlayer != host)
         {
-            bool lifted = SocialHands.CarryStarts > startsBefore;
-            if (c.data.carriedPlayer == null && lifted && dropped == null)
-                dropped = F(
-                    $"lifted then dropped: host fully passed out {host.data.fullyPassedOut}, dead {host.data.dead}, A down {c.data.fullyPassedOut}, A slot {(c.refs.items.currentSelectedSlot.IsSome ? c.refs.items.currentSelectedSlot.Value.ToString(CultureInfo.InvariantCulture) : "none")}, A wore a pack {pack}, interact held {c.input.interactIsPressed}"
-                );
+            if (c.data.carriedPlayer == null && SocialHands.CarryStarts > startsBefore)
+            {
+                Fail(CarryEnded("lifted then dropped at once", host, pack));
+                yield break;
+            }
             yield return null;
         }
         if (c.data.carriedPlayer != host)
         {
             Fail(
-                dropped
-                    ?? $"the host was not lifted (host fully passed out {host.data.fullyPassedOut})"
+                F(
+                    $"the host was not lifted (host fully passed out {host.data.fullyPassedOut}, lifts {SocialHands.CarryStarts - startsBefore})"
+                )
             );
             yield break;
         }
@@ -1620,9 +1708,32 @@ internal sealed partial class SelfTestRunner
             yield return ExpectCue(SocialHands.Instance.CarryLeft, DenyReason.Dropped, mark);
         if (!stepOk)
             yield break;
+        // Lifted: the hands let go and A stands up with the host on its back, as a player walks off.
         Script(true).Grip = Script(false).Grip = 0f;
-        yield return Wait(0.5f);
+        float carriedFrom = Now;
+        var rise = StandUp(true);
+        while (c.data.carriedPlayer == host && rise.MoveNext())
+            yield return rise.Current;
+        while (Now - carriedFrom < MpCarryHold && c.data.carriedPlayer == host)
+            yield return null;
+        if (c.data.carriedPlayer != host)
+        {
+            Fail(
+                CarryEnded(
+                    F($"the host fell off {Now - carriedFrom:0.00} s after the lift"),
+                    host,
+                    pack
+                )
+            );
+            yield break;
+        }
         yield return MoveTo(false, () => HostPart(host, BodypartType.Torso), 0.4f);
+        over = OverReach(false);
+        if (over != null)
+        {
+            Fail("putting the carried host down: " + over);
+            yield break;
+        }
         Script(false).Grip = 1f;
         yield return Until(
             () => c.data.carriedPlayer == null,
@@ -1631,7 +1742,20 @@ internal sealed partial class SelfTestRunner
         );
         Script(false).Grip = 0f;
         if (stepOk)
-            stepNote = pack ? "lifted, pack dropped and marked, put down" : "lifted and put down";
+            stepNote = F(
+                $"stooped, lifted{(pack ? ", pack dropped and marked" : "")}, carried {MpCarryHold:0.#} s standing, put down"
+            );
+    }
+
+    /// <summary>Why a carry ended early, from the game's own drop paths: the carried friend woke or died, or the carrier
+    /// went down (CharacterCarrying.Update :28-32), or the backpack slot was picked (CharacterItems.cs:459-462, :821).</summary>
+    static string CarryEnded(string what, Character host, bool pack)
+    {
+        var c = Character.localCharacter;
+        var slot = c.refs.items.currentSelectedSlot;
+        return F(
+            $"{what}: host fully passed out {host.data.fullyPassedOut} (statuses {host.refs.afflictions.statusSum:0.00}), dead {host.data.dead}, A down {c.data.fullyPassedOut}, A slot {(slot.IsSome ? slot.Value.ToString(CultureInfo.InvariantCulture) : "none")}, A wore a pack {pack}, interact held {c.input.interactIsPressed}"
+        );
     }
 
     /// <summary>Each of the three spots behind the host gets this long to walk to (MP run 11: three unbounded walks ran
@@ -1688,22 +1812,72 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         Face(visuals.transform.position);
-        // Turn away: vanilla needs the look within 110° of the pack's facing (BackpackOnBackVisuals.cs:99-104).
-        VRRig.Instance.RotateYaw(150f);
-        yield return Wait(0.3f);
-        yield return MoveTo(false, () => visuals.transform.position, 0.6f);
-        yield return GripTo(false, 1f, 0.1f);
-        yield return Until(
-            () =>
-                Interaction.instance != null
-                && Interaction.instance.currentHeldInteractible is BackpackOnBackVisuals,
-            2f,
-            "the pack hold did not start"
+        // Look away as a player can: vanilla needs the look within 110° of the pack's facing
+        // (BackpackOnBackVisuals.cs:99-104). The body turns 45° away from that facing, which leaves the pack ahead of the
+        // hand on the near side, and the head alone 75° further, a neck's turn (MP run 13 turned the whole body 150° and
+        // reached behind its own back).
+        float side = Vector3.SignedAngle(
+            HelperFunctions.ZeroY(visuals.transform.forward),
+            HelperFunctions.ZeroY(c.data.lookDirection),
+            Vector3.up
         );
-        Script(false).Grip = 0f;
-        if (stepOk)
-            stepNote = "host's pack held from behind while looking away";
+        float turn = side >= 0f ? 1f : -1f;
+        // Turning right puts the pack on the left.
+        bool left = turn > 0f;
+        VRRig.Instance.RotateYaw(turn * MpPackBodyTurn);
+        var hands = applyHands;
+        var neck = Quaternion.Euler(0f, turn * MpPackNeckTurn, 0f);
+        VRInput.TestOverride = () =>
+        {
+            hands();
+            VRInput.HeadRotation = neck * VRInput.HeadRotation;
+        };
+        try
+        {
+            yield return Wait(0.5f);
+            float off = Vector3.Angle(
+                HelperFunctions.ZeroY(c.data.lookDirection),
+                HelperFunctions.ZeroY(visuals.transform.forward)
+            );
+            // Within 110° vanilla takes the hold anyway, so a pass would not show the hand pick (SocialPatches.PackPick).
+            if (off < 110f)
+            {
+                stepSkip = F(
+                    $"the look is only {off:0}° off the pack's facing, which vanilla accepts"
+                );
+                yield break;
+            }
+            float past = PastArm(left, visuals.transform.position);
+            if (past > 0f)
+            {
+                stepSkip = F($"the host's pack is {past:0.00} m past a real arm's reach");
+                yield break;
+            }
+            yield return MoveTo(left, () => visuals.transform.position, 0.6f);
+            yield return GripTo(left, 1f, 0.1f);
+            yield return Until(
+                () =>
+                    Interaction.instance != null
+                    && Interaction.instance.currentHeldInteractible is BackpackOnBackVisuals,
+                2f,
+                "the pack hold did not start"
+            );
+            Script(left).Grip = 0f;
+            if (stepOk)
+                stepNote = F(
+                    $"host's pack held from behind by the {(left ? "left" : "right")} hand, looking {off:0}° off its facing"
+                );
+        }
+        finally
+        {
+            VRInput.TestOverride = hands;
+        }
     }
+
+    /// <summary>Body and neck turn (degrees) of the pack step: 120° in all, past vanilla's 110° (BackpackOnBackVisuals.cs:102).</summary>
+    const float MpPackBodyTurn = 45f;
+
+    const float MpPackNeckTurn = 75f;
 
     /// <summary>
     /// pal-jump (CharacterMovement.StandOnPlayer :992-1022, CheckForPalJump :1024-1034): A crouches by a scripted head

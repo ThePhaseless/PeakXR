@@ -6,7 +6,7 @@ namespace PeakXR.Core;
 /// <summary>
 /// Holds the first-person view still against the standing body's idle sway. Since PEAK 3.0 the ragdoll sways about
 /// 0.07 m/s and bobs about 4 cm while standing (2 mm on 2.6.b); the view rides the body, so a still player saw the
-/// world move. While <see cref="ViewHoldGate"/> says the body is only idling, the view stays where it is unless the
+/// world move. While <see cref="ViewHoldGate"/> says the body is only idling (or holding a lean still), the view stays where it is unless the
 /// body wanders past <see cref="Deadband"/> (then it is carried along, never left behind) and glides back onto the
 /// body very slowly; the moment the body really moves, the held offset decays onto it in a fraction of a second.
 /// Local view only: nothing about the body changes.
@@ -102,8 +102,8 @@ public struct ViewHoldInputs
     /// sliding, bouncing or on a slope it cannot stand on.</summary>
     public bool BodyFree;
 
-    /// <summary>The lean's bend (degrees).</summary>
-    public float LeanDegrees;
+    /// <summary>How fast the lean moves the eyes (m/s, <see cref="LeanMotion"/>).</summary>
+    public float LeanSpeed;
 
     /// <summary>The ragdoll's mean part speed (m/s, <c>CharacterData.avarageVelocity</c>).</summary>
     public float Speed;
@@ -113,12 +113,14 @@ public struct ViewHoldInputs
     public bool RoomWalking;
 }
 
-/// <summary>When <see cref="ViewHold"/> may hold: the body is only idling. Anything that moves it (a walk, a jump,
-/// a fall, a climb, a knockback, a ride, a lean past its deadband) releases the view onto it.</summary>
+/// <summary>When <see cref="ViewHold"/> may hold: the body is only idling or holding a lean still. Anything that
+/// moves it (a walk, a jump, a fall, a climb, a knockback, a ride, a lean bending or straightening) releases the
+/// view onto it.</summary>
 public static class ViewHoldGate
 {
-    /// <summary>Above the lean's own deadband (<see cref="BodyHold"/> starts at 1 degree), the body is leaning.</summary>
-    public const float MaxLeanDegrees = 1f;
+    /// <summary>A held lean's eyes drift about 1 cm/s (run 43: 0.152-0.153 m over 0.27 s samples); bending or
+    /// straightening moves them 0.3-0.6 m/s, and 5 degrees a second is already 0.05 m/s.</summary>
+    public const float MaxLeanSpeed = 0.05f;
 
     /// <summary>Faster than idle sway (0.07 m/s), slower than any walk, push or ride.</summary>
     public const float MaxSpeed = 0.3f;
@@ -132,10 +134,41 @@ public static class ViewHoldGate
             return "jump";
         if (i.RoomWalking)
             return "room walk";
-        if (!(i.LeanDegrees < MaxLeanDegrees))
+        if (!(i.LeanSpeed < MaxLeanSpeed))
             return "lean";
         if (!(i.Speed < MaxSpeed))
             return "moving";
         return null;
+    }
+}
+
+/// <summary>How fast the lean moves the eyes, for <see cref="ViewHoldGate"/>. A held lean bends the body but moves
+/// nothing, so only a lean in motion releases the view. The shift is computed on the 50 Hz animation tick and read
+/// each rendered frame, so the per-frame velocity is smoothed as a vector: the ragdoll's tick jitter cancels out,
+/// a real bend does not.</summary>
+public sealed class LeanMotion
+{
+    /// <summary>Time constant (s) of the velocity smoothing: a fast lean closes the gate within its first centimetre.</summary>
+    public const float SmoothSeconds = 0.05f;
+
+    private Vector3 last;
+    private Vector3 velocity;
+    private bool have;
+
+    /// <param name="eyeShift">How far the lean moves the eyes (m, world).</param>
+    /// <returns>The smoothed speed (m/s).</returns>
+    public float Update(Vector3 eyeShift, float dt)
+    {
+        if (!have)
+        {
+            last = eyeShift;
+            have = true;
+        }
+        if (dt > 0f)
+        {
+            velocity += ((eyeShift - last) / dt - velocity) * (1f - MathF.Exp(-dt / SmoothSeconds));
+            last = eyeShift;
+        }
+        return velocity.Length();
     }
 }

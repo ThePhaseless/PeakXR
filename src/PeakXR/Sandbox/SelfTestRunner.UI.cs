@@ -436,7 +436,12 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => gui.heroObject.activeSelf, 3f, "hero title never showed");
         if (!stepOk)
             yield break;
-        yield return Wait(1.5f);
+        float shown = Now;
+        // The title, the day and then the time of day type out (GUIManager.cs:513-532); the full line holds 1.5 s
+        // before the fade, so check and shoot the finished sign.
+        string timeOfDay = DayNightManager.instance.TimeOfDayString();
+        yield return WaitFor(() => gui.heroTimeOfDayText.text == timeOfDay, 8f);
+        string dayLine = gui.heroTimeOfDayText.text;
         var sign = gui.heroObject.transform.parent;
         var head = VRRig.Instance.Head;
         float d = sign != null ? Vector3.Distance(sign.position, head.position) : 0f;
@@ -484,15 +489,14 @@ internal sealed partial class SelfTestRunner
             );
         }
         // The title types out and fades over about 6 s (GUIManager.cs:496-542); later steps' frames must not show it.
-        float shown = Now;
-        yield return WaitFor(() => !gui.heroObject.activeSelf, 12f);
+        yield return WaitFor(() => !gui.heroObject.activeSelf, 12f - (Now - shown));
         if (gui.heroObject.activeSelf)
             fails.Add("hero title still up after 12 s");
         Conclude(
             fails,
             new List<string>
             {
-                $"'{title}' sign {d:0.0} m away (ray {expected:0.0} m), gone {Now - shown + 1.5f:0.0} s after it showed, {read}",
+                $"'{title}' sign {d:0.0} m away (ray {expected:0.0} m), day line '{dayLine}' at the check, gone {Now - shown:0.0} s after it showed, {read}",
             }
         );
     }
@@ -528,12 +532,28 @@ internal sealed partial class SelfTestRunner
         else if (d > 0.4f)
             fails.Add($"gauge {d:0.00} m from the spool");
         else
-            read = Readable(
-                "rope length",
-                text,
-                HeldItem().Center() - VRRig.Instance.Head.position,
-                fails
-            );
+        {
+            var eye = VRRig.Instance.Head.position;
+            read = Readable("rope length", text, HeldItem().Center() - eye, fails);
+            // Drawn over the depth buffer, nothing hides it; else nothing solid may stand between the eye and the
+            // text (the spool, the hand). Starts clear of the head's own collider.
+            bool onTop = UI.Common.OnTop.IsOnTop(text);
+            var dir = (drawn - eye).normalized;
+            if (
+                !onTop
+                && Physics.Linecast(
+                    eye + dir * 0.1f,
+                    drawn,
+                    out var hit,
+                    Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                fails.Add(
+                    F($"rope length hidden behind '{hit.collider.name}' at {hit.distance:0.00} m")
+                );
+            read += $", on top {onTop}";
+        }
         Conclude(fails, new List<string> { $"gauge {d:0.00} m from the spool, {read}" });
     }
 }

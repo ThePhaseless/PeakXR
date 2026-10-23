@@ -589,7 +589,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         float y0 = c.Center.y;
         yield return Shot("vr-15-climb");
-        yield return MoveTrack(left, Script(left).Position + Vector3.down * 0.4f, 0.6f);
+        yield return PullDown(left, 0.4f, 0.6f);
         yield return Wait(0.4f);
         float rise = c.Center.y - y0;
         bool stillClimbing = c.data.isClimbing;
@@ -1101,9 +1101,31 @@ internal sealed partial class SelfTestRunner
         return null;
     }
 
-    /// <summary>vr.19: both aim rays on the pause menu's Resume button (<c>PauseMenuMainPage.resumeButton</c>,
-    /// PauseMenuMainPage.cs:56) and a trigger pull close the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304).</summary>
+    /// <summary>vr.19: each hand in turn, alone, aims at the pause menu's Resume button
+    /// (<c>PauseMenuMainPage.resumeButton</c>, PauseMenuMainPage.cs:56) while the other points at the floor, and pulls
+    /// its trigger. A hand that drives the laser (<c>UI.PointerHand</c>; LastUsed: one pull moves the laser there and
+    /// clicks, <see cref="PointerHands"/>) closes the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304) with the
+    /// press from that hand; a hand the setting leaves out must not.</summary>
     IEnumerator LaserStep()
+    {
+        var mode = UI.World.UIWorldFeature.Settings?.PointerHand.Value ?? PointerHandMode.LastUsed;
+        var notes = new List<string>();
+        for (int i = 0; i < 2 && stepOk; i++)
+        {
+            bool left = i == 0;
+            bool drives =
+                mode == PointerHandMode.LastUsed || (mode == PointerHandMode.Left) == left;
+            yield return LaserPull(left, drives, i == 0, notes);
+            ClosePause();
+            yield return Wait(0.5f);
+        }
+        if (stepOk)
+            stepNote = $"pointer {mode}: " + string.Join("; ", notes);
+    }
+
+    /// <summary>One <see cref="LaserStep"/> pull: opens the pause menu, aims only the <paramref name="left"/> hand at
+    /// Resume and pulls its trigger.</summary>
+    IEnumerator LaserPull(bool left, bool drives, bool shot, List<string> notes)
     {
         var c = Character.localCharacter;
         var gui = GUIManager.instance;
@@ -1131,25 +1153,49 @@ internal sealed partial class SelfTestRunner
         var rect = (RectTransform)button.transform;
         var target = rect.TransformPoint(rect.rect.center);
         HeadFrame(out var head, out var forward, out var right);
-        // LastUsed pointer mode keeps the active hand when both pull at once, so aim and pull both.
-        for (int i = 0; i < 2; i++)
+        string side = left ? "left" : "right";
+        for (int h = 0; h < 2; h++)
         {
-            bool left = i == 0;
-            var p = head + (left ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
-            var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
-            Script(left).Position = p;
-            Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
+            bool aimLeft = h == 0;
+            var p =
+                head + (aimLeft ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
+            // The other hand points at the floor, off the panel: only this hand's laser can find Resume.
+            Script(aimLeft).Position = p;
+            Script(aimLeft).Rotation =
+                aimLeft == left
+                    ? Quaternion.LookRotation(
+                        rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p)),
+                        Vector3.up
+                    )
+                    : Quaternion.LookRotation(Vector3.down + forward * 0.2f, forward);
         }
         yield return Wait(0.3f);
-        yield return Shot("vr-19-laser");
-        Script(true).Trigger = Script(false).Trigger = 1f;
+        if (shot)
+            yield return Shot("vr-19-laser");
+        Script(left).Trigger = 1f;
         yield return Wait(0.15f);
-        Script(true).Trigger = Script(false).Trigger = 0f;
+        Script(left).Trigger = 0f;
+        float away = Vector3.Distance(rig.Head.position, target);
+        if (!drives)
+        {
+            yield return Wait(1f);
+            if (!GUIManager.InPauseMenu)
+                Fail($"the {side} trigger clicked although the pointer is on the other hand");
+            else
+                notes.Add($"{side} pull ignored (not the pointer hand)");
+            yield break;
+        }
         yield return Until(
             () => !GUIManager.InPauseMenu,
             2f,
-            $"Resume click did not close the menu (button {Vector3.Distance(rig.Head.position, target):0.00} m away)"
+            F($"the {side} laser's Resume click did not close the menu (button {away:0.00} m away)")
         );
+        if (!stepOk)
+            yield break;
+        if (PeakXR.UI.World.LaserPointer.PressLeft != left)
+            Fail($"the {side} pull closed the menu, but the press came from the other hand");
+        else
+            notes.Add($"{side} laser clicked Resume");
     }
 
     /// <summary>
@@ -1257,6 +1303,27 @@ internal sealed partial class SelfTestRunner
             )
             : null;
     }
+
+    /// <summary><paramref name="tracking"/> moved in toward the eye until it lies within a player's reach (just inside
+    /// <see cref="MaxHandFromEye"/>): level first, so a pull keeps its downward travel and loses only its reach out
+    /// (along a wall's normal, which the climb ignores, <c>ClimbInput.FromBodyVelocity</c>).</summary>
+    static Vector3 InReach(Vector3 tracking)
+    {
+        const float R = MaxHandFromEye * 0.97f;
+        var eye = VRInput.HeadPosition;
+        var d = tracking - eye;
+        if (d.sqrMagnitude <= R * R)
+            return tracking;
+        var level = new Vector3(d.x, 0f, d.z);
+        if (Mathf.Abs(d.y) < R && level.sqrMagnitude > 1e-6f)
+            return eye + Vector3.up * d.y + level.normalized * Mathf.Sqrt(R * R - d.y * d.y);
+        return eye + d.normalized * R;
+    }
+
+    /// <summary>The <paramref name="left"/> hand pulls <paramref name="metres"/> down, ending inside a player's
+    /// reach (<see cref="InReach"/>): a straight 0.4 m pull from a hold 0.55 m out ended 1.08 m from the eye.</summary>
+    IEnumerator PullDown(bool left, float metres, float seconds) =>
+        MoveTrack(left, InReach(Script(left).Position + Vector3.down * metres), seconds);
 
     /// <summary>
     /// The hand reaches a low world point the way a player does: the head stoops (which also crouches the
