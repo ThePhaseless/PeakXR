@@ -72,6 +72,8 @@ Set `Accessibility.OneHanded` to `Left` or `Right` to play with that controller 
 | Trigger | Use. With the stick clicked in as you pull it: the secondary use (use on a friend, reach out with an empty hand) |
 | Menu | Release within 1 s: pause. Hold 1 s: recenter. Controllers without one (the Touch right controller) pause on B |
 
+On a Vive wand the trackpad stands in for the stick and acts only when clicked. Click its top or bottom half to walk forward or back, its left or right side to turn, and its centre for the stick click. The wand has no A/X or B/Y, so pause with its menu button. There is no jump button in this layout.
+
 What moves off the buttons:
 
 - Hotbar: draw from and holster on the belt slots. Stick up and down walks now, so it no longer cycles the hotbar or scrolls a held item. Twist your wrist instead: that pays out rope and tilts the scout cannon (`Interaction.Tools.TwistScroll`) and zooms the binoculars (`Interaction.Binoculars.TwistZoom`).
