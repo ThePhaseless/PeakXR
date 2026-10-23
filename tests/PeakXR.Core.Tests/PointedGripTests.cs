@@ -48,3 +48,46 @@ public class PointedGripTests
         Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
     }
 }
+
+public class PointedGripCandidateTests
+{
+    [Fact]
+    public void APointedGripWithAnInteractibleAtTheHandTakesTheCandidatePath()
+    {
+        var c = new GripContext
+        {
+            PhysicalGrab = true,
+            PhysicalClimb = true,
+            Candidate = GrabCandidate.Interactible,
+            PointedAtTaker = true,
+        };
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void APointedGripWithAnInteractibleAtTheHandBesideRockStillTakesIt()
+    {
+        var c = new GripContext
+        {
+            PhysicalGrab = true,
+            PhysicalClimb = true,
+            NearClimbable = true,
+            HoldConfirmed = true,
+            Candidate = GrabCandidate.Interactible,
+            PointedAtTaker = true,
+        };
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void APointedGripWithALooseItemAtAnEmptyHandPicksItUp()
+    {
+        var c = new GripContext
+        {
+            PhysicalGrab = true,
+            Candidate = GrabCandidate.Item,
+            PointedAtTaker = true,
+        };
+        Assert.Equal(GripPressAction.GrabItem, GripIntent.OnPress(c));
+    }
+}

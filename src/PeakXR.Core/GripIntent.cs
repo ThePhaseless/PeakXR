@@ -134,9 +134,17 @@ namespace PeakXR.Core
             )
                 return GripPressAction.SecondHand;
 
-            // Nobody climbs with a pointed finger: a pointed aim at a target that takes it is the interact.
+            // Nobody climbs with a pointed finger: a pointed aim at a target that takes it beats a climb or a body-slot
+            // claim, but not the hand's own grab candidate, whose path (a world hold, its progress, its refusals)
+            // is the interact itself (the airport kiosk, run 52).
             if (c.PointedAtTaker)
+            {
+                if (c.PhysicalGrab && c.Candidate == GrabCandidate.Interactible)
+                    return GripPressAction.GrabInteractible;
+                if (c.PhysicalGrab && c.Candidate == GrabCandidate.Item && !c.ThisHandHolds)
+                    return GripPressAction.GrabItem;
                 return GripPressAction.Interact;
+            }
 
             if (c.ExtensionClaim)
                 return GripPressAction.Extension;
