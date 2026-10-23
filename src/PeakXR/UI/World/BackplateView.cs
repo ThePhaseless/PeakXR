@@ -43,6 +43,7 @@ internal static class BackplateView
                 out var center,
                 out var size
             )
+            || Scattered(t, center, size)
         )
         {
             if (t.Plate != null && t.Plate.gameObject.activeSelf)
@@ -71,6 +72,37 @@ internal static class BackplateView
         var color = new Color(c.X, c.Y, c.Z, cfg.MenuBackplateOpacity.Value);
         if (t.Plate.color != color)
             t.Plate.color = color;
+    }
+
+    /// <summary>The content is spread over more than <see cref="MenuBackplate.MaxSpanDegrees"/> of view (the title's
+    /// sign, logo and credits): one plate around it would be the full-view 2D panel, so the menu gets none. Logged when
+    /// that changes.</summary>
+    private static bool Scattered(
+        TrackedCanvas t,
+        System.Numerics.Vector2 center,
+        System.Numerics.Vector2 size
+    )
+    {
+        var rig = VRRig.Instance;
+        if (rig == null || rig.Head == null)
+            return false;
+        float mpp = Mathf.Abs(t.Rect.lossyScale.x);
+        var at = t.Rect.TransformPoint(new Vector3(center.X, center.Y, 0f));
+        float distance = Vector3.Distance(at, rig.Head.position);
+        t.PlateSpanDegrees = MenuBackplate.SpanDegrees(
+            Mathf.Max(size.X, size.Y) * mpp,
+            Mathf.Max(distance, 1e-3f)
+        );
+        bool scattered = MenuBackplate.Scattered(size.X * mpp, size.Y * mpp, distance);
+        if (scattered != t.PlateScattered)
+        {
+            t.PlateScattered = scattered;
+            Plugin.Log.LogInfo(
+                $"[ui.world] canvas '{t.Canvas.name}': content spans {t.PlateSpanDegrees:0} deg, menu backplate "
+                    + (scattered ? "skipped" : "back")
+            );
+        }
+        return scattered;
     }
 
     public static void Remove(TrackedCanvas t)

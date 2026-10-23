@@ -84,6 +84,12 @@ internal sealed class TrackedCanvas
     /// <summary>What the plate was last fitted around, in canvas pixels about the pivot (self-test).</summary>
     public Vector2 PlateContentMin,
         PlateContentMax;
+
+    /// <summary>How wide the plate looks from the eye, degrees, at the last fit (self-test).</summary>
+    public float PlateSpanDegrees;
+
+    /// <summary>The content was too scattered for a plate at the last fit (<see cref="BackplateView"/>).</summary>
+    public bool PlateScattered;
 }
 
 /// <summary>
@@ -855,12 +861,14 @@ internal static class WorldCanvases
         out Vector2 contentMin,
         out Vector2 contentMax,
         out Vector2 canvasSize,
-        out bool raycastTarget
+        out bool raycastTarget,
+        out float spanDegrees
     )
     {
         plate = default;
         contentMin = contentMax = canvasSize = default;
         raycastTarget = false;
+        spanDegrees = 0f;
         var id = root.GetInstanceID();
         foreach (var t in tracked)
             if (t.Id == id && t.Plate != null && t.Plate.isActiveAndEnabled)
@@ -871,6 +879,7 @@ internal static class WorldCanvases
                 contentMax = t.PlateContentMax;
                 canvasSize = t.Rect.rect.size;
                 raycastTarget = t.Plate.raycastTarget;
+                spanDegrees = t.PlateSpanDegrees;
                 return true;
             }
         return false;

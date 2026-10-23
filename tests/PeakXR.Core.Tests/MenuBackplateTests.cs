@@ -60,4 +60,18 @@ public class MenuBackplateTests
     [Fact]
     public void NoPlate_WhiteTextOnWhite_IsNoContrast() =>
         Assert.Equal(1f, MenuBackplate.WorstContrast(0f), 3);
+
+    [Fact]
+    public void Scattered_WhenThePlateWouldSpanMoreThan70Degrees()
+    {
+        // 2 m wide at 1 m: about 90 degrees, the title's whole view.
+        Assert.True(MenuBackplate.Scattered(2f, 0.5f, 1f));
+        Assert.True(MenuBackplate.Scattered(0.5f, 2f, 1f));
+        // A pause menu: 1 m wide at 1.5 m, about 37 degrees.
+        Assert.False(MenuBackplate.Scattered(1f, 0.6f, 1.5f));
+    }
+
+    [Fact]
+    public void Scattered_NoDistance_GetsNoPlate() =>
+        Assert.True(MenuBackplate.Scattered(1f, 1f, 0f));
 }

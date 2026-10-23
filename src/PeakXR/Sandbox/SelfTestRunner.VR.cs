@@ -334,7 +334,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.222: the pause menu's VR tab has a dark plate behind it (<c>UI.MenuBackplate</c>, ui.world
     /// BackplateView) that hugs what the menu draws: each edge <see cref="MenuBackplate.MarginPixels"/> outside the
-    /// drawn content, within 2 px, never a full-canvas 16:9 panel and never a raycast target. Checked again on the
+    /// drawn content, within 2 px, never a full-canvas 16:9 panel, never wider than
+    /// <see cref="MenuBackplate.MaxSpanDegrees"/> of view and never a raycast target. Checked again on the
     /// Compatibility page, whose content differs, so the plate follows a page change.</summary>
     IEnumerator BackplateCheck()
     {
@@ -354,7 +355,7 @@ internal sealed partial class SelfTestRunner
         }
         var notes = new List<string>();
         yield return Until(
-            () => WorldCanvases.TryBackplate(root, out _, out _, out _, out _, out _),
+            () => WorldCanvases.TryBackplate(root, out _, out _, out _, out _, out _, out _),
             2f,
             "no menu backplate on the pause menu"
         );
@@ -390,7 +391,8 @@ internal sealed partial class SelfTestRunner
                 out var lo,
                 out var hi,
                 out var canvas,
-                out bool raycast
+                out bool raycast,
+                out float span
             )
         )
             return $"{page}: no menu backplate shown";
@@ -410,12 +412,14 @@ internal sealed partial class SelfTestRunner
         );
         notes.Add(
             $"{page}: plate {plate.width:0}x{plate.height:0} px around content {hi.x - lo.x:0}x{hi.y - lo.y:0} on a "
-                + $"{canvas.x:0}x{canvas.y:0} canvas, raycast target {raycast}"
+                + $"{canvas.x:0}x{canvas.y:0} canvas, {span:0} deg wide, raycast target {raycast}"
         );
         return !fits
                 ? $"{page}: plate edges not {MenuBackplate.MarginPixels:0} px outside the content"
             : full ? $"{page}: plate is a full-canvas panel"
             : raycast ? $"{page}: plate takes raycasts"
+            : span > MenuBackplate.MaxSpanDegrees
+                ? $"{page}: plate spans {span:0} deg, over the {MenuBackplate.MaxSpanDegrees:0} deg cap"
             : null;
     }
 
