@@ -323,6 +323,7 @@ internal static class ClimbHands
         // On a handle only the free hand holds on; the item hand keeps its item.
         if (
             mode == Mode.Handle
+            && !VRInput.OneHanded
             && c.data.currentItem != null
             && LocalHold.ItemInLeftHand == hand.Left
         )
@@ -726,7 +727,7 @@ internal static class ClimbHands
             {
                 var next = Current(ctx.Character, out var obj);
                 // The hand that holds an item never holds the handle too (GripIntent: the free hand hangs).
-                if (next == Mode.Handle && ctx.ThisHandHolds)
+                if (next == Mode.Handle && ctx.ThisHandHolds && !VRInput.OneHanded)
                     return false;
                 return next != Mode.None
                     && next == mode

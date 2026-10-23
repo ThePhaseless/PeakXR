@@ -447,4 +447,17 @@ public class GripIntentTests
         c.Candidate = GrabCandidate.Interactible;
         Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
     }
+
+    [Fact]
+    public void OneHanded_ItemHand_HangsAndKeepsItsItem()
+    {
+        // One-handed play has no free hand: the item hand takes the handle, and vanilla keeps the item while hanging.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Interactible;
+        c.CandidateIsHandle = true;
+        c.OneHanded = true;
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
 }
