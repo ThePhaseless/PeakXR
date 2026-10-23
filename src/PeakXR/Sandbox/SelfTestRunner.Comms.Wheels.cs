@@ -185,8 +185,8 @@ internal sealed partial class SelfTestRunner
             Fail($"the held pose played {played} emotes, not 1");
             yield break;
         }
-        yield return ExpectNoCue(hand, mark, 0f);
-        notes.Add($"thumbs up: played {GestureEmotes.LastPlayed} once");
+        yield return ExpectCue(hand, DenyReason.HappenedHere, mark);
+        notes.Add($"thumbs up: played {GestureEmotes.LastPlayed} once, confirmed: {cueNote}");
         if (stepOk)
             stepNote = string.Join("; ", notes);
 

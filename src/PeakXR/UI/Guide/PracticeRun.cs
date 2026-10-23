@@ -28,6 +28,9 @@ internal sealed class PracticeRun : MonoBehaviour
     private const float ArrivalSettle = 2f;
     private const float TurnGoal = 25f;
     private const float ClimbHold = 0.3f;
+
+    /// <summary>The Refused drill's apple: past vanilla's 2 m interact reach (Interaction.distance, Interaction.cs:7).</summary>
+    private const float FarApple = 2.6f;
     private const float ReplaceDistance = 1.5f;
     private const float ReplaceAngle = 70f;
     private static readonly Color SkipColor = new(0.45f, 0.9f, 0.82f, 0.8f);
@@ -69,6 +72,9 @@ internal sealed class PracticeRun : MonoBehaviour
     private float consumedBefore;
     private int throwsBefore;
     private float climbFor;
+    private int deniesBefore;
+    private int recenters;
+    private VRRig recenterRig;
     private Vector3 confirmAt;
 
     /// <summary>Where the skip and exit orbs are, for the self-test's scripted hands.</summary>
@@ -131,6 +137,8 @@ internal sealed class PracticeRun : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (recenterRig != null)
+            recenterRig.Recentered -= OnRecentered;
         GuideRows.ComfortFirst = false;
         if (Current == this)
             Current = null;
@@ -369,8 +377,25 @@ internal sealed class PracticeRun : MonoBehaviour
                 if (!hasGoal)
                     Plugin.Log.LogInfo("[ui.guide] no wall near the practice spot; walk to one");
                 break;
+            case PracticeStation.Refused:
+                // Past the game's 2 m interact reach: a pointed grip at it gets the out-of-reach refusal.
+                SpawnApple(rig, FarApple);
+                deniesBefore = Affordance.Count;
+                break;
+            case PracticeStation.Recenter:
+                if (recenterRig != rig)
+                {
+                    if (recenterRig != null)
+                        recenterRig.Recentered -= OnRecentered;
+                    recenterRig = rig;
+                    rig.Recentered += OnRecentered;
+                }
+                recenters = 0;
+                break;
         }
     }
+
+    private void OnRecentered() => recenters++;
 
     /// <summary>The station's success signal, the same game state the self-test steps check.</summary>
     private bool Done(Character c, VRRig rig, float dt)
@@ -414,6 +439,13 @@ internal sealed class PracticeRun : MonoBehaviour
                 if (climbFor > 0f)
                     confirmAt = rig.Head.position + rig.Head.forward * 0.3f;
                 return climbFor >= ClimbHold;
+            case PracticeStation.Refused:
+                // Any refusal counts: the drill is to see, hear and feel one.
+                confirmAt = Affordance.LastPosition;
+                return Affordance.Count > deniesBefore;
+            case PracticeStation.Recenter:
+                confirmAt = rig.Head.position + rig.Head.forward * 0.6f;
+                return recenters > 0;
             default:
                 var wheel = GUIManager.instance != null ? GUIManager.instance.emoteWheel : null;
                 if (wheel == null)
@@ -461,14 +493,14 @@ internal sealed class PracticeRun : MonoBehaviour
 
     /// <summary>An Apple held still at waist height in front of the dominant hand, the self-test's spawn call
     /// (<c>PhotonNetwork.InstantiateItemRoom</c>; offline, so the room is ours).</summary>
-    private void SpawnApple(VRRig rig)
+    private void SpawnApple(VRRig rig, float distance = 0.45f)
     {
         if (apple == null)
             return;
         var head = rig.Head;
         var forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
         var side = Vector3.Cross(Vector3.up, forward) * (VRInput.LeftHanded ? -1f : 1f);
-        var at = head.position + forward * 0.45f + side * 0.15f + Vector3.down * 0.5f;
+        var at = head.position + forward * distance + side * 0.15f + Vector3.down * 0.5f;
         spawned = PhotonNetwork.InstantiateItemRoom(apple.gameObject.name, at, Quaternion.identity);
         var world = spawned != null ? spawned.GetComponent<Item>() : null;
         if (world == null)

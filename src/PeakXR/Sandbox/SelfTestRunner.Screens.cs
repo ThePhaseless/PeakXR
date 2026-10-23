@@ -57,6 +57,9 @@ internal sealed partial class SelfTestRunner
         yield return VRStep("vr.132-guide-comms-rows", 25f, GuideCommsStep());
         if (guideStage != null)
             Destroy(guideStage);
+        yield return VRStep("vr.134-guide-new-rows", 80f, GuideNewRowsStep());
+        if (guideStage != null)
+            Destroy(guideStage);
     }
 
     /// <summary>A screen step driven by scripted hands, which go back to the idle pose afterwards; no settle or
@@ -743,6 +746,72 @@ internal sealed partial class SelfTestRunner
                 yield break;
         }
         stepNote = string.Join("; ", notes);
+    }
+
+    /// <summary>The guide rows added for review row 12, plus the eat demo's new trigger refusal.</summary>
+    static readonly GuideTopic[] NewGuideTopics =
+    {
+        GuideTopic.Eat,
+        GuideTopic.Socket,
+        GuideTopic.ReleaseDrop,
+        GuideTopic.EdgeRing,
+        GuideTopic.FirstLabel,
+        GuideTopic.RopePump,
+        GuideTopic.Chest,
+        GuideTopic.GroundPickup,
+        GuideTopic.HelpUp,
+        GuideTopic.Carry,
+        GuideTopic.Feed,
+        GuideTopic.Struggle,
+        GuideTopic.Hammer,
+        GuideTopic.Glider,
+        GuideTopic.GiveUp,
+    };
+
+    /// <summary>vr.134: every guide row added for the newer mechanics opens: its demo plays a loop on a ghost stage
+    /// (<see cref="GhostDemo"/>, the stage a guide row opens) and sounds its cue at least once; and the practice lists the
+    /// Refused and Recenter drills (PracticeFlow.Stations).</summary>
+    IEnumerator GuideNewRowsStep()
+    {
+        var rig = VRRig.Instance;
+        if (rig == null || rig.Head == null)
+        {
+            Fail("no rig");
+            yield break;
+        }
+        guideStage = new GameObject("PeakXR_SelfTestGuide");
+        var flat = Vector3.ProjectOnPlane(rig.Head.forward, Vector3.up).normalized;
+        guideStage.transform.SetPositionAndRotation(
+            rig.Head.position + flat * 0.8f,
+            Quaternion.LookRotation(-flat, Vector3.up)
+        );
+        var demo = new GhostDemo("Demo", guideStage.transform);
+        var fails = new System.Collections.Generic.List<string>();
+        foreach (var topic in NewGuideTopics)
+        {
+            demo.Play(topic);
+            float until = Now + GuideTable.Get(topic).Loop + 0.2f;
+            while (Now < until)
+            {
+                demo.Tick(Time.unscaledDeltaTime, 1f, rig.Head);
+                yield return null;
+            }
+            if (!demo.Alive || demo.Topic != topic)
+                fails.Add($"{topic} demo not showing");
+            else if (demo.SoundsPlayed < 1)
+                fails.Add($"{topic} played no cue sound in a loop");
+        }
+        demo.Destroy();
+        foreach (var drill in new[] { Core.PracticeStation.Refused, Core.PracticeStation.Recenter })
+            if (System.Array.IndexOf(PracticeFlow.Stations, drill) < 0)
+                fails.Add($"practice has no {drill} drill");
+        Conclude(
+            fails,
+            new System.Collections.Generic.List<string>
+            {
+                $"{NewGuideTopics.Length} rows played a loop with a cue; drills Refused and Recenter listed",
+            }
+        );
     }
 
     /// <summary>vr.132: the VR Guide demos for ping, talk, mute and spectate each play a loop on a ghost stage in front
