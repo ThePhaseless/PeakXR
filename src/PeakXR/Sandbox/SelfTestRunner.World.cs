@@ -757,12 +757,14 @@ internal sealed partial class SelfTestRunner
         )
         {
             CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f);
+            StoopToFollow(left);
             yield return null;
         }
         BeginCarry();
         while (Now < end && flame != null && !done())
         {
             CarryToward(left, flame.position, Touch());
+            StoopToFollow(left);
             yield return null;
         }
         if (flame == null)
