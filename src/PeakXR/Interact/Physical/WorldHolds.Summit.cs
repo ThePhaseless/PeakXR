@@ -215,15 +215,48 @@ internal static partial class WorldHolds
             bool now = on && PhysicalInteraction.HandAction(left) == GripPressAction.Interact;
             bool started = now && !PointGrip[h];
             PointGrip[h] = now;
+            if (now && PressLogAt[h] > 0f && Time.unscaledTime >= PressLogAt[h])
+            {
+                PressLogAt[h] = 0f;
+                LogPress(c, left, "0.3 s on");
+            }
             if (!started)
                 continue;
             var item = c.data.currentItem;
             if (item != null && (item.itemTags & Item.ItemTags.ScoutAmulet) != 0)
+            {
+                // What the game sees as the amulet's pointed grip starts, and once its interact has pressed.
+                LogPress(c, left, "at the grip");
+                PressLogAt[h] = Time.unscaledTime + 0.3f;
                 continue;
+            }
             if (PointedStatue(left, out var at, out var pointed))
                 Affordance.Deny(left, at, DenyReason.CantUse, default, pointed);
         }
     }
+
+    private static readonly float[] PressLogAt = new float[2];
+
+    /// <summary>One line on an amulet's pointed grip: whether interact is pressed, what the game hovers and holds,
+    /// which hand aims, and whether the statue takes the held item (ScoutStatue.IsConstantlyInteractable,
+    /// Peak/ScoutStatue.cs:288-295).</summary>
+    private static void LogPress(Character c, bool left, string when)
+    {
+        var interaction = Interaction.instance;
+        var hovered = interaction != null ? interaction.currentHovered : null;
+        var item = c.data.currentItem;
+        Plugin.Log.LogInfo(
+            $"[interact.world] amulet pointed grip ({(left ? "L" : "R")}) {when}: interact pressed {c.input.interactIsPressed}, "
+                + $"hovered {Name(hovered)}, held {Name(interaction != null ? interaction.currentHeldInteractible : null)}, "
+                + $"aim hand {PhysicalInteraction.AimHand}, statue takes {(item != null ? item.name : "nothing")} "
+                + $"{(statue != null && statue.IsConstantlyInteractable(c))}"
+        );
+    }
+
+    private static string Name(IInteractible it) =>
+        it is Component comp && comp != null ? comp.name
+        : it == null ? "nothing"
+        : it.GetType().Name;
 
     private static bool PointedStatue(bool left, out Vector3 at, out ScoutStatue pointed)
     {
