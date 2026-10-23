@@ -637,6 +637,7 @@ internal sealed partial class SelfTestRunner
         LookAtHand(left, along: true);
         yield return FingerGunAim(left, sky, 0.3f);
         bool skyPreview = PingPreview.DotRed;
+        bool skySign = PingPreview.DotSigned;
         Affordance.ResetGate();
         float mark = CueMark();
         yield return FingerGunSqueeze(left, sky);
@@ -646,6 +647,10 @@ internal sealed partial class SelfTestRunner
         notes.Add("sky: " + cueNote);
         if (!skyPreview)
             Fail("the preview dot was not red while aimed at the sky");
+        else if (!skySign)
+            Fail(
+                "the red sky dot had no ring-and-slash sign: colour alone told the ping would fail"
+            );
         if (PingInput.LastPinged(pinger) != before)
             Fail("a ping went out at the sky");
         if (!stepOk)
