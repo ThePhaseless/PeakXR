@@ -73,7 +73,9 @@ internal static class FrameClock
         {
             string refresh =
                 Hz > 0f
-                    ? FormattableString.Invariant($"{Hz:0.#} Hz, budget {BudgetMs:0.00} ms")
+                    ? FormattableString.Invariant(
+                        $"{Hz:0.#} Hz ({Source}), budget {BudgetMs:0.00} ms"
+                    )
                     : "n/a";
             string gpu = Gpu.Empty
                 ? "n/a"
@@ -90,8 +92,48 @@ internal static class FrameClock
     public static readonly Window Step = new();
     public static readonly Window Adapt = new();
 
-    /// <summary>The display's refresh rate from the last frame; 0 when the runtime reports none.</summary>
+    /// <summary>The headset's refresh rate, sanity-checked (<see cref="FrameBudget.PickRefresh"/>); 0 when no source
+    /// gives a real one.</summary>
     public static float RefreshHz { get; private set; }
+
+    /// <summary>Where <see cref="RefreshHz"/> came from.</summary>
+    public static RefreshSource Source { get; private set; }
+
+    private static float displayHz;
+    private static float lastGoodHz;
+
+    /// <summary>
+    /// SteamVR's OpenXR runtime reports the throttled rate (run 57 over ALVR: a 72 Hz headset read as 36, 24 and 18 Hz),
+    /// so a rate outside 60-240 Hz is unknown and the next source is tried: <c>XRDevice.refreshRate</c>
+    /// (https://docs.unity3d.com/6000.3/Documentation/ScriptReference/XR.XRDevice-refreshRate.html), the last sane
+    /// headset reading, then the desktop monitor
+    /// (https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Screen-currentResolution.html). Logged when the
+    /// chosen rate changes.
+    /// </summary>
+    private static void PickRefresh()
+    {
+        float device = FrameBudget.Sane(displayHz) ? 0f : DeviceHz();
+        float screen =
+            FrameBudget.Sane(displayHz) || FrameBudget.Sane(device) || FrameBudget.Sane(lastGoodHz)
+                ? 0f
+                : (float)Screen.currentResolution.refreshRateRatio.value;
+        float hz = FrameBudget.PickRefresh(displayHz, device, lastGoodHz, screen, out var source);
+        if (source is RefreshSource.Display or RefreshSource.Device)
+            lastGoodHz = hz;
+        Source = source;
+        if (hz == RefreshHz)
+            return;
+        RefreshHz = hz;
+        Plugin.Log.LogInfo(
+            FormattableString.Invariant(
+                $"[render.fixes] refresh {hz:0.#} Hz from {source} (display reported {displayHz:0.#} Hz, device {device:0.#} Hz, screen {screen:0.#} Hz)"
+            )
+        );
+    }
+
+#pragma warning disable CS0618 // Obsolete in favour of the display subsystem; it is only the backup source here.
+    private static float DeviceHz() => UnityEngine.XR.XRDevice.refreshRate;
+#pragma warning restore CS0618
 
     private static readonly UnityEngine.FrameTiming[] Timings = new UnityEngine.FrameTiming[1];
 
@@ -99,6 +141,7 @@ internal static class FrameClock
 
     public static void ResetAll()
     {
+        lastGoodHz = 0f;
         Log.Reset();
         Step.Reset();
         Adapt.Reset();
@@ -115,7 +158,7 @@ internal static class FrameClock
         int repeated = 0;
         if (d != null)
         {
-            RefreshHz = d.TryGetDisplayRefreshRate(out float hz) && hz > 0f ? hz : 0f;
+            displayHz = d.TryGetDisplayRefreshRate(out float hz) ? hz : 0f;
             // Frames dropped since the last update, and how often the current frame was presented (2+ = reprojected).
             if (d.TryGetDroppedFrameCount(out int dr))
             {
@@ -129,7 +172,8 @@ internal static class FrameClock
             }
         }
         else
-            RefreshHz = 0f;
+            displayHz = 0f;
+        PickRefresh();
         Log.Add(interval, gpu, counts, dropped, repeated);
         Step.Add(interval, gpu, counts, dropped, repeated);
         Adapt.Add(interval, gpu, counts, dropped, repeated);
