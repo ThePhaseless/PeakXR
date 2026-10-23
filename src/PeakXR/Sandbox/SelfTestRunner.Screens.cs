@@ -92,6 +92,8 @@ internal sealed partial class SelfTestRunner
         var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
         Script(left).Position = p;
         Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
+        // A player looks at the control they point at.
+        LookAtPoint(target);
     }
 
     /// <summary>
@@ -495,9 +497,21 @@ internal sealed partial class SelfTestRunner
         bool left =
             (rig.LeftHand.position - at).sqrMagnitude < (rig.RightHand.position - at).sqrMagnitude;
         bool shown = kiosk.gameObject.activeInHierarchy;
+        // The refusal rings at the kiosk itself; a player pressing it faces it (run 50: it sat 176 degrees off,
+        // behind the player, because the step pressed it from wherever the kiosk steps left the view).
+        float turn = Vector3.SignedAngle(
+            Flat(rig.Head.forward),
+            Flat(at - rig.Head.position),
+            Vector3.up
+        );
+        rig.RotateYaw(turn);
+        LookAtPoint(at);
+        yield return Wait(0.6f);
         float since = CueMark();
         kiosk.Interact(Character.localCharacter);
         yield return ExpectCue(left, DenyReason.Blocked, since, shown);
+        // The airport steps after this one start from the view they had.
+        rig.RotateYaw(-turn);
         // Offline the kiosk hides itself (AirportInviteFriendsKiosk.cs:36), so no hand can press it: the call stands in.
         if (stepOk)
             stepNote =

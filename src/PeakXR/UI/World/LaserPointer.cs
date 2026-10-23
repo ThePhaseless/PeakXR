@@ -83,6 +83,7 @@ internal sealed class LaserPointer
     private Vector3 pressForward;
     private bool visible = true;
     private GameObject hoverObject;
+    private Selectable overSelectable;
     private Selectable hoverSelectable;
 
     // The hovered control is disabled (a boarding-pass arrow at its limit, kick for a non-host, a locked setting).
@@ -146,6 +147,7 @@ internal sealed class LaserPointer
         Cancel();
         SetVisible(false, false);
         hoverObject = null;
+        overSelectable = null;
         hoverSelectable = null;
         lockedSelectable = null;
         SetHoverLook(false);
@@ -284,13 +286,17 @@ internal sealed class LaserPointer
     }
 
     /// <summary>One tick when the laser lands on a new interactable control. The lookup runs only when
-    /// the hovered graphic changes, and moving between a button's own graphics does not tick again.</summary>
+    /// the hovered graphic changes, and moving between a button's own graphics does not tick again. Whether the
+    /// control is locked is read every frame: a click that disables it (an ascent arrow at its last step) leaves the
+    /// beam on it, and the next press must still get Locked (run 50, vr.116: it got nothing).</summary>
     private void TickOnHover(GameObject over, float strength)
     {
-        if (over == hoverObject)
-            return;
-        hoverObject = over;
-        var selectable = over != null ? over.GetComponentInParent<Selectable>() : null;
+        if (over != hoverObject)
+        {
+            hoverObject = over;
+            overSelectable = over != null ? over.GetComponentInParent<Selectable>() : null;
+        }
+        var selectable = overSelectable;
         lockedSelectable = selectable != null && !selectable.IsInteractable() ? selectable : null;
         if (lockedSelectable != null)
             selectable = null;

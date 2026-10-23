@@ -1495,6 +1495,7 @@ internal sealed partial class SelfTestRunner
     {
         glanceHand = left;
         glanceAlong = along;
+        glancePoint = null;
         if (glanceHeading == null)
         {
             glanceHeading = Flat(VRInput.HeadRotation * Vector3.forward);
@@ -1502,9 +1503,21 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>The world point the scripted head looks toward instead of a hand (<see cref="LookAtPoint"/>).</summary>
+    Vector3? glancePoint;
+
+    /// <summary>As <see cref="LookAtHand"/>, toward a world point: the control a laser presses, a kiosk walked up
+    /// to. A player looks at the button they press (run 50: vr.130's ring 53 degrees off a level view).</summary>
+    void LookAtPoint(Vector3 world)
+    {
+        LookAtHand(false);
+        glancePoint = world;
+    }
+
     void EndGlance()
     {
         glanceHand = null;
+        glancePoint = null;
         glanceHeading = null;
     }
 
@@ -1579,8 +1592,10 @@ internal sealed partial class SelfTestRunner
         if (glanceHand is bool g && glanceHeading is { } heading)
         {
             ref var hand = ref Script(g);
-            var target = glanceAlong
-                ? hand.Position + hand.Rotation * Vector3.forward * 3f
+            var origin = VRRig.Instance != null ? VRRig.Instance.Origin : null;
+            var target =
+                glancePoint is { } world && origin != null ? origin.InverseTransformPoint(world)
+                : glanceAlong ? hand.Position + hand.Rotation * Vector3.forward * 3f
                 : hand.Position;
             glanceWant = HeadGlance.Aim(heading.N(), (target - VRInput.HeadPosition).N()).U();
             glanceDir = Vector3.Slerp(glanceDir, glanceWant, 1f - Mathf.Exp(-10f * dt));
