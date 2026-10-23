@@ -351,9 +351,13 @@ internal static class LocomotionInput
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
-        // At the calibrated standing eye height no lean is left to stand up from (RoomScaleFollow.Update).
+        // No lean left to stand up from (RoomScaleFollow.Update): the head within 3 cm of the calibrated standing
+        // eye height and the avatar not bending into a lean. Run 56's held far lean sat only 6 cm low with a 16
+        // degree bend; read as standing, it lost the stand-up's exemption and standing up walked the body back.
+        var pose = AvatarPoseDriver.Of(c);
         bool standingTall =
-            Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.06f;
+            Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.03f
+            && (pose == null || pose.LeanDegrees < 1f);
         var request = Follow.Update(
             head,
             new NVector2(delta.x, delta.z),
