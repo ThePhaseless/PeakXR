@@ -9,6 +9,29 @@ namespace PeakXR.Core
         /// <summary>Default angle weight in metres: a candidate straight behind the hand scores this much worse.</summary>
         public const float DefaultAngleWeight = 0.05f;
 
+        /// <summary>How many points <see cref="SightPoints"/> writes.</summary>
+        public const int SightPointCount = 3;
+
+        /// <summary>
+        /// Where the eye may see a grab candidate: the point of its bounds nearest the hand, its centre and the top of
+        /// its bounds. An item partly sunk into uneven ground hides the first two below the surface while its top still
+        /// shows, so the grab checks line of sight to each and takes the item when any is clear; a wall between hides
+        /// all three.
+        /// </summary>
+        /// <returns>The number of points written (<see cref="SightPointCount"/>).</returns>
+        public static int SightPoints(
+            Vector3 closest,
+            Vector3 center,
+            Vector3 extents,
+            Vector3[] into
+        )
+        {
+            into[0] = closest;
+            into[1] = center;
+            into[2] = center + new Vector3(0f, extents.Y, 0f);
+            return SightPointCount;
+        }
+
         /// <summary>
         /// Returns the index of the best of the first <paramref name="count"/> candidates, or -1 if none is within
         /// <paramref name="grabRadius"/>. Distance is measured to the candidate's surface when
