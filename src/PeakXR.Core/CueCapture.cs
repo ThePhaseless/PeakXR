@@ -94,6 +94,15 @@ public sealed class CueCapture
     }
 
     /// <summary>A non-refusal haptic (progress, contact, cancel, end stop, danger) on this hand.</summary>
+    /// <summary>This frame the ring's in-view edge copy is drawn at <paramref name="center"/>.</summary>
+    public void Edge(bool isLeft, Vector3 center, float degrees, float time)
+    {
+        ref var h = ref Hand(isLeft);
+        h.EdgeCenter = center;
+        h.EdgeDegrees = degrees;
+        h.EdgeAt = time;
+    }
+
     public void Feel(
         bool isLeft,
         CueFeel feel,
@@ -243,6 +252,12 @@ public struct CueHand
     public bool Tint;
     public float RingAt;
 
+    /// <summary>The in-view edge copy of the ring (<see cref="CueEdge"/>), drawn when the real spot is out of
+    /// sight: its centre, angular diameter and the last time it was drawn.</summary>
+    public Vector3 EdgeCenter;
+    public float EdgeDegrees;
+    public float EdgeAt;
+
     /// <summary>Last time a drawn ring had the red preview on.</summary>
     public float TintAt;
 
@@ -266,6 +281,7 @@ public struct CueHand
                 ReasonAt = float.NegativeInfinity,
                 RingAt = float.NegativeInfinity,
                 TintAt = float.NegativeInfinity,
+                EdgeAt = float.NegativeInfinity,
                 PulseAt = float.NegativeInfinity,
                 FeelAt = new float[FeelCount],
                 FeelAmplitude = new float[FeelCount],

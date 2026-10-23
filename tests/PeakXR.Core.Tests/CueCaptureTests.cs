@@ -240,4 +240,18 @@ public class CueCaptureTests
         Assert.Equal(10f, c.LastSound(CueSound.Transmit).At);
         Assert.False(c.LastSound(CueSound.Cancel).Played);
     }
+
+    [Fact]
+    public void EdgeRing_IsRecordedPerHand_AndCleared()
+    {
+        var c = new CueCapture();
+        Assert.Equal(float.NegativeInfinity, c.Hand(true).EdgeAt);
+        c.Edge(true, Spot, 5f, 10f);
+        Assert.Equal(10f, c.Hand(true).EdgeAt);
+        Assert.Equal(Spot, c.Hand(true).EdgeCenter);
+        Assert.Equal(5f, c.Hand(true).EdgeDegrees);
+        Assert.Equal(float.NegativeInfinity, c.Hand(false).EdgeAt);
+        c.Clear();
+        Assert.Equal(float.NegativeInfinity, c.Hand(true).EdgeAt);
+    }
 }
