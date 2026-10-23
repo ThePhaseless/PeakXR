@@ -695,7 +695,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.242 (P2-6): a slab on the game's Map layer (in <c>HelperFunctions.terrainMapMask</c>,
     /// HelperFunctions.cs:27) across the line from the eye to the target prompt of an Apple on the head's ray, but
     /// clear of the ray to the Apple so it stays hovered, dims the prompt to <see cref="PromptOcclusion.DimAlpha"/>
-    /// within 0.8 s; with the slab gone it comes back to full.</summary>
+    /// within 0.8 s; with the slab gone it comes back to full. The Apple is held 1.3 m out (the game's interact reach
+    /// is 2 m, Interaction.cs:7): at 0.8 m the prompt sits at the fruit's front, about 0.65 m away, and a slab 0.3 m
+    /// out falls inside the margin <see cref="PromptOcclusion.Blocked"/> leaves for the target's own surface.</summary>
     IEnumerator PromptOcclusionStep()
     {
         Item world = null;
@@ -703,6 +705,11 @@ internal sealed partial class SelfTestRunner
         if (world == null)
             yield break;
         var head = VRRig.Instance.Head;
+        for (float t = Now + 0.4f; Now < t; )
+        {
+            HoldFar(world, head);
+            yield return null;
+        }
         var label = GUIManager.instance.interactName.transform.parent;
         if (label == null || label.name != "PeakXR_TargetPrompt")
         {
@@ -739,7 +746,7 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         for (float t = Now + 0.8f; Now < t; )
         {
-            HoldOnHeadRay(world, head);
+            HoldFar(world, head);
             yield return null;
         }
         bool hovered = ReferenceEquals(Interaction.instance.currentHovered, world);
@@ -747,7 +754,7 @@ internal sealed partial class SelfTestRunner
         float drawn = Alpha(GUIManager.instance.interactNameText);
         notes.Add(
             F(
-                $"behind the slab: prompt alpha {dimmed:0.00}, name drawn at {drawn:0.00}, hovered {hovered}"
+                $"behind the slab: prompt alpha {dimmed:0.00}, name drawn at {drawn:0.00}, hovered {hovered}, terrain hit {TargetPrompt.LastHit:0.00} m of {TargetPrompt.LastDistance:0.00} m to the prompt, target radius {TargetPrompt.LastRadius:0.00} m"
             )
         );
         if (!hovered)
@@ -763,7 +770,7 @@ internal sealed partial class SelfTestRunner
         Physics.SyncTransforms();
         for (float t = Now + 0.8f; Now < t; )
         {
-            HoldOnHeadRay(world, head);
+            HoldFar(world, head);
             yield return null;
         }
         float open = TargetPrompt.Dim;
@@ -771,5 +778,12 @@ internal sealed partial class SelfTestRunner
         if (open < 0.95f)
             fails.Add(F($"prompt stayed at {open:0.00} with nothing in the way"));
         Conclude(fails, notes);
+    }
+
+    /// <summary>vr.242's hold: the Apple on the head's ray 1.3 m out, far enough that the prompt clears its margin.</summary>
+    static void HoldFar(Item item, Transform head)
+    {
+        if (item != null)
+            item.transform.position += head.position + head.forward * 1.3f - item.Center();
     }
 }
