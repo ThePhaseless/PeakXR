@@ -37,6 +37,49 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.13: the fixed item, thrown along the head's level forward, judged with <see cref="ThrowReport"/>.</summary>
+    /// <summary>Clear flight (m) a heading needs for the throw: past the step's 2 m landing check with room to fall.</summary>
+    const float ThrowClear = 8f;
+
+    /// <summary>Which heading vr.13 threw along (<see cref="FaceOpenThrow"/>), for its note.</summary>
+    string throwFacing = "";
+
+    /// <summary>
+    /// Turns the view to the first of eight headings (the current one first, then alternately 45 degrees either
+    /// side) with nothing within <see cref="ThrowClear"/> of the eye level or 10 degrees above it, and says which.
+    /// </summary>
+    static string FaceOpenThrow()
+    {
+        var rig = VRRig.Instance;
+        var eye = rig.Head.position;
+        var start = Flat(rig.Head.forward);
+        for (int i = 0; i < 8; i++)
+        {
+            float yaw = (i + 1) / 2 * 45f * (i % 2 == 0 ? 1f : -1f);
+            var dir = Quaternion.Euler(0f, yaw, 0f) * start;
+            var up = Quaternion.AngleAxis(-10f, Vector3.Cross(Vector3.up, dir)) * dir;
+            bool closed =
+                Physics.Raycast(
+                    eye,
+                    dir,
+                    ThrowClear,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.Raycast(
+                    eye,
+                    up,
+                    ThrowClear,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                );
+            if (closed)
+                continue;
+            rig.RotateYaw(yaw);
+            return F($"threw {yaw:0} deg off the home heading, {ThrowClear:0} m clear");
+        }
+        return F($"no heading {ThrowClear:0} m clear; threw along the home heading");
+    }
+
     IEnumerator ThrowCheck()
     {
         Item item = null;
@@ -50,6 +93,10 @@ internal sealed partial class SelfTestRunner
             Fail($"no '{ThrowItemName}' item to throw");
             yield break;
         }
+        // A player throws into open space, not into the rock in front of them (run 50: a 79 degree face 2.3 m ahead
+        // of the home heading stopped the Apple at 1.6 m).
+        throwFacing = FaceOpenThrow();
+        yield return Wait(0.3f);
         yield return GiveAndHold(item);
         if (!stepOk)
             yield break;
@@ -235,7 +282,8 @@ internal sealed partial class SelfTestRunner
         string spawnNote = F(
             $"appeared at {spawnAt}, {Vector3.Distance(spawnAt, controllerAt):0.00} m from the controller, {height:0.00} m over the ground, flat range {flatRange:0.0} m"
         );
-        var note = $"{ThrowItemName}: {launchNote}; {releaseNote}; {spawnNote}; {firstContact}";
+        var note =
+            $"{ThrowItemName}: {launchNote}; {releaseNote}; {spawnNote}; {firstContact}; {throwFacing}";
         switch (verdict)
         {
             case ThrowVerdict.Ok:

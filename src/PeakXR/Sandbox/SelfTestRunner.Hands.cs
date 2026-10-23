@@ -145,11 +145,32 @@ internal sealed partial class SelfTestRunner
     const float PropSetOut = 0.55f;
 
     /// <summary>
+    /// Where a prop for a stooped grab is set down: on the ground <paramref name="outward"/> m ahead of the eye, a
+    /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
+    /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
+    /// </summary>
+    static Vector3 GroundAhead(float outward)
+    {
+        var head = VRRig.Instance.Head;
+        var ahead = head.position + Flat(head.forward) * outward;
+        return Physics.Raycast(
+            ahead + Vector3.up * 0.5f,
+            Vector3.down,
+            out var ground,
+            4f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? ground.point + Vector3.up * 0.08f
+            : ahead;
+    }
+
+    /// <summary>
     /// Waits (up to 2 s) for a dropped prop to stop rolling. One that rests outside <see cref="PropRestIn"/> to
     /// <see cref="PropRestOut"/> out from the eye is set down on the ground <see cref="PropSetOut"/> ahead, as a player
-    /// would step to it: the step is the grab, not a chase. Then it is held still (kinematic, a named shortcut in the
-    /// note) so the stooping body cannot roll or kick it before the hand closes; the pickup takes it out of the world
-    /// anyway. Run 47-49: Apples that rolled 1.0-3.2 m away, or under the toes, failed vr.10, vr.11, vr.32 and vr.47b.
+    /// would step to it: the step is the grab, not a chase. Its physics stay the game's (run 50 held it kinematic and
+    /// the grab still failed, so that is not what helps). Run 47-50: Apples that rolled 1.0-3.2 m away, or under the
+    /// toes, failed vr.10, vr.11, vr.32 and vr.47b.
     /// </summary>
     IEnumerator RestWithinReach(Item world, Vector3 spot)
     {
@@ -168,7 +189,6 @@ internal sealed partial class SelfTestRunner
         outward.y = 0f;
         world.rig.linearVelocity = Vector3.zero;
         world.rig.angularVelocity = Vector3.zero;
-        world.rig.isKinematic = true;
         string how = F($"rested {outward.magnitude:0.00} m out");
         if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut)
         {
@@ -190,7 +210,7 @@ internal sealed partial class SelfTestRunner
             world.transform.position = ahead;
             how += F($", set down {PropSetOut:0.00} m ahead");
         }
-        Note($"{world.name} {how}; shortcut: held still (kinematic) until the grab");
+        Note($"{world.name} {how}");
         yield return Wait(0.2f);
     }
 
@@ -206,8 +226,7 @@ internal sealed partial class SelfTestRunner
             Fail("no Apple item");
             yield break;
         }
-        var spot = Flat(VRRig.Instance.Head.forward) * 0.45f + VRRig.Instance.Head.position;
-        spot.y = c.Center.y;
+        var spot = GroundAhead(PropSetOut);
         if (!SandboxActions.SpawnItemAt(apple, spot))
         {
             Fail(SandboxActions.LastMessage);
@@ -241,9 +260,26 @@ internal sealed partial class SelfTestRunner
         }
         bool crouched = c.data.isCrouching;
         yield return GripTo(left, 1f, 0.1f);
-        yield return Until(() => Holding(apple), 3f, "not picked up within 3 s");
-        if (!stepOk)
+        yield return WaitFor(() => Holding(apple), 3f);
+        if (!Holding(apple))
+        {
+            // Name the stage: where the hand is against the Apple, the eye's line to it, and the grip's own verdict.
+            var hand = VRRig.Instance.Hand(left).position;
+            var eye = VRRig.Instance.Head.position;
+            var near = world != null ? world.Center() : last;
+            bool sight = !Physics.Linecast(
+                eye,
+                Vector3.MoveTowards(near, eye, 0.05f),
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
+            Fail(
+                F(
+                    $"not picked up within 3 s: hand {Vector3.Distance(hand, near):0.00} m from the Apple, eye {Vector3.Distance(eye, near):0.00} m (clear line {sight}), stooped {headDrop:0.00} m, crouched {crouched}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                )
+            );
             yield break;
+        }
         yield return null;
         yield return null;
         var pose = PoseOf(c);
@@ -615,8 +651,27 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool left = VRInput.LeftHanded;
-        var hold = hit.point + hit.normal * 0.04f;
         var rig = VRRig.Instance;
+        // A player steps up to the face before reaching for it; the warp spot can leave it out of reach (run 50:
+        // the hold 0.81 m out, 1.03 m from the eye).
+        var gap = hit.point - rig.Head.position;
+        gap.y = 0f;
+        if (gap.magnitude > 0.65f)
+        {
+            yield return WarpTo(c.Center - Flat(hit.normal) * (gap.magnitude - 0.5f));
+            rig.RotateYaw(
+                Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(hit.normal), Vector3.up)
+            );
+            yield return Wait(0.6f);
+            if (!WallInFront(c, wall, 0.1f, out hit))
+            {
+                Fail(
+                    $"wall not in front after stepping up to it (wall {wall.point}, body {c.Center})"
+                );
+                yield break;
+            }
+        }
+        var hold = hit.point + hit.normal * 0.04f;
         Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 3.5f;
         yield return MoveTo(left, () => hold, 0.5f);
         if (OverReach(left) is { } far)
@@ -903,8 +958,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var head = VRRig.Instance.Head;
-        var spot = Flat(head.forward) * 0.45f + head.position;
-        spot.y = c.Center.y;
+        var spot = GroundAhead(PropSetOut);
 
         // Wear a pack: the wheel's Wear slice calls Backpack.Wear (BackpackWheel.cs:133), the plain pickup into
         // Player.backpackSlot (Player.cs:278).
