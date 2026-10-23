@@ -30,6 +30,12 @@ internal static class CueAudio
     /// <summary>The last sound went through the fallback sources (self-test).</summary>
     internal static bool LastWasFallback { get; private set; }
 
+    /// <summary>The last sound's final source volume, before the game's mixer (self-test).</summary>
+    internal static float LastVolume { get; private set; }
+
+    /// <summary><c>UI.CueVolume</c>: 1 before ui.affordance binds it.</summary>
+    private static float CueVolume => AffordanceFeature.CueVolume?.Value ?? 1f;
+
     /// <summary>Plays the cue; false only when neither path could play it (clips failed to build).</summary>
     public static bool Play(CueSound sound, Vector3 position, float volume)
     {
@@ -49,7 +55,10 @@ internal static class CueAudio
             var sfx = Instance(sound);
             if (sfx == null)
                 return false;
-            player.PlaySFX(sfx, position, null, null, volume);
+            // PlaySFX plays settings.volume times the multiplier (SFX_Player.cs:131).
+            LastVolume = CueTones.Volume(volume, CueVolume);
+            // PlaySFX plays settings.volume times the multiplier (SFX_Player.cs:131).
+            player.PlaySFX(sfx, position, null, null, LastVolume / CueTones.BaseVolume);
             LastWasFallback = false;
             return true;
         }
@@ -81,7 +90,7 @@ internal static class CueAudio
         source.transform.position = position;
         source.Stop();
         source.clip = clip;
-        source.volume = 0.3f * volume;
+        source.volume = LastVolume = CueTones.Volume(volume, CueVolume);
         source.Play();
         LastWasFallback = true;
         return true;
@@ -123,7 +132,7 @@ internal static class CueAudio
         sfx.clips = new[] { clip };
         sfx.settings = new SFX_Settings
         {
-            volume = 0.3f,
+            volume = CueTones.BaseVolume,
             volume_Variation = 0f,
             pitch = 1f,
             pitch_Variation = 0f,

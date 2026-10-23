@@ -30,11 +30,64 @@ internal sealed partial class SelfTestRunner
         yield return VRStep("vr.220-first-refusal-label", 20f, FirstRefusalLabelStep());
         yield return VRStep("vr.232-deny-retry-haptic", 10f, DenyRetryHapticStep());
         yield return VRStep("vr.233-haptic-detail", 10f, HapticDetailStep());
+        yield return VRStep("vr.234-cue-volume", 10f, CueVolumeStep());
+    }
+
+    /// <summary>vr.234: <c>UI.CueVolume</c> scales the cue sounds on both paths (the game's SFX player and the
+    /// fallback sources): at 2 and at 0.5 a notice played at full call volume goes out at
+    /// <see cref="CueTones.Volume"/> (0.6 and 0.15), through the path asked for. The setting goes back.</summary>
+    IEnumerator CueVolumeStep()
+    {
+        var entry = AffordanceFeature.CueVolume;
+        if (!Affordance.Enabled || entry == null)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        float saved = entry.Value;
+        string note = "";
+        try
+        {
+            var at =
+                VRRig.Instance != null && VRRig.Instance.Head != null
+                    ? VRRig.Instance.Head.position + VRRig.Instance.Head.forward * 0.5f
+                    : Vector3.zero;
+            for (int pass = 0; pass < 4 && stepOk; pass++)
+            {
+                bool fallback = pass >= 2;
+                float level = pass % 2 == 0 ? 2f : 0.5f;
+                entry.Value = level;
+                CueAudio.ForceFallback = fallback;
+                if (!CueAudio.Play(CueSound.Notice, at, 1f))
+                    Fail("the cue sound could not play");
+                else if (CueAudio.LastWasFallback != fallback)
+                    Fail($"sound went through the {(fallback ? "game's SFX player" : "fallback")}");
+                else if (Mathf.Abs(CueAudio.LastVolume - CueTones.Volume(1f, level)) > 1e-4f)
+                    Fail(
+                        F(
+                            $"CueVolume {level:0.0}: source volume {CueAudio.LastVolume:0.000}, expected {CueTones.Volume(1f, level):0.000}"
+                        )
+                    );
+                else
+                    note += F(
+                        $"{(fallback ? "fallback" : "SFX")} x{level:0.0}: {CueAudio.LastVolume:0.00}; "
+                    );
+                // Past the SFX instance's 0.12 s cooldown.
+                yield return Wait(0.2f);
+            }
+        }
+        finally
+        {
+            CueAudio.ForceFallback = false;
+            entry.Value = saved;
+        }
+        if (stepOk)
+            stepNote = note;
     }
 
     /// <summary>vr.233: <c>Interaction.HapticDetail</c> Essential drops the ambient feel in the one haptic mixer
-    /// (Interact.Haptics): an Ambient beat asked for every frame for 0.5 s never goes out, while a Cue pulse and a
-    /// refusal's triple still reach the hand. Full again lets the beat through. The setting goes back.</summary>
+    /// (Interact.Haptics): at Full an Ambient beat goes out; at Essential the same beat asked for every frame for
+    /// 0.5 s never does, while a Cue pulse and a refusal's triple still reach the hand. The setting goes back.</summary>
     IEnumerator HapticDetailStep()
     {
         var entry = Interact.InteractConfig.Instance.HapticDetailEntry;

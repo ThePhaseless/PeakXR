@@ -28,6 +28,9 @@ public sealed class AffordanceFeature : Feature
 
     internal static ConfigEntry<bool> FirstTimeRefusalLabels { get; private set; }
 
+    /// <summary>Loudness of every affordance cue sound, on the game's SFX path and the fallback.</summary>
+    internal static ConfigEntry<float> CueVolume { get; private set; }
+
     /// <summary>One bit per <see cref="Core.DenyReason"/> already labelled (<see cref="Core.FirstRefusalLabel"/>).</summary>
     internal static ConfigEntry<ulong> SeenRefusals { get; private set; }
 
@@ -65,6 +68,16 @@ public sealed class AffordanceFeature : Feature
             true,
             "The first time each kind of refusal happens, its short reason shows as text next to the ring, even "
                 + "with ActionHintText off. After that only the ring's shape shows. The button below starts over."
+        );
+        CueVolume = Plugin.Settings.Bind(
+            "UI",
+            "CueVolume",
+            1f,
+            new ConfigDescription(
+                "Loudness of the cue sounds (refused, would work, notice, cancel, danger). 1 is normal, 2 is twice "
+                    + "as loud, 0 is silent; the rings and haptics still show.",
+                new AcceptableValueRange<float>(0f, 2f)
+            )
         );
         SeenRefusals = Plugin.Settings.Bind(
             "UI",
