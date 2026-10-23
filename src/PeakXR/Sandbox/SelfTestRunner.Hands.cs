@@ -1694,6 +1694,10 @@ internal sealed partial class SelfTestRunner
     {
         headDrop = 0f;
         EndGlance();
+        // No step inherits another's hand pose: buttons, touches (the thumb on the stick or a button), sticks and
+        // skeletal curls back to the rest pose's, finger on the trigger and thumb lifted, as BeginHands starts.
+        Neutral(ref scriptLeft);
+        Neutral(ref scriptRight);
         VRInput.TestOverride = finished ? null : IdleHands;
     }
 
@@ -1718,6 +1722,16 @@ internal sealed partial class SelfTestRunner
             Position = head + side * 0.18f + Vector3.down * 0.25f + forward * 0.35f,
             Rotation =
                 Quaternion.LookRotation(forward, Vector3.up) * Quaternion.Euler(0f, 0f, roll),
+        };
+
+    /// <summary>Every input on a scripted hand back to the rest pose's, keeping where it is.</summary>
+    static void Neutral(ref HandState s) =>
+        s = new HandState
+        {
+            Tracked = s.Tracked,
+            Position = s.Position,
+            Rotation = s.Rotation,
+            TriggerTouch = true,
         };
 
     static HandState Rest(Vector3 head, Vector3 forward, Vector3 side)
