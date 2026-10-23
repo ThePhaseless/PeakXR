@@ -294,7 +294,7 @@ internal static class PhysicalInteraction
         )
             hand.InteractAt = GripIntent.DeferPointedInteract(
                 hand.InteractAt,
-                GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left)),
+                GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left)),
                 now,
                 FingerGun.DefaultWindow
             );
@@ -496,8 +496,12 @@ internal static class PhysicalInteraction
                 Haptics.Pulse(hand.Left, 0.2f, 0.03f);
                 break;
             case GripPressAction.Interact:
-                // A pointing grip may be the start of a finger-gun ping: wait out its trigger window first.
-                hand.InteractAt = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left))
+                // A finger gun (pointing, thumb up) may be the start of a ping: wait out its trigger window first.
+                // Pointing with the thumb resting is a pointed interact, at once (external review #13).
+                hand.InteractAt = GripIntent.PointedInteractWaits(
+                    LocalAvatar.ControllerCurls(hand.Left),
+                    PingAims()
+                )
                     ? now + FingerGun.DefaultWindow
                     : now;
                 break;

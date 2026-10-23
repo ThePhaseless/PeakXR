@@ -1313,7 +1313,23 @@ internal sealed partial class SelfTestRunner
             $"Apple {toApple:0.00} m from the pointing hand (ray {rayReach:0.00} m), on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (!keptWhileAiming || !kept)
+        {
             Fail("aiming a ping at an item picked it up: " + note);
+            yield break;
+        }
+        // External review #13: the same pointing grip with the thumb resting on the stick is a pointed interact, not
+        // a ping aim. It takes the Apple and pings nothing.
+        float pingBefore = Interact.Ping.PingInput.LastPinged(pinger);
+        Script(left).StickTouch = true;
+        OnRestore(() => Script(left).StickTouch = false);
+        yield return FingerGunAim(left, aim, 0.1f);
+        yield return WaitFor(() => Holding(apple), 2f);
+        bool taken = Holding(apple);
+        bool pinged = Interact.Ping.PingInput.LastPinged(pinger) != pingBefore;
+        Script(left).StickTouch = false;
+        note += F($"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}");
+        if (!taken || pinged)
+            Fail("a pointed grip with the thumb resting did not interact cleanly: " + note);
         else
             Note(note);
     }

@@ -257,5 +257,17 @@ namespace PeakXR.Core
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
         public static bool IsPointing(in FingerCurls c) =>
             c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;
+
+        /// <summary>
+        /// The ping's finger gun: pointing with the thumb lifted off the stick and face buttons. A grip with the index
+        /// straight and the thumb resting is a common way to hold Index and Touch controllers, so that alone is a
+        /// pointed interact, never a ping aim (external review #13).
+        /// </summary>
+        public static bool IsFingerGun(in FingerCurls c) => IsPointing(c) && c.Thumb < 0.5f;
+
+        /// <summary>A pointing grip's interact waits for a possible ping only for a finger gun while pinging is
+        /// live; any other pointing grip interacts at once, so neither steals the other.</summary>
+        public static bool PointedInteractWaits(in FingerCurls c, bool pingLive) =>
+            pingLive && IsFingerGun(c);
     }
 }
