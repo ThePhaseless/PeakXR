@@ -64,4 +64,34 @@ public class SettingMigrationTests
         Assert.Equal(1.6f, Rescale(1.6f, ran: true));
         Assert.Equal(0.5f, Rescale(0.5f, ran: true));
     }
+
+    static bool RunSaved(string raw, out float value, bool ran = false) =>
+        SettingMigration.RescaleSaved(raw, 0.5f, 1f, 2f, 0f, 2f, ran, out value);
+
+    [Theory]
+    [InlineData("0.5", 1f)]
+    [InlineData("0.8", 1.6f)]
+    [InlineData(" 0.25 ", 0.5f)]
+    public void RescaleSaved_ASavedNumberIsRescaled(string raw, float expected)
+    {
+        Assert.True(RunSaved(raw, out var v));
+        Assert.Equal(expected, v, 5);
+    }
+
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("")]
+    [InlineData("0,5")]
+    public void RescaleSaved_AnUnparseableValueIsLeftAlone(string raw)
+    {
+        // BepInEx falls back to the new default for it; doubling that would be wrong.
+        Assert.False(RunSaved(raw, out _));
+    }
+
+    [Fact]
+    public void RescaleSaved_NothingSavedOrAlreadyRan_NoRescale()
+    {
+        Assert.False(RunSaved(null, out _));
+        Assert.False(RunSaved("0.8", out _, ran: true));
+    }
 }
