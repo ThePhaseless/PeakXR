@@ -27,7 +27,7 @@ internal sealed partial class SelfTestRunner
         if (r.Interval.Empty)
             return;
         Plugin.Log.LogInfo($"[selftest] frames {id}: {r.Line(RenderDriver.CurrentScale)}");
-        if (r.BudgetMs <= 0f)
+        if (r.BudgetMs <= 0f || !r.Trusted)
             return;
         frameSteps++;
         float ratio = r.Interval.P95 / r.BudgetMs;
@@ -58,7 +58,8 @@ internal sealed partial class SelfTestRunner
         yield return Wait(FrameBudgetSeconds);
         var r = FrameClock.Summarize(FrameClock.Step);
         var note = r.Line(RenderDriver.CurrentScale);
-        switch (FrameBudget.Judge(r.Interval, r.Hz))
+        // The desktop monitor's rate is no budget for the headset: that SKIPs too.
+        switch (FrameBudget.Judge(r.Interval, r.Trusted ? r.Hz : 0f))
         {
             case FrameVerdict.Skip:
                 stepSkip = "no timing: " + note;

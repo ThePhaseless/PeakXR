@@ -23,6 +23,9 @@ internal static class FrameClock
         public int Dropped;
         public int Repeated;
         public bool RuntimeCounts;
+
+        /// <summary>Frames this window saw; its rings keep only their last <see cref="FrameRing.DefaultCapacity"/>.</summary>
+        public int Frames;
         private float started;
 
         public float Seconds => Time.unscaledTime - started;
@@ -31,13 +34,14 @@ internal static class FrameClock
         {
             Interval.Clear();
             Gpu.Clear();
-            Dropped = Repeated = 0;
+            Dropped = Repeated = Frames = 0;
             RuntimeCounts = false;
             started = Time.unscaledTime;
         }
 
         public void Add(float interval, float gpu, bool counts, int dropped, int repeated)
         {
+            Frames++;
             Interval.Add(interval);
             Gpu.Add(gpu);
             RuntimeCounts |= counts;
@@ -57,10 +61,16 @@ internal static class FrameClock
         public readonly int Dropped;
         public readonly int Repeated;
         public readonly float Seconds;
+        public readonly int Frames;
 
-        public Report(Window w, float hz)
+        /// <summary>The rate is the headset's: only then may anything act on <see cref="BudgetMs"/>.</summary>
+        public readonly bool Trusted;
+
+        public Report(Window w, float hz, bool trusted)
         {
             Hz = hz;
+            Trusted = trusted;
+            Frames = w.Frames;
             BudgetMs = FrameBudget.BudgetMs(hz);
             Interval = w.Interval.Summarize(BudgetMs * FrameBudget.DroppedFactor);
             Gpu = w.Gpu.Summarize(0f);
@@ -82,8 +92,13 @@ internal static class FrameClock
                 : FormattableString.Invariant($"{Gpu.P50:0.00}/{Gpu.P95:0.00} ms");
             string runtime =
                 Dropped < 0 ? "n/a" : FormattableString.Invariant($"{Dropped}/{Repeated}");
+            // A long log window at a high rate outgrows the ring: say which frames the percentiles cover.
+            string covers =
+                Interval.Count < Frames
+                    ? FormattableString.Invariant($" (last {Interval.Count} of {Frames} frames)")
+                    : "";
             return FormattableString.Invariant(
-                $"refresh {refresh}, frame p50/p95/p99 {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {Interval.Over}/{Interval.Count}, GPU p50/p95 {gpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
+                $"refresh {refresh}, frame p50/p95/p99{covers} {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {Interval.Over}/{Interval.Count}, GPU p50/p95 {gpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
             );
         }
     }
@@ -92,41 +107,42 @@ internal static class FrameClock
     public static readonly Window Step = new();
     public static readonly Window Adapt = new();
 
-    /// <summary>The headset's refresh rate, sanity-checked (<see cref="FrameBudget.PickRefresh"/>); 0 when no source
-    /// gives a real one.</summary>
-    public static float RefreshHz { get; private set; }
+    private static readonly RefreshTracker Refresh = new();
+
+    /// <summary>The refresh rate for budgets (<see cref="RefreshTracker"/>); 0 when no source gives a real one.</summary>
+    public static float RefreshHz => Refresh.Hz;
 
     /// <summary>Where <see cref="RefreshHz"/> came from.</summary>
-    public static RefreshSource Source { get; private set; }
+    public static RefreshSource Source => Refresh.Source;
+
+    /// <summary>The rate is the headset's (not the desktop monitor's): budgets may drive adaptive quality, dynamic
+    /// resolution and the self-test's verdict.</summary>
+    public static bool Trusted => Refresh.Trusted;
 
     private static float displayHz;
-    private static float lastGoodHz;
 
     /// <summary>
-    /// SteamVR's OpenXR runtime reports the throttled rate (run 57 over ALVR: a 72 Hz headset read as 36, 24 and 18 Hz),
-    /// so a rate outside 60-240 Hz is unknown and the next source is tried: <c>XRDevice.refreshRate</c>
-    /// (https://docs.unity3d.com/6000.3/Documentation/ScriptReference/XR.XRDevice-refreshRate.html), the last sane
-    /// headset reading, then the desktop monitor
+    /// Sources in order: the display subsystem, <c>XRDevice.refreshRate</c>
+    /// (https://docs.unity3d.com/6000.3/Documentation/ScriptReference/XR.XRDevice-refreshRate.html), the session's
+    /// rate while the runtime reports a throttled fraction of it, then the desktop monitor for reports only
     /// (https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Screen-currentResolution.html). Logged when the
     /// chosen rate changes.
     /// </summary>
     private static void PickRefresh()
     {
+        float before = Refresh.Hz;
         float device = FrameBudget.Sane(displayHz) ? 0f : DeviceHz();
+        // The monitor is read only when no headset rate is known (an internal call, not needed every frame).
         float screen =
-            FrameBudget.Sane(displayHz) || FrameBudget.Sane(device) || FrameBudget.Sane(lastGoodHz)
+            FrameBudget.Sane(displayHz) || FrameBudget.Sane(device) || Refresh.Trusted
                 ? 0f
                 : (float)Screen.currentResolution.refreshRateRatio.value;
-        float hz = FrameBudget.PickRefresh(displayHz, device, lastGoodHz, screen, out var source);
-        if (source is RefreshSource.Display or RefreshSource.Device)
-            lastGoodHz = hz;
-        Source = source;
-        if (hz == RefreshHz)
+        float hz = Refresh.Update(displayHz, device, screen);
+        if (hz == before)
             return;
-        RefreshHz = hz;
         Plugin.Log.LogInfo(
             FormattableString.Invariant(
-                $"[render.fixes] refresh {hz:0.#} Hz from {source} (display reported {displayHz:0.#} Hz, device {device:0.#} Hz, screen {screen:0.#} Hz)"
+                $"[render.fixes] refresh {hz:0.#} Hz from {Refresh.Source}{(Refresh.Trusted ? "" : " (not the headset: nothing adapts to it)")} (display reported {displayHz:0.#} Hz, device {device:0.#} Hz, screen {screen:0.#} Hz)"
             )
         );
     }
@@ -137,11 +153,11 @@ internal static class FrameClock
 
     private static readonly UnityEngine.FrameTiming[] Timings = new UnityEngine.FrameTiming[1];
 
-    public static Report Summarize(Window w) => new(w, RefreshHz);
+    public static Report Summarize(Window w) => new(w, RefreshHz, Trusted);
 
     public static void ResetAll()
     {
-        lastGoodHz = 0f;
+        Refresh.Reset();
         Log.Reset();
         Step.Reset();
         Adapt.Reset();

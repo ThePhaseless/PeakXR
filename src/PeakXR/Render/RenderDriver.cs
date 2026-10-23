@@ -423,7 +423,13 @@ internal sealed class RenderDriver : MonoBehaviour
         var report = FrameClock.Summarize(FrameClock.Adapt);
         FrameClock.Adapt.Reset();
         // A step still waiting for its fade would be measured at the old scale and stepped again.
-        if (adaptive.Scale != appliedAdaptive || report.BudgetMs <= 0f || report.Interval.Empty)
+        // Only the headset's own rate: the desktop monitor's (144 or 60 Hz) would step a fine frame down, or never.
+        if (
+            adaptive.Scale != appliedAdaptive
+            || !report.Trusted
+            || report.BudgetMs <= 0f
+            || report.Interval.Empty
+        )
             return;
         bool gpu = !report.Gpu.Empty;
         adaptive.Min = RenderFixesFeature.AdaptiveQualityMin.Value;
@@ -518,7 +524,7 @@ internal sealed class RenderDriver : MonoBehaviour
         if (display == null || !display.TryGetAppGPUTimeLastFrame(out float gpu) || !(gpu > 0f))
             return;
         // The sanity-checked rate (FrameClock): a throttled runtime's 36 Hz would be a 27.8 ms budget.
-        float hz = FrameClock.RefreshHz;
+        float hz = FrameClock.Trusted ? FrameClock.RefreshHz : 0f;
         if (!(hz > 0f))
             return;
         // Providers report seconds or milliseconds; no real GPU frame takes under half a millisecond.

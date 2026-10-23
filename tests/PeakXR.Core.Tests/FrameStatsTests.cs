@@ -129,6 +129,18 @@ public class FrameStatsTests
 public class AdaptiveScaleTests
 {
     [Fact]
+    public void ATargetChange_StartsTheCountAgain()
+    {
+        // FeedAdaptive switches between the GPU target and the frame-interval one window by window.
+        var a = new AdaptiveScale();
+        a.Feed(1.2f);
+        a.Target = 1.25f;
+        Assert.False(a.Feed(1.3f));
+        Assert.Equal(1f, a.Scale);
+        Assert.True(a.Feed(1.3f));
+    }
+
+    [Fact]
     public void FarOverBudget_JumpsToTheScaleThatFits()
     {
         // Run 57: 38 ms GPU frames on a 72 Hz (13.9 ms) headset, load 2.8. One 0.1 step per fade would take the
@@ -246,26 +258,81 @@ public class AdaptiveScaleTests
     }
 }
 
-public class RefreshPickTests
+public class RefreshTrackerTests
 {
-    [Theory]
-    [InlineData(90f, 0f, 0f, 60f, 90f, RefreshSource.Display)]
-    [InlineData(24f, 72f, 0f, 60f, 72f, RefreshSource.Device)]
-    [InlineData(36f, 36f, 72f, 60f, 72f, RefreshSource.LastGood)]
-    [InlineData(0f, 0f, 0f, 144f, 144f, RefreshSource.Screen)]
-    [InlineData(18f, 24f, 0f, 30f, 0f, RefreshSource.None)]
-    [InlineData(500f, float.NaN, 0f, 0f, 0f, RefreshSource.None)]
-    public void Pick_TakesTheFirstSaneSource(
-        float display,
-        float device,
-        float lastGood,
-        float screen,
-        float hz,
-        RefreshSource source
-    )
+    [Fact]
+    public void HeadsetRate_IsTrusted()
     {
-        Assert.Equal(hz, FrameBudget.PickRefresh(display, device, lastGood, screen, out var got));
-        Assert.Equal(source, got);
+        var t = new RefreshTracker();
+        Assert.Equal(90f, t.Update(90f, 0f, 60f));
+        Assert.Equal(RefreshSource.Display, t.Source);
+        Assert.True(t.Trusted);
+        Assert.Equal(72f, t.Update(24f, 72f, 60f));
+        Assert.Equal(RefreshSource.Device, t.Source);
+    }
+
+    [Fact]
+    public void ThrottledReadings_KeepTheSessionRate()
+    {
+        // Run 57: a 72 Hz ALVR headset read as 72, 36, 24 and 18 Hz.
+        var t = new RefreshTracker();
+        t.Update(72f, 0f, 144f);
+        foreach (float hz in new[] { 36f, 24f, 18f, 0f })
+        {
+            Assert.Equal(72f, t.Update(hz, 0f, 144f));
+            Assert.Equal(RefreshSource.LastGood, t.Source);
+            Assert.True(t.Trusted);
+        }
+    }
+
+    [Fact]
+    public void A120HzHeadsetThrottledTo60_KeepsItsBudget()
+    {
+        var t = new RefreshTracker();
+        t.Update(120f, 0f, 60f);
+        Assert.Equal(120f, t.Update(60f, 0f, 60f));
+        Assert.Equal(120f, t.Update(40f, 0f, 60f));
+    }
+
+    [Fact]
+    public void ARateChangeThatIsNoFraction_IsTaken()
+    {
+        // The player switched the headset from 120 to 90 Hz: 120/90 is not a whole number.
+        var t = new RefreshTracker();
+        t.Update(120f, 0f, 60f);
+        Assert.Equal(90f, t.Update(90f, 0f, 60f));
+        Assert.Equal(RefreshSource.Display, t.Source);
+        Assert.Equal(90f, t.Update(45f, 0f, 60f));
+    }
+
+    [Fact]
+    public void ThrottledFromTheStart_FallsBackToTheMonitor_Untrusted()
+    {
+        var t = new RefreshTracker();
+        Assert.Equal(144f, t.Update(36f, 36f, 144f));
+        Assert.Equal(RefreshSource.Screen, t.Source);
+        Assert.False(t.Trusted);
+        // A real reading later replaces it.
+        Assert.Equal(72f, t.Update(72f, 0f, 144f));
+        Assert.True(t.Trusted);
+    }
+
+    [Fact]
+    public void NothingSane_IsUnknown()
+    {
+        var t = new RefreshTracker();
+        Assert.Equal(0f, t.Update(500f, float.NaN, 30f));
+        Assert.Equal(RefreshSource.None, t.Source);
+        Assert.False(t.Trusted);
+    }
+
+    [Fact]
+    public void Reset_ForgetsTheSession()
+    {
+        var t = new RefreshTracker();
+        t.Update(90f, 0f, 60f);
+        t.Reset();
+        Assert.Equal(0f, t.Update(30f, 0f, 0f));
     }
 
     [Theory]

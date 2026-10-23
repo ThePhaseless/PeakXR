@@ -25,17 +25,21 @@ namespace PeakXR.Core
     }
 
     /// <summary>
-    /// The last N frame samples (ms) in a fixed ring. <see cref="Add"/> is O(1) and allocation-free, so it runs every
+    /// The last <see cref="DefaultCapacity"/> frame samples (ms) in a fixed ring. <see cref="Add"/> is O(1) and allocation-free, so it runs every
     /// frame at 90-144 Hz; <see cref="Summarize"/> sorts a preallocated copy and is for report time only.
     /// </summary>
     public sealed class FrameRing
     {
+        /// <summary>The last 2048 frames: a whole 5 s adaptive window even at 240 Hz; a longer window keeps its
+        /// last 2048 (reports name how many of the window's frames that is).</summary>
+        public const int DefaultCapacity = 2048;
+
         readonly float[] _samples;
         readonly float[] _scratch;
         int _next;
         int _count;
 
-        public FrameRing(int capacity = 1024)
+        public FrameRing(int capacity = DefaultCapacity)
         {
             _samples = new float[capacity];
             _scratch = new float[capacity];
@@ -83,7 +87,7 @@ namespace PeakXR.Core
         Fail,
     }
 
-    /// <summary>Where <see cref="FrameBudget.PickRefresh"/> found the refresh rate.</summary>
+    /// <summary>Where <see cref="RefreshTracker"/> found the refresh rate.</summary>
     public enum RefreshSource
     {
         None,
@@ -94,11 +98,73 @@ namespace PeakXR.Core
         /// <summary><c>XRDevice.refreshRate</c>.</summary>
         Device,
 
-        /// <summary>The last sane headset reading this session.</summary>
+        /// <summary>The session's headset rate, kept while the runtime reports a throttled fraction of it.</summary>
         LastGood,
 
-        /// <summary>The desktop monitor (<c>Screen.currentResolution</c>), when the headset never reported one.</summary>
+        /// <summary>The desktop monitor (<c>Screen.currentResolution</c>), when the headset never reported one. Shown in
+        /// reports only: it is not the headset's budget, so nothing adapts to it.</summary>
         Screen,
+    }
+
+    /// <summary>
+    /// The headset refresh rate across a session. SteamVR's OpenXR runtime reports the throttled rate (run 57 over
+    /// ALVR: a 72 Hz headset read as 36, 24 and 18 Hz), so a reading outside <see cref="FrameBudget.Sane"/> is no
+    /// reading, and a lower sane one that is a whole fraction of the session's rate (120 read as 60 or 40) keeps that
+    /// rate. A lower one that is no fraction (120 to 90 Hz) is a real change. Only headset sources are
+    /// <see cref="Trusted"/>; the desktop monitor fills in for reports when the headset never gave a rate.
+    /// </summary>
+    public sealed class RefreshTracker
+    {
+        float _session;
+
+        public float Hz { get; private set; }
+        public RefreshSource Source { get; private set; }
+
+        /// <summary>The rate is the headset's, so budgets, adaptive quality and the self-test may use it.</summary>
+        public bool Trusted =>
+            Source is RefreshSource.Display or RefreshSource.Device or RefreshSource.LastGood;
+
+        public void Reset()
+        {
+            _session = Hz = 0f;
+            Source = RefreshSource.None;
+        }
+
+        /// <summary>One frame's readings (Hz, 0 when a source has none); returns <see cref="Hz"/>.</summary>
+        public float Update(float display, float device, float screen)
+        {
+            var source =
+                FrameBudget.Sane(display) ? RefreshSource.Display
+                : FrameBudget.Sane(device) ? RefreshSource.Device
+                : RefreshSource.None;
+            float head = source == RefreshSource.Display ? display : device;
+            if (source != RefreshSource.None && !(head < _session && Throttled(_session, head)))
+            {
+                _session = head;
+                Set(head, source);
+            }
+            else if (_session > 0f)
+                Set(_session, RefreshSource.LastGood);
+            else if (FrameBudget.Sane(screen))
+                Set(screen, RefreshSource.Screen);
+            else
+                Set(0f, RefreshSource.None);
+            return Hz;
+        }
+
+        /// <summary><paramref name="hz"/> is <paramref name="full"/> divided by a whole number of at least 2.</summary>
+        public static bool Throttled(float full, float hz)
+        {
+            float ratio = full / hz;
+            float n = MathF.Round(ratio);
+            return n >= 2f && MathF.Abs(ratio - n) < 0.05f * n;
+        }
+
+        void Set(float hz, RefreshSource source)
+        {
+            Hz = hz;
+            Source = source;
+        }
     }
 
     /// <summary>The display's frame budget and the self-test's rule for it.</summary>
@@ -111,32 +177,6 @@ namespace PeakXR.Core
         public const float MaxRefresh = 240f;
 
         public static bool Sane(float hz) => hz >= MinRefresh && hz <= MaxRefresh;
-
-        /// <summary>The first sane rate of the headset display, the XR device, the last sane headset reading and the
-        /// desktop monitor, or 0 (unknown).</summary>
-        public static float PickRefresh(
-            float display,
-            float device,
-            float lastGood,
-            float screen,
-            out RefreshSource source
-        )
-        {
-            source =
-                Sane(display) ? RefreshSource.Display
-                : Sane(device) ? RefreshSource.Device
-                : Sane(lastGood) ? RefreshSource.LastGood
-                : Sane(screen) ? RefreshSource.Screen
-                : RefreshSource.None;
-            return source switch
-            {
-                RefreshSource.Display => display,
-                RefreshSource.Device => device,
-                RefreshSource.LastGood => lastGood,
-                RefreshSource.Screen => screen,
-                _ => 0f,
-            };
-        }
 
         /// <summary>A frame interval this many budgets long missed its vsync: the runtime showed the previous frame
         /// again or reprojected it.</summary>
@@ -192,6 +232,7 @@ namespace PeakXR.Core
         int _over;
         int _under;
         int _cooldown;
+        float _countedTarget = float.NaN;
 
         /// <summary>Multiplier on the player's render scale, in [<see cref="Min"/>, 1].</summary>
         public float Scale { get; private set; } = 1f;
@@ -210,6 +251,12 @@ namespace PeakXR.Core
         {
             if (!(load > 0f) || float.IsInfinity(load))
                 return false;
+            // A window judged against another target (GPU time or frame interval) starts the count again.
+            if (Target != _countedTarget)
+            {
+                _countedTarget = Target;
+                _over = _under = 0;
+            }
             if (_cooldown > 0)
             {
                 _cooldown--;
