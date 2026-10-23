@@ -505,7 +505,8 @@ internal static class WorldCanvases
             // measured this frame (MeasureIfDue runs once a frame).
             if (!Degenerate(t))
             {
-                MeasureContent(t);
+                // Still at its old pose: the plate keeps its last spread verdict until the placed measure.
+                MeasureContent(t, placed: false);
                 t.MeasuredFrame = Time.frameCount;
             }
             t.Eye = head.position;
@@ -741,7 +742,7 @@ internal static class WorldCanvases
     /// Bounds of the drawn graphics in canvas pixels (relative to the canvas pivot), clipped to the canvas and
     /// skipping full-canvas ones (dimmers, vignettes). Nothing drawn means the whole canvas.
     /// </summary>
-    private static void MeasureContent(TrackedCanvas t)
+    private static void MeasureContent(TrackedCanvas t, bool placed = true)
     {
         var bounds = t.Rect.rect;
         var min = new Vector2(float.MaxValue, float.MaxValue);
@@ -768,7 +769,7 @@ internal static class WorldCanvases
         }
         graphics.Clear();
         if (t.Strip)
-            BackplateView.Apply(t, plateMin, plateMax);
+            BackplateView.Apply(t, plateMin, plateMax, placed);
         if (max.x <= min.x)
         {
             t.ContentSize = bounds.size;
