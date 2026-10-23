@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Comfort;
 using PeakXR.Core;
@@ -33,11 +34,11 @@ internal sealed partial class SelfTestRunner
     /// <summary>The move stick's hand, which is also the wrist with the stamina bar's refusal.</summary>
     static bool OffLeft => !VRInput.LeftHanded;
 
-    /// <summary>A step's timeout covers the shared settle before it (SelfTestRunner.Settle.cs: revive, warp home,
+    /// <summary>A step's timeout covers the shared settle before it (<see cref="SettleSeconds"/>: revive, warp home,
     /// recentre, stand still, once more on a poor spot) as well as the body: run 38 timed out vr.149 inside the
     /// settle and vr.211 in its own 8 s wait. <paramref name="body"/> is the step body's worst case, every wait in
     /// it bounded.</summary>
-    static float Budget(float body) => 20f + body;
+    static float Budget(float body) => SettleSeconds + body;
 
     /// <summary>
     /// WP3 steps that need the Tropics segment (breakable bridges hang in the jungle). Run once the run has jumped
@@ -51,7 +52,7 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator MovementSteps()
     {
-        yield return Restoring("vr.140-roomscale-blocked", Budget(8f), RoomScaleBlockedStep());
+        yield return Restoring("vr.140-roomscale-blocked", Budget(16f), RoomScaleBlockedStep());
         yield return HandStep("vr.141-forced-look-side", Budget(3f), ForcedLookSideStep());
         yield return Restoring("vr.142-sprint-out", Budget(7f), SprintOutStep());
         yield return Restoring("vr.154-jump-out", Budget(4f), JumpOutStep());
@@ -64,7 +65,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.146-slope", Budget(10f), SlopeStep());
         yield return WarpBack();
         yield return HandStep("vr.148-ragdoll-getup", Budget(10f), GetUpStep());
-        yield return HandStep("vr.149-knockback-side", Budget(6f), KnockbackSideStep());
+        yield return HandStep("vr.149-knockback-side", Budget(12f), KnockbackSideStep());
         yield return HandStep("vr.150-pre-pass-out", Budget(16f), PrePassOutStep());
         yield return HandStep("vr.147-morale-glow", Budget(3f), MoraleGlowStep());
         yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
@@ -72,16 +73,16 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
-        yield return HandStep("vr.210-heartbeat", Budget(11f), HeartbeatStep());
+        yield return Restoring("vr.210-heartbeat", Budget(11f), HeartbeatStep());
         yield return Restoring("vr.211-shiver", Budget(10f), ShiverStep());
         yield return Restoring("vr.151-wind-pressure", Budget(3f), WindPressureStep());
         yield return Restoring("vr.212-tornado-brace", Budget(5f), TornadoBraceStep());
         yield return Restoring("vr.152-bounce", Budget(14f), BounceStep());
         yield return WarpBack();
         yield return Restoring("vr.213-lava-sting", Budget(7f), LavaStingStep());
-        yield return HandStep("vr.214-balloon", Budget(8f), BalloonTieStep());
-        yield return HandStep("vr.215-parachute", Budget(2f), ParachuteStep());
-        yield return HandStep("vr.216-sugar-crash", Budget(2f), SugarCrashStep());
+        yield return HandStep("vr.214-balloon", Budget(22f), BalloonTieStep());
+        yield return HandStep("vr.215-parachute", Budget(36f), ParachuteStep());
+        yield return HandStep("vr.216-sugar-crash", Budget(6f), SugarCrashStep());
         yield return HandStep("vr.217-float-end", Budget(10f), FloatEndStep());
     }
 
@@ -180,8 +181,85 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         setting.Value = was;
+        if (!stepOk)
+            yield break;
+        if (!was)
+        {
+            stepNote =
+                "head 0.9 m from a body that cannot follow: "
+                + note
+                + "; stalled follow skipped, RoomScaleWalking off";
+            yield break;
+        }
+        yield return Wait(1f);
+        yield return StalledFollow(wall => bodyRestore += () => UnityEngine.Object.Destroy(wall));
         if (stepOk)
-            stepNote = "head 0.9 m from a body that cannot follow: " + note;
+            stepNote = $"head 0.9 m from a body that cannot follow: {note}; {stalledNote}";
+    }
+
+    string stalledNote;
+
+    /// <summary>vr.140, the path a player meets: room-scale on, the head steps 0.7 m back (past the lean radius,
+    /// short of 1 m) toward a hip-high wall just behind the body. The follow walk stalls against it
+    /// (RoomScaleFollow.Stalled, after StallSeconds of no progress), which gives the same NotNow at the feet and the
+    /// one recenter fade (LocomotionInput.WarnFar, RecenterFade); the body stays on its side of the wall. The head
+    /// passes over the wall, so the eye guard stays out of it. Releasing the head afterwards walks the body forward
+    /// onto open ground, which the next settle warps home from.</summary>
+    IEnumerator StalledFollow(Action<GameObject> placed)
+    {
+        var c = Character.localCharacter;
+        HeadFrame(out var head, out var forward, out _);
+        var rot = VRInput.HeadRotation;
+        var back = -Flat(VRRig.Instance.Head.forward);
+        var start = c.Center;
+        var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        placed(wall);
+        wall.name = "PeakXR_TestWallBehind";
+        wall.layer = LayerMask.NameToLayer("Map");
+        wall.transform.SetPositionAndRotation(
+            c.data.groundPos + back * 0.6f + Vector3.up * 0.45f,
+            Quaternion.LookRotation(back)
+        );
+        wall.transform.localScale = new Vector3(3f, 0.9f, 0.3f);
+        Physics.SyncTransforms();
+        yield return Wait(0.3f);
+        float since = CueMark();
+        float t0 = Now;
+        float faded = 0f;
+        while (Now - t0 < 1f)
+        {
+            ScriptHead(head - forward * Ease(0f, 0.7f, Now - t0), rot);
+            faded = Mathf.Max(faded, VRFade.Target);
+            yield return null;
+        }
+        ScriptHead(head - forward * 0.7f, rot);
+        float stallBy = Now + 4f;
+        while (
+            Now < stallBy
+            && !(
+                faded > 0.5f
+                && CueLog.Capture.Fired(DomLeft, DenyReason.NotNow, since, false, out _)
+            )
+        )
+        {
+            faded = Mathf.Max(faded, VRFade.Target);
+            yield return null;
+        }
+        float back0 = Vector3.Dot(c.Center - start, back);
+        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 0.1f);
+        string cue = cueNote;
+        // The fade clears again once the recenter is done.
+        yield return WaitFor(() => VRFade.Target <= 0f, 2f);
+        bool cleared = VRFade.Target <= 0f;
+        ReleaseHead();
+        yield return Wait(2f);
+        stalledNote = F(
+            $"stalled follow: body {back0:0.00} m back toward the wall 0.6 m behind, fade {faded:0.00}, cleared {cleared}: {cue}"
+        );
+        if (!stepOk)
+            yield break;
+        if (!(faded > 0.5f) || !cleared || back0 > 0.6f)
+            Fail(stalledNote);
     }
 
     /// <summary>vr.141: a scripted look 40 degrees to the right (what a frog tongue or the scoutmaster writes into
@@ -781,29 +859,49 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.149: a knockback from the right (RPCA_AddForceAtPosition, Character.cs:458, applied locally)
-    /// rumbles the right hand harder than the left.</summary>
+    /// <summary>vr.149: knockbacks from the right (RPCA_AddForceAtPosition, Character.cs:458, applied locally) rumble
+    /// the right hand harder than the left, and a harder push rumbles harder: a light 150 then a heavy 450 (vanilla
+    /// hits run 200 to 500+). shortcut: the game's knockback RPC is called as a mob or bonk sends it; no attacker
+    /// offline.</summary>
     IEnumerator KnockbackSideStep()
     {
         var c = Character.localCharacter;
-        var head = VRRig.Instance.Head;
         if (!ComfortEventsConfig.Haptics)
         {
             stepSkip = "comfort haptics off";
             yield break;
         }
-        float at = ComfortEventsRuntime.LastAt;
-        var right = Flat(head.right);
-        c.RPCA_AddForceAtPosition(-right * 300f, c.Center + right, 2f);
-        yield return WaitFor(() => ComfortEventsRuntime.LastAt > at, 1f);
-        float l = ComfortEventsRuntime.LastLeftAmplitude;
-        float r = ComfortEventsRuntime.LastRightAmplitude;
-        var note = $"rumble left {l:0.00} right {r:0.00}";
-        if (ComfortEventsRuntime.LastAt <= at || !(r > l))
+        float lightL = 0f,
+            lightR = 0f,
+            heavyL = 0f,
+            heavyR = 0f;
+        bool felt = true;
+        yield return Knock(c, 150f, (ok, l, r) => (felt, lightL, lightR) = (felt && ok, l, r));
+        yield return Knock(c, 450f, (ok, l, r) => (felt, heavyL, heavyR) = (felt && ok, l, r));
+        var note = F(
+            $"push 150: rumble left {lightL:0.00} right {lightR:0.00}; push 450: left {heavyL:0.00} right {heavyR:0.00}"
+        );
+        if (!felt || !(lightR > lightL) || !(heavyR > heavyL) || !(heavyR > lightR))
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>One knockback of <paramref name="force"/> from the head's right; reports the first rumble after it
+    /// (false when none came within 1 s), then waits for the body to get back up and the rumble to end.</summary>
+    static IEnumerator Knock(Character c, float force, Action<bool, float, float> result)
+    {
+        float at = ComfortEventsRuntime.LastAt;
+        var right = Flat(VRRig.Instance.Head.right);
+        c.RPCA_AddForceAtPosition(-right * force, c.Center + right, 2f);
+        yield return WaitFor(() => ComfortEventsRuntime.LastAt > at, 1f);
+        result(
+            ComfortEventsRuntime.LastAt > at,
+            ComfortEventsRuntime.LastLeftAmplitude,
+            ComfortEventsRuntime.LastRightAmplitude
+        );
         yield return WaitFor(() => c.data.currentRagdollControll > 0.9f, 4f);
+        yield return Wait(0.5f);
     }
 
     /// <summary>vr.150: statuses over the top (Injury 1) start passOutValue rising (Character.cs:1040): danger
@@ -830,10 +928,14 @@ internal sealed partial class SelfTestRunner
             stepNote = $"passOutValue {value:0.00}: {cueNote}";
     }
 
-    /// <summary>vr.147: the campfire morale boost (StaminaBar.PlayMoraleBoost, StaminaBar.cs:223) shows no
-    /// MORALEBOOST word in VR; the rising chord plays at the wrist.</summary>
+    /// <summary>vr.147: the campfire morale boost (the game's MoraleBoost.SpawnMoraleBoost, MoraleBoost.cs:7, which
+    /// Campfire.cs:191 and the Scoutmaster's bugle call; it reaches StaminaBar.PlayMoraleBoost, StaminaBar.cs:223,
+    /// through Character.MoraleBoost, Character.cs:1592) shows no MORALEBOOST word in VR; the rising chord plays at
+    /// the wrist and the bar gains the boost's extra stamina. shortcut: the boost is spawned at the body instead of
+    /// lighting a campfire (the run reaches one only at a segment's end); upgrade once a step lights one.</summary>
     IEnumerator MoraleGlowStep()
     {
+        var c = Character.localCharacter;
         var gui = GUIManager.instance;
         var bar = gui != null ? gui.bar : null;
         if (bar == null)
@@ -842,14 +944,23 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         int shown = MoraleBoostTextPatch.Shown;
+        float extra = c.data.extraStamina;
         float since = CueMark();
-        bar.PlayMoraleBoost(2);
+        bool boosted = MoraleBoost.SpawnMoraleBoost(c.Center, 5f, 0.1f, 0f);
         yield return Wait(0.5f);
         var sound = CueLog.Capture.LastSound(CueSound.WouldWork);
         bool word = bar.moraleBoostText != null && bar.moraleBoostText.enabled;
+        // At the cap (1, Character.cs:1632) there is nothing left to add.
+        bool gained = c.data.extraStamina > extra + 0.05f || extra > 0.9f;
         var note =
-            $"boost handled {MoraleBoostTextPatch.Shown > shown}, word shown {word}, chord played {sound.Played && sound.At >= since}";
-        if (MoraleBoostTextPatch.Shown == shown || word || !(sound.Played && sound.At >= since))
+            $"boost spawned {boosted}, handled {MoraleBoostTextPatch.Shown > shown}, word shown {word}, chord played {sound.Played && sound.At >= since}, extra stamina {extra:0.00} to {c.data.extraStamina:0.00}";
+        if (
+            !boosted
+            || MoraleBoostTextPatch.Shown == shown
+            || word
+            || !(sound.Played && sound.At >= since)
+            || !gained
+        )
             Fail(note);
         else
             stepNote = note;
@@ -1077,11 +1188,17 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>vr.210: spending stamina low on the bar beats a heartbeat; under the Weight status the beat is
-    /// slower (and heavier).</summary>
+    /// <summary>vr.210: sprinting with the move stick low on the bar (the game's sprint drain, CharacterMovement.cs:266)
+    /// beats a heartbeat; under the Weight status the beat is slower (and heavier).</summary>
     IEnumerator HeartbeatStep()
     {
         var c = Character.localCharacter;
+        bool move = OffLeft;
+        bodyRestore = () =>
+        {
+            Script(move).Stick = Vector2.zero;
+            Script(move).StickClick = false;
+        };
         if (!SandboxActions.SetStamina(0.25f, 0f))
         {
             stepSkip = "sandbox stamina control unavailable (online?)";
@@ -1089,35 +1206,63 @@ internal sealed partial class SelfTestRunner
         }
         float light = 0f,
             heavy = 0f;
-        yield return Exert(c, 3f, p => light = p);
+        string lightRun = null,
+            heavyRun = null;
+        bool ran = true;
+        yield return Sprint(
+            c,
+            move,
+            3f,
+            (p, ok, run) => (light, ran, lightRun) = (p, ran && ok, run)
+        );
         SandboxActions.AddStatus(STATUS.Weight, 0.5f);
         // Weight lowers the max (1 minus the status sum, Character.cs:1613), and the beat slows as the bar's fraction
         // rises (BodyCues.Heartbeat): 0.25 of a 0.5 bar beat slower with no weight term at all. Same fraction, so
         // only the weight (period x1.5 at 0.5) can slow it.
         float max = c.GetMaxStamina();
         SandboxActions.SetStamina(0.25f * max, 0f);
-        yield return Exert(c, 4f, p => heavy = p);
+        yield return Sprint(
+            c,
+            move,
+            4f,
+            (p, ok, run) => (heavy, ran, heavyRun) = (p, ran && ok, run)
+        );
         SandboxActions.ClearStatus(STATUS.Weight);
         var note =
-            $"beat every {light:0.00} s at 0.25 of the bar, with Weight 0.5 (max {max:0.00}) every {heavy:0.00} s";
-        if (!(light > 0f) || !(heavy > light * 1.2f))
+            $"beat every {light:0.00} s at 0.25 of the bar ({lightRun}), with Weight 0.5 (max {max:0.00}) every {heavy:0.00} s ({heavyRun})";
+        if (!ran || !(light > 0f) || !(heavy > light * 1.2f))
             Fail(note);
         else
             stepNote = note;
     }
 
-    /// <summary>Holds the body spending stamina (CharacterData.sinceUseStamina at 0, as any use leaves it) for
-    /// <paramref name="seconds"/>; reports the last beat gap.</summary>
-    static IEnumerator Exert(Character c, float seconds, Action<float> period)
+    /// <summary>Sprints with the move stick and its click (as vr.142) until the second beat or
+    /// <paramref name="seconds"/>, then stops and rests 1 s. Reports the first beat gap, which the first beat sets
+    /// from the bar as the sprint starts (later gaps shorten as the sprint drains it, faster on a Weight-shrunk bar),
+    /// whether the body sprinted and spent stamina, and a note on the sprint.</summary>
+    IEnumerator Sprint(Character c, bool move, float seconds, Action<float, bool, string> result)
     {
         int beats = BodyFeedback.Beats;
+        float before = c.data.currentStamina;
+        bool sprinted = false;
+        Script(move).Stick = new Vector2(0f, 1f);
+        Script(move).StickClick = true;
         float start = Now;
-        while (Now - start < seconds)
+        while (Now - start < seconds && BodyFeedback.Beats - beats < 2)
         {
-            c.data.sinceUseStamina = 0f;
+            if (LocomotionConfig.SprintToggle && Now - start > 0.15f)
+                Script(move).StickClick = false;
+            sprinted |= c.data.isSprinting;
             yield return null;
         }
-        period(BodyFeedback.Beats - beats >= 2 ? BodyFeedback.LastBeatPeriod : 0f);
+        Script(move).Stick = Vector2.zero;
+        Script(move).StickClick = false;
+        float spent = before - c.data.currentStamina;
+        result(
+            BodyFeedback.Beats - beats >= 2 ? BodyFeedback.LastBeatPeriod : 0f,
+            sprinted && spent > 0f,
+            F($"sprinting {sprinted} for {Now - start:0.0} s, spent {spent:0.000}")
+        );
         yield return Wait(1f);
     }
 
@@ -1474,74 +1619,160 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.isGrounded, 4f);
     }
 
-    /// <summary>vr.214: tying a balloon (CharacterBalloons.TieNewBalloon) gives a lift tick on the item hand;
-    /// popping it a snap on both hands.</summary>
+    /// <summary>vr.214: a held Balloon used with the trigger (its Action_Balloon ties it, CharacterBalloons.TieNewBalloon,
+    /// CharacterBalloons.cs:99) gives a lift tick on the hand holding it and none on the other; the tied balloon then
+    /// pops on its own timer (TiedBalloon.popTime, TiedBalloon.cs:83), a snap on both hands.</summary>
     IEnumerator BalloonTieStep()
     {
         var c = Character.localCharacter;
+        var balloon = FindItem(new List<Item>(SandboxActions.Items), "Balloon");
+        yield return GiveAndHold(balloon);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
         bool hand = LocalHold.ItemInLeftHand;
+        yield return GripTo(hand, 1f, 0.1f);
         float since = CueMark();
-        c.refs.balloons.TieNewBalloon(0);
+        Script(hand).TriggerTouch = true;
+        Script(hand).Trigger = 1f;
+        TiedBalloon tied = null;
+        float end = Now + GameTiming.Budget(GameTiming.UseSeconds(item), 0.5f);
+        while (
+            Now < end && (tied = UnityEngine.Object.FindFirstObjectByType<TiedBalloon>()) == null
+        )
+            yield return null;
+        Script(hand).Trigger = 0f;
+        if (tied == null)
+        {
+            Fail($"using the held balloon tied nothing (in the {(hand ? "left" : "right")} hand)");
+            yield break;
+        }
         yield return ExpectFeel(hand, CueFeel.Contact, since, 1f);
         if (!stepOk)
             yield break;
         string tie = cueNote;
-        TiedBalloon tied = null;
-        yield return WaitFor(
-            () => (tied = UnityEngine.Object.FindFirstObjectByType<TiedBalloon>()) != null,
-            2f
-        );
-        if (tied == null)
+        // The tick belongs to the holding hand only (with the default right hand, a tick that ignores the hold
+        // still lands here; the note names the hand).
+        if (CueLog.Capture.Felt(!hand, CueFeel.Contact, since, out _))
         {
-            Fail("no tied balloon appeared");
+            Fail($"the tie ticked the empty hand too: {tie}");
             yield break;
         }
-        yield return Wait(0.5f);
         int pops = EnvironmentCues.Pops;
         since = CueMark();
-        tied.Pop();
-        yield return WaitFor(() => EnvironmentCues.Pops > pops, 1f);
-        yield return ExpectFeel(!hand, CueFeel.Contact, since, 0.5f);
-        if (stepOk && EnvironmentCues.Pops == pops)
-            Fail("the pop was not felt");
-        else if (stepOk)
-            stepNote = $"tie: {tie}; pop: {cueNote}";
+        yield return WaitFor(
+            () => tied == null || EnvironmentCues.Pops > pops,
+            GameTiming.Budget(tied.popTime)
+        );
+        if (EnvironmentCues.Pops == pops)
+        {
+            Fail($"the tied balloon never popped within {tied.popTime:0} s");
+            yield break;
+        }
+        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
+        if (stepOk)
+            stepNote = $"tie on the {(hand ? "left" : "right")} hand: {tie}; pop: {cueNote}";
         yield return WaitFor(() => c.data.isGrounded, 3f);
     }
 
-    /// <summary>vr.215: the parachute opening (CharacterBalloons.SetParachute(true), what the auto-open after
-    /// 1.5 s of falling calls) tugs both hands.</summary>
+    /// <summary>vr.215: holding the AUTOPARACHUTE item (tag Parachute, CharacterData.UpdateHasParachute, :736), a drop
+    /// from 40 m opens it the game's way after 1.5 s of falling (Character.cs:1122-1128, SetParachute): the opening
+    /// tugs both hands, and the body lands under it (the note gives the fall speed; the game closes it on landing,
+    /// :1112). shortcut: the game's warp lifts the
+    /// body instead of a climb to a ledge (as vr.145).</summary>
     IEnumerator ParachuteStep()
     {
         var c = Character.localCharacter;
+        if (Physics.Raycast(c.Center, Vector3.up, 41f, HelperFunctions.terrainMapMask))
+        {
+            stepSkip = "no open sky above the spawn";
+            yield break;
+        }
+        var chute = FindItem(new List<Item>(SandboxActions.Items), "Parachute Item");
+        yield return GiveAndHold(chute);
+        if (!stepOk)
+            yield break;
+        yield return WaitFor(() => c.data.hasParachute, 1f);
+        if (!c.data.hasParachute)
+        {
+            Fail($"holding {HeldItem()?.name} does not count as a parachute");
+            yield break;
+        }
         int tugs = EnvironmentCues.Tugs;
         float since = CueMark();
-        c.refs.balloons.SetParachute(true);
-        yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
-        c.refs.balloons.SetParachute(false);
-        if (stepOk && EnvironmentCues.Tugs == tugs)
-            Fail("no tug counted");
-        else if (stepOk)
-            stepNote = cueNote;
+        warpedForProp = true;
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, c.Center + Vector3.up * 40f, false);
+        yield return WaitFor(() => !c.warping && !c.data.isGrounded, 2f);
+        float dropAt = Now;
+        yield return WaitFor(() => EnvironmentCues.Tugs > tugs || c.data.isGrounded, 4f);
+        float openedAfter = Now - dropAt;
+        if (EnvironmentCues.Tugs == tugs)
+        {
+            Fail(
+                F(
+                    $"the parachute never opened (grounded {c.data.isGrounded}, fell {openedAfter:0.0} s, sinceGrounded {c.data.sinceGrounded:0.0})"
+                )
+            );
+            yield break;
+        }
+        yield return ExpectFeelBoth(CueFeel.Contact, since, CueMark() - since + 1f);
+        if (!stepOk)
+            yield break;
+        string felt = cueNote;
+        float fallSpeed = 0f;
+        float end = Now + 20f;
+        while (Now < end && !c.data.isGrounded)
+        {
+            fallSpeed = Mathf.Max(fallSpeed, -c.data.avarageVelocity.y);
+            yield return null;
+        }
+        var note = F(
+            $"opened {openedAfter:0.0} s into the fall, then fell at most {fallSpeed:0.0} m/s, landed {c.data.isGrounded}: {felt}"
+        );
+        if (!c.data.isGrounded)
+            Fail(note);
+        else
+            stepNote = note;
+        yield return WaitFor(() => c.data.currentRagdollControll > 0.9f, 5f);
     }
 
-    /// <summary>vr.216: the end of a sugar rush (GUIManager.EndSugarRush, called when infinite stamina ends) is a
-    /// crash: the soft falling cancel cue on both hands.</summary>
+    /// <summary>vr.216: a sugar rush that runs out is a crash: Affliction_InfiniteStamina ends on its own timer and its
+    /// OnRemoved calls GUIManager.EndSugarRush (Affliction_InfiniteStamina.cs:55-59), the soft falling cancel cue on
+    /// both hands, and none while the rush lasts. shortcut: the affliction is added as Action_ApplyInfiniteStamina
+    /// (:11) adds it when a Follypop is eaten, not by eating one (vr.12 covers the eat), and for 1.5 s instead of
+    /// the item's 16 s.</summary>
     IEnumerator SugarCrashStep()
     {
-        var gui = GUIManager.instance;
-        if (gui == null)
+        var c = Character.localCharacter;
+        if (GUIManager.instance == null)
         {
             stepSkip = "no GUIManager";
             yield break;
         }
-        gui.StartSugarRush();
-        yield return Wait(0.3f);
+        // God mode's tick clears every affliction and holds infinite stamina (SandboxActions.GodTick): off for the
+        // step, the runner restores it.
+        SandboxActions.SetGodMode(false);
+        yield return null;
         float since = CueMark();
-        gui.EndSugarRush();
-        yield return ExpectFeelBoth(CueFeel.Cancel, since, 0.5f);
+        c.refs.afflictions.AddAffliction(new Peak.Afflictions.Affliction_InfiniteStamina(1.5f));
+        yield return WaitFor(() => c.infiniteStam, 0.5f);
+        bool rush = c.infiniteStam;
+        yield return Wait(0.8f);
+        bool early =
+            CueLog.Capture.Felt(true, CueFeel.Cancel, since, out _)
+            || CueLog.Capture.Felt(false, CueFeel.Cancel, since, out _);
+        float before = CueMark();
+        yield return WaitFor(() => !c.infiniteStam, GameTiming.Budget(1.5f));
+        bool ended = !c.infiniteStam;
+        var state = $"rush started {rush}, cancel during it {early}, rush ended {ended}";
+        if (!rush || early || !ended)
+        {
+            Fail(state);
+            yield break;
+        }
+        yield return ExpectFeelBoth(CueFeel.Cancel, before, CueMark() - before + 0.5f);
         if (stepOk)
-            stepNote = cueNote;
+            stepNote = $"{state}: {cueNote}";
     }
 
     /// <summary>vr.217: low gravity (Affliction_LowGravity, as a super jump adds it) warns 1.5 s before it ends;

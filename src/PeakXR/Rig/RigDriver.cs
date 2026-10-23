@@ -779,7 +779,7 @@ internal sealed class RigDriver : MonoBehaviour
         if (shownKind == ViewKind.FirstPerson && !snap)
         {
             var extra = turnShift + Vector3.up * rig.CrouchLift;
-            viewHoldWhy = ViewHoldGate.Why(ViewHoldNow(c));
+            viewHoldWhy = ViewHoldGate.Why(ViewHoldNow(c, dt));
             var body = (goal - extra).N();
             // A turn (and the torso swing after it) moves the eye anchor and turnShift cancels it: the hold must not
             // cancel it again, or the turn pivots off the eye (run 45, vr.16: 3.2 cm slide in a 30 degree snap).
@@ -1122,17 +1122,22 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>This frame's closed <see cref="ViewHoldGate"/>, or null while the view holds. Traced.</summary>
     private string viewHoldWhy;
 
+    private readonly LeanMotion leanMotion = new();
+
     /// <summary>The local body for <see cref="ViewHoldGate"/>: the lean's body gate (grounded, upright, no stick,
-    /// not carried, swimming, warping, sliding or bouncing), the bend, the mean part speed, a jump, a room-scale
-    /// walk. Only this player's view reads it; the body and what peers see are untouched.</summary>
-    private static ViewHoldInputs ViewHoldNow(Character c)
+    /// not carried, swimming, warping, sliding or bouncing), how fast the lean moves the eyes, the mean part speed,
+    /// a jump, a room-scale walk. Only this player's view reads it; the body and what peers see are untouched.</summary>
+    private ViewHoldInputs ViewHoldNow(Character c, float dt)
     {
         var d = c.data;
         var driver = AvatarPoseDriver.Of(c);
         return new ViewHoldInputs
         {
             BodyFree = HoldGate.Free(AvatarPoseDriver.GateInputs(c)),
-            LeanDegrees = driver != null ? driver.LeanDegrees : 0f,
+            LeanSpeed = leanMotion.Update(
+                (driver != null ? driver.EyeLeanShift : Vector3.zero).N(),
+                dt
+            ),
             Speed = d.avarageVelocity.magnitude,
             Jumping = d.isJumping || (c.input != null && c.input.jumpWasPressed),
             RoomWalking = FollowWalking,

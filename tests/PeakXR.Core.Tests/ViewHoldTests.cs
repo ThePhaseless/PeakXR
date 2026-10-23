@@ -169,7 +169,7 @@ public class ViewHoldTests
         new()
         {
             BodyFree = true,
-            LeanDegrees = 0f,
+            LeanSpeed = 0.01f,
             Speed = 0.07f,
         };
 
@@ -183,7 +183,7 @@ public class ViewHoldTests
         i.BodyFree = false;
         Assert.NotNull(ViewHoldGate.Why(i));
         i = Calm();
-        i.LeanDegrees = 5f;
+        i.LeanSpeed = 0.5f;
         Assert.NotNull(ViewHoldGate.Why(i));
         i = Calm();
         i.Speed = 1f;
@@ -194,5 +194,134 @@ public class ViewHoldTests
         i = Calm();
         i.RoomWalking = true;
         Assert.NotNull(ViewHoldGate.Why(i));
+    }
+
+    [Fact]
+    public void Gate_SteadyHeldLean_Holds()
+    {
+        // A lean held still bends the body but moves nothing: the bend alone no longer closes the gate.
+        var i = Calm();
+        i.LeanSpeed = 0.02f;
+        Assert.Null(ViewHoldGate.Why(i));
+    }
+
+    /// <summary>Eye shift (m) per degree of bend: run 43's held leans, 0.152 m at 15.7 degrees.</summary>
+    const float ShiftPerDegree = 0.0097f;
+
+    /// <summary>The eye's lean shift (m): a 0.15 m lean (about 16 degrees) eased in over 0.25 s at
+    /// <paramref name="on"/>, held, eased out over 0.25 s at <paramref name="off"/>. It is computed on the 50 Hz
+    /// animation tick, with run 43's half-millimetre jitter and a slow 2 mm sway while leaning.</summary>
+    static Vector3 LeanShift(float t, float on, float off)
+    {
+        static float Ease(float s) =>
+            s <= 0f ? 0f
+            : s >= 1f ? 1f
+            : s * s * (3f - 2f * s);
+        float tick = MathF.Floor(t * 50f) / 50f;
+        float amount = Ease((tick - on) / 0.25f) - Ease((tick - off) / 0.25f);
+        return amount
+            * new Vector3(
+                0.15f + 0.0005f * MathF.Sin(tick * 377f),
+                0.0005f * MathF.Sin(tick * 53f),
+                0.002f * MathF.Sin(2f * MathF.PI * tick)
+            );
+    }
+
+    /// <summary>rig.camera's chain at 90 Hz: the eye's lean shift through <see cref="LeanMotion"/> into the gate,
+    /// the swaying body through the hold. The view, the gate's verdict and the shift, per frame.</summary>
+    static (Vector3 view, string why, Vector3 shift)[] RunLean(float on, float off, float end)
+    {
+        var hold = new ViewHold();
+        var motion = new LeanMotion();
+        var frames = new (Vector3, string, Vector3)[(int)(end / Dt)];
+        for (int f = 0; f < frames.Length; f++)
+        {
+            float t = f * Dt;
+            var shift = LeanShift(t, on, off);
+            var i = Calm();
+            i.LeanSpeed = motion.Update(shift, Dt);
+            string why = ViewHoldGate.Why(i);
+            frames[f] = (hold.Update(Sway(t), why == null, Dt), why, shift);
+        }
+        return frames;
+    }
+
+    [Fact]
+    public void SteadyHeldLean_ViewHeldStill()
+    {
+        // Run 43: "leans: view moved 0.038 m" while the head held each lean still on 3.0's idle bob.
+        var frames = RunLean(1f, 6f, 7f);
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        for (int f = (int)(1.9f / Dt); f < (int)(6f / Dt); f++)
+        {
+            Assert.Null(frames[f].why);
+            min = Vector3.Min(min, frames[f].view);
+            max = Vector3.Max(max, frames[f].view);
+        }
+        float p2p = (max - min).Length();
+        Assert.True(p2p < 0.005f, $"view moved {p2p:0.0000} m during the held lean");
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(6f)]
+    public void LeanOnsetAndOffset_ReleaseNoLaterThanTheBendGate(float start)
+    {
+        // The bend gate closed at 1 degree: a moving lean must release the view at least as early, and keep it
+        // released while the lean moves, so the view is on the body as the lean carries it.
+        var frames = RunLean(1f, 6f, 7f);
+        int from = (int)(start / Dt);
+        var rest = frames[from].shift;
+        int closed = -1;
+        int bendGate = -1;
+        for (int f = from; f < frames.Length && (closed < 0 || bendGate < 0); f++)
+        {
+            if (closed < 0 && frames[f].why != null)
+                closed = f;
+            if (bendGate < 0 && (frames[f].shift - rest).Length() >= ShiftPerDegree)
+                bendGate = f;
+        }
+        Assert.True(closed >= 0, "the moving lean never released the view");
+        Assert.True(
+            closed <= bendGate,
+            $"released {(closed - bendGate) * Dt:0.000} s after the bend gate would have"
+        );
+        for (int f = closed; f < (int)((start + 0.25f) / Dt); f++)
+            Assert.Equal("lean", frames[f].why);
+    }
+
+    [Fact]
+    public void WalkFromAHeldLean_Releases()
+    {
+        // Pushing the stick or the body speeding up closes the gate however still the lean is.
+        var i = Calm();
+        i.LeanSpeed = 0.01f;
+        i.BodyFree = false;
+        Assert.Equal("body", ViewHoldGate.Why(i));
+        i = Calm();
+        i.LeanSpeed = 0.01f;
+        i.Speed = 1.5f;
+        Assert.Equal("moving", ViewHoldGate.Why(i));
+    }
+
+    [Fact]
+    public void LeanMotion_SteadyLeanJitter_StaysUnderTheGate()
+    {
+        var motion = new LeanMotion();
+        for (float t = 0f; t < 10f; t += Dt)
+        {
+            float speed = motion.Update(LeanShift(t, -1f, 100f), Dt);
+            Assert.True(speed < ViewHoldGate.MaxLeanSpeed, $"{speed:0.000} m/s at {t:0.00} s");
+        }
+    }
+
+    [Fact]
+    public void LeanMotion_PausedFrame_KeepsItsSpeed()
+    {
+        var motion = new LeanMotion();
+        motion.Update(Vector3.Zero, Dt);
+        float moving = motion.Update(new Vector3(0.01f, 0f, 0f), Dt);
+        Assert.Equal(moving, motion.Update(new Vector3(0.02f, 0f, 0f), 0f));
     }
 }

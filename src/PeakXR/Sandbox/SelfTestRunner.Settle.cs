@@ -38,6 +38,24 @@ internal sealed partial class SelfTestRunner
     /// <summary>Clearance (m) around the body, at chest height, a home spot needs.</summary>
     const float SettleClear = 0.6f;
 
+    /// <summary>The longest <see cref="Settle"/> that still ends settled: a revive (5 s), one warp home (3.5 s), and on
+    /// a poor spot two rounds of recentre (3 s, the eye guard's 4 s, the 0.5 s fade) and stand-still (its budget on
+    /// flat ground plus a stillness that starts just before it runs out). Step budgets start from it, so a slow
+    /// settle ends in its own "not settled" note instead of the step's timeout (run 46 settled in 2-5 s).</summary>
+    internal static readonly float SettleSeconds =
+        5f
+        + 3.5f
+        + 2f
+            * (
+                3f
+                + 4f
+                + 0.5f
+                + GameTiming.Budget(SettleHold + SettleSmooth, 1f)
+                + SettleHold
+                + SettleSmooth
+                + SelfTestChecks.GameMargin
+            );
+
     /// <summary>Per segment: the flat, open ground spot hand steps start from, found by the first settle there.</summary>
     readonly Dictionary<Segment, (Vector3 Spot, Vector3 Facing)> settleHome = new();
 
