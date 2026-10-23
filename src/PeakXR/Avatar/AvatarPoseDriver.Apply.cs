@@ -942,6 +942,12 @@ public partial class AvatarPoseDriver
         return true;
     }
 
+    private static System.Reflection.MethodBase vanillaAttach;
+
+    /// <summary>CharacterItems.AttachItem (CharacterItems.cs:641, private), resolved on first use.</summary>
+    private static System.Reflection.MethodBase VanillaAttach =>
+        vanillaAttach ??= Framework.GameMember.Method(typeof(CharacterItems), "AttachItem");
+
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
 
@@ -963,7 +969,17 @@ public partial class AvatarPoseDriver
             || !TryGetItemWorldPose(out var target, out var targetRot)
         )
         {
+            // No hand-carried pose (arms ragdolled, no tracking): back to vanilla's weld, body collisions restored.
             haveLastTarget = false;
+            if (weldGate.Released)
+            {
+                weldGate.Reset();
+                EndPassBody();
+                // Ours when the pose allows it, else the game's own two-hand weld (CharacterItems.AttachItem,
+                // CharacterItems.cs:641; its prefix falls through to vanilla while our attach declines).
+                if (item != null && item.rig != null && Owner.IsLocal && !AttachToHoldingHand(item))
+                    VanillaAttach?.Invoke(Owner.refs.items, new object[] { item });
+            }
             return false;
         }
         if (!ReferenceEquals(item, followItem))
@@ -1028,9 +1044,9 @@ public partial class AvatarPoseDriver
                 .U();
             body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
         }
-        if (Time.unscaledTime >= freeLogAt)
+        // Diagnostics only while the lean trace runs (rig.camera's trace window).
+        if (Rig.RigDriver.LeanTraceDue(ref freeLogAt))
         {
-            freeLogAt = Time.unscaledTime + 0.5f;
             // Whether a free item that lags sits against the world: its target inside terrain or props.
             bool blocked = Physics.CheckSphere(
                 target,
