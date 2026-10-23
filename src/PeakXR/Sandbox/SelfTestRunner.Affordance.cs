@@ -404,12 +404,9 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.15f);
         var aim = rig.Aim(left);
         var ahead = rig.Origin.TransformDirection(forward);
-        // Half the wall's 0.5 m depth behind the face.
-        var at = aim.position + ahead * (range + 1.25f);
-        wall.transform.SetPositionAndRotation(
-            new Vector3(at.x, wall.transform.position.y, at.z),
-            Quaternion.LookRotation(ahead)
-        );
+        // Centred on the aim ray itself (run 53: kept at its old height, the pitched aim passed it after the slide).
+        var at = aim.position + aim.forward * (range + 1.25f);
+        wall.transform.SetPositionAndRotation(at, Quaternion.LookRotation(ahead));
         Physics.SyncTransforms();
         int mask = HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap);
         bool OnWall(RaycastHit h) =>
@@ -421,7 +418,7 @@ internal sealed partial class SelfTestRunner
             && OnWall(first)
         )
         {
-            wall.transform.position += ahead * (range + 1f - first.distance);
+            wall.transform.position += aim.forward * (range + 1f - first.distance);
             Physics.SyncTransforms();
         }
         yield return Wait(0.15f);
