@@ -61,6 +61,10 @@ internal static class PhysicalInteraction
         /// <summary>When a forced detach's second "torn off" beat is due on this hand.</summary>
         public float TornAt = -10f;
 
+        /// <summary>A release of this grip may drop or throw the held item (<see cref="ReleaseArming"/>): false for an
+        /// item that arrived while the grip was already closed.</summary>
+        public bool Armed = true;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -232,7 +236,15 @@ internal static class PhysicalInteraction
         Mouth.Reset();
         dropPending = false;
         if (item != null)
+        {
             LocalHold.ItemInLeftHand = now - pendingTime < 3f ? pendingLeft : VRInput.LeftHanded;
+            var into = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
+            into.Armed = ReleaseArming.OnArrive(
+                into.Grip.Held,
+                into.Action,
+                into.Target is Item wanted && wanted.itemID == item.itemID
+            );
+        }
         pendingTime = -10f;
     }
 
@@ -341,6 +353,7 @@ internal static class PhysicalInteraction
     {
         var t = rig.Hand(hand.Left);
         var pos = t.position;
+        hand.Armed = ReleaseArming.OnPress();
         bool holding = Holding(c, out var item);
         bool thisHolds = holding && LocalHold.ItemInLeftHand == hand.Left;
 
@@ -620,7 +633,8 @@ internal static class PhysicalInteraction
                     cfg.ThrowSpeed,
                     cfg.PhysicalThrow,
                     cfg.ReleaseToDrop,
-                    action != GripPressAction.Extension && GripHooks.HeldRelease(hook)
+                    action != GripPressAction.Extension && GripHooks.HeldRelease(hook),
+                    hand.Armed
                 );
                 // Item.ItemUIData.canThrow (Item.cs:71; the flat game hides its throw prompt, GUIManager.cs:1183), and
                 // Item.progress (Item.cs:346): mid-cast, CharacterItems.DoDropping (CharacterItems.cs:254-258) keeps it.
