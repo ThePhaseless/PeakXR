@@ -38,7 +38,8 @@ public class RoomScaleStallTests
         RoomScaleFollow f,
         Func<float, Vector2> head,
         float seconds,
-        ref Vector2 body
+        ref Vector2 body,
+        bool standingTall = true
     )
     {
         var request = Vector2.Zero;
@@ -46,7 +47,7 @@ public class RoomScaleStallTests
         {
             var step = request * 1f * 0.02f;
             body += step;
-            request = f.Update(head(t) - body + f.Anchor, step, true, 0.02f, standingTall: true);
+            request = f.Update(head(t) - body + f.Anchor, step, true, 0.02f, standingTall);
         }
         return request;
     }
@@ -65,6 +66,24 @@ public class RoomScaleStallTests
         Assert.True(
             back.Length() > 0.05f || f.RecenterNeeded,
             $"stepping back 0.7 m: no follow (offset {f.Offset.Length():0.00} m)"
+        );
+    }
+
+    [Fact]
+    public void AFarLeanHeldStill_ThenStandingUp_DoesNotWalkBack()
+    {
+        // Run 56, vr.45: the far lean (0.5 m forward) held 2.5 s at nearly standing height cleared its stand-up
+        // exemption, and standing up walked the body 0.155 m back. A held lean is not standing tall.
+        var f = new RoomScaleFollow { LeanRadius = 0.35f };
+        var body = Vector2.Zero;
+        var lean = new Vector2(0f, 0.5f);
+        Walk(f, _ => lean, 3f, ref body, standingTall: false); // lean, the body follows, hold still
+        var before = body;
+        Walk(f, t => lean * (1f - MathF.Min(1f, t / 0.6f)), 0.6f, ref body, standingTall: false);
+        Walk(f, _ => Vector2.Zero, 3f, ref body); // stood up, still, at standing height
+        Assert.True(
+            Vector2.Distance(body, before) < 0.05f,
+            $"standing up walked the body {Vector2.Distance(body, before):0.00} m"
         );
     }
 
