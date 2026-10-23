@@ -72,7 +72,13 @@ Set `Accessibility.OneHanded` to `Left` or `Right` to play with that controller 
 | Trigger | Use. With the stick clicked in as you pull it: the secondary use (use on a friend, reach out with an empty hand) |
 | Menu | Release within 1 s: pause. Hold 1 s: recenter. Controllers without one (the Touch right controller) pause on B |
 
-On a Vive wand the trackpad stands in for the stick and acts only when clicked. Click its top or bottom half to walk forward or back, its left or right side to turn, and its centre for the stick click. The wand has no A/X or B/Y, so pause with its menu button. There is no jump button in this layout.
+On a Vive wand the trackpad stands in for the stick and the buttons, and acts only when clicked:
+
+- Top half: walk forward. At the rim: sprint as well.
+- Bottom half: walk back. At the rim: B, so tap it to pause and hold it for the emote wheel.
+- Left or right side: turn.
+- Centre: tap to jump, hold for half a second to crouch.
+- Menu button: tap to pause, hold to recenter. A long press opens no wheel here, because the hold already recenters.
 
 What moves off the buttons:
 

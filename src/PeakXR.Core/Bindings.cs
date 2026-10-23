@@ -238,7 +238,58 @@ namespace PeakXR.Core
             new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
         };
 
-        /// <summary>The table in use: <see cref="Default"/>, or <see cref="OneHanded"/> while that mode is on.</summary>
+        /// <summary>
+        /// <see cref="OneHanded"/> on a Vive wand, whose pad walks and turns and has no A or B (<c>WandPad.Map</c>): the
+        /// centre click is A, tapped to jump and held to crouch; the top rim is the stick click (sprint); the bottom rim
+        /// is B, tapped to pause and held for the emote wheel. The wheel stays off the menu button, whose hold recenters.
+        /// </summary>
+        public static readonly Binding[] OneHandedWand =
+        {
+            new Binding(VRAction.Jump, BindingHand.Dominant, VRControl.Primary, PressKind.Tap),
+            new Binding(
+                VRAction.Crouch,
+                BindingHand.Dominant,
+                VRControl.Primary,
+                PressKind.LongPress
+            ),
+            new Binding(
+                VRAction.Sprint,
+                BindingHand.Dominant,
+                VRControl.StickClick,
+                PressKind.Hold
+            ),
+            new Binding(VRAction.Interact, BindingHand.Dominant, VRControl.Grip, PressKind.Hold),
+            new Binding(
+                VRAction.UsePrimary,
+                BindingHand.Dominant,
+                VRControl.Trigger,
+                PressKind.Hold
+            ),
+            new Binding(VRAction.Pause, BindingHand.Dominant, VRControl.Secondary, PressKind.Tap),
+            new Binding(
+                VRAction.Emote,
+                BindingHand.Dominant,
+                VRControl.Secondary,
+                PressKind.LongPress
+            ),
+            new Binding(
+                VRAction.SpectateNext,
+                BindingHand.Dominant,
+                VRControl.StickUp,
+                PressKind.Hold
+            ),
+            new Binding(
+                VRAction.SpectatePrevious,
+                BindingHand.Dominant,
+                VRControl.StickDown,
+                PressKind.Hold
+            ),
+            new Binding(VRAction.Pause, BindingHand.Left, VRControl.Menu, PressKind.Tap),
+            new Binding(VRAction.Pause, BindingHand.Right, VRControl.Menu, PressKind.Tap),
+        };
+
+        /// <summary>The table in use: <see cref="Default"/>, or <see cref="OneHanded"/> (<see cref="OneHandedWand"/>
+        /// on a wand) while that mode is on.</summary>
         public static Binding[] Active = Default;
 
         /// <summary>
