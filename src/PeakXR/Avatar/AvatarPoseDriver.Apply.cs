@@ -142,6 +142,8 @@ public partial class AvatarPoseDriver
                 $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}, physics step {Time.fixedDeltaTime * 1000f:0.0} ms"
             );
         SplitForLegShift(c.refs.ragdoll.partList);
+        if (c.IsLocal && PeakXR.VR.VRSession.Active)
+            ArmsPastHead(parts);
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
         if (c.refs.ikLeft != null)
             hintWeightL = c.refs.ikLeft.data.hintWeight;
@@ -156,6 +158,43 @@ public partial class AvatarPoseDriver
         rigReady = true;
         return true;
     }
+
+    /// <summary>
+    /// The local VR player's arms pass beside the scout's oversized head instead of bumping it. A controller raised
+    /// overhead puts the upper arm about 16 cm from the head's centre, inside the scout's head collider, so the ragdoll
+    /// arm was shoved 12-15 degrees off its target and the hand landed 15 cm short (run 48, vr.08), though a person's
+    /// head never blocks that reach. Local physics only: peers see the network pose.
+    /// </summary>
+    private static void ArmsPastHead(
+        System.Collections.Generic.Dictionary<BodypartType, Bodypart> parts
+    )
+    {
+        if (!parts.TryGetValue(BodypartType.Head, out var headPart))
+            return;
+        var headColliders = headPart.GetComponentsInChildren<Collider>();
+        int pairs = 0;
+        foreach (var side in ArmRoots)
+        {
+            if (!parts.TryGetValue(side, out var arm))
+                continue;
+            foreach (var a in arm.GetComponentsInChildren<Collider>())
+            {
+                if (a.isTrigger)
+                    continue;
+                foreach (var h in headColliders)
+                {
+                    if (h.isTrigger || h == a)
+                        continue;
+                    Physics.IgnoreCollision(a, h);
+                    pairs++;
+                }
+            }
+        }
+        Plugin.Log.LogInfo($"[avatar.local] arms pass the head: {pairs} collider pairs ignored");
+    }
+
+    /// <summary>The upper arms: their children carry the elbows and hands.</summary>
+    private static readonly BodypartType[] ArmRoots = { BodypartType.Arm_L, BodypartType.Arm_R };
 
     private Vector3 AnimatedOffset() => hip.transform.position - hip.Rig.position;
 
