@@ -303,7 +303,14 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.Stuck, mark, false);
         if (!stepOk)
+        {
+            // Which stage: was the hand on the thorn, what did the pinch see, and what else was refused instead.
+            var hand = VRRig.Instance.Hand(left).position;
+            stepNote = F(
+                $"hand {Vector3.Distance(hand, thorn.transform.position):0.00} m from the thorn, {Vector3.Distance(hand, VRRig.Instance.Head.position):0.00} m from the eye; last refusal {UI.Affordances.Affordance.LastReason} ({(UI.Affordances.Affordance.LastLeft ? "left" : "right")}), {UI.Affordances.Affordance.Count} in all; stuck {c.IsStuck()}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+            );
             yield break;
+        }
         yield return Wait(1.5f);
         if (!thorn.stuckIn)
             Fail("the thorn came out while stuck");

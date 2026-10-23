@@ -675,7 +675,25 @@ internal sealed partial class SelfTestRunner
         yield return SwingFor(restLeft, restRight, forward, 1.5f, (_, s) => still |= s);
         Script(move).Stick = new Vector2(0f, 1f);
         yield return SwingFor(restLeft, restRight, right, 1.5f, (_, s) => clap |= s);
-        yield return SwingFor(restLeft, restRight, forward, 1.5f, (p, s) => run |= p && s);
+        // A player starts a sprint with stamina to spend: vr.154 just before leaves the bar at 0, and god mode's
+        // refill is not this step's to rely on (run 50 walked at 1.9 m/s with no sprint at all).
+        float staminaBefore = c.data.currentStamina;
+        if (staminaBefore < 0.5f)
+            SandboxActions.SetStamina(1f, 0f);
+        bool swungRun = false,
+            sprinted = false;
+        yield return SwingFor(
+            restLeft,
+            restRight,
+            forward,
+            1.5f,
+            (p, s) =>
+            {
+                run |= p && s;
+                swungRun |= s;
+                sprinted |= p;
+            }
+        );
         float speed = c.data.avarageVelocity.magnitude;
         Script(move).Stick = Vector2.zero;
         SetHand(true, restLeft);
@@ -683,7 +701,7 @@ internal sealed partial class SelfTestRunner
         setting.Value = was;
         yield return Wait(0.5f);
         var note =
-            $"swing gesture standing still {still}, swinging sideways {clap}, sprinting on a running swing {run} (speed {speed:0.0} m/s)";
+            $"swing gesture standing still {still}, swinging sideways {clap}, sprinting on a running swing {run} (speed {speed:0.0} m/s; gesture seen {swungRun}, sprint seen {sprinted}, stamina {staminaBefore:0.00} before)";
         if (still || clap || !run)
             Fail(note);
         else

@@ -372,16 +372,23 @@ internal sealed partial class SelfTestRunner
             Quaternion.LookRotation(ahead)
         );
         Physics.SyncTransforms();
+        int mask = HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap);
+        bool OnWall(RaycastHit h) =>
+            h.collider != null && h.collider.transform.IsChildOf(wall.transform);
+        // The wall is deeper than the 0.5 m assumed above (run 50: its "front half" collider faced the hand at
+        // 2.69 m, not 3.5 m): measure where the aim meets it and slide it so that face sits 1 m past the reach.
+        if (
+            Physics.Raycast(aim.position, aim.forward, out var first, range + 6f, mask)
+            && OnWall(first)
+        )
+        {
+            wall.transform.position += ahead * (range + 1f - first.distance);
+            Physics.SyncTransforms();
+        }
         yield return Wait(0.15f);
         if (
-            !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var face,
-                range + 4f,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
-            )
-            || face.collider.gameObject != wall
+            !Physics.Raycast(aim.position, aim.forward, out var face, range + 4f, mask)
+            || !OnWall(face)
             || face.distance <= range
         )
         {
