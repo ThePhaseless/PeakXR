@@ -355,4 +355,39 @@ public class ViewHoldTests
         float moving = motion.Update(new Vector3(0.01f, 0f, 0f), Dt);
         Assert.Equal(moving, motion.Update(new Vector3(0.02f, 0f, 0f), 0f));
     }
+
+    [Fact]
+    public void LeanInMotion_CarriesTheHeldOffsetInsteadOfReleasingIt()
+    {
+        // Run 49: releasing during a slow lean slid the view by the held offset (3.3 cm) on top of the lean.
+        Assert.True(ViewHoldGate.CarriesThrough(ViewHoldGate.LeanReason));
+        Assert.False(ViewHoldGate.CarriesThrough("moving"));
+        Assert.False(ViewHoldGate.CarriesThrough(null));
+
+        var hold = new ViewHold();
+        float t = 0f;
+        // Held while standing; the body drifts 3 cm under the view, inside the deadband.
+        for (; t < 3f; t += Dt)
+            hold.Update(Sway(t) + new Vector3(0.01f * t, 0f, 0f), true, Dt);
+        var body0 = Sway(t) + new Vector3(0.03f, 0f, 0f);
+        var off0 = hold.Update(body0, true, Dt) - body0;
+        Assert.True(off0.Length() > 0.02f);
+
+        // A slow lean: the body anchor moves 0.3 m over 2 s while the gate reads "lean".
+        var lean = new Vector3(0f, 0f, 0.15f);
+        float start = t;
+        float worst = 0f;
+        for (; t < start + 2f; t += Dt)
+        {
+            var body = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * (t - start);
+            var view = hold.Carry(body);
+            worst = MathF.Max(worst, ((view - body) - off0).Length());
+        }
+        Assert.True(worst < 0.005f, $"held offset slid {worst:0.000} m during the lean");
+
+        // Held still again: the hold resumes at once, without the offset collapsing onto the body.
+        var end = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * 2f;
+        var after = hold.Update(end, true, Dt);
+        Assert.True(((after - end) - off0).Length() < 0.005f);
+    }
 }

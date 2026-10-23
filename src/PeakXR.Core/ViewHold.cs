@@ -128,6 +128,17 @@ public static class ViewHoldGate
     /// <summary>Faster than idle sway (0.07 m/s), slower than any walk, push or ride.</summary>
     public const float MaxSpeed = 0.3f;
 
+    /// <summary><see cref="Why"/> for a lean bending or straightening.</summary>
+    public const string LeanReason = "lean";
+
+    /// <summary>
+    /// A closed gate whose motion the view rides with its held offset frozen (<see cref="ViewHold.Carry"/>) instead
+    /// of releasing: a lean in motion moves the body's eye anchor with the head, so the view follows it at once
+    /// either way, and releasing as well slid the view by the held offset on top of the lean (run 49, vr.45: 3.3 cm
+    /// over the slow leans, 2.2 cm over the fast one). Every other reason really moves the body: release.
+    /// </summary>
+    public static bool CarriesThrough(string why) => why == LeanReason;
+
     /// <summary>The first closed gate, or null when the view may hold.</summary>
     public static string Why(in ViewHoldInputs i)
     {
@@ -138,7 +149,7 @@ public static class ViewHoldGate
         if (i.RoomWalking)
             return "room walk";
         if (!(i.LeanSpeed < MaxLeanSpeed))
-            return "lean";
+            return LeanReason;
         if (!(i.Speed < MaxSpeed))
             return "moving";
         return null;

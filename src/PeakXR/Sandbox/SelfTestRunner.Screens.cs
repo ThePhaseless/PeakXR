@@ -1041,7 +1041,7 @@ internal sealed partial class SelfTestRunner
             Fail("no clear spot in front of the kiosk: " + string.Join(", ", tried));
             yield break;
         }
-        if (Vector3.Distance(Flat(c.Center), Flat(stand.Value)) > 0.3f)
+        if (FlatDistance(c.Center, stand.Value) > 0.3f)
         {
             // Not WarpTo: its ground ray starts 3 m up, which can be above the airport roof.
             warpedForProp = true;
@@ -1067,7 +1067,7 @@ internal sealed partial class SelfTestRunner
             bounds.ClosestPoint(new Vector3(c.Center.x, bounds.center.y, c.Center.z)) - c.Center;
         gap.y = 0f;
         kioskNote =
-            $"stood {gap.magnitude:0.00} m from the kiosk face ({Vector3.Distance(Flat(c.Center), Flat(bounds.center)):0.00} m from its centre, body {bounds.size.x:0.00} x {bounds.size.z:0.00} m), {heading:0} deg from its forward";
+            $"stood {gap.magnitude:0.00} m from the kiosk face ({FlatDistance(c.Center, bounds.center):0.00} m from its centre, body {bounds.size.x:0.00} x {bounds.size.z:0.00} m), {heading:0} deg from its forward";
     }
 
     /// <summary>
