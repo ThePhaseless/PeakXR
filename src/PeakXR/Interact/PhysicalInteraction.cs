@@ -509,8 +509,10 @@ internal static class PhysicalInteraction
             ctx.ExtensionClaim = extension != null;
             action = GripIntent.OnPress(ctx);
         }
+        // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
+        var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight)"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}"
         );
         Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
         switch (action)
