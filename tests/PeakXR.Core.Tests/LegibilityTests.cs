@@ -104,4 +104,29 @@ public class LegibilityTests
             Legibility.Check(Eye, Forward, at, -Forward, 0.01f, out _, out _, out _, out _)
         );
     }
+
+    // A 5 degree ring 40 degrees below the view sits inside a 96 degree headset field (edge at 48 degrees).
+    [Fact]
+    public void RingInsideTheField_IsInView()
+    {
+        var below = Eye + new Vector3(0f, -MathF.Tan(40f * MathF.PI / 180f), 1f);
+        Assert.True(Legibility.InFieldOfView(Eye, Forward, below, 96f, 5f, out var off));
+        TestUtil.Near(40f, off, 0.01f);
+    }
+
+    // 47 degrees down: the centre is inside 48, but half the ring (2.5 degrees) is past the edge.
+    [Fact]
+    public void RingCutByTheEdge_IsOutOfView()
+    {
+        var below = Eye + new Vector3(0f, -MathF.Tan(47f * MathF.PI / 180f), 1f);
+        Assert.False(Legibility.InFieldOfView(Eye, Forward, below, 96f, 5f, out var off));
+        TestUtil.Near(47f, off, 0.01f);
+    }
+
+    [Fact]
+    public void RingBehindTheHead_IsOutOfView()
+    {
+        Assert.False(Legibility.InFieldOfView(Eye, Forward, Eye - Forward, 110f, 5f, out var off));
+        TestUtil.Near(180f, off, 0.01f);
+    }
 }

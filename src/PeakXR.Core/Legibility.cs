@@ -55,6 +55,25 @@ namespace PeakXR.Core
             return null;
         }
 
+        /// <summary>
+        /// Whether a mark <paramref name="sizeDegrees"/> across at <paramref name="point"/> lies wholly inside a
+        /// headset field <paramref name="fovDegrees"/> wide, seen from <paramref name="eye"/> looking along
+        /// <paramref name="forward"/>: its centre's angle off the view (<paramref name="offView"/>) plus half its size
+        /// stays within half the field. Pass the narrower (vertical) field so the test holds in every direction.
+        /// </summary>
+        public static bool InFieldOfView(
+            Vector3 eye,
+            Vector3 forward,
+            Vector3 point,
+            float fovDegrees,
+            float sizeDegrees,
+            out float offView
+        )
+        {
+            offView = Angle(forward, point - eye);
+            return offView + sizeDegrees * 0.5f <= fovDegrees * 0.5f;
+        }
+
         static float Angle(Vector3 a, Vector3 b)
         {
             float n = a.Length() * b.Length();

@@ -237,6 +237,8 @@ static class SelfTestEndGamePatch
 /// postfix on <c>CharacterInput.Sample(bool)</c> (internal, decomp Assembly-CSharp/CharacterInput.cs:212, which
 /// starts with <c>ResetInput()</c> at :214), OR-merged into usePrimary* (:101-105) and drop* (:95-99) so
 /// <c>CharacterItems.DoUsing</c> (CharacterItems.cs:201) and <c>DoDropping</c> (:252) read them the same frame.
+/// <c>HoldPrimary</c> is flat play's use button only: it ORs in after the mod's VR bindings, so in VR a step drives
+/// the scripted controller instead (<c>SelfTestRunner.UseWay</c>) and the mod's gates run.
 /// </summary>
 [HarmonyPatch]
 static class SelfTestInputPatch
@@ -282,6 +284,9 @@ static class SelfTestUseProbe
 {
     static int lines;
 
+    /// <summary>Every <c>Item.StartUsePrimary</c> so far, logged or not: a refused use must start none (vr.62).</summary>
+    internal static int Starts;
+
     static IEnumerable<MethodBase> TargetMethods()
     {
         yield return GameMember.Method(typeof(Item), "StartUsePrimary");
@@ -291,10 +296,12 @@ static class SelfTestUseProbe
 
     static void Prefix(Item __instance, MethodBase __originalMethod)
     {
+        bool start = __originalMethod.Name == "StartUsePrimary";
+        if (start)
+            Starts++;
         var hands = VR.VRInput.TestOverride;
         if (hands == null || hands == SelfTestRunner.IdleHands || lines >= 120)
             return;
-        bool start = __originalMethod.Name == "StartUsePrimary";
         if (!start && !__instance.isUsingPrimary)
             return;
         lines++;

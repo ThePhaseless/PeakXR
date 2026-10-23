@@ -27,6 +27,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return ItemStep("vr.21-bugle", "Bugle", 25f, BugleStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
+        yield return ItemStep("vr.22b-bandage-forearm", "Bandage", 30f, ForearmBandageStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
         yield return ItemStep("vr.28-use-while-pointing", AppleFragment, 25f, UsePointingStep);
         yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
@@ -162,7 +163,22 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.22: a healing item pressed to the chest holds its primary use (<c>Item.castProgress</c>,
     /// Item.cs:344) until the cast finishes (<c>lastFinishedCast</c>, Item.cs:272) or the item is used up.</summary>
-    IEnumerator BandageStep(Item prefab)
+    IEnumerator BandageStep(Item prefab) => Bandage(prefab, false);
+
+    /// <summary>vr.22b: the same use from the other route HeldGestures takes (HeldGestures.cs:182-196), the item
+    /// pressed to the free arm's forearm held out in front, well clear of the chest: the torso stays farther than
+    /// the press's exit distance, so only the forearm can have made the contact.</summary>
+    IEnumerator ForearmBandageStep(Item prefab) => Bandage(prefab, true);
+
+    /// <summary>HeldGestures' torso radius (HeldGestures.cs:41, private); a hand farther than <see cref="BandageChestExit"/>
+    /// from that torso is no chest press.</summary>
+    const float BandageTorsoRadius = 0.22f;
+
+    /// <summary>The chest press's exit distance (HeldGestures' Body dwell, HeldGestures.cs:33-38; it starts only at
+    /// 0).</summary>
+    const float BandageChestExit = 0.05f;
+
+    IEnumerator Bandage(Item prefab, bool forearm)
     {
         yield return GiveAndHold(prefab);
         if (!stepOk)
@@ -181,7 +197,18 @@ internal sealed partial class SelfTestRunner
         float statusBefore = measured ? afflictions.GetCurrentStatus(status) : 0f;
         HeadFrame(out var head, out var forward, out var right);
         var chest = head + Vector3.down * 0.45f + forward * 0.08f + (left ? -right : right) * 0.05f;
+        if (forearm)
+        {
+            // The free hand out in front pointing ahead, its forearm 0.05-0.3 m behind the grip
+            // (BodyZones.ForearmStart/End); the item goes to the forearm's middle.
+            var arm = head + forward * 0.6f + Vector3.down * 0.35f;
+            yield return MoveTrack(!left, arm, 0.4f);
+            Script(!left).Rotation = Quaternion.LookRotation(forward, Vector3.up);
+            chest = arm - forward * 0.17f;
+        }
         yield return MoveTrack(left, chest, 0.6f);
+        var rig = VRRig.Instance;
+        float nearestTorso = float.MaxValue;
         float progress = 0f;
         float useTime = GameTiming.UseSeconds(item);
         float end = Now + GameTiming.Budget(useTime, 2f);
@@ -202,23 +229,43 @@ internal sealed partial class SelfTestRunner
             if (c.data.currentItem != item)
                 break;
             progress = Mathf.Max(progress, item.castProgress);
+            nearestTorso = Mathf.Min(
+                nearestTorso,
+                BodyZones.TorsoDistance(
+                    rig.Hand(left).position.N(),
+                    rig.Head.position.N(),
+                    Flat(rig.Head.forward).N(),
+                    BandageTorsoRadius
+                )
+            );
             if (!shot && progress > 0.3f)
             {
                 // The hold ring sits above the acting hand, which is at the chest, under the view.
                 shot = true;
-                yield return ShotAt("vr-22-bandage", VRRig.Instance.Hand(left).position);
+                yield return ShotAt(
+                    forearm ? "vr-22b-bandage-forearm" : "vr-22-bandage",
+                    VRRig.Instance.Hand(left).position
+                );
                 continue;
             }
             yield return null;
         }
         yield return Wait(0.5f);
         float statusAfter = measured ? afflictions.GetCurrentStatus(status) : 0f;
-        var note = $"{prefab.name}: cast progress {progress:0.00} of {useTime:0.0} s, used {used}";
+        var note =
+            $"{prefab.name} on the {(forearm ? "forearm" : "chest")}: cast progress {progress:0.00} of {useTime:0.0} s, used {used}";
+        if (forearm)
+            note += F($", hand at least {nearestTorso:0.00} m from the torso");
         if (measured)
             note +=
                 $", {status} {statusBefore:0.00} -> {statusAfter:0.00} (item changes it by {change:+0.00;-0.00})";
         if (!used)
-            Fail("no use on the chest: " + note);
+            Fail($"no use on the {(forearm ? "forearm" : "chest")}: " + note);
+        else if (forearm && nearestTorso <= BandageChestExit)
+            Fail(
+                "the hand came near enough the chest to press there, so the forearm route is unproven: "
+                    + note
+            );
         // Half the amount: statuses creep between the reads, and the start value caps a large change.
         else if (measured && statusBefore - statusAfter < Mathf.Min(-change, statusBefore) * 0.5f)
             Fail($"used but {status} did not fall: " + note);
@@ -652,6 +699,8 @@ internal sealed partial class SelfTestRunner
             flame = torch.transform;
         // The near side of the light zone (FireGestures: 0.6 m around the base, -0.1 to 0.6 m up), in arm's reach.
         var goal = fireBase + Flat(c.Center - fireBase) * 0.2f + Vector3.up * 0.2f;
+        // Squat to the low zone as a player does, so the arm reaches it.
+        yield return StoopOver(goal, 0.6f);
         var interaction = Interaction.instance;
         float progress = 0f;
         // The fire's own hold (GetInteractTime, Campfire.cs:441), after up to 3 s carrying the flame in.
@@ -682,6 +731,7 @@ internal sealed partial class SelfTestRunner
                 if (outNow)
                     SteerBack(left, flame.position, goal);
             }
+            HoldInReach(left);
             state = FireTrace("vr.26", flame.position, fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
                 progress = Mathf.Max(progress, interaction.constantInteractableProgress);
@@ -704,7 +754,7 @@ internal sealed partial class SelfTestRunner
             yield return ShotAt("vr-26-lit", fireBase + Vector3.up * 0.3f, 1.5f);
         var note =
             $"{torch.name} at {fire.name}: light hold progress {progress:0.00} of {holdTime:0.0} s, fire {fire.state}; "
-            + $"flame reached the light zone {entered}, drifted out {drifts} times (worst {worst:0.00} m out); at the end {state}";
+            + $"flame reached the light zone {entered}, drifted out {drifts} times (worst {worst:0.00} m out); {ReachNote()}; at the end {state}";
         if (progress <= 0f)
             Fail("flame did not start the light hold: " + note);
         else if (!lit)
@@ -714,8 +764,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.25: a cookable item held in the heat column over a lit campfire cooks through the game's hold
-    /// (<c>DataEntryKey.CookedAmount</c> +1, ItemCooking.cs:264). Lights the nearest campfire first with
-    /// <c>Campfire.LightWithoutReveal</c> (Campfire.cs:468: no segment advance) when it is still unlit.</summary>
+    /// (<c>DataEntryKey.CookedAmount</c> +1, ItemCooking.cs:264), the player squatting and the hand within reach.
+    /// vr.26 lights the fire with the flame gesture; when it failed, this lights the fire with
+    /// <c>Campfire.LightWithoutReveal</c> (Campfire.cs:468: no segment advance) and names that shortcut in the note
+    /// (vr.26 then fails on its own).</summary>
     IEnumerator CookStep(Item foodPrefab)
     {
         var c = Character.localCharacter;
@@ -732,7 +784,8 @@ internal sealed partial class SelfTestRunner
         }
         var fireBase = ItemGestures.FireBase(fire);
         yield return ApproachFire(fireBase);
-        if (!fire.Lit)
+        bool litHere = !fire.Lit;
+        if (litHere)
         {
             fire.LightWithoutReveal();
             yield return Until(() => fire.Lit, 3f, "campfire did not light");
@@ -753,6 +806,7 @@ internal sealed partial class SelfTestRunner
         int before = Cooked(food);
         // The near side of the heat column (FireGestures: 0.6 m around the base, 0.2 to 1 m up), in arm's reach.
         var goal = fireBase + Flat(c.Center - fireBase) * 0.35f + Vector3.up * 0.55f;
+        yield return StoopOver(goal, 0.6f);
         var interaction = Interaction.instance;
         float progress = 0f;
         bool shot = false;
@@ -764,6 +818,7 @@ internal sealed partial class SelfTestRunner
         while (Now < end && food != null && Cooked(food) == before)
         {
             CarryToward(left, food.Center(), goal);
+            HoldInReach(left);
             state = FireTrace("vr.25", food.Center(), fireBase, left);
             if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire))
                 progress = Mathf.Max(progress, interaction.constantInteractableProgress);
@@ -777,7 +832,12 @@ internal sealed partial class SelfTestRunner
         }
         int after = food != null ? Cooked(food) : before;
         var note =
-            $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {cookTime:0.0} s, cooked {before} -> {after}; at the end {state}";
+            (
+                litHere
+                    ? "shortcut: the fire was lit by Campfire.LightWithoutReveal, as vr.26 left it unlit; "
+                    : "fire lit by vr.26's flame; "
+            )
+            + $"{NameOf(food)} over {fire.name}: cook hold progress {progress:0.00} of {cookTime:0.0} s, cooked {before} -> {after}; {ReachNote()}; at the end {state}";
         if (after <= before)
             Fail("not cooked: " + note);
         else
@@ -816,6 +876,7 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
         food.GetData<IntItemData>(DataEntryKey.CookedAmount).Value = 2;
         var goal = fireBase + Flat(c.Center - fireBase) * 0.35f + Vector3.up * 0.55f;
+        yield return StoopOver(goal, 0.6f);
         float cookTime = GameTiming.InteractSeconds(fire, c);
         float mark = CueMark();
         float end = Now + GameTiming.Budget(cookTime * 0.8f, 3f);
@@ -831,6 +892,7 @@ internal sealed partial class SelfTestRunner
         )
         {
             CarryToward(left, food.Center(), goal);
+            HoldInReach(left);
             yield return null;
             holding |=
                 interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire);
@@ -842,7 +904,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         int after = food != null ? Cooked(food) : -1;
         var note =
-            $"{foodPrefab.name} at cook level 2 over {fire.name}: {cueNote}; game cook hold seen {holding}; cooked after {after}";
+            $"{foodPrefab.name} at cook level 2 over {fire.name}: {cueNote}; game cook hold seen {holding}; cooked after {after}; {ReachNote()}";
         if (!holding)
             Fail("the danger came without the game's cook hold on the fire: " + note);
         else if (after != 2)
@@ -850,6 +912,53 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
     }
+
+    /// <summary>Frames <see cref="HoldInReach"/> held the hand back since the last <see cref="StoopOver"/>.</summary>
+    int reachHeld;
+
+    /// <summary>
+    /// The fire steps' squat: the head lowers (which also crouches the character, as <see cref="ReachDown"/> does)
+    /// until it is at most <see cref="StoopReach"/> over <paramref name="world"/>, leaving the hands where they are.
+    /// Resets <see cref="reachHeld"/>. The step's teardown stands back up.
+    /// </summary>
+    IEnumerator StoopOver(Vector3 world, float seconds)
+    {
+        reachHeld = 0;
+        var rig = VRRig.Instance;
+        if (headDrop <= 0f)
+            stoopFrom = VRInput.HeadPosition.y;
+        float from = headDrop;
+        float low = Mathf.Max(
+            0f,
+            stoopFrom - rig.Origin.InverseTransformPoint(world).y - StoopReach
+        );
+        float start = Now;
+        while (true)
+        {
+            float t = (Now - start) / seconds;
+            headDrop = Mathf.SmoothStep(from, low, t);
+            if (t >= 1f)
+                yield break;
+            yield return null;
+        }
+    }
+
+    /// <summary>Keeps the scripted hand within <see cref="MaxHandFromEye"/> of the eye: a carry that would stretch
+    /// past a player's arm stops at it instead, so the step passes only from a reachable pose.</summary>
+    void HoldInReach(bool left)
+    {
+        ref var s = ref Script(left);
+        var off = s.Position - VRInput.HeadPosition;
+        if (off.magnitude <= MaxHandFromEye)
+            return;
+        s.Position = VRInput.HeadPosition + off.normalized * MaxHandFromEye;
+        reachHeld++;
+    }
+
+    string ReachNote() =>
+        F(
+            $"stooped {headDrop:0.00} m, hand held back at the {MaxHandFromEye:0.0} m reach for {reachHeld} frames"
+        );
 
     /// <summary>How close the fire steps' body gets to the fire base. The item hangs off a 0.6 m ragdoll arm: from
     /// 1.1-1.2 m (vr9) or 1.8 m (vr10, warped to 0.95 m but ended there) it never reached the zone.</summary>
@@ -931,9 +1040,10 @@ internal sealed partial class SelfTestRunner
 
     static int Cooked(Item item) => item.GetData<IntItemData>(DataEntryKey.CookedAmount).Value;
 
-    /// <summary>vr.27: open palms held toward a lit campfire send interact.items' warm pulses
-    /// (<c>FireGestures.WarmPulses</c>, counted where <c>Haptics.Pulse</c> is called); the backs of the hands send
-    /// none. Uses the campfire vr.25 lit; skips when none is lit.</summary>
+    /// <summary>vr.27: an open palm held toward a lit campfire sends interact.items' warm pulses
+    /// (<c>FireGestures.WarmPulses</c>, counted where <c>Haptics.Pulse</c> is called). The count is one for both
+    /// hands, so each palm is tried alone with the other hand's back to the fire, and each must warm; the backs of
+    /// both hands send none. Uses the campfire vr.25 lit; skips when none is lit.</summary>
     IEnumerator WarmStep()
     {
         var c = Character.localCharacter;
@@ -963,9 +1073,19 @@ internal sealed partial class SelfTestRunner
         var dir = Flat(rig.Origin.InverseTransformDirection(heat - c.Center));
         var leftRot = Quaternion.LookRotation(Vector3.Cross(dir, Vector3.up), Vector3.up);
         var rightRot = Quaternion.LookRotation(Vector3.Cross(-dir, Vector3.up), Vector3.up);
+        string far = OverReach(true) ?? OverReach(false);
+        if (far != null)
+        {
+            Fail(far);
+            yield break;
+        }
+        // Left palm to the fire, right back to it (leftRot on the right hand turns its palm away), then the reverse.
         int before = FireGestures.WarmPulses;
-        yield return HoldPalms(leftRot, rightRot, 2f);
-        int pulses = FireGestures.WarmPulses - before;
+        yield return HoldPalms(leftRot, leftRot, 1.5f);
+        int leftPulses = FireGestures.WarmPulses - before;
+        before = FireGestures.WarmPulses;
+        yield return HoldPalms(rightRot, rightRot, 1.5f);
+        int rightPulses = FireGestures.WarmPulses - before;
         float leftGap = Vector3.Distance(rig.Hand(true).position, heat);
         float rightGap = Vector3.Distance(rig.Hand(false).position, heat);
         yield return Shot("vr-27-warm-hands");
@@ -974,9 +1094,9 @@ internal sealed partial class SelfTestRunner
         yield return HoldPalms(rightRot, leftRot, 1.5f);
         away = FireGestures.WarmPulses - away;
         var note =
-            $"{fire.name}: {pulses} warm pulses in 2 s, palms {leftGap:0.00} m (left) and {rightGap:0.00} m (right) from the heat point; backs to the fire {away} pulses in 1.5 s";
-        if (pulses <= 0)
-            Fail("no warm pulse: " + note);
+            $"{fire.name}: left palm alone {leftPulses} warm pulses in 1.5 s, right palm alone {rightPulses}; palms {leftGap:0.00} m (left) and {rightGap:0.00} m (right) from the heat point; backs to the fire {away} pulses in 1.5 s";
+        if (leftPulses <= 0 || rightPulses <= 0)
+            Fail($"no warm pulse from the {(leftPulses <= 0 ? "left" : "right")} palm: " + note);
         else if (away > 0)
             Fail("warm pulses with the backs of the hands to the fire: " + note);
         else
@@ -1000,7 +1120,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// use.*: give to the hand (<c>GameUtils.InstantiateAndGrab</c>), hold primary use through the item's own use
     /// time (<c>Item.StartUsePrimary</c>/<c>ContinueUsePrimary</c>, Item.cs:849-901), release, and prove what the use
-    /// did in the game, in VR and flat:
+    /// did in the game, in VR and flat. The use is the player's (<see cref="UseWay"/>): in VR the holding hand's
+    /// trigger, or a mouth item raised to the mouth, so interact.physical's bindings and gates run; flat play's use
+    /// button otherwise.
     /// <list type="bullet">
     /// <item>food: eaten (<c>CharacterData.lastConsumedItem</c>, CharacterData.cs:170) and Hunger down, after
     /// <c>AddStatus</c> (CharacterAfflictions.cs:712) gave it room;</item>
@@ -1010,7 +1132,8 @@ internal sealed partial class SelfTestRunner
     /// Flare.cs:32-34);</item>
     /// <item>rope cannon and chain launcher: aimed where their own <c>WillAttach</c> accepts (RopeShooter.cs:122-138,
     /// VineShooter.cs:71-92, read through <c>Item.CanUsePrimary</c>, Item.cs:797-801), a new rope anchor
-    /// (RopeShooter.cs:104) or vine (VineShooter.cs:61);</item>
+    /// (RopeShooter.cs:104) with its rope spawned and anchored to it (<see cref="KeepRope"/>), or a vine
+    /// (VineShooter.cs:61);</item>
     /// <item>spool (<see cref="SpoolUse"/>), compass (<see cref="CompassHeading"/>) and binoculars (Hold mode in VR)
     /// get checks of their own.</item>
     /// </list>
@@ -1056,6 +1179,11 @@ internal sealed partial class SelfTestRunner
         var afflictions = c.refs.afflictions;
         bool vr = VRSession.Active && VRRig.Instance != null;
         bool left = LocalHold.ItemInLeftHand;
+        // The player's own use: the holding hand's trigger, or for a mouth item the hand at the mouth (VR); flat
+        // play's use button otherwise.
+        var way = WayOf(held);
+        if (vr)
+            yield return ReadyHand(left);
 
         // Food gets room to lower Hunger (god mode keeps it at 0; Run restores god mode after the step).
         bool food =
@@ -1075,12 +1203,6 @@ internal sealed partial class SelfTestRunner
         if (shooter)
         {
             shotsBefore = ropeShooter != null ? Ids<RopeAnchorProjectile>() : Ids<JungleVine>();
-            if (vr)
-            {
-                BeginHands();
-                HeadFrame(out var head, out var forward, out _);
-                SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
-            }
             yield return AimHeld(c, left, ShooterPitches, AllYaws, () => held.CanUsePrimary());
             if (!aimFound)
             {
@@ -1102,8 +1224,8 @@ internal sealed partial class SelfTestRunner
         // Binoculars in VR run in Hold mode: raised while use is held, lowered by the release alone.
         var binoculars = vr ? held.GetComponentInChildren<Action_ShowBinocularOverlay>() : null;
         BinocularsConfig.ForceHold = binoculars != null;
-        SelfTestInputPatch.HoldPrimary = true;
-        float end = Now + GameTiming.Budget(useTime);
+        // A mouth item first travels up to the mouth (about 0.4 m at 1.5 m/s) and dwells there.
+        float end = Now + GameTiming.Budget(useTime, way == UseWay.Mouth ? 1.5f : 0f);
         while (Now < end && !held.finishedCast)
         {
             if (held == null || HeldItem() != held)
@@ -1111,6 +1233,7 @@ internal sealed partial class SelfTestRunner
                 started = true;
                 break;
             }
+            HoldUse(way, left);
             started |= held.isUsingPrimary || held.finishedCast;
             progress = Mathf.Max(progress, held.castProgress);
             yield return null;
@@ -1127,7 +1250,7 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
             raisedWhileHeld = binoculars != null && binoculars.binocularsActive;
         }
-        SelfTestInputPatch.HoldPrimary = false;
+        ReleaseUse(way, left);
         ResetFlatLook(c, vr);
         bool lit = held != null && (lantern != null || flare != null) && HandLights.IsLit(held);
         float fuelBefore = Fuel(held);
@@ -1151,12 +1274,12 @@ internal sealed partial class SelfTestRunner
         }
         bool gone = held == null || HeldItem() != held;
         var note =
-            $"primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
+            $"used by {UseWayText(way)}: primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
         BinocularsConfig.ForceHold = false;
         if (binoculars != null)
         {
             note +=
-                $", Hold mode: raised while held {raisedWhileHeld}, raised after release {binoculars != null && binoculars.binocularsActive}";
+                $", Hold mode: raised while held {raisedWhileHeld}, raised after release {binoculars != null && binoculars.binocularsActive}; {BinocularGiveNre}";
         }
         bool consumed = c.data.lastConsumedItem != consumedBefore;
         float hungerAfter = food ? afflictions.GetCurrentStatus(status) : 0f;
@@ -1171,6 +1294,8 @@ internal sealed partial class SelfTestRunner
             note += $", flame {flame}";
         if (shooter)
             note += $", {(ropeShooter != null ? "rope anchor" : "vine")} spawned {shot != null}";
+        if (ropeShooter != null && shot != null)
+            note += $", rope {ropeMissing ?? "spawned anchored to it"}";
         if (!started)
             Fail("primary use never started: " + note);
         else if (binoculars != null && (!raisedWhileHeld || binoculars.binocularsActive))
@@ -1188,22 +1313,133 @@ internal sealed partial class SelfTestRunner
             Fail("flare lit but no flame spawned: " + note);
         else if (shooter && shot == null)
             Fail("nothing fired where it was aimed: " + note);
+        else if (ropeShooter != null && ropeMissing != null)
+            Fail("the anchor brought no rope: " + note);
         else
             stepNote = note;
         // Eaten or spent items leave the hand on their own.
         yield return DropHeld();
     }
 
-    /// <summary>A rope cannon's anchor flies to the hit, then spawns its rope (RopeAnchorProjectile.cs:40-68,
-    /// RopeAnchorWithRope.cs:26-37): waits for that rope and hands it to teardown with the anchor.</summary>
+    /// <summary>Why the give logs a vanilla NullReferenceException in <c>ItemRenderFeatureManager.setFeatureActive</c>
+    /// (VR run 46): <c>GameUtils.InstantiateAndGrabRPC</c> (GameUtils.cs:270) instantiates the binoculars and picks
+    /// them up in the same call, and the pickup deactivates the new world object before its <c>Start</c> has looked
+    /// up the renderer feature (ItemRenderFeatureManager.cs:17-28), so <c>OnDisable</c> (:49-52) dereferences a null
+    /// feature (:42-47). The only PeakXR frame is the Harmony wrapper of Item.Interact (ItemGestures.BeforePickup, a
+    /// prefix that deactivates nothing); the SetActive is the game's own. Vanilla gives through the same call
+    /// (Action_ConsumeAndSpawn, Action_SpawnGuidebookPage).</summary>
+    const string BinocularGiveNre =
+        "the give's ItemRenderFeatureManager NullReferenceException is vanilla (InstantiateAndGrab disables the new item before its Start)";
+
+    /// <summary>Set by <see cref="KeepRope"/>: null when the rope anchor spawned its rope tied to it, else what is
+    /// missing.</summary>
+    string ropeMissing;
+
+    /// <summary>A rope cannon's anchor flies to the hit (distance x 0.01 s, RopeShooter.cs:105), then spawns its rope
+    /// and ties it to itself (<c>SpawnRope</c>, <c>AttachToAnchor_Rpc</c>; RopeAnchorProjectile.cs:40-68,
+    /// RopeAnchorWithRope.cs:26-37): waits for that rope, hands it to teardown with the anchor and sets
+    /// <see cref="ropeMissing"/>.</summary>
     IEnumerator KeepRope(Component shot)
     {
-        var withRope = shot != null ? shot.GetComponent<RopeAnchorWithRope>() : null;
-        if (withRope == null)
+        ropeMissing = null;
+        if (shot is not RopeAnchorProjectile)
             yield break;
-        yield return WaitFor(() => withRope == null || withRope.ropeInstance != null, 2f);
+        var withRope = shot.GetComponent<RopeAnchorWithRope>();
+        if (withRope == null)
+        {
+            ropeMissing = "missing: the anchor has no RopeAnchorWithRope";
+            yield break;
+        }
+        bool Tied() =>
+            withRope.rope != null && withRope.rope.attachmenState == Rope.ATTACHMENT.anchored;
+        yield return WaitFor(() => withRope == null || Tied(), 2f);
         if (withRope != null && withRope.ropeInstance != null)
             spawned.Add(withRope.ropeInstance);
+        ropeMissing =
+            withRope == null ? "missing: the anchor was destroyed"
+            : withRope.ropeInstance == null ? "missing: none spawned on the anchor within 2 s"
+            : !Tied()
+                ? $"spawned but {(withRope.rope != null ? withRope.rope.attachmenState.ToString() : "with no Rope")}, not anchored"
+            : null;
+    }
+
+    /// <summary>How the step gives the held item's use.</summary>
+    enum UseWay
+    {
+        /// <summary>Flat play's use button (<see cref="SelfTestInputPatch.HoldPrimary"/>, the player's input there).</summary>
+        Button,
+
+        /// <summary>VR: the holding hand's trigger through the scripted controller, so interact.physical's use path
+        /// and its gates run (PhysicalInteraction.Inject).</summary>
+        Trigger,
+
+        /// <summary>VR, a mouth item with <c>Interaction.EatAtMouth</c> on: the holding hand raised to the mouth, as
+        /// vr.12 eats (interact.physical's mouth route).</summary>
+        Mouth,
+
+        /// <summary>VR, an item whose bare trigger interact.items refuses (commune or read,
+        /// <c>ItemGestures.TriggerRefused</c>): held at its face spot (<see cref="FaceSpot"/>) for the cast.</summary>
+        Face,
+    }
+
+    static UseWay WayOf(Item held) =>
+        !(VRSession.Active && VRRig.Instance != null) ? UseWay.Button
+        : ItemGestures.TriggerRefused(held) ? UseWay.Face
+        : InteractConfig.Instance.EatAtMouth && ItemGestures.AtMouth(held) ? UseWay.Mouth
+        : UseWay.Trigger;
+
+    static string UseWayText(UseWay way) =>
+        way switch
+        {
+            UseWay.Trigger => "the holding hand's trigger",
+            UseWay.Mouth => "the hand at the mouth",
+            UseWay.Face => "the item held at the face",
+            _ => "the use button",
+        };
+
+    /// <summary>VR: scripted hands, the holding hand closed on the item in front of the chest, and a moment for the
+    /// grip and trigger edges to see it.</summary>
+    IEnumerator ReadyHand(bool left)
+    {
+        BeginHands();
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.3f);
+    }
+
+    /// <summary>One frame of giving the held item's use <paramref name="way"/>.</summary>
+    void HoldUse(UseWay way, bool left)
+    {
+        if (way == UseWay.Button)
+            SelfTestInputPatch.HoldPrimary = true;
+        else if (way == UseWay.Trigger)
+        {
+            Script(left).TriggerTouch = true;
+            Script(left).Trigger = 1f;
+        }
+        else if (way == UseWay.Mouth)
+            ApproachHand(left, MouthGoal());
+        else
+        {
+            var rig = VRRig.Instance;
+            ApproachHand(
+                left,
+                rig.Origin.InverseTransformPoint(
+                    FaceSpot(rig.Head, ItemGestures.Use == UseGesture.Read)
+                )
+            );
+        }
+    }
+
+    /// <summary>Stops giving the use: button up, trigger released, or the hand back from the mouth or face.</summary>
+    void ReleaseUse(UseWay way, bool left)
+    {
+        SelfTestInputPatch.HoldPrimary = false;
+        if (way == UseWay.Trigger)
+            Script(left).Trigger = 0f;
+        else if (way != UseWay.Button)
+            PullAway(left);
     }
 
     /// <summary>A lantern's fuel entry (<c>DataEntryKey.Fuel</c>, Lantern.cs:171); -1 when it has none.</summary>
@@ -2202,7 +2438,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         BinocularsConfig.ForceHold = false;
         var note =
-            $"{prefab.name}: zoom {fovBefore:0.0} -> {fovAt:0.0} deg (range {zoom.minFov:0.0}-{zoom.maxFov:0.0})";
+            $"{prefab.name}: zoom {fovBefore:0.0} -> {fovAt:0.0} deg (range {zoom.minFov:0.0}-{zoom.maxFov:0.0}); {BinocularGiveNre}";
         if (fovAt < zoom.maxFov - 0.01f)
             Fail("the end stop came before the widest zoom: " + note);
         else
@@ -2210,9 +2446,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.171: a vine or chain shooter aimed where the game's aim check passes (WillAttach,
-    /// VineShooter.cs:71-92) but every path try fails (CheckVinePath forced false, as when no hang finds open air,
-    /// :49-69). The vanilla cast ends with nothing built; VR gets NoPath with the shooter red, and no vine
-    /// appears.</summary>
+    /// VineShooter.cs:71-92) but every path try fails (:49-69). The body turns round looking for terrain that refuses
+    /// every hang itself (<see cref="NoVinePath"/>); only when none is in view are the tries forced to fail
+    /// (<c>AimPatches.SelfTestNoPath</c>), a shortcut the note names. The vanilla cast ends with nothing built; VR gets
+    /// NoPath with the shooter red, and no vine appears.</summary>
     IEnumerator VineNoPathStep()
     {
         if (!Affordance.Enabled)
@@ -2235,10 +2472,24 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => c.data.isGrounded, 3f);
-        bool aimed = false;
-        for (int i = 0; i < 24 && !aimed; i++)
+        // A full turn for terrain that refuses every path; failing that, back to an aim WillAttach takes.
+        bool natural = false;
+        bool attachable = false;
+        for (int i = 0; i < 24 && !natural; i++)
         {
             Turn(c, i == 0 ? 0f : 15f, 0f);
+            yield return null;
+            yield return null;
+            if (shooter.WillAttach(out var hit))
+            {
+                attachable = true;
+                natural = NoVinePath(shooter, hit.point);
+            }
+        }
+        bool aimed = natural;
+        for (int i = 0; i < 24 && attachable && !aimed; i++)
+        {
+            Turn(c, 15f, 0f);
             yield return null;
             yield return null;
             aimed = shooter.WillAttach(out _);
@@ -2250,7 +2501,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var before = Ids<JungleVine>();
-        AimPatches.SelfTestNoPath = true;
+        AimPatches.SelfTestNoPath = !natural;
         Affordance.ResetGate();
         float mark = CueMark();
         // The holding hand's trigger, as a player fires it (the input patch would skip interact.physical's use path).
@@ -2269,10 +2520,45 @@ internal sealed partial class SelfTestRunner
             spawned.Add(vine.gameObject);
         if (!stepOk)
             yield break;
+        string how = natural
+            ? "terrain here refuses every hang"
+            : "shortcut: every path try forced to fail (AimPatches.SelfTestNoPath); no aim in a full turn met terrain that refuses a path";
         if (vine != null)
-            Fail("a vine was built although every path try failed");
+            Fail($"a vine was built although every path try failed ({how})");
         else
-            Note($"{prefab.name}: {cue}");
+            Note($"{prefab.name}, {how}: {cue}");
+    }
+
+    /// <summary>True when no hang the shot tries (0 to <c>maxDown</c> below the straight line, VineShooter.cs:47-50)
+    /// clears the terrain from the vine start the shot takes (1 m ahead of the aim, 1.5 m over the ground there,
+    /// :52-57) to <paramref name="to"/> (<c>JungleVine.CheckVinePath</c>, JungleVine.cs:234-248).</summary>
+    static bool NoVinePath(VineShooter shooter, Vector3 to)
+    {
+        var vine =
+            shooter.vinePrefab != null ? shooter.vinePrefab.GetComponent<JungleVine>() : null;
+        if (
+            vine == null
+            || !SpoolRay(VRSession.Active && VRRig.Instance != null, out var origin, out var dir)
+        )
+            return false;
+        var start = origin - Vector3.up * 0.2f;
+        if (
+            Physics.Raycast(
+                origin + dir,
+                Vector3.down,
+                out var ground,
+                4f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+        )
+            start = ground.point + Vector3.up * 1.5f;
+        // The game draws each hang at random inside a narrowing window; 21 even steps cover it.
+        for (int i = 0; i <= 20; i++)
+        {
+            if (JungleVine.CheckVinePath(start, to, -vine.maxDown * i / 20f, out _))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>vr.172: the warp compass (Action_WarpToRandomPlayer) used with nobody alive farther than its

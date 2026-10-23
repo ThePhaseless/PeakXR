@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using PeakXR.Avatar;
+using PeakXR.VR;
 using UnityEngine;
 using Zorro.Core;
 
@@ -16,16 +18,27 @@ internal sealed partial class SelfTestRunner
     /// so a still hand leaves it well inside this.</summary>
     const float CompassToleranceDeg = 10f;
 
-    /// <summary>Game time for the needle to swing back from a 90 degree knock: at 10/s it is inside the tolerance
-    /// in about 0.25 s.</summary>
+    /// <summary>Game time for the needle to catch up after a 90 degree turn: at 10/s it is inside the tolerance in
+    /// about 0.25 s.</summary>
     const float CompassSwingSeconds = 0.5f;
 
+    /// <summary>Seconds the player takes to turn the compass a quarter turn.</summary>
+    const float CompassTurnSeconds = 0.5f;
+
     /// <summary>
-    /// use.Compass: after a second in the hand the needle points at its heading, and knocked 90 degrees off about
-    /// the face normal it swings back. The angle error is noted both times.
+    /// use.Compass: after a second in the hand the needle points at its heading; then the player turns it a quarter
+    /// turn (VR: the holding hand's wrist about the vertical, through the scripted controller; flat: the look, which
+    /// turns the body and the item). The compass must turn with the hand and the needle must keep its world heading,
+    /// not turn with the compass. The mod adds nothing to the needle (vanilla <c>CompassPointer</c>), so this proves
+    /// the held pose it gives the item leaves the needle working.
     /// </summary>
     IEnumerator CompassHeading(CompassPointer compass)
     {
+        var c = Character.localCharacter;
+        bool vr = VRSession.Active && VRRig.Instance != null;
+        bool left = LocalHold.ItemInLeftHand;
+        if (vr)
+            yield return ReadyHand(left);
         var why = compass.needle == null ? "no needle" : CompassTarget(compass, out _);
         if (why != null)
         {
@@ -38,23 +51,50 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1f);
         float settled = NeedleError(compass);
         var face = compass.transform.forward;
-        compass.needle.rotation = Quaternion.AngleAxis(90f, face) * compass.needle.rotation;
-        float knocked = NeedleError(compass);
-        float knockAt = Now;
+        var body = Vector3.ProjectOnPlane(compass.transform.up, Vector3.up);
+        var startRot = Script(left).Rotation;
+        float startYaw = c.data.lookValues.x;
+        float turnStart = Now;
+        while (true)
+        {
+            float t = Mathf.Clamp01((Now - turnStart) / CompassTurnSeconds);
+            if (vr)
+                Script(left).Rotation = Quaternion.AngleAxis(90f * t, Vector3.up) * startRot;
+            else
+                c.data.lookValues.x = startYaw + 90f * t;
+            if (t >= 1f)
+                break;
+            yield return null;
+        }
+        float turnedAt = Now;
         yield return WaitFor(
             () => NeedleError(compass) <= CompassToleranceDeg,
             GameTiming.Budget(CompassSwingSeconds)
         );
         float error = NeedleError(compass);
+        // How far the compass body turned about the vertical: it must follow the hand.
+        float turned = Vector3.Angle(
+            body,
+            Vector3.ProjectOnPlane(compass.transform.up, Vector3.up)
+        );
+        if (body.sqrMagnitude < 0.01f)
+            turned = Vector3.Angle(
+                Vector3.ProjectOnPlane(face, Vector3.up),
+                Vector3.ProjectOnPlane(compass.transform.forward, Vector3.up)
+            );
         var note = F(
-            $"{compass.compassType} needle {settled:0.0} deg off its heading after 1 s in the hand, knocked to {knocked:0} deg, {error:0.0} deg after {Now - knockAt:0.00} s (tolerance {CompassToleranceDeg:0} deg); face normal {Vector3.Angle(face, Vector3.up):0} deg from up"
+            $"{compass.compassType} needle {settled:0.0} deg off its heading after 1 s in the hand; turned a quarter turn by the {(vr ? "holding hand" : "look")}, the compass turned {turned:0} deg and the needle sat {error:0.0} deg off its heading {Now - turnedAt:0.00} s later (tolerance {CompassToleranceDeg:0} deg); face normal {Vector3.Angle(compass.transform.forward, Vector3.up):0} deg from up"
         );
         if (settled > CompassToleranceDeg)
             Fail("needle not on its heading: " + note);
+        else if (turned < 45f)
+            Fail("the compass did not turn with the hand: " + note);
         else if (error > CompassToleranceDeg)
-            Fail("needle did not swing back: " + note);
+            Fail("the needle turned with the compass instead of keeping its heading: " + note);
         else
             stepNote = note;
+        if (!vr)
+            c.data.lookValues.x = startYaw;
     }
 
     /// <summary>Degrees between the needle's forward and its heading; 180 when the heading has no direction.</summary>
@@ -132,11 +172,14 @@ internal sealed partial class SelfTestRunner
             WarpUse(item, target)
         );
         SelfTestInputPatch.HoldPrimary = false;
+        if (VRRun)
+            EndHands();
         Safe("use.despawn", Despawn);
     }
 
     /// <summary>
-    /// use.(warp compass): hold primary use. <c>Action_WarpToBiome.RunAction</c> (Action_WarpToBiome.cs:8-11, fired
+    /// use.(warp compass): hold primary use the player's way (<see cref="UseWay"/>: in VR held eye to eye, its commune
+    /// gesture, while interact.items refuses its bare trigger). <c>Action_WarpToBiome.RunAction</c> (Action_WarpToBiome.cs:8-11, fired
     /// on press, hold, cast end, release or cancel, ItemAction.cs:33-57) RPCs <c>RPC_Warp</c>, which on the master
     /// jumps to <c>segmentToWarpTo</c> through <c>MapHandler.JumpToSegment</c> (:31-33, MapHandler.cs:921). Passes
     /// when the current segment is the target and the body moved; the loop's 06-segment step then checks the landing.
@@ -161,18 +204,23 @@ internal sealed partial class SelfTestRunner
         float useTime = GameTiming.UseSeconds(held);
         bool started = false;
         float progress = 0f;
-        SelfTestInputPatch.HoldPrimary = true;
-        float end = Now + GameTiming.Budget(useTime);
+        bool left = LocalHold.ItemInLeftHand;
+        var way = WayOf(held);
+        if (VRSession.Active && VRRig.Instance != null)
+            yield return ReadyHand(left);
+        // A face item first travels up to the face.
+        float end = Now + GameTiming.Budget(useTime, way == UseWay.Face ? 1.5f : 0f);
         while (Now < end && map.GetCurrentSegment() == from)
         {
             if (held != null)
             {
+                HoldUse(way, left);
                 started |= held.isUsingPrimary || held.finishedCast;
                 progress = Mathf.Max(progress, held.castProgress);
             }
             yield return null;
         }
-        SelfTestInputPatch.HoldPrimary = false;
+        ReleaseUse(way, left);
         // A warp on release or cancel fires on this frame's release.
         yield return WaitFor(() => map.GetCurrentSegment() != from, 2f);
         var now = map.GetCurrentSegment();
@@ -187,7 +235,7 @@ internal sealed partial class SelfTestRunner
         }
         float moved = Vector3.Distance(start, Character.localCharacter.Center);
         var note = F(
-            $"primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, segment {from} to {now} (the item warps to {target}), body moved {moved:0} m"
+            $"used by {UseWayText(way)}: primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, segment {from} to {now} (the item warps to {target}), body moved {moved:0} m"
         );
         if (now != target)
             Fail("hold did not warp to the item's segment: " + note);
