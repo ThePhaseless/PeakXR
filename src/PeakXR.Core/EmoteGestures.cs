@@ -23,6 +23,49 @@ public static class EmoteGestures
         && c.Pinky > 0.5f
         && thumbUp > 0.7f;
 
+    /// <summary>A thumbs-up is held at least this far in front of the eyes (flat), clear of a fist at your side.</summary>
+    public const float ThumbReach = 0.3f;
+
+    /// <summary>...and at most this far below the eyes: chest height or above, not a fist at the hip.</summary>
+    public const float ThumbDrop = 0.45f;
+
+    /// <summary>...and slower than this (m/s) for the whole dwell: a swing or a reach is not a gesture.</summary>
+    public const float StillSpeed = 0.3f;
+
+    /// <summary>How long the pose is held before the emote plays.</summary>
+    public const float ThumbDwell = 0.6f;
+
+    /// <summary>
+    /// The body is doing something with its hands (climbing, on a rope or vine, carrying a friend, a grip that took or
+    /// started something): any hand pose now is part of that, not an emote. Emotes are seen by every peer, so a false
+    /// one is broadcast.
+    /// </summary>
+    public static bool Busy(bool climbingAnything, bool carrying, bool midGrab) =>
+        climbingAnything || carrying || midGrab;
+
+    /// <summary>
+    /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose, on a controller that reports thumb touch
+    /// (<paramref name="thumbSensed"/>; without the sensor every fist reads as a lifted thumb), no item held, the body
+    /// not <see cref="Busy"/>, the hand held out in front (<paramref name="forward"/> metres ahead of the eyes,
+    /// <paramref name="belowEyes"/> metres under them) and still (<paramref name="speed"/> m/s).
+    /// </summary>
+    public static bool ThumbIntent(
+        bool pose,
+        bool thumbSensed,
+        bool holdingItem,
+        bool busy,
+        float forward,
+        float belowEyes,
+        float speed
+    ) =>
+        pose
+        && thumbSensed
+        && !holdingItem
+        && !busy
+        && forward >= ThumbReach
+        && belowEyes <= ThumbDrop
+        && speed <= StillSpeed;
+
     /// <summary>
     /// Why the game will not open the emote wheel (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:561-569, and
     /// canEmote :312-322), or <see cref="DenyReason.None"/> when it opens.

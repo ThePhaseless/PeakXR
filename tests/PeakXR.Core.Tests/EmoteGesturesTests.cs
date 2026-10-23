@@ -153,4 +153,65 @@ public class EmoteGesturesTests
         Assert.False(EmoteGestures.ThumbsUp(Fist, thumbUp: 0.3f));
         Assert.False(EmoteGestures.ThumbsUp(Fist, thumbUp: -0.9f));
     }
+
+    // A deliberate thumbs-up: held out 0.4 m in front, 0.2 m under the eyes, still, thumb sensed and lifted.
+    static bool Thumb(
+        bool pose = true,
+        bool sensed = true,
+        bool holding = false,
+        bool busy = false,
+        float forward = 0.4f,
+        float below = 0.2f,
+        float speed = 0.05f
+    ) => EmoteGestures.ThumbIntent(pose, sensed, holding, busy, forward, below, speed);
+
+    // Frames of one intent fed to the dwell; how many emotes fire.
+    static int Fires(DwellGesture g, bool intent, float seconds)
+    {
+        int fired = 0;
+        for (float t = 0f; t < seconds; t += Dt)
+            if (g.Update(intent, Dt))
+                fired++;
+        return fired;
+    }
+
+    [Fact]
+    public void ThumbIntent_DeliberateHeldPose_FiresOnce()
+    {
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };
+        Assert.Equal(1, Fires(g, Thumb(), 2f));
+    }
+
+    [Fact]
+    public void ThumbIntent_OrdinaryGrips_NeverFire()
+    {
+        // vr audit: a closed grip with the thumb off the buttons fired the thumbs-up for every peer to see.
+        Assert.False(Thumb(forward: 0.05f, below: 0.6f)); // fist at the side, swinging while walking
+        Assert.False(Thumb(below: 0.7f)); // held low, at the hip
+        Assert.False(Thumb(holding: true)); // gripping a held item
+        Assert.False(Thumb(busy: true)); // climbing, on a rope or vine, carrying, mid-grab
+        Assert.False(Thumb(speed: 0.8f)); // reaching or swinging
+        Assert.False(Thumb(sensed: false)); // no thumb touch sensor: a lifted thumb cannot be told apart
+        Assert.False(Thumb(pose: false));
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };
+        Assert.Equal(0, Fires(g, Thumb(forward: 0.05f, below: 0.6f), 5f));
+    }
+
+    [Fact]
+    public void ThumbIntent_BrokenByMovement_StartsOver()
+    {
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };
+        Assert.Equal(0, Fires(g, Thumb(), EmoteGestures.ThumbDwell * 0.8f));
+        Assert.Equal(0, Fires(g, Thumb(speed: 0.8f), 0.05f));
+        Assert.Equal(0, Fires(g, Thumb(), EmoteGestures.ThumbDwell * 0.8f));
+    }
+
+    [Fact]
+    public void Busy_AnyBodyActivityBlocksGestures()
+    {
+        Assert.False(EmoteGestures.Busy(false, false, false));
+        Assert.True(EmoteGestures.Busy(climbingAnything: true, false, false));
+        Assert.True(EmoteGestures.Busy(false, carrying: true, false));
+        Assert.True(EmoteGestures.Busy(false, false, midGrab: true));
+    }
 }
