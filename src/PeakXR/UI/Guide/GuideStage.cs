@@ -191,7 +191,8 @@ internal sealed class GuideStage : MonoBehaviour
     // ---- the once-only offer ----
 
     /// <summary>Once a second while not yet offered: the first time VR reaches the title's main page and it has stayed
-    /// a moment, show the offer. It is marked offered as soon as it shows.</summary>
+    /// a moment, show the offer. It is marked offered only when answered (accept or dismiss), so leaving the title
+    /// without answering offers it again next launch; <c>offerTried</c> keeps it to once per launch.</summary>
     private void CheckOffer()
     {
         if (offerTried || Time.unscaledTime < nextOfferCheck)
@@ -249,7 +250,6 @@ internal sealed class GuideStage : MonoBehaviour
             offerTried = false;
             return;
         }
-        GuideFeature.Offered.Value = true;
         offerHandler = handler;
         var canvas = handler.GetComponentInParent<Canvas>();
         var panel = canvas != null ? (RectTransform)canvas.rootCanvas.transform : null;
@@ -320,6 +320,7 @@ internal sealed class GuideStage : MonoBehaviour
         offerDemo.Tick(dt, 1f, rig.Head);
         if (offerNo.Tick(rig, dt))
         {
+            GuideFeature.Offered.Value = true;
             CueAudio.Play(CueSound.Notice, offerNo.Position, 0.6f);
             Plugin.Log.LogInfo("[ui.guide] practice offer dismissed");
             HideOffer();
@@ -327,6 +328,7 @@ internal sealed class GuideStage : MonoBehaviour
         }
         if (!offerYes.Tick(rig, dt))
             return;
+        GuideFeature.Offered.Value = true;
         CueAudio.Play(CueSound.WouldWork, offerYes.Position, 1f);
         var handler = offerHandler;
         HideOffer();
