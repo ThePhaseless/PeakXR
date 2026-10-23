@@ -781,11 +781,14 @@ internal sealed class RigDriver : MonoBehaviour
             var extra = turnShift + Vector3.up * rig.CrouchLift;
             viewHoldWhy = ViewHoldGate.Why(ViewHoldNow(c, dt));
             var body = (goal - extra).N();
-            // A turn (and the torso swing after it) moves the eye anchor and turnShift cancels it: the hold must not
-            // cancel it again, or the turn pivots off the eye (run 45, vr.16: 3.2 cm slide in a 30 degree snap).
-            if (Time.unscaledTime < turnHoldUntil)
-                viewHold.Rebase(body);
-            viewGoal = viewHold.Update(body, viewHoldWhy == null, dt).U() + extra;
+            // A turn (and the torso swing after it) moves the eye anchor and turnShift cancels it: the hold neither
+            // holds nor releases then, or the turn pivots off the eye (vr.16: 3.2 cm in run 45, 3.8 cm in run 47).
+            viewGoal =
+                (
+                    Time.unscaledTime < turnHoldUntil
+                        ? viewHold.Carry(body)
+                        : viewHold.Update(body, viewHoldWhy == null, dt)
+                ).U() + extra;
             ViewHeld = viewGoal - goal;
         }
         else
@@ -920,7 +923,7 @@ internal sealed class RigDriver : MonoBehaviour
             c.refs.rigCreator != null ? c.refs.rigCreator.transform.eulerAngles.y : float.NaN;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} turn f{Time.frameCount} eye ({eye.x:0.000},{eye.z:0.000}) rig {rig.Origin.eulerAngles.y:0.0} body {bodyYaw:0.0} torso ({torso.x:0.000},{torso.z:0.000}) shift ({turnShift.x:0.000},{turnShift.z:0.000}) offset {EyeOffsetNow.X:0.000} hold {(Time.unscaledTime < turnHoldUntil ? 1 : 0)}"
+                $"{Tag} turn f{Time.frameCount} eye ({eye.x:0.000},{eye.z:0.000}) rig {rig.Origin.eulerAngles.y:0.0} body {bodyYaw:0.0} torso ({torso.x:0.000},{torso.z:0.000}) shift ({turnShift.x:0.000},{turnShift.z:0.000}) offset {EyeOffsetNow.X:0.000} hold {(Time.unscaledTime < turnHoldUntil ? 1 : 0)} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000}"
             )
         );
     }
