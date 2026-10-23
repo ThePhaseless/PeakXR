@@ -104,7 +104,7 @@ public sealed class RenderFixesFeature : Feature
                 "OpenXR: lower the render scale when the GPU keeps missing the headset's frame time, and raise it again "
                     + "after a long spell with room to spare. A change reallocates the eye buffers, so it waits for the "
                     + "next fade to black (a segment change, a death, a recenter) or a scene load; you get a notice when "
-                    + "it lands. Each new scene starts at your full RenderScale."
+                    + "it lands. The lowered scale stays across scenes until there is room to raise it. Nothing changes while the headset reports no refresh rate of its own."
             )
         );
         AdaptiveQualityMin = Plugin.Settings.Bind(
