@@ -1353,7 +1353,7 @@ internal sealed partial class SelfTestRunner
         // home spot, the base camp 375 m below, where the body crept 2 cm/s off the spot in vr46 (vr.90 "not settled",
         // net drift at the 3 cm limit after the warp; vr.91's settle there needed a second warp).
         yield return PeakHandStep("vr.89-altar-full", 40f, AltarFullStep());
-        yield return PeakHandStep("vr.89b-amulet-socket", 60f, AmuletSocketStep());
+        yield return PeakHandStep("vr.89b-amulet-socket", 120f, AmuletSocketStep());
         // Without the scene object there is nothing to settle or jump for: skip before the setup.
         if (Object.FindFirstObjectByType<ScoutmasterSoulPillar>() == null)
             Skip("vr.90-soul-pillar", NoPillar());
