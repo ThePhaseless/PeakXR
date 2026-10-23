@@ -34,7 +34,7 @@ internal sealed partial class SelfTestRunner
         yield return SettleIn();
         yield return HandStep("vr.80-campfire-far", 30f, CampfireFarStep());
         yield return WarpBack();
-        yield return HandStep("vr.81-chest-two-hands", 40f, ChestTwoHandsStep());
+        yield return HandStep("vr.81-chest-two-hands", 75f, ChestTwoHandsStep());
         yield return WarpBack();
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
@@ -254,9 +254,89 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(true, 0f, 0.1f);
         yield return GripTo(false, 0f, 0.1f);
         if (progress <= 0f && !chest.IsOpen)
+        {
             Fail($"two hands lifting did not run the timer; one hand: {cue}");
+            yield break;
+        }
+        var lifted2 = $"two hands progress {progress:0.00}";
+        if (chest.IsOpen)
+        {
+            stepNote =
+                $"{chest.name}: one hand {cue}; {lifted2}; opened, so no pointed or grab-off phase";
+            yield break;
+        }
+        // A hold no hand is on: a pointed grip from out of reach (the hand-aimed interact) is held at 0 like one
+        // hand, and refused at the chest (LidGesture, LidCap.RefusesUntracked) instead of doing nothing.
+        yield return Wait(0.6f);
+        bool point = !VRInput.LeftHanded;
+        HeadFrame(out var head, out var forward, out var side);
+        Script(point).Position =
+            head + forward * 0.4f + (point ? -side : side) * 0.15f + Vector3.down * 0.25f;
+        var lid = top;
+        Script(point).Rotation = Quaternion.LookRotation(
+            rig()
+                .Origin.InverseTransformDirection(
+                    lid - rig().Origin.TransformPoint(Script(point).Position)
+                ),
+            Vector3.up
+        );
+        Script(point).TriggerTouch = false;
+        Script(point).StickTouch = true;
+        LookAtPoint(lid);
+        yield return Wait(0.4f);
+        Affordance.ResetGate();
+        float pointMark = CueMark();
+        yield return GripTo(point, 1f, 0.1f);
+        yield return ExpectCue(point, DenyReason.NeedsTwoHands, pointMark, tint: true, within: 2f);
+        var pointed = cueNote;
+        float pointedProgress = interaction != null ? interaction.constantInteractableProgress : 0f;
+        yield return GripTo(point, 0f, 0.1f);
+        Script(point).TriggerTouch = true;
+        Script(point).StickTouch = false;
+        if (!stepOk)
+            yield break;
+        if (pointedProgress > 0.05f)
+        {
+            Fail($"a pointed grip ran the chest timer to {pointedProgress:0.00}");
+            yield break;
+        }
+        // Grabbing by hand off (Interaction.GrabToPickUp): nothing can lift a lid, so the plain vanilla hold opens
+        // the chest (LidCap.TryFraction).
+        if (!Plugin.Settings.TryGetEntry<bool>("Interaction", "GrabToPickUp", out var grab))
+        {
+            stepNote =
+                $"{chest.name}: one hand {cue}; {lifted2}; pointed {pointed}; no GrabToPickUp setting";
+            yield break;
+        }
+        bool was = grab.Value;
+        try
+        {
+            grab.Value = false;
+            yield return Wait(0.3f);
+            yield return MoveTo(point, () => top, 0.4f);
+            yield return GripTo(point, 1f, 0.1f);
+            float openBy =
+                Now
+                + GameTiming.Budget(
+                    GameTiming.InteractSeconds(chest, Character.localCharacter),
+                    2f
+                );
+            yield return WaitFor(() => chest.IsOpen, openBy - Now);
+            yield return GripTo(point, 0f, 0.1f);
+        }
+        finally
+        {
+            grab.Value = was;
+        }
+        if (!chest.IsOpen)
+            Fail(
+                $"with grabbing by hand off the vanilla hold did not open {chest.name}; pointed: {pointed}"
+            );
         else
-            stepNote = $"{chest.name}: one hand {cue}; two hands progress {progress:0.00}";
+            stepNote =
+                $"{chest.name}: one hand {cue}; {lifted2}; pointed {pointed}; grab off: opened by the vanilla hold";
+
+        static VRRig rig() => VRRig.Instance;
     }
 
     /// <summary>vr.82: lifting a suitcase lid (vr.24's motion, on the next closed case) is felt as the progress

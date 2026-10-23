@@ -181,18 +181,18 @@ public class LidCapTests
     [Fact]
     public void TrackedLidUsesItsLift()
     {
-        Assert.True(LidCap.TryFraction(true, 0.4f, true, out var f));
+        Assert.True(LidCap.TryFraction(true, 0.4f, true, true, out var f));
         Assert.Equal(0.4f, f);
     }
 
     [Fact]
     public void TwoHandLidWithoutBothHandsTrackedHoldsAtZero()
     {
-        Assert.True(LidCap.TryFraction(false, 0.7f, true, out var f));
+        Assert.True(LidCap.TryFraction(false, 0.7f, true, true, out var f));
         Assert.Equal(0f, f);
     }
 
     [Fact]
     public void OrdinaryCaseNotOnTheLidKeepsTheVanillaHold() =>
-        Assert.False(LidCap.TryFraction(false, 0.7f, false, out _));
+        Assert.False(LidCap.TryFraction(false, 0.7f, false, true, out _));
 }
