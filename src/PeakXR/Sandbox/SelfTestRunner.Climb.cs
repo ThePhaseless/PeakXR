@@ -48,6 +48,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
+        yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
@@ -1362,6 +1363,69 @@ internal sealed partial class SelfTestRunner
             Note(note);
     }
 
+    /// <summary>
+    /// vr.47f: an item resting on sloped ground, partly sunk into it as items settle on uneven terrain. A 25 degree
+    /// Map-layer slab rises away 0.7 m ahead of the feet, clear of the body; an Apple is held still with its centre 2 cm below the slab's
+    /// surface. A hand on it grabs it: the grab's line of sight takes the item's top when its centre and nearest point
+    /// are under the surface (<see cref="GrabSelector.SightPoints"/>).
+    /// </summary>
+    IEnumerator GrabOnSlopeStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        if (apple == null)
+        {
+            Fail("no Apple item");
+            yield break;
+        }
+        var forward = Flat(rig.Head.forward);
+        var slope =
+            Vector3.up * Mathf.Cos(25f * Mathf.Deg2Rad) - forward * Mathf.Sin(25f * Mathf.Deg2Rad);
+        var onSlope = Feet(c) + forward * 0.7f + Vector3.up * 0.15f;
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        slab.name = "PeakXR_TestSlope";
+        slab.layer = LayerMask.NameToLayer("Map");
+        OnRestore(() =>
+        {
+            if (slab != null)
+                UnityEngine.Object.Destroy(slab);
+        });
+        PlaceSlab(slab, onSlope, slope);
+        if (!SandboxActions.SpawnItemAt(apple, onSlope + slope * 0.2f))
+        {
+            Fail(SandboxActions.LastMessage);
+            yield break;
+        }
+        var go = SandboxActions.LastSpawned;
+        spawned.Add(go);
+        var item = go != null ? go.GetComponent<Item>() : null;
+        yield return null;
+        if (item == null || item.rig == null)
+        {
+            Fail("spawned Apple has no Item or body");
+            yield break;
+        }
+        // Held still, sunk 2 cm, so it neither rolls down the slope nor sits cleanly on top.
+        item.rig.isKinematic = true;
+        item.transform.position = onSlope - slope * 0.02f;
+        Physics.SyncTransforms();
+        yield return Wait(0.3f);
+        bool left = false;
+        var at = item.Center();
+        yield return MoveTo(left, () => at, 0.5f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(() => Holding(apple), 3f);
+        bool held = Holding(apple);
+        var note = F(
+            $"Apple sunk 0.02 m into a 25 deg slope, hand {Vector3.Distance(rig.Hand(left).position, at):0.00} m from it: held {held}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
+        if (!held)
+            Fail("a hand on an item resting on a slope did not grab it: " + note);
+        else
+            Note(note);
+    }
+
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
     /// before): which reason or notice fired and which ring was last captured, to tell a replaced cue from an undrawn
     /// one.</summary>
@@ -1524,6 +1588,16 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(true, 1f, 0.1f);
         yield return WaitFor(() => !InWorld(), 2f);
         bool pocketed = !InWorld();
+        // No pickup, no pocket notice: say which failed (run 50 read the missing pickup as a missing Stowed cue).
+        if (!pocketed)
+        {
+            Fail(
+                F(
+                    $"the free hand did not pick up the second Apple (hand {Vector3.Distance(rig.Hand(true).position, last):0.00} m from it, stooped {headDrop:0.00} m), so no Stowed notice was due; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                )
+            );
+            yield break;
+        }
         yield return ExpectCue(true, DenyReason.Stowed, mark, false, 1f);
         bool kept = HeldItem() == held && !LocalHold.ItemInLeftHand;
         var note =

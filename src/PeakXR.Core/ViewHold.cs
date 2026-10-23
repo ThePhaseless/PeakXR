@@ -56,6 +56,27 @@ public sealed class ViewHold
         return output;
     }
 
+    /// <summary>Lean travel (m) per e-fold of the held offset while <see cref="Lean"/> carries it.</summary>
+    public const float LeanBleed = 0.1f;
+
+    /// <summary>
+    /// Instead of <see cref="Update"/> while a lean is in motion (<see cref="ViewHoldGate.CarriesThrough"/>): the view
+    /// rides the body, and the held offset bleeds out with the body's own travel, a 0.3 m lean leaving 5 % of it. A
+    /// release instead slid the view by the whole offset in 0.15 s on top of the lean (run 49, vr.45: 3.3 cm); a
+    /// frozen offset outlived the lean and room-scale walked the body back to close it after standing up (run 50:
+    /// 5.5 cm). The engage timer is kept, so a lean held still again is held at once.
+    /// </summary>
+    public Vector3 Lean(Vector3 body)
+    {
+        if (!have || (body - output).LengthSquared() > SnapDistance * SnapDistance)
+            return Update(body, false, 0f);
+        float moved = (body - (output - off)).Length();
+        off *= MathF.Exp(-moved / LeanBleed);
+        output = body + off;
+        Offset = off.Length();
+        return output;
+    }
+
     /// <summary>Forget the held point: the next update starts on the body (recenter, new view, warp).</summary>
     public void Reset()
     {
@@ -132,10 +153,11 @@ public static class ViewHoldGate
     public const string LeanReason = "lean";
 
     /// <summary>
-    /// A closed gate whose motion the view rides with its held offset frozen (<see cref="ViewHold.Carry"/>) instead
-    /// of releasing: a lean in motion moves the body's eye anchor with the head, so the view follows it at once
-    /// either way, and releasing as well slid the view by the held offset on top of the lean (run 49, vr.45: 3.3 cm
-    /// over the slow leans, 2.2 cm over the fast one). Every other reason really moves the body: release.
+    /// A closed gate whose motion the view rides with its held offset bleeding out into that motion
+    /// (<see cref="ViewHold.Lean"/>) instead of releasing: a lean in motion moves the body's eye anchor with the head,
+    /// so the view follows it at once either way, and releasing as well slid the view by the held offset on top of
+    /// the lean (run 49, vr.45: 3.3 cm over the slow leans, 2.2 cm over the fast one). Every other reason really
+    /// moves the body: release.
     /// </summary>
     public static bool CarriesThrough(string why) => why == LeanReason;
 

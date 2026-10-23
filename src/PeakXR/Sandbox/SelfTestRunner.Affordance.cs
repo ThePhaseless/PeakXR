@@ -26,7 +26,46 @@ internal sealed partial class SelfTestRunner
         yield return VRStep("vr.64-cue-in-menu", 20f, CueInMenuStep());
         yield return HandStep("vr.65-hints-off", 25f, HintsOffStep());
         yield return VRStep("vr.66-refusal-over-ambient", 10f, RefusalOverAmbientStep());
+        yield return HandStep("vr.67-edge-ring", 15f, EdgeRingStep());
         yield return VRStep("vr.220-first-refusal-label", 20f, FirstRefusalLabelStep());
+    }
+
+    /// <summary>vr.67: a refusal at a hand held behind the head. Its real ring is out of sight, so ui.affordance also
+    /// draws the in-view edge copy (<see cref="CueEdge"/>) toward it; the copy must lie wholly inside the headset's
+    /// view while the real ring stays where it is.</summary>
+    IEnumerator EdgeRingStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        const bool left = false;
+        HeadFrame(out var head, out var forward, out var right);
+        SetHand(left, head - forward * 0.3f + right * 0.1f + Vector3.up * 0.05f);
+        yield return Wait(0.3f);
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Affordance.DenyAtHand(left, DenyReason.NotNow);
+        // The head stays put: the hand is behind it, and the edge copy is what must show.
+        yield return ExpectCue(left, DenyReason.NotNow, mark, within: 1f, seen: false);
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.2f);
+        ref var h = ref CueLog.Capture.Hand(left);
+        var rig = VRRig.Instance;
+        float off =
+            rig != null && rig.Head != null
+                ? Vector3.Angle(rig.Head.forward, h.RingCenter.U() - rig.Head.position)
+                : 0f;
+        if (h.EdgeAt < mark)
+            Fail(F($"no edge ring drawn for a ring {off:0} deg off the view"));
+        else if (RingOutOfView(left, out var view) is { } outside)
+            Fail(outside);
+        else if (off <= CueEdge.HalfAngle)
+            Fail(F($"the hand's ring was in view ({off:0} deg), so the step proved nothing"));
+        else
+            stepNote = cueNote + view;
     }
 
     /// <summary>vr.66: an ambient beat (heartbeat, wind, texture) asking for the right hand every frame must not cut a
@@ -372,16 +411,23 @@ internal sealed partial class SelfTestRunner
             Quaternion.LookRotation(ahead)
         );
         Physics.SyncTransforms();
+        int mask = HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap);
+        bool OnWall(RaycastHit h) =>
+            h.collider != null && h.collider.transform.IsChildOf(wall.transform);
+        // The wall is deeper than the 0.5 m assumed above (run 50: its "front half" collider faced the hand at
+        // 2.69 m, not 3.5 m): measure where the aim meets it and slide it so that face sits 1 m past the reach.
+        if (
+            Physics.Raycast(aim.position, aim.forward, out var first, range + 6f, mask)
+            && OnWall(first)
+        )
+        {
+            wall.transform.position += ahead * (range + 1f - first.distance);
+            Physics.SyncTransforms();
+        }
         yield return Wait(0.15f);
         if (
-            !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var face,
-                range + 4f,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
-            )
-            || face.collider.gameObject != wall
+            !Physics.Raycast(aim.position, aim.forward, out var face, range + 4f, mask)
+            || !OnWall(face)
             || face.distance <= range
         )
         {

@@ -392,7 +392,7 @@ internal static class PhysicalInteraction
             action = GripIntent.OnPress(ctx);
         }
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate}"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight)"
         );
         switch (action)
         {
@@ -732,6 +732,7 @@ internal static class PhysicalInteraction
     )
     {
         target = null;
+        lastReachable = lastHidden = 0;
         int hits = Physics.OverlapSphereNonAlloc(
             pos,
             radius,
@@ -754,22 +755,20 @@ internal static class PhysicalInteraction
             if (!it.IsInteractible(c))
                 continue;
             // Line of sight like the game's interact ray (Interaction.cs:214): a hand pushed through a crate or a
-            // rock fin does not grab what lies behind it. Stops 5 cm short so a resting item's floor does not count;
-            // the target's own map-layer collider (luggage, kiosks) does not block it.
-            var point = col.bounds.ClosestPoint(pos);
-            var toPoint = point - eye;
-            float len = toPoint.magnitude;
-            if (len > 0.05f)
+            // rock fin does not grab what lies behind it. Seen when any of the point nearest the hand, the centre or
+            // the top is clear (GrabSelector.SightPoints): an item partly sunk into uneven ground hides the first two
+            // (VR run 50's vr.10, vr.11 and vr.32 ground pickups failed with the hand on the Apple).
+            var bounds = col.bounds;
+            var point = bounds.ClosestPoint(pos);
+            GrabSelector.SightPoints(point.N(), bounds.center.N(), bounds.extents.N(), SightPoints);
+            bool seen = false;
+            for (int s = 0; s < GrabSelector.SightPointCount && !seen; s++)
+                seen = Visible(eye, SightPoints[s].U(), it);
+            lastReachable++;
+            if (!seen)
             {
-                var block = HelperFunctions
-                    .LineCheck(
-                        eye,
-                        eye + toPoint * ((len - 0.05f) / len),
-                        HelperFunctions.LayerType.TerrainMap
-                    )
-                    .collider;
-                if (block != null && block.GetComponentInParent<IInteractible>() != it)
-                    continue;
+                lastHidden++;
+                continue;
             }
             Candidates[count] = it;
             CandidatePositions[count] = point.N();
@@ -792,6 +791,31 @@ internal static class PhysicalInteraction
         if (target == null)
             return GrabCandidate.None;
         return target is Item ? GrabCandidate.Item : GrabCandidate.Interactible;
+    }
+
+    private static readonly NVector3[] SightPoints = new NVector3[GrabSelector.SightPointCount];
+
+    /// <summary>The last grab search's interactible colliders in reach, and how many of them the eye could not see
+    /// (for <see cref="LastGripNote"/>).</summary>
+    private static int lastReachable,
+        lastHidden;
+
+    /// <summary>No terrain or map geometry between the eye and <paramref name="point"/>, stopping 5 cm short so a
+    /// resting item's floor does not count; the target's own map-layer collider (luggage, kiosks) does not block.</summary>
+    private static bool Visible(Vector3 eye, Vector3 point, IInteractible it)
+    {
+        var toPoint = point - eye;
+        float len = toPoint.magnitude;
+        if (len <= 0.05f)
+            return true;
+        var block = HelperFunctions
+            .LineCheck(
+                eye,
+                eye + toPoint * ((len - 0.05f) / len),
+                HelperFunctions.LayerType.TerrainMap
+            )
+            .collider;
+        return block == null || block.GetComponentInParent<IInteractible>() == it;
     }
 
     private static bool StartClimb(Character c, VRRig rig, Vector3 handPos, InteractConfig cfg)

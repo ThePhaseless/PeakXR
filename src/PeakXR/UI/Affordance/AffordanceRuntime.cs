@@ -96,6 +96,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         /// <summary>This frame's opacity of a refusal cue.</summary>
         public float Alpha;
 
+        /// <summary>A refusal's in-view copy at the edge of the view cone while its real spot is out of sight
+        /// (<see cref="CueEdge"/>), and the pointer from it toward the real spot.</summary>
+        public Cue Edge;
+        public LineRenderer Pointer,
+            PointerRim;
+        public bool EdgeOn;
+
         /// <summary>Its ring has been drawn at a readable opacity since it started.</summary>
         public bool Drawn = true;
     }
@@ -591,6 +598,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 d.Position = CueLayout.HandAnchor(hand.position.N(), eye.N()).U();
             PoseCue(d, eye, d.Alpha);
             CaptureRing(d, eye, now);
+            PoseEdge(d, rig, eye, now);
         }
         var owner = tintOwner;
         if (DenyTint.Active && owner != null)
@@ -629,6 +637,67 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     /// <summary>The refusal's ring (a notice's teal one when it has no red one) as the eye sees it, while clearly
     /// visible: for <see cref="CueLog"/>.</summary>
+    /// <summary>
+    /// The refusal's in-view copy (<see cref="CueEdge"/>): while its real spot lies outside the comfortable cone
+    /// (the head camera's field when known, at most 45 degrees half-angle), the same ring and glyph at the cone's
+    /// edge toward the spot, 1 m from the eye, with a small pointer toward it. The real ring stays drawn.
+    /// </summary>
+    private static void PoseEdge(Cue d, VRRig rig, Vector3 eye, float now)
+    {
+        var e = d.Edge;
+        var forward = rig.Head.forward;
+        float half = CueEdge.ConeHalf(rig.HeadCamera != null ? rig.HeadCamera.fieldOfView : 0f);
+        float off = Vector3.Angle(forward, d.Position - eye);
+        d.EdgeOn = d.Alpha > 0.001f && CueEdge.Needed(off, half, d.EdgeOn);
+        float alpha = d.EdgeOn ? d.Alpha : 0f;
+        e.Glyph = d.Glyph;
+        e.Notice = d.Notice;
+        e.Reason = d.Reason;
+        e.Degrees = d.Degrees;
+        e.Spot = default;
+        e.Position = CueEdge
+            .Spot(
+                eye.N(),
+                forward.N(),
+                d.Position.N(),
+                CueEdge.EdgeDegrees(half, d.Degrees),
+                CueEdge.Depth,
+                out var outward
+            )
+            .U();
+        PoseCue(e, eye, alpha);
+        bool shown = alpha > 0.001f && e.Deny.enabled;
+        if (shown)
+        {
+            var t = e.Deny.transform;
+            var c = t.position;
+            float r = t.localScale.x;
+            var o = outward.U();
+            var across = Vector3.Cross(o, eye - c);
+            across = across.sqrMagnitude > 1e-8f ? across.normalized : Vector3.up;
+            // A chevron just outside the ring, pointing toward the real spot.
+            var tip = c + o * (r * 1.9f);
+            var root = c + o * (r * 1.4f);
+            d.Pointer.SetPosition(0, root + across * (r * 0.45f));
+            d.Pointer.SetPosition(1, tip);
+            d.Pointer.SetPosition(2, root - across * (r * 0.45f));
+            d.Pointer.widthMultiplier = r * 0.18f;
+            for (int i = 0; i < 3; i++)
+                d.PointerRim.SetPosition(i, d.Pointer.GetPosition(i));
+            d.PointerRim.widthMultiplier = d.Pointer.widthMultiplier * RimWidth;
+            if (alpha >= 0.3f)
+                CueLog.Capture.Edge(
+                    d.Left,
+                    c.N(),
+                    CueLayout.AngularDegrees(r, Vector3.Distance(c, eye)),
+                    now
+                );
+        }
+        var color = d.Notice ? Affordance.HintColor : Affordance.DenyColor;
+        SetLine(d.Pointer, shown, alpha, color);
+        SetLine(d.PointerRim, shown, alpha, RimColor);
+    }
+
     private void CaptureRing(Cue d, Vector3 eye, float now)
     {
         var ring =
@@ -984,6 +1053,12 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             foreach (var ring in cue.Marks)
                 ring.enabled = false;
         }
+        if (cue.Edge != null)
+        {
+            Hide(cue.Edge);
+            cue.Pointer.enabled = cue.PointerRim.enabled = false;
+            cue.EdgeOn = false;
+        }
     }
 
     private void Build()
@@ -994,61 +1069,54 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             // A refused attempt draws over the world: the hand that tried, the item it holds or a rock would hide it.
             // Hovers stay depth-tested, so a "can't" ring behind a rock stays behind it.
             bool top = cue == denials[0] || cue == denials[1];
-            cue.Degrees = top ? CueLayout.DenyDegrees : CueLayout.HoverDegrees;
-            cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, top);
-            // Rims render first (lower queue), so the coloured stroke lies on a dark edge, not on a plate.
-            cue.RingRim = Line(
-                "RingRim",
-                RingPoints,
-                true,
-                RimColor,
-                top,
-                cue.Deny.transform,
-                3190
-            );
-            cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, top, cue.Deny.transform);
-            cue.MarkRim = Line("GlyphRim", 2, false, RimColor, top, cue.Deny.transform, 3190);
-            cue.ArcRim = Line(
-                "WaitArcRim",
-                ArcPoints,
-                false,
-                RimColor,
-                top,
-                cue.Deny.transform,
-                3190
-            );
-            cue.Arc = Line(
-                "WaitArc",
-                ArcPoints,
-                false,
-                Affordance.DenyColor,
-                top,
-                cue.Deny.transform
-            );
-            cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, top);
-            cue.Inner = Line(
-                "HintInner",
-                RingPoints,
-                true,
-                Affordance.HintColor,
-                top,
-                cue.Hint.transform
-            );
-            cue.Inner.transform.localScale = new Vector3(0.55f, 0.55f, 0.55f);
+            BuildCue(cue, top, marks: top);
             if (top)
             {
-                cue.Marks = new LineRenderer[SpotSet.Capacity];
-                for (int i = 0; i < cue.Marks.Length; i++)
-                    cue.Marks[i] = Line("HintMark", RingPoints, true, Affordance.HintColor, top);
+                cue.Edge = new Cue();
+                BuildCue(cue.Edge, true, marks: false);
+                cue.PointerRim = Line("EdgePointerRim", 3, false, RimColor, true, null, 3190);
+                cue.PointerRim.useWorldSpace = true;
+                cue.Pointer = Line("EdgePointer", 3, false, Affordance.DenyColor, true);
+                cue.Pointer.useWorldSpace = true;
             }
-            cue.Link = Line("HintLink", 2, false, Affordance.HintColor, top);
-            cue.Link.useWorldSpace = true;
-            cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, top);
-            cue.Chevron.useWorldSpace = true;
         }
         ray = Line("PointRay", 2, false, RayColor, drawOnTop: false);
         ray.useWorldSpace = true;
         ray.widthMultiplier = RayWidth;
+    }
+
+    /// <summary>One cue's lines: the refused ring with its glyph and rims, the would-work double ring, link and
+    /// chevron, and with <paramref name="marks"/> the extra hint rings.</summary>
+    private void BuildCue(Cue cue, bool top, bool marks)
+    {
+        cue.Degrees = top ? CueLayout.DenyDegrees : CueLayout.HoverDegrees;
+        cue.Deny = Line("DenyRing", RingPoints, true, Affordance.DenyColor, top);
+        // Rims render first (lower queue), so the coloured stroke lies on a dark edge, not on a plate.
+        cue.RingRim = Line("RingRim", RingPoints, true, RimColor, top, cue.Deny.transform, 3190);
+        cue.Mark = Line("Glyph", 2, false, Affordance.DenyColor, top, cue.Deny.transform);
+        cue.MarkRim = Line("GlyphRim", 2, false, RimColor, top, cue.Deny.transform, 3190);
+        cue.ArcRim = Line("WaitArcRim", ArcPoints, false, RimColor, top, cue.Deny.transform, 3190);
+        cue.Arc = Line("WaitArc", ArcPoints, false, Affordance.DenyColor, top, cue.Deny.transform);
+        cue.Hint = Line("HintRing", RingPoints, true, Affordance.HintColor, top);
+        cue.Inner = Line(
+            "HintInner",
+            RingPoints,
+            true,
+            Affordance.HintColor,
+            top,
+            cue.Hint.transform
+        );
+        cue.Inner.transform.localScale = new Vector3(0.55f, 0.55f, 0.55f);
+        if (marks)
+        {
+            cue.Marks = new LineRenderer[SpotSet.Capacity];
+            for (int i = 0; i < cue.Marks.Length; i++)
+                cue.Marks[i] = Line("HintMark", RingPoints, true, Affordance.HintColor, top);
+        }
+        cue.Link = Line("HintLink", 2, false, Affordance.HintColor, top);
+        cue.Link.useWorldSpace = true;
+        cue.Chevron = Line("Chevron", 3, false, Affordance.HintColor, top);
+        cue.Chevron.useWorldSpace = true;
     }
 
     private LineRenderer Line(

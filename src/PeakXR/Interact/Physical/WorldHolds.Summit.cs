@@ -16,8 +16,9 @@ namespace PeakXR.Interact.Physical;
 /// <list type="bullet">
 /// <item>Altar socket (WS-W14): the held amulet brought to the socket it would fill (<see cref="AltarSocket"/>)
 /// holds interact on the statue; near a full altar it is refused (Occupied, statue red). The Peak altar's sockets sit
-/// 2.7 m up, past a hand's reach: as in vanilla, where the camera ray takes the statue from 2 m
-/// (<c>Interaction.distance</c>, Interaction.cs:7, :203), a grip pointed at the statue within that reach runs the
+/// 2.7 m up, past a hand's reach: as in vanilla, where the camera ray takes the statue within
+/// <c>Interaction.distance</c> (field default 2 m, Interaction.cs:7, used at :203; the scene sets 2.5 m, read at
+/// runtime, vr50), a grip pointed at the statue within that reach runs the
 /// same hold (interact.physical's hand-aimed interact). Pointing at it with an amulet shows the socket it fills
 /// (teal ring); a full altar is refused as the hold starts; a pointed grip without an amulet gets CantUse.</item>
 /// <item>Soul pillar (WS-W15): both open palms laid on it hold interact (2 s, ScoutmasterSoulPillar.cs:94).</item>
@@ -146,8 +147,11 @@ internal static partial class WorldHolds
             bool was = AltarNear.Active;
             // Brought near a full altar, or its hold started some other way (pointed at it, vanilla's 2 m
             // interact ray): refused at once rather than after a hold that ends in nothing.
-            if ((AltarNear.Update(near, Time.deltaTime) && !was) || holdStarted)
-                Affordance.Deny(left, at, DenyReason.Occupied, default, statue);
+            // The ring where the player looks: at the amulet hand when it was carried up (vr50: a ring at the
+            // 2.7 m socket sat 80 deg off the view), at the socket when the hold started by pointing at it.
+            bool carried = AltarNear.Update(near, Time.deltaTime) && !was;
+            if (carried || holdStarted)
+                Affordance.Deny(left, carried ? point : at, DenyReason.Occupied, default, statue);
             return;
         }
         AltarNear.Reset();
@@ -189,8 +193,9 @@ internal static partial class WorldHolds
     }
 
     /// <summary>
-    /// A grip pointed at the scout statue within vanilla's interact reach (<c>Interaction.distance</c>, 2 m from the
-    /// camera, Interaction.cs:7, :203; the hand ray is shortened by the hand's offset, InteractPatches) while the
+    /// A grip pointed at the scout statue within vanilla's interact reach (<c>Interaction.distance</c> from the
+    /// camera, read at runtime: field default 2 m at Interaction.cs:7, 2.5 m in the scene; used at :203; the hand ray
+    /// is shortened by the hand's offset, InteractPatches) while the
     /// hand holds no amulet: the statue takes only amulets (ScoutStatue.IsConstantlyInteractable,
     /// Peak/ScoutStatue.cs:288-295), so the game would ignore the grip. Refused with CantUse, the statue red.
     /// </summary>

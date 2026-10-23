@@ -357,9 +357,11 @@ public class ViewHoldTests
     }
 
     [Fact]
-    public void LeanInMotion_CarriesTheHeldOffsetInsteadOfReleasingIt()
+    public void LeanInMotion_BleedsTheHeldOffsetIntoItsOwnTravel()
     {
         // Run 49: releasing during a slow lean slid the view by the held offset (3.3 cm) on top of the lean.
+        // Run 50: carrying it unchanged left it after standing up, and room-scale walked the body 5.5 cm back to
+        // close it. It now bleeds out with the lean's own travel: gone by the end, never faster than the lean.
         Assert.True(ViewHoldGate.CarriesThrough(ViewHoldGate.LeanReason));
         Assert.False(ViewHoldGate.CarriesThrough("moving"));
         Assert.False(ViewHoldGate.CarriesThrough(null));
@@ -376,18 +378,29 @@ public class ViewHoldTests
         // A slow lean: the body anchor moves 0.3 m over 2 s while the gate reads "lean".
         var lean = new Vector3(0f, 0f, 0.15f);
         float start = t;
-        float worst = 0f;
+        var lastBody = body0;
+        var lastOff = off0;
+        float worstStep = 0f;
         for (; t < start + 2f; t += Dt)
         {
             var body = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * (t - start);
-            var view = hold.Carry(body);
-            worst = MathF.Max(worst, ((view - body) - off0).Length());
+            var off = hold.Lean(body) - body;
+            // Per frame the view leaves the body's path by at most a fraction of what the body moved.
+            float moved = MathF.Max((body - lastBody).Length(), 1e-6f);
+            worstStep = MathF.Max(worstStep, (off - lastOff).Length() / moved);
+            Assert.True(off.Length() <= lastOff.Length() + 1e-5f);
+            lastBody = body;
+            lastOff = off;
         }
-        Assert.True(worst < 0.005f, $"held offset slid {worst:0.000} m during the lean");
+        Assert.True(worstStep < 0.5f, $"offset slid {worstStep:0.00} m per metre of lean");
+        Assert.True(
+            lastOff.Length() < 0.2f * off0.Length(),
+            $"offset left {lastOff.Length():0.000} m"
+        );
 
-        // Held still again: the hold resumes at once, without the offset collapsing onto the body.
+        // Held still again: no jump.
         var end = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * 2f;
         var after = hold.Update(end, true, Dt);
-        Assert.True(((after - end) - off0).Length() < 0.005f);
+        Assert.True(((after - end) - lastOff).Length() < 0.005f);
     }
 }
