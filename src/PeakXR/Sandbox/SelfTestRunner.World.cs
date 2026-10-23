@@ -946,6 +946,23 @@ internal sealed partial class SelfTestRunner
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
         var low = NearSide(lug, rig.Head.position, -0.08f);
+        // The level spot sits 0.45 m off the case's bounds along its heading, which on a diagonal or a long case
+        // left the low grip 1.25 m out (run 50): step in until it is 0.5 m ahead of the eye, as a player would.
+        var gap = low - rig.Head.position;
+        gap.y = 0f;
+        if (gap.magnitude > 0.6f)
+        {
+            yield return WarpTo(c.Center + gap.normalized * (gap.magnitude - 0.5f));
+            rig.RotateYaw(
+                Vector3.SignedAngle(
+                    Flat(rig.Head.forward),
+                    Flat(low - rig.Head.position),
+                    Vector3.up
+                )
+            );
+            yield return Wait(0.6f);
+            low = NearSide(lug, rig.Head.position, -0.08f);
+        }
         yield return ReachDown(left, () => low, 0.5f);
         if (OverReach(left) is { } far)
         {
