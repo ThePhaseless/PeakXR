@@ -18,8 +18,10 @@ namespace PeakXR.Sandbox;
 /// above 1 means a force is tearing the hand off the forearm; a ratio near 1 with the hand on target means the IK
 /// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch,
 /// when an elbow points up, or when an empty hand sits more than 0.15 m off its target (each hand follows only its
-/// own controller); with real controllers (hold mode) it only reports. Either way it fails when the eye sits more
-/// than <see cref="SelfTestChecks.MaxEyeError"/> from the avatar's eye renderers (and says so when it has none).
+/// own controller); with real controllers (hold mode) it only reports. The scripted hands then hold two more reaches
+/// (<see cref="ReachPoses"/>, <see cref="JudgeReaches"/>). Either way it fails when the eye, less the idle-sway hold's
+/// deliberate offset (<see cref="Rig.RigDriver.ViewHeld"/>), sits more than <see cref="SelfTestChecks.MaxEyeError"/>
+/// from the avatar's eye renderers (and says so when it has none), or when that hold exceeds its deadband.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -49,8 +51,19 @@ internal sealed partial class SelfTestRunner
         public float MaxStretch;
         public float ShoulderToTarget;
         public Vector3 Bend;
+        public float Follow;
         public int Count;
     }
+
+    /// <summary>Reaches the arms are judged in besides the idle pose, in the head's level frame (m: out to the hand's
+    /// own side, up, forward): out to the side and up, and overhead like vr.43's vine grip. Both well inside a
+    /// player's reach (<see cref="MaxHandFromEye"/>).</summary>
+    static readonly Vector3[] ReachPoses = { new(0.45f, 0.1f, 0.35f), new(0.12f, 0.4f, 0.25f) };
+
+    /// <summary>Degrees the avatar's arm (shoulder to hand) may point off the line from the shoulder to its
+    /// controller: the reach map keeps the controller's direction (<see cref="ArmReach.Target"/>), less the
+    /// controller-to-wrist offset.</summary>
+    const float MaxFollowDegrees = 25f;
 
     IEnumerator ArmReachCheck()
     {
@@ -95,19 +108,28 @@ internal sealed partial class SelfTestRunner
             float drop = head.position.y - 0.5f * (sl.Rig.position.y + sr.Rig.position.y);
             notes.Add(F($"eye {drop:0.00} m above the shoulders"));
         }
-        // The view must ride the avatar's own eyes (scouts have big heads, so no human eye-to-shoulder rule).
+        // The view must ride the avatar's own eyes (scouts have big heads, so no human eye-to-shoulder rule). The
+        // idle-sway hold keeps it up to its deadband off them on purpose (ViewHold; runs 45-46 read that as a 0.08 m
+        // misplacement), so the placement is judged without it and the hold on its own.
         if (head != null && Rig.RigDriver.TryEyeRenderers(c, out var avatarEye))
         {
-            var off = head.position - avatarEye;
+            var held = Rig.RigDriver.ViewHeld;
+            var off = head.position - held - avatarEye;
             notes.Add(
                 F(
-                    $"eye {off.magnitude:0.00} m from the avatar's eyes (up {off.y:0.00}, level {new Vector2(off.x, off.z).magnitude:0.00})"
+                    $"eye {off.magnitude:0.00} m from the avatar's eyes (up {off.y:0.00}, level {new Vector2(off.x, off.z).magnitude:0.00}) with the view hold's {held.magnitude:0.00} m taken out"
                 )
             );
             if (off.magnitude > SelfTestChecks.MaxEyeError)
                 fails.Add(
                     F(
                         $"eye {off.magnitude:0.00} m from the avatar's eyes > {SelfTestChecks.MaxEyeError:0.00} m"
+                    )
+                );
+            if (held.magnitude > ViewHold.Deadband + 0.01f)
+                fails.Add(
+                    F(
+                        $"the view hold keeps the view {held.magnitude:0.00} m off the body, past its {ViewHold.Deadband:0.00} m deadband"
                     )
                 );
         }
@@ -121,7 +143,91 @@ internal sealed partial class SelfTestRunner
         );
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
+        yield return JudgeReaches(c, driver, fails, notes);
         Conclude(fails, notes);
+    }
+
+    /// <summary>
+    /// With the scripted idle hands (VR run), both hands hold each of <see cref="ReachPoses"/> for
+    /// <see cref="ArmSamples"/> ticks: each avatar hand must reach its target (<see cref="MaxIdleTargetError"/>, nothing
+    /// held), the arm must not stretch past <see cref="MaxArmStretch"/>, and it must point along the line to its
+    /// controller (<see cref="MaxFollowDegrees"/>), so the avatar hand follows the tracked one. Elbow direction is judged
+    /// in the idle pose only. Real controllers: nothing to script.
+    /// </summary>
+    static IEnumerator JudgeReaches(
+        Character c,
+        AvatarPoseDriver driver,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        if (VRInput.TestOverride != IdleHands)
+            yield break;
+        try
+        {
+            foreach (var reach in ReachPoses)
+            {
+                var at = reach;
+                VRInput.TestOverride = () =>
+                {
+                    ApplyIdle();
+                    HeadFrame(out var head, out var forward, out var right);
+                    var lift = Vector3.up * at.y + forward * at.z;
+                    VRInput.Left.Position = head - right * at.x + lift;
+                    VRInput.Right.Position = head + right * at.x + lift;
+                };
+                yield return Wait(1f);
+                var left = default(ArmSample);
+                var right = default(ArmSample);
+                yield return SampleArms(
+                    c,
+                    driver,
+                    () => left,
+                    v => left = v,
+                    () => right,
+                    v => right = v
+                );
+                var label = F($"reach out {at.x:0.00} up {at.y:0.00} forward {at.z:0.00}");
+                JudgeReach(c, label + " L", left, fails, notes);
+                JudgeReach(c, label + " R", right, fails, notes);
+            }
+        }
+        finally
+        {
+            VRInput.TestOverride = IdleHands;
+        }
+    }
+
+    static void JudgeReach(
+        Character c,
+        string name,
+        ArmSample s,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        if (s.Count == 0)
+        {
+            fails.Add(name + ": hand not tracked");
+            return;
+        }
+        float error = s.TargetError / s.Count;
+        float follow = s.Follow / s.Count;
+        notes.Add(
+            F(
+                $"{name}: target-hand {error:0.000} m, max stretch x{s.MaxStretch:0.00}, arm {follow:0} deg off its controller"
+            )
+        );
+        if (error > MaxIdleTargetError && c.data.currentItem == null)
+            fails.Add(
+                F($"{name}: hand {error:0.000} m off its target > {MaxIdleTargetError:0.00} m")
+            );
+        if (s.MaxStretch > MaxArmStretch)
+            fails.Add(F($"{name}: arm stretched x{s.MaxStretch:0.00} > x{MaxArmStretch:0.00}"));
+        if (follow > MaxFollowDegrees)
+            fails.Add(
+                F($"{name}: arm {follow:0} deg off its controller > {MaxFollowDegrees:0} deg")
+            );
     }
 
     /// <summary>A ragdoll hand farther than this from the chest is being pulled off the body.</summary>
@@ -139,7 +245,7 @@ internal sealed partial class SelfTestRunner
     /// within <see cref="MaxHandTargetFromHip"/> of the hip even when the view detaches, and the arms are tracked
     /// again within 6 s of the fall ending. With <c>Camera.TakeoverView</c> ThirdPerson and <c>DetachOnRagdoll</c> on,
     /// the view must detach during the fall, so the held-hands path runs. Once tracked again, each arm is judged as in
-    /// vr.08: an arm left twisted behind the torso fails.
+    /// vr.08, and in vr.08's reaches (<see cref="JudgeReaches"/>): an arm left twisted behind the torso fails.
     /// </summary>
     IEnumerator RagdollArmsCheck()
     {
@@ -256,17 +362,22 @@ internal sealed partial class SelfTestRunner
         notes.Add(idle ? "idle hands" : "live controllers, arms not judged");
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
+        yield return JudgeReaches(c, driver, fails, notes);
         Conclude(fails, notes);
     }
 
-    /// <summary>Looking 60 degrees down, the belt slots must sit this close to the view axis (degrees): well inside
-    /// any headset's vertical field of view.</summary>
+    /// <summary>Looking <see cref="BeltViewPitch"/> down, the belt slots must sit this close to the view axis
+    /// (degrees): well inside any headset's vertical field of view.</summary>
     const float BeltViewHalfAngle = 40f;
 
+    /// <summary>Degrees below level a player looks to see the belt.</summary>
+    const float BeltViewPitch = 60f;
+
     /// <summary>
-    /// <c>vr.09-belt-view</c>: the hotbar ghosts on the belt can be seen from the eye. The headset's own pitch cannot
-    /// be scripted, so it is judged from poses: each hotbar ghost must be drawn, within
-    /// <see cref="BeltViewHalfAngle"/> of a view pitched 60 degrees down along the body's heading, and either drawn
+    /// <c>vr.09-belt-view</c>: the hotbar ghosts on the belt can be seen from the eye. In a VR run the scripted head
+    /// looks <see cref="BeltViewPitch"/> down (<c>VRInput.HeadRotation</c>, as vr.40 moves the head) and the ghosts are
+    /// judged from the camera that pitch moves; with a live headset (hold mode) from a view computed along the body's
+    /// heading. Each hotbar ghost must be drawn, within <see cref="BeltViewHalfAngle"/> of the view, and either drawn
     /// on top or with no collider of the local body between the eye and the ghost. Body colliders on the line are
     /// reported either way.
     /// </summary>
@@ -288,15 +399,69 @@ internal sealed partial class SelfTestRunner
             Conclude(fails, notes);
             yield break;
         }
-        // Ghosts are placed in LateUpdate; let a frame pass with the current pose.
-        yield return null;
+        bool scripted = VRInput.TestOverride == IdleHands;
+        try
+        {
+            if (scripted)
+            {
+                HeadFrame(out _, out var level, out var side);
+                var pitched = Quaternion.LookRotation(
+                    Quaternion.AngleAxis(BeltViewPitch, side) * level,
+                    Vector3.up
+                );
+                VRInput.TestOverride = () =>
+                {
+                    ApplyIdle();
+                    VRInput.HeadRotation = pitched;
+                };
+                yield return Wait(0.5f);
+            }
+            else
+            {
+                // Ghosts are placed in LateUpdate; let a frame pass with the current pose.
+                yield return null;
+            }
+            var down = JudgeBelt(c, cam, scripted, fails, notes);
+            yield return ShotAt("vr-09-belt-view", cam.transform.position + down);
+        }
+        finally
+        {
+            if (scripted)
+                VRInput.TestOverride = IdleHands;
+        }
+        Conclude(fails, notes);
+    }
 
+    /// <summary>The <see cref="BeltViewCheck"/> verdicts; returns the view direction judged from.</summary>
+    static Vector3 JudgeBelt(
+        Character c,
+        Camera cam,
+        bool scripted,
+        List<string> fails,
+        List<string> notes
+    )
+    {
         var eye = cam.transform.position;
         var flat =
             c.data.lookDirection_Flat.sqrMagnitude > 1e-4f
                 ? c.data.lookDirection_Flat.normalized
                 : Vector3.forward;
-        var down = Quaternion.AngleAxis(60f, Vector3.Cross(Vector3.up, flat)) * flat;
+        var down = scripted
+            ? cam.transform.forward
+            : Quaternion.AngleAxis(BeltViewPitch, Vector3.Cross(Vector3.up, flat)) * flat;
+        if (scripted)
+        {
+            float pitch = 90f - Vector3.Angle(down, Vector3.down);
+            notes.Add(F($"head pitched {pitch:0} deg down"));
+            if (Mathf.Abs(pitch - BeltViewPitch) > 5f)
+                fails.Add(
+                    F($"the camera looks {pitch:0} deg down, not the scripted {BeltViewPitch:0}")
+                );
+        }
+        else
+        {
+            notes.Add(F($"live headset: judged from a computed {BeltViewPitch:0} deg down view"));
+        }
         bool onTop = SlotGhosts.DrawnOnTop;
         notes.Add(onTop ? "ghosts drawn on top" : "ghosts depth-tested");
         var inv = BodyInventory.Instance;
@@ -329,8 +494,7 @@ internal sealed partial class SelfTestRunner
         }
         if (checkedSlots == 0)
             fails.Add("no hotbar slots laid out");
-        yield return ShotAt("vr-09-belt-view", eye + down);
-        Conclude(fails, notes);
+        return down;
     }
 
     /// <summary>Colliders of <paramref name="c"/> on the line from <paramref name="from"/> to <paramref name="to"/>.</summary>
@@ -380,6 +544,9 @@ internal sealed partial class SelfTestRunner
         s.MaxStretch = Mathf.Max(s.MaxStretch, Mathf.Max(fore / rest.x, upper / rest.y));
         s.ShoulderToTarget += Vector3.Distance(a, target);
         s.Bend += ArmMath.BendOffset(a.N(), e.N(), h.N()).U();
+        var controller = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+        if (controller != null)
+            s.Follow += Vector3.Angle(h - a, controller.position - a);
     }
 
     static void JudgeArm(

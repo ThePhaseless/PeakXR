@@ -105,6 +105,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// included, meanwhile.</summary>
     internal static bool ViewDetached;
 
+    /// <summary>World offset the idle-sway hold (<see cref="ViewHold"/>) keeps the view off the body's eye anchor this
+    /// frame, up to its deadband; zero when not holding. Read by the self-test, which judges eye placement without it.</summary>
+    internal static Vector3 ViewHeld;
+
     /// <summary>The eye guard (finding: warps into rock) wants black; read by the self-test.</summary>
     internal static bool EyeGuardBlack => instance != null && instance.eyeGuard.Black;
 
@@ -782,11 +786,13 @@ internal sealed class RigDriver : MonoBehaviour
             if (Time.unscaledTime < turnHoldUntil)
                 viewHold.Rebase(body);
             viewGoal = viewHold.Update(body, viewHoldWhy == null, dt).U() + extra;
+            ViewHeld = viewGoal - goal;
         }
         else
         {
             viewHold.Reset();
             viewHoldWhy = "view";
+            ViewHeld = Vector3.zero;
         }
         var before = anchor;
         anchor = snap
