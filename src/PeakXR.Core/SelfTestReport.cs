@@ -37,6 +37,36 @@ namespace PeakXR.Core
         /// <summary>Exceptions logged while a step ran whose stack has no PeakXR frame beyond the harness.</summary>
         public int VanillaExceptions { get; private set; }
 
+        /// <summary>The running step's id, or null between steps.</summary>
+        public string CurrentId => current?.Id;
+
+        /// <summary>
+        /// Where a stack trace threw, for a one-line step note: the first frame that is not Unity's throw helper
+        /// (which tops every null-object exception and says nothing), and, when that frame is engine code, the first
+        /// PeakXR frame below it, joined with " &lt; ". Empty for no trace.
+        /// </summary>
+        public static string ThrowSite(string stackTrace)
+        {
+            if (string.IsNullOrWhiteSpace(stackTrace))
+                return "";
+            string site = null;
+            foreach (var raw in stackTrace.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line.Contains("UnityEngine.Bindings.ThrowHelper"))
+                    continue;
+                if (site == null)
+                {
+                    site = line;
+                    if (line.Contains("PeakXR."))
+                        return site;
+                }
+                else if (line.Contains("PeakXR."))
+                    return site + " < " + line;
+            }
+            return site ?? FirstLine(stackTrace);
+        }
+
         public void Begin(string id, float time)
         {
             current = new StepResult { Id = id };

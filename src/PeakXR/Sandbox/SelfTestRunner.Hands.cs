@@ -134,6 +134,43 @@ internal sealed partial class SelfTestRunner
 
     // ---------------------------------------------------------------- steps
 
+    /// <summary>Farthest out (m, level from the eye) a dropped prop may come to rest for a stooped reach.</summary>
+    const float PropRestOut = 0.7f;
+
+    /// <summary>
+    /// Waits (up to 2 s) for a dropped prop to stop rolling; one that came to rest more than
+    /// <see cref="PropRestOut"/> out from the eye is set back on <paramref name="spot"/> and waited for again, as a
+    /// player would step over to it: the step is the grab, not a chase. Run 47-48: Apples that bounced or rolled
+    /// 1.0-3.2 m away failed vr.10, vr.11 and vr.32 on the reach guard.
+    /// </summary>
+    IEnumerator RestWithinReach(Item world, Vector3 spot)
+    {
+        for (int round = 0; round < 2 && world != null && world.rig != null; round++)
+        {
+            for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
+            {
+                if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
+                    break;
+                yield return null;
+            }
+            if (world == null || world.rig == null)
+                yield break;
+            var outward = world.Center() - VRRig.Instance.Head.position;
+            outward.y = 0f;
+            if (outward.magnitude <= PropRestOut)
+                yield break;
+            world.rig.linearVelocity = Vector3.zero;
+            world.rig.angularVelocity = Vector3.zero;
+            world.rig.position = spot + Vector3.up * 0.1f;
+            Note(
+                F(
+                    $"{world.name} rolled to {outward.magnitude:0.00} m out; set back at the drop spot"
+                )
+            );
+            yield return Wait(0.3f);
+        }
+    }
+
     /// <summary>vr.10 / vr.11: the player stoops (<see cref="ReachDown"/>), a hand reaches an Apple on the ground and
     /// grips; the game equips it in that hand (<c>CharacterData.currentItem</c>, CharacterData.cs:418). Standing up
     /// with it, a slow release keeps it unless <c>Interaction.ReleaseToDrop</c>.</summary>
@@ -162,6 +199,7 @@ internal sealed partial class SelfTestRunner
             Fail("spawned Apple has no Item");
             yield break;
         }
+        yield return RestWithinReach(world, spot);
         var last = world.Center();
         yield return ReachDown(
             left,
@@ -872,23 +910,7 @@ internal sealed partial class SelfTestRunner
         // The apple drops from chest height and, after vr.29's walk, can land on a slope and roll: let it settle
         // (up to 2 s), then follow it every frame like GrabStep so the grip closes at the apple, not where it was.
         yield return Wait(0.4f);
-        for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
-        {
-            if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
-                break;
-            yield return null;
-        }
-        // An apple that rolled off (run 47: the hand followed it to 3.19 m) is set back where it dropped, as a
-        // player would pick it up after walking over: the step is the stash, not a chase.
-        var rolled = world != null ? world.Center() - head.position : Vector3.zero;
-        rolled.y = 0f;
-        if (world != null && world.rig != null && rolled.magnitude > 0.8f)
-        {
-            world.rig.linearVelocity = Vector3.zero;
-            world.rig.angularVelocity = Vector3.zero;
-            world.rig.position = spot + Vector3.up * 0.1f;
-            yield return Wait(0.4f);
-        }
+        yield return RestWithinReach(world, spot);
         var at = world != null ? world.Center() : spot;
         Vector3 Apple() => world != null ? at = world.Center() : at;
         yield return ReachDown(hold, Apple, 0.6f);

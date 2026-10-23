@@ -241,6 +241,33 @@ internal sealed partial class SelfTestRunner
         {
             bool free = !left;
             var spot = NearestVineSpot(vine, VRRig.Instance.Head.position);
+            var gap = spot - VRRig.Instance.Head.position;
+            gap.y = 0f;
+            // A player walks up to the chain before grabbing it; run 48's nearest point was 1.65 m out.
+            if (
+                gap.magnitude > 0.6f
+                && Physics.Raycast(
+                    spot - gap.normalized * 0.5f + Vector3.up * 2f,
+                    Vector3.down,
+                    out var ground,
+                    6f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                warpedForProp = true;
+                c.photonView.RPC(
+                    "WarpPlayerRPC",
+                    RpcTarget.All,
+                    ground.point + Vector3.up * 0.1f,
+                    false
+                );
+                yield return Wait(0.5f);
+                yield return WaitFor(() => !c.warping, 3f);
+                yield return Wait(1f);
+                spot = NearestVineSpot(vine, VRRig.Instance.Head.position);
+            }
             yield return MoveTo(free, () => spot, 0.5f);
             if (OverReach(free) is { } far)
             {

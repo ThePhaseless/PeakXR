@@ -132,4 +132,34 @@ public class SelfTestReportTests
 
         Assert.False(r.Steps[0].Passed);
     }
+
+    [Fact]
+    public void ThrowSite_SkipsUnitysThrowHelperFrame()
+    {
+        const string trace =
+            "  at UnityEngine.Bindings.ThrowHelper.ThrowNullReferenceException (System.Object obj) [0x00018] in <89f3>:0\n"
+            + "  at UnityEngine.Component.TryGetComponent[T] (T& component) [0x00001] in <89f3>:0\n"
+            + "  at PeakXR.Sandbox.SelfTestRunner+<UseItem>d__42.MoveNext () [0x001a2] in <abcd>:0\n";
+
+        Assert.Equal(
+            "at UnityEngine.Component.TryGetComponent[T] (T& component) [0x00001] in <89f3>:0 < at PeakXR.Sandbox.SelfTestRunner+<UseItem>d__42.MoveNext () [0x001a2] in <abcd>:0",
+            SelfTestReport.ThrowSite(trace)
+        );
+    }
+
+    [Fact]
+    public void ThrowSite_KeepsAPlainFirstFrame()
+    {
+        Assert.Equal("at Foo.Bar ()", SelfTestReport.ThrowSite("  at Foo.Bar ()\n  at Baz.Qux ()"));
+        Assert.Equal("", SelfTestReport.ThrowSite(null));
+    }
+
+    [Fact]
+    public void CurrentId_NamesTheRunningStep()
+    {
+        var r = new SelfTestReport();
+        Assert.Null(r.CurrentId);
+        r.Begin("use.Apple", 0f);
+        Assert.Equal("use.Apple", r.CurrentId);
+    }
 }
