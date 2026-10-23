@@ -55,7 +55,6 @@ internal static class CueAudio
             var sfx = Instance(sound);
             if (sfx == null)
                 return false;
-            // PlaySFX plays settings.volume times the multiplier (SFX_Player.cs:131).
             LastVolume = CueTones.Volume(volume, CueVolume);
             // PlaySFX plays settings.volume times the multiplier (SFX_Player.cs:131).
             player.PlaySFX(sfx, position, null, null, LastVolume / CueTones.BaseVolume);

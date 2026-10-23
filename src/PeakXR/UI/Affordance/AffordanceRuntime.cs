@@ -164,7 +164,47 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         DontDestroyOnLoad(go);
         instance = go.AddComponent<AffordanceRuntime>();
         instance.denied = instance.denials[1];
+        UnityEngine.SceneManagement.SceneManager.activeSceneChanged += (_, _) => FlushSeen();
     }
+
+    private static ulong seenBits;
+    private static bool seenLoaded,
+        seenDirty;
+    private bool wasPaused;
+
+    /// <summary>Refusal reasons that have shown their first-time label (<see cref="FirstRefusalLabel"/>). Kept in
+    /// memory: setting <c>UI.SeenRefusals</c> saves the whole config file and fires its change events, a hitch at the
+    /// moment of a refusal, so the entry is written by <see cref="FlushSeen"/> when the pause menu opens or closes, the
+    /// scene changes or the game quits.</summary>
+    internal static ulong Seen
+    {
+        get
+        {
+            if (!seenLoaded)
+            {
+                seenBits = AffordanceFeature.SeenRefusals.Value;
+                seenLoaded = true;
+            }
+            return seenBits;
+        }
+        set
+        {
+            seenBits = value;
+            seenLoaded = true;
+            seenDirty = true;
+        }
+    }
+
+    /// <summary>Saves <see cref="Seen"/> to <c>UI.SeenRefusals</c> if it changed since.</summary>
+    internal static void FlushSeen()
+    {
+        if (!seenDirty)
+            return;
+        seenDirty = false;
+        AffordanceFeature.SeenRefusals.Value = seenBits;
+    }
+
+    private void OnApplicationQuit() => FlushSeen();
 
     /// <summary>The red preview the caller just set (a placement ghost, a tint target) belongs to the refusal shown
     /// last, and ends with it.</summary>
@@ -220,7 +260,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         bool continues = start == d.At && d.Reason == reason && self.firstLabel == d;
         if (start != d.At)
             d.Drawn = false;
-        ulong seen = AffordanceFeature.SeenRefusals.Value;
+        ulong seen = Seen;
         bool first =
             FirstRefusalLabel.Show(
                 false,
@@ -228,9 +268,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 ref seen,
                 reason
             ) || continues;
-        // Written once per reason ever, so the config save never lands on a hot path twice.
-        if (seen != AffordanceFeature.SeenRefusals.Value)
-            AffordanceFeature.SeenRefusals.Value = seen;
+        // In memory now; the config file is saved later (FlushSeen), never in the middle of a refusal.
+        if (seen != Seen)
+            Seen = seen;
         self.firstLabel = first ? d : null;
         d.Notice = notice;
         d.Glyph = DenyGlyph.For(reason);
@@ -449,6 +489,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private void LateUpdate()
     {
+        // A menu opening or closing is a still moment to save the seen set.
+        bool paused = GUIManager.InPauseMenu;
+        if (paused != wasPaused)
+        {
+            wasPaused = paused;
+            FlushSeen();
+        }
         var rig = VRRig.Instance;
         if (!Affordance.Enabled || rig == null || rig.Head == null)
         {
@@ -649,8 +696,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         PoseLabel(rig, eye, now, denyAlpha);
     }
 
-    /// <summary>The refusal's ring (a notice's teal one when it has no red one) as the eye sees it, while clearly
-    /// visible: for <see cref="CueLog"/>.</summary>
     /// <summary>
     /// The refusal's in-view copy (<see cref="CueEdge"/>): while its real spot lies outside the comfortable cone
     /// (the head camera's field when known, at most 45 degrees half-angle), the same ring and glyph at the cone's
@@ -712,6 +757,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         SetLine(d.PointerRim, shown, alpha, RimColor);
     }
 
+    /// <summary>The refusal's ring (a notice's teal one when it has no red one) as the eye sees it, while clearly
+    /// visible: for <see cref="CueLog"/>.</summary>
     private void CaptureRing(Cue d, Vector3 eye, float now)
     {
         var ring =

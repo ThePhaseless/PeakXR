@@ -93,7 +93,6 @@ public sealed class CueCapture
         h.PulseAt = time;
     }
 
-    /// <summary>A non-refusal haptic (progress, contact, cancel, end stop, danger) on this hand.</summary>
     /// <summary>This frame the ring's in-view edge copy is drawn at <paramref name="center"/>.</summary>
     public void Edge(bool isLeft, Vector3 center, float degrees, float time)
     {
@@ -103,6 +102,7 @@ public sealed class CueCapture
         h.EdgeAt = time;
     }
 
+    /// <summary>A non-refusal haptic (progress, contact, cancel, end stop, danger) on this hand.</summary>
     public void Feel(
         bool isLeft,
         CueFeel feel,
