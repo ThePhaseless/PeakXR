@@ -128,6 +128,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     /// <summary>The refusal or notice shown last: the label follows it.</summary>
     private Cue denied;
 
+    /// <summary>The refusal whose label shows because its reason fired for the first time
+    /// (<c>UI.FirstTimeRefusalLabels</c>); null when none.</summary>
+    private Cue firstLabel;
+
+    /// <summary>The label shows this frame: <c>UI.ActionHintText</c>, or a first-time refusal still on show.</summary>
+    private bool textOn;
+
     /// <summary>The refusal whose red preview <see cref="DenyTint"/> shows (one at a time).</summary>
     private Cue tintOwner;
     private readonly Cue[] hovers = { new(), new() };
@@ -208,8 +215,22 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 $"[ui.affordance] {(left ? "left" : "right")} {d.Reason} replaced by {reason} "
                     + $"{now - d.At:0.000} s after it, before its ring was drawn"
             );
+        // The same refusal still on show keeps its first-time label; a new firing of a seen reason shows none.
+        bool continues = start == d.At && d.Reason == reason && self.firstLabel == d;
         if (start != d.At)
             d.Drawn = false;
+        ulong seen = AffordanceFeature.SeenRefusals.Value;
+        bool first =
+            FirstRefusalLabel.Show(
+                false,
+                AffordanceFeature.FirstTimeRefusalLabels.Value,
+                ref seen,
+                reason
+            ) || continues;
+        // Written once per reason ever, so the config save never lands on a hot path twice.
+        if (seen != AffordanceFeature.SeenRefusals.Value)
+            AffordanceFeature.SeenRefusals.Value = seen;
+        self.firstLabel = first ? d : null;
         d.Notice = notice;
         d.Glyph = DenyGlyph.For(reason);
         d.Text = text;
@@ -301,9 +322,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
     }
 
-    /// <summary>The reason label is up now (only with <c>UI.ActionHintText</c>), for the self-test.</summary>
+    /// <summary>The reason label is up now (<c>UI.ActionHintText</c>, or a reason's first firing), for the self-test.</summary>
     public static bool LabelShown =>
         instance != null && instance.labelRoot != null && instance.labelRoot.activeSelf;
+
+    /// <summary>The label's text now, for the self-test.</summary>
+    public static string LabelText =>
+        instance != null && instance.label != null ? instance.label.text : null;
 
     /// <summary>The reach ray is drawn now, for the self-test.</summary>
     public static bool RayShown => instance != null && instance.built && instance.ray.enabled;
@@ -411,13 +436,17 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         }
         if (!built)
             Build();
-        // Text is optional (UI.ActionHintText): the label is built only when asked for.
-        bool text = AffordanceFeature.ActionHintText.Value;
-        if (text && labelRoot == null)
+        // Text is optional (UI.ActionHintText, or a reason's first firing): the label is built only when asked for.
+        bool hintText = AffordanceFeature.ActionHintText.Value;
+        textOn = hintText || (firstLabel != null && labelOwner < 0 && denied == firstLabel);
+        if (
+            (hintText || AffordanceFeature.FirstTimeRefusalLabels.Value || textOn)
+            && labelRoot == null
+        )
             BuildLabel();
-        else if (!text && labelRoot != null && labelRoot.activeSelf)
+        else if (!textOn && labelRoot != null && labelRoot.activeSelf)
             labelRoot.SetActive(false);
-        if (text)
+        if (labelRoot != null)
             EnsureFont();
         UpdateRay(rig);
         Pose();
@@ -630,7 +659,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private void PoseLabel(VRRig rig, Vector3 eye, float now, float denyAlpha)
     {
-        if (labelRoot == null || !AffordanceFeature.ActionHintText.Value)
+        if (labelRoot == null || !textOn)
             return;
         float alpha;
         Vector3 anchor;

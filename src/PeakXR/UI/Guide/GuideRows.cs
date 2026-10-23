@@ -35,6 +35,9 @@ internal enum GuideAction : byte
 
     /// <summary>Show the VR tab's next page.</summary>
     PageNext,
+
+    /// <summary>A button beside a setting (<see cref="VRTab.AddButtonAfter"/>): runs <see cref="GuideRow.Run"/>.</summary>
+    Run,
 }
 
 /// <summary>A button row of the VR Guide section; the game's own button cell when this build has one.</summary>
@@ -47,6 +50,9 @@ internal sealed class GuideRow : ButtonSetting, IExposedSetting
 
     /// <summary>The spawned row, for placing the demo and the refusal cue; null until shown.</summary>
     public SettingsUICell Cell;
+
+    /// <summary><see cref="GuideAction.Run"/>: what the button does, given the row's spot and the clicking hand.</summary>
+    public System.Action<Vector3, bool> Run;
 
     /// <summary>Frame of the last click, so a click is never handled twice.</summary>
     public int ClickFrame = -1;
@@ -289,6 +295,9 @@ internal static class GuideRows
                 ComfortFirst = false;
                 Rebuild();
                 break;
+            case GuideAction.Run:
+                row.Run?.Invoke(RowSpot(row), VRInput.Left.Trigger > VRInput.Right.Trigger);
+                break;
         }
     }
 
@@ -306,16 +315,15 @@ internal static class GuideRows
     /// Practice cannot start here (online, in a run, loading): the refusal cue at the row, never a silent click.
     /// With action hints off, the falling note and a tick still play.
     /// </summary>
+    /// <summary>Where a cue about <paramref name="row"/> plays: the row, else the head.</summary>
+    private static Vector3 RowSpot(GuideRow row) =>
+        row.Cell != null ? row.Cell.transform.position
+        : VRRig.Instance != null && VRRig.Instance.Head != null ? VRRig.Instance.Head.position
+        : Vector3.zero;
+
     public static void Refuse(GuideRow row)
     {
-        var at =
-            row.Cell != null
-                ? row.Cell.transform.position
-                : (
-                    VRRig.Instance != null && VRRig.Instance.Head != null
-                        ? VRRig.Instance.Head.position
-                        : Vector3.zero
-                );
+        var at = RowSpot(row);
         bool left = VRInput.Left.Trigger > VRInput.Right.Trigger;
         Plugin.Log.LogInfo(
             "[ui.guide] practice refused: it runs offline, from the title or the solo airport"

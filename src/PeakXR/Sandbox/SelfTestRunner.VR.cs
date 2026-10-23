@@ -332,6 +332,93 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => !GUIManager.InPauseMenu, 3f, "pause menu did not close");
     }
 
+    /// <summary>vr.222: the pause menu's VR tab has a dark plate behind it (<c>UI.MenuBackplate</c>, ui.world
+    /// BackplateView) that hugs what the menu draws: each edge <see cref="MenuBackplate.MarginPixels"/> outside the
+    /// drawn content, within 2 px, never a full-canvas 16:9 panel and never a raycast target. Checked again on the
+    /// Compatibility page, whose content differs, so the plate follows a page change.</summary>
+    IEnumerator BackplateCheck()
+    {
+        if (!UIWorldFeature.Settings.MenuBackplate.Value)
+        {
+            stepSkip = "UI.MenuBackplate is off";
+            yield break;
+        }
+        yield return OpenVRTab();
+        if (!stepOk)
+            yield break;
+        var root = RootCanvasOf(FindAnyObjectByType<PauseMenuHandler>());
+        if (root == null)
+        {
+            Fail("no pause menu canvas");
+            yield break;
+        }
+        var notes = new List<string>();
+        yield return Until(
+            () => WorldCanvases.TryBackplate(root, out _, out _, out _, out _, out _),
+            2f,
+            "no menu backplate on the pause menu"
+        );
+        if (!stepOk)
+            yield break;
+        string bad = JudgePlate(root, "VR tab", notes);
+        yield return ShotAt("vr-222-menu-backplate", CentreOf(root.transform));
+        var menu = vrTabMenu;
+        if (bad == null && menu != null && VRTabGrid.Shown)
+        {
+            string group = VRTab.Group;
+            int page = VRTab.Page;
+            VRTabGrid.Select(menu, VRTab.CompatGroup, 0);
+            // Past one slow re-measure (0.5 s) and the page's settle.
+            yield return Wait(1f);
+            bad = JudgePlate(root, "Compatibility", notes);
+            VRTabGrid.Select(menu, group, page);
+            yield return Wait(0.25f);
+        }
+        if (bad != null)
+            Fail(bad + "; " + string.Join("; ", notes));
+        else
+            stepNote = string.Join("; ", notes);
+    }
+
+    /// <summary>One vr.222 check of the plate on <paramref name="root"/>; null when it passes.</summary>
+    static string JudgePlate(Canvas root, string page, List<string> notes)
+    {
+        if (
+            !WorldCanvases.TryBackplate(
+                root,
+                out var plate,
+                out var lo,
+                out var hi,
+                out var canvas,
+                out bool raycast
+            )
+        )
+            return $"{page}: no menu backplate shown";
+        var centre = new System.Numerics.Vector2(plate.center.x, plate.center.y);
+        var size = new System.Numerics.Vector2(plate.width, plate.height);
+        bool fits = MenuBackplate.FitsContent(
+            centre,
+            size,
+            new System.Numerics.Vector2(lo.x, lo.y),
+            new System.Numerics.Vector2(hi.x, hi.y),
+            MenuBackplate.MarginPixels,
+            2f
+        );
+        bool full = MenuBackplate.IsFullPanel(
+            size,
+            new System.Numerics.Vector2(canvas.x, canvas.y)
+        );
+        notes.Add(
+            $"{page}: plate {plate.width:0}x{plate.height:0} px around content {hi.x - lo.x:0}x{hi.y - lo.y:0} on a "
+                + $"{canvas.x:0}x{canvas.y:0} canvas, raycast target {raycast}"
+        );
+        return !fits
+                ? $"{page}: plate edges not {MenuBackplate.MarginPixels:0} px outside the content"
+            : full ? $"{page}: plate is a full-canvas panel"
+            : raycast ? $"{page}: plate takes raycasts"
+            : null;
+    }
+
     /// <summary>vr.04: every page of every rail entry, each filled by a category switch or page turn, draws no row
     /// strip. The rail entry and page on show before are restored.</summary>
     IEnumerator VRTabStrips(Canvas root)

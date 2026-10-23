@@ -348,7 +348,8 @@ internal sealed partial class SelfTestRunner
         var prompt = SpatialFeature.Settings.TargetPrompt;
         yield return WithOn("vr.121-prompt-glyphs", 25f, PromptGlyphStep(), prompt);
         yield return WithOn("vr.125-hold-glyph", 40f, HoldGlyphStep(), prompt);
-        yield return WithOn("vr.133-target-names", 25f, TargetNamesStep(), prompt);
+        yield return WithOn("vr.133-target-names", 25f, TargetNamesStep(false), prompt);
+        yield return WithOn("vr.221-colorblind-names", 25f, TargetNamesStep(true), prompt);
         yield return WarpBack();
     }
 
@@ -559,8 +560,10 @@ internal sealed partial class SelfTestRunner
     /// the game's highlight (<c>_Interactable</c> 1, Item.cs:1147) and, by default (<c>UI.TargetNames</c> off), no
     /// name shows; the hand moved away turns the glow off (Item.HoverExit, :1155). With <c>UI.TargetNames</c> on, the
     /// Apple on the head's ray shows its name.
+    /// vr.221 (<paramref name="colourBlind"/>): with <c>UI.TargetNames</c> off and <c>UI.ColorBlindNames</c> On (as the
+    /// game's colour-blind mode does with FollowGame), the Apple on the head's ray shows its name.
     /// </summary>
-    IEnumerator TargetNamesStep()
+    IEnumerator TargetNamesStep(bool colourBlind)
     {
         var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
@@ -588,11 +591,32 @@ internal sealed partial class SelfTestRunner
         var gui = GUIManager.instance;
         var names = SpatialFeature.Settings.TargetNames;
         bool namesWas = names.Value;
+        var cb = SpatialFeature.Settings.ColorBlindNames;
+        var cbWas = cb.Value;
         var fails = new List<string>();
         var notes = new List<string>();
         // Put back after the step, a timeout too (Restoring).
         names.Value = false;
-        bodyRestore += () => names.Value = namesWas;
+        // Names off means off here, whatever the game's colour-blind setting says.
+        cb.Value = colourBlind ? ColorBlindNames.On : ColorBlindNames.Off;
+        bodyRestore += () =>
+        {
+            names.Value = namesWas;
+            cb.Value = cbWas;
+        };
+        if (colourBlind)
+        {
+            yield return HoverOnHeadRay(world, head);
+            bool cbShown = NameShown(gui);
+            notes.Add($"UI.TargetNames off, UI.ColorBlindNames On: name shown {cbShown}");
+            if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+                fails.Add("the Apple never became the hovered target");
+            else if (!cbShown)
+                fails.Add("no name in colour-blind mode");
+            yield return ShotAt("vr-221-colorblind-names", world.Center());
+            Conclude(fails, notes);
+            yield break;
+        }
         yield return Wait(0.3f);
         float before = Glow(world);
         var restAt = Script(false).Position;
@@ -617,6 +641,20 @@ internal sealed partial class SelfTestRunner
             fails.Add("the Apple still glows after the hand left");
 
         names.Value = true;
+        yield return HoverOnHeadRay(world, head);
+        bool shown = NameShown(gui);
+        notes.Add($"UI.TargetNames on: name shown {shown}");
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+            fails.Add("the Apple never became the hovered target");
+        else if (!shown)
+            fails.Add("no name with UI.TargetNames on");
+        Conclude(fails, notes);
+    }
+
+    /// <summary>Holds <paramref name="world"/> on the head's ray until it is the hovered target (5 s at most), then
+    /// 0.4 s more for the prompt to settle.</summary>
+    static IEnumerator HoverOnHeadRay(Item world, Transform head)
+    {
         float until = Now + 5f;
         while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
         {
@@ -628,13 +666,6 @@ internal sealed partial class SelfTestRunner
             HoldOnHeadRay(world, head);
             yield return null;
         }
-        bool shown = NameShown(gui);
-        notes.Add($"UI.TargetNames on: name shown {shown}");
-        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
-            fails.Add("the Apple never became the hovered target");
-        else if (!shown)
-            fails.Add("no name with UI.TargetNames on");
-        Conclude(fails, notes);
     }
 
     /// <summary>The target name is drawn: the game shows it (GUIManager.cs:1050) and ui.spatial has not hidden it.</summary>

@@ -19,6 +19,9 @@ public sealed class UIWorldFeature : Feature
     {
         Settings = UIWorldSettings.Bind(Plugin.Settings);
         Settings.MenuPanels.SettingChanged += (_, _) => WorldCanvases.OnMenuPanelsChanged();
+        Settings.MenuBackplate.SettingChanged += (_, _) => WorldCanvases.OnBackplateChanged();
+        Settings.MenuBackplateOpacity.SettingChanged += (_, _) =>
+            WorldCanvases.OnBackplateChanged();
         HudSplit.Resolve();
 
         Patch(typeof(CanvasScalerEnablePatch));

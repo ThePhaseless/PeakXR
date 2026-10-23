@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using PeakXR.Core;
 using PeakXR.Framework;
 
 namespace PeakXR.UI.Spatial;
@@ -36,6 +37,7 @@ internal sealed class SpatialSettings
         HeldItemGauges,
         SpectateOnPlayer,
         StatusAlerts;
+    public ConfigEntry<ColorBlindNames> ColorBlindNames;
 
     public static SpatialSettings Bind(ConfigFile cfg)
     {
@@ -54,6 +56,13 @@ internal sealed class SpatialSettings
                 "TargetNames",
                 false,
                 "In VR, show the name of the item or object you are about to pick up or use. Off: it just glows."
+            ),
+            ColorBlindNames = cfg.Bind(
+                ui,
+                "ColorBlindNames",
+                Core.ColorBlindNames.FollowGame,
+                "Show item names even with TargetNames off, for items that differ only by colour (berries). "
+                    + "FollowGame: while the game's colour-blind mode is on."
             ),
             ButtonLabels = cfg.Bind(
                 ui,

@@ -1,5 +1,8 @@
 using BepInEx.Configuration;
+using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.UI.Common;
+using UnityEngine;
 
 namespace PeakXR.UI.Affordances;
 
@@ -22,6 +25,11 @@ public sealed class AffordanceFeature : Feature
     internal static ConfigEntry<bool> ReachRay { get; private set; }
 
     internal static ConfigEntry<bool> ActionHintText { get; private set; }
+
+    internal static ConfigEntry<bool> FirstTimeRefusalLabels { get; private set; }
+
+    /// <summary>One bit per <see cref="Core.DenyReason"/> already labelled (<see cref="Core.FirstRefusalLabel"/>).</summary>
+    internal static ConfigEntry<ulong> SeenRefusals { get; private set; }
 
     protected internal override void Install()
     {
@@ -51,7 +59,40 @@ public sealed class AffordanceFeature : Feature
             "Also show a short text reason and next step by the hand or target. The rings, shapes, sounds and "
                 + "haptics already say what is wrong and what would work; this adds words."
         );
+        FirstTimeRefusalLabels = Plugin.Settings.Bind(
+            "UI",
+            "FirstTimeRefusalLabels",
+            true,
+            "The first time each kind of refusal happens, its short reason shows as text next to the ring, even "
+                + "with ActionHintText off. After that only the ring's shape shows. The button below starts over."
+        );
+        SeenRefusals = Plugin.Settings.Bind(
+            "UI",
+            "SeenRefusals",
+            0ul,
+            new ConfigDescription(
+                "Internal: which refusal reasons have shown their first-time label (one bit each).",
+                null,
+                Settings.VRTab.HiddenTag
+            )
+        );
+        Settings.VRTab.AddButtonAfter(
+            FirstTimeRefusalLabels,
+            "PEAKXR_RESET_REFUSAL_LABELS",
+            "Refusal labels seen",
+            "Reset",
+            ResetSeen
+        );
         DenyTint.ItemBlock = GameMember.Field<Item, UnityEngine.MaterialPropertyBlock>("mpb");
         AffordanceRuntime.Create();
+    }
+
+    /// <summary>The reset button: every refusal shows its label once more. A notice at the button says it worked.</summary>
+    private static void ResetSeen(Vector3 at, bool left)
+    {
+        SeenRefusals.Value = 0ul;
+        Plugin.Log.LogInfo("[ui.affordance] first-time refusal labels reset");
+        if (!Affordance.Inform(left, at, DenyReason.HappenedHere, DenyHint.At(at), "Labels reset"))
+            UIHaptics.Tick(left, 0.25f, 0.04f);
     }
 }

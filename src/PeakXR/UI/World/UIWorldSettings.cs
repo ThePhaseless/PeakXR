@@ -1,6 +1,7 @@
 using BepInEx.Configuration;
 using PeakXR.Core;
 using PeakXR.VR;
+using MenuBackplateMath = PeakXR.Core.MenuBackplate;
 
 namespace PeakXR.UI.World;
 
@@ -51,7 +52,9 @@ internal sealed class UIWorldSettings
         MenuTilt,
         FadeSeconds,
         NameTagScale;
-    public ConfigEntry<bool> MenuPanels;
+    public ConfigEntry<bool> MenuPanels,
+        MenuBackplate;
+    public ConfigEntry<float> MenuBackplateOpacity;
     public ConfigEntry<StatusOverlayMode> StatusOverlays;
     public ConfigEntry<HudMode> Hud;
     public ConfigEntry<float> HudDistance,
@@ -108,6 +111,24 @@ internal sealed class UIWorldSettings
                 "Show the game's flat panel backgrounds behind menus (full-screen dimmers stay hidden). Off: "
                     + "buttons, text and icons float in the world on their own, and text gets a thin outline to stay "
                     + "readable."
+            ),
+            MenuBackplate = cfg.Bind(
+                ui,
+                "MenuBackplate",
+                true,
+                "A dark rounded plate behind each menu, sized to the buttons and text it holds (it grows and shrinks "
+                    + "with pages, tabs and open lists), so text stays readable over sand, snow or sky. Off: menus "
+                    + "float with nothing behind them."
+            ),
+            MenuBackplateOpacity = cfg.Bind(
+                ui,
+                "MenuBackplateOpacity",
+                MenuBackplateMath.DefaultOpacity,
+                Range(
+                    "How opaque the menu plate is. 0.85 keeps white text readable even against snow in sunlight.",
+                    0.5f,
+                    1f
+                )
             ),
             FadeSeconds = cfg.Bind(
                 ui,
