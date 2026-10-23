@@ -23,6 +23,25 @@ public class VRTabColumnTests
     }
 
     [Fact]
+    public void FarDistance_IsThePanelCornerFromTheEye()
+    {
+        // A 0.6 x 0.8 m panel 1 m away: its corner is sqrt(1 + 0.09 + 0.16) m from the eye.
+        Assert.Equal(1.118f, VRTabColumn.FarDistance(1f, 0.6f, 0.8f), 3);
+        Assert.Equal(1f, VRTabColumn.FarDistance(1f, 0f, 0f));
+    }
+
+    [Fact]
+    public void TextScaledAtTheFarCorner_MeetsTheFloorEverywhereOnThePanel()
+    {
+        // VR run 56: the rail's last chip, far below the centre, read 1.09 deg.
+        float near = 0.9f,
+            far = VRTabColumn.FarDistance(near, 0.5f, 0.45f);
+        float s = VRTabColumn.TextScale(24f, far, 0.001f);
+        Assert.True(ReadableText.Degrees(24f * 0.001f * s, far) >= ReadableText.MinDegrees - 0.01f);
+        Assert.True(ReadableText.Degrees(24f * 0.001f * s, near) > ReadableText.MinDegrees);
+    }
+
+    [Fact]
     public void TextScale_NeverShrinksLargeText() =>
         Assert.Equal(1f, VRTabColumn.TextScale(60f, 1.5f, 0.001f));
 

@@ -31,6 +31,12 @@ public static class VRTabColumn
     public static float TextScale(float fontUnits, float distance, float metersPerUnit) =>
         ReadableText.Grow(fontUnits * metersPerUnit, distance, 4f);
 
+    /// <summary>Distance from the eye to the corner of a panel <paramref name="width"/> by <paramref name="height"/>
+    /// metres centred <paramref name="distance"/> ahead: the farthest text on it, so a panel scaled for this distance
+    /// meets the floor all over (VR run 56: the far end of a tall rail read 1.09 deg).</summary>
+    public static float FarDistance(float distance, float width, float height) =>
+        MathF.Sqrt(distance * distance + 0.25f * (width * width + height * height));
+
     /// <summary>Yaw of the rail about the edge it shares with the column. The window's forward points away from the
     /// eye, so a rail on the left turns by a negative yaw to bring its outer edge closer.</summary>
     public static float RailYaw(bool left) => left ? -RailDegrees : RailDegrees;

@@ -89,7 +89,7 @@ Everything that needs both hands takes one:
 
 ## VR Guide and practice
 
-In VR the VR tab of the settings (title or pause menu) is laid out for the headset. The settings of the chosen category stand in one column about 30° wide; push the stick up or down while pointing at it, or drag it with the laser, to scroll. The categories are a small panel of their own to the left of the column, turned toward you, and each panel has its own plate. Every vibration setting is in the Haptics category, under a heading for the part of the game it belongs to, and the item and fire gestures have their own Items category. The config file keeps every setting where it was. Text is at least 1.3° tall wherever the menu stands. The game's own tabs keep the game's layout.
+In VR the VR tab of the settings (title or pause menu) is laid out for the headset. The settings of the chosen category stand in one column about 30° wide; push the stick up or down while pointing at it, or drag it with the laser, to scroll. The categories are a small panel of their own to the left of the column, turned toward you, that scrolls the same way, and each panel has its own plate. Every vibration setting is in the Haptics category, under a heading for the part of the game it belongs to, and the item and fire gestures have their own Items category. The config file keeps every setting where it was. Text is at least 1.3° tall wherever the menu stands. The game's own tabs keep the game's layout.
 
 In VR the VR tab of the settings (title or pause menu) starts with a VR Guide section. It covers only what PeakXR adds or changes in VR; PEAK's own rules and items are left to the game.
 

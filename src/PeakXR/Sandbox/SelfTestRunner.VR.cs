@@ -547,10 +547,12 @@ internal sealed partial class SelfTestRunner
             {
                 if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
                     continue;
-                if (clip)
+                // Only what its scroll view shows: rows and chips scrolled away are not read.
+                var view = text.GetComponentInParent<RectMask2D>();
+                if (clip && view != null)
                 {
-                    var local = viewport.InverseTransformPoint(text.transform.position);
-                    if (!viewport.rect.Contains(local))
+                    var local = view.rectTransform.InverseTransformPoint(text.transform.position);
+                    if (!view.rectTransform.rect.Contains(local))
                         continue;
                 }
                 float deg = ReadableText.Degrees(
@@ -565,7 +567,7 @@ internal sealed partial class SelfTestRunner
             }
         }
         Floor(column, clip: true);
-        Floor(rail, clip: false);
+        Floor(rail, clip: true);
         notes.Add($"smallest text {smallest:0.00} deg ('{smallestText}')");
         if (smallest < ReadableText.MinDegrees - 0.05f)
             fails.Add(

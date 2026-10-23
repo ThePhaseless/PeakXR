@@ -405,30 +405,60 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             stepNote = note;
     }
 
-    /// <summary>Spawned rows of <paramref name="settings"/> that reach below or past its row area. A row in the VR
-    /// column's scrolled viewport is judged by that viewport, which clips it.</summary>
+    /// <summary>Spawned rows of <paramref name="settings"/> a player cannot see whole. A row of the game's list must
+    /// sit inside the window's row area. A row in the VR tab's scrolling column (VR run 56: below its view by design)
+    /// must instead lie inside the scrolled rows, so scrolling reaches it, and within the view's width, with the view
+    /// itself on the canvas.</summary>
     int RowsOutside(SharedSettingsMenu settings)
     {
         var content = settings.m_settingsContentParent as RectTransform;
         var cells =
             UISettingsFeature.CellsRef != null ? UISettingsFeature.CellsRef(settings) : null;
-        if (content == null || cells == null)
+        var canvas = settings.GetComponentInParent<Canvas>();
+        if (content == null || cells == null || canvas == null)
             return 0;
+        var root = (RectTransform)canvas.rootCanvas.transform;
         var area = content.rect;
         int count = 0;
         foreach (var cell in cells)
         {
             if (cell == null || !cell.gameObject.activeInHierarchy)
                 continue;
+            var row = (RectTransform)cell.transform;
             var mask = cell.GetComponentInParent<UnityEngine.UI.RectMask2D>();
-            var shown = mask != null ? mask.rectTransform : (RectTransform)cell.transform;
-            shown.GetWorldCorners(edgeCorners);
-            var lo = content.InverseTransformPoint(edgeCorners[0]);
-            var hi = content.InverseTransformPoint(edgeCorners[2]);
-            if (lo.y < area.yMin - 2f || hi.x > area.xMax + 2f)
+            if (mask == null)
+            {
+                row.GetWorldCorners(edgeCorners);
+                var lo = content.InverseTransformPoint(edgeCorners[0]);
+                var hi = content.InverseTransformPoint(edgeCorners[2]);
+                if (lo.y < area.yMin - 2f || hi.x > area.xMax + 2f)
+                    count++;
+                continue;
+            }
+            var view = mask.rectTransform;
+            var rows = (RectTransform)row.parent;
+            if (
+                !Within(row, view, horizontal: true)
+                || !Within(row, rows, horizontal: false)
+                || !Within(view, root, horizontal: true)
+                || !Within(view, root, horizontal: false)
+            )
                 count++;
         }
         return count;
+    }
+
+    /// <summary><paramref name="inner"/> lies inside <paramref name="outer"/>'s rect along one axis, within 2 units of
+    /// <paramref name="outer"/>.</summary>
+    bool Within(RectTransform inner, RectTransform outer, bool horizontal)
+    {
+        inner.GetWorldCorners(edgeCorners);
+        var a = outer.InverseTransformPoint(edgeCorners[0]);
+        var b = outer.InverseTransformPoint(edgeCorners[2]);
+        var r = outer.rect;
+        return horizontal
+            ? Mathf.Min(a.x, b.x) >= r.xMin - 2f && Mathf.Max(a.x, b.x) <= r.xMax + 2f
+            : Mathf.Min(a.y, b.y) >= r.yMin - 2f && Mathf.Max(a.y, b.y) <= r.yMax + 2f;
     }
 
     /// <summary>Spawn every item in rows, one step each.</summary>

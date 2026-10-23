@@ -31,6 +31,7 @@ internal static class VRTabGrid
     private const float ChipFallbackHeight = 44f;
 
     private static readonly List<TMP_Text> texts = new();
+    private static readonly Vector3[] corners = new Vector3[4];
     private static readonly List<RectTransform> spawned = new();
     private static string lastFallback;
 
@@ -98,16 +99,7 @@ internal static class VRTabGrid
             // The column: its plate, then a masked viewport that scrolls the rows.
             var column = NewRoot("PeakXR_VRColumn", content);
             layout.Grid = column.gameObject;
-            var viewport = NewRect("PeakXR_VRViewport", column);
-            Stretch(viewport);
-            // Invisible, but it takes the laser between rows, so a drag or the stick scrolls there too.
-            viewport.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
-            viewport.gameObject.AddComponent<World.PanelPart>();
-            viewport.gameObject.AddComponent<RectMask2D>();
-            var rows = NewRect("PeakXR_VRRows", viewport);
-            rows.anchorMin = new Vector2(0f, 1f);
-            rows.anchorMax = Vector2.one;
-            rows.pivot = new Vector2(0.5f, 1f);
+            var rows = Scroller(column, "PeakXR_VRRows");
 
             bool first = true;
             float minFont = float.MaxValue;
@@ -129,8 +121,24 @@ internal static class VRTabGrid
             if (minFont == float.MaxValue)
                 minFont = cellHeight * 0.5f;
 
-            columnScale = VRTabColumn.TextScale(minFont, distance, mpu);
-            rowWidth = VRTabColumn.Width(VRTabColumn.ColumnDegrees, distance, mpu) / columnScale;
+            // Both panels are scaled for their farthest corner from the eye, so the floor holds at every edge.
+            float chipWidth = 0f;
+            foreach (var g in groups)
+                chipWidth = Mathf.Max(
+                    chipWidth,
+                    chip.text.GetPreferredValues(g.Title.ToUpperInvariant()).x + 2f * ChipPad
+                );
+            float columnMeters = VRTabColumn.Width(VRTabColumn.ColumnDegrees, distance, mpu) * mpu;
+            float railMeters =
+                chipWidth * mpu * VRTabColumn.TextScale(chip.text.fontSize, distance, mpu);
+            float far = VRTabColumn.FarDistance(
+                distance,
+                columnMeters + railMeters,
+                area.height * mpu
+            );
+            columnScale = VRTabColumn.TextScale(minFont, far, mpu);
+            railScale = VRTabColumn.TextScale(chip.text.fontSize, far, mpu);
+            rowWidth = columnMeters / mpu / columnScale;
             float pitch = cellHeight + spacing;
             for (int i = 0; i < spawned.Count; i++)
             {
@@ -143,52 +151,58 @@ internal static class VRTabGrid
             }
             float rowsHeight = Mathf.Max(0f, spawned.Count * pitch - spacing);
             rows.sizeDelta = new Vector2(0f, rowsHeight);
-            rows.anchoredPosition = Vector2.zero;
             spawned.Clear();
-            var scroll = viewport.gameObject.AddComponent<ScrollRect>();
-            scroll.viewport = viewport;
-            scroll.content = rows;
-            scroll.horizontal = false;
-            scroll.vertical = true;
-            scroll.movementType = ScrollRect.MovementType.Clamped;
 
-            // The rail: as wide as its longest chip, hinged on the edge next to the column.
-            railScale = VRTabColumn.TextScale(chip.text.fontSize, distance, mpu);
-            float chipWidth = 0f;
-            foreach (var g in groups)
-                chipWidth = Mathf.Max(
-                    chipWidth,
-                    chip.text.GetPreferredValues(g.Title.ToUpperInvariant()).x + 2f * ChipPad
-                );
+            // Side by side about the window's centre (the row area sits off it, right of the game's own margin).
+            var window = (RectTransform)menu.transform;
+            window.GetWorldCorners(corners);
+            float centre = content.InverseTransformPoint((corners[0] + corners[2]) * 0.5f).x;
             var chipRect = ((RectTransform)chip.transform).rect;
             float chipHeight = chipRect.height > 1f ? chipRect.height : ChipFallbackHeight;
             float railWidth = chipWidth * railScale;
-            float left = area.center.x - (railWidth + RailGap + rowWidth * columnScale) * 0.5f;
+            float left = centre - (railWidth + RailGap + rowWidth * columnScale) * 0.5f;
             // As tall as the window allows, or as the rows when they are fewer: the plate hugs what is there.
-            float viewHeight = Mathf.Min(area.height / columnScale, rowsHeight);
-            Place(column, area, left + railWidth + RailGap, area.yMax, rowWidth, viewHeight);
+            Place(
+                column,
+                area,
+                left + railWidth + RailGap,
+                area.yMax,
+                rowWidth,
+                Mathf.Min(area.height / columnScale, rowsHeight)
+            );
             column.localScale = new Vector3(columnScale, columnScale, columnScale);
             World.PanelPlate.Add(column, columnScale);
 
+            // The rail scrolls too, in a view no taller than the window, opened on the chosen category.
             var rail = NewRoot("PeakXR_VRRail", content);
             layout.Rail = rail.gameObject;
+            float chipPitch = chipHeight + ChipGap;
+            float chipsHeight = groups.Count * chipPitch - ChipGap;
+            float railView = Mathf.Min(area.height / railScale, chipsHeight);
             rail.anchorMin = rail.anchorMax = new Vector2(0f, 1f);
             rail.pivot = Vector2.one;
-            rail.sizeDelta = new Vector2(
-                chipWidth,
-                groups.Count * (chipHeight + ChipGap) - ChipGap
-            );
+            rail.sizeDelta = new Vector2(chipWidth, railView);
             rail.anchoredPosition = new Vector2(left + railWidth - area.xMin, 0f);
             rail.localScale = new Vector3(railScale, railScale, railScale);
             rail.localRotation = Quaternion.Euler(0f, VRTabColumn.RailYaw(left: true), 0f);
             World.PanelPlate.Add(rail, railScale);
+            var chips = Scroller(rail, "PeakXR_VRChips");
+            chips.sizeDelta = new Vector2(0f, chipsHeight);
+            chips.anchoredPosition = new Vector2(
+                0f,
+                VRTabColumn.ClampScroll(
+                    selected * chipPitch - (railView - chipHeight) * 0.5f,
+                    chipsHeight,
+                    railView
+                )
+            );
             for (int i = 0; i < groups.Count; i++)
             {
                 var key = groups[i].Key;
                 var rt = (RectTransform)
                     Chip(
                         chip,
-                        rail,
+                        chips,
                         key,
                         groups[i].Title,
                         i == selected,
@@ -197,7 +211,7 @@ internal static class VRTabGrid
                 rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
                 rt.pivot = new Vector2(0f, 1f);
                 rt.sizeDelta = new Vector2(chipWidth, chipHeight);
-                rt.anchoredPosition = new Vector2(0f, -i * (chipHeight + ChipGap));
+                rt.anchoredPosition = new Vector2(0f, -i * chipPitch);
             }
         }
         catch (Exception e)
@@ -222,6 +236,30 @@ internal static class VRTabGrid
                 + $"turned {VRTabColumn.RailDegrees:0} deg, {distance:0.00} m away"
         );
         return true;
+    }
+
+    /// <summary>A masked viewport filling <paramref name="panel"/> that scrolls vertically (stick or laser drag), and
+    /// the content to fill, anchored to its top.</summary>
+    private static RectTransform Scroller(RectTransform panel, string name)
+    {
+        var viewport = NewRect(name + "View", panel);
+        Stretch(viewport);
+        // Invisible, but it takes the laser between items, so a drag or the stick scrolls there too.
+        viewport.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+        viewport.gameObject.AddComponent<World.PanelPart>();
+        viewport.gameObject.AddComponent<RectMask2D>();
+        var content = NewRect(name, viewport);
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = Vector2.one;
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        var scroll = viewport.gameObject.AddComponent<ScrollRect>();
+        scroll.viewport = viewport;
+        scroll.content = content;
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        return content;
     }
 
     private static void Stretch(RectTransform rt)
