@@ -19,7 +19,7 @@ public class ViewMotionLimitTests
         var lastV = Vector3.Zero;
         for (int i = 0; i < 900; i++)
         {
-            var next = m.Step(pos, Follow(pos, target), Dt);
+            var next = m.Step(pos, Follow(pos, target), target, Dt);
             var v = (next - pos) / Dt;
             Assert.True(
                 (v - lastV).Length() <= m.MaxAcceleration * Dt + 1e-3f,
@@ -41,27 +41,56 @@ public class ViewMotionLimitTests
         for (int i = 0; i < 1200; i++)
         {
             var target = new Vector3(1.5f * Dt * (i + 1), 0f, 0f);
-            pos = m.Step(pos, Follow(pos, target), Dt);
+            pos = m.Step(pos, Follow(pos, target), target, Dt);
         }
         TestUtil.Near(1.5f, m.Velocity.Length(), 0.05f);
+    }
+
+    [Theory]
+    [InlineData(0.8f)]
+    [InlineData(2f)]
+    [InlineData(5f)]
+    public void AStoppingBody_IsNeverOvershot(float rate)
+    {
+        // Review: at follow rate 5 a body running at 6 m/s and stopping was overshot by 1.9-4.8 m.
+        var m = new ViewMotionLimit();
+        var pos = Vector3.Zero;
+        var body = Vector3.Zero;
+        float worst = 0f;
+        for (int i = 0; i < 1800; i++)
+        {
+            if (i < 270)
+                body.X += 6f * Dt;
+            var follow = pos + (body - pos) * (1f - MathF.Exp(-rate * Dt));
+            pos = m.Step(pos, follow, body, Dt);
+            worst = MathF.Max(worst, pos.X - body.X);
+        }
+        Assert.True(worst < 0.02f, $"overshot by {worst:0.00} m at rate {rate}");
+        Assert.True(MathF.Abs(pos.X - body.X) < 0.05f, $"ended {body.X - pos.X:0.00} m short");
     }
 
     [Fact]
     public void Reset_StopsAtOnce()
     {
         var m = new ViewMotionLimit();
-        m.Step(Vector3.Zero, new Vector3(5f, 0f, 0f), Dt);
+        m.Step(Vector3.Zero, new Vector3(5f, 0f, 0f), new Vector3(5f, 0f, 0f), Dt);
         m.Reset();
         Assert.Equal(Vector3.Zero, m.Velocity);
-        Assert.Equal(Vector3.Zero, m.Step(Vector3.Zero, Vector3.Zero, Dt));
+        Assert.Equal(Vector3.Zero, m.Step(Vector3.Zero, Vector3.Zero, Vector3.Zero, Dt));
     }
 
     [Fact]
     public void ZeroOrBadTime_HoldsStill()
     {
         var m = new ViewMotionLimit();
-        Assert.Equal(Vector3.One, m.Step(Vector3.One, new Vector3(9f, 9f, 9f), 0f));
-        Assert.Equal(Vector3.One, m.Step(Vector3.One, new Vector3(9f, 9f, 9f), float.NaN));
+        Assert.Equal(
+            Vector3.One,
+            m.Step(Vector3.One, new Vector3(9f, 9f, 9f), new Vector3(9f, 9f, 9f), 0f)
+        );
+        Assert.Equal(
+            Vector3.One,
+            m.Step(Vector3.One, new Vector3(9f, 9f, 9f), new Vector3(9f, 9f, 9f), float.NaN)
+        );
     }
 
     [Fact]
