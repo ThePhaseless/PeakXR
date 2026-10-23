@@ -99,9 +99,9 @@ namespace PeakXR.Core
         }
 
         /// <summary>
-        /// A saved config that still holds <paramref name="preset"/>'s old values exactly (every setting, the unused
-        /// ones too) was never changed by the player: it moves to the preset's current values. Anything else is the
-        /// player's choice and stays. False for Custom, Intense, or any edited value.
+        /// Field by field: each setting of a saved <paramref name="preset"/> config that still holds the preset's old
+        /// value was never changed by the player and moves to the preset's current value; every other field is the
+        /// player's choice and stays. True when anything moved. Nothing moves for Custom or Intense.
         /// </summary>
         public static bool FromOld(
             ComfortPreset preset,
@@ -113,17 +113,44 @@ namespace PeakXR.Core
             if (preset != ComfortPreset.Comfortable && preset != ComfortPreset.Moderate)
                 return false;
             var old = Old(preset);
+            var now = Get(preset);
+            bool moved = false;
             if (
-                old.Turn != saved.Turn
-                || old.Vignette != saved.Vignette
-                || !Near(old.SnapAngle, saved.SnapAngle)
-                || !Near(old.SmoothTurnSpeed, saved.SmoothTurnSpeed)
-                || !Near(old.VignetteStrength, saved.VignetteStrength)
-                || !Near(old.MoveSmoothing, saved.MoveSmoothing)
+                Near(saved.SmoothTurnSpeed, old.SmoothTurnSpeed)
+                && !Near(old.SmoothTurnSpeed, now.SmoothTurnSpeed)
             )
-                return false;
-            updated = Get(preset);
-            return true;
+            {
+                updated.SmoothTurnSpeed = now.SmoothTurnSpeed;
+                moved = true;
+            }
+            if (
+                Near(saved.MoveSmoothing, old.MoveSmoothing)
+                && !Near(old.MoveSmoothing, now.MoveSmoothing)
+            )
+            {
+                updated.MoveSmoothing = now.MoveSmoothing;
+                moved = true;
+            }
+            return moved;
+        }
+
+        /// <summary>Camera.ThirdPersonFollow a preset sets: Comfortable stills the detached view (0, re-placed behind a
+        /// fade); the others keep the slow follow (0.8/s). NaN for Custom.</summary>
+        public static float ChaseFollow(ComfortPreset preset) =>
+            preset switch
+            {
+                ComfortPreset.Comfortable => 0f,
+                ComfortPreset.Custom => float.NaN,
+                _ => 0.8f,
+            };
+
+        /// <summary>The chase follow after switching <paramref name="from"/> → <paramref name="to"/>: the new
+        /// preset's value while <paramref name="current"/> still holds the old preset's, else the player's own.</summary>
+        public static float ChaseFollowAfter(ComfortPreset from, ComfortPreset to, float current)
+        {
+            float was = ChaseFollow(from),
+                next = ChaseFollow(to);
+            return !float.IsNaN(was) && !float.IsNaN(next) && Near(current, was) ? next : current;
         }
 
         /// <summary>The preset <paramref name="profile"/> matches, ignoring settings its turn and vignette modes do

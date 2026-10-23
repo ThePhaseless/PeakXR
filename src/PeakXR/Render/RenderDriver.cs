@@ -182,7 +182,8 @@ internal sealed class RenderDriver : MonoBehaviour
 
     /// <summary>URP asset and renderer features: render scale once (it reallocates eye buffers), MSAA,
     /// linear upscaling (STP is temporal and needs TAA, which URP cannot combine with XR dynamic resolution),
-    /// and a shadow distance cap (the shadow maps render for each eye pass).</summary>
+    /// and a shadow distance cap (the shadow maps render for each eye pass). API:
+    /// https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.0/api/UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset.html</summary>
     private void ApplyQuality()
     {
         if (urp == null)

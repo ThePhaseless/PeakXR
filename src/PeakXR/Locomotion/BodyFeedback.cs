@@ -111,7 +111,12 @@ internal static class BodyFeedback
     {
         if (!Affordance.Enabled)
             return;
-        bool delivered = Haptics.Pulse(left, amplitude, seconds);
+        bool delivered = Haptics.Pulse(
+            left,
+            amplitude,
+            seconds,
+            feel == CueFeel.Danger ? HapticPriority.Alert : HapticPriority.Cue
+        );
         CueLog.Capture.Feel(left, feel, amplitude, delivered, Haptics.Muted, Time.unscaledTime);
     }
 
@@ -263,8 +268,8 @@ internal static class BodyFeedback
         float weight = a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Weight);
         if (Beat.Update(exerting, d.currentStamina / max, weight, dt, out var pulse))
         {
-            Haptics.Pulse(true, pulse.Amplitude, pulse.Seconds);
-            Haptics.Pulse(false, pulse.Amplitude, pulse.Seconds);
+            Haptics.Pulse(true, pulse.Amplitude, pulse.Seconds, HapticPriority.Ambient);
+            Haptics.Pulse(false, pulse.Amplitude, pulse.Seconds, HapticPriority.Ambient);
             if (pulse.Beat)
             {
                 float now = Time.unscaledTime;
@@ -279,8 +284,8 @@ internal static class BodyFeedback
         );
         if (shiver > 0f)
         {
-            Haptics.Pulse(true, shiver, 0.03f);
-            Haptics.Pulse(false, shiver, 0.03f);
+            Haptics.Pulse(true, shiver, 0.03f, HapticPriority.Ambient);
+            Haptics.Pulse(false, shiver, 0.03f, HapticPriority.Ambient);
             Shivers++;
         }
     }

@@ -32,6 +32,9 @@ internal static class ComfortConfig
     private static ConfigEntry<bool> seated;
     private static bool applying;
 
+    /// <summary>The preset in force before the current change, for <see cref="ComfortPresets.ChaseFollowAfter"/>.</summary>
+    private static ComfortPreset appliedPreset = ComfortPreset.Moderate;
+
     public static TurnMode Turn => turnMode?.Value == "Smooth" ? TurnMode.Smooth : TurnMode.Snap;
     public static float SnapAngle => snapAngle?.Value ?? 30f;
     public static float SmoothTurnSpeed => smoothSpeed?.Value ?? 60f;
@@ -139,11 +142,18 @@ internal static class ComfortConfig
         // Configs written before the vr-practices review: a preset still holding its old values moves to the new
         // ones (Comfortable lost its 0.3 s ramp); then any single setting still at its old default moves too.
         // A player's own choices stay (ComfortPresets.FromOld, ConfigMigration.FromOldDefault).
+        bool known = Enum.TryParse(preset.Value, out ComfortPreset saved);
+        appliedPreset = known ? saved : ComfortPreset.Custom;
         if (
-            Enum.TryParse(preset.Value, out ComfortPreset saved)
+            known
+            && Framework.ConfigMigration.Once("Comfort.Preset.FromOld.VrPractices")
             && ComfortPresets.FromOld(saved, Current(), out var updated)
         )
+        {
             Apply(updated);
+            // Into Comfortable as if picked from the default (Moderate) chase follow: still the view.
+            SetChaseFollow(ComfortPreset.Moderate, saved);
+        }
         Framework.ConfigMigration.FromOldDefault(smoothSpeed, 120f);
         Framework.ConfigMigration.FromOldDefault(moveSmoothing, 0.15f);
 
@@ -171,18 +181,27 @@ internal static class ComfortConfig
 
     private static void OnPresetChanged(object sender, EventArgs e)
     {
-        if (
-            applying
-            || !Enum.TryParse(preset.Value, out ComfortPreset p)
-            || p == ComfortPreset.Custom
-        )
+        if (applying || !Enum.TryParse(preset.Value, out ComfortPreset p))
+            return;
+        var from = appliedPreset;
+        appliedPreset = p;
+        if (p == ComfortPreset.Custom)
             return;
         Apply(ComfortPresets.Get(p));
-        // Comfortable also stills the detached view (Camera.ThirdPersonFollow 0: it stays put and re-places
-        // behind a fade), so a watched body's climbs and falls never glide the eyes. Not part of the preset's
-        // identity: the player can set it back without leaving Comfortable.
-        if (p == ComfortPreset.Comfortable && Rig.CameraFeature.ThirdPersonFollow != null)
-            Rig.CameraFeature.ThirdPersonFollow.Value = 0f;
+        SetChaseFollow(from, p);
+    }
+
+    /// <summary>
+    /// Comfortable also stills the detached view (Camera.ThirdPersonFollow 0: it stays put and re-places behind a
+    /// fade), so a watched body's climbs and falls never glide the eyes; the others restore the slow follow. Only
+    /// while the setting still holds the previous preset's value: a player's own value stays. Not part of a preset's
+    /// identity, so changing it never leaves the preset.
+    /// </summary>
+    private static void SetChaseFollow(ComfortPreset from, ComfortPreset to)
+    {
+        var follow = Rig.CameraFeature.ThirdPersonFollow;
+        if (follow != null)
+            follow.Value = ComfortPresets.ChaseFollowAfter(from, to, follow.Value);
     }
 
     private static void Apply(ComfortProfile profile)
@@ -214,6 +233,8 @@ internal static class ComfortConfig
         try
         {
             preset.Value = name;
+            if (Enum.TryParse(name, out ComfortPreset now))
+                appliedPreset = now;
         }
         finally
         {

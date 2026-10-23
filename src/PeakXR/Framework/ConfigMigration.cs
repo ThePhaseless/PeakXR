@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Configuration;
 using PeakXR.Core;
 
@@ -39,6 +40,22 @@ internal static class ConfigMigration
             new ConfigDescription("Internal: this default migration has run.", null, "Hidden")
         );
 
+    /// <summary>True the first time a named migration runs, false ever after (a hidden marker records it).</summary>
+    public static bool Once(string key)
+    {
+        var marker = Plugin.Settings.Bind(
+            Section,
+            key,
+            false,
+            // "Hidden" is VRTab.HiddenTag: kept out of the in-game settings tab.
+            new ConfigDescription("Internal: this migration has run.", null, "Hidden")
+        );
+        if (marker.Value)
+            return false;
+        marker.Value = true;
+        return true;
+    }
+
     public static void FromOldDefault(ConfigEntry<float> entry, float oldDefault)
     {
         var def = entry.Definition;
@@ -52,5 +69,67 @@ internal static class ConfigMigration
         Plugin.Log.LogInfo(
             $"[config] {def.Section}.{def.Key}: old default {oldDefault} moved to {newDefault}"
         );
+    }
+
+    /// <summary>
+    /// A setting whose default and scale changed together (<see cref="SettingMigration.RescaleSaved"/>): the old
+    /// default moves to the new one, any other saved value is multiplied by <paramref name="factor"/> and clamped,
+    /// once. <paramref name="savedText"/> is the text the file held before this version bound it
+    /// (<see cref="SavedText"/>, read before <c>Bind</c>), null when it held none: a fresh value is already on the
+    /// new scale. Text that does not parse is left at the default BepInEx fell back to, with one log line.
+    /// </summary>
+    public static void Rescale(
+        ConfigEntry<float> entry,
+        float oldDefault,
+        float factor,
+        float min,
+        float max,
+        string savedText
+    )
+    {
+        var def = entry.Definition;
+        var marker = Marker(def, oldDefault);
+        bool ran = marker.Value;
+        marker.Value = true;
+        if (
+            !SettingMigration.RescaleSaved(
+                savedText,
+                oldDefault,
+                (float)entry.DefaultValue,
+                factor,
+                min,
+                max,
+                ran,
+                out float after
+            )
+        )
+        {
+            if (!ran && savedText != null)
+                Plugin.Log.LogWarning(
+                    $"[config] {def.Section}.{def.Key}: saved value '{savedText}' does not parse; left at {entry.Value}"
+                );
+            return;
+        }
+        float before = entry.Value;
+        if (after == before)
+            return;
+        entry.Value = after;
+        Plugin.Log.LogInfo($"[config] {def.Section}.{def.Key}: {savedText} rescaled to {after}");
+    }
+
+    private static System.Reflection.MethodInfo orphans;
+
+    /// <summary>
+    /// The text <paramref name="file"/> holds for the key that nothing has bound yet, or null: BepInEx keeps such
+    /// values in its protected <c>OrphanedEntries</c> until <c>Bind</c> claims them. Call before binding.
+    /// </summary>
+    public static string SavedText(ConfigFile file, string section, string key)
+    {
+        orphans ??= HarmonyLib.AccessTools.PropertyGetter(typeof(ConfigFile), "OrphanedEntries");
+        return
+            orphans?.Invoke(file, null) is Dictionary<ConfigDefinition, string> entries
+            && entries.TryGetValue(new ConfigDefinition(section, key), out var text)
+            ? text
+            : null;
     }
 }

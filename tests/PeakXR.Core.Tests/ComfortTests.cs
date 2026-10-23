@@ -76,11 +76,17 @@ public class ComfortTests
     }
 
     [Fact]
-    public void Migration_KeepsAPlayersOwnValues()
+    public void Migration_KeepsAPlayersOwnValues_FieldByField()
     {
+        // A player's own ramp stays; the untouched smooth-turn speed still moves.
         var mine = ComfortPresets.Old(ComfortPreset.Comfortable);
         mine.MoveSmoothing = 0.5f;
-        Assert.False(ComfortPresets.FromOld(ComfortPreset.Comfortable, mine, out _));
+        Assert.True(ComfortPresets.FromOld(ComfortPreset.Comfortable, mine, out var updated));
+        Assert.Equal(0.5f, updated.MoveSmoothing);
+        Assert.Equal(
+            ComfortPresets.Get(ComfortPreset.Comfortable).SmoothTurnSpeed,
+            updated.SmoothTurnSpeed
+        );
         Assert.False(
             ComfortPresets.FromOld(
                 ComfortPreset.Custom,
@@ -89,6 +95,43 @@ public class ComfortTests
             )
         );
     }
+
+    [Fact]
+    public void Migration_ASnapTurnerWhoTunedSmoothTurn_StillLosesTheRamp()
+    {
+        // Review: every field had to match, so changing only the (unused) smooth-turn speed kept the 0.3 s ramp.
+        var mine = ComfortPresets.Old(ComfortPreset.Comfortable);
+        mine.SmoothTurnSpeed = 100f;
+        Assert.True(ComfortPresets.FromOld(ComfortPreset.Comfortable, mine, out var updated));
+        Assert.Equal(0f, updated.MoveSmoothing);
+        Assert.Equal(100f, updated.SmoothTurnSpeed);
+    }
+
+    [Fact]
+    public void Migration_NothingOld_NothingToDo()
+    {
+        Assert.False(
+            ComfortPresets.FromOld(
+                ComfortPreset.Comfortable,
+                ComfortPresets.Get(ComfortPreset.Comfortable),
+                out _
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(ComfortPreset.Moderate, ComfortPreset.Comfortable, 0.8f, 0f)]
+    [InlineData(ComfortPreset.Comfortable, ComfortPreset.Moderate, 0f, 0.8f)]
+    [InlineData(ComfortPreset.Comfortable, ComfortPreset.Intense, 0f, 0.8f)]
+    [InlineData(ComfortPreset.Moderate, ComfortPreset.Comfortable, 2f, 2f)] // the player's own speed stays
+    [InlineData(ComfortPreset.Custom, ComfortPreset.Comfortable, 0.8f, 0.8f)] // no preset value to compare
+    [InlineData(ComfortPreset.Moderate, ComfortPreset.Custom, 0.8f, 0.8f)]
+    public void ChaseFollow_FollowsThePresetOnlyWhileItHoldsThePreviousOnes(
+        ComfortPreset from,
+        ComfortPreset to,
+        float current,
+        float expected
+    ) => TestUtil.Near(expected, ComfortPresets.ChaseFollowAfter(from, to, current));
 
     [Fact]
     public void Identify_EditedValueIsCustom()

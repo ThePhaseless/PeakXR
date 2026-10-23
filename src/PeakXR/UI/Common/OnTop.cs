@@ -12,7 +12,8 @@ namespace PeakXR.UI.Common;
 /// after smoke but under the comfort overlays. Small hand UI showing through a wall the hand is pressed against is
 /// the accepted cost. A material modifier rather than a swapped material: the game keeps owning the graphic's
 /// material, the mask stencil (applied before this) is kept, and TMP text runs it too
-/// (TMP_MaterialManager.GetMaterialForRendering calls every IMaterialModifier).
+/// (TMP_MaterialManager.GetMaterialForRendering calls every IMaterialModifier). UI shaders read their ZTest from
+/// unity_GUIZTestMode: https://support.unity.com/hc/en-us/articles/115000531226-What-is-the-value-of-shader-ZTest-mode-unity-GUIZTestMode
 /// </summary>
 internal sealed class OnTop : MonoBehaviour, IMaterialModifier
 {

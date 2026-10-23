@@ -1964,6 +1964,8 @@ internal sealed partial class SelfTestRunner
             false
         );
         var last = rig.Origin.position;
+        var first = last;
+        var path = new System.Collections.Generic.List<Vector3>();
         var lastV = Vector3.zero;
         bool haveV = false;
         float maxAccel = 0f,
@@ -1979,6 +1981,7 @@ internal sealed partial class SelfTestRunner
             var p = rig.Origin.position;
             var d = p - last;
             last = p;
+            path.Add(p);
             if (dt <= 0f || d.magnitude > ViewMotionLimit.JumpDistance)
             {
                 haveV = false;
@@ -1994,15 +1997,33 @@ internal sealed partial class SelfTestRunner
             if (v.magnitude > 0.5f)
             {
                 moving += dt;
-                if (LocomotionDriver.Intensity > 0.05f)
+                // Half what the speed curve asks at this speed (vr.17's rule): a weak strength closes little.
+                float want =
+                    0.5f
+                    * ComfortConfig.VignetteStrength
+                    * ComfortVignette.Drive(
+                        LocomotionDriver.ViewSpeed,
+                        ComfortConfig.VignetteStartSpeed,
+                        ComfortConfig.VignetteFullSpeed
+                    );
+                if (LocomotionDriver.Intensity > want)
                     vignetted += dt;
             }
+        }
+        // Overshoot: how far the view went past where it ended, along its travel (the chase brakes for its goal).
+        var travel = last - first;
+        float overshoot = 0f;
+        if (travel.magnitude > 0.1f)
+        {
+            var dir = travel.normalized;
+            foreach (var at in path)
+                overshoot = Mathf.Max(overshoot, Vector3.Dot(at - first, dir) - travel.magnitude);
         }
         SandboxActions.Revive();
         yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);
         var note =
             $"chase view {chase}, moving {moving:0.00} s (vignette on {vignetted:0.00} s, peak {peak:0.00}), "
-            + $"top speed {maxSpeed:0.0} m/s, top acceleration {maxAccel:0.0} m/s^2";
+            + $"top speed {maxSpeed:0.0} m/s, top acceleration {maxAccel:0.0} m/s^2, overshoot {overshoot:0.00} m";
         // Frame-time jitter roughens a finite difference: half again over the limit is the bar.
         if (moving > 0.2f && vignetted < moving * 0.8f)
             Fail("the view moved without the vignette: " + note);
@@ -2010,6 +2031,8 @@ internal sealed partial class SelfTestRunner
             Fail("the view accelerated past the chase limit: " + note);
         else if (chase && maxSpeed > limit.MaxSpeed + 0.5f)
             Fail("the view moved faster than the chase cap: " + note);
+        else if (chase && overshoot > 0.15f)
+            Fail("the view overshot the body it follows: " + note);
         else
             stepNote = note;
     }

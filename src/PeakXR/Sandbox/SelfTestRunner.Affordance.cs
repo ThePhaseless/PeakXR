@@ -25,6 +25,71 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.63-sticky-throw", 25f, StickyThrowStep());
         yield return VRStep("vr.64-cue-in-menu", 20f, CueInMenuStep());
         yield return HandStep("vr.65-hints-off", 25f, HintsOffStep());
+        yield return VRStep("vr.66-refusal-over-ambient", 10f, RefusalOverAmbientStep());
+        yield return VRStep("vr.220-first-refusal-label", 20f, FirstRefusalLabelStep());
+    }
+
+    /// <summary>vr.66: an ambient beat (heartbeat, wind, texture) asking for the right hand every frame must not cut a
+    /// refusal there: the whole triple tick goes out, and no ambient pulse slips in until it ends and the duck tail
+    /// passes (Interact.Haptics priority channel). The beat is played here, so the step needs no exertion or wind.</summary>
+    IEnumerator RefusalOverAmbientStep()
+    {
+        if (!Affordance.Enabled || Interact.Haptics.Muted)
+        {
+            stepSkip = "ui.affordance not installed or Interaction.Haptics off";
+            yield break;
+        }
+        const bool left = false;
+        const float beat = 0.05f;
+        float end = CueMark() + 0.3f;
+        bool any = false;
+        while (CueMark() < end)
+        {
+            any |= Interact.Haptics.Pulse(left, 0.3f, beat, HapticPriority.Ambient);
+            yield return null;
+        }
+        if (!any)
+        {
+            stepSkip = "no impulse-capable right controller";
+            yield break;
+        }
+        var pattern = DenyHaptics.For(DenyReason.NotNow);
+        float length = pattern[pattern.Length - 1].At + pattern[pattern.Length - 1].Seconds;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        Affordance.DenyAtHand(left, DenyReason.NotNow);
+        int pulses = 0;
+        float lastPulse = float.NegativeInfinity;
+        string cut = null;
+        end = mark + length + Core.HapticChannel.DuckTail + 0.2f;
+        while (CueMark() < end)
+        {
+            Interact.Haptics.Pulse(left, 0.3f, beat, HapticPriority.Ambient);
+            ref var hand = ref CueLog.Capture.Hand(left);
+            if (hand.PulseAt >= mark && hand.PulseAt != lastPulse)
+            {
+                lastPulse = hand.PulseAt;
+                if (hand.Delivered || hand.Muted)
+                    pulses++;
+            }
+            float ambientAt = Interact.Haptics.LastSent(left, HapticPriority.Ambient);
+            if (
+                cut == null
+                && ambientAt >= mark
+                && ambientAt < mark + length + Core.HapticChannel.DuckTail
+            )
+                cut =
+                    $"ambient pulse at {ambientAt - mark:0.000} s inside the {length:0.00} s refusal or its duck tail";
+            yield return null;
+        }
+        string note =
+            $"{pulses} of {pattern.Length} refusal pulses delivered, {Interact.Haptics.Dropped} dropped by priority in all";
+        if (cut != null)
+            Fail(cut + "; " + note);
+        else if (pulses != pattern.Length)
+            Fail("refusal pattern not intact: " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>vr.64: a refusal while the pause menu is up still sounds, through the game's SFX player and through
@@ -89,10 +154,13 @@ internal sealed partial class SelfTestRunner
         }
         bool hints = AffordanceFeature.ActionHints.Value;
         bool text = AffordanceFeature.ActionHintText.Value;
+        bool firstTime = AffordanceFeature.FirstTimeRefusalLabels.Value;
         try
         {
             AffordanceFeature.ActionHints.Value = false;
             AffordanceFeature.ActionHintText.Value = false;
+            // A first firing would label it (vr.220 covers that); this step is about the text staying off.
+            AffordanceFeature.FirstTimeRefusalLabels.Value = false;
             yield return GiveAndHold(hook);
             if (!stepOk)
                 yield break;
@@ -125,6 +193,83 @@ internal sealed partial class SelfTestRunner
         {
             AffordanceFeature.ActionHints.Value = hints;
             AffordanceFeature.ActionHintText.Value = text;
+            AffordanceFeature.FirstTimeRefusalLabels.Value = firstTime;
+        }
+    }
+
+    /// <summary>vr.220: with <c>UI.ActionHintText</c> off, a reason's first refusal shows its text label beside the
+    /// ring (<c>UI.FirstTimeRefusalLabels</c>); once that cue is gone, the same refusal again shows the ring only. The
+    /// seen-reasons mask is put back after.</summary>
+    IEnumerator FirstRefusalLabelStep()
+    {
+        if (!Affordance.Enabled)
+        {
+            stepSkip = "ui.affordance not installed";
+            yield break;
+        }
+        const DenyReason reason = DenyReason.Locked;
+        var seenEntry = AffordanceFeature.SeenRefusals;
+        ulong seen = seenEntry.Value;
+        bool text = AffordanceFeature.ActionHintText.Value;
+        bool firstTime = AffordanceFeature.FirstTimeRefusalLabels.Value;
+        try
+        {
+            AffordanceFeature.ActionHintText.Value = false;
+            AffordanceFeature.FirstTimeRefusalLabels.Value = true;
+            seenEntry.Value = seen & ~(1ul << (int)reason);
+            Affordance.ResetGate();
+            if (!Affordance.DenyAtHand(false, reason))
+            {
+                Fail("Locked refusal not accepted");
+                yield break;
+            }
+            yield return Until(
+                () => AffordanceRuntime.LabelShown,
+                1f,
+                "no label on the first Locked refusal"
+            );
+            if (!stepOk)
+                yield break;
+            string first = AffordanceRuntime.LabelText;
+            bool marked = FirstRefusalLabel.Seen(seenEntry.Value, reason);
+            yield return ShotAt("vr-220-first-label", Affordance.LastPosition);
+            if (
+                first == null
+                || !first.StartsWith(DenyText.Label(reason), System.StringComparison.Ordinal)
+            )
+            {
+                Fail($"first label reads '{first}', not '{DenyText.Label(reason)}'");
+                yield break;
+            }
+            if (!marked)
+            {
+                Fail("Locked not saved as seen after its first label");
+                yield break;
+            }
+            yield return Until(() => !AffordanceRuntime.LabelShown, 6f, "first label never faded");
+            if (!stepOk)
+                yield break;
+            Affordance.ResetGate();
+            float mark = CueMark();
+            if (!Affordance.DenyAtHand(false, reason))
+            {
+                Fail("second Locked refusal not accepted");
+                yield break;
+            }
+            yield return ExpectCue(false, reason, mark);
+            string note = cueNote;
+            if (!stepOk)
+                yield break;
+            if (AffordanceRuntime.LabelShown)
+                Fail($"label shown again on the second Locked refusal; {note}");
+            else
+                stepNote = $"first: '{first.Split('\n')[0]}', second: ring only; {note}";
+        }
+        finally
+        {
+            seenEntry.Value = seen;
+            AffordanceFeature.ActionHintText.Value = text;
+            AffordanceFeature.FirstTimeRefusalLabels.Value = firstTime;
         }
     }
 

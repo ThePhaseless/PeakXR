@@ -153,8 +153,7 @@ internal sealed class PreviewStage : MonoBehaviour
         smoothSpeed,
         statusIntensity,
         nameTagScale,
-        wristWidth,
-        interactStrength;
+        wristWidth;
     private static ConfigEntry<bool> physicalCrouch;
     private static ConfigEntry<string> turnMode,
         moveRelativeTo;
@@ -268,11 +267,13 @@ internal sealed class PreviewStage : MonoBehaviour
                 if (now - lastPulse < PulseInterval)
                     break;
                 lastPulse = now;
+                // UI ticks follow Interaction.HapticStrength themselves: a switch or the slider itself pulses a
+                // reference tick at the strength now set; an amplitude setting pulses its own value.
                 var amplitude = entry.BoxedValue switch
                 {
-                    float f => Mathf.Clamp01(f),
-                    bool b => b ? PairedStrength() : 0f,
-                    _ => 0.5f,
+                    float f when entry.Definition.Key != "HapticStrength" => Mathf.Clamp01(f),
+                    bool b => b ? ReferenceTick : 0f,
+                    _ => ReferenceTick,
                 };
                 UIHaptics.Tick(true, amplitude, 0.12f);
                 UIHaptics.Tick(false, amplitude, 0.12f);
@@ -307,21 +308,8 @@ internal sealed class PreviewStage : MonoBehaviour
     private static bool TriggerHeld() =>
         VRInput.Left.Trigger > 0.2f || VRInput.Right.Trigger > 0.2f;
 
-    /// <summary>A bool haptics switch pulses at the strength slider it goes with, when there is one.</summary>
-    private float PairedStrength()
-    {
-        if (
-            Plugin.Settings.TryGetEntry<float>(
-                entry.Definition.Section,
-                "HapticStrength",
-                out var own
-            )
-        )
-            return Mathf.Clamp01(own.Value);
-        return Mathf.Clamp01(
-            SettingPreviews.Value(ref interactStrength, "Interaction", "HapticStrength", 0.5f)
-        );
-    }
+    /// <summary>A typical cue's amplitude, for previews of the strength slider and the haptics switches.</summary>
+    private const float ReferenceTick = 0.5f;
 
     private void EndFade()
     {

@@ -802,7 +802,7 @@ internal sealed class RigDriver : MonoBehaviour
         // artificial locomotion, so it eases in and out at a capped acceleration and speed (ViewMotionLimit). A body
         // that gets away re-places the view behind a fade (TryGoal's Blink), never a fast glide.
         if (shownKind == ViewKind.ThirdPerson && !snap)
-            anchor = chaseLimit.Step(before.N(), anchor.N(), dt).U();
+            anchor = chaseLimit.Step(before.N(), anchor.N(), viewGoal.N(), dt).U();
         else
             chaseLimit.Reset();
         if (shownKind == ViewKind.FirstPerson && !snap)

@@ -169,7 +169,8 @@ internal static class BackdropStrip
         for (int i = 0; i < graphics.Count; i++)
         {
             var g = graphics[i];
-            if (IndexOf(t, g) >= 0)
+            // Our own plate is a large flat fill under content, exactly what the rules hide: never judge it.
+            if (g == t.Plate || IndexOf(t, g) >= 0)
                 continue;
             if (rects[i].width <= 0f)
             {

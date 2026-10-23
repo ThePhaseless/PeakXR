@@ -22,9 +22,11 @@ public sealed class ViewMotionLimit
 
     public Vector3 Velocity { get; private set; }
 
-    /// <summary>The next view position from <paramref name="position"/> toward <paramref name="goal"/> (this frame's
-    /// follow result).</summary>
-    public Vector3 Step(Vector3 position, Vector3 goal, float dt)
+    /// <summary>The next view position from <paramref name="position"/>: toward <paramref name="goal"/> (this
+    /// frame's follow result), braking for <paramref name="target"/> (where the follow is headed) so the view stops at
+    /// it: its speed toward the target never exceeds √(2 · <see cref="MaxAcceleration"/> · gap). Without the brake a
+    /// fast follow overshot a stopping body by metres (code review), and an overshot view can end up in rock.</summary>
+    public Vector3 Step(Vector3 position, Vector3 goal, Vector3 target, float dt)
     {
         if (!(dt > 0f))
             return position;
@@ -34,6 +36,21 @@ public sealed class ViewMotionLimit
         if (dv.Length() > maxDv)
             dv = Vector3.Normalize(dv) * maxDv;
         var v = Velocity + dv;
+        var toTarget = target - position;
+        float gap = toTarget.Length();
+        float limit = MathF.Min(MaxSpeed, MathF.Sqrt(2f * MaxAcceleration * gap));
+        if (gap > 1e-5f)
+        {
+            // Only the part heading at the target brakes; sideways motion keeps its own cap.
+            var dir = toTarget / gap;
+            float along = Vector3.Dot(v, dir);
+            if (along > limit)
+                v -= dir * (along - limit);
+            // Never step past the target in one frame.
+            along = Vector3.Dot(v, dir);
+            if (along * dt > gap)
+                v -= dir * (along - gap / dt);
+        }
         if (v.Length() > MaxSpeed)
             v = Vector3.Normalize(v) * MaxSpeed;
         Velocity = v;

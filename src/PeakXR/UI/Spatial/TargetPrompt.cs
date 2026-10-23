@@ -8,6 +8,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Zorro.Core;
+using Zorro.Settings;
 
 namespace PeakXR.UI.Spatial;
 
@@ -25,7 +26,7 @@ namespace PeakXR.UI.Spatial;
 /// D8: in VR the verb text (GRAB, CARRY, DROP, EAT, SETPITON, lunge, struggle) gives way to a glyph drawn where the
 /// text was (<see cref="PromptGlyph"/>), the struggle glyph on both wrists, with a tick (and for lunge and struggle a
 /// notice) when a hand prompt appears. <c>UI.ActionHintText</c> brings the verb text back. The item or object name
-/// shows only with <c>UI.TargetNames</c>; without it a plain pickup has no grab glyph either, only the game's glow
+/// shows only with <c>UI.TargetNames</c> (or an item in colour-blind mode, <c>UI.ColorBlindNames</c>); without it a plain pickup has no grab glyph either, only the game's glow
 /// on what the hand would grab (<see cref="GripGlow"/>).
 /// </summary>
 internal sealed class TargetPrompt
@@ -213,7 +214,15 @@ internal sealed class TargetPrompt
         box.SetVisible(target != null || anyShown);
         textHidden = VRSession.Active && !(AffordanceFeature.ActionHintText?.Value ?? false);
         SetTextAlpha(textHidden ? 0f : 1f);
-        nameHidden = VRSession.Active && !SpatialFeature.Settings.TargetNames.Value;
+        var cfg = SpatialFeature.Settings;
+        nameHidden =
+            VRSession.Active
+            && !TargetNameRule.Show(
+                cfg.TargetNames.Value,
+                cfg.ColorBlindNames.Value,
+                GameColorBlind(),
+                target is Item
+            );
         SetAlpha(nameTexts, nameHidden ? 0f : 1f);
         glow.Tick();
         PickVerbs(rig);
@@ -249,6 +258,22 @@ internal sealed class TargetPrompt
             SpatialRuntime.FaceEyeYaw(at, eye, rig.Head.forward),
             SpatialMath.MetersPerPixel(Vector3.Distance(at, eye), SpatialRuntime.DegreesPerPixel)
         );
+    }
+
+    private static ColorblindSetting colorblind;
+
+    /// <summary>The game's colour-blind setting, read live: <c>GUIManager.colorblindness</c> is only copied from it at
+    /// the HUD's Start (A/GUIManager.cs:352-354), so a change in the settings menu would wait for the next scene.</summary>
+    private static bool GameColorBlind()
+    {
+        if (colorblind == null)
+        {
+            var game = GameHandler.Instance;
+            if (game == null || game.SettingsHandler == null)
+                return false;
+            colorblind = game.SettingsHandler.GetSetting<ColorblindSetting>();
+        }
+        return colorblind != null && colorblind.Value == OffOnMode.ON;
     }
 
     /// <summary>Follows this frame's hovered target; a new one gets measured and one soft tick.</summary>

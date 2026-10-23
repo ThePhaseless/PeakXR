@@ -69,7 +69,8 @@ namespace PeakXR.Core
         }
     }
 
-    /// <summary>Maps controller analog input to finger curls.</summary>
+    /// <summary>Maps controller analog input to finger curls (estimated hand pose from the controls the fingers
+    /// rest on: https://github.com/ValveSoftware/openvr/wiki/SteamVR-Skeletal-Input).</summary>
     public static class FingerCurlMapper
     {
         /// <summary>Index curl when the finger rests on the trigger without pulling it.</summary>

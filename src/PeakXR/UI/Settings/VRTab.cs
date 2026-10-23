@@ -36,6 +36,55 @@ internal static class VRTab
 
     private static readonly Dictionary<ConfigEntryBase, Setting> rows = new();
 
+    private sealed class Button
+    {
+        public string Key,
+            Title,
+            Text;
+        public Action<Vector3, bool> Run;
+        public Guide.GuideRow Row;
+    }
+
+    private static readonly Dictionary<ConfigEntryBase, Button> buttons = new();
+
+    /// <summary>A button row right after <paramref name="entry"/>'s row (a reset beside its switch). The action gets
+    /// the row's position and whether the left hand clicked, for its cue.</summary>
+    public static void AddButtonAfter(
+        ConfigEntryBase entry,
+        string key,
+        string title,
+        string text,
+        Action<Vector3, bool> run
+    ) =>
+        buttons[entry] = new Button
+        {
+            Key = key,
+            Title = title,
+            Text = text,
+            Run = run,
+        };
+
+    /// <summary>Adds <paramref name="entry"/>'s row and the button that follows it, if any.</summary>
+    private static void AddRows(List<Setting> list, ConfigEntryBase entry)
+    {
+        if (RowFor(entry) is not { } row)
+            return;
+        list.Add(row);
+        if (!buttons.TryGetValue(entry, out var b))
+            return;
+        // Built on first show: the localisation table is only ready once the game runs.
+        b.Row ??= new Guide.GuideRow(
+            Guide.GuideAction.Run,
+            GuideTopic.Count,
+            Loc.Set(b.Key, b.Title),
+            b.Text
+        )
+        {
+            Run = b.Run,
+        };
+        list.Add(b.Row);
+    }
+
     /// <summary>Keeps open rows in sync when an entry changes elsewhere.</summary>
     public static void OnSettingChanged(object sender, SettingChangedEventArgs e)
     {
@@ -83,8 +132,7 @@ internal static class VRTab
         {
             result.Add(Header("PEAKXR_SECTION_" + section.Key, section.Key));
             foreach (var entry in section.Value)
-                if (RowFor(entry) is { } row)
-                    result.Add(row);
+                AddRows(result, entry);
         }
 
         result.Add(Header("PEAKXR_SECTION_COMPAT", "Compatibility"));
@@ -151,8 +199,7 @@ internal static class VRTab
                 );
             }
             foreach (var entry in section.Value)
-                if (RowFor(entry) is { } row)
-                    group.Rows.Add(row);
+                AddRows(group.Rows, entry);
         }
         groups.RemoveAll(g => !HasSetting(g.Rows));
 

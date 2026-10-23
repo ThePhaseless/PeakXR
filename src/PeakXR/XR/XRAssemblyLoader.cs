@@ -9,7 +9,9 @@ namespace PeakXR.XR;
 /// Loads the managed XR assemblies (Unity.XR.Management, Unity.XR.OpenXR, Unity.XR.OpenVR) from
 /// <c>BepInEx/plugins/PeakXR/RuntimeDeps/</c> (layout from tools/package.sh). They are not in Mono's
 /// probing path, so they must be loaded, and an <see cref="AppDomain.AssemblyResolve"/> handler must
-/// answer for them, before the JIT compiles any method that touches their types.
+/// answer for them, before the JIT compiles any method that touches their types. APIs:
+/// https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.loadfile and
+/// https://learn.microsoft.com/en-us/dotnet/api/system.appdomain.assemblyresolve
 /// </summary>
 static class XRAssemblyLoader
 {
