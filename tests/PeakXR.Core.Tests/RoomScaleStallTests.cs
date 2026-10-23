@@ -34,6 +34,18 @@ public class RoomScaleStallTests
     }
 
     [Fact]
+    public void BlockedFollow_StallsThroughBriefGroundingDropouts()
+    {
+        // Run 52, vr.140: a body pressed into the wall loses isGrounded for a frame now and then; each dropout ended
+        // the follow and the restart reset the stall clock, so it never stalled and no NotNow or fade came.
+        var f = new RoomScaleFollow { LeanRadius = 0.35f };
+        int frame = 0;
+        for (float t = 0f; t < f.StallSeconds + 0.5f; t += 0.05f, frame++)
+            f.Update(Head, Vector2.Zero, frame % 4 != 3, 0.05f);
+        Assert.True(f.RecenterNeeded);
+    }
+
+    [Fact]
     public void SteppingBackAfterAStall_NeedsNoFade()
     {
         // Leaned into a rock, the follow gave up; the player steps back to the body: no recentre fade is due.

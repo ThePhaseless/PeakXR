@@ -97,6 +97,10 @@ namespace PeakXR.Core
 
         float _stallBest;
         float _stallFor;
+        float _sinceFollowed = float.MaxValue;
+
+        /// <summary>Seconds a follow may drop out (canFollow false for a frame or two) and still be the same follow.</summary>
+        public float StallGrace = 0.3f;
 
         public bool RecenterNeeded => Stalled || Offset.Length() > RecenterDistance;
 
@@ -147,13 +151,24 @@ namespace PeakXR.Core
                 _sinceFollow += dt;
             if (_following)
             {
-                if (start || dist < _stallBest - StallProgress)
+                // A restart right after a dropout (a body pressed into a wall loses isGrounded for a frame now and
+                // then, run 52) carries on the same follow: its stall clock keeps running.
+                bool fresh = start && _sinceFollowed > StallGrace;
+                _sinceFollowed = 0f;
+                if (fresh || dist < _stallBest - StallProgress)
                 {
                     _stallBest = dist;
                     _stallFor = 0f;
                 }
                 else if ((_stallFor += dt) >= StallSeconds)
                     Stalled = true;
+            }
+            else if (!Stalled)
+            {
+                _sinceFollowed += dt;
+                // The dropout's time counts toward the stall too: the body made no progress then either.
+                if (_sinceFollowed <= StallGrace)
+                    _stallFor += dt;
             }
             // The head came back inside the lean: nothing left to recentre, so no fade for a stall the player undid.
             if (Stalled && dist <= LeanRadius)
@@ -226,6 +241,7 @@ namespace PeakXR.Core
             _following = false;
             Stalled = false;
             _stallFor = 0f;
+            _sinceFollowed = float.MaxValue;
             _followDir = Vector2.Zero;
             _followTravel = 0f;
             _neutralGoal = Vector2.Zero;
