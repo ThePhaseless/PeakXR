@@ -39,6 +39,9 @@ internal sealed class KioskDock : ICanvasPlacement
         public bool MeasuredOptions,
             Settled;
         public float SettleUntil;
+
+        /// <summary>The docked window is drawn over the kiosk (<see cref="OnTop"/>).</summary>
+        public bool OnTop;
     }
 
     /// <summary>BoardingPass.OnOpen fades the pass in over 0.5 s (A/BoardingPass.cs:147): measure until then.</summary>
@@ -116,6 +119,15 @@ internal sealed class KioskDock : ICanvasPlacement
         )
             Dock(slot, kiosk, head, nudge: !hasPass);
         slot.WasOpen = open;
+        // Drawn over the kiosk while docked and open: the window floats a hand's breadth off the kiosk face, where
+        // the kiosk's own screen can cut a corner from the eyes (run 53: 1/4 corners hidden). It is the thing in
+        // use, so the kiosk it sits on may not cover it.
+        bool onTop = open && slot.Docked;
+        if (onTop != slot.OnTop)
+        {
+            OnTop.Set(root, onTop);
+            slot.OnTop = onTop;
+        }
         if (!slot.Docked)
             return PlacementResult.Default;
 

@@ -1840,7 +1840,19 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectFeel(free, CueFeel.Progress, mark, within: 0f);
+        // The ramp belongs on the gripping (pointing) hand. Since the mark, so the whole hold counts; 1 s more for a
+        // hold that ended as the loop did.
+        if (
+            !CueLog.Capture.Felt(free, CueFeel.Progress, mark, out _)
+            && CueLog.Capture.Felt(!free, CueFeel.Progress, mark, out _)
+        )
+        {
+            Fail(
+                $"the hold's progress ramp went to the amulet hand, not the pointing one: {where}"
+            );
+            yield break;
+        }
+        yield return ExpectFeel(free, CueFeel.Progress, mark, within: CueMark() - mark + 1f);
         if (stepOk)
             notes.Add(
                 $"{back:0.0} m back, pointed at socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {where}; {cueNote}"

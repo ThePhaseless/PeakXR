@@ -171,14 +171,22 @@ internal static partial class WorldHolds
             );
         // The pointed hold feels the same ramp, on the pointing hand (or the amulet hand for a head-aimed grip).
         if (heldNow && !Socket.Active)
-            HeldProgress(
-                PhysicalInteraction.AimHand >= 0 ? PhysicalInteraction.AimHand == 0 : left,
-                statue
-            );
+            HeldProgress(HandOn(statue, InteractingHand(left)), statue);
         if (!Socket.Update(SocketDistance(point, centers[socket]), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
         HeldProgress(left, statue);
+    }
+
+    /// <summary>The hand whose grip presses the game's interact as the fallback (a pointed or head-aimed grip),
+    /// else <paramref name="fallback"/>: the hand that feels a hold it did not grab by hand.</summary>
+    private static bool InteractingHand(bool fallback)
+    {
+        if (PhysicalInteraction.HandAction(true) == GripPressAction.Interact)
+            return true;
+        if (PhysicalInteraction.HandAction(false) == GripPressAction.Interact)
+            return false;
+        return fallback;
     }
 
     private static bool statueHeld;
