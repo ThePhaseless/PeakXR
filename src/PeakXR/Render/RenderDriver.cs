@@ -444,7 +444,7 @@ internal sealed class RenderDriver : MonoBehaviour
             )
         );
         var rig = VRRig.Instance;
-        bool left = !VRInput.LeftHanded;
+        bool left = VRInput.OffHandLeft;
         var hand = rig != null ? rig.Hand(left) : null;
         if (hand != null)
             Affordance.Inform(
