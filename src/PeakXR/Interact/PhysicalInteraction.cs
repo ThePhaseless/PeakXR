@@ -44,6 +44,9 @@ internal static class PhysicalInteraction
         /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact.</summary>
         public float InteractAt;
 
+        /// <summary>This Interact grip is a pointed aim at an item taker (<see cref="GripContext.PointedAtTaker"/>).</summary>
+        public bool AimedTaker;
+
         /// <summary>This grip pressed the game's interact on the last frame <c>Inject</c> ran.</summary>
         public bool Injected;
 
@@ -278,7 +281,14 @@ internal static class PhysicalInteraction
             hand.Action = GripPressAction.None;
         // While the hand keeps pointing it is aiming a ping (the aim preview invites a long hold): the pending
         // interact waits, so a ping aimed at an item never picks it up.
-        else if (hand.Action == GripPressAction.Interact && now < hand.InteractAt && PingAims())
+        // A pointed aim at an item taker with its item in hand is the interact, not a ping: it waits only the
+        // finger-gun window (a trigger squeeze in it still pings), never longer.
+        else if (
+            hand.Action == GripPressAction.Interact
+            && !hand.AimedTaker
+            && now < hand.InteractAt
+            && PingAims()
+        )
             hand.InteractAt = GripIntent.DeferPointedInteract(
                 hand.InteractAt,
                 GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left)),
@@ -338,20 +348,28 @@ internal static class PhysicalInteraction
     }
 
     /// <summary>
-    /// <see cref="GripContext.PointedAtTaker"/>: the hand is pointing and its aim ray, as long as the hand-aimed
-    /// interact's (the game's <c>Interaction.distance</c> from the camera less the hand's offset, InteractPatches;
-    /// Interaction.cs:7, :203), hits something that takes the interact now (<c>IInteractible.IsInteractible</c>), not
-    /// the held item. One raycast per grip press.
+    /// What a pointing hand's aim ray hits within the hand-aimed interact's reach (the game's
+    /// <c>Interaction.distance</c> from the camera less the hand's offset, InteractPatches; Interaction.cs:7, :203),
+    /// for <see cref="GripContext.Aimed"/>. Item takers are an explicit allow-list of targets that take the interact
+    /// only because of the held item: the scout statue with an amulet (Peak/ScoutStatue.cs:251-295) and a skeleton
+    /// with the Book of Bones (Skelleton.cs:44-63, :104-107). Everything else is <see cref="AimedTarget.Other"/>, so an
+    /// ordinary grip keeps its candidate, climb and fallback order. One raycast per pointing grip press.
     /// </summary>
-    private static bool PointedAtTaker(bool left, VRRig rig, Character c, InteractConfig cfg)
+    private static AimedTarget AimedAt(
+        bool left,
+        bool pointing,
+        VRRig rig,
+        Character c,
+        InteractConfig cfg
+    )
     {
-        if (!cfg.HandAimedInteract || !GripIntent.IsPointing(LocalAvatar.ControllerCurls(left)))
-            return false;
+        if (!cfg.HandAimedInteract || !pointing)
+            return AimedTarget.None;
         var aim = rig.Aim(left);
         var cam = MainCamera.instance;
         var interaction = Interaction.instance;
         if (aim == null || cam == null || interaction == null)
-            return false;
+            return AimedTarget.None;
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
         if (
             reach <= 0f
@@ -364,11 +382,15 @@ internal static class PhysicalInteraction
                 QueryTriggerInteraction.Collide
             )
         )
-            return false;
+            return AimedTarget.None;
         var target = hit.collider.GetComponentInParent<IInteractible>();
-        return target != null
-            && !ReferenceEquals(target, c.data.currentItem)
-            && target.IsInteractible(c);
+        if (
+            target == null
+            || ReferenceEquals(target, c.data.currentItem)
+            || !target.IsInteractible(c)
+        )
+            return AimedTarget.None;
+        return target is Peak.ScoutStatue or Skelleton ? AimedTarget.ItemTaker : AimedTarget.Other;
     }
 
     private static bool Holding(Character c, out Item item)
@@ -403,8 +425,9 @@ internal static class PhysicalInteraction
             NearClimbable =
                 cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
-            PointedAtTaker = PointedAtTaker(hand.Left, rig, c, cfg),
         };
+        ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
+        ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg);
         var kind = HoldKind.Normal;
         probeHit = probeRefused = false;
         if (ctx.NearClimbable)
@@ -477,6 +500,7 @@ internal static class PhysicalInteraction
                 break;
         }
         hand.Action = action;
+        hand.AimedTaker = action == GripPressAction.Interact && ctx.PointedAtTaker;
         // A wall-like surface the game will not grab, and nothing else took the grip: the hand slides off it.
         if (
             probeRefused
