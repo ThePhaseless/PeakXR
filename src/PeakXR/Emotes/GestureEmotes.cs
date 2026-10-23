@@ -62,6 +62,9 @@ internal sealed class GestureEmotes : MonoBehaviour
     /// <summary>The thumbs-up emote's animation found in the wheel data, or null.</summary>
     public static string ThumbsUpAnim { get; private set; }
 
+    /// <summary>The cheer emote's animation found in the wheel data, or null.</summary>
+    public static string CheerAnim { get; private set; }
+
     private struct Emote
     {
         public string Anim;
@@ -191,7 +194,7 @@ internal sealed class GestureEmotes : MonoBehaviour
     private void Find(GUIManager current)
     {
         wave = cheerEmote = thumbsUp = default;
-        WaveAnim = ThumbsUpAnim = null;
+        WaveAnim = ThumbsUpAnim = CheerAnim = null;
         var wheel =
             current.emoteWheel != null
                 ? current.emoteWheel.GetComponentInChildren<EmoteWheel>(true)
@@ -211,6 +214,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         }
         WaveAnim = wave.Anim;
         ThumbsUpAnim = thumbsUp.Anim;
+        CheerAnim = cheerEmote.Anim;
         Plugin.Log.LogInfo(
             $"[avatar.emotes] gesture emotes: wave '{wave.Anim ?? "none"}', cheer '{cheerEmote.Anim ?? "none"}', thumbs-up '{thumbsUp.Anim ?? "none"}'"
         );

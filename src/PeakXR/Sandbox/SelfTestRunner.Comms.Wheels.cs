@@ -131,7 +131,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.128: a grip held on a backpack on the ground opens its wheel (Backpack.cs:262); letting go with the hand
+    /// vr.128: stooping, a grip held on a backpack on the ground opens its wheel (Backpack.cs:262); letting go with the hand
     /// still, so no pocket is hovered, commits nothing (BackpackWheel.Choose, A/BackpackWheel.cs:122-126) and the
     /// hand gets a Cancel tick, no refusal. The pack stays on the ground.
     /// </summary>
@@ -157,7 +157,7 @@ internal sealed partial class SelfTestRunner
         }
         rig.RotateYaw(turn);
         yield return Wait(0.5f);
-        var spot = Flat(rig.Head.forward) * 0.6f + rig.Head.position;
+        var spot = Flat(rig.Head.forward) * 0.5f + rig.Head.position;
         spot.y = c.Center.y;
         if (!SandboxActions.SpawnItemAt(prefab, spot))
         {
@@ -175,9 +175,13 @@ internal sealed partial class SelfTestRunner
         }
         bool left = !VRInput.LeftHanded;
         var at = pack.Center();
-        yield return MoveTo(left, () => at, 0.5f);
-        // shortcut: the head stays standing while the hand goes to the pack on the ground, a reach no standing player
-        // has; logged until the step crouches the scripted head as a player would.
+        // The player stoops to the pack on the ground (ReachDown also crouches the body), as for an apple (vr.10).
+        yield return ReachDown(left, () => at, 0.6f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
         float reach = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
         yield return GripTo(left, 1f, 0.1f);
         float openTime = pack is Backpack bp ? bp.GetInteractTime(c) : 0f;
@@ -200,6 +204,7 @@ internal sealed partial class SelfTestRunner
         else if (!c.player.backpackSlot.IsEmpty())
             Fail("the pack was worn, not left on the ground");
         else
-            stepNote = $"released on no pocket: {cueNote}; grip {reach:0.00} m from the eyes";
+            stepNote =
+                $"released on no pocket: {cueNote}; stooped {headDrop:0.00} m, grip {reach:0.00} m from the eyes";
     }
 }

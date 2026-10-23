@@ -26,11 +26,14 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.111-ping-refused", 40f, PingRefusedStep());
         yield return HandStep("vr.112-ptt", 25f, PushToTalkStep());
         yield return HandStep("vr.113-mute", 25f, PalmMuteStep());
+        yield return HandStep("vr.188-ptt-button", 20f, PushToTalkButtonStep());
         // ---- end WP6 slice A
         // ---- WP6 slice B: emotes, pause, spectate
         yield return HandStep("vr.114-emote-refused", 20f, EmoteRefusedStep());
         yield return HandStep("vr.115-gesture-emote", 20f, GestureEmoteStep());
         yield return HandStep("vr.117-pause-refused", 20f, PauseRefusedStep());
+        yield return HandStep("vr.185-menu-recenter", 20f, MenuRecenterStep());
+        yield return HandStep("vr.186-cheer", 20f, CheerStep());
         yield return PromptGlyphSteps();
         // ---- WP6 gap round: ping
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
@@ -371,6 +374,184 @@ internal sealed partial class SelfTestRunner
             stepNote = refused + "; unrefused tap paused";
     }
 
+    /// <summary>
+    /// vr.185: holding a menu button for <c>Camera.RecenterHoldSeconds</c> recenters the view (RigDriver's recenter
+    /// hold, <c>VRRig.Recentered</c>), not before the hold time, and letting go does not also pause (the pause binding
+    /// is a tap, ActionMapper.MenuHoldSeconds).
+    /// </summary>
+    IEnumerator MenuRecenterStep()
+    {
+        var rig = VRRig.Instance;
+        if (GUIManager.InPauseMenu)
+        {
+            ClosePause();
+            yield return Until(() => !GUIManager.InPauseMenu, 2f, "pause menu did not close");
+            if (!stepOk)
+                yield break;
+            yield return Wait(0.3f);
+        }
+        int recentered = 0;
+        void Count() => recentered++;
+        float hold = PeakXR.Rig.CameraFeature.RecenterSeconds;
+        rig.Recentered += Count;
+        try
+        {
+            Script(true).Menu = true;
+            yield return Wait(hold * 0.6f);
+            bool early = recentered > 0;
+            yield return WaitFor(() => recentered > 0, hold * 0.4f + 1.5f);
+            Script(true).Menu = false;
+            // A pause that would open on the release.
+            yield return Wait(0.4f);
+            if (early)
+                Fail($"the menu press recentered before its {hold:0.0} s hold");
+            else if (recentered == 0)
+                Fail($"holding the menu button {hold + 1.5f:0.0} s did not recenter");
+            else if (GUIManager.InPauseMenu)
+                Fail("the recenter hold also opened the pause menu");
+            else
+                stepNote = $"recentered after the {hold:0.0} s menu hold, no pause";
+        }
+        finally
+        {
+            rig.Recentered -= Count;
+        }
+    }
+
+    /// <summary>
+    /// vr.186: both open hands raised over the head and held there (GestureEmotes cheer: grip under OpenGrip, both
+    /// over the eyes by CheerMargin) play the game's cheer emote through CharacterAnimations.PlayEmote
+    /// (A/CharacterAnimations.cs:410; emoting :432), not the wave, with no refusal cue.
+    /// </summary>
+    IEnumerator CheerStep()
+    {
+        if (!EmotesFeature.Gestures.Value)
+        {
+            stepSkip = "Emotes.GestureEmotes off";
+            yield break;
+        }
+        if (GestureEmotes.CheerAnim == null)
+        {
+            stepSkip = "no cheer emote in EmoteWheel.data";
+            yield break;
+        }
+        // Past the 2 s cooldown between gesture emotes after vr.115's wave.
+        yield return Wait(2f);
+        var c = Character.localCharacter;
+        var emoting = GameMember.Field<CharacterAnimations, bool>("emoting");
+        HeadFrame(out var head, out var forward, out var right);
+        foreach (bool left in new[] { true, false })
+        {
+            Script(left).Grip = 0f;
+            Script(left).TriggerTouch = false;
+        }
+        float mark = CueMark();
+        int before = GestureEmotes.PlayCount;
+        // Hands up and a little apart, 25 cm over the eyes.
+        var up = head + forward * 0.1f + Vector3.up * 0.25f;
+        yield return MoveTrack(true, up - right * 0.2f, 0.3f);
+        yield return MoveTrack(false, up + right * 0.2f, 0.3f);
+        bool started = false;
+        yield return WaitFor(
+            () =>
+                started =
+                    emoting(c.refs.animations)
+                    && GestureEmotes.PlayCount != before
+                    && GestureEmotes.LastPlayed == GestureEmotes.CheerAnim,
+            2f
+        );
+        if (!started)
+        {
+            Fail(
+                $"no cheer emote within 2 s of both hands overhead (last gesture emote '{GestureEmotes.LastPlayed}')"
+            );
+            yield break;
+        }
+        yield return ExpectNoCue(true, mark, 0f);
+        yield return ExpectNoCue(false, mark, 0f);
+        if (stepOk)
+            stepNote = $"cheered: played {GestureEmotes.LastPlayed}";
+    }
+
+    /// <summary>
+    /// vr.188: <c>Voice.PushToTalkButton</c> set to DominantPrimary (the jump button) talks while held in Push To Talk:
+    /// the game's key (<c>pushToTalkPressed</c>, CharacterVoiceHandler.cs:269) opens the recorder that sends (:270),
+    /// with the radio click and the open mic icon, and the button does not also jump (LocomotionInput reserves it);
+    /// letting go closes the mic. The settings are put back.
+    /// </summary>
+    IEnumerator PushToTalkButtonStep()
+    {
+        var setting = MicSetting();
+        var c = Character.localCharacter;
+        var voice = c != null ? c.refs.voice : null;
+        var cfg = VoiceFeature.Settings;
+        if (setting == null || voice == null || cfg == null)
+        {
+            stepSkip = "no PushToTalkSetting, voice handler or voice feature";
+            yield break;
+        }
+        var mode = setting.Value;
+        string button = cfg.PushToTalkButton.Value;
+        bool talk = cfg.HandToMouthTalk.Value;
+        bool hand = VRInput.LeftHanded;
+        try
+        {
+            // Only the button talks here: the hands rest away from the mouth anyway.
+            cfg.HandToMouthTalk.Value = false;
+            cfg.PushToTalkButton.Value = "DominantPrimary";
+            SetMicMode(setting, PushToTalkSetting.PushToTalkType.PushToTalk);
+            yield return Wait(0.3f);
+            float mark = CueMark();
+            bool jumped = false;
+            Script(hand).Primary = true;
+            for (float until = Now + 1f; Now < until; )
+            {
+                jumped |= c.input.jumpWasPressed || c.input.jumpIsPressed;
+                if (c.input.pushToTalkPressed && voice.transmitting && RecorderIs(voice, true))
+                    break;
+                yield return null;
+            }
+            bool pressed = c.input.pushToTalkPressed;
+            bool sending = voice.transmitting && RecorderIs(voice, true);
+            var click = CueLog.Capture.LastSound(CueSound.Transmit);
+            var glyph = VoiceRuntime.GlyphShown;
+            Script(hand).Primary = false;
+            for (float until = Now + 0.3f; Now < until; )
+            {
+                jumped |= c.input.jumpWasPressed || c.input.jumpIsPressed;
+                yield return null;
+            }
+            if (!pressed)
+                Fail("holding the push-to-talk button did not press the game's key");
+            else if (!sending)
+                Fail(
+                    $"push-to-talk pressed but the mic did not send (transmitting {voice.transmitting})"
+                );
+            else if (click.At < mark || !click.Played)
+                Fail("no radio click as the mic opened");
+            else if (glyph != MicGlyph.Open)
+                Fail($"mic icon shows {glyph}, not Open");
+            else if (jumped)
+                Fail("the push-to-talk button also jumped");
+            if (!stepOk)
+                yield break;
+            yield return Until(
+                () => !c.input.pushToTalkPressed && !voice.transmitting && RecorderIs(voice, false),
+                1f,
+                "the mic kept sending after the button let go"
+            );
+            if (stepOk)
+                stepNote =
+                    $"{(VoiceAllowed(voice) ? "recorder sent" : "platform blocks voice")} while held, click, icon, no jump; closed on release";
+        }
+        finally
+        {
+            SetMicMode(setting, mode);
+            cfg.PushToTalkButton.Value = button;
+            cfg.HandToMouthTalk.Value = talk;
+        }
+    }
+
     // ================================================================ WP6 slice A: ping and voice
 
     /// <summary>
@@ -481,8 +662,11 @@ internal sealed partial class SelfTestRunner
         Affordance.ResetGate();
         mark = CueMark();
         yield return FingerGunAim(left, ground, 0.15f);
+        // The prefab's coolDown is 0 (vr43), so no player meets TooSoon and this branch normally does not run.
         if (Time.time - PingInput.LastPinged(pinger) >= pinger.coolDown)
-            notes.Add($"cooldown {pinger.coolDown:0.00} s too short to test");
+            notes.Add(
+                $"TooSoon not tested: PointPinger.coolDown {pinger.coolDown:0.00} s, a second ping at once goes out"
+            );
         else
         {
             yield return FingerGunSqueeze(left, ground);
