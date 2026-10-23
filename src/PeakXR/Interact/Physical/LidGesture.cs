@@ -245,18 +245,53 @@ internal static class LidGesture
 
     /// <summary>Interaction.DoInteraction prefix body: before the game adds this frame's time to the held luggage,
     /// cap it at the lid's lift.</summary>
+    /// <summary>The chest whose untracked hold was refused, so it is refused once per hold.</summary>
+    private static Luggage refusedHold;
+
+    /// <summary>The hand whose grip presses the game's interact as the fallback, else the dominant hand.</summary>
+    private static bool InteractingHand()
+    {
+        if (PhysicalInteraction.HandAction(true) == GripPressAction.Interact)
+            return true;
+        if (PhysicalInteraction.HandAction(false) == GripPressAction.Interact)
+            return false;
+        return VRInput.LeftHanded;
+    }
+
     public static void BeforeInteraction(Interaction interaction)
     {
         var held = interaction.currentHeldInteractible as Luggage;
         var cfg = ItemGesturesConfig.Instance;
         if (held == null || !VRSession.Active || cfg == null || !cfg.LiftLid)
+        {
+            refusedHold = null;
             return;
+        }
         // Decided here, before the game adds this frame's time (LidCap). A respawn chest whose lid the hands are
         // not both lifting right now holds at 0 however its hold started, so a frame where the hand tracking lags
         // the grip can no longer let one hand run it (run 49: one hand ran it to 0.09).
         bool tracked = ReferenceEquals(held, target) && Time.frameCount - frame <= 1;
-        if (!LidCap.TryFraction(tracked, fraction, held is RespawnChest, out float cap))
+        bool twoHands = held is RespawnChest;
+        // With grabbing by hand off nothing can lift the lid: the plain vanilla hold opens the chest.
+        bool physicalGrab = InteractConfig.Instance.PhysicalGrab;
+        if (!LidCap.TryFraction(tracked, fraction, twoHands, physicalGrab, out float cap))
             return;
+        // A hold no hand is on (pointed, head-aimed, out of reach) is held at 0 too; the one-hand gate only sees
+        // hands on the chest, so it is refused here, once per hold, instead of silently doing nothing.
+        bool handOnCase = ReferenceEquals(Grabbed[0], held) || ReferenceEquals(Grabbed[1], held);
+        if (!LidCap.RefusesUntracked(tracked, twoHands, physicalGrab, handOnCase))
+            refusedHold = null;
+        else if (!ReferenceEquals(refusedHold, held))
+        {
+            refusedHold = held;
+            Affordance.Deny(
+                WorldHolds.HandOn(held, InteractingHand()),
+                held.Center(),
+                DenyReason.NeedsTwoHands,
+                default,
+                held
+            );
+        }
         interaction.currentInteractableHeldTime = LidLift.CapHeldTime(
             interaction.currentInteractableHeldTime,
             interaction.currentConstantInteractableTime,

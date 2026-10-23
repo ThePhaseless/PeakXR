@@ -166,9 +166,28 @@ public static class AltarSocket
 /// </summary>
 public static class LidCap
 {
-    public static bool TryFraction(bool lidTracked, float lift, bool twoHands, out float fraction)
+    /// <param name="physicalGrab">Grabbing by hand is on (<c>Interaction.PhysicalGrab</c>). Off, nothing can lift a
+    /// lid, so a two-hand lid keeps the plain vanilla hold.</param>
+    public static bool TryFraction(
+        bool lidTracked,
+        float lift,
+        bool twoHands,
+        bool physicalGrab,
+        out float fraction
+    )
     {
         fraction = lidTracked ? lift : 0f;
-        return lidTracked || twoHands;
+        return lidTracked || (twoHands && physicalGrab);
     }
+
+    /// <summary>
+    /// A two-hand lid held at 0 by a hold no hand is on (a pointed or head-aimed grip, a grip out of reach): it must
+    /// be refused at the case, since the one-hand gate only sees hands on it. A hand on the case is that gate's.
+    /// </summary>
+    public static bool RefusesUntracked(
+        bool lidTracked,
+        bool twoHands,
+        bool physicalGrab,
+        bool handOnCase
+    ) => !lidTracked && twoHands && physicalGrab && !handOnCase;
 }
