@@ -117,11 +117,11 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("drop", 15f, true, DropByButton());
         yield return MpStep("pickup", 40f, true, PickUpAgain());
         yield return MpStep("throw", 60f, true, ThrowToHost());
-        yield return MpStep("eat", 60f, true, Eat());
+        yield return MpStep("eat", 150f, true, Eat());
         yield return MpStep("holster", 60f, true, Holster());
         yield return MpStep("climb", 120f, true, MpClimb());
         yield return MpStep("two-hand", 60f, true, MpTwoHand());
-        yield return MpStep("feed", 60f, true, Feed());
+        yield return MpStep("feed", 180f, true, Feed());
         yield return MpSocialSteps();
         MpFinish("script done");
     }
@@ -594,8 +594,15 @@ internal sealed partial class SelfTestRunner
         }
         // The airport hands A its passport: the other hand grips.
         bool left = HeldItem() != null && !LocalHold.ItemInLeftHand;
-        Face(kiosk.Center());
-        yield return Wait(0.3f);
+        // On foot to a clear spot at the kiosk (the solo ToKiosk's stand-off, walked instead of warped), then the hand
+        // on the kiosk's near face at chest height (MP run 14: the grip closed at rest 5.1 m away and missed it).
+        string why = null;
+        yield return MpToKioskFace(kiosk, left, s => why = s);
+        if (why != null)
+        {
+            failed(why);
+            yield break;
+        }
         float cast = GameTiming.InteractSeconds(kiosk, Character.localCharacter);
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
@@ -617,6 +624,95 @@ internal sealed partial class SelfTestRunner
             failed("the laser press on Start did not start the load");
         else
             Note("boarded by hand: grip opened the pass, laser pressed Start");
+    }
+
+    /// <summary>
+    /// Walks to the nearest clear spot around the kiosk at the solo steps' stand-off (<see cref="KioskStandOff"/>
+    /// past its bounds on eight headings, the floor found down from the kiosk's top so never the roof), steps in until
+    /// the near face at chest height is 0.5 m ahead, and puts the <paramref name="left"/> hand on it. Each walk is
+    /// bounded; <paramref name="failed"/> gets why when no spot or face is reached.
+    /// </summary>
+    IEnumerator MpToKioskFace(AirportCheckInKiosk kiosk, bool left, Action<string> failed)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        PeakXR.UI.Lobby.KioskDock.Measure(kiosk.transform, out var centre, out var top);
+        var bounds = KioskBounds(kiosk);
+        var forward = Flat(kiosk.transform.forward);
+        var spots = new List<Vector3>();
+        for (int i = 0; i < 8; i++)
+        {
+            var dir = Quaternion.Euler(0f, i * 45f, 0f) * forward;
+            float reach =
+                Mathf.Abs(dir.x) * bounds.extents.x
+                + Mathf.Abs(dir.z) * bounds.extents.z
+                + KioskStandOff;
+            var spot = new Vector3(bounds.center.x, top, bounds.center.z) + dir * reach;
+            if (
+                Physics.Raycast(
+                    spot,
+                    Vector3.down,
+                    out var floor,
+                    top - bounds.min.y + 1f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                spots.Add(floor.point);
+        }
+        spots.Sort((a, b) => FlatDistance(a, c.Center).CompareTo(FlatDistance(b, c.Center)));
+        bool there = false;
+        for (int i = 0; i < spots.Count && i < 3 && !there; i++)
+        {
+            var spot = spots[i];
+            yield return MpWalkBounded(() => spot, 0.25f, 15f);
+            there = FlatDistance(c.Center, spot) <= 0.45f;
+        }
+        if (!there)
+        {
+            failed(
+                F(
+                    $"no spot at the kiosk reached on foot ({FlatDistance(c.Center, bounds.center):0.0} m from it)"
+                )
+            );
+            yield break;
+        }
+        Face(centre);
+        yield return Wait(0.5f);
+        var eye = rig.Head.position;
+        float y = Mathf.Min(eye.y - 0.35f, top - 0.1f, bounds.max.y - 0.1f);
+        var from = new Vector3(eye.x, y, eye.z);
+        var toward = new Vector3(bounds.center.x, y, bounds.center.z) - from;
+        if (
+            toward.sqrMagnitude < 1e-4f
+            || !Physics.Raycast(
+                from,
+                toward.normalized,
+                out var face,
+                toward.magnitude + bounds.extents.magnitude,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            )
+            || face.collider.GetComponentInParent<AirportCheckInKiosk>() != kiosk
+        )
+        {
+            failed("no kiosk face at hand height from the stand spot");
+            yield break;
+        }
+        var touch = face.point + face.normal * 0.02f;
+        var gap = touch - eye;
+        gap.y = 0f;
+        if (gap.magnitude > 0.6f)
+        {
+            // Step in, as a player does when the top overhangs the face (the solo step's run 51 note).
+            var to = c.Center + gap.normalized * (gap.magnitude - 0.5f);
+            yield return MpWalkBounded(() => to, 0.15f, 3f);
+            Face(centre);
+            yield return Wait(0.3f);
+        }
+        yield return MoveTo(left, () => touch, 0.5f);
+        if (OverReach(left) is { } far)
+            failed(far);
     }
 
     /// <summary>Lifts suitcase lids (<see cref="LiftLid"/>) until enough food and other items lie around, trying at
@@ -775,16 +871,10 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        var food = NearestGround(IsFood);
-        if (food == null)
-        {
-            stepSkip = $"no food within {NearItems:0} m";
+        yield return FetchFood(IsFood);
+        if (!stepOk || stepSkip != null)
             yield break;
-        }
-        cpItemId = food.itemID;
-        yield return GrabWorld(food);
-        if (!stepOk)
-            yield break;
+        cpItemId = HeldItem().itemID;
         yield return EatHeld();
     }
 
@@ -926,17 +1016,11 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        var food = NearestGround(i => IsFood(i) && i.canUseOnFriend);
-        if (food == null)
-        {
-            stepSkip = $"no food to feed within {NearItems:0} m";
-            yield break;
-        }
-        cpItemId = food.itemID;
-        yield return GrabWorld(food);
-        if (!stepOk)
+        yield return FetchFood(i => IsFood(i) && i.canUseOnFriend);
+        if (!stepOk || stepSkip != null)
             yield break;
         var item = HeldItem();
+        cpItemId = item.itemID;
         yield return WalkTo(HostCenter, 0.75f, true);
         if (!stepOk)
             yield break;
@@ -1053,20 +1137,28 @@ internal sealed partial class SelfTestRunner
     /// <paramref name="ok"/>) that the walk actually reaches; one on a ledge or behind rock is passed over (MP run 7:
     /// holster walked into rock 4.2 m short of the thrown drink). SKIP when none can be reached.
     /// </summary>
-    IEnumerator GrabReachable(Func<Item, bool> ok, Item first = null)
+    IEnumerator GrabReachable(
+        Func<Item, bool> ok,
+        Item first = null,
+        float range = NearItems,
+        int tries = 3
+    )
     {
         var tried = new HashSet<Item>();
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < tries; i++)
         {
             var item =
-                i == 0 && first != null ? first : NearestGround(x => ok(x) && !tried.Contains(x));
+                i == 0 && first != null
+                    ? first
+                    : NearestGround(x => ok(x) && !tried.Contains(x), null, range);
             if (item == null)
                 break;
             tried.Add(item);
-            yield return WalkTo(
+            // Bounded, so far tries still fit the step (walking 4 m/s).
+            yield return MpWalkBounded(
                 () => item != null ? item.Center() : Character.localCharacter.Center,
                 0.55f,
-                false
+                5f + Vector3.Distance(item.Center(), Character.localCharacter.Center) / 3f
             );
             var to = item != null ? item.Center() - Character.localCharacter.Center : Vector3.zero;
             to.y = 0f;
@@ -1075,7 +1167,59 @@ internal sealed partial class SelfTestRunner
             yield return GrabWorld(item);
             yield break;
         }
-        stepSkip = $"no reachable item among {tried.Count} tried within {NearItems:0} m";
+        stepSkip = $"no reachable item among {tried.Count} tried within {range:0} m";
+    }
+
+    /// <summary>How far (m) A goes for food: along the beach, as a player would.</summary>
+    const float FoodRange = 120f;
+
+    /// <summary>
+    /// Food the way a player gets it (MP run 14: "no food within 40 m" skipped eat, feed and feed-refuse): the nearest
+    /// reachable food lying within <see cref="FoodRange"/> (a berry on a bush, BerryBush.cs:13-49, is a ground item
+    /// like any other); none, then the closed suitcases within that range opened by hand (<see cref="LiftLid"/>), one at
+    /// a time until one spills food. SKIP with the reason when none turns up.
+    /// </summary>
+    IEnumerator FetchFood(Func<Item, bool> food)
+    {
+        var c = Character.localCharacter;
+        var opened = new HashSet<Luggage>();
+        for (int round = 0; round < 4; round++)
+        {
+            if (NearestGround(food, null, FoodRange) != null)
+            {
+                stepSkip = null;
+                yield return GrabReachable(food, null, FoodRange, 4);
+                if (stepSkip == null || !stepOk)
+                    yield break;
+            }
+            var lug = Nearest<Luggage>(
+                c.Center,
+                l => !l.IsOpen && l is not RespawnChest && !opened.Contains(l)
+            );
+            if (lug == null || FlatDistance(lug.Center(), c.Center) > FoodRange)
+                break;
+            opened.Add(lug);
+            var solid = SolidColliders(lug);
+            var centre = lug.Center();
+            yield return MpWalkBounded(
+                () => SolidPoint(solid, centre, Character.localCharacter.Center),
+                0.5f,
+                5f + FlatDistance(centre, c.Center) / 3f
+            );
+            var near = SolidPoint(solid, centre, c.Center) - c.Center;
+            near.y = 0f;
+            if (near.magnitude > 0.6f)
+                continue;
+            Face(lug.Center());
+            yield return Wait(0.4f);
+            stepSkip = null;
+            yield return LiftLid(lug);
+            if (!stepOk)
+                yield break;
+            yield return Wait(2.5f);
+            yield return MpRest();
+        }
+        stepSkip = $"no food within {FoodRange:0} m after opening {opened.Count} more suitcase(s)";
     }
 
     /// <summary>Walks to a ground item and closes the right hand on it (vr.10's grab, on an item the level spawned).</summary>
@@ -1212,11 +1356,11 @@ internal sealed partial class SelfTestRunner
     static Item OnGround(Item item) => Grabbable(item) ? item : null;
 
     /// <summary>The nearest grabbable ground item (Item.cs:103 ALL_ITEMS, :286 itemState) within <see cref="NearItems"/> m.</summary>
-    static Item NearestGround(Func<Item, bool> ok, Vector3? from = null)
+    static Item NearestGround(Func<Item, bool> ok, Vector3? from = null, float range = NearItems)
     {
         var at = from ?? Character.localCharacter.Center;
         Item best = null;
-        float bestSq = NearItems * NearItems;
+        float bestSq = range * range;
         foreach (var item in Item.ALL_ITEMS)
         {
             if (!Grabbable(item) || !ok(item))
@@ -1302,7 +1446,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator MpSocialSteps()
     {
-        yield return MpStep("feed-refuse", 60f, true, FeedRefuse());
+        yield return MpStep("feed-refuse", 150f, true, FeedRefuse());
         yield return MpStep("reach-deny", 40f, true, ReachDeny());
         yield return MpStep("reach", 40f, true, MpReach());
         yield return HostWake();
@@ -1420,9 +1564,12 @@ internal sealed partial class SelfTestRunner
     /// (<see cref="SocialConfig.Reach"/>, SocialHands.Find); 0 or less is in reach.</summary>
     static float PastArm(bool left, Vector3 world)
     {
+        // HeadFrame is tracking space; the target is world space (MP run 14: the two were mixed and every friend's hand
+        // read 370 m past reach, skipping reach and reach-deny).
         HeadFrame(out var head, out _, out var right);
         var shoulder = head + Vector3.down * 0.25f + (left ? -right : right) * 0.18f;
-        return Vector3.Distance(shoulder, world) - SocialConfig.Instance.Reach - MpShoulderReach;
+        var target = VRRig.Instance.Origin.InverseTransformPoint(world);
+        return Vector3.Distance(shoulder, target) - SocialConfig.Instance.Reach - MpShoulderReach;
     }
 
     /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
@@ -1460,11 +1607,16 @@ internal sealed partial class SelfTestRunner
         // A small one-handed thing (MP run 7 took the two-hand step's Guidebook, whose two-hand hold kept it from the
         // host's mouth).
         var info = new ItemHoldInfo();
-        yield return GrabReachable(i =>
-            !i.canUseOnFriend
-            && !IsFood(i)
-            && info.Bind(i)
-            && info.Profile.Handedness == Handedness.OneHanded
+        // As far as food is fetched, five tries (MP run 14: three within 40 m were all out of reach).
+        yield return GrabReachable(
+            i =>
+                !i.canUseOnFriend
+                && !IsFood(i)
+                && info.Bind(i)
+                && info.Profile.Handedness == Handedness.OneHanded,
+            null,
+            FoodRange,
+            5
         );
         if (!stepOk || stepSkip != null)
             yield break;
@@ -1817,7 +1969,8 @@ internal sealed partial class SelfTestRunner
         // invisible pack on a host who had none).
         if (visuals == null || !SocialHands.WearsPack(host))
         {
-            stepSkip = "the host wears no pack";
+            stepSkip =
+                "the host wears no pack (vanilla B can only put one on by picking one up, which takes more than local input)";
             yield break;
         }
         yield return FreeHands();
