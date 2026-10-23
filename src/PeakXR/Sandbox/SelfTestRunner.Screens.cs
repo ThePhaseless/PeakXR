@@ -1010,6 +1010,13 @@ internal sealed partial class SelfTestRunner
         MenuWindow.CloseAllWindows();
         yield return Until(() => !pass.isOpen, 2f, "boarding pass did not close");
         yield return Wait(0.5f);
+        // KioskDock draws the pass over the kiosk only while it is docked and open: closed, it is depth-tested again.
+        if (
+            stepOk
+            && pass.panel.gameObject.activeInHierarchy
+            && UI.Common.OnTop.AllOnTop(pass.panel.transform)
+        )
+            Fail($"the boarding pass is still drawn on top after closing: {stepNote}");
     }
 
     /// <summary>Horizontal gap from the kiosk's bounds to where the player stands at it: about an arm's length, so a
