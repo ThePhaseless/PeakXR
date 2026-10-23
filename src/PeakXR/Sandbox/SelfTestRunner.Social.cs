@@ -340,11 +340,18 @@ internal sealed partial class SelfTestRunner
             yield break;
         var cam = MainCamera.instance.transform;
         float angle = Vector3.Angle(tick.transform.position - cam.position, cam.forward);
-        // On the right knee (Bugfix.cs:103): a standing player bends for it; the note keeps the stretch on record.
+        // On the right knee (Bugfix.cs:103), about 1.2 m below a standing head: the player bends for it.
         float reach = Vector3.Distance(tick.transform.position, cam.position);
         ushort bugId = tick.bugItem != null ? tick.bugItem.itemID : (ushort)0;
         const bool left = true;
-        yield return MoveTo(left, () => tick != null ? tick.transform.position : c.Center, 0.6f);
+        var knee = tick.transform.position;
+        yield return ReachDown(left, () => tick != null ? tick.transform.position : knee, 0.6f);
+        var over = OverReach(left);
+        if (over != null)
+        {
+            Fail("stooped to the tick on the knee, " + over);
+            yield break;
+        }
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectFeel(left, CueFeel.Contact, mark);
@@ -360,9 +367,14 @@ internal sealed partial class SelfTestRunner
             2f,
             $"tick gone but the hand holds {(HeldItem() != null ? HeldItem().name : "nothing")}, not the bug"
         );
-        if (stepOk)
+        if (!stepOk)
+            yield break;
+        // The pinching hand keeps it (SocialHands.BeginPress, PhysicalInteraction.ExpectItemIn), not the other one.
+        if (LocalHold.ItemInLeftHand != left)
+            Fail($"the left hand pinched the tick but {HeldItem().name} went to the right hand");
+        else
             stepNote =
-                $"tick {angle:0}° off the view, {reach:0.00} m from the head, pinched off; holding {HeldItem().name} in the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
+                $"tick {angle:0}° off the view, {reach:0.00} m from the standing head, stooped and pinched off; holding {HeldItem().name} in the left hand";
     }
 
     /// <summary>
@@ -382,12 +394,27 @@ internal sealed partial class SelfTestRunner
         yield return Until(() => a.isStruggling, 3f, "not struggling after the web");
         if (!stepOk)
             yield break;
+        // Hands still first: the web must hold, so a drop later is the strokes' (Web does not decay by itself,
+        // CharacterAfflictions.cs:495-525).
+        float still = a.GetCurrentStatus(STATUS.Web);
+        yield return Wait(0.6f);
         float before = a.GetCurrentStatus(STATUS.Web);
+        if (before < still)
+        {
+            Fail($"web fell {still:0.00} to {before:0.00} with the hands still");
+            yield break;
+        }
         float mark = CueMark();
         HeadFrame(out var head, out var forward, out var right);
         var l = Rest(head, forward, -right).Position;
         var r = Rest(head, forward, right).Position;
         var up = Vector3.up * 0.15f;
+        // Each stroke is one jump press (SocialHands.UpdateStruggle), each jump tears 0.05 (CharacterMovement.cs:657);
+        // a drop with no press in the last 0.3 s came from somewhere else.
+        int presses = 0;
+        int unexplained = 0;
+        float lastPress = -10f;
+        float web = before;
         for (int i = 0; i < 12 && a.isStruggling; i++)
         {
             var dy = i % 2 == 0 ? up : -up;
@@ -395,14 +422,22 @@ internal sealed partial class SelfTestRunner
             float start = Now;
             var l0 = Script(true).Position;
             var r0 = Script(false).Position;
-            while (Now - start < 0.1f)
+            for (float end = start + 0.15f; Now < end; )
             {
-                float t = (Now - start) / 0.1f;
+                float t = Mathf.Clamp01((Now - start) / 0.1f);
                 SetHand(true, Vector3.Lerp(l0, l + dy, t));
                 SetHand(false, Vector3.Lerp(r0, r + dy, t));
                 yield return null;
+                if (c.input.jumpWasPressed)
+                {
+                    presses++;
+                    lastPress = Now;
+                }
+                float now = a.GetCurrentStatus(STATUS.Web);
+                if (now < web - 0.001f && Now - lastPress > 0.3f)
+                    unexplained++;
+                web = now;
             }
-            yield return Wait(0.05f);
         }
         float after = a.GetCurrentStatus(STATUS.Web);
         if (after >= before && a.isStruggling)
@@ -410,9 +445,25 @@ internal sealed partial class SelfTestRunner
             Fail($"web {before:0.00} did not drop ({after:0.00}) from the shaking");
             yield break;
         }
+        if (presses == 0 || unexplained > 0)
+        {
+            Fail(
+                $"web {before:0.00} to {after:0.00} with {presses} stroke press(es) and {unexplained} drop(s) no stroke explains"
+            );
+            yield break;
+        }
+        // 0.05 per jump; a stroke can land on a frame the jump is refused, never tear more than its share.
+        if (before - after > presses * 0.05f + 0.01f)
+        {
+            Fail(
+                $"web fell {before - after:0.00}, more than {presses} stroke(s) tear ({presses * 0.05f:0.00})"
+            );
+            yield break;
+        }
         yield return ExpectFeel(true, CueFeel.Progress, mark, 0f);
         if (stepOk)
-            stepNote = $"web {before:0.00} to {after:0.00} by shaking; {cueNote}";
+            stepNote =
+                $"web {before:0.00} to {after:0.00} by {presses} stroke(s), held still with the hands still; {cueNote}";
     }
 
     /// <summary>
@@ -436,7 +487,11 @@ internal sealed partial class SelfTestRunner
         yield return ExpectCue(false, DenyReason.NeedsTwoHands, mark, false);
         if (!stepOk)
             yield break;
-        for (int i = 0; i < 20; i++)
+        // The death timer's slope (game seconds) is the outcome: 0.33/s while interact is held, else at most 0.1/s
+        // (Character.cs:1174-1185).
+        float t0 = Time.time;
+        float d0 = c.data.deathTimer;
+        for (float end = Now + 0.6f; Now < end; )
         {
             if (c.input.interactIsPressed)
             {
@@ -444,6 +499,14 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
             yield return null;
+        }
+        float gripRate = (c.data.deathTimer - d0) / Mathf.Max(Time.time - t0, 1e-3f);
+        if (gripRate > GiveUpRate * 0.5f)
+        {
+            Fail(
+                $"the death timer ran {gripRate:0.00}/s under a single grip (giving up runs {GiveUpRate:0.00}/s)"
+            );
+            yield break;
         }
         float squeeze = CueMark();
         Script(true).Grip = 1f;
@@ -453,12 +516,27 @@ internal sealed partial class SelfTestRunner
             1f,
             "all four inputs did not hold interact"
         );
+        float squeezeRate = 0f;
+        if (stepOk)
+        {
+            float t1 = Time.time;
+            float d1 = c.data.deathTimer;
+            yield return Wait(0.6f);
+            squeezeRate = (c.data.deathTimer - d1) / Mathf.Max(Time.time - t1, 1e-3f);
+            if (squeezeRate < GiveUpRate * 0.8f)
+                Fail(
+                    $"the squeeze held interact but the death timer ran only {squeezeRate:0.00}/s (giving up runs {GiveUpRate:0.00}/s)"
+                );
+        }
         if (stepOk)
             yield return ExpectFeel(true, CueFeel.Progress, squeeze);
         Script(true).Trigger = Script(false).Trigger = 0f;
         Script(true).Grip = Script(false).Grip = 0f;
         if (stepOk)
             stepNote =
-                $"single grip refused, squeeze gives up (death timer {c.data.deathTimer:0.00})";
+                $"single grip refused (death timer {gripRate:0.00}/s), squeeze gives up ({squeezeRate:0.00}/s, timer {c.data.deathTimer:0.00})";
     }
+
+    /// <summary>Death timer per game second while a passed-out player holds interact (Character.cs:1177).</summary>
+    const float GiveUpRate = 0.33f;
 }

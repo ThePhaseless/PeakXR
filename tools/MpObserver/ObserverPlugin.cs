@@ -85,6 +85,7 @@ static class RpcProbe
         yield return AccessTools.Method(typeof(Item), "SendFeedDataRPC");
         yield return AccessTools.Method(typeof(Item), "Consume");
         yield return AccessTools.Method(typeof(Character), "RPCA_PassOut");
+        yield return AccessTools.Method(typeof(Character), "RPCA_UnPassOut");
         yield return AccessTools.Method(typeof(Character), "GetFedItemRPC");
         yield return AccessTools.Method(typeof(Character), "RPCA_Fall");
         yield return AccessTools.Method(typeof(Luggage), "OpenLuggageRPC");

@@ -445,8 +445,20 @@ internal sealed class Observer : MonoBehaviour
                     return true;
                 }
                 Character.PassOut();
-                note = "passed out";
-                return true;
+                // A body wakes 3 s after passing out once its statuses sum under 1 (Character.HandlePassedOut,
+                // :574-579). Hunger is refused under a NoHunger buff (CharacterAfflictions.canGetHungry, :211; the
+                // campfire's, Campfire.cs:246): MP run 13's host woke the moment A lifted it, and the carry dropped
+                // it (CharacterCarrying.Update, :29-31). Injury fills the rest, so the host stays out.
+                var afflictions = c.refs.afflictions;
+                bool hunger = afflictions.statusSum >= 1f;
+                if (!hunger)
+                    afflictions.AddStatus(CharacterAfflictions.STATUSTYPE.Injury, 1f);
+                float sum = afflictions.statusSum;
+                note =
+                    (hunger ? "passed out" : "passed out (Hunger refused, Injury added)")
+                    + ", statuses "
+                    + F(sum);
+                return sum >= 1f;
             case MpRequest.Web:
                 // CharacterAfflictions.AddStatus (:712), as a spider's web does; the game refuses it in the airport.
                 bool webbed = c.refs.afflictions.AddStatus(
