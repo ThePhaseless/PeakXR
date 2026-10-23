@@ -273,11 +273,17 @@ internal static class PhysicalInteraction
             into.Armed = ReleaseArming.OnArrive(
                 into.Grip.Held,
                 into.Action,
-                into.Target is Item wanted && wanted.itemID == item.itemID
+                into.Target is Item wanted && SameInstance(wanted, item)
             );
         }
         pendingTime = -10f;
     }
+
+    /// <summary>The same item, though a pickup equips a new object for it (CharacterItems.cs:516-534): the ground copy
+    /// and the held one share their instance data (Item.cs:191, passed through Player.AddItem, Item.cs:617). A
+    /// same-type item handed over has its own.</summary>
+    private static bool SameInstance(Item a, Item b) =>
+        a == b || (a.data != null && b.data != null && a.data.guid == b.data.guid);
 
     private static void EndAction(Hand hand, GripPressAction action)
     {
@@ -1205,7 +1211,7 @@ internal static class PhysicalInteraction
         // A fling, not a reach: let go at or above the shoulder (LungeIntent), then confirmed once the arm is seen
         // still rising a moment later (ConfirmLunge).
         float below = VRInput.HeadPosition.y - VRInput.Hand(hand.Left).Position.y;
-        if (!LungeIntent.AtRelease(cfg.LungeSpeed, cfg.LungeSpeed, below))
+        if (!LungeIntent.AtRelease(HandVelocity(hand, rig).y, cfg.LungeSpeed, below))
             return;
         lungeHand = hand;
         lungeStick = stick;
