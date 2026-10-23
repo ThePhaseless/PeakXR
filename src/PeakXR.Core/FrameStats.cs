@@ -138,7 +138,13 @@ namespace PeakXR.Core
                 : FrameBudget.Sane(device) ? RefreshSource.Device
                 : RefreshSource.None;
             float head = source == RefreshSource.Display ? display : device;
-            if (source != RefreshSource.None && !(head < _session && Throttled(_session, head)))
+            // A hair off the session rate is the same rate (run 59: 72 Hz jittered every frame).
+            if (source != RefreshSource.None && Same(_session, head))
+                Set(_session, source);
+            else if (
+                source != RefreshSource.None
+                && !(head < _session && Throttled(_session, head))
+            )
             {
                 _session = head;
                 Set(head, source);
@@ -152,6 +158,9 @@ namespace PeakXR.Core
             return Hz;
         }
 
+        /// <summary>Within 1 %: reading jitter, not a new rate.</summary>
+        static bool Same(float a, float b) => a > 0f && MathF.Abs(a - b) <= 0.01f * a;
+
         /// <summary><paramref name="hz"/> is <paramref name="full"/> divided by a whole number of at least 2.</summary>
         public static bool Throttled(float full, float hz)
         {
@@ -164,6 +173,35 @@ namespace PeakXR.Core
         {
             Hz = hz;
             Source = source;
+        }
+    }
+
+    /// <summary>
+    /// When the chosen refresh rate is worth a log line: the first one, a rate that moves by more than
+    /// <see cref="RateStep"/>, or a source flip at the same rate at most once per <see cref="FlipSeconds"/> (a throttled
+    /// runtime flips Display and LastGood several times a second, run 59).
+    /// </summary>
+    public sealed class RefreshLogGate
+    {
+        public const float RateStep = 0.5f;
+        public const float FlipSeconds = 10f;
+
+        bool _any;
+        float _hz;
+        RefreshSource _source;
+        float _at;
+
+        public bool Due(float hz, RefreshSource source, float now)
+        {
+            bool rate = !_any || MathF.Abs(hz - _hz) > RateStep;
+            bool flip = source != _source && now - _at >= FlipSeconds;
+            if (!rate && !flip)
+                return false;
+            _any = true;
+            _hz = hz;
+            _source = source;
+            _at = now;
+            return true;
         }
     }
 
