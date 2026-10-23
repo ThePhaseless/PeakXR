@@ -1435,34 +1435,60 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>The hand the scripted head looks down toward (<see cref="LookAtHand"/>); null keeps the head level.</summary>
+    /// <summary>The hand the scripted head looks toward (<see cref="LookAtHand"/>); null keeps the head as tracked.</summary>
     bool? glanceHand;
 
-    /// <summary>Degrees the scripted head is pitched down now, easing toward the glance.</summary>
-    float glancePitch;
+    /// <summary>Look along the hand's pointing ray (a finger gun, an aimed item) rather than at the hand.</summary>
+    bool glanceAlong;
 
-    /// <summary>Share of the hand's angle below the eye the head pitches: a player glances at the hand, the eyes do
-    /// the rest, so the head never aims exactly.</summary>
-    const float GlanceShare = 0.75f;
+    /// <summary>The scripted head's view direction now, easing toward <see cref="glanceWant"/>.</summary>
+    Vector3 glanceDir,
+        glanceWant;
 
-    /// <summary>Steepest glance (deg down) and fastest overhead one (deg up): a comfortable neck.</summary>
-    const float GlanceMaxDown = 50f,
-        GlanceMaxUp = 25f;
+    /// <summary>Waits (at most <paramref name="seconds"/>) for an active glance to finish turning, as a player's eyes
+    /// land on the hand before they read what it shows.</summary>
+    IEnumerator GlanceSettled(float seconds)
+    {
+        for (
+            float end = Now + seconds;
+            glanceHand != null && Vector3.Angle(glanceDir, glanceWant) > 3f && Now < end;
+
+        )
+            yield return null;
+    }
+
+    /// <summary>The level heading when the glance began. <see cref="HeadFrame"/> builds poses from it, so a turned
+    /// head does not turn the step's hand targets with it.</summary>
+    static Vector3? glanceHeading;
 
     /// <summary>
-    /// From now until the step ends, the scripted head pitches toward the <paramref name="left"/> hand as it moves,
-    /// as a player watches the hand they grab, eat, use, place or cook with; its heading stays, so poses built from
-    /// <see cref="HeadFrame"/> do not turn. Call it before acting; it eases in over about 0.3 s, faster than any reach.
-    /// The cue's view check (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>) is then honest for a
-    /// hand in front of the body.
+    /// From now until the step ends, the scripted head turns toward the <paramref name="left"/> hand as it moves (or,
+    /// with <paramref name="along"/>, along its pointing ray), as a player watches the hand they grab, eat, use, place,
+    /// cook or aim with: most of the way and within a comfortable neck (<see cref="HeadGlance"/>), easing in over
+    /// about 0.3 s. Call it before acting. The cue's view check
+    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>) is then judged from a view a player has.
     /// </summary>
-    void LookAtHand(bool left) => glanceHand = left;
+    void LookAtHand(bool left, bool along = false)
+    {
+        glanceHand = left;
+        glanceAlong = along;
+        if (glanceHeading == null)
+        {
+            glanceHeading = Flat(VRInput.HeadRotation * Vector3.forward);
+            glanceDir = glanceWant = glanceHeading.Value;
+        }
+    }
+
+    void EndGlance()
+    {
+        glanceHand = null;
+        glanceHeading = null;
+    }
 
     void BeginHands()
     {
         headDrop = 0f;
-        glanceHand = null;
-        glancePitch = 0f;
+        EndGlance();
         HeadFrame(out var head, out var forward, out var right);
         scriptLeft = Rest(head, forward, -right);
         scriptRight = Rest(head, forward, right);
@@ -1475,8 +1501,7 @@ internal sealed partial class SelfTestRunner
     void EndHands()
     {
         headDrop = 0f;
-        glanceHand = null;
-        glancePitch = 0f;
+        EndGlance();
         VRInput.TestOverride = finished ? null : IdleHands;
     }
 
@@ -1528,17 +1553,15 @@ internal sealed partial class SelfTestRunner
             p.y = stoopFrom - headDrop;
             VRInput.HeadPosition = p;
         }
-        if (glanceHand is bool g)
+        if (glanceHand is bool g && glanceHeading is { } heading)
         {
-            var to = Script(g).Position - VRInput.HeadPosition;
-            float below = -Mathf.Atan2(to.y, new Vector2(to.x, to.z).magnitude) * Mathf.Rad2Deg;
-            float want = Mathf.Clamp(below * GlanceShare, -GlanceMaxUp, GlanceMaxDown);
-            glancePitch = Mathf.Lerp(glancePitch, want, 1f - Mathf.Exp(-10f * dt));
-            var level = Flat(VRInput.HeadRotation * Vector3.forward);
-            var side = Vector3.Cross(Vector3.up, level);
-            VRInput.HeadRotation =
-                Quaternion.AngleAxis(glancePitch, side)
-                * Quaternion.LookRotation(level, Vector3.up);
+            ref var hand = ref Script(g);
+            var target = glanceAlong
+                ? hand.Position + hand.Rotation * Vector3.forward * 3f
+                : hand.Position;
+            glanceWant = HeadGlance.Aim(heading.N(), (target - VRInput.HeadPosition).N()).U();
+            glanceDir = Vector3.Slerp(glanceDir, glanceWant, 1f - Mathf.Exp(-10f * dt));
+            VRInput.HeadRotation = Quaternion.LookRotation(glanceDir, Vector3.up);
         }
     }
 
@@ -1639,7 +1662,7 @@ internal sealed partial class SelfTestRunner
     static void HeadFrame(out Vector3 head, out Vector3 forward, out Vector3 right)
     {
         head = VRInput.HeadPosition;
-        forward = Flat(VRInput.HeadRotation * Vector3.forward);
+        forward = glanceHeading ?? Flat(VRInput.HeadRotation * Vector3.forward);
         right = Vector3.Cross(Vector3.up, forward);
     }
 

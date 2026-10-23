@@ -617,6 +617,9 @@ internal sealed partial class SelfTestRunner
     /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
     /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
     /// </summary>
+    /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
+    const float TorchInHand = 0.45f;
+
     IEnumerator FlameToFuse(Item torchPrefab, Component fuse, Func<bool> done, float seconds)
     {
         var c = Character.localCharacter;
@@ -654,18 +657,47 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // The copy in hand after the warp may sit in the other hand: carry with the hand that holds it now.
+        left = LocalHold.ItemInLeftHand;
+        torchLeft = left;
         var flame = FireGestures.FlamePoint(torch);
         if (flame == null)
             flame = torch.transform;
         var fuseCol = fuse.GetComponentInChildren<Collider>();
         Vector3 Touch() => fuseCol != null ? fuseCol.bounds.center : at;
         var rig = VRRig.Instance;
-        // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left.
-        var lead = rig.Hand(left).position - flame.position;
+        // The torch must ride the hand before the hand can carry it: run 48 carried a controller that ended 1.17 m
+        // from the flame, so the flame never reached the fuse. Give the held copy up to 1.5 s to settle in the hand.
+        yield return WaitFor(
+            () =>
+                flame != null
+                && Vector3.Distance(rig.Hand(left).position, flame.position) < TorchInHand,
+            1.5f
+        );
+        if (flame == null)
+        {
+            Fail("the torch left the hand after the warp to the fuse");
+            yield break;
+        }
+        float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
+        // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left. A
+        // flame not yet at the hand leads by nothing, so the goal stays at the fuse.
+        var lead = inHand < TorchInHand ? rig.Hand(left).position - flame.position : Vector3.zero;
         yield return ReachDown(left, () => Touch() + lead, 0.6f);
         if (flame == null)
         {
             Fail("the torch left the hand while reaching for the fuse");
+            yield break;
+        }
+        float stoopedGap = Vector3.Distance(rig.Hand(left).position, flame.position);
+        if (stoopedGap > TorchInHand)
+        {
+            // A held item that does not follow its hand cannot be brought anywhere: say so instead of a fuse miss.
+            Fail(
+                F(
+                    $"the held {torch.name} is {stoopedGap:0.00} m from the {(left ? "left" : "right")} hand holding it after the stoop ({inHand:0.00} m before it, stooped {headDrop:0.00} m); the held item does not follow a stooped hand"
+                )
+            );
             yield break;
         }
         Affordance.ResetGate();
@@ -823,6 +855,57 @@ internal sealed partial class SelfTestRunner
             Fail("effigy left the hand");
     }
 
+    /// <summary>
+    /// Ground 0.45 m out from <paramref name="lug"/>'s solid bounds, on the first of eight headings (from the body's
+    /// side round) whose floor lies within 0.25 m of the case's base and is not the case itself, so a squat reaches
+    /// low on it. False when none is.
+    /// </summary>
+    static bool LevelSpotBeside(Luggage lug, out Vector3 spot)
+    {
+        spot = default;
+        var c = Character.localCharacter;
+        Bounds? solid = null;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (col.isTrigger || !col.enabled)
+                continue;
+            if (solid is { } b)
+            {
+                b.Encapsulate(col.bounds);
+                solid = b;
+            }
+            else
+                solid = col.bounds;
+        }
+        if (solid is not { } box || c == null)
+            return false;
+        var from = Flat(c.Center - box.center);
+        for (int i = 0; i < 8; i++)
+        {
+            var dir = Quaternion.Euler(0f, i * 45f, 0f) * from;
+            float reach =
+                Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
+            var probe = new Vector3(box.center.x, box.max.y + 0.5f, box.center.z) + dir * reach;
+            if (
+                Physics.Raycast(
+                    probe,
+                    Vector3.down,
+                    out var ground,
+                    box.size.y + 1.5f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && ground.collider.GetComponentInParent<Luggage>() == null
+                && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
+            )
+            {
+                spot = ground.point;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>vr.82b: a grip low on a closed slow suitcase (open time at least <see cref="LidGesture.LowGripMinOpen"/>)
     /// keeps the vanilla hold and, after 0.5 s, gets the "grab the lid" notice (AimHigher, ring on the lid edge above
     /// the hand). A would-work hint: needs UI.ActionHints.</summary>
@@ -846,7 +929,19 @@ internal sealed partial class SelfTestRunner
         }
         // 0.6 m out and stooping, as a player crouches at a case on the ground: 8 cm under its centre is about knee
         // height, 1.4 m under a standing eye.
-        yield return WarpFacing(lug.Center(), 0.6f);
+        // Run 48 warped onto higher ground (or the case) 0.25 m from it, so even a full squat left the hand 1.03 m
+        // down: stand on ground level with the case's base, as a player walks round to its open side.
+        if (LevelSpotBeside(lug, out var levelSpot))
+        {
+            yield return WarpTo(levelSpot);
+            var r = VRRig.Instance;
+            r.RotateYaw(
+                Vector3.SignedAngle(Flat(r.Head.forward), Flat(lug.Center() - c.Center), Vector3.up)
+            );
+            yield return Wait(0.6f);
+        }
+        else
+            yield return WarpFacing(lug.Center(), 0.6f);
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;

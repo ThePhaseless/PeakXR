@@ -60,6 +60,9 @@ internal sealed partial class SelfTestRunner
             !CueLog.Capture.Fired(left, reason, since, tint, out why) && CueLog.Now < since + within
         )
             yield return null;
+        // A glancing head may still be turning when the cue fires; judge the view once the eyes are on the hand.
+        if (seen)
+            yield return GlanceSettled(0.4f);
         if (!CueLog.Capture.Fired(left, reason, since, tint, out why))
             Fail(
                 $"{reason} cue on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}"

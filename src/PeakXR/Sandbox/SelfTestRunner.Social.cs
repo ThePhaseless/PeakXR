@@ -296,8 +296,9 @@ internal sealed partial class SelfTestRunner
             Fail("could not stick the foot");
             yield break;
         }
-        yield return MoveTo(left, () => thorn.transform.position, 0.6f);
+        // The player watches the hand go to the thorn (run 48: the glance began after the reach, 85 deg off).
         LookAtHand(left);
+        yield return MoveTo(left, () => thorn.transform.position, 0.6f);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.Stuck, mark, false);
