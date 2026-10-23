@@ -57,6 +57,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.142-sprint-out", Budget(7f), SprintOutStep());
         yield return Restoring("vr.154-jump-out", Budget(4f), JumpOutStep());
         yield return Restoring("vr.143-crouch-walk", Budget(12f), CrouchWalkStep());
+        yield return Restoring("vr.241-long-crouch-hint", Budget(12f), LongCrouchHintStep());
         yield return HandStep("vr.144-jump", Budget(4f), JumpStep());
         yield return Restoring("vr.155-hop-jump", Budget(14f), HopStep());
         yield return Restoring("vr.158-arm-swing-still", Budget(6f), SwingStillStep());
@@ -457,6 +458,74 @@ internal sealed partial class SelfTestRunner
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>vr.241: crouch-walking past the long-crouch wait (shortened to 1 s here, 10 s in play) shows one
+    /// HappenedHere notice with the recenter hint on the off hand; walking on in the same crouch shows no second.</summary>
+    IEnumerator LongCrouchHintStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        if (!BodyGestures.CrouchOn || rig.SeatedMode)
+        {
+            stepSkip = "Locomotion.PhysicalCrouch off or seated mode";
+            yield break;
+        }
+        bool move = OffLeft;
+        var rule = BodyGestures.LongCrouchRule;
+        float wasSeconds = rule.Seconds;
+        bodyRestore = () =>
+        {
+            rule.Seconds = wasSeconds;
+            Script(move).Stick = Vector2.zero;
+            ReleaseHead();
+        };
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float standing = XRRuntimeInfo.FloorTracking
+            ? eye
+            : HeightCalibration.DefaultStandingEyeHeight;
+        if (!FaceOpen(c, rig, 6f, out string blocked))
+        {
+            stepSkip = "no heading with 6 m of open ground: " + blocked;
+            yield break;
+        }
+        yield return Wait(0.5f);
+        var head = VRInput.HeadPosition;
+        var rot = VRInput.HeadRotation;
+        rule.Seconds = 1f;
+        ScriptHead(new Vector3(head.x, eye - standing * 0.4f, head.z), rot);
+        yield return WaitFor(() => c.data.isCrouching, 2f);
+        if (!c.data.isCrouching)
+        {
+            Fail("the head held low did not crouch");
+            yield break;
+        }
+        int before = BodyGestures.LongCrouchHints;
+        float since = CueMark();
+        float walked = 0f;
+        yield return Walk(c, move, 2f, d => walked = d);
+        if (BodyGestures.LongCrouchHints != before + 1)
+        {
+            Fail(
+                $"{BodyGestures.LongCrouchHints - before} hints after a 2 s crouched walk ({walked:0.00} m)"
+            );
+            yield break;
+        }
+        yield return ExpectCue(
+            VRInput.OffHandLeft,
+            DenyReason.HappenedHere,
+            since,
+            3f,
+            seen: false
+        );
+        if (!stepOk)
+            yield break;
+        var note = cueNote;
+        yield return Walk(c, move, 1.5f, _ => { });
+        if (BodyGestures.LongCrouchHints != before + 1)
+            Fail("a second hint in the same crouch");
+        else
+            stepNote = $"one hint after {walked:0.00} m crouched: {note}";
     }
 
     /// <summary>Turns the rig toward the nearest heading with <paramref name="meters"/> of open ground at hip and

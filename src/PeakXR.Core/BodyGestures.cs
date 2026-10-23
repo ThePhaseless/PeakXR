@@ -46,6 +46,36 @@ namespace PeakXR.Core
     }
 
     /// <summary>
+    /// A player who sat down mid-run stays in the physical crouch and crouch-walks at half speed without knowing
+    /// why. After <see cref="Seconds"/> of moving while physically crouched, this fires once; standing up starts a
+    /// new episode. Crouching still at the ground (a fuse, a fire) does not count.
+    /// </summary>
+    public sealed class LongCrouchHint
+    {
+        public float Seconds = 10f;
+
+        private float movingFor;
+        private bool shown;
+
+        /// <returns>True on the one frame the hint should show.</returns>
+        public bool Update(bool crouched, bool moving, float dt)
+        {
+            if (!crouched)
+            {
+                movingFor = 0f;
+                shown = false;
+                return false;
+            }
+            if (moving)
+                movingFor += dt;
+            if (shown || movingFor < Seconds)
+                return false;
+            shown = true;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Arm-swing sprint: alternating hand swings (hands moving in opposite directions, positions relative to the
     /// head) above <see cref="EnterSpeed"/> average hand speed hold sprint; it lets go below <see cref="ExitSpeed"/>.
     /// The average decays over <see cref="TimeConstant"/>, so the slow points of each swing do not drop it.

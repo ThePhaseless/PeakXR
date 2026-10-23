@@ -2,6 +2,7 @@ using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Rig;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
@@ -24,6 +25,7 @@ internal static class BodyGestures
     private static readonly PhysicalCrouch Crouch = new();
     private static readonly ArmSwing Swing = new();
     private static readonly JumpGesture Hop = new();
+    private static readonly LongCrouchHint LongCrouch = new();
     private static ConfigEntry<bool> physicalCrouch;
     private static ConfigEntry<float> crouchDepth;
     private static ConfigEntry<bool> armSwingSprint;
@@ -54,6 +56,12 @@ internal static class BodyGestures
 
     /// <summary>The arm-swing sprint holds this frame (self-test).</summary>
     internal static bool Swinging => Swing.Active;
+
+    /// <summary>Long crouch-walk notices shown (self-test).</summary>
+    internal static int LongCrouchHints { get; private set; }
+
+    /// <summary>The long-crouch rule, so the self-test can shorten its wait.</summary>
+    internal static LongCrouchHint LongCrouchRule => LongCrouch;
 
     /// <summary>Frame of the last recognised hop, so the jump cue knows the press came from the body.</summary>
     internal static int HopFrame { get; private set; } = -10;
@@ -171,6 +179,9 @@ internal static class BodyGestures
 
         if (!active)
             return;
+        var v = d.avarageVelocity;
+        if (LongCrouch.Update(crouch, v.x * v.x + v.z * v.z > 0.25f, dt))
+            ShowLongCrouchHint(rig);
         if (crouch)
             input.crouchIsPressed = true;
         if (swing)
@@ -180,6 +191,28 @@ internal static class BodyGestures
             input.jumpWasPressed = true;
             HopFrame = Time.frameCount;
         }
+    }
+
+    /// <summary>Sat down mid-run and forgot: a notice at the wrist says the body is still crouched and how to get
+    /// the standing height back (stand, or recenter). Once per crouch episode, so the string is fine.</summary>
+    private static void ShowLongCrouchHint(VRRig rig)
+    {
+        LongCrouchHints++;
+        Plugin.Log.LogInfo(
+            "[player.locomotion] long physical crouch while moving: recenter hint shown"
+        );
+        bool left = VRInput.OffHandLeft;
+        var hand = rig.Hand(left);
+        if (hand != null)
+            Affordance.Inform(
+                left,
+                hand.position,
+                DenyReason.HappenedHere,
+                DenyHint.Wrist(),
+                System.FormattableString.Invariant(
+                    $"Still crouched: stand up, or hold Menu {CameraFeature.RecenterSeconds:0.#} s to recenter"
+                )
+            );
     }
 
     /// <summary>The opt-in hop: standing play only, on the ground, head and both hands tracked.</summary>
@@ -265,6 +298,7 @@ internal static class BodyGestures
         Crouch.Update(false, 0f, 0f, 0f);
         Swing.Reset();
         Hop.Reset();
+        LongCrouch.Update(false, false, 0f);
         haveStand = false;
         uprightFor = 0f;
         lift = 0f;
