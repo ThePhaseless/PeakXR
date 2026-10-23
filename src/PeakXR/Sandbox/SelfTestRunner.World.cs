@@ -620,6 +620,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
     const float TorchInHand = 0.45f;
 
+    /// <summary>Wrist pitches (deg down from level) tried to tip a held torch toward a low fuse.</summary>
+    static readonly float[] TorchTips = { 30f, 60f, 90f };
+
     /// <summary>Farthest a held item may sit from its controller-held pose (m), standing or stooped.</summary>
     const float ItemOnHand = 0.15f;
 
@@ -682,6 +685,37 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
+        // A player tips the torch down toward a low fuse, so the flame leads the hand instead of standing 0.5 m over
+        // it (run 53: a flame upright over the hand put the hand 0.27 m under the floor to reach a fuse at the feet).
+        // Of the wrist turns a player can make, keep the one that brings the flame lowest under the hand.
+        var keep = Script(left).Rotation;
+        float lowest = flame.position.y - rig.Hand(left).position.y;
+        HeadFrame(out _, out var level, out var across);
+        foreach (float tip in TorchTips)
+        {
+            var turn =
+                Quaternion.AngleAxis(tip, across) * Quaternion.LookRotation(level, Vector3.up);
+            Script(left).Rotation = turn;
+            yield return null;
+            yield return null;
+            if (flame == null)
+                break;
+            float drop = flame.position.y - rig.Hand(left).position.y;
+            if (drop < lowest)
+            {
+                lowest = drop;
+                keep = turn;
+            }
+        }
+        Script(left).Rotation = keep;
+        yield return null;
+        yield return null;
+        if (flame == null)
+        {
+            Fail("the torch left the hand while tipping it toward the fuse");
+            yield break;
+        }
+        inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
         // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left. A
         // flame not yet at the hand leads by nothing, so the goal stays at the fuse.
         var lead = inHand < TorchInHand ? rig.Hand(left).position - flame.position : Vector3.zero;
