@@ -60,10 +60,15 @@ public static class MenuBackplate
             && MathF.Abs(contentMax.Y + margin - hi.Y) <= tolerance;
     }
 
-    /// <summary>The plate covers most of the canvas both ways: the full-screen panel it must not become.</summary>
-    public static bool IsFullPanel(Vector2 size, Vector2 canvas) =>
-        size.X >= BackdropRules.FullCanvas * canvas.X
-        && size.Y >= BackdropRules.FullCanvas * canvas.Y;
+    /// <summary>The plate covers most of the canvas both ways while what the menu draws, plus the margin, does not:
+    /// a 16:9 screen panel instead of a plate fitted to the content. A settings window whose tabs, rail and rows
+    /// really fill the canvas gets a canvas-sized plate and is not one (VR run 47: 1705x991 px drawn).</summary>
+    public static bool IsFullPanel(Vector2 plate, Vector2 content, float margin, Vector2 canvas)
+    {
+        var full = BackdropRules.FullCanvas * canvas;
+        var drawn = content + new Vector2(2f * margin);
+        return plate.X >= full.X && plate.Y >= full.Y && (drawn.X < full.X || drawn.Y < full.Y);
+    }
 
     /// <summary>WCAG contrast of white text on the plate at <paramref name="opacity"/> over a white background, the
     /// worst case (sun on snow). Blended in linear light, as URP does.</summary>
