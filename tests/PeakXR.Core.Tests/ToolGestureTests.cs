@@ -96,59 +96,62 @@ public class RopePullTests
 
 public class HammerCastTests
 {
+    const float Cast = 1.5f;
+    const float Dt = 0.02f;
+
+    static bool Completes(int strikes, float elapsed) =>
+        HammerCast.TickBeforeUpdate(strikes, 3, Cast, Dt, elapsed) + Dt >= Cast;
+
     [Fact]
-    public void NoStrikes_KeepsTheCastBarelyStarted()
+    public void NoStrikes_HoldPlacesAtTheGamesTime()
     {
-        float tick = HammerCast.TickBeforeUpdate(0, 3, 1.5f, 0.02f, 10f);
-        Assert.True(tick > 0f);
-        Assert.True(tick + 0.02f < 1.5f * 0.05f);
+        // External review #7: hammering must never be slower than holding the button.
+        TestUtil.Near(0.7f, HammerCast.TickBeforeUpdate(0, 3, Cast, Dt, 0.7f), 1e-5f);
+        Assert.False(Completes(0, 1.4f));
+        Assert.True(Completes(0, 1.49f));
     }
 
     [Fact]
-    public void PartialStrikes_LandOnTheirShareAfterTheGamesIncrement()
+    public void PartialStrikes_NeverSlowTheHold()
     {
-        float dt = 0.02f;
-        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt, 10f);
-        TestUtil.Near(1f, tick + dt, 1e-5f);
-        Assert.True(tick + dt < 1.5f);
+        for (float e = 0f; e < Cast; e += 0.05f)
+            Assert.True(HammerCast.TickBeforeUpdate(2, 3, Cast, Dt, e) >= e - 1e-5f);
     }
 
     [Fact]
-    public void LastStrike_CompletesTheCast()
+    public void AllStrikes_PlaceSooner_UpToTheCap()
     {
-        float dt = 0.02f;
-        float tick = HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 10f);
-        Assert.True(tick > 0f);
-        Assert.True(tick + dt >= 1.5f);
+        float earliest = Cast / HammerCast.MaxSpeedup;
+        // All strikes in early: the spike goes in at the capped time, sooner than the hold.
+        Assert.False(Completes(3, earliest - Dt - 0.01f));
+        Assert.True(Completes(3, earliest));
+        Assert.True(earliest < Cast);
     }
 
     [Fact]
-    public void ExtraStrikes_StillComplete()
+    public void Strikes_NeverBeatTheCap()
     {
-        Assert.True(HammerCast.TickBeforeUpdate(9, 3, 1.5f, 0.02f, 10f) + 0.02f >= 1.5f);
+        for (int strikes = 0; strikes <= 9; strikes++)
+        {
+            for (float e = 0f; e < Cast; e += 0.01f)
+            {
+                if (Completes(strikes, e))
+                    Assert.True(e * HammerCast.MaxSpeedup + Dt >= Cast - 1e-4f);
+            }
+        }
     }
 
     [Fact]
-    public void FastStrikes_NeverBeatTheVanillaHoldTime()
+    public void PartialStrikes_DoNotComplete_BeforeTheHoldTime()
     {
-        // All strikes in after 0.4 s of a 1.5 s cast: the timer follows real time, not the strikes.
-        float dt = 0.02f;
-        float tick = HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 0.4f);
-        TestUtil.Near(0.4f, tick, 1e-5f);
-        Assert.True(tick + dt < 1.5f);
-        // Once the vanilla time has run, the last strike completes on that frame.
-        Assert.True(HammerCast.TickBeforeUpdate(3, 3, 1.5f, dt, 1.49f) + dt >= 1.5f);
+        Assert.False(Completes(2, 1.2f));
+        // A long frame must not finish it before the last strike either.
+        Assert.True(HammerCast.TickBeforeUpdate(2, 3, Cast, 1f, 0.2f) + 1f < Cast);
     }
 
     [Fact]
-    public void LongFrame_NeverCompletesEarly()
-    {
-        // A hitch of most of the cast must not finish it before the last strike.
-        float dt = 1f;
-        float tick = HammerCast.TickBeforeUpdate(2, 3, 1.5f, dt, 10f);
-        Assert.True(tick > 0f);
-        Assert.True(tick + dt < 1.5f);
-    }
+    public void NoCastTime_StaysAboveZero() =>
+        Assert.True(HammerCast.TickBeforeUpdate(3, 3, 0f, Dt, 0.5f) > 0f);
 }
 
 public class GliderSteerTests

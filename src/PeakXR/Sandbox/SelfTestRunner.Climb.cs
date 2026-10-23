@@ -59,6 +59,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
+        yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
         yield return Restoring("vr.42b-rope-pump", 45f, RopePumpStep());
@@ -1445,6 +1446,92 @@ internal sealed partial class SelfTestRunner
             Fail("a hand on an item resting on a slope did not grab it: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>
+    /// vr.44d (external review #7): hammering a climbing spike is faster than holding. Holding the use button with the
+    /// spike aimed at the test wall starts the game's cast; the free hand strikes the preview <c>HammerStrikes</c>
+    /// times. The spike goes in sooner than the item's hold time, but no sooner than the cap
+    /// (<see cref="HammerCast.MaxSpeedup"/>).
+    /// </summary>
+    IEnumerator HammerSpikeStep()
+    {
+        var c = Character.localCharacter;
+        var tools = Interact.Tools.ToolsConfig.Instance;
+        if (!tools.HammerSpikes)
+        {
+            stepSkip = "Tools.HammerSpikes off";
+            yield break;
+        }
+        var spike = FindItemComponent<ClimbingSpikeComponent>();
+        if (spike == null)
+        {
+            stepSkip = "no climbing spike item";
+            yield break;
+        }
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        yield return GiveAndHold(spike.GetComponent<Item>());
+        if (!stepOk)
+            yield break;
+        float castTime = spike.GetComponent<Item>().usingTimePrimary;
+        bool holdLeft = LocalHold.ItemInLeftHand;
+        bool free = !holdLeft;
+        var rig = VRRig.Instance;
+        // The spike hand aims at the face in front.
+        var face = wallFace.point;
+        var spikeAim = rig.Origin.InverseTransformPoint(
+            rig.Head.position + Flat(face - rig.Head.position) * 0.3f + Vector3.down * 0.15f
+        );
+        SetHand(holdLeft, spikeAim);
+        Script(holdLeft).Rotation = Quaternion.LookRotation(
+            rig.Origin.InverseTransformDirection(face - rig.Origin.TransformPoint(spikeAim)),
+            Vector3.up
+        );
+        yield return Wait(0.3f);
+        int before = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length;
+        Script(holdLeft).Trigger = 1f;
+        yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
+        if (!Interact.Tools.SpikeHammer.Casting)
+        {
+            Script(holdLeft).Trigger = 0f;
+            Fail("holding the use button at the wall started no spike cast");
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float started = Now;
+        int needed = tools.HammerStrikes;
+        for (int i = 0; i < needed && Interact.Tools.SpikeHammer.Casting; i++)
+        {
+            var point = Interact.Tools.SpikeHammer.Preview;
+            var back = point + wallFace.normal * 0.3f;
+            yield return MoveTo(free, () => back, 0.12f);
+            // 0.3 m in 0.08 s: a strike at about 3.7 m/s into the wall.
+            yield return MoveTo(free, () => point, 0.08f);
+            yield return null;
+        }
+        int strikes = Interact.Tools.SpikeHammer.Strikes;
+        yield return WaitFor(
+            () => FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before,
+            castTime + 1f
+        );
+        float took = Now - started;
+        bool placed = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before;
+        Script(holdLeft).Trigger = 0f;
+        float earliest = castTime / HammerCast.MaxSpeedup;
+        var note = F(
+            $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s)"
+        );
+        if (!placed)
+            Fail("the hammered spike was not placed: " + note);
+        else if (took >= castTime - 0.05f)
+            Fail("hammering was not faster than holding: " + note);
+        else if (took < earliest - 0.15f)
+            Fail("hammering beat the cap: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
     }
 
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is

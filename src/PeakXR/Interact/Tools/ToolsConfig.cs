@@ -58,8 +58,9 @@ internal sealed class ToolsConfig
                 "HammerSpikes",
                 true,
                 new ConfigDescription(
-                    "Climbing spikes go in by striking the preview with either hand instead of waiting out the hold timer. "
-                        + "Keep holding the use button as usual. Off: the game's hold timer."
+                    "While you hold the use button, striking the preview with either hand drives a climbing spike in "
+                        + "sooner, up to a third faster than the hold timer. Holding alone still places it on time. "
+                        + "Off: the game's hold timer only."
                 )
             ),
             hammerStrikes = file.Bind(
