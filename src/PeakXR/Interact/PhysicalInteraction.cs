@@ -161,6 +161,31 @@ internal static class PhysicalInteraction
     /// <summary>What this hand's grip is doing, for gesture features (lid lift, parasol runner).</summary>
     public static GripPressAction HandAction(bool left) => (left ? LeftHand : RightHand).Action;
 
+    /// <summary>
+    /// This hand holds something through its grip, so opening it lets go: a wall climb (through its top-out walk), a
+    /// rope, vine or handle, the second hand on the held item, the held item itself when opening drops it
+    /// (<c>ReleaseToDrop</c>, armed), or a friend it lifts. What <see cref="GripToggle"/> may latch.
+    /// </summary>
+    internal static bool GripHolds(bool left)
+    {
+        var c = Character.localCharacter;
+        if (c == null)
+            return false;
+        var hand = left ? LeftHand : RightHand;
+        if (hand.Action == GripPressAction.Climb && (c.data.isClimbing || Mantling))
+            return true;
+        if (hand.Action == GripPressAction.SecondHand && LocalHold.TwoHand)
+            return true;
+        if (
+            c.data.currentItem != null
+            && LocalHold.ItemInLeftHand == left
+            && hand.Armed
+            && InteractConfig.Instance.ReleaseToDrop
+        )
+            return true;
+        return Climb.ClimbHands.HandAnchored(left) || Social.SocialHands.Instance.CarryGrip(left);
+    }
+
     /// <summary>The interactible this hand's grip selected (grab), or null.</summary>
     public static IInteractible HandTarget(bool left) => (left ? LeftHand : RightHand).Target;
 

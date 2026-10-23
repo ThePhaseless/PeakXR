@@ -41,5 +41,6 @@ public sealed class PhysicalInteractionFeature : Feature
         Climb.ClimbHands.Bind(Plugin.Settings);
         GripHooks.Register(Climb.ClimbHands.Extension);
         GripHooks.Register(Climb.TraversalGrips.Instance);
+        GripToggle.Install();
     }
 }

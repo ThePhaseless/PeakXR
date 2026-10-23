@@ -82,6 +82,9 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>The hand that last gripped a passed-out friend: where the dropped-pack notice goes.</summary>
     public bool CarryLeft { get; private set; }
 
+    /// <summary>This hand's grip is on a passed-out friend to lift them (<see cref="GripToggle"/> latches it).</summary>
+    public bool CarryGrip(bool left) => kinds[left ? 0 : 1] == SocialKind.Carry;
+
     private static bool Ready(Character c) =>
         VRSession.Active && SocialConfig.Instance.HandInteract && c == Character.localCharacter;
 

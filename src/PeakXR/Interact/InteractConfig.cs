@@ -34,6 +34,7 @@ internal sealed class InteractConfig
         hapticStrength;
     private ConfigEntry<string> dropButton;
     private ConfigEntry<HapticDetail> hapticDetail;
+    private ConfigEntry<GripMode> gripMode;
 
     public bool PhysicalGrab => physicalGrab?.Value ?? true;
     public bool HandAimedInteract => handAim?.Value ?? true;
@@ -64,6 +65,11 @@ internal sealed class InteractConfig
 
     /// <summary>The setting itself, for the self-test (vr.233).</summary>
     internal ConfigEntry<HapticDetail> HapticDetailEntry => hapticDetail;
+
+    public GripMode GripMode => gripMode?.Value ?? GripMode.Hold;
+
+    /// <summary>The setting itself, for the self-test (vr.237, vr.238).</summary>
+    internal ConfigEntry<GripMode> GripModeEntry => gripMode;
 
     /// <summary>The configured drop button (<c>DominantSecondary</c>, <c>LeftPrimary</c> ... or <c>None</c>), so the
     /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.
@@ -154,6 +160,15 @@ internal sealed class InteractConfig
                     "Multiplier on the hand's release velocity, capped at a full-charge throw of the game.",
                     new AcceptableValueRange<float>(0.5f, 2.5f)
                 )
+            ),
+            gripMode = file.Bind(
+                s,
+                "GripMode",
+                GripMode.Hold,
+                "Hold: keep the grip closed to hang on a wall, rope, vine or handle, to lift a friend, and (with "
+                    + "ReleaseToDrop) to keep an item. Toggle, for weak or tired hands: a grip that closes on one of "
+                    + "these stays closed when you open your hand, with a tick. Squeeze firmly again and open to let go, "
+                    + "with a softer tick."
             ),
             releaseToDrop = file.Bind(
                 s,
