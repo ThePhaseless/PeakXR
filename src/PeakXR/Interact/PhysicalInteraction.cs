@@ -1140,6 +1140,39 @@ internal static class PhysicalInteraction
         );
         if (stick == System.Numerics.Vector2.Zero)
             return;
+        // A fling, not a reach: let go at or above the shoulder (LungeIntent), then confirmed once the arm is seen
+        // still rising a moment later (ConfirmLunge).
+        float below = VRInput.HeadPosition.y - VRInput.Hand(hand.Left).Position.y;
+        if (!LungeIntent.AtRelease(cfg.LungeSpeed, cfg.LungeSpeed, below))
+            return;
+        lungeHand = hand;
+        lungeStick = stick;
+        lungeCheckAt = Time.time + LungeIntent.ConfirmDelay;
+        Grace.Extend(LungeIntent.ConfirmDelay + 0.05f);
+    }
+
+    private static Hand lungeHand;
+    private static System.Numerics.Vector2 lungeStick;
+    private static float lungeCheckAt = -10f;
+
+    /// <summary>
+    /// <see cref="LungeIntent.ConfirmDelay"/> after a fling-like release: the arm still rising and the grip still
+    /// open, so it was a throw and not a reach arriving at its next hold. Only then is it refused or turned into the
+    /// game's climb jump.
+    /// </summary>
+    private static void ConfirmLunge(Character c, VRRig rig, InteractConfig cfg, float now)
+    {
+        if (lungeCheckAt < 0f || now < lungeCheckAt)
+            return;
+        lungeCheckAt = -10f;
+        var hand = lungeHand;
+        lungeHand = null;
+        var d = c.data;
+        if (hand == null || !d.isClimbing)
+            return;
+        if (!LungeIntent.Confirm(HandVelocity(hand, rig).y, cfg.LungeSpeed, hand.Grip.Held))
+            return;
+        var stick = lungeStick;
         switch (TraversalRefusal.Lunge(d.sinceClimbJump, d.outOfStaminaFor))
         {
             case DenyReason.NoStamina:
@@ -1184,6 +1217,7 @@ internal static class PhysicalInteraction
 
     private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
+        ConfirmLunge(c, rig, cfg, now);
         if (physicalClimb && !c.data.isClimbing)
         {
             // The game ended the climb (top-out, jump, stamina, ragdoll): grips must close again to climb.

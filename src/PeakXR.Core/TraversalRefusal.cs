@@ -74,3 +74,27 @@ public static class TraversalRefusal
     /// </summary>
     public const float GameWallReach = 1.35f;
 }
+
+/// <summary>
+/// A climb lunge only on a clear fling (external review #16): vanilla never jumps without a press, and a climb jump
+/// costs 20 % stamina (CharacterClimbing.cs:238-241), so a brisk hand-over-hand reach must never set one off. The
+/// last climbing hand must let go at or above the shoulder while moving up fast, and still be rising
+/// <see cref="ConfirmDelay"/> later without closing on a new hold.
+/// </summary>
+public static class LungeIntent
+{
+    /// <summary>Seconds after the release that the hand must still be rising.</summary>
+    public const float ConfirmDelay = 0.08f;
+
+    /// <summary>How far below the head (metres) the hand may let go: about the shoulder.</summary>
+    public const float ShoulderDrop = 0.25f;
+
+    /// <summary>The release looks like a fling: fast upward, at or above the shoulder.</summary>
+    public static bool AtRelease(float upSpeed, float minUpSpeed, float handBelowHead) =>
+        upSpeed >= minUpSpeed && handBelowHead <= ShoulderDrop;
+
+    /// <summary><see cref="ConfirmDelay"/> later: the arm carried on up (half the lunge speed or more) and the grip
+    /// did not close again on a hold, as a reach does when it arrives.</summary>
+    public static bool Confirm(float upSpeedNow, float minUpSpeed, bool gripClosedAgain) =>
+        !gripClosedAgain && upSpeedNow >= 0.5f * minUpSpeed;
+}

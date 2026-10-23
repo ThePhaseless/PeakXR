@@ -44,6 +44,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ClimbSteps()
     {
         yield return Restoring("vr.46b-lunge-too-soon", 30f, LungeTooSoonStep());
+        yield return Restoring("vr.46c-reach-no-lunge", 30f, ReachNoLungeStep());
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
@@ -222,7 +223,7 @@ internal sealed partial class SelfTestRunner
         float jumpBefore = c.data.sinceClimbJump;
         float y0 = c.Center.y;
         float whooshMark = CueMark();
-        yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+        yield return FlingRelease(left, from, speed);
         float released = Now;
         yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
         bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
@@ -291,7 +292,7 @@ internal sealed partial class SelfTestRunner
             bool climbingAtThrow = c.data.isClimbing;
             from = Script(left).Position;
             float mark = CueMark();
-            yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+            yield return FlingRelease(left, from, speed);
             bool Denied() =>
                 UI.Affordances.Affordance.Count > denials
                 && UI.Affordances.Affordance.LastReason == DenyReason.NoStamina
@@ -1534,6 +1535,82 @@ internal sealed partial class SelfTestRunner
         yield return LetGoAll(c);
     }
 
+    /// <summary>
+    /// A climb lunge's fling (<see cref="LungeIntent"/>): the hand goes straight up at <paramref name="speed"/>, lets go
+    /// at or above the head, and keeps rising past the confirm delay, as a thrown arm does.
+    /// </summary>
+    IEnumerator FlingRelease(bool left, Vector3 from, float speed)
+    {
+        float start = Now;
+        float release = 0.25f;
+        while (true)
+        {
+            float t = Now - start;
+            SetHand(left, from + Vector3.up * (speed * Mathf.Min(t, release + 0.15f)));
+            if (t >= release)
+                Script(left).Grip = 0f;
+            if (t >= release + 0.15f)
+                yield break;
+            yield return null;
+        }
+    }
+
+    /// <summary>
+    /// vr.46c (external review #16): a brisk reach never lunges. Climbing on one hand, that hand lets go at chest height
+    /// moving up at the lunge speed and closes on the wall again 0.12 s later, as a hand-over-hand reach does: no climb
+    /// jump, no refusal.
+    /// </summary>
+    IEnumerator ReachNoLungeStep()
+    {
+        var c = Character.localCharacter;
+        var cfg = Interact.InteractConfig.Instance;
+        if (!cfg.ArmLunge)
+        {
+            stepSkip = "Interaction.ArmLunge off";
+            yield break;
+        }
+        yield return ToWall(headroom: LungeHeadroom);
+        if (!wallReady)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        yield return GripWall(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return MoveTrack(left, Script(left).Position + Vector3.down * 0.3f, 0.5f);
+        yield return WaitFor(() => c.data.sinceClimbJump > 1.1f, 2f);
+        UI.Affordances.Affordance.ResetGate();
+        float jumpBefore = c.data.sinceClimbJump;
+        float mark = CueMark();
+        var from = Script(left).Position;
+        float speed = Mathf.Max(1.2f * cfg.LungeSpeed, 3f);
+        // Up through chest height, open, then close on the face again.
+        float start = Now;
+        while (Now - start < 0.2f)
+        {
+            float t = Now - start;
+            SetHand(left, from + Vector3.up * (speed * t));
+            if (t >= 0.08f)
+                Script(left).Grip = 0f;
+            yield return null;
+        }
+        Script(left).Grip = 1f;
+        yield return Wait(0.5f);
+        bool jumped = c.data.sinceClimbJump < jumpBefore;
+        bool climbing = c.data.isClimbing;
+        yield return ExpectNoCue(left, mark, 0f);
+        var note = F(
+            $"reach at {speed:0.0} m/s from chest height: climb jump {jumped}, still climbing {climbing}"
+        );
+        if (jumped)
+            Fail("a brisk reach set off a climb lunge: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
     /// <summary>Both hands' last cue records relative to <paramref name="since"/> (seconds after it; negative is
     /// before): which reason or notice fired and which ring was last captured, to tell a replaced cue from an undrawn
     /// one.</summary>
@@ -1587,7 +1664,7 @@ internal sealed partial class SelfTestRunner
         float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
         var from = Script(left).Position;
         float mark = CueMark();
-        yield return SwingRelease(left, from, from + Vector3.up * speed * 0.15f);
+        yield return FlingRelease(left, from, speed);
         yield return ExpectCue(left, DenyReason.TooSoon, mark, false, 1f, seen: false);
         bool noJump = c.data.sinceClimbJump >= 0.2f + (Time.time - poked) - 0.1f;
         var note = F(
