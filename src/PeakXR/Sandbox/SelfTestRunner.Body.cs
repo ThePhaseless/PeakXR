@@ -1977,7 +1977,8 @@ internal sealed partial class SelfTestRunner
         while (Now - start < 4f)
         {
             yield return null;
-            float dt = Time.deltaTime;
+            // The clock RigDriver moves the view on (unscaled), so a capped or scaled game frame never fakes a jolt.
+            float dt = Time.unscaledDeltaTime;
             var p = rig.Origin.position;
             var d = p - last;
             last = p;

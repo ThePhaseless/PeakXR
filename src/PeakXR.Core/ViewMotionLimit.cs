@@ -24,35 +24,37 @@ public sealed class ViewMotionLimit
 
     /// <summary>The next view position from <paramref name="position"/>: toward <paramref name="goal"/> (this
     /// frame's follow result), braking for <paramref name="target"/> (where the follow is headed) so the view stops at
-    /// it: its speed toward the target never exceeds √(2 · <see cref="MaxAcceleration"/> · gap). Without the brake a
+    /// it: the speed it wants toward the target never exceeds √(2 · <see cref="MaxAcceleration"/> · gap), and every
+    /// change of velocity, braking included, stays within <see cref="MaxAcceleration"/>. Without the brake a
     /// fast follow overshot a stopping body by metres (code review), and an overshot view can end up in rock.</summary>
     public Vector3 Step(Vector3 position, Vector3 goal, Vector3 target, float dt)
     {
         if (!(dt > 0f))
             return position;
+        // The wanted velocity is shaped first (the brake for the target, the speed cap), then reached at no more
+        // than MaxAcceleration: run 47's vr.219 cut the velocity after the acceleration limit, and a body falling
+        // back toward the view changed its speed at 11 m/s^2.
         var want = (goal - position) / dt;
-        var dv = want - Velocity;
-        float maxDv = MaxAcceleration * dt;
-        if (dv.Length() > maxDv)
-            dv = Vector3.Normalize(dv) * maxDv;
-        var v = Velocity + dv;
         var toTarget = target - position;
         float gap = toTarget.Length();
-        float limit = MathF.Min(MaxSpeed, MathF.Sqrt(2f * MaxAcceleration * gap));
         if (gap > 1e-5f)
         {
             // Only the part heading at the target brakes; sideways motion keeps its own cap.
             var dir = toTarget / gap;
-            float along = Vector3.Dot(v, dir);
+            // Braking planned at 80 % of MaxAcceleration: the rest absorbs the one-frame lag of reaching the curve.
+            float limit = MathF.Min(gap / dt, MathF.Sqrt(2f * 0.8f * MaxAcceleration * gap));
+            float along = Vector3.Dot(want, dir);
             if (along > limit)
-                v -= dir * (along - limit);
-            // Never step past the target in one frame.
-            along = Vector3.Dot(v, dir);
-            if (along * dt > gap)
-                v -= dir * (along - gap / dt);
+                want -= dir * (along - limit);
         }
-        if (v.Length() > MaxSpeed)
-            v = Vector3.Normalize(v) * MaxSpeed;
+        if (want.Length() > MaxSpeed)
+            want = Vector3.Normalize(want) * MaxSpeed;
+        var dv = want - Velocity;
+        float maxDv = MaxAcceleration * dt;
+        if (dv.Length() > maxDv)
+            dv = Vector3.Normalize(dv) * maxDv;
+        // Between two velocities within MaxSpeed, so within it too.
+        var v = Velocity + dv;
         Velocity = v;
         return position + v * dt;
     }
