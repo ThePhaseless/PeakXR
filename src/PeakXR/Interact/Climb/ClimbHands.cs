@@ -316,6 +316,13 @@ internal static class ClimbHands
     private static void Adopt(Character c, VRRig rig, Hand hand)
     {
         var t = rig.Hand(hand.Left);
+        // On a handle only the free hand holds on; the item hand keeps its item.
+        if (
+            mode == Mode.Handle
+            && c.data.currentItem != null
+            && LocalHold.ItemInLeftHand == hand.Left
+        )
+            return;
         if (hand.Grip.Held && t != null && Near(c, t.position, 2f))
             Anchor(hand);
     }
@@ -714,6 +721,9 @@ internal static class ClimbHands
             try
             {
                 var next = Current(ctx.Character, out var obj);
+                // The hand that holds an item never holds the handle too (GripIntent: the free hand hangs).
+                if (next == Mode.Handle && ctx.ThisHandHolds)
+                    return false;
                 return next != Mode.None
                     && next == mode
                     && obj == held

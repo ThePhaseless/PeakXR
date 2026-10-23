@@ -413,4 +413,38 @@ public class GripIntentTests
         c.NearHeldItem = true;
         Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
     }
+
+    [Fact]
+    public void ItemHand_OnAClimbHandle_KeepsItsItem()
+    {
+        // Vanilla hangs from a handle without putting the item away (ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647):
+        // the free hand holds the handle. A hand that holds a torch does not hang from a piton with it.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Interactible;
+        c.CandidateIsHandle = true;
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void FreeHand_OnAClimbHandle_HangsWhileTheOtherHandHolds()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.Candidate = GrabCandidate.Interactible;
+        c.CandidateIsHandle = true;
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ItemHand_OnOtherInteractibles_StillGrabs()
+    {
+        // A rope or vine grab puts the item away itself (RopeSegment.cs:42, JungleVine.cs:113); luggage opens.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.ThisHandHolds = true;
+        c.Candidate = GrabCandidate.Interactible;
+        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+    }
 }

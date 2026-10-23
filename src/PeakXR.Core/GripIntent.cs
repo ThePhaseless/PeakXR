@@ -65,6 +65,9 @@ namespace PeakXR.Core
         /// <summary>This hand is at the held item's off-hand grip point (its <c>Hand_L</c>/<c>Hand_R</c>): a join
         /// even beside rock or a line.</summary>
         public bool AtSecondGrip;
+
+        /// <summary>The interactible candidate is a climb handle (a piton or pickaxe), held by the free hand only.</summary>
+        public bool CandidateIsHandle;
         public Handedness HeldHandedness;
 
         /// <summary>
@@ -179,7 +182,12 @@ namespace PeakXR.Core
             {
                 if (c.Candidate == GrabCandidate.Item && !c.HoldingItem)
                     return GripPressAction.GrabItem;
-                if (c.Candidate == GrabCandidate.Interactible)
+                // The hand that holds an item never hangs from a climb handle: the free hand does (vanilla keeps the
+                // item while hanging, ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647).
+                if (
+                    c.Candidate == GrabCandidate.Interactible
+                    && !(c.ThisHandHolds && c.CandidateIsHandle)
+                )
                     return GripPressAction.GrabInteractible;
             }
 
