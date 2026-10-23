@@ -47,6 +47,13 @@ public static class VRInput
     /// <summary>The player chose the left hand as dominant (setting <c>Input.DominantHand</c>). Layouts mirror.</summary>
     public static bool LeftHanded;
 
+    /// <summary>One-handed play (setting <c>Accessibility.OneHanded</c>): only the <see cref="LeftHanded"/> controller
+    /// is read, the other is left untracked, and every two-hand action takes its one-hand path.</summary>
+    public static bool OneHanded;
+
+    /// <summary>The off-hand controller for cues and HUD, or the one controller in one-handed play.</summary>
+    public static bool OffHandLeft => OneHanded ? LeftHanded : !LeftHanded;
+
     /// <summary>Self-test only: runs right after the sampler fills this frame's state, so scripted hands can stand in
     /// for the controllers (tracking-space poses, buttons, sticks). Null outside the self-test.</summary>
     internal static Action TestOverride;

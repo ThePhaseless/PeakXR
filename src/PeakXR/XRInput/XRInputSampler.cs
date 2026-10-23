@@ -86,6 +86,12 @@ internal static class XRInputSampler
             Head.Read();
             LeftReader.Read(ref VRInput.Left, dt);
             RightReader.Read(ref VRInput.Right, dt);
+            // One-handed: the other controller may still be on (on a desk, in a lap); nothing reads it.
+            if (VRInput.OneHanded)
+                VRInput.Hand(!VRInput.LeftHanded) = new HandState
+                {
+                    Rotation = Quaternion.identity,
+                };
         }
         catch (Exception e)
         {

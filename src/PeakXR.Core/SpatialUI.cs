@@ -508,8 +508,19 @@ namespace PeakXR.Core
             }
         }
 
-        /// <summary>The first binding of <paramref name="action"/> in <see cref="BindingTable.Default"/>.</summary>
+        /// <summary>The first binding of <paramref name="action"/> in <see cref="BindingTable.Active"/>.</summary>
         public static bool ForAction(
+            VRAction action,
+            bool dominantLeft,
+            bool itemInLeft,
+            out bool left,
+            out VRControl control
+        ) =>
+            ForAction(BindingTable.Active, action, dominantLeft, itemInLeft, out left, out control);
+
+        /// <summary>The first binding of <paramref name="action"/> in <paramref name="table"/>.</summary>
+        public static bool ForAction(
+            Binding[] table,
             VRAction action,
             bool dominantLeft,
             bool itemInLeft,
@@ -517,7 +528,7 @@ namespace PeakXR.Core
             out VRControl control
         )
         {
-            foreach (var b in BindingTable.Default)
+            foreach (var b in table)
             {
                 if (b.Action != action)
                     continue;

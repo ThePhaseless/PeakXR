@@ -36,6 +36,14 @@ public static class EmoteGestures
     public const float ThumbDwell = 0.6f;
 
     /// <summary>
+    /// The cheer pose this frame: both open hands over the head, or one-handed (<c>Accessibility.OneHanded</c>) one open
+    /// hand over the head held still (<paramref name="oneHandSpeed"/> m/s at most <see cref="StillSpeed"/>), so a wave,
+    /// which swings, never reads as a cheer.
+    /// </summary>
+    public static bool CheerPose(bool oneHanded, bool leftUp, bool rightUp, float oneHandSpeed) =>
+        oneHanded ? (leftUp || rightUp) && oneHandSpeed <= StillSpeed : leftUp && rightUp;
+
+    /// <summary>
     /// The body is doing something with its hands (climbing, on a rope or vine, carrying a friend, a grip that took or
     /// started something): any hand pose now is part of that, not an emote. Emotes are seen by every peer, so a false
     /// one is broadcast.

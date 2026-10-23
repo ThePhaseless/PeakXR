@@ -55,6 +55,38 @@ Notes:
 - Menus (title, pause, settings, passport, end screen) sit on a dark rounded plate cut to the buttons and text they hold. It grows or shrinks when a page, tab or open list changes, and it never takes a click. `UI.MenuBackplate` (on) switches it off and `UI.MenuBackplateOpacity` (0.85) sets how dark it is. At 0.85, white text stays readable even against snow in sunlight. A menu whose buttons and text spread over more than 70° of your view, like the title, gets no plate, since one plate around all of it would be a full-view screen. In the VR tab, dropdown text is black or white, whichever is easier to read on its box.
 - Menu panels at a kiosk (boarding pass, custom run options) and the end-of-run results take the laser like any other menu. At the end of a won run, any controller button skips the credits wait, the same as any key on a keyboard.
 
+## One-handed play
+
+Set `Accessibility.OneHanded` to `Left` or `Right` to play with that controller alone. The other controller is ignored, even if it is still switched on, and the layout below replaces the two-controller one. `Input.DominantHand` stops mattering while it is on.
+
+| Control | The one controller |
+|---|---|
+| Stick | Up/down: walk forward or back (toward your head or your hand, per `Locomotion.MoveRelativeTo`). Left/right: turn. A push counts as whichever is larger, so it never walks and turns at once |
+| Stick click | Sprint. Keep it pressed for half a second to crouch as well |
+| A / X | Jump |
+| B / Y | Tap: pause. Hold: emote wheel |
+| Grip | Grab or interact. Open it to drop, swing and open it to throw |
+| Trigger | Use. With the stick clicked in as you pull it: the secondary use (use on a friend, reach out with an empty hand) |
+| Menu | Release within 1 s: pause. Hold 1 s: recenter. Controllers without one (the Touch right controller) pause on B |
+
+What moves off the buttons:
+
+- Hotbar: draw from and holster on the belt slots. Stick up and down walks now, so it no longer cycles the hotbar or scrolls a held item. Twist your wrist instead: that pays out rope and tilts the scout cannon (`Interaction.Tools.TwistScroll`) and zooms the binoculars (`Interaction.Binoculars.TwistZoom`).
+- Put away: holster the item on the belt. Backpack: reach over a shoulder and grip to open its wheel, or hold that grip still in the wheel's centre for a second to take the pack off.
+- Ping: make a finger gun with the empty hand.
+- Crouch: crouch for real (`Locomotion.PhysicalCrouch`), or keep the stick clicked in.
+- Drop: open the grip (`Interaction.ReleaseToDrop`). With `ReleaseToDrop` off, `Interaction.DropButton` drops as usual and takes B over from pause and the emote wheel.
+
+Everything that needs both hands takes one:
+
+- A respawn chest opens with one hand lifting its lid.
+- A two-handed item (the antizooka, rescue hook) works in one hand.
+- Cheer: hold one open hand still over your head for about a second. A hand that swings is a wave.
+- The kick shove: push one open palm at a friend.
+- Soul pillar: lay one palm on it.
+- Lifting a passed-out friend takes one grip (as with `Social.CarryWithBothHands` off).
+- The wrist display moves to the one controller's wrist.
+
 ## VR Guide and practice
 
 In VR the VR tab of the settings (title or pause menu) is laid out for the headset. The settings of the chosen category stand in one column about 30° wide; push the stick up or down while pointing at it, or drag it with the laser, to scroll. The categories are a small panel of their own to the left of the column, turned toward you, and each panel has its own plate. Every vibration setting is in the Haptics category, under a heading for the part of the game it belongs to, and the item and fire gestures have their own Items category. The config file keeps every setting where it was. Text is at least 1.3° tall wherever the menu stands. The game's own tabs keep the game's layout.

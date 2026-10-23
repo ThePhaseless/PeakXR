@@ -179,7 +179,7 @@ internal sealed class RadialWheels : MonoBehaviour
                 return leftGrip;
         }
         var role = BindingHand.Dominant;
-        foreach (var b in BindingTable.Default)
+        foreach (var b in BindingTable.Active)
             if (b.Action == action)
             {
                 role = b.Hand;
