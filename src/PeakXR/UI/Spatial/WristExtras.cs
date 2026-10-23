@@ -68,7 +68,9 @@ internal sealed class WristExtras
         if (!box.Holding || !HudSplit.WristValid)
             return;
         var rotation = HudSplit.WristRotation;
-        var p = HudSplit.WristPosition + rotation * (Vector3.down * Below);
+        // The wrist bar grows with UI.TextScale, so the gap below its centre does too.
+        var p =
+            HudSplit.WristPosition + rotation * (Vector3.down * (Below * SpatialRuntime.TextScale));
         var mpp = SpatialMath.MetersPerPixel(
             Vector3.Distance(p, rig.Head.position),
             SpatialRuntime.DegreesPerPixel * 0.8f

@@ -315,17 +315,41 @@ public class ControllerProfileTests
     }
 
     [Fact]
-    public void Simple_SelectIsPrimaryAndNothingElse()
+    public void Simple_HeldSelectIsGripAndNotAlsoPrimary()
     {
+        // Simple has no grip, so select stands in for it: without that a player could never climb or grab.
         var layout = ControllerLayout.From(Simple);
         Assert.False(layout.HasTrigger);
         Assert.False(layout.HasGrip);
+        Assert.True(layout.SelectIsGrip);
         var b = Map(Simple, new ControllerSample { Primary = true, Menu = true });
-        Assert.True(b.Primary);
+        Assert.Equal(1f, b.Grip);
+        Assert.False(b.Primary);
         Assert.True(b.Menu);
         Assert.Equal(0f, b.Trigger);
-        Assert.Equal(0f, b.Grip);
         Assert.False(b.TriggerTouch);
+        b = Map(Simple, new ControllerSample { Menu = true });
+        Assert.Equal(0f, b.Grip);
+        Assert.True(b.Menu);
+    }
+
+    [Fact]
+    public void SelectIsGrip_OnlyOnSimple()
+    {
+        foreach (
+            var usages in new[]
+            {
+                Index,
+                Touch,
+                Concat(Touch, TouchPlusExtra),
+                Concat(Touch, TouchProExtra),
+                ViveWand,
+                ReverbG2,
+                WindowsMotion,
+                new[] { "TriggerButton", "GripButton", "PrimaryButton" },
+            }
+        )
+            Assert.False(ControllerLayout.From(usages).SelectIsGrip);
     }
 
     [Fact]

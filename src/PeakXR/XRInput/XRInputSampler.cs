@@ -28,7 +28,8 @@ internal static class XRInputSampler
     private static bool dirty = true;
     private static int lastFrame = -1;
 
-    /// <summary>Test hook run after each VR sample (the self-test input edge log).</summary>
+    /// <summary>Runs after each VR sample and the self-test's scripted hands: the toggle grip
+    /// (<c>Interact.GripToggle</c>) and the self-test input edge log.</summary>
     internal static event Action AfterSample;
 
     public static void Install()

@@ -1026,6 +1026,48 @@ internal sealed partial class SelfTestRunner
         Conclude(fails, notes);
     }
 
+    /// <summary>
+    /// vr.235: a 1 s fall through the game's RPC (<c>Character.RPCA_Fall</c>, decomp Assembly-CSharp/Character.cs:1749)
+    /// pulses comfort.events' vignette at the ragdoll onset (the default <c>ComfortEvents.Ragdoll</c> VignettePulse),
+    /// which is open again within 2 s.
+    /// </summary>
+    IEnumerator RagdollVignetteCheck()
+    {
+        Recover();
+        var c = Character.localCharacter;
+        if (c == null)
+        {
+            Fail("no character");
+            yield break;
+        }
+        var treatment = ComfortEventsConfig.Treatment(ComfortEvent.Ragdoll);
+        if (treatment != ComfortTreatment.VignettePulse || ComfortEventsConfig.Intensity <= 0f)
+        {
+            stepSkip =
+                $"ComfortEvents.Ragdoll is {treatment}, Intensity {ComfortEventsConfig.Intensity:0.00}";
+            yield break;
+        }
+        var fails = new List<string>();
+        var notes = new List<string>();
+        yield return WaitFor(() => ComfortEventsRuntime.VignetteBoost <= 0f, 5f);
+        c.photonView.RPC("RPCA_Fall", RpcTarget.All, 1f, 0f);
+        var pulse = new PulseWatch();
+        float start = Now;
+        while (Now - start < 3f)
+        {
+            pulse.Sample(ComfortEventsRuntime.VignetteBoost, Now - start);
+            yield return null;
+        }
+        notes.Add($"ragdoll pulse peak {pulse.Peak:0.00}, open after {pulse.SettleSeconds:0.00} s");
+        if (!pulse.Rose)
+            fails.Add("no vignette pulse at the ragdoll onset");
+        else if (!pulse.Settled || pulse.SettleSeconds > 2f)
+            fails.Add("vignette not open within 2 s");
+        yield return WaitFor(() => c.data.fallSeconds <= 0f, 3f);
+        Recover();
+        Conclude(fails, notes);
+    }
+
     // ---------------------------------------------------------------- VR helpers
 
     void Conclude(List<string> fails, List<string> notes)

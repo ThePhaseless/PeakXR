@@ -16,6 +16,15 @@ namespace PeakXR.Core
         const float MinDistance = 0.2f;
         const float MaxDistance = 0.7f;
 
+        /// <summary>Widest the display grows for <c>UI.TextScale</c>: the largest <c>UI.HUD.WristWidth</c>, about a
+        /// forearm across, so the bar never spreads over the hand or the item prompts beside it.</summary>
+        public const float MaxWidth = 0.35f;
+
+        /// <summary>The configured <paramref name="baseWidth"/> grown by <paramref name="textScale"/>
+        /// (<see cref="ReadableText.Scale"/>), at most <see cref="MaxWidth"/> and never below the setting.</summary>
+        public static float ScaledWidth(float baseWidth, float textScale) =>
+            MathF.Max(baseWidth, MathF.Min(baseWidth * ReadableText.Scale(textScale), MaxWidth));
+
         /// <summary>Extra width at the peak of an alert pulse.</summary>
         public const float PulseGrow = 0.2f;
 

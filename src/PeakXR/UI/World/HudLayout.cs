@@ -335,7 +335,8 @@ internal sealed class HudSplit
         var anchor = WristHud.Anchor(hand.position.N(), hand.rotation.N(), left).U();
         var rotation = WristHud.Rest(hand.rotation.N(), left).U();
         WristRest = rotation;
-        var width = WristHud.Width(cfg.WristWidth.Value, WristHud.ReadDistance, WristPulse);
+        float baseWidth = WristHud.ScaledWidth(cfg.WristWidth.Value, cfg.TextScale.Value);
+        var width = WristHud.Width(baseWidth, WristHud.ReadDistance, WristPulse);
         var head = rig.Head;
         var toEye = head != null ? head.position - anchor : Vector3.zero;
         float distance = toEye.magnitude;
@@ -349,7 +350,7 @@ internal sealed class HudSplit
             );
             var face = Quaternion.LookRotation(-toEye, head.up);
             rotation = Quaternion.Slerp(rotation, face, WristFacing);
-            width = WristHud.Width(cfg.WristWidth.Value, distance, WristPulse);
+            width = WristHud.Width(baseWidth, distance, WristPulse);
         }
         wristBox.Pose(anchor, rotation, wristCenter, width / wristSpan);
         WristValid = true;

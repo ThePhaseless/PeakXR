@@ -1,3 +1,5 @@
+using System;
+
 namespace PeakXR.Core
 {
     public enum HeightMode
@@ -26,6 +28,31 @@ namespace PeakXR.Core
             if (!(eye >= MinPlausibleEyeHeight && eye <= MaxPlausibleEyeHeight))
                 eye = mode == HeightMode.Seated ? DefaultSeatedEyeHeight : DefaultStandingEyeHeight;
             return avatarEyeHeight - eye;
+        }
+    }
+
+    /// <summary>
+    /// Downward reach gain for seated play: a seated player's hands bottom out at the real floor, about 0.45 m above
+    /// the virtual one, so ground pick-ups and floor gestures are out of reach. Below the seated hip level the hand's
+    /// drop is scaled, so a hand lowered to the real floor reaches the virtual floor; above it nothing changes.
+    /// </summary>
+    public static class SeatedReach
+    {
+        /// <summary>Seated hips (the pivot) under the calibrated eye, metres: about where the hands rest on the lap.</summary>
+        public const float HipBelowEye = 0.7f;
+
+        /// <summary>
+        /// Tracking-space hand Y for a controller at <paramref name="handY"/>, with the calibrated eye at
+        /// <paramref name="eyeY"/> and the virtual floor at <paramref name="floorY"/>. Identity unless
+        /// <paramref name="seated"/> with a <paramref name="gain"/> above 1; continuous at the pivot, monotonic, and
+        /// never pushed below the virtual floor.
+        /// </summary>
+        public static float Y(float handY, float eyeY, float floorY, float gain, bool seated)
+        {
+            float pivot = eyeY - HipBelowEye;
+            if (!seated || !(gain > 1f) || !(handY < pivot))
+                return handY;
+            return MathF.Max(pivot - (pivot - handY) * gain, MathF.Min(handY, floorY));
         }
     }
 

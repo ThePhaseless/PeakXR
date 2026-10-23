@@ -28,6 +28,9 @@ namespace PeakXR.UI.Spatial;
 /// notice) when a hand prompt appears. <c>UI.ActionHintText</c> brings the verb text back. The item or object name
 /// shows only with <c>UI.TargetNames</c> (or an item in colour-blind mode, <c>UI.ColorBlindNames</c>); without it a plain pickup has no grab glyph either, only the game's glow
 /// on what the hand would grab (<see cref="GripGlow"/>).
+/// P2-6: the label draws over smoke and particles, but when rock (<c>HelperFunctions.terrainMapMask</c>,
+/// A/HelperFunctions.cs:27) stands between the eye and it, short of the target's own surface
+/// (<see cref="PromptOcclusion"/>), it and its glyphs ease to 30% alpha, checked a few times a second.
 /// </summary>
 internal sealed class TargetPrompt
 {
@@ -76,6 +79,10 @@ internal sealed class TargetPrompt
         warned;
     private int resolvedFrame = -1,
         restack;
+    private float dim = 1f,
+        glyphTint = 1f,
+        nextOcclusionCheck;
+    private bool occluded;
 
     private sealed class GlyphView
     {
@@ -109,6 +116,9 @@ internal sealed class TargetPrompt
 
     /// <summary>For the self-test: the target's name is hidden now (VR, <c>UI.TargetNames</c> off).</summary>
     public static bool NameHidden => current != null && current.nameHidden;
+
+    /// <summary>For the self-test: the label's alpha now (<see cref="PromptOcclusion.DimAlpha"/> behind rock).</summary>
+    public static float Dim => current != null ? current.dim : 1f;
 
     /// <summary>For the self-test: a glyph for <paramref name="verb"/> is drawn now.</summary>
     public static bool Drawn(PromptVerb verb) => DrawnRoot(verb) != null;
@@ -154,6 +164,9 @@ internal sealed class TargetPrompt
     public void Release()
     {
         SetTextAlpha(1f);
+        dim = 1f;
+        occluded = false;
+        box.SetAlpha(1f);
         SetAlpha(nameTexts, 1f);
         glow.Release();
         verbTexts.Clear();
@@ -227,6 +240,39 @@ internal sealed class TargetPrompt
         glow.Tick();
         PickVerbs(rig);
         Pose(rig);
+        Occlusion(rig);
+    }
+
+    /// <summary>P2-6: one terrain ray from the eye to the label every <see cref="PromptOcclusion.CheckSeconds"/>
+    /// (a new target at once); the label and its in-place glyphs ease toward the result. Allocation-free.</summary>
+    private void Occlusion(VRRig rig)
+    {
+        if (!VRSession.Active || target == null || box.Rect == null)
+            occluded = false;
+        else if (Time.unscaledTime >= nextOcclusionCheck)
+        {
+            nextOcclusionCheck = Time.unscaledTime + PromptOcclusion.CheckSeconds;
+            var eye = rig.Head.position;
+            var to = box.Rect.position - eye;
+            float d = to.magnitude;
+            float hit = -1f;
+            if (
+                d > 1e-3f
+                && Physics.Raycast(
+                    eye,
+                    to / d,
+                    out var h,
+                    d,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && !(target is Component comp && h.collider.transform.IsChildOf(comp.transform))
+            )
+                hit = h.distance;
+            occluded = PromptOcclusion.Blocked(hit, d, radius);
+        }
+        dim = PromptOcclusion.Ease(dim, occluded, Time.unscaledDeltaTime);
+        box.SetAlpha(dim);
     }
 
     public void Pose(VRRig rig)
@@ -298,6 +344,7 @@ internal sealed class TargetPrompt
         target = hovered;
         if (target == null)
             return;
+        nextOcclusionCheck = 0f;
         radius = target is Component comp ? Radius(comp) : 0.1f;
         restack = RestackFrames;
         var aim = PhysicalInteraction.AimHand;
@@ -457,6 +504,7 @@ internal sealed class TargetPrompt
             return;
         }
         BuildGlyphs();
+        TintGlyphs();
         var eye = rig.Head.position;
         for (int i = 0; i < Glyphs; i++)
         {
@@ -473,7 +521,10 @@ internal sealed class TargetPrompt
                 // Beside the primary glyph, on the side away from the name: a ring that fills while you hold.
                 var primary = box.Rect.TransformPoint(partCentre[GlyphPart[0]]);
                 float hr =
-                    SpatialMath.SpanMeters(Vector3.Distance(primary, eye), GlyphDegrees) * 0.5f;
+                    SpatialMath.SpanMeters(
+                        Vector3.Distance(primary, eye),
+                        GlyphDegrees * SpatialRuntime.TextScale
+                    ) * 0.5f;
                 var facing = SpatialRuntime.FaceEye(primary, eye);
                 ShowHold(views[i], primary + facing * Vector3.right * (hr * 2.6f), facing, hr);
                 continue;
@@ -483,7 +534,8 @@ internal sealed class TargetPrompt
                 hand != null
                     ? hand.position + Vector3.up * 0.09f
                     : box.Rect.TransformPoint(partCentre[GlyphPart[i]]);
-            float degrees = hand != null ? WristGlyphDegrees : GlyphDegrees;
+            float degrees =
+                (hand != null ? WristGlyphDegrees : GlyphDegrees) * SpatialRuntime.TextScale;
             float r = SpatialMath.SpanMeters(Vector3.Distance(at, eye), degrees) * 0.5f;
             Show(views[i], verb, at, SpatialRuntime.FaceEye(at, eye), r);
         }
@@ -549,6 +601,25 @@ internal sealed class TargetPrompt
         Enable(view.SecondRim, false);
     }
 
+    /// <summary>The label's occlusion dim on the glyphs drawn on it; the wrist glyphs stay full.</summary>
+    private void TintGlyphs()
+    {
+        if (glyphTint == dim)
+            return;
+        glyphTint = dim;
+        var c = new Color(1f, 1f, 1f, dim);
+        for (int i = 0; i < Glyphs; i++)
+        {
+            if (i is 3 or 4)
+                continue;
+            var v = views[i];
+            v.First.startColor = v.First.endColor = c;
+            v.Second.startColor = v.Second.endColor = c;
+            v.FirstRim.startColor = v.FirstRim.endColor = c;
+            v.SecondRim.startColor = v.SecondRim.endColor = c;
+        }
+    }
+
     private static void Enable(LineRenderer line, bool on)
     {
         if (line.enabled != on)
@@ -592,6 +663,7 @@ internal sealed class TargetPrompt
         if (glyphRoot != null)
             return;
         glyphRoot = new GameObject("PeakXR_PromptGlyphs");
+        glyphTint = 1f;
         Object.DontDestroyOnLoad(glyphRoot);
         for (int i = 0; i < Glyphs; i++)
         {

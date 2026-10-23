@@ -15,6 +15,7 @@ public class ComfortPolicyTests
         Assert.Equal(ComfortTreatment.ThirdPerson, ComfortPolicy.Default(ComfortEvent.Launch));
         Assert.Equal(ComfortTreatment.VignettePulse, ComfortPolicy.Default(ComfortEvent.Knockback));
         Assert.Equal(ComfortTreatment.VignettePulse, ComfortPolicy.Default(ComfortEvent.WindPush));
+        Assert.Equal(ComfortTreatment.VignettePulse, ComfortPolicy.Default(ComfortEvent.Ragdoll));
     }
 
     [Fact]
