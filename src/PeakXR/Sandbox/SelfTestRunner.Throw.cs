@@ -55,8 +55,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     static bool LowObstacle(Vector3 eye, Vector3 dir)
     {
-        var c = Character.localCharacter;
-        float feet = c != null ? Feet(c).y : eye.y - 1.6f;
+        float feet = TrackedFloorY();
         for (float d = 0.75f; d <= 3f; d += 0.75f)
         {
             var at = eye + dir * d;

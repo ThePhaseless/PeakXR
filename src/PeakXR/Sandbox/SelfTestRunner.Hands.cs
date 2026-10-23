@@ -149,13 +149,18 @@ internal sealed partial class SelfTestRunner
     /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
     /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
     /// </summary>
+    /// <summary>World height of the floor the tracked eye stands on: the head's world height less its tracked
+    /// height over the tracking floor.</summary>
+    static float TrackedFloorY() => VRRig.Instance.Head.position.y - VRInput.HeadPosition.y;
+
     static Vector3 GroundAhead(float outward)
     {
         var head = VRRig.Instance.Head;
-        var c = Character.localCharacter;
         // Ground level with the feet, the view's heading first, then 45 degrees either side in turn: run 51's spot
-        // ahead was a drop, the Apple came to rest 3 m under the eye and no squat could reach it.
-        float feet = c != null ? Feet(c).y : head.position.y - 1.6f;
+        // ahead was a drop, the Apple came to rest 3 m under the eye and no squat could reach it. The feet are the
+        // rig's floor (the eye less its tracked height), not a terrain ray down from the body: run 52 still put
+        // every grab target 3.1 m under the eye with the body's terrain ray as the feet.
+        float feet = TrackedFloorY();
         var start = Flat(head.forward);
         for (int i = 0; i < 8; i++)
         {
@@ -1429,9 +1434,23 @@ internal sealed partial class SelfTestRunner
         to.y = 0f;
         return d > MaxHandFromEye + ReachSlack
             ? F(
-                $"scripted {(left ? "left" : "right")} hand {d:0.000} m from the eye ({to.magnitude:0.00} m out), past a player's {MaxHandFromEye:0.00} m reach"
+                $"scripted {(left ? "left" : "right")} hand {d:0.000} m from the eye ({to.magnitude:0.00} m out), past a player's {MaxHandFromEye:0.00} m reach{ReachSpaces(left)}"
             )
             : null;
+    }
+
+    /// <summary>The world positions behind a reach verdict, so a space mix-up shows in the note: the scripted eye and
+    /// hand placed through the rig origin, the head, the origin, the tracked floor and the terrain under the body.</summary>
+    string ReachSpaces(bool left)
+    {
+        var rig = VRRig.Instance;
+        var c = Character.localCharacter;
+        if (rig == null || rig.Origin == null || rig.Head == null)
+            return "";
+        var o = rig.Origin;
+        return F(
+            $" [world: eye {o.TransformPoint(ScriptedEye())}, hand {o.TransformPoint(Script(left).Position)}, head {rig.Head.position}, origin {o.position}, tracked floor {TrackedFloorY():0.00}, terrain under the body {(c != null ? Feet(c).y : float.NaN):0.00}, stooped {headDrop:0.00} from {stoopFrom:0.00}]"
+        );
     }
 
     /// <summary>Rounding and float slack on <see cref="MaxHandFromEye"/>, so a pose built to the limit passes.</summary>
