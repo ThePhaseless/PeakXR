@@ -40,8 +40,10 @@ internal sealed class KioskDock : ICanvasPlacement
             Settled;
         public float SettleUntil;
 
-        /// <summary>The docked window is drawn over the kiosk (<see cref="OnTop"/>).</summary>
+        /// <summary>The docked window is drawn over the kiosk (<see cref="OnTop"/>), on this canvas root: a new
+        /// airport visit brings a new canvas, which must get the state again.</summary>
         public bool OnTop;
+        public Transform OnTopRoot;
     }
 
     /// <summary>BoardingPass.OnOpen fades the pass in over 0.5 s (A/BoardingPass.cs:147): measure until then.</summary>
@@ -61,7 +63,16 @@ internal sealed class KioskDock : ICanvasPlacement
     private Vector3 kioskCenter;
     private float kioskTop;
 
-    public KioskDock(UILobbySettings cfg) => this.cfg = cfg;
+    public KioskDock(UILobbySettings cfg)
+    {
+        this.cfg = cfg;
+        // The canvases of the old scene are gone; their slots must not think a new one is already drawn on top.
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += (_, _) =>
+        {
+            Forget(passSlot);
+            Forget(optionsSlot);
+        };
+    }
 
     public bool Interactive => true;
 
@@ -86,7 +97,11 @@ internal sealed class KioskDock : ICanvasPlacement
             || rig == null
             || rig.Head == null
         )
+        {
+            ClearOnTop(passSlot);
+            ClearOnTop(optionsSlot);
             return PlacementResult.Default;
+        }
 
         var pass = gui.boardingPass;
         var options = pass.customOptionsWindow;
@@ -102,6 +117,7 @@ internal sealed class KioskDock : ICanvasPlacement
         var kiosk = pass.kiosk;
         if (kiosk == null)
         {
+            ClearOnTop(slot);
             slot.Docked = false;
             slot.WasOpen = open;
             return PlacementResult.Default;
@@ -122,12 +138,7 @@ internal sealed class KioskDock : ICanvasPlacement
         // Drawn over the kiosk while docked and open: the window floats a hand's breadth off the kiosk face, where
         // the kiosk's own screen can cut a corner from the eyes (run 53: 1/4 corners hidden). It is the thing in
         // use, so the kiosk it sits on may not cover it.
-        bool onTop = open && slot.Docked;
-        if (onTop != slot.OnTop)
-        {
-            OnTop.Set(root, onTop);
-            slot.OnTop = onTop;
-        }
+        SetOnTop(slot, root, open && slot.Docked);
         if (!slot.Docked)
             return PlacementResult.Default;
 
@@ -152,6 +163,32 @@ internal sealed class KioskDock : ICanvasPlacement
         rotation = slot.Rotation;
         widthMeters = width * slot.Grow;
         return PlacementResult.Placed;
+    }
+
+    /// <summary>Draws <paramref name="root"/> over the kiosk or not, applying it again to a new canvas root and taking
+    /// it off the one it was on before.</summary>
+    private static void SetOnTop(Slot slot, Transform root, bool on)
+    {
+        if (ReferenceEquals(slot.OnTopRoot, root) && slot.OnTop == on)
+            return;
+        if (slot.OnTop && slot.OnTopRoot != null && !ReferenceEquals(slot.OnTopRoot, root))
+            OnTop.Set(slot.OnTopRoot, false);
+        OnTop.Set(root, on);
+        slot.OnTop = on;
+        slot.OnTopRoot = root;
+    }
+
+    private static void ClearOnTop(Slot slot)
+    {
+        if (slot.OnTop && slot.OnTopRoot != null)
+            OnTop.Set(slot.OnTopRoot, false);
+        Forget(slot);
+    }
+
+    private static void Forget(Slot slot)
+    {
+        slot.OnTop = false;
+        slot.OnTopRoot = null;
     }
 
     /// <summary>The window may sit on the canvas, under it, or (like PassportManager) above it.</summary>
