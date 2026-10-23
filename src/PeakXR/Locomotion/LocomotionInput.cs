@@ -24,6 +24,13 @@ internal static class LocomotionInput
     private static readonly ActionMapper Mapper = new();
     private static readonly InputRamp Ramp = new();
     private static readonly RoomScaleFollow Follow = new();
+
+    /// <summary>Head-to-body gap, the stall, and frames the body could not follow while the head was past the lean
+    /// (self-test: vr.140's stalled follow).</summary>
+    internal static float FollowGap => Follow.Offset.Length();
+
+    internal static bool FollowStalled => Follow.Stalled;
+    internal static int FollowDrops { get; private set; }
     private static readonly RecenterFade Fade = new();
     private static readonly object FadeOwner = new();
 
@@ -339,6 +346,8 @@ internal static class LocomotionInput
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
         var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
+        if (!canFollow && stickIdle && Follow.Offset.Length() > Follow.LeanRadius)
+            FollowDrops++;
         lastCanFollow = canFollow;
         WarnFar(c, canFollow, stickIdle);
         if (Fade.Update(Follow.RecenterNeeded, dt))

@@ -231,10 +231,17 @@ internal sealed partial class SelfTestRunner
         float since = CueMark();
         float t0 = Now;
         float faded = 0f;
+        float maxGap = 0f;
+        bool everStalled = false;
+        bool crouched = false;
+        int drops = LocomotionInput.FollowDrops;
         while (Now - t0 < 1f)
         {
             ScriptHead(head - forward * Ease(0f, 0.7f, Now - t0), rot);
             faded = Mathf.Max(faded, VRFade.Target);
+            maxGap = Mathf.Max(maxGap, LocomotionInput.FollowGap);
+            everStalled |= LocomotionInput.FollowStalled;
+            crouched |= c.data.isCrouching;
             yield return null;
         }
         ScriptHead(head - forward * 0.7f, rot);
@@ -248,18 +255,27 @@ internal sealed partial class SelfTestRunner
         )
         {
             faded = Mathf.Max(faded, VRFade.Target);
+            maxGap = Mathf.Max(maxGap, LocomotionInput.FollowGap);
+            everStalled |= LocomotionInput.FollowStalled;
+            crouched |= c.data.isCrouching;
             yield return null;
         }
         float back0 = Vector3.Dot(c.Center - start, back);
         yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 0.1f, seen: false);
         string cue = cueNote;
+        // What the follow did, so a miss names its cause (run 52 failed with no numbers).
+        string trail = F(
+            $"head-body gap up to {maxGap:0.00} m, stalled {everStalled}, follow dropouts {LocomotionInput.FollowDrops - drops}, crouched {crouched}, NotNow on the right {CueLog.Capture.Fired(false, DenyReason.NotNow, since, false, out _)}, on the left {CueLog.Capture.Fired(true, DenyReason.NotNow, since, false, out _)}, fade {faded:0.00}"
+        );
+        if (!stepOk)
+            Note(trail);
         // The fade clears again once the recenter is done.
         yield return WaitFor(() => VRFade.Target <= 0f, 2f);
         bool cleared = VRFade.Target <= 0f;
         ReleaseHead();
         yield return Wait(2f);
         stalledNote = F(
-            $"stalled follow: body {back0:0.00} m back toward the wall 0.45 m behind, fade {faded:0.00}, cleared {cleared}: {cue}"
+            $"stalled follow: body {back0:0.00} m back toward the wall 0.45 m behind, cleared {cleared}, {trail}: {cue}"
         );
         if (!stepOk)
             yield break;
