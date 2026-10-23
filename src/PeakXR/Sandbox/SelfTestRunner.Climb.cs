@@ -1483,8 +1483,7 @@ internal sealed partial class SelfTestRunner
         yield return null;
         var held = HeldItem();
         spawned.Add(held.gameObject);
-        var spot = Flat(rig.Head.forward) * 0.45f + rig.Head.position;
-        spot.y = c.Center.y;
+        var spot = GroundAhead(PropSetOut);
         if (!SandboxActions.SpawnItemAt(apple, spot))
         {
             Fail(SandboxActions.LastMessage);
