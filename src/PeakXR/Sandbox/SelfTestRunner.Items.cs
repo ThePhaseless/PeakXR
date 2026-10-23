@@ -1152,6 +1152,13 @@ internal sealed partial class SelfTestRunner
         var held = HeldItem();
         spawned.Add(held.gameObject);
         yield return Wait(0.5f);
+        if (held == null || !ReferenceEquals(HeldItem(), held))
+        {
+            Fail(
+                $"the given {item.name} left the hand before any use (now holding {(HeldItem() != null ? HeldItem().name : "nothing")})"
+            );
+            yield break;
+        }
         // A rope spool's use is the tie-off, which needs an anchor in aim (RopeTier.Update).
         if (held.TryGetComponent<RopeTier>(out var tier))
         {

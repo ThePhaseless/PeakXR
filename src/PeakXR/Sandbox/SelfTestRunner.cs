@@ -475,7 +475,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             SelfTestInputPatch.HoldPrimary = false;
             // SpoolUse scripts the hands; a failed or timed-out step leaves them scripted.
             if (VRRun)
+            {
                 EndHands();
+                // Let interact.physical see the scripted grip open while the hand is empty: run 48 gave the next item
+                // in the same frame, so the release edge landed on it ("drop release: Apple Berry Green(Clone)"),
+                // dropped it, and every other use.* step read a destroyed item 0.5 s in.
+                yield return Wait(0.3f);
+            }
             Interact.Binoculars.BinocularsConfig.ForceHold = false;
             Safe("use.despawn", Despawn);
         }
@@ -800,7 +806,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         // A reflected game call wraps the real failure.
         if (e is System.Reflection.TargetInvocationException { InnerException: { } inner })
             e = inner;
-        report.Exception($"{e.GetType().Name}: {e.Message} @ {FirstLine(e.StackTrace)}");
+        // The whole trace, inner exceptions included, goes to LogOutput.log; the step line names the first frame
+        // that is not Unity's own throw helper (run 48 kept only ThrowHelper.ThrowNullReferenceException).
+        Plugin.Log.LogWarning($"[selftest] {report.CurrentId} threw: {e}");
+        report.Exception(
+            $"{e.GetType().Name}: {e.Message} @ {SelfTestReport.ThrowSite(e.StackTrace)}"
+        );
     }
 
     /// <summary>
