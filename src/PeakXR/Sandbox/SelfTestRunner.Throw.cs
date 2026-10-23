@@ -36,7 +36,6 @@ internal sealed partial class SelfTestRunner
         release = windup + forward * 0.9f + Vector3.up * 0.15f;
     }
 
-    /// <summary>vr.13: the fixed item, thrown along the head's level forward, judged with <see cref="ThrowReport"/>.</summary>
     /// <summary>Clear flight (m) a heading needs for the throw: past the step's 2 m landing check with room to fall.</summary>
     const float ThrowClear = 8f;
 
@@ -117,6 +116,7 @@ internal sealed partial class SelfTestRunner
         return F($"no heading {ThrowClear:0} m clear; threw along the home heading");
     }
 
+    /// <summary>vr.13: the fixed item, thrown along the head's level forward, judged with <see cref="ThrowReport"/>.</summary>
     IEnumerator ThrowCheck()
     {
         Item item = null;
