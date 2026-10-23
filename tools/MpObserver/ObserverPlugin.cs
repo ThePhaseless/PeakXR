@@ -4,8 +4,11 @@ using System.IO;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Logging;
+using ExitGames.Client.Photon;
 using HarmonyLib;
 using PeakXR.Core;
+using Photon.Pun;
+using Photon.Realtime;
 using UnityEngine;
 
 namespace MpObserver;
@@ -17,7 +20,8 @@ namespace MpObserver;
 /// methods on its own character: <c>Character.PassOut</c> (Starve, then the RPCA_PassOut RPC), AddStatus Injury or Web,
 /// ClearAllStatus, the RPCA_ReviveAtPosition and WarpPlayerRPC RPCs on its own view, and its own crouch input (the
 /// full table is in docs/testing.md). No custom RPC, event or property, and nothing called on the VR player. B's profile is kept (<see cref="ProgressGuard"/>): it refuses to start unguarded. Idle unless
-/// the game starts with <c>-mpobs</c>.
+/// the game starts with <c>-mpobs</c>. When B also runs PeakXR flat (the modded-B mode), it records PeakXR's side of
+/// the pose sync as well (Observer.PeakXR.cs), still without referencing PeakXR.
 /// </summary>
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 public sealed class ObserverPlugin : BaseUnityPlugin
@@ -53,9 +57,13 @@ public sealed class ObserverPlugin : BaseUnityPlugin
             Log.LogError($"refusing to observe: progress guard targets missing ({missing})");
             return;
         }
+        // Mod errors from here on; an error PeakXR logs in its own Awake before this one runs still shows as a Failed
+        // feature in Observer's PeakXR report.
+        BepInEx.Logging.Logger.Listeners.Add(ModLog.Instance);
         var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
         ProgressGuard.Arm(harmony, guarded);
         Harmony.CreateAndPatchAll(typeof(RpcProbe), MyPluginInfo.PLUGIN_GUID);
+        Harmony.CreateAndPatchAll(typeof(SendProbe), MyPluginInfo.PLUGIN_GUID);
         Harmony.CreateAndPatchAll(typeof(InputHold), MyPluginInfo.PLUGIN_GUID);
         var go = new GameObject("MpObserver") { hideFlags = HideFlags.HideAndDontSave };
         DontDestroyOnLoad(go);
@@ -125,4 +133,97 @@ static class InputHold
         if (Crouch && c != null && c.input == __instance)
             __instance.crouchIsPressed = true;
     }
+}
+
+/// <summary>
+/// Counts what B itself raises, per event code: <c>PhotonNetwork.RaiseEvent</c> (PhotonUnityNetworking.dll), the call
+/// PeakXR's net.pose sends event 151 with (src/PeakXR/Net/NetPoseSync.cs). A flat PeakXR peer must never send 151.
+/// Prefix that only counts; the call goes on unchanged.
+/// </summary>
+[HarmonyPatch]
+static class SendProbe
+{
+    internal static readonly Dictionary<byte, int> Sent = new();
+
+    static MethodBase TargetMethod() =>
+        AccessTools.Method(
+            typeof(PhotonNetwork),
+            nameof(PhotonNetwork.RaiseEvent),
+            new[] { typeof(byte), typeof(object), typeof(RaiseEventOptions), typeof(SendOptions) }
+        );
+
+    static void Prefix(byte eventCode)
+    {
+        Sent.TryGetValue(eventCode, out int n);
+        Sent[eventCode] = n + 1;
+    }
+}
+
+/// <summary>
+/// PeakXR's verdict on each pose packet it receives: postfix on <c>PeakXR.Core.RemotePoseStream.Accept</c>
+/// (src/PeakXR.Core/PeerTable.cs), which returns a <c>PoseAccept</c> (Accepted, RateLimited, Malformed, OutOfOrder).
+/// Found by name, because the observer never references PeakXR; patched only when PeakXR is loaded. Read only.
+/// </summary>
+static class AcceptProbe
+{
+    internal static readonly Dictionary<string, int> Results = new(StringComparer.Ordinal);
+
+    internal static MethodBase Target()
+    {
+        var stream = AccessTools.TypeByName("PeakXR.Core.RemotePoseStream");
+        return stream != null ? AccessTools.Method(stream, "Accept") : null;
+    }
+
+    // HarmonyX boxes the enum result into an object __result.
+    internal static void Postfix(object __result)
+    {
+        var key = __result?.ToString() ?? "null";
+        Results.TryGetValue(key, out int n);
+        Results[key] = n + 1;
+    }
+}
+
+/// <summary>
+/// BepInEx log lines from mods, not the game: errors and fatals from any source but Unity's own log (which
+/// <see cref="Observer"/> reads itself), and PeakXR's warnings. Logging can come from any thread.
+/// </summary>
+sealed class ModLog : ILogListener
+{
+    internal static readonly ModLog Instance = new();
+
+    internal int Errors;
+    internal int PeakXRWarnings;
+    internal readonly List<string> FirstErrors = new();
+    internal readonly List<string> FirstWarnings = new();
+
+    public void LogEvent(object sender, LogEventArgs eventArgs)
+    {
+        var source = eventArgs.Source?.SourceName ?? "";
+        if (source == "Unity Log")
+            return;
+        var text = eventArgs.Data?.ToString() ?? "";
+        int nl = text.IndexOf('\n', StringComparison.Ordinal);
+        if (nl >= 0)
+            text = text.Substring(0, nl);
+        bool peakxr = source.StartsWith("PeakXR", StringComparison.Ordinal);
+        lock (FirstErrors)
+        {
+            if ((eventArgs.Level & (LogLevel.Error | LogLevel.Fatal)) != 0)
+            {
+                Errors++;
+                if (FirstErrors.Count < 20)
+                    FirstErrors.Add(source + ": " + text);
+            }
+            else if (!peakxr)
+                return;
+            else if ((eventArgs.Level & LogLevel.Warning) != 0)
+            {
+                PeakXRWarnings++;
+                if (FirstWarnings.Count < 20)
+                    FirstWarnings.Add(source + ": " + text);
+            }
+        }
+    }
+
+    public void Dispose() { }
 }

@@ -323,6 +323,7 @@ internal sealed partial class SelfTestRunner
                         + c.data.lookValues.y.ToString("0.#", CultureInfo.InvariantCulture)
                         + "]"
                 );
+            MpPoseFields(j, c);
         }
         j.Str("item", held != null ? held.name : null)
             .Num("heldId", held != null ? held.itemID : -1)
@@ -344,6 +345,46 @@ internal sealed partial class SelfTestRunner
         {
             Plugin.Log.LogWarning("[mptest] checkpoint write failed: " + e.Message);
         }
+    }
+
+    /// <summary>
+    /// A's tracked head, its wrist targets (<see cref="AvatarPoseDriver.HandTarget"/>, the bone the tracked hand asks
+    /// for) and its own avatar's head and hand bones, in its body frame (<see cref="MpPoseFrame"/>). A modded B writes
+    /// A's avatar bones in the same frame, and mp-check --modded-b compares them. Only while the arms follow the pose.
+    /// </summary>
+    static void MpPoseFields(JsonLine j, Character c)
+    {
+        var driver = AvatarPoseDriver.Of(c);
+        var rig = c.refs.hip != null ? c.refs.hip.Rig : null;
+        var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partDict : null;
+        if (
+            driver == null
+            || rig == null
+            || parts == null
+            || !driver.HasFreshPose
+            || driver.ArmsSuspended
+            || !AvatarPoseDriver.ArmsTracked(c)
+        )
+            return;
+        var root = new System.Numerics.Vector3(rig.position.x, rig.position.y, rig.position.z);
+        float yaw = c.data.lookValues.x;
+        void Put(string key, Vector3 w)
+        {
+            var v = MpPoseFrame.ToFrame(new System.Numerics.Vector3(w.x, w.y, w.z), root, yaw);
+            j.Vec(key, v.X, v.Y, v.Z);
+        }
+        if (driver.Pose.HasHead)
+            Put("poseHead", driver.Pose.HeadPosition);
+        if (driver.HandTarget(true, out var left))
+            Put("poseL", left);
+        if (driver.HandTarget(false, out var right))
+            Put("poseR", right);
+        if (parts.TryGetValue(BodypartType.Head, out var head))
+            Put("boneHead", head.Rig.position);
+        if (parts.TryGetValue(BodypartType.Hand_L, out var handL))
+            Put("boneL", handL.Rig.position);
+        if (parts.TryGetValue(BodypartType.Hand_R, out var handR))
+            Put("boneR", handR.Rig.position);
     }
 
     void Extra(string key, Vector3 v) =>

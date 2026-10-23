@@ -548,7 +548,7 @@ All files are in the shared directory.
 ### Checking the result
 
 ```sh
-tools/mp-check.sh [mp-dir]       # POS_TOL=1.0, LAND_TOL=1.5 metres, LAG_TOL=1.0 s, HOLD=2.0 s by default
+tools/mp-check.sh [--modded-b] [mp-dir]   # POS_TOL=1.0, LAND_TOL=1.5 metres, LAG_TOL=1.0 s, HOLD=2.0 s by default; --modded-b: see "Modded B"
 ```
 
 It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 when any check fails:
@@ -566,6 +566,76 @@ It prints one `PASS`, `FAIL`, `SKIP` or `INFO` line per check and exits with 1 w
 - B's quicksave fingerprint is the same at the end as at the start.
 
 `INFO` lines list the skipped checkpoints and any emote B saw from A outside the `emote` step. The remaining checks are by eye: the screenshots for how A's held items and arms look on B's screen, and the hand IK targets for `two-hand`.
+
+### Modded B: PeakXR without a headset
+
+The default run pairs A with a vanilla B. This second mode gives B PeakXR as well, running flat, next to MpObserver. It covers two cases the vanilla run cannot:
+
+- A modded player with no XR. With `VRSession.Active` false, B must play like vanilla: every VR-only feature skipped, no exceptions, a normal mono camera, and no event 151 sent.
+- The receive half of VR to VR. B publishes the `PeakXR` handshake property (`Net/NetPoseSync.cs`), receives A's event 151, passes it through `RemotePoseStream.Accept` (`src/PeakXR.Core/PeerTable.cs`: 40/s per sender, burst 10, parts within 4 m of the hip) and drives A's avatar with A's head and hands (rows 1 to 3 and 9 of `docs/multiplayer-compat.md`).
+
+PeakXR already has a flat switch. With the preloader's `Runtime.Mode = Disabled` (or the launch option `-peakxr-novr`), the preloader sets `PEAKXR_RUNTIME=Disabled` and installs no XR runtime files. The plugin then skips every feature with `VROnly` and never creates the XR bootstrap, so XR never starts. The flat-safe features stay on: `net.pose`, `avatar.local`, `avatar.emotes`, `ui.settings` and `sandbox`. Leaving `Mode` at `OpenXR` on a machine without a headset is a different path: the VR features install, the bootstrap tries OpenXR and logs an error when nothing starts, and that error would fail the check below. B gets `Mode = Disabled` in its config file, so its Steam launch options stay as they are.
+
+Today B is the Linux user `peakb` with its own Steam, and both sides use `/tmp/peakxr-mp-shared`. B's launch options are `WINEDLLOVERRIDES="winhttp=n,b" %command% -mpobs -force-vulkan -mpdir /tmp/peakxr-mp-shared`. Install with B's game closed, from the repo root:
+
+```sh
+mise run package && mise run build-observer
+MP=/tmp/peakxr-mp-shared
+BX=/home/peakb/.local/share/Steam/steamapps/common/PEAK/BepInEx
+rm -rf "$MP/peakxr-b" && cp -r dist/PeakXR/BepInEx "$MP/peakxr-b"
+cp dist/MpObserver/MpObserver.dll "$MP/peakxr-b/"
+printf '[Runtime]\nMode = Disabled\n' > "$MP/peakxr-b/PeakXR.Preloader.cfg"
+chmod -R a+rX "$MP/peakxr-b"
+sudo -S -p '' -u peakb rm -rf "$BX/plugins/PeakXR" "$BX/patchers/PeakXR" < ~/.sudo
+sudo -S -p '' -u peakb cp -r "$MP/peakxr-b/plugins/PeakXR" "$BX/plugins/" < ~/.sudo
+sudo -S -p '' -u peakb cp -r "$MP/peakxr-b/patchers/PeakXR" "$BX/patchers/" < ~/.sudo
+sudo -S -p '' -u peakb cp "$MP/peakxr-b/PeakXR.Preloader.cfg" "$BX/config/" < ~/.sudo
+sudo -S -p '' -u peakb cp "$MP/peakxr-b/MpObserver.dll" "$BX/plugins/MpObserver/" < ~/.sudo
+rm -rf "$MP/peakxr-b"
+```
+
+Launch both sides as usual, B first. After the run:
+
+```sh
+tools/mp-check.sh --modded-b /tmp/peakxr-mp-shared
+```
+
+B's `BepInEx/LogOutput.log` should show `PEAKXR_RUNTIME=Disabled` and `[compat] xr.bootstrap Skipped (VR disabled)`.
+
+When PeakXR is loaded on B, the observer records more. It still never references PeakXR: it finds PeakXR's types by name and reads them through reflection and read-only Harmony postfixes.
+
+- A `peakxr` line at start: PeakXR's version, `PEAKXR_RUNTIME`, the feature report (`FeatureManager.Features`) and how many game methods each feature patches.
+- A `handshake` line whenever A's or B's `PeakXR` property changes (raw ints: protocol in the low 16 bits, bit 16 set while in VR).
+- In every sample and checkpoint: `vrDriven` (A's avatar has an `AvatarPoseDriver` with a fresh pose), `acc151` (packets accepted so far), and A's avatar `boneHead`, `boneL` and `boneR` in A's body frame (hip rigidbody, look yaw; `MpPoseFrame` in `src/PeakXR.Core/MpPoseCheck.cs`).
+- In `b-summary.json`: `sent151` and `sentEvents` (what B raised, from a `PhotonNetwork.RaiseEvent` prefix that only counts), `xrEverActive` and `stereoEver`, `bepinexErrors` with the first messages (errors and fatals from any BepInEx log source except Unity's own log), and a `peakxr` block. That block holds `vrEverActive`, PeakXR's warnings, the feature report and `pose151`: packets received, the peak in any 1 s window, the mean over the seconds that had packets (`RateWindow`), and the `RemotePoseStream.Accept` verdicts (Accepted, RateLimited, Malformed, OutOfOrder).
+
+The observer writes `sent151`, `xrEverActive`, `stereoEver`, `bepinexErrors` and `peakxrLoaded` in the vanilla mode too. In that mode, `mp-check.sh` fails when `peakxrLoaded` is true, which catches an incomplete switch back.
+
+A's checkpoints carry `poseHead`, `poseL` and `poseR` while its arms follow the tracked pose: the tracked head and the wrist targets the tracked hands ask for (`AvatarPoseDriver.HandTarget`). Next to them are `boneHead`, `boneL` and `boneR`, A's own avatar bones, all in the same body frame.
+
+`--modded-b` keeps every vanilla check (positions, held items, landings, step RPCs, exceptions, quicksave) and swaps "B received no event 151" and "A sent no event 151" for:
+
+- B loaded PeakXR, ran with `PEAKXR_RUNTIME=Disabled`, and never had a VR session, an XR device or a stereo camera.
+- No PeakXR feature failed, every skipped one says `VR disabled` or `not requested`, and `xr.bootstrap` is skipped. An `INFO` line lists the active features and their patch counts.
+- B published a flat handshake, saw A's VR handshake, and both carry the same protocol.
+- B received 151 from A and PeakXR accepted some. None was malformed. The mean rate over the seconds with packets lies between `RATE_MIN` and `RATE_MAX` (2 and 30 per second: the 0.25 s keepalive and `PoseRate.MaxRate`). B received at least half of what A sent. The peak in 1 s and the rate-limited and out-of-order counts are `INFO`, because B's frame hitches (screenshots, level loads) bunch packets on arrival, and the bucket limiting them is the intended behaviour.
+- At `walk-to-host`, `ping`, `regroup`, `grab`, `pickup`, `holster` and `two-hand` (A stands still with tracked arms), B drives A's avatar, and its hand bones lie within `HAND_TOL` (0.25 m) of A's tracked wrist targets. The line also gives the distance to A's own hand bones and head bone. At least one of these checkpoints must pass.
+- B sent no event 151 and logged no PeakXR or BepInEx errors.
+- A sent event 151.
+
+Switch B back to vanilla, with B's game closed. This removes PeakXR's plugin, preloader, both config files and the preloader's state file, and keeps MpObserver and BepInEx:
+
+```sh
+B=/home/peakb/.local/share/Steam/steamapps/common/PEAK
+sudo -S -p '' -u peakb rm -rf "$B/BepInEx/plugins/PeakXR" "$B/BepInEx/patchers/PeakXR" \
+  "$B/BepInEx/config/com.thephaseless.peakxr.cfg" "$B/BepInEx/config/PeakXR.Preloader.cfg" \
+  "$B/PEAK_Data/PeakXR.Preloader.state" < ~/.sudo
+sudo -S -p '' -u peakb ls "$B/BepInEx/plugins" "$B/BepInEx/patchers" < ~/.sudo
+```
+
+The listing must show only `MpObserver` under plugins and nothing under patchers. With `Mode = Disabled`, the preloader never put XR files into `PEAK_Data`. If B ever ran PeakXR with another mode, run it once more with `Mode = Disabled` before removing it, so the preloader takes its files out of `PEAK_Data/Plugins/x86_64` and `PEAK_Data/UnitySubsystems`. The next vanilla `tools/mp-check.sh` fails if PeakXR still loaded on B.
+
+This mode tests one direction with one sender. A second headset is still needed for B in VR: B sending poses, A receiving and applying them, both sides' rate limits under two-way traffic, and the send rate scaling of row 9, which only drops below the configured 25 Hz with four or more VR players (250/N² Hz).
 
 ## What the sandbox does not cover
 

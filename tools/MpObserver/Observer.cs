@@ -20,7 +20,7 @@ namespace MpObserver;
 /// It reads <c>a-checkpoints.jsonl</c>, <c>a-requests.jsonl</c> and <c>a-done.json</c> from the VR side and answers
 /// requests in <c>b-acks.jsonl</c>.
 /// </summary>
-internal sealed class Observer : MonoBehaviour
+internal sealed partial class Observer : MonoBehaviour
 {
     const float SampleInterval = 0.5f;
     const float PollInterval = 0.25f;
@@ -79,6 +79,7 @@ internal sealed class Observer : MonoBehaviour
                 .Str("path", ProgressGuard.SavePath)
                 .Str("fingerprint", ProgressGuard.SaveAtStart.ToString())
         );
+        StartPeakXR();
         StartCoroutine(Flow());
     }
 
@@ -225,6 +226,7 @@ internal sealed class Observer : MonoBehaviour
             samples++;
             Write(Snapshot(new JsonLine().Str("type", "sample").Num("t", Unix), c));
         }
+        SampleFlat(FirstRemote());
         return any;
     }
 
@@ -271,6 +273,7 @@ internal sealed class Observer : MonoBehaviour
             )
             .Num("ev151", Count(151))
             .Num("events", TotalEvents());
+        PoseFields(j, c);
         return j;
     }
 
@@ -522,6 +525,7 @@ internal sealed class Observer : MonoBehaviour
     {
         eventCounts.TryGetValue(ev.Code, out int n);
         eventCounts[ev.Code] = n + 1;
+        OnPoseEvent(ev.Code);
     }
 
     void OnRpc(string method, Component at, object[] args)
@@ -646,11 +650,11 @@ internal sealed class Observer : MonoBehaviour
             .Raw("firstExceptions", exc.Append(']').ToString())
             .Str("saveStart", ProgressGuard.SaveAtStart.ToString())
             .Str("saveEnd", saveEnd.ToString())
-            .Bool("saveSame", saveEnd.Same(ProgressGuard.SaveAtStart))
-            .ToString();
+            .Bool("saveSame", saveEnd.Same(ProgressGuard.SaveAtStart));
+        SummaryFlat(summary);
         try
         {
-            File.WriteAllText(Path.Combine(Dir, "b-summary.json"), summary + "\n");
+            File.WriteAllText(Path.Combine(Dir, "b-summary.json"), summary.ToString() + "\n");
         }
         catch (IOException e)
         {
