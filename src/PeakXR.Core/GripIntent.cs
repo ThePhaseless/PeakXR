@@ -282,9 +282,14 @@ namespace PeakXR.Core
             float window
         ) => pointing && now + window > interactAt ? now + window : interactAt;
 
-        /// <summary>Index straight, the other fingers closed: the hand aims instead of the head.</summary>
+        /// <summary>Index straight, the other fingers closed: the hand aims instead of the head. A finger resting on the
+        /// trigger (<see cref="FingerCurlMapper.TriggerTouchCurl"/>) is a fist, not a point: at 0.35 a touch-sensing
+        /// controller's plain grip read as a finger gun and its interact waited forever (VR run 59, vr.81).</summary>
         public static bool IsPointing(in FingerCurls c) =>
-            c.Index < 0.35f && c.Middle > 0.6f && c.Ring > 0.5f;
+            c.Index < PointedIndex && c.Middle > 0.6f && c.Ring > 0.5f;
+
+        /// <summary>Index curl below which the finger counts as straight, under a finger resting on the trigger.</summary>
+        public const float PointedIndex = 0.2f;
 
         /// <summary>
         /// The ping's finger gun: pointing with the thumb lifted off the stick and face buttons. A grip with the index
