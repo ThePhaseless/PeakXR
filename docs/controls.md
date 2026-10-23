@@ -69,7 +69,7 @@ Each of these has an on/off setting in the `Interaction` section. With a setting
 - Open a suitcase (`LiftLidToOpen`): grip the top of the case and lift. The game's open timer only runs as far as you have raised the lid, so lift slowly. A respawn chest needs both hands on the lid; one hand alone gets the two-hands cue. Gripping the case low down holds it open the old way, and shows an upward ring at the lid edge to say where to lift.
 - Bugle (`BugleAtMouth`): raise it to your mouth to play. Tilt the bell up for a higher note and down for a lower one. The trigger plays it too.
 - Light things (`LightWithFlame`): touch a lit torch, flare, candle or lantern to a cannon or rocket fuse, a ghost fire or an unlit campfire and keep it there until it catches.
-- Food and drinks: bring them to your mouth. Pulling them away before the use finishes cancels it.
+- Food and drinks: bring them to your mouth. Pulling them away before the use finishes cancels it. The trigger alone doesn't eat or drink: it gets the refusal cue and a ring at your mouth. For seated or one-handed play, turn on `TriggerEats` and the trigger eats and drinks too.
 - Bandages, heat packs, chalk and other healing items (`PressToBody`): press the item to your chest or your other forearm to use it. Press it to a friend's body to use it on them.
 - Book of Bones (`ReadAtFace`, on): hold it open in front of your eyes to read it. Lowering it stops.
 - Cursed items (`CommuneAtFace`, on): they only work held eye to eye for the whole use. The trigger alone is refused with a warning.

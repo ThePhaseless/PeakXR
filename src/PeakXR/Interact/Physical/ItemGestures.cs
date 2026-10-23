@@ -263,12 +263,18 @@ internal static class ItemGestures
     /// gesture (<see cref="HeldGestures"/>) is how it is used in VR.</summary>
     public static bool TriggerRefused(Item item)
     {
-        if (!Installed || !VRSession.Active)
+        if (!Installed || !VRSession.Active || item == null)
             return false;
         var use = UseOf(item);
         var cfg = ItemGesturesConfig.Instance;
-        return ItemUse.NeedsGesture(use)
-            && (use == UseGesture.Read ? cfg.ReadAtFace : cfg.CommuneAtFace);
+        return ItemUse.Trigger(use, cfg.TriggerEats) switch
+        {
+            TriggerUse.Gesture => use == UseGesture.Read ? cfg.ReadAtFace : cfg.CommuneAtFace,
+            // Food and drink go to the mouth, when there is a mouth route; an item the game will not use anyway
+            // keeps the trigger, so its own refusal (UseDenial) says why.
+            TriggerUse.Mouth => InteractConfig.Instance.EatAtMouth && item.CanUsePrimary(),
+            _ => false,
+        };
     }
 
     private static bool hipsSeen;

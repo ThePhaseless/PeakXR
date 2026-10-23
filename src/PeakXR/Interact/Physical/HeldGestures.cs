@@ -110,6 +110,7 @@ internal static class HeldGestures
         {
             Face.Reset();
             facing = false;
+            MouthHint(rig, hand, left, use);
             return;
         }
         var head = rig.Head;
@@ -147,6 +148,31 @@ internal static class HeldGestures
                 ItemGestures.Held
             );
         }
+    }
+
+    /// <summary>Clear of the mouth zone (interact.physical eats within its 0.12 m radius), metres.</summary>
+    private const float AwayFromMouth = 0.2f;
+
+    /// <summary>
+    /// The trigger on food or drink held away from the mouth (Interaction.TriggerEats off): it is not eaten, so say
+    /// where it goes instead of doing nothing. A soft refusal at the hand with the would-work ring at the mouth.
+    /// </summary>
+    private static void MouthHint(VRRig rig, Transform hand, bool left, UseGesture use)
+    {
+        if (
+            !Trigger.Pressed
+            || !InteractConfig.Instance.TriggerUse
+            || (use != UseGesture.Eat && use != UseGesture.Drink)
+            || !ItemGestures.TriggerRefused(ItemGestures.Held)
+        )
+            return;
+        var head = rig.Head;
+        var mouth = MouthGesture
+            .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
+            .U();
+        if (Vector3.Distance(hand.position, mouth) < AwayFromMouth)
+            return;
+        Affordance.DenyAtHand(left, DenyReason.NotHere, DenyHint.At(mouth), ItemGestures.Held);
     }
 
     private static void UpdateBugle(VRRig rig, ItemGesturesConfig cfg, Transform hand, float dt)
