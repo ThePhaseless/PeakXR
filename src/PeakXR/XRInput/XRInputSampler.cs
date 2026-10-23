@@ -93,6 +93,11 @@ internal static class XRInputSampler
                 {
                     Rotation = Quaternion.identity,
                 };
+            // The one controller's own layout: a wand has no A or B.
+            BindingTable.Active =
+                !VRInput.OneHanded ? BindingTable.Default
+                : VRInput.Hand(VRInput.LeftHanded).WandPad ? BindingTable.OneHandedWand
+                : BindingTable.OneHanded;
         }
         catch (Exception e)
         {

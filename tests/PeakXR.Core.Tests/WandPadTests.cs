@@ -85,9 +85,79 @@ public class WandPadTests
         Assert.Equal(new Vector2(0.8f, 0f), right.Stick);
         Assert.Equal(0f, StickAxes.MoveY(right.Stick).Y);
 
+        // The centre is the wand's A: tap jumps, hold crouches (BindingTable.OneHandedWand).
         var centre = WandPad.Map(new Vector2(0.1f, 0f), true, moveHand: false, oneHanded: true);
-        Assert.True(centre.StickClick);
+        Assert.True(centre.Primary);
+        Assert.False(centre.StickClick);
         Assert.Equal(Vector2.Zero, centre.Stick);
+    }
+
+    [Fact]
+    public void OneHanded_TopRimSprints_BottomRimIsB()
+    {
+        var top = WandPad.Map(new Vector2(0f, 0.95f), true, moveHand: false, oneHanded: true);
+        Assert.Equal(0.95f, top.Stick.Y);
+        Assert.True(top.StickClick);
+
+        // The wheel cannot go on a long menu press: the menu hold already recenters (Camera.RecenterHoldSeconds).
+        var bottom = WandPad.Map(new Vector2(0f, -0.95f), true, moveHand: false, oneHanded: true);
+        Assert.True(bottom.Secondary);
+        Assert.Equal(Vector2.Zero, bottom.Stick);
+    }
+
+    const float Dt = 1f / 90f;
+
+    static ActionMapper WandMapper() => new(BindingTable.OneHandedWand) { LongPressSeconds = 0.5f };
+
+    static void Run(ActionMapper m, ControllerInput c, int frames)
+    {
+        for (int i = 0; i < frames; i++)
+            m.Update(default, c, Dt);
+    }
+
+    [Fact]
+    public void OneHandedWand_CentreTapJumps()
+    {
+        var m = WandMapper();
+        Run(m, new ControllerInput { Primary = true }, 10);
+        Assert.False(m.Held(VRAction.Jump));
+        m.Update(default, default, Dt);
+        Assert.True(m.Pressed(VRAction.Jump));
+        Assert.False(m.Held(VRAction.Crouch));
+    }
+
+    [Fact]
+    public void OneHandedWand_CentreHoldCrouches_WithoutJumping()
+    {
+        var m = WandMapper();
+        Run(m, new ControllerInput { Primary = true }, 50);
+        Assert.True(m.Held(VRAction.Crouch));
+        m.Update(default, default, Dt);
+        Assert.False(m.Pressed(VRAction.Jump));
+    }
+
+    [Fact]
+    public void OneHandedWand_BottomRimPausesAndHoldsTheWheel_TopRimSprints()
+    {
+        var m = WandMapper();
+        Run(m, new ControllerInput { Secondary = true }, 5);
+        m.Update(default, default, Dt);
+        Assert.True(m.Pressed(VRAction.Pause));
+
+        Run(m, new ControllerInput { Secondary = true }, 50);
+        Assert.True(m.Held(VRAction.Emote));
+
+        var s = WandMapper();
+        s.Update(default, new ControllerInput { StickClick = true }, Dt);
+        Assert.True(s.Pressed(VRAction.Sprint));
+        Assert.False(s.Pressed(VRAction.Jump));
+    }
+
+    [Fact]
+    public void OneHandedWand_TableKeepsEveryRowOnTheOneController()
+    {
+        foreach (var b in BindingTable.OneHandedWand)
+            Assert.True(b.Control == VRControl.Menu || b.Hand == BindingHand.Dominant);
     }
 
     [Fact]

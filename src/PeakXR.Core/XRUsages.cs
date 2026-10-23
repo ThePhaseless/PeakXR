@@ -102,8 +102,9 @@ namespace PeakXR.Core
         public const float TurnSide = 0.5f;
 
         /// <param name="oneHanded">Accessibility.OneHanded: the one wand's top and bottom clicks walk forward and back
-        /// (the stick Y one-handed walking reads) instead of being B and A; the sides still turn and the centre still
-        /// clicks.</param>
+        /// (the stick Y one-handed walking reads) instead of being B and A, the top rim also sprints (stick click), the
+        /// bottom rim is B (pause, held: emote wheel), the sides still turn and the centre is A (with
+        /// <c>BindingTable.OneHandedWand</c>: tap jumps, hold crouches).</param>
         public static WandPadState Map(
             Vector2 pad,
             bool clicked,
@@ -120,11 +121,21 @@ namespace PeakXR.Core
                 s.StickClick = pad.Length() >= SprintRim;
                 return s;
             }
+            bool rim = pad.Length() >= SprintRim;
             switch (TrackpadButtons.Zone(pad))
             {
                 case PadZone.Up when oneHanded:
+                    s.Stick = new Vector2(0f, pad.Y);
+                    s.StickClick = rim;
+                    break;
+                case PadZone.Down when oneHanded && rim:
+                    s.Secondary = true;
+                    break;
                 case PadZone.Down when oneHanded:
                     s.Stick = new Vector2(0f, pad.Y);
+                    break;
+                case PadZone.Center when oneHanded && MathF.Abs(pad.X) < TurnSide:
+                    s.Primary = true;
                     break;
                 case PadZone.Up:
                     s.Secondary = true;

@@ -207,6 +207,7 @@ internal sealed class ControllerReader
         s.StickClick = b.StickClick;
         s.StickTouch = b.StickTouch;
         s.Menu = b.Menu;
+        s.WandPad = layout.EmulateFaceButtons && layout.PadIsStick;
 
         s.SkeletalCurls = ReadCurls() ? curls : null;
     }

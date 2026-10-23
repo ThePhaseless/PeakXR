@@ -30,6 +30,10 @@ public struct HandState
     /// otherwise null and fingers are derived from the analog values.</summary>
     public float[] SkeletalCurls;
 
+    /// <summary>A Vive wand: its pad is the stick and it has no A or B (one-handed play picks
+    /// <c>BindingTable.OneHandedWand</c> for it).</summary>
+    public bool WandPad;
+
     /// <summary>The controller accepts haptic impulses (<c>InputDevice.SendHapticImpulse</c>).</summary>
     public bool Haptics;
 }
