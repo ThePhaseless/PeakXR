@@ -57,4 +57,31 @@ public class StrikeGestureTests
         s.Reset();
         Assert.Equal(0, s.Count);
     }
+
+    [Theory]
+    [InlineData(90f)]
+    [InlineData(36f)]
+    public void HammerSwing_LandsAtLowFrameRates(float fps)
+    {
+        // SpikeHammer's tuning; one swing from 0.45 m out to the spike in 0.12 s, eased (VR run 58 ran at 36 fps).
+        var s = new StrikeGesture
+        {
+            Radius = 0.2f,
+            RearmRadius = 0.35f,
+            MinSpeed = 1.2f,
+        };
+        float dt = 1f / fps;
+        float last = 0.45f;
+        Assert.False(s.Update(last, 0f));
+        bool landed = false;
+        for (float t = dt; t <= 0.12f + 1e-4f; t += dt)
+        {
+            float u = MathF.Min(t / 0.12f, 1f);
+            float d = 0.45f * (1f - u * u * (3f - 2f * u));
+            landed |= s.Update(d, (last - d) / dt);
+            last = d;
+        }
+        Assert.True(landed);
+        Assert.False(s.Armed);
+    }
 }

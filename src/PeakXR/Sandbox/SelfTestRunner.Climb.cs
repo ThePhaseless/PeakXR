@@ -1608,11 +1608,13 @@ internal sealed partial class SelfTestRunner
             rig.Head.position + Flat(face - rig.Head.position) * 0.3f + Vector3.down * 0.15f
         );
         SetHand(holdLeft, spikeAim);
-        Script(holdLeft).Rotation = Quaternion.LookRotation(
-            rig.Origin.InverseTransformDirection(face - rig.Origin.TransformPoint(spikeAim)),
-            Vector3.up
-        );
-        yield return Wait(0.3f);
+        // Aim the spike hand's aim pose (not the grip) at the face: interact.aim casts the spike from it. Run 58 turned
+        // the grip toward the wall, the aim pose pointed at the floor, and the preview landed by the feet.
+        for (float until = Now + 0.3f; Now < until; )
+        {
+            AimHand(rig, holdLeft, face);
+            yield return null;
+        }
         var handlesBefore = new HashSet<int>();
         foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
             handlesBefore.Add(h.GetInstanceID());
@@ -1627,19 +1629,34 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float started = Now;
+        var preview = Interact.Tools.SpikeHammer.Preview;
+        float offFace = Mathf.Abs(Vector3.Dot(preview - wallFace.point, wallFace.normal));
+        if (offFace > 0.2f)
+        {
+            Script(holdLeft).Trigger = 0f;
+            Fail(
+                F(
+                    $"the spike's preview is {offFace:0.00} m off the wall face, at {preview}: it aimed elsewhere"
+                )
+            );
+            yield return LetGoAll(c);
+            yield break;
+        }
         int needed = tools.HammerStrikes;
         for (int i = 0; i < needed && Interact.Tools.SpikeHammer.Casting; i++)
         {
             var point = Interact.Tools.SpikeHammer.Preview;
             // Back past the strike's re-arm radius (SpikeHammer: 0.35 m) so each blow counts; run 57's 0.3 m never
-            // re-armed it and landed 0 of 3.
-            var back = point + wallFace.normal * 0.45f;
+            // re-armed it and landed 0 of 3. Along the preview's own normal, the direction the strike is measured on.
+            var back = point + Interact.Tools.SpikeHammer.PreviewNormal * 0.45f;
             yield return MoveTo(free, () => back, 0.12f);
+            yield return Wait(0.05f);
             // 0.45 m in 0.12 s: a strike at about 3.7 m/s into the wall.
             yield return MoveTo(free, () => point, 0.12f);
             yield return null;
         }
         int strikes = Interact.Tools.SpikeHammer.Strikes;
+        string swing = Interact.Tools.SpikeHammer.LastSwing;
         yield return WaitFor(
             () => FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before,
             castTime + 1f
@@ -1659,7 +1676,7 @@ internal sealed partial class SelfTestRunner
         Script(holdLeft).Trigger = 0f;
         float earliest = castTime / HammerCast.MaxSpeedup;
         var note = F(
-            $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s)"
+            $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s); last {swing}"
         );
         if (!placed)
             Fail("the hammered spike was not placed: " + note);

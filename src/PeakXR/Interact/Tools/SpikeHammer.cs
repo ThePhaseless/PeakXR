@@ -32,6 +32,17 @@ internal static class SpikeHammer
     /// <summary>Where the running cast's preview sits on the wall.</summary>
     internal static Vector3 Preview { get; private set; }
 
+    /// <summary>The wall's normal at <see cref="Preview"/>.</summary>
+    internal static Vector3 PreviewNormal { get; private set; }
+
+    /// <summary>The last swing as the strike check saw it (self-test vr.44d, and the log).</summary>
+    internal static string LastSwing { get; private set; } = "";
+
+    // Per hand: the swing now inside the re-arm radius, its closest approach and the speed into the wall there.
+    private static readonly float[] SwingClosest = { float.MaxValue, float.MaxValue };
+    private static readonly float[] SwingSpeed = new float[2];
+    private static readonly bool[] SwingArmed = new bool[2];
+
     private static StrikeGesture NewStrike() =>
         new()
         {
@@ -75,6 +86,7 @@ internal static class SpikeHammer
             RightStrike.Reset();
         }
         Preview = hit.point;
+        PreviewNormal = hit.normal;
         if (leftTracked)
             Strike(LeftStrike, true, rig, in hit);
         if (rightTracked)
@@ -88,6 +100,41 @@ internal static class SpikeHammer
             ParityFeedback.Denied(lastStrikeLeft, hit.point, ParityFeedback.KeepHolding);
     }
 
+    /// <summary>
+    /// One Info line per swing: when the hand leaves the re-arm radius again (or lands a strike), its closest approach
+    /// to the preview, the speed into the wall there, whether it came in armed, and the thresholds. Only during a
+    /// spike cast, a few lines per placement.
+    /// </summary>
+    private static void TraceSwing(
+        StrikeGesture gesture,
+        bool left,
+        float distance,
+        float speed,
+        bool armed,
+        bool struck
+    )
+    {
+        int i = left ? 0 : 1;
+        if (distance <= gesture.RearmRadius)
+        {
+            if (distance < SwingClosest[i])
+            {
+                SwingClosest[i] = distance;
+                SwingSpeed[i] = speed;
+                SwingArmed[i] = armed;
+            }
+            if (!struck)
+                return;
+        }
+        else if (SwingClosest[i] == float.MaxValue)
+            return;
+        LastSwing = System.FormattableString.Invariant(
+            $"{(left ? "L" : "R")} swing: closest {SwingClosest[i]:0.00} m (strike within {gesture.Radius:0.00}), {SwingSpeed[i]:0.0} m/s into the wall there (min {gesture.MinSpeed:0.0}), armed {SwingArmed[i]}, struck {struck}"
+        );
+        Plugin.Log.LogInfo("[tools.hammer] " + LastSwing);
+        SwingClosest[i] = float.MaxValue;
+    }
+
     /// <summary>A strike: the hand reaches the preview point moving into the wall (against its normal).</summary>
     private static void Strike(StrikeGesture gesture, bool left, VRRig rig, in RaycastHit hit)
     {
@@ -98,7 +145,10 @@ internal static class SpikeHammer
         var velocity = rig.Origin.TransformVector(state.Velocity);
         float distance = Vector3.Distance(hand.position, hit.point);
         float speed = Vector3.Dot(velocity, -hit.normal);
-        if (!gesture.Update(distance, speed))
+        bool armed = gesture.Armed;
+        bool struck = gesture.Update(distance, speed);
+        TraceSwing(gesture, left, distance, speed, armed, struck);
+        if (!struck)
             return;
         strikes++;
         lastStrikeLeft = left;

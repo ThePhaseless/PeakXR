@@ -15,6 +15,9 @@ namespace PeakXR.Core
 
         bool _armed;
 
+        /// <summary>The hand has been out past <see cref="RearmRadius"/> since the last strike.</summary>
+        public bool Armed => _armed;
+
         /// <summary>Strikes since the last <see cref="Reset"/>.</summary>
         public int Count { get; private set; }
 
