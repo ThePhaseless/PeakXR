@@ -16,7 +16,8 @@ public class PointedGripTests
     public void PointingAtAnAcceptingTargetBeatsAClimbableInReach()
     {
         var c = AgainstRock();
-        c.PointedAtTaker = true;
+        c.Pointing = true;
+        c.Aimed = AimedTarget.ItemTaker;
         Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
     }
 
@@ -25,7 +26,8 @@ public class PointedGripTests
     {
         var c = AgainstRock();
         c.ExtensionClaim = true;
-        c.PointedAtTaker = true;
+        c.Pointing = true;
+        c.Aimed = AimedTarget.ItemTaker;
         Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
     }
 
@@ -40,7 +42,8 @@ public class PointedGripTests
     public void AFreeHandJoiningATwoHandItemStillJoins()
     {
         var c = AgainstRock();
-        c.PointedAtTaker = true;
+        c.Pointing = true;
+        c.Aimed = AimedTarget.ItemTaker;
         c.NearHeldItem = true;
         // At the item's off-hand grip: next to rock, the grip anchor is what makes it a join (vr.51's chain fix).
         c.AtSecondGrip = true;
@@ -59,7 +62,8 @@ public class PointedGripCandidateTests
             PhysicalGrab = true,
             PhysicalClimb = true,
             Candidate = GrabCandidate.Interactible,
-            PointedAtTaker = true,
+            Pointing = true,
+            Aimed = AimedTarget.ItemTaker,
         };
         Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
     }
@@ -74,7 +78,8 @@ public class PointedGripCandidateTests
             NearClimbable = true,
             HoldConfirmed = true,
             Candidate = GrabCandidate.Interactible,
-            PointedAtTaker = true,
+            Pointing = true,
+            Aimed = AimedTarget.ItemTaker,
         };
         Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
     }
@@ -86,7 +91,8 @@ public class PointedGripCandidateTests
         {
             PhysicalGrab = true,
             Candidate = GrabCandidate.Item,
-            PointedAtTaker = true,
+            Pointing = true,
+            Aimed = AimedTarget.ItemTaker,
         };
         Assert.Equal(GripPressAction.GrabItem, GripIntent.OnPress(c));
     }

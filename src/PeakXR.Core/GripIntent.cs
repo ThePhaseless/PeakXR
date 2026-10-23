@@ -81,10 +81,29 @@ namespace PeakXR.Core
         /// sphere. A hand that holds an item climbs only on such a hold.</summary>
         public bool HoldConfirmed;
 
-        /// <summary>The hand is in the pointing pose (<see cref="GripIntent.IsPointing"/>) and its aim ray, within
-        /// the game's interact reach, hits something that takes the interact now (the scout statue with an amulet in
-        /// hand). A pointed finger is a deliberate aim, so this beats a climbable in reach and a body-slot claim.</summary>
-        public bool PointedAtTaker;
+        /// <summary>The hand is in the pointing pose (<see cref="GripIntent.IsPointing"/>). Any grip with the finger off
+        /// the trigger reads as this, so on its own it decides nothing.</summary>
+        public bool Pointing;
+
+        /// <summary>What the hand's aim ray hits within the game's interact reach.</summary>
+        public AimedTarget Aimed;
+
+        /// <summary>Pointing at an item taker: a deliberate aim with the item it takes in hand, which beats a
+        /// climbable in reach and a body-slot claim (only those).</summary>
+        public readonly bool PointedAtTaker => Pointing && Aimed == AimedTarget.ItemTaker;
+    }
+
+    /// <summary>What a pointing hand's aim ray hits within the game's interact reach.</summary>
+    public enum AimedTarget
+    {
+        None,
+
+        /// <summary>Something interactible that does not depend on the held item.</summary>
+        Other,
+
+        /// <summary>A target that takes the interact only because of the held item (the scout statue with an
+        /// amulet, a skeleton with the Book of Bones): nobody climbs while offering it.</summary>
+        ItemTaker,
     }
 
     /// <summary>
