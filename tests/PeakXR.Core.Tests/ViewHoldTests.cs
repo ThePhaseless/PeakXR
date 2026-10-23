@@ -384,7 +384,7 @@ public class ViewHoldTests
         for (; t < start + 2f; t += Dt)
         {
             var body = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * (t - start);
-            var off = hold.Lean(body) - body;
+            var off = hold.Lean(body, bleed: true) - body;
             // Per frame the view leaves the body's path by at most a fraction of what the body moved.
             float moved = MathF.Max((body - lastBody).Length(), 1e-6f);
             worstStep = MathF.Max(worstStep, (off - lastOff).Length() / moved);
@@ -402,5 +402,27 @@ public class ViewHoldTests
         var end = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * 2f;
         var after = hold.Update(end, true, Dt);
         Assert.True(((after - end) - lastOff).Length() < 0.005f);
+    }
+
+    [Fact]
+    public void LeanInMotion_WithoutAFollowWalk_CarriesTheOffsetWhole()
+    {
+        // Run 54: bleeding every lean added the offset's change to the view (vr.45 leans 3.8 cm, carry 2.5 cm). A
+        // lean that room-scale did not walk under keeps its offset whole; the hold resumes on it.
+        var hold = new ViewHold();
+        float t = 0f;
+        for (; t < 3f; t += Dt)
+            hold.Update(Sway(t) + new Vector3(0.01f * t, 0f, 0f), true, Dt);
+        var body0 = Sway(t) + new Vector3(0.03f, 0f, 0f);
+        var off0 = hold.Update(body0, true, Dt) - body0;
+        var lean = new Vector3(0f, 0f, 0.15f);
+        float start = t;
+        float worst = 0f;
+        for (; t < start + 2f; t += Dt)
+        {
+            var body = Sway(t) + new Vector3(0.03f, 0f, 0f) + lean * (t - start);
+            worst = MathF.Max(worst, ((hold.Lean(body, bleed: false) - body) - off0).Length());
+        }
+        Assert.True(worst < 0.001f, $"held offset moved {worst:0.000} m during the lean");
     }
 }

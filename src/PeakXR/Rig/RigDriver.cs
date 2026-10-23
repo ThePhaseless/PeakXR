@@ -805,10 +805,26 @@ internal sealed class RigDriver : MonoBehaviour
             var body = (goal - extra).N();
             // A turn (and the torso swing after it) moves the eye anchor and turnShift cancels it: the hold neither
             // holds nor releases then, or the turn pivots off the eye (vr.16: 3.2 cm in run 45, 3.8 cm in run 47).
+            // A lean after a room-scale walk bleeds its held offset into its own travel, so standing up leaves none
+            // for the follow to walk back to (run 50); any other lean carries it whole (run 54). The episode ends once
+            // the view has been held still for a while.
+            if (FollowWalking)
+            {
+                bleedLean = true;
+                heldSinceWalk = 0f;
+            }
+            else if (viewHoldWhy == null)
+            {
+                heldSinceWalk += dt;
+                if (heldSinceWalk > BleedEpisodeSeconds)
+                    bleedLean = false;
+            }
+            else
+                heldSinceWalk = 0f;
             viewGoal =
                 (
                     Time.unscaledTime < turnHoldUntil ? viewHold.Carry(body)
-                    : ViewHoldGate.CarriesThrough(viewHoldWhy) ? viewHold.Lean(body)
+                    : ViewHoldGate.CarriesThrough(viewHoldWhy) ? viewHold.Lean(body, bleedLean)
                     : viewHold.Update(body, viewHoldWhy == null, dt)
                 ).U() + extra;
             ViewHeld = viewGoal - goal;
@@ -1164,6 +1180,15 @@ internal sealed class RigDriver : MonoBehaviour
     private string viewHoldWhy;
 
     private readonly LeanMotion leanMotion = new();
+
+    /// <summary>A room-scale walk happened since the view was last held still for <see cref="BleedEpisodeSeconds"/>:
+    /// leans bleed the held offset (<see cref="ViewHold.Lean"/>) instead of carrying it.</summary>
+    private bool bleedLean;
+    private float heldSinceWalk;
+
+    /// <summary>Seconds of a held view that end a room-scale walk's episode: longer than a held far lean (2.5 s in
+    /// vr.45), so its stand-up still bleeds.</summary>
+    private const float BleedEpisodeSeconds = 3f;
 
     /// <summary>The local body for <see cref="ViewHoldGate"/>: the lean's body gate (grounded, upright, no stick,
     /// not carried, swimming, warping, sliding or bouncing), how fast the lean moves the eyes, the mean part speed,

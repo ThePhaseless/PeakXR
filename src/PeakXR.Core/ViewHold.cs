@@ -61,17 +61,20 @@ public sealed class ViewHold
 
     /// <summary>
     /// Instead of <see cref="Update"/> while a lean is in motion (<see cref="ViewHoldGate.CarriesThrough"/>): the view
-    /// rides the body, and the held offset bleeds out with the body's own travel, a 0.3 m lean leaving 5 % of it. A
-    /// release instead slid the view by the whole offset in 0.15 s on top of the lean (run 49, vr.45: 3.3 cm); a
-    /// frozen offset outlived the lean and room-scale walked the body back to close it after standing up (run 50:
-    /// 5.5 cm). The engage timer is kept, so a lean held still again is held at once.
+    /// rides the body with the held offset kept whole, as turns do (a release slid the view by the whole offset in
+    /// 0.15 s on top of the lean: run 49, vr.45, 3.3 cm). With <paramref name="bleed"/>, for a lean room-scale has
+    /// walked under, the offset instead bleeds out with the body's own travel (a 0.3 m return leaves 5 % of it): kept
+    /// whole it outlived the far lean, and the follow walked the body 5.5 cm back to close it (run 50). Bleeding every
+    /// lean added the offset's change to the view (run 54: 3.8 cm against 2.5 cm carried). The engage timer is kept,
+    /// so a lean held still again is held at once.
     /// </summary>
-    public Vector3 Lean(Vector3 body)
+    public Vector3 Lean(Vector3 body, bool bleed)
     {
         if (!have || (body - output).LengthSquared() > SnapDistance * SnapDistance)
             return Update(body, false, 0f);
         float moved = (body - (output - off)).Length();
-        off *= MathF.Exp(-moved / LeanBleed);
+        if (bleed)
+            off *= MathF.Exp(-moved / LeanBleed);
         output = body + off;
         Offset = off.Length();
         return output;

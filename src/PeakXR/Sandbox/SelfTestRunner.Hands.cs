@@ -191,9 +191,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// Waits (up to 2 s) for a dropped prop to stop rolling. One that rests outside <see cref="PropRestIn"/> to
     /// <see cref="PropRestOut"/> out from the eye is set down on the ground <see cref="PropSetOut"/> ahead, as a player
-    /// would step to it: the step is the grab, not a chase. Its physics stay the game's (run 50 held it kinematic and
-    /// the grab still failed, so that is not what helps). Run 47-50: Apples that rolled 1.0-3.2 m away, or under the
-    /// toes, failed vr.10, vr.11, vr.32 and vr.47b.
+    /// would step to it: the step is the grab, not a chase. Then it is held still (kinematic, named in the note) until
+    /// the grab, so the stooping body cannot roll it on. Run 47-54: Apples that rolled 1.0-3.2 m away, under the toes
+    /// or on during the stoop failed vr.10, vr.11, vr.32 and vr.47b.
     /// </summary>
     IEnumerator RestWithinReach(Item world, Vector3 spot)
     {
@@ -239,8 +239,15 @@ internal sealed partial class SelfTestRunner
             if (world != null)
                 how += F($", now at {world.Center()}");
         }
-        if (world != null)
-            Note($"{world.name} {how}");
+        if (world != null && world.rig != null)
+        {
+            // Run 54: accepted where it rested, the Apple rolled 1 m on during the stoop. Held still from here to
+            // the grab; the pickup takes it out of the world anyway.
+            world.rig.linearVelocity = Vector3.zero;
+            world.rig.angularVelocity = Vector3.zero;
+            world.rig.isKinematic = true;
+            Note($"{world.name} {how}; shortcut: held still (kinematic) from here to the grab");
+        }
         yield return Wait(0.2f);
     }
 
@@ -715,6 +722,14 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
         }
+        // A climber reaches up for a hold about eye height and pulls it down to the chest: from a chest-height hold
+        // the arm ran out after a 0.25 m pull, and the rise sat on the 0.1 m line (vr.15 passed and failed in turn,
+        // runs 49-54). Grip at eye height where the face goes that high.
+        if (
+            WallInFront(c, wall, 0.6f, out var high)
+            && Vector3.Distance(high.point, hit.point) < 1f
+        )
+            hit = high;
         var hold = hit.point + hit.normal * 0.04f;
         Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 3.5f;
         yield return MoveTo(left, () => hold, 0.5f);
