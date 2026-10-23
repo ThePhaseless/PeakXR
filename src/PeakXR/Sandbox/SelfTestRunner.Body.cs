@@ -217,7 +217,11 @@ internal sealed partial class SelfTestRunner
         wall.name = "PeakXR_TestWallBehind";
         wall.layer = LayerMask.NameToLayer("Map");
         wall.transform.SetPositionAndRotation(
-            c.data.groundPos + back * 0.6f + Vector3.up * 0.45f,
+            // 0.45 m: run 49 put it at 0.6 and the body walked 0.36 m toward it before stalling, leaving the
+            // head inside the 0.35 m lean radius, where a stall clears with no fade or NotNow (a lean, by design).
+            c.data.groundPos
+                + back * 0.45f
+                + Vector3.up * 0.45f,
             Quaternion.LookRotation(back)
         );
         wall.transform.localScale = new Vector3(3f, 0.9f, 0.3f);
@@ -254,7 +258,7 @@ internal sealed partial class SelfTestRunner
         ReleaseHead();
         yield return Wait(2f);
         stalledNote = F(
-            $"stalled follow: body {back0:0.00} m back toward the wall 0.6 m behind, fade {faded:0.00}, cleared {cleared}: {cue}"
+            $"stalled follow: body {back0:0.00} m back toward the wall 0.45 m behind, fade {faded:0.00}, cleared {cleared}: {cue}"
         );
         if (!stepOk)
             yield break;
@@ -1986,23 +1990,39 @@ internal sealed partial class SelfTestRunner
             vignetted = 0f,
             peak = 0f;
         float start = Now;
+        int seen = Time.frameCount;
+        int traced = 0;
         while (Now - start < 4f)
         {
             yield return null;
-            // The clock RigDriver moves the view on (unscaled), so a capped or scaled game frame never fakes a jolt.
-            float dt = Time.unscaledDeltaTime;
-            var p = rig.Origin.position;
-            var d = p - last;
-            last = p;
-            path.Add(p);
-            if (dt <= 0f || d.magnitude > ViewMotionLimit.JumpDistance)
+            // The view step RigDriver made last LateUpdate, with its own frame time (sampling the origin here would
+            // pair a move with the next frame's dt: run 49's 12.5 m/s^2 with the limiter right).
+            var step = RigDriver.LastViewStep;
+            if (step.Frame == seen)
+                continue;
+            seen = step.Frame;
+            float dt = step.Dt;
+            var d = step.Origin;
+            last += d;
+            path.Add(last);
+            if (step.Snap || dt <= 0f || d.magnitude > ViewMotionLimit.JumpDistance)
             {
                 haveV = false;
                 continue;
             }
             var v = d / dt;
             if (haveV)
-                maxAccel = Mathf.Max(maxAccel, (v - lastV).magnitude / dt);
+            {
+                float a = (v - lastV).magnitude / dt;
+                maxAccel = Mathf.Max(maxAccel, a);
+                // Trace the frames that jolt: the follow's own move against the origin's, so another writer shows.
+                if (a > limit.MaxAcceleration * 1.5f && traced++ < 8)
+                    Plugin.Log.LogInfo(
+                        F(
+                            $"[selftest] vr.219 jolt frame {step.Frame} dt {dt * 1000f:0.0} ms accel {a:0.0} m/s^2 origin v {v.magnitude:0.00} chase v {step.ChaseVelocity.magnitude:0.00} anchor step {step.Anchor.magnitude:0.000} origin step {d.magnitude:0.000} other writers {(d - step.Anchor).magnitude:0.000} m chasing {step.Chasing}"
+                        )
+                    );
+            }
             lastV = v;
             haveV = true;
             maxSpeed = Mathf.Max(maxSpeed, v.magnitude);

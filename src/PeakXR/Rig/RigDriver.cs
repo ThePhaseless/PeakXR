@@ -237,6 +237,28 @@ internal sealed class RigDriver : MonoBehaviour
         System.Numerics.Vector2.Lerp(torsoEyes.Offset, massEyes.Offset, rootBlend);
     private Vector3 anchor;
     private readonly ViewMotionLimit chaseLimit = new();
+    private Vector3 lastOriginWritten;
+    private bool haveOriginWritten;
+
+    /// <summary>
+    /// One LateUpdate's view motion, recorded where it is made so a reader pairs each move with its own frame time
+    /// (a coroutine samples the previous LateUpdate's write with the next frame's dt, which turns frame-time jitter
+    /// into fake jolts). <c>Anchor</c> is the follow (limited while chasing); <c>Origin</c> the rig origin's move
+    /// this frame, including every other writer (room anchor, turn, the spectate push).
+    /// </summary>
+    internal struct ViewStepTrace
+    {
+        public int Frame;
+        public float Dt;
+        public Vector3 Anchor;
+        public Vector3 Origin;
+        public Vector3 ChaseVelocity;
+        public bool Chasing;
+        public bool Snap;
+    }
+
+    /// <summary>The last LateUpdate's <see cref="ViewStepTrace"/> (self-test).</summary>
+    internal static ViewStepTrace LastViewStep;
     private bool snap = true;
     private Vector3 turnShift;
 
@@ -804,10 +826,21 @@ internal sealed class RigDriver : MonoBehaviour
         // The detached chase moves the view without the player (spectating, passed out, carried, a tumble, a launch):
         // artificial locomotion, so it eases in and out at a capped acceleration and speed (ViewMotionLimit). A body
         // that gets away re-places the view behind a fade (TryGoal's Blink), never a fast glide.
-        if (shownKind == ViewKind.ThirdPerson && !snap)
+        bool chasing = shownKind == ViewKind.ThirdPerson && !snap;
+        bool snapped = snap;
+        if (chasing)
             anchor = chaseLimit.Step(before.N(), anchor.N(), viewGoal.N(), dt).U();
         else
             chaseLimit.Reset();
+        LastViewStep = new ViewStepTrace
+        {
+            Frame = Time.frameCount,
+            Dt = dt,
+            Anchor = anchor - before,
+            ChaseVelocity = chaseLimit.Velocity.U(),
+            Chasing = chasing,
+            Snap = snapped,
+        };
         if (shownKind == ViewKind.FirstPerson && !snap)
         {
             BodyAnchor = anchor;
@@ -865,6 +898,11 @@ internal sealed class RigDriver : MonoBehaviour
         }
         if (clearShift.sqrMagnitude > 1e-8f)
             rig.Origin.position += clearShift;
+        var written = rig.Origin.position;
+        if (LastViewStep.Frame == Time.frameCount)
+            LastViewStep.Origin = haveOriginWritten ? written - lastOriginWritten : Vector3.zero;
+        lastOriginWritten = written;
+        haveOriginWritten = true;
         spectateFloor.Tick(watching, rig);
     }
 
