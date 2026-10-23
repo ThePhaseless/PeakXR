@@ -345,7 +345,16 @@ internal static class LocomotionInput
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
-        var request = Follow.Update(head, new NVector2(delta.x, delta.z), canFollow, dt);
+        // At the calibrated standing eye height no lean is left to stand up from (RoomScaleFollow.Update).
+        bool standingTall =
+            Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.06f;
+        var request = Follow.Update(
+            head,
+            new NVector2(delta.x, delta.z),
+            canFollow,
+            dt,
+            standingTall
+        );
         if (!canFollow && stickIdle && Follow.Offset.Length() > Follow.LeanRadius)
             FollowDrops++;
         lastCanFollow = canFollow;

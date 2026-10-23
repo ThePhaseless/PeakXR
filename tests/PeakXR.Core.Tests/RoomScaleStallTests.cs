@@ -33,6 +33,41 @@ public class RoomScaleStallTests
         }
     }
 
+    /// <summary>Runs the follow with a body that walks its request at 1 m/s; returns the last request.</summary>
+    static Vector2 Walk(
+        RoomScaleFollow f,
+        Func<float, Vector2> head,
+        float seconds,
+        ref Vector2 body
+    )
+    {
+        var request = Vector2.Zero;
+        for (float t = 0f; t < seconds; t += 0.02f)
+        {
+            var step = request * 1f * 0.02f;
+            body += step;
+            request = f.Update(head(t) - body + f.Anchor, step, true, 0.02f, standingTall: true);
+        }
+        return request;
+    }
+
+    [Fact]
+    public void AnOldFollowsTravel_DoesNotBlockAStepTheOtherWay()
+    {
+        // Run 54, vr.140: an earlier forward follow left its travel behind; stepping back 0.7 m later counted as
+        // "standing back up after that follow" for good, so the body never followed and never stalled (gap 0.70 m).
+        var f = new RoomScaleFollow { LeanRadius = 0.35f };
+        var body = Vector2.Zero;
+        Walk(f, _ => new Vector2(0f, 0.8f), 4f, ref body); // walk forward after the head
+        var at = body;
+        Walk(f, _ => at, 3f, ref body); // the head comes back over the body and rests
+        var back = Walk(f, t => at - new Vector2(0f, 0.7f * MathF.Min(1f, t)), 1.5f, ref body);
+        Assert.True(
+            back.Length() > 0.05f || f.RecenterNeeded,
+            $"stepping back 0.7 m: no follow (offset {f.Offset.Length():0.00} m)"
+        );
+    }
+
     [Fact]
     public void BlockedFollow_StallsThroughBriefGroundingDropouts()
     {
