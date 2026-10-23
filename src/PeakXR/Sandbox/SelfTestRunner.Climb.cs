@@ -47,6 +47,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
+        yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
@@ -1297,6 +1298,66 @@ internal sealed partial class SelfTestRunner
         );
         if (!keptWhileAiming || !kept)
             Fail("aiming a ping at an item picked it up: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>
+    /// vr.47e: an item that arrives in a hand whose grip is already closed is not the grip's to throw
+    /// (<see cref="ReleaseArming"/>). The right hand holds an Apple with its grip closed; a second item is given (the
+    /// game equips it, CharacterItems.cs:457) and a fast release follows: the new item stays in hand. Closing the grip
+    /// on it again and the same release throws it.
+    /// </summary>
+    IEnumerator ArriveInClosedGripStep()
+    {
+        var items = new List<Item>(SandboxActions.Items);
+        var apple = FindItem(items, AppleFragment);
+        var other = FindItem(items, "Airplane Food") ?? FindItem(items, "Granola");
+        if (apple == null || other == null)
+        {
+            stepSkip = "no Apple or second one-handed food item";
+            yield break;
+        }
+        const bool left = false;
+        if (!SandboxActions.GiveItem(apple, left))
+        {
+            stepSkip = SandboxActions.LastMessage;
+            yield break;
+        }
+        yield return Until(() => Holding(apple), 5f, "given Apple not in hand");
+        if (!stepOk)
+            yield break;
+        spawned.Add(HeldItem().gameObject);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.3f);
+        // Arrives while the grip stays closed.
+        SandboxActions.GiveItem(other, left);
+        yield return Until(() => Holding(other), 5f, "second item not equipped");
+        if (!stepOk)
+            yield break;
+        var arrived = HeldItem();
+        spawned.Add(arrived.gameObject);
+        yield return null;
+        HeadFrame(out var head, out var forward, out var right);
+        var windup = head + right * 0.25f + Vector3.down * 0.15f;
+        yield return MoveTrack(left, windup, 0.4f);
+        yield return Wait(0.3f);
+        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        yield return Wait(0.6f);
+        bool kept = HeldItem() == arrived;
+        // A fresh close on it arms the release again.
+        yield return MoveTrack(left, windup, 0.3f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.3f);
+        yield return SwingRelease(left, windup, windup + forward * 0.9f + Vector3.up * 0.15f);
+        yield return WaitFor(() => HeldItem() == null, 1.5f);
+        bool thrown = HeldItem() == null;
+        var note =
+            $"{arrived.name} arrived in the closed grip: kept on the release {kept}; thrown after a fresh close {thrown}";
+        if (!kept)
+            Fail("a release dropped an item that arrived in the closed grip: " + note);
+        else if (!thrown)
+            Fail("a fresh close and fast release did not throw: " + note);
         else
             Note(note);
     }

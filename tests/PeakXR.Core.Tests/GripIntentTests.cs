@@ -308,4 +308,54 @@ public class GripIntentTests
             GripReleaseAction.Keep,
             GripIntent.OnRelease(true, true, 0.1f, 2f, true, releaseToDrop: false)
         );
+
+    [Theory]
+    [InlineData(GripPressAction.None)]
+    [InlineData(GripPressAction.Interact)]
+    [InlineData(GripPressAction.Regrip)]
+    [InlineData(GripPressAction.Climb)]
+    public void ItemArrivingInAClosedGrip_IsNotArmed(GripPressAction action) =>
+        // A hotbar or wheel select, a friend's hand-over or a game equip while the hand happens to grip.
+        Assert.False(ReleaseArming.OnArrive(gripClosed: true, action, isTheGrabbedItem: false));
+
+    [Fact]
+    public void TheItemTheGripClosedOn_IsArmed()
+    {
+        Assert.True(ReleaseArming.OnArrive(true, GripPressAction.GrabItem, isTheGrabbedItem: true));
+        // A slot draw: the grip closed on the slot that gave it.
+        Assert.True(ReleaseArming.OnArrive(true, GripPressAction.Extension, false));
+        // Another item arriving during a grab is not the one grabbed.
+        Assert.False(
+            ReleaseArming.OnArrive(true, GripPressAction.GrabItem, isTheGrabbedItem: false)
+        );
+    }
+
+    [Fact]
+    public void ItemArrivingInAnOpenHand_IsArmedForTheNextClose() =>
+        Assert.True(ReleaseArming.OnArrive(gripClosed: false, GripPressAction.None, false));
+
+    [Fact]
+    public void ClosedGrip_ItemArrives_Release_Keeps()
+    {
+        bool armed = ReleaseArming.OnArrive(true, GripPressAction.Regrip, false);
+        Assert.Equal(
+            GripReleaseAction.Keep,
+            GripIntent.OnRelease(true, true, 9f, 2f, true, releaseToDrop: true, armed: armed)
+        );
+    }
+
+    [Fact]
+    public void CloseThenRelease_Drops()
+    {
+        // A fresh close arms the release.
+        bool armed = ReleaseArming.OnPress();
+        Assert.Equal(
+            GripReleaseAction.Drop,
+            GripIntent.OnRelease(true, true, 0.1f, 2f, true, releaseToDrop: true, armed: armed)
+        );
+        Assert.Equal(
+            GripReleaseAction.Throw,
+            GripIntent.OnRelease(true, true, 9f, 2f, true, releaseToDrop: true, armed: armed)
+        );
+    }
 }

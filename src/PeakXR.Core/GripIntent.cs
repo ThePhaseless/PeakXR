@@ -79,6 +79,31 @@ namespace PeakXR.Core
     }
 
     /// <summary>
+    /// Whether a grip's release may drop or throw the item in that hand. Only an item the grip closed on, or one the
+    /// hand already held when it closed: an item that arrives in a hand whose grip is already closed (a hotbar or
+    /// wheel select, a friend's hand-over, a game equip) needs a fresh close before a release lets it go, so a player
+    /// who happens to be gripping never loses it.
+    /// </summary>
+    public static class ReleaseArming
+    {
+        /// <summary>The grip closes: whatever the hand holds, or then grabs, is the grip's.</summary>
+        public static bool OnPress() => true;
+
+        /// <summary>An item arrived in this hand.</summary>
+        /// <param name="gripClosed">The hand's grip was closed when it arrived.</param>
+        /// <param name="action">What that grip is doing.</param>
+        /// <param name="isTheGrabbedItem">It is the item that grip's pickup reached for.</param>
+        public static bool OnArrive(
+            bool gripClosed,
+            GripPressAction action,
+            bool isTheGrabbedItem
+        ) =>
+            !gripClosed
+            || action == GripPressAction.Extension
+            || (action == GripPressAction.GrabItem && isTheGrabbedItem);
+    }
+
+    /// <summary>
     /// Decides what a grip press or release means. The rules keep hands independent and allow only one held
     /// item: a free hand may join the held item, climb or interact, and a second item it grabs goes to the pockets.
     /// </summary>
@@ -134,10 +159,13 @@ namespace PeakXR.Core
             float throwSpeed,
             bool throwEnabled,
             bool releaseToDrop,
-            bool extensionClaims = false
+            bool extensionClaims = false,
+            bool armed = true
         )
         {
-            if (!thisHandHolds)
+            // An item that reached the hand while its grip was already closed (ReleaseArming) is kept: the grip
+            // never closed on it, so letting go of it is no drop or throw.
+            if (!thisHandHolds || !armed)
                 return GripReleaseAction.Keep;
             if (extensionClaims)
                 return GripReleaseAction.Extension;
