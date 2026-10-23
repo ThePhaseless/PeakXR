@@ -1438,6 +1438,8 @@ internal sealed partial class SelfTestRunner
             Fail("spawned Apple has no Item");
             yield break;
         }
+        // Run 48: the dropped Apple rolled 0.98 m out, past a stooped reach.
+        yield return RestWithinReach(second, spot);
         bool InWorld() => second != null && second.gameObject.activeInHierarchy;
         var last = second.Center();
         UI.Affordances.Affordance.ResetGate();
