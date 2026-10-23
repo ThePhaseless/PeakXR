@@ -1825,6 +1825,9 @@ internal sealed partial class SelfTestRunner
             mouthTriggerNote = "trigger eats (Interaction.TriggerEats on, or no mouth route)";
             yield break;
         }
+        // A player looks at the hand they squeeze (vr56: the ring drew 41 degrees off a level view).
+        LookAtHand(left);
+        yield return GlanceSettled(1f);
         Affordance.ResetGate();
         float mark = CueMark();
         bool cast = false;
@@ -1840,7 +1843,13 @@ internal sealed partial class SelfTestRunner
         string cue = cueNote;
         Script(left).Trigger = 0f;
         Script(left).TriggerTouch = false;
+        // The refusal ring fades on its own: the caller's next phase marks its quiet window after it is gone
+        // (vr56: vr.161's ExpectNoCue saw this ring still drawn).
+        float fadeEnd = Now + 4f;
+        while (Now < fadeEnd && UI.Affordances.AffordanceRuntime.DeniedRing(left, out _, out _))
+            yield return null;
         yield return Wait(0.3f);
+        Affordance.ResetGate();
         if (!stepOk)
             yield break;
         mouthTriggerNote = $"trigger away from the mouth: cast {cast}, {cue}";
