@@ -99,6 +99,25 @@ internal sealed partial class SelfTestRunner
             out float off
         );
         view = F($", ring {off:0} deg off the view (field {fov:0} deg)");
+        // The real spot out of sight: its in-view edge copy (CueEdge), drawn alongside the last ring, carries it.
+        if (
+            !inside
+            && h.EdgeAt >= h.RingAt - 0.1f
+            && Legibility.InFieldOfView(
+                rig.Head.position.N(),
+                rig.Head.forward.N(),
+                h.EdgeCenter,
+                fov,
+                h.EdgeDegrees,
+                out float edgeOff
+            )
+        )
+        {
+            view = F(
+                $", ring {off:0} deg off the view, shown by its edge copy {edgeOff:0} deg off"
+            );
+            return null;
+        }
         return inside
             ? null
             : F(

@@ -396,6 +396,74 @@ public static class CueLayout
     }
 }
 
+/// <summary>
+/// The in-view copy of a refusal ring whose real spot is out of sight (a hand overhead on a rope, a socket beside
+/// you, something behind): the same ring and glyph at the edge of a comfortable view cone, in the direction of the
+/// real spot, at a comfortable depth, with a pointer toward it. The real ring stays, so turning toward it shows the
+/// original. Hysteresis keeps it from flickering at the boundary.
+/// </summary>
+public static class CueEdge
+{
+    /// <summary>Half-angle of the comfortable view cone, degrees from the head's forward.</summary>
+    public const float HalfAngle = 45f;
+
+    /// <summary>Degrees back inside the cone before the edge copy goes again.</summary>
+    public const float Hysteresis = 6f;
+
+    /// <summary>Distance of the edge copy from the eye, metres.</summary>
+    public const float Depth = 1f;
+
+    /// <summary>Clearance between the edge copy and the cone, degrees.</summary>
+    private const float Inset = 2f;
+
+    /// <summary>Clearance from the display's own half field, degrees.</summary>
+    private const float FieldMargin = 4f;
+
+    /// <summary>The cone for a display of vertical field <paramref name="fovDegrees"/> (its narrower one): never
+    /// wider than <see cref="HalfAngle"/>, narrower on a narrow display; <see cref="HalfAngle"/> when unknown (0).</summary>
+    public static float ConeHalf(float fovDegrees) =>
+        fovDegrees > 1f ? MathF.Min(HalfAngle, fovDegrees * 0.5f - FieldMargin) : HalfAngle;
+
+    /// <summary>Where on the cone the edge copy's centre sits, so a ring of <paramref name="ringDegrees"/> lies wholly
+    /// inside it.</summary>
+    public static float EdgeDegrees(float coneHalf, float ringDegrees) =>
+        MathF.Max(0f, coneHalf - ringDegrees * 0.5f - Inset);
+
+    /// <summary>The edge copy shows for a real spot <paramref name="offDegrees"/> off the view: past the cone to
+    /// appear, back inside by <see cref="Hysteresis"/> to go.</summary>
+    public static bool Needed(float offDegrees, float coneHalf, bool wasShown) =>
+        wasShown ? offDegrees > coneHalf - Hysteresis : offDegrees > coneHalf;
+
+    /// <summary>
+    /// The edge copy's centre: <paramref name="edgeDegrees"/> from <paramref name="forward"/> toward
+    /// <paramref name="target"/>, <paramref name="depth"/> from the eye. <paramref name="outward"/> is the unit
+    /// direction on the view, from the centre toward the real spot (the pointer's direction). A spot straight behind
+    /// points down (toward the body), the least surprising side.
+    /// </summary>
+    public static Vector3 Spot(
+        Vector3 eye,
+        Vector3 forward,
+        Vector3 target,
+        float edgeDegrees,
+        float depth,
+        out Vector3 outward
+    )
+    {
+        var f = Vector3.Normalize(forward);
+        var to = target - eye;
+        var side = to - f * Vector3.Dot(to, f);
+        if (side.LengthSquared() < 1e-8f)
+        {
+            side = -Vector3.UnitY - f * Vector3.Dot(-Vector3.UnitY, f);
+            if (side.LengthSquared() < 1e-8f)
+                side = Vector3.UnitX;
+        }
+        outward = Vector3.Normalize(side);
+        float a = edgeDegrees * UnityQuat.Deg2Rad;
+        return eye + (f * MathF.Cos(a) + outward * MathF.Sin(a)) * depth;
+    }
+}
+
 /// <summary>Comfort-safe motion of the "would work" part: slow, small, never a flash.</summary>
 public static class CueMotion
 {
