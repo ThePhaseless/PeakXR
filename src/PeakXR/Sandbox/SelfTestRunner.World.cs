@@ -1811,7 +1811,10 @@ internal sealed partial class SelfTestRunner
                 Vector3.up
             );
         }
+        // A deliberate point: index off the trigger, thumb resting on the stick. A lifted thumb is the finger gun
+        // (GripIntent.IsFingerGun), whose interact waits for a possible ping.
         Script(free).TriggerTouch = false;
+        Script(free).StickTouch = true;
         Script(free).Trigger = 0f;
         yield return MoveTrack(free, handAt, 0.4f);
         Aim();
@@ -1848,6 +1851,7 @@ internal sealed partial class SelfTestRunner
         }
         yield return GripTo(free, 0f, 0.1f);
         Script(free).TriggerTouch = true;
+        Script(free).StickTouch = false;
         if (progress <= 0f)
         {
             Fail(
