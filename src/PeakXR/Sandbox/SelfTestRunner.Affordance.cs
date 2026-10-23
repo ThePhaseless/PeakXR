@@ -440,15 +440,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         const DenyReason reason = DenyReason.Locked;
-        var seenEntry = AffordanceFeature.SeenRefusals;
-        ulong seen = seenEntry.Value;
+        ulong seen = AffordanceRuntime.Seen;
         bool text = AffordanceFeature.ActionHintText.Value;
         bool firstTime = AffordanceFeature.FirstTimeRefusalLabels.Value;
         try
         {
             AffordanceFeature.ActionHintText.Value = false;
             AffordanceFeature.FirstTimeRefusalLabels.Value = true;
-            seenEntry.Value = seen & ~(1ul << (int)reason);
+            AffordanceRuntime.Seen = seen & ~(1ul << (int)reason);
             Affordance.ResetGate();
             if (!Affordance.DenyAtHand(false, reason))
             {
@@ -463,7 +462,7 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
             string first = AffordanceRuntime.LabelText;
-            bool marked = FirstRefusalLabel.Seen(seenEntry.Value, reason);
+            bool marked = FirstRefusalLabel.Seen(AffordanceRuntime.Seen, reason);
             yield return ShotAt("vr-220-first-label", Affordance.LastPosition);
             if (
                 first == null
@@ -500,7 +499,7 @@ internal sealed partial class SelfTestRunner
         }
         finally
         {
-            seenEntry.Value = seen;
+            AffordanceRuntime.Seen = seen;
             AffordanceFeature.ActionHintText.Value = text;
             AffordanceFeature.FirstTimeRefusalLabels.Value = firstTime;
         }

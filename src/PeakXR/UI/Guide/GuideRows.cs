@@ -311,16 +311,16 @@ internal static class GuideRows
         }
     }
 
-    /// <summary>
-    /// Practice cannot start here (online, in a run, loading): the refusal cue at the row, never a silent click.
-    /// With action hints off, the falling note and a tick still play.
-    /// </summary>
     /// <summary>Where a cue about <paramref name="row"/> plays: the row, else the head.</summary>
     private static Vector3 RowSpot(GuideRow row) =>
         row.Cell != null ? row.Cell.transform.position
         : VRRig.Instance != null && VRRig.Instance.Head != null ? VRRig.Instance.Head.position
         : Vector3.zero;
 
+    /// <summary>
+    /// Practice cannot start here (online, in a run, loading): the refusal cue at the row, never a silent click.
+    /// With action hints off, the falling note and a tick still play.
+    /// </summary>
     public static void Refuse(GuideRow row)
     {
         var at = RowSpot(row);

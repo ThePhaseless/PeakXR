@@ -103,7 +103,8 @@ public sealed class AffordanceFeature : Feature
     /// <summary>The reset button: every refusal shows its label once more. A notice at the button says it worked.</summary>
     private static void ResetSeen(Vector3 at, bool left)
     {
-        SeenRefusals.Value = 0ul;
+        AffordanceRuntime.Seen = 0ul;
+        AffordanceRuntime.FlushSeen();
         Plugin.Log.LogInfo("[ui.affordance] first-time refusal labels reset");
         if (!Affordance.Inform(left, at, DenyReason.HappenedHere, DenyHint.At(at), "Labels reset"))
             UIHaptics.Tick(left, 0.25f, 0.04f);
