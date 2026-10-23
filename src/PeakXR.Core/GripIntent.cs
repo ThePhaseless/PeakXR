@@ -174,6 +174,10 @@ namespace PeakXR.Core
 
             if (c.ExtensionClaim)
                 return GripPressAction.Extension;
+            // The item hand on a piton or handle keeps its item: no hang, and no wall catch on the rock behind it
+            // either, which would put the item away (VR run 59). The press is a Regrip, refused with HandsFull.
+            if (c.ThisHandHolds && c.CandidateIsHandle && !c.OneHanded)
+                return GripPressAction.Regrip;
             // Tightening the grip on a held item is never a climb attempt (climbing puts the item away, and a sticky one
             // falls, CharacterItems.cs:498): the holding hand climbs only when it is on a real hold, as a falling
             // player catching the wall.
