@@ -302,14 +302,27 @@ internal sealed partial class SelfTestRunner
         LookAtHand(left);
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
         float mark = CueMark();
-        yield return GripTo(left, 1f, 0.1f);
+        int refusalsBefore = UI.Affordances.Affordance.Count;
+        // The stuck body sways on its pinned foot, carrying the thorn with it: the hand stays on the thorn while the
+        // grip closes, as a player's would (run 54: the grip closed 0.24 m off it and the press found no thorn).
+        var rig = VRRig.Instance;
+        float startGrip = Now;
+        float onThorn = float.MaxValue;
+        while (Now - startGrip < 0.15f)
+        {
+            SetHand(left, rig.Origin.InverseTransformPoint(thorn.transform.position));
+            Script(left).Grip = Mathf.Clamp01((Now - startGrip) / 0.1f);
+            onThorn = Vector3.Distance(rig.Hand(left).position, thorn.transform.position);
+            yield return null;
+        }
+        Script(left).Grip = 1f;
         yield return ExpectCue(left, DenyReason.Stuck, mark, false);
         if (!stepOk)
         {
-            // Which stage: was the hand on the thorn, what did the pinch see, and what else was refused instead.
-            var hand = VRRig.Instance.Hand(left).position;
+            // Which stage: was the hand on the thorn as it closed, what did the pinch see, and what was refused since.
+            int since = UI.Affordances.Affordance.Count - refusalsBefore;
             stepNote = F(
-                $"hand {Vector3.Distance(hand, thorn.transform.position):0.00} m from the thorn, {Vector3.Distance(hand, VRRig.Instance.Head.position):0.00} m from the eye; last refusal {UI.Affordances.Affordance.LastReason} ({(UI.Affordances.Affordance.LastLeft ? "left" : "right")}), {UI.Affordances.Affordance.Count} in all; stuck {c.IsStuck()}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+                $"hand {onThorn:0.00} m from the thorn as the grip closed; {since} refusal(s) since the pinch{(since > 0 ? $", last {UI.Affordances.Affordance.LastReason}" : "")}; stuck {c.IsStuck()}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
             );
             yield break;
         }
