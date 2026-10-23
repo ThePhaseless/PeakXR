@@ -56,17 +56,50 @@ public class ViewMotionLimitTests
         var m = new ViewMotionLimit();
         var pos = Vector3.Zero;
         var body = Vector3.Zero;
+        var lastV = Vector3.Zero;
         float worst = 0f;
         for (int i = 0; i < 1800; i++)
         {
             if (i < 270)
                 body.X += 6f * Dt;
             var follow = pos + (body - pos) * (1f - MathF.Exp(-rate * Dt));
-            pos = m.Step(pos, follow, body, Dt);
+            var next = m.Step(pos, follow, body, Dt);
+            var v = (next - pos) / Dt;
+            Assert.True(
+                (v - lastV).Length() <= m.MaxAcceleration * Dt + 1e-3f,
+                $"frame {i}: {(v - lastV).Length() / Dt:0.0} m/s^2 while braking at rate {rate}"
+            );
+            lastV = v;
+            pos = next;
             worst = MathF.Max(worst, pos.X - body.X);
         }
         Assert.True(worst < 0.02f, $"overshot by {worst:0.00} m at rate {rate}");
         Assert.True(MathF.Abs(pos.X - body.X) < 0.05f, $"ended {body.X - pos.X:0.00} m short");
+    }
+
+    [Fact]
+    public void ATargetComingBack_IsBrakedForAtTheCappedRate()
+    {
+        // Run 47, vr.219: the warped body fell back toward the view, the brake cap dropped faster than MaxAcceleration
+        // and the view's speed changed at 11 m/s^2. Braking must keep the same limit.
+        var m = new ViewMotionLimit();
+        var pos = Vector3.Zero;
+        var body = new Vector3(0f, 3f, 0f);
+        var lastV = Vector3.Zero;
+        for (int i = 0; i < 900; i++)
+        {
+            if (i > 90 && body.Y > -1f)
+                body.Y -= 8f * Dt; // falls back past the view's height
+            var follow = pos + (body - pos) * (1f - MathF.Exp(-2f * Dt));
+            var next = m.Step(pos, follow, body, Dt);
+            var v = (next - pos) / Dt;
+            Assert.True(
+                (v - lastV).Length() <= m.MaxAcceleration * Dt + 1e-3f,
+                $"frame {i}: {(v - lastV).Length() / Dt:0.0} m/s^2"
+            );
+            lastV = v;
+            pos = next;
+        }
     }
 
     [Fact]
