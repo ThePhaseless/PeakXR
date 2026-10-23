@@ -43,8 +43,6 @@ internal sealed class GuideStage : MonoBehaviour
         offerNo;
     private GameObject offerCaption;
     private MainMenuPageHandler offerHandler;
-    private static readonly Color OfferYes = new(0.45f, 0.9f, 0.82f, 0.8f);
-    private static readonly Color OfferNo = new(1f, 0.42f, 0.36f, 0.8f);
 
     /// <summary>The demo on show, for the self-test; null when none.</summary>
     public GhostDemo Demo => demo;
@@ -276,8 +274,8 @@ internal sealed class GuideStage : MonoBehaviour
         offerDemo.Play(GuideTopic.Grab);
         offerDemo.Root.SetPositionAndRotation(edge + right * 0.3f + Vector3.up * 0.15f, rotation);
         var orbs = head.position + facing * 0.4f + Vector3.down * 0.12f;
-        offerYes = new TouchOrb("PeakXR_OfferPractice", OfferYes, cross: false, seconds: 0.6f);
-        offerNo = new TouchOrb("PeakXR_OfferDismiss", OfferNo, cross: true, seconds: 0.6f);
+        offerYes = new TouchOrb("PeakXR_OfferPractice", cross: false, seconds: 0.6f);
+        offerNo = new TouchOrb("PeakXR_OfferDismiss", cross: true, seconds: 0.6f);
         offerYes.Place(orbs + right * 0.28f, rotation);
         offerNo.Place(orbs + right * 0.42f, rotation);
         if (AffordanceFeature.ActionHintText != null && AffordanceFeature.ActionHintText.Value)
