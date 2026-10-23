@@ -70,6 +70,9 @@ namespace PeakXR.Core
         /// <summary>How far the anchor moved along the last follow, coasting after it included.</summary>
         float _followTravel;
 
+        /// <summary>How far the last follow walked the body, still excusing a step back as a stand-up (trace).</summary>
+        public float FollowTravel => _followTravel;
+
         /// <summary>Seconds after a follow during which the body is still settling from its walk.</summary>
         public float FollowSettleSeconds = 1.5f;
 
@@ -140,9 +143,11 @@ namespace PeakXR.Core
             // Hysteresis: start past the lean radius, stop only well inside it. Standing back up after a follow
             // points the head back by up to how far the body walked (more when the walk coasted onto the head, run
             // 31): that stance is not a step, so it never starts a walk back. Neutral then makes it upright.
-            // Standing tall and still, the stand-up is done: the last follow's travel stops excusing a step back
-            // (run 54, vr.140: an old follow's travel kept a 0.7 m step back from ever following).
-            if (!_following && standingTall && _stillFor >= StillSeconds)
+            // Standing tall and still with the head back over the body, nothing is left to stand up from: the last
+            // follow's travel stops excusing a step back (run 54, vr.140: an old follow's travel kept a 0.7 m step
+            // back from ever following). A head still behind the body after a far lean is the stand-up's own pose
+            // and keeps it (run 57, vr.45: clearing it there walked the body 0.13 m back).
+            if (!_following && standingTall && _stillFor >= StillSeconds && dist <= StopRadius)
                 _followTravel = 0f;
             bool start = !_following;
             if (start)

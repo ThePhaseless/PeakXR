@@ -382,7 +382,7 @@ internal static class LocomotionInput
         if (RigDriver.LeanTraceDue(ref nextLeanTrace))
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor ({Follow.Offset.X:0.000},{Follow.Offset.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} stick fwd {stick.Y:0.00} right {stick.X:0.00} neutral ({Follow.Neutral.X:0.000},{Follow.Neutral.Y:0.000})"
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor ({Follow.Offset.X:0.000},{Follow.Offset.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} stick fwd {stick.Y:0.00} right {stick.X:0.00} neutral ({Follow.Neutral.X:0.000},{Follow.Neutral.Y:0.000}) head y {VRInput.HeadPosition.y:0.000} vs standing {RigMath.TrackedEyeHeight(rig.HeightOffset):0.000} lean {(pose != null ? pose.LeanDegrees : 0f):0.0} deg standing-tall {standingTall} stand-up travel {Follow.FollowTravel:0.000} stalled {Follow.Stalled}"
                 )
             );
         return stick;
