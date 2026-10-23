@@ -2,7 +2,7 @@
 
 A VR mod for [PEAK](https://store.steampowered.com/app/3527290/PEAK/), built as a BepInEx 5 plugin. It
 loads Unity's OpenXR plugin into the game at startup, and can use Valve's OpenVR plugin instead.
-Work in progress.
+It supports PEAK 3.0 and still runs on 2.6.b. Work in progress.
 
 PeakXR is MIT licensed and written from scratch. It does not contain code from other PEAK or Unity VR
 mods. The XR runtime files it ships come from Unity's packages (Unity Companion License) and Valve's
@@ -40,8 +40,10 @@ well it runs flat. `BepInEx/LogOutput.log` shows the outcome on a line starting 
 `[xr.bootstrap] VR active` or `[xr.bootstrap] No XR runtime started`.
 
 In the headset, hold the menu button for a second to recenter your view and recalibrate eye height.
-Camera, render and comfort options are in `BepInEx/config/com.thephaseless.peakxr.cfg` under
-`[Camera]`, `[Render]` and `[XR]`.
+Every other option is in `BepInEx/config/com.thephaseless.peakxr.cfg`, and in VR also in the VR tab of
+the game's settings: camera under `[Camera]`, rendering under `[Render]`, runtime start-up under `[XR]`,
+and comfort under `[Comfort]` and `[ComfortEvents]`. [docs/controls.md](docs/controls.md) lists the
+controls and the settings behind them.
 
 ### Linux (Proton)
 
