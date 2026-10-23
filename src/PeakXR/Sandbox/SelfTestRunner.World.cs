@@ -97,6 +97,7 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
             Affordance.ResetGate();
+            LookAtHand(left);
             float mark = CueMark();
             yield return GripTo(left, 1f, 0.1f);
             float eyeHand = Vector3.Distance(
@@ -213,6 +214,7 @@ internal sealed partial class SelfTestRunner
         bool left = VRInput.LeftHanded;
         yield return MoveTo(left, () => top + (left ? -right : right) * 0.15f, 0.5f);
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.NeedsTwoHands, mark, tint: true, within: 2f);
@@ -377,6 +379,7 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var goal = fireBase + Flat(c.Center - fireBase) * 0.45f + Vector3.up * 0.85f;
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         float end = Now + 4f;
         BeginCarry();
@@ -467,6 +470,7 @@ internal sealed partial class SelfTestRunner
                 uses.Value = 0;
             string usesNote = $"uses {(uses.HasData ? uses.Value : -1)} of {held.totalUses}";
             Affordance.ResetGate();
+            LookAtHand(left);
             float mark = CueMark();
             var interaction = Interaction.instance;
             float progress = 0f;
@@ -665,6 +669,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         Affordance.ResetGate();
+        LookAtHand(torchLeft);
         carryMark = CueMark();
         float end = Now + seconds;
         BeginCarry();
@@ -763,6 +768,7 @@ internal sealed partial class SelfTestRunner
             bool left = LocalHold.ItemInLeftHand;
             yield return GripTo(left, 1f, 0.1f);
             Affordance.ResetGate();
+            LookAtHand(left);
             float mark = CueMark();
             yield return MoveTo(left, () => AmuletOffer(socketAt), 0.6f);
             yield return ExpectCue(left, DenyReason.Occupied, mark, tint: true, within: 2f);
@@ -856,6 +862,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         var interaction0 = Interaction.instance;

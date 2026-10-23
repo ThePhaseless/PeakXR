@@ -171,7 +171,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         ScriptHead(head - forward * 0.9f, rot);
-        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 1.5f);
+        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 1.5f, seen: false);
         string note = cueNote;
         start = Now;
         while (Now - start < 0.6f)
@@ -246,7 +246,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         float back0 = Vector3.Dot(c.Center - start, back);
-        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 0.1f);
+        yield return ExpectCue(DomLeft, DenyReason.NotNow, since, false, 0.1f, seen: false);
         string cue = cueNote;
         // The fade clears again once the recenter is done.
         yield return WaitFor(() => VRFade.Target <= 0f, 2f);
@@ -337,7 +337,7 @@ internal sealed partial class SelfTestRunner
             Fail($"sprinted {sprinted} at {speed:0.0} m/s, stopped when empty {stopped}");
             yield break;
         }
-        yield return ExpectCue(move, DenyReason.NoStamina, since, true, 1.5f);
+        yield return ExpectCue(move, DenyReason.NoStamina, since, true, 1.5f, seen: false);
         Script(move).Stick = Vector2.zero;
         Script(move).StickClick = false;
         if (stepOk)
@@ -370,7 +370,7 @@ internal sealed partial class SelfTestRunner
             Fail("the jump press did not take off");
             yield break;
         }
-        yield return ExpectCue(OffLeft, DenyReason.NoStamina, since, true, 1.5f);
+        yield return ExpectCue(OffLeft, DenyReason.NoStamina, since, true, 1.5f, seen: false);
         if (stepOk)
             stepNote = $"stamina {c.data.currentStamina:0.000} after the jump: {cueNote}";
     }
@@ -527,7 +527,7 @@ internal sealed partial class SelfTestRunner
         int airborne = BodyFeedback.TakeOffs;
         since = CueMark();
         yield return PressJump();
-        yield return ExpectCue(DomLeft, DenyReason.TooSoon, since, false, 1f);
+        yield return ExpectCue(DomLeft, DenyReason.TooSoon, since, false, 1f, seen: false);
         if (stepOk && BodyFeedback.TakeOffs != airborne)
             Fail("the second press jumped again");
         else if (stepOk)
@@ -828,7 +828,7 @@ internal sealed partial class SelfTestRunner
         string where =
             $"slope {tilt:0} degrees (limit {limit:0}), slide started {minSlide < 0.1f}, "
             + $"off the ground {airborne} of {frames} slide frames, down up to {maxDown:0.0} m/s";
-        yield return ExpectCue(DomLeft, DenyReason.TooSteep, since, false, 0.5f);
+        yield return ExpectCue(DomLeft, DenyReason.TooSteep, since, false, 0.5f, seen: false);
         if (stepOk)
             stepNote = $"{where}: {cueNote}";
         else
@@ -1010,7 +1010,7 @@ internal sealed partial class SelfTestRunner
         Script(dom).Stick = new Vector2(0f, 1f);
         yield return Wait(0.3f);
         Script(dom).Stick = Vector2.zero;
-        yield return ExpectCue(handLeft, DenyReason.CantSwitch, since, false, 1.5f);
+        yield return ExpectCue(handLeft, DenyReason.CantSwitch, since, false, 1.5f, seen: false);
         string note = cueNote;
         SandboxActions.Revive();
         yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);
@@ -1058,7 +1058,7 @@ internal sealed partial class SelfTestRunner
         Script(dom).Trigger = 1f;
         yield return Wait(0.2f);
         Script(dom).Trigger = 0f;
-        yield return ExpectCue(dom, DenyReason.CantSwitch, since, false, 1.5f);
+        yield return ExpectCue(dom, DenyReason.CantSwitch, since, false, 1.5f, seen: false);
         string note = cueNote;
         SandboxActions.Revive();
         yield return WaitFor(() => !c.data.passedOut && !c.data.fullyPassedOut, 6f);

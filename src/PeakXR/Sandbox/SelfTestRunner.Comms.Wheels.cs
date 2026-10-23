@@ -54,7 +54,13 @@ internal sealed partial class SelfTestRunner
             bool hand = RadialWheels.OpeningHandLeft(VRAction.Emote);
             float mark = CueMark();
             Script(hand).Secondary = true;
-            yield return ExpectCue(hand, DenyReason.NotWhileClimbing, mark, EmoteOpenSeconds);
+            yield return ExpectCue(
+                hand,
+                DenyReason.NotWhileClimbing,
+                mark,
+                EmoteOpenSeconds,
+                seen: false
+            );
             bool opened = gui.emoteWheel.activeInHierarchy;
             Script(hand).Secondary = false;
             if (stepOk && opened)

@@ -2275,6 +2275,7 @@ internal sealed partial class SelfTestRunner
         bool off = !left;
         yield return GripTo(left, 1f, 0.1f);
         Affordance.ResetGate();
+        LookAtHand(off);
         float mark = CueMark();
         Script(off).TriggerTouch = true;
         Script(off).Trigger = 1f;
@@ -2597,6 +2598,7 @@ internal sealed partial class SelfTestRunner
         var from = c.Center;
         int usesBefore = UsesLeft(item);
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;

@@ -878,6 +878,17 @@ internal sealed partial class SelfTestRunner
                 break;
             yield return null;
         }
+        // An apple that rolled off (run 47: the hand followed it to 3.19 m) is set back where it dropped, as a
+        // player would pick it up after walking over: the step is the stash, not a chase.
+        var rolled = world != null ? world.Center() - head.position : Vector3.zero;
+        rolled.y = 0f;
+        if (world != null && world.rig != null && rolled.magnitude > 0.8f)
+        {
+            world.rig.linearVelocity = Vector3.zero;
+            world.rig.angularVelocity = Vector3.zero;
+            world.rig.position = spot + Vector3.up * 0.1f;
+            yield return Wait(0.4f);
+        }
         var at = world != null ? world.Center() : spot;
         Vector3 Apple() => world != null ? at = world.Center() : at;
         yield return ReachDown(hold, Apple, 0.6f);
@@ -1287,6 +1298,10 @@ internal sealed partial class SelfTestRunner
     /// a hand on the ground in front of the feet.</summary>
     const float StoopReach = 0.75f;
 
+    /// <summary>Deepest stoop (m the eye drops): a full squat. A point that needs more is out of reach and the
+    /// reach guard says so.</summary>
+    const float MaxStoop = 0.9f;
+
     /// <summary>Metres the scripted hands lower the tracked head (a stoop, <see cref="ReachDown"/>), from the
     /// real head height <see cref="stoopFrom"/>. 0 stands.</summary>
     float headDrop;
@@ -1296,12 +1311,28 @@ internal sealed partial class SelfTestRunner
     /// eye (both in tracking space), else what is wrong.</summary>
     string OverReach(bool left)
     {
-        float d = Vector3.Distance(Script(left).Position, VRInput.HeadPosition);
-        return d > MaxHandFromEye
+        var to = Script(left).Position - ScriptedEye();
+        float d = to.magnitude;
+        to.y = 0f;
+        return d > MaxHandFromEye + ReachSlack
             ? F(
-                $"scripted {(left ? "left" : "right")} hand {d:0.00} m from the eye, past a player's {MaxHandFromEye:0.00} m reach"
+                $"scripted {(left ? "left" : "right")} hand {d:0.000} m from the eye ({to.magnitude:0.00} m out), past a player's {MaxHandFromEye:0.00} m reach"
             )
             : null;
+    }
+
+    /// <summary>Rounding and float slack on <see cref="MaxHandFromEye"/>, so a pose built to the limit passes.</summary>
+    const float ReachSlack = 0.005f;
+
+    /// <summary>The eye the scripted pose is built around: the tracked head, lowered by this step's stoop. Read
+    /// from the script rather than from the last sampled frame, so a check right after a stoop or a re-placed rig
+    /// does not judge a stale head.</summary>
+    Vector3 ScriptedEye()
+    {
+        var eye = VRInput.HeadPosition;
+        if (headDrop > 0f)
+            eye.y = stoopFrom - headDrop;
+        return eye;
     }
 
     /// <summary><paramref name="tracking"/> moved in toward the eye until it lies within a player's reach (just inside
@@ -1341,10 +1372,17 @@ internal sealed partial class SelfTestRunner
         var hand = MoveTo(left, world, seconds);
         while (hand.MoveNext())
         {
-            float low = Mathf.Max(
-                0f,
-                stoopFrom - rig.Origin.InverseTransformPoint(world()).y - StoopReach
+            // Low enough that the point is in reach counting its distance out, not only its height: a pack 0.6 m
+            // ahead with the eye 0.75 m above it is already 0.96 m away (run 47, vr.29).
+            var p = rig.Origin.InverseTransformPoint(world());
+            var outward = p - VRInput.HeadPosition;
+            outward.y = 0f;
+            const float R = MaxHandFromEye * 0.95f;
+            float above = Mathf.Min(
+                StoopReach,
+                Mathf.Sqrt(Mathf.Max(0f, R * R - outward.sqrMagnitude))
             );
+            float low = Mathf.Clamp(stoopFrom - p.y - above, 0f, MaxStoop);
             headDrop = Mathf.SmoothStep(from, low, (Now - start) / seconds);
             yield return hand.Current;
         }
@@ -1372,9 +1410,34 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>The hand the scripted head looks down toward (<see cref="LookAtHand"/>); null keeps the head level.</summary>
+    bool? glanceHand;
+
+    /// <summary>Degrees the scripted head is pitched down now, easing toward the glance.</summary>
+    float glancePitch;
+
+    /// <summary>Share of the hand's angle below the eye the head pitches: a player glances at the hand, the eyes do
+    /// the rest, so the head never aims exactly.</summary>
+    const float GlanceShare = 0.75f;
+
+    /// <summary>Steepest glance (deg down) and fastest overhead one (deg up): a comfortable neck.</summary>
+    const float GlanceMaxDown = 50f,
+        GlanceMaxUp = 25f;
+
+    /// <summary>
+    /// From now until the step ends, the scripted head pitches toward the <paramref name="left"/> hand as it moves,
+    /// as a player watches the hand they grab, eat, use, place or cook with; its heading stays, so poses built from
+    /// <see cref="HeadFrame"/> do not turn. Call it before acting; it eases in over about 0.3 s, faster than any reach.
+    /// The cue's view check (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>) is then honest for a
+    /// hand in front of the body.
+    /// </summary>
+    void LookAtHand(bool left) => glanceHand = left;
+
     void BeginHands()
     {
         headDrop = 0f;
+        glanceHand = null;
+        glancePitch = 0f;
         HeadFrame(out var head, out var forward, out var right);
         scriptLeft = Rest(head, forward, -right);
         scriptRight = Rest(head, forward, right);
@@ -1387,6 +1450,8 @@ internal sealed partial class SelfTestRunner
     void EndHands()
     {
         headDrop = 0f;
+        glanceHand = null;
+        glancePitch = 0f;
         VRInput.TestOverride = finished ? null : IdleHands;
     }
 
@@ -1437,6 +1502,18 @@ internal sealed partial class SelfTestRunner
             var p = VRInput.HeadPosition;
             p.y = stoopFrom - headDrop;
             VRInput.HeadPosition = p;
+        }
+        if (glanceHand is bool g)
+        {
+            var to = Script(g).Position - VRInput.HeadPosition;
+            float below = -Mathf.Atan2(to.y, new Vector2(to.x, to.z).magnitude) * Mathf.Rad2Deg;
+            float want = Mathf.Clamp(below * GlanceShare, -GlanceMaxUp, GlanceMaxDown);
+            glancePitch = Mathf.Lerp(glancePitch, want, 1f - Mathf.Exp(-10f * dt));
+            var level = Flat(VRInput.HeadRotation * Vector3.forward);
+            var side = Vector3.Cross(Vector3.up, level);
+            VRInput.HeadRotation =
+                Quaternion.AngleAxis(glancePitch, side)
+                * Quaternion.LookRotation(level, Vector3.up);
         }
     }
 

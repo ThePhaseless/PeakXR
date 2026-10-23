@@ -1483,6 +1483,7 @@ internal sealed partial class SelfTestRunner
         }
         Face(Mouth());
         bool left = LocalHold.ItemInLeftHand;
+        LookAtHand(left);
         float mark = CueMark();
         float end = Now + 4f;
         float best = float.MaxValue;
@@ -1525,6 +1526,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "the host needs help now (reach covers it)";
             yield break;
         }
+        LookAtHand(false);
         float mark = CueMark();
         yield return GripHostHand(false);
         if (stepSkip != null)
@@ -1705,7 +1707,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         if (pack)
-            yield return ExpectCue(SocialHands.Instance.CarryLeft, DenyReason.Dropped, mark);
+            yield return ExpectCue(
+                SocialHands.Instance.CarryLeft,
+                DenyReason.Dropped,
+                mark,
+                seen: false
+            );
         if (!stepOk)
             yield break;
         // Lifted: the hands let go and A stands up with the host on its back, as a player walks off.
@@ -1972,6 +1979,7 @@ internal sealed partial class SelfTestRunner
         bool left = VRInput.LeftHanded; // the dominant hand
         var logs = fire.Center();
         yield return MoveTo(left, () => logs, 0.5f);
+        LookAtHand(left);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.FriendsFar, mark, true, 2f);
@@ -2038,7 +2046,7 @@ internal sealed partial class SelfTestRunner
             Fail("the flick moved the view off A's own body");
             yield break;
         }
-        yield return ExpectCue(cueLeft, DenyReason.CantSwitch, mark, false, 0.5f);
+        yield return ExpectCue(cueLeft, DenyReason.CantSwitch, mark, false, 0.5f, seen: false);
         if (stepOk)
             stepNote = "spectating A's own body; flick refused: " + cueNote;
     }

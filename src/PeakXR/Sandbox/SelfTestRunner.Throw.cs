@@ -300,6 +300,7 @@ internal sealed partial class SelfTestRunner
         int throwsBefore = PhysicalInteraction.ThrowCount;
         float consumedBefore = c.data.lastConsumedItem;
         Affordance.ResetGate();
+        LookAtHand(left);
         float mark = CueMark();
         yield return SwingRelease(left, windup, release);
         yield return ExpectCue(left, DenyReason.TooSoon, mark, tint: true);

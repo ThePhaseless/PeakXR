@@ -297,6 +297,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
+        LookAtHand(left);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         yield return ExpectCue(left, DenyReason.Stuck, mark, false);
@@ -484,7 +485,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         float mark = CueMark();
         yield return GripTo(false, 1f, 0.1f);
-        yield return ExpectCue(false, DenyReason.NeedsTwoHands, mark, false);
+        yield return ExpectCue(false, DenyReason.NeedsTwoHands, mark, false, seen: false);
         if (!stepOk)
             yield break;
         // The death timer's slope (game seconds) is the outcome: 0.33/s while interact is held, else at most 0.1/s
