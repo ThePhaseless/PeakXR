@@ -224,10 +224,12 @@ internal sealed partial class SelfTestRunner
         float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
         var from = Script(left).Position;
         float jumpBefore = c.data.sinceClimbJump;
-        float y0 = c.Center.y;
         float whooshMark = CueMark();
         yield return FlingRelease(left, from, speed);
         float released = Now;
+        // The rise counts from the release: the gripped 0.25 s fling pushes the body down the wall first (run 57: from
+        // the fling's start the same jump read 0.23 m against 0.58 m for run 56's shorter swing).
+        float y0 = flingReleaseY;
         yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.4f);
         bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
         float jumpAfter = Now - released;
@@ -1375,14 +1377,24 @@ internal sealed partial class SelfTestRunner
         // External review #13: the same pointing grip with the thumb resting on the stick is a pointed interact, not
         // a ping aim. It takes the Apple and pings nothing.
         float pingBefore = Interact.Ping.PingInput.LastPinged(pinger);
+        // The ping's marker stands on the Apple for 2 s (PointPinger.cs:97-104); let it go first.
+        yield return Wait(Mathf.Max(0f, pingBefore + 2.1f - Time.time));
         Script(left).StickTouch = true;
         OnRestore(() => Script(left).StickTouch = false);
         yield return FingerGunAim(left, aim, 0.1f);
-        yield return WaitFor(() => Holding(apple), 2f);
+        // Still pointing at it while the interact lands, as a player does.
+        for (float until = Now + 2f; Now < until && !Holding(apple); )
+        {
+            AimHand(rig, left, aim);
+            yield return null;
+        }
         bool taken = Holding(apple);
         bool pinged = Interact.Ping.PingInput.LastPinged(pinger) != pingBefore;
+        var hovered = Interaction.instance != null ? Interaction.instance.currentHovered : null;
         Script(left).StickTouch = false;
-        note += F($"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}");
+        note += F(
+            $"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}, hovered {(hovered is UnityEngine.Object o && o != null ? o.name : "nothing")}, {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
         if (!taken || pinged)
             Fail("a pointed grip with the thumb resting did not interact cleanly: " + note);
         else
@@ -1563,7 +1575,10 @@ internal sealed partial class SelfTestRunner
             Vector3.up
         );
         yield return Wait(0.3f);
-        int before = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length;
+        var handlesBefore = new HashSet<int>();
+        foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
+            handlesBefore.Add(h.GetInstanceID());
+        int before = handlesBefore.Count;
         Script(holdLeft).Trigger = 1f;
         yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
         if (!Interact.Tools.SpikeHammer.Casting)
@@ -1578,10 +1593,12 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < needed && Interact.Tools.SpikeHammer.Casting; i++)
         {
             var point = Interact.Tools.SpikeHammer.Preview;
-            var back = point + wallFace.normal * 0.3f;
+            // Back past the strike's re-arm radius (SpikeHammer: 0.35 m) so each blow counts; run 57's 0.3 m never
+            // re-armed it and landed 0 of 3.
+            var back = point + wallFace.normal * 0.45f;
             yield return MoveTo(free, () => back, 0.12f);
-            // 0.3 m in 0.08 s: a strike at about 3.7 m/s into the wall.
-            yield return MoveTo(free, () => point, 0.08f);
+            // 0.45 m in 0.12 s: a strike at about 3.7 m/s into the wall.
+            yield return MoveTo(free, () => point, 0.12f);
             yield return null;
         }
         int strikes = Interact.Tools.SpikeHammer.Strikes;
@@ -1590,7 +1607,17 @@ internal sealed partial class SelfTestRunner
             castTime + 1f
         );
         float took = Now - started;
-        bool placed = FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None).Length > before;
+        // The game places the spike itself (InstantiateItemRoom, CharacterItems.cs:1080), so it is not in spawned:
+        // left on the wall, every later step's grip at that stand took it as a handle (run 57: vr.21 on).
+        bool placed = false;
+        foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
+        {
+            if (handlesBefore.Contains(h.GetInstanceID()))
+                continue;
+            placed = true;
+            var view = h.GetComponentInParent<PhotonView>();
+            spawned.Add(view != null ? view.gameObject : h.gameObject);
+        }
         Script(holdLeft).Trigger = 0f;
         float earliest = castTime / HammerCast.MaxSpeedup;
         var note = F(
@@ -1607,6 +1634,9 @@ internal sealed partial class SelfTestRunner
         yield return LetGoAll(c);
     }
 
+    /// <summary>The body's centre height when <see cref="FlingRelease"/> let go.</summary>
+    float flingReleaseY;
+
     /// <summary>
     /// A climb lunge's fling (<see cref="LungeIntent"/>): the hand goes straight up at <paramref name="speed"/>, lets go
     /// at or above the head, and keeps rising past the confirm delay, as a thrown arm does.
@@ -1619,8 +1649,11 @@ internal sealed partial class SelfTestRunner
         {
             float t = Now - start;
             SetHand(left, from + Vector3.up * (speed * Mathf.Min(t, release + 0.15f)));
-            if (t >= release)
+            if (t >= release && Script(left).Grip > 0f)
+            {
                 Script(left).Grip = 0f;
+                flingReleaseY = Character.localCharacter.Center.y;
+            }
             if (t >= release + 0.15f)
                 yield break;
             yield return null;
@@ -1715,11 +1748,18 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
-        yield return ExpectNoCue(left, mark, 0f);
+        yield return Wait(0.2f);
         entry.Value = was;
-        var note = $"{HeldItem()?.name} one-handed: use reached the game {reached}";
+        // The game's own refusal may follow (a hook with nothing in range is OutOfReach, RescueHook.cs:108-116, run
+        // 57): that is the press reaching the game. Only the two-hand refusal is wrong here.
+        var h = CueLog.Capture.Hand(left);
+        bool twoHandRefusal = h.Reason == DenyReason.NeedsTwoHands && h.ReasonAt >= mark;
+        var note =
+            $"{HeldItem()?.name} one-handed: use reached the game {reached}, last cue {h.Reason}";
         if (!reached)
             Fail("the use press of a two-handed tool held one-handed was blocked: " + note);
+        else if (twoHandRefusal)
+            Fail("NeedsTwoHands with Interaction.RequireTwoHands off: " + note);
         else
             Note(note);
     }
