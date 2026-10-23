@@ -120,6 +120,14 @@ internal sealed class TargetPrompt
     /// <summary>For the self-test: the label's alpha now (<see cref="PromptOcclusion.DimAlpha"/> behind rock).</summary>
     public static float Dim => current != null ? current.dim : 1f;
 
+    /// <summary>For the self-test: the last occlusion check's terrain hit (-1: none), eye-to-prompt distance and
+    /// target radius, so a failed vr.242 says which side of <see cref="PromptOcclusion.Blocked"/> it fell on.</summary>
+    public static float LastHit { get; private set; } = -1f;
+
+    public static float LastDistance { get; private set; }
+
+    public static float LastRadius { get; private set; }
+
     /// <summary>For the self-test: a glyph for <paramref name="verb"/> is drawn now.</summary>
     public static bool Drawn(PromptVerb verb) => DrawnRoot(verb) != null;
 
@@ -270,6 +278,9 @@ internal sealed class TargetPrompt
             )
                 hit = h.distance;
             occluded = PromptOcclusion.Blocked(hit, d, radius);
+            LastHit = hit;
+            LastDistance = d;
+            LastRadius = radius;
         }
         dim = PromptOcclusion.Ease(dim, occluded, Time.unscaledDeltaTime);
         box.SetAlpha(dim);
