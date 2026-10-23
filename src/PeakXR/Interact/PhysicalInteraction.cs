@@ -368,9 +368,20 @@ internal static class PhysicalInteraction
     {
         if (!cfg.HandAimedInteract || !pointing)
             return AimedTarget.None;
+        // What the game's own interact ray picked last frame from this hand's aim, or the head's while no hand aims
+        // (InteractPatches swaps the camera
+        // to the aiming hand; vanilla's line check plus its sphere-cast fallback, Interaction.cs:196-260): the same
+        // pick the press will get. A single raycast of our own met the statue's rock first when standing against it
+        // (vr56: 0.7 m back, hovered statue, not classified).
+        var interaction = Interaction.instance;
+        if (interaction != null && (AimHand == (left ? 0 : 1) || AimHand < 0))
+        {
+            var picked = Classify(interaction.currentHovered, c);
+            if (picked != AimedTarget.None)
+                return picked;
+        }
         var aim = rig.Aim(left);
         var cam = MainCamera.instance;
-        var interaction = Interaction.instance;
         if (aim == null || cam == null || interaction == null)
             return AimedTarget.None;
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
@@ -386,9 +397,14 @@ internal static class PhysicalInteraction
             )
         )
             return AimedTarget.None;
-        var target = hit.collider.GetComponentInParent<IInteractible>();
+        return Classify(hit.collider.GetComponentInParent<IInteractible>(), c);
+    }
+
+    private static AimedTarget Classify(IInteractible target, Character c)
+    {
         if (
             target == null
+            || (target is Object unityObject && unityObject == null)
             || ReferenceEquals(target, c.data.currentItem)
             || !target.IsInteractible(c)
         )
