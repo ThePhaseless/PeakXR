@@ -423,6 +423,7 @@ internal sealed partial class SelfTestRunner
                 yield return null;
             }
             var down = JudgeBelt(c, cam, scripted, fails, notes);
+            JudgeOwnBody(c, cam.transform.position, fails, notes);
             yield return ShotAt("vr-09-belt-view", cam.transform.position + down);
         }
         finally
@@ -431,6 +432,79 @@ internal sealed partial class SelfTestRunner
                 VRInput.TestOverride = IdleHands;
         }
         Conclude(fails, notes);
+    }
+
+    static readonly int VertexGhostId = Shader.PropertyToID("_VertexGhost");
+    static readonly int RawVertexColorId = Shader.PropertyToID("_UseRawVertexColor");
+
+    static readonly BodypartType[] OwnBodyLimbs =
+    {
+        BodypartType.Elbow_L,
+        BodypartType.Elbow_R,
+        BodypartType.Knee_L,
+        BodypartType.Knee_R,
+    };
+
+    /// <summary>
+    /// <see cref="BeltViewCheck"/>'s own-body verdict. Unless <c>Avatar.OwnBody</c> is Vanilla, the outfit at the
+    /// elbows and knees must be drawn: every material of <c>HideTheBody.body</c> and its costumes
+    /// (HideTheBody.cs:8, :20) is read for <c>_VertexGhost</c> and <c>_UseRawVertexColor</c> and run through
+    /// <see cref="BodyGhost.Alpha"/> at each limb's flat distance from the eye, with the outfit's red vertex paint.
+    /// In Vanilla the ghosted outfit is expected; the coverage is only noted.
+    /// </summary>
+    static void JudgeOwnBody(Character c, Vector3 eye, List<string> fails, List<string> notes)
+    {
+        var hide = c.refs.hideTheBody;
+        var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partDict : null;
+        if (hide == null || hide.body == null || parts == null)
+        {
+            fails.Add("no HideTheBody body or ragdoll parts on the local character");
+            return;
+        }
+        string mode = AvatarConfig.Instance.OwnBody;
+        bool vanilla = string.Equals(mode, AvatarConfig.ShowVanilla, StringComparison.Ordinal);
+        var renderers = new List<Renderer> { hide.body };
+        renderers.AddRange(hide.costumes);
+        var mats = new List<Material>();
+        var worst = new List<string>();
+        foreach (var part in OwnBodyLimbs)
+        {
+            if (!parts.TryGetValue(part, out var bp))
+                continue;
+            var d = bp.Rig.position - eye;
+            float flat = new Vector2(d.x, d.z).magnitude;
+            float least = 1f;
+            string where = "";
+            foreach (var r in renderers)
+            {
+                if (r == null || !r.enabled || !r.gameObject.activeInHierarchy)
+                    continue;
+                r.GetSharedMaterials(mats);
+                foreach (var m in mats)
+                {
+                    if (m == null || !m.HasProperty(VertexGhostId))
+                        continue;
+                    float ghost = m.GetFloat(VertexGhostId);
+                    bool raw = m.HasProperty(RawVertexColorId) && m.GetFloat(RawVertexColorId) > 0f;
+                    float a = BodyGhost.Alpha(ghost, flat, 1f, raw);
+                    if (a < least)
+                    {
+                        least = a;
+                        where = F($"{r.name}/{m.name} ghost {ghost:0.##}");
+                    }
+                }
+            }
+            notes.Add(
+                F(
+                    $"{part} {flat:0.00} m out: outfit drawn {least:0.00}{(where.Length > 0 ? " (" + where + ")" : "")}"
+                )
+            );
+            if (!vanilla && least < 1f)
+                worst.Add(F($"{part} {least:0.00} ({where})"));
+        }
+        notes.Add(F($"OwnBody {mode}"));
+        if (worst.Count > 0)
+            fails.Add("own outfit ghosted in VR at " + string.Join(", ", worst));
     }
 
     /// <summary>The <see cref="BeltViewCheck"/> verdicts; returns the view direction judged from.</summary>
