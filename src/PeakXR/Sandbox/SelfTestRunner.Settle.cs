@@ -39,13 +39,13 @@ internal sealed partial class SelfTestRunner
     const float SettleClear = 0.6f;
 
     /// <summary>The longest <see cref="Settle"/> that still ends settled: a revive (5 s), one warp home (3.5 s), and on
-    /// a poor spot two rounds of recentre (3 s, the eye guard's 4 s, the 0.5 s fade) and stand-still (its budget on
+    /// a poor spot up to three rounds of recentre (3 s, the eye guard's 4 s, the 0.5 s fade) and stand-still (its budget on
     /// flat ground plus a stillness that starts just before it runs out). Step budgets start from it, so a slow
     /// settle ends in its own "not settled" note instead of the step's timeout (run 46 settled in 2-5 s).</summary>
     internal static readonly float SettleSeconds =
         5f
         + 3.5f
-        + 2f
+        + 3f
             * (
                 3f
                 + 4f
@@ -134,6 +134,26 @@ internal sealed partial class SelfTestRunner
             if (target is { } to)
             {
                 yield return SettleWarp(c, to);
+                ClearAround(c);
+                yield return SettleRecenter(rig);
+                yield return StandStill(c);
+                why = SettleProblem(c, needSpot: !hasHome);
+            }
+        }
+        if (why != null && settledFor < stillWindow.Required && (CreptOffSpot() || NeverGrounded()))
+        {
+            // The second spot failed too, on the ground itself: run 54's vr.85 crept 2 cm/s on the Peak's landing
+            // slope at both spots, and vr.59 never stood on the ground at its own. One more try on flatter open
+            // ground nearby, the spot dropped as home if it was one.
+            if (hasHome && Vector3.Distance(Feet(c), home) <= SettleRadius)
+            {
+                settleHome.Remove(segment);
+                hasHome = false;
+            }
+            if (OpenSpotNear(Feet(c), FlatSlope) is { } flat)
+            {
+                Note(F($"settle tried flatter ground at {flat} ({why})"));
+                yield return SettleWarp(c, flat);
                 ClearAround(c);
                 yield return SettleRecenter(rig);
                 yield return StandStill(c);
@@ -358,6 +378,14 @@ internal sealed partial class SelfTestRunner
     /// not the spot's fault (run 51, vr.106: 105 of 224 frames in the eye guard after vr.105's death, 2 of drift, and
     /// the beach home spot was dropped for it).
     /// </summary>
+    /// <summary>The last stillness wait spent most of its frames off the ground: the spot gives the body nothing to
+    /// stand on (a removed test ledge, a vine area's gap).</summary>
+    bool NeverGrounded() => blocked[0] * 2 > standFrames;
+
+    /// <summary>Steepest ground (deg) for the last-try spot: well under <see cref="SettleSlope"/>, where the
+    /// ragdoll's slow slide showed (2 cm/s at the Peak landing and TheKiln's base camp).</summary>
+    const float FlatSlope = 8f;
+
     bool CreptOffSpot()
     {
         int other = blocked[0] + blocked[1] + blocked[2] + blocked[3] + blocked[5];
@@ -410,10 +438,10 @@ internal sealed partial class SelfTestRunner
     const float SettleHeadroom = 2.2f;
 
     /// <summary>Why <paramref name="ground"/> is not flat, open ground to stand on, or null.</summary>
-    static string OpenProblem(RaycastHit ground)
+    static string OpenProblem(RaycastHit ground, float maxSlope = SettleSlope)
     {
         float slope = Vector3.Angle(ground.normal, Vector3.up);
-        if (slope > SettleSlope)
+        if (slope > maxSlope)
             return F($"ground {slope:0} deg from level at {ground.point}");
         RaycastHit hit;
         foreach (float h in ClearHeights)
@@ -453,7 +481,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Flat, open ground (<see cref="OpenProblem"/>) in rings 1.5, 3 and 5 m around
     /// <paramref name="around"/>, nearest first, or null.</summary>
-    static Vector3? OpenSpotNear(Vector3 around)
+    static Vector3? OpenSpotNear(Vector3 around, float maxSlope = SettleSlope)
     {
         foreach (float r in OpenSpotRings)
         {
@@ -469,7 +497,7 @@ internal sealed partial class SelfTestRunner
                         HelperFunctions.terrainMapMask,
                         QueryTriggerInteraction.Ignore
                     )
-                    && OpenProblem(ground) == null
+                    && OpenProblem(ground, maxSlope) == null
                 )
                     return ground.point;
             }

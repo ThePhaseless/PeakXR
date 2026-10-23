@@ -2697,10 +2697,18 @@ internal sealed partial class SelfTestRunner
                 break;
             hand = !hand;
         }
-        yield return Wait(1f);
+        // The highest the feet got in that second: a body that went up and slid back off the lip reads differently
+        // from one the mantle never lifted (run 54: feet 1.67 m under the top after a mantle that fired).
+        float peakFeet = Feet(c).y;
+        for (float end = Now + 1f; Now < end; )
+        {
+            peakFeet = Mathf.Max(peakFeet, Feet(c).y);
+            yield return null;
+        }
         float mantleAt = PeakXR.Interact.PhysicalInteraction.LastMantleAt;
         bool mantled = mantleAt >= mark;
         bool onTop = Feet(c).y >= top - 0.3f;
+        Note(F($"feet peaked {peakFeet - top:0.00} m from the top after the pulls"));
         string settle = "no settle tick checked";
         if (mantled)
         {
