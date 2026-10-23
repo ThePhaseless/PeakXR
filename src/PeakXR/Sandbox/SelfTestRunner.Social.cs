@@ -31,7 +31,9 @@ internal sealed partial class SelfTestRunner
         yield return SocialStep("vr.102-tick-pluck", 30f, TickPluckStep());
         yield return SocialStep("vr.104-struggle", 30f, StruggleStep());
         yield return SocialStep("vr.105-give-up", 40f, GiveUpStep());
-        yield return HandStep("vr.106-social-clean", 15f, SocialCleanStep());
+        // After vr.105 the body is dead or down: the settle revives it and waits out the eye guard first (run 51 timed out
+        // at 15 s inside that settle), so the budget starts from the settle's own.
+        yield return HandStep("vr.106-social-clean", Budget(10f), SocialCleanStep());
     }
 
     /// <summary>GUIManager.currentInteractable (GUIManager.cs:300, internal getter).</summary>

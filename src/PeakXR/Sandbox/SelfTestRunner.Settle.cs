@@ -109,6 +109,7 @@ internal sealed partial class SelfTestRunner
         if (
             why != null
             && settledFor < stillWindow.Required
+            && CreptOffSpot()
             && hasHome
             && Vector3.Distance(Feet(c), home) <= SettleRadius
         )
@@ -349,6 +350,18 @@ internal sealed partial class SelfTestRunner
         if (reason >= 0)
             blocked[reason]++;
         return still;
+    }
+
+    /// <summary>
+    /// The last stillness wait failed on the spot itself: hip drift restarted the window and nothing else held it
+    /// up for long. A body still waking from a revive (control) or a view still in the eye guard after the warp is
+    /// not the spot's fault (run 51, vr.106: 105 of 224 frames in the eye guard after vr.105's death, 2 of drift, and
+    /// the beach home spot was dropped for it).
+    /// </summary>
+    bool CreptOffSpot()
+    {
+        int other = blocked[0] + blocked[1] + blocked[2] + blocked[3] + blocked[5];
+        return blocked[4] > 0 && other * 4 < standFrames;
     }
 
     /// <summary>Frames of the last stillness wait each <see cref="StillTick"/> reason restarted the window: grounded,
