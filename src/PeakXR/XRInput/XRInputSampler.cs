@@ -59,6 +59,11 @@ internal static class XRInputSampler
 
     private static void MarkDirty(InputDevice device) => dirty = true;
 
+    /// <summary>The headset and controllers in use, by device name (which carries the interaction profile), for bug
+    /// reports. Allocates.</summary>
+    internal static string DeviceNames() =>
+        $"head {Head.Name}, left {LeftReader.Name}, right {RightReader.Name}";
+
     private static void Sample()
     {
         if (Time.frameCount == lastFrame)
@@ -161,6 +166,8 @@ internal static class XRInputSampler
         private Usage<Vector3> position;
         private Usage<Quaternion> rotation;
         private Usage<bool> isTracked;
+
+        public string Name => device.isValid ? device.name : "none";
 
         public void Acquire(List<InputDevice> found)
         {

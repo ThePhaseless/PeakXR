@@ -129,6 +129,8 @@ internal sealed class TraversalGrips : IGripExtension
         LastNote = System.FormattableString.Invariant(
             $"grip check: {n} colliders, rope {ropes}, vine {vines} (capsule {vineCapsule}, hand {vineGap:0.00} m off it), handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
         );
+        if (Diagnostics.DebugLog.Verbose)
+            Plugin.Log.LogInfo("[interact.traversal] " + LastNote);
         return found;
     }
 

@@ -35,6 +35,14 @@ internal sealed class RenderDriver : MonoBehaviour
     /// <summary>Adaptive scale changes applied this session (self-test vr.231 reports it).</summary>
     internal static int AdaptiveSteps { get; private set; }
 
+    /// <summary>The adaptive multiplier applied now and the one the controller wants next, for bug reports.</summary>
+    internal static string AdaptiveState =>
+        instance == null
+            ? "not running"
+            : System.FormattableString.Invariant(
+                $"applied {instance.appliedAdaptive:0.00}, wanted {instance.adaptive.Scale:0.00}, steps {AdaptiveSteps}"
+            );
+
     /// <summary>Seconds per adaptive quality window: one p95 per window feeds <see cref="AdaptiveScale"/>.</summary>
     private const float AdaptWindowSeconds = 5f;
 
@@ -383,6 +391,9 @@ internal sealed class RenderDriver : MonoBehaviour
     private static void LogFrameTiming()
     {
         float every = RenderFixesFeature.FrameTimingLogSeconds.Value;
+        // Debug mode keeps the frame line coming even when the player turned it off.
+        if (Diagnostics.DebugLog.Verbose && !(every > 0f && every <= 10f))
+            every = 10f;
         if (!(every > 0f) || FrameClock.Log.Seconds < every)
             return;
         var report = FrameClock.Summarize(FrameClock.Log);

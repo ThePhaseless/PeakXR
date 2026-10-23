@@ -215,6 +215,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
     }
 
     /// <param name="notice">Information, not a refusal: no red ring, a single soft tick, the label in the hint colour.</param>
+    /// <param name="forceText">The label shows while this cue does, as a first-time label would.</param>
     public static void Show(
         bool left,
         Vector3 pos,
@@ -222,7 +223,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         DenyHint hint,
         bool notice = false,
         string text = null,
-        bool atHand = false
+        bool atHand = false,
+        bool forceText = false
     )
     {
         var self = instance;
@@ -271,7 +273,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         // In memory now; the config file is saved later (FlushSeen), never in the middle of a refusal.
         if (seen != Seen)
             Seen = seen;
-        self.firstLabel = first ? d : null;
+        self.firstLabel = first || (forceText && text != null) ? d : null;
         d.Notice = notice;
         d.Glyph = DenyGlyph.For(reason);
         d.Text = text;

@@ -34,6 +34,7 @@ Notes:
 - The game ignores a throw or drop while the held item is still in use, for example while you eat. If you throw or open your hand then, the item stays in your hand and you get the wait cue.
 - The emote wheel opens centred on the hand that holds Y. Move that hand out onto an emote on the ring, point the laser at one, or push the stick, then release Y to play it. The hand in the middle of the wheel or past its edge picks nothing. Stick up and down on the right controller flips the page. The backpack wheel opens at the hand that grips the pack; move the hand toward a pocket and let go. Letting go on nothing gives a soft cancel tick. A wheel the game refuses (for example while climbing) gives the refusal cue.
 - Menu: `Camera.RecenterHoldSeconds` (1 s by default) sets both uses. Let go before it to pause; keep holding to recenter. A small ring just above the controller you are holding fills while you hold, so you can see which one you will get.
+- Bug report: hold Menu on one controller and click the other controller's stick (on Quest, the left Menu and the right stick). Let go within 1.5 s to drop a marker, or keep holding for 1.5 s to save a report. Click the stick within a second of pressing Menu, before the recenter fires. Neither button does its usual job during the gesture. [docs/debugging.md](debugging.md) has the details.
 - Valve Index: SteamVR keeps the system button for its dashboard. Squeeze either trackpad firmly instead; it works as the menu button.
 - While you are dead or passed out you watch a teammate from a detached view behind them (`Camera.TakeoverView`). Flick the turn stick up or down to switch to the next or previous teammate; the view fades between them. `FirstPerson` puts you at the eyes instead, riding a tumbling body or a teammate's head as it moves, which can make you sick; the default `ThirdPerson` is the comfortable choice. You can also point at a teammate and pull the trigger to watch them. Arrows on that stick mark next and previous, and the teammate's name, status bar and items float on them (`UI.SpectateOnPlayer`).
 - When you draw an item, its prompts (use, drop, scroll) appear as small labels beside the buttons that do them for 3 s, and again whenever you look at your hand (`UI.ButtonLabels`). Each label sits on a dark plate, with the button's name as large as the label text.
@@ -71,6 +72,8 @@ Set `Accessibility.OneHanded` to `Left` or `Right` to play with that controller 
 | Grip | Grab or interact. Open it to drop, swing and open it to throw |
 | Trigger | Use. With the stick clicked in as you pull it: the secondary use (use on a friend, reach out with an empty hand) |
 | Menu | Release within 1 s: pause. Hold 1 s: recenter. Controllers without one (the Touch right controller) pause on B |
+
+The bug-report gesture needs both controllers, so one-handed play saves reports and markers from the VR tab's Debug section instead ([docs/debugging.md](debugging.md)).
 
 On a Vive wand the trackpad stands in for the stick and the buttons, and acts only when clicked:
 

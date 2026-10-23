@@ -20,6 +20,8 @@ public class Plugin : BaseUnityPlugin
     {
         Instance = this;
         Log = Logger;
+        // First, so every line from here on reaches a bug report's log ring.
+        Diagnostics.DebugLog.Attach();
 
         var args = System.Environment.GetCommandLineArgs();
         if (System.Array.IndexOf(args, "-peakxr-selftest") >= 0)
