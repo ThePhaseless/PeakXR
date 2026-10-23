@@ -497,8 +497,6 @@ internal sealed partial class SelfTestRunner
         }
         var rig = VRRig.Instance;
         var at = kiosk.transform.position;
-        bool left =
-            (rig.LeftHand.position - at).sqrMagnitude < (rig.RightHand.position - at).sqrMagnitude;
         bool shown = kiosk.gameObject.activeInHierarchy;
         // The refusal rings at the kiosk itself; a player pressing it faces it (run 50: it sat 176 degrees off,
         // behind the player, because the step pressed it from wherever the kiosk steps left the view).
@@ -510,6 +508,11 @@ internal sealed partial class SelfTestRunner
         rig.RotateYaw(turn);
         LookAtPoint(at);
         yield return Wait(0.6f);
+        // The hand InviteNote.Show picks: the one nearer the kiosk now, after the turn. Picked before the turn it
+        // could be the other hand (run 56: Blocked went to the left hand, the step waited on the right).
+        bool left =
+            (rig.LeftHand.position - at).sqrMagnitude < (rig.RightHand.position - at).sqrMagnitude;
+        Affordance.ResetGate();
         float since = CueMark();
         kiosk.Interact(Character.localCharacter);
         yield return ExpectCue(left, DenyReason.Blocked, since, shown);
