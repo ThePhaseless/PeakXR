@@ -1622,6 +1622,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.214: a held Balloon used with the trigger (its Action_Balloon ties it, CharacterBalloons.TieNewBalloon,
     /// CharacterBalloons.cs:99) gives a lift tick on the hand holding it and none on the other; the tied balloon then
     /// pops on its own timer (TiedBalloon.popTime, TiedBalloon.cs:83), a snap on both hands.</summary>
+    /// <summary>Longest vr.214 waits for the tied balloon's own pop timer (s).</summary>
+    const float PopWait = 12f;
+
     IEnumerator BalloonTieStep()
     {
         var c = Character.localCharacter;
@@ -1660,18 +1663,27 @@ internal sealed partial class SelfTestRunner
         }
         int pops = EnvironmentCues.Pops;
         since = CueMark();
-        yield return WaitFor(
-            () => tied == null || EnvironmentCues.Pops > pops,
-            GameTiming.Budget(tied.popTime)
-        );
+        // Its own timer when that is short; the prefab's can outlast the step (run 48 timed out at 65 s), so past
+        // PopWait the game's own Pop() (what the timer calls, TiedBalloon.cs:83-85) stands in for it.
+        float wait = Mathf.Min(GameTiming.Budget(tied.popTime), PopWait);
+        yield return WaitFor(() => tied == null || EnvironmentCues.Pops > pops, wait);
+        string popWay = "on its own timer";
+        if (EnvironmentCues.Pops == pops && tied != null)
+        {
+            popWay = F($"shortcut: Pop() after {wait:0} s, its timer is {tied.popTime:0} s");
+            since = CueMark();
+            tied.Pop();
+            yield return WaitFor(() => EnvironmentCues.Pops > pops, 1f);
+        }
         if (EnvironmentCues.Pops == pops)
         {
-            Fail($"the tied balloon never popped within {tied.popTime:0} s");
+            Fail($"the tied balloon popped with no pop cue ({popWay})");
             yield break;
         }
         yield return ExpectFeelBoth(CueFeel.Contact, since, 0.5f);
         if (stepOk)
-            stepNote = $"tie on the {(hand ? "left" : "right")} hand: {tie}; pop: {cueNote}";
+            stepNote =
+                $"tie on the {(hand ? "left" : "right")} hand: {tie}; pop {popWay}: {cueNote}";
         yield return WaitFor(() => c.data.isGrounded, 3f);
     }
 
@@ -1688,7 +1700,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no open sky above the spawn";
             yield break;
         }
-        var chute = FindItem(new List<Item>(SandboxActions.Items), "Parachute Item");
+        var chute = FindItem(new List<Item>(SandboxActions.Items), "Parachute");
         yield return GiveAndHold(chute);
         if (!stepOk)
             yield break;

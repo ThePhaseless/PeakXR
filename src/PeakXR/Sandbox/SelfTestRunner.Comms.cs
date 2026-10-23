@@ -629,6 +629,8 @@ internal sealed partial class SelfTestRunner
         yield return PingCooldownOver(pinger);
         float before = PingInput.LastPinged(pinger);
         var sky = rig.Hand(left).position + Vector3.up * 200f;
+        // The player looks along the finger gun at what they ping (run 48: the ring sat 89 deg off a level view).
+        LookAtHand(left, along: true);
         yield return FingerGunAim(left, sky, 0.3f);
         bool skyPreview = PingPreview.DotRed;
         Affordance.ResetGate();

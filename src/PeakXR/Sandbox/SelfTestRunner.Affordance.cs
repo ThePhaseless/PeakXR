@@ -329,7 +329,8 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no aim direction free of terrain within 60 m";
             yield break;
         }
-        yield return PressAndExpect(left, DenyReason.NoWall);
+        // The player looks where the spike points, at the empty sky the refusal is about (run 48: 70 deg off).
+        yield return PressAndExpect(left, DenyReason.NoWall, along: true);
         if (!stepOk)
             yield break;
         string sky = "open sky: " + stepNote;
@@ -516,7 +517,7 @@ internal sealed partial class SelfTestRunner
     /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>); other denials meanwhile do not end the
     /// wait. The held item must also stay in the hand with its uses unspent: a cue over a use that went through
     /// is no refusal.</summary>
-    IEnumerator PressAndExpect(bool left, DenyReason expected)
+    IEnumerator PressAndExpect(bool left, DenyReason expected, bool along = false)
     {
         if (!Affordance.Enabled)
         {
@@ -529,7 +530,7 @@ internal sealed partial class SelfTestRunner
         var held = HeldItem();
         ushort heldId = held != null ? held.itemID : (ushort)0;
         int usesBefore = held != null ? UsesLeft(held) : -1;
-        LookAtHand(left);
+        LookAtHand(left, along);
         float mark = CueMark();
         Script(left).TriggerTouch = true;
         Script(left).Trigger = 1f;
