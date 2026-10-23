@@ -707,6 +707,11 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
     const float TorchInHand = 0.45f;
 
+    /// <summary>Seconds a carried flame may stop closing on the fuse before the hand gives up. Since 1899a19 the held
+    /// torch rides the ragdoll hand, which follows the controller on a spring: the flame trails, and the items' 0.4 s
+    /// (<see cref="CarryStallSeconds"/>) read that lag as blocked (run 58, vr.88: given up 0.49 m from the fuse).</summary>
+    const float FlameStall = 1.2f;
+
     /// <summary>Wrist pitches (deg down from level) tried to tip a held torch toward a low fuse.</summary>
     static readonly float[] TorchTips = { 30f, 60f, 90f };
 
@@ -846,14 +851,14 @@ internal sealed partial class SelfTestRunner
             && Vector3.Distance(flame.position, Touch() + Vector3.up * 0.25f) > 0.08f
         )
         {
-            CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f);
+            CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f, FlameStall);
             StoopToFollow(left);
             yield return null;
         }
         BeginCarry();
         while (Now < end && flame != null && !done())
         {
-            CarryToward(left, flame.position, Touch());
+            CarryToward(left, flame.position, Touch(), FlameStall);
             StoopToFollow(left);
             yield return null;
         }
@@ -867,7 +872,7 @@ internal sealed partial class SelfTestRunner
                 ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                 : Vector3.Distance(at, flame.position);
         flameNote = F(
-            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse"
+            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse, closest {carryBest:0.00} m to the carry goal"
         );
         if (OverReach(left) is { } far)
             Fail($"{far}: {flameNote}");
