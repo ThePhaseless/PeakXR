@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Collections.Generic;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Emotes;
 using PeakXR.Framework;
@@ -73,9 +75,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.127: a fist held out in front, finger on the trigger, thumb off every button and pointing up
-    /// (EmoteGestures.ThumbsUp) plays the game's thumbs-up emote through CharacterAnimations.PlayEmote
-    /// (A/CharacterAnimations.cs:410; emoting :432), with no refusal cue.
+    /// vr.127: the thumbs-up needs clear intent (EmoteGestures.ThumbIntent). First the negatives, before the emote's
+    /// cooldown could hide them: a plain grip at the side, thumb off the buttons, and the full pose on the hand that
+    /// holds an Apple, each held 1.5 s, play nothing (a false emote is seen by every peer). Then a fist held still out
+    /// in front, finger on the trigger, thumb lifted off the stick it rested on and pointing up, plays the game's
+    /// thumbs-up emote through CharacterAnimations.PlayEmote (A/CharacterAnimations.cs:410; emoting :432), once and
+    /// with no refusal cue.
     /// </summary>
     IEnumerator ThumbsUpStep()
     {
@@ -95,19 +100,59 @@ internal sealed partial class SelfTestRunner
         bool hand = !VRInput.LeftHanded;
         HeadFrame(out var head, out var forward, out var right);
         var side = hand ? -right : right;
+        var notes = new List<string>();
+
+        // The thumb rests on the stick first, as real thumbs do: the controller shows it senses the thumb.
+        Script(hand).StickTouch = true;
+        yield return Wait(0.2f);
+
+        // Negative: an ordinary grip at the side, thumb off every button, held still.
+        int before = GestureEmotes.PlayCount;
         yield return MoveTrack(
             hand,
-            head + forward * 0.35f + side * 0.1f + Vector3.down * 0.2f,
+            head + side * 0.3f + Vector3.down * 0.6f + forward * 0.05f,
             0.3f
         );
+        Fist(hand, forward);
+        yield return Wait(1.5f);
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        notes.Add($"grip at the side: {GestureEmotes.PlayCount - before} emotes");
+        if (GestureEmotes.PlayCount != before)
+        {
+            Fail($"a plain grip at the side played '{GestureEmotes.LastPlayed}'");
+            yield break;
+        }
+
+        // Negative: the full pose out in front on the hand that holds an item.
+        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        yield return GiveAndHold(apple);
+        if (!stepOk)
+            yield break;
+        bool holdLeft = LocalHold.ItemInLeftHand;
+        yield return MoveTrack(holdLeft, Out(holdLeft), 0.3f);
+        Fist(holdLeft, forward);
+        yield return Wait(1.5f);
+        notes.Add(
+            $"pose while holding {HeldItem()?.name}: {GestureEmotes.PlayCount - before} emotes"
+        );
+        if (GestureEmotes.PlayCount != before)
+        {
+            Fail($"the pose on a hand holding an item played '{GestureEmotes.LastPlayed}'");
+            yield break;
+        }
+        Script(holdLeft).StickTouch = true;
+        yield return DropHeld();
+        if (!stepOk)
+            yield break;
+        Script(holdLeft).Grip = 0f;
+        yield return Wait(0.3f);
+
+        // Positive: the deliberate pose, held still out in front.
+        yield return MoveTrack(hand, Out(hand), 0.3f);
         float mark = CueMark();
-        int before = GestureEmotes.PlayCount;
-        ref var s = ref Script(hand);
-        s.Rotation = Quaternion.LookRotation(forward, Vector3.up);
-        s.TriggerTouch = true;
-        s.Trigger = 0f;
-        s.PrimaryTouch = s.SecondaryTouch = s.StickTouch = false;
-        s.Grip = 1f;
+        before = GestureEmotes.PlayCount;
+        Fist(hand, forward);
         bool started = false;
         yield return WaitFor(
             () =>
@@ -117,7 +162,11 @@ internal sealed partial class SelfTestRunner
                     && GestureEmotes.LastPlayed == GestureEmotes.ThumbsUpAnim,
             2f
         );
+        // Still held: it must not repeat.
+        yield return Wait(0.8f);
+        int played = GestureEmotes.PlayCount - before;
         Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
         if (!started)
         {
             Fail(
@@ -125,9 +174,30 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        if (played != 1)
+        {
+            Fail($"the held pose played {played} emotes, not 1");
+            yield break;
+        }
         yield return ExpectNoCue(hand, mark, 0f);
+        notes.Add($"thumbs up: played {GestureEmotes.LastPlayed} once");
         if (stepOk)
-            stepNote = $"thumbs up: played {GestureEmotes.LastPlayed}";
+            stepNote = string.Join("; ", notes);
+
+        Vector3 Out(bool left) =>
+            head + forward * 0.4f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
+    }
+
+    /// <summary>A fist on <paramref name="left"/>: grip closed, finger on the trigger, the thumb off every button, the
+    /// controller's up axis pointing up.</summary>
+    void Fist(bool left, Vector3 forward)
+    {
+        ref var s = ref Script(left);
+        s.Rotation = Quaternion.LookRotation(forward, Vector3.up);
+        s.TriggerTouch = true;
+        s.Trigger = 0f;
+        s.PrimaryTouch = s.SecondaryTouch = s.StickTouch = false;
+        s.Grip = 1f;
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using System;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.Interact;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -12,8 +13,10 @@ namespace PeakXR.Emotes;
 /// Gesture emotes (D5): wave a raised open hand side to side to play the game's wave emote, hold both open hands
 /// over your head to cheer, hold a fist out with the thumb up for the thumbs-up. They play through vanilla CharacterAnimations.PlayEmote (A/CharacterAnimations.cs:410,
 /// the call the emote wheel makes, EmoteWheel.cs:87), so every peer sees them. The emotes are found by name in the
-/// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing, passed out, dead, in
-/// a menu or with a wheel open (a climber's reaching hands look like a cheer); an emote the game only plays on the
+/// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing (rope and vine too),
+/// carrying a friend, passed out, dead, in a menu or with a wheel open, nor on a hand whose grip is busy (a climber's
+/// reaching hands look like a cheer, an ordinary grip like a thumbs-up). The thumbs-up also needs an empty-handed fist
+/// held still out in front, on a controller that senses the thumb (EmoteGestures.ThumbIntent); an emote the game only plays on the
 /// ground (EmoteWheelData.requireGrounded, greyed on the wheel by EmoteWheelSlice.cs:31-34) gets a NeedsGround cue.
 /// </summary>
 [DefaultExecutionOrder(31060)]
@@ -24,12 +27,6 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>A cheer needs both hands over the head.</summary>
     private const float CheerMargin = 0.1f;
-
-    /// <summary>A thumbs-up is held out at chest height or above: 45 cm under the eyes.</summary>
-    private const float ThumbMargin = -0.45f;
-
-    /// <summary>...and at least this far in front of the head, so a fist at the side while walking is not one.</summary>
-    private const float ThumbReach = 0.2f;
 
     /// <summary>An open hand: the grip let go.</summary>
     private const float OpenGrip = 0.3f;
@@ -42,8 +39,12 @@ internal sealed class GestureEmotes : MonoBehaviour
     private readonly WaveGesture leftWave = new();
     private readonly WaveGesture rightWave = new();
     private readonly DwellGesture cheer = new();
-    private readonly DwellGesture leftThumb = new() { Dwell = 0.5f };
-    private readonly DwellGesture rightThumb = new() { Dwell = 0.5f };
+    private readonly DwellGesture leftThumb = new() { Dwell = EmoteGestures.ThumbDwell };
+    private readonly DwellGesture rightThumb = new() { Dwell = EmoteGestures.ThumbDwell };
+
+    /// <summary>Per hand (left, right): the controller has reported a thumb touch or press at least once, so it has
+    /// thumb sensors and a lifted thumb means something.</summary>
+    private readonly bool[] thumbSensed = new bool[2];
     private GUIManager gui;
     private Emote wave,
         cheerEmote,
@@ -100,7 +101,7 @@ internal sealed class GestureEmotes : MonoBehaviour
             || c.data.dead
             || c.data.passedOut
             || c.data.fullyPassedOut
-            || c.data.isClimbingAnything
+            || EmoteGestures.Busy(c.data.isClimbingAnything, c.data.IsCarryingCharacter, false)
             || c.refs.stats.won
             || current.wheelActive
             || current.windowBlockingInput
@@ -126,8 +127,13 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
         var l = rig.LeftHand.position;
         var r = rig.RightHand.position;
-        bool leftOpen = leftFree && VRInput.Left.Tracked && VRInput.Left.Grip < OpenGrip;
-        bool rightOpen = rightFree && VRInput.Right.Tracked && VRInput.Right.Grip < OpenGrip;
+        // A grip that took or started something (a handle, a friend, a lid) is busy, not gesturing.
+        bool leftBusy = MidGrab(true);
+        bool rightBusy = MidGrab(false);
+        bool leftOpen =
+            leftFree && !leftBusy && VRInput.Left.Tracked && VRInput.Left.Grip < OpenGrip;
+        bool rightOpen =
+            rightFree && !rightBusy && VRInput.Right.Tracked && VRInput.Right.Grip < OpenGrip;
 
         bool cheered = cheer.Update(
             leftOpen
@@ -147,9 +153,12 @@ internal sealed class GestureEmotes : MonoBehaviour
             dt
         );
         var forward = rig.Head.forward;
-        bool thumbLeft = leftThumb.Update(leftFree && Thumb(true, rig.LeftHand, head, forward), dt);
+        bool thumbLeft = leftThumb.Update(
+            Thumb(true, rig.LeftHand, head, forward, holding, leftBusy),
+            dt
+        );
         bool thumbRight = rightThumb.Update(
-            rightFree && Thumb(false, rig.RightHand, head, forward),
+            Thumb(false, rig.RightHand, head, forward, holding, rightBusy),
             dt
         );
         if (Time.time < nextAt)
@@ -162,18 +171,52 @@ internal sealed class GestureEmotes : MonoBehaviour
             Play(c, thumbsUp, thumbLeft);
     }
 
-    /// <summary>A tracked fist held out in front, thumb lifted and pointing up (EmoteGestures.ThumbsUp).</summary>
-    private static bool Thumb(bool left, Transform hand, Vector3 head, Vector3 forward)
+    /// <summary>A deliberate thumbs-up (EmoteGestures.ThumbIntent): a tracked fist, thumb lifted and up, held still out
+    /// in front, empty-handed and not busy, on a controller that has shown it senses the thumb.</summary>
+    private bool Thumb(
+        bool left,
+        Transform hand,
+        Vector3 head,
+        Vector3 forward,
+        bool holding,
+        bool busy
+    )
     {
         ref var state = ref VRInput.Hand(left);
+        if (!state.Tracked)
+            return false;
+        ref bool sensed = ref thumbSensed[left ? 0 : 1];
+        sensed |=
+            state.PrimaryTouch
+            || state.SecondaryTouch
+            || state.StickTouch
+            || state.Primary
+            || state.Secondary;
         var p = hand.position;
-        return state.Tracked
-            && EmoteGestures.Raised(p.y, head.y, ThumbMargin)
-            && Vector3.Dot(p - head, forward) > ThumbReach
-            && EmoteGestures.ThumbsUp(
+        var flat = forward;
+        flat.y = 0f;
+        flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
+        return EmoteGestures.ThumbIntent(
+            EmoteGestures.ThumbsUp(
                 LocalAvatar.ControllerCurls(left),
                 Vector3.Dot(hand.up, Vector3.up)
-            );
+            ),
+            sensed,
+            holding,
+            busy,
+            Vector3.Dot(p - head, flat),
+            head.y - p.y,
+            state.Velocity.magnitude
+        );
+    }
+
+    /// <summary>This hand's grip took or started something (PhysicalInteraction.HandAction: a grab, climb, second
+    /// hand, extension), or holds a target. The fallback Interact of a grip on empty air is not busy.</summary>
+    private static bool MidGrab(bool left)
+    {
+        var action = PhysicalInteraction.HandAction(left);
+        return (action != GripPressAction.None && action != GripPressAction.Interact)
+            || PhysicalInteraction.HandTarget(left) != null;
     }
 
     private void Play(Character c, Emote emote, bool left)
