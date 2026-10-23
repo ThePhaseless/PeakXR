@@ -1370,7 +1370,7 @@ internal sealed partial class SelfTestRunner
         // home spot, the base camp 375 m below, where the body crept 2 cm/s off the spot in vr46 (vr.90 "not settled",
         // net drift at the 3 cm limit after the warp; vr.91's settle there needed a second warp).
         yield return PeakHandStep("vr.89-altar-full", 40f, AltarFullStep());
-        yield return PeakHandStep("vr.89b-amulet-socket", 60f, AmuletSocketStep());
+        yield return PeakHandStep("vr.89b-amulet-socket", 120f, AmuletSocketStep());
         // Without the scene object there is nothing to settle or jump for: skip before the setup.
         if (Object.FindFirstObjectByType<ScoutmasterSoulPillar>() == null)
             Skip("vr.90-soul-pillar", NoPillar());
@@ -1694,104 +1694,117 @@ internal sealed partial class SelfTestRunner
         var saved = (int[])slots.Clone();
         try
         {
-            for (int i = 0; i < slots.Length; i++)
-                slots[i] = -1;
-            // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
-            // root: vr34 stood by the root and ended 2.16 m short.
-            var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
-            // 1.3 m back from the socket's foot: a hand next to the statue's rock is a climb grip, not a pointed one
-            // (GripIntent: a climbable surface in reach wins over the fallback interact; vr50's grip pressed nothing),
-            // and the socket stays well inside vanilla's interact reach from the camera.
-            yield return WarpBeside(target, 1.3f);
-            yield return GiveAndHold(amulet.GetComponent<Item>());
-            if (!stepOk)
-                yield break;
-            var held = HeldItem();
-            bool left = LocalHold.ItemInLeftHand;
-            yield return GripTo(left, 1f, 0.1f);
-            yield return Until(
-                () => WorldHolds.SocketTarget >= 0,
-                2f,
-                $"no socket picked for {amulet.name} (index {amulet.amuletIndex}, statue enabled {statue.isActiveAndEnabled}, {statue.amuletObjects.Length} sockets)"
-            );
-            if (!stepOk)
-                yield break;
-            var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[WorldHolds.SocketTarget]);
-            float socketUp = socketAt.y - Feet(Character.localCharacter).y;
-            var rig = VRRig.Instance;
-            var interaction = Interaction.instance;
-            // The player path: the socket sits past a hand's reach (2.7 m up, vr36), so as vanilla's camera ray takes
-            // the statue within Interaction.distance (field default 2 m, Interaction.cs:7, :203; 2.5 m in the scene),
-            // the free hand points at it, held out at shoulder height clear of the body's slots, and grips
-            // (interact.physical's hand-aimed interact). The hand never leaves arm's reach of the eye.
-            bool free = !left;
-            HeadFrame(out var head, out var forward, out var right);
-            var handAt =
-                head + forward * 0.45f + (free ? -right : right) * 0.1f + Vector3.down * 0.15f;
-            void Aim()
+            // Two stands: 1.3 m back, clear of the statue's rock, and 0.7 m back against it, where a pointed grip must
+            // still insert rather than climb (GripContext.PointedAtTaker; vr50's grip there pressed nothing).
+            var notes = new List<string>();
+            foreach (float back in new[] { 1.3f, 0.7f })
             {
-                var from = rig.Origin.TransformPoint(Script(free).Position);
-                Script(free).Rotation = Quaternion.LookRotation(
-                    rig.Origin.InverseTransformDirection(socketAt - from),
-                    Vector3.up
-                );
+                for (int i = 0; i < slots.Length; i++)
+                    slots[i] = -1;
+                yield return DropHeld();
+                if (!stepOk)
+                    yield break;
+                yield return PointInsert(statue, amulet, back, notes);
+                if (!stepOk)
+                    yield break;
             }
-            Script(free).TriggerTouch = false;
-            Script(free).Trigger = 0f;
-            yield return MoveTrack(free, handAt, 0.4f);
-            Aim();
-            yield return Wait(0.4f);
-            float fromEye = Vector3.Distance(rig.Hand(free).position, rig.Head.position);
-            float camToSocket = Vector3.Distance(MainCamera.instance.transform.position, socketAt);
-            var where =
-                $"socket {socketUp:0.00} m over the feet, {camToSocket:0.00} m from the camera (vanilla reach "
-                + $"{interaction.distance:0.0} m); pointing hand {fromEye:0.00} m from the eye";
-            if (fromEye > 1f)
-            {
-                Fail("reach guard: the pointing hand is out of arm's reach: " + where);
-                yield break;
-            }
-            if (!ReferenceEquals(interaction.currentHovered, statue))
-            {
-                Fail(
-                    $"pointing at the socket does not reach the statue (hovered {Label(interaction.currentHovered)}): {where}"
-                );
-                yield break;
-            }
-            float progress = 0f;
-            float mark = CueMark();
-            yield return GripTo(free, 1f, 0.1f);
-            float end =
-                Now
-                + GameTiming.Budget(
-                    GameTiming.InteractSeconds(statue, Character.localCharacter),
-                    3f
-                );
-            while (Now < end && held != null && ReferenceEquals(HeldItem(), held))
-            {
-                Aim();
-                if (ReferenceEquals(interaction.currentHeldInteractible, statue))
-                    progress = Mathf.Max(progress, interaction.constantInteractableProgress);
-                yield return null;
-            }
-            yield return GripTo(free, 0f, 0.1f);
-            Script(free).TriggerTouch = true;
-            if (progress <= 0f)
-            {
-                Fail(
-                    $"the pointed grip did not start the statue's hold (grip took {PhysicalInteraction.HandAction(free)}, aim hand {PhysicalInteraction.AimHand}): {where}"
-                );
-                yield break;
-            }
-            yield return ExpectFeel(free, CueFeel.Progress, mark, within: 0f);
-            if (stepOk)
-                stepNote =
-                    $"pointed at socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {where}; {cueNote}";
+            stepNote = string.Join(" | ", notes);
         }
         finally
         {
             Array.Copy(saved, slots, slots.Length);
         }
+    }
+
+    /// <summary>One vr.89b stand: <paramref name="back"/> metres from the socket's foot, the amulet in one hand, the
+    /// free hand pointed at the socket from within arm's reach, gripping until the statue's hold puts it in.</summary>
+    IEnumerator PointInsert(ScoutStatue statue, AmuletBase amulet, float back, List<string> notes)
+    {
+        // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
+        // root: vr34 stood by the root and ended 2.16 m short.
+        var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
+        yield return WarpBeside(target, back);
+        yield return GiveAndHold(amulet.GetComponent<Item>());
+        if (!stepOk)
+            yield break;
+        var held = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Until(
+            () => WorldHolds.SocketTarget >= 0,
+            2f,
+            $"no socket picked for {amulet.name} (index {amulet.amuletIndex}, statue enabled {statue.isActiveAndEnabled}, {statue.amuletObjects.Length} sockets)"
+        );
+        if (!stepOk)
+            yield break;
+        var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[WorldHolds.SocketTarget]);
+        float socketUp = socketAt.y - Feet(Character.localCharacter).y;
+        var rig = VRRig.Instance;
+        var interaction = Interaction.instance;
+        // The player path: the socket sits past a hand's reach (2.7 m up, vr36), so as vanilla's camera ray takes
+        // the statue within Interaction.distance (field default 2 m, Interaction.cs:7, :203; 2.5 m in the scene),
+        // the free hand points at it, held out at shoulder height clear of the body's slots, and grips
+        // (interact.physical's hand-aimed interact). The hand never leaves arm's reach of the eye.
+        bool free = !left;
+        HeadFrame(out var head, out var forward, out var right);
+        var handAt = head + forward * 0.45f + (free ? -right : right) * 0.1f + Vector3.down * 0.15f;
+        void Aim()
+        {
+            var from = rig.Origin.TransformPoint(Script(free).Position);
+            Script(free).Rotation = Quaternion.LookRotation(
+                rig.Origin.InverseTransformDirection(socketAt - from),
+                Vector3.up
+            );
+        }
+        Script(free).TriggerTouch = false;
+        Script(free).Trigger = 0f;
+        yield return MoveTrack(free, handAt, 0.4f);
+        Aim();
+        yield return Wait(0.4f);
+        float fromEye = Vector3.Distance(rig.Hand(free).position, rig.Head.position);
+        float camToSocket = Vector3.Distance(MainCamera.instance.transform.position, socketAt);
+        var where =
+            $"socket {socketUp:0.00} m over the feet, {camToSocket:0.00} m from the camera (vanilla reach "
+            + $"{interaction.distance:0.0} m); pointing hand {fromEye:0.00} m from the eye";
+        if (fromEye > 1f)
+        {
+            Fail("reach guard: the pointing hand is out of arm's reach: " + where);
+            yield break;
+        }
+        if (!ReferenceEquals(interaction.currentHovered, statue))
+        {
+            Fail(
+                $"pointing at the socket does not reach the statue (hovered {Label(interaction.currentHovered)}): {where}"
+            );
+            yield break;
+        }
+        float progress = 0f;
+        float mark = CueMark();
+        yield return GripTo(free, 1f, 0.1f);
+        float end =
+            Now
+            + GameTiming.Budget(GameTiming.InteractSeconds(statue, Character.localCharacter), 3f);
+        while (Now < end && held != null && ReferenceEquals(HeldItem(), held))
+        {
+            Aim();
+            if (ReferenceEquals(interaction.currentHeldInteractible, statue))
+                progress = Mathf.Max(progress, interaction.constantInteractableProgress);
+            yield return null;
+        }
+        yield return GripTo(free, 0f, 0.1f);
+        Script(free).TriggerTouch = true;
+        if (progress <= 0f)
+        {
+            Fail(
+                $"the pointed grip did not start the statue's hold at {back:0.0} m back ({PhysicalInteraction.LastGripNote}): {where}"
+            );
+            yield break;
+        }
+        yield return ExpectFeel(free, CueFeel.Progress, mark, within: 0f);
+        if (stepOk)
+            notes.Add(
+                $"{back:0.0} m back, pointed at socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {where}; {cueNote}"
+            );
     }
 
     /// <summary>Where a player holds an amulet up to <paramref name="socketAt"/>: at the socket when it is within

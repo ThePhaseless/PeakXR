@@ -76,6 +76,11 @@ namespace PeakXR.Core
         /// <summary>The hold probe found rock the game would let this hand grab, not just something in the grip
         /// sphere. A hand that holds an item climbs only on such a hold.</summary>
         public bool HoldConfirmed;
+
+        /// <summary>The hand is in the pointing pose (<see cref="GripIntent.IsPointing"/>) and its aim ray, within
+        /// the game's interact reach, hits something that takes the interact now (the scout statue with an amulet in
+        /// hand). A pointed finger is a deliberate aim, so this beats a climbable in reach and a body-slot claim.</summary>
+        public bool PointedAtTaker;
     }
 
     /// <summary>
@@ -118,6 +123,10 @@ namespace PeakXR.Core
                 && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
             )
                 return GripPressAction.SecondHand;
+
+            // Nobody climbs with a pointed finger: a pointed aim at a target that takes it is the interact.
+            if (c.PointedAtTaker)
+                return GripPressAction.Interact;
 
             if (c.ExtensionClaim)
                 return GripPressAction.Extension;

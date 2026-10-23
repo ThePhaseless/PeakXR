@@ -337,6 +337,40 @@ internal static class PhysicalInteraction
             && Ping.PingConfig.Instance.FingerGun;
     }
 
+    /// <summary>
+    /// <see cref="GripContext.PointedAtTaker"/>: the hand is pointing and its aim ray, as long as the hand-aimed
+    /// interact's (the game's <c>Interaction.distance</c> from the camera less the hand's offset, InteractPatches;
+    /// Interaction.cs:7, :203), hits something that takes the interact now (<c>IInteractible.IsInteractible</c>), not
+    /// the held item. One raycast per grip press.
+    /// </summary>
+    private static bool PointedAtTaker(bool left, VRRig rig, Character c, InteractConfig cfg)
+    {
+        if (!cfg.HandAimedInteract || !GripIntent.IsPointing(LocalAvatar.ControllerCurls(left)))
+            return false;
+        var aim = rig.Aim(left);
+        var cam = MainCamera.instance;
+        var interaction = Interaction.instance;
+        if (aim == null || cam == null || interaction == null)
+            return false;
+        float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
+        if (
+            reach <= 0f
+            || !Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var hit,
+                reach,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                QueryTriggerInteraction.Collide
+            )
+        )
+            return false;
+        var target = hit.collider.GetComponentInParent<IInteractible>();
+        return target != null
+            && !ReferenceEquals(target, c.data.currentItem)
+            && target.IsInteractible(c);
+    }
+
     private static bool Holding(Character c, out Item item)
     {
         item = c.data.currentItem;
@@ -368,6 +402,7 @@ internal static class PhysicalInteraction
             NearClimbable =
                 cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
+            PointedAtTaker = PointedAtTaker(hand.Left, rig, c, cfg),
         };
         var kind = HoldKind.Normal;
         probeHit = probeRefused = false;
@@ -392,7 +427,7 @@ internal static class PhysicalInteraction
             action = GripIntent.OnPress(ctx);
         }
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight)"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight)"
         );
         switch (action)
         {
