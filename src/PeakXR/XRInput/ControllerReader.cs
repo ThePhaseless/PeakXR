@@ -9,18 +9,15 @@ namespace PeakXR.XRInput;
 
 /// <summary>
 /// Reads one controller (and, when present, the same side's hand-tracking device) into a <see cref="HandState"/>.
-/// Usages are resolved by name on connect. Fallbacks for missing values: an analog trigger/grip from its button,
-/// face buttons from trackpad clicks (Vive wand, WMR), velocity from the position change, tracking from device
-/// validity. Per-finger curls come from a curl usage on the controller or from hand-tracking joints.
+/// Usages are resolved by name on connect; which usage feeds which button per profile is Core
+/// <see cref="ControllerMap"/>. Here: velocity from the position change when missing, tracking from device
+/// validity, and per-finger curls from a curl usage on the controller or from hand-tracking joints.
 /// </summary>
 internal sealed class ControllerReader
 {
     // Summed joint bend that counts as a closed finger: thumb has a shorter range than the others.
     private const float ThumbFullCurl = 120f;
     private const float FingerFullCurl = 240f;
-
-    // A firm trackpad squeeze, well above a resting thumb.
-    private const float PadMenuForce = 0.6f;
 
     private readonly bool left;
     private readonly InputDeviceCharacteristics side;
@@ -36,14 +33,13 @@ internal sealed class ControllerReader
     private InputDevice handDevice;
     private bool anyFingerUsage;
     private bool haptics;
-    private bool emulateFaceButtons;
-    private bool padIsStick;
+    private ControllerLayout layout;
     private Vector3 lastPosition;
     private bool hadPosition;
 
     private XRInputSampler.Usage<float> trigger,
         grip,
-        padMenuForce;
+        padForce;
     private XRInputSampler.Usage<bool> triggerButton,
         gripButton,
         triggerTouch,
@@ -55,7 +51,6 @@ internal sealed class ControllerReader
         stickTouch,
         menu,
         padClick,
-        padMenuClick,
         isTracked;
     private XRInputSampler.Usage<Vector2> stick,
         pad;
@@ -129,22 +124,10 @@ internal sealed class ControllerReader
         angularVelocity = XRInputSampler.Usage<Vector3>.Find(n, "DeviceAngularVelocity");
         isTracked = XRInputSampler.Usage<bool>.Find(n, "IsTracked");
 
-        // No face buttons: take them from trackpad clicks. WMR has a separate touchpad (Secondary2DAxis);
-        // on a Vive wand the stick is the pad, so a centre click stays the stick click.
-        emulateFaceButtons = !primary.Has && !secondary.Has;
-        var secondaryPad = XRInputSampler.Usage<Vector2>.Find(n, "Secondary2DAxis");
-        var secondaryPadClick = XRInputSampler.Usage<bool>.Find(n, "Secondary2DAxisClick");
-        padIsStick = !(secondaryPad.Has && secondaryPadClick.Has);
-        pad = padIsStick ? stick : secondaryPad;
-        padClick = padIsStick ? stickClick : secondaryPadClick;
-
-        // SteamVR keeps the Index system button (the profile's MenuButton) for its dashboard, so an Index player
-        // would have no pause or recenter. A trackpad next to real face buttons is otherwise unbound: its click or
-        // firm squeeze is the menu button too.
-        padMenuClick = emulateFaceButtons || padIsStick ? default : secondaryPadClick;
-        padMenuForce = emulateFaceButtons
-            ? default
-            : XRInputSampler.Usage<float>.Find(n, "Secondary2DAxisForce");
+        pad = XRInputSampler.Usage<Vector2>.Find(n, "Secondary2DAxis");
+        padClick = XRInputSampler.Usage<bool>.Find(n, "Secondary2DAxisClick");
+        padForce = XRInputSampler.Usage<float>.Find(n, "Secondary2DAxisForce");
+        layout = ControllerLayout.From(n);
 
         anyFingerUsage = false;
         for (int i = 0; i < fingerUsages.Length; i++)
@@ -187,42 +170,37 @@ internal sealed class ControllerReader
         hadPosition = s.Tracked;
         lastPosition = s.Position;
 
-        s.Trigger = trigger.Has ? Float(trigger) : (Bool(triggerButton) ? 1f : 0f);
-        s.Grip = grip.Has ? Float(grip) : (Bool(gripButton) ? 1f : 0f);
-        s.TriggerTouch = Bool(triggerTouch) || s.Trigger > 0.05f;
-        s.Stick = Vec2(stick);
-        s.StickTouch = Bool(stickTouch);
-        s.Menu = Bool(menu) || Bool(padMenuClick) || Float(padMenuForce) > PadMenuForce;
-        s.PrimaryTouch = Bool(primaryTouch);
-        s.SecondaryTouch = Bool(secondaryTouch);
-
-        bool click = Bool(stickClick);
-        if (emulateFaceButtons && padIsStick)
+        var raw = new ControllerSample
         {
-            // Vive wand: the pad is the only stick and it reports a resting thumb, so everything takes a click.
-            var wand = WandPad.Map(
-                XRInputSampler.N(s.Stick),
-                Bool(padClick),
-                moveHand: left != VRInput.LeftHanded
-            );
-            s.Stick = new Vector2(wand.Stick.X, wand.Stick.Y);
-            s.Primary = wand.Primary;
-            s.Secondary = wand.Secondary;
-            click = wand.StickClick;
-        }
-        else if (emulateFaceButtons)
-        {
-            bool padDown = Bool(padClick);
-            var zone = TrackpadButtons.Zone(XRInputSampler.N(Vec2(pad)));
-            s.Secondary = padDown && zone == PadZone.Up;
-            s.Primary = padDown && zone == PadZone.Down;
-        }
-        else
-        {
-            s.Primary = Bool(primary);
-            s.Secondary = Bool(secondary);
-        }
-        s.StickClick = click;
+            Trigger = Float(trigger),
+            Grip = Float(grip),
+            PadForce = Float(padForce),
+            TriggerButton = Bool(triggerButton),
+            GripButton = Bool(gripButton),
+            TriggerTouch = Bool(triggerTouch),
+            Primary = Bool(primary),
+            PrimaryTouch = Bool(primaryTouch),
+            Secondary = Bool(secondary),
+            SecondaryTouch = Bool(secondaryTouch),
+            StickClick = Bool(stickClick),
+            StickTouch = Bool(stickTouch),
+            Menu = Bool(menu),
+            PadClick = Bool(padClick),
+            Stick = XRInputSampler.N(Vec2(stick)),
+            Pad = XRInputSampler.N(Vec2(pad)),
+        };
+        var b = ControllerMap.Map(layout, raw, moveHand: left != VRInput.LeftHanded);
+        s.Trigger = b.Trigger;
+        s.Grip = b.Grip;
+        s.Stick = new Vector2(b.Stick.X, b.Stick.Y);
+        s.TriggerTouch = b.TriggerTouch;
+        s.Primary = b.Primary;
+        s.Secondary = b.Secondary;
+        s.PrimaryTouch = b.PrimaryTouch;
+        s.SecondaryTouch = b.SecondaryTouch;
+        s.StickClick = b.StickClick;
+        s.StickTouch = b.StickTouch;
+        s.Menu = b.Menu;
 
         s.SkeletalCurls = ReadCurls() ? curls : null;
     }
