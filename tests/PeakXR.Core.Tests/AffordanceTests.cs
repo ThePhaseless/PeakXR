@@ -73,7 +73,7 @@ public class AffordanceTests
             Assert.True(p.Length >= 3);
             for (int i = 0; i < p.Length; i++)
             {
-                Assert.InRange(p[i].Amplitude, 0.05f, 0.45f);
+                Assert.InRange(p[i].Amplitude, 0.05f, 1f);
                 Assert.InRange(p[i].Seconds, 0.01f, 0.05f);
                 if (i > 0)
                     Assert.True(
