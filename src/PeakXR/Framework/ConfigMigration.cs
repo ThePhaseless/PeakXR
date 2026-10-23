@@ -40,6 +40,22 @@ internal static class ConfigMigration
             new ConfigDescription("Internal: this default migration has run.", null, "Hidden")
         );
 
+    /// <summary>True the first time a named migration runs, false ever after (a hidden marker records it).</summary>
+    public static bool Once(string key)
+    {
+        var marker = Plugin.Settings.Bind(
+            Section,
+            key,
+            false,
+            // "Hidden" is VRTab.HiddenTag: kept out of the in-game settings tab.
+            new ConfigDescription("Internal: this migration has run.", null, "Hidden")
+        );
+        if (marker.Value)
+            return false;
+        marker.Value = true;
+        return true;
+    }
+
     public static void FromOldDefault(ConfigEntry<float> entry, float oldDefault)
     {
         var def = entry.Definition;

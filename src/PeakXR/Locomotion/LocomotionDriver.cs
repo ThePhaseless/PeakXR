@@ -69,7 +69,8 @@ internal sealed class LocomotionDriver : MonoBehaviour
             : ArtificialSpeed(c, rig, dt);
         if (!detached)
             hadOrigin = false;
-        if (!on)
+        // Detached frames don't sample the head: the first frame back must not read the whole detached time as one.
+        if (!on || detached)
             hadHead = false;
         ViewSpeed = speed;
         float intensity = vignette.Update(speed, LookPatches.SmoothTurnRate, dt);
