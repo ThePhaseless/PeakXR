@@ -639,20 +639,28 @@ internal sealed class RigDriver : MonoBehaviour
         }
         if (rig.SeatedMode != lastSeated)
             pendingHeight = true;
+        if (headTracked)
+            heightSession.Watch(rig.Head.localPosition.y, rig.SeatedMode, dt);
         if (needInitialRecenter && headTracked && c != null)
         {
             // First frame with a body: nothing to fade from yet (loading just ended).
             needInitialRecenter = false;
-            Recenter(c);
+            Recenter(c, HeightCause.SceneLoad);
             pendingRecenter = false;
         }
     }
 
-    private void Recenter(Character c)
+    /// <summary>The session's height rule: measured once, on request, or after a long wrong stand (survives scenes).</summary>
+    private static readonly HeightSession heightSession = new();
+
+    private void Recenter(Character c, HeightCause cause)
     {
         var hp = rig.Head.localPosition;
         rig.RoomAnchor = new System.Numerics.Vector2(hp.x, hp.z);
-        CalibrateHeight();
+        // A scene load re-places and re-yaws only: a player seated, kneeling or leaning there keeps their height.
+        bool measure = heightSession.ShouldMeasure(cause);
+        if (measure)
+            CalibrateHeight();
         if (c != null)
         {
             var body = c.data.lookDirection_Flat;
@@ -668,7 +676,7 @@ internal sealed class RigDriver : MonoBehaviour
         }
         snap = true;
         Plugin.Log.LogInfo(
-            $"{Tag} Recentered: head y {hp.y:0.00} m, height offset {rig.HeightOffset:0.00} m, "
+            $"{Tag} Recentered ({cause}): head y {hp.y:0.00} m, height offset {rig.HeightOffset:0.00} m {(measure ? "measured" : "kept")}, "
                 + $"floor tracking {XRRuntimeInfo.FloorTracking}, seated {rig.SeatedMode}"
         );
         rig.RaiseRecentered();
@@ -678,6 +686,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         lastSeated = rig.SeatedMode;
         pendingHeight = false;
+        heightSession.Measured(rig.Head.localPosition.y);
         rig.HeightOffset = RigMath.HeightOffset(
             XRRuntimeInfo.FloorTracking,
             rig.SeatedMode ? HeightMode.Seated : HeightMode.Standing,
@@ -763,7 +772,7 @@ internal sealed class RigDriver : MonoBehaviour
             FaceStaticView(source);
             snap = true;
             if (pendingRecenter)
-                Recenter(c);
+                Recenter(c, HeightCause.Recenter);
             else if (pendingHeight)
                 CalibrateHeight();
             pendingRecenter = false;

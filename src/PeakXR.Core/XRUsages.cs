@@ -77,6 +77,60 @@ namespace PeakXR.Core
         }
     }
 
+    /// <summary>What a Vive wand's trackpad (the pad is the only stick, and there are no face buttons) gives one hand.</summary>
+    public struct WandPadState
+    {
+        public Vector2 Stick;
+        public bool Primary;
+        public bool Secondary;
+        public bool StickClick;
+    }
+
+    /// <summary>
+    /// A Vive wand's trackpad reports its position whenever the thumb rests on it, so read as a stick it walks,
+    /// turns and flicks the hotbar by itself (review #22). Everything here needs a click. The move hand (the off
+    /// hand) walks toward the thumb while clicked and sprints with a click at the rim. The turn hand turns with a
+    /// click on either side; its top and bottom clicks are B/Y and A/X and its centre the stick click, and none of
+    /// those also flicks or turns. Hotbar and scroll flicks are left to the belt and the wrist gestures.
+    /// </summary>
+    public static class WandPad
+    {
+        /// <summary>Pad radius past which a move-hand click sprints.</summary>
+        public const float SprintRim = 0.85f;
+
+        /// <summary>Turn-hand clicks closer to the middle than this (sideways) are the stick click, not a turn.</summary>
+        public const float TurnSide = 0.5f;
+
+        public static WandPadState Map(Vector2 pad, bool clicked, bool moveHand)
+        {
+            var s = default(WandPadState);
+            if (!clicked)
+                return s;
+            if (moveHand)
+            {
+                s.Stick = pad;
+                s.StickClick = pad.Length() >= SprintRim;
+                return s;
+            }
+            switch (TrackpadButtons.Zone(pad))
+            {
+                case PadZone.Up:
+                    s.Secondary = true;
+                    break;
+                case PadZone.Down:
+                    s.Primary = true;
+                    break;
+                default:
+                    if (MathF.Abs(pad.X) >= TurnSide)
+                        s.Stick = new Vector2(pad.X, 0f);
+                    else
+                        s.StickClick = true;
+                    break;
+            }
+            return s;
+        }
+    }
+
     /// <summary>Finger curl from hand-tracking joint positions: the summed bend between bone segments.</summary>
     public static class JointCurl
     {
