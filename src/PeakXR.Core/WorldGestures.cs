@@ -157,3 +157,18 @@ public static class AltarSocket
         return false;
     }
 }
+
+/// <summary>
+/// How far the game's open timer of a held case may run (<see cref="LidLift.CapHeldTime"/>'s fraction), decided
+/// before the game adds the frame's time. A lid the hands are lifting: its lift. A two-hand lid (the respawn chest)
+/// without that: 0, whatever started the hold and whatever frame the hand tracking is on, so one hand never runs
+/// it. Any other case: false, the plain vanilla hold.
+/// </summary>
+public static class LidCap
+{
+    public static bool TryFraction(bool lidTracked, float lift, bool twoHands, out float fraction)
+    {
+        fraction = lidTracked ? lift : 0f;
+        return lidTracked || twoHands;
+    }
+}
