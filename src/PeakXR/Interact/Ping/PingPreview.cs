@@ -1,6 +1,7 @@
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
+using PeakXR.UI.Spatial;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -10,8 +11,9 @@ namespace PeakXR.Interact.Ping;
 /// Where a ping would land, before the squeeze: while a hand holds the finger gun (<see cref="PingInput.Aiming"/>), or
 /// the thumb rests on or presses the layout's ping button (<see cref="PingInput.ButtonAiming"/>), a dotted line from
 /// the aiming hand to a small dot on the ground the ping ray would hit (the same ray and TerrainMap mask as
-/// <see cref="PingPatches.PingHit"/>), like a laser pointer's spot. Where the ray finds nothing the dot sits red at a fixed distance, and a ping
-/// fired there leaves it red for a moment as the refused marker. Local only.
+/// <see cref="PingPatches.PingHit"/>), like a laser pointer's spot. Where the ray finds nothing the dot sits red at a fixed distance
+/// inside the refused cue's "no" sign (a ring and its slash, <see cref="CueGlyph.Slash"/>), so shape and not only
+/// colour says it will fail, and a ping fired there leaves it for a moment as the refused marker. Local only.
 /// </summary>
 [DefaultExecutionOrder(31000)]
 internal sealed class PingPreview : MonoBehaviour
@@ -27,6 +29,10 @@ internal sealed class PingPreview : MonoBehaviour
     private const float RayDotDegrees = 0.3f;
     private const float RefusedSeconds = 1f;
 
+    /// <summary>The "no" sign's ring radius, in dot widths: just clear of the dot.</summary>
+    private const float SignScale = 0.9f;
+    private const int SignPoints = 24;
+
     private static readonly Color AimColor = new(0.45f, 0.9f, 0.82f, 0.6f);
     private static readonly Color DotColor = new(0.45f, 0.9f, 0.82f, 0.9f);
 
@@ -36,6 +42,8 @@ internal sealed class PingPreview : MonoBehaviour
     private int rayShown;
     private bool fromLeft;
     private MeshRenderer dot;
+    private LineRenderer signRing,
+        signSlash;
     private Material dotMaterial,
         skyMaterial;
     private float refusedUntil = -1f;
@@ -46,6 +54,10 @@ internal sealed class PingPreview : MonoBehaviour
 
     /// <summary>The drawn dot is the red no-ground one.</summary>
     public static bool DotRed => DotShown && instance.dot.sharedMaterial == instance.skyMaterial;
+
+    /// <summary>The red dot is drawn inside the "no" sign (ring and slash), for the self-test.</summary>
+    public static bool DotSigned =>
+        DotRed && instance.signRing.enabled && instance.signSlash.enabled;
 
     /// <summary>Dots drawn along the aim ray this frame (0 when only the landing dot shows), for the self-test.</summary>
     public static int RayDots => instance != null ? instance.rayShown : 0;
@@ -95,6 +107,35 @@ internal sealed class PingPreview : MonoBehaviour
             .MeshObject("PingDot", sphere, dotMaterial, transform)
             .GetComponent<MeshRenderer>();
         dot.enabled = false;
+        var sign = new GameObject("PingNoSign").transform;
+        sign.SetParent(transform, false);
+        signRing = SignLine(sign, SignPoints);
+        signRing.loop = true;
+        for (int i = 0; i < SignPoints; i++)
+        {
+            float a = i * Mathf.PI * 2f / SignPoints;
+            signRing.SetPosition(i, new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f));
+        }
+        var slash = GlyphShape.Stroke(CueGlyph.Slash, 0);
+        signSlash = SignLine(sign, slash.Length);
+        for (int i = 0; i < slash.Length; i++)
+            signSlash.SetPosition(i, new Vector3(slash[i].X, slash[i].Y, 0f));
+    }
+
+    private LineRenderer SignLine(Transform parent, int points)
+    {
+        var go = new GameObject("Stroke");
+        go.transform.SetParent(parent, false);
+        var line = go.AddComponent<LineRenderer>();
+        line.useWorldSpace = false;
+        line.positionCount = points;
+        line.numCapVertices = 0;
+        line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        line.receiveShadows = false;
+        line.sharedMaterial = skyMaterial;
+        line.startColor = line.endColor = Color.white;
+        line.enabled = false;
+        return line;
     }
 
     private void LateUpdate()
@@ -147,6 +188,21 @@ internal sealed class PingPreview : MonoBehaviour
         t.localScale = new Vector3(size, size, size);
         dot.sharedMaterial = sky ? skyMaterial : dotMaterial;
         dot.enabled = true;
+        ShowSign(sky, end, eye, size * SignScale);
+    }
+
+    /// <summary>The ring and slash around the red dot, facing the eye; widths in world units, as the cue rings.</summary>
+    private void ShowSign(bool on, Vector3 at, Vector3 eye, float radius)
+    {
+        if (on)
+        {
+            var t = signRing.transform.parent;
+            t.SetPositionAndRotation(at, SpatialRuntime.FaceEye(at, eye));
+            t.localScale = new Vector3(radius, radius, radius);
+            signRing.widthMultiplier = signSlash.widthMultiplier = radius * 0.18f;
+        }
+        if (signRing.enabled != on)
+            signRing.enabled = signSlash.enabled = on;
     }
 
     /// <summary>Dots from <paramref name="origin"/> toward <paramref name="end"/>, each the same size in view.</summary>
@@ -183,5 +239,6 @@ internal sealed class PingPreview : MonoBehaviour
     {
         DrawRay(false, default, default, default);
         dot.enabled = false;
+        ShowSign(false, default, default, 0f);
     }
 }

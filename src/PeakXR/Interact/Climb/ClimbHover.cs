@@ -15,6 +15,10 @@ internal static class ClimbHover
     private const int Points = 24;
     private const float Radius = 0.045f;
 
+    /// <summary>Lift off the surface along its normal: 1 cm sank into rough rock, and the ring stays depth tested (a
+    /// mark on the rock, not hand UI) so it never shows through a ledge.</summary>
+    public const float Lift = 0.025f;
+
     /// <summary>A hand must stay off the rock this long before its next touch ticks again.</summary>
     private const float RetouchAfter = 0.3f;
 
@@ -29,6 +33,13 @@ internal static class ClimbHover
         return ring != null && ring.enabled;
     }
 
+    /// <summary>Where the ring of this hand sits (self-test vr.50).</summary>
+    public static Vector3 Position(bool left)
+    {
+        var ring = Rings[left ? 0 : 1];
+        return ring != null ? ring.transform.position : default;
+    }
+
     /// <summary>Draws the ring at <paramref name="point"/> on a surface facing <paramref name="normal"/>. True on
     /// the first frame of a new touch, for the contact tick.</summary>
     public static bool Show(bool left, Vector3 point, Vector3 normal, float now)
@@ -36,9 +47,8 @@ internal static class ClimbHover
         int i = left ? 0 : 1;
         var ring = Rings[i] != null ? Rings[i] : Rings[i] = Build(left);
         bool fresh = !ring.enabled && now - HiddenAt[i] >= RetouchAfter;
-        // Lifted off the rock a little so it is not lost in the surface.
         ring.transform.SetPositionAndRotation(
-            point + normal * 0.01f,
+            point + normal * Lift,
             Quaternion.LookRotation(normal)
         );
         ring.enabled = true;

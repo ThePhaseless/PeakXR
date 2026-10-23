@@ -13,9 +13,6 @@ namespace PeakXR.Core
         /// <summary>The peripheral status rim.</summary>
         public const short Rim = short.MaxValue - 1;
 
-        /// <summary>The head-locked recenter hold ring: over the vignette, so a narrowed view still shows it.</summary>
-        public const short RecenterCue = short.MaxValue - 2;
-
         /// <summary>The comfort vignette.</summary>
         public const short Vignette = short.MaxValue - 3;
 

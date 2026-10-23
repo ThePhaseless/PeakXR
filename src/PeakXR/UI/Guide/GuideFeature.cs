@@ -29,7 +29,7 @@ public sealed class GuideFeature : Feature
             "PracticeOffered",
             false,
             new ConfigDescription(
-                "Internal: the VR practice was offered once on the title screen.",
+                "Internal: the VR practice offer on the title screen was answered (practised or dismissed).",
                 null,
                 VRTab.HiddenTag
             )

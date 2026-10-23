@@ -18,10 +18,13 @@ internal sealed class TouchOrb
     private readonly Material material;
     private readonly DwellButton dwell;
 
-    public TouchOrb(string name, Color color, bool cross, float seconds)
+    /// <summary>Neutral chalk white for every orb: teal and red mean "would work" and "refused" in the cue system.</summary>
+    private static readonly Color Chalk = new(0.92f, 0.92f, 0.88f, 0.8f);
+
+    public TouchOrb(string name, bool cross, float seconds)
     {
         dwell = new DwellButton(seconds);
-        material = UIMaterials.Create(color, drawOnTop: false, renderQueue: 3100);
+        material = UIMaterials.Create(Chalk, drawOnTop: false, renderQueue: 3100);
         orb = UIMaterials.MeshObject(name, UIMaterials.SphereMesh(), material, null).transform;
         Object.DontDestroyOnLoad(orb.gameObject);
         orb.localScale = Vector3.one * (Radius * 2f);
