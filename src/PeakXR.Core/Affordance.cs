@@ -361,24 +361,26 @@ public readonly struct HapticPulse
 }
 
 /// <summary>
-/// The "denied" feel: three soft, quick ticks. Success cues in PeakXR are single pulses, and the hazard hold is two
-/// strong beats, so a soft triple never reads as either. <see cref="Slip"/> fades out, for a hand sliding off a
-/// surface it cannot hold.
+/// The "denied" feel: three firm, quick ticks. Success cues in PeakXR are single pulses, and the hazard hold is two
+/// strong beats, so a triple never reads as either. <see cref="Slip"/> fades out, for a hand sliding off a surface it
+/// cannot hold. A refusal is Alert priority and the strongest thing the hand feels: at the default slider each tick
+/// goes out at about 0.5 for 30 ms (built-in 1 times <see cref="HapticScale.Cue"/>), well above a 0.2 laser hover
+/// tick, and every slider value scales both alike.
 /// </summary>
 public static class DenyHaptics
 {
     public static readonly HapticPulse[] Deny =
     {
-        new(0f, 0.32f, 0.02f),
-        new(0.07f, 0.32f, 0.02f),
-        new(0.14f, 0.32f, 0.02f),
+        new(0f, 1f, 0.03f),
+        new(0.07f, 1f, 0.03f),
+        new(0.14f, 1f, 0.03f),
     };
 
     public static readonly HapticPulse[] Slip =
     {
-        new(0f, 0.4f, 0.04f),
-        new(0.07f, 0.25f, 0.04f),
-        new(0.14f, 0.12f, 0.04f),
+        new(0f, 1f, 0.04f),
+        new(0.07f, 0.75f, 0.04f),
+        new(0.14f, 0.5f, 0.04f),
     };
 
     public static HapticPulse[] For(DenyReason reason) =>
@@ -431,8 +433,10 @@ public sealed class DangerPulse
     public static float Interval(float urgency) =>
         0.5f - 0.38f * System.Math.Clamp(urgency, 0f, 1f);
 
+    /// <summary>Built-in amplitude: 0.6 when far off to 1 when imminent (0.3 to 0.5 at the default slider), so even
+    /// the first warning tick is felt above a hover tick.</summary>
     public static float Amplitude(float urgency) =>
-        0.2f + 0.35f * System.Math.Clamp(urgency, 0f, 1f);
+        0.6f + 0.4f * System.Math.Clamp(urgency, 0f, 1f);
 
     /// <summary>A tick is due at <paramref name="now"/>; the wait is measured at the current urgency, so a rise
     /// shortens a wait already running.</summary>

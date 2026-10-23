@@ -97,10 +97,12 @@ public class AffordanceVocabularyTests
     {
         Assert.InRange(CueHaptics.EndStop.Amplitude, 0.7f, 0.9f);
         Assert.InRange(CueHaptics.EndStop.Seconds, 0.015f, 0.025f);
+        Assert.True(CueHaptics.EndStop.Amplitude > CueHaptics.Contact.Amplitude);
+        // Hard, but a refusal (Alert) stays the strongest thing the player feels.
         foreach (var p in DenyHaptics.Deny)
             Assert.True(
-                CueHaptics.EndStop.Amplitude > p.Amplitude,
-                "an end stop is felt harder than a refusal"
+                CueHaptics.EndStop.Amplitude < p.Amplitude,
+                "a refusal is felt harder than an end stop"
             );
     }
 

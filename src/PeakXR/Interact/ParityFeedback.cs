@@ -36,7 +36,7 @@ internal static class ParityFeedback
             if (now - fallbackAt < Repeat)
                 return;
             fallbackAt = now;
-            Haptics.Pulse(left, 0.3f, 0.18f, HapticPriority.Alert);
+            Haptics.Pulse(left, 1f, 0.18f, HapticPriority.Alert);
             Plugin.Log.LogDebug($"[parity] denied {reason} at {worldPos}");
             return;
         }
