@@ -69,12 +69,20 @@ public static class MenuBackplate
     /// worst case (sun on snow). Blended in linear light, as URP does.</summary>
     public static float WorstContrast(float opacity)
     {
-        float plate =
-            0.2126f * Linear(Color.X) + 0.7152f * Linear(Color.Y) + 0.0722f * Linear(Color.Z);
-        float under = opacity * plate + (1f - opacity);
-        return 1.05f / (under + 0.05f);
+        float under = opacity * Contrast.Luminance(Color) + (1f - opacity);
+        return Contrast.Ratio(1f, under);
     }
 
-    private static float Linear(float c) =>
-        c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
+    /// <summary>Widest a plate may look: past this the content is scattered over the view (the title's sign, logo and
+    /// credits) and one plate around it all would be the full-view 2D panel, so none is drawn.</summary>
+    public const float MaxSpanDegrees = 70f;
+
+    /// <summary>A plate <paramref name="width"/> by <paramref name="height"/> metres at <paramref name="distance"/>
+    /// from the eye would span more than <see cref="MaxSpanDegrees"/> either way (or the eye is on it).</summary>
+    public static bool Scattered(float width, float height, float distance) =>
+        distance <= 1e-3f || SpanDegrees(MathF.Max(width, height), distance) > MaxSpanDegrees;
+
+    /// <summary>Angle a span of <paramref name="size"/> metres covers, centred at <paramref name="distance"/>.</summary>
+    public static float SpanDegrees(float size, float distance) =>
+        2f * MathF.Atan(size * 0.5f / distance) * (180f / MathF.PI);
 }

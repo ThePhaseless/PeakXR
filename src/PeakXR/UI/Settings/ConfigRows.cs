@@ -283,3 +283,39 @@ internal sealed class InfoRow : Setting, IExposedSetting
 
     public string GetCategory() => VRTab.CategoryName;
 }
+
+/// <summary>
+/// The game's dropdown cell draws grey text on a cream box, about 1.7:1. On our <see cref="ChoiceRow"/> cells only,
+/// the caption and the open list's item text turn black or white, whichever reaches 4.5:1 on its own box
+/// (<see cref="Contrast.TextFor"/>). The list is cloned from this cell's template each time it opens, so the
+/// template's item text is the one to change. Boxes are read as their tint times the normal state colour (the
+/// sprites are plain white).
+/// </summary>
+internal static class DropdownContrast
+{
+    public static void Apply(SettingsUICell cell)
+    {
+        var ui = cell.GetComponentInChildren<Zorro.Settings.UI.EnumSettingUI>(true);
+        var dropdown = ui != null ? ui.dropdown : null;
+        if (dropdown == null)
+            return;
+        if (dropdown.captionText != null && dropdown.targetGraphic != null)
+            Fit(dropdown.captionText, dropdown.targetGraphic.color * dropdown.colors.normalColor);
+        if (dropdown.itemText == null)
+            return;
+        var item = dropdown.itemText.GetComponentInParent<UnityEngine.UI.Toggle>(true);
+        if (item != null && item.targetGraphic != null)
+            Fit(dropdown.itemText, item.targetGraphic.color * item.colors.normalColor);
+        else if (
+            dropdown.template != null
+            && dropdown.template.TryGetComponent<UnityEngine.UI.Image>(out var list)
+        )
+            Fit(dropdown.itemText, list.color);
+    }
+
+    private static void Fit(TMPro.TMP_Text text, Color box)
+    {
+        var c = Contrast.TextFor(new System.Numerics.Vector3(box.r, box.g, box.b));
+        text.color = new Color(c.X, c.Y, c.Z, text.color.a);
+    }
+}
