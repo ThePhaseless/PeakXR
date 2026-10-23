@@ -1561,8 +1561,13 @@ internal static class PhysicalInteraction
             return;
         bool l = VRInput.Left.Tracked && GripIntent.IsPointing(LocalAvatar.ControllerCurls(true));
         bool r = VRInput.Right.Tracked && GripIntent.IsPointing(LocalAvatar.ControllerCurls(false));
+        // The hand whose grip runs the interact aims it, whichever side: a hand holding an item with its finger off
+        // the trigger also reads as pointing, and took the aim from the left's pointed grip (vr58: the amulet hand
+        // aimed, the statue went unhovered).
         if (l && LeftHand.Action == GripPressAction.Interact)
             AimHand = 0;
+        else if (r && RightHand.Action == GripPressAction.Interact)
+            AimHand = 1;
         else if (r)
             AimHand = 1;
         else if (l)
