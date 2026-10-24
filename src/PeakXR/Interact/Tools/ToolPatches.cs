@@ -73,7 +73,7 @@ internal static class ToolPatches
                 ___character,
                 __state,
                 ___climbingSpikeTick,
-                ___currentClimbingSpikeItemSlot != null,
+                ___currentClimbingSpikeItemSlot,
                 ___currentClimbingSpikeComponent,
                 in ___climbingSpikeHit
             );
