@@ -385,6 +385,11 @@ internal sealed partial class SelfTestRunner
             Put("boneL", handL.Rig.position);
         if (parts.TryGetValue(BodypartType.Hand_R, out var handR))
             Put("boneR", handR.Rig.position);
+        // Which hands hold the item (AvatarPoseDriver.Apply's holding test): their bone, not the tracked pose, is what
+        // A's own client shows, since a held item follows the controller free of a hand that cannot reach it.
+        bool item = c.data.currentItem != null;
+        j.Bool("holdL", item && (driver.Pose.TwoHandHold || driver.Pose.ItemInLeftHand))
+            .Bool("holdR", item && (driver.Pose.TwoHandHold || !driver.Pose.ItemInLeftHand));
     }
 
     void Extra(string key, Vector3 v) =>
