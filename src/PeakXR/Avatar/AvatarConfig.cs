@@ -16,7 +16,8 @@ internal sealed class AvatarConfig
         fingers,
         headLook,
         bodyLean,
-        retargetItems;
+        retargetItems,
+        reachGhostHand;
     private ConfigEntry<string> ownBody;
     private ConfigEntry<float> wristBack,
         wristSide,
@@ -30,6 +31,7 @@ internal sealed class AvatarConfig
     public bool HeadLook => headLook?.Value ?? true;
     public bool BodyLean => bodyLean?.Value ?? true;
     public bool RetargetItems => retargetItems?.Value ?? true;
+    public bool ReachGhostHand => reachGhostHand?.Value ?? true;
     public string OwnBody => ownBody?.Value ?? ShowArms;
     public ConfigEntry<string> OwnBodyEntry => ownBody;
     public float WristBack => wristBack?.Value ?? 0.07f;
@@ -68,6 +70,13 @@ internal sealed class AvatarConfig
                 true,
                 "The character's upper body leans toward your headset (yours and other modded players'), so its "
                     + "shoulders and hands come along when you lean over something."
+            ),
+            reachGhostHand = file.Bind(
+                s,
+                "ReachGhostHand",
+                true,
+                "When your real hand reaches further than your character's arm can (a deep stoop, a long reach), a "
+                    + "faint ghost hand shows where your hand really is. Only you see it."
             ),
             retargetItems = file.Bind(
                 s,

@@ -117,6 +117,8 @@ In VR the VR tab of the settings (title or pause menu) starts with a VR Guide se
 
 Each of these has an on/off setting in the `Interaction` section. With a setting off, the grip and trigger work as before.
 
+A held item stays in your character's hand. When your real hand goes further than the character's arm can reach, such as a deep stoop or a long reach, a faint ghost hand shows where your hand really is (`Avatar.ReachGhostHand`, on). Only you see it.
+
 - Cook (`CookOverFire`): hold food over a lit campfire. It cooks while it stays above the flames and stops when you pull it out. A soft buzz grows as it cooks. Held near a lit fire, food gives a faint pulse that gets stronger toward the heat. Food that cannot be used on the fire, or a fire that is not lit, gets the refusal cue.
 - Open a suitcase (`LiftLidToOpen`): grip the top of the case and lift. The game's open timer only runs as far as you have raised the lid, so lift slowly. A respawn chest needs both hands on the lid; one hand alone gets the two-hands cue. Gripping the case low down holds it open the old way, and shows an upward ring at the lid edge to say where to lift.
 - Bugle (`BugleAtMouth`): raise it to your mouth to play. Tilt the bell up for a higher note and down for a lower one. The trigger plays it too.

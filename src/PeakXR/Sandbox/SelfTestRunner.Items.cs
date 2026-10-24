@@ -60,6 +60,60 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.170-throw-mid-cast", "Bandage", 25f, ThrowMidCastStep);
         yield return HandStep("vr.171-vine-no-path", 30f, VineNoPathStep());
         yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
+        yield return HandStep("vr.173-reach-ghost", 20f, ReachGhostStep());
+    }
+
+    /// <summary>
+    /// vr.173: the ghost hand (avatar.local <see cref="ReachGhost"/>) shows where the real hand is when the character's
+    /// arm cannot get there, and only then: none with the hand at rest; standing tall with the right controller on the
+    /// floor 0.6 m ahead (past the arm's reach from a standing shoulder) it fades in; back at rest it fades out.
+    /// </summary>
+    IEnumerator ReachGhostStep()
+    {
+        if (!AvatarConfig.Instance.ReachGhostHand)
+        {
+            stepSkip = "Avatar.ReachGhostHand off";
+            yield break;
+        }
+        var rig = VRRig.Instance;
+        // Fade time from the rule (GhostFade.Rate) plus the arm's settling.
+        float settle = 1f / GhostFade.Rate + 0.6f;
+        var rest = Script(false).Position;
+        yield return Wait(settle);
+        float atRest = ReachGhost.Alpha(false);
+        float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+        float floor = XR.XRRuntimeInfo.FloorTracking
+            ? 0f
+            : eye - HeightCalibration.DefaultStandingEyeHeight;
+        HeadFrame(out var head, out var forward, out var right);
+        var low = new Vector3(head.x, floor + 0.05f, head.z) + forward * 0.6f + right * 0.15f;
+        float start = Now;
+        while (Now - start < 0.5f)
+        {
+            SetHand(false, Vector3.Lerp(rest, low, (Now - start) / 0.5f));
+            yield return null;
+        }
+        yield return Wait(settle);
+        float reaching = ReachGhost.Alpha(false);
+        start = Now;
+        while (Now - start < 0.5f)
+        {
+            SetHand(false, Vector3.Lerp(low, rest, (Now - start) / 0.5f));
+            yield return null;
+        }
+        yield return Wait(settle + 0.3f);
+        float back = ReachGhost.Alpha(false);
+        var note = F(
+            $"ghost alpha at rest {atRest:0.00}, controller on the floor ahead {reaching:0.00}, back at rest {back:0.00}"
+        );
+        if (atRest > 0f)
+            Fail("ghost hand shown with the hand at rest: " + note);
+        else if (reaching < 0.5f)
+            Fail("no ghost hand at a controller the arm cannot reach: " + note);
+        else if (back > 0f)
+            Fail("ghost hand stayed after the hand came back: " + note);
+        else
+            stepNote = note;
     }
 
     IEnumerator ItemStep(string id, string fragment, float timeout, Func<Item, IEnumerator> body)
