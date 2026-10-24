@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace PeakXR.Core;
@@ -89,6 +90,29 @@ public static class SocialIntent
         if (f.OnHandOrArm && !f.HandOnWall)
             refusal = DenyReason.NotInTrouble;
         return SocialKind.None;
+    }
+
+    /// <summary>The game's reach cone (CharacterGrabbing.Reach, CharacterGrabbing.cs:252-253): degrees between the
+    /// look and the friend, and the farthest friend (m, centre to centre).</summary>
+    public const float ReachConeDegrees = 60f;
+
+    public const float ReachRange = 4f;
+
+    /// <summary>
+    /// The game's own reach would catch a friend at <paramref name="toFriend"/> (centre to centre) with the look
+    /// along <paramref name="look"/>. Every client tests this from the synced look, so a hand on the friend with the
+    /// look elsewhere pulls nobody up.
+    /// </summary>
+    public static bool ReachSees(Vector3 look, Vector3 toFriend)
+    {
+        float d = toFriend.Length();
+        if (d > ReachRange)
+            return false;
+        float l = look.Length();
+        if (d < 1e-5f || l < 1e-5f)
+            return true;
+        float cos = Vector3.Dot(look, toFriend) / (l * d);
+        return cos >= MathF.Cos(ReachConeDegrees * MathF.PI / 180f);
     }
 
     /// <summary>Why the game's kick would not fire (CharacterGrabbing.cs:104): None when it would.</summary>
