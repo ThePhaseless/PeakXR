@@ -761,9 +761,9 @@ public partial class AvatarPoseDriver
     /// tracked. The self-test compares it with where the ragdoll hand really is.</summary>
     internal bool HandTarget(bool left, out Vector3 pos) => HandTarget(left, out pos, out _);
 
-    /// <summary>How far the <paramref name="left"/> ragdoll hand is from where its controller puts the hand bone
-    /// (without the reach map's compression): what <see cref="ReachGhost"/> fades on. False without a fresh pose
-    /// for that hand or while the arms are let go.</summary>
+    /// <summary>How far the <paramref name="left"/> arm falls short of where its controller puts the hand bone
+    /// (<see cref="ArmShortfall"/>: geometry, not lag), what <see cref="ReachGhost"/> fades on. False without a fresh
+    /// pose for that hand or while the arms are let go.</summary>
     internal bool ReachGap(bool left, out float gap)
     {
         gap = 0f;
@@ -782,7 +782,7 @@ public partial class AvatarPoseDriver
             out var bone,
             out _
         );
-        gap = Vector3.Distance(HandBody(left).position, bone);
+        gap = ArmShortfall(left, bone);
         return true;
     }
 

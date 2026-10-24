@@ -6,9 +6,10 @@ using UnityEngine;
 namespace PeakXR.Avatar;
 
 /// <summary>
-/// A faint ghost hand at each controller the local character's hand cannot reach (a deep stoop, a reach past the
-/// arm): the held item stays on the character's hand, and the ghost shows where the real hand is. It fades in from
-/// about 5 cm of gap and is full by 15 cm (<see cref="GhostFade"/>), and its fingers follow the hand's curls. Local
+/// A faint ghost hand at each controller the local character's arm cannot reach (a deep stoop, a reach past the
+/// arm): the held item stays on the character's hand, and the ghost shows where the real hand is. It fades in once
+/// the arm falls 5 cm short for 0.15 s and is full by 15 cm (<see cref="GhostFade"/>; geometry, so a fast swing's lag
+/// never shows it), and its fingers follow the hand's curls. Local
 /// only: a renderer on the rig side, never sent. Built once; LateUpdate allocates nothing and poses only what shows.
 /// </summary>
 internal sealed class ReachGhost : MonoBehaviour

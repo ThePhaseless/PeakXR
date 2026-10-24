@@ -39,7 +39,21 @@ public class ReachGhostTests
     public void FadesRatherThanPops()
     {
         var f = new GhostFade();
-        f.Update(0.5f, 0.02f);
+        for (int i = 0; i < 10; i++)
+            f.Update(0.5f, 0.02f);
         Assert.InRange(f.Alpha, 0.01f, 0.5f);
+    }
+
+    [Fact]
+    public void ABriefShortfallShowsNothing()
+    {
+        // A shortfall must last about 0.15 s before the ghost fades in (a reach that only touches the limit).
+        var f = new GhostFade();
+        for (int i = 0; i < 6; i++)
+            f.Update(0.3f, 0.02f);
+        Assert.False(f.Visible);
+        for (int i = 0; i < 6; i++)
+            f.Update(0f, 0.02f);
+        Assert.False(f.Visible);
     }
 }
