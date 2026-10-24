@@ -120,7 +120,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("eat", 150f, true, Eat());
         yield return MpStep("holster", 60f, true, Holster());
         yield return MpStep("climb", 200f, true, MpClimb());
-        yield return MpStep("two-hand", 60f, true, MpTwoHand());
+        yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpSocialSteps();
         MpFinish("script done");
@@ -1079,16 +1079,12 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var info = new ItemHoldInfo();
-        var item = NearestGround(i =>
+        // The nearest reachable one, walking around what blocks the way and passing over one it cannot reach (MP run
+        // 23: the walk to the nearest stopped 0.7 m short against a blocker and the step failed).
+        yield return GrabReachable(i =>
             info.Bind(i) && info.Profile.Handedness != Handedness.OneHanded
         );
-        if (item == null)
-        {
-            stepSkip = $"no two-hand item within {NearItems:0} m";
-            yield break;
-        }
-        yield return GrabWorld(item);
-        if (!stepOk)
+        if (!stepOk || stepSkip != null)
             yield break;
         yield return TwoHandHeld();
     }
@@ -1273,11 +1269,12 @@ internal sealed partial class SelfTestRunner
             if (item == null)
                 break;
             tried.Add(item);
-            // Bounded, so far tries still fit the step (walking 4 m/s).
-            yield return MpWalkBounded(
+            // Bounded, so far tries still fit the step (walking 4 m/s), with one sidestep round a blocker.
+            yield return MpWalkAround(
                 () => item != null ? item.Center() : Character.localCharacter.Center,
                 0.55f,
-                5f + Vector3.Distance(item.Center(), Character.localCharacter.Center) / 3f
+                5f + Vector3.Distance(item.Center(), Character.localCharacter.Center) / 3f,
+                1
             );
             var to = item != null ? item.Center() - Character.localCharacter.Center : Vector3.zero;
             to.y = 0f;
@@ -1691,7 +1688,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("reach", 40f, true, MpReach());
         yield return HostWake();
         yield return MpStep("kick-mode", 40f, true, KickMode());
-        yield return MpStep("carry", 60f, true, MpCarry());
+        yield return MpStep("carry", 90f, true, MpCarry());
         yield return HostWake();
         yield return MpStep("pack", MpPackBudget, true, MpPack());
         yield return MpStep("pal-jump", 40f, true, PalJump());
@@ -2211,20 +2208,36 @@ internal sealed partial class SelfTestRunner
         yield return ToHost(0.6f);
         if (!stepOk)
             yield break;
-        // A lying body stretches out from its centre: step in until the torso and hip both sit within 0.5 m of the
-        // eye on the level, so a squat reaches them (MP run 21: the hip lay 1.16 m out and the carry skipped).
+        // A lying body stretches out from its centre, and walking at its middle runs into the body itself (MP run 23:
+        // the steps in stalled and the hip lay 0.77 m out). Stand beside it instead: 0.4 m off the torso-hip line on
+        // A's side, facing the body, so a squat reaches both. Up to three tries, each bounded.
+        int steps = 0;
         for (int i = 0; i < 3; i++)
         {
             var eye = VRRig.Instance.Head.position;
             var torso = HostPart(host, BodypartType.Torso);
             var hip = HostPart(host, BodypartType.Hip);
             var mid = (torso + hip) * 0.5f;
-            if (FlatDistance(eye, torso) <= 0.5f && FlatDistance(eye, hip) <= 0.5f)
+            if (FlatDistance(eye, torso) <= 0.55f && FlatDistance(eye, hip) <= 0.55f)
                 break;
-            yield return MpWalkBounded(() => mid, 0.25f, 3f);
+            var axis = hip - torso;
+            axis.y = 0f;
+            var side =
+                axis.sqrMagnitude > 1e-4f
+                    ? Vector3.Cross(Vector3.up, axis.normalized)
+                    : Flat(c.Center - mid);
+            if (Vector3.Dot(side, c.Center - mid) < 0f)
+                side = -side;
+            var spot = mid + side * 0.4f;
+            steps++;
+            yield return MpWalkAround(() => spot, 0.15f, 4f, 1);
             Face(mid);
             yield return Wait(0.3f);
         }
+        var eyeAt = VRRig.Instance.Head.position;
+        var stand = F(
+            $"{steps} step(s) beside the body; torso {FlatDistance(eyeAt, HostPart(host, BodypartType.Torso)):0.00} m and hip {FlatDistance(eyeAt, HostPart(host, BodypartType.Hip)):0.00} m from the eye on the level"
+        );
         bool pack = c.player != null && !c.player.backpackSlot.IsEmpty();
         float mark = CueMark();
         yield return ReachDown(true, () => HostPart(host, BodypartType.Torso), 0.6f);
@@ -2232,7 +2245,7 @@ internal sealed partial class SelfTestRunner
         var over = OverReach(true) ?? OverReach(false);
         if (over != null)
         {
-            stepSkip = "stooped to the lying host, " + over;
+            stepSkip = "stooped to the lying host, " + over + "; " + stand;
             yield break;
         }
         Script(true).Grip = Script(false).Grip = 1f;
