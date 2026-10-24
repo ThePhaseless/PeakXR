@@ -2465,12 +2465,19 @@ internal sealed partial class SelfTestRunner
             yield break;
         var hands = applyHands;
         float low = VRInput.HeadPosition.y * 0.6f;
+        float drop = VRInput.HeadPosition.y - low;
         VRInput.TestOverride = () =>
         {
             hands();
             var p = VRInput.HeadPosition;
             p.y = low;
             VRInput.HeadPosition = p;
+            // The hands crouch with the head, as a player's do. Left at standing height they sat level with the
+            // crouched head and 0.4 m ahead, so a modded peer drew A's arms up there (net.pose), B landed on them and
+            // slid off before A jumped: no boost on modded B in MP runs 20, 21 and 23, while vanilla B (A's arms on
+            // the game's crouch animation) was boosted.
+            VRInput.Left.Position.y -= drop;
+            VRInput.Right.Position.y -= drop;
         };
         try
         {
@@ -2492,16 +2499,22 @@ internal sealed partial class SelfTestRunner
                 if (stepSkip != null)
                     yield break;
                 float until = Now + 2f;
+                float lastY = host.Center.y;
                 while (Now < until && !onTop)
                 {
+                    yield return null;
                     var flat = host.Center - c.Center;
                     flat.y = 0f;
-                    // On A's head, and no longer falling onto it (the warp drops B from 0.6 m above).
+                    float vy = Time.deltaTime > 0f ? (host.Center.y - lastY) / Time.deltaTime : 0f;
+                    lastY = host.Center.y;
+                    // On A's head, and no longer falling onto it (the warp drops B from 0.6 m above): B's own check
+                    // needs B already standing on the crouched A when A's jump arrives, as JumpRpc ends A's crouch
+                    // (CharacterMovement.cs:646, :1006-1013, :1021).
                     onTop =
                         flat.magnitude < 0.45f
                         && host.Center.y > c.Head.y - 0.1f
-                        && host.Center.y < c.Head.y + 0.9f;
-                    yield return null;
+                        && host.Center.y < c.Head.y + 0.9f
+                        && Mathf.Abs(vy) < 0.3f;
                 }
             }
             if (!onTop)
