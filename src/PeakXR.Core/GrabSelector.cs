@@ -10,7 +10,10 @@ namespace PeakXR.Core
         public const float DefaultAngleWeight = 0.05f;
 
         /// <summary>How many points <see cref="SightPoints"/> writes.</summary>
-        public const int SightPointCount = 3;
+        public const int SightPointCount = 4;
+
+        /// <summary>How far above an item's top (metres) the last sight point sits.</summary>
+        public const float SightAboveTop = 0.05f;
 
         /// <summary>
         /// Where the eye may see a grab candidate: the point of its bounds nearest the hand, its centre and the top of
@@ -29,8 +32,18 @@ namespace PeakXR.Core
             into[0] = closest;
             into[1] = center;
             into[2] = center + new Vector3(0f, extents.Y, 0f);
+            // Just above the top: a flat item in a rock hollow shows only from there (VR mp19's compass).
+            into[3] = center + new Vector3(0f, extents.Y + SightAboveTop, 0f);
             return SightPointCount;
         }
+
+        /// <summary>
+        /// A grab candidate is in sight when the eye sees any of its <see cref="SightPoints"/>, or when the hand already
+        /// on it sees it and the eye sees that hand. Small items on rocky ground can hide from a stooped eye on every
+        /// point; a hand pushed through a rock fin is itself out of the eye's sight, so nothing behind a fin is taken.
+        /// </summary>
+        public static bool Seen(bool eyeSeesItem, bool handSeesItem, bool eyeSeesHand) =>
+            eyeSeesItem || (handSeesItem && eyeSeesHand);
 
         /// <summary>
         /// Returns the index of the best of the first <paramref name="count"/> candidates, or -1 if none is within
