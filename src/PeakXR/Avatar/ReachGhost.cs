@@ -67,12 +67,25 @@ internal sealed class ReachGhost : MonoBehaviour
     {
         float gap = 0f;
         var controller = rig != null ? rig.Hand(isLeft) : null;
+        Vector3 shoulder = default,
+            bone = default;
+        float arm = 0f;
         bool on =
             driver != null
             && controller != null
             && VRInput.Hand(isLeft).Tracked
-            && driver.ReachGap(isLeft, out gap);
+            && driver.ReachGap(isLeft, out gap, out shoulder, out bone, out arm);
+        bool was = h.Fade.Visible;
         float alpha = on ? h.Fade.Update(gap, dt) : h.Fade.Update(0f, dt);
+        if (on && h.Fade.Visible && !was)
+        {
+            // Rare edge: why it showed.
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[avatar.local] ghost {(isLeft ? "left" : "right")} hand: short {gap:0.00} m, shoulder {shoulder}, controller bone {bone}, arm {arm:0.00} m, body to head {driver.BodyToHead()}"
+                )
+            );
+        }
         if (!h.Fade.Visible)
         {
             if (h.Root != null && h.Root.gameObject.activeSelf)
