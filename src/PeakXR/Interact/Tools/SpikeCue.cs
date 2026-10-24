@@ -14,6 +14,9 @@ namespace PeakXR.Interact.Tools;
 /// While a finger rests on the aiming trigger and the wall is past range, the wall gets a red ring and the end of the
 /// real range a teal one ("Move 0.6 m closer"); a press there, or a cast lost by moving away, is denied with the same
 /// cue. Runs in the <c>UpdateClimbingSpikeUse</c> patch, where the camera is still at the aiming hand.
+/// A held spike that is not the first one in the slots never places by itself (vanilla <c>climbingSpikeSelected</c>,
+/// CharacterItems.cs:102-112, picks the first spike slot, :935-946): aimed at a wall in range, it gets a CantUse
+/// cue whose ring marks the belt slot of the spike that places. The slot rule itself stays vanilla.
 /// </summary>
 internal static class SpikeCue
 {
@@ -32,12 +35,13 @@ internal static class SpikeCue
         Character c,
         float tickBefore,
         float tickAfter,
-        bool slotKept,
+        ItemSlot spikeSlot,
         ClimbingSpikeComponent spike,
         in RaycastHit preview
     )
     {
         outOfRangeFrame = -10;
+        bool slotKept = spikeSlot != null;
         var cam = MainCamera.instance;
         if (
             c == null
@@ -121,6 +125,31 @@ internal static class SpikeCue
         // The hover cue never says "can't" inside the range (hysteresis only past it); a press the game just
         // refused (it would have started the cast above) is checked against the exact range.
         within = hit && DenyRange.Within(wall.distance, range, within, 0.1f);
+        // In range, not climbing, yet no cast (the started one returned above): the held spike's slot is not the one
+        // the game places from.
+        var selected = c.refs.items.currentSelectedSlot;
+        if (
+            heldSpike
+            && !climbing
+            && hit
+            && wall.distance <= range
+            && spikeSlot != null
+            && selected.IsSome
+            && selected.Value != spikeSlot.itemSlotID
+        )
+        {
+            var slotHint = PeakXR.Inventory.BodyInventory.Instance.SlotWorld(
+                spikeSlot.itemSlotID,
+                out var slotAt
+            )
+                ? DenyHint.At(slotAt)
+                : default;
+            if (!attempt)
+                Affordance.Hover(left, wall.point, DenyReason.CantUse, slotHint);
+            else
+                Affordance.Deny(left, wall.point, DenyReason.CantUse, slotHint, held);
+            return;
+        }
         if (attempt ? hit && wall.distance <= range : within)
             return;
         if (!within)

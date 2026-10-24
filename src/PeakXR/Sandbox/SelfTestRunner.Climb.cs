@@ -64,6 +64,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
         yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
+        yield return Restoring("vr.44f-spike-second-slot", 30f, SpikeSecondSlotStep());
         yield return Restoring("vr.44e-item-hand-no-hang", 35f, ItemHandNoHangStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
@@ -1845,6 +1846,114 @@ internal sealed partial class SelfTestRunner
             Fail("hammering was not faster than holding: " + note);
         else if (took < earliest - 0.15f)
             Fail("hammering beat the cap: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.44f: spikes in two slots and the second one drawn. Vanilla places only from the first spike slot
+    /// (climbingSpikeSelected, CharacterItems.cs:102-112, :935-946), so the press at a wall in range does nothing;
+    /// SpikeCue refuses it as <see cref="DenyReason.CantUse"/> with the spike red and the ring on the first spike's
+    /// belt slot. No cast starts and both spikes stay.
+    /// </summary>
+    IEnumerator SpikeSecondSlotStep()
+    {
+        var c = Character.localCharacter;
+        var spike = FindItemComponent<ClimbingSpikeComponent>();
+        if (spike == null)
+        {
+            stepSkip = "no climbing spike item";
+            yield break;
+        }
+        var spikeItem = spike.GetComponent<Item>();
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        EmptyHotbar(c);
+        OnRestore(() => EmptyHotbar(c));
+        if (
+            c.player == null
+            || !c.player.AddItem(spikeItem.itemID, null, out var first)
+            || first == null
+        )
+        {
+            Fail("no slot for the first spike");
+            yield break;
+        }
+        yield return EquipDirect(spikeItem);
+        if (!stepOk)
+            yield break;
+        var selected = c.refs.items.currentSelectedSlot;
+        if (!selected.IsSome || selected.Value <= first.itemSlotID)
+        {
+            Fail(
+                F(
+                    $"the drawn spike is not the later one: first spike in slot {first.itemSlotID}, selected {(selected.IsSome ? selected.Value : -1)}"
+                )
+            );
+            yield break;
+        }
+        bool left = LocalHold.ItemInLeftHand;
+        var rig = VRRig.Instance;
+        var toWall = -Flat(wallFace.normal);
+        var wallCollider = wallFace.collider;
+        float gap = wallCollider.Raycast(new Ray(rig.Head.position, toWall), out var headHit, 3f)
+            ? headHit.distance
+            : 0.6f;
+        SetHand(
+            left,
+            rig.Origin.InverseTransformPoint(
+                rig.Head.position
+                    + toWall * Mathf.Clamp(gap - 0.3f, 0.1f, 0.3f)
+                    + Vector3.down * 0.15f
+            )
+        );
+        yield return Wait(0.2f);
+        var face = wallFace.point;
+        if (
+            rig.Aim(left) is { } from
+            && wallCollider.Raycast(new Ray(from.position, toWall), out var onFace, 3f)
+        )
+            face = onFace.point;
+        for (float until = Now + 0.3f; Now < until; )
+        {
+            AimHand(rig, left, face);
+            yield return null;
+        }
+        // The precondition: in range, so only the slot rule can refuse it.
+        var aim = rig.Aim(left);
+        float range = spike.climbingSpikeStartDistanceGrounded;
+        if (
+            aim == null
+            || !Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var hit,
+                range,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+        )
+        {
+            Fail(
+                F(
+                    $"the spike hand's aim line meets no terrain within the {range:0.00} m start reach"
+                )
+            );
+            yield break;
+        }
+        int spikesBefore = c.data.climbingSpikeCount;
+        yield return PressAndExpect(left, DenyReason.CantUse);
+        bool cast = Interact.Tools.SpikeHammer.Casting;
+        int spikesAfter = c.data.climbingSpikeCount;
+        string note =
+            F(
+                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m), spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
+            ) + stepNote;
+        if (!stepOk)
+            stepNote = note;
+        else if (cast || spikesAfter != spikesBefore)
+            Fail("the refused press still cast or spent a spike: " + note);
         else
             Note(note);
         yield return LetGoAll(c);
