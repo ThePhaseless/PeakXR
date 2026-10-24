@@ -630,6 +630,64 @@ internal static class PhysicalInteraction
                 probePoint,
                 probeAngle > 90f ? DenyReason.Overhang : DenyReason.TooFlat
             );
+        // Closed short of a climbable wall: the hand stops at arm's length, so rock just past the grab range would
+        // otherwise get no cue at all (VR run 64). The grab itself stays capped; this only says "too far".
+        else if (
+            cfg.PhysicalClimb
+            && !ctx.NearClimbable
+            && action is GripPressAction.None or GripPressAction.Interact
+            && (Interaction.instance == null || Interaction.instance.currentHovered == null)
+            && RockJustBeyond(rig, pos, t, cfg, out var rock)
+        )
+            Affordance.Deny(
+                hand.Left,
+                rock,
+                DenyReason.OutOfReach,
+                DenyHint.Range(pos, rock, cfg.ClimbRadius)
+            );
+    }
+
+    /// <summary>
+    /// Climbable rock along the reach (eye through hand) past the grab radius but within
+    /// <see cref="TraversalRefusal.ReachProbe"/> beyond it (<see cref="TraversalRefusal.ReachBand"/>). Only at a
+    /// grip press: one ray.
+    /// </summary>
+    private static bool RockJustBeyond(
+        VRRig rig,
+        Vector3 handPos,
+        Transform hand,
+        InteractConfig cfg,
+        out Vector3 rock
+    )
+    {
+        rock = default;
+        var dir = handPos - Eye(rig);
+        dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : hand.forward;
+        if (
+            !Physics.Raycast(
+                handPos,
+                dir,
+                out var hit,
+                cfg.ClimbRadius + TraversalRefusal.ReachProbe,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return false;
+        bool climbable =
+            hit.collider.TryGetComponent<ClimbModifierSurface>(out _)
+            || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up));
+        if (
+            !climbable
+            || TraversalRefusal.ReachBand(
+                hit.distance,
+                cfg.ClimbRadius,
+                TraversalRefusal.ReachProbe
+            ) == DenyReason.None
+        )
+            return false;
+        rock = hit.point;
+        return true;
     }
 
     /// <summary>

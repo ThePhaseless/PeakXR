@@ -73,6 +73,19 @@ public static class TraversalRefusal
     /// retried as a line check thickened up to 0.1 m (:553-561), so surface points up to 1.35 m away are hit.
     /// </summary>
     public const float GameWallReach = 1.35f;
+
+    /// <summary>How far past the grab radius (metres) a grip still sees rock it falls short of.</summary>
+    public const float ReachProbe = 0.4f;
+
+    /// <summary>
+    /// A grip that closes short of a climbable surface: rock beyond <paramref name="grabRadius"/> but within
+    /// <paramref name="band"/> past it along the reach is "too far", so the player learns to reach on instead of
+    /// meeting silence. Within the grab radius the grip climbs; farther is open air.
+    /// </summary>
+    public static DenyReason ReachBand(float handToRock, float grabRadius, float band) =>
+        handToRock > grabRadius && handToRock <= grabRadius + band
+            ? DenyReason.OutOfReach
+            : DenyReason.None;
 }
 
 /// <summary>
