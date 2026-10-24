@@ -1294,9 +1294,39 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         if (!holding)
+        {
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
+            yield break;
+        }
+        stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m");
+        if (lug.IsOpen)
+            yield break;
+        // A tracked hand sunk into the case, which nothing stops: the grip still takes it (VR run 75's vr.82b met no
+        // triangle from inside a concave mesh and did "Interact on nothing").
+        var inside = lug.Center() + Vector3.down * 0.05f;
+        yield return ReachDown(left, () => inside, 0.3f);
+        if (OverReach(left) != null)
+        {
+            stepNote += "; sunk-in grip skipped: past arm's reach";
+            yield break;
+        }
+        LookAtHand(left);
+        yield return Wait(0.2f);
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(
+            () => ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen,
+            1f
+        );
+        bool took = ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen;
+        var sunkNote = PhysicalInteraction.LastGripNote;
+        yield return GripTo(left, 0f, 0.1f);
+        if (!took)
+            Fail(
+                $"a hand sunk into {lug.name} took nothing: grip {PhysicalInteraction.HandAction(left)}, hovered "
+                    + $"{Label(Interaction.instance != null ? Interaction.instance.currentHovered : null)}; {sunkNote}"
+            );
         else
-            stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m");
+            stepNote += "; a hand sunk into it takes it too";
     }
 
     /// <summary>The point of <paramref name="lug"/>'s solid colliders nearest a probe on the side toward

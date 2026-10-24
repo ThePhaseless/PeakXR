@@ -707,8 +707,18 @@ internal sealed partial class SelfTestRunner
         float best = float.MaxValue;
         foreach (var col in lug.GetComponentsInChildren<Collider>())
         {
+            // A concave mesh has no closest-point query (ClosestPoint returns the point itself, a false 0 m in run 75):
+            // its bounds stand in.
             if (!col.isTrigger)
-                best = Mathf.Min(best, Vector3.Distance(col.ClosestPoint(point), point));
+                best = Mathf.Min(
+                    best,
+                    Vector3.Distance(
+                        col is MeshCollider { convex: false }
+                            ? col.bounds.ClosestPoint(point)
+                            : col.ClosestPoint(point),
+                        point
+                    )
+                );
         }
         return best;
     }
