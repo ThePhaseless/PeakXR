@@ -715,6 +715,13 @@ internal sealed partial class SelfTestRunner
     /// <summary>The level direction the fuse sticks out from its cannon's body; zero for a fuse with no cannon.</summary>
     Vector3 fuseOut;
 
+    /// <summary>Within this of the fuse (m) the hand stops steering and holds the flame there: inside the light's
+    /// 0.12 m touch (FireGestures.TouchEnter) with room for the ragdoll hand's sway.</summary>
+    const float FuseHold = 0.08f;
+
+    /// <summary>The fuse carry's waypoints and dwell, for the note.</summary>
+    string fuseWay = "";
+
     /// <summary>Wrist pitches (deg down from level) tried to tip a held torch toward a low fuse.</summary>
     static readonly float[] TorchTips = { 30f, 60f, 90f };
 
@@ -880,13 +887,34 @@ internal sealed partial class SelfTestRunner
             StoopToFollow(left);
             yield return null;
         }
+        var approachAt = Approach();
         BeginCarry();
+        // The last leg ends on the fuse's own touch point, and once the flame is inside the light's touch distance
+        // (FireGestures.TouchEnter, 0.12 m) the hand holds still for the light's hold: run 63 got the flame within
+        // 0.03 m and kept steering, and it ended 0.56 m off, unlit.
+        float heldAt = -1f;
         while (Now < end && flame != null && !done())
         {
-            CarryToward(left, flame.position, Touch(), FlameStall);
+            float off =
+                fuseCol != null
+                    ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
+                    : Vector3.Distance(Touch(), flame.position);
+            if (off <= FuseHold)
+            {
+                if (heldAt < 0f)
+                    heldAt = Now;
+            }
+            else
+            {
+                heldAt = -1f;
+                CarryToward(left, flame.position, Touch(), FlameStall);
+            }
             StoopToFollow(left);
             yield return null;
         }
+        fuseWay = F(
+            $"waypoints: over and out at {approachAt}, then the fuse at {Touch()}; held at the fuse {(heldAt < 0f ? 0f : Now - heldAt):0.0} s"
+        );
         if (flame == null)
         {
             Fail("the torch left the hand while carried to the fuse");
@@ -897,7 +925,7 @@ internal sealed partial class SelfTestRunner
                 ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                 : Vector3.Distance(at, flame.position);
         flameNote = F(
-            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse, closest {carryBest:0.00} m to the carry goal"
+            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse, closest {carryBest:0.00} m to the carry goal; {fuseWay}"
         );
         if (OverReach(left) is { } far)
             Fail($"{far}: {flameNote}");
