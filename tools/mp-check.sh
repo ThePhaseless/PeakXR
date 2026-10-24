@@ -193,9 +193,11 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
        then "PASS feed: B was fed by A (SendFeedDataRPC, GetFedItemRPC on B)"
        else "FAIL feed: B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end)
     elif $x.name == "feed-refuse" then
-      (if any(after($y)[]; .name == "GetFedItemRPC" or .name == "SendFeedDataRPC")
-       then "FAIL feed-refuse: B got a feed RPC for a refused item"
-       else "PASS feed-refuse: B got no feed RPC" end)
+      # A feed starts with SendFeedDataRPC on the item fed: count only those on the refused item. The window also
+      # holds the end of the feed step before it (GetFedItemRPC and Consume arrive about 0.1 s after that checkpoint).
+      (if any(after($y)[]; .name == "SendFeedDataRPC" and .on == $x.item)
+       then "FAIL feed-refuse: B got a feed RPC for the refused \($x.item)"
+       else "PASS feed-refuse: B got no feed RPC for the refused \($x.item)" end)
     elif $x.name == "reach-deny" then
       (if any(after($y)[]; .name == "RPCA_Fall" and .local) then "FAIL reach-deny: B fell (RPCA_Fall) from a refused grip"
        else "PASS reach-deny: B was not knocked down" end)
