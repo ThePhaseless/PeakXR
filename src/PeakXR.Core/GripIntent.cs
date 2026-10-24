@@ -187,7 +187,7 @@ namespace PeakXR.Core
                 c.ThisHandHolds
                 && c.CandidateIsHandle
                 && !c.OneHanded
-                && c.HandleDistance <= c.RockDistance
+                && c.HandleDistance <= c.RockDistance + HandleDepth
             )
                 return GripPressAction.Regrip;
             // Tightening the grip on a held item is never a climb attempt (climbing puts the item away, and a sticky one
@@ -281,6 +281,10 @@ namespace PeakXR.Core
             float now,
             float window
         ) => pointing && now + window > interactAt ? now + window : interactAt;
+
+        /// <summary>How far a piton or handle stands out of the rock it is set in (metres): rock up to this much nearer
+        /// than the handle's surface is the face it sits on, not a separate hold (VR run 60).</summary>
+        public const float HandleDepth = 0.1f;
 
         /// <summary>Index straight, the other fingers closed: the hand aims instead of the head. A finger resting on the
         /// trigger (<see cref="FingerCurlMapper.TriggerTouchCurl"/>) is a fist, not a point: at 0.35 a touch-sensing

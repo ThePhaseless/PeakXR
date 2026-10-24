@@ -5,8 +5,8 @@ namespace PeakXR.Core
     /// <summary>
     /// Hammering a climbing spike while holding the use button. The game adds the frame time to its cast timer and
     /// places the spike once the timer reaches the cast time (CharacterItems.cs:999-1004). Holding alone places it at
-    /// the game's own time; the strikes can only bring it forward, and all <c>needed</c> strikes bring it forward to at
-    /// most <see cref="MaxSpeedup"/> times the hold's pace, so it stays fair against a flat player's timer. The cast
+    /// the game's own time; each strike brings it forward by its share, and all <c>needed</c> strikes bring it to
+    /// <see cref="MaxSpeedup"/> times the hold's pace, so it stays fair against a flat player's timer. The cast
     /// is local to the owner and the placement is the game's own RPC, so nothing new is sent.
     /// </summary>
     public static class HammerCast
@@ -36,12 +36,9 @@ namespace PeakXR.Core
                 needed = 1;
             if (castTime <= 0f)
                 return MinTick;
-            // The strikes' share of the cast; short of the last strike it never completes it.
-            float struck =
-                strikes >= needed
-                    ? castTime
-                    : Math.Min(castTime * strikes / needed, castTime - dt - MinTick);
-            float tick = Math.Max(elapsed, Math.Min(struck, elapsed * MaxSpeedup));
+            // Each strike earns its share of the speed-up: none is the hold's pace, all is MaxSpeedup.
+            float share = Math.Min(Math.Max(strikes, 0), needed) / (float)needed;
+            float tick = elapsed * (1f + (MaxSpeedup - 1f) * share);
             return tick > MinTick ? tick : MinTick;
         }
     }

@@ -1871,8 +1871,11 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         yield return MoveTo(itemHand, () => handle.transform.position, 0.5f);
         yield return GripTo(itemHand, 1f, 0.1f);
+        string gripNote = PeakXR.Interact.PhysicalInteraction.LastGripNote;
         yield return ExpectCue(itemHand, DenyReason.HandsFull, mark, true, 1f);
-        string cue = cueNote;
+        string cue = $"{cueNote}; {gripNote}";
+        if (!stepOk)
+            Note("item hand grip: " + gripNote);
         yield return Wait(0.4f);
         bool hungByItemHand = c.data.currentClimbHandle != null;
         bool keptAfterItemHand = Holding(apple);

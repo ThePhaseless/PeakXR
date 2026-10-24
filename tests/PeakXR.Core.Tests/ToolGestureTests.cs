@@ -142,11 +142,14 @@ public class HammerCastTests
     }
 
     [Fact]
-    public void PartialStrikes_DoNotComplete_BeforeTheHoldTime()
+    public void PartialStrikes_SpeedItUpInProportion()
     {
-        Assert.False(Completes(2, 1.2f));
-        // A long frame must not finish it before the last strike either.
-        Assert.True(HammerCast.TickBeforeUpdate(2, 3, Cast, 1f, 0.2f) + 1f < Cast);
+        // VR run 60: two of three strikes placed it at the hold time. Each strike now earns its share of the speed-up.
+        float twoOfThree = Cast / (1f + (HammerCast.MaxSpeedup - 1f) * 2f / 3f);
+        Assert.False(Completes(2, twoOfThree - Dt - 0.01f));
+        Assert.True(Completes(2, twoOfThree));
+        Assert.True(twoOfThree < Cast);
+        Assert.True(twoOfThree > Cast / HammerCast.MaxSpeedup);
     }
 
     [Fact]
