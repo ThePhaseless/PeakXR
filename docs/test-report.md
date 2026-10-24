@@ -11,6 +11,8 @@ These replace the older numbers below, which are kept as history. The game is PE
 | Single-step runs 73 and 74 (`-peakxr-selftest-only`) | `cf8f07f`, `86b25a2` | vr.173, vr.230 and vr.89b pass: 6 and 11 pass (setup included), 0 fail, 82 s and 114 s |
 | VR self-test, run 75 | `86b25a2` | 470 pass, 2 fail (vr.71, vr.82b; both fixed and confirmed below), 5 skips |
 | Single-step run 78 | `0a4008d` | vr.71, vr.82 and vr.82b pass; 7 pass, 0 fail, 114 s |
+| Two clients, B unmodded (run 31) | `0a4008d` | Every compatibility check passes; A 22 pass, 3 fail, 5 skip; `mp-check.sh` 70 pass, 3 fail |
+| Two clients, B runs PeakXR flat (run 32) | `0a4008d` | A 24 pass, 2 fail, 4 skip; `mp-check.sh --modded-b` 87 pass, 4 fail; every hand-position check passes; B accepted 8801 of 8848 pose packets |
 | Two clients, B runs PeakXR flat (run 27) | `d61d73b` | A 25 pass, 1 fail; `mp-check.sh --modded-b` 91 pass, 2 fail |
 | Two clients, B unmodded (run 28) | `d61d73b` | Every compatibility check passes: B logged no unknown events and received no event 151 |
 
@@ -31,7 +33,13 @@ Run 75 found a silent grip on large cases. LuggageAncient has a concave mesh col
 
 To check a few steps without the full 45-minute suite, pass `-peakxr-selftest-only` (see `docs/testing.md`).
 
-**Two-client runs on the latest build are still to do.** Runs 29 and 30 on `40a2bb3` never got past the join, with "Failed to fetch lobby data". At the time, client A's Steam was logged off, and Steam's connection log shows 103 "Disconnected By Remote Host" entries. Changes since the last good two-client run touch feeding (the feed zone counts from the item's nearest point), body presses (a slow hand is needed), held items and the ghost hand. The ghost hand is local only.
+Runs 29 and 30 never got past the join, with "Failed to fetch lobby data". Client A's Steam was logged off at the time: its connection log shows 103 "Disconnected By Remote Host" entries. A Steam restart fixed it, and runs 31 and 32 joined in 15 s and 14 s.
+
+Open in runs 31 and 32:
+
+- **feed and feed-refuse:** the scripted hand never held the item still at the host's mouth. These steps failed for script reasons in most two-client runs and are tracked as flaky. Feeding itself is covered by Core tests and passed in earlier runs.
+- **vr.00 in run 31:** the SteamVR dashboard covered the game at launch.
+- **pal-jump in run 32:** B logged no boost. It passed in runs 24, 25 and 27, so it is intermittent.
 
 The four skips are things the game can't provide in this run: a pickaxe handle, a cheer emote, and two objects from the hardest late-game route.
 
