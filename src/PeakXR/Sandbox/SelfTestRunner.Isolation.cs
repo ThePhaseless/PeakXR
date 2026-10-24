@@ -181,6 +181,7 @@ internal sealed partial class SelfTestRunner
                     || targeted
                     || blinded
                     || (grows && grew > MinGrowth)
+                    || Swelled(grew, size)
                     || gone
                     || stole;
         if (washed)
@@ -251,6 +252,17 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Growth (m) that counts as a sign of life.</summary>
     const float MinGrowth = 0.2f;
+
+    /// <summary>Growth (m) of a mob with no vine or AOE that still counts, when it also more than doubles its size.</summary>
+    const float MinSwell = 0.5f;
+
+    /// <summary>
+    /// A mob whose behaviour is to swell or pulse (AntiSphere_Projectile grew 18 m) shows it whatever its start
+    /// distance; run 66 started it 15 m off, where it came no closer, and the step read no behaviour. More than
+    /// <see cref="MinSwell"/> and more than its own spawned size, so a ragdoll's or an idle rig's pose change (a few
+    /// tenths of its size) does not pass.
+    /// </summary>
+    static bool Swelled(float grew, float size) => grew > MinSwell && grew > size;
 
     static float BoundsSize(GameObject go)
     {
