@@ -68,6 +68,9 @@ internal static class PhysicalInteraction
         /// item that arrived while the grip was already closed.</summary>
         public bool Armed = true;
 
+        /// <summary>When this hand last let an item go (released its grip on it, or the item left it).</summary>
+        public float ItemLeftAt = -10f;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -260,6 +263,8 @@ internal static class PhysicalInteraction
         var item = c.data.currentItem;
         if (item == lastItem)
             return;
+        if (lastItem != null && item != lastItem)
+            (LocalHold.ItemInLeftHand ? LeftHand : RightHand).ItemLeftAt = now;
         if (lastItem != null && item == null)
             LogItemLeft(c, lastItem);
         lastItem = item;
@@ -637,6 +642,7 @@ internal static class PhysicalInteraction
             && !ctx.NearClimbable
             && action is GripPressAction.None or GripPressAction.Interact
             && (Interaction.instance == null || Interaction.instance.currentHovered == null)
+            && ReachAttempt(hand, c, rig, ctx, holding && thisHolds, pos, now)
             && RockJustBeyond(rig, pos, t, cfg, out var rock)
         )
             Affordance.Deny(
@@ -645,6 +651,44 @@ internal static class PhysicalInteraction
                 DenyReason.OutOfReach,
                 DenyHint.Range(pos, rock, cfg.ClimbRadius)
             );
+    }
+
+    /// <summary>
+    /// The grip is a real climb attempt (<see cref="TraversalRefusal.ReachAttempt"/>): not pointing, no item in this
+    /// hand or let go within 0.5 s, no item use or interact hold running, and the hand reaching toward the wall or
+    /// held out at full stretch.
+    /// </summary>
+    private static bool ReachAttempt(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        in GripContext ctx,
+        bool thisHolds,
+        Vector3 pos,
+        float now
+    )
+    {
+        var held = c.data.currentItem;
+        bool casting =
+            (
+                held != null
+                && (held.isUsingPrimary || held.isUsingSecondary || held.castProgress > 0f)
+            )
+            || (
+                Interaction.instance != null && Interaction.instance.currentHeldInteractible != null
+            );
+        var eye = Eye(rig);
+        var dir = pos - eye;
+        float eyeToHand = dir.magnitude;
+        float approach =
+            eyeToHand > 1e-3f ? Vector3.Dot(HandVelocity(hand, rig), dir / eyeToHand) : 0f;
+        return TraversalRefusal.ReachAttempt(
+            ctx.Pointing,
+            thisHolds || now - hand.ItemLeftAt < 0.5f,
+            casting,
+            approach,
+            eyeToHand
+        );
     }
 
     /// <summary>
@@ -826,6 +870,8 @@ internal static class PhysicalInteraction
         hand.Action = GripPressAction.None;
         hand.Target = null;
         hand.Extension = null;
+        if (c.data.currentItem != null && LocalHold.ItemInLeftHand == hand.Left)
+            hand.ItemLeftAt = Time.time;
 
         switch (action)
         {

@@ -77,6 +77,29 @@ public static class TraversalRefusal
     /// <summary>How far past the grab radius (metres) a grip still sees rock it falls short of.</summary>
     public const float ReachProbe = 0.4f;
 
+    /// <summary>Eye to hand (metres) that counts as an arm held out at full stretch.</summary>
+    public const float FullReach = 0.55f;
+
+    /// <summary>Hand speed toward the rock (m/s) that counts as reaching for it.</summary>
+    public const float ReachApproach = 0.15f;
+
+    /// <summary>
+    /// The grip is a real climb attempt, so a fall short of the wall earns OutOfReach (VR run 65 refused a hand that
+    /// had just let a flag go): no pointing, no item in that hand or just released from it, no use or interact cast
+    /// running, and the hand moving toward the rock or held out at full stretch.
+    /// </summary>
+    public static bool ReachAttempt(
+        bool pointing,
+        bool itemHandOrJustReleased,
+        bool castInProgress,
+        float approachSpeed,
+        float eyeToHand
+    ) =>
+        !pointing
+        && !itemHandOrJustReleased
+        && !castInProgress
+        && (approachSpeed >= ReachApproach || eyeToHand >= FullReach);
+
     /// <summary>
     /// A grip that closes short of a climbable surface: rock beyond <paramref name="grabRadius"/> but within
     /// <paramref name="band"/> past it along the reach is "too far", so the player learns to reach on instead of
