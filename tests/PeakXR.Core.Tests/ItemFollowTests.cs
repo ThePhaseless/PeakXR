@@ -21,7 +21,7 @@ public class ItemFollowTests
         // A stoop: the ragdoll hand stops 0.5 m above its controller.
         var g = new WeldGate();
         bool released = false;
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 15; i++)
             released = g.Update(0.5f, 0f, 0.02f);
         Assert.True(released);
     }
@@ -38,10 +38,48 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AnArmCatchingUpWithAStoopUntilTheCrouchLandsKeepsTheWeld()
+    {
+        // vr61 vr.230: the arm trails the stooping controller until the crouch lowers the shoulder, about 0.15 s.
+        var g = new WeldGate();
+        for (int i = 0; i < 8; i++)
+            Assert.False(g.Update(0.25f, 0f, 0.02f));
+        for (int i = 0; i < 30; i++)
+            Assert.False(g.Update(0.03f, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void AFreshWeldSettlesBeforeItCanLetGoAgain()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 20; i++)
+            g.Update(0.5f, 0.5f, 0.02f);
+        for (int i = 0; i < 10; i++)
+            g.Update(0.02f, 0.02f, 0.02f);
+        Assert.False(g.Released);
+        // The snap of the rejoin jolts the arm: within the settle time it does not flip back.
+        for (int i = 0; i < 20; i++)
+            Assert.False(g.Update(0.3f, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void RejoinsWithTheArmOnItsControllerAndTheItemNearby()
+    {
+        // The rejoin puts the hand on the item's grip, so the item need only be near, not exact.
+        var g = new WeldGate();
+        for (int i = 0; i < 20; i++)
+            g.Update(0.5f, 0.5f, 0.02f);
+        bool released = true;
+        for (int i = 0; i < 10; i++)
+            released = g.Update(0.02f, 0.1f, 0.02f);
+        Assert.False(released);
+    }
+
+    [Fact]
     public void RejoinsOnlyWithTheArmBackOnItsControllerAndAtTheItem()
     {
         var g = new WeldGate();
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 15; i++)
             g.Update(0.5f, 0.5f, 0.02f);
         // Arm caught up, but the free item is stuck elsewhere: stays free (a rejoin would snap the hand onto it).
         for (int i = 0; i < 10; i++)

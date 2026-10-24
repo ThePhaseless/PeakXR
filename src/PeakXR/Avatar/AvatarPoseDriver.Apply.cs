@@ -1032,7 +1032,17 @@ public partial class AvatarPoseDriver
             ? Vector3.Distance(hand, itemBone)
             : float.PositiveInfinity;
         bool wasFree = weldGate.Released;
-        bool free = weldGate.Update(Vector3.Distance(hand, ctrlBone), toItem, dt);
+        float toController = Vector3.Distance(hand, ctrlBone);
+        bool free = weldGate.Update(toController, toItem, dt);
+        if (free != wasFree && Owner.IsLocal)
+        {
+            // Rare edges, kept in the log: why a held item left or rejoined the hand.
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller, {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}"
+                )
+            );
+        }
         if (!free)
         {
             if (wasFree)
