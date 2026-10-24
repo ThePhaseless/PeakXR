@@ -108,7 +108,7 @@ def moddedb:
           | ([(if $x.holdL // false then "left" else empty end), (if $x.holdR // false then "right" else empty end)] | join("+")) as $held
           | (if $ebv == null then "?" else ($ebv | r2) end) as $eb
           | (if $x.boneHead == null or $y.boneHead == null then "?" else dist($y.boneHead; $x.boneHead) | r2 end) as $eh
-          | "\(if $e <= $handTol then "PASS" else "FAIL" end) \($x.name) hands: on B \($e | r2) m from what A shows (\(if $held == "" then "both free, tracked pose" else "\($held) holding, own bone" end)); \($et | r2) m from the tracked hands of A, \($eb) m from its own hand bones, head bone \($eh) m"
+          | "\(if $e <= $handTol then "PASS" else "FAIL" end) \($x.name) hands: on B \($e | r2) m from what A shows (\(if $held == "" then "both free, tracked pose" else "\($held) holding, own bone" end)); \($et | r2) m from the tracked hands of A, \($eb) m from its own hand bones, head bone \($eh) m\(if $x.settle == null then "" else "; " + $x.settle end)"
         end]) as $lines
     | ($lines[], (if any($lines[]; startswith("PASS")) then empty
                   else "FAIL hands: no checkpoint compared the avatar hands of A on B (\(handcps | join(", ")))" end)),
