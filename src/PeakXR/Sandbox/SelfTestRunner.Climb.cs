@@ -1602,25 +1602,60 @@ internal sealed partial class SelfTestRunner
         bool holdLeft = LocalHold.ItemInLeftHand;
         bool free = !holdLeft;
         var rig = VRRig.Instance;
-        // The spike hand aims at the face in front.
-        var face = wallFace.point;
+        // The spike hand aims at the wall's real face, read from its collider (run 63: the old wall estimate put the
+        // preview 0.21 m off the sandbox wall's face). The preview must land on that face before any swing; if it
+        // does not, let go and aim again once.
         var spikeAim = rig.Origin.InverseTransformPoint(
-            rig.Head.position + Flat(face - rig.Head.position) * 0.3f + Vector3.down * 0.15f
+            rig.Head.position
+                + Flat(wallFace.point - rig.Head.position) * 0.3f
+                + Vector3.down * 0.15f
         );
         SetHand(holdLeft, spikeAim);
-        // Aim the spike hand's aim pose (not the grip) at the face: interact.aim casts the spike from it. Run 58 turned
-        // the grip toward the wall, the aim pose pointed at the floor, and the preview landed by the feet.
-        for (float until = Now + 0.3f; Now < until; )
+        var wallCollider = wallFace.collider;
+        Vector3 FacePoint()
         {
-            AimHand(rig, holdLeft, face);
-            yield return null;
+            var from = rig.Origin.TransformPoint(spikeAim);
+            return
+                Physics.Raycast(
+                    from,
+                    -wallFace.normal,
+                    out var onFace,
+                    3f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                && onFace.collider == wallCollider
+                ? onFace.point
+                : wallCollider.ClosestPoint(from);
         }
+        float OffFace(Vector3 p) => Vector3.Distance(p, wallCollider.ClosestPoint(p));
         var handlesBefore = new HashSet<int>();
         foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
             handlesBefore.Add(h.GetInstanceID());
         int before = handlesBefore.Count;
-        Script(holdLeft).Trigger = 1f;
-        yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
+        var face = FacePoint();
+        var preview = Vector3.zero;
+        float offFace = float.MaxValue;
+        for (int attempt = 0; attempt < 2 && offFace > 0.2f; attempt++)
+        {
+            Script(holdLeft).Trigger = 0f;
+            yield return Wait(0.2f);
+            // The second try aims at the face point nearest the aim pose itself.
+            if (attempt == 1 && rig.Aim(holdLeft) is { } aimPose)
+                face = wallCollider.ClosestPoint(aimPose.position);
+            // Aim the spike hand's aim pose (not the grip): interact.aim casts the spike from it (run 58).
+            for (float until = Now + 0.3f; Now < until; )
+            {
+                AimHand(rig, holdLeft, face);
+                yield return null;
+            }
+            Script(holdLeft).Trigger = 1f;
+            yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
+            if (!Interact.Tools.SpikeHammer.Casting)
+                continue;
+            preview = Interact.Tools.SpikeHammer.Preview;
+            offFace = OffFace(preview);
+        }
         if (!Interact.Tools.SpikeHammer.Casting)
         {
             Script(holdLeft).Trigger = 0f;
@@ -1629,14 +1664,12 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float started = Now;
-        var preview = Interact.Tools.SpikeHammer.Preview;
-        float offFace = Mathf.Abs(Vector3.Dot(preview - wallFace.point, wallFace.normal));
         if (offFace > 0.2f)
         {
             Script(holdLeft).Trigger = 0f;
             Fail(
                 F(
-                    $"the spike's preview is {offFace:0.00} m off the wall face, at {preview}: it aimed elsewhere"
+                    $"the spike's preview is {offFace:0.00} m off the wall face after two aims, at {preview} (aimed at {face}): it aimed elsewhere"
                 )
             );
             yield return LetGoAll(c);
