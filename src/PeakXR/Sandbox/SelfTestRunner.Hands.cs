@@ -739,6 +739,24 @@ internal sealed partial class SelfTestRunner
         )
             hit = high;
         var hold = hit.point + hit.normal * 0.04f;
+        // Both sticks centred, and seen centred by the game, before the hand grips: a stick still pushed forward
+        // makes the game mantle and end the climb during the pull (MP run 16: "stick y 0.61, mantled True", the
+        // body rose -0.46 m).
+        Script(true).Stick = Vector2.zero;
+        Script(false).Stick = Vector2.zero;
+        yield return WaitFor(
+            () =>
+                VRInput.Left.Stick.sqrMagnitude < 1e-4f && VRInput.Right.Stick.sqrMagnitude < 1e-4f,
+            1f
+        );
+        string sticks = F(
+            $"sticks at the grip L {VRInput.Left.Stick.magnitude:0.00} R {VRInput.Right.Stick.magnitude:0.00}"
+        );
+        if (VRInput.Left.Stick.sqrMagnitude >= 1e-4f || VRInput.Right.Stick.sqrMagnitude >= 1e-4f)
+        {
+            Fail($"a move stick was still pushed at the grip ({sticks})");
+            yield break;
+        }
         Rig.RigDriver.TraceLeanUntil = Time.unscaledTime + 3.5f;
         yield return MoveTo(left, () => hold, 0.5f);
         if (OverReach(left) is { } far)
@@ -784,7 +802,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
-            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}";
+            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}";
         if (rise < 0.1f)
             Fail("arm pull did not lift the body: " + note);
         else if (c.data.isClimbing)
