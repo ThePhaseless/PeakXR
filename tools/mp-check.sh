@@ -120,7 +120,7 @@ def moddedb:
     end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
 def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
-  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach",
+  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
   "kick-mode", "carry", "pack", "pal-jump", "campfire-far", "spectate", "save-untouched"];
 ($b | map(select(.type == "checkpoint")) | sort_by(.t)) as $bcps
 | ($bcps | map({key: .name, value: .}) | from_entries) as $bcp

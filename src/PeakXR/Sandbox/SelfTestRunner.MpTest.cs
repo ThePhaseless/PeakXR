@@ -1581,6 +1581,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return MpStep("feed-refuse", 150f, true, FeedRefuse());
         yield return MpStep("reach-deny", 40f, true, ReachDeny());
+        yield return MpStep("reach-look", 50f, true, MpReachLook());
         yield return MpStep("reach", 40f, true, MpReach());
         yield return HostWake();
         yield return MpStep("kick-mode", 40f, true, KickMode());
@@ -1892,6 +1893,63 @@ internal sealed partial class SelfTestRunner
     /// <summary>reach: the host is asked to get webbed (<see cref="MpRequest.Web"/>), so the game lets a friend help
     /// (CharacterGrabbing.TargetCanBeHelped, :293); a grip on their hand holds the game's reach and it catches them
     /// (GUIManager.Grasp after CharacterGrabbing.Reach, :247-276).</summary>
+    /// <summary>
+    /// reach-look: the host is webbed (<see cref="MpRequest.Web"/>), A grips their hand while looking well to the side,
+    /// past the game's 60 degree reach cone (CharacterGrabbing.cs:252-253): nobody is pulled up, so A must get
+    /// WrongAngle at the hand once (SocialHands.UpdateReachLook), not a silent grip. Then A looks at them and the game's
+    /// reach catches them (GUIManager.Grasp after CharacterGrabbing.Reach).
+    /// </summary>
+    IEnumerator MpReachLook()
+    {
+        var c = Character.localCharacter;
+        var host = Host();
+        if (host != null && !CharacterGrabbing.TargetCanBeHelped(host, c))
+        {
+            yield return Ask(MpRequest.Web);
+            if (stepSkip != null)
+                yield break;
+            yield return WaitFor(() => CharacterGrabbing.TargetCanBeHelped(host, c), 3f);
+        }
+        if (host == null || !CharacterGrabbing.TargetCanBeHelped(host, c))
+        {
+            stepSkip = "the host needs no help (web request had no effect)";
+            yield break;
+        }
+        yield return ToHost(0.6f);
+        if (!stepOk)
+            yield break;
+        // Look 100 degrees to the side of the host before the grip, as a player glancing at something else.
+        var toHost = host.Center - c.Center;
+        toHost.y = 0f;
+        var aside = c.Center + Quaternion.Euler(0f, 100f, 0f) * toHost.normalized * 2f;
+        LookAtPoint(aside);
+        yield return Wait(0.6f);
+        float mark = CueMark();
+        yield return GripHostHand(false);
+        if (stepSkip != null)
+            yield break;
+        yield return ExpectCue(false, DenyReason.WrongAngle, mark, false, 2f);
+        if (!stepOk)
+            yield break;
+        if (c.data.sinceGrabFriend < 0.3f)
+        {
+            Fail("the reach caught the host while A looked away: the cue is wrong");
+            yield break;
+        }
+        var cue = cueNote;
+        LookAtPoint(host.Center);
+        yield return Until(
+            () => c.data.sinceGrabFriend < 0.3f,
+            3f,
+            F(
+                $"looking at the host, the reach still never caught them (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off)"
+            )
+        );
+        EndGlance();
+        if (stepOk)
+            stepNote = "looking away: " + cue + "; looking at them: caught";
+    }
+
     IEnumerator MpReach()
     {
         var c = Character.localCharacter;

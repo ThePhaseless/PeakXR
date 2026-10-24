@@ -111,6 +111,8 @@ internal sealed class SocialHands : IGripExtension
         )
             return;
         grasped[h] = false;
+        lookCued[h] = false;
+        lookOff[h] = 0f;
         if (refusal != DenyReason.None)
         {
             // The grip stays owned (nothing falls through to a grab or the head's interact) and says why. A held
@@ -524,9 +526,48 @@ internal sealed class SocialHands : IGripExtension
 
         UpdateStruggle(c, input, cfg, dt);
         UpdateStickyCue(c);
+        UpdateReachLook(c, 0, dt);
+        UpdateReachLook(c, 1, dt);
         UpdateGlow(c, cfg);
         UpdateCarried(c, cfg, dt);
         UpdatePalJump(c, cfg);
+    }
+
+    /// <summary>Seconds a reaching hand may hold a friend with the look outside the game's cone before the cue: the
+    /// head is usually still turning as the grip lands.</summary>
+    private const float ReachLookDwell = 0.4f;
+
+    private readonly bool[] lookCued = new bool[2];
+    private readonly float[] lookOff = new float[2];
+
+    /// <summary>
+    /// A hand holds a friend for the reach, but the look is past the game's cone (<see cref="SocialIntent.ReachSees"/>,
+    /// CharacterGrabbing.cs:252-253): every client tests the synced look, so nobody is pulled up. Instead of a silent
+    /// grip: WrongAngle at the hand once per grip, with a would-work ring on the friend to look at. Nothing once the
+    /// look comes round or the game catches them (GUIManager.Grasp). Local only.
+    /// </summary>
+    private void UpdateReachLook(Character c, int h, float dt)
+    {
+        var who = characters[h];
+        if (kinds[h] != SocialKind.Reach || grasped[h] || lookCued[h] || who == null)
+            return;
+        if (SocialIntent.ReachSees(c.data.lookDirection.N(), (who.Center - c.Center).N()))
+        {
+            lookOff[h] = 0f;
+            return;
+        }
+        lookOff[h] += dt;
+        if (lookOff[h] < ReachLookDwell)
+            return;
+        lookCued[h] = true;
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(h == 0) : null;
+        Affordance.Deny(
+            h == 0,
+            hand != null ? hand.position : who.Center,
+            DenyReason.WrongAngle,
+            DenyHint.At(who.Center)
+        );
     }
 
     /// <summary>
