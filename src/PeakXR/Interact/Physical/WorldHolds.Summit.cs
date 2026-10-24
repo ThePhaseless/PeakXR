@@ -139,6 +139,8 @@ internal static partial class WorldHolds
         bool heldNow =
             interaction != null && ReferenceEquals(interaction.currentHeldInteractible, statue);
         bool holdStarted = heldNow && !statueHeld;
+        if (holdStarted)
+            StatueHolds++;
         statueHeld = heldNow;
         if (socket < 0 || sockets[socket] == null)
         {
@@ -190,6 +192,10 @@ internal static partial class WorldHolds
     }
 
     private static bool statueHeld;
+
+    /// <summary>Statue holds started with an amulet in hand, for the self-test: a short insert can start and
+    /// finish between two of its samples (vr60).</summary>
+    internal static int StatueHolds { get; private set; }
     private static readonly bool[] PointGrip = new bool[2];
 
     /// <summary>A socket higher than a raised hand reaches directly (<see cref="AltarSocket.RaisedReach"/> over
@@ -246,7 +252,7 @@ internal static partial class WorldHolds
         var hovered = interaction != null ? interaction.currentHovered : null;
         var item = c.data.currentItem;
         Plugin.Log.LogInfo(
-            $"[interact.world] amulet pointed grip ({(left ? "L" : "R")}) {when}: interact pressed {c.input.interactIsPressed}, "
+            $"[interact.world] amulet pointed grip ({(left ? "L" : "R")}) {when}: grip action {PhysicalInteraction.HandAction(left)}, "
                 + $"hovered {Name(hovered)}, held {Name(interaction != null ? interaction.currentHeldInteractible : null)}, "
                 + $"aim hand {PhysicalInteraction.AimHand}, statue takes {(item != null ? item.name : "nothing")} "
                 + $"{(statue != null && statue.IsConstantlyInteractable(c))}"

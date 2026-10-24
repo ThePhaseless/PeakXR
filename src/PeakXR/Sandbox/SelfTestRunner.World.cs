@@ -1913,11 +1913,15 @@ internal sealed partial class SelfTestRunner
         bool free = !left;
         HeadFrame(out var head, out var forward, out var right);
         var handAt = head + forward * 0.45f + (free ? -right : right) * 0.1f + Vector3.down * 0.15f;
+        // Aimed a little into the statue from the socket, so the ray rests on its body, not on the socket's edge,
+        // where a ray grazing off it for one frame drops the game's hold (Interaction.cs:128-132).
+        var into = Flat(statue.transform.position - socketAt);
+        var aimAt = socketAt + (into.sqrMagnitude > 1e-4f ? into.normalized * 0.15f : Vector3.zero);
         void Aim()
         {
             var from = rig.Origin.TransformPoint(Script(free).Position);
             Script(free).Rotation = Quaternion.LookRotation(
-                rig.Origin.InverseTransformDirection(socketAt - from),
+                rig.Origin.InverseTransformDirection(aimAt - from),
                 Vector3.up
             );
         }
@@ -1946,6 +1950,9 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         float progress = 0f;
         float mark = CueMark();
+        // Counted by the mod as each hold starts: the statue's own hold can be short enough to start and finish
+        // inside the grip's ramp, before the loop below samples it (vr60: held at the grip, done 0.3 s on).
+        int holdsBefore = WorldHolds.StatueHolds;
         yield return GripTo(free, 1f, 0.1f);
         yield return Wait(0.15f);
         var hoveredAtGrip = interaction.currentHovered;
@@ -1962,7 +1969,17 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(free, 0f, 0.1f);
         Script(free).TriggerTouch = true;
         Script(free).StickTouch = false;
-        if (progress <= 0f)
+        // The amulet going in is the outcome (ConsumeDelayed takes it from the hand, Peak/ScoutStatue.cs:308); a hold
+        // that started but ended with the amulet still in hand was dropped, which is a failure too.
+        bool inserted = !ReferenceEquals(HeldItem(), held);
+        if (!inserted && WorldHolds.StatueHolds > holdsBefore)
+        {
+            Fail(
+                $"the statue's hold started at {back:0.0} m back but ended without the amulet going in (hold {progress:0.00}; {PhysicalInteraction.LastGripNote}): {where}"
+            );
+            yield break;
+        }
+        if (!inserted)
         {
             Fail(
                 $"the pointed grip did not start the statue's hold at {back:0.0} m back ({PhysicalInteraction.LastGripNote}; hovered at the grip {Label(hoveredAtGrip)}, aim hand {PhysicalInteraction.AimHand}): {where}"
