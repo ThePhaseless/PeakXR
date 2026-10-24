@@ -946,7 +946,7 @@ internal sealed partial class SelfTestRunner
         RaycastHit wall = default;
         bool reached = false;
         int tried = 0;
-        foreach (var (face, stand) in walls)
+        foreach (var (face, stand, profile) in walls)
         {
             if (tried++ >= MpWallTries)
                 break;
@@ -956,6 +956,7 @@ internal sealed partial class SelfTestRunner
             if (miss.magnitude <= 0.6f)
             {
                 wall = face;
+                WallProfile = profile;
                 reached = true;
                 break;
             }
@@ -964,7 +965,7 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 walls.Count == 0
-                    ? "no climbable wall with walkable ground in front within 40 m"
+                    ? $"no wall steep enough to climb ({MinWallAngle:0} deg from up or more from the hold to 1 m above) with walkable ground in front within 40 m; online no test wall can be placed"
                     : $"none of the {tried} nearest climbable walls was reachable on foot";
             yield break;
         }
@@ -987,9 +988,9 @@ internal sealed partial class SelfTestRunner
     /// Climbable faces with walkable ground in front within 40 m of A, nearest first: <see cref="WallsFrom"/>'s best
     /// face from A and from rings of seeds 6 and 15 m around A, each standing spot at least 2 m from the others.
     /// </summary>
-    static List<(RaycastHit Face, Vector3 Stand)> MpWalls(Character c)
+    static List<(RaycastHit Face, Vector3 Stand, string Profile)> MpWalls(Character c)
     {
-        var found = new List<(RaycastHit Face, Vector3 Stand)>();
+        var found = new List<(RaycastHit Face, Vector3 Stand, string Profile)>();
         var home = c.Center;
         void From(Vector3 seed)
         {
@@ -1004,7 +1005,7 @@ internal sealed partial class SelfTestRunner
                 if (Vector3.Distance(other.Stand, stand) < 2f)
                     return;
             }
-            found.Add((face, stand));
+            found.Add((face, stand, WallProfile));
         }
         From(home);
         foreach (float radius in new[] { 6f, 15f })
