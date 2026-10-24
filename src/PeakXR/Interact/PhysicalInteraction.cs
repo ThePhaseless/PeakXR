@@ -1333,9 +1333,21 @@ internal static class PhysicalInteraction
                 TornOff(RightHand, now);
             }
             // Why the game let go, once per ended climb (VR run 60's vr.15 lost its climb mid-pull with no torn-off cue).
+            // The face 0.5 m above the body: while the stick (the arm pull) moves, the game lets go of any face
+            // flatter than 50 degrees from up (SampleWall, CharacterClimbing.cs:458-470), its top-out.
+            float faceAbove = Physics.Raycast(
+                c.Center + Vector3.up * 0.5f,
+                -c.data.climbNormal,
+                out var above,
+                1.5f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? Vector3.Angle(above.normal, Vector3.up)
+                : -1f;
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased}"
+                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up"
                 )
             );
             physicalClimb = false;
