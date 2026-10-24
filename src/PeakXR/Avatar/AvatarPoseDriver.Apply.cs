@@ -1064,9 +1064,16 @@ public partial class AvatarPoseDriver
         if (!free)
         {
             if (wasFree)
-            {
-                EndPassBody();
                 AttachToHoldingHand(item);
+            // Welded or free, the held item passes through its holder's body: crouched at a stoop, a welded apple
+            // met the knees and held the hand 0.31 m off its controller while the free one, already passing the
+            // body, let the same arm reach 0.12 m (vr65-66 vr.230).
+            if (!ReferenceEquals(passItem, item))
+            {
+                PassBody(item);
+                Plugin.Log.LogInfo(
+                    $"[avatar.local] {item.name} held: passes the body, weight cancelled {body.useGravity && !body.isKinematic}, weld {(itemJoint != null ? "ours" : "the game's")}"
+                );
             }
             // Welded, the item hangs its whole weight (prefab mass 5, against a hand part far lighter) on the arm's
             // muscles: the hand sat 0.2-0.25 m under its controller while the empty hand reached it (MP run 23).
@@ -1125,10 +1132,11 @@ public partial class AvatarPoseDriver
     }
 
     /// <summary>
-    /// A free held item passes through its holder's own body, as a real hand carries a torch past its own hip: the
-    /// scout's colliders are far larger than a person (the 0.38 m head sphere, a wide torso), so a free torch held
-    /// low beside the body was pinned 0.2-0.35 m off its hand (vr52, vr.88). Local physics only; undone when the item
-    /// rejoins the hand or leaves it (<see cref="EndPassBody"/>).
+    /// A held item, welded or free, passes through its holder's own body, as a real hand carries a torch past its own
+    /// hip: the scout's colliders are far larger than a person (the 0.38 m head sphere, a wide torso), so a free torch
+    /// held low beside the body was pinned 0.2-0.35 m off its hand (vr52, vr.88) and a welded apple at a crouched
+    /// stoop met the knees (vr66, vr.230). Local physics only; undone when the item leaves the hand
+    /// (<see cref="EndPassBody"/>).
     /// </summary>
     private void PassBody(Item item)
     {
