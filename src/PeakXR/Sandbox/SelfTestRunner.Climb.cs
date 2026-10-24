@@ -1879,7 +1879,14 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.4f);
         bool hungByItemHand = c.data.currentClimbHandle != null;
         bool keptAfterItemHand = Holding(apple);
-        yield return GripTo(itemHand, 0f, 0.1f);
+        // The item hand keeps its grip closed on the Apple and moves off the piton: opening it would drop the Apple
+        // with Interaction.ReleaseToDrop on (run 61: "drop release: Apple" right there, before the hang).
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            itemHand,
+            head + right * 0.25f + Vector3.down * 0.35f + forward * 0.2f,
+            0.3f
+        );
         yield return MoveTo(!itemHand, () => handle.transform.position, 0.5f);
         yield return GripTo(!itemHand, 1f, 0.1f);
         yield return WaitFor(() => c.data.currentClimbHandle == handle, 2f);

@@ -260,6 +260,8 @@ internal static class PhysicalInteraction
         var item = c.data.currentItem;
         if (item == lastItem)
             return;
+        if (lastItem != null && item == null)
+            LogItemLeft(c, lastItem);
         lastItem = item;
         LocalHold.TwoHand = false;
         EndAction(LeftHand, GripPressAction.SecondHand);
@@ -306,6 +308,25 @@ internal static class PhysicalInteraction
     /// same-type item handed over has its own.</summary>
     private static bool SameInstance(Item a, Item b) =>
         a == b || (a.data != null && b.data != null && a.data.guid == b.data.guid);
+
+    /// <summary>One Info line whenever the held item leaves the hand, naming the likely cause: this mod's release
+    /// (drop or throw), a climb, rope, vine or carry putting it away (CharacterClimbing.cs:569), or the game.</summary>
+    private static float releaseDropAt = -10f;
+
+    private static void LogItemLeft(Character c, Item was)
+    {
+        var d = c.data;
+        string cause =
+            Time.time - releaseDropAt < 1f ? "a grip release dropped or threw it"
+            : d.isClimbingAnything || d.carriedPlayer != null
+                ? "a climb, rope, vine or carry put it away"
+            : "the game (no release, no climb)";
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[interact] held item left the hand: {(was != null ? was.name : "destroyed")}, {cause}; hanging {d.currentClimbHandle != null}, grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}"
+            )
+        );
+    }
 
     private static void EndAction(Hand hand, GripPressAction action)
     {
@@ -814,11 +835,13 @@ internal static class PhysicalInteraction
                     throwFrame = Time.frameCount;
                     ThrowCount++;
                     dropPending = true;
+                    releaseDropAt = Time.time;
                     Haptics.Pulse(hand.Left, 0.5f, 0.05f);
                 }
                 else if (result == GripReleaseAction.Drop)
                 {
                     dropPending = true;
+                    releaseDropAt = Time.time;
                 }
                 break;
         }
