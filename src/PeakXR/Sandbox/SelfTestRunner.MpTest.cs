@@ -119,7 +119,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("throw", 60f, true, ThrowToHost());
         yield return MpStep("eat", 150f, true, Eat());
         yield return MpStep("holster", 60f, true, Holster());
-        yield return MpStep("climb", 120f, true, MpClimb());
+        yield return MpStep("climb", 200f, true, MpClimb());
         yield return MpStep("two-hand", 60f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpSocialSteps();
@@ -177,6 +177,8 @@ internal sealed partial class SelfTestRunner
             yield return WaitFor(() => !c.data.dead && !c.data.fullyPassedOut, 5f);
         }
         ClosePause();
+        // No glance carried over from the step before (MP run 18: reach-deny's glance at the hand held into reach).
+        EndGlance();
         Calm(ref scriptLeft);
         Calm(ref scriptRight);
         if (VRInput.TestOverride != null && VRInput.TestOverride != applyHands)
@@ -970,8 +972,8 @@ internal sealed partial class SelfTestRunner
         {
             stepSkip =
                 walls.Count == 0
-                    ? $"no wall steep enough to climb ({MinWallAngle:0} deg from up or more from the hold to 1 m above) with walkable ground in front within 40 m; online no test wall can be placed"
-                    : $"none of the {tried} nearest climbable walls was reachable on foot";
+                    ? $"no wall steep enough to climb ({MinWallAngle:0} deg from up or more from the hold to 1 m above) with walkable ground in front within {MpWallRange:0} m; online no test wall can be placed"
+                    : $"none of the {tried} nearest climbable walls ({walls.Count} within {MpWallRange:0} m) was reachable on foot";
             yield break;
         }
         var rig = VRRig.Instance;
@@ -983,15 +985,18 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1f);
     }
 
-    /// <summary>Walls the climb step tries, and how long each walk may take: 4 x 18 s, plus the settle (about 12 s)
-    /// and the climb itself (about 20 s), fits the step's 120 s.</summary>
-    const int MpWallTries = 4;
+    /// <summary>Walls the climb step tries, the farthest it looks (m), and how long each walk may take: 5 walks of up
+    /// to 25 s, plus the settle (about 14 s) and the climb itself (about 20 s), fit the step's 200 s. MP run 18 found
+    /// one wall within 40 m and skipped, once the climb kept to faces under 68 degrees.</summary>
+    const int MpWallTries = 5;
 
-    const float MpWallWalkSeconds = 18f;
+    const float MpWallRange = 60f;
+
+    const float MpWallWalkSeconds = 25f;
 
     /// <summary>
-    /// Climbable faces with walkable ground in front within 40 m of A, nearest first: <see cref="WallsFrom"/>'s best
-    /// face from A and from rings of seeds 6 and 15 m around A, each standing spot at least 2 m from the others.
+    /// Climbable faces with walkable ground in front within <see cref="MpWallRange"/> of A, nearest first: <see cref="WallsFrom"/>'s best
+    /// face from A and from rings of seeds 6, 15, 30 and 45 m around A, each standing spot at least 2 m from the others.
     /// </summary>
     static List<(RaycastHit Face, Vector3 Stand, string Profile)> MpWalls(Character c)
     {
@@ -1003,7 +1008,7 @@ internal sealed partial class SelfTestRunner
             RaycastHit face = default;
             var stand = Vector3.zero;
             WallsFrom(seed, home, 1.2f, ref best, ref face, ref stand);
-            if (best == float.MaxValue || Vector3.Distance(stand, home) > 40f)
+            if (best == float.MaxValue || Vector3.Distance(stand, home) > MpWallRange)
                 return;
             foreach (var other in found)
             {
@@ -1013,7 +1018,7 @@ internal sealed partial class SelfTestRunner
             found.Add((face, stand, WallProfile));
         }
         From(home);
-        foreach (float radius in new[] { 6f, 15f })
+        foreach (float radius in new[] { 6f, 15f, 30f, 45f })
         {
             for (int o = 0; o < 8; o++)
                 From(home + Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward * radius);
@@ -1909,11 +1914,18 @@ internal sealed partial class SelfTestRunner
         yield return GripHostHand(false);
         if (stepSkip != null)
             yield break;
+        // The game's reach only catches a friend within 60 degrees of the look (CharacterGrabbing.Reach, :253),
+        // every client from the synced look: a player pulling a friend up looks at them (MP run 18: the head still
+        // glanced 57 degrees down at the hand from reach-deny, and the reach never caught).
+        LookAtPoint(host.Center);
         yield return Until(
             () => c.data.sinceGrabFriend < 0.3f,
             3f,
-            "the reach never caught the host"
+            F(
+                $"the reach never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off them, host webbed {host.refs.afflictions.isStruggling})"
+            )
         );
+        EndGlance();
         if (stepOk)
             stepNote = "reached and caught the host";
     }
