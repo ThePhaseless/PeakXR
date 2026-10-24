@@ -152,6 +152,10 @@ internal static class Affordance
             DenyCore(left, worldPos, DenyReason.NoStamina, DenyHint.Wrist(), false, StaminaBar())
         );
 
+    /// <summary>Set by a feature that knows a hand's context (interact.social's hand-over at a friend's mouth): maps a
+    /// refusal at that hand (left, reason) to the one the player needs. Null: reasons pass unchanged.</summary>
+    internal static System.Func<bool, DenyReason, DenyReason> ReasonContext;
+
     private static bool DenyCore(
         bool left,
         Vector3 worldPos,
@@ -163,6 +167,10 @@ internal static class Affordance
     {
         if (!Enabled)
             return false;
+        // The context a hand is in can name the refusal better than the item's own use (interact.social: a held item
+        // at a friend's mouth says CantUse, not its placement's NoWall).
+        if (ReasonContext != null)
+            reason = ReasonContext(left, reason);
         if (!Gate.Allow(reason, left, Time.unscaledTime))
         {
             // A quick retry is still felt; the ring and sound wait out the longer window.

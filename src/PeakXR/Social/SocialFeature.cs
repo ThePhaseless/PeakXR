@@ -29,6 +29,7 @@ public sealed class SocialFeature : Feature
         Patch(typeof(SocialPatches.CarryDropsPack));
         Patch(typeof(SocialPatches.FeedAngle));
         Patch(typeof(SocialPatches.Grasp));
+        UI.Affordances.Affordance.ReasonContext = SocialHands.RefusalContext;
         GripHooks.Register(SocialHands.Instance);
     }
 }
