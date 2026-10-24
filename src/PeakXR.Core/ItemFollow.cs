@@ -5,24 +5,33 @@ namespace PeakXR.Core;
 
 /// <summary>
 /// When the held item may ride the ragdoll hand it is welded to, and when it must leave it. The avatar's arm stops
-/// at its own reach from a shoulder that stays at standing height, so a hand stooped toward the ground (a fuse, a
-/// fire, a build spot) drags the item away from the controller. The rule reads the arm, not the item: the weld lets
-/// go only when the ragdoll hand itself is more than <see cref="Release"/> from its controller for <see cref="Hold"/>
-/// seconds (an item's grip offset never counts, vr53 vr.230), and rejoins once the hand is back within
-/// <see cref="Rejoin"/> of its controller and of the item's grip.
+/// at its own reach from a shoulder at standing height, so a hand stooped toward the ground (a fuse, a fire, a build
+/// spot) drags the item away from the controller. The rule reads the arm, not the item: the weld lets go only when
+/// the ragdoll hand itself stays more than <see cref="Release"/> from its controller for <see cref="ReleaseHold"/>
+/// (long enough for a physical crouch to lower the shoulder, vr61 vr.230; an item's grip offset never counts, vr53).
+/// It rejoins once the hand is within <see cref="Rejoin"/> of its controller and the free item is within
+/// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), and a fresh weld stays for
+/// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back.
 /// </summary>
 public sealed class WeldGate
 {
     /// <summary>Ragdoll hand to its controller that releases the weld, metres.</summary>
     public float Release = 0.15f;
 
-    /// <summary>Ragdoll hand to its controller, and to the free item's grip, that rejoins it, metres.</summary>
+    /// <summary>Ragdoll hand to its controller that rejoins it, metres.</summary>
     public float Rejoin = 0.05f;
 
-    /// <summary>Each change waits this long, seconds, so an arm trailing a fast swing does not flip it.</summary>
-    public float Hold = 0.08f;
+    /// <summary>How long the arm must stay out of reach before the weld lets go, seconds.</summary>
+    public float ReleaseHold = 0.2f;
+
+    /// <summary>How long the arm must be back before the item rejoins, seconds.</summary>
+    public float RejoinHold = 0.08f;
+
+    /// <summary>A fresh weld holds at least this long, seconds.</summary>
+    public float Settle = 0.5f;
 
     private float timer;
+    private float settle;
 
     public bool Released { get; private set; }
 
@@ -30,14 +39,18 @@ public sealed class WeldGate
     /// <param name="handToItem">Ragdoll hand to where the item's grip puts the hand bone, metres.</param>
     public bool Update(float handToController, float handToItem, float dt)
     {
+        if (settle > 0f)
+            settle -= dt;
         bool toward = Released
-            ? handToController < Rejoin && handToItem < Rejoin
-            : handToController > Release;
+            ? handToController < Rejoin && handToItem < Release
+            : settle <= 0f && handToController > Release;
         timer = toward ? timer + dt : 0f;
-        if (timer >= Hold)
+        if (timer >= (Released ? RejoinHold : ReleaseHold))
         {
             Released = !Released;
             timer = 0f;
+            if (!Released)
+                settle = Settle;
         }
         return Released;
     }
@@ -46,6 +59,7 @@ public sealed class WeldGate
     {
         Released = false;
         timer = 0f;
+        settle = 0f;
     }
 }
 
