@@ -1143,6 +1143,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     void Despawn()
     {
+        // The sandbox test wall a climb or piton step stood up (FindWall offline, 5e25a82) goes with the step: left
+        // 3 m ahead of the home spot it blocked a projectile mob, left a body ungrounded and stalled a crouch (run 61).
+        SandboxActions.RemoveWall();
         foreach (var go in spawned)
         {
             if (go == null)

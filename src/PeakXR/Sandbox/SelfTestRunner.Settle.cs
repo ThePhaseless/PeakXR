@@ -78,6 +78,9 @@ internal sealed partial class SelfTestRunner
             Fail("not settled: no character or rig");
             yield break;
         }
+        // No test wall from an earlier step stands by the home spot (run 61: vr.32 and vr.40 settled against it).
+        if (SandboxActions.RemoveWall())
+            Note("settle removed a sandbox test wall left standing");
         yield return RestoreBody(c);
         if (!stepOk)
             yield break;
