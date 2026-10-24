@@ -35,6 +35,54 @@ namespace PeakXR.Core
             return (shoulder + hand) * 0.5f + Vector3.Normalize(pole) * HintDistance;
         }
 
+        /// <summary>Sine of the angle between the arm and the hint below which the elbow keeps its last side
+        /// (<see cref="StableHint"/>), and above which it follows the hint alone.</summary>
+        public const float HoldSin = 0.17f;
+
+        public const float FreeSin = 0.5f;
+
+        /// <summary>
+        /// <paramref name="hint"/> (from <see cref="ElbowHint"/>) made stable for an arm pointing along it. The solver
+        /// bends the elbow toward the hint's offset off the shoulder-hand line, and an arm hanging down, out and back
+        /// lies on that line: millimetres of hand jitter then swing the elbow around the arm. Near the line the bend
+        /// keeps <paramref name="bend"/> (last tick's unit bend direction, zero for none; updated), blending back to
+        /// the hint by <see cref="FreeSin"/>.
+        /// </summary>
+        public static Vector3 StableHint(
+            Vector3 shoulder,
+            Vector3 hand,
+            Vector3 hint,
+            ref Vector3 bend
+        )
+        {
+            var axis = hand - shoulder;
+            var mid = (shoulder + hand) * 0.5f;
+            var off = hint - mid;
+            float len = off.Length();
+            if (axis.LengthSquared() < 1e-8f || len < 1e-5f)
+                return hint;
+            axis = Vector3.Normalize(axis);
+            var perp = off - axis * Vector3.Dot(off, axis);
+            var held = bend - axis * Vector3.Dot(bend, axis);
+            float w = System.Math.Clamp(
+                (perp.Length() / len - HoldSin) / (FreeSin - HoldSin),
+                0f,
+                1f
+            );
+            if (held.LengthSquared() < 1e-6f)
+                w = 1f;
+            var dir =
+                (
+                    w > 0f && perp.LengthSquared() > 1e-12f
+                        ? Vector3.Normalize(perp) * w
+                        : Vector3.Zero
+                ) + (w < 1f ? Vector3.Normalize(held) * (1f - w) : Vector3.Zero);
+            if (dir.LengthSquared() < 1e-8f)
+                return hint;
+            bend = Vector3.Normalize(dir);
+            return mid + bend * HintDistance;
+        }
+
         /// <summary>Unit direction of the elbow off the shoulder-hand line, or zero for a straight arm.</summary>
         public static Vector3 BendDirection(Vector3 shoulder, Vector3 elbow, Vector3 hand)
         {

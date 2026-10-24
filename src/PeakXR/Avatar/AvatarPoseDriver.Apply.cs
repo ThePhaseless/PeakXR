@@ -73,6 +73,10 @@ public partial class AvatarPoseDriver
     private float hintWeightR;
     private bool hintOnL;
     private bool hintOnR;
+
+    /// <summary>Last tick's elbow bend direction per arm (<see cref="ArmMath.StableHint"/>), zero when the hint is off.</summary>
+    private System.Numerics.Vector3 bendL;
+    private System.Numerics.Vector3 bendR;
     private HandRig leftRig;
     private HandRig rightRig;
     private readonly ItemHoldInfo hold = new();
@@ -175,6 +179,7 @@ public partial class AvatarPoseDriver
         var smr = c.refs.mainRenderer;
         leftRig = new HandRig(handL.transform, true, FingerNamesLeft, smr);
         rightRig = new HandRig(handR.transform, false, FingerNamesRight, smr);
+        InitTwist(parts, handL.transform, handR.transform, smr);
         if (!leftRig.HasFingers && !rightRig.HasFingers)
             Plugin.Log.LogInfo($"[avatar] {c.name}: no finger bones found, finger curls skipped");
         rigReady = true;
@@ -424,6 +429,8 @@ public partial class AvatarPoseDriver
             ShiftLegs(Vector3.zero);
             leanWeight = 0f;
             LeanGate = "stale pose";
+            SpreadTwist(true, false);
+            SpreadTwist(false, false);
             FadeUnreached();
             if (rigReady)
                 RestoreFingers();
@@ -480,6 +487,13 @@ public partial class AvatarPoseDriver
                 ReachAfterLean(refs.ikLeft, refs.IKHandTargetLeft, tipL, w);
             if (leaned && pose.HasRightHand)
                 ReachAfterLean(refs.ikRight, refs.IKHandTargetRight, tipR, w);
+            SpreadTwist(true, pose.HasLeftHand);
+            SpreadTwist(false, pose.HasRightHand);
+        }
+        else
+        {
+            SpreadTwist(true, false);
+            SpreadTwist(false, false);
         }
         FadeUnreached();
 
@@ -716,22 +730,27 @@ public partial class AvatarPoseDriver
         if (ik == null || shoulder == null || ik.data.hint == null)
             return;
         ref var data = ref ik.data;
+        ref var bend = ref left ? ref bendL : ref bendR;
         if (on)
         {
-            data.hint.position = ArmMath
-                .ElbowHint(
-                    shoulder.transform.position.N(),
-                    hand.N(),
-                    bodyFrame.right.N(),
-                    bodyFrame.up.N(),
-                    bodyFrame.forward.N(),
-                    left
-                )
-                .U();
+            var s = shoulder.transform.position.N();
+            var hint = ArmMath.ElbowHint(
+                s,
+                hand.N(),
+                bodyFrame.right.N(),
+                bodyFrame.up.N(),
+                bodyFrame.forward.N(),
+                left
+            );
+            data.hint.position = ArmMath.StableHint(s, hand.N(), hint, ref bend).U();
             data.hintWeight = Mathf.Lerp(left ? hintWeightL : hintWeightR, 1f, w);
         }
-        else if (left ? hintOnL : hintOnR)
-            data.hintWeight = left ? hintWeightL : hintWeightR;
+        else
+        {
+            bend = default;
+            if (left ? hintOnL : hintOnR)
+                data.hintWeight = left ? hintWeightL : hintWeightR;
+        }
         if (left)
             hintOnL = on;
         else
@@ -740,9 +759,13 @@ public partial class AvatarPoseDriver
 
     /// <summary>The wrist bone pose a tracked hand asks for, in physics (world) space; false when the hand is not
     /// tracked. The self-test compares it with where the ragdoll hand really is.</summary>
-    internal bool HandTarget(bool left, out Vector3 pos)
+    internal bool HandTarget(bool left, out Vector3 pos) => HandTarget(left, out pos, out _);
+
+    /// <inheritdoc cref="HandTarget(bool, out Vector3)"/>
+    internal bool HandTarget(bool left, out Vector3 pos, out Quaternion rot)
     {
         pos = default;
+        rot = Quaternion.identity;
         var pose = Pose;
         if (!HasFreshPose || !EnsureRig() || (left ? !pose.HasLeftHand : !pose.HasRightHand))
             return false;
@@ -750,7 +773,7 @@ public partial class AvatarPoseDriver
             left ? pose.LeftHandPosition : pose.RightHandPosition,
             left ? pose.LeftHandRotation : pose.RightHandRotation,
             out pos,
-            out _
+            out rot
         );
         if (left ? haveReachL : haveReachR)
             pos += left ? reachShiftL : reachShiftR;
