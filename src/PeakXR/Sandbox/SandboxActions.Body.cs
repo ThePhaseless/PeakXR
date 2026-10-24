@@ -160,6 +160,17 @@ public static partial class SandboxActions
     /// (<c>HelperFunctions.terrainMapMask</c>, CharacterClimbing.cs:418; any collider there climbs). For a map with no
     /// wall near the player. Local, one at a time (a new one replaces the last); the scene load removes it.
     /// </summary>
+    /// <summary>Removes the test wall, if one stands; true when there was one.</summary>
+    public static bool RemoveWall()
+    {
+        if (testWall == null)
+            return false;
+        testWall.SetActive(false);
+        Object.Destroy(testWall);
+        testWall = null;
+        return true;
+    }
+
     public static GameObject PlaceWall()
     {
         if (!OfflineGuard())
