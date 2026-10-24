@@ -1179,6 +1179,15 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator OpenKioskByHand(AirportCheckInKiosk kiosk, BoardingPass pass)
     {
+        // The stand and the face ray are measured from the kiosk's solid colliders, which may still be off just
+        // after the airport loads.
+        yield return Until(
+            () => KioskBounds(kiosk).size.sqrMagnitude > 0.01f,
+            3f,
+            "the kiosk has no enabled solid collider"
+        );
+        if (!stepOk)
+            yield break;
         yield return ToKiosk(kiosk);
         if (!stepOk)
             yield break;
@@ -1190,25 +1199,51 @@ internal sealed partial class SelfTestRunner
         // A hand held out at chest height (or just under the kiosk top) from where the player stands toward the
         // kiosk's solid body, cast from the player's side so it meets the near face, not the inside of the kiosk.
         float y = Mathf.Min(eye.y - 0.35f, top - 0.1f, bounds.max.y - 0.1f);
-        var from = new Vector3(eye.x, y, eye.z);
-        var toward = new Vector3(bounds.center.x, y, bounds.center.z) - from;
+        // Cast from clearly outside the kiosk's whole bounds, on the player's side, so the line never starts inside any
+        // collider. Hand height follows the eye, and at some heights the line met nothing at all (vr68, vr75 at
+        // 0.67 m; passing runs at 0.65-0.76 m): re-aim once at the body's middle. Both casts are logged.
+        var tried = new System.Collections.Generic.List<string>(2);
         RaycastHit face = default;
-        if (
-            toward.sqrMagnitude < 1e-4f
-            || !Physics.Raycast(
-                from,
-                toward.normalized,
-                out face,
-                toward.magnitude + bounds.extents.magnitude,
-                HelperFunctions.AllPhysicalExceptCharacter,
-                QueryTriggerInteraction.Ignore
-            )
-            || face.collider.GetComponentInParent<AirportCheckInKiosk>() != kiosk
-        )
+        bool found = false;
+        var dir = new Vector3(bounds.center.x - eye.x, 0f, bounds.center.z - eye.z);
+        float back = bounds.extents.magnitude + 0.3f;
+        if (dir.sqrMagnitude > 1e-4f)
         {
-            Fail(
-                $"no kiosk face at hand height ({(face.collider != null ? face.collider.name : "nothing")} on the line); {kioskNote}"
-            );
+            dir.Normalize();
+            foreach (float height in new[] { y, bounds.center.y })
+            {
+                var origin = new Vector3(bounds.center.x, height, bounds.center.z) - dir * back;
+                bool hit = Physics.Raycast(
+                    origin,
+                    dir,
+                    out face,
+                    back * 2f,
+                    HelperFunctions.AllPhysicalExceptCharacter,
+                    QueryTriggerInteraction.Ignore
+                );
+                tried.Add(
+                    System.FormattableString.Invariant(
+                        $"from {origin.x:0.00},{origin.y:0.00},{origin.z:0.00} along {dir.x:0.00},{dir.z:0.00} for {back * 2f:0.00} m: "
+                    )
+                        + (
+                            hit
+                                ? System.FormattableString.Invariant(
+                                    $"{face.collider.name} (layer {LayerMask.LayerToName(face.collider.gameObject.layer)}) at {face.distance:0.00} m"
+                                )
+                                : "nothing"
+                        )
+                );
+                if (hit && face.collider.GetComponentInParent<AirportCheckInKiosk>() == kiosk)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        Plugin.Log.LogInfo("[selftest] vr.71 kiosk face ray: " + string.Join("; ", tried));
+        if (!found)
+        {
+            Fail($"no kiosk face at hand height ({string.Join("; then ", tried)}); {kioskNote}");
             yield break;
         }
         var touch = face.point + face.normal * 0.02f;
