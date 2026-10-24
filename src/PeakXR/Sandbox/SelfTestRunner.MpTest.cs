@@ -1398,12 +1398,20 @@ internal sealed partial class SelfTestRunner
             Fail(label + " is gone");
             yield break;
         }
+        // Within a squat's reach of the eye, not only of the body's centre (MP run 21: a granola bar 0.79 m out from
+        // the eye, past reach even stooped 0.89 m): step in toward it.
+        var eyeNow = VRRig.Instance.Head.position;
+        if (FlatDistance(eyeNow, world.Center()) > 0.5f)
+        {
+            var near = world.Center();
+            yield return MpWalkBounded(() => near, 0.45f, 3f);
+        }
         Face(world.Center());
         yield return Wait(0.3f);
         const bool left = false;
         yield return GripTo(left, 0f, 0.05f);
-        var at = world.Center();
-        var lay = at;
+        var at = GripPoint(world);
+        var lay = world.Center();
         // Stooping as a player squats for something low (ReachDown); standing again after the grab. The hand follows
         // the item only while it stays near where it lay: one the hand nudges off down a slope is not chased.
         yield return ReachDown(
@@ -1411,8 +1419,8 @@ internal sealed partial class SelfTestRunner
             () =>
             {
                 if (world != null && (world.Center() - lay).sqrMagnitude < 0.3f * 0.3f)
-                    at = world.Center();
-                return at;
+                    at = GripPoint(world);
+                return CapToReach(at);
             },
             0.6f
         );
@@ -1440,6 +1448,38 @@ internal sealed partial class SelfTestRunner
         stepNote = "holding " + label;
         HeadFrame(out var head, out var forward, out var right);
         yield return MoveTrack(left, Rest(head, forward, right).Position, 0.4f);
+    }
+
+    /// <summary>Where a hand takes a ground item: its centre, or for a big item (MP run 21: a Shell Big, centre 0.41 m
+    /// up and inside it, "out of sight" from the eye) the point of its solid surface nearest the eye, as a hand closes
+    /// on the side a player sees.</summary>
+    static Vector3 GripPoint(Item item)
+    {
+        var centre = item.Center();
+        var eye = VRRig.Instance.Head.position;
+        Collider best = null;
+        foreach (var col in item.GetComponentsInChildren<Collider>())
+        {
+            if (
+                col.enabled
+                && !col.isTrigger
+                && (best == null || col.bounds.size.sqrMagnitude > best.bounds.size.sqrMagnitude)
+            )
+                best = col;
+        }
+        if (best == null || best.bounds.extents.magnitude < 0.15f)
+            return centre;
+        var surface = best.ClosestPoint(eye);
+        var outward = eye - surface;
+        return surface + (outward.sqrMagnitude > 1e-6f ? outward.normalized * 0.02f : Vector3.zero);
+    }
+
+    /// <summary>A world point brought within a player's reach of the eye (<see cref="MaxHandFromEye"/>): the hand is
+    /// never sent past an arm, which B would reject as an implausible pose (MP run 21).</summary>
+    static Vector3 CapToReach(Vector3 world)
+    {
+        var eye = VRRig.Instance.Head.position;
+        return eye + Vector3.ClampMagnitude(world - eye, MaxHandFromEye * 0.97f);
     }
 
     /// <summary>Where a ground item lies, for a failed pickup's note: the terrain under it (its collider, tilt from
@@ -1544,7 +1584,13 @@ internal sealed partial class SelfTestRunner
     /// <summary>A ground item the hand can take. A ground backpack opens its wheel instead (Backpack.cs:32-35), so it is
     /// never a generic grab target; vr.29 covers it.</summary>
     static bool Grabbable(Item item) =>
-        item != null && item.itemState == ItemState.Ground && item is not Backpack;
+        item != null
+        && item.itemState == ItemState.Ground
+        && item is not Backpack
+        // Nothing that floats away: a dropped balloon rose 230 m and the hand chased it, a pose B rejected as
+        // implausible (MP run 21, pickup).
+        && !item.TryGetComponent<Balloon>(out _)
+        && (item.rig == null || item.rig.useGravity);
 
     static Item OnGround(Item item) => Grabbable(item) ? item : null;
 
@@ -2148,6 +2194,20 @@ internal sealed partial class SelfTestRunner
         yield return ToHost(0.6f);
         if (!stepOk)
             yield break;
+        // A lying body stretches out from its centre: step in until the torso and hip both sit within 0.5 m of the
+        // eye on the level, so a squat reaches them (MP run 21: the hip lay 1.16 m out and the carry skipped).
+        for (int i = 0; i < 3; i++)
+        {
+            var eye = VRRig.Instance.Head.position;
+            var torso = HostPart(host, BodypartType.Torso);
+            var hip = HostPart(host, BodypartType.Hip);
+            var mid = (torso + hip) * 0.5f;
+            if (FlatDistance(eye, torso) <= 0.5f && FlatDistance(eye, hip) <= 0.5f)
+                break;
+            yield return MpWalkBounded(() => mid, 0.25f, 3f);
+            Face(mid);
+            yield return Wait(0.3f);
+        }
         bool pack = c.player != null && !c.player.backpackSlot.IsEmpty();
         float mark = CueMark();
         yield return ReachDown(true, () => HostPart(host, BodypartType.Torso), 0.6f);
@@ -2390,11 +2450,35 @@ internal sealed partial class SelfTestRunner
                 stepSkip = "A did not crouch (Locomotion.PhysicalCrouch off?)";
                 yield break;
             }
-            yield return Ask(MpRequest.StandOn);
-            if (stepSkip != null)
-                yield break;
+            // B lands on A's head and slides off within about a second (MP runs 19 and 21: B 0.65 m off A at the
+            // checkpoint, so the jump 1.4 s after the warp boosted nobody). The jump goes the moment B is seen standing
+            // on A, and the warp is asked again if B slid off first.
+            var host = Host();
+            bool onTop = false;
             float mark = CueMark();
-            yield return Wait(1.2f);
+            for (int ask = 0; ask < 2 && !onTop; ask++)
+            {
+                yield return Ask(MpRequest.StandOn);
+                if (stepSkip != null)
+                    yield break;
+                float until = Now + 2f;
+                while (Now < until && !onTop)
+                {
+                    var flat = host.Center - c.Center;
+                    flat.y = 0f;
+                    // On A's head, and no longer falling onto it (the warp drops B from 0.6 m above).
+                    onTop =
+                        flat.magnitude < 0.45f
+                        && host.Center.y > c.Head.y - 0.1f
+                        && host.Center.y < c.Head.y + 0.9f;
+                    yield return null;
+                }
+            }
+            if (!onTop)
+            {
+                stepSkip = "the host never came to stand on A after two warps";
+                yield break;
+            }
             bool felt = CueLog.Capture.Felt(true, CueFeel.Progress, mark, out _);
             // Jump is the dominant hand's primary (Bindings: VRAction.Jump); Script takes "left" (MP run 7 pressed the
             // off hand's, so A never jumped and B was never boosted).
