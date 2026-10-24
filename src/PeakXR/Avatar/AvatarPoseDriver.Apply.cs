@@ -965,6 +965,10 @@ public partial class AvatarPoseDriver
         return true;
     }
 
+    /// <summary>Seconds after an equip's attach before the local weld gate judges the arm (the attach settles in 0.5 s,
+    /// CharacterItems.cs:617 and ReconcileWeld).</summary>
+    private const float AttachSettle = 0.5f;
+
     private static System.Reflection.MethodBase vanillaAttach;
 
     /// <summary>CharacterItems.AttachItem (CharacterItems.cs:641, private), resolved on first use.</summary>
@@ -1041,7 +1045,12 @@ public partial class AvatarPoseDriver
         // A peer always carries the item free of the hand on the holder's controller pose, its hand on the arm IK:
         // judging the weld by its own lagging copy of the arm welded it when the holder's client had let go, and the
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
-        bool free = !Owner.IsLocal || weldGate.Update(toController, toItem, dt);
+        // The local gate waits for the equip's own attach to settle (CharacterItems.cs:600-618, sinceItemAttach): at
+        // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
+        bool free = Owner.IsLocal
+            ? (Owner.data.sinceItemAttach > AttachSettle || weldGate.Released)
+                && weldGate.Update(toController, toItem, dt)
+            : true;
         remoteFree = !Owner.IsLocal;
         if (free != wasFree && Owner.IsLocal)
         {
@@ -1063,7 +1072,8 @@ public partial class AvatarPoseDriver
             haveLastTarget = true;
             return false;
         }
-        if (!wasFree)
+        // Free: no joint may hold it, whoever made it.
+        if (!wasFree || itemJoint != null)
         {
             DestroyItemJoint();
             DestroyHandJoint(BodypartType.Hand_L, body);
@@ -1170,8 +1180,16 @@ public partial class AvatarPoseDriver
     private void ReconcileWeld()
     {
         var item = Owner.data.currentItem;
-        // A peer carries the item free of the hand (FollowHeld): no weld to reconcile.
-        if (item == null || ArmsSuspended || armBlend.Weight < 1f || remoteFree)
+        // A peer carries the item free of the hand, and a local item the gate let go is FollowHeld's: no weld to
+        // reconcile. Re-welding a free local item here left it welded while FollowHeld still drove it by velocity,
+        // dragging the body so both arms hung 0.2-0.6 m under the tracked hands (MP run 20, the passport).
+        if (
+            item == null
+            || ArmsSuspended
+            || armBlend.Weight < 1f
+            || remoteFree
+            || weldGate.Released
+        )
             return;
         if (itemJoint != null)
         {
