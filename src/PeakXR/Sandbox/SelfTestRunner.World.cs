@@ -782,10 +782,12 @@ internal sealed partial class SelfTestRunner
         bool outSide =
             fuseOut != Vector3.zero
             && (entry == null || Vector3.Distance(at + fuseOut * 0.8f, entry.position) > 1.2f);
-        if (outSide)
-            yield return WarpBeside(at, 0.8f, fuseOut);
-        else if (entry != null)
-            yield return WarpBeside(at, 0.8f, at - entry.position);
+        var side =
+            outSide ? fuseOut
+            : entry != null ? at - entry.position
+            : default;
+        if (side != default)
+            yield return WarpBeside(at, 0.8f, side);
         else
             yield return WarpFacing(at, 0.8f);
         var torch = HeldItem();
@@ -879,6 +881,28 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // Runs 61 and 69 ended up on the cannon's base, 1 m over the ground beside it: even fully stooped the fuse lay
+        // past a player's reach (the hand 1.28 m from the eye). Step down beside it once and reach again.
+        if (!InStoopReach(c, Touch()))
+        {
+            yield return StandUp(left);
+            yield return WarpBeside(at, 0.8f, side);
+            if (flame == null || HeldItem() != torch)
+            {
+                Fail("the torch left the hand on the step back beside the fuse");
+                yield break;
+            }
+            yield return ReachDown(left, () => CapToReach(Touch() + lead), 0.6f);
+            if (!InStoopReach(c, Touch()))
+            {
+                Fail(
+                    F(
+                        $"the fuse stays past a stooped reach after stepping beside it again: body {FlatDistance(c.Center, Touch()):0.00} m from it, standing {TrackedFloorY() - Feet(c).y:0.00} m over the ground"
+                    )
+                );
+                yield break;
+            }
+        }
         float end = Now + seconds;
         BeginCarry();
         // Over the fuse first, then down onto it, as a player lowers a flame onto a fuse: carried in level, the torch
@@ -896,6 +920,7 @@ internal sealed partial class SelfTestRunner
         {
             CarryToward(left, flame.position, Approach(), FlameStall);
             StoopToFollow(left);
+            CapHandToReach(left);
             yield return null;
         }
         var approachAt = Approach();
@@ -921,6 +946,7 @@ internal sealed partial class SelfTestRunner
                 CarryToward(left, flame.position, Touch(), FlameStall);
             }
             StoopToFollow(left);
+            CapHandToReach(left);
             yield return null;
         }
         fuseWay = F(
@@ -936,10 +962,29 @@ internal sealed partial class SelfTestRunner
                 ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                 : Vector3.Distance(at, flame.position);
         flameNote = F(
-            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse, closest {carryBest:0.00} m to the carry goal; {fuseWay}"
+            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse standing {TrackedFloorY() - Feet(c).y:0.00} m over the ground, closest {carryBest:0.00} m to the carry goal; {fuseWay}"
         );
         if (OverReach(left) is { } far)
             Fail($"{far}: {flameNote}");
+    }
+
+    /// <summary>A stooping head reaches <paramref name="target"/>: the body stands on the ground (not up on a prop)
+    /// and the eye, lowered to the deepest stoop, is within a player's reach of it.</summary>
+    bool InStoopReach(Character c, Vector3 target)
+    {
+        var eye = VRRig.Instance.Head.position;
+        eye.y -= MaxStoop - headDrop;
+        return TrackedFloorY() - Feet(c).y <= 0.5f
+            && Vector3.Distance(eye, target) <= MaxHandFromEye * 0.95f;
+    }
+
+    /// <summary>The scripted hand held within a player's reach of the scripted eye (<see cref="OverReach"/>'s measure),
+    /// keeping its turn: a carry heading past it stops at the edge.</summary>
+    void CapHandToReach(bool left)
+    {
+        var eye = ScriptedEye();
+        ref var hand = ref Script(left);
+        hand.Position = eye + Vector3.ClampMagnitude(hand.Position - eye, MaxHandFromEye * 0.97f);
     }
 
     IEnumerator FuseRefused(Item torchPrefab, Component fuse)
@@ -1959,12 +2004,35 @@ internal sealed partial class SelfTestRunner
         // root: vr34 stood by the root and ended 2.16 m short.
         var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
         yield return WarpBeside(target, back);
+        // Landed and still before any grip (vr69 failed with the torso still moving after the warp).
+        var me = Character.localCharacter;
+        yield return WaitFor(
+            () => me.data.isGrounded && me.data.avarageVelocity.sqrMagnitude < 0.04f,
+            3f
+        );
         yield return GiveAndHold(amulet.GetComponent<Item>());
         if (!stepOk)
             yield break;
         var held = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
+        // A scripted grip reads as a point (index off the trigger: GripIntent.IsPointing), so the amulet hand closing
+        // while it or the head aims at the statue is itself a pointed grip at a taker and inserts the amulet before
+        // the free hand points (vr69: interact pressed on the amulet hand's grip, the cue on that hand). It closes
+        // aimed at the ground with the head looking down.
+        HeadFrame(out _, out var level, out _);
+        Script(left).Rotation = Quaternion.LookRotation(Vector3.down, level);
+        LookAtPoint(Feet(me));
+        yield return Wait(0.3f);
+        int holdsAtGive = WorldHolds.StatueHolds;
         yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.2f);
+        if (WorldHolds.StatueHolds > holdsAtGive || !ReferenceEquals(HeldItem(), held))
+        {
+            Fail(
+                $"the amulet hand's own grip started the statue's hold before the point ({PhysicalInteraction.LastGripNote})"
+            );
+            yield break;
+        }
         yield return Until(
             () => WorldHolds.SocketTarget >= 0,
             2f,

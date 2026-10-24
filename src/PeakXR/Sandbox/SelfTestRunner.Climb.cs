@@ -615,19 +615,57 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MoveTo(left, () => segment.position, 0.6f);
+        // The rope swings as the hand comes in (run 69: 0.13 m off): take the segment nearest the hand now, and
+        // re-aim once onto its live position when the hand is more than 0.08 m off it.
+        var rig = VRRig.Instance;
+        var live = NearestRopeSegment(rig.Hand(left).position, out float off);
+        if (live != null && off > 0.08f)
+        {
+            segment = live;
+            yield return MoveTo(left, () => segment.position, 0.2f);
+        }
         if (OverReach(left) is { } far)
         {
             Fail(far);
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        // The hand stays on the segment's live position while the grip closes.
+        float from = Script(left).Grip;
+        for (float start = Now; ; )
+        {
+            float t = Mathf.Clamp01((Now - start) / 0.1f);
+            SetHand(left, rig.Origin.InverseTransformPoint(segment.position));
+            Script(left).Grip = Mathf.Lerp(from, 1f, t);
+            if (t >= 1f)
+                break;
+            yield return null;
+        }
+        NearestRopeSegment(rig.Hand(left).position, out float atGrip);
         yield return Until(
             () => c.data.isRopeClimbing,
             2f,
             FormattableString.Invariant(
-                $"grip on the rope did not grab it (nearest segment {Mathf.Sqrt(best):0.00} m from the reach point, {segment.position.y - reach.y:0.00} m above it)"
+                $"grip on the rope did not grab it (first pick {Mathf.Sqrt(best):0.00} m from the reach point, {segment.position.y - reach.y:0.00} m above it; hand {off:0.00} m off the nearest segment after the reach, {atGrip:0.00} m at the grip)"
             )
         );
+    }
+
+    /// <summary>The test rope's segment nearest <paramref name="world"/>, read now, and its distance.</summary>
+    Transform NearestRopeSegment(Vector3 world, out float distance)
+    {
+        Transform nearest = null;
+        float bestSq = float.MaxValue;
+        foreach (var t in testRope.GetRopeSegments())
+        {
+            float d = t != null ? (t.position - world).sqrMagnitude : float.MaxValue;
+            if (d < bestSq)
+            {
+                bestSq = d;
+                nearest = t;
+            }
+        }
+        distance = Mathf.Sqrt(bestSq);
+        return nearest;
     }
 
     /// <summary>The test rope's segment nearest the <paramref name="left"/> hand's reach point (0.2 m above it).</summary>
