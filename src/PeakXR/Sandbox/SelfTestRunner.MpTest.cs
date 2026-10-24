@@ -1167,6 +1167,11 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
+        // Fed: the game consumes the item and unequips it a few hundred ms later (Consume, then EquipSlotRpc on B 0.2 s
+        // after GetFedItemRPC in MP run 17); the checkpoint waits for that, so it does not list an item B already saw
+        // gone.
+        if (c.data.lastConsumedItem != consumedBefore)
+            yield return WaitFor(() => HeldItem() != item, 2f);
         var note =
             $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth, {resqueezes} re-squeeze(s)";
         // The squeeze is the hand-over, not a try at eating far from A's own mouth (HeldGestures.MouthHint's NotHere).
@@ -1348,12 +1353,29 @@ internal sealed partial class SelfTestRunner
             Fail(label + " is gone");
             yield break;
         }
+        // An item the walk ended on top of is underfoot, out of a standing hand's reach and under the body: step back
+        // from it first (MP run 17: a Compass at A's feet, the hand sent 1.5 m down and behind, the grip found nothing).
+        var c = Character.localCharacter;
+        var under = world.Center() - c.Center;
+        under.y = 0f;
+        if (under.magnitude < 0.35f)
+        {
+            var back =
+                c.Center
+                - (
+                    under.sqrMagnitude > 1e-4f
+                        ? under.normalized
+                        : Flat(VRRig.Instance.Head.forward)
+                ) * 0.5f;
+            yield return MpWalkBounded(() => back, 0.15f, 3f);
+        }
         Face(world.Center());
         yield return Wait(0.3f);
         const bool left = false;
         yield return GripTo(left, 0f, 0.05f);
         var at = world.Center();
-        yield return MoveTo(
+        // Stooping as a player squats for something low (ReachDown); standing again after the grab.
+        yield return ReachDown(
             left,
             () =>
             {
@@ -1367,8 +1389,11 @@ internal sealed partial class SelfTestRunner
         yield return Until(
             () => HeldItem() != null && HeldItem().itemID == id,
             3f,
-            label + " not picked up"
+            F(
+                $"{label} not picked up ({Vector3.Distance(VRRig.Instance.Hand(left).position, at):0.00} m from the hand, stooped {headDrop:0.00} m; {PeakXR.Interact.PhysicalInteraction.LastGripNote})"
+            )
         );
+        headDrop = 0f;
         if (!stepOk)
             yield break;
         stepNote = "holding " + label;
