@@ -111,35 +111,36 @@ public class HandOverTests
     }
 
     [Fact]
-    public void FeedingAFriend_IsNoTryAtEatingHere()
+    public void BesideAFriendsMouth_ASqueezeSaysCloser_AtTheirMouth()
     {
-        // MP run 26: the squeeze that fed the host also said NotHere, the own-mouth eat refusal.
-        Assert.Equal(
-            DenyReason.None,
-            HandOver.ContextReason(DenyReason.NotHere, atFriendMouth: false, nearFriendMouth: true)
-        );
+        // MP run 26 said NotHere (your own mouth) there; a silent squeeze would break the no-silent-failures rule.
+        var r = HandOver.Context(DenyReason.NotHere, false, true, out bool atFriend);
+        Assert.Equal(DenyReason.OutOfReach, r);
+        Assert.True(atFriend);
     }
 
     [Fact]
     public void NearAFriend_OtherRefusalsStand()
     {
-        Assert.Equal(
-            DenyReason.NoStamina,
-            HandOver.ContextReason(
-                DenyReason.NoStamina,
-                atFriendMouth: false,
-                nearFriendMouth: true
-            )
-        );
+        var r = HandOver.Context(DenyReason.NoStamina, false, true, out bool atFriend);
+        Assert.Equal(DenyReason.NoStamina, r);
+        Assert.False(atFriend);
     }
 
     [Fact]
     public void AwayFromFriends_NotHereStands()
     {
-        Assert.Equal(
-            DenyReason.NotHere,
-            HandOver.ContextReason(DenyReason.NotHere, atFriendMouth: false, nearFriendMouth: false)
-        );
+        var r = HandOver.Context(DenyReason.NotHere, false, false, out bool atFriend);
+        Assert.Equal(DenyReason.NotHere, r);
+        Assert.False(atFriend);
+    }
+
+    [Fact]
+    public void AtTheMouthWithAnUnfeedableItem_CantUseWins()
+    {
+        var r = HandOver.Context(DenyReason.NotHere, true, true, out bool atFriend);
+        Assert.Equal(DenyReason.CantUse, r);
+        Assert.False(atFriend);
     }
 
     [Fact]

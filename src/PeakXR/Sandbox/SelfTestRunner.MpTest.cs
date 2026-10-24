@@ -1208,6 +1208,53 @@ internal sealed partial class SelfTestRunner
         var grip = HeldGrip.Of(rig, Script(left), item);
         float stalled = 0f;
         int resqueezes = 0;
+        // First a squeeze just beside the mouth, 0.32 m out toward A, outside the feed zone: it must not feed and must
+        // say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
+        float bandMark = -1f;
+        float placedFor = 0f;
+        float bandEnd = Now + 4f;
+        while (Now < bandEnd && HeldItem() == item && host != null)
+        {
+            var mouthNow = HostPart(host, BodypartType.Head);
+            var towardA = rig.Head.position - mouthNow;
+            towardA.y = 0f;
+            var target =
+                mouthNow
+                + (towardA.sqrMagnitude > 1e-4f ? towardA.normalized : Vector3.forward) * 0.32f;
+            var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
+            bandGoal =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpArmReach);
+            SetHand(left, bandGoal);
+            float d = Vector3.Distance(item.Center(), mouthNow);
+            placedFor = d > 0.26f && d < 0.42f ? placedFor + Time.unscaledDeltaTime : 0f;
+            if (bandMark < 0f && placedFor >= 0.5f)
+            {
+                bandMark = CueMark();
+                Script(left).Trigger = 1f;
+            }
+            if (bandMark >= 0f && CueMark() - bandMark >= 0.4f)
+                break;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        if (bandMark < 0f)
+        {
+            Fail(
+                "the food never rested 0.26-0.42 m from the host's mouth for the beside-the-mouth squeeze"
+            );
+            yield break;
+        }
+        if (item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
+        {
+            Fail("a squeeze 0.32 m from the host's mouth fed them: outside the feed zone");
+            yield break;
+        }
+        yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
+        if (!stepOk)
+            yield break;
+        var bandCue = cueNote;
+        yield return Wait(0.3f);
         while (
             item != null
             && HeldItem() == item
@@ -1275,7 +1322,7 @@ internal sealed partial class SelfTestRunner
                     + note
             );
         else
-            stepNote = "fed; " + note;
+            stepNote = "beside the mouth: " + bandCue + "; fed; " + note;
     }
 
     // ---------------------------------------------------------------- movement and hands
