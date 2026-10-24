@@ -8,6 +8,7 @@ These replace the older numbers below, which are kept as history. The game is PE
 |---|---|---|
 | VR self-test, runs 67 to 69 (476 steps) | `0bc85f8` | 472, 470 and 468 pass, with 0, 2 and 4 failures; 4 skips |
 | VR self-test, runs 70 and 71 (477 steps) | `c7076bc`, `5dd53dc` | 470 pass and 3 failures in each, all in the tests rather than the mod (see below) |
+| Single-step runs 73 and 74 (`-peakxr-selftest-only`) | `cf8f07f`, `86b25a2` | vr.173, vr.230 and vr.89b pass: 6 and 11 pass (setup included), 0 fail, 82 s and 114 s |
 | Two clients, B runs PeakXR flat (run 27) | `d61d73b` | A 25 pass, 1 fail; `mp-check.sh --modded-b` 91 pass, 2 fail |
 | Two clients, B unmodded (run 28) | `d61d73b` | Every compatibility check passes: B logged no unknown events and received no event 151 |
 
@@ -21,6 +22,10 @@ The failures in runs 70 and 71 were all in the tests:
 - **vr.00 and vr.02 (start-up):** the SteamVR dashboard covered the game at launch, or PEAK's own "Failed to connect to Photon Network" popup covered the title. vr.02 now skips with that reason.
 - **mob.Character_Scoutmaster:** the check called a Scoutmaster that moved 52 m and targeted the player "no behaviour". It now counts targeting plus movement.
 - **vr.82b:** the scripted hand was placed 2 cm past arm's reach. The step now steps in first.
+
+Run 72 found a real ghost-hand bug: after a warp and a recenter, the ghost showed at 60% with the arm at rest. Two changes fix it. The shoulder and the controller are now measured in one frame, and the ghost measures from where the shoulder sits under the tracked head, so a lagging body no longer counts as reach. Single-step run 73 confirms the fix.
+
+To check a few steps without the full 45-minute suite, pass `-peakxr-selftest-only` (see `docs/testing.md`).
 
 **Two-client runs on the latest build are still to do.** Runs 29 and 30 on `40a2bb3` never got past the join, with "Failed to fetch lobby data". At the time, client A's Steam was logged off, and Steam's connection log shows 103 "Disconnected By Remote Host" entries. Changes since the last good two-client run touch feeding (the feed zone counts from the item's nearest point), body presses (a slow hand is needed), held items and the ghost hand. The ghost hand is local only.
 
