@@ -123,7 +123,7 @@ Each of these has an on/off setting in the `Interaction` section. With a setting
 - Light things (`LightWithFlame`): touch a lit torch, flare, candle or lantern to a cannon or rocket fuse, a ghost fire or an unlit campfire and keep it there until it catches.
 - Food and drinks: bring them to your mouth. Pulling them away before the use finishes cancels it. The trigger alone doesn't eat or drink: it gets the refusal cue and a ring at your mouth. For seated or one-handed play, turn on `TriggerEats` and the trigger eats and drinks too.
 - Feeding a friend: hold the food to their mouth and pull the trigger. Pulling it just short of their mouth gets the out-of-reach cue, with the ring on their mouth. An item they can't eat gets the can't-use cue at their mouth, even if the item has a use of its own.
-- Bandages, heat packs, chalk and other healing items (`PressToBody`): press the item to your chest or your other forearm to use it. Press it to a friend's body to use it on them.
+- Bandages, heat packs, chalk and other healing items (`PressToBody`): press the item to your chest or your other forearm to use it. Press it to a friend's body to use it on them. The hand has to slow down at the body: sweeping the item past your chest, as in a throw, doesn't start it.
 - Book of Bones (`ReadAtFace`, on): hold it open in front of your eyes to read it. Lowering it stops.
 - Cursed items (`CommuneAtFace`, on): they only work held eye to eye for the whole use. The trigger alone is refused with a warning.
 - Revive with the Book of Bones (`BookOverBones`, on): hold the open book just above the skeleton's hips and keep it there. Gripping the skeleton still works.
