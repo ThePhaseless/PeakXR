@@ -160,6 +160,27 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.02: title menu converted by ui.world and the title stage holding the rig origin (UI/Menu/TitleStage.cs).</summary>
+    /// <summary>The open modal's text when it is the game's connection-failed one (header
+    /// <c>LocalizedText.GetText("FAILEDTOCONNECT")</c>, MainMenuPageHandler.cs:93), else null.</summary>
+    static string ConnectFailedPopup()
+    {
+        if (!Zorro.UI.Modal.Modal.IsOpen || Zorro.UI.Modal.Modal.Instance == null)
+            return null;
+        string header = LocalizedText.GetText("FAILEDTOCONNECT");
+        if (string.IsNullOrEmpty(header))
+            return null;
+        foreach (var text in Zorro.UI.Modal.Modal.Instance.GetComponentsInChildren<TMP_Text>(false))
+        {
+            if (
+                text != null
+                && text.text != null
+                && text.text.Contains(header, StringComparison.Ordinal)
+            )
+                return text.text;
+        }
+        return null;
+    }
+
     IEnumerator TitleStageCheck()
     {
         bool onBeach = Setting("UI", "TitleOnBeach", true);
@@ -174,6 +195,15 @@ internal sealed partial class SelfTestRunner
             },
             10f
         );
+        // PEAK's own connection-failed popup (MainMenuPageHandler.cs:93, a Zorro modal headed FAILEDTOCONNECT with
+        // Try again and Play offline) covers the title page when Photon does not connect at start (runs 70-71): no
+        // title button can be read then, and that is the network, not the mod.
+        if (ConnectFailedPopup() is { } popup)
+        {
+            stepSkip =
+                $"Photon connect failed at start (game popup), title buttons hidden; up: '{popup}'";
+            yield break;
+        }
         var fails = new List<string>();
         var notes = new List<string>();
         if (root == null)
