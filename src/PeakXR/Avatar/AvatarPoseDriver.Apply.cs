@@ -1068,6 +1068,12 @@ public partial class AvatarPoseDriver
                 EndPassBody();
                 AttachToHoldingHand(item);
             }
+            // Welded, the item hangs its whole weight (prefab mass 5, against a hand part far lighter) on the arm's
+            // muscles: the hand sat 0.2-0.25 m under its controller while the empty hand reached it (MP run 23).
+            // Cancel the item's gravity so the arm carries only its own; vanilla's spring and torque still place it.
+            // Local physics only, as the weld itself.
+            if (itemJoint != null && body.useGravity)
+                body.AddForce(-Physics.gravity, ForceMode.Acceleration);
             lastTarget = target;
             haveLastTarget = true;
             return false;
