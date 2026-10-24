@@ -154,7 +154,11 @@ internal static class Affordance
 
     /// <summary>Set by a feature that knows a hand's context (interact.social's hand-over at a friend's mouth): maps a
     /// refusal at that hand (left, reason) to the one the player needs. Null: reasons pass unchanged.</summary>
-    internal static System.Func<bool, DenyReason, DenyReason> ReasonContext;
+    internal static ReasonContextFn ReasonContext;
+
+    /// <summary>Maps a refusal at the <paramref name="left"/> hand to the one its context needs, and may move the
+    /// would-work spot (<paramref name="hint"/>) to where that context points. Returning None silences it.</summary>
+    internal delegate DenyReason ReasonContextFn(bool left, DenyReason reason, ref DenyHint hint);
 
     private static bool DenyCore(
         bool left,
@@ -170,7 +174,7 @@ internal static class Affordance
         // The context a hand is in can name the refusal better than the item's own use (interact.social: a held item
         // at a friend's mouth says CantUse, not its placement's NoWall).
         if (ReasonContext != null)
-            reason = ReasonContext(left, reason);
+            reason = ReasonContext(left, reason, ref hint);
         // The context can also silence a refusal that does not apply there (an own-mouth eat try while feeding a friend).
         if (reason == DenyReason.None)
             return false;

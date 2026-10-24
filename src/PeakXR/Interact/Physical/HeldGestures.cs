@@ -162,7 +162,6 @@ internal static class HeldGestures
         // At a friend's mouth the trigger is the hand-over's squeeze (interact.social), not a try at eating here.
         if (
             Social.SocialHands.Instance.HandOverOwnsTrigger
-            || Social.SocialHands.Instance.NearFriendMouth
             || !Trigger.Pressed
             || !InteractConfig.Instance.TriggerUse
             || (use != UseGesture.Eat && use != UseGesture.Drink)

@@ -92,15 +92,29 @@ public sealed class HandOver
         atFriendMouth && own != DenyReason.None ? DenyReason.CantUse : own;
 
     /// <summary>
-    /// As above, and with the held item near a friend's mouth or chest (<paramref name="nearFriendMouth"/>, a little
-    /// wider than the feed zone): the own-mouth eat refusal (NotHere) is silent there, because the trigger is the hand-over's
-    /// squeeze, not a try at eating it yourself (MP run 26: a feed that worked also said NotHere). None means no cue.
+    /// The refusal for a press of the held item, given where it is: at a friend's mouth or chest with an item they
+    /// cannot take, CantUse (<see cref="ContextReason(DenyReason, bool)"/>); just beside it
+    /// (<paramref name="nearFriendMouth"/>, out to a little past the feed zone), the own-mouth eat refusal becomes
+    /// "closer" (OutOfReach) with <paramref name="hintAtFriendMouth"/> set, so the ring points at the friend's mouth
+    /// instead of the player's own (MP run 26: NotHere there; silencing it left a squeeze beside a friend's face
+    /// with no cue at all). Anything else stands.
     /// </summary>
-    public static DenyReason ContextReason(DenyReason own, bool atFriendMouth, bool nearFriendMouth)
+    public static DenyReason Context(
+        DenyReason own,
+        bool atFriendMouth,
+        bool nearFriendMouth,
+        out bool hintAtFriendMouth
+    )
     {
+        hintAtFriendMouth = false;
         if (atFriendMouth)
             return ContextReason(own, true);
-        return nearFriendMouth && own == DenyReason.NotHere ? DenyReason.None : own;
+        if (nearFriendMouth && own == DenyReason.NotHere)
+        {
+            hintAtFriendMouth = true;
+            return DenyReason.OutOfReach;
+        }
+        return own;
     }
 
     public void Reset()

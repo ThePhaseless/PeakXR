@@ -945,7 +945,9 @@ internal sealed class SocialHands : IGripExtension
                 ? BodypartType.Torso
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
-        nearFriendMouth = NearestPart(c, part, point, NearFriendRadius + grow) != null;
+        var near = NearestPart(c, part, point, NearFriendRadius + grow);
+        nearFriendMouth = near != null;
+        nearFriendSpot = near != null ? PartPosition(near, part, point) : null;
         // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
         var friend = feedCandidate;
         if (
@@ -1015,17 +1017,29 @@ internal sealed class SocialHands : IGripExtension
     private bool atFriendMouth;
 
     /// <summary>Installed as <see cref="Affordance.ReasonContext"/> by <see cref="SocialFeature"/>.</summary>
-    internal static DenyReason RefusalContext(bool left, DenyReason reason) =>
-        left == LocalHold.ItemInLeftHand
-            ? HandOver.ContextReason(reason, Instance.atFriendMouth, Instance.nearFriendMouth)
-            : reason;
+    internal static DenyReason RefusalContext(bool left, DenyReason reason, ref DenyHint hint)
+    {
+        if (left != LocalHold.ItemInLeftHand)
+            return reason;
+        var self = Instance;
+        var r = HandOver.Context(
+            reason,
+            self.atFriendMouth,
+            self.nearFriendMouth,
+            out bool atFriend
+        );
+        // "Closer", with the ring on the friend's mouth the item should go to.
+        if (atFriend && self.nearFriendSpot is { } spot)
+            hint = DenyHint.At(spot);
+        return r;
+    }
+
+    /// <summary>The friend's mouth or chest the held item is near (<see cref="nearFriendMouth"/>), for the hint.</summary>
+    private Vector3? nearFriendSpot;
 
     /// <summary>The held item is near a friend's mouth or chest (within <see cref="NearFriendRadius"/>, wider than the
-    /// feed zone so a squeeze just off it still counts): the own-mouth eat refusal stays silent there.</summary>
+    /// feed zone so a squeeze just off it still counts): the own-mouth eat refusal says "closer" at their mouth there.</summary>
     private bool nearFriendMouth;
-
-    /// <summary>The held item is near a friend's mouth or chest this frame (see <see cref="nearFriendMouth"/>).</summary>
-    public bool NearFriendMouth => nearFriendMouth;
 
     private const float NearFriendRadius = 0.45f;
 
@@ -1033,6 +1047,7 @@ internal sealed class SocialHands : IGripExtension
     {
         atFriendMouth = false;
         nearFriendMouth = false;
+        nearFriendSpot = null;
         feedCandidate = null;
         handOver.Reset();
     }
