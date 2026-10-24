@@ -1414,10 +1414,15 @@ internal sealed partial class SelfTestRunner
         var tried = new HashSet<Item>();
         for (int i = 0; i < tries; i++)
         {
+            // Nearest first, and only one a player can pick up off the ground (OnReachableGround).
             var item =
-                i == 0 && first != null
+                i == 0 && first != null && OnReachableGround(first)
                     ? first
-                    : NearestGround(x => ok(x) && !tried.Contains(x), null, range);
+                    : NearestGround(
+                        x => ok(x) && !tried.Contains(x) && OnReachableGround(x),
+                        null,
+                        range
+                    );
             if (item == null)
                 break;
             tried.Add(item);
@@ -1573,6 +1578,25 @@ internal sealed partial class SelfTestRunner
             },
             0.6f
         );
+        // The capped hand stopped short of it (MP run 33: 0.28 m, stooped 0.49 m): step in toward it and reach again.
+        if (world != null && Vector3.Distance(VRRig.Instance.Hand(left).position, at) > 0.15f)
+        {
+            headDrop = 0f;
+            var closer = world.Center();
+            yield return MpWalkBounded(() => closer, 0.35f, 3f);
+            Face(world.Center());
+            yield return Wait(0.3f);
+            yield return ReachDown(
+                left,
+                () =>
+                {
+                    if (world != null && (world.Center() - lay).sqrMagnitude < 0.3f * 0.3f)
+                        at = GripPoint(world);
+                    return CapToReach(at);
+                },
+                0.6f
+            );
+        }
         if (OverReach(left) is { } far)
         {
             headDrop = 0f;
@@ -1694,6 +1718,43 @@ internal sealed partial class SelfTestRunner
         /// <summary>World offset from the controller to the item for the controller's pose now.</summary>
         public Vector3 World(VRRig rig, HandState hand) =>
             rig.Origin.rotation * hand.Rotation * local;
+    }
+
+    /// <summary>Steepest ground (deg from level) a fetched item may lie on, and how far above that ground its centre may
+    /// sit (an item caught in a bush or on a ledge).</summary>
+    const float FetchSlope = 35f;
+
+    const float FetchAboveGround = 0.5f;
+
+    /// <summary>
+    /// A ground item a player can walk up to and pick up: terrain under it no steeper than <see cref="FetchSlope"/>,
+    /// not a bush (MP run 33: an apple in a berry bush on a 48 degree slope, 1.82 m from the reaching hand), and its
+    /// centre at most <see cref="FetchAboveGround"/> above that ground.
+    /// </summary>
+    static bool OnReachableGround(Item item)
+    {
+        if (item == null)
+            return false;
+        var at = item.Center();
+        if (
+            !Physics.Raycast(
+                at + Vector3.up * 0.5f,
+                Vector3.down,
+                out var ground,
+                3f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return false;
+        if (Vector3.Angle(ground.normal, Vector3.up) > FetchSlope)
+            return false;
+        if (
+            ground.collider.GetComponentInParent<BerryBush>() != null
+            || ground.collider.name.Contains("bush", StringComparison.OrdinalIgnoreCase)
+        )
+            return false;
+        return at.y - ground.point.y <= FetchAboveGround;
     }
 
     /// <summary>Where a ground item lies, for a failed pickup's note: the terrain under it (its collider, tilt from
