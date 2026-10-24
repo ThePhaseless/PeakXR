@@ -59,9 +59,22 @@ public class GrabSelectorTests
             new Vector3(0.04f, 0.04f, 0.04f),
             into
         );
-        Assert.Equal(3, n);
+        Assert.Equal(4, n);
         Assert.Equal(new Vector3(0, -0.02f, 0.55f), into[0]);
         Assert.Equal(new Vector3(0, 0f, 0.55f), into[1]);
         Assert.Equal(new Vector3(0, 0.04f, 0.55f), into[2]);
+        // Just above its top: a flat item in a rock hollow (VR mp19's compass) shows only from above.
+        TestUtil.Near(new Vector3(0, 0.04f + GrabSelector.SightAboveTop, 0.55f), into[3]);
+    }
+
+    [Fact]
+    public void HandOnTheItem_SeenByTheHand_CountsWhenTheEyeSeesTheHand()
+    {
+        // VR mp19: a compass 3 cm from the hand on rocky ground, hidden from the stooped eye on every point.
+        Assert.True(GrabSelector.Seen(eyeSeesItem: false, handSeesItem: true, eyeSeesHand: true));
+        Assert.True(GrabSelector.Seen(eyeSeesItem: true, handSeesItem: false, eyeSeesHand: false));
+        // A hand pushed through a rock fin: the eye cannot see it, so nothing behind the fin is grabbed.
+        Assert.False(GrabSelector.Seen(eyeSeesItem: false, handSeesItem: true, eyeSeesHand: false));
+        Assert.False(GrabSelector.Seen(eyeSeesItem: false, handSeesItem: false, eyeSeesHand: true));
     }
 }

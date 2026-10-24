@@ -975,6 +975,10 @@ internal static class PhysicalInteraction
             bool seen = false;
             for (int s = 0; s < GrabSelector.SightPointCount && !seen; s++)
                 seen = Visible(eye, SightPoints[s].U(), it);
+            // The hand already on it sees it, and the eye sees the hand (no fin between): VR mp19's compass 3 cm from
+            // the hand on rocky ground hid from the stooped eye on every point.
+            if (!seen)
+                seen = GrabSelector.Seen(false, Visible(pos, point, it), Visible(eye, pos, it));
             lastReachable++;
             if (!seen)
             {
