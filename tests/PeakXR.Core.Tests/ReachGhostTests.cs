@@ -21,18 +21,33 @@ public class ReachGhostTests
     }
 
     [Fact]
-    public void JitterAtTheThresholdDoesNotFlicker()
+    public void JitterAtTheThresholdOnlyShimmersFaintly()
     {
-        // Shown once past 0.05 m, it stays until the gap drops under the exit (0.03 m): no on-off at 0.05.
+        // Around 0.05 m the ghost is all but transparent and eases: no pop, however the gap jitters.
         var f = new GhostFade();
         Settle(f, 0.1f);
+        float last = f.Alpha;
         for (int i = 0; i < 50; i++)
         {
             f.Update(i % 2 == 0 ? 0.045f : 0.055f, 0.02f);
-            Assert.True(f.Visible);
+            // Down from the 0.1 m level first, at its eased rate.
+            if (i >= 10)
+                Assert.True(f.Alpha <= 0.1f);
+            Assert.True(System.MathF.Abs(f.Alpha - last) <= GhostFade.Rate * 0.02f + 1e-4f);
+            last = f.Alpha;
         }
         Settle(f, 0f);
         Assert.False(f.Visible);
+    }
+
+    [Fact]
+    public void AStraightArmAtRestHidesTheGhost()
+    {
+        // vr70 vr.173: a hand hanging at rest on a straight arm reads about 4 cm short; the ghost must fade out
+        // there, not linger faintly.
+        var f = new GhostFade();
+        Settle(f, 0.5f);
+        Assert.Equal(0f, Settle(f, 0.04f, 0.5f));
     }
 
     [Fact]
