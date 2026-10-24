@@ -1,5 +1,23 @@
 # In-game test report
 
+## Latest results (2026-10-24, PEAK 3.0.1, master `0bc85f8`)
+
+These replace the older numbers below, which are kept as history. The game is PEAK 3.0.1 (build 26155610), and `mise run compat-check` resolves all 355 patch targets.
+
+| Check | Result |
+|---|---|
+| VR self-test, runs 67 to 69 (476 steps) | 472, 470 and 468 pass, with 0, 2 and 4 failures; 4 skips |
+| Two clients, B runs PeakXR flat (run 27) | A 25 pass, 1 fail; `mp-check.sh --modded-b` 91 pass, 2 fail |
+| Two clients, B unmodded (run 28) | Every compatibility check passes: B logged no unknown events and received no event 151 |
+
+Runs 68 and 69 used the same build, and each failed different steps. The failures that recur from run to run:
+
+- **vr.230 (stoop pickup):** at a deep crouched stoop, the held item sometimes leaves the avatar's hand and follows the controller. The item stays held and usable.
+- **vr.89b (altar progress buzz):** sometimes no buzz reaches the hand.
+- **vr.88 and vr.58b (scout cannon, rope anchor):** the test's hand aim misses.
+
+The four skips are things the game can't provide in this run: a pickaxe handle, a cheer emote, and two objects from the hardest late-game route.
+
 PEAK 2.6.b, Unity 6000.3.15f1, Proton-CachyOS 11.0, BepInEx 5.4.23.3 (BepInExPack_PEAK 5.4.75301), PEAK_MX 1.1.2 loaded alongside. Runs from 2026-10-21, master `eb8157c` for the first runs. Later runs name their own commit.
 
 ## Install and boot
@@ -184,4 +202,4 @@ rea-agents 6.7.0 is registered for Claude Code (`~/.claude.json`). `rea mcp doct
 
 ## Not tested yet
 
-Still untested: finger curls from real hand tracking, eating and feeding another player over the network (the `eat` and `feed` multiplayer steps skipped for lack of food), and a multiplayer run with a second PeakXR client. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
+Still untested: finger curls from real hand tracking, and two VR players in one lobby. Feeding another player over the network and a second PeakXR client (in flat mode) have both been tested since this list was written. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
