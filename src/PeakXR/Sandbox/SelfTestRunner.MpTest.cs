@@ -141,6 +141,8 @@ internal sealed partial class SelfTestRunner
         }
         yield return Run(id, timeout, vr && MpReady ? MpSettled(body) : body);
         var r = report.Steps[report.Steps.Count - 1];
+        if (vr)
+            yield return HoldingHandSettled();
         WriteCheckpoint(
             id,
             r.Skipped ? "skip"
@@ -303,6 +305,44 @@ internal sealed partial class SelfTestRunner
         )
             ? Vector3.Angle(hit.normal, Vector3.up)
             : 90f;
+
+    /// <summary>A holding hand's bone off its tracked hand by at most this (m) counts as settled.</summary>
+    const float HandSettledGap = 0.1f;
+
+    /// <summary>
+    /// Before a checkpoint while A holds an item: wait (1.5 s at most) until A's own holding-hand bone is back on its
+    /// tracked hand and the item is welded to it again, so B samples a still hand and not one caught between the hip
+    /// slot and rest (MP run 24: the bandage off the weld at 0.40 m and 0.30 m, back at 0.03 m just after the step).
+    /// The wait, or its timeout, is the checkpoint's <c>settle</c> note.
+    /// </summary>
+    IEnumerator HoldingHandSettled()
+    {
+        var c = Character.localCharacter;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
+        if (driver == null || c.data.currentItem == null)
+            yield break;
+        bool left = driver.Pose.ItemInLeftHand;
+        var part = c.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R];
+        float Gap() =>
+            driver.HandTarget(left, out var target)
+                ? Vector3.Distance(part.Rig.position, target)
+                : float.PositiveInfinity;
+        float start = Now;
+        yield return WaitFor(
+            () => c.data.currentItem == null || (!driver.HeldReleased && Gap() <= HandSettledGap),
+            1.5f
+        );
+        bool settled =
+            c.data.currentItem == null || (!driver.HeldReleased && Gap() <= HandSettledGap);
+        Extra(
+            "settle",
+            settled
+                ? F($"hand settled after {Now - start:0.00} s")
+                : F(
+                    $"hand not settled after {Now - start:0.00} s (own bone {Gap():0.00} m off its tracked hand, off the weld {driver.HeldReleased})"
+                )
+        );
+    }
 
     void WriteCheckpoint(string id, string status, string note)
     {
