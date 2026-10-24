@@ -70,6 +70,39 @@ internal static class InteractPatches
                 return CameraSwap.Restore(exception, state.Swap);
             }
 
+            private static readonly HoldGrace PointedHold = new();
+
+            /// <summary>
+            /// A hand-aimed hold keeps its target through a brief ray dropout (<see cref="HoldGrace"/>): the game drops a
+            /// held interact the frame its target leaves the ray and never restarts it while interact stays pressed
+            /// (Interaction.cs:128-132), and a jittering hand grazes off edges. For the grace this frame's pick stays the
+            /// held target, the same hold on the same object, so nothing changes on the wire; past it the game drops the
+            /// hold as before and the aiming hand feels the cancel.
+            /// </summary>
+            public static void KeepPointedHold(
+                Interaction interaction,
+                Character c,
+                ref IInteractible picked,
+                State state
+            )
+            {
+                var held = interaction.currentHeldInteractible;
+                bool holding =
+                    state.Swap.Active
+                    && c.input.interactIsPressed
+                    && held is UnityEngine.Object live
+                    && live != null;
+                switch (PointedHold.Update(holding, holding && picked == held, Time.time))
+                {
+                    case HoldGraceStep.Keep:
+                        picked = held;
+                        break;
+                    case HoldGraceStep.Drop:
+                        Affordance.Cancel(state.Left);
+                        break;
+                }
+            }
+
             /// <summary>Interact pressed with nothing picked: if the full-length hand ray would have found an
             /// interactible beyond the shortened one, say "Too far" instead of failing silently.</summary>
             public static void ReportTooFar(Interaction interaction, Character c, State state)
@@ -153,6 +186,7 @@ internal static class InteractPatches
                 && other != c.data.currentItem
             )
                 interactableResult = null;
+            State.KeepPointedHold(__instance, c, ref interactableResult, __state);
         }
 
         private static Exception Finalizer(
