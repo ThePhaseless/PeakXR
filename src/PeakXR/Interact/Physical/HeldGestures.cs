@@ -199,6 +199,7 @@ internal static class HeldGestures
         {
             Body.Reset();
             pressing = false;
+            haveBodyHand = false;
             return;
         }
         var head = rig.Head;
@@ -223,7 +224,12 @@ internal static class HeldGestures
             }
         }
 
-        bool on = Body.Update(distance, dt);
+        // Held still against the body, not swept past it (a throw's swing crosses the chest).
+        var tracked = VRInput.Hand(ItemGestures.HoldLeft).Position;
+        float speed = haveBodyHand && dt > 0f ? Vector3.Distance(tracked, lastBodyHand) / dt : 0f;
+        lastBodyHand = tracked;
+        haveBodyHand = true;
+        bool on = Body.Update(BodyPress.Distance(distance, speed, pressing), dt);
         if (on && !pressing)
         {
             // A short wrap: the holding hand, and the arm being wrapped.
@@ -235,6 +241,10 @@ internal static class HeldGestures
         if (on)
             GestureRequests.Primary();
     }
+
+    /// <summary>The holding hand's tracked position last frame (tracking space, so walking does not count).</summary>
+    private static Vector3 lastBodyHand;
+    private static bool haveBodyHand;
 
     private static bool lookSwapped;
     private static Vector3 savedLook;

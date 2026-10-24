@@ -290,3 +290,23 @@ public class ReadZoneTests
         Assert.False(ReadZone.Allowed(new(0f, 1.15f, 0.5f), hips));
     }
 }
+
+public class BodyPressTests
+{
+    [Fact]
+    public void AHandSweptPastTheBodyDoesNotPress() =>
+        // mp28 throw: the swing carried a bandage past the chest.
+        Assert.Equal(
+            float.PositiveInfinity,
+            BodyPress.Distance(0f, handSpeed: 1.5f, pressing: false)
+        );
+
+    [Fact]
+    public void AHandHeldStillAgainstTheBodyPresses() =>
+        Assert.Equal(0.02f, BodyPress.Distance(0.02f, handSpeed: 0.1f, pressing: false));
+
+    [Fact]
+    public void APressUnderWayRidesOutHandMotion() =>
+        // Once the use has started, a wiping or wrapping motion does not cancel it; only leaving the body does.
+        Assert.Equal(0.02f, BodyPress.Distance(0.02f, handSpeed: 1.5f, pressing: true));
+}
