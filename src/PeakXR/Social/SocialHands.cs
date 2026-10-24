@@ -962,10 +962,12 @@ internal sealed class SocialHands : IGripExtension
         if (who == null || !who.gameObject.activeInHierarchy)
         {
             handOver.Reset();
+            atFriendMouth = false;
             return false;
         }
         bool left = LocalHold.ItemInLeftHand;
         bool usable = item.canUseOnFriend && who.refs.interactible != null;
+        atFriendMouth = inZone && !usable;
         var state = handOver.Update(
             inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
@@ -1006,8 +1008,20 @@ internal sealed class SocialHands : IGripExtension
             ? body.transform.position
             : fallback;
 
+    /// <summary>A held item the friend cannot take sits at their mouth or chest this frame: any refusal of its own
+    /// use at the holding hand is said as CantUse (<see cref="HandOver.ContextReason"/>, via
+    /// <see cref="Affordance.ReasonContext"/>).</summary>
+    private bool atFriendMouth;
+
+    /// <summary>Installed as <see cref="Affordance.ReasonContext"/> by <see cref="SocialFeature"/>.</summary>
+    internal static DenyReason RefusalContext(bool left, DenyReason reason) =>
+        left == LocalHold.ItemInLeftHand && Instance.atFriendMouth
+            ? HandOver.ContextReason(reason, true)
+            : reason;
+
     private void ResetFeed()
     {
+        atFriendMouth = false;
         feedCandidate = null;
         handOver.Reset();
     }

@@ -91,6 +91,31 @@ public class HandOverTests
         Assert.Equal(HandOverState.None, h.Update(true, true, true, false, 0.02f));
     }
 
+    [Theory]
+    [InlineData(DenyReason.NoWall)]
+    [InlineData(DenyReason.CantUse)]
+    [InlineData(DenyReason.OutOfReach)]
+    public void AtAFriendsMouth_AnItemRefusalSaysCantFeed(DenyReason own)
+    {
+        // MP run 22: a piton squeezed at the host's mouth said NoWall, its own placement refusal.
+        Assert.Equal(DenyReason.CantUse, HandOver.ContextReason(own, atFriendMouth: true));
+    }
+
+    [Fact]
+    public void AwayFromAMouth_TheItemsOwnReasonStands()
+    {
+        Assert.Equal(
+            DenyReason.NoWall,
+            HandOver.ContextReason(DenyReason.NoWall, atFriendMouth: false)
+        );
+    }
+
+    [Fact]
+    public void ContextNeverInventsARefusal()
+    {
+        Assert.Equal(DenyReason.None, HandOver.ContextReason(DenyReason.None, atFriendMouth: true));
+    }
+
     [Fact]
     public void LeavingTheZone_Disarms()
     {

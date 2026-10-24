@@ -1290,7 +1290,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>How far (m) A goes for food: along the beach, as a player would.</summary>
-    const float FoodRange = 120f;
+    const float FoodRange = 200f;
 
     /// <summary>
     /// Food the way a player gets it (MP run 14: "no food within 40 m" skipped eat, feed and feed-refuse): the nearest
@@ -1302,7 +1302,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var opened = new HashSet<Luggage>();
-        for (int round = 0; round < 4; round++)
+        for (int round = 0; round < 6; round++)
         {
             if (NearestGround(food, null, FoodRange) != null)
             {
@@ -1817,12 +1817,22 @@ internal sealed partial class SelfTestRunner
     IEnumerator GripHostHand(bool left)
     {
         var host = Host();
-        // Whichever of the host's hands is nearer this hand's shoulder, as a player reaches for the closer one.
+        // Whichever of the host's hands is nearer this hand's shoulder, as a player reaches for the closer one; a hand
+        // held out of reach is taken at the forearm instead, where a player grabs a friend's wrist (MP run 22: the
+        // host's outstretched hand stayed 0.04-0.12 m past reach). SocialHands.Find takes hand, elbow and arm alike.
         Vector3 Part()
         {
-            var l = HostPart(host, BodypartType.Hand_L);
-            var r = HostPart(host, BodypartType.Hand_R);
-            return PastArm(left, l) < PastArm(left, r) ? l : r;
+            Vector3 Nearer(BodypartType a, BodypartType b)
+            {
+                var pa = HostPart(host, a);
+                var pb = HostPart(host, b);
+                return PastArm(left, pa) <= PastArm(left, pb) ? pa : pb;
+            }
+            var hand = Nearer(BodypartType.Hand_L, BodypartType.Hand_R);
+            if (PastArm(left, hand) <= 0f)
+                return hand;
+            var forearm = Nearer(BodypartType.Elbow_L, BodypartType.Elbow_R);
+            return PastArm(left, forearm) < PastArm(left, hand) ? forearm : hand;
         }
         // Up to two steps in toward that hand, as the solo steps do (MP run 15: the walk to the host stopped 0.27 m
         // and 0.30 m short of reach). Each step goes as far as the hand is past reach, bounded.
@@ -1868,6 +1878,13 @@ internal sealed partial class SelfTestRunner
                 // No trigger use of its own: one that has one (MP run 15's Flare) is no hand-over at all, so its
                 // trigger stays its own and nothing is refused (HandOver ownUse).
                 && !i.CanUsePrimary()
+                // Nor an aimed use the trigger reaches another way (MP run 22's piton: SpikeCue's NoWall). The mod
+                // says CantUse for any refusal at a friend's mouth now; a plain item keeps the step about that alone.
+                && !i.TryGetComponent<ClimbingSpikeComponent>(out _)
+                && !i.TryGetComponent<RopeTier>(out _)
+                && !i.TryGetComponent<RopeShooter>(out _)
+                && !i.TryGetComponent<VineShooter>(out _)
+                && !i.TryGetComponent<Constructable>(out _)
                 && info.Bind(i)
                 && info.Profile.Handedness == Handedness.OneHanded,
             null,

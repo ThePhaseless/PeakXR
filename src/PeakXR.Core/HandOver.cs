@@ -83,6 +83,14 @@ public sealed class HandOver
         return HandOverState.Refuse;
     }
 
+    /// <summary>
+    /// The refusal a player needs for the held item: at a friend's mouth or chest, the context is a hand-over, so any
+    /// refusal of the item's own use there says "can't feed this" (CantUse); elsewhere the item's own reason stands
+    /// (MP run 22: a piton at the host's mouth said NoWall).
+    /// </summary>
+    public static DenyReason ContextReason(DenyReason own, bool atFriendMouth) =>
+        atFriendMouth && own != DenyReason.None ? DenyReason.CantUse : own;
+
     public void Reset()
     {
         armed = false;
