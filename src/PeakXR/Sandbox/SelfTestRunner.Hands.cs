@@ -802,7 +802,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
-            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}";
+            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
         if (rise < 0.1f)
             Fail("arm pull did not lift the body: " + note);
         else if (c.data.isClimbing)
@@ -2029,8 +2029,17 @@ internal sealed partial class SelfTestRunner
         stand = default;
         float best = float.MaxValue;
         var home = c.Center;
+        // Offline the sandbox's test wall comes first: the daily map can put the nearest face on a slab (PEAK 3.0.1,
+        // 63-65 deg from up), where vanilla drops a climb that moves on any face flatter than 50 deg
+        // (CharacterClimbing.cs:458-470) and the pull tops out and slides back.
+        if (PhotonNetwork.OfflineMode && SandboxActions.PlaceWall() != null)
+        {
+            WallsFrom(home, home, headroom, ref best, ref wall, ref stand);
+            if (best < float.MaxValue)
+                return true;
+        }
         WallsFrom(home, home, headroom, ref best, ref wall, ref stand);
-        foreach (float radius in new[] { 15f, 35f })
+        foreach (float radius in WallRings)
         {
             for (int o = 0; o < 8; o++)
             {
@@ -2052,6 +2061,19 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
     /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
+    /// <summary>Rings (m) around the player <see cref="FindWall"/> searches; online, where no test wall can be
+    /// placed, it reaches further for a steep enough face.</summary>
+    static readonly float[] WallRings = { 15f, 35f, 60f };
+
+    /// <summary>Steepest-to-flattest bound (deg from up) a climb wall keeps from the hold up through the pull.</summary>
+    const float MinWallAngle = 68f;
+
+    /// <summary>Heights (m over the hold) the face must stay steep at: the pull lifts the body about this far.</summary>
+    static readonly float[] WallProfileHeights = { 0.25f, 0.5f, 0.75f, 1f };
+
+    /// <summary>The angle profile (deg from up at the hold and above it) of the last wall <see cref="FindWall"/> chose.</summary>
+    internal static string WallProfile = "";
+
     static void WallsFrom(
         Vector3 spot,
         Vector3 home,
@@ -2084,7 +2106,36 @@ internal sealed partial class SelfTestRunner
                 if (away >= best)
                     continue;
                 float angle = Vector3.Angle(hit.normal, Vector3.up);
-                if (angle < 65f || angle > 115f)
+                if (angle < MinWallAngle || angle > 115f)
+                    continue;
+                // Steep all the way through the pull: a slab above the hold drops the moving climb.
+                string profile = F($"{angle:0}");
+                bool steep = true;
+                foreach (float up in WallProfileHeights)
+                {
+                    if (
+                        !Physics.Raycast(
+                            origin + Vector3.up * up,
+                            dir,
+                            out var above,
+                            hit.distance + 1f,
+                            HelperFunctions.terrainMapMask,
+                            QueryTriggerInteraction.Ignore
+                        )
+                    )
+                    {
+                        steep = false;
+                        break;
+                    }
+                    float a = Vector3.Angle(above.normal, Vector3.up);
+                    profile += F($"/{a:0}");
+                    if (a < MinWallAngle || a > 115f)
+                    {
+                        steep = false;
+                        break;
+                    }
+                }
+                if (!steep)
                     continue;
                 if (
                     !Physics.Raycast(
@@ -2117,6 +2168,9 @@ internal sealed partial class SelfTestRunner
                 best = away;
                 wall = hit;
                 stand = ground.point + Vector3.up * 0.1f;
+                WallProfile = F(
+                    $"{hit.collider.name}, deg from up at the hold and up to 1 m above: {profile}"
+                );
             }
         }
     }

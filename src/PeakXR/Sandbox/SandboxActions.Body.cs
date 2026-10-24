@@ -179,7 +179,11 @@ public static partial class SandboxActions
             ? hit.point.y
             : c.Center.y - 1f;
         if (testWall != null)
+        {
+            // Out of the casts at once: Destroy waits for the frame's end, and the self-test searches right after.
+            testWall.SetActive(false);
             Object.Destroy(testWall);
+        }
         testWall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         testWall.name = "PeakXR_SandboxWall";
         testWall.layer = LayerMask.NameToLayer("Map");
