@@ -39,13 +39,17 @@ public sealed class WeldGate
 
     /// <param name="handToController">Ragdoll hand to where its controller puts the hand bone, metres.</param>
     /// <param name="handToItem">Ragdoll hand to where the item's grip puts the hand bone, metres.</param>
-    public bool Update(float handToController, float handToItem, float dt)
+    /// <param name="shortfall">How far the arm cannot reach its controller right now (<see cref="Shortfall"/>):
+    /// release and rejoin are judged past it, so an arm that cannot physically get there keeps its weld
+    /// (vr69 vr.230: crouched at a stoop the welded hand sat 0.33 m off).</param>
+    public bool Update(float handToController, float handToItem, float dt, float shortfall = 0f)
     {
         if (settle > 0f)
             settle -= dt;
+        float lag = handToController - MathF.Max(shortfall, 0f);
         bool toward = Released
-            ? handToController < Rejoin && handToItem < Release
-            : settle <= 0f && handToController > Release;
+            ? lag < Rejoin && handToItem < Release
+            : settle <= 0f && lag > Release;
         timer = toward ? timer + dt : 0f;
         if (timer >= (Released ? RejoinHold : ReleaseHold))
         {
@@ -63,6 +67,11 @@ public sealed class WeldGate
         timer = 0f;
         settle = 0f;
     }
+
+    /// <summary>How far a straight arm of <paramref name="armLength"/> from <paramref name="shoulder"/> falls short of
+    /// <paramref name="target"/>, metres; 0 within reach.</summary>
+    public static float Shortfall(Vector3 shoulder, Vector3 target, float armLength) =>
+        MathF.Max(0f, Vector3.Distance(shoulder, target) - armLength);
 }
 
 /// <summary>A held item carried by its rigidbody's velocity onto the controller-held pose: the hand's own motion plus a
