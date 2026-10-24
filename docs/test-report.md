@@ -9,6 +9,8 @@ These replace the older numbers below, which are kept as history. The game is PE
 | VR self-test, runs 67 to 69 (476 steps) | `0bc85f8` | 472, 470 and 468 pass, with 0, 2 and 4 failures; 4 skips |
 | VR self-test, runs 70 and 71 (477 steps) | `c7076bc`, `5dd53dc` | 470 pass and 3 failures in each, all in the tests rather than the mod (see below) |
 | Single-step runs 73 and 74 (`-peakxr-selftest-only`) | `cf8f07f`, `86b25a2` | vr.173, vr.230 and vr.89b pass: 6 and 11 pass (setup included), 0 fail, 82 s and 114 s |
+| VR self-test, run 75 | `86b25a2` | 470 pass, 2 fail (vr.71, vr.82b; both fixed and confirmed below), 5 skips |
+| Single-step run 78 | `0a4008d` | vr.71, vr.82 and vr.82b pass; 7 pass, 0 fail, 114 s |
 | Two clients, B runs PeakXR flat (run 27) | `d61d73b` | A 25 pass, 1 fail; `mp-check.sh --modded-b` 91 pass, 2 fail |
 | Two clients, B unmodded (run 28) | `d61d73b` | Every compatibility check passes: B logged no unknown events and received no event 151 |
 
@@ -24,6 +26,8 @@ The failures in runs 70 and 71 were all in the tests:
 - **vr.82b:** the scripted hand was placed 2 cm past arm's reach. The step now steps in first.
 
 Run 72 found a real ghost-hand bug: after a warp and a recenter, the ghost showed at 60% with the arm at rest. Two changes fix it. The shoulder and the controller are now measured in one frame, and the ghost measures from where the shoulder sits under the tracked head, so a lagging body no longer counts as reach. Single-step run 73 confirms the fix.
+
+Run 75 found a silent grip on large cases. LuggageAncient has a concave mesh collider, so a hand that sank into the case touched no triangle, and the grip did nothing and gave no cue. Now, when a grip finds nothing, it takes the object the game is highlighting if the hand is inside, or within grab range of, that object's collider bounds. Run 78 confirms it ("a hand sunk into it takes it too"). The bounds are world-axis boxes, so a hand just off the corner of a long case lying diagonally can also take it while it is highlighted.
 
 To check a few steps without the full 45-minute suite, pass `-peakxr-selftest-only` (see `docs/testing.md`).
 
