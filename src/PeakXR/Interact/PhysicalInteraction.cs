@@ -279,6 +279,28 @@ internal static class PhysicalInteraction
         pendingTime = -10f;
     }
 
+    private static readonly System.Collections.Generic.List<Collider> HandleColliders = new();
+
+    /// <summary>Hand to the nearest point of the handle's colliders (bounds for concave meshes), else to its origin.</summary>
+    private static float HandleSurfaceDistance(ClimbHandle handle, Vector3 pos)
+    {
+        handle.GetComponentsInChildren(HandleColliders);
+        float best = float.PositiveInfinity;
+        foreach (var col in HandleColliders)
+        {
+            if (col == null || !col.enabled)
+                continue;
+            var p = col is MeshCollider { convex: false }
+                ? col.bounds.ClosestPoint(pos)
+                : col.ClosestPoint(pos);
+            best = Mathf.Min(best, Vector3.Distance(p, pos));
+        }
+        HandleColliders.Clear();
+        return best < float.PositiveInfinity
+            ? best
+            : Vector3.Distance(pos, handle.transform.position);
+    }
+
     /// <summary>The same item, though a pickup equips a new object for it (CharacterItems.cs:516-534): the ground copy
     /// and the held one share their instance data (Item.cs:191, passed through Player.AddItem, Item.cs:617). A
     /// same-type item handed over has its own.</summary>
@@ -493,7 +515,8 @@ internal static class PhysicalInteraction
         ctx.CandidateIsHandle = target is ClimbHandle;
         if (target is ClimbHandle near)
         {
-            ctx.HandleDistance = Vector3.Distance(pos, near.transform.position);
+            // To the handle's surface, not its origin (which can sit at the rock face, VR run 60).
+            ctx.HandleDistance = HandleSurfaceDistance(near, pos);
             ctx.RockDistance = probeHit
                 ? Vector3.Distance(pos, probePoint)
                 : float.PositiveInfinity;
@@ -512,7 +535,7 @@ internal static class PhysicalInteraction
         // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
         var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
         );
         Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
         switch (action)
@@ -1309,6 +1332,12 @@ internal static class PhysicalInteraction
                 TornOff(LeftHand, now);
                 TornOff(RightHand, now);
             }
+            // Why the game let go, once per ended climb (VR run 60's vr.15 lost its climb mid-pull with no torn-off cue).
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased}"
+                )
+            );
             physicalClimb = false;
             climbInput = Vector2.zero;
             EndAction(LeftHand, GripPressAction.Climb);

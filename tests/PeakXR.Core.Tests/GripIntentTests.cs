@@ -513,4 +513,13 @@ public class GripIntentTests
     public void ItemHand_OnRockAwayFromAHandle_Climbs() =>
         // Vanilla climbs and puts the item away (CharacterClimbing.cs:569); a piton 0.3 m off changes nothing.
         Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(ItemHandByAPiton(0.3f, 0.01f)));
+
+    [Fact]
+    public void ItemHand_OnAPitonSetInTheRock_Regrips()
+    {
+        // VR run 60: the piton sits on the rock face, so the rock under the hand reads a little nearer than the
+        // handle's own surface. Within the handle's depth it is still the handle the hand closes on.
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(ItemHandByAPiton(0.06f, 0.03f)));
+        Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(ItemHandByAPiton(0.09f, 0.0f)));
+    }
 }
