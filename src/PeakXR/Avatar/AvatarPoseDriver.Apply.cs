@@ -1049,6 +1049,17 @@ public partial class AvatarPoseDriver
             ? Pose.HeadPosition - head.transform.TransformPoint(eyeInHead)
             : Vector3.zero;
 
+    /// <summary>Terrain between the <paramref name="left"/> shoulder and <paramref name="bone"/>: the hand is stuck
+    /// against it. Cast only while the hand lags past the release distance.</summary>
+    private bool ReachBlocked(bool left, Vector3 bone) =>
+        PhysicsShoulder(left, out var shoulder, out _)
+        && Physics.Linecast(
+            shoulder,
+            bone,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
 
@@ -1123,7 +1134,13 @@ public partial class AvatarPoseDriver
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
         bool free = Owner.IsLocal
             ? (Owner.data.sinceItemAttach > AttachSettle || weldGate.Released)
-                && weldGate.Update(toController, toItem, dt, ArmShortfall(left, ctrlBone))
+                && weldGate.Update(
+                    toController,
+                    toItem,
+                    dt,
+                    ArmShortfall(left, ctrlBone),
+                    toController > weldGate.Release && ReachBlocked(left, ctrlBone)
+                )
             : true;
         remoteFree = !Owner.IsLocal;
         if (free != wasFree && Owner.IsLocal)

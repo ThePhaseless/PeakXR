@@ -21,7 +21,7 @@ public class ItemFollowTests
         // A stoop: the ragdoll hand stops 0.5 m above its controller.
         var g = new WeldGate();
         bool released = false;
-        for (int i = 0; i < 15; i++)
+        for (int i = 0; i < 60; i++)
             released = g.Update(0.5f, 0f, 0.02f);
         Assert.True(released);
     }
@@ -38,6 +38,39 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AnArmCatchingUpForHalfASecondKeepsTheWeld()
+    {
+        // mp31: scripted controllers jump between poses and the arm lags 0.25-0.67 m for a moment; with the ghost hand
+        // showing the real hand, only a stuck arm lets go.
+        var g = new WeldGate();
+        for (int i = 0; i < 20; i++)
+            Assert.False(g.Update(0.6f, 0f, 0.02f));
+        for (int i = 0; i < 30; i++)
+            Assert.False(g.Update(0.02f, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void AnArmStuckForOverASecondReleases()
+    {
+        var g = new WeldGate();
+        bool released = false;
+        for (int i = 0; i < 60; i++)
+            released = g.Update(0.6f, 0f, 0.02f);
+        Assert.True(released);
+    }
+
+    [Fact]
+    public void AHandBlockedByTerrainReleasesQuickly()
+    {
+        // Terrain between the shoulder and the controller: the arm is stuck now, not catching up.
+        var g = new WeldGate();
+        bool released = false;
+        for (int i = 0; i < 12; i++)
+            released = g.Update(0.6f, 0f, 0.02f, blocked: true);
+        Assert.True(released);
+    }
+
+    [Fact]
     public void AnArmThatCannotReachItsControllerKeepsItsWeldWithinItsShortfall()
     {
         // vr69 vr.230: crouched at a stoop the shoulder leaves the controller beyond the arm's length; the hand sits
@@ -46,7 +79,7 @@ public class ItemFollowTests
         for (int i = 0; i < 60; i++)
             Assert.False(g.Update(0.33f, 0f, 0.02f, shortfall: 0.2f));
         bool released = false;
-        for (int i = 0; i < 15; i++)
+        for (int i = 0; i < 60; i++)
             released = g.Update(0.5f, 0f, 0.02f, shortfall: 0.2f);
         Assert.True(released);
     }
@@ -55,7 +88,7 @@ public class ItemFollowTests
     public void AFreeItemRejoinsAnArmAtItsBestReach()
     {
         var g = new WeldGate();
-        for (int i = 0; i < 15; i++)
+        for (int i = 0; i < 60; i++)
             g.Update(0.6f, 0.6f, 0.02f, shortfall: 0f);
         bool released = true;
         for (int i = 0; i < 10; i++)
@@ -92,7 +125,7 @@ public class ItemFollowTests
     {
         // Free while the arm caught up, then back within 0.1 m of its controller while still stooped: rejoins.
         var g = new WeldGate();
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 60; i++)
             g.Update(0.6f, 0.6f, 0.02f);
         bool released = true;
         for (int i = 0; i < 10; i++)
@@ -115,7 +148,7 @@ public class ItemFollowTests
     public void AFreshWeldSettlesBeforeItCanLetGoAgain()
     {
         var g = new WeldGate();
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 60; i++)
             g.Update(0.5f, 0.5f, 0.02f);
         for (int i = 0; i < 10; i++)
             g.Update(0.02f, 0.02f, 0.02f);
@@ -130,7 +163,7 @@ public class ItemFollowTests
     {
         // The rejoin puts the hand on the item's grip, so the item need only be near, not exact.
         var g = new WeldGate();
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 60; i++)
             g.Update(0.5f, 0.5f, 0.02f);
         bool released = true;
         for (int i = 0; i < 10; i++)
@@ -142,7 +175,7 @@ public class ItemFollowTests
     public void RejoinsOnlyWithTheArmBackOnItsControllerAndAtTheItem()
     {
         var g = new WeldGate();
-        for (int i = 0; i < 15; i++)
+        for (int i = 0; i < 60; i++)
             g.Update(0.5f, 0.5f, 0.02f);
         // Arm caught up, but the free item is stuck elsewhere: stays free (a rejoin would snap the hand onto it).
         for (int i = 0; i < 10; i++)
