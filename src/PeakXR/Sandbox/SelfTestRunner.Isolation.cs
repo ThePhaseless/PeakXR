@@ -120,7 +120,7 @@ internal sealed partial class SelfTestRunner
             && go != null
             && !(zombie != null && targeted)
             && !(vineOrigin != null && grew > MinGrowth)
-            && !(staged != null && Came(scout, swarm, near - closest, targeted, grabbed))
+            && !(staged != null && Came(scout, swarm, near - closest, targeted, grabbed, moved))
         )
         {
             var p = Where();
@@ -175,7 +175,7 @@ internal sealed partial class SelfTestRunner
             spawnOnly |= entry.Name.Contains(s, System.StringComparison.Ordinal);
         bool alive =
             staged != null
-                ? Came(scout, swarm, near - closest, targeted, grabbed)
+                ? Came(scout, swarm, near - closest, targeted, grabbed, moved)
                 : moved > 0.3f
                     || near - closest > 0.3f
                     || targeted
@@ -239,13 +239,21 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>A staged mob came for the player: the Scoutmaster 0.3 m closer or holding the player; the swarm
     /// aggroed on the player and 0.3 m closer.</summary>
+    /// <summary>Movement (m) that, with the player targeted, shows the Scoutmaster acting even without coming
+    /// closer: run 71's moved 51.8 m targeting the player and stayed 10.9 m off.</summary>
+    const float ScoutRoams = 5f;
+
     static bool Came(
         Scoutmaster scout,
         BeeSwarm swarm,
         float closer,
         bool targeted,
-        bool grabbed
-    ) => scout != null ? closer > 0.3f || grabbed : swarm != null && targeted && closer > 0.3f;
+        bool grabbed,
+        float moved
+    ) =>
+        scout != null
+            ? closer > 0.3f || grabbed || (targeted && moved > ScoutRoams)
+            : swarm != null && targeted && closer > 0.3f;
 
     static string ZombieWoke(float after) =>
         after < 0f ? "never woke" : F($"woke after {after:0.0} s");
