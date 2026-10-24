@@ -592,7 +592,7 @@ internal sealed partial class SelfTestRunner
         if (VRSession.Active)
         {
             // Inside the game's 2 m interact reach (Interaction.cs:7).
-            yield return WalkTo(() => kiosk.transform.position, 1.6f, false);
+            yield return MpWalkAround(() => kiosk.transform.position, 1.6f, 15f);
             yield return BoardByHand(kiosk, s => shortcut = s);
         }
         if (!LoadingScreenHandler.loading)
@@ -706,7 +706,7 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < spots.Count && i < 3 && !there; i++)
         {
             var spot = spots[i];
-            yield return MpWalkBounded(() => spot, 0.25f, 15f);
+            yield return MpWalkAround(() => spot, 0.25f, 12f);
             there = FlatDistance(c.Center, spot) <= 0.45f;
         }
         if (!there)
@@ -1025,6 +1025,41 @@ internal sealed partial class SelfTestRunner
         yield return Guard(WalkTo(target, stop, false), Now + seconds, _ => { });
         Script(!VRInput.LeftHanded).Stick = Vector2.zero;
         yield return Wait(0.3f);
+    }
+
+    /// <summary>
+    /// <see cref="MpWalkBounded"/> that walks around what blocks the straight line, as a player steps around a
+    /// stanchion or a bench (MP run 16: the walk to the kiosk stalled 12.5 m short every time). When a try ends short,
+    /// A sidesteps 2.5 m to a side whose chest-height line is clear, alternating sides, then tries again; at most
+    /// <paramref name="detours"/> times, each walk bounded by <paramref name="seconds"/>.
+    /// </summary>
+    IEnumerator MpWalkAround(Func<Vector3> target, float stop, float seconds, int detours = 3)
+    {
+        var c = Character.localCharacter;
+        for (int i = 0; ; i++)
+        {
+            yield return MpWalkBounded(target, stop, seconds);
+            if (FlatDistance(c.Center, target()) <= stop + 0.2f || i >= detours)
+                yield break;
+            var to = target() - c.Center;
+            to.y = 0f;
+            if (to.sqrMagnitude < 1e-4f)
+                yield break;
+            var side = Vector3.Cross(Vector3.up, to.normalized) * (i % 2 == 0 ? 1f : -1f);
+            var chest = c.Center + Vector3.up * 0.3f;
+            if (
+                Physics.Raycast(
+                    chest,
+                    side,
+                    2.5f,
+                    HelperFunctions.AllPhysicalExceptCharacter,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                side = -side;
+            var aside = c.Center + side * 2.5f;
+            yield return MpWalkBounded(() => aside, 0.4f, 4f);
+        }
     }
 
     IEnumerator MpTwoHand()

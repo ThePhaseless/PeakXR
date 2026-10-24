@@ -957,14 +957,16 @@ public partial class AvatarPoseDriver
     /// while the weld ties it to the ragdoll hand. That hand only reaches as far as the arm from a shoulder at standing
     /// height, so a stooped controller left the item up to 1.2 m behind (vr50, vr.87). Past that reach the weld lets
     /// go and the item's own velocity carries it onto the controller-held pose; it rejoins the hand when the arm
-    /// catches up. Local player only: peers see the item's synced pose. True skips vanilla's spring.
+    /// catches up. Every tracked character, not only the local one: a held item is simulated on each client
+    /// (ItemPhysicsSyncer syncs only ground items, ItemPhysicsSyncer.cs:55), so a peer that kept vanilla's weld and
+    /// spring for it held the VR player's item and hand where vanilla puts them, 0.3-0.5 m off the hand the VR player's
+    /// own client shows (MP run 16: grab, pickup, holster). Local physics only, nothing sent. True skips vanilla's spring.
     /// </summary>
     internal bool FollowHeld(Item item)
     {
         HeldItemGap = -1f;
         if (
-            !Owner.IsLocal
-            || item == null
+            item == null
             || item.rig == null
             || !TryGetItemWorldPose(out var target, out var targetRot)
         )
@@ -977,7 +979,7 @@ public partial class AvatarPoseDriver
                 EndPassBody();
                 // Ours when the pose allows it, else the game's own two-hand weld (CharacterItems.AttachItem,
                 // CharacterItems.cs:641; its prefix falls through to vanilla while our attach declines).
-                if (item != null && item.rig != null && Owner.IsLocal && !AttachToHoldingHand(item))
+                if (item != null && item.rig != null && !AttachToHoldingHand(item))
                     VanillaAttach?.Invoke(Owner.refs.items, new object[] { item });
             }
             return false;
