@@ -945,7 +945,8 @@ internal sealed class SocialHands : IGripExtension
                 ? BodypartType.Torso
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
-        var near = NearestPart(c, part, point, NearFriendRadius + grow);
+        var box = ItemBounds(item);
+        var near = NearestPart(c, part, box, NearFriendRadius + grow);
         nearFriendMouth = near != null;
         nearFriendSpot = near != null ? PartPosition(near, part, point) : null;
         // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
@@ -954,12 +955,12 @@ internal sealed class SocialHands : IGripExtension
             friend != null
             && (
                 !friend.gameObject.activeInHierarchy
-                || !NearPart(friend, part, point, FeedExitRadius + grow)
+                || !NearPart(friend, part, box, FeedExitRadius + grow)
             )
         )
             feedCandidate = null;
         if (feedCandidate == null)
-            feedCandidate = NearestPart(c, part, point, FeedRadius + grow);
+            feedCandidate = NearestPart(c, part, box, FeedRadius + grow);
         bool inZone = feedCandidate != null;
         var who = inZone ? feedCandidate : friend;
         if (who == null || !who.gameObject.activeInHierarchy)
@@ -1052,22 +1053,58 @@ internal sealed class SocialHands : IGripExtension
         handOver.Reset();
     }
 
-    private static bool NearPart(Character ch, BodypartType part, Vector3 point, float radius)
+    private static bool NearPart(Character ch, BodypartType part, Bounds box, float radius)
     {
         if (ch.refs.ragdoll == null || !ch.refs.ragdoll.partDict.TryGetValue(part, out var body))
             return false;
-        return (body.transform.position - point).sqrMagnitude <= radius * radius;
+        return Gap(box, body.transform.position) <= radius;
     }
+
+    private static float Gap(Bounds box, Vector3 target) =>
+        FeedZone.Gap(box.center.N(), box.extents.N(), target.N());
+
+    private Item boundsItem;
+    private Collider[] boundsColliders;
+
+    /// <summary>The held item's solid colliders' world bounds, the colliders looked up once per item; its centre alone
+    /// without colliders.</summary>
+    private Bounds ItemBounds(Item item)
+    {
+        if (!ReferenceEquals(item, boundsItem))
+        {
+            boundsItem = item;
+            boundsColliders = item.GetComponentsInChildren<Collider>();
+        }
+        var box = new Bounds(item.Center(), Vector3.zero);
+        bool any = false;
+        for (int i = 0; i < boundsColliders.Length; i++)
+        {
+            var col = boundsColliders[i];
+            if (col == null || !col.enabled || col.isTrigger)
+                continue;
+            if (any)
+                box.Encapsulate(col.bounds);
+            else
+                box = col.bounds;
+            any = true;
+        }
+        return box;
+    }
+
+    /// <summary>How far <paramref name="item"/> is from <paramref name="target"/> the way the feed zone counts it: from
+    /// the nearest point of its bounds (<see cref="FeedZone.Gap"/>). For the MP test.</summary>
+    internal static float FeedGap(Item item, Vector3 target) =>
+        Gap(Instance.ItemBounds(item), target);
 
     private static Character NearestPart(
         Character self,
         BodypartType part,
-        Vector3 point,
+        Bounds box,
         float radius
     )
     {
         Character best = null;
-        float bestSq = radius * radius;
+        float bestGap = radius;
         var all = Character.AllCharacters;
         for (int i = 0; i < all.Count; i++)
         {
@@ -1082,10 +1119,10 @@ internal sealed class SocialHands : IGripExtension
                 || !ch.refs.ragdoll.partDict.TryGetValue(part, out var body)
             )
                 continue;
-            float d = (body.transform.position - point).sqrMagnitude;
-            if (d < bestSq)
+            float d = Gap(box, body.transform.position);
+            if (d <= bestGap)
             {
-                bestSq = d;
+                bestGap = d;
                 best = ch;
             }
         }
