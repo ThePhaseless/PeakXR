@@ -1318,6 +1318,25 @@ internal sealed partial class SelfTestRunner
             Fail("no Apple item");
             yield break;
         }
+        // Independent of the step before (vr.47 leaves the body facing the test wall 0.6 m off, runs 65-66 put the
+        // Apple against it): hands open, then face open ground, or warp to the spawn and look again.
+        yield return GripTo(false, 0f, 0.1f);
+        yield return GripTo(true, 0f, 0.1f);
+        Script(false).StickTouch = false;
+        if (!FaceOpenGround(c, rig))
+        {
+            SandboxActions.WarpToSpawn();
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1.5f);
+            if (!FaceOpenGround(c, rig))
+            {
+                stepSkip =
+                    "no open, level ground 1.2 m ahead in any direction, here or at the spawn";
+                yield break;
+            }
+        }
+        yield return Wait(0.6f);
         // Past the grab radius, inside the game's 2 m interact reach: only a pointed interact could take it.
         var spot = Flat(rig.Head.forward) * 1.2f + rig.Head.position;
         spot.y = c.Center.y;
@@ -1337,12 +1356,35 @@ internal sealed partial class SelfTestRunner
         }
         bool InWorld() => item != null && item.gameObject.activeInHierarchy;
         bool left = false;
-        // Aim at the Apple's visible top, as a player points at what they see. Its centre can sit below the uneven
-        // ground it settled into (the run-50 ground pickups): the game's interact line then meets the ground first,
-        // and its sphere-cast fallback stops there (Interaction.cs:214-241), so run 58 hovered nothing.
-        var aim = TopOf(item);
+        // Aim at the Apple's collider centre, and check the hand's own aim line meets the Apple before any press: a
+        // line that meets the ground first (run 58, runs 65-66 "meets Ground") makes the game's interact and its
+        // sphere-cast fallback stop there (Interaction.cs:214-241). Once blocked, the hand rises 0.25 m and aims at
+        // the upper half instead.
+        var aim = CentreOf(item);
         yield return PingCooldownOver(pinger);
         yield return FingerGunAim(left, aim, 1f);
+        float raise = 0f;
+        string lineMeets = AimLineMeets(rig, left, item, aim);
+        if (lineMeets != null)
+        {
+            aim = TopOf(item);
+            raise = 0.25f;
+            yield return FingerGunAim(left, aim, 0.2f);
+            Script(left).Position += Vector3.up * raise;
+            for (float until = Now + 0.4f; Now < until; )
+            {
+                AimHand(rig, left, aim);
+                yield return null;
+            }
+            string again = AimLineMeets(rig, left, item, aim);
+            if (again != null)
+            {
+                Fail(
+                    $"the pointing hand's aim line never met the Apple (centre: {lineMeets}; raised, at its top: {again}): the step would prove nothing"
+                );
+                yield break;
+            }
+        }
         // The precondition that makes the step mean something: a pointed interact could reach the Apple. The hand's
         // ray is the game's distance less the hand's offset from the head (InteractPatches.Raycasts), and the sphere
         // cast behind it starts half its area out and reaches its area past the end (Interaction.cs:241).
@@ -1392,6 +1434,7 @@ internal sealed partial class SelfTestRunner
         Script(left).StickTouch = true;
         OnRestore(() => Script(left).StickTouch = false);
         yield return FingerGunAim(left, aim, 0.1f);
+        Script(left).Position += Vector3.up * raise;
         // Still pointing at it while the interact lands, as a player does.
         for (float until = Now + 2f; Now < until && !Holding(apple); )
         {
@@ -1424,6 +1467,79 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
     }
+
+    /// <summary>The centre of an item's first solid collider's bounds (its pivot when it has none).</summary>
+    static Vector3 CentreOf(Item item)
+    {
+        foreach (var col in item.colliders)
+            if (col != null && col.enabled && !col.isTrigger)
+                return col.bounds.center;
+        return item.Center();
+    }
+
+    /// <summary>Null when the hand's aim line toward <paramref name="target"/> meets <paramref name="item"/> first;
+    /// otherwise what it meets (the line the game's pointed interact casts, InteractPatches.Raycasts).</summary>
+    static string AimLineMeets(VRRig rig, bool left, Item item, Vector3 target)
+    {
+        var aim = rig.Aim(left);
+        if (aim == null)
+            return "no aim pose";
+        float reach = Vector3.Distance(aim.position, target) + 0.5f;
+        if (
+            !Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var hit,
+                reach,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                QueryTriggerInteraction.Collide
+            )
+        )
+            return F($"nothing within {reach:0.00} m");
+        return hit.collider.GetComponentInParent<Item>() == item
+            ? null
+            : F($"{hit.collider.name} at {hit.distance:0.00} m");
+    }
+
+    /// <summary>Turns the rig (0, 180, then 90 degrees either way) until the 2 m ahead at chest height is clear and the
+    /// ground 1.2 m ahead lies within 0.4 m of the feet. False when no direction is.</summary>
+    static bool FaceOpenGround(Character c, VRRig rig)
+    {
+        var feet = Feet(c);
+        foreach (float yaw in OpenGroundYaws)
+        {
+            var dir = Quaternion.Euler(0f, yaw, 0f) * Flat(rig.Head.forward);
+            var chest = c.Center + Vector3.up * 0.3f;
+            if (
+                Physics.Raycast(
+                    chest,
+                    dir,
+                    2f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                continue;
+            if (
+                !Physics.Raycast(
+                    chest + dir * 1.2f,
+                    Vector3.down,
+                    out var ground,
+                    3f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Mathf.Abs(ground.point.y - feet.y) > 0.4f
+            )
+                continue;
+            if (yaw != 0f)
+                rig.RotateYaw(yaw);
+            return true;
+        }
+        return false;
+    }
+
+    static readonly float[] OpenGroundYaws = { 0f, 180f, 90f, -90f };
 
     /// <summary>A point in the upper half of an item's solid colliders: above a centre sunk in uneven ground, yet inside a
     /// small item's outline (run 65's aim at 70 % up passed over the Apple and met the ground behind it).</summary>
@@ -1596,6 +1712,9 @@ internal sealed partial class SelfTestRunner
         yield return ToWall();
         if (!wallReady)
             yield break;
+        // Only the first spike in the slots places with primary use (climbingSpikeSelected, CharacterItems.cs:102-112,
+        // :935-946): a spike an earlier step left in a pocket would make the held one's press do nothing.
+        EmptyHotbar(c);
         yield return GiveAndHold(spike.GetComponent<Item>());
         if (!stepOk)
             yield break;
@@ -1606,16 +1725,19 @@ internal sealed partial class SelfTestRunner
         // The spike hand aims at the wall's real face, read from its collider (run 63: the old wall estimate put the
         // preview 0.21 m off the sandbox wall's face). The preview must land on that face before any swing; if it
         // does not, let go and aim again once.
+        var wallCollider = wallFace.collider;
+        // Out 0.3 m toward the wall, but never closer than 0.3 m to its face: a controller inside the wall leaves the
+        // arm 0.55 m short of it and aims from inside the collider (run 66).
+        var toWall = -Flat(wallFace.normal);
+        float gap = wallCollider.Raycast(new Ray(rig.Head.position, toWall), out var headHit, 3f)
+            ? headHit.distance
+            : 0.6f;
         var spikeAim = rig.Origin.InverseTransformPoint(
-            rig.Head.position
-                + Flat(wallFace.point - rig.Head.position) * 0.3f
-                + Vector3.down * 0.15f
+            rig.Head.position + toWall * Mathf.Clamp(gap - 0.3f, 0.1f, 0.3f) + Vector3.down * 0.15f
         );
         SetHand(holdLeft, spikeAim);
-        var wallCollider = wallFace.collider;
-        Vector3 FacePoint()
+        Vector3 FacePoint(Vector3 from)
         {
-            var from = rig.Origin.TransformPoint(spikeAim);
             return
                 Physics.Raycast(
                     from,
@@ -1634,16 +1756,17 @@ internal sealed partial class SelfTestRunner
         foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
             handlesBefore.Add(h.GetInstanceID());
         int before = handlesBefore.Count;
-        var face = FacePoint();
+        var face = FacePoint(rig.Origin.TransformPoint(spikeAim));
         var preview = Vector3.zero;
+        string press = "";
         float offFace = float.MaxValue;
         for (int attempt = 0; attempt < 2 && offFace > 0.2f; attempt++)
         {
             Script(holdLeft).Trigger = 0f;
             yield return Wait(0.2f);
-            // The second try aims at the face point nearest the aim pose itself.
+            // The second try aims straight at the face from the aim pose itself.
             if (attempt == 1 && rig.Aim(holdLeft) is { } aimPose)
-                face = wallCollider.ClosestPoint(aimPose.position);
+                face = FacePoint(aimPose.position);
             // Aim the spike hand's aim pose (not the grip): interact.aim casts the spike from it (run 58).
             for (float until = Now + 0.3f; Now < until; )
             {
@@ -1651,6 +1774,9 @@ internal sealed partial class SelfTestRunner
                 yield return null;
             }
             Script(holdLeft).Trigger = 1f;
+            yield return null;
+            yield return null;
+            press += F($" press {attempt + 1}: ") + SpikePressState(c, rig, holdLeft, spike, face);
             yield return WaitFor(() => Interact.Tools.SpikeHammer.Casting, 2f);
             if (!Interact.Tools.SpikeHammer.Casting)
                 continue;
@@ -1660,7 +1786,7 @@ internal sealed partial class SelfTestRunner
         if (!Interact.Tools.SpikeHammer.Casting)
         {
             Script(holdLeft).Trigger = 0f;
-            Fail("holding the use button at the wall started no spike cast");
+            Fail("holding the use button at the wall started no spike cast;" + press);
             yield return LetGoAll(c);
             yield break;
         }
@@ -1670,8 +1796,8 @@ internal sealed partial class SelfTestRunner
             Script(holdLeft).Trigger = 0f;
             Fail(
                 F(
-                    $"the spike's preview is {offFace:0.00} m off the wall face after two aims, at {preview} (aimed at {face}): it aimed elsewhere"
-                )
+                    $"the spike's preview is {offFace:0.00} m off the wall face after two aims, at {preview} (aimed at {face}): it aimed elsewhere;"
+                ) + press
             );
             yield return LetGoAll(c);
             yield break;
@@ -1709,9 +1835,10 @@ internal sealed partial class SelfTestRunner
         }
         Script(holdLeft).Trigger = 0f;
         float earliest = castTime / HammerCast.MaxSpeedup;
-        var note = F(
-            $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s); last {swing}"
-        );
+        var note =
+            F(
+                $"{strikes} of {needed} strikes: placed {placed} after {took:0.00} s (hold {castTime:0.00} s, cap {earliest:0.00} s); last {swing};"
+            ) + press;
         if (!placed)
             Fail("the hammered spike was not placed: " + note);
         else if (took >= castTime - 0.05f)
@@ -1721,6 +1848,74 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
         yield return LetGoAll(c);
+    }
+
+    /// <summary>What decides a spike cast at a press (CharacterItems.UpdateClimbingSpikeUse, CharacterItems.cs:981-1027):
+    /// the use input, the spike slots against the selected slot, climbing, the aim line's terrain hit against the
+    /// start distance (RaycastClimbingSpikeStart, :1072-1076, from the hand under interact.aim), whether the aim pose
+    /// sits inside terrain, and how far the ragdoll hand trails its controller.</summary>
+    static string SpikePressState(
+        Character c,
+        VRRig rig,
+        bool left,
+        ClimbingSpikeComponent spike,
+        Vector3 aimedAt
+    )
+    {
+        var spikeSlots = new System.Text.StringBuilder();
+        var slots = c.player != null ? c.player.itemSlots : null;
+        for (int i = 0; slots != null && i < slots.Length; i++)
+        {
+            if (
+                slots[i] != null
+                && slots[i].prefab != null
+                && slots[i].prefab.TryGetComponent<ClimbingSpikeComponent>(out _)
+            )
+                spikeSlots.Append(spikeSlots.Length > 0 ? "," : "").Append(i);
+        }
+        var selected = c.refs.items.currentSelectedSlot;
+        var aim = rig.Aim(left);
+        string ray = "no aim pose";
+        if (aim != null)
+        {
+            ray = Physics.Raycast(
+                aim.position,
+                aim.forward,
+                out var hit,
+                10f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
+            )
+                ? F(
+                    $"meets {hit.collider.name} at {hit.distance:0.00} m (start reach {spike.climbingSpikeStartDistanceGrounded:0.00} m) at {hit.point}"
+                )
+                : "meets no terrain within 10 m";
+            ray += F(
+                $", aim pose {aim.position}, {Vector3.Angle(aim.forward, aimedAt - aim.position):0} deg off {aimedAt}"
+            );
+            if (
+                Physics.CheckSphere(
+                    aim.position,
+                    0.01f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                ray += ", inside terrain";
+        }
+        string trail =
+            c.refs.ragdoll.partDict.TryGetValue(
+                left ? BodypartType.Hand_L : BodypartType.Hand_R,
+                out var hand
+            ) && rig.Hand(left) is { } ctl
+                ? F(
+                    $", hand {Vector3.Distance(hand.transform.position, ctl.position):0.00} m from its controller"
+                )
+                : "";
+        var held = c.data.currentItem;
+        string sel = selected.IsSome ? F($"{selected.Value}") : "none";
+        return F(
+            $"use {c.input.usePrimaryIsPressed} (was pressed {c.input.usePrimaryWasPressed}), held {(held != null ? held.name : "nothing")}, spike slots [{spikeSlots}] selected {sel}, spikes {c.data.climbingSpikeCount}, climbing {c.data.isClimbingAnything}, casting {Interact.Tools.SpikeHammer.Casting}, out of range {Interact.Tools.SpikeCue.OutOfRange}; aim line {ray}{trail}"
+        );
     }
 
     /// <summary>The body's centre height when <see cref="FlingRelease"/> let go.</summary>
