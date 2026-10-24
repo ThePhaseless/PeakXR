@@ -1959,12 +1959,35 @@ internal sealed partial class SelfTestRunner
         // root: vr34 stood by the root and ended 2.16 m short.
         var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
         yield return WarpBeside(target, back);
+        // Landed and still before any grip (vr69 failed with the torso still moving after the warp).
+        var me = Character.localCharacter;
+        yield return WaitFor(
+            () => me.data.isGrounded && me.data.avarageVelocity.sqrMagnitude < 0.04f,
+            3f
+        );
         yield return GiveAndHold(amulet.GetComponent<Item>());
         if (!stepOk)
             yield break;
         var held = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
+        // A scripted grip reads as a point (index off the trigger: GripIntent.IsPointing), so the amulet hand closing
+        // while it or the head aims at the statue is itself a pointed grip at a taker and inserts the amulet before
+        // the free hand points (vr69: interact pressed on the amulet hand's grip, the cue on that hand). It closes
+        // aimed at the ground with the head looking down.
+        HeadFrame(out _, out var level, out _);
+        Script(left).Rotation = Quaternion.LookRotation(Vector3.down, level);
+        LookAtPoint(Feet(me));
+        yield return Wait(0.3f);
+        int holdsAtGive = WorldHolds.StatueHolds;
         yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.2f);
+        if (WorldHolds.StatueHolds > holdsAtGive || !ReferenceEquals(HeldItem(), held))
+        {
+            Fail(
+                $"the amulet hand's own grip started the statue's hold before the point ({PhysicalInteraction.LastGripNote})"
+            );
+            yield break;
+        }
         yield return Until(
             () => WorldHolds.SocketTarget >= 0,
             2f,
