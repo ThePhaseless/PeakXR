@@ -1072,7 +1072,7 @@ public partial class AvatarPoseDriver
             {
                 PassBody(item);
                 Plugin.Log.LogInfo(
-                    $"[avatar.local] {item.name} held: passes the body, weight cancelled {body.useGravity && !body.isKinematic}, weld {(itemJoint != null ? "ours" : "the game's")}"
+                    $"[avatar.local] {item.name} held: passes the body, kinematic now {body.isKinematic} (its weight is cancelled each tick it is not), weld {(itemJoint != null ? "ours" : "the game's")}"
                 );
             }
             // Welded, the item hangs its whole weight (prefab mass 5, against a hand part far lighter) on the arm's

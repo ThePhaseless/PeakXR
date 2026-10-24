@@ -262,3 +262,19 @@ public static class ReadZone
     public static bool Allowed(Vector3 hand, Vector3? hips) =>
         hips is not { } h || HeatZone.Distance(hand, h, ReviveRadius, 0f, ReviveUp) > Clearance;
 }
+
+/// <summary>
+/// An item pressed to the body (bandage, heat pack) starts its use only when the hand is held there, not swept past:
+/// a throw's swing carried a bandage across the chest, its use started and the game then kept it in the hand (mp28).
+/// A press already under way rides out the hand's motion; leaving the body still ends it.
+/// </summary>
+public static class BodyPress
+{
+    /// <summary>Fastest a hand may move (m/s, tracking space) and still start a press.</summary>
+    public const float MaxStartSpeed = 0.5f;
+
+    /// <summary>The contact distance to feed the press dwell: infinite while a hand that has not pressed yet moves
+    /// faster than <see cref="MaxStartSpeed"/>.</summary>
+    public static float Distance(float distance, float handSpeed, bool pressing) =>
+        !pressing && handSpeed > MaxStartSpeed ? float.PositiveInfinity : distance;
+}
