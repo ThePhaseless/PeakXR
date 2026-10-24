@@ -28,6 +28,12 @@ internal static class LidGesture
     private static readonly float[] StartY = new float[2];
     private static readonly TwoHandGate ChestGate = new();
 
+    /// <summary>How far under the case's render centre a grip still takes the lid.</summary>
+    private const float LidGive = 0.05f;
+
+    /// <summary>The last grab on a case: where the hand was and whether it took the lid, for the self-test.</summary>
+    internal static string LastGrab { get; private set; } = "none";
+
     /// <summary>Per hand: a low grip held long enough for the "grab the lid" hint.</summary>
     private static readonly ContactDwell[] Low =
     {
@@ -134,7 +140,15 @@ internal static class LidGesture
         {
             Grabbed[h] = lug;
             var t = rig.Hand(left);
-            OnLid[h] = lug != null && t != null && t.position.y >= lug.Center().y;
+            // The top half, with a little give: on a small case the lid edge sits only a few cm over the centre,
+            // and a grip there counted as low keeps the plain hold, which opens it unlifted (run 65, vr.82).
+            float above =
+                lug != null && t != null ? t.position.y - lug.Center().y : float.NegativeInfinity;
+            OnLid[h] = above >= -LidGive;
+            if (lug != null)
+                LastGrab = System.FormattableString.Invariant(
+                    $"{lug.name}: {(left ? "L" : "R")} grip {above:+0.00;-0.00} m from the case centre, {(OnLid[h] ? "on the lid" : "low (plain hold)")}"
+                );
             // Tracking-space height, so walking or the body settling does not count as lifting.
             StartY[h] = state.Position.y;
             if (OnLid[h])
