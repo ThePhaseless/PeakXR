@@ -1213,6 +1213,9 @@ internal sealed partial class SelfTestRunner
         float bandMark = -1f;
         float placedFor = 0f;
         float bandEnd = Now + 4f;
+        // How far out the item's centre is held: adjusted so its nearest point (the zone's measure,
+        // SocialHands.FeedGap) sits 0.26-0.42 m off the mouth whatever its length.
+        float standoff = 0.32f;
         while (Now < bandEnd && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
@@ -1220,13 +1223,17 @@ internal sealed partial class SelfTestRunner
             towardA.y = 0f;
             var target =
                 mouthNow
-                + (towardA.sqrMagnitude > 1e-4f ? towardA.normalized : Vector3.forward) * 0.32f;
+                + (towardA.sqrMagnitude > 1e-4f ? towardA.normalized : Vector3.forward) * standoff;
             var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
             bandGoal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpArmReach);
             SetHand(left, bandGoal);
-            float d = Vector3.Distance(item.Center(), mouthNow);
+            float d = Social.SocialHands.FeedGap(item, mouthNow);
+            if (d < 0.28f)
+                standoff += 0.01f;
+            else if (d > 0.4f)
+                standoff = Mathf.Max(0.05f, standoff - 0.01f);
             placedFor = d > 0.26f && d < 0.42f ? placedFor + Time.unscaledDeltaTime : 0f;
             if (bandMark < 0f && placedFor >= 0.5f)
             {
@@ -1264,9 +1271,11 @@ internal sealed partial class SelfTestRunner
         )
         {
             var mouth = HostPart(host, BodypartType.Head);
-            var miss = mouth - item.Center();
-            best = Mathf.Min(best, miss.magnitude);
-            atMouth = miss.magnitude <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            // The zone's own measure: the item's nearest point, not its centre (MP run 27: a lollipop's centre never
+            // came within 0.2 m while its candy reached the mouth).
+            float gapNow = Social.SocialHands.FeedGap(item, mouth);
+            best = Mathf.Min(best, gapNow);
+            atMouth = gapNow <= 0.18f ? atMouth + Time.unscaledDeltaTime : atMouth;
             bool squeeze = atMouth >= 2f;
             if (!squeeze && item.isUsingSecondary)
                 proximityFed = true;
@@ -1627,7 +1636,7 @@ internal sealed partial class SelfTestRunner
         return eye + Vector3.ClampMagnitude(world - eye, MaxHandFromEye * 0.97f);
     }
 
-    /// <summary>A held item's centre in the frame of the scripted controller holding it (clamped to 0.3 m).</summary>
+    /// <summary>A held item's centre in the frame of the scripted controller holding it (clamped to 0.6 m).</summary>
     readonly struct HeldGrip
     {
         readonly Vector3 local;
@@ -1639,7 +1648,8 @@ internal sealed partial class SelfTestRunner
             var rot = rig.Origin.rotation * hand.Rotation;
             var ctrl = rig.Origin.TransformPoint(hand.Position);
             var off = Quaternion.Inverse(rot) * (item.Center() - ctrl);
-            return new HeldGrip(Vector3.ClampMagnitude(off, 0.3f));
+            // Up to 0.6 m: a lollipop held by its stick has its centre well past 0.3 m (MP run 27).
+            return new HeldGrip(Vector3.ClampMagnitude(off, 0.6f));
         }
 
         /// <summary>World offset from the controller to the item for the controller's pose now.</summary>

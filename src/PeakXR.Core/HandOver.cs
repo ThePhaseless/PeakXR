@@ -1,5 +1,25 @@
 namespace PeakXR.Core;
 
+/// <summary>
+/// How far a held item is from a friend's mouth or chest: from the nearest point of its bounds, not its centre, so a
+/// long item counts by the end the player puts there (MP run 27: a lollipop's candy at the mouth, its centre 0.2 m off
+/// and outside the zone).
+/// </summary>
+public static class FeedZone
+{
+    /// <summary>Distance from an axis-aligned box (<paramref name="center"/>, <paramref name="extents"/>) to
+    /// <paramref name="target"/>; 0 inside.</summary>
+    public static float Gap(
+        System.Numerics.Vector3 center,
+        System.Numerics.Vector3 extents,
+        System.Numerics.Vector3 target
+    )
+    {
+        var d = System.Numerics.Vector3.Abs(target - center) - extents;
+        return System.Numerics.Vector3.Max(d, System.Numerics.Vector3.Zero).Length();
+    }
+}
+
 /// <summary>What a held item at a friend's mouth or chest does this frame (<see cref="HandOver"/>).</summary>
 public enum HandOverState : byte
 {
