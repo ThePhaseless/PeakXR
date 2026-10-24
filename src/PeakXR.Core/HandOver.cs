@@ -33,13 +33,37 @@ public sealed class HandOver
     /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
     /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
-    public HandOverState Update(bool inZone, bool trigger, bool usable, bool ownUse = false)
+    /// <summary>Seconds an applying hand may wobble out of the zone, trigger still held, before the hand-over ends
+    /// (MP run 15: a frame's wobble past the mouth ended the feed for good, the trigger never re-armed).</summary>
+    public float Grace = 0.4f;
+
+    private bool applying;
+    private float outFor;
+
+    /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
+    public HandOverState Update(
+        bool inZone,
+        bool trigger,
+        bool usable,
+        bool ownUse = false,
+        float dt = 0f
+    )
     {
+        if (!inZone && applying && trigger && usable && (outFor += dt) < Grace)
+            return HandOverState.Apply;
+        outFor = 0f;
         if (!inZone || (!usable && ownUse))
         {
             Reset();
             return HandOverState.None;
         }
+        var state = Step(trigger, usable);
+        applying = state == HandOverState.Apply;
+        return state;
+    }
+
+    private HandOverState Step(bool trigger, bool usable)
+    {
         if (!trigger)
         {
             armed = true;
@@ -63,6 +87,8 @@ public sealed class HandOver
     {
         armed = false;
         refused = false;
+        applying = false;
+        outFor = 0f;
         SuppressPrimary = false;
     }
 }

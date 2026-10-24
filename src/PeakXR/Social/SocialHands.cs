@@ -904,34 +904,39 @@ internal sealed class SocialHands : IGripExtension
                 ? BodypartType.Torso
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
-        if (feedCandidate != null)
-        {
-            if (
-                !feedCandidate.gameObject.activeInHierarchy
-                || !NearPart(feedCandidate, part, point, FeedExitRadius + grow)
+        // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
+        var friend = feedCandidate;
+        if (
+            friend != null
+            && (
+                !friend.gameObject.activeInHierarchy
+                || !NearPart(friend, part, point, FeedExitRadius + grow)
             )
-                ResetFeed();
-        }
+        )
+            feedCandidate = null;
         if (feedCandidate == null)
-        {
             feedCandidate = NearestPart(c, part, point, FeedRadius + grow);
-            if (feedCandidate == null)
-            {
-                handOver.Reset();
-                return false;
-            }
+        bool inZone = feedCandidate != null;
+        var who = inZone ? feedCandidate : friend;
+        if (who == null || !who.gameObject.activeInHierarchy)
+        {
+            handOver.Reset();
+            return false;
         }
         bool left = LocalHold.ItemInLeftHand;
-        bool usable = item.canUseOnFriend && feedCandidate.refs.interactible != null;
+        bool usable = item.canUseOnFriend && who.refs.interactible != null;
         var state = handOver.Update(
-            true,
+            inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
             usable,
-            ownUse: item.CanUsePrimary()
+            item.CanUsePrimary(),
+            dt
         );
-        if (usable)
-            FeedTarget = feedCandidate.refs.interactible;
-        var spot = PartPosition(feedCandidate, part, point);
+        if (!inZone && state == HandOverState.Apply)
+            feedCandidate = who;
+        if (usable && (inZone || state == HandOverState.Apply))
+            FeedTarget = who.refs.interactible;
+        var spot = PartPosition(who, part, point);
         switch (state)
         {
             case HandOverState.Hint:

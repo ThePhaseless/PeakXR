@@ -1083,6 +1083,8 @@ internal sealed partial class SelfTestRunner
         float atMouth = 0f;
         bool proximityFed = false;
         float squeezeMark = -1f;
+        float stalled = 0f;
+        int resqueezes = 0;
         while (
             item != null
             && HeldItem() == item
@@ -1100,7 +1102,16 @@ internal sealed partial class SelfTestRunner
                 proximityFed = true;
             if (squeeze && squeezeMark < 0f)
                 squeezeMark = CueMark();
-            Script(left).Trigger = squeeze ? 1f : 0f;
+            // A squeeze that is not feeding (the hand slipped off the mouth): let go and squeeze again, as a player
+            // would.
+            stalled = squeeze && !item.isUsingSecondary ? stalled + Time.unscaledDeltaTime : 0f;
+            bool resqueeze = stalled > 0.6f;
+            if (resqueeze)
+            {
+                stalled = 0f;
+                resqueezes++;
+            }
+            Script(left).Trigger = squeeze && !resqueeze ? 1f : 0f;
             var goal = Script(left).Position + rig.Origin.InverseTransformVector(miss);
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
             goal =
@@ -1115,7 +1126,8 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
-        var note = $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth";
+        var note =
+            $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth, {resqueezes} re-squeeze(s)";
         // The squeeze is the hand-over, not a try at eating far from A's own mouth (HeldGestures.MouthHint's NotHere).
         bool notHere =
             squeezeMark >= 0f
@@ -1627,10 +1639,23 @@ internal sealed partial class SelfTestRunner
     IEnumerator GripHostHand(bool left)
     {
         var host = Host();
-        Vector3 Part() => HostPart(host, BodypartType.Hand_R);
-        if (PastArm(left, Part()) > 0f)
+        // Whichever of the host's hands is nearer this hand's shoulder, as a player reaches for the closer one.
+        Vector3 Part()
         {
-            yield return MpWalkBounded(HostCenter, 0.3f, 4f);
+            var l = HostPart(host, BodypartType.Hand_L);
+            var r = HostPart(host, BodypartType.Hand_R);
+            return PastArm(left, l) < PastArm(left, r) ? l : r;
+        }
+        // Up to two steps in toward that hand, as the solo steps do (MP run 15: the walk to the host stopped 0.27 m
+        // and 0.30 m short of reach). Each step goes as far as the hand is past reach, bounded.
+        for (int i = 0; i < 2 && PastArm(left, Part()) > 0f; i++)
+        {
+            var c = Character.localCharacter;
+            var toward = Part() - c.Center;
+            toward.y = 0f;
+            float step = PastArm(left, Part()) + 0.1f;
+            var to = c.Center + toward.normalized * Mathf.Min(step, toward.magnitude);
+            yield return MpWalkBounded(() => to, 0.1f, 3f);
             Face(host.Head);
             yield return Wait(0.3f);
         }
@@ -1662,6 +1687,9 @@ internal sealed partial class SelfTestRunner
             i =>
                 !i.canUseOnFriend
                 && !IsFood(i)
+                // No trigger use of its own: one that has one (MP run 15's Flare) is no hand-over at all, so its
+                // trigger stays its own and nothing is refused (HandOver ownUse).
+                && !i.CanUsePrimary()
                 && info.Bind(i)
                 && info.Profile.Handedness == Handedness.OneHanded,
             null,
@@ -1706,6 +1734,7 @@ internal sealed partial class SelfTestRunner
         float best = float.MaxValue;
         float atMouth = 0f;
         bool proximityRefused = false;
+        float squeezeMark = -1f;
         while (Now < end && HeldItem() == item)
         {
             best = Mathf.Min(best, Vector3.Distance(item.Center(), Mouth()));
@@ -1713,6 +1742,8 @@ internal sealed partial class SelfTestRunner
             bool squeeze = atMouth >= 1f;
             if (!squeeze && CueLog.Capture.Fired(left, DenyReason.CantUse, mark, false, out _))
                 proximityRefused = true;
+            if (squeeze && squeezeMark < 0f)
+                squeezeMark = CueMark();
             Script(left).Trigger = squeeze ? 1f : 0f;
             var goal =
                 Script(left).Position + rig.Origin.InverseTransformVector(Mouth() - item.Center());
@@ -1740,7 +1771,16 @@ internal sealed partial class SelfTestRunner
             Note(
                 $"{item.name} came within {best:0.00} m of the host's head, {atMouth:0.0} s at the mouth"
             );
-        yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0f);
+        if (squeezeMark < 0f)
+        {
+            Fail(
+                $"{item.name} never rested at the host's mouth for the squeeze (closest {best:0.00} m)"
+            );
+            yield break;
+        }
+        // The window runs from the squeeze, not from the approach (MP run 15: a window from the start of the walk was
+        // over before the squeeze).
+        yield return ExpectCue(left, DenyReason.CantUse, squeezeMark, true, 1.5f);
         if (stepOk)
             stepNote = $"{item.name} at the host's mouth refused; {cueNote}";
     }
