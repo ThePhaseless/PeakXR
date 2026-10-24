@@ -139,8 +139,6 @@ internal static partial class WorldHolds
         bool heldNow =
             interaction != null && ReferenceEquals(interaction.currentHeldInteractible, statue);
         bool holdStarted = heldNow && !statueHeld;
-        if (holdStarted)
-            StatueHolds++;
         statueHeld = heldNow;
         if (socket < 0 || sockets[socket] == null)
         {
@@ -173,7 +171,9 @@ internal static partial class WorldHolds
             );
         // The pointed hold feels the same ramp, on the pointing hand (or the amulet hand for a head-aimed grip).
         if (heldNow && !Socket.Active)
+        {
             HeldProgress(HandOn(statue, InteractingHand(left)), statue);
+        }
         if (!Socket.Update(SocketDistance(point, centers[socket]), Time.deltaTime))
             return;
         GestureRequests.Interact(statue);
@@ -290,6 +290,30 @@ internal static partial class WorldHolds
         pointed = hit.collider.GetComponentInParent<ScoutStatue>();
         at = hit.point;
         return pointed != null;
+    }
+
+    /// <summary>
+    /// ScoutStatue.Interact (Peak/ScoutStatue.cs:256, empty), which the game calls as a hold on the statue starts
+    /// (Interaction.cs:124): with an amulet in hand the gripping hand feels the press land, a contact tick. The
+    /// statue's hold can be over in a few frames (vr62: the amulet went in with no ramp tick felt), too short for a
+    /// per-frame poll to see.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class StatueHoldStart
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(ScoutStatue), "Interact", new[] { typeof(Character) });
+
+        private static void Postfix(ScoutStatue __instance, Character interactor)
+        {
+            if (!VRSession.Active || interactor == null || !interactor.IsLocal)
+                return;
+            var item = interactor.data.currentItem;
+            if (item == null || (item.itemTags & Item.ItemTags.ScoutAmulet) == 0)
+                return;
+            StatueHolds++;
+            Affordance.Contact(HandOn(__instance, InteractingHand(LocalHold.ItemInLeftHand)));
+        }
     }
 
     private static float NearestSocket(Vector3[] centers, Vector3 point, out Vector3 at)
