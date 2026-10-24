@@ -761,6 +761,31 @@ public partial class AvatarPoseDriver
     /// tracked. The self-test compares it with where the ragdoll hand really is.</summary>
     internal bool HandTarget(bool left, out Vector3 pos) => HandTarget(left, out pos, out _);
 
+    /// <summary>How far the <paramref name="left"/> arm falls short of where its controller puts the hand bone
+    /// (<see cref="ArmShortfall"/>: geometry, not lag), what <see cref="ReachGhost"/> fades on. False without a fresh
+    /// pose for that hand or while the arms are let go.</summary>
+    internal bool ReachGap(bool left, out float gap)
+    {
+        gap = 0f;
+        var pose = Pose;
+        if (
+            !HasFreshPose
+            || ArmsSuspended
+            || armBlend.Weight < 1f
+            || !EnsureRig()
+            || (left ? !pose.HasLeftHand : !pose.HasRightHand)
+        )
+            return false;
+        (left ? leftRig : rightRig).BoneFromController(
+            left ? pose.LeftHandPosition : pose.RightHandPosition,
+            left ? pose.LeftHandRotation : pose.RightHandRotation,
+            out var bone,
+            out _
+        );
+        gap = ArmShortfall(left, bone);
+        return true;
+    }
+
     /// <inheritdoc cref="HandTarget(bool, out Vector3)"/>
     internal bool HandTarget(bool left, out Vector3 pos, out Quaternion rot)
     {
@@ -975,6 +1000,19 @@ public partial class AvatarPoseDriver
     private static System.Reflection.MethodBase VanillaAttach =>
         vanillaAttach ??= Framework.GameMember.Method(typeof(CharacterItems), "AttachItem");
 
+    /// <summary>How far the <paramref name="left"/> arm (shoulder to wrist of its IK chain) cannot reach
+    /// <paramref name="bone"/> right now, metres.</summary>
+    private float ArmShortfall(bool left, Vector3 bone)
+    {
+        var ik = left ? Owner.refs.ikLeft : Owner.refs.ikRight;
+        if (ik == null || ik.data.root == null || ik.data.mid == null || ik.data.tip == null)
+            return 0f;
+        var shoulder = ik.data.root.position;
+        var mid = ik.data.mid.position;
+        float arm = Vector3.Distance(shoulder, mid) + Vector3.Distance(mid, ik.data.tip.position);
+        return WeldGate.Shortfall(shoulder.N(), bone.N(), arm);
+    }
+
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
 
@@ -1049,7 +1087,7 @@ public partial class AvatarPoseDriver
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
         bool free = Owner.IsLocal
             ? (Owner.data.sinceItemAttach > AttachSettle || weldGate.Released)
-                && weldGate.Update(toController, toItem, dt)
+                && weldGate.Update(toController, toItem, dt, ArmShortfall(left, ctrlBone))
             : true;
         remoteFree = !Owner.IsLocal;
         if (free != wasFree && Owner.IsLocal)

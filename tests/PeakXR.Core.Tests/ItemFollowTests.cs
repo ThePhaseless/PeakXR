@@ -38,6 +38,46 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AnArmThatCannotReachItsControllerKeepsItsWeldWithinItsShortfall()
+    {
+        // vr69 vr.230: crouched at a stoop the shoulder leaves the controller beyond the arm's length; the hand sits
+        // 0.33 m off with the arm 0.2 m short. Only lag past that shortfall plus the margin lets go.
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            Assert.False(g.Update(0.33f, 0f, 0.02f, shortfall: 0.2f));
+        bool released = false;
+        for (int i = 0; i < 15; i++)
+            released = g.Update(0.5f, 0f, 0.02f, shortfall: 0.2f);
+        Assert.True(released);
+    }
+
+    [Fact]
+    public void AFreeItemRejoinsAnArmAtItsBestReach()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 15; i++)
+            g.Update(0.6f, 0.6f, 0.02f, shortfall: 0f);
+        bool released = true;
+        for (int i = 0; i < 10; i++)
+            released = g.Update(0.25f, 0.05f, 0.02f, shortfall: 0.2f);
+        Assert.False(released);
+    }
+
+    [Theory]
+    [InlineData(0.5f, 0.6f, 0f)]
+    [InlineData(0.9f, 0.6f, 0.3f)]
+    public void ShortfallIsTheDistanceTheArmCannotCover(
+        float toController,
+        float arm,
+        float expected
+    ) =>
+        Assert.Equal(
+            expected,
+            WeldGate.Shortfall(Vector3.Zero, new Vector3(0f, -toController, 0f), arm),
+            3
+        );
+
+    [Fact]
     public void AStoopedCrouchedArmShortOfItsControllerKeepsTheWeld()
     {
         // vr65 vr.230: crouched at a 0.47 m stoop the arm ends about 0.13 m short of its controller; that is reach
