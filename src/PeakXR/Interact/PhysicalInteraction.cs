@@ -1119,7 +1119,7 @@ internal static class PhysicalInteraction
         for (int i = 0; i < count; i++)
             Candidates[i] = null;
         if (target == null)
-            target = SunkInto(c, eye, pos);
+            target = SunkInto(c, pos, radius);
 
         if (target == null)
             return GrabCandidate.None;
@@ -1129,11 +1129,11 @@ internal static class PhysicalInteraction
     private static readonly NVector3[] SightPoints = new NVector3[GrabSelector.SightPointCount];
     private static readonly System.Collections.Generic.List<Collider> SunkColliders = new();
 
-    /// <summary>The hovered interactible (Interaction.cs:15, :95) when the hand has sunk inside one of its solid colliders:
-    /// within its bounds, and past its surface as seen from the eye. Nothing stops a tracked hand going into a case, and
-    /// an overlap sphere deep inside a concave mesh meets no triangle (VR run 75's vr.82b: grip "Interact on nothing"
-    /// with LuggageAncient hovered).</summary>
-    private static IInteractible SunkInto(Character c, Vector3 eye, Vector3 pos)
+    /// <summary>The hovered interactible (Interaction.cs:15, :95) when the hand is inside, or within the grab radius of,
+    /// the bounds of one of its enabled solid colliders. Nothing stops a tracked hand going into a case, and an overlap
+    /// sphere inside a concave mesh's hollow meets no triangle (VR runs 75 and 77's vr.82b: grip "Interact on nothing"
+    /// with LuggageAncient hovered). Only the hovered one, which the game's own ray found, so nothing behind a wall.</summary>
+    private static IInteractible SunkInto(Character c, Vector3 pos, float radius)
     {
         var interaction = Interaction.instance;
         var it = interaction != null ? interaction.currentHovered : null;
@@ -1145,21 +1145,11 @@ internal static class PhysicalInteraction
             || !it.IsInteractible(c)
         )
             return null;
-        var toHand = pos - eye;
-        float len = toHand.magnitude;
-        if (len < 0.01f)
-            return null;
-        var ray = new Ray(eye, toHand / len);
         comp.GetComponentsInChildren(false, SunkColliders);
         IInteractible found = null;
         foreach (var col in SunkColliders)
         {
-            if (
-                col.enabled
-                && !col.isTrigger
-                && col.bounds.Contains(pos)
-                && col.Raycast(ray, out _, len)
-            )
+            if (col.enabled && !col.isTrigger && col.bounds.SqrDistance(pos) <= radius * radius)
             {
                 found = it;
                 break;
