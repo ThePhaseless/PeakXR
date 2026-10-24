@@ -2032,22 +2032,18 @@ internal sealed partial class SelfTestRunner
         // Stand beside the socket it will fill (an empty altar: its own type's, AltarSocket), not the statue's
         // root: vr34 stood by the root and ended 2.16 m short.
         var target = WorldHolds.SocketCenter(statue.amuletObjects[amulet.amuletIndex]);
-        yield return WarpBeside(target, back);
-        // Landed and still before any grip (vr69 failed with the torso still moving after the warp).
+        // The player draws the amulet with the grip already closed, never closing a hand fresh beside the statue, whose
+        // body falls in that hand's grab sphere (vr72: the amulet hand's grip resolved to GrabInteractible). So the
+        // amulet is given and gripped 2.5 m out, aimed at the ground with the head looking down (a scripted grip reads
+        // as a point, GripIntent.IsPointing, vr69), and carried in.
+        yield return WarpBeside(target, 2.5f);
         var me = Character.localCharacter;
-        yield return WaitFor(
-            () => me.data.isGrounded && me.data.avarageVelocity.sqrMagnitude < 0.04f,
-            3f
-        );
+        yield return Landed(me);
         yield return GiveAndHold(amulet.GetComponent<Item>());
         if (!stepOk)
             yield break;
         var held = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
-        // A scripted grip reads as a point (index off the trigger: GripIntent.IsPointing), so the amulet hand closing
-        // while it or the head aims at the statue is itself a pointed grip at a taker and inserts the amulet before
-        // the free hand points (vr69: interact pressed on the amulet hand's grip, the cue on that hand). It closes
-        // aimed at the ground with the head looking down.
         HeadFrame(out _, out var level, out _);
         Script(left).Rotation = Quaternion.LookRotation(Vector3.down, level);
         LookAtPoint(Feet(me));
@@ -2055,6 +2051,9 @@ internal sealed partial class SelfTestRunner
         int holdsAtGive = WorldHolds.StatueHolds;
         yield return GripTo(left, 1f, 0.1f);
         yield return Wait(0.2f);
+        yield return WarpBeside(target, back);
+        // Landed and still before the point (vr69 failed with the torso still moving after the warp).
+        yield return Landed(me);
         if (WorldHolds.StatueHolds > holdsAtGive || !ReferenceEquals(HeldItem(), held))
         {
             Fail(
@@ -2176,6 +2175,9 @@ internal sealed partial class SelfTestRunner
                 $"{back:0.0} m back, pointed at socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {where}; {cueNote}"
             );
     }
+
+    static IEnumerator Landed(Character me) =>
+        WaitFor(() => me.data.isGrounded && me.data.avarageVelocity.sqrMagnitude < 0.04f, 3f);
 
     /// <summary>Where a player holds an amulet up to <paramref name="socketAt"/>: at the socket when it is within
     /// reach, else raised over the head straight under it (AltarSocket.Reach); the gesture reads the tracked hand,
