@@ -15,11 +15,13 @@ namespace PeakXR.Core;
 /// </summary>
 public sealed class WeldGate
 {
-    /// <summary>Ragdoll hand to its controller that releases the weld, metres.</summary>
-    public float Release = 0.15f;
+    /// <summary>Ragdoll hand to its controller that releases the weld, metres: past what a crouched arm falls short
+    /// at a deep stoop (about 0.13 m, vr65 vr.230), well short of an arm that cannot reach at all (0.5-1.2 m, vr50).</summary>
+    public float Release = 0.2f;
 
-    /// <summary>Ragdoll hand to its controller that rejoins it, metres.</summary>
-    public float Rejoin = 0.05f;
+    /// <summary>Ragdoll hand to its controller that rejoins it, metres: within a stooped arm's own shortfall, so a
+    /// free item rejoins without standing up.</summary>
+    public float Rejoin = 0.1f;
 
     /// <summary>How long the arm must stay out of reach before the weld lets go, seconds.</summary>
     public float ReleaseHold = 0.2f;

@@ -38,6 +38,29 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AStoopedCrouchedArmShortOfItsControllerKeepsTheWeld()
+    {
+        // vr65 vr.230: crouched at a 0.47 m stoop the arm ends about 0.13 m short of its controller; that is reach
+        // the body has, not an arm that cannot get there, so the apple stays welded.
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            Assert.False(g.Update(0.16f, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void AStoopedArmRejoinsWithoutStandingUp()
+    {
+        // Free while the arm caught up, then back within 0.1 m of its controller while still stooped: rejoins.
+        var g = new WeldGate();
+        for (int i = 0; i < 20; i++)
+            g.Update(0.6f, 0.6f, 0.02f);
+        bool released = true;
+        for (int i = 0; i < 10; i++)
+            released = g.Update(0.08f, 0.05f, 0.02f);
+        Assert.False(released);
+    }
+
+    [Fact]
     public void AnArmCatchingUpWithAStoopUntilTheCrouchLandsKeepsTheWeld()
     {
         // vr61 vr.230: the arm trails the stooping controller until the crouch lowers the shoulder, about 0.15 s.
