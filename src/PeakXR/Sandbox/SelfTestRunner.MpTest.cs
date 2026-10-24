@@ -1471,6 +1471,27 @@ internal sealed partial class SelfTestRunner
         return surface + (outward.sqrMagnitude > 1e-6f ? outward.normalized * 0.02f : Vector3.zero);
     }
 
+    /// <summary>The world position of <paramref name="ch"/>'s body part nearest <paramref name="world"/>.</summary>
+    static Vector3 NearestPartTo(Character ch, Vector3 world)
+    {
+        var best = ch.Center;
+        float bestSq = float.MaxValue;
+        if (ch.refs.ragdoll == null)
+            return best;
+        foreach (var part in ch.refs.ragdoll.partList)
+        {
+            if (part == null)
+                continue;
+            float sq = (part.transform.position - world).sqrMagnitude;
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                best = part.transform.position;
+            }
+        }
+        return best;
+    }
+
     /// <summary>A world point brought within a player's reach of the eye (<see cref="MaxHandFromEye"/>): the hand is
     /// never sent past an arm, which B would reject as an implausible pose (MP run 21).</summary>
     static Vector3 CapToReach(Vector3 world)
@@ -1684,8 +1705,8 @@ internal sealed partial class SelfTestRunner
     {
         yield return MpStep("feed-refuse", 150f, true, FeedRefuse());
         yield return MpStep("reach-deny", 40f, true, ReachDeny());
-        yield return MpStep("reach-look", 50f, true, MpReachLook());
-        yield return MpStep("reach", 40f, true, MpReach());
+        yield return MpStep("reach-look", 60f, true, MpReachLook());
+        yield return MpStep("reach", 50f, true, MpReach());
         yield return HostWake();
         yield return MpStep("kick-mode", 40f, true, KickMode());
         yield return MpStep("carry", 90f, true, MpCarry());
@@ -1811,7 +1832,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
     /// takes one more step in, then skips the step rather than stretch the scripted arm.</summary>
-    IEnumerator GripHostHand(bool left)
+    IEnumerator GripHostHand(bool left, float turnAway = 0f)
     {
         var host = Host();
         // Whichever of the host's hands is nearer this hand's shoulder, as a player reaches for the closer one; a hand
@@ -1843,6 +1864,12 @@ internal sealed partial class SelfTestRunner
             yield return MpWalkBounded(() => to, 0.1f, 3f);
             Face(host.Head);
             yield return Wait(0.3f);
+        }
+        // Turned away first when asked: the body and the look turn, the hand still reaches to the side.
+        if (turnAway != 0f)
+        {
+            VRRig.Instance.RotateYaw(turnAway);
+            yield return Wait(0.5f);
         }
         float past = PastArm(left, Part());
         if (past > 0f)
@@ -1922,31 +1949,36 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         // A hand-over (HandOver): 1 s resting at the mouth with the trigger up refuses nothing (no feed was tried),
         // then the trigger squeeze is refused.
-        float end = Now + 6f;
+        float end = Now + 8f;
         float best = float.MaxValue;
         float atMouth = 0f;
         bool proximityRefused = false;
         float squeezeMark = -1f;
         while (Now < end && HeldItem() == item)
         {
-            best = Mathf.Min(best, Vector3.Distance(item.Center(), Mouth()));
-            atMouth = best <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            float gapNow = Vector3.Distance(item.Center(), Mouth());
+            best = Mathf.Min(best, gapNow);
+            atMouth = gapNow <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
             bool squeeze = atMouth >= 1f;
             if (!squeeze && CueLog.Capture.Fired(left, DenyReason.CantUse, mark, false, out _))
                 proximityRefused = true;
             if (squeeze && squeezeMark < 0f)
                 squeezeMark = CueMark();
             Script(left).Trigger = squeeze ? 1f : 0f;
-            var goal =
-                Script(left).Position + rig.Origin.InverseTransformVector(Mouth() - item.Center());
+            // The item, not the hand, on the moving mouth every frame, as feed does (MP run 24: chasing the gap kept a
+            // Frisbee at the mouth 0.4 s in all).
+            var controller = rig.Origin.TransformPoint(Script(left).Position);
+            var goal = rig.Origin.InverseTransformPoint(Mouth() - (item.Center() - controller));
             goal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
             SetHand(
                 left,
-                HandScript
-                    .Approach(Script(left).Position.N(), goal.N(), 1.2f, Time.unscaledDeltaTime)
-                    .U()
+                Vector3.Distance(goal, Script(left).Position) > 0.25f
+                    ? HandScript
+                        .Approach(Script(left).Position.N(), goal.N(), 1.5f, Time.unscaledDeltaTime)
+                        .U()
+                    : goal
             );
             if (CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _))
                 break;
@@ -2038,16 +2070,20 @@ internal sealed partial class SelfTestRunner
         yield return ToHost(0.6f);
         if (!stepOk)
             yield break;
-        // Look 100 degrees to the side of the host before the grip, as a player glancing at something else.
-        var toHost = host.Center - c.Center;
-        toHost.y = 0f;
-        var aside = c.Center + Quaternion.Euler(0f, 100f, 0f) * toHost.normalized * 2f;
-        LookAtPoint(aside);
-        yield return Wait(0.6f);
+        // Turned 80 degrees left with the host on the right, the right hand reaching out to the side: the body and the
+        // look turn together (MP run 24: a head glance alone left the look 21 degrees off, inside the cone).
         float mark = CueMark();
-        yield return GripHostHand(false);
+        yield return GripHostHand(false, -80f);
         if (stepSkip != null)
             yield break;
+        float off = Vector3.Angle(c.data.lookDirection, host.Center - c.Center);
+        if (off <= SocialIntent.ReachConeDegrees + 10f)
+        {
+            stepSkip = F(
+                $"the turn left the look only {off:0} deg off the host, inside the game's cone"
+            );
+            yield break;
+        }
         yield return ExpectCue(false, DenyReason.WrongAngle, mark, false, 2f);
         if (!stepOk)
         {
@@ -2063,6 +2099,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var cue = cueNote;
+        Face(host.Center);
         LookAtPoint(host.Center);
         yield return Until(
             () => c.data.sinceGrabFriend < 0.3f,
@@ -2109,9 +2146,28 @@ internal sealed partial class SelfTestRunner
                 $"the reach never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off them, host webbed {host.refs.afflictions.isStruggling})"
             )
         );
+        if (!stepOk)
+        {
+            EndGlance();
+            yield break;
+        }
+        // A's own catch is local: the web comes off on the host's own client, when its copy of A's reach passes the
+        // same test from the synced look and reaching flag (CharacterGrabbing.Reach, :250-260, SubtractStatus Web on
+        // every client, the owner's counting), which B saw 0.24 s after A's checkpoint in MP run 24. Keep the reach
+        // held until A sees the host free (statuses synced back, SyncStatusesRPC), so the checkpoint is not early.
+        float caughtAt = Now;
+        yield return WaitFor(() => !host.refs.afflictions.isStruggling, 3f);
         EndGlance();
-        if (stepOk)
-            stepNote = "reached and caught the host";
+        if (host.refs.afflictions.isStruggling)
+            Fail(
+                F(
+                    $"A's reach caught the host, but the host was still webbed 3 s later (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off them)"
+                )
+            );
+        else
+            stepNote = F(
+                $"reached and caught the host; free of the web {Now - caughtAt:0.0} s later"
+            );
     }
 
     /// <summary>
@@ -2298,7 +2354,14 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return MoveTo(false, () => HostPart(host, BodypartType.Torso), 0.4f);
+        // The carried body rides the shoulder: the hand goes to whichever of its parts is nearest the eye, capped at
+        // a player's reach (MP run 24: aimed at the torso 0.78 m out, past reach). A grip on any part of the carried
+        // friend puts them down (SocialHands: carried by me is an interact on the body).
+        yield return MoveTo(
+            false,
+            () => CapToReach(NearestPartTo(host, VRRig.Instance.Head.position)),
+            0.4f
+        );
         over = OverReach(false);
         if (over != null)
         {
