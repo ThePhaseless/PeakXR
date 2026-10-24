@@ -5,8 +5,9 @@ namespace PeakXR.Core;
 /// <summary>
 /// How strongly to draw the ghost hand at a controller the avatar's arm cannot reach: fed the arm's geometric
 /// shortfall (shoulder to controller minus arm length, never lag), none under <see cref="Enter"/>, rising to full at
-/// <see cref="Full"/>. A shortfall must last <see cref="Persist"/> before it shows; once shown it stays until the
-/// shortfall falls under <see cref="Exit"/>, and the alpha eases at <see cref="Rate"/>, so the edge never flickers.
+/// <see cref="Full"/>. A shortfall must last <see cref="Persist"/> before it first shows; until it falls under
+/// <see cref="Exit"/> it may fade back in at once, and the alpha eases at <see cref="Rate"/>, so the edge only ever
+/// shimmers faintly.
 /// </summary>
 public sealed class GhostFade
 {
@@ -38,7 +39,9 @@ public sealed class GhostFade
             pending = gap > Enter ? pending + MathF.Max(dt, 0f) : 0f;
             shown = pending >= Persist;
         }
-        float target = shown ? Math.Clamp((gap - Exit) / (Full - Exit), 0.05f, 1f) : 0f;
+        // Drawn only past Enter: a straight arm at rest reads a few centimetres short (vr70) and must not show it.
+        // The hysteresis keeps the shown state, so a return past Enter fades straight back without the delay.
+        float target = shown ? Math.Clamp((gap - Enter) / (Full - Enter), 0f, 1f) : 0f;
         float step = Rate * MathF.Max(dt, 0f);
         Alpha = Alpha < target ? MathF.Min(target, Alpha + step) : MathF.Max(target, Alpha - step);
         return Alpha;

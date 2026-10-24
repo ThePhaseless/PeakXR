@@ -101,10 +101,14 @@ internal sealed partial class SelfTestRunner
             SetHand(false, Vector3.Lerp(low, rest, (Now - start) / 0.5f));
             yield return null;
         }
-        yield return Wait(settle + 0.3f);
+        // Poll the fade-out from the moment the hand is back (frames run ~28 ms in the VR runs).
+        start = Now;
+        while (Now - start < 1f && ReachGhost.Alpha(false) > 0f)
+            yield return null;
+        float fadeOut = Now - start;
         float back = ReachGhost.Alpha(false);
         var note = F(
-            $"ghost alpha at rest {atRest:0.00}, controller on the floor ahead {reaching:0.00}, back at rest {back:0.00}"
+            $"ghost alpha at rest {atRest:0.00}, controller on the floor ahead {reaching:0.00}, back at rest {back:0.00} after {fadeOut:0.00} s"
         );
         if (atRest > 0f)
             Fail("ghost hand shown with the hand at rest: " + note);
