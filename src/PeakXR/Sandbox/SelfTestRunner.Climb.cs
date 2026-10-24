@@ -342,6 +342,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator Restoring(string id, float timeout, IEnumerator body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         try
         {
             yield return HandStep(id, timeout, body);

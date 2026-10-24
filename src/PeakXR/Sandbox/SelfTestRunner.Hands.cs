@@ -78,6 +78,9 @@ internal sealed partial class SelfTestRunner
     /// that lets go and clears the override whether the step passed, failed, threw or timed out.</summary>
     IEnumerator HandStep(string id, float timeout, IEnumerator body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         if (!VRRun)
             yield break;
         if (!VRSession.Active)

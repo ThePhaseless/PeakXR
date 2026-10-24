@@ -66,6 +66,9 @@ internal sealed partial class SelfTestRunner
     /// item cleanup, since nothing here touches the body.</summary>
     IEnumerator ScreenHandStep(string id, float timeout, IEnumerator body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         yield return VRStep(id, timeout, Hands(body));
         EndHands();
     }

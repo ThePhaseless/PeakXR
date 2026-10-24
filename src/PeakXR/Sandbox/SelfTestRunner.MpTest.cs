@@ -72,6 +72,16 @@ internal sealed partial class SelfTestRunner
             Plugin.Log.LogError($"[mptest] cannot prepare {MpDirectory}: {e.Message}");
         }
         Plugin.Log.LogInfo($"[mptest] started, results in {MpDirectory}");
+        if (SelfTestFeature.OnlySpec != null)
+        {
+            // Each MP step writes a checkpoint the vanilla peer answers, and mp-check pairs them in order; a filtered
+            // run would leave both sides out of step, so it is refused rather than half-honoured.
+            Plugin.Log.LogError(
+                $"[mptest] {SelfTestFeature.OnlyFlag} is not supported with the two-player test"
+            );
+            MpFinish($"{SelfTestFeature.OnlyFlag} is not supported with the two-player test");
+            return;
+        }
         StartCoroutine(
             Guard(
                 MpScript(),

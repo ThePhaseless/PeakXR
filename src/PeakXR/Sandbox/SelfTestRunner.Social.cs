@@ -94,6 +94,9 @@ internal sealed partial class SelfTestRunner
     /// thorns, ticks, webs or stuck parts, god mode on. Runs whether the step passed, failed or timed out.</summary>
     IEnumerator SocialStep(string id, float timeout, IEnumerator body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         if (VRRun && VR.VRSession.Active)
             SandboxActions.SetGodMode(false);
         yield return HandStep(id, timeout, body);
