@@ -133,7 +133,8 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("pickup", 40f, true, PickUpAgain());
         yield return MpStep("throw", 60f, true, ThrowToHost());
         yield return MpStep("eat", 150f, true, Eat());
-        yield return MpStep("holster", 60f, true, Holster());
+        // 120 s: the walk back from eat's food to the thrown item can be 100 m (MP run 35 timed out at 60 s on it).
+        yield return MpStep("holster", 120f, true, Holster());
         yield return MpStep("climb", 200f, true, MpClimb());
         yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
@@ -1676,8 +1677,13 @@ internal sealed partial class SelfTestRunner
         return eye + Vector3.ClampMagnitude(world - eye, MaxHandFromEye * 0.97f);
     }
 
-    /// <summary>Steps in (up to three bounded steps) until the host's mouth is within <see cref="MpFeedHold"/> of A's
-    /// eye, so the item is held out on a bent arm rather than at full stretch.</summary>
+    /// <summary>How close (m) the feed steps step in to the host's mouth from A's eye: from <see cref="MpFeedHold"/>
+    /// the capped hand left the held item about 0.3 m short of the mouth (MP run 35).</summary>
+    const float MpFeedStepIn = 0.4f;
+
+    /// <summary>Steps in (up to three bounded steps) until the host's mouth is within <see cref="MpFeedStepIn"/> of A's
+    /// eye and the hand that puts the held item on it (the item's offset from the controller taken off the mouth) is
+    /// within <see cref="MpFeedHold"/>, so the item is held out on a bent arm rather than at full stretch.</summary>
     IEnumerator MpStepToMouth(Character host)
     {
         var c = Character.localCharacter;
@@ -1685,11 +1691,19 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < 3; i++)
         {
             var mouth = HostPart(host, BodypartType.Head);
-            if (Vector3.Distance(rig.Head.position, mouth) <= MpFeedHold)
+            var held = HeldItem();
+            var hand = Script(LocalHold.ItemInLeftHand);
+            var handAt =
+                held != null ? mouth - HeldGrip.Of(rig, hand, held).World(rig, hand) : mouth;
+            float over = Mathf.Max(
+                Vector3.Distance(rig.Head.position, mouth) - MpFeedStepIn,
+                Vector3.Distance(rig.Head.position, handAt) - MpFeedHold
+            );
+            if (over <= 0f)
                 yield break;
             var toward = mouth - c.Center;
             toward.y = 0f;
-            float step = Vector3.Distance(rig.Head.position, mouth) - MpFeedHold + 0.1f;
+            float step = over + 0.1f;
             var to =
                 c.Center
                 + toward.normalized * Mathf.Min(step, Mathf.Max(0f, toward.magnitude - 0.35f));
