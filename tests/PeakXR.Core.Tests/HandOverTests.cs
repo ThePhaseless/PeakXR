@@ -67,6 +67,31 @@ public class HandOverTests
     }
 
     [Fact]
+    public void ApplyingHand_RidesOutAShortWobbleOutOfTheZone()
+    {
+        // MP run 15: the food wobbled out of the mouth zone for a frame and the squeeze never fed again.
+        var h = new HandOver();
+        h.Update(true, false, true, false, 0.02f);
+        Assert.Equal(HandOverState.Apply, h.Update(true, true, true, false, 0.02f));
+        for (int i = 0; i < 10; i++)
+            Assert.Equal(HandOverState.Apply, h.Update(false, true, true, false, 0.02f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, true, true, false, 0.02f));
+    }
+
+    [Fact]
+    public void ApplyingHand_GivesUpAfterTheGrace()
+    {
+        var h = new HandOver();
+        h.Update(true, false, true, false, 0.02f);
+        h.Update(true, true, true, false, 0.02f);
+        for (float t = 0f; t < h.Grace + 0.05f; t += 0.02f)
+            h.Update(false, true, true, false, 0.02f);
+        Assert.Equal(HandOverState.None, h.Update(false, true, true, false, 0.02f));
+        // Back in with the trigger still held: a new squeeze is needed.
+        Assert.Equal(HandOverState.None, h.Update(true, true, true, false, 0.02f));
+    }
+
+    [Fact]
     public void LeavingTheZone_Disarms()
     {
         var h = new HandOver();
