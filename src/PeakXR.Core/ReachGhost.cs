@@ -47,6 +47,16 @@ public sealed class GhostFade
         return Alpha;
     }
 
+    /// <summary>How far a hand reaches past the arm from where the shoulder belongs under the tracked head: the
+    /// avatar's <paramref name="shoulder"/> moved by <paramref name="bodyToHead"/> (tracked head minus the avatar's
+    /// eyes), so a body that lags the head (a warp, a recenter, a push) is not mistaken for a reach (vr72).</summary>
+    public static float Shortfall(
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 bodyToHead,
+        System.Numerics.Vector3 hand,
+        float armLength
+    ) => WeldGate.Shortfall(shoulder + bodyToHead, hand, armLength);
+
     public void Reset()
     {
         shown = false;

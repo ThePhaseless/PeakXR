@@ -72,3 +72,29 @@ public class ReachGhostTests
         Assert.False(f.Visible);
     }
 }
+
+public class ReachShortfallTests
+{
+    private static readonly System.Numerics.Vector3 Shoulder = new(0.2f, 1.4f, 0f);
+
+    [Fact]
+    public void ABodyLaggingTheHeadDoesNotCountAsReach()
+    {
+        // vr72 vr.173: after a warp and recenter the body sat behind the tracked head; a resting hand read 11 cm short.
+        var lag = new System.Numerics.Vector3(0f, 0f, -0.15f);
+        var hand = Shoulder + new System.Numerics.Vector3(0f, 0f, 0.6f);
+        Assert.True(WeldGate.Shortfall(Shoulder + lag, hand, 0.6f) > 0.05f);
+        Assert.Equal(0f, GhostFade.Shortfall(Shoulder + lag, -lag, hand, 0.6f), 3);
+    }
+
+    [Fact]
+    public void AHandPastTheArmUnderTheHeadStillCounts()
+    {
+        var hand = Shoulder + new System.Numerics.Vector3(0f, -0.9f, 0f);
+        Assert.Equal(
+            0.3f,
+            GhostFade.Shortfall(Shoulder, System.Numerics.Vector3.Zero, hand, 0.6f),
+            3
+        );
+    }
+}

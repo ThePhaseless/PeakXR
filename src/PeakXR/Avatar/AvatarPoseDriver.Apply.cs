@@ -764,9 +764,24 @@ public partial class AvatarPoseDriver
     /// <summary>How far the <paramref name="left"/> arm falls short of where its controller puts the hand bone
     /// (<see cref="ArmShortfall"/>: geometry, not lag), what <see cref="ReachGhost"/> fades on. False without a fresh
     /// pose for that hand or while the arms are let go.</summary>
-    internal bool ReachGap(bool left, out float gap)
+    internal bool ReachGap(bool left, out float gap) =>
+        ReachGap(left, out gap, out _, out _, out _);
+
+    /// <inheritdoc cref="ReachGap(bool, out float)"/>
+    /// <param name="shoulder">The shoulder in the physics frame, before the body-to-head shift.</param>
+    /// <param name="bone">Where the controller puts the hand bone.</param>
+    /// <param name="arm">The arm's length.</param>
+    internal bool ReachGap(
+        bool left,
+        out float gap,
+        out Vector3 shoulder,
+        out Vector3 bone,
+        out float arm
+    )
     {
         gap = 0f;
+        shoulder = bone = default;
+        arm = 0f;
         var pose = Pose;
         if (
             !HasFreshPose
@@ -779,10 +794,13 @@ public partial class AvatarPoseDriver
         (left ? leftRig : rightRig).BoneFromController(
             left ? pose.LeftHandPosition : pose.RightHandPosition,
             left ? pose.LeftHandRotation : pose.RightHandRotation,
-            out var bone,
+            out bone,
             out _
         );
-        gap = ArmShortfall(left, bone);
+        // Reach past the arm from where the shoulder belongs under the tracked head, never the body's lag (vr72).
+        if (!PhysicsShoulder(left, out shoulder, out arm))
+            return false;
+        gap = GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm);
         return true;
     }
 
@@ -1002,16 +1020,34 @@ public partial class AvatarPoseDriver
 
     /// <summary>How far the <paramref name="left"/> arm (shoulder to wrist of its IK chain) cannot reach
     /// <paramref name="bone"/> right now, metres.</summary>
-    private float ArmShortfall(bool left, Vector3 bone)
+    private float ArmShortfall(bool left, Vector3 bone) =>
+        PhysicsShoulder(left, out var shoulder, out float arm)
+            ? WeldGate.Shortfall(shoulder.N(), bone.N(), arm)
+            : 0f;
+
+    /// <summary>The <paramref name="left"/> shoulder of the IK chain moved into the physics body's frame (the chain
+    /// is animated, the controller bone is in the world: <see cref="AnimatedOffset"/> apart), and that chain's arm
+    /// length.</summary>
+    private bool PhysicsShoulder(bool left, out Vector3 shoulder, out float arm)
     {
+        shoulder = default;
+        arm = 0f;
         var ik = left ? Owner.refs.ikLeft : Owner.refs.ikRight;
         if (ik == null || ik.data.root == null || ik.data.mid == null || ik.data.tip == null)
-            return 0f;
-        var shoulder = ik.data.root.position;
+            return false;
+        var root = ik.data.root.position;
         var mid = ik.data.mid.position;
-        float arm = Vector3.Distance(shoulder, mid) + Vector3.Distance(mid, ik.data.tip.position);
-        return WeldGate.Shortfall(shoulder.N(), bone.N(), arm);
+        arm = Vector3.Distance(root, mid) + Vector3.Distance(mid, ik.data.tip.position);
+        shoulder = root - AnimatedOffset();
+        return true;
     }
+
+    /// <summary>Tracked head minus the avatar's eyes (zero until the eyes are learned): how far the body lags the
+    /// head.</summary>
+    internal Vector3 BodyToHead() =>
+        haveEyeInHead && head != null
+            ? Pose.HeadPosition - head.transform.TransformPoint(eyeInHead)
+            : Vector3.zero;
 
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
