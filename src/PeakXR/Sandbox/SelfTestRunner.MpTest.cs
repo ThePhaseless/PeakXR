@@ -1165,6 +1165,10 @@ internal sealed partial class SelfTestRunner
         float atMouth = 0f;
         bool proximityFed = false;
         float squeezeMark = -1f;
+        // The item's place on the controller, taken once while it rests in the hand: reading it every frame from
+        // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
+        // rejoined, and the item left the mouth).
+        var grip = HeldGrip.Of(rig, Script(left), item);
         float stalled = 0f;
         int resqueezes = 0;
         while (
@@ -1197,8 +1201,7 @@ internal sealed partial class SelfTestRunner
             // Hold the item, not the hand, on the moving mouth every frame: the hand goes where the item's offset from
             // the controller puts the item on the mouth (MP run 19: chasing the lagging item kept it at the mouth for
             // only 0.4 s in all). Eased only while still far.
-            var controller = rig.Origin.TransformPoint(Script(left).Position);
-            var goal = rig.Origin.InverseTransformPoint(mouth - (item.Center() - controller));
+            var goal = rig.Origin.InverseTransformPoint(mouth - grip.World(rig, Script(left)));
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
             goal =
                 VRInput.HeadPosition
@@ -1538,6 +1541,26 @@ internal sealed partial class SelfTestRunner
     {
         var eye = VRRig.Instance.Head.position;
         return eye + Vector3.ClampMagnitude(world - eye, MaxHandFromEye * 0.97f);
+    }
+
+    /// <summary>A held item's centre in the frame of the scripted controller holding it (clamped to 0.3 m).</summary>
+    readonly struct HeldGrip
+    {
+        readonly Vector3 local;
+
+        HeldGrip(Vector3 local) => this.local = local;
+
+        public static HeldGrip Of(VRRig rig, HandState hand, Item item)
+        {
+            var rot = rig.Origin.rotation * hand.Rotation;
+            var ctrl = rig.Origin.TransformPoint(hand.Position);
+            var off = Quaternion.Inverse(rot) * (item.Center() - ctrl);
+            return new HeldGrip(Vector3.ClampMagnitude(off, 0.3f));
+        }
+
+        /// <summary>World offset from the controller to the item for the controller's pose now.</summary>
+        public Vector3 World(VRRig rig, HandState hand) =>
+            rig.Origin.rotation * hand.Rotation * local;
     }
 
     /// <summary>Where a ground item lies, for a failed pickup's note: the terrain under it (its collider, tilt from
@@ -1994,6 +2017,10 @@ internal sealed partial class SelfTestRunner
         float atMouth = 0f;
         bool proximityRefused = false;
         float squeezeMark = -1f;
+        // The item's place on the controller, taken once while it rests in the hand: reading it every frame from
+        // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
+        // rejoined, and the item left the mouth).
+        var grip = HeldGrip.Of(rig, Script(left), item);
         while (Now < end && HeldItem() == item)
         {
             float gapNow = Vector3.Distance(item.Center(), Mouth());
@@ -2007,8 +2034,7 @@ internal sealed partial class SelfTestRunner
             Script(left).Trigger = squeeze ? 1f : 0f;
             // The item, not the hand, on the moving mouth every frame, as feed does (MP run 24: chasing the gap kept a
             // Frisbee at the mouth 0.4 s in all).
-            var controller = rig.Origin.TransformPoint(Script(left).Position);
-            var goal = rig.Origin.InverseTransformPoint(Mouth() - (item.Center() - controller));
+            var goal = rig.Origin.InverseTransformPoint(Mouth() - grip.World(rig, Script(left)));
             goal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
@@ -2110,17 +2136,19 @@ internal sealed partial class SelfTestRunner
         yield return ToHost(0.6f);
         if (!stepOk)
             yield break;
-        // Turned 80 degrees left with the host on the right, the right hand reaching out to the side: the body and the
-        // look turn together (MP run 24: a head glance alone left the look 21 degrees off, inside the cone).
+        // Turned 100 degrees left with the host on the right, the right hand reaching out to the side: the body and
+        // the look turn together (MP run 24: a head glance alone left the look 21 degrees off, inside the cone; run 25:
+        // an 80 degree turn left it 69 degrees off).
         float mark = CueMark();
-        yield return GripHostHand(false, -80f);
+        yield return GripHostHand(false, -100f);
         if (stepSkip != null)
             yield break;
         float off = Vector3.Angle(c.data.lookDirection, host.Center - c.Center);
-        if (off <= SocialIntent.ReachConeDegrees + 10f)
+        // A clear margin past the game's cone, so the reach plainly cannot catch.
+        if (off <= SocialIntent.ReachConeDegrees + 5f)
         {
             stepSkip = F(
-                $"the turn left the look only {off:0} deg off the host, inside the game's cone"
+                $"the turn left the look {off:0} deg off the host, too close to the game's {SocialIntent.ReachConeDegrees:0} deg cone for a clear test (wanted over {SocialIntent.ReachConeDegrees + 5f:0})"
             );
             yield break;
         }
