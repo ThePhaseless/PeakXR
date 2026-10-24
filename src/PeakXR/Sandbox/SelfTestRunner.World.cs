@@ -357,6 +357,11 @@ internal sealed partial class SelfTestRunner
         }
         yield return WarpFacing(lug.Center(), 0.8f);
         bool left = VRInput.LeftHanded;
+        if (lug.IsOpen)
+        {
+            Fail($"{lug.name} was already open at the start");
+            yield break;
+        }
         float mark = CueMark();
         int ringTicks = UI.HandWidgets.HandWidgetsRuntime.StepTicks;
         int ringYielded = UI.HandWidgets.HandWidgetsRuntime.StepsYielded;
@@ -364,6 +369,12 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var opened = stepNote;
+        // Open with no lift: the grip did not take the lid, so the plain hold ran (run 65).
+        if (!CueLog.Capture.Felt(left, CueFeel.Progress, mark, out _))
+        {
+            Fail($"{opened}; no lift ramp: {LidGesture.LastGrab}");
+            yield break;
+        }
         yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
         var progress = cueNote;
         yield return ExpectFeel(left, CueFeel.Contact, mark, within: 0f);
