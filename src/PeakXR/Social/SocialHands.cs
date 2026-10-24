@@ -945,6 +945,7 @@ internal sealed class SocialHands : IGripExtension
                 ? BodypartType.Torso
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
+        nearFriendMouth = NearestPart(c, part, point, NearFriendRadius + grow) != null;
         // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
         var friend = feedCandidate;
         if (
@@ -1015,13 +1016,23 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>Installed as <see cref="Affordance.ReasonContext"/> by <see cref="SocialFeature"/>.</summary>
     internal static DenyReason RefusalContext(bool left, DenyReason reason) =>
-        left == LocalHold.ItemInLeftHand && Instance.atFriendMouth
-            ? HandOver.ContextReason(reason, true)
+        left == LocalHold.ItemInLeftHand
+            ? HandOver.ContextReason(reason, Instance.atFriendMouth, Instance.nearFriendMouth)
             : reason;
+
+    /// <summary>The held item is near a friend's mouth or chest (within <see cref="NearFriendRadius"/>, wider than the
+    /// feed zone so a squeeze just off it still counts): the own-mouth eat refusal stays silent there.</summary>
+    private bool nearFriendMouth;
+
+    /// <summary>The held item is near a friend's mouth or chest this frame (see <see cref="nearFriendMouth"/>).</summary>
+    public bool NearFriendMouth => nearFriendMouth;
+
+    private const float NearFriendRadius = 0.45f;
 
     private void ResetFeed()
     {
         atFriendMouth = false;
+        nearFriendMouth = false;
         feedCandidate = null;
         handOver.Reset();
     }

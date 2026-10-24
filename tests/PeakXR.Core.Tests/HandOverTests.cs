@@ -111,6 +111,38 @@ public class HandOverTests
     }
 
     [Fact]
+    public void FeedingAFriend_IsNoTryAtEatingHere()
+    {
+        // MP run 26: the squeeze that fed the host also said NotHere, the own-mouth eat refusal.
+        Assert.Equal(
+            DenyReason.None,
+            HandOver.ContextReason(DenyReason.NotHere, atFriendMouth: false, nearFriendMouth: true)
+        );
+    }
+
+    [Fact]
+    public void NearAFriend_OtherRefusalsStand()
+    {
+        Assert.Equal(
+            DenyReason.NoStamina,
+            HandOver.ContextReason(
+                DenyReason.NoStamina,
+                atFriendMouth: false,
+                nearFriendMouth: true
+            )
+        );
+    }
+
+    [Fact]
+    public void AwayFromFriends_NotHereStands()
+    {
+        Assert.Equal(
+            DenyReason.NotHere,
+            HandOver.ContextReason(DenyReason.NotHere, atFriendMouth: false, nearFriendMouth: false)
+        );
+    }
+
+    [Fact]
     public void ContextNeverInventsARefusal()
     {
         Assert.Equal(DenyReason.None, HandOver.ContextReason(DenyReason.None, atFriendMouth: true));

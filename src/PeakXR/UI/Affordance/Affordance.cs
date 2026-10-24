@@ -171,6 +171,9 @@ internal static class Affordance
         // at a friend's mouth says CantUse, not its placement's NoWall).
         if (ReasonContext != null)
             reason = ReasonContext(left, reason);
+        // The context can also silence a refusal that does not apply there (an own-mouth eat try while feeding a friend).
+        if (reason == DenyReason.None)
+            return false;
         if (!Gate.Allow(reason, left, Time.unscaledTime))
         {
             // A quick retry is still felt; the ring and sound wait out the longer window.

@@ -1038,6 +1038,41 @@ internal sealed partial class SelfTestRunner
     /// Climbable faces with walkable ground in front within <see cref="MpWallRange"/> of A, nearest first: <see cref="WallsFrom"/>'s best
     /// face from A and from rings of seeds 6, 15, 30 and 45 m around A, each standing spot at least 2 m from the others.
     /// </summary>
+    /// <summary>Steepest the face may lean back over the climber along the pull (deg from up): past it is an overhang
+    /// the arm pull cannot rise up (MP run 26: 77/72/72 then 113/107 degrees 0.5-1 m above the hold, the body sank).</summary>
+    const float MaxPullAngle = 85f;
+
+    /// <summary>
+    /// The face stays climbable along the whole 1 m arm pull: at the hold and every 0.25 m above it, a level ray from
+    /// in front meets terrain between <see cref="MinWallAngle"/> and <see cref="MaxPullAngle"/> from up, so no overhang
+    /// waits within the pull.
+    /// </summary>
+    static bool PullClimbable(RaycastHit face)
+    {
+        var flat = Flat(face.normal);
+        if (flat.sqrMagnitude < 1e-4f)
+            return false;
+        var from = face.point + flat * 0.6f;
+        for (float up = 0f; up <= 1.001f; up += 0.25f)
+        {
+            if (
+                !Physics.Raycast(
+                    from + Vector3.up * up,
+                    -flat,
+                    out var hit,
+                    1.6f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                return false;
+            float a = Vector3.Angle(hit.normal, Vector3.up);
+            if (a < MinWallAngle || a > MaxPullAngle)
+                return false;
+        }
+        return true;
+    }
+
     static List<(RaycastHit Face, Vector3 Stand, string Profile)> MpWalls(Character c)
     {
         var found = new List<(RaycastHit Face, Vector3 Stand, string Profile)>();
@@ -1049,6 +1084,8 @@ internal sealed partial class SelfTestRunner
             var stand = Vector3.zero;
             WallsFrom(seed, home, 1.2f, ref best, ref face, ref stand);
             if (best == float.MaxValue || Vector3.Distance(stand, home) > MpWallRange)
+                return;
+            if (!PullClimbable(face))
                 return;
             foreach (var other in found)
             {
