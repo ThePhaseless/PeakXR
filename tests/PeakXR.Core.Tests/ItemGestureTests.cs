@@ -246,7 +246,18 @@ public class LidLiftTests
     [Fact]
     public void CapHeldTime_ClosedLidHoldsAtZero()
     {
-        Assert.Equal(0f, LidLift.CapHeldTime(0.5f, 2f, 0f, 0.02f));
+        // Zero after the game adds the frame, not before: the read-back progress stays 0.
+        Assert.Equal(0f, LidLift.CapHeldTime(0.5f, 2f, 0f, 0.02f) + 0.02f, 5);
+    }
+
+    [Fact]
+    public void CapHeldTime_LongFrameNeverRunsOrOpensAClosedLid()
+    {
+        // A 0.6 s hitch on a 0.5 s case (two-player run 23 saw 85-125 ms frames): the add alone would finish it.
+        float total = 0.5f;
+        float dt = 0.6f;
+        float after = LidLift.CapHeldTime(0f, total, 0f, dt) + dt;
+        Assert.True(after <= 1e-5f && after < total);
     }
 
     [Fact]

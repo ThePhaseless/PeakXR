@@ -161,7 +161,9 @@ public static class LidLift
     {
         if (fraction >= 1f)
             return held;
-        return MathF.Max(0f, MathF.Min(held, fraction * total - dt));
+        // May go below 0 by up to dt: the game's add then lands exactly on the cap, so a long frame cannot run (or
+        // with dt >= total, finish) a lid that is not up (two-player run 23: 0.17 with the hand still).
+        return MathF.Min(held, fraction * total - dt);
     }
 }
 
