@@ -442,9 +442,11 @@ internal static class PhysicalInteraction
         bool pointing,
         VRRig rig,
         Character c,
-        InteractConfig cfg
+        InteractConfig cfg,
+        out IInteractible aimed
     )
     {
+        aimed = null;
         if (!cfg.HandAimedInteract || !pointing)
             return AimedTarget.None;
         // What the game's own interact ray picked last frame from this hand's aim, or the head's while no hand aims
@@ -457,7 +459,10 @@ internal static class PhysicalInteraction
         {
             var picked = Classify(interaction.currentHovered, c);
             if (picked != AimedTarget.None)
+            {
+                aimed = interaction.currentHovered;
                 return picked;
+            }
         }
         var aim = rig.Aim(left);
         var cam = MainCamera.instance;
@@ -476,7 +481,11 @@ internal static class PhysicalInteraction
             )
         )
             return AimedTarget.None;
-        return Classify(hit.collider.GetComponentInParent<IInteractible>(), c);
+        var target = hit.collider.GetComponentInParent<IInteractible>();
+        var kind = Classify(target, c);
+        if (kind != AimedTarget.None)
+            aimed = target;
+        return kind;
     }
 
     private static AimedTarget Classify(IInteractible target, Character c)
@@ -525,7 +534,10 @@ internal static class PhysicalInteraction
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
         };
         ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
-        ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg);
+        ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
+        // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
+        ctx.AtSecondGripTight =
+            holding && !thisHolds && AtSecondGrip(hand.Left, pos, cfg.GrabRadius);
         var kind = HoldKind.Normal;
         probeHit = probeRefused = false;
         if (ctx.NearClimbable)
@@ -538,6 +550,7 @@ internal static class PhysicalInteraction
         IInteractible target = null;
         if (cfg.PhysicalGrab)
             ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
+        ctx.CandidateIsAimed = target != null && ReferenceEquals(target, aimedTarget);
         ctx.CandidateIsHandle = target is ClimbHandle;
         if (target is ClimbHandle near)
         {
@@ -561,7 +574,7 @@ internal static class PhysicalInteraction
         // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
         var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}, second grip {(ctx.AtSecondGripTight ? "tight" : ctx.AtSecondGrip ? "loose" : "no")}, candidate aimed {ctx.CandidateIsAimed}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
         );
         Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
         switch (action)
@@ -1009,11 +1022,10 @@ internal static class PhysicalInteraction
 
     /// <summary>The free hand is at the held item's grip for it (<c>Hand_L</c> for the left hand, <c>Hand_R</c> for
     /// the right, ItemHoldInfo); items without one have no second grip point.</summary>
-    private static bool AtSecondGrip(bool left, Vector3 pos)
+    private static bool AtSecondGrip(bool left, Vector3 pos, float reach = SecondGripReach)
     {
         var grip = left ? Hold.GripLeft : Hold.GripRight;
-        return grip != null
-            && (grip.position - pos).sqrMagnitude <= SecondGripReach * SecondGripReach;
+        return grip != null && (grip.position - pos).sqrMagnitude <= reach * reach;
     }
 
     /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists. While the head
