@@ -712,6 +712,9 @@ internal sealed partial class SelfTestRunner
     /// (<see cref="CarryStallSeconds"/>) read that lag as blocked (run 58, vr.88: given up 0.49 m from the fuse).</summary>
     const float FlameStall = 1.2f;
 
+    /// <summary>The level direction the fuse sticks out from its cannon's body; zero for a fuse with no cannon.</summary>
+    Vector3 fuseOut;
+
     /// <summary>Wrist pitches (deg down from level) tried to tip a held torch toward a low fuse.</summary>
     static readonly float[] TorchTips = { 30f, 60f, 90f };
 
@@ -743,7 +746,27 @@ internal sealed partial class SelfTestRunner
             Fail("no torch in hand after lighting it: " + Whereabouts(given, entry));
             yield break;
         }
-        if (entry != null)
+        // The side the fuse sticks out on, away from the cannon's body: carried in from elsewhere the torch met the
+        // body and stopped 0.29 m short (runs 56-61, vr.88). Stand there unless it brings the body within 1.2 m of
+        // the cannon's entry, which pulls in and launches whoever comes near it (ScoutCannon.cs:66-110).
+        fuseOut = Vector3.zero;
+        if (cannon != null)
+        {
+            var body = new Bounds(cannon.transform.position, Vector3.zero);
+            foreach (var r in cannon.GetComponentsInChildren<Renderer>())
+                if (r.enabled && !r.transform.IsChildOf(fuse.transform))
+                    body.Encapsulate(r.bounds);
+            var outward = at - body.center;
+            outward.y = 0f;
+            if (outward.sqrMagnitude > 1e-4f)
+                fuseOut = outward.normalized;
+        }
+        bool outSide =
+            fuseOut != Vector3.zero
+            && (entry == null || Vector3.Distance(at + fuseOut * 0.8f, entry.position) > 1.2f);
+        if (outSide)
+            yield return WarpBeside(at, 0.8f, fuseOut);
+        else if (entry != null)
             yield return WarpBeside(at, 0.8f, at - entry.position);
         else
             yield return WarpFacing(at, 0.8f);
@@ -844,14 +867,16 @@ internal sealed partial class SelfTestRunner
         // met the cannon's body and the flame stalled 0.25 m short (run 56, vr.88) of the 0.12 m touch the light needs
         // (FireGestures.TouchEnter; ScoutCannonFuse.Interact_CastFinished lights it, ScoutCannonFuse.cs:99-101).
         float above = Now + Mathf.Min(1.5f, seconds * 0.4f);
+        // Over the fuse and out on its exposed side, then in and down onto it.
+        Vector3 Approach() => Touch() + Vector3.up * 0.25f + fuseOut * 0.2f;
         while (
             Now < above
             && flame != null
             && !done()
-            && Vector3.Distance(flame.position, Touch() + Vector3.up * 0.25f) > 0.08f
+            && Vector3.Distance(flame.position, Approach()) > 0.08f
         )
         {
-            CarryToward(left, flame.position, Touch() + Vector3.up * 0.25f, FlameStall);
+            CarryToward(left, flame.position, Approach(), FlameStall);
             StoopToFollow(left);
             yield return null;
         }
