@@ -290,6 +290,12 @@ internal sealed partial class SelfTestRunner
         float wait = Mathf.Max(4f, GameTiming.Budget(GameTiming.FallSeconds(drop)));
         float start = Now;
         yield return WaitFor(() => c.data.isGrounded, wait);
+        // Judged once the body has come to rest, not on a touch-down mid slide or tumble (run 61: grounded for a
+        // frame while falling 11 m/s, the view still in the fall view).
+        yield return WaitFor(
+            () => c.data.isGrounded && Mathf.Abs(c.data.avarageVelocity.y) < 1f,
+            2f
+        );
         float waited = Now - start;
         float ground = GroundBelow(c.Center, 200f);
         string view = "flat view";
@@ -342,6 +348,8 @@ internal sealed partial class SelfTestRunner
     /// so when the warp target has no ground within a short drop, this stands the player on the ground under that
     /// point.
     /// </summary>
+    static readonly float[] PeakGroundRings = { 0f, 3f, 6f };
+
     IEnumerator PeakGround()
     {
         var c = Character.localCharacter;
@@ -370,16 +378,30 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        if (
-            !Physics.Raycast(
-                peak.position + Vector3.up * 200f,
-                Vector3.down,
-                out var hit,
-                1000f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        // Real ground near the point, level enough to stand on (PEAK 3.0.1's first hit under it, VolcanoModel, let the
+        // body fall at 11 m/s, run 61), probed at the point and in rings 3 and 6 m around it.
+        RaycastHit hit = default;
+        bool found = false;
+        foreach (float r in PeakGroundRings)
+        {
+            for (int i = 0; i < (r > 0f ? 8 : 1) && !found; i++)
+            {
+                var at = peak.position + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * r;
+                found =
+                    Physics.Raycast(
+                        at + Vector3.up * 200f,
+                        Vector3.down,
+                        out hit,
+                        1000f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    )
+                    && Vector3.Angle(hit.normal, Vector3.up) <= 30f;
+            }
+            if (found)
+                break;
+        }
+        if (!found)
         {
             Fail(
                 $"respawnThePeak {respawn} has no ground under it, nor has the Peak progress point {peak.position}"
@@ -390,7 +412,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         Note(
-            $"respawnThePeak {respawn} has no ground under it; stood on {hit.collider.name} under the Peak progress point {peak.position}"
+            $"respawnThePeak {respawn} has no ground under it; stood on {hit.collider.name} at {hit.point}, {Vector3.Angle(hit.normal, Vector3.up):0} deg from level, by the Peak progress point {peak.position}"
         );
     }
 }
