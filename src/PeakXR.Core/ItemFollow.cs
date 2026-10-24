@@ -23,8 +23,13 @@ public sealed class WeldGate
     /// free item rejoins without standing up.</summary>
     public float Rejoin = 0.1f;
 
-    /// <summary>How long the arm must stay out of reach before the weld lets go, seconds.</summary>
-    public float ReleaseHold = 0.2f;
+    /// <summary>How long the arm must stay out of reach before the weld lets go, seconds: a stuck arm, not one catching
+    /// up with a fast swing or a jump of the controller (mp31: 0.2 s let the passport flap while standing). The ghost
+    /// hand shows the real hand meanwhile.</summary>
+    public float ReleaseHold = 0.9f;
+
+    /// <summary>The hold when terrain lies between the shoulder and the controller: stuck at once.</summary>
+    public float BlockedHold = 0.2f;
 
     /// <summary>How long the arm must be back before the item rejoins, seconds.</summary>
     public float RejoinHold = 0.08f;
@@ -42,7 +47,14 @@ public sealed class WeldGate
     /// <param name="shortfall">How far the arm cannot reach its controller right now (<see cref="Shortfall"/>):
     /// release and rejoin are judged past it, so an arm that cannot physically get there keeps its weld
     /// (vr69 vr.230: crouched at a stoop the welded hand sat 0.33 m off).</param>
-    public bool Update(float handToController, float handToItem, float dt, float shortfall = 0f)
+    /// <param name="blocked">Terrain between the shoulder and the controller (the hand cannot get through).</param>
+    public bool Update(
+        float handToController,
+        float handToItem,
+        float dt,
+        float shortfall = 0f,
+        bool blocked = false
+    )
     {
         if (settle > 0f)
             settle -= dt;
@@ -51,7 +63,14 @@ public sealed class WeldGate
             ? lag < Rejoin && handToItem < Release
             : settle <= 0f && lag > Release;
         timer = toward ? timer + dt : 0f;
-        if (timer >= (Released ? RejoinHold : ReleaseHold))
+        if (
+            timer
+            >= (
+                Released ? RejoinHold
+                : blocked ? BlockedHold
+                : ReleaseHold
+            )
+        )
         {
             Released = !Released;
             timer = 0f;
