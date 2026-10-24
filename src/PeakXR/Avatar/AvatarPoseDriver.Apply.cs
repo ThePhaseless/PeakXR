@@ -985,6 +985,9 @@ public partial class AvatarPoseDriver
     /// spring for it held the VR player's item and hand where vanilla puts them, 0.3-0.5 m off the hand the VR player's
     /// own client shows (MP run 16: grab, pickup, holster). Local physics only, nothing sent. True skips vanilla's spring.
     /// </summary>
+    /// <summary>A peer's copy of a tracked holder carries the held item free of the hand (<see cref="FollowHeld"/>).</summary>
+    private bool remoteFree;
+
     internal bool FollowHeld(Item item)
     {
         HeldItemGap = -1f;
@@ -996,9 +999,10 @@ public partial class AvatarPoseDriver
         {
             // No hand-carried pose (arms ragdolled, no tracking): back to vanilla's weld, body collisions restored.
             haveLastTarget = false;
-            if (weldGate.Released)
+            if (weldGate.Released || remoteFree)
             {
                 weldGate.Reset();
+                remoteFree = false;
                 EndPassBody();
                 // Ours when the pose allows it, else the game's own two-hand weld (CharacterItems.AttachItem,
                 // CharacterItems.cs:641; its prefix falls through to vanilla while our attach declines).
@@ -1011,6 +1015,7 @@ public partial class AvatarPoseDriver
         {
             followItem = item;
             weldGate.Reset();
+            remoteFree = false;
             EndPassBody();
             haveLastTarget = false;
         }
@@ -1031,9 +1036,13 @@ public partial class AvatarPoseDriver
         float toItem = HandBoneOnItem(item, left, out var itemBone, out _)
             ? Vector3.Distance(hand, itemBone)
             : float.PositiveInfinity;
-        bool wasFree = weldGate.Released;
+        bool wasFree = Owner.IsLocal ? weldGate.Released : remoteFree;
         float toController = Vector3.Distance(hand, ctrlBone);
-        bool free = weldGate.Update(toController, toItem, dt);
+        // A peer always carries the item free of the hand on the holder's controller pose, its hand on the arm IK:
+        // judging the weld by its own lagging copy of the arm welded it when the holder's client had let go, and the
+        // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
+        bool free = !Owner.IsLocal || weldGate.Update(toController, toItem, dt);
+        remoteFree = !Owner.IsLocal;
         if (free != wasFree && Owner.IsLocal)
         {
             // Rare edges, kept in the log: why a held item left or rejoined the hand.
@@ -1161,7 +1170,8 @@ public partial class AvatarPoseDriver
     private void ReconcileWeld()
     {
         var item = Owner.data.currentItem;
-        if (item == null || ArmsSuspended || armBlend.Weight < 1f)
+        // A peer carries the item free of the hand (FollowHeld): no weld to reconcile.
+        if (item == null || ArmsSuspended || armBlend.Weight < 1f || remoteFree)
             return;
         if (itemJoint != null)
         {
