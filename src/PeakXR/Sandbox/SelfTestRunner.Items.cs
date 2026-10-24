@@ -1478,7 +1478,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Pitches below level (negative: above) and yaws off the head's forward that the aim search tries.</summary>
     static readonly float[] GroundPitches = { 45f, 60f, 30f, 75f };
-    static readonly float[] SkyPitches = { -90f, -60f, -45f };
+
+    // A player aims an item "at the sky" about 35-60 deg above the horizon; straight up (-90 first, as before run 67)
+    // is a last resort, for a spot where every shallower aim meets terrain.
+    static readonly float[] SkyPitches = { -35f, -45f, -60f, -90f };
 
     /// <summary>A launcher shoots far: shallow first, inside the vine's elevation window (VineShooter.cs:82-90).</summary>
     static readonly float[] ShooterPitches = { 15f, 25f, 35f, 45f };
@@ -2089,7 +2092,9 @@ internal sealed partial class SelfTestRunner
         }
         yield return GripTo(left, 1f, 0.1f);
         HeadFrame(out var head, out var forward, out _);
-        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        // Held out as a player aims, 0.45 m ahead: at 0.3 m the cue lifted 0.1 m over the hand read 25-26 deg off it
+        // (runs 65-66, CueLayout.MaxOffDegrees 25).
+        SetHand(left, head + forward * 0.45f + Vector3.down * 0.15f);
         yield return AimHeld(c, left, SkyPitches, SkyYaws, () => OpenSky(true));
         if (!aimFound)
         {
@@ -2418,7 +2423,8 @@ internal sealed partial class SelfTestRunner
         }
         yield return GripTo(left, 1f, 0.1f);
         HeadFrame(out var head, out var forward, out _);
-        SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
+        // Held out as a player aims (see vr.163).
+        SetHand(left, head + forward * 0.45f + Vector3.down * 0.15f);
         yield return AimHeld(c, left, SkyPitches, SkyYaws, () => OpenSky(true));
         if (!aimFound)
         {
