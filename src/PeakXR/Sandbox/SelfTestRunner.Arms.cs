@@ -19,7 +19,7 @@ namespace PeakXR.Sandbox;
 /// pose itself is what the player sees. With the idle hands in front of the face it fails above 1.15 stretch,
 /// when an elbow points up, or when an empty hand sits more than 0.15 m off its target (each hand follows only its
 /// own controller); with real controllers (hold mode) it only reports. The scripted hands then hold two more reaches
-/// (<see cref="ReachPoses"/>, <see cref="JudgeReaches"/>). Either way it fails when the eye, less the idle-sway hold's
+/// (<see cref="ReachPoses"/>, <see cref="JudgeReaches"/>) and still rolled wrists (<see cref="JudgeWristRolls"/>). Either way it fails when the eye, less the idle-sway hold's
 /// deliberate offset (<see cref="Rig.RigDriver.ViewHeld"/>), sits more than <see cref="SelfTestChecks.MaxEyeError"/>
 /// from the avatar's eye renderers (and says so when it has none), or when that hold exceeds its deadband.
 /// </summary>
@@ -144,7 +144,143 @@ internal sealed partial class SelfTestRunner
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
         yield return JudgeReaches(c, driver, fails, notes);
+        yield return JudgeWristRolls(c, driver, fails, notes);
         Conclude(fails, notes);
+    }
+
+    /// <summary>Wrist rolls (degrees off the idle pose about the grip's pointing axis, same sense on both hands) the
+    /// still hands hold in <see cref="JudgeWristRolls"/>: past a quarter turn either way, where the one wrist joint
+    /// used to take it all.</summary>
+    static readonly float[] WristRolls = { 0f, 120f, -120f };
+
+    /// <summary>Most twist a ragdoll wrist may show: <see cref="ArmTwist.MaxWrist"/> plus the physics lag.</summary>
+    const float MaxWristTwistDegrees = 105f;
+
+    /// <summary>Most a still arm's forearm or hand body may turn in one physics tick, or its wrist twist change: a
+    /// flip between the two ways round is a half turn.</summary>
+    const float MaxTickTurnDegrees = 20f;
+
+    /// <summary>Most the ragdoll hand's long axis may point off its target's: the roll is shared, the pointing kept.</summary>
+    const float MaxPointDegrees = 30f;
+
+    struct WristSample
+    {
+        public int Count;
+        public float MaxTwist;
+        public float MaxTick;
+        public float Point;
+        public float Twist;
+        public Quaternion Fore;
+        public Quaternion Hand;
+    }
+
+    /// <summary>
+    /// With the scripted idle hands, both hands hold still at rest and rolled by each of <see cref="WristRolls"/>.
+    /// Over <see cref="ArmSamples"/> ticks each ragdoll wrist's twist (<see cref="AvatarPoseDriver.WristTwist"/>)
+    /// must stay within <see cref="MaxWristTwistDegrees"/>, neither the forearm nor the hand body nor the wrist twist
+    /// may jump more than <see cref="MaxTickTurnDegrees"/> between ticks, and the hand must point within
+    /// <see cref="MaxPointDegrees"/> of its target.
+    /// </summary>
+    IEnumerator JudgeWristRolls(
+        Character c,
+        AvatarPoseDriver driver,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        if (VRInput.TestOverride != IdleHands)
+            yield break;
+        var fixedWait = new WaitForFixedUpdate();
+        try
+        {
+            foreach (var roll in WristRolls)
+            {
+                float at = roll;
+                VRInput.TestOverride = () =>
+                {
+                    ApplyIdle();
+                    VRInput.Left.Rotation *= Quaternion.Euler(0f, 0f, -at);
+                    VRInput.Right.Rotation *= Quaternion.Euler(0f, 0f, at);
+                };
+                yield return Wait(1f);
+                var left = default(WristSample);
+                var right = default(WristSample);
+                for (int i = 0; i < ArmSamples; i++)
+                {
+                    yield return fixedWait;
+                    SampleWrist(c, driver, true, ref left);
+                    SampleWrist(c, driver, false, ref right);
+                }
+                var label = F($"wrist roll {at:+0;-0;0}");
+                yield return ShotAt(F($"vr.08-arm-reach-wrist{at:+0;-0;0}"), HandsMid());
+                JudgeWrist(label + " L", left, fails, notes);
+                JudgeWrist(label + " R", right, fails, notes);
+            }
+        }
+        finally
+        {
+            VRInput.TestOverride = IdleHands;
+        }
+    }
+
+    static void SampleWrist(Character c, AvatarPoseDriver driver, bool left, ref WristSample s)
+    {
+        var parts = c.refs.ragdoll.partDict;
+        if (
+            !parts.TryGetValue(left ? BodypartType.Elbow_L : BodypartType.Elbow_R, out var elbow)
+            || !parts.TryGetValue(left ? BodypartType.Hand_L : BodypartType.Hand_R, out var hand)
+            || !driver.WristTwist(left, out float twist)
+            || !driver.HandTarget(left, out _, out var target)
+        )
+            return;
+        var fore = elbow.Rig.rotation;
+        var h = hand.Rig.rotation;
+        s.MaxTwist = Mathf.Max(s.MaxTwist, Mathf.Abs(twist));
+        if (s.Count > 0)
+            s.MaxTick = Mathf.Max(
+                s.MaxTick,
+                Mathf.Max(
+                    Mathf.Abs(Mathf.DeltaAngle(s.Twist, twist)),
+                    Mathf.Max(Quaternion.Angle(s.Fore, fore), Quaternion.Angle(s.Hand, h))
+                )
+            );
+        // Scout bones point along +Y (HandRig): the hand's long axis against its target's.
+        s.Point += Vector3.Angle(h * Vector3.up, target * Vector3.up);
+        s.Twist = twist;
+        s.Fore = fore;
+        s.Hand = h;
+        s.Count++;
+    }
+
+    static void JudgeWrist(string name, WristSample s, List<string> fails, List<string> notes)
+    {
+        if (s.Count == 0)
+        {
+            fails.Add(
+                name + ": wrist not measured (no forearm or hand body, or no tracked target)"
+            );
+            return;
+        }
+        float point = s.Point / s.Count;
+        notes.Add(
+            F(
+                $"{name}: wrist twist max {s.MaxTwist:0} deg, max tick turn {s.MaxTick:0} deg, hand {point:0} deg off its target's pointing"
+            )
+        );
+        if (s.MaxTwist > MaxWristTwistDegrees)
+            fails.Add(
+                F($"{name}: wrist twisted {s.MaxTwist:0} deg > {MaxWristTwistDegrees:0} deg")
+            );
+        if (s.MaxTick > MaxTickTurnDegrees)
+            fails.Add(
+                F(
+                    $"{name}: arm flipped, turned {s.MaxTick:0} deg in one tick > {MaxTickTurnDegrees:0} deg"
+                )
+            );
+        if (point > MaxPointDegrees)
+            fails.Add(
+                F($"{name}: hand points {point:0} deg off its target > {MaxPointDegrees:0} deg")
+            );
     }
 
     /// <summary>

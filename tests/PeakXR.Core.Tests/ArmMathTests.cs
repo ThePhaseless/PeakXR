@@ -195,4 +195,56 @@ public class ArmMathTests
         );
         TestUtil.Near(new Vector3(0f, -0.02f, 0f), off, 1e-5f);
     }
+
+    [Fact]
+    public void StableHint_ClearPole_KeepsTheElbowHint()
+    {
+        var shoulder = new Vector3(0.26f, 0f, 0f);
+        var hand = new Vector3(0.18f, 0.22f, 0.28f);
+        var hint = ArmMath.ElbowHint(shoulder, hand, Right, Up, Forward, false);
+        var bend = Vector3.Zero;
+        var stable = ArmMath.StableHint(shoulder, hand, hint, ref bend);
+        TestUtil.Near(Pole(shoulder, hand, hint), Pole(shoulder, hand, stable), 1e-4f);
+        TestUtil.Near(Pole(shoulder, hand, hint), bend, 1e-4f);
+    }
+
+    [Fact]
+    public void StableHint_ArmAlongThePole_HoldsTheLastBend()
+    {
+        var shoulder = Vector3.Zero;
+        var last = Vector3.Normalize(new Vector3(1f, 0f, -0.2f));
+        var bend = last;
+        // The hint sits on the arm's own line: its direction off the arm is undefined.
+        var hand = new Vector3(0f, -0.55f, 0f);
+        var stable = ArmMath.StableHint(shoulder, hand, new Vector3(0f, -0.8f, 0f), ref bend);
+        TestUtil.Near(last, Pole(shoulder, hand, stable), 1e-4f);
+    }
+
+    [Fact]
+    public void StableHint_HandSweptAcrossThePole_ElbowNeverFlips()
+    {
+        // Arm hanging along the pole (down, out, back): a plain projection swings the elbow half a turn as the hand
+        // crosses the pole's line, which a relaxed hand at the side does by millimetres.
+        var shoulder = new Vector3(0.26f, 0f, 0f);
+        var pole = Vector3.Normalize(new Vector3(0.5f, -1f, -0.3f));
+        var bend = Vector3.Zero;
+        Vector3 first = default,
+            prev = default;
+        for (int i = 0; i <= 40; i++)
+        {
+            float t = -0.1f + 0.005f * i;
+            var hand = shoulder + pole * 0.55f + new Vector3(t, 0f, -t);
+            var hint = (shoulder + hand) * 0.5f + pole * ArmMath.HintDistance;
+            var dir = Pole(shoulder, hand, ArmMath.StableHint(shoulder, hand, hint, ref bend));
+            if (i == 0)
+                first = dir;
+            else
+                Assert.True(
+                    Vector3.Dot(dir, prev) > MathF.Cos(25f * MathF.PI / 180f),
+                    $"elbow jumped from {prev} to {dir} at step {i}"
+                );
+            prev = dir;
+        }
+        Assert.True(Vector3.Dot(first, prev) > 0f, $"elbow flipped sides: {first} -> {prev}");
+    }
 }
