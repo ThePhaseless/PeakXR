@@ -11,6 +11,9 @@ These replace the older numbers below, which are kept as history. The game is PE
 | Single-step runs 73 and 74 (`-peakxr-selftest-only`) | `cf8f07f`, `86b25a2` | vr.173, vr.230 and vr.89b pass: 6 and 11 pass (setup included), 0 fail, 82 s and 114 s |
 | VR self-test, run 75 | `86b25a2` | 470 pass, 2 fail (vr.71, vr.82b; both fixed and confirmed below), 5 skips |
 | Single-step run 78 | `0a4008d` | vr.71, vr.82 and vr.82b pass; 7 pass, 0 fail, 114 s |
+| Two clients, B runs PeakXR flat (run 33) | `84805ef` | A 24 pass, 2 fail; `mp-check.sh --modded-b` 88 pass, 3 fail; pal-jump and every hand check pass; held items let go of the hand 3 times instead of repeatedly |
+| Two clients, B unmodded (run 35) | `fc5b418` | Every compatibility check passes; A 22 pass, 3 fail, 5 skip; `mp-check.sh` 67 pass, 4 fail |
+| Two clients, B runs PeakXR flat (run 36) | `fc5b418` | Not valid: SteamVR took input focus from A after the ping step, so later steps could not move |
 | Two clients, B unmodded (run 31) | `0a4008d` | Every compatibility check passes; A 22 pass, 3 fail, 5 skip; `mp-check.sh` 70 pass, 3 fail |
 | Two clients, B runs PeakXR flat (run 32) | `0a4008d` | A 24 pass, 2 fail, 4 skip; `mp-check.sh --modded-b` 87 pass, 4 fail; every hand-position check passes; B accepted 8801 of 8848 pose packets |
 | Two clients, B runs PeakXR flat (run 27) | `d61d73b` | A 25 pass, 1 fail; `mp-check.sh --modded-b` 91 pass, 2 fail |
@@ -37,7 +40,7 @@ Runs 29 and 30 never got past the join, with "Failed to fetch lobby data". Clien
 
 Open in runs 31 and 32:
 
-- **feed and feed-refuse:** the scripted hand never held the item still at the host's mouth. These steps failed for script reasons in most two-client runs and are tracked as flaky. Feeding itself is covered by Core tests and passed in earlier runs.
+- **feed and feed-refuse:** the scripted hand never held the item still at the host's mouth. In run 35 the item is picked up, but the step stands about 0.6 m from the host, so the item stops about 0.3 m short of the mouth. These steps failed for script reasons in most two-client runs and are tracked as flaky. Feeding itself is covered by Core tests and passed in earlier runs.
 - **vr.00 in run 31:** the SteamVR dashboard covered the game at launch.
 - **pal-jump in run 32:** B logged no boost. It passed in runs 24, 25 and 27, so it is intermittent.
 
