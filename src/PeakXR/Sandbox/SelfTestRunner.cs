@@ -629,9 +629,61 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield break;
     }
 
+    /// <summary>Mobs judged by how far they come toward the player: spawned at a fixed distance straight ahead, so the
+    /// start does not depend on where the spawn rule lands (run 61: AntiSphere_Projectile started 6.1 m off instead of
+    /// 15.8 m and had no room left to show its approach).</summary>
+    static readonly string[] ApproachMobs = { "AntiSphere_Projectile" };
+
+    /// <summary>Where an approach mob starts: this far ahead of the player, over open ground.</summary>
+    const float ApproachStart = 15f;
+
     IEnumerator Mob(MobEntry entry)
     {
-        if (!SandboxActions.SpawnMob(entry))
+        if (Array.IndexOf(ApproachMobs, entry.Name) >= 0)
+        {
+            var c = Character.localCharacter;
+            var forward =
+                c.data.lookDirection_Flat.sqrMagnitude > 1e-4f
+                    ? c.data.lookDirection_Flat.normalized
+                    : Vector3.forward;
+            var eye = c.Head;
+            var ahead = c.Center + forward * ApproachStart;
+            if (
+                !Physics.Raycast(
+                    ahead + Vector3.up * 10f,
+                    Vector3.down,
+                    out var ground,
+                    30f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.Linecast(
+                    eye,
+                    ground.point + Vector3.up * 1.5f,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                stepSkip = F(
+                    $"no open ground {ApproachStart:0} m ahead with a clear line from the player"
+                );
+                yield break;
+            }
+            if (
+                !SandboxActions.SpawnMobAt(
+                    entry,
+                    ground.point + Vector3.up * 1.5f,
+                    Quaternion.LookRotation(-forward)
+                )
+            )
+            {
+                Fail(SandboxActions.LastMessage);
+                yield break;
+            }
+            Note(F($"started {Vector3.Distance(c.Center, ground.point):0.0} m straight ahead"));
+        }
+        else if (!SandboxActions.SpawnMob(entry))
         {
             Fail(SandboxActions.LastMessage);
             yield break;
