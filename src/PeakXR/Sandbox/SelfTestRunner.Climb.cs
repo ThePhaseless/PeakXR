@@ -2006,32 +2006,49 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.47: the OutOfReach refusal on a wall grip (<c>PhysicalInteraction.DenyClimb</c>) needs a hold more than
-    /// <see cref="TraversalRefusal.GameWallReach"/> (1.35 m) from the camera (CharacterClimbing.cs:534, :552-561). The
-    /// hold is where the hand's cast hits (<c>CastHold</c>): at most 0.15 m plus <c>ClimbGrabRadius</c> past the hand,
-    /// which sits at most <see cref="MaxHandFromEye"/> from the eye the camera rides. So only a radius above 0.2 m (the
-    /// setting allows 0.25) in a full-stretch reach along a slanted face can be refused for reach; at the default no
-    /// player meets the cue. The step skips with the numbers rather than fake a 1.6 m arm (mod design issue,
-    /// reported).
+    /// vr.47: a grip that closes just short of a climbable wall gets OutOfReach (<see cref="TraversalRefusal.ReachBand"/>),
+    /// never silence. The player stands at the test wall and the hand reaches toward it, stopping 0.2 m past
+    /// the grab range (<c>ClimbGrabRadius</c>); the grip gets the OutOfReach cue on that hand and does not climb.
     /// </summary>
     IEnumerator ClimbDenyReachStep()
     {
+        var c = Character.localCharacter;
         var cfg = Interact.InteractConfig.Instance;
         if (!cfg.PhysicalClimb)
         {
             stepSkip = "Interaction.GrabToClimb off";
             yield break;
         }
-        float farthest = MaxHandFromEye + 0.15f + cfg.ClimbRadius;
-        stepSkip =
-            F(
-                $"mod issue: a player's grip reaches holds at most {farthest:0.00} m from the eye ({MaxHandFromEye:0.00} m arm, 0.15 m cast, ClimbGrabRadius {cfg.ClimbRadius:0.00} m); OutOfReach needs more than {TraversalRefusal.GameWallReach:0.00} m"
-            )
-            + (
-                farthest > TraversalRefusal.GameWallReach
-                    ? ", reachable only at full stretch along a slanted face, not scripted"
-                    : ", so no player meets it"
-            );
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        var rig = VRRig.Instance;
+        bool left = VRInput.LeftHanded;
+        // Along the reach from the eye to the face, the hand stops grab radius plus 0.2 m short of it.
+        var eye = EyeNow();
+        var dir = (wallFace.point - eye).normalized;
+        float gap = cfg.ClimbRadius + 0.2f;
+        var stop = wallFace.point - dir * gap;
+        UI.Affordances.Affordance.ResetGate();
+        float mark = CueMark();
+        yield return MoveTo(left, () => stop, 0.5f);
+        if (OverReach(left) is { } far)
+        {
+            stepSkip = "the stance left the wall beyond a full arm's reach: " + far;
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        yield return ExpectCue(left, DenyReason.OutOfReach, mark, false, 1f);
+        bool climbed = c.data.isClimbing;
+        var note = F(
+            $"hand {gap:0.00} m short of the face ({Vector3.Distance(rig.Hand(left).position, wallFace.point):0.00} m measured): {cueNote}; climbing {climbed}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        );
+        if (climbed)
+            Fail("a grip short of the wall climbed: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
     }
 
     /// <summary>

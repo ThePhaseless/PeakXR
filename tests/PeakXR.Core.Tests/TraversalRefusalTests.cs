@@ -135,4 +135,24 @@ public class TraversalRefusalTests
             refused ? DenyReason.OutOfReach : DenyReason.None,
             TraversalRefusal.WallReach(eyeToHold, reach)
         );
+
+    [Theory]
+    [InlineData(0.05f, false)]
+    [InlineData(0.1f, false)]
+    [InlineData(0.3f, true)]
+    [InlineData(0.5f, true)]
+    [InlineData(0.55f, false)]
+    public void GripShortOfAWall_IsOutOfReach(float handToRock, bool refused)
+    {
+        // VR run 64: the hand stops at arm's length, so a wall just beyond it never reached the grab and the grip was
+        // silent. Rock within the band past the grab radius (0.10 m) is the "too far" refusal; farther is open air.
+        Assert.Equal(
+            refused ? DenyReason.OutOfReach : DenyReason.None,
+            TraversalRefusal.ReachBand(
+                handToRock,
+                grabRadius: 0.1f,
+                band: TraversalRefusal.ReachProbe
+            )
+        );
+    }
 }
