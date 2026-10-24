@@ -39,6 +39,11 @@ internal sealed partial class SelfTestRunner
     /// <summary>How far (m) from the head a scripted hand may reach toward a friend: about a real arm.</summary>
     const float MpArmReach = 0.85f;
 
+    /// <summary>How far (m) from the eye the feed steps hold an item out: a bent arm the avatar's ragdoll arm keeps up
+    /// with. At the full 0.85 m the arm fell 0.25-0.67 m behind the controller, the hand weld let go and rejoined over
+    /// and over, and the item jumped about the mouth so it never rested (MP runs 31 and 32).</summary>
+    const float MpFeedHold = 0.6f;
+
     /// <summary>Set by <see cref="MpTestFeature"/>; non-null switches this runner to the mp script.</summary>
     internal static string MpDirectory;
 
@@ -1195,9 +1200,10 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var host = Host();
+        var rig = VRRig.Instance;
+        yield return MpStepToMouth(host);
         Face(host.Head);
         yield return Wait(0.3f);
-        var rig = VRRig.Instance;
         bool left = LocalHold.ItemInLeftHand;
         var c = Character.localCharacter;
         // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
@@ -1237,11 +1243,11 @@ internal sealed partial class SelfTestRunner
             var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
             bandGoal =
                 VRInput.HeadPosition
-                + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpArmReach);
+                + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpFeedHold);
             SetHand(left, bandGoal);
             float d = Social.SocialHands.FeedGap(item, mouthNow);
             if (d < 0.28f)
-                standoff += 0.01f;
+                standoff = Mathf.Min(0.6f, standoff + 0.01f);
             else if (d > 0.4f)
                 standoff = Mathf.Max(0.05f, standoff - 0.01f);
             placedFor = d > 0.26f && d < 0.42f ? placedFor + Time.unscaledDeltaTime : 0f;
@@ -1308,7 +1314,7 @@ internal sealed partial class SelfTestRunner
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
             goal =
                 VRInput.HeadPosition
-                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
+                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpFeedHold);
             SetHand(
                 left,
                 Vector3.Distance(goal, Script(left).Position) > 0.25f
@@ -1644,6 +1650,29 @@ internal sealed partial class SelfTestRunner
     {
         var eye = VRRig.Instance.Head.position;
         return eye + Vector3.ClampMagnitude(world - eye, MaxHandFromEye * 0.97f);
+    }
+
+    /// <summary>Steps in (up to three bounded steps) until the host's mouth is within <see cref="MpFeedHold"/> of A's
+    /// eye, so the item is held out on a bent arm rather than at full stretch.</summary>
+    IEnumerator MpStepToMouth(Character host)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        for (int i = 0; i < 3; i++)
+        {
+            var mouth = HostPart(host, BodypartType.Head);
+            if (Vector3.Distance(rig.Head.position, mouth) <= MpFeedHold)
+                yield break;
+            var toward = mouth - c.Center;
+            toward.y = 0f;
+            float step = Vector3.Distance(rig.Head.position, mouth) - MpFeedHold + 0.1f;
+            var to =
+                c.Center
+                + toward.normalized * Mathf.Min(step, Mathf.Max(0f, toward.magnitude - 0.35f));
+            yield return MpWalkBounded(() => to, 0.1f, 3f);
+            Face(mouth);
+            yield return Wait(0.3f);
+        }
     }
 
     /// <summary>A held item's centre in the frame of the scripted controller holding it (clamped to 0.6 m).</summary>
@@ -2095,15 +2124,8 @@ internal sealed partial class SelfTestRunner
         Vector3 Mouth() => HostPart(host, BodypartType.Head);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
         // 1.4 m under the floor toward a host down the slope).
+        yield return MpStepToMouth(host);
         float gap = Vector3.Distance(rig.Head.position, Mouth());
-        // Still more than a bent arm away (MP run 13: 0.87 m, the walk stopped against the host): one more, closer step.
-        if (gap > MpArmReach - 0.15f)
-        {
-            yield return MpWalkBounded(HostCenter, 0.3f, 4f);
-            Face(Mouth());
-            yield return Wait(0.3f);
-            gap = Vector3.Distance(rig.Head.position, Mouth());
-        }
         // The item reaches past the hand, so a mouth up to a full arm plus the item away is in reach.
         if (gap > MpArmReach + 0.1f)
         {
@@ -2141,7 +2163,7 @@ internal sealed partial class SelfTestRunner
             var goal = rig.Origin.InverseTransformPoint(Mouth() - grip.World(rig, Script(left)));
             goal =
                 VRInput.HeadPosition
-                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
+                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpFeedHold);
             SetHand(
                 left,
                 Vector3.Distance(goal, Script(left).Position) > 0.25f
@@ -2733,23 +2755,34 @@ internal sealed partial class SelfTestRunner
                 yield return Ask(MpRequest.StandOn);
                 if (stepSkip != null)
                     yield break;
-                float until = Now + 2f;
-                float lastY = host.Center.y;
+                float until = Now + 3f;
+                // The host's height a moment ago: its remote position steps at the network rate, so a per-frame
+                // speed reads 0 between packets while it still falls (MP run 32: the jump went 0.9 s after the warp,
+                // before B had settled on A, and boosted nobody).
+                float sampledY = host.Center.y;
+                float sampledAt = Now;
+                float onHeadFor = 0f;
                 while (Now < until && !onTop)
                 {
                     yield return null;
                     var flat = host.Center - c.Center;
                     flat.y = 0f;
-                    float vy = Time.deltaTime > 0f ? (host.Center.y - lastY) / Time.deltaTime : 0f;
-                    lastY = host.Center.y;
-                    // On A's head, and no longer falling onto it (the warp drops B from 0.6 m above): B's own check
-                    // needs B already standing on the crouched A when A's jump arrives, as JumpRpc ends A's crouch
+                    bool still = true;
+                    if (Now - sampledAt >= 0.2f)
+                    {
+                        still = Mathf.Abs(host.Center.y - sampledY) < 0.05f;
+                        sampledY = host.Center.y;
+                        sampledAt = Now;
+                    }
+                    // On A's head and settled there (the warp drops B from 0.6 m above): B's own check needs B already
+                    // standing on the crouched A when A's jump arrives, as JumpRpc ends A's crouch
                     // (CharacterMovement.cs:646, :1006-1013, :1021).
-                    onTop =
+                    bool there =
                         flat.magnitude < 0.45f
                         && host.Center.y > c.Head.y - 0.1f
-                        && host.Center.y < c.Head.y + 0.9f
-                        && Mathf.Abs(vy) < 0.3f;
+                        && host.Center.y < c.Head.y + 0.9f;
+                    onHeadFor = there && still ? onHeadFor + Time.unscaledDeltaTime : 0f;
+                    onTop = onHeadFor >= 0.3f;
                 }
             }
             if (!onTop)
