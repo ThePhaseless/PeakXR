@@ -81,6 +81,7 @@ public sealed class WorldHoldsFeature : Feature
         WorldHolds.Usability = GameMember.Field<Item, Optionable<bool>>("overrideUsability");
         WorldHolds.CannonEntry = GameMember.Field<ScoutCannon, Transform>("entry");
         Patch(typeof(WorldHolds.PortalSeen));
+        Patch(typeof(WorldHolds.StatueHoldStart));
         Patch(typeof(WorldHolds.CannonLit));
         Patch(typeof(WorldHolds.CannonLaunch));
         Patch(typeof(WorldHolds.CheckpointUsed));

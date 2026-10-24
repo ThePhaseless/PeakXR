@@ -1770,6 +1770,12 @@ internal sealed partial class SelfTestRunner
             RestoreFire(fire, was);
             yield break;
         }
+        // An unlit fire is lit by holding interact on it (Campfire.cs:321-337: Off, everyone in range, Light_Rpc with
+        // the segment advance; IsInteractible is true while Off, :353-357). With no log under the grip sphere the grip
+        // is the head-aimed interact (run 62: candidate None, the fire not looked at), so look at the logs as a player
+        // does when reaching for them.
+        LookAtPoint(fire.Center());
+        yield return Wait(0.3f);
         float mark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
         float eyeHand = Vector3.Distance(
@@ -2023,7 +2029,12 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectFeel(free, CueFeel.Progress, mark, within: CueMark() - mark + 1f);
+        // A hold over in a few frames may give the contact tick of its start and no ramp tick: either is the
+        // press felt on the pointing hand.
+        if (CueLog.Capture.Felt(free, CueFeel.Contact, mark, out var contact))
+            cueNote = contact;
+        else
+            yield return ExpectFeel(free, CueFeel.Progress, mark, within: CueMark() - mark + 1f);
         if (stepOk)
             notes.Add(
                 $"{back:0.0} m back, pointed at socket {WorldHolds.SocketTarget}: hold {progress:0.00}, amulet {(ReferenceEquals(HeldItem(), held) ? "still held" : "inserted")}; {where}; {cueNote}"
