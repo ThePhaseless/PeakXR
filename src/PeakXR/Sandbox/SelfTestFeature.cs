@@ -24,6 +24,23 @@ public sealed class SelfTestFeature : Feature
 
     internal static bool Hold => Array.IndexOf(Environment.GetCommandLineArgs(), HoldFlag) >= 0;
 
+    /// <summary>Run only these steps: the next argument is a comma-separated list of step ids or prefixes ending in
+    /// <c>*</c> (<see cref="Core.StepFilter"/>). Setup steps still run (<see cref="Core.SelfTestIds.Setup"/>).</summary>
+    public const string OnlyFlag = "-peakxr-selftest-only";
+
+    /// <summary>The value after <see cref="OnlyFlag"/>, empty when the flag has none, null without the flag.</summary>
+    internal static string OnlySpec
+    {
+        get
+        {
+            var args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, OnlyFlag);
+            if (i < 0)
+                return null;
+            return i + 1 < args.Length ? args[i + 1] : "";
+        }
+    }
+
     public override string Id => "sandbox.selftest";
 
     // After sandbox (Order 0), which it drives.

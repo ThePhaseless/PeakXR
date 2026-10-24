@@ -122,6 +122,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator ItemStep(string id, string fragment, float timeout, Func<Item, IEnumerator> body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         var item = FindItem(new List<Item>(SandboxActions.Items), fragment);
         if (item == null)
         {

@@ -112,6 +112,27 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Plugin.Log.LogError($"[selftest] cannot prepare output: {e.Message}");
         }
         Plugin.Log.LogInfo($"[selftest] started, results in {logPath}");
+        if (SelfTestFeature.OnlySpec is { } only)
+        {
+            // A filter that cannot match fails now, not after a 45 min run.
+            if (!StepFilter.TryParse(only, out var parsed, out var bad))
+            {
+                Abort($"{SelfTestFeature.OnlyFlag}: {bad}");
+                return;
+            }
+            var none = parsed.MatchingNothing(SelfTestIds.Known, SelfTestIds.DynamicPrefixes);
+            if (none.Length > 0)
+            {
+                Abort(
+                    $"{SelfTestFeature.OnlyFlag}: matches no step: {string.Join(", ", none)} (filter '{only}')"
+                );
+                return;
+            }
+            filter = parsed;
+            Plugin.Log.LogInfo(
+                $"[selftest] only {string.Join(", ", parsed.Patterns)}, setup still runs"
+            );
+        }
         StartCoroutine(
             Guard(
                 Script(),
@@ -470,6 +491,15 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         var positions = new System.Numerics.Vector3[RowSize];
         for (int start = 0, row = 0; start < all.Count; start += RowSize, row++)
         {
+            // A filtered run places no row none of whose items it runs (and shoots none).
+            if (filter != null)
+            {
+                bool any = false;
+                for (int i = 0; i < RowSize && start + i < all.Count; i++)
+                    any |= !Filtered("item." + all[start + i].name);
+                if (!any)
+                    continue;
+            }
             Safe("items.place", () => PlaceRow(positions));
             for (int i = 0; i < RowSize && start + i < all.Count; i++)
             {
@@ -495,6 +525,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Skip("use." + fragment, "no item name contains it");
                 continue;
             }
+            if (Filtered("use." + item.name))
+                continue;
             // Setup (drop, give, settle) plus the item's own use time; a spool also aims twice and ties off.
             var tier = item.GetComponent<RopeTier>();
             yield return Run(
@@ -598,6 +630,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return Run("05-mob-scan", 120f, ScanMobs());
         foreach (var entry in mobs)
         {
+            if (Filtered("mob." + entry.Name))
+                continue;
             if (entry.Style == SpawnStyle.Unsupported)
             {
                 if (Deferred(entry))
@@ -844,8 +878,77 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     // ---------------------------------------------------------------- step machinery
 
+    /// <summary>The <c>-peakxr-selftest-only</c> filter, or null for a full run.</summary>
+    StepFilter filter;
+
+    /// <summary>Steps a filtered run left out, for the summary.</summary>
+    readonly HashSet<string> filteredIds = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Steps that only mean something after another: a filtered run that selects the first runs the second too.
+    /// vr.93b's countdown needs vr.93's helicopter summon; vr.25b cooks over the fire vr.25 lights; vr.86b judges the
+    /// screens the end-of-run slot showed.
+    /// </summary>
+    readonly Dictionary<string, string[]> Needs = new(StringComparer.Ordinal)
+    {
+        ["vr.93b-summit-countdown"] = new[] { "vr.93-summit-flare" },
+        ["vr.25b-cook-danger"] = new[] { "vr.25-cook-over-fire" },
+        ["vr.86b-no-flat-screens"] = EndOfRunIds,
+    };
+
+    HashSet<string> neededByFilter;
+
+    /// <summary>
+    /// True when a filtered run leaves step <paramref name="id"/> out: it is neither selected, nor setup
+    /// (<see cref="SelfTestIds.Setup"/>), nor needed by a selected step; or every selected step has already run, so
+    /// the rest of the script, setup included, is skipped through to the summary.
+    /// </summary>
+    bool Filtered(string id)
+    {
+        if (filter == null)
+            return false;
+        if (neededByFilter == null)
+        {
+            neededByFilter = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var pair in Needs)
+            {
+                if (filter.Matches(pair.Key))
+                    neededByFilter.UnionWith(pair.Value);
+            }
+        }
+        bool setup = IsSetup(id);
+        bool keep =
+            !filter.Complete
+            && (
+                setup
+                || filter.Matches(id)
+                || neededByFilter.Contains(id)
+                // The mob list comes from the scan: needed whenever a mob step is.
+                || (id == "05-mob-scan" && filter.MayMatchUnder("mob."))
+            );
+        if (!keep && !setup)
+            filteredIds.Add(id);
+        return !keep;
+    }
+
+    static bool IsSetup(string id)
+    {
+        foreach (var s in SelfTestIds.Setup)
+        {
+            if (
+                s.EndsWith('*')
+                    ? id.StartsWith(s.Substring(0, s.Length - 1), StringComparison.Ordinal)
+                    : id == s
+            )
+                return true;
+        }
+        return false;
+    }
+
     IEnumerator Run(string id, float timeout, IEnumerator body)
     {
+        if (Filtered(id))
+            yield break;
         stepOk = true;
         stepNote = null;
         failNote = null;
@@ -879,6 +982,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 stepNote == null || stepNote == failNote ? failNote : failNote + "; " + stepNote
             );
         Record(report.Steps.Count - 1);
+        filter?.MarkRun(id);
     }
 
     void OnStepFailure(Exception e)
@@ -1030,7 +1134,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     void Skip(string id, string note)
     {
+        if (Filtered(id))
+            return;
         report.Skip(id, note);
+        filter?.MarkRun(id);
         Record(report.Steps.Count - 1);
     }
 
@@ -1079,7 +1186,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         for (int i = 0; i < report.Steps.Count; i++)
             sb.Append(report.Line(i)).Append('\n');
         sb.Append(
-            $"summary: {report.Passed} pass, {report.Failed} fail, {skipped} skip, {Now:0}s\n"
+            $"summary: {report.Passed} pass, {report.Failed} fail, {skipped} skip, {(filter != null ? $"{filteredIds.Count} filtered, " : "")}{Now:0}s\n"
         );
         sb.Append(FramesSummary()).Append('\n');
         sb.Append($"vanilla-exceptions: {report.VanillaExceptions}\n");

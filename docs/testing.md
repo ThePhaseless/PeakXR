@@ -107,6 +107,21 @@ Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual
 
 VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-vulkan -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
 
+### Running only some steps
+
+A full VR run takes about 45 minutes. To re-check a few steps, add `-peakxr-selftest-only` and a comma-separated list of step ids. An id ending in `*` matches every id that starts with it:
+
+```
+-force-vulkan -peakxr-selftest -peakxr-selftest-only vr.173-reach-ghost
+-force-vulkan -peakxr-selftest -peakxr-selftest-only "vr.230*,mob.Character_*"
+```
+
+Setup still runs, so a chosen step meets the scene, segment and god mode it has in a full run: `00-title`, `vr.00-session`, `01-airport`, `04-beach` and the `06-segment-*` jumps (`SelfTestIds.Setup`). So does the mob scan when the filter can match a `mob.` step. A few steps only mean something after another, and those run too: `vr.93b` after `vr.93` (the helicopter summon), `vr.25b` after `vr.25` (the lit fire), and `vr.86b` after the whole end-of-run slot. Every other step does its own setup (warps, the sandbox test wall, items, statuses).
+
+Steps that are not selected are not run and not logged. The summary counts them, for example `summary: 3 pass, 0 fail, 0 skip, 474 filtered, 210s`. With exact ids only, the run stops as soon as the last one has run, and skips the remaining setup. A filter with a `*` runs to the end of the script with everything else filtered out. A run for one beach step takes about 2-4 minutes: the title, the airport and the beach load. A step in a later segment adds about 10 s per segment jump before it.
+
+A filter that cannot match anything fails at once. A malformed list (an empty entry, or a `*` that does not end an entry) or an id or prefix that no step has fails the run before the title, naming the bad entry. The known ids are in `SelfTestIds.Known`; a Core test keeps that list in step with the runner. `-peakxr-selftest-only` is refused with `-peakxr-mptest`: each two-player step writes a checkpoint the other client answers, in order.
+
 In a VR run each step also writes a `[selftest] frames <step>:` line to `LogOutput.log`, measured over that step alone. It has the refresh rate and frame budget, the p50, p95 and p99 frame interval, how many frames took more than 1.5 budgets, the GPU time, and the dropped and repeated frames the runtime reports (`n/a` where it reports none). `PeakXR-selftest.log` ends with a `frames:` line that counts the steps whose p95 frame ran over 1.1 budgets and names the worst one.
 
 ### Live input

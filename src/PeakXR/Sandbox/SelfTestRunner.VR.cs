@@ -57,6 +57,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator VRStep(string id, float timeout, IEnumerator body)
     {
+        // A filtered run skips the wrapper's setup and teardown too, not only the step.
+        if (Filtered(id))
+            yield break;
         if (!VRRun)
             yield break;
         if (!VRSession.Active)
