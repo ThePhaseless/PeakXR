@@ -1352,50 +1352,80 @@ internal sealed partial class SelfTestRunner
         ushort id = world.itemID;
         string label = world.name;
         cpItemId = id;
-        yield return WalkTo(
-            () => world != null ? world.Center() : Character.localCharacter.Center,
-            0.55f,
-            true
-        );
-        if (!stepOk)
-            yield break;
+        var c = Character.localCharacter;
+        // A round item the walk bumps rolls on (MP run 20: a coconut came to rest 8-9 m off and the hand was sent
+        // after it, a pose B rejected as implausible): let it settle and walk again while it lies out of reach.
+        for (int walk = 0; walk < 3; walk++)
+        {
+            yield return WalkTo(
+                () => world != null ? world.Center() : Character.localCharacter.Center,
+                0.55f,
+                true
+            );
+            if (!stepOk)
+                yield break;
+            if (world == null || world.itemState != ItemState.Ground)
+            {
+                Fail(label + " is gone");
+                yield break;
+            }
+            // An item the walk ended on top of is underfoot, out of a standing hand's reach and under the body: step
+            // back from it first (MP run 17: a Compass at A's feet, the hand sent 1.5 m down and behind, the grip found
+            // nothing).
+            var under = world.Center() - c.Center;
+            under.y = 0f;
+            if (under.magnitude < 0.35f)
+            {
+                var back =
+                    c.Center
+                    - (
+                        under.sqrMagnitude > 1e-4f
+                            ? under.normalized
+                            : Flat(VRRig.Instance.Head.forward)
+                    ) * 0.5f;
+                yield return MpWalkBounded(() => back, 0.15f, 3f);
+            }
+            yield return WaitFor(
+                () =>
+                    world == null || world.rig == null || world.rig.linearVelocity.magnitude < 0.1f,
+                2f
+            );
+            if (world == null || FlatDistance(world.Center(), c.Center) <= 1.2f)
+                break;
+        }
         if (world == null || world.itemState != ItemState.Ground)
         {
             Fail(label + " is gone");
             yield break;
-        }
-        // An item the walk ended on top of is underfoot, out of a standing hand's reach and under the body: step back
-        // from it first (MP run 17: a Compass at A's feet, the hand sent 1.5 m down and behind, the grip found nothing).
-        var c = Character.localCharacter;
-        var under = world.Center() - c.Center;
-        under.y = 0f;
-        if (under.magnitude < 0.35f)
-        {
-            var back =
-                c.Center
-                - (
-                    under.sqrMagnitude > 1e-4f
-                        ? under.normalized
-                        : Flat(VRRig.Instance.Head.forward)
-                ) * 0.5f;
-            yield return MpWalkBounded(() => back, 0.15f, 3f);
         }
         Face(world.Center());
         yield return Wait(0.3f);
         const bool left = false;
         yield return GripTo(left, 0f, 0.05f);
         var at = world.Center();
-        // Stooping as a player squats for something low (ReachDown); standing again after the grab.
+        var lay = at;
+        // Stooping as a player squats for something low (ReachDown); standing again after the grab. The hand follows
+        // the item only while it stays near where it lay: one the hand nudges off down a slope is not chased.
         yield return ReachDown(
             left,
             () =>
             {
-                if (world != null)
+                if (world != null && (world.Center() - lay).sqrMagnitude < 0.3f * 0.3f)
                     at = world.Center();
                 return at;
             },
             0.6f
         );
+        if (OverReach(left) is { } far)
+        {
+            headDrop = 0f;
+            Fail(
+                F(
+                    $"{label} out of reach: {far}; it lies {(world != null ? Vector3.Distance(world.Center(), lay) : -1f):0.00} m from where the reach began"
+                )
+            );
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return Until(
             () => HeldItem() != null && HeldItem().itemID == id,
@@ -1960,7 +1990,13 @@ internal sealed partial class SelfTestRunner
             yield break;
         yield return ExpectCue(false, DenyReason.WrongAngle, mark, false, 2f);
         if (!stepOk)
+        {
+            // MP run 20 missed the cue with nothing to tell a look inside the cone from a reach the game caught.
+            stepNote = F(
+                $"look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off the host (cone {SocialIntent.ReachConeDegrees:0}), caught {c.data.sinceGrabFriend < 0.3f}, grip {PeakXR.Interact.PhysicalInteraction.HandAction(false)}"
+            );
             yield break;
+        }
         if (c.data.sinceGrabFriend < 0.3f)
         {
             Fail("the reach caught the host while A looked away: the cue is wrong");
