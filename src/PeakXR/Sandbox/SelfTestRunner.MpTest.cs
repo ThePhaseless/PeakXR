@@ -1158,16 +1158,22 @@ internal sealed partial class SelfTestRunner
                 resqueezes++;
             }
             Script(left).Trigger = squeeze && !resqueeze ? 1f : 0f;
-            var goal = Script(left).Position + rig.Origin.InverseTransformVector(miss);
+            // Hold the item, not the hand, on the moving mouth every frame: the hand goes where the item's offset from
+            // the controller puts the item on the mouth (MP run 19: chasing the lagging item kept it at the mouth for
+            // only 0.4 s in all). Eased only while still far.
+            var controller = rig.Origin.TransformPoint(Script(left).Position);
+            var goal = rig.Origin.InverseTransformPoint(mouth - (item.Center() - controller));
             // A real arm's length from the head, as feed-refuse (a host down a slope is not fed through the floor).
             goal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpArmReach);
             SetHand(
                 left,
-                HandScript
-                    .Approach(Script(left).Position.N(), goal.N(), 1.2f, Time.unscaledDeltaTime)
-                    .U()
+                Vector3.Distance(goal, Script(left).Position) > 0.25f
+                    ? HandScript
+                        .Approach(Script(left).Position.N(), goal.N(), 1.5f, Time.unscaledDeltaTime)
+                        .U()
+                    : goal
             );
             yield return null;
         }
@@ -1395,7 +1401,7 @@ internal sealed partial class SelfTestRunner
             () => HeldItem() != null && HeldItem().itemID == id,
             3f,
             F(
-                $"{label} not picked up ({Vector3.Distance(VRRig.Instance.Hand(left).position, at):0.00} m from the hand, stooped {headDrop:0.00} m; {PeakXR.Interact.PhysicalInteraction.LastGripNote})"
+                $"{label} not picked up ({Vector3.Distance(VRRig.Instance.Hand(left).position, at):0.00} m from the hand, stooped {headDrop:0.00} m; {GroundNote(world)}; {PeakXR.Interact.PhysicalInteraction.LastGripNote})"
             )
         );
         headDrop = 0f;
@@ -1404,6 +1410,30 @@ internal sealed partial class SelfTestRunner
         stepNote = "holding " + label;
         HeadFrame(out var head, out var forward, out var right);
         yield return MoveTrack(left, Rest(head, forward, right).Position, 0.4f);
+    }
+
+    /// <summary>Where a ground item lies, for a failed pickup's note: the terrain under it (its collider, tilt from
+    /// level, how far the item's centre sits above it, negative when sunk in), and the item's own state.</summary>
+    static string GroundNote(Item item)
+    {
+        if (item == null)
+            return "item gone";
+        var at = item.Center();
+        var state = $"{item.itemState}, kinematic {(item.rig != null && item.rig.isKinematic)}";
+        if (
+            !Physics.Raycast(
+                at + Vector3.up * 0.5f,
+                Vector3.down,
+                out var ground,
+                3f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            return $"no terrain within 2.5 m under it ({state})";
+        return F(
+            $"lies on {ground.collider.name}, {Vector3.Angle(ground.normal, Vector3.up):0} deg slope, centre {at.y - ground.point.y:0.00} m above it ({state})"
+        );
     }
 
     /// <summary>Taps the drop button (<c>InteractConfig.DropButton</c>, DominantSecondary by default).</summary>
