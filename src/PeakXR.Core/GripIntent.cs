@@ -66,6 +66,13 @@ namespace PeakXR.Core
         /// even beside rock or a line.</summary>
         public bool AtSecondGrip;
 
+        /// <summary>This hand is right at the held item's second grip point, within the grab radius (tighter than
+        /// <see cref="AtSecondGrip"/>'s reach): the one place a pointing hand still joins the item.</summary>
+        public bool AtSecondGripTight;
+
+        /// <summary>The hand's grab candidate is the target its pointed aim hits.</summary>
+        public bool CandidateIsAimed;
+
         /// <summary>The interactible candidate is a climb handle (a piton or pickaxe), held by the free hand only.</summary>
         public bool CandidateIsHandle;
 
@@ -154,13 +161,23 @@ namespace PeakXR.Core
             // The free hand joins the held item at its second grip, or on its body when nothing else is at the hand:
             // a chain, rope, ledge or item there wins over brushing the item (VR run 51's chain grab joined the
             // launcher instead).
+            // A pointing hand whose aim finds an interactible is aiming at it, not joining the item, unless it sits
+            // right on the item's second grip (VR run 66: a hand pointing at the statue joined the held amulet).
+            bool aimsElsewhere = c.Pointing && c.Aimed != AimedTarget.None && !c.AtSecondGripTight;
             if (
                 c.HoldingItem
                 && !c.ThisHandHolds
                 && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
                 && (
-                    c.AtSecondGrip
-                    || (c.NearHeldItem && c.Candidate == GrabCandidate.None && !c.NearClimbable)
+                    (c.AtSecondGrip && !aimsElsewhere)
+                    // A hand closing on the item's body joins it unless it points at a taker: a scripted or relaxed
+                    // grip reads as pointing, and whatever lies past the item must not steal the join (vr.14).
+                    || (
+                        c.NearHeldItem
+                        && c.Candidate == GrabCandidate.None
+                        && !c.NearClimbable
+                        && !(c.PointedAtTaker && !c.AtSecondGripTight)
+                    )
                 )
             )
                 return GripPressAction.SecondHand;
@@ -170,9 +187,15 @@ namespace PeakXR.Core
             // is the interact itself (the airport kiosk, run 52).
             if (c.PointedAtTaker)
             {
-                if (c.PhysicalGrab && c.Candidate == GrabCandidate.Interactible)
+                // The hand already on the taker grabs it there; some other interactible at the hand is not what
+                // it points at (vr66: an unrelated candidate at the pointing hand).
+                if (
+                    c.PhysicalGrab
+                    && c.Candidate == GrabCandidate.Interactible
+                    && c.CandidateIsAimed
+                )
                     return GripPressAction.GrabInteractible;
-                if (c.PhysicalGrab && c.Candidate == GrabCandidate.Item && !c.ThisHandHolds)
+                if (c.PhysicalGrab && c.Candidate == GrabCandidate.Item && !c.HoldingItem)
                     return GripPressAction.GrabItem;
                 return GripPressAction.Interact;
             }

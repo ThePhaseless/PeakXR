@@ -47,6 +47,7 @@ public class PointedGripTests
         c.NearHeldItem = true;
         // At the item's off-hand grip: next to rock, the grip anchor is what makes it a join (vr.51's chain fix).
         c.AtSecondGrip = true;
+        c.AtSecondGripTight = true;
         c.HeldHandedness = Handedness.TwoHanded;
         Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
     }
@@ -62,6 +63,7 @@ public class PointedGripCandidateTests
             PhysicalGrab = true,
             PhysicalClimb = true,
             Candidate = GrabCandidate.Interactible,
+            CandidateIsAimed = true,
             Pointing = true,
             Aimed = AimedTarget.ItemTaker,
         };
@@ -78,6 +80,7 @@ public class PointedGripCandidateTests
             NearClimbable = true,
             HoldConfirmed = true,
             Candidate = GrabCandidate.Interactible,
+            CandidateIsAimed = true,
             Pointing = true,
             Aimed = AimedTarget.ItemTaker,
         };
