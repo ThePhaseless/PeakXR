@@ -1176,9 +1176,18 @@ internal sealed partial class SelfTestRunner
         {
             if (col.isTrigger)
                 continue;
-            var p = col is MeshCollider { convex: false }
-                ? col.bounds.ClosestPoint(probe)
-                : col.ClosestPoint(probe);
+            // A concave mesh has no closest-point query, and its bounds can sit well off the real surface (run 60:
+            // LuggageAncient's box put the hand where the 0.12 m grab sphere met no triangle, so the grip went to
+            // interact and no low-grip hint came). Cast at it from the player's side instead to find the surface.
+            Vector3 p;
+            if (col is MeshCollider { convex: false })
+            {
+                var outward = Flat(from - center);
+                var ray = new Ray(probe + outward * 1.5f, -outward);
+                p = col.Raycast(ray, out var hit, 3f) ? hit.point : col.bounds.ClosestPoint(probe);
+            }
+            else
+                p = col.ClosestPoint(probe);
             float d = (p - probe).sqrMagnitude;
             if (d < bestSq)
             {
