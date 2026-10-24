@@ -1425,7 +1425,8 @@ internal sealed partial class SelfTestRunner
             Note(note);
     }
 
-    /// <summary>A point near the top of an item's solid colliders, where the eye sees it on the ground.</summary>
+    /// <summary>A point in the upper half of an item's solid colliders: above a centre sunk in uneven ground, yet inside a
+    /// small item's outline (run 65's aim at 70 % up passed over the Apple and met the ground behind it).</summary>
     static Vector3 TopOf(Item item)
     {
         foreach (var col in item.colliders)
@@ -1433,7 +1434,7 @@ internal sealed partial class SelfTestRunner
             if (col != null && col.enabled && !col.isTrigger)
             {
                 var b = col.bounds;
-                return b.center + Vector3.up * (0.7f * b.extents.y);
+                return b.center + Vector3.up * (0.4f * b.extents.y);
             }
         }
         return item.Center();
@@ -2030,15 +2031,28 @@ internal sealed partial class SelfTestRunner
         float gap = cfg.ClimbRadius + 0.2f;
         var stop = wallFace.point - dir * gap;
         UI.Affordances.Affordance.ResetGate();
-        float mark = CueMark();
-        yield return MoveTo(left, () => stop, 0.5f);
+        // A reach for the wall: the hand still moving toward it (0.4 m/s over the last 0.12 m) as the grip closes, the
+        // way a player reaches for a hold that turns out too far (TraversalRefusal.ReachAttempt).
+        var windup = stop - dir * 0.12f;
+        yield return MoveTo(left, () => windup, 0.5f);
         if (OverReach(left) is { } far)
         {
             stepSkip = "the stance left the wall beyond a full arm's reach: " + far;
             yield return LetGoAll(c);
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        float mark = CueMark();
+        var fromT = rig.Origin.InverseTransformPoint(windup);
+        var toT = rig.Origin.InverseTransformPoint(stop);
+        for (float start = Now, t = 0f; t < 0.3f; t = Now - start)
+        {
+            SetHand(left, Vector3.Lerp(fromT, toT, t / 0.3f));
+            if (t >= 0.18f)
+                Script(left).Grip = 1f;
+            yield return null;
+        }
+        SetHand(left, toT);
+        Script(left).Grip = 1f;
         yield return ExpectCue(left, DenyReason.OutOfReach, mark, false, 1f);
         bool climbed = c.data.isClimbing;
         var note = F(

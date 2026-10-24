@@ -155,4 +155,32 @@ public class TraversalRefusalTests
             )
         );
     }
+
+    static bool Attempt(
+        bool pointing = false,
+        bool itemHand = false,
+        bool casting = false,
+        float approach = 0.5f,
+        float eyeToHand = 0.4f
+    ) => TraversalRefusal.ReachAttempt(pointing, itemHand, casting, approach, eyeToHand);
+
+    [Fact]
+    public void ReachingTowardTheWall_IsAnAttempt()
+    {
+        Assert.True(Attempt());
+        // Or held out at full stretch, still.
+        Assert.True(Attempt(approach: 0f, eyeToHand: TraversalRefusal.FullReach));
+    }
+
+    [Fact]
+    public void NotAClimbAttempt_NeverRefused()
+    {
+        // VR run 65: a hand that had just let a flag go closed near the test wall and got OutOfReach.
+        Assert.False(Attempt(itemHand: true));
+        Assert.False(Attempt(pointing: true));
+        Assert.False(Attempt(casting: true));
+        // A hand resting near a wall, neither reaching nor stretched.
+        Assert.False(Attempt(approach: 0f, eyeToHand: 0.4f));
+        Assert.False(Attempt(approach: -0.5f, eyeToHand: 0.4f));
+    }
 }
