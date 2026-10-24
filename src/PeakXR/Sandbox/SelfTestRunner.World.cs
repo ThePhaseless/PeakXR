@@ -1303,12 +1303,43 @@ internal sealed partial class SelfTestRunner
             yield break;
         // A tracked hand sunk into the case, which nothing stops: the grip still takes it (VR run 75's vr.82b met no
         // triangle from inside a concave mesh and did "Interact on nothing").
+        // The centre lies half the case further out than the low grip (run 76: past arm's reach), so step in and stoop
+        // as for the low grip, until it is in reach or no closer stance is left.
         var inside = lug.Center() + Vector3.down * 0.05f;
-        yield return ReachDown(left, () => inside, 0.3f);
-        if (OverReach(left) != null)
+        float closest = float.MaxValue;
+        for (int step = 0; ; step++)
         {
-            stepNote += "; sunk-in grip skipped: past arm's reach";
-            yield break;
+            yield return ReachDown(left, () => inside, 0.3f);
+            if (OverReach(left) == null)
+                break;
+            closest = Mathf.Min(closest, Vector3.Distance(Script(left).Position, ScriptedEye()));
+            var gap = inside - rig.Head.position;
+            gap.y = 0f;
+            // 0.5 m out keeps the body clear of the case it stands at.
+            if (step >= 2 || gap.magnitude <= 0.55f)
+            {
+                stepNote += F(
+                    $"; sunk-in grip skipped: no stance reached it, closest {closest:0.00} m from the eye ({gap.magnitude:0.00} m out)"
+                );
+                yield break;
+            }
+            var to =
+                new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
+                + gap.normalized * (gap.magnitude - 0.5f);
+            warpedForProp = true;
+            c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, to, false);
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1f);
+            rig.RotateYaw(
+                Vector3.SignedAngle(
+                    Flat(rig.Head.forward),
+                    Flat(inside - rig.Head.position),
+                    Vector3.up
+                )
+            );
+            yield return Wait(0.6f);
+            stepNote += F($"; stepped in to sink the hand from {gap.magnitude:0.00} m");
         }
         LookAtHand(left);
         yield return Wait(0.2f);
