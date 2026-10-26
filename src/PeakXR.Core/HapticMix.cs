@@ -57,6 +57,20 @@ public static class HapticScale
 }
 
 /// <summary>
+/// A steady background rumble (warm palms at a fire) made of overlapping impulses: each one outlasts the next
+/// refresh, and an OpenXR impulse replaces the one playing, so the hand feels one even buzz with no gaps. A 0.3 s
+/// impulse every 0.5 s was felt as pulsing (tester, warming hands at a campfire).
+/// </summary>
+public static class SteadyRumble
+{
+    /// <summary>Seconds between impulses.</summary>
+    public const float Refresh = 0.1f;
+
+    /// <summary>Length of each impulse: past the next refresh, with room for a late frame.</summary>
+    public const float Seconds = 0.2f;
+}
+
+/// <summary>
 /// One hand's haptic channel: which pulse plays now, until when, at what priority. A pulse of lower priority than
 /// the one still playing is dropped; ambient feel also waits <see cref="DuckTail"/> after any cue, so the cue reads
 /// alone. A pattern (the refusal triple) holds the channel for its whole length with <see cref="Hold"/>, gaps
