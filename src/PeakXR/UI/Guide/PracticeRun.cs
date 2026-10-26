@@ -16,11 +16,14 @@ using UnityEngine.SceneManagement;
 namespace PeakXR.UI.Guide;
 
 /// <summary>
-/// The VR practice: a few stations in the offline solo airport, each teaching one VR mechanic. A station shows its
-/// ghost demo ahead of you, marks where to act with the "works here" double ring, waits for the same game state the
+/// The VR practice: a few stations in the offline solo airport, each teaching one VR mechanic, grouped in zones
+/// (<see cref="PracticeZones"/>): the basics where you start, then one short walk to each further zone, the climb
+/// zone at the airport's climbing wall and its rope (<see cref="PracticeLayout"/>). Between zones a light beam and
+/// the breathing double ring on the floor mark where to walk, with a cue sound from there. A station shows its
+/// ghost demo at its zone, marks where to act with the "works here" double ring, waits for the same game state the
 /// self-test reads, then confirms with the rising note, a pulse on both controllers and a widening ring. Two touch
-/// orbs on the off-hand side skip the station (chevron) or leave (cross); the VR tab's Practice row stops it too.
-/// It never runs in an online room and always ends back at the title through the game's own leave path.
+/// orbs on the off-hand side skip the station or the walk (chevron) or leave (cross); the VR tab's Practice row
+/// stops it too. It never runs in an online room and always ends back at the title through the game's own leave path.
 /// </summary>
 internal sealed class PracticeRun : MonoBehaviour
 {
@@ -33,6 +36,10 @@ internal sealed class PracticeRun : MonoBehaviour
     private const float FarApple = 2.6f;
     private const float ReplaceDistance = 1.5f;
     private const float ReplaceAngle = 70f;
+    private const float BeaconHeight = 3f;
+    private const float TravelPing = 4f;
+
+    private static readonly float[] AppleYaws = { 0f, 35f, -35f, 70f, -70f };
 
     public static PracticeRun Current { get; private set; }
 
@@ -49,7 +56,12 @@ internal sealed class PracticeRun : MonoBehaviour
     private TouchOrb skipOrb,
         exitOrb;
     private LineRenderer goalInner,
-        goalOuter;
+        goalOuter,
+        beacon;
+    private PracticeSpot[] zones;
+    private float eyeHeight;
+    private Vector3 orbsAt;
+    private float pingIn;
     private TextMeshProUGUI caption;
     private PracticePhase lastPhase;
     private int lastIndex = -1;
@@ -79,6 +91,13 @@ internal sealed class PracticeRun : MonoBehaviour
     public Vector3 SkipOrbPosition => skipOrb != null ? skipOrb.Position : Vector3.zero;
 
     public Vector3 ExitOrbPosition => exitOrb != null ? exitOrb.Position : Vector3.zero;
+
+    /// <summary>A zone as laid out on arrival, for the self-test; false before the layout.</summary>
+    public bool TryZone(PracticeZone zone, out PracticeSpot spot)
+    {
+        spot = zones != null ? zones[(int)zone] : default;
+        return zones != null;
+    }
 
     /// <summary>Where the practice could start now (<see cref="PracticeStart.Decide"/>).</summary>
     public static PracticeEntry Entry() =>
@@ -203,10 +222,12 @@ internal sealed class PracticeRun : MonoBehaviour
             return;
         phaseTime += dt;
 
-        PlaceStation(rig.Head, false);
+        PlaceOrbs(rig.Head, false);
         demo?.Tick(dt, 1f, rig.Head);
         TickOrbs(rig, dt);
-        if (Flow.Phase == PracticePhase.Station && Done(c, rig, dt))
+        if (Flow.Phase == PracticePhase.Travel)
+            Travel(rig.Head, dt);
+        else if (Flow.Phase == PracticePhase.Station && Done(c, rig, dt))
             Flow.Succeed();
         PoseGoal(rig.Head);
     }
@@ -310,14 +331,37 @@ internal sealed class PracticeRun : MonoBehaviour
         phaseTime = 0f;
         if (station == null)
             BuildStation();
+        if (zones == null)
+            PlanZones(rig.Head);
+        beacon.gameObject.SetActive(phase == PracticePhase.Travel);
         switch (phase)
         {
             case PracticePhase.Station when newStation:
                 Despawn();
                 skipOrb.Reset();
                 exitOrb.Reset();
-                PlaceStation(rig.Head, true);
+                PlaceStation();
+                PlaceOrbs(rig.Head, true);
                 EnterStation(c, rig);
+                break;
+            case PracticePhase.Travel:
+                // The next station's demo already plays at its zone, under a beam, with a ring on the floor there.
+                Despawn();
+                skipOrb.Reset();
+                exitOrb.Reset();
+                hasGoal = false;
+                PlaceStation();
+                if (demo == null || !demo.Alive)
+                    demo = new GhostDemo("PeakXR_PracticeDemo", station);
+                demo.Play(PracticeFlow.TopicOf(Flow.Current));
+                SetCaption("Walk to the light");
+                var spot = zones[(int)Flow.Zone];
+                beacon.SetPosition(0, spot.Feet);
+                beacon.SetPosition(1, spot.Feet + Vector3.up * BeaconHeight);
+                pingIn = 0f;
+                Plugin.Log.LogInfo(
+                    $"[ui.guide] practice: walk to the {Flow.Zone} zone ({spot.Anchor})"
+                );
                 break;
             case PracticePhase.Confirm:
                 hasGoal = false;
@@ -374,6 +418,18 @@ internal sealed class PracticeRun : MonoBehaviour
                 hasGoal = FindWall(c, out goal);
                 if (!hasGoal)
                     Plugin.Log.LogInfo("[ui.guide] no wall near the practice spot; walk to one");
+                break;
+            case PracticeStation.Rope:
+                goalFollow = RopeHold(rig.Head.position);
+                hasGoal = goalFollow != null;
+                if (!hasGoal)
+                {
+                    // Nothing to climb: say so in the log and move on rather than wait on a rope that is not there.
+                    Plugin.Log.LogWarning(
+                        "[ui.guide] no hanging rope in the scene; rope station skipped"
+                    );
+                    Flow.Skip();
+                }
                 break;
             case PracticeStation.Refused:
                 // Past the game's 2 m interact reach: a pointed grip at it gets the out-of-reach refusal.
@@ -433,7 +489,13 @@ internal sealed class PracticeRun : MonoBehaviour
                 confirmAt = rig.Hand(left).position;
                 return PhysicalInteraction.ThrowCount != throwsBefore;
             case PracticeStation.Climb:
-                climbFor = c.data.isClimbingAnything ? climbFor + dt : 0f;
+            case PracticeStation.Rope:
+                // The wall and the rope count apart (CharacterData.isClimbing :119, isRopeClimbing :121).
+                bool on =
+                    Flow.Current == PracticeStation.Rope
+                        ? c.data.isRopeClimbing
+                        : c.data.isClimbing;
+                climbFor = on ? climbFor + dt : 0f;
                 if (climbFor > 0f)
                     confirmAt = rig.Head.position + rig.Head.forward * 0.3f;
                 return climbFor >= ClimbHold;
@@ -496,9 +558,17 @@ internal sealed class PracticeRun : MonoBehaviour
         if (apple == null)
             return;
         var head = rig.Head;
-        var forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
-        var side = Vector3.Cross(Vector3.up, forward) * (VRInput.LeftHanded ? -1f : 1f);
-        var at = head.position + forward * distance + side * 0.15f + Vector3.down * 0.5f;
+        var ahead = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
+        var at = Vector3.zero;
+        // Never inside a wall or behind one: the first heading with a clear line from the eyes.
+        foreach (float yaw in AppleYaws)
+        {
+            var forward = Quaternion.Euler(0f, yaw, 0f) * ahead;
+            var side = Vector3.Cross(Vector3.up, forward) * (VRInput.LeftHanded ? -1f : 1f);
+            at = head.position + forward * distance + side * 0.15f + Vector3.down * 0.5f;
+            if (PracticeLayout.Clear(head.position, at + (at - head.position).normalized * 0.1f))
+                break;
+        }
         spawned = PhotonNetwork.InstantiateItemRoom(apple.gameObject.name, at, Quaternion.identity);
         var world = spawned != null ? spawned.GetComponent<Item>() : null;
         if (world == null)
@@ -565,6 +635,76 @@ internal sealed class PracticeRun : MonoBehaviour
         return best < float.MaxValue;
     }
 
+    /// <summary>The hanging rope's segment nearest the eyes, the one to reach for: the airport wall's rope, spawned by
+    /// <c>RopeAnchorWithRope.SpawnRope</c> on joining the room (RopeAnchorWithRope.cs:21, its <c>rope</c> :18), its
+    /// segments from <c>Rope.GetRopeSegments</c> (Rope.cs:186). Null when no rope hangs anywhere.</summary>
+    private static Transform RopeHold(Vector3 eye)
+    {
+        var anchor = FindAnyObjectByType<RopeAnchorWithRope>();
+        if (anchor == null || anchor.rope == null)
+            return null;
+        Transform best = null;
+        float nearest = float.MaxValue;
+        foreach (var segment in anchor.rope.GetRopeSegments())
+        {
+            if (segment == null)
+                continue;
+            float d = (segment.position - eye).sqrMagnitude;
+            if (d < nearest)
+            {
+                nearest = d;
+                best = segment;
+            }
+        }
+        return best;
+    }
+
+    // ---- zones ----
+
+    private void PlanZones(Transform head)
+    {
+        var feet = PracticeLayout.FloorUnder(head.position);
+        eyeHeight = Mathf.Clamp(head.position.y - feet.y, 0.9f, 2f);
+        var forward = PracticeLayout.Flat(head.forward);
+        if (forward.sqrMagnitude < 1e-4f)
+            forward = PracticeLayout.Flat(head.up);
+        zones = PracticeLayout.Plan(feet, forward.normalized);
+    }
+
+    /// <summary>Walking to the next zone: arrival starts its station; the cue sounds from the spot now and then, so
+    /// it can be found by ear when it is behind you.</summary>
+    private void Travel(Transform head, float dt)
+    {
+        var spot = zones[(int)Flow.Zone];
+        pingIn -= dt;
+        if (pingIn <= 0f)
+        {
+            pingIn = TravelPing;
+            CueAudio.Play(CueSound.Notice, spot.Feet + Vector3.up * eyeHeight, 1f);
+        }
+        if (PracticeZones.Arrived(head.position.x - spot.Feet.x, head.position.z - spot.Feet.z))
+        {
+            Plugin.Log.LogInfo($"[ui.guide] practice: reached the {Flow.Zone} zone");
+            Flow.Reached();
+        }
+    }
+
+    /// <summary>Skipping a walk brings a zone that is tied to nothing to where you stand; a tied zone (the climbing
+    /// wall) stays, as its station needs the wall.</summary>
+    private void BringZoneHere(Transform head)
+    {
+        int z = (int)Flow.Zone;
+        if (zones[z].Fixed)
+            return;
+        var forward = PracticeLayout.Flat(head.forward);
+        zones[z] = new PracticeSpot
+        {
+            Feet = PracticeLayout.FloorUnder(head.position),
+            Facing = forward.sqrMagnitude > 1e-4f ? forward.normalized : zones[z].Facing,
+            Anchor = "where you skipped the walk",
+        };
+    }
+
     // ---- the station's things in the world ----
 
     private void BuildStation()
@@ -579,6 +719,12 @@ internal sealed class PracticeRun : MonoBehaviour
         exitOrb = new TouchOrb("PeakXR_PracticeExit", cross: true, seconds: 0.8f);
         goalInner = Ring("GoalInner", hintMat);
         goalOuter = Ring("GoalOuter", hintMat);
+        // The walk cue: a tall beam over the next zone, seen over fences and desks from across the hall.
+        beacon = Ring("Beacon", hintMat);
+        beacon.loop = false;
+        beacon.positionCount = 2;
+        beacon.startWidth = 0.03f;
+        beacon.endWidth = 0.005f;
 
         if (AffordanceFeature.ActionHintText != null && AffordanceFeature.ActionHintText.Value)
         {
@@ -629,29 +775,43 @@ internal sealed class PracticeRun : MonoBehaviour
     }
 
     /// <summary>
-    /// Demo ahead and to the off-hand side, the orbs within reach below it on the same side, away from where the
-    /// dominant hand works. Placed when a station starts and again only if you walk or turn well away (comfort: no
-    /// UI follows the head).
+    /// The demo at the current zone, ahead of its spot and to the off-hand side at eye height less a little, kept
+    /// off the wall the climb zone faces (<see cref="PracticeZones.DemoOffset"/>). It stays in the world: walking
+    /// to a zone means walking to it.
     /// </summary>
-    private void PlaceStation(Transform head, bool force)
+    private void PlaceStation()
+    {
+        var spot = zones[(int)Flow.Zone];
+        float chest = eyeHeight - 0.15f;
+        var (ahead, side) = PracticeZones.DemoOffset(PracticeLayout.ClearAhead(spot, chest));
+        var offSide = Vector3.Cross(Vector3.up, spot.Facing) * (VRInput.LeftHanded ? 1f : -1f);
+        station.SetPositionAndRotation(
+            spot.Feet + Vector3.up * chest + spot.Facing * ahead + offSide * side,
+            Quaternion.LookRotation(spot.Facing, Vector3.up)
+        );
+    }
+
+    /// <summary>
+    /// The orbs within reach on the off-hand side, away from where the dominant hand works. Placed when a station
+    /// starts and again only if you walk or turn well away from them (comfort: no UI follows the head).
+    /// </summary>
+    private void PlaceOrbs(Transform head, bool force)
     {
         var forward = Vector3.ProjectOnPlane(head.forward, Vector3.up);
         if (forward.sqrMagnitude < 1e-4f)
             forward = Vector3.ProjectOnPlane(head.up, Vector3.up);
         forward.Normalize();
-        if (!force && station != null)
+        if (!force)
         {
-            var to = station.position - head.position;
+            var to = orbsAt - head.position;
             to.y = 0f;
             if (to.magnitude < ReplaceDistance && Vector3.Angle(to, forward) < ReplaceAngle)
                 return;
         }
         var offSide = Vector3.Cross(Vector3.up, forward) * (VRInput.LeftHanded ? 1f : -1f);
         var rotation = Quaternion.LookRotation(forward, Vector3.up);
-        station.SetPositionAndRotation(
-            head.position + forward * 1.0f + offSide * 0.3f + Vector3.down * 0.15f,
-            rotation
-        );
+        // Where the demo stood before zones: the anchor the walk-away test measures from.
+        orbsAt = head.position + forward * 1.0f + offSide * 0.3f;
         // Chest high, above where an idle hand rests, so a resting hand never skips by accident.
         var orbs = head.position + forward * 0.4f + Vector3.down * 0.12f;
         skipOrb.Place(orbs + offSide * 0.28f, rotation);
@@ -660,12 +820,21 @@ internal sealed class PracticeRun : MonoBehaviour
 
     private void TickOrbs(VRRig rig, float dt)
     {
-        if (Flow.Phase is not (PracticePhase.Station or PracticePhase.Confirm))
+        if (
+            Flow.Phase
+            is not (PracticePhase.Station or PracticePhase.Confirm or PracticePhase.Travel)
+        )
             return;
         if (skipOrb.Tick(rig, dt))
         {
             CueAudio.Play(CueSound.Notice, skipOrb.Position, 1f);
-            Plugin.Log.LogInfo($"[ui.guide] practice station {Flow.Current} skipped");
+            if (Flow.Phase == PracticePhase.Travel)
+            {
+                Plugin.Log.LogInfo($"[ui.guide] practice walk to the {Flow.Zone} zone skipped");
+                BringZoneHere(rig.Head);
+            }
+            else
+                Plugin.Log.LogInfo($"[ui.guide] practice station {Flow.Current} skipped");
             Flow.Skip();
         }
         if (exitOrb.Tick(rig, dt))
@@ -678,7 +847,8 @@ internal sealed class PracticeRun : MonoBehaviour
     private void PoseGoal(Transform eye)
     {
         bool confirm = Flow.Phase == PracticePhase.Confirm;
-        bool show = (hasGoal && Flow.Phase == PracticePhase.Station) || confirm;
+        bool travel = Flow.Phase == PracticePhase.Travel;
+        bool show = (hasGoal && Flow.Phase == PracticePhase.Station) || confirm || travel;
         if (goalInner.gameObject.activeSelf != show)
         {
             goalInner.gameObject.SetActive(show);
@@ -686,6 +856,15 @@ internal sealed class PracticeRun : MonoBehaviour
         }
         if (!show)
             return;
+        if (travel)
+        {
+            // Lying on the floor where to stand, about a stride across.
+            var feet = zones[(int)Flow.Zone].Feet + Vector3.up * 0.03f;
+            float r = 0.35f * CueMotion.Breathe(phaseTime);
+            RingAt(goalInner, feet, Vector3.up, r);
+            RingAt(goalOuter, feet, Vector3.up, r * 1.4f);
+            return;
+        }
         if (goalFollow != null && Flow.Phase == PracticePhase.Station)
             goal = goalFollow.position;
         var center = confirm ? confirmAt : goal;

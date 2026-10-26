@@ -196,6 +196,9 @@ internal sealed partial class SelfTestRunner
             stationAt != null ? stationAt.position : run.ExitOrbPosition
         );
 
+        var fails = new List<string>();
+        var zoneNote = PracticeZoneCheck(run, stationAt, fails);
+
         BeginHands();
         bool turnHand = VRInput.LeftHanded;
         for (int i = 0; i < 3 && run != null && run.Flow.Completed == 0; i++)
@@ -205,7 +208,6 @@ internal sealed partial class SelfTestRunner
             Script(turnHand).Stick = Vector2.zero;
             yield return Wait(0.5f);
         }
-        var fails = new List<string>();
         int completed = run != null ? run.Flow.Completed : 0;
         if (completed < 1)
             fails.Add("the turn station did not pass after three stick flicks");
@@ -246,8 +248,49 @@ internal sealed partial class SelfTestRunner
             new List<string>
             {
                 $"{completed} station passed, next was {nextStation}, back on the title",
+                zoneNote,
             }
         );
+    }
+
+    /// <summary>
+    /// vr.31's layout check at the first station: the basics zone is where the player stands, its demo within 2 m and
+    /// not inside scenery, the climb zone is tied to the airport's climbing wall (RopeAnchorWithRope), and every zone
+    /// has room for a body. The note lists each zone's anchor and distance from the start.
+    /// </summary>
+    static string PracticeZoneCheck(PracticeRun run, Transform stationAt, List<string> fails)
+    {
+        var head = VRRig.Instance.Head.position;
+        if (!run.TryZone(PracticeZone.Basics, out var start))
+        {
+            fails.Add("practice zones not laid out at the first station");
+            return "no zones";
+        }
+        if (PracticeLayout.Flat(start.Feet - head).magnitude > 0.6f)
+            fails.Add("basics zone is not where the player stands");
+        if (stationAt != null)
+        {
+            if ((stationAt.position - head).magnitude > 2f)
+                fails.Add(F($"first demo {(stationAt.position - head).magnitude:0.0} m away"));
+            if (PracticeLayout.InScenery(stationAt.position, 0.1f))
+                fails.Add("first demo inside scenery");
+        }
+        var note = new System.Text.StringBuilder("zones:");
+        for (var z = PracticeZone.Basics; z <= PracticeZone.Social; z++)
+        {
+            run.TryZone(z, out var spot);
+            if (PracticeLayout.InScenery(spot.Feet + Vector3.up * 1.3f, 0.25f))
+                fails.Add($"{z} zone spot inside scenery");
+            note.Append(
+                F(
+                    $" {z} {PracticeLayout.Flat(spot.Feet - start.Feet).magnitude:0.0} m ({spot.Anchor});"
+                )
+            );
+        }
+        run.TryZone(PracticeZone.Climb, out var climb);
+        if (!climb.Fixed && FindAnyObjectByType<RopeAnchorWithRope>() != null)
+            fails.Add("climb zone not at the airport's climbing wall");
+        return note.ToString();
     }
 
     /// <summary>
