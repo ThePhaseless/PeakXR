@@ -596,7 +596,9 @@ internal sealed class RigDriver : MonoBehaviour
         torsoEyes.Sample(torsoSample, leaning, snap, dt);
         if (first)
             Plugin.Log.LogInfo(
-                $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip"
+                $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
+                    + $"{eye.y - d.groundPos.y:0.00} m above the ground; the player's calibrated eyes "
+                    + $"{RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m (world scale 1:1)"
             );
     }
 

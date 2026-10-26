@@ -83,6 +83,14 @@ internal sealed class HudSplit
     public static RectTransform WristRoot { get; private set; }
     private int measuredMask;
 
+    /// <summary>Dark plate behind the wrist parts (first child of the wrist box): the stamina bar is translucent, and
+    /// over the forearm's patterned sleeve it read as sunk into the arm.</summary>
+    private UnityEngine.UI.Image wristPlate;
+
+    /// <summary>Plate margin round the wrist parts, in HUD pixels, and its opacity.</summary>
+    private const float WristPlatePad = 14f;
+    private const float WristPlateOpacity = 0.85f;
+
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
     {
@@ -161,6 +169,7 @@ internal sealed class HudSplit
         if (wrist)
         {
             var box = wristBox.Ensure(hudRoot);
+            EnsureWristPlate(box);
             if (!plate)
             {
                 MoveGroup(gui.bar != null ? gui.bar.transform : null);
@@ -201,10 +210,11 @@ internal sealed class HudSplit
         measuredMask = ShownMask(box);
         bool any = false;
         var bounds = default(Bounds);
+        var plate = wristPlate != null ? wristPlate.transform : null;
         for (int i = 0; i < box.childCount; i++)
         {
             var child = box.GetChild(i);
-            if (!child.gameObject.activeSelf)
+            if (!child.gameObject.activeSelf || child == plate)
                 continue;
             var b = RectTransformUtility.CalculateRelativeRectTransformBounds(box, child);
             if (any)
@@ -218,15 +228,52 @@ internal sealed class HudSplit
             wristCenter = bounds.center;
             wristSpan = Mathf.Max(1f, bounds.size.x);
         }
+        if (wristPlate != null)
+        {
+            var rt = wristPlate.rectTransform;
+            rt.anchoredPosition = bounds.center;
+            rt.sizeDelta = (Vector2)bounds.size + 2f * WristPlatePad * Vector2.one;
+            if (wristPlate.gameObject.activeSelf != any)
+                wristPlate.gameObject.SetActive(any);
+        }
     }
 
-    private static int ShownMask(RectTransform box)
+    /// <summary>Puts <see cref="wristPlate"/> first in <paramref name="box"/> (a new box after a scene change gets a
+    /// new plate); <see cref="MeasureWrist"/> fits it. Drawn on top with the box, under the parts.</summary>
+    private void EnsureWristPlate(RectTransform box)
+    {
+        if (wristPlate == null || wristPlate.transform.parent != box)
+        {
+            var go = new GameObject(
+                "PeakXR_WristPlate",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(UnityEngine.UI.Image),
+                typeof(PanelPart)
+            );
+            go.layer = box.gameObject.layer;
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(box, false);
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            wristPlate = go.GetComponent<UnityEngine.UI.Image>();
+            wristPlate.sprite = BackplateView.PlateSprite();
+            wristPlate.type = UnityEngine.UI.Image.Type.Sliced;
+            wristPlate.raycastTarget = false;
+            var c = MenuBackplate.Color;
+            wristPlate.color = new Color(c.X, c.Y, c.Z, WristPlateOpacity);
+        }
+        wristPlate.transform.SetAsFirstSibling();
+    }
+
+    private int ShownMask(RectTransform box)
     {
         int mask = 0;
         int n = Mathf.Min(box.childCount, 31);
+        var plate = wristPlate != null ? wristPlate.transform : null;
         for (int i = 0; i < n; i++)
         {
-            if (box.GetChild(i).gameObject.activeSelf)
+            var child = box.GetChild(i);
+            if (child != plate && child.gameObject.activeSelf)
                 mask |= 1 << i;
         }
         return mask;

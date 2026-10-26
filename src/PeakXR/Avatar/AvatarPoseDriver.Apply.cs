@@ -1012,6 +1012,10 @@ public partial class AvatarPoseDriver
     /// CharacterItems.cs:617 and ReconcileWeld).</summary>
     private const float AttachSettle = 0.5f;
 
+    /// <summary>Arm shortfall (m) past which vanilla's hold spring stops pulling a welded item toward its controller
+    /// (<see cref="FollowHeld"/>): the ghost hand's own fade-in start.</summary>
+    private const float SpringReachSlack = 0.05f;
+
     private static System.Reflection.MethodBase vanillaAttach;
 
     /// <summary>CharacterItems.AttachItem (CharacterItems.cs:641, private), resolved on first use.</summary>
@@ -1127,6 +1131,7 @@ public partial class AvatarPoseDriver
             : float.PositiveInfinity;
         bool wasFree = Owner.IsLocal ? weldGate.Released : remoteFree;
         float toController = Vector3.Distance(hand, ctrlBone);
+        float shortfall = ArmShortfall(left, ctrlBone);
         // A peer always carries the item free of the hand on the holder's controller pose, its hand on the arm IK:
         // judging the weld by its own lagging copy of the arm welded it when the holder's client had let go, and the
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
@@ -1138,7 +1143,7 @@ public partial class AvatarPoseDriver
                     toController,
                     toItem,
                     dt,
-                    ArmShortfall(left, ctrlBone),
+                    shortfall,
                     toController > weldGate.Release && ReachBlocked(left, ctrlBone)
                 )
             : true;
@@ -1175,7 +1180,10 @@ public partial class AvatarPoseDriver
                 body.AddForce(-Physics.gravity, ForceMode.Acceleration);
             lastTarget = target;
             haveLastTarget = true;
-            return false;
+            // Vanilla's spring is an outside force on the item (CharacterItems.cs:172). Toward a controller the arm
+            // cannot reach, the weld hands it to the arm and the whole body: a held item lifted its holder toward the
+            // raised hand, taller than standing (tester, OpenXR Touch). Out of reach the arm alone carries the item.
+            return Owner.IsLocal && shortfall > SpringReachSlack;
         }
         // Free: no joint may hold it, whoever made it.
         if (!wasFree || itemJoint != null)

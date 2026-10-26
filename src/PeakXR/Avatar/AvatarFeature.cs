@@ -27,6 +27,7 @@ public sealed class AvatarFeature : Feature
         Patch(typeof(AvatarPatches.UnAttachItem));
         Patch(typeof(AvatarPatches.HoldItem));
         Patch(typeof(AvatarPatches.HideBody));
+        Patch(typeof(AvatarPatches.LevelLook));
         Patch(typeof(AvatarPatches.ShowBodyWhenDetached));
         Patch(typeof(AvatarPatches.CharacterStart));
         ReachGhost.Create();
