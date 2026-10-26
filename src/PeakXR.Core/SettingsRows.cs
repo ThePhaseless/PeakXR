@@ -128,6 +128,24 @@ namespace PeakXR.Core
             count = Math.Max(0, Math.Min(pageRows, rows - start));
         }
 
+        /// <summary>
+        /// Left anchor (0..1) of an action button right-aligned in a row's control area of <paramref name="area"/>
+        /// px: as wide as its text plus padding, at least the game's own button width, never wider than the area.
+        /// An anchor rather than a width, so a control area narrowed later shrinks the button with it.
+        /// </summary>
+        public static float ButtonLeftAnchor(
+            float textWidth,
+            float inset,
+            float minWidth,
+            float area
+        )
+        {
+            if (area <= 0f)
+                return 0f;
+            float width = Math.Min(Math.Max(textWidth + inset, minWidth), area);
+            return 1f - width / area;
+        }
+
         /// <summary>Slider label: whole numbers for integers and wide ranges, more decimals for narrow ones.</summary>
         public static string Format(float value, bool integral, float min, float max)
         {

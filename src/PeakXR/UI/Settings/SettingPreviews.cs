@@ -104,7 +104,9 @@ internal sealed class PreviewStage : MonoBehaviour
     private const float PreviewWalkSpeed = 2.7f;
     private const float HoverVignetteCap = 0.4f;
     private static readonly float CrouchEnter = new PhysicalCrouch().EnterFraction;
-    private static readonly Color Accent = new(0.45f, 0.85f, 1f, 1f);
+
+    // The settings menu's own accent (#EFBB39: a selected dropdown, the slider handle), so a preview reads as the menu's.
+    private static readonly Color Accent = new(0.937f, 0.733f, 0.224f, 1f);
     private static readonly Color StatusSample = new(0.35f, 0.85f, 0.2f, 1f);
     private static readonly Color DyingSample = new(0.85f, 0.1f, 0.1f, 1f);
 
@@ -334,10 +336,12 @@ internal sealed class PreviewStage : MonoBehaviour
         var def = entry.Definition;
         var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
         var note = SettingPreviewTable.ApplyNote(def.Section, def.Key);
+        // The game's settings palette: upper-case white name as its row labels, the value in its accent (#EFBB39, a
+        // selected dropdown and the slider handle), an apply note in its warning red (#FF7575, "main menu only").
         text.text =
-            $"<b>{SettingsRows.Prettify(def.Key)}</b>   <color=#8fd8ff>{value}</color>\n"
+            $"<uppercase>{SettingsRows.Prettify(def.Key)}</uppercase>   <color=#EFBB39>{value}</color>\n"
             + $"<size=80%>{NoParse(entry.Description?.Description)}</size>"
-            + (note != null ? $"\n<size=80%><color=#ffc880>{note}</color></size>" : "");
+            + (note != null ? $"\n<size=80%><color=#FF7575>{note}</color></size>" : "");
         // The turn dial takes the lower part of the card.
         cardText.offsetMin = new Vector2(24f, kind == PreviewKind.Turn ? CardHeight * 0.5f : 20f);
     }

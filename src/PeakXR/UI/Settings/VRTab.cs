@@ -30,9 +30,10 @@ internal static class VRTab
     /// <summary>Description tag that keeps an entry out of the tab (internal state, calibration data).</summary>
     public const string HiddenTag = "Hidden";
 
-    private static readonly Color Active = new(0.55f, 0.85f, 0.55f, 1f);
-    private static readonly Color Failed = new(0.95f, 0.45f, 0.4f, 1f);
-    private static readonly Color Muted = new(0.7f, 0.7f, 0.7f, 1f);
+    // The game's own text colours (InfoCell): white for working, its warning red for failed, half alpha for off.
+    private static readonly Color Active = InfoCell.Normal;
+    private static readonly Color Failed = InfoCell.Warning;
+    private static readonly Color Muted = InfoCell.Muted;
 
     private static readonly Dictionary<ConfigEntryBase, Setting> rows = new();
 
