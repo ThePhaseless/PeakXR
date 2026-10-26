@@ -123,39 +123,14 @@ internal static class ClimbStow
         heldPos = item.Center();
     }
 
-    /// <summary>The free hand is where a grab would start a climb: rock in reach at an angle the game grabs
-    /// (CharacterClimbing.cs:511-532), probed like interact.physical's ProbeHold.</summary>
+    /// <summary>The free hand is where a grab would start a climb: the same probe and verdict as the grip and its
+    /// chalk ring (<see cref="PhysicalInteraction.WouldCatch"/>).</summary>
     private static void WarnNearWall(Character c, VRRig rig, InteractConfig cfg)
     {
-        if (!cfg.PhysicalClimb || !VRInput.Hand(!heldLeft).Tracked)
-            return;
-        var hand = rig.Hand(!heldLeft);
-        var cam = MainCamera.instance;
-        if (hand == null || cam == null)
-            return;
-        var pos = hand.position;
         if (
-            !Physics.CheckSphere(
-                pos,
-                cfg.ClimbRadius,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
-            return;
-        var dir = pos - cam.transform.position;
-        if (dir.sqrMagnitude < 1e-4f)
-            return;
-        dir.Normalize();
-        if (
-            !Physics.Raycast(
-                pos - dir * 0.15f,
-                dir,
-                out var hit,
-                0.3f + cfg.ClimbRadius,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            ) || !ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up))
+            !cfg.PhysicalClimb
+            || !VRInput.Hand(!heldLeft).Tracked
+            || !PhysicalInteraction.WouldCatch(c, !heldLeft)
         )
             return;
         Affordance.Hover(

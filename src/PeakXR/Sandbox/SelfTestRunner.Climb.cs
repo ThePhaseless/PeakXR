@@ -2352,9 +2352,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.47: a grip that closes just short of a climbable wall gets OutOfReach (<see cref="TraversalRefusal.ReachBand"/>),
-    /// never silence. The player stands at the test wall and the hand reaches toward it, stopping 0.2 m past
-    /// the grab range (<c>ClimbGrabRadius</c>); the grip gets the OutOfReach cue on that hand and does not climb.
+    /// vr.47: a grip that closes just short of a climbable wall gets OutOfReach (<see cref="HoldVerdict.Approach"/>),
+    /// never silence. The player stands at the test wall and the hand reaches toward it, stopping 0.15 m past
+    /// the grab reach (<c>ClimbGrabRadius</c> plus the full <c>ClimbReachAssist</c>); the grip gets the OutOfReach cue
+    /// on that hand and does not climb.
     /// </summary>
     IEnumerator ClimbDenyReachStep()
     {
@@ -2370,10 +2371,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         var rig = VRRig.Instance;
         bool left = VRInput.LeftHanded;
-        // Along the reach from the eye to the face, the hand stops grab radius plus 0.2 m short of it.
+        // Along the reach from the eye to the face, the hand stops 0.15 m past the farthest grab reach (ClimbReach).
         var eye = EyeNow();
         var dir = (wallFace.point - eye).normalized;
-        float gap = cfg.ClimbRadius + 0.2f;
+        float gap = cfg.ClimbRadius + cfg.ClimbReachAssist + 0.15f;
         var stop = wallFace.point - dir * gap;
         UI.Affordances.Affordance.ResetGate();
         // A reach for the wall: the hand still moving toward it (0.4 m/s over the last 0.12 m) as the grip closes, the
