@@ -302,7 +302,7 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 
 | Step id | Runs | Checks |
 |---|---|---|
-| `vr.21-bugle` | VR run, ItemStep Bugle | The holding hand brought to the mouth with the bell tilted 30 degrees up starts the toot (BugleSFX.hold) with the hand within 0.25 m of the mouth point, at the bell's pitch within 0.1. Back at rest the toot stops. |
+| `vr.21-bugle` | VR run, ItemStep Bugle | The bugle's mouthpiece (the end of its longest side away from the bell) brought to the mouth with the bell tilted 30 degrees up starts the toot (BugleSFX.hold) with the mouthpiece within 0.25 m of the mouth point, at the bell's pitch within 0.1. Back at rest the toot stops. |
 | `vr.22-bandage` | VR run, ItemStep Bandage | Held against the chest, the bandage's cast finishes (lastFinishedCast or consumed; a drop does not count) and the status it lowers (Injury, set up first) falls by at least half its change. |
 | `vr.22b-bandage-forearm` | VR run, ItemStep Bandage | The free hand is held out in front and the bandage is pressed to the middle of its forearm. The cast finishes, the status it lowers (Injury, set up first) falls by at least half its change, and the hand stays farther than the chest press's 0.05 m exit from the torso, so the forearm route made the contact. |
 | `vr.23-parasol` | VR run, ItemStep Parasol | The free hand grips the held parasol and slides 0.25 m up: Parasol.isOpen flips. Sliding back down flips it again. |

@@ -235,7 +235,7 @@ internal static class FireGestures
             refusedTouch = null;
             return;
         }
-        var flame = flamePoint != null ? flamePoint.position : item.Center();
+        var flame = flamePoint != null ? flamePoint.position : HeldItemPoints.Tip(item);
         var target = FindLightable(c, flame, out float distance, out var refused);
         RefuseTouch(c, flame, refused);
         if (!ReferenceEquals(target, touchTarget))
@@ -302,7 +302,7 @@ internal static class FireGestures
     /// </summary>
     private static void WarnUnlit(Character c, Item item)
     {
-        var flame = flamePoint != null ? flamePoint.position : item.Center();
+        var flame = flamePoint != null ? flamePoint.position : HeldItemPoints.Tip(item);
         var target = FindLightable(c, flame, out float distance);
         TraceLight(item, flame, target, distance, false, lit: false);
         if (target == null || distance > LightHintRange)
@@ -455,7 +455,8 @@ internal static class FireGestures
     }
 
     /// <summary>Where a held light's flame is: the candle's or lantern's fire particles (Candle.cs:25, Lantern.cs:31),
-    /// a torch light, else null (use the item's centre). The self-test carries the same point (vr.26).</summary>
+    /// a torch light, else null (a flare: its tip away from the grip, <see cref="HeldItemPoints.Tip"/>). The self-test
+    /// carries the same point (vr.26).</summary>
     internal static Transform FlamePoint(Item item)
     {
         if (item == null)

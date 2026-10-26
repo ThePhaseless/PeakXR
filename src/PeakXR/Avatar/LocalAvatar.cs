@@ -120,6 +120,11 @@ internal sealed class LocalAvatar : MonoBehaviour
         var item = character.data.currentItem;
         bool holding = hold.Bind(item);
         var grip = holding ? hold.Profile.Grip : GripPreset.Cylinder;
+        // Fingers on the item stop at its drawn surface: the presets close on a handle, and on the game's big props
+        // (an apple 0.42 m across) they sank into it.
+        float wrap = holding
+            ? HandPose.WrapCurl(0.5f * hold.Thickness * HeldItemScale.Factor(item))
+            : 1f;
         float dt = Time.deltaTime;
 
         if (VRInput.Left.Tracked && rig.LeftHand != null)
@@ -127,7 +132,7 @@ internal sealed class LocalAvatar : MonoBehaviour
             pose.HasLeftHand = true;
             pose.LeftHandPosition = rig.LeftHand.position;
             pose.LeftHandRotation = rig.LeftHand.rotation;
-            var target = HandPose.Fingers(ControllerCurls(true), Role(holding, true), grip);
+            var target = HandPose.Fingers(ControllerCurls(true), Role(holding, true), grip, wrap);
             pose.LeftFingers = leftSmoother.Update(target, dt);
         }
         if (VRInput.Right.Tracked && rig.RightHand != null)
@@ -135,7 +140,7 @@ internal sealed class LocalAvatar : MonoBehaviour
             pose.HasRightHand = true;
             pose.RightHandPosition = rig.RightHand.position;
             pose.RightHandRotation = rig.RightHand.rotation;
-            var target = HandPose.Fingers(ControllerCurls(false), Role(holding, false), grip);
+            var target = HandPose.Fingers(ControllerCurls(false), Role(holding, false), grip, wrap);
             pose.RightFingers = rightSmoother.Update(target, dt);
         }
 

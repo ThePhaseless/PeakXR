@@ -117,15 +117,20 @@ internal static class HeldGestures
         var spot = read
             ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
             : head.position + head.forward * CommuneAhead;
+        // The item, not the controller: the open book's middle at the read spot, the item itself eye to eye (the game's
+        // props are big; a cursed skull held at the eyes by the hand sat beside the head).
+        var item = ItemGestures.Held;
+        var at = read
+            ? ItemMiddle(item, hand, left)
+            : HeldItemPoints.Nearest(item, hand, left, spot);
         float distance = Mathf.Max(
-            Vector3.Distance(hand.position, spot) - (read ? ReadZone.Radius : CommuneRadius),
+            Vector3.Distance(at, spot) - (read ? ReadZone.Radius : CommuneRadius),
             0f
         );
         // The book over bones revives (interact.world); it must never read there.
         if (read && !ReadZone.Allowed(hand.position.N(), ItemGestures.NearHips))
             distance = float.PositiveInfinity;
         bool on = Face.Update(distance, dt);
-        var item = ItemGestures.Held;
         if (on && !facing)
         {
             // It starts: warn once that this harms (the warning's tick is the start tick), then the cast's progress.
@@ -172,7 +177,10 @@ internal static class HeldGestures
         var mouth = MouthGesture
             .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
             .U();
-        if (Vector3.Distance(hand.position, mouth) < AwayFromMouth)
+        if (
+            Vector3.Distance(HeldItemPoints.Nearest(ItemGestures.Held, hand, left, mouth), mouth)
+            < AwayFromMouth
+        )
             return;
         Affordance.DenyAtHand(left, DenyReason.NotHere, DenyHint.At(mouth), ItemGestures.Held);
     }
@@ -185,7 +193,10 @@ internal static class HeldGestures
             tooting = false;
             return;
         }
-        bool at = Mouth.Update(rig.Head.position.N(), rig.Head.rotation.N(), hand.position.N(), dt);
+        // The mouthpiece, not the hand: the game's bugle is held under its loop, its mouthpiece 0.2 m above the grip
+        // (tester: "the trigger point should be where the mouthpiece is, not where the hand is").
+        BuglePoint = Mouthpiece(ItemGestures.Held, hand, ItemGestures.HoldLeft);
+        bool at = Mouth.Update(rig.Head.position.N(), rig.Head.rotation.N(), BuglePoint.N(), dt);
         if (at && !tooting)
             Haptics.Pulse(ItemGestures.HoldLeft, 0.3f, 0.05f);
         tooting = at;
@@ -206,17 +217,30 @@ internal static class HeldGestures
         var flat = head.forward;
         flat.y = 0f;
         flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
+        // The hand or the item it holds against the body, whichever is nearer: a bandage roll is pressed with the item.
         var point = hand.position.N();
-        float distance = BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius);
+        var chest = head.position + Vector3.down * ChestBelowEyes;
+        var itemPoint = HeldItemPoints
+            .Nearest(ItemGestures.Held, hand, ItemGestures.HoldLeft, chest)
+            .N();
+        float distance = Mathf.Min(
+            BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius),
+            BodyZones.TorsoDistance(itemPoint, head.position.N(), flat.N(), TorsoRadius)
+        );
 
         // The other forearm, unless both hands are on the item.
         bool onForearm = false;
         var other = rig.Hand(!ItemGestures.HoldLeft);
         if (!LocalHold.TwoHand && other != null && VRInput.Hand(!ItemGestures.HoldLeft).Tracked)
         {
+            var onArm = HeldItemPoints
+                .Nearest(ItemGestures.Held, hand, ItemGestures.HoldLeft, other.position)
+                .N();
             float arm =
-                BodyZones.ForearmDistance(point, other.position.N(), other.forward.N())
-                - ForearmRadius;
+                Mathf.Min(
+                    BodyZones.ForearmDistance(point, other.position.N(), other.forward.N()),
+                    BodyZones.ForearmDistance(onArm, other.position.N(), other.forward.N())
+                ) - ForearmRadius;
             if (arm < distance)
             {
                 distance = Mathf.Max(arm, 0f);
@@ -240,6 +264,57 @@ internal static class HeldGestures
         pressing = on;
         if (on)
             GestureRequests.Primary();
+    }
+
+    /// <summary>The chest the held item is pressed against: this far under the eyes, metres.</summary>
+    private const float ChestBelowEyes = 0.4f;
+
+    /// <summary>Where the held bugle's mouthpiece is drawn this frame (self-test vr.21 steers it to the mouth).</summary>
+    public static Vector3 BuglePoint { get; private set; }
+
+    private static Item mouthpieceItem;
+    private static Vector3 mouthpieceLocal;
+
+    /// <summary>The bugle's mouthpiece on the holding hand: the end of its longest side away from the bell (its
+    /// play particles, BugleSFX.cs:22), else the end nearer the grip. The hand itself when unknown.</summary>
+    private static Vector3 Mouthpiece(Item item, Transform hand, bool left)
+    {
+        var info = HeldItemPoints.Info(item);
+        if (info == null)
+            return hand.position;
+        if (!ReferenceEquals(item, mouthpieceItem))
+        {
+            mouthpieceItem = item;
+            var bugle = ItemGestures.Bugle;
+            // No bell known: the mouthpiece is the end nearer the hand, so look away from the far end.
+            var bell =
+                bugle != null && bugle.particle1 != null
+                    ? item.transform.InverseTransformPoint(bugle.particle1.transform.position)
+                    : info.BoundsMin + info.BoundsMax - info.GripLocal;
+            mouthpieceLocal = HeldItemShape
+                .FarEnd(info.BoundsMin.N(), info.BoundsMax.N(), bell.N())
+                .U();
+        }
+        return HeldItemPoints.World(item, hand, left, mouthpieceLocal, out var p)
+            ? p
+            : hand.position;
+    }
+
+    /// <summary>The middle of the held item's drawn bounds on the holding hand.</summary>
+    private static Vector3 ItemMiddle(Item item, Transform hand, bool left)
+    {
+        var info = HeldItemPoints.Info(item);
+        return
+            info != null
+            && HeldItemPoints.World(
+                item,
+                hand,
+                left,
+                (info.BoundsMin + info.BoundsMax) * 0.5f,
+                out var p
+            )
+            ? p
+            : hand.position;
     }
 
     /// <summary>The holding hand's tracked position last frame (tracking space, so walking does not count).</summary>

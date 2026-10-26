@@ -1441,7 +1441,26 @@ public partial class AvatarPoseDriver
         rot = ctrlRot * xRot;
         pos = ctrlPos + ctrlRot * xPos;
 
-        if (pose.TwoHandHold && (left ? pose.HasRightHand : pose.HasLeftHand))
+        if (pose.TwoHandHold && hold.Aimed && (left ? pose.HasRightHand : pose.HasLeftHand))
+        {
+            // A launcher lies along the two-hand axis, turned about the holding grip: the vanilla grips sit side by
+            // side at its stock, so aligning them with the support hand swung a crossbow held at its fore-end 60-90
+            // degrees off to the side, while it fires along its own barrel (HandAim.TryBarrel; tester: "the crossbow
+            // is somewhere in a random place").
+            var support = left ? pose.RightHandPosition : pose.LeftHandPosition;
+            var aimed = GripMath
+                .TwoHandAim(
+                    rot.N(),
+                    (rot * Vector3.forward).N(),
+                    ctrlPos.N(),
+                    support.N(),
+                    Interact.HandAim.TwoHandMinSeparation
+                )
+                .U();
+            pos = ctrlPos + aimed * Quaternion.Inverse(rot) * (pos - ctrlPos);
+            rot = aimed;
+        }
+        else if (pose.TwoHandHold && (left ? pose.HasRightHand : pose.HasLeftHand))
         {
             // Pivot the item about the holding hand so the grip-to-grip axis points at the supporting hand.
             rig.BoneFromController(ctrlPos, ctrlRot, out var anchor, out _);
@@ -1487,6 +1506,17 @@ public partial class AvatarPoseDriver
                 axis = local;
             }
         }
+    }
+
+    /// <summary>The held item's one-hand pose in the <paramref name="left"/> controller's frame, so gestures test the
+    /// part of the item that touches (a mouthpiece, the food) on the tracked hand rather than the controller.</summary>
+    internal bool HeldItemInController(bool left, out Vector3 pos, out Quaternion rot)
+    {
+        pos = default;
+        rot = Quaternion.identity;
+        return EnsureRig()
+            && hold.Bind(Owner.data.currentItem)
+            && ItemInController(left ? leftRig : rightRig, out pos, out rot);
     }
 
     /// <summary>
