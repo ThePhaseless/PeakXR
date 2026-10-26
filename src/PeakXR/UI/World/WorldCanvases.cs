@@ -51,6 +51,11 @@ internal sealed class TrackedCanvas
     /// <summary>Menus: brought closer by a wall test since the last log line.</summary>
     public bool Moved;
 
+    /// <summary>Plate opacity <see cref="BackdropProbe"/> measured for the background behind this menu, and the
+    /// opacity drawn now on its way there; negative until the first measure.</summary>
+    public float PlateTarget = -1f;
+    public float PlateAlpha = -1f;
+
     /// <summary>Menus lose their flat-screen backdrops in VR (<see cref="BackdropStrip"/>).</summary>
     public bool Strip;
 
@@ -101,6 +106,9 @@ internal sealed class TrackedCanvas
 internal static class WorldCanvases
 {
     private static readonly List<TrackedCanvas> tracked = new();
+
+    /// <summary>Every canvas seen, for <see cref="BackdropProbe"/>. Index it; do not hold on to it.</summary>
+    internal static List<TrackedCanvas> Tracked => tracked;
     private static readonly HashSet<int> known = new();
     private static readonly List<Canvas> pending = new();
     private static readonly HashSet<int> convertedRoots = new();
