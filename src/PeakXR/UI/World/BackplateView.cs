@@ -72,9 +72,25 @@ internal static class BackplateView
             rt.sizeDelta = span;
         if (rt.GetSiblingIndex() != 0)
             rt.SetAsFirstSibling();
+        SetAlpha(t, Alpha(t, cfg));
+    }
+
+    /// <summary>The plate's opacity: the setting, or with <c>UI.MenuBackplateAdaptive</c> what
+    /// <see cref="BackdropProbe"/> measured behind it (never above the setting).</summary>
+    public static float Alpha(TrackedCanvas t, UIWorldSettings cfg)
+    {
+        var max = cfg.MenuBackplateOpacity.Value;
+        return cfg.MenuBackplateAdaptive.Value && t.PlateAlpha >= 0f
+            ? Mathf.Min(t.PlateAlpha, max)
+            : max;
+    }
+
+    /// <summary>Writes the plate colour only when it changed: each write dirties the canvas.</summary>
+    public static void SetAlpha(TrackedCanvas t, float alpha)
+    {
         var c = MenuBackplate.Color;
-        var color = new Color(c.X, c.Y, c.Z, cfg.MenuBackplateOpacity.Value);
-        if (t.Plate.color != color)
+        var color = new Color(c.X, c.Y, c.Z, alpha);
+        if (t.Plate != null && t.Plate.color != color)
             t.Plate.color = color;
     }
 

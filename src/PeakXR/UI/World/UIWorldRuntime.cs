@@ -23,6 +23,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
 
     private readonly HudLayout hud = new();
     private readonly HudSplit split = new();
+    private readonly BackdropProbe backdrop = new();
     private readonly object fadeOwner = new();
     private LaserPointer pointer;
     private FadeSphere sphere;
@@ -78,6 +79,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
             else
             {
                 split.Restore();
+                backdrop.Release();
                 // Every hand UI is off VR now (or turns off this frame and rebuilds without them).
                 OnTop.DestroyClones();
                 WorldCanvases.RevertAll();
@@ -109,6 +111,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         var dt = Time.unscaledDeltaTime;
         hud.Update(rig.Head, cfg, dt);
         var interactive = WorldCanvases.Update(rig.Head, hud, cfg);
+        backdrop.Tick(rig, cfg, dt);
         split.Sync(cfg, rig);
         split.PoseWrist(rig, cfg);
         split.PoseReticle(rig.Head, hud, cfg);

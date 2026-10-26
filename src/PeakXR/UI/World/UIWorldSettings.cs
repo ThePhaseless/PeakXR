@@ -54,7 +54,8 @@ internal sealed class UIWorldSettings
         NameTagScale,
         TextScale;
     public ConfigEntry<bool> MenuPanels,
-        MenuBackplate;
+        MenuBackplate,
+        MenuBackplateAdaptive;
     public ConfigEntry<float> MenuBackplateOpacity;
     public ConfigEntry<StatusOverlayMode> StatusOverlays;
     public ConfigEntry<HudMode> Hud;
@@ -121,12 +122,20 @@ internal sealed class UIWorldSettings
                     + "with pages, tabs and open lists), so text stays readable over sand, snow or sky. Off: menus "
                     + "float with nothing behind them."
             ),
+            MenuBackplateAdaptive = cfg.Bind(
+                ui,
+                "MenuBackplateAdaptive",
+                true,
+                "Fit the menu plate to what is behind it as seen from your eyes: as dark as MenuBackplateOpacity over "
+                    + "bright snow or sky, lighter over a dark background, so text keeps the same contrast either way. "
+                    + "Off: always MenuBackplateOpacity."
+            ),
             MenuBackplateOpacity = cfg.Bind(
                 ui,
                 "MenuBackplateOpacity",
                 MenuBackplateMath.DefaultOpacity,
                 Range(
-                    "How opaque the menu plate is. 0.85 keeps white text readable even against snow in sunlight.",
+                    "How opaque the menu plate is (with MenuBackplateAdaptive, the most it gets). 0.85 keeps white text readable even against snow in sunlight.",
                     0.5f,
                     1f
                 )
