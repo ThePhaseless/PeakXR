@@ -336,10 +336,10 @@ internal sealed class PreviewStage : MonoBehaviour
         var def = entry.Definition;
         var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
         var note = SettingPreviewTable.ApplyNote(def.Section, def.Key);
-        // The game's settings palette: upper-case white name as its row labels, the value in its accent (#EFBB39, a
-        // selected dropdown and the slider handle), an apply note in its warning red (#FF7575, "main menu only").
+        // The game's settings text: white throughout, the name upper case as its row labels, an apply note in its
+        // warning red (#FF7575, "main menu only"). Its gold accent marks focus graphics only, never text.
         text.text =
-            $"<uppercase>{SettingsRows.Prettify(def.Key)}</uppercase>   <color=#EFBB39>{value}</color>\n"
+            $"<uppercase>{SettingsRows.Prettify(def.Key)}</uppercase>   {value}\n"
             + $"<size=80%>{NoParse(entry.Description?.Description)}</size>"
             + (note != null ? $"\n<size=80%><color=#FF7575>{note}</color></size>" : "");
         // The turn dial takes the lower part of the card.
