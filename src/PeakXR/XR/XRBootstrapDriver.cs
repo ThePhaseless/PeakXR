@@ -229,12 +229,16 @@ sealed class XRBootstrapDriver : MonoBehaviour
     static void WarnGraphicsApi()
     {
         var api = SystemInfo.graphicsDeviceType;
-        Plugin.Log.LogInfo($"{Tag} Graphics API {api}");
-        if (api != GraphicsDeviceType.Vulkan)
-            Plugin.Log.LogWarning(
-                $"{Tag} {api} is untested in VR; add -force-vulkan to the launch options"
-            );
+        Plugin.Log.LogInfo($"{Tag} Graphics API {api}{(UnderWine ? " (Proton)" : "")}");
+        var advice = GraphicsAdvice.For(api.ToString(), UnderWine);
+        if (advice != null)
+            Plugin.Log.LogWarning($"{Tag} {advice}");
     }
+
+    /// <summary>Wine sets these in every process it runs, Proton included.</summary>
+    internal static bool UnderWine =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WINEHOMEDIR"))
+        || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WINEPREFIX"));
 
     void Update()
     {

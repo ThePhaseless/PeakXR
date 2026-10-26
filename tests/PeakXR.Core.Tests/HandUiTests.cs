@@ -15,6 +15,36 @@ public class DrawOrderTests
         Assert.True(DrawOrder.HandUi > 0);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(204)]
+    [InlineData(1001)]
+    [InlineData(-5)]
+    public void WorldCanvas_DrawsAfterWorldTransparentsAndUnderHandUi(int original)
+    {
+        short order = DrawOrder.WorldCanvas(original);
+        // Glass, water and particles sort at order 0: a converted menu must come after them.
+        Assert.True(order > 1000);
+        Assert.True(order < DrawOrder.HandUi);
+        Assert.True(DrawOrder.LoadingRoom < order);
+    }
+
+    [Fact]
+    public void WorldCanvas_KeepsTheGamesRelativeOrder()
+    {
+        // Modal 500 over pause 204 over the title at 0.
+        Assert.True(DrawOrder.WorldCanvas(500) > DrawOrder.WorldCanvas(204));
+        Assert.True(DrawOrder.WorldCanvas(204) > DrawOrder.WorldCanvas(0));
+    }
+
+    [Fact]
+    public void WorldCanvas_LeavesPopupsAboveTheirMenu()
+    {
+        // A TMP dropdown list sorts at 30000 and is not remapped; a huge order stays under hand UI.
+        Assert.True(DrawOrder.WorldCanvas(int.MaxValue) < DrawOrder.HandUi);
+        Assert.True(DrawOrder.WorldCanvas(1500) < 30000);
+    }
+
     [Fact]
     public void LoadingRoom_SortsBehindEverythingOnIt()
     {

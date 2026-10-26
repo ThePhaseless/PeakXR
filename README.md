@@ -55,9 +55,11 @@ On Linux it is usually `~/.local/share/Steam/steamapps/common/PEAK`.
 5. Start SteamVR (or your runtime), put the headset on, then start PEAK: from Steam if you installed by
    hand, or with "Start modded" in the mod manager.
 
-All testing so far ran on Linux. If VR does not start on Windows, add `-force-vulkan` to PEAK's launch
-options in Steam (Properties, General, Launch options) and check the log as described under
-[Check that it works](#check-that-it-works).
+Most testing so far ran on Linux. On Windows, PEAK starts on Direct3D12, which usually runs VR slower.
+For a higher frame rate add `-force-d3d11` to PEAK's launch options in Steam (Properties, General,
+Launch options), or pick "PEAK using DX11" when Steam asks. If you launch from a mod manager, put it in
+the manager's launch arguments setting instead. The log line `[xr.bootstrap] Graphics API` says which
+one is running; see [Check that it works](#check-that-it-works).
 
 ### Linux (Steam with Proton)
 

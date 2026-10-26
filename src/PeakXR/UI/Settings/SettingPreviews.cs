@@ -352,6 +352,8 @@ internal sealed class PreviewStage : MonoBehaviour
         card.transform.SetParent(transform, false);
         var canvas = card.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
+        // Over the converted settings menu it sits beside (DrawOrder.WorldCanvas) and the world's transparents.
+        canvas.sortingOrder = DrawOrder.HandUi;
         ((RectTransform)card.transform).sizeDelta = new Vector2(CardWidth, CardHeight);
         cardGroup = card.AddComponent<CanvasGroup>();
         cardGroup.interactable = false;
@@ -372,7 +374,9 @@ internal sealed class PreviewStage : MonoBehaviour
 
         sampleTag = new GameObject("PeakXR_SettingPreviewTag", typeof(RectTransform));
         sampleTag.transform.SetParent(transform, false);
-        sampleTag.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        var tagCanvas = sampleTag.AddComponent<Canvas>();
+        tagCanvas.renderMode = RenderMode.WorldSpace;
+        tagCanvas.sortingOrder = DrawOrder.HandUi;
         ((RectTransform)sampleTag.transform).sizeDelta = new Vector2(400f, 80f);
         tagText = sampleTag.AddComponent<TextMeshProUGUI>();
         tagText.text = "Scout";

@@ -335,4 +335,58 @@ namespace PeakXR.Core
             return true;
         }
     }
+
+    /// <summary>How a measured window relates to the headset's rate.</summary>
+    public enum PacingVerdict
+    {
+        /// <summary>Frames arrive at the headset's rate (or nothing to judge).</summary>
+        OnRate,
+
+        /// <summary>The runtime shows a whole fraction of the rate (SteamVR halves 120 Hz to 60 and reprojects) and the
+        /// GPU needs more than the budget allows.</summary>
+        GpuBound,
+
+        /// <summary>The rate is divided but the GPU fits the budget (or reports no time): CPU, or the runtime itself.</summary>
+        NotGpu,
+    }
+
+    /// <summary>
+    /// Reads a frame window the way the runtime paces it: when an app misses the budget, SteamVR shows it at a whole
+    /// fraction of the refresh (120 Hz as 60 or 40) and reprojects the rest, so the frame interval locks to a multiple
+    /// of the budget. That is the runtime's throttle, not a cap of ours; this names its likely cause and the refresh
+    /// rate the GPU would keep up with.
+    /// </summary>
+    public static class FramePacing
+    {
+        /// <summary>The GPU may use this share of the budget; the compositor and pacing need the rest.</summary>
+        public const float GpuShare = 0.9f;
+
+        /// <summary>Common headset rates, fastest first.</summary>
+        static readonly float[] Rates = { 144f, 120f, 90f, 80f, 72f };
+
+        /// <summary>The whole number the rate is divided by (1 = full rate, 2 = half); 0 without a budget.</summary>
+        public static int Divisor(float intervalP50, float budgetMs)
+        {
+            if (!(budgetMs > 0f) || !(intervalP50 > 0f))
+                return 0;
+            return Math.Max(1, (int)MathF.Round(intervalP50 / budgetMs));
+        }
+
+        public static PacingVerdict Judge(float intervalP50, float gpuP95, float budgetMs)
+        {
+            if (Divisor(intervalP50, budgetMs) <= 1)
+                return PacingVerdict.OnRate;
+            return gpuP95 > GpuShare * budgetMs ? PacingVerdict.GpuBound : PacingVerdict.NotGpu;
+        }
+
+        /// <summary>The fastest common rate whose budget holds the typical (p50) GPU frame; 0 when none does. Spikes
+        /// past it are reprojected, so p50 rather than p95.</summary>
+        public static float FittingRefresh(float gpuP50)
+        {
+            foreach (float hz in Rates)
+                if (gpuP50 > 0f && gpuP50 <= GpuShare * 1000f / hz)
+                    return hz;
+            return 0f;
+        }
+    }
 }

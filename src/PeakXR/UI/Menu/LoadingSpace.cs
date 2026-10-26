@@ -694,6 +694,7 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         go.transform.SetParent(origin, false);
         var canvas = go.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = PeakXR.Core.DrawOrder.WorldUi;
         var rect = (RectTransform)go.transform;
         rect.sizeDelta = size;
         rect.localScale = Vector3.one * metersPerPixel;

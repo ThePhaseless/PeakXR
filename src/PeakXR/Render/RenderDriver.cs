@@ -70,6 +70,24 @@ internal sealed class RenderDriver : MonoBehaviour
     private const float QualityDelay = 0.4f;
     private float qualityDueAt = -1f;
 
+    private EyeMatrixFeature eyeMatrices;
+    private ScriptableRendererData eyeMatricesOn;
+
+    /// <summary>When the controller first wanted the scale that has not landed yet (-1: none waiting).</summary>
+    private float wantedSince = -1f;
+
+    /// <summary>The blink this driver started to land a step; cleared once it lands.</summary>
+    private static readonly object BlinkOwner = new();
+    private bool blinking;
+
+    /// <summary>Pacing seen in the last adaptive window; logged when it changes.</summary>
+    private PacingVerdict pacing = PacingVerdict.OnRate;
+    private int pacingWindows;
+    private bool pacingNoticeShown;
+
+    /// <summary>Hot windows in a row before the player is told the headset rate is out of the GPU's reach.</summary>
+    private const int PacingNoticeWindows = 3;
+
     private void OnEnable()
     {
         instance = this;
@@ -123,8 +141,12 @@ internal sealed class RenderDriver : MonoBehaviour
         }
         adaptive.Reset();
         appliedAdaptive = 1f;
+        wantedSince = -1f;
+        pacing = PacingVerdict.OnRate;
+        pacingWindows = 0;
         FrameClock.ResetAll();
         ApplyQuality();
+        AddEyeMatrices();
         ApplyScene();
 
         scaler.SetScale(1f);
@@ -132,8 +154,8 @@ internal sealed class RenderDriver : MonoBehaviour
         Plugin.Log.LogInfo(
             $"{Tag} Applied: renderScale {RenderFixesFeature.RenderScale.Value:0.00}, MSAA {(urp != null ? urp.msaaSampleCount : 0)}x "
                 + $"(configured {RenderFixesFeature.Msaa.Value}x{(urp != null && IsDeferred(urp) ? ", Deferred forces 1" : "")}), "
-                + $"upscaling Linear, AA {RenderFixesFeature.Antialiasing.Value}, dynamic resolution "
-                + $"{RenderFixesFeature.DynamicResolution.Value}, FPS cap and VSync off"
+                + $"upscaling Linear, AA {RenderFixesFeature.Antialiasing.Value}, {ScalingSummary()}, "
+                + "FPS cap and VSync off (the runtime paces frames)"
         );
     }
 
@@ -157,11 +179,49 @@ internal sealed class RenderDriver : MonoBehaviour
                 c.active = true;
         disabledComponents.Clear();
         RestoreFeatures();
+        RemoveEyeMatrices();
         RestoreSettings();
         UnbindCamera();
+        EndBlink();
         XRSettings.renderViewportScale = 1f;
         ReapplyGameSettings();
         Plugin.Log.LogInfo($"{Tag} Reverted for flat play");
+    }
+
+    /// <summary>Which knob adapts the resolution on this runtime: viewport scaling (OpenVR) or the eye texture scale
+    /// (OpenXR), so the log never claims a dynamic resolution that is off.</summary>
+    private static string ScalingSummary() =>
+        VRSession.Running == VRRuntime.OpenXR
+            ? $"adaptive quality {(RenderFixesFeature.AdaptiveQuality.Value ? "on" : "off")} (OpenXR; viewport dynamic resolution is OpenVR only)"
+            : $"dynamic resolution {(RenderFixesFeature.DynamicResolution.Value ? "on" : "off")}";
+
+    /// <summary>Adds <see cref="EyeMatrixFeature"/> to the game's renderer (URP_Renderer); URP rebuilds the renderer
+    /// once on the next frame (ScriptableRendererData.SetDirty).</summary>
+    private void AddEyeMatrices()
+    {
+        if (urp == null || eyeMatricesOn != null || urp.rendererDataList.Length == 0)
+            return;
+        var data = urp.rendererDataList[0];
+        if (data == null)
+            return;
+        if (eyeMatrices == null)
+        {
+            eyeMatrices = ScriptableObject.CreateInstance<EyeMatrixFeature>();
+            eyeMatrices.name = "PeakXR eye matrices";
+            eyeMatrices.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        }
+        data.rendererFeatures.Add(eyeMatrices);
+        data.SetDirty();
+        eyeMatricesOn = data;
+    }
+
+    private void RemoveEyeMatrices()
+    {
+        if (eyeMatricesOn == null)
+            return;
+        eyeMatricesOn.rendererFeatures.Remove(eyeMatrices);
+        eyeMatricesOn.SetDirty();
+        eyeMatricesOn = null;
     }
 
     /// <summary>The settings whose ApplyValue is skipped in VR may have changed in the game menu meanwhile: apply
@@ -351,6 +411,21 @@ internal sealed class RenderDriver : MonoBehaviour
             gui.photosensitivity = true;
     }
 
+    /// <summary>Photosensitive mode is on in VR only because <see cref="ForceComfortSettings"/> turned it on; the
+    /// player's own setting is off.</summary>
+    internal static bool PhotosensitiveForced
+    {
+        get
+        {
+            if (instance == null)
+                return false;
+            foreach (var (setting, _) in instance.forcedSettings)
+                if (setting is PhotosensitiveSetting)
+                    return true;
+            return false;
+        }
+    }
+
     private void Force(OffOnSetting setting)
     {
         if (setting == null || setting.Value == OffOnMode.ON)
@@ -423,16 +498,53 @@ internal sealed class RenderDriver : MonoBehaviour
             && urp != null;
         if (!on)
             adaptive.Reset();
-        else if (FrameClock.Adapt.Seconds >= AdaptWindowSeconds)
-            FeedAdaptive();
-        if (urp != null && adaptive.Scale != appliedAdaptive && FadeView.Alpha >= 0.99f)
-            ApplyAdaptive("fade");
+        if (FrameClock.Adapt.Seconds >= AdaptWindowSeconds)
+        {
+            var report = FrameClock.Summarize(FrameClock.Adapt);
+            FrameClock.Adapt.Reset();
+            JudgePacing(report);
+            if (on)
+                FeedAdaptive(report);
+        }
+        if (urp == null || adaptive.Scale == appliedAdaptive)
+        {
+            wantedSince = -1f;
+            EndBlink();
+            return;
+        }
+        if (wantedSince < 0f)
+            wantedSince = Time.unscaledTime;
+        if (FadeView.Alpha >= 0.99f)
+        {
+            ApplyAdaptive(blinking ? "blink" : "fade");
+            EndBlink();
+            return;
+        }
+        // A step down waits for a natural fade only so long: run 2026-10-24 sat at half rate for 70 s in the title.
+        // A short blink hides the reallocation instead; steps up always wait, so a blink never repeats for comfort.
+        float blinkAfter = RenderFixesFeature.AdaptiveQualityBlinkSeconds.Value;
+        if (
+            !blinking
+            && blinkAfter > 0f
+            && adaptive.Scale < appliedAdaptive
+            && Time.unscaledTime - wantedSince >= blinkAfter
+        )
+        {
+            blinking = true;
+            VRFade.Set(BlinkOwner, 1f);
+        }
     }
 
-    private void FeedAdaptive()
+    private void EndBlink()
     {
-        var report = FrameClock.Summarize(FrameClock.Adapt);
-        FrameClock.Adapt.Reset();
+        if (!blinking)
+            return;
+        blinking = false;
+        VRFade.Clear(BlinkOwner);
+    }
+
+    private void FeedAdaptive(in FrameClock.Report report)
+    {
         // A step still waiting for its fade would be measured at the old scale and stepped again.
         // Only the headset's own rate: the desktop monitor's (144 or 60 Hz) would step a fine frame down, or never.
         if (
@@ -449,9 +561,95 @@ internal sealed class RenderDriver : MonoBehaviour
         if (adaptive.Feed(load, canRaise: gpu))
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"{Tag} adaptive quality wants {adaptive.Scale:0.00} of RenderScale ({(gpu ? "GPU" : "frame")} p95 load {load:0.00}, target {adaptive.Target:0.00}); it lands at the next fade"
+                    $"{Tag} adaptive quality wants {adaptive.Scale:0.00} of RenderScale ({(gpu ? "GPU" : "frame")} p95 load {load:0.00}, target {adaptive.Target:0.00}); it lands at the next fade, or behind a blink after {RenderFixesFeature.AdaptiveQualityBlinkSeconds.Value:0} s"
                 )
             );
+    }
+
+    /// <summary>
+    /// Names what holds the frame rate down (<see cref="FramePacing"/>): the game's FPS cap and VSync are off in VR, so a
+    /// frame interval locked to a multiple of the budget is the runtime showing a fraction of the refresh and
+    /// reprojecting (SteamVR on a 120 Hz Quest: 60 Hz). Logged when the verdict changes; after
+    /// <see cref="PacingNoticeWindows"/> GPU-bound windows with no scale left to drop, the player gets one wrist notice
+    /// with the refresh rate the GPU keeps up with.
+    /// </summary>
+    private void JudgePacing(in FrameClock.Report report)
+    {
+        if (!report.Trusted || report.Interval.Empty)
+            return;
+        var verdict = FramePacing.Judge(report.Interval.P50, report.Gpu.P95, report.BudgetMs);
+        pacingWindows = verdict == pacing ? pacingWindows + 1 : 1;
+        if (verdict != pacing)
+        {
+            pacing = verdict;
+            Plugin.Log.LogInfo($"{Tag} pacing: {PacingLine(report, verdict)}");
+        }
+        bool noScaleLeft =
+            !RenderFixesFeature.AdaptiveQuality.Value
+            || VRSession.Running != VRRuntime.OpenXR
+            || appliedAdaptive <= RenderFixesFeature.AdaptiveQualityMin.Value + 0.001f;
+        if (
+            verdict != PacingVerdict.GpuBound
+            || pacingNoticeShown
+            || pacingWindows < PacingNoticeWindows
+            || !noScaleLeft
+        )
+            return;
+        var rig = VRRig.Instance;
+        bool left = VRInput.OffHandLeft;
+        var hand = rig != null ? rig.Hand(left) : null;
+        if (hand == null)
+            return;
+        pacingNoticeShown = true;
+        int shown = Mathf.RoundToInt(
+            report.Hz / FramePacing.Divisor(report.Interval.P50, report.BudgetMs)
+        );
+        float fits = FramePacing.FittingRefresh(report.Gpu.P50);
+        Affordance.Inform(
+            left,
+            hand.position,
+            DenyReason.HappenedHere,
+            DenyHint.Wrist(),
+            fits > 0f && fits < report.Hz
+                ? System.FormattableString.Invariant(
+                    $"{shown} of {report.Hz:0} Hz: GPU too slow. Set the headset to {fits:0} Hz"
+                )
+                : System.FormattableString.Invariant($"{shown} of {report.Hz:0} Hz: GPU too slow"),
+            forceText: true
+        );
+    }
+
+    private static string PacingLine(in FrameClock.Report r, PacingVerdict verdict)
+    {
+        if (verdict == PacingVerdict.OnRate)
+            return System.FormattableString.Invariant($"frames at the headset's {r.Hz:0} Hz");
+        int divisor = FramePacing.Divisor(r.Interval.P50, r.BudgetMs);
+        string head = System.FormattableString.Invariant(
+            $"the runtime shows {r.Hz / divisor:0} of {r.Hz:0} Hz and reprojects the rest (frame p50 {r.Interval.P50:0.00} ms, budget {r.BudgetMs:0.00} ms); this is runtime throttling, not a cap: the game's FPS cap and VSync are off"
+        );
+        if (verdict == PacingVerdict.NotGpu)
+            return head
+                + (
+                    r.Gpu.Empty
+                        ? "; no GPU time reported, so the cause is unknown"
+                        : System.FormattableString.Invariant(
+                            $"; the GPU fits (p95 {r.Gpu.P95:0.00} ms), so the CPU (main/render p95 {(r.CpuMain.Empty ? "n/a" : $"{r.CpuMain.P95:0.00}/{r.CpuRender.P95:0.00} ms")}) or the runtime holds it"
+                        )
+                );
+        float fits = FramePacing.FittingRefresh(r.Gpu.P50);
+        string advice =
+            fits > 0f && fits < r.Hz
+                ? System.FormattableString.Invariant(
+                    $"the GPU keeps up with {fits:0} Hz: set the headset's refresh rate to it, or lower the runtime's resolution or Render.RenderScale"
+                )
+                : "lower the runtime's resolution or Render.RenderScale";
+        var api = SystemInfo.graphicsDeviceType;
+        string apiAdvice = GraphicsAdvice.For(api.ToString(), XRBootstrapDriver.UnderWine);
+        return head
+            + System.FormattableString.Invariant(
+                $"; the GPU needs p50/p95 {r.Gpu.P50:0.00}/{r.Gpu.P95:0.00} ms of it at render scale {CurrentScale:0.00}; {advice}"
+            )
+            + (apiAdvice != null ? "; " + apiAdvice : "");
     }
 
     /// <summary>Resizes the eye textures to the wanted adaptive scale; called only while nothing is visible.</summary>
