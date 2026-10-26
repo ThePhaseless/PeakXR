@@ -19,7 +19,7 @@ namespace PeakXR.Interact.Physical;
 /// <item>Light (G6): a lit held flame touched to a scout cannon fuse (ScoutCannonFuse.cs:99), rocket fuse
 /// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:334; its own solid colliders, or the
 /// zone over its fire base) holds interact on it.</item>
-/// <item>Warm hands (G10): open palms toward a lit campfire give a slow warm pulse; cold (status Cold) a faint
+/// <item>Warm hands (G10): open palms toward a lit campfire give a steady low warm buzz; cold (status Cold) a faint
 /// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:237).</item>
 /// </list>
 /// </summary>
@@ -601,9 +601,14 @@ internal static class FireGestures
             warming = true;
             if (now >= NextWarm[h])
             {
-                NextWarm[h] = now + 0.5f;
+                NextWarm[h] = now + SteadyRumble.Refresh;
                 WarmPulses++;
-                Haptics.Pulse(left, 0.05f + 0.2f * warm, 0.3f, HapticPriority.Ambient);
+                Haptics.Pulse(
+                    left,
+                    0.05f + 0.2f * warm,
+                    SteadyRumble.Seconds,
+                    HapticPriority.Ambient
+                );
             }
         }
         // Shiver only by a lit fire, as a cue to warm up there; no endless pulses across a cold biome.
