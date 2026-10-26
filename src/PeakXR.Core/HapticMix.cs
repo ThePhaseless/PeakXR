@@ -8,6 +8,10 @@ namespace PeakXR.Core;
 /// </summary>
 public enum HapticPriority : byte
 {
+    /// <summary>The continuous environment rumble (fire, wind, heat, cold): under everything, even ambient beats,
+    /// and resumes as soon as they end.</summary>
+    Environment,
+
     /// <summary>Background feel: heartbeat, wind, surface texture, shiver, warmth. Ducks under everything else.</summary>
     Ambient,
 
@@ -49,7 +53,7 @@ public static class HapticScale
     /// <summary>A pulse of <paramref name="priority"/> plays at this <see cref="HapticDetail"/>: Essential drops the
     /// Ambient feel (heartbeat, wind, texture, shiver, warmth).</summary>
     public static bool Plays(HapticDetail detail, HapticPriority priority) =>
-        detail == HapticDetail.Full || priority != HapticPriority.Ambient;
+        detail == HapticDetail.Full || priority > HapticPriority.Ambient;
 
     /// <summary>The impulse amplitude sent for <paramref name="amplitude"/> at slider <paramref name="strength"/>.</summary>
     public static float Felt(float amplitude, float strength, float scale) =>
@@ -91,7 +95,7 @@ public struct HapticChannel
     public bool Allow(HapticPriority p, float now, float seconds)
     {
         float tail =
-            p == HapticPriority.Ambient && priority > HapticPriority.Ambient ? DuckTail : 0f;
+            p <= HapticPriority.Ambient && priority > HapticPriority.Ambient ? DuckTail : 0f;
         if (now < until + tail && p < priority)
             return false;
         Take(p, now, seconds);

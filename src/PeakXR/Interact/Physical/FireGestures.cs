@@ -19,8 +19,9 @@ namespace PeakXR.Interact.Physical;
 /// <item>Light (G6): a lit held flame touched to a scout cannon fuse (ScoutCannonFuse.cs:99), rocket fuse
 /// (RocketFuse.cs:101), ghost fire (GhostFire.cs:149) or unlit campfire (Campfire.cs:334; its own solid colliders, or the
 /// zone over its fire base) holds interact on it.</item>
-/// <item>Warm hands (G10): open palms toward a lit campfire give a steady low warm buzz; cold (status Cold) a faint
-/// shiver while near one. Feel only: campfire warmth stays the game's passive range (Campfire.cs:237).</item>
+/// <item>Fire rumble (G10): a hand at a lit campfire's flames feels a continuous crackling rumble, full in the flames
+/// and fading out a hand's width past them (<see cref="EnvironmentRumble"/>). Feel only: campfire warmth stays the
+/// game's passive range (Campfire.cs:237).</item>
 /// </list>
 /// </summary>
 internal static class FireGestures
@@ -47,7 +48,9 @@ internal static class FireGestures
 
     private const float TouchEnter = 0.12f;
     private const float TouchExit = 0.2f;
-    private const float WarmRange = 1f;
+
+    /// <summary>Time constant (s) over which the measured flame bounds follow their flicker.</summary>
+    private const float FlameEaseSeconds = 0.5f;
 
     private static readonly ContactDwell Cook = new()
     {
@@ -68,7 +71,6 @@ internal static class FireGestures
     /// <summary>Collider instance id to its fuse or ghost fire, or null for any other collider, so a flame held
     /// in clutter does not run GetComponentInParent on every hit every frame.</summary>
     private static readonly Dictionary<int, IInteractible> LightableByCollider = new(256);
-    private static readonly float[] NextWarm = new float[2];
 
     /// <summary>Dwell before a refused cook (item in the column of a fire that will not cook it) is reported.</summary>
     private static readonly ContactDwell CookRefused = new()
@@ -82,10 +84,15 @@ internal static class FireGestures
     private static IInteractible touchTarget;
     private static IInteractible refusedTouch;
     private static Campfire farFire;
-    private static float nextShiver;
 
-    /// <summary>Warm pulses sent so far; the self-test reads it (vr.27).</summary>
-    internal static int WarmPulses;
+    private static Campfire flameFire;
+    private static ParticleSystemRenderer[] flameRenderers =
+        System.Array.Empty<ParticleSystemRenderer>();
+    private static Vector3 flameCentre;
+
+    /// <summary>Centre of the nearest lit campfire's flames as the fire rumble measures them (self-test).</summary>
+    internal static Vector3 FlameCentre => flameCentre;
+    private static Vector3 flameExtents;
 
     private static Item flameItem;
     private static HeldLightKind flameKind;
@@ -104,11 +111,10 @@ internal static class FireGestures
 
     public static void Tick(Character c, VRRig rig, ItemGesturesConfig cfg, float dt)
     {
-        float now = Time.time;
         UpdateCook(c, cfg, dt);
         UpdateLight(c, cfg, dt);
         UpdateFriendsFar();
-        UpdateWarmth(c, rig, cfg, now);
+        UpdateFireRumble(c, rig, cfg, dt);
     }
 
     /// <summary>
@@ -578,51 +584,92 @@ internal static class FireGestures
         && it is IInteractibleConstant constant
         && constant.IsConstantlyInteractable(c);
 
-    private static void UpdateWarmth(Character c, VRRig rig, ItemGesturesConfig cfg, float now)
+    /// <summary>
+    /// The fire rumble (<see cref="EnvSource.Fire"/>): each tracked hand by the nearest lit campfire feels
+    /// <see cref="EnvironmentFeel.FlameStrength"/> of its flames, full in them and fading out to
+    /// <see cref="EnvironmentFeel.FlameOnset"/> past their surface. The flames are the fire particles' live bounds
+    /// (<see cref="FlameBounds"/>), eased so their flicker does not shake the curve.
+    /// </summary>
+    private static void UpdateFireRumble(Character c, VRRig rig, ItemGesturesConfig cfg, float dt)
     {
         if (!cfg.WarmHands)
             return;
         var fire = ItemGestures.NearestCampfire(c.Center, 4f, litOnly: true);
-        var heat = fire != null ? (ItemGestures.FireBase(fire) + Vector3.up * 0.3f).N() : default;
-        bool warming = false;
+        if (fire == null)
+        {
+            flameFire = null;
+            return;
+        }
+        FlameBounds(fire, dt);
         for (int h = 0; h < 2; h++)
         {
             bool left = h == 0;
-            bool free =
-                ItemGestures.Held == null || (!LocalHold.TwoHand && ItemGestures.HoldLeft != left);
-            ref var state = ref VRInput.Hand(left);
             var t = rig.Hand(left);
-            if (fire == null || !free || !state.Tracked || state.Grip > 0.4f || t == null)
+            if (!VRInput.Hand(left).Tracked || t == null)
                 continue;
-            // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
-            var palm = left ? t.right : -t.right;
-            float warm = PalmWarmth.Amount(palm.N(), t.position.N(), heat, WarmRange);
-            if (warm <= 0f)
-                continue;
-            warming = true;
-            if (now >= NextWarm[h])
-            {
-                NextWarm[h] = now + SteadyRumble.Refresh;
-                WarmPulses++;
-                Haptics.Pulse(
-                    left,
-                    0.05f + 0.2f * warm,
-                    SteadyRumble.Seconds,
-                    HapticPriority.Ambient
-                );
-            }
+            float strength = EnvironmentFeel.FlameStrength(
+                t.position.N(),
+                flameCentre.N(),
+                flameExtents.N()
+            );
+            if (strength > 0f)
+                EnvironmentRumble.Feed(EnvSource.Fire, left, strength);
         }
-        // Shiver only by a lit fire, as a cue to warm up there; no endless pulses across a cold biome.
-        if (
-            fire != null
-            && !warming
-            && now >= nextShiver
-            && c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold) > 0.05f
-        )
+    }
+
+    /// <summary>
+    /// The flames of <paramref name="fire"/> as a box: the live bounds of its fire particles (Campfire.cs:51,
+    /// their renderer, else their child systems' renderers), else a 0.6 m wide, 0.7 m tall flame on
+    /// <see cref="ItemGestures.FireBase"/>. Eased over <see cref="FlameEaseSeconds"/>; a new fire snaps.
+    /// </summary>
+    private static void FlameBounds(Campfire fire, float dt)
+    {
+        bool fresh = !ReferenceEquals(fire, flameFire);
+        if (fresh)
         {
-            nextShiver = now + 1.6f;
-            Haptics.Pulse(true, 0.08f, 0.04f, HapticPriority.Ambient);
-            Haptics.Pulse(false, 0.08f, 0.04f, HapticPriority.Ambient);
+            flameFire = fire;
+            flameRenderers =
+                fire.fireParticles != null
+                    ? fire.fireParticles.GetComponentsInChildren<ParticleSystemRenderer>()
+                    : System.Array.Empty<ParticleSystemRenderer>();
         }
+        var bounds = default(Bounds);
+        bool any = false;
+        // The fire system's own renderer (first) when it draws; else all its child systems together.
+        for (int i = 0; i < flameRenderers.Length; i++)
+        {
+            var r = flameRenderers[i];
+            if (r == null || !r.enabled)
+                continue;
+            var b = r.bounds;
+            if (b.extents.sqrMagnitude < 1e-4f)
+                continue;
+            if (any)
+                bounds.Encapsulate(b);
+            else
+                bounds = b;
+            any = true;
+            if (i == 0)
+                break;
+        }
+        if (!any)
+            bounds = new Bounds(
+                ItemGestures.FireBase(fire) + Vector3.up * 0.35f,
+                new Vector3(0.6f, 0.7f, 0.6f)
+            );
+        if (fresh)
+        {
+            flameCentre = bounds.center;
+            flameExtents = bounds.extents;
+            Plugin.Log.LogDebug(
+                System.FormattableString.Invariant(
+                    $"[interact.items] fire rumble: {fire.name} flames {(any ? "measured" : "assumed")} {bounds.size.x:0.00} x {bounds.size.y:0.00} x {bounds.size.z:0.00} m, {bounds.center.y - ItemGestures.FireBase(fire).y:0.00} m over the base"
+                )
+            );
+            return;
+        }
+        float k = 1f - Mathf.Exp(-dt / FlameEaseSeconds);
+        flameCentre += (bounds.center - flameCentre) * k;
+        flameExtents += (bounds.extents - flameExtents) * k;
     }
 }

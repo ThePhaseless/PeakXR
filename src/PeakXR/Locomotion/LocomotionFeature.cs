@@ -29,6 +29,7 @@ public sealed class LocomotionFeature : Feature
         Patch(typeof(BodyFeedback.JumpTry));
         Patch(typeof(BodyFeedback.TakeOff));
         Patch(typeof(BodyFeedback.Landing));
+        Patch(typeof(BodyFeedback.HazardZone));
         EnvironmentCues.Resolve();
         Patch(typeof(EnvironmentCues.Bounce));
         Patch(typeof(EnvironmentCues.LavaSting));

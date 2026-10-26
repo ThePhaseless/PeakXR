@@ -30,7 +30,15 @@ internal static class BodyFeedback
     private static readonly StaminaOutCue StaminaOut = new();
     private static readonly FootingCue Footing = new();
     private static readonly Heartbeat Beat = new();
-    private static readonly Shiver Chill = new();
+    private static readonly RateMeter ColdRate = new();
+    private static readonly RateMeter HotRate = new();
+    private static readonly RateMeter HazardRate = new();
+
+    /// <summary>Running total of status the hazard zones have added to the local character (<see cref="HazardZone"/>).</summary>
+    private static float hazardTotal;
+
+    /// <summary>Felt strength (default slider) of the heat or cold rumble at full strength.</summary>
+    private const float StatusFelt = 0.35f;
 
     /// <summary>Head this close (m) to rock: the wall is felt before the view would fade (RigDriver).</summary>
     private const float WallNear = 0.3f;
@@ -77,9 +85,6 @@ internal static class BodyFeedback
     internal static int Beats { get; private set; }
 
     internal static float LastBeatPeriod { get; private set; }
-
-    /// <summary>Shiver pulses felt (self-test).</summary>
-    internal static int Shivers { get; private set; }
 
     /// <summary>Air jumps (double-jump amulet charges) spent (self-test).</summary>
     internal static int AirJumps { get; private set; }
@@ -278,15 +283,35 @@ internal static class BodyFeedback
                 Beats++;
             }
         }
-        float shiver = Chill.Update(
-            BodyGestures.ShiverOn ? a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold) : 0f,
+        // Heat and cold rumbles follow how fast the game is raising those statuses right now, whatever raises them:
+        // night cold (CharacterAfflictions.cs:511), fog (Fog.cs:100, FogSphere.cs:113), a blizzard or wind chill
+        // zone (WindChillZone.cs:207), the desert sun (HotSun.cs:45 through AddSunHeat, CharacterAfflictions.cs:677,
+        // which a parasol or sunscreen blocks), lava heat (Lava.cs:63). A status the game blocks or has maxed does
+        // not rise, so it is not felt; warming at a fire lowers Cold and reads as none.
+        Status(
+            EnvSource.Cold,
+            ColdRate,
+            a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold),
+            BodyGestures.ShiverOn,
             dt
         );
-        if (shiver > 0f)
+        Status(
+            EnvSource.Heat,
+            HotRate,
+            a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Hot),
+            BodyGestures.HeatOn,
+            dt
+        );
+        Status(EnvSource.Hazard, HazardRate, hazardTotal, BodyGestures.HazardOn, dt);
+    }
+
+    private static void Status(EnvSource source, RateMeter meter, float value, bool on, float dt)
+    {
+        float level = StatusFelt * EnvironmentFeel.StatusStrength(meter.Update(value, dt));
+        if (on && level > 0f)
         {
-            Haptics.Pulse(true, shiver, 0.03f, HapticPriority.Ambient);
-            Haptics.Pulse(false, shiver, 0.03f, HapticPriority.Ambient);
-            Shivers++;
+            EnvironmentRumble.Feed(source, true, level);
+            EnvironmentRumble.Feed(source, false, level);
         }
     }
 
@@ -348,6 +373,43 @@ internal static class BodyFeedback
             Feel(false, CueFeel.Contact, amplitude, 0.03f);
         if (side != 2)
             Feel(true, CueFeel.Contact, amplitude, 0.03f);
+    }
+
+    /// <summary>
+    /// StatusEmitter.Update (StatusEmitter.cs:73; WindAffectedStatusEmitter.cs:3 inherits it): a hazard zone (a spore
+    /// cloud, any zone that ticks a status onto the local character, :129) raising a status other than Hot or Cold,
+    /// which the heat and cold rumbles already read. What it really added, after the game's own blocks, goes into the
+    /// hazard rumble's total.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class HazardZone
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(StatusEmitter), "Update");
+
+        private static void Prefix(StatusEmitter __instance, out float __state) =>
+            __state = Read(__instance);
+
+        private static void Postfix(StatusEmitter __instance, float __state)
+        {
+            float after = Read(__instance);
+            if (after > __state)
+                hazardTotal += after - __state;
+        }
+
+        private static float Read(StatusEmitter emitter)
+        {
+            var c = Character.localCharacter;
+            var type = emitter.statusType;
+            if (
+                !VRSession.Active
+                || c == null
+                || type == CharacterAfflictions.STATUSTYPE.Hot
+                || type == CharacterAfflictions.STATUSTYPE.Cold
+            )
+                return float.NaN;
+            return c.refs.afflictions.GetCurrentStatus(type);
+        }
     }
 
     /// <summary>

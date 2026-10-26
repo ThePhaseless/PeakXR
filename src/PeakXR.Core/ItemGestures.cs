@@ -168,28 +168,6 @@ public static class LidLift
     }
 }
 
-/// <summary>How much an open palm held toward a fire warms: 0 when it faces away or is out of range, up to 1 close in.</summary>
-public static class PalmWarmth
-{
-    /// <summary>Minimum cosine between the palm normal and the direction to the fire.</summary>
-    public const float MinFacing = 0.5f;
-
-    public static float Amount(Vector3 palmNormal, Vector3 hand, Vector3 fire, float maxDistance)
-    {
-        var to = fire - hand;
-        float d = to.Length();
-        if (d > maxDistance || maxDistance <= 0f)
-            return 0f;
-        if (d < 1e-4f)
-            return 1f;
-        float n = palmNormal.Length();
-        if (n < 1e-6f)
-            return 0f;
-        float facing = Vector3.Dot(palmNormal / n, to / d);
-        return facing < MinFacing ? 0f : (1f - d / maxDistance) * facing;
-    }
-}
-
 /// <summary>
 /// A hand sliding along a held shaft, like a parasol's runner: +1 each time it travels <see cref="Travel"/> up from
 /// where the stroke began, -1 down; each stroke then starts again from there. Call <see cref="Update"/> per frame.

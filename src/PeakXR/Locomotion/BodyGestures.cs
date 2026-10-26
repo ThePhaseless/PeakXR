@@ -32,12 +32,16 @@ internal static class BodyGestures
     private static ConfigEntry<bool> hopToJump;
     private static ConfigEntry<bool> heartbeat;
     private static ConfigEntry<bool> shiver;
+    private static ConfigEntry<bool> heat;
+    private static ConfigEntry<bool> hazard;
     private static ConfigEntry<bool> wallTouch;
 
     /// <summary>Body feels in <see cref="BodyFeedback"/>, each its own switch (all also need Interaction.Haptics).</summary>
     internal static bool HeartbeatOn => heartbeat?.Value ?? true;
 
     internal static bool ShiverOn => shiver?.Value ?? true;
+    internal static bool HeatOn => heat?.Value ?? true;
+    internal static bool HazardOn => hazard?.Value ?? true;
     internal static bool WallTouchOn => wallTouch?.Value ?? true;
     private static float standAbove;
     private static bool haveStand;
@@ -114,7 +118,22 @@ internal static class BodyGestures
             s,
             "Shiver",
             true,
-            "Feel fine shivers in both hands while you are getting colder."
+            "Feel a fine shivering rumble in both hands while you are getting colder, stronger the faster the cold "
+                + "(night, fog, snowstorm) gets to you."
+        );
+        heat = file.Bind(
+            s,
+            "Heat",
+            true,
+            "Feel a slow swelling rumble in both hands while you are getting hotter, stronger the faster the heat "
+                + "(desert sun, lava) gets to you. A parasol or sunscreen that keeps the sun off keeps it quiet."
+        );
+        hazard = file.Bind(
+            s,
+            "HazardZones",
+            true,
+            "Feel a throbbing rumble in both hands while a hazard zone, such as a spore cloud, is affecting you, "
+                + "stronger the faster it gets to you."
         );
         wallTouch = file.Bind(
             s,

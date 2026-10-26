@@ -23,6 +23,8 @@ namespace PeakXR.Core
         {
             "Heartbeat",
             "Shiver",
+            "Heat",
+            "HazardZones",
             "WallTouch",
             "WindPressure",
             "CarriedSway",

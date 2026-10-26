@@ -189,4 +189,32 @@ public class SteadyRumbleTests
                 )
             );
     }
+
+    [Fact]
+    public void EnvironmentRumble_YieldsToAmbientBeats_AndResumesRightAfter()
+    {
+        var ch = new HapticChannel();
+        Assert.True(ch.Allow(HapticPriority.Environment, 10f, SteadyRumble.Seconds));
+        // A heartbeat takes the hand over a playing rumble; the rumble waits it out, then carries on.
+        Assert.True(ch.Allow(HapticPriority.Ambient, 10.01f, 0.1f));
+        Assert.False(ch.Allow(HapticPriority.Environment, 10.05f, SteadyRumble.Seconds));
+        Assert.True(ch.Allow(HapticPriority.Environment, 10.12f, SteadyRumble.Seconds));
+    }
+
+    [Fact]
+    public void EnvironmentRumble_DucksUnderCues_ForTheTail()
+    {
+        var ch = new HapticChannel();
+        Assert.True(ch.Allow(HapticPriority.Cue, 10f, 0.05f));
+        Assert.False(
+            ch.Allow(HapticPriority.Environment, 10.05f + HapticChannel.DuckTail * 0.5f, 0.15f)
+        );
+        Assert.True(ch.Allow(HapticPriority.Environment, 10.06f + HapticChannel.DuckTail, 0.15f));
+    }
+
+    [Theory]
+    [InlineData(HapticDetail.Full, true)]
+    [InlineData(HapticDetail.Essential, false)]
+    public void Essential_DropsTheEnvironmentRumble(HapticDetail detail, bool plays) =>
+        Assert.Equal(plays, HapticScale.Plays(detail, HapticPriority.Environment));
 }

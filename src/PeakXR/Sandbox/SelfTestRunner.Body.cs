@@ -1375,12 +1375,12 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1f);
     }
 
-    /// <summary>vr.211: Cold rising shivers the hands; held steady, it stops.</summary>
+    /// <summary>vr.211: Cold rising gives the cold rumble; once Cold holds steady, the rumble fades out.</summary>
     IEnumerator ShiverStep()
     {
         var c = Character.localCharacter;
         bodyRestore = () => SandboxActions.ClearStatus(STATUS.Cold);
-        int before = BodyFeedback.Shivers;
+        float rising = 0f;
         for (int i = 0; i < 4; i++)
         {
             if (!SandboxActions.AddStatus(STATUS.Cold, 0.05f))
@@ -1389,38 +1389,36 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
             yield return Wait(0.3f);
+            rising = Mathf.Max(
+                rising,
+                Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true)
+            );
         }
-        int rising = BodyFeedback.Shivers - before;
-        // Steady means the game's own Cold has not risen for the shiver's hold and a margin: night cold
-        // (CharacterAfflictions.cs:509-511) keeps adding 0.025 steps, and each is a real rise that shivers. Cold
-        // falling (warming) is steady for the shiver. Bounded: 5 s, then the step skips.
+        // Steady means the game's own Cold has not risen for the meter to empty: night cold
+        // (CharacterAfflictions.cs:509-511) keeps adding, and each rise is real cold that rumbles. Cold falling
+        // (warming) reads as none. Bounded: 6 s, then the step skips.
         var a = c.refs.afflictions;
         float cold = a.GetCurrentStatus(STATUS.Cold);
         float still = Now;
-        int steady = -1;
-        float until = Now + 5f;
-        while (Now < until && steady < 0)
+        float steady = -1f;
+        float until = Now + 6f;
+        while (Now < until && steady < 0f)
         {
             float now = a.GetCurrentStatus(STATUS.Cold);
             if (now > cold)
                 still = Now;
             cold = now;
-            if (Now - still >= 1.3f && until - Now >= 0.8f)
-            {
-                int held = BodyFeedback.Shivers;
-                float from = cold;
-                yield return Wait(0.8f);
-                if (a.GetCurrentStatus(STATUS.Cold) <= from)
-                    steady = BodyFeedback.Shivers - held;
-                continue;
-            }
+            if (Now - still >= 3f)
+                steady = Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true);
             yield return null;
         }
         SandboxActions.ClearStatus(STATUS.Cold);
-        var note = $"shiver pulses while rising {rising}, while steady {steady} (cold {cold:0.00})";
-        if (steady < 0)
-            stepSkip = "Cold kept rising for 5 s (night cold): " + note;
-        else if (rising < 5 || steady > 0)
+        var note = F(
+            $"cold rumble while rising {rising:0.000}, after 3 s steady {steady:0.000} (cold {cold:0.00})"
+        );
+        if (steady < 0f)
+            stepSkip = "Cold kept rising for 6 s (night cold): " + note;
+        else if (rising < 0.1f || steady > 0.03f)
             Fail(note);
         else
             stepNote = note;
