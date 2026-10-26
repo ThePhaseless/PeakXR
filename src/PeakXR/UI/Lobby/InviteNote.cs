@@ -159,6 +159,7 @@ internal sealed class InviteNote : MonoBehaviour
         panel.transform.SetParent(transform, false);
         var canvas = panel.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = PeakXR.Core.DrawOrder.WorldUi;
         var rect = (RectTransform)panel.transform;
         rect.sizeDelta = Size;
         rect.localScale = Vector3.one * PanelMath.MetersPerPixel(WidthMeters, Size.x);

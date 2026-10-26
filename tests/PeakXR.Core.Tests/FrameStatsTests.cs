@@ -388,3 +388,81 @@ public class RefreshLogGateTests
         Assert.True(g.Due(144f, RefreshSource.Screen, 0.6f));
     }
 }
+
+public class FramePacingTests
+{
+    const float Budget120 = 1000f / 120f;
+
+    [Fact]
+    public void FullRate_IsOnRate()
+    {
+        Assert.Equal(1, FramePacing.Divisor(8.35f, Budget120));
+        Assert.Equal(PacingVerdict.OnRate, FramePacing.Judge(8.35f, 6.5f, Budget120));
+    }
+
+    [Fact]
+    public void HalvedWithTheGpuOverBudget_IsGpuBound()
+    {
+        // Tester log, 2026-10-24: 120 Hz headset, frames at 16.67 ms, GPU p95 14.0 ms.
+        Assert.Equal(2, FramePacing.Divisor(16.67f, Budget120));
+        Assert.Equal(PacingVerdict.GpuBound, FramePacing.Judge(16.67f, 14.04f, Budget120));
+    }
+
+    [Fact]
+    public void HalvedWithTheGpuInsideTheBudget_IsNotTheGpu()
+    {
+        Assert.Equal(PacingVerdict.NotGpu, FramePacing.Judge(16.67f, 5f, Budget120));
+    }
+
+    [Fact]
+    public void HalvedWithoutGpuTime_IsUnknownCause()
+    {
+        Assert.Equal(PacingVerdict.NotGpu, FramePacing.Judge(16.67f, 0f, Budget120));
+    }
+
+    [Fact]
+    public void NoBudget_JudgesNothing()
+    {
+        Assert.Equal(0, FramePacing.Divisor(16.67f, 0f));
+        Assert.Equal(PacingVerdict.OnRate, FramePacing.Judge(16.67f, 14f, 0f));
+    }
+
+    [Theory]
+    [InlineData(12.24f, 72f)]
+    [InlineData(9.5f, 90f)]
+    [InlineData(6.5f, 120f)]
+    [InlineData(4f, 144f)]
+    [InlineData(20f, 0f)]
+    public void FittingRefresh_IsTheFastestCommonRateTheGpuKeepsUpWith(float gpuP50, float hz) =>
+        Assert.Equal(hz, FramePacing.FittingRefresh(gpuP50));
+}
+
+public class GraphicsAdviceTests
+{
+    [Fact]
+    public void Vulkan_NeedsNoAdvice() =>
+        Assert.Null(GraphicsAdvice.For("Vulkan", underWine: true));
+
+    [Fact]
+    public void Direct3D11OnWindows_NeedsNoAdvice() =>
+        Assert.Null(GraphicsAdvice.For("Direct3D11", underWine: false));
+
+    [Fact]
+    public void Direct3D12OnWindows_PointsToDirect3D11()
+    {
+        var advice = GraphicsAdvice.For("Direct3D12", underWine: false);
+        Assert.NotNull(advice);
+        Assert.Contains("-force-d3d11", advice);
+        Assert.Contains("Launch options", advice);
+    }
+
+    [Theory]
+    [InlineData("Direct3D12")]
+    [InlineData("Direct3D11")]
+    public void AnyDirect3DUnderProton_PointsToVulkan(string api)
+    {
+        var advice = GraphicsAdvice.For(api, underWine: true);
+        Assert.NotNull(advice);
+        Assert.Contains("-force-vulkan", advice);
+    }
+}

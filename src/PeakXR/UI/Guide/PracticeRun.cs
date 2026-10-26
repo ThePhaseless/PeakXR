@@ -584,7 +584,7 @@ internal sealed class PracticeRun : MonoBehaviour
         {
             var go = new GameObject("PeakXR_PracticeCaption", typeof(RectTransform));
             go.transform.SetParent(station, false);
-            go.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            GuideStage.WorldSign(go);
             ((RectTransform)go.transform).sizeDelta = new Vector2(600f, 90f);
             go.transform.localScale = Vector3.one * 0.001f;
             go.transform.localPosition = new Vector3(0f, -0.62f, 0f);

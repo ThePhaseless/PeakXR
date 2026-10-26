@@ -15,11 +15,30 @@ namespace PeakXR.Render;
 /// </summary>
 internal static class FrameClock
 {
+    /// <summary>One frame's times (ms, 0 when not reported).</summary>
+    internal readonly struct Sample
+    {
+        public readonly float Interval;
+        public readonly float Gpu;
+        public readonly float CpuMain;
+        public readonly float CpuRender;
+
+        public Sample(float interval, float gpu, float cpuMain, float cpuRender)
+        {
+            Interval = interval;
+            Gpu = gpu;
+            CpuMain = cpuMain;
+            CpuRender = cpuRender;
+        }
+    }
+
     /// <summary>One measuring window: the periodic log, the self-test step, the adaptive quality window.</summary>
     internal sealed class Window
     {
         public readonly FrameRing Interval = new();
         public readonly FrameRing Gpu = new();
+        public readonly FrameRing CpuMain = new();
+        public readonly FrameRing CpuRender = new();
         public int Dropped;
         public int Repeated;
         public bool RuntimeCounts;
@@ -34,16 +53,20 @@ internal static class FrameClock
         {
             Interval.Clear();
             Gpu.Clear();
+            CpuMain.Clear();
+            CpuRender.Clear();
             Dropped = Repeated = Frames = 0;
             RuntimeCounts = false;
             started = Time.unscaledTime;
         }
 
-        public void Add(float interval, float gpu, bool counts, int dropped, int repeated)
+        public void Add(in Sample s, bool counts, int dropped, int repeated)
         {
             Frames++;
-            Interval.Add(interval);
-            Gpu.Add(gpu);
+            Interval.Add(s.Interval);
+            Gpu.Add(s.Gpu);
+            CpuMain.Add(s.CpuMain);
+            CpuRender.Add(s.CpuRender);
             RuntimeCounts |= counts;
             Dropped += dropped;
             Repeated += repeated;
@@ -58,6 +81,8 @@ internal static class FrameClock
         public readonly float BudgetMs;
         public readonly FrameSummary Interval;
         public readonly FrameSummary Gpu;
+        public readonly FrameSummary CpuMain;
+        public readonly FrameSummary CpuRender;
         public readonly int Dropped;
         public readonly int Repeated;
         public readonly float Seconds;
@@ -74,6 +99,8 @@ internal static class FrameClock
             BudgetMs = FrameBudget.BudgetMs(hz);
             Interval = w.Interval.Summarize(BudgetMs * FrameBudget.DroppedFactor);
             Gpu = w.Gpu.Summarize(0f);
+            CpuMain = w.CpuMain.Summarize(0f);
+            CpuRender = w.CpuRender.Summarize(0f);
             Dropped = w.RuntimeCounts ? w.Dropped : -1;
             Repeated = w.RuntimeCounts ? w.Repeated : -1;
             Seconds = w.Seconds;
@@ -90,6 +117,9 @@ internal static class FrameClock
             string gpu = Gpu.Empty
                 ? "n/a"
                 : FormattableString.Invariant($"{Gpu.P50:0.00}/{Gpu.P95:0.00} ms");
+            string cpu = CpuMain.Empty
+                ? "n/a"
+                : FormattableString.Invariant($"{CpuMain.P95:0.00}/{CpuRender.P95:0.00} ms");
             string runtime =
                 Dropped < 0 ? "n/a" : FormattableString.Invariant($"{Dropped}/{Repeated}");
             // A long log window at a high rate outgrows the ring: say which frames the percentiles cover.
@@ -98,7 +128,7 @@ internal static class FrameClock
                     ? FormattableString.Invariant($" (last {Interval.Count} of {Frames} frames)")
                     : "";
             return FormattableString.Invariant(
-                $"refresh {refresh}, frame p50/p95/p99{covers} {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {Interval.Over}/{Interval.Count}, GPU p50/p95 {gpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
+                $"refresh {refresh}, frame p50/p95/p99{covers} {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {Interval.Over}/{Interval.Count}, GPU p50/p95 {gpu}, CPU main/render p95 {cpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
             );
         }
     }
@@ -168,7 +198,21 @@ internal static class FrameClock
     {
         var d = XRRuntimeInfo.Display;
         float interval = Time.unscaledDeltaTime * 1000f;
-        float gpu = GpuMs(d);
+        float ftmGpu = 0f;
+        float cpuMain = 0f;
+        float cpuRender = 0f;
+        // CPU thread times tell a CPU-bound frame from a GPU-bound one when the runtime halves the rate.
+        if (FrameTimingManager.IsFeatureEnabled())
+        {
+            FrameTimingManager.CaptureFrameTimings();
+            if (FrameTimingManager.GetLatestTimings(1, Timings) > 0)
+            {
+                ftmGpu = (float)Timings[0].gpuFrameTime;
+                cpuMain = (float)Timings[0].cpuMainThreadFrameTime;
+                cpuRender = (float)Timings[0].cpuRenderThreadFrameTime;
+            }
+        }
+        var sample = new Sample(interval, GpuMs(d, ftmGpu), cpuMain, cpuRender);
         bool counts = false;
         int dropped = 0;
         int repeated = 0;
@@ -190,23 +234,18 @@ internal static class FrameClock
         else
             displayHz = 0f;
         PickRefresh();
-        Log.Add(interval, gpu, counts, dropped, repeated);
-        Step.Add(interval, gpu, counts, dropped, repeated);
-        Adapt.Add(interval, gpu, counts, dropped, repeated);
+        Log.Add(sample, counts, dropped, repeated);
+        Step.Add(sample, counts, dropped, repeated);
+        Adapt.Add(sample, counts, dropped, repeated);
     }
 
-    /// <summary>App GPU time (ms), or 0. FrameTimingManager needs the "Frame Timing Stats" player setting, which a
-    /// shipped game may lack, so it is only the fallback.</summary>
-    private static float GpuMs(UnityEngine.XR.XRDisplaySubsystem d)
+    /// <summary>App GPU time (ms), or 0: the display provider's, else <c>FrameTimingManager</c>'s, which needs the
+    /// "Frame Timing Stats" player setting a shipped game may lack.</summary>
+    private static float GpuMs(UnityEngine.XR.XRDisplaySubsystem d, float frameTimingGpu)
     {
         // Providers report seconds or milliseconds; no real GPU frame takes under half a millisecond.
         if (d != null && d.TryGetAppGPUTimeLastFrame(out float g) && g > 0f)
             return g < 0.5f ? g * 1000f : g;
-        if (!FrameTimingManager.IsFeatureEnabled())
-            return 0f;
-        FrameTimingManager.CaptureFrameTimings();
-        return FrameTimingManager.GetLatestTimings(1, Timings) > 0
-            ? (float)Timings[0].gpuFrameTime
-            : 0f;
+        return frameTimingGpu;
     }
 }

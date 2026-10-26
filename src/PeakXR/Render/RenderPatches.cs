@@ -99,6 +99,21 @@ internal static class RenderPatches
     }
 
     /// <summary>
+    /// DisableIfPhotosensitive.Start (DisableIfPhotosensitive.cs:10) switches an effect off at spawn when photosensitive
+    /// mode is on. The flare's flame is one (VFX_FlareSmoke's spark child, spawned by Flare.EnableFlareVisuals,
+    /// Flare.cs:60, with no stand-in), so the forced comfort setting left a lit flare with only smoke and sound. When
+    /// photosensitive mode is on only because render.fixes forced it (for shake and flashes), the effect stays.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class DisableIfPhotosensitiveStart
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(DisableIfPhotosensitive), "Start");
+
+        private static bool Prefix() => !(VRSession.Active && RenderDriver.PhotosensitiveForced);
+    }
+
+    /// <summary>
     /// PostHandler.LateUpdate (PostHandler.cs:17) re-enables the HBAO volume component from AOSetting every
     /// frame. Postfix: in VR it stays off unless Render.AmbientOcclusion is on. HBAO is found by type name
     /// because its assembly (HBAO.Universal.Runtime) is not referenced.

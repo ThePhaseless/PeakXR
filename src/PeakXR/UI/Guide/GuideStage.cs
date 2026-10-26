@@ -162,7 +162,7 @@ internal sealed class GuideStage : MonoBehaviour
         {
             caption = new GameObject("PeakXR_GuideCaption", typeof(RectTransform));
             caption.transform.SetParent(transform, false);
-            caption.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            WorldSign(caption);
             ((RectTransform)caption.transform).sizeDelta = new Vector2(520f, 90f);
             caption.transform.localScale = Vector3.one * 0.001f;
             captionText = caption.AddComponent<TextMeshProUGUI>();
@@ -282,7 +282,7 @@ internal sealed class GuideStage : MonoBehaviour
         {
             offerCaption = new GameObject("PeakXR_OfferCaption", typeof(RectTransform));
             offerCaption.transform.SetParent(transform, false);
-            offerCaption.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            WorldSign(offerCaption);
             ((RectTransform)offerCaption.transform).sizeDelta = new Vector2(420f, 60f);
             offerCaption.transform.SetPositionAndRotation(
                 orbs + right * 0.35f + Vector3.up * 0.08f,
@@ -383,5 +383,14 @@ internal sealed class GuideStage : MonoBehaviour
             return true;
         }
         return false;
+    }
+
+    /// <summary>A caption sign in the world, sorted over the world's transparents like converted menus
+    /// (<see cref="DrawOrder.WorldUi"/>) so smoke or glass nearer by centre never blends over its text.</summary>
+    internal static void WorldSign(GameObject go)
+    {
+        var canvas = go.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = DrawOrder.WorldUi;
     }
 }

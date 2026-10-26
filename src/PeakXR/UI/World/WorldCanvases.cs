@@ -25,6 +25,9 @@ internal sealed class TrackedCanvas
     public Camera OriginalCamera;
     public Vector3 OriginalScale;
 
+    /// <summary>The root and its own-sorting sub-canvases with the orders they had before conversion.</summary>
+    public readonly List<(Canvas Canvas, int Order)> OriginalOrders = new();
+
     public bool IsOpen;
     public bool WasOpen;
 
@@ -319,6 +322,7 @@ internal static class WorldCanvases
         t.OriginalScale = t.Rect.localScale;
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = LaserPointer.EventCamera;
+        SortOverWorld(t);
         t.Rect.sizeDelta = t.Size;
         t.Converted = true;
         t.WasOpen = false;
@@ -341,11 +345,31 @@ internal static class WorldCanvases
         t.Canvas.renderMode = t.OriginalMode;
         t.Canvas.worldCamera = t.OriginalCamera;
         t.Rect.localScale = t.OriginalScale;
+        foreach (var (c, order) in t.OriginalOrders)
+            if (c != null)
+                c.sortingOrder = order;
+        t.OriginalOrders.Clear();
         BackdropStrip.Restore(t, panelsOnly: false);
         BackplateView.Remove(t);
         t.Converted = false;
         if (t.Kind == CanvasKind.Names)
             ResetNameTags(t.Canvas);
+    }
+
+    /// <summary>Lifts the canvas and its own-sorting sub-canvases above the world's transparents
+    /// (<see cref="DrawOrder.WorldCanvas"/>), keeping their order among themselves. Popups at 10000 and up (a TMP
+    /// dropdown list sorts at 30000) already draw over everything they belong to and keep their order.</summary>
+    private static void SortOverWorld(TrackedCanvas t)
+    {
+        t.OriginalOrders.Clear();
+        // shortcut: sub-canvases added after conversion keep their order; none of the game's do (no sortingOrder writes).
+        foreach (var c in t.Canvas.GetComponentsInChildren<Canvas>(true))
+        {
+            if ((c != t.Canvas && !c.overrideSorting) || c.sortingOrder >= 10000)
+                continue;
+            t.OriginalOrders.Add((c, c.sortingOrder));
+            c.sortingOrder = DrawOrder.WorldCanvas(c.sortingOrder);
+        }
     }
 
     /// <summary>PlayerNamePatch rotates and scales every tag; vanilla UpdateName writes only the position

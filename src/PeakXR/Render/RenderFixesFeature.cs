@@ -34,6 +34,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<bool> AdaptiveQuality;
     internal static ConfigEntry<float> AdaptiveQualityMin;
     internal static ConfigEntry<float> AdaptiveQualityTarget;
+    internal static ConfigEntry<float> AdaptiveQualityBlinkSeconds;
     internal static ConfigEntry<float> FrameTimingLogSeconds;
     internal static ConfigEntry<bool> AmbientOcclusion;
     internal static ConfigEntry<bool> EdgeDetection;
@@ -103,8 +104,8 @@ public sealed class RenderFixesFeature : Feature
             new ConfigDescription(
                 "OpenXR: lower the render scale when the GPU keeps missing the headset's frame time, and raise it again "
                     + "after a long spell with room to spare. A change reallocates the eye buffers, so it waits for the "
-                    + "next fade to black (a segment change, a death, a recenter) or a scene load; you get a notice when "
-                    + "it lands. The lowered scale stays across scenes until there is room to raise it. Nothing changes while the headset reports no refresh rate of its own."
+                    + "next fade to black (a segment change, a death, a recenter) or a scene load, or for a lower scale behind "
+                    + "a short blink after AdaptiveQualityBlinkSeconds; you get a notice when it lands. The lowered scale stays across scenes until there is room to raise it. Nothing changes while the headset reports no refresh rate of its own."
             )
         );
         AdaptiveQualityMin = Plugin.Settings.Bind(
@@ -124,6 +125,17 @@ public sealed class RenderFixesFeature : Feature
                 "Share of the headset's frame time the GPU may use before adaptive quality steps down. Lower keeps "
                     + "more headroom for busy moments; higher keeps more detail.",
                 new AcceptableValueRange<float>(0.6f, 0.95f)
+            )
+        );
+        AdaptiveQualityBlinkSeconds = Plugin.Settings.Bind(
+            section,
+            "AdaptiveQualityBlinkSeconds",
+            15f,
+            new ConfigDescription(
+                "When adaptive quality wants a lower render scale and no fade to black comes within this many seconds, "
+                    + "a short blink (a quick fade to black and back) applies it, so a slow GPU does not stay at half the "
+                    + "frame rate until the next segment. 0 waits for a natural fade.",
+                new AcceptableValueRange<float>(0f, 120f)
             )
         );
         FrameTimingLogSeconds = Plugin.Settings.Bind(
@@ -182,6 +194,7 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.VolumeEnable));
         Patch(typeof(RenderPatches.LimitFrameRateStart));
         Patch(typeof(RenderPatches.PostHandlerLateUpdate));
+        Patch(typeof(RenderPatches.DisableIfPhotosensitiveStart));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);
