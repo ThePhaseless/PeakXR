@@ -200,6 +200,7 @@ internal sealed class GestureEmotes : MonoBehaviour
             state.PrimaryTouch
             || state.SecondaryTouch
             || state.StickTouch
+            || state.ThumbrestTouch
             || state.Primary
             || state.Secondary;
         var p = hand.position;

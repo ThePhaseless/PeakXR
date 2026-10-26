@@ -245,3 +245,50 @@ public class BodyYawTests
         TestUtil.Near(0f, BodySlotLayout.DeltaAngle(190f, b.Yaw), 0.01f);
     }
 }
+
+public class BackReachTests
+{
+    static readonly Vector3 NeckPos = new(0.3f, 1.45f, -0.2f);
+
+    static int FindAt(Vector3 point, float yaw = 0f)
+    {
+        var slots = BodySlotLayout.Create(BodySlotLayout.Belt, 3, 0.12f, 0f);
+        var anchors = new Vector3[slots.Length];
+        for (int i = 0; i < slots.Length; i++)
+            anchors[i] = BodySlotLayout.Anchor(NeckPos, yaw, slots[i]);
+        return BodySlotLayout.Find(point, anchors, slots, slots.Length, 1f, NeckPos, yaw);
+    }
+
+    [Theory]
+    // Palm on top of the right shoulder, just behind it.
+    [InlineData(0.17f, -0.15f, -0.05f)]
+    // Reaching further down the back.
+    [InlineData(0.12f, -0.25f, -0.2f)]
+    // Over the left shoulder.
+    [InlineData(-0.2f, -0.1f, -0.1f)]
+    public void ReachOverTheShoulder_FindsTheBackpack(float x, float y, float z)
+    {
+        int i = FindAt(NeckPos + new Vector3(x, y, z));
+        Assert.True(i >= 3, $"found {i}");
+    }
+
+    [Theory]
+    // Hand at the mouth, in front of the neck.
+    [InlineData(0.05f, 0f, 0.12f)]
+    // Beside the ear and in front of the neck pivot.
+    [InlineData(0.15f, 0.1f, 0.06f)]
+    // Raised above the head.
+    [InlineData(0.15f, 0.3f, -0.1f)]
+    // On the collarbone, in front of the shoulder: inside the zone's sphere, but not reaching back.
+    [InlineData(0.16f, -0.1f, 0.05f)]
+    public void HandsNearTheHeadButNotBehindIt_DoNotFindTheBackpack(float x, float y, float z) =>
+        Assert.Equal(-1, FindAt(NeckPos + new Vector3(x, y, z)));
+
+    [Fact]
+    public void BackGate_TurnsWithTheBody()
+    {
+        // Facing +X: behind is -X. The same over-the-shoulder reach, turned.
+        Assert.True(FindAt(NeckPos + new Vector3(-0.05f, -0.15f, -0.17f), 90f) >= 3);
+        Assert.Equal(-1, FindAt(NeckPos + new Vector3(0.12f, 0f, -0.05f), 90f));
+    }
+}

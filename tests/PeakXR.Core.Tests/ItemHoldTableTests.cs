@@ -101,4 +101,22 @@ public class ItemHoldTableTests
         Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.TwoHanded));
         Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.OptionalTwoHand));
     }
+
+    [Fact]
+    public void SecondHand_AlsoForAnyItemTheGameHoldsWithBothHands()
+    {
+        // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:647-651).
+        Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.OneHanded, vanillaBothHands: true));
+        Assert.False(
+            ItemHoldTable.AcceptsSecondHand(Handedness.OneHanded, vanillaBothHands: false)
+        );
+    }
+
+    [Fact]
+    public void BingBong_TakesASecondHand() =>
+        Assert.True(
+            ItemHoldTable.AcceptsSecondHand(
+                ItemHoldTable.Classify("BingBong(Clone)", ItemTraits.None).Handedness
+            )
+        );
 }

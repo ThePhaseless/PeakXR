@@ -148,7 +148,10 @@ internal static class PhysicalInteraction
     /// <summary>Hand whose aim ray replaces the head for interaction this frame: -1 none, 0 left, 1 right.</summary>
     public static int AimHand { get; private set; } = -1;
     public static bool ThrowPending => Time.frameCount - throwFrame <= 2;
-    public static Vector3 ThrowVelocity { get; private set; }
+
+    /// <summary>The pending hand throw's release velocity relative to the body (world axes), times
+    /// <c>ThrowVelocityScale</c>. InteractPatches.Dropping turns it into the launch.</summary>
+    public static Vector3 ThrowHandVelocity { get; private set; }
 
     /// <summary>The last throw's parts before scaling, for the self-test's vr.13 note: the fitted hand velocity
     /// (world, relative to the body) and the hip velocity added to it.</summary>
@@ -297,10 +300,7 @@ internal static class PhysicalInteraction
         {
             if (col == null || !col.enabled)
                 continue;
-            var p = col is MeshCollider { convex: false }
-                ? col.bounds.ClosestPoint(pos)
-                : col.ClosestPoint(pos);
-            best = Mathf.Min(best, Vector3.Distance(p, pos));
+            best = Mathf.Min(best, Vector3.Distance(SurfacePoint(col, pos), pos));
         }
         HandleColliders.Clear();
         return best < float.PositiveInfinity
@@ -527,8 +527,10 @@ internal static class PhysicalInteraction
             HoldingItem = holding,
             ThisHandHolds = thisHolds,
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
+            // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651).
+            HeldBothHandsInGame = holding && !item.rightHandOnly,
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
-            AtSecondGrip = holding && !thisHolds && AtSecondGrip(hand.Left, pos),
+            AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
             NearClimbable =
                 cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
@@ -536,8 +538,7 @@ internal static class PhysicalInteraction
         ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
         ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
         // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
-        ctx.AtSecondGripTight =
-            holding && !thisHolds && AtSecondGrip(hand.Left, pos, cfg.GrabRadius);
+        ctx.AtSecondGripTight = holding && !thisHolds && AtSecondGrip(pos, cfg.GrabRadius);
         var kind = HoldKind.Normal;
         probeHit = probeRefused = false;
         if (ctx.NearClimbable)
@@ -585,6 +586,7 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.GrabItem:
                 hand.Target = target;
+                FreeInteract(hand);
                 // A free hand's grab while another item is held goes to the pockets: the held hand stays as it is.
                 if (!holding)
                 {
@@ -595,6 +597,7 @@ internal static class PhysicalInteraction
                 break;
             case GripPressAction.GrabInteractible:
                 hand.Target = target;
+                FreeInteract(hand);
                 Haptics.Pulse(hand.Left, 0.6f, 0.05f);
                 break;
             case GripPressAction.SecondHand:
@@ -664,6 +667,51 @@ internal static class PhysicalInteraction
                 DenyReason.OutOfReach,
                 DenyHint.Range(pos, rock, cfg.ClimbRadius)
             );
+    }
+
+    /// <summary>One frame of interact up before a new grab presses it (<see cref="Inject"/>).</summary>
+    private static bool interactGap;
+
+    /// <summary>
+    /// A grab is starting while the other hand's fallback grip already holds the game's interact on nothing being
+    /// held: the game only acts on an interact pressed after a release (<c>readyToInteract</c>, Interaction.cs:109-124),
+    /// so that closed fist silently swallowed every grab of this hand. The fist lets go of its interact (it pressed it
+    /// on nothing a hold uses) and interact is up for one frame. A running hold interaction (a lid, a pillar) keeps it.
+    /// </summary>
+    private static void FreeInteract(Hand hand)
+    {
+        var other = Other(hand);
+        var interaction = Interaction.instance;
+        if (
+            other.Action != GripPressAction.Interact
+            || (interaction != null && interaction.currentHeldInteractible != null)
+        )
+            return;
+        other.Action = GripPressAction.None;
+        interactGap = true;
+    }
+
+    /// <summary>
+    /// The game's interact, pressed by a grip that fell back to it (<see cref="GripPressAction.Interact"/>), is picking
+    /// up <paramref name="item"/> (InteractPatches.Raycasts, the frame Interaction.DoInteraction calls Item.Interact,
+    /// Interaction.cs:116-124). The item belongs to that grip like one it grabbed: it lands in that hand, and opening the
+    /// hand drops or throws it. Before this a pickup by the head's or a pointing hand's aim went to the dominant hand
+    /// and stayed there until the grip closed once more.
+    /// </summary>
+    internal static void InteractPicking(Item item)
+    {
+        var c = Character.localCharacter;
+        if (item == null || c == null || c.data.currentItem != null)
+            return;
+        foreach (var hand in Hands)
+        {
+            if (hand.Action != GripPressAction.Interact || !hand.Injected)
+                continue;
+            hand.Target = item;
+            pendingLeft = hand.Left;
+            pendingTime = Time.time;
+            return;
+        }
     }
 
     /// <summary>
@@ -880,6 +928,15 @@ internal static class PhysicalInteraction
     {
         var action = hand.Action;
         var extension = hand.Extension;
+        // A fallback grip whose interact picked up the item now in this hand lets go of it like a grab
+        // (InteractPicking): never a pointed grip's own held item handed to a statue or skeleton.
+        if (
+            action == GripPressAction.Interact
+            && hand.Target is Item picked
+            && c.data.currentItem != null
+            && SameInstance(picked, c.data.currentItem)
+        )
+            action = GripPressAction.GrabItem;
         hand.Action = GripPressAction.None;
         hand.Target = null;
         hand.Extension = null;
@@ -945,7 +1002,7 @@ internal static class PhysicalInteraction
                 }
                 if (result == GripReleaseAction.Throw)
                 {
-                    ThrowVelocity = ReleaseVelocity(handVelocity, c) * cfg.ThrowScale;
+                    ThrowHandVelocity = handVelocity * cfg.ThrowScale;
                     LastThrowHand = handVelocity;
                     LastThrowBody =
                         c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
@@ -972,15 +1029,6 @@ internal static class PhysicalInteraction
 
     /// <summary>One-handed: this trigger pull started with the stick clicked in, so it is the secondary use.</summary>
     private static bool secondaryChord;
-
-    /// <summary>World release velocity: the hand's velocity relative to the body plus the body's own velocity.</summary>
-    private static Vector3 ReleaseVelocity(Vector3 handVelocity, Character c)
-    {
-        var world = handVelocity;
-        if (c.refs.hip != null)
-            world += c.refs.hip.Rig.linearVelocity;
-        return world;
-    }
 
     /// <summary>The tracked hand's fitted release velocity, rotated from tracking space to world: relative to the
     /// body, since the rig moves with it.</summary>
@@ -1010,21 +1058,20 @@ internal static class PhysicalInteraction
             if (col == null || !col.enabled || col.isTrigger)
                 continue;
             any = true;
-            // Collider.ClosestPoint is exact for primitives and convex meshes only; a concave mesh uses its bounds.
-            var closest = col is MeshCollider { convex: false }
-                ? col.bounds.ClosestPoint(pos)
-                : col.ClosestPoint(pos);
+            var closest = SurfacePoint(col, pos);
             if ((closest - pos).sqrMagnitude <= r2)
                 return true;
         }
         return !any && (item.Center() - pos).sqrMagnitude <= r2;
     }
 
-    /// <summary>The free hand is at the held item's grip for it (<c>Hand_L</c> for the left hand, <c>Hand_R</c> for
-    /// the right, ItemHoldInfo); items without one have no second grip point.</summary>
-    private static bool AtSecondGrip(bool left, Vector3 pos, float reach = SecondGripReach)
+    /// <summary>The free hand is at the held item's off-hand grip, <c>Hand_L</c> (ItemHoldInfo), whichever hand that
+    /// is: the holding hand always takes <c>Hand_R</c>, mirrored in the left hand (AvatarPoseDriver.ItemInController),
+    /// so the right hand joining an item held in the left once had to reach into the left hand. Items without
+    /// <c>Hand_L</c> have no second grip point.</summary>
+    private static bool AtSecondGrip(Vector3 pos, float reach = SecondGripReach)
     {
-        var grip = left ? Hold.GripLeft : Hold.GripRight;
+        var grip = Hold.GripLeft;
         return grip != null && (grip.position - pos).sqrMagnitude <= reach * reach;
     }
 
@@ -1086,7 +1133,10 @@ internal static class PhysicalInteraction
             // the top is clear (GrabSelector.SightPoints): an item partly sunk into uneven ground hides the first two
             // (VR run 50's vr.10, vr.11 and vr.32 ground pickups failed with the hand on the Apple).
             var bounds = col.bounds;
-            var point = bounds.ClosestPoint(pos);
+            // The collider's real surface, as the overlap itself measured it: a bounding box's corner of a long item
+            // held at a slant, or of Bing Bong's limbs, lies in empty air, ranked the wrong item first and sighted a
+            // point the item does not reach. Concave meshes have no exact query and keep their box.
+            var point = SurfacePoint(col, pos);
             GrabSelector.SightPoints(point.N(), bounds.center.N(), bounds.extents.N(), SightPoints);
             bool seen = false;
             for (int s = 0; s < GrabSelector.SightPointCount && !seen; s++)
@@ -1126,11 +1176,19 @@ internal static class PhysicalInteraction
         return target is Item ? GrabCandidate.Item : GrabCandidate.Interactible;
     }
 
+    /// <summary>Nearest point of the collider to <paramref name="pos"/>: exact where Collider.ClosestPoint is (boxes,
+    /// spheres, capsules, convex meshes), else the bounds (a concave mesh).</summary>
+    private static Vector3 SurfacePoint(Collider col, Vector3 pos) =>
+        ExactShape(col) ? col.ClosestPoint(pos) : col.bounds.ClosestPoint(pos);
+
+    private static bool ExactShape(Collider col) =>
+        col is BoxCollider or SphereCollider or CapsuleCollider or MeshCollider { convex: true };
+
     private static readonly NVector3[] SightPoints = new NVector3[GrabSelector.SightPointCount];
     private static readonly System.Collections.Generic.List<Collider> SunkColliders = new();
 
     /// <summary>The hovered interactible (Interaction.cs:15, :95) when the hand is inside, or within the grab radius of,
-    /// the bounds of one of its enabled solid colliders. Nothing stops a tracked hand going into a case, and an overlap
+    /// the bounds of one of its enabled solid concave mesh colliders. Nothing stops a tracked hand going into a case, and an overlap
     /// sphere inside a concave mesh's hollow meets no triangle (VR runs 75 and 77's vr.82b: grip "Interact on nothing"
     /// with LuggageAncient hovered). Only the hovered one, which the game's own ray found, so nothing behind a wall.</summary>
     private static IInteractible SunkInto(Character c, Vector3 pos, float radius)
@@ -1149,7 +1207,14 @@ internal static class PhysicalInteraction
         IInteractible found = null;
         foreach (var col in SunkColliders)
         {
-            if (col.enabled && !col.isTrigger && col.bounds.SqrDistance(pos) <= radius * radius)
+            // Only a concave mesh: the overlap sphere already finds a hand inside or at any primitive or convex
+            // collider, and a box around those reached well past the item's shape.
+            if (
+                col.enabled
+                && !col.isTrigger
+                && !ExactShape(col)
+                && col.bounds.SqrDistance(pos) <= radius * radius
+            )
             {
                 found = it;
                 break;
@@ -1912,6 +1977,13 @@ internal static class PhysicalInteraction
             interactDown = true;
             GrabTarget = gestureTarget;
         }
+        // A grab that started while a fallback fist held interact: up for this frame, so the game takes the press.
+        if (interactGap)
+        {
+            interactGap = false;
+            if (InteractEdge.Held)
+                interactDown = false;
+        }
         InteractEdge.Update(interactDown, dt);
         input.interactWasPressed |= InteractEdge.Pressed;
         input.interactIsPressed |= InteractEdge.Held;
@@ -2015,7 +2087,7 @@ internal static class PhysicalInteraction
             if (PrimaryEdge.Pressed || SecondaryEdge.Pressed)
             {
                 bool left = LocalHold.ItemInLeftHand;
-                var grip = left ? Hold.GripRight : Hold.GripLeft;
+                var grip = Hold.GripLeft;
                 Affordance.DenyAtHand(
                     left,
                     DenyReason.NeedsTwoHands,

@@ -64,6 +64,18 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void OtherHandOnAnItemTheGameHoldsWithBothHands_BecomesSecondHand()
+    {
+        // Bing Bong: one-handed in the table, but vanilla puts both hands on it (not rightHandOnly).
+        var c = Empty();
+        c.HoldingItem = true;
+        c.NearHeldItem = true;
+        c.HeldHandedness = Handedness.OneHanded;
+        c.HeldBothHandsInGame = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
     public void HoldingHand_NothingNear_Regrips()
     {
         var c = Empty();
@@ -335,6 +347,8 @@ public class GripIntentTests
         Assert.True(ReleaseArming.OnArrive(true, GripPressAction.GrabItem, isTheGrabbedItem: true));
         // A slot draw: the grip closed on the slot that gave it.
         Assert.True(ReleaseArming.OnArrive(true, GripPressAction.Extension, false));
+        // A grip that fell back to the game's interact and picked up the hovered item: that item is the grip's.
+        Assert.True(ReleaseArming.OnArrive(true, GripPressAction.Interact, isTheGrabbedItem: true));
         // Another item arriving during a grab is not the one grabbed.
         Assert.False(
             ReleaseArming.OnArrive(true, GripPressAction.GrabItem, isTheGrabbedItem: false)
