@@ -32,7 +32,8 @@ internal sealed class AimConfig
                 "HandAim",
                 true,
                 "Rope tie-off, rope and vine shooters, rescue hook, pitons, darts, antizooka, clone staff and "
-                    + "placeable items aim where the holding hand points instead of where you look. "
+                    + "placeable items aim where the holding hand points instead of where you look; "
+                    + "a launcher fires along its barrel as you see it. "
                     + "Off: they aim from your head like the flat game."
             ),
             twoHandMinSeparation = file.Bind(

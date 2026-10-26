@@ -53,7 +53,11 @@ namespace PeakXR.Core
         public static readonly Vector3 NeckFromHead = new Vector3(0f, -0.1f, -0.09f);
 
         /// <summary>Back anchors are larger than the hotbar slots: the hand reaches there blind.</summary>
-        public const float BackRadius = 0.16f;
+        public const float BackRadius = 0.2f;
+
+        /// <summary>A back anchor takes a hand only this far (metres, body forward) in front of the neck pivot or
+        /// behind it: a hand at the mouth or beside the ear is not reaching over the shoulder.</summary>
+        public const float BackGateForward = 0.02f;
 
         /// <summary>Belt arc axis (body frame, below and just behind the neck pivot) and radius: the front slot
         /// rides a forearm's length out from the belly, where a glance down sees it.</summary>
@@ -63,8 +67,11 @@ namespace PeakXR.Core
         static readonly Vector3 ChestCenter = new Vector3(0f, -0.3f, -0.05f);
         const float ChestRadius = 0.28f;
 
-        static readonly Vector3 BackLeft = new Vector3(-0.15f, 0.05f, -0.18f);
-        static readonly Vector3 BackRight = new Vector3(0.15f, 0.05f, -0.18f);
+        // Where a palm lands reaching over a shoulder for the pack: on top of the shoulder and just behind it, about
+        // 0.2 m below the eyes. The old spot (0.27 m behind the eyes at ear height) was further back than an arm
+        // bends over the shoulder.
+        static readonly Vector3 BackLeft = new Vector3(-0.16f, -0.12f, -0.12f);
+        static readonly Vector3 BackRight = new Vector3(0.16f, -0.12f, -0.12f);
 
         /// <summary>
         /// Builds a layout by name (unknown names fall back to <see cref="Belt"/>) for a hotbar of
@@ -140,6 +147,41 @@ namespace PeakXR.Core
                 if (d <= r * r && d < bestSq)
                 {
                     bestSq = d;
+                    best = i;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// <see cref="Find(Vector3, Vector3[], BodySlot[], int, float)"/> for a hand, where a back anchor (the
+        /// backpack, game slot <see cref="MaxHotbar"/>) only counts a hand no further forward than
+        /// <see cref="BackGateForward"/> of the neck pivot along the body's heading.
+        /// </summary>
+        public static int Find(
+            Vector3 point,
+            Vector3[] anchors,
+            BodySlot[] slots,
+            int count,
+            float radiusScale,
+            Vector3 neck,
+            float bodyYawDeg
+        )
+        {
+            float r = bodyYawDeg * UnityQuat.Deg2Rad;
+            var d = point - neck;
+            bool behind = d.X * MathF.Sin(r) + d.Z * MathF.Cos(r) <= BackGateForward;
+            int best = -1;
+            float bestSq = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                if (slots[i].GameSlot == MaxHotbar && !behind)
+                    continue;
+                float rr = slots[i].Radius * radiusScale;
+                float dsq = Vector3.DistanceSquared(point, anchors[i]);
+                if (dsq <= rr * rr && dsq < bestSq)
+                {
+                    bestSq = dsq;
                     best = i;
                 }
             }

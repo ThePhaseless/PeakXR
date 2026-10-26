@@ -74,7 +74,7 @@ internal sealed class ItemGesturesConfig
                 s,
                 "WarmHandsAtFire",
                 true,
-                "Open palms held toward a lit campfire give a slow warm vibration; near one while cold, a faint "
+                "Open palms held toward a lit campfire give a steady low warm vibration; near one while cold, a faint "
                     + "shiver. Feel only; the game's warmth is unchanged."
             ),
             parasolRunner = file.Bind(

@@ -166,3 +166,27 @@ public class HapticMixTests
         bool plays
     ) => Assert.Equal(plays, HapticScale.Plays(detail, priority));
 }
+
+public class SteadyRumbleTests
+{
+    [Fact]
+    public void EachImpulseOutlastsTheNextRefresh_SoTheRumbleHasNoGaps()
+    {
+        // A refresh can land a frame late (90 Hz: 11 ms, a hitch: more); the impulse must still be playing then.
+        Assert.True(SteadyRumble.Seconds >= SteadyRumble.Refresh + 0.05f);
+    }
+
+    [Fact]
+    public void RefreshesKeepTheChannel_AtAmbientPriority()
+    {
+        var channel = new HapticChannel();
+        for (int i = 0; i < 20; i++)
+            Assert.True(
+                channel.Allow(
+                    HapticPriority.Ambient,
+                    i * SteadyRumble.Refresh,
+                    SteadyRumble.Seconds
+                )
+            );
+    }
+}

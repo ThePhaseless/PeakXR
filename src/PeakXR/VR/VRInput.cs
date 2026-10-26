@@ -24,6 +24,9 @@ public struct HandState
     public bool SecondaryTouch;
     public bool StickClick;
     public bool StickTouch;
+
+    /// <summary>A thumb rests on the Touch thumbrest: a resting thumb, never a finger gun's lifted one.</summary>
+    public bool ThumbrestTouch;
     public bool Menu;
 
     /// <summary>Per-finger curls from skeletal input or hand tracking when the runtime offers them,

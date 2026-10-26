@@ -33,4 +33,27 @@ public static class HandThrow
     /// <summary>Speed the master adds along the look for <paramref name="charge"/> (0 for no charge).</summary>
     public static float LookSpeed(float charge, float minForce, float maxForce, float multiplier) =>
         charge > 0f ? 0.5f * multiplier * (minForce + (maxForce - minForce) * charge) : 0f;
+
+    /// <summary>
+    /// Release speed of a hand throw, relative to the body. A real arm tops out far below a charged vanilla throw
+    /// (a hard swing is 6 to 8 m/s, a full charge 0.5 * multiplier * maxThrowForce), so items tuned to break or bonk
+    /// on a strong vanilla throw never did. From <paramref name="fromSpeed"/> (the throw threshold, the hand's own
+    /// speed) the launch rises to <paramref name="fullLaunch"/> at <paramref name="fullSpeed"/>, and never above it.
+    /// </summary>
+    public static float LaunchSpeed(
+        float handSpeed,
+        float fromSpeed,
+        float fullSpeed,
+        float fullLaunch
+    )
+    {
+        float t =
+            fullSpeed - fromSpeed > 1e-4f
+                ? System.Math.Clamp((handSpeed - fromSpeed) / (fullSpeed - fromSpeed), 0f, 1f)
+                : 1f;
+        return System.MathF.Min(
+            fullLaunch,
+            handSpeed + System.MathF.Max(0f, fullLaunch - handSpeed) * t
+        );
+    }
 }

@@ -29,6 +29,12 @@ public sealed class PhysicalInteractionFeature : Feature
         PhysicalInteraction.SinceLastClimbStarted = GameMember.Field<CharacterClimbing, float>(
             "sinceLastClimbStarted"
         );
+        PhysicalInteraction.ModHasRange = GameMember.Field<ClimbModifierSurface, bool>(
+            "hasAlwaysClimbableRange"
+        );
+        PhysicalInteraction.ModRange = GameMember.Field<ClimbModifierSurface, float>(
+            "alwaysClimbableRange"
+        );
         Patch(typeof(InteractPatches.Sample));
         Patch(typeof(InteractPatches.Raycasts));
         Patch(typeof(InteractPatches.Dropping));

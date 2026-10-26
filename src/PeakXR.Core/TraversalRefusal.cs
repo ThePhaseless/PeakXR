@@ -74,7 +74,7 @@ public static class TraversalRefusal
     /// </summary>
     public const float GameWallReach = 1.35f;
 
-    /// <summary>How far past the grab radius (metres) a grip still sees rock it falls short of.</summary>
+    /// <summary>How far past the grab reach (metres) a hand still sees rock it falls short of (<see cref="ClimbReach"/>).</summary>
     public const float ReachProbe = 0.4f;
 
     /// <summary>Eye to hand (metres) that counts as an arm held out at full stretch.</summary>
@@ -99,16 +99,6 @@ public static class TraversalRefusal
         && !itemHandOrJustReleased
         && !castInProgress
         && (approachSpeed >= ReachApproach || eyeToHand >= FullReach);
-
-    /// <summary>
-    /// A grip that closes short of a climbable surface: rock beyond <paramref name="grabRadius"/> but within
-    /// <paramref name="band"/> past it along the reach is "too far", so the player learns to reach on instead of
-    /// meeting silence. Within the grab radius the grip climbs; farther is open air.
-    /// </summary>
-    public static DenyReason ReachBand(float handToRock, float grabRadius, float band) =>
-        handToRock > grabRadius && handToRock <= grabRadius + band
-            ? DenyReason.OutOfReach
-            : DenyReason.None;
 }
 
 /// <summary>

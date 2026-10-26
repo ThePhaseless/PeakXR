@@ -119,7 +119,8 @@ namespace PeakXR.Core
             ("egg", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
             ("coconut", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
             ("conch", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
-            ("bingbong", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
+            // A plush the size of a torso: the game holds it in both hands (not rightHandOnly).
+            ("bingbong", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder)),
             ("frisbee", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
         };
 
@@ -144,7 +145,7 @@ namespace PeakXR.Core
             bool has(ItemTraits t) => (traits & t) != 0;
 
             // A long item is held like a pole, but the game needs no second hand for any item (it only joins one when
-            // the item is not rightHandOnly, CharacterItems.cs:647-651): one hand still uses it. Only the named
+            // the item is not rightHandOnly, CharacterItems.cs:641-651): one hand still uses it. Only the named
             // two-handed tools above require both.
             if (has(ItemTraits.Elongated))
                 return new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole);
@@ -172,9 +173,13 @@ namespace PeakXR.Core
             bool requireTwoHands = true
         ) => !requireTwoHands || handedness != Handedness.TwoHanded || secondHandOnItem;
 
-        /// <summary>Whether the free hand gripping the held item becomes a two-hand hold.</summary>
-        public static bool AcceptsSecondHand(Handedness handedness) =>
-            handedness != Handedness.OneHanded;
+        /// <summary>Whether the free hand gripping the held item becomes a two-hand hold: any item the table allows
+        /// a second hand on, and any the game itself holds in both hands (<paramref name="vanillaBothHands"/>: not
+        /// <c>rightHandOnly</c>, CharacterItems.cs:641-651), whatever the table says.</summary>
+        public static bool AcceptsSecondHand(
+            Handedness handedness,
+            bool vanillaBothHands = false
+        ) => vanillaBothHands || handedness != Handedness.OneHanded;
 
         /// <summary>Lowercase letters and digits only, with a Unity "(Clone)" suffix removed.</summary>
         public static string Normalize(string name)
