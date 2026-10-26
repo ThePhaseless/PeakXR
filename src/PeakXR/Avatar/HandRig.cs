@@ -8,8 +8,9 @@ namespace PeakXR.Avatar;
 /// One hand of a character rig: where the hand bone sits relative to a tracked controller, and the finger
 /// chains with their bend axes. Calibrated once from the skinned mesh's bind pose (falling back to the current
 /// bone transforms), so it works without hard-coded bone axes:
-/// - hand forward = wrist to middle-finger knuckle, hand up = pinky to index knuckle; these map to the
-///   controller's +Z and +Y;
+/// - hand forward = wrist to middle-finger knuckle, hand up = pinky to index knuckle; these map to the grip
+///   pose's fingers (-Y) and thumb side (+Z) (<see cref="GripFrame"/>: OpenXR's grip runs +Z along the handle, so
+///   mapping the fingers onto +Z stood every hand up along the handle with its wrist below the fist);
 /// - each finger bends about (finger direction x palm normal), the axis that moves the tip toward the palm.
 /// Scout rig facts (from the prefab): bones point along +Y, fingers are Thumb/Index/Middle/Pinky with 3 joints,
 /// no ring finger, no Bodypart on fingers (plain skinned bones, free to rotate).
@@ -80,15 +81,19 @@ internal sealed class HandRig
 
     private Transform Joint(int finger, int joint) => joints[finger * Joints + joint];
 
-    /// <summary>Hand bone pose relative to the controller grip pose (position, rotation), with user tweaks.</summary>
+    /// <summary>Hand bone pose relative to the controller grip pose (position, rotation), with user tweaks. The
+    /// offsets and tweaks are in the hand's frame (back = toward the forearm, up = toward the thumb), turned into the
+    /// grip's by <see cref="GripFrame.FromHand"/>.</summary>
     public void ControllerToBone(out Vector3 pos, out Quaternion rot)
     {
         var cfg = AvatarConfig.Instance;
         float side = IsLeft ? -1f : 1f;
-        pos = new Vector3(side * cfg.WristSide, cfg.WristUp, -cfg.WristBack);
+        pos = GripFromHand * new Vector3(side * cfg.WristSide, cfg.WristUp, -cfg.WristBack);
         var tweak = Quaternion.Euler(cfg.HandPitch, side * cfg.HandYaw, side * cfg.HandRoll);
-        rot = tweak * handFromController;
+        rot = GripFromHand * tweak * handFromController;
     }
+
+    private static readonly Quaternion GripFromHand = GripFrame.FromHand.U();
 
     public void BoneFromController(
         Vector3 ctrlPos,

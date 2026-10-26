@@ -30,11 +30,18 @@ internal sealed class HeldGauges
         ropeShown;
     private int ropeCentre;
 
+    /// <summary>Dark plate behind the throw charge bar, so the translucent bar reads over the hand, sleeve or item
+    /// behind it instead of looking sunk into them.</summary>
+    private Image throwPlate;
+    private const float ThrowPlatePad = 10f;
+
     public void Release()
     {
         ropeShown = false;
         rope.Restore();
         throwBar.Restore();
+        if (throwPlate != null)
+            throwPlate.gameObject.SetActive(false);
         SetFuel(false);
     }
 
@@ -58,6 +65,12 @@ internal sealed class HeldGauges
             throwBar.Move(hudRoot, gui.throwGO.transform, Vector2.zero);
             throwBar.SetVisible(true);
         }
+        bool throwShown =
+            throwBar.Holding && throwBar.Item(0) != null && throwBar.Item(0).gameObject.activeSelf;
+        if (throwShown && (throwPlate == null || throwPlate.transform.parent != throwBar.Rect))
+            throwPlate = ThrowPlate(throwBar.Rect, throwBar.Item(0).rect.size);
+        if (throwPlate != null && throwPlate.gameObject.activeSelf != throwShown)
+            throwPlate.gameObject.SetActive(throwShown);
         // UI_Rope draws its coil and length text far from its rect's centre (they sat 0.6 m off, on the ground, while
         // the rect was beside the spool): centre the drawn text on the box origin each time it shows, for a few
         // frames while the game writes the length. Stack is idempotent once centred.
@@ -99,6 +112,25 @@ internal sealed class HeldGauges
         Pose(rig);
     }
 
+    /// <summary>The throw bar's plate: first in its box, the bar's size plus a margin, drawn on top like the bar.</summary>
+    private static Image ThrowPlate(RectTransform box, Vector2 size)
+    {
+        var go = new GameObject("PeakXR_ThrowPlate", typeof(RectTransform));
+        var rt = (RectTransform)go.transform;
+        rt.SetParent(box, false);
+        rt.SetAsFirstSibling();
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = size + 2f * ThrowPlatePad * Vector2.one;
+        var image = go.AddComponent<Image>();
+        image.sprite = World.BackplateView.PlateSprite();
+        image.type = Image.Type.Sliced;
+        image.raycastTarget = false;
+        var c = MenuBackplate.Color;
+        image.color = new Color(c.X, c.Y, c.Z, ButtonLabelStyle.PlateOpacity);
+        Common.OnTop.Set(go.transform, true);
+        return image;
+    }
+
     public void Pose(VRRig rig)
     {
         var c = Character.localCharacter;
@@ -112,8 +144,9 @@ internal sealed class HeldGauges
             var hand = rig.Hand(LocalHold.ItemInLeftHand);
             if (hand != null)
             {
-                var p = hand.position + Vector3.up * 0.1f;
-                p += (eye - p).normalized * 0.03f;
+                // Clear of the game's chunky hand and the held item, toward the eye.
+                var p = hand.position + Vector3.up * 0.14f;
+                p += (eye - p).normalized * 0.06f;
                 throwBar.Pose(
                     p,
                     SpatialRuntime.FaceEye(p, eye),
