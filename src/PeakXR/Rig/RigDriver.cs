@@ -529,12 +529,20 @@ internal sealed class RigDriver : MonoBehaviour
             drop.y = SeatedReachY(h.Position.y) - h.Position.y;
             grip.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
         }
-        // Scripted self-test hands have no aim pose of their own: aim along the grip pose like a runtime without one.
+        // Without an aim pose of its own, a hand aims from its grip: a runtime (the OpenVR plugin) out of the
+        // controller's front (GripFrame.AimFromGrip), a scripted self-test hand along its fingers (GripFrame.FromHand,
+        // SelfTestRunner.HandLook), never up the handle.
         if (VRInput.TestOverride == null && devices.TryGetAim(left, out var p, out var r))
             aim.SetLocalPositionAndRotation(p + drop, r);
         else if (h.Tracked)
-            aim.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
+            aim.SetLocalPositionAndRotation(
+                h.Position + drop,
+                h.Rotation * (VRInput.TestOverride == null ? AimFromGrip : AimFromHand)
+            );
     }
+
+    private static readonly Quaternion AimFromGrip = GripFrame.AimFromGrip.U();
+    private static readonly Quaternion AimFromHand = GripFrame.FromHand.U();
 
     /// <summary>Tracking-space hand Y after the seated reach gain (identity standing, at gain 1 or outside VR).</summary>
     private float SeatedReachY(float y)

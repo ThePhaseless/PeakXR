@@ -1069,7 +1069,7 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, palm ? 0f : 1f, 0.1f);
         yield return MoveTrack(left, mouth, 0.3f);
         if (palm)
-            Script(left).Rotation = Quaternion.LookRotation(
+            Script(left).Rotation = HandLook(
                 Vector3.Cross(left ? back : -back, Vector3.up),
                 Vector3.up
             );

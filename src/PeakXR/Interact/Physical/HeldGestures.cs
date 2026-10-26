@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -238,8 +239,8 @@ internal static class HeldGestures
                 .N();
             float arm =
                 Mathf.Min(
-                    BodyZones.ForearmDistance(point, other.position.N(), other.forward.N()),
-                    BodyZones.ForearmDistance(onArm, other.position.N(), other.forward.N())
+                    BodyZones.ForearmDistance(point, other.position.N(), other.Fingers().N()),
+                    BodyZones.ForearmDistance(onArm, other.position.N(), other.Fingers().N())
                 ) - ForearmRadius;
             if (arm < distance)
             {

@@ -190,7 +190,7 @@ internal sealed partial class SelfTestRunner
             yield return ReadyHand(left);
             // Aim level ahead: WillAttach reads the hand (AimPatches), and Turn below swings the body round.
             HeadFrame(out _, out var ahead, out _);
-            Script(left).Rotation = Quaternion.LookRotation(ahead, Vector3.up);
+            Script(left).Rotation = HandLook(ahead, Vector3.up);
         }
         yield return WaitFor(() => c.data.isGrounded, 3f);
 

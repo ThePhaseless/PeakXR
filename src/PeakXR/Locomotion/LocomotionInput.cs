@@ -315,7 +315,7 @@ internal static class LocomotionInput
             stick = MoveInput.HandRelative(
                 stick,
                 HeadYaw(),
-                MoveInput.Yaw((hand.Rotation * Vector3.forward).N())
+                MoveInput.Yaw(GripAxes.Fingers(hand.Rotation).N())
             );
         Ramp.RiseTime = ComfortConfig.MoveSmoothing;
         return Ramp.Update(stick, dt);
@@ -502,8 +502,9 @@ internal static class LocomotionInput
     private static Character PointedTeammate(Character self, bool dominantLeft)
     {
         var rig = VRRig.Instance;
-        var hand = rig != null ? rig.Hand(dominantLeft) : null;
-        if (hand == null)
+        // The aim pose: the ray out of the controller's front, not the grip's +Z (along the handle).
+        var aim = rig != null ? rig.Aim(dominantLeft) : null;
+        if (aim == null)
             return null;
         Character best = null;
         float bestAngle = PointCone;
@@ -511,7 +512,7 @@ internal static class LocomotionInput
         {
             if (ch == null || ch == self || ch.isBot || !ch.data.canBeSpectated)
                 continue;
-            float angle = Vector3.Angle(hand.forward, ch.Center - hand.position);
+            float angle = Vector3.Angle(aim.forward, ch.Center - aim.position);
             if (angle < bestAngle)
             {
                 bestAngle = angle;

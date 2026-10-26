@@ -1,6 +1,7 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Render;
+using PeakXR.Rig;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using TMPro;
@@ -118,7 +119,7 @@ internal sealed class DebugDriver : MonoBehaviour
             statsRoot.SetActive(true);
         // On the back of the wrist, a little toward the elbow, turned to the eye.
         var t = statsRoot.transform;
-        t.position = hand.TransformPoint(new Vector3(0f, 0.045f, -0.09f));
+        t.position = hand.TransformPoint(GripAxes.FromHand(new Vector3(0f, 0.045f, -0.09f)));
         var toEye = t.position - rig.Head.position;
         if (toEye.sqrMagnitude > 1e-6f)
             t.rotation = Quaternion.LookRotation(toEye, rig.Head.up);

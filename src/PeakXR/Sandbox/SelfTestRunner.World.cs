@@ -273,7 +273,7 @@ internal sealed partial class SelfTestRunner
         Script(point).Position =
             head + forward * 0.4f + (point ? -side : side) * 0.15f + Vector3.down * 0.25f;
         var lid = top;
-        Script(point).Rotation = Quaternion.LookRotation(
+        Script(point).Rotation = HandLook(
             rig()
                 .Origin.InverseTransformDirection(
                     lid - rig().Origin.TransformPoint(Script(point).Position)
@@ -828,8 +828,7 @@ internal sealed partial class SelfTestRunner
         HeadFrame(out _, out var level, out var across);
         foreach (float tip in TorchTips)
         {
-            var turn =
-                Quaternion.AngleAxis(tip, across) * Quaternion.LookRotation(level, Vector3.up);
+            var turn = Quaternion.AngleAxis(tip, across) * HandLook(level, Vector3.up);
             Script(left).Rotation = turn;
             yield return null;
             yield return null;
@@ -2106,7 +2105,7 @@ internal sealed partial class SelfTestRunner
         var held = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         HeadFrame(out _, out var level, out _);
-        Script(left).Rotation = Quaternion.LookRotation(Vector3.down, level);
+        Script(left).Rotation = HandLook(Vector3.down, level);
         LookAtPoint(Feet(me));
         yield return Wait(0.3f);
         int holdsAtGive = WorldHolds.StatueHolds;
@@ -2147,7 +2146,7 @@ internal sealed partial class SelfTestRunner
         void Aim()
         {
             var from = rig.Origin.TransformPoint(Script(free).Position);
-            Script(free).Rotation = Quaternion.LookRotation(
+            Script(free).Rotation = HandLook(
                 rig.Origin.InverseTransformDirection(aimAt - from),
                 Vector3.up
             );
@@ -2312,7 +2311,7 @@ internal sealed partial class SelfTestRunner
             var into = Flat(surface - head);
             // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
             var x = left ? into : -into;
-            var world = Quaternion.LookRotation(Vector3.Cross(x, Vector3.up), Vector3.up);
+            var world = HandLook(Vector3.Cross(x, Vector3.up), Vector3.up);
             Script(left).Grip = 0f;
             Script(left).Rotation = Quaternion.Inverse(rig.Origin.rotation) * world;
             yield return MoveTo(left, () => surface - into * 0.02f, 0.4f);
@@ -2781,7 +2780,7 @@ internal sealed partial class SelfTestRunner
             var p = head + (left ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
             var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
             Script(left).Position = p;
-            Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
+            Script(left).Rotation = HandLook(dir, Vector3.up);
         }
         yield return Wait(0.3f);
         Script(true).Trigger = Script(false).Trigger = 1f;

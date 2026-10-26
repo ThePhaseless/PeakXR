@@ -13,8 +13,9 @@ namespace PeakXR.Interact.Tools;
 /// </summary>
 internal static class ToolInput
 {
-    /// <summary>Twist axis: the controller's forward, along the forearm in the grip pose.</summary>
-    private static readonly System.Numerics.Vector3 TwistAxis = new(0f, 0f, 1f);
+    /// <summary>Twist axis: along the fingers and forearm (<see cref="GripFrame.Fingers"/>), the axis a wrist turns
+    /// about; the grip's +Z runs along the handle instead.</summary>
+    private static readonly System.Numerics.Vector3 TwistAxis = GripFrame.Fingers;
 
     /// <summary>A single twist step keeps the spool scrolling this long, so slow twists still move the rope.</summary>
     private const float StepHoldSeconds = 0.2f;

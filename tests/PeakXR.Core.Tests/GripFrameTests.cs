@@ -28,4 +28,18 @@ public class GripFrameTests
 
     [Fact]
     public void Forearm_IsOppositeTheFingers() => Near(-GripFrame.Fingers, GripFrame.Forearm);
+
+    [Fact]
+    public void FromHandVector_MatchesTheRotation()
+    {
+        var v = new Vector3(0.1f, 0.2f, 0.3f);
+        Near(UnityQuat.Rotate(GripFrame.FromHand, v), GripFrame.FromHandVector(v));
+    }
+
+    [Fact]
+    public void AimFromGrip_PointsBetweenTheHandleAndTheFingers()
+    {
+        var aim = UnityQuat.Rotate(GripFrame.AimFromGrip, Vector3.UnitZ);
+        Near(Vector3.Normalize(GripFrame.ThumbSide + GripFrame.Fingers), aim);
+    }
 }

@@ -327,17 +327,24 @@ public class ControllerLabelTests
             var left = ControllerLabels.Offset(c, left: true);
             TestUtil.Near(new Vector3(-right.X, right.Y, right.Z), left);
         }
+        // Grip space (GripFrame): the trigger toward the fingers (-Y), the B button up the handle (+Z).
         Assert.True(ControllerLabels.Offset(VRControl.Trigger, false).X > 0f);
-        Assert.True(ControllerLabels.Offset(VRControl.Trigger, false).Y < 0f);
-        Assert.True(ControllerLabels.Offset(VRControl.Secondary, false).Y > 0f);
+        Assert.True(
+            Vector3.Dot(ControllerLabels.Offset(VRControl.Trigger, false), GripFrame.Fingers) > 0f
+        );
+        Assert.True(
+            ControllerLabels.Offset(VRControl.Secondary, false).Z
+                > ControllerLabels.Offset(VRControl.Trigger, false).Z
+        );
     }
 
     [Fact]
     public void StickArrows_SitForwardAndBack()
     {
+        // Stick up is out of the controller's front: toward the fingers in grip space.
         var up = ControllerLabels.Offset(VRControl.StickUp, false);
         var down = ControllerLabels.Offset(VRControl.StickDown, false);
-        Assert.True(up.Z > down.Z);
+        Assert.True(Vector3.Dot(up - down, GripFrame.Fingers) > 0f);
     }
 
     [Fact]

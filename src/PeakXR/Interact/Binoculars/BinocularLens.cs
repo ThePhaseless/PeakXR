@@ -270,7 +270,7 @@ internal sealed class BinocularLens : MonoBehaviour
         float delta = TwistKnob.TwistAngle(
             lastHandRotation.N(),
             hand.Rotation.N(),
-            Vector3.forward.N()
+            GripFrame.Fingers
         );
         lastHandRotation = hand.Rotation;
         int steps = knob.Update(delta, Time.deltaTime);

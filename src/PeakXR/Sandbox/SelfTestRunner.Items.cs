@@ -171,7 +171,7 @@ internal sealed partial class SelfTestRunner
                 MouthGesture.DefaultOffset
             )
             .U();
-        var tilt = Quaternion.LookRotation(
+        var tilt = HandLook(
             Quaternion.AngleAxis(-30f, Vector3.Cross(Vector3.up, forward)) * forward,
             Vector3.up
         );
@@ -276,7 +276,7 @@ internal sealed partial class SelfTestRunner
             // (BodyZones.ForearmStart/End); the item goes to the forearm's middle.
             var arm = head + forward * 0.6f + Vector3.down * 0.35f;
             yield return MoveTrack(!left, arm, 0.4f);
-            Script(!left).Rotation = Quaternion.LookRotation(forward, Vector3.up);
+            Script(!left).Rotation = HandLook(forward, Vector3.up);
             chest = arm - forward * 0.17f;
         }
         yield return MoveTrack(left, chest, 0.6f);
@@ -430,7 +430,7 @@ internal sealed partial class SelfTestRunner
         while (Now < end)
         {
             if (target != null)
-                Script(left).Rotation = Quaternion.LookRotation(
+                Script(left).Rotation = HandLook(
                     VRRig.Instance.Origin.InverseTransformDirection(
                         target.Center() - VRRig.Instance.Hand(left).position
                     ),
@@ -1159,8 +1159,8 @@ internal sealed partial class SelfTestRunner
         yield return MoveTrack(false, low + right * 0.15f, 0.5f);
         // Palms to the fire: +X of the left grip pose, -X of the right (HandRig.cs:62), in tracking space.
         var dir = Flat(rig.Origin.InverseTransformDirection(heat - c.Center));
-        var leftRot = Quaternion.LookRotation(Vector3.Cross(dir, Vector3.up), Vector3.up);
-        var rightRot = Quaternion.LookRotation(Vector3.Cross(-dir, Vector3.up), Vector3.up);
+        var leftRot = HandLook(Vector3.Cross(dir, Vector3.up), Vector3.up);
+        var rightRot = HandLook(Vector3.Cross(-dir, Vector3.up), Vector3.up);
         string far = OverReach(true) ?? OverReach(false);
         if (far != null)
         {
@@ -1597,7 +1597,7 @@ internal sealed partial class SelfTestRunner
                 var axis = Vector3.Cross(Vector3.up, heading);
                 var dir = Quaternion.AngleAxis(down, axis) * heading;
                 if (vr)
-                    Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.Cross(dir, axis));
+                    Script(left).Rotation = HandLook(dir, Vector3.Cross(dir, axis));
                 else
                     c.data.lookValues = new Vector2(lookYaw + yaw, -down);
                 yield return Wait(0.15f);
@@ -1778,17 +1778,19 @@ internal sealed partial class SelfTestRunner
             Fail("twisting the spool paid out no rope: " + spoolNote);
     }
 
-    /// <summary>Turns the scripted hand about its own forward at <paramref name="degreesPerSecond"/> until
+    /// <summary>Turns the scripted hand about its fingers at <paramref name="degreesPerSecond"/> until
     /// <paramref name="done"/> or <paramref name="seconds"/> pass. The knobs read that twist
-    /// (<c>TwistKnob.TwistAngle</c> about the controller's forward): positive pays rope out and zooms out.</summary>
+    /// (<c>TwistKnob.TwistAngle</c> about <see cref="Core.GripFrame.Fingers"/>): positive pays rope out and zooms
+    /// out.</summary>
     IEnumerator TwistHand(bool left, float degreesPerSecond, Func<bool> done, float seconds)
     {
         float end = Now + seconds;
         while (Now < end && !done())
         {
+            // A wrist turn: about the fingers (GripFrame), the axis ToolInput reads.
             Script(left).Rotation *= Quaternion.AngleAxis(
                 degreesPerSecond * Time.unscaledDeltaTime,
-                Vector3.forward
+                FingersLocal
             );
             yield return null;
         }

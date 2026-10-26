@@ -1,3 +1,4 @@
+using PeakXR.Rig;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -79,7 +80,7 @@ internal sealed class AmuletPips
         root = new GameObject("PeakXR_AmuletPips").transform;
         root.SetParent(hand, false);
         // Along the back of the wrist, just above the controller ring.
-        root.localPosition = new Vector3(0f, 0.04f, -0.07f);
+        root.localPosition = GripAxes.FromHand(new Vector3(0f, 0.04f, -0.07f));
         var mesh = UIMaterials.SphereMesh();
         for (int i = 0; i < MaxPips; i++)
         {

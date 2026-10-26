@@ -219,8 +219,8 @@ internal sealed class ButtonLabels
                 onLeft[i] = left;
                 SetGlyph(i);
             }
-            // Top to bottom as the buttons sit on the controller.
-            rank[i] = ControllerLabels.Spot(control, left).Y;
+            // Top to bottom as the buttons sit on the controller: up the handle is the grip's +Z (GripFrame).
+            rank[i] = ControllerLabels.Spot(control, left).Z;
             if (ControllerLabels.Touched(control, left ? touchLeft : touchRight))
             {
                 if (left)

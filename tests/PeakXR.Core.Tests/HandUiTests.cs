@@ -131,24 +131,30 @@ public class ButtonSpotTests
     [Fact]
     public void Spots_SitWhereTheFingersFindThem()
     {
-        // Face buttons and stick on top of the head, trigger under its front, grip down the handle.
-        var a = ControllerLabels.Spot(VRControl.Primary, false);
-        var b = ControllerLabels.Spot(VRControl.Secondary, false);
-        var trigger = ControllerLabels.Spot(VRControl.Trigger, false);
-        var grip = ControllerLabels.Spot(VRControl.Grip, false);
-        var stick = ControllerLabels.Spot(VRControl.StickClick, false);
+        // Face buttons and stick on top of the head, trigger under its front, grip down the handle; checked in the
+        // controller's own frame (x right, y up, z forward), which the grip-space spots turn back into.
+        var a = OnController(VRControl.Primary);
+        var b = OnController(VRControl.Secondary);
+        var trigger = OnController(VRControl.Trigger);
+        var grip = OnController(VRControl.Grip);
+        var stick = OnController(VRControl.StickClick);
         Assert.True(a.Y > trigger.Y && b.Y > trigger.Y && stick.Y > trigger.Y);
         Assert.True(trigger.Y > grip.Y);
         Assert.True(trigger.Z > grip.Z);
         Assert.True(b.Z > a.Z);
+        Assert.True(OnController(VRControl.StickUp).Z > OnController(VRControl.StickDown).Z);
+        // In grip space the face buttons are up the handle (+Z) from the grip button.
         Assert.True(
-            ControllerLabels.Spot(VRControl.StickUp, false).Z
-                > ControllerLabels.Spot(VRControl.StickDown, false).Z
+            ControllerLabels.Spot(VRControl.Primary, false).Z
+                > ControllerLabels.Spot(VRControl.Grip, false).Z
         );
         // Every spot is on the controller, within a hand's width of the grip.
         foreach (var c in Enum.GetValues<VRControl>())
             Assert.True(ControllerLabels.Spot(c, false).Length() < 0.09f);
     }
+
+    static Vector3 OnController(VRControl c) =>
+        UnityQuat.Rotate(Quaternion.Inverse(GripFrame.FromHand), ControllerLabels.Spot(c, false));
 
     [Fact]
     public void Glyphs_NameEveryControlShortly()
