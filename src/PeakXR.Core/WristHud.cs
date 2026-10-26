@@ -37,22 +37,23 @@ namespace PeakXR.Core
         /// <summary>Share of the turn toward the eye while not looked at: still readable from the corner of the eye.</summary>
         public const float RestFacing = 0.5f;
 
-        /// <summary>Out of the back of the wrist (grip-space x), metres: clear of the game's chunky forearm.</summary>
-        public const float DorsalOffset = 0.06f;
+        /// <summary>Out of the back of the wrist (<see cref="GripFrame.BackOfHand"/>), metres: clear of the game's chunky
+        /// forearm, so its sleeve never fills the bar.</summary>
+        public const float DorsalOffset = 0.08f;
 
-        /// <summary>From the grip back toward the elbow (grip-space -z), metres: over the wrist, not the hand.</summary>
+        /// <summary>From the grip back toward the elbow (<see cref="GripFrame.Forearm"/>), metres: over the wrist, not
+        /// the hand.</summary>
         public const float WristBack = 0.12f;
 
         /// <summary>
         /// Centre of the display in the world: on the back of the wrist, the side that faces the eye when the wrist
-        /// is raised to read a watch. Grip space is +z toward the fingers, +y up out of the fist; the back of the left
-        /// hand is -x and of the right hand +x.
+        /// is raised to read a watch, in the grip frame (<see cref="GripFrame"/>).
         /// </summary>
         public static Vector3 Anchor(Vector3 hand, Quaternion handRotation, bool left) =>
             hand
             + UnityQuat.Rotate(
                 handRotation,
-                new Vector3(left ? -DorsalOffset : DorsalOffset, 0f, -WristBack)
+                GripFrame.BackOfHand(left) * DorsalOffset + GripFrame.Forearm * WristBack
             );
 
         /// <summary>
@@ -63,7 +64,7 @@ namespace PeakXR.Core
         public static Quaternion Rest(Quaternion handRotation, bool left) =>
             UnityQuat.Mul(
                 handRotation,
-                UnityQuat.LookRotation(new Vector3(left ? 1f : -1f, 0f, 0f), Vector3.UnitZ)
+                UnityQuat.LookRotation(GripFrame.Palm(left), GripFrame.Fingers)
             );
 
         /// <summary>Width in metres: <paramref name="baseWidth"/> at <see cref="ReadDistance"/>, the same angle nearer

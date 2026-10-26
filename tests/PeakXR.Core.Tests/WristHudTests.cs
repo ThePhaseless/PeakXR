@@ -61,3 +61,40 @@ public class WristHudTests
         Assert.Equal(0.16f, WristHud.ScaledWidth(0.16f, 0.5f));
     }
 }
+
+public class WristHudPlacementTests
+{
+    private static void Near(System.Numerics.Vector3 a, System.Numerics.Vector3 b) =>
+        Assert.True(System.Numerics.Vector3.Distance(a, b) < 1e-4f, $"{a} vs {b}");
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Anchor_SitsBehindTheFistOnTheBackOfTheWrist(bool left)
+    {
+        var p = WristHud.Anchor(
+            System.Numerics.Vector3.Zero,
+            System.Numerics.Quaternion.Identity,
+            left
+        );
+        // Toward the forearm (grip +Y), not down the handle (grip -Z), and out of the back of the hand.
+        Assert.Equal(WristHud.WristBack, System.Numerics.Vector3.Dot(p, GripFrame.Forearm), 4);
+        Assert.Equal(0f, p.Z, 4);
+        Assert.Equal(
+            WristHud.DorsalOffset,
+            System.Numerics.Vector3.Dot(p, GripFrame.BackOfHand(left)),
+            4
+        );
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Rest_ReadsWithTextUpTowardTheFingers(bool left)
+    {
+        var q = WristHud.Rest(System.Numerics.Quaternion.Identity, left);
+        Near(GripFrame.Fingers, UnityQuat.Rotate(q, System.Numerics.Vector3.UnitY));
+        // Faces out of the back of the hand: its forward points into the wrist.
+        Near(GripFrame.Palm(left), UnityQuat.Rotate(q, System.Numerics.Vector3.UnitZ));
+    }
+}
