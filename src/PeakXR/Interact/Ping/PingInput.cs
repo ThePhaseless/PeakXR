@@ -40,6 +40,9 @@ internal static class PingInput
     private static readonly ButtonEdge Button = new();
     private static readonly PingButtonPreview ButtonPreview = new();
 
+    /// <summary>Trigger travel that counts as the finger on its way to the squeeze, not a hand that let go.</summary>
+    private const float PartialPull = 0.05f;
+
     /// <summary>The layout's long press (the emote wheel shares the ping button), the same threshold as
     /// player.locomotion's binding table.</summary>
     private static readonly float LongPressSeconds = new ActionMapper().LongPressSeconds;
@@ -240,7 +243,11 @@ internal static class PingInput
             hand.Armed && hand.Pointing,
             hand.Armed && hand.Grip.Held,
             hand.Armed && hand.Trigger.Held,
-            dt
+            dt,
+            // A light pull curls the index off "pointing"; it is the squeeze on its way, so the aim stays up.
+            hand.Armed
+                && tracked
+                && state.Trigger > PartialPull
         );
         if (fired)
             hand.SuppressUse = true;

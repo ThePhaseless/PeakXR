@@ -10,14 +10,19 @@ namespace PeakXR.UI.Menu;
 /// Title scene: stands the player where the title camera looks out over the beach and floats the
 /// main menu in front of them. The pose comes from the title scene's <see cref="MainCamera"/> at load,
 /// before anything moves it; the research doc's (31.70, 4.63, -405.84), yaw -46.4 is only a sanity check.
-/// The panel is world-locked at the eye height measured once the headset tracks; <see cref="TitleMenuDepth"/>
-/// brings its button groups to hand.
+/// The panel is world-locked at the eye height measured once the headset tracks: one big screen
+/// (<see cref="ScreenWidth"/> times its distance wide) with the game's own intro, or, with <c>UI.TitleReach</c> set
+/// nearer than the screen, <see cref="TitleMenuDepth"/> brings its button groups to hand.
 /// </summary>
 internal sealed class TitleStage : ICanvasPlacement
 {
     private static readonly Vector3 ResearchPosition = new(31.70f, 4.63f, -405.84f);
     private const float StandingEyeHeight = 1.65f;
     private const float MenuTilt = 8f;
+
+    /// <summary>Screen width per metre of distance: 1.1 spans about 58 degrees, a big screen that still fits the view
+    /// without turning the head (was 0.85, about 46 degrees, "too small").</summary>
+    private const float ScreenWidth = 1.1f;
 
     private readonly UIMenuSettings cfg;
     private bool active;
@@ -142,13 +147,14 @@ internal sealed class TitleStage : ICanvasPlacement
             return PlacementResult.Default;
 
         var eye = Eye;
-        depth.Tick(canvas, eye, cfg.TitleReach.Value);
         var distance = cfg.TitleMenuDistance.Value;
+        var reach = cfg.TitleReach.Value;
+        depth.Tick(canvas, eye, reach, oneScreen: reach >= distance);
         rotation = Quaternion.Euler(0f, yaw, 0f);
         var offset = PanelMath.InFront(0f, distance, MenuTilt).ToUnity();
         position = eye + rotation * offset;
         rotation = Quaternion.LookRotation(rotation * offset, Vector3.up);
-        widthMeters = distance * 0.85f;
+        widthMeters = distance * ScreenWidth;
         return PlacementResult.Placed;
     }
 }

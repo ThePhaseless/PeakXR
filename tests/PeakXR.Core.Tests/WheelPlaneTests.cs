@@ -52,4 +52,43 @@ public class WheelPlaneTests
         var p = new Vector3(1f, 2f, 3f);
         Assert.Equal(1f, WheelPlane.DrawScale(p, p, p));
     }
+
+    [Fact]
+    public void InView_SitsAtTheFocusDistance_TowardTheHandsLowerCorner()
+    {
+        // Tester: the backpack chooser opened at the shoulder, too close and off to the side.
+        var eye = new Vector3(0f, 1.6f, 0f);
+        var forward = new Vector3(0f, 0f, 1f);
+        var right = WheelPlane.InView(eye, forward, handLeft: false);
+        var left = WheelPlane.InView(eye, forward, handLeft: true);
+
+        Assert.Equal(WheelPlane.ViewDistance, Vector3.Distance(eye, right), 4);
+        Assert.True(right.X > 0f && left.X < 0f);
+        Assert.True(right.Y < eye.Y);
+        Assert.Equal(-left.X, right.X, 4);
+        var side = MathF.Atan2(right.X, right.Z) * 180f / MathF.PI;
+        Assert.Equal(WheelPlane.ViewSideDegrees, side, 1);
+    }
+
+    [Fact]
+    public void InView_FollowsTheHeadsYawAndPitch_WithoutRoll()
+    {
+        var eye = Vector3.Zero;
+        // Looking 30 degrees down toward +X.
+        var forward = Vector3.Normalize(new Vector3(1f, -MathF.Tan(MathF.PI / 6f), 0f));
+        var p = WheelPlane.InView(eye, forward, handLeft: false);
+        Assert.True(Vector3.Dot(Vector3.Normalize(p), forward) > MathF.Cos(MathF.PI / 4f));
+        // The hand's side of a head facing +X is -Z.
+        Assert.True(p.Z < 0f);
+    }
+
+    [Fact]
+    public void InView_LooksAsBigAsAWheelAtArmsLength()
+    {
+        Assert.Equal(
+            WheelPlane.ViewDistance / WheelPlane.HandDistance,
+            WheelPlane.ViewDrawScale,
+            4
+        );
+    }
 }

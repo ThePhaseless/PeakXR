@@ -390,7 +390,9 @@ internal static class PhysicalInteraction
         )
             hand.InteractAt = GripIntent.DeferPointedInteract(
                 hand.InteractAt,
-                GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left)),
+                // A light trigger pull keeps the ping aim up (FingerGun triggerResting), so it keeps waiting too.
+                GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left))
+                    || Ping.PingInput.Aiming(hand.Left),
                 now,
                 FingerGun.DefaultWindow
             );

@@ -90,7 +90,11 @@ internal sealed class PassportSettings
                 section,
                 "BookLift",
                 0.15f,
-                Range("Height of an open book above the hand holding it, in metres.", 0f, 0.35f)
+                Range(
+                    "Height of an open book's centre above the hand holding it, in metres. The book always rises far enough that the hand stays below its lower edge.",
+                    0f,
+                    0.35f
+                )
             ),
             BookSide = cfg.Bind(
                 section,
