@@ -273,40 +273,6 @@ public class LidLiftTests
     }
 }
 
-public class PalmWarmthTests
-{
-    static readonly Vector3 Fire = new(0f, 0.5f, 2f);
-
-    [Fact]
-    public void PalmTowardFire_Warms()
-    {
-        var hand = new Vector3(0f, 0.5f, 1.5f);
-        Assert.True(PalmWarmth.Amount(Vector3.UnitZ, hand, Fire, 1f) > 0.3f);
-    }
-
-    [Fact]
-    public void PalmAway_DoesNot()
-    {
-        var hand = new Vector3(0f, 0.5f, 1.5f);
-        Assert.Equal(0f, PalmWarmth.Amount(-Vector3.UnitZ, hand, Fire, 1f));
-    }
-
-    [Fact]
-    public void OutOfRange_DoesNot()
-    {
-        Assert.Equal(0f, PalmWarmth.Amount(Vector3.UnitZ, new Vector3(0f, 0.5f, 0.5f), Fire, 1f));
-    }
-
-    [Fact]
-    public void Closer_IsWarmer()
-    {
-        float near = PalmWarmth.Amount(Vector3.UnitZ, new Vector3(0f, 0.5f, 1.7f), Fire, 1f);
-        float far = PalmWarmth.Amount(Vector3.UnitZ, new Vector3(0f, 0.5f, 1.2f), Fire, 1f);
-        Assert.True(near > far);
-        Assert.True(near <= 1f);
-    }
-}
-
 public class RunnerSlideTests
 {
     [Fact]

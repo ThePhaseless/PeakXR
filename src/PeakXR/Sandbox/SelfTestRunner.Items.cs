@@ -1118,14 +1118,13 @@ internal sealed partial class SelfTestRunner
 
     static int Cooked(Item item) => item.GetData<IntItemData>(DataEntryKey.CookedAmount).Value;
 
-    /// <summary>vr.27: an open palm held toward a lit campfire sends interact.items' warm pulses
-    /// (<c>FireGestures.WarmPulses</c>, counted where <c>Haptics.Pulse</c> is called). The count is one for both
-    /// hands, so each palm is tried alone with the other hand's back to the fire, and each must warm; the backs of
-    /// both hands send none. Uses the campfire vr.25 lit; skips when none is lit.</summary>
+    /// <summary>vr.27: a hand in a lit campfire's flames feels the fire rumble at full strength
+    /// (<c>EnvironmentRumble.Level(Fire)</c>, fed by interact.items), while the other hand, held low at the body
+    /// past <c>EnvironmentFeel.FlameOnset</c> from the flames, feels none; then the hands swap. Uses the campfire
+    /// vr.25 lit; skips when none is lit.</summary>
     IEnumerator WarmStep()
     {
         var c = Character.localCharacter;
-        var rig = VRRig.Instance;
         var fire = Nearest<Campfire>(c.Center, f => f.Lit);
         if (fire == null)
         {
@@ -1137,49 +1136,45 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.WarmHandsAtFire is off";
             yield break;
         }
-        // The heat point FireGestures.UpdateWarmth measures from (0.3 m over the fire base).
-        var heat = ItemGestures.FireBase(fire) + Vector3.up * 0.3f;
-        // Walk in as a player does, then hold both hands out low in front, in reach: 0.45 m ahead of the eyes and
-        // 0.65 m below them is about 0.65 m from the shoulder. The old pose put them 0.3 m over the fire base from
-        // 1.3 m out, some 1.3 m from a standing shoulder.
         yield return ApproachFire(ItemGestures.FireBase(fire));
         HeadFrame(out var head, out var forward, out var right);
-        var low = head + forward * 0.45f + Vector3.down * 0.65f;
-        yield return MoveTrack(true, low - right * 0.15f, 0.5f);
-        yield return MoveTrack(false, low + right * 0.15f, 0.5f);
-        // Palms to the fire: +X of the left grip pose, -X of the right (HandRig.cs:62), in tracking space.
-        var dir = Flat(rig.Origin.InverseTransformDirection(heat - c.Center));
-        var leftRot = Quaternion.LookRotation(Vector3.Cross(dir, Vector3.up), Vector3.up);
-        var rightRot = Quaternion.LookRotation(Vector3.Cross(-dir, Vector3.up), Vector3.up);
-        string far = OverReach(true) ?? OverReach(false);
-        if (far != null)
+        var low = head - forward * 0.1f + Vector3.down * 0.6f;
+        float inLeft = 0f,
+            outRight = 0f,
+            inRight = 0f,
+            outLeft = 0f;
+        string far = null;
+        for (int pass = 0; pass < 2 && far == null; pass++)
         {
-            Fail(far);
-            yield break;
+            bool left = pass == 0;
+            // The flames as interact.items measures them this frame (their particle bounds' centre).
+            yield return MoveTrack(left, FireGestures.FlameCentre, 0.5f);
+            yield return MoveTrack(!left, low + (left ? right : -right) * 0.2f, 0.5f);
+            far = OverReach(left);
+            yield return Wait(0.8f);
+            float hot = EnvironmentRumble.Level(EnvSource.Fire, left);
+            float cold = EnvironmentRumble.Level(EnvSource.Fire, !left);
+            if (left)
+            {
+                inLeft = hot;
+                outRight = cold;
+                yield return Shot("vr-27-warm-hands");
+            }
+            else
+            {
+                inRight = hot;
+                outLeft = cold;
+            }
         }
-        // Left palm to the fire, right back to it (leftRot on the right hand turns its palm away), then the reverse.
-        int before = FireGestures.WarmPulses;
-        yield return HoldPalms(leftRot, leftRot, 1.5f);
-        int leftPulses = FireGestures.WarmPulses - before;
-        before = FireGestures.WarmPulses;
-        yield return HoldPalms(rightRot, rightRot, 1.5f);
-        int rightPulses = FireGestures.WarmPulses - before;
-        float leftGap = Vector3.Distance(rig.Hand(true).position, heat);
-        float rightGap = Vector3.Distance(rig.Hand(false).position, heat);
-        yield return Shot("vr-27-warm-hands");
-        // Backs of the hands to the fire: no warmth (PalmWarmth.MinFacing), so the pulses come from the palms. The
-        // turn reaches the tracked hands a frame or two after the script sets it, and a pulse due in those frames is
-        // still the right palm's (run 49 counted one): count only once the backs face the fire.
-        yield return HoldPalms(rightRot, leftRot, 0.3f);
-        int away = FireGestures.WarmPulses;
-        yield return HoldPalms(rightRot, leftRot, 1.5f);
-        away = FireGestures.WarmPulses - away;
-        var note =
-            $"{fire.name}: left palm alone {leftPulses} warm pulses in 1.5 s, right palm alone {rightPulses}; palms {leftGap:0.00} m (left) and {rightGap:0.00} m (right) from the heat point; backs to the fire {away} pulses in 1.5 s";
-        if (leftPulses <= 0 || rightPulses <= 0)
-            Fail($"no warm pulse from the {(leftPulses <= 0 ? "left" : "right")} palm: " + note);
-        else if (away > 0)
-            Fail("warm pulses with the backs of the hands to the fire: " + note);
+        var note = F(
+            $"{fire.name}: fire rumble left in the flames {inLeft:0.00} (right away {outRight:0.00}), right in the flames {inRight:0.00} (left away {outLeft:0.00})"
+        );
+        if (far != null)
+            Fail(far);
+        else if (inLeft < 0.85f || inRight < 0.85f)
+            Fail("a hand in the flames is not at full rumble: " + note);
+        else if (outLeft > 0.02f || outRight > 0.02f)
+            Fail("a hand away from the fire rumbles: " + note);
         else
             stepNote = note;
     }

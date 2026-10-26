@@ -28,8 +28,10 @@ public static class BodyCues
     /// <summary>The softest bounce-shroom spring.</summary>
     public const float BounceMin = 0.25f;
 
-    /// <summary>Strongest steady pressure (wind, tornado pull): a lean, never a buzz that drowns other cues.</summary>
-    public const float PressureMax = 0.15f;
+    /// <summary>Strongest steady pressure (wind, tornado pull), at the gameplay pulse scale: felt 0.3 at the default
+    /// slider. It is a continuous rumble that yields to every other pulse, so it cannot drown a cue; a zone's nominal
+    /// wind (strength 0.5) is felt 0.15.</summary>
+    public const float PressureMax = 0.6f;
 
     /// <summary>Spring amplitude for the game's bounce multiplier <paramref name="bounce"/> (1 up to
     /// <paramref name="maxBounce"/>, CollisionModifier.cs:94-110).</summary>
@@ -202,43 +204,6 @@ public sealed class Heartbeat
     {
         _toBeat = 0f;
         _toDub = -1f;
-    }
-}
-
-/// <summary>Shivering: fine, fast pulses while the Cold status is rising (and for <see cref="Hold"/> seconds after
-/// a step up), once it is past <see cref="MinCold"/>. Steady or warming cold is quiet. The gaps jitter between 36 and
-/// 57 ms (<see cref="Gaps"/>): a trembling texture, never the refusal's even 70 ms triple
-/// (<see cref="DenyHaptics.Deny"/>).</summary>
-public sealed class Shiver
-{
-    public float MinCold = 0.05f;
-    public float Hold = 1f;
-
-    /// <summary>The pulse gaps (s), played in turn: irregular and all well off the refusal's 70 ms.</summary>
-    static readonly float[] Gaps = { 0.045f, 0.038f, 0.057f, 0.041f, 0.052f, 0.036f, 0.049f };
-
-    int _gap;
-
-    float _last = float.NaN;
-    float _since = float.PositiveInfinity;
-    float _timer;
-
-    /// <returns>Pulse amplitude this frame, 0 for none.</returns>
-    public float Update(float cold, float dt)
-    {
-        _since = !float.IsNaN(_last) && cold > _last + 1e-5f ? 0f : _since + dt;
-        _last = cold;
-        if (!(cold >= MinCold) || _since > Hold)
-        {
-            _timer = 0f;
-            return 0f;
-        }
-        _timer -= dt;
-        if (_timer > 0f)
-            return 0f;
-        _timer = Gaps[_gap];
-        _gap = (_gap + 1) % Gaps.Length;
-        return 0.05f + 0.1f * MathF.Min(1f, cold);
     }
 }
 

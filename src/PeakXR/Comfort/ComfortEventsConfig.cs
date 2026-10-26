@@ -63,8 +63,8 @@ internal static class ComfortEventsConfig
             "WindPressure",
             true,
             new ConfigDescription(
-                "Wind and a tornado's pull press faintly on the hand facing them: hide behind rock and it fades, "
-                    + "crouch near a tornado and it eases. A light tap a few times a second, never a buzz."
+                "Wind and a tornado's pull rumble in your hands, as strong as the push the game puts on you and "
+                    + "stronger on the hand facing it: hide behind rock and it fades, crouch near a tornado and it eases."
             )
         );
         Bind(

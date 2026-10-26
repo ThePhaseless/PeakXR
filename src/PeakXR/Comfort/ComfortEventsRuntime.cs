@@ -37,15 +37,11 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     private Vector3 sideFrom;
     private float sideUntil = -1f;
 
-    /// <summary>Seconds between pressure taps: a lean, not a buzz.</summary>
-    private const float PressureInterval = 0.2f;
-
     private Vector3 pressureFrom;
     private float pressureAmplitude;
     private int pressureFrame = -10;
-    private float nextPressure;
 
-    /// <summary>The last pressure tap per hand, and when (self-test).</summary>
+    /// <summary>The wind rumble's level per hand at its last feed, and when (self-test).</summary>
     internal static float PressureLeft { get; private set; }
 
     internal static float PressureRight { get; private set; }
@@ -120,8 +116,8 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
 
     /// <summary>
     /// A steady push this frame (wind, a tornado's pull) from <paramref name="towardSource"/> (world), at
-    /// <paramref name="amplitude"/> (<see cref="BodyCues.PullAmplitude"/>): light taps on the hand facing it while
-    /// the push lasts. The strongest push of the frame wins. Off with <c>ComfortEvents.WindPressure</c>.
+    /// <paramref name="amplitude"/> (<see cref="BodyCues.PullAmplitude"/>): a continuous wind rumble
+    /// (<see cref="EnvironmentRumble"/>), stronger on the hand facing it, following the push while it lasts. The strongest push of the frame wins. Off with <c>ComfortEvents.WindPressure</c>.
     /// </summary>
     internal static void Pressure(Vector3 towardSource, float amplitude)
     {
@@ -145,9 +141,6 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         )
             return;
         float now = Time.unscaledTime;
-        if (now < nextPressure)
-            return;
-        nextPressure = now + PressureInterval;
         float left = 1f,
             right = 1f;
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
@@ -165,8 +158,9 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         PressureLeft = a * left;
         PressureRight = a * right;
         PressureAt = now;
-        Haptics.Pulse(true, PressureLeft, 0.05f, HapticPriority.Ambient);
-        Haptics.Pulse(false, PressureRight, 0.05f, HapticPriority.Ambient);
+        // PullAmplitude is a pulse amplitude at the gameplay scale; the rumble takes felt strength.
+        EnvironmentRumble.Feed(EnvSource.Wind, true, PressureLeft * HapticScale.Cue);
+        EnvironmentRumble.Feed(EnvSource.Wind, false, PressureRight * HapticScale.Cue);
     }
 
     /// <summary>A camera shake: rumble length follows the shake, capped so long quakes pulse instead.</summary>
