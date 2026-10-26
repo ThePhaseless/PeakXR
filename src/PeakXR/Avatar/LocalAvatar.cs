@@ -61,7 +61,15 @@ internal sealed class LocalAvatar : MonoBehaviour
     public static FingerCurls ControllerCurls(bool left)
     {
         ref var h = ref VRInput.Hand(left);
-        bool thumb = h.PrimaryTouch || h.SecondaryTouch || h.StickTouch || h.Primary || h.Secondary;
+        // The Touch thumbrest counts: a thumb resting there read as lifted, so every plain grip with the index off the
+        // trigger was a finger gun whose interact waited for a ping that never came.
+        bool thumb =
+            h.PrimaryTouch
+            || h.SecondaryTouch
+            || h.StickTouch
+            || h.ThumbrestTouch
+            || h.Primary
+            || h.Secondary;
         return FingerCurlMapper.Map(h.Trigger, h.TriggerTouch, h.Grip, thumb, h.SkeletalCurls);
     }
 

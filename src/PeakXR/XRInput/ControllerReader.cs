@@ -49,6 +49,7 @@ internal sealed class ControllerReader
         secondaryTouch,
         stickClick,
         stickTouch,
+        thumbrestTouch,
         menu,
         padClick,
         isTracked;
@@ -120,6 +121,7 @@ internal sealed class ControllerReader
         stick = XRInputSampler.Usage<Vector2>.Find(n, "Primary2DAxis");
         stickClick = XRInputSampler.Usage<bool>.Find(n, "Primary2DAxisClick");
         stickTouch = XRInputSampler.Usage<bool>.Find(n, "Primary2DAxisTouch");
+        thumbrestTouch = XRInputSampler.Usage<bool>.Find(n, "ThumbrestTouch");
         menu = XRInputSampler.Usage<bool>.Find(n, "MenuButton", "Menu");
         position = XRInputSampler.Usage<Vector3>.Find(n, "DevicePosition");
         rotation = XRInputSampler.Usage<Quaternion>.Find(n, "DeviceRotation");
@@ -187,6 +189,7 @@ internal sealed class ControllerReader
             SecondaryTouch = Bool(secondaryTouch),
             StickClick = Bool(stickClick),
             StickTouch = Bool(stickTouch),
+            ThumbrestTouch = Bool(thumbrestTouch),
             Menu = Bool(menu),
             PadClick = Bool(padClick),
             Stick = XRInputSampler.N(Vec2(stick)),
@@ -209,6 +212,7 @@ internal sealed class ControllerReader
         s.SecondaryTouch = b.SecondaryTouch;
         s.StickClick = b.StickClick;
         s.StickTouch = b.StickTouch;
+        s.ThumbrestTouch = b.ThumbrestTouch;
         s.Menu = b.Menu;
         s.WandPad = layout.EmulateFaceButtons && layout.PadIsStick;
 

@@ -27,6 +27,7 @@ internal sealed class InteractConfig
     private ConfigEntry<float> grabRadius,
         throwSpeed,
         throwScale,
+        throwFullSpeed,
         climbRadius,
         climbReachAssist,
         climbGain,
@@ -48,6 +49,7 @@ internal sealed class InteractConfig
     public float GrabRadius => grabRadius?.Value ?? 0.12f;
     public float ThrowSpeed => throwSpeed?.Value ?? 2f;
     public float ThrowScale => throwScale?.Value ?? 1f;
+    public float ThrowFullSpeed => throwFullSpeed?.Value ?? 7f;
     public float ClimbRadius => climbRadius?.Value ?? 0.1f;
     public float ClimbReachAssist => climbReachAssist?.Value ?? 0.2f;
     public float ClimbGain => climbGain?.Value ?? 1f;
@@ -162,6 +164,17 @@ internal sealed class InteractConfig
                 new ConfigDescription(
                     "Multiplier on the hand's release velocity, capped at a full-charge throw of the game.",
                     new AcceptableValueRange<float>(0.5f, 2.5f)
+                )
+            ),
+            throwFullSpeed = file.Bind(
+                s,
+                "ThrowFullSpeed",
+                7f,
+                new ConfigDescription(
+                    "Hand speed (m/s) at release that throws as hard as a fully charged throw of the game. Slower swings "
+                        + "throw in between, from ThrowMinSpeed (your hand's own speed) up. A real arm is far slower than "
+                        + "the game's charged throw, so without this a coconut never broke and a throw never bonked.",
+                    new AcceptableValueRange<float>(3f, 15f)
                 )
             ),
             gripMode = file.Bind(

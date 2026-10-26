@@ -152,6 +152,14 @@ public class ControllerProfileTests
         Assert.False(b.Menu);
     }
 
+    [Fact]
+    public void TouchThumbrest_PassesThrough()
+    {
+        // A thumb on the Touch thumbrest rests: it is no lifted finger-gun thumb.
+        Assert.True(Map(Index, new ControllerSample { ThumbrestTouch = true }).ThumbrestTouch);
+        Assert.False(Map(Index, new ControllerSample()).ThumbrestTouch);
+    }
+
     [Theory]
     [InlineData(0.3f, false)]
     [InlineData(0.7f, true)]

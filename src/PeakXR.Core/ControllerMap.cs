@@ -71,6 +71,9 @@ namespace PeakXR.Core
         public bool SecondaryTouch;
         public bool StickClick;
         public bool StickTouch;
+
+        /// <summary>The Touch controller's thumbrest is touched (<c>ThumbrestTouch</c>).</summary>
+        public bool ThumbrestTouch;
         public bool Menu;
         public bool PadClick;
         public Vector2 Stick;
@@ -90,6 +93,9 @@ namespace PeakXR.Core
         public bool SecondaryTouch;
         public bool StickClick;
         public bool StickTouch;
+
+        /// <summary>A thumb rests on the thumbrest: resting, not lifted.</summary>
+        public bool ThumbrestTouch;
         public bool Menu;
     }
 
@@ -120,6 +126,7 @@ namespace PeakXR.Core
             b.TriggerTouch = s.TriggerTouch || b.Trigger > TriggerTouchPull;
             b.Stick = s.Stick;
             b.StickTouch = s.StickTouch;
+            b.ThumbrestTouch = s.ThumbrestTouch;
             b.Menu =
                 s.Menu
                 || (l.PadMenuClick && s.PadClick)

@@ -59,6 +59,11 @@ internal sealed class BodyInventory : IGripExtension
     );
     private readonly NVector3[] anchors = new NVector3[MaxSlots];
     private readonly BodyYaw bodyYaw = new();
+
+    /// <summary>This frame's neck pivot (tracking space) and body yaw: a shoulder anchor takes only a hand behind the
+    /// neck (the gated <c>BodySlotLayout.Find</c>).</summary>
+    private NVector3 neck;
+    private float yaw;
     private int revision = -1;
     private int hotbarCount = -1;
 
@@ -194,12 +199,12 @@ internal sealed class BodyInventory : IGripExtension
         }
         var headPos = VRInput.HeadPosition.N();
         var headRot = VRInput.HeadRotation.N();
-        float yaw = bodyYaw.Update(
+        yaw = bodyYaw.Update(
             BodySlotLayout.HeadYawDeg(headRot),
             BodySlotLayout.HeadPitchDeg(headRot),
             dt
         );
-        var neck = BodySlotLayout.Neck(headPos, headRot);
+        neck = BodySlotLayout.Neck(headPos, headRot);
         for (int i = 0; i < slots.Length; i++)
             anchors[i] = BodySlotLayout.Anchor(neck, yaw, slots[i]);
     }
@@ -273,7 +278,7 @@ internal sealed class BodyInventory : IGripExtension
     }
 
     private int Find(NVector3 trackingPos, float scale) =>
-        BodySlotLayout.Find(trackingPos, anchors, slots, slots.Length, scale);
+        BodySlotLayout.Find(trackingPos, anchors, slots, slots.Length, scale, neck, yaw);
 
     private static int HandIndex(bool left) => left ? 0 : 1;
 
