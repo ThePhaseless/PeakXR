@@ -1375,7 +1375,8 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1f);
     }
 
-    /// <summary>vr.211: Cold rising gives the cold rumble; once Cold holds steady, the rumble fades out.</summary>
+    /// <summary>vr.211: Cold applied by an environmental source gives the cold rumble; once nothing applies Cold, the
+    /// rumble fades out.</summary>
     IEnumerator ShiverStep()
     {
         var c = Character.localCharacter;
@@ -1383,7 +1384,18 @@ internal sealed partial class SelfTestRunner
         float rising = 0f;
         for (int i = 0; i < 4; i++)
         {
-            if (!SandboxActions.AddStatus(STATUS.Cold, 0.05f))
+            // Applied as an environmental source would (BodyFeedback.ExposureSource), so the rumble reads it.
+            BodyFeedback.SelfTestExposure(true);
+            bool added;
+            try
+            {
+                added = SandboxActions.AddStatus(STATUS.Cold, 0.05f);
+            }
+            finally
+            {
+                BodyFeedback.SelfTestExposure(false);
+            }
+            if (!added)
             {
                 stepSkip = "the game refused Cold (airport?)";
                 yield break;
