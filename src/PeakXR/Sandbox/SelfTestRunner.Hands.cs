@@ -575,7 +575,8 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.14: the free hand gripping a held two-hand item sets <see cref="AvatarPose.TwoHandHold"/>; letting
+    /// <summary>vr.14: the free hand gripping a held two-hand item sets <see cref="AvatarPose.TwoHandHold"/>, and opening
+    /// the primary while it grips hands the item over to it (HoldHands.HandOff); letting
     /// go clears it.</summary>
     IEnumerator TwoHandStep()
     {
@@ -637,9 +638,32 @@ internal sealed partial class SelfTestRunner
         var note =
             $"{held.name} ({info.Profile}) in the {(holdLeft ? "left" : "right")} hand, pose TwoHandHold {posed}, after letting go {LocalHold.TwoHand}";
         if (!posed)
+        {
             Fail("pose not two-handed: " + note);
-        else if (LocalHold.TwoHand)
+            yield break;
+        }
+        if (LocalHold.TwoHand)
+        {
             Fail("two-hand hold stuck after letting go: " + note);
+            yield break;
+        }
+        // Handoff: the second hand grips again, the primary opens; the item passes to the second hand (HoldHands).
+        yield return GripTo(free, 1f, 0.1f);
+        yield return Until(
+            () => LocalHold.TwoHand,
+            2f,
+            "second hand did not rejoin for the handoff"
+        );
+        if (!stepOk)
+            yield break;
+        yield return GripTo(holdLeft, 0f, 0.2f);
+        yield return WaitFor(() => LocalHold.ItemInLeftHand == free, 1f);
+        bool handed = c.data.currentItem == held && LocalHold.ItemInLeftHand == free;
+        note +=
+            $"; handoff: held {c.data.currentItem == held}, in the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
+        yield return GripTo(free, 0f, 0.2f);
+        if (!handed)
+            Fail("primary let go with the second hand on: " + note);
         else
             stepNote = note;
     }

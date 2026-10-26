@@ -87,6 +87,20 @@ public partial class AvatarPoseDriver
     /// <summary>The item whose vanilla two-hand weld was last checked for replacement; one try per item.</summary>
     private Item vanillaWeldChecked;
 
+    /// <summary>The held item and its primary side last tick, to see a handoff (the primary hand changed under the
+    /// same item, HoldHands.HandOff).</summary>
+    private Item handoffItem;
+    private bool handoffLeft;
+
+    /// <summary>When the last handoff began, and the item's pose then in the new primary controller's frame: the
+    /// item eases from it onto the new grip over <see cref="HoldHands.EaseSeconds"/> instead of popping.</summary>
+    private float handoffAt = -10f;
+    private Vector3 handoffPos;
+    private Quaternion handoffRot = Quaternion.identity;
+
+    /// <summary>The handoff took the old primary's weld away: the new primary welds once the ease ends.</summary>
+    private bool handoffReweld;
+
     /// <summary>True while this tick's held-item frame comes from the tracked hand; read by the hold torque patch.</summary>
     internal bool ItemFrameOverridden { get; private set; }
 
@@ -951,6 +965,7 @@ public partial class AvatarPoseDriver
     internal void OnSaveAdditional()
     {
         ItemFrameOverridden = false;
+        TrackHandoff();
         ReconcileWeld();
         float w = armBlend.Weight;
         if (w <= 0f || !TryGetItemWorldPose(out var itemPos, out var itemRot))
@@ -1294,6 +1309,14 @@ public partial class AvatarPoseDriver
     private void ReconcileWeld()
     {
         var item = Owner.data.currentItem;
+        if (item != null && handoffReweld && !HandingOff && itemJoint == null && !remoteFree)
+        {
+            handoffReweld = false;
+            if (!weldGate.Released && !ArmsSuspended && armBlend.Weight >= 1f)
+                AttachToHoldingHand(item);
+        }
+        if (HandingOff)
+            return;
         // A peer carries the item free of the hand, and a local item the gate let go is FollowHeld's: no weld to
         // reconcile. Re-welding a free local item here left it welded while FollowHeld still drove it by velocity,
         // dragging the body so both arms hung 0.2-0.6 m under the tracked hands (MP run 20, the passport).
@@ -1319,6 +1342,52 @@ public partial class AvatarPoseDriver
         }
     }
 
+    /// <summary>The item is easing into a new primary hand after a handoff.</summary>
+    private bool HandingOff => HoldHands.Ease(Time.time - handoffAt, HoldHands.EaseSeconds) < 1f;
+
+    /// <summary>
+    /// The primary hand changed under the same item (the local player's handoff, or a peer's arriving in its pose
+    /// flags): keep the item where it is in the new primary's frame and ease it onto the new grip, and let go of the
+    /// old primary's weld at once, so the hand that opened does not drag the item away.
+    /// </summary>
+    private void TrackHandoff()
+    {
+        var item = Owner.data.currentItem;
+        var pose = Pose;
+        bool left = pose.ItemInLeftHand;
+        if (
+            item != null
+            && ReferenceEquals(item, handoffItem)
+            && left != handoffLeft
+            && HasFreshPose
+            && (left ? pose.HasLeftHand : pose.HasRightHand)
+        )
+        {
+            var inv = Quaternion.Inverse(left ? pose.LeftHandRotation : pose.RightHandRotation);
+            handoffPos =
+                inv
+                * (
+                    item.transform.position
+                    - (left ? pose.LeftHandPosition : pose.RightHandPosition)
+                );
+            handoffRot = inv * item.transform.rotation;
+            handoffAt = Time.time;
+            if (itemJoint != null)
+            {
+                DestroyItemJoint();
+                handoffReweld = true;
+            }
+        }
+        else if (!ReferenceEquals(item, handoffItem))
+        {
+            // Another item: no ease or weld left over from the last one.
+            handoffAt = -10f;
+            handoffReweld = false;
+        }
+        handoffItem = item;
+        handoffLeft = left;
+    }
+
     private void DestroyHandJoint(BodypartType part, Rigidbody itemRig)
     {
         var body = Owner.refs.ragdoll.partDict[part].Rig;
@@ -1339,6 +1408,8 @@ public partial class AvatarPoseDriver
     {
         pos = default;
         rot = Quaternion.identity;
+        // Whichever runs first in a tick (FollowHeld or OnSaveAdditional) sees a handoff.
+        TrackHandoff();
         var c = Owner;
         var item = c.data.currentItem;
         if (
@@ -1361,6 +1432,12 @@ public partial class AvatarPoseDriver
 
         var ctrlPos = left ? pose.LeftHandPosition : pose.RightHandPosition;
         var ctrlRot = left ? pose.LeftHandRotation : pose.RightHandRotation;
+        float handoff = HoldHands.Ease(Time.time - handoffAt, HoldHands.EaseSeconds);
+        if (handoff < 1f)
+        {
+            xPos = Vector3.Lerp(handoffPos, xPos, handoff);
+            xRot = Quaternion.Slerp(handoffRot, xRot, handoff);
+        }
         rot = ctrlRot * xRot;
         pos = ctrlPos + ctrlRot * xPos;
 
@@ -1383,21 +1460,27 @@ public partial class AvatarPoseDriver
     {
         var axis = Vector3.forward;
         float best = 0.1f;
-        Consider(hold.GripLeft, item.transform, anchorLocal, ref axis, ref best);
-        Consider(hold.GripRight, item.transform, anchorLocal, ref axis, ref best);
+        // The grips as this hold has them: mirrored for a left-primary hold (HoldHands.ItemLocal).
+        bool left = Pose.ItemInLeftHand;
+        Consider(hold.GripLeft, item.transform, anchorLocal, left, ref axis, ref best);
+        Consider(hold.GripRight, item.transform, anchorLocal, left, ref axis, ref best);
         return axis;
 
         static void Consider(
             Transform grip,
             Transform itemTransform,
             Vector3 anchorLocal,
+            bool primaryLeft,
             ref Vector3 axis,
             ref float best
         )
         {
             if (grip == null)
                 return;
-            var local = itemTransform.InverseTransformPoint(grip.position) - anchorLocal;
+            var local =
+                HoldHands
+                    .ItemLocal(itemTransform.InverseTransformPoint(grip.position).N(), primaryLeft)
+                    .U() - anchorLocal;
             if (local.magnitude > best)
             {
                 best = local.magnitude;

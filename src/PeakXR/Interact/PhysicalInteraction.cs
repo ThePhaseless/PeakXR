@@ -961,6 +961,20 @@ internal static class PhysicalInteraction
                     && extension.EndPress(hook)
                 )
                     break;
+                // The primary hand opens while the other hand still grips the item as its second hand: the item
+                // stays held and passes to that hand, which becomes the primary (no drop, throw or holster).
+                if (
+                    thisHolds
+                    && HoldHands.HandOff(
+                        LocalHold.TwoHand,
+                        Other(hand).Grip.Held,
+                        Other(hand).Action == GripPressAction.SecondHand
+                    )
+                )
+                {
+                    HandOff(Other(hand), item);
+                    break;
+                }
                 // No drop or throw while a wheel or menu blocks input: Inject would fire it later, maybe on another item.
                 if (!thisHolds || !active)
                     break;
@@ -1011,6 +1025,28 @@ internal static class PhysicalInteraction
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
 
+    /// <summary>
+    /// The held item passes to <paramref name="to"/>, the hand that kept gripping it as the second hand, which is its
+    /// primary from now on: use, release to drop, throw and holster follow that hand, and the avatar eases the item
+    /// onto its grip (AvatarPoseDriver.TrackHandoff). Local state only: the game still holds the same item, so nothing
+    /// goes on the network but the pose flags modded peers already read.
+    /// </summary>
+    private static void HandOff(Hand to, Item item)
+    {
+        LocalHold.ItemInLeftHand = to.Left;
+        LocalHold.TwoHand = false;
+        to.Action = GripPressAction.GrabItem;
+        to.Target = item;
+        to.Confirmed = true;
+        to.Pocketing = false;
+        // Its grip closed on the item: opening it lets go of it like any grab.
+        to.Armed = true;
+        Haptics.Pulse(to.Left, 0.3f, 0.04f);
+        Plugin.Log.LogInfo(
+            $"[interact] {item.name} handed to the {(to.Left ? "left" : "right")} hand, now its primary"
+        );
+    }
+
     /// <summary>A two-handed item counts as held in both hands: the free hand joined it, or one-handed play has no
     /// second hand to join it with (Accessibility.OneHanded), so its use is never refused for want of one.</summary>
     private static bool SecondHand => LocalHold.TwoHand || VRInput.OneHanded;
@@ -1053,15 +1089,12 @@ internal static class PhysicalInteraction
         return !any && (item.Center() - pos).sqrMagnitude <= r2;
     }
 
-    /// <summary>The free hand is at the held item's off-hand grip, <c>Hand_L</c> (ItemHoldInfo), whichever hand that
-    /// is: the holding hand always takes <c>Hand_R</c>, mirrored in the left hand (AvatarPoseDriver.ItemInController),
-    /// so the right hand joining an item held in the left once had to reach into the left hand. Items without
-    /// <c>Hand_L</c> have no second grip point.</summary>
-    private static bool AtSecondGrip(Vector3 pos, float reach = SecondGripReach)
-    {
-        var grip = Hold.GripLeft;
-        return grip != null && (grip.position - pos).sqrMagnitude <= reach * reach;
-    }
+    /// <summary>The free (secondary) hand is at the held item's grip for it: <c>Hand_L</c> under a right-primary
+    /// hold, its mirror under a left-primary one (ItemHoldInfo.SecondGrip), never the primary's own grip. Items
+    /// without <c>Hand_L</c> have no second grip point.</summary>
+    private static bool AtSecondGrip(Vector3 pos, float reach = SecondGripReach) =>
+        Hold.SecondGrip(LocalHold.ItemInLeftHand, out var grip)
+        && (grip - pos).sqrMagnitude <= reach * reach;
 
     /// <summary>Where the game's own aim rays start: the camera, or the tracked head before it exists. While the head
     /// is inside a wall, rig.camera keeps the camera on the body's side of it (RigDriver.CheckHeadInWall), so these
@@ -2217,11 +2250,12 @@ internal static class PhysicalInteraction
             if (PrimaryEdge.Pressed || SecondaryEdge.Pressed)
             {
                 bool left = LocalHold.ItemInLeftHand;
-                var grip = Hold.GripLeft;
                 Affordance.DenyAtHand(
                     left,
                     DenyReason.NeedsTwoHands,
-                    grip != null ? DenyHint.On(grip) : DenyHint.On(c.data.currentItem.transform)
+                    Hold.SecondGrip(left, out var grip)
+                        ? DenyHint.At(grip)
+                        : DenyHint.On(c.data.currentItem.transform)
                 );
             }
         }

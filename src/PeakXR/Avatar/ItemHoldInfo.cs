@@ -20,6 +20,21 @@ internal sealed class ItemHoldInfo
     public Transform GripRight;
     public Transform GripLeft;
 
+    /// <summary>
+    /// World position of the secondary hand's grip on the bound item: <c>Hand_L</c> for a right-primary hold, its
+    /// mirror across the item's local X for a left-primary one (<see cref="HoldHands.ItemLocal"/>), since the left
+    /// hold is the mirror image of the right. False when the item has no <c>Hand_L</c>.
+    /// </summary>
+    public bool SecondGrip(bool primaryLeft, out Vector3 world)
+    {
+        world = default;
+        if (item == null || GripLeft == null)
+            return false;
+        var local = item.transform.InverseTransformPoint(GripLeft.position);
+        world = item.transform.TransformPoint(HoldHands.ItemLocal(local.N(), primaryLeft).U());
+        return true;
+    }
+
     private static readonly Dictionary<ushort, (HoldProfile profile, bool edible)> byId = new();
 
     private Item item;
