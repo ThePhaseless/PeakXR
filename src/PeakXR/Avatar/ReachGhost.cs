@@ -19,9 +19,18 @@ internal sealed class ReachGhost : MonoBehaviour
 
     private const int RenderQueue = 3100;
 
-    /// <summary>Knuckle line ahead of the grip pose's origin and the finger spread across it, metres.</summary>
-    private const float Knuckles = 0.05f;
-    private const float Spread = 0.012f;
+    /// <summary>Knuckle line ahead of the grip pose's origin, the palm's centre behind it toward the back of the hand,
+    /// and the finger spacing across the knuckles, metres (hand frame: +Z the fingers, +Y the thumb side).</summary>
+    private const float Knuckles = 0.035f;
+    private const float PalmBack = 0.025f;
+    private const float Spread = 0.019f;
+    private const float Proximal = 0.042f;
+    private const float Distal = 0.034f;
+
+    /// <summary>Thumb's rest angle up toward the thumb side, and how far a full curl folds each finger joint.</summary>
+    private const float ThumbRaise = 40f;
+    private const float FingerFold = 80f;
+    private const float ThumbFold = 55f;
 
     private sealed class Hand
     {
@@ -29,6 +38,7 @@ internal sealed class ReachGhost : MonoBehaviour
         public Transform Root;
         public Material Material;
         public readonly Transform[] Fingers = new Transform[FingerCurls.Count];
+        public readonly Transform[] Tips = new Transform[FingerCurls.Count];
         public float ShownAlpha = -1f;
     }
 
@@ -109,18 +119,26 @@ internal sealed class ReachGhost : MonoBehaviour
             driver != null
                 ? (isLeft ? driver.Pose.LeftFingers : driver.Pose.RightFingers)
                 : default;
+        // Fingers fold about the knuckle line (hand +Y) toward the palm: -X on the right hand, +X on the left.
+        float palm = isLeft ? 1f : -1f;
         for (int i = 0; i < FingerCurls.Count; i++)
         {
-            // Thumb folds across the palm about the hand's long axis; fingers fold toward the palm.
-            h.Fingers[i].localRotation =
+            float c = curls[i];
+            var fold =
                 i == 0
-                    ? Quaternion.Euler(0f, (isLeft ? 1f : -1f) * (30f + 50f * curls[i]), 0f)
-                    : Quaternion.Euler(90f * curls[i], 0f, 0f);
+                    ? Quaternion.Euler(0f, palm * ThumbFold * c, 0f)
+                    : Quaternion.Euler(0f, palm * FingerFold * c, 0f);
+            h.Fingers[i].localRotation = i == 0 ? ThumbRest * fold : fold;
+            h.Tips[i].localRotation = fold;
         }
     }
 
-    /// <summary>A mitten of ellipsoids around the grip pose (OpenXR grip: +Z where the fist points, -Y toward the
-    /// palm's fold): a palm, four fingers and a thumb on pivots at their knuckles.</summary>
+    private static readonly Quaternion ThumbRest = Quaternion.Euler(-ThumbRaise, 0f, 0f);
+
+    /// <summary>A hand of ellipsoids around the grip pose, built in a hand frame (+Z the fingers, +Y the thumb side,
+    /// X the palm axis) that <see cref="GripFrame.FromHand"/> turns into the grip's, the same frame the avatar's hand
+    /// bone takes (HandRig): a palm, four two-segment fingers and a thumb on pivots at their knuckles, wrapped round
+    /// the controller's handle like the real hand.</summary>
     private void Build()
     {
         built = true;
@@ -135,43 +153,67 @@ internal sealed class ReachGhost : MonoBehaviour
         var root = new GameObject(isLeft ? "GhostHandL" : "GhostHandR").transform;
         root.SetParent(transform, false);
         h.Root = root;
+        var hand = new GameObject("Hand").transform;
+        hand.SetParent(root, false);
+        hand.localRotation = GripFrame.FromHand.U();
+        // The grip's origin is the middle of the fist, in front of the palm: the palm sits toward the back of the hand.
+        float back = isLeft ? -PalmBack : PalmBack;
         Part(
             "Palm",
-            root,
+            hand,
             mesh,
             h.Material,
-            new Vector3(0f, 0f, 0.01f),
-            new Vector3(0.075f, 0.03f, 0.09f)
+            new Vector3(back, 0f, -0.01f),
+            new Vector3(0.032f, 0.085f, 0.095f)
         );
-        float side = isLeft ? 1f : -1f;
         for (int i = 1; i < FingerCurls.Count; i++)
         {
-            var pivot = new GameObject("Finger" + i).transform;
-            pivot.SetParent(root, false);
-            pivot.localPosition = new Vector3(side * Spread * (i - 2.5f) * 2f, 0f, Knuckles);
-            Part(
-                "Seg",
-                pivot,
-                mesh,
-                h.Material,
-                new Vector3(0f, 0f, 0.035f),
-                new Vector3(0.017f, 0.017f, 0.075f)
-            );
+            // Index nearest the thumb (+Y), little finger farthest.
+            var pivot = Pivot(hand, new Vector3(back, Spread * (2.5f - i), Knuckles));
             h.Fingers[i] = pivot;
+            h.Tips[i] = Segment(pivot, mesh, h.Material, Proximal, 0.02f);
         }
-        var thumb = new GameObject("Thumb").transform;
-        thumb.SetParent(root, false);
-        thumb.localPosition = new Vector3(side * 0.035f, -0.005f, 0.0f);
+        var thumb = Pivot(hand, new Vector3(back * 0.5f, 0.04f, -0.035f));
+        h.Fingers[0] = thumb;
+        h.Tips[0] = Segment(thumb, mesh, h.Material, 0.045f, 0.024f);
+        root.gameObject.SetActive(false);
+    }
+
+    private static Transform Pivot(Transform parent, Vector3 at)
+    {
+        var pivot = new GameObject("Knuckle").transform;
+        pivot.SetParent(parent, false);
+        pivot.localPosition = at;
+        return pivot;
+    }
+
+    /// <summary>A finger's two segments under <paramref name="knuckle"/>; returns the outer joint's pivot.</summary>
+    private static Transform Segment(
+        Transform knuckle,
+        Mesh mesh,
+        Material material,
+        float length,
+        float thickness
+    )
+    {
         Part(
             "Seg",
-            thumb,
+            knuckle,
             mesh,
-            h.Material,
-            new Vector3(0f, 0f, 0.03f),
-            new Vector3(0.02f, 0.02f, 0.06f)
+            material,
+            new Vector3(0f, 0f, length * 0.5f),
+            new Vector3(thickness, thickness, length * 1.1f)
         );
-        h.Fingers[0] = thumb;
-        root.gameObject.SetActive(false);
+        var tip = Pivot(knuckle, new Vector3(0f, 0f, length));
+        Part(
+            "Tip",
+            tip,
+            mesh,
+            material,
+            new Vector3(0f, 0f, Distal * 0.5f),
+            new Vector3(thickness * 0.9f, thickness * 0.9f, Distal * 1.1f)
+        );
+        return tip;
     }
 
     private static void Part(

@@ -86,6 +86,10 @@ namespace PeakXR.Core
         public bool OneHanded;
         public Handedness HeldHandedness;
 
+        /// <summary>The game holds the held item in both hands (it is not <c>rightHandOnly</c>), so a free hand may
+        /// join it whatever <see cref="HeldHandedness"/> says.</summary>
+        public bool HeldBothHandsInGame;
+
         /// <summary>
         /// An extension (inventory slot, social target) wants this press. Independent of the physical toggles,
         /// since extensions have their own settings.
@@ -139,7 +143,8 @@ namespace PeakXR.Core
         /// <summary>An item arrived in this hand.</summary>
         /// <param name="gripClosed">The hand's grip was closed when it arrived.</param>
         /// <param name="action">What that grip is doing.</param>
-        /// <param name="isTheGrabbedItem">It is the item that grip's pickup reached for.</param>
+        /// <param name="isTheGrabbedItem">It is the item that grip's pickup reached for: its own grab, or the item
+        /// the game's interact picked up for a grip that fell back to it.</param>
         public static bool OnArrive(
             bool gripClosed,
             GripPressAction action,
@@ -147,7 +152,9 @@ namespace PeakXR.Core
         ) =>
             !gripClosed
             || action == GripPressAction.Extension
-            || (action == GripPressAction.GrabItem && isTheGrabbedItem);
+            || (
+                (action is GripPressAction.GrabItem or GripPressAction.Interact) && isTheGrabbedItem
+            );
     }
 
     /// <summary>
@@ -167,7 +174,7 @@ namespace PeakXR.Core
             if (
                 c.HoldingItem
                 && !c.ThisHandHolds
-                && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness)
+                && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness, c.HeldBothHandsInGame)
                 && (
                     (c.AtSecondGrip && !aimsElsewhere)
                     // A hand closing on the item's body joins it unless it points at a taker: a scripted or relaxed

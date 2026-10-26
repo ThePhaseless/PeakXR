@@ -32,6 +32,41 @@ public class FingerGunTests
     }
 
     [Fact]
+    public void LightTriggerPress_KeepsAimingUntilTheSqueeze()
+    {
+        // Tester: a light press of the trigger turned the ping laser off. A partly pulled trigger is the squeeze
+        // on its way, so the aim holds past the window and the full press still fires.
+        var g = new FingerGun { Window = 0.3f };
+        g.Update(true, true, false, 0.1f);
+        for (int i = 0; i < 20; i++)
+        {
+            Assert.False(g.Update(false, true, false, 0.1f, triggerResting: true));
+            Assert.True(g.Aiming);
+        }
+        Assert.True(g.Update(false, true, true, 0.05f, triggerResting: true));
+        Assert.False(g.Aiming);
+    }
+
+    [Fact]
+    public void LightPressLetGo_WindowRunsAgain()
+    {
+        var g = new FingerGun { Window = 0.3f };
+        g.Update(true, true, false, 0.1f);
+        g.Update(false, true, false, 1f, triggerResting: true);
+        g.Update(false, true, false, 0.4f);
+        Assert.False(g.Aiming);
+    }
+
+    [Fact]
+    public void OpeningTheGrip_EndsALightPressAim()
+    {
+        var g = new FingerGun();
+        g.Update(true, true, false, 0.1f);
+        g.Update(false, false, false, 0.1f, triggerResting: true);
+        Assert.False(g.Aiming);
+    }
+
+    [Fact]
     public void PointedTooLongAgo_DoesNotFire()
     {
         var g = new FingerGun { Window = 0.3f };

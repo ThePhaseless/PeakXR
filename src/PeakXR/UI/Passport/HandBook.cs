@@ -87,10 +87,12 @@ internal static class HandBook
         return !holding || LocalHold.ItemInLeftHand;
     }
 
-    /// <summary>Reading pose above the book hand, facing the eyes.</summary>
+    /// <summary>Reading pose above the book hand, facing the eyes, its lower edge clear of the hand
+    /// (<see cref="BookPose"/> with the book's half height).</summary>
     internal static bool TryPose(
         VRRig rig,
         bool left,
+        bool passport,
         out Vector3 position,
         out Quaternion rotation
     )
@@ -110,7 +112,8 @@ internal static class HandBook
             cfg.BookLift.Value,
             cfg.BookSide.Value,
             out var pos,
-            out var rot
+            out var rot,
+            HalfExtents(passport).y
         );
         position = pos.ToUnity();
         rotation = new Quaternion(rot.X, rot.Y, rot.Z, rot.W);
@@ -197,6 +200,7 @@ internal sealed class PassportPlacement : ICanvasPlacement
             || !HandBook.TryPose(
                 VRRig.Instance,
                 HandBook.BookInLeftHand(),
+                true,
                 out position,
                 out rotation
             )
@@ -249,7 +253,9 @@ internal sealed class HandBookRuntime : MonoBehaviour
     private const float FlipHapticSeconds = 0.03f;
 
     private readonly PageSwipe swipe = new();
+    private readonly AnalogButton closeTrigger = new(0.6f, 0.4f);
     private UnityEngine.Object lastBook;
+    private bool passportWasOpen;
 
     public static void Create()
     {
@@ -268,6 +274,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
         HeldPassport.Update(VRSession.Active);
         if (!VRSession.Active || rig == null || rig.Head == null)
         {
+            passportWasOpen = false;
             Forget();
             PassportPoke.Reset();
             return;
@@ -275,6 +282,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
 
         var cfg = PassportFeature.Settings;
         var left = HandBook.BookInLeftHand();
+        CloseOnTrigger(left);
         var guidebook = cfg.GuidebookAtHand.Value ? HandBook.OpenGuidebook() : null;
         if (guidebook != null)
             PoseGuidebook(guidebook, rig, left);
@@ -315,7 +323,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
             position = rect.position;
             rotation = rect.rotation;
         }
-        else if (!HandBook.TryPose(rig, left, out position, out rotation))
+        else if (!HandBook.TryPose(rig, left, false, out position, out rotation))
             return;
 
         var half = HandBook.HalfExtents(passport);
@@ -341,6 +349,29 @@ internal sealed class HandBookRuntime : MonoBehaviour
             Affordance.EndStop(freeLeft);
     }
 
+    /// <summary>
+    /// The trigger that opened the passport closes it again. It opened through the item's use
+    /// (A/Action_Passport.cs:5 <c>ToggleOpen</c>), but the open window blocks item use, so vanilla never sees the
+    /// second press. Only a fresh press on the book hand while it was already open, and not one the laser spends on
+    /// the passport's own controls.
+    /// </summary>
+    private void CloseOnTrigger(bool left)
+    {
+        closeTrigger.Update(VRInput.Hand(left).Trigger, Time.unscaledDeltaTime);
+        bool open = HandBook.PassportOpen;
+        if (
+            open
+            && passportWasOpen
+            && closeTrigger.Pressed
+            && !(LaserPointer.Over != null && LaserPointer.OverLeft == left)
+        )
+        {
+            PassportManager.instance.ToggleOpen();
+            UIHaptics.Tick(left, FlipHaptic, FlipHapticSeconds);
+        }
+        passportWasOpen = open;
+    }
+
     private static void OnBeforeRender()
     {
         var rig = VRRig.Instance;
@@ -363,7 +394,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
             && canvas != null
             && HandBook.PassportOpen
             && WorldCanvases.IsConverted(canvas)
-            && HandBook.TryPose(rig, left, out var position, out var rotation)
+            && HandBook.TryPose(rig, left, true, out var position, out var rotation)
         )
             canvas.transform.SetPositionAndRotation(position, rotation);
     }
@@ -373,7 +404,7 @@ internal sealed class HandBookRuntime : MonoBehaviour
     private static void PoseGuidebook(Guidebook guidebook, VRRig rig, bool left)
     {
         var book = guidebook.bookTransform;
-        if (book != null && HandBook.TryPose(rig, left, out var position, out var rotation))
+        if (book != null && HandBook.TryPose(rig, left, false, out var position, out var rotation))
             book.SetPositionAndRotation(position, rotation);
     }
 

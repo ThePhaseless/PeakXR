@@ -187,6 +187,15 @@ internal static class InteractPatches
             )
                 interactableResult = null;
             State.KeepPointedHold(__instance, c, ref interactableResult, __state);
+            // A fallback grip's press that DoInteraction turns into Item.Interact this frame (Interaction.cs:116-124):
+            // the pickup belongs to that grip's hand.
+            if (
+                c.input.interactWasPressed
+                && __instance.readyToInteract
+                && PhysicalInteraction.GripInteractActive
+                && interactableResult is Item picked
+            )
+                PhysicalInteraction.InteractPicking(picked);
         }
 
         private static Exception Finalizer(
@@ -239,16 +248,23 @@ internal static class InteractPatches
             var item = c.data.currentItem;
             if (item == null || item.rig == null)
                 return;
-            // No faster than a full-charge vanilla throw (CharacterItems.cs:394, :428): body speed plus half the
-            // max throw force times the item's multiplier.
+            // The swing's speed mapped onto the vanilla throw range (HandThrow.LaunchSpeed): a hard swing throws as
+            // hard as a full charge, so breakables (Breakable.cs:61-67, minBreakVelocity) and bonks fire, and never
+            // harder (CharacterItems.cs:394, :428: half the max throw force times the item's multiplier), along the hand.
             var body = c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
             float mult = item.throwForceMultiplier;
-            var velocity = Vector3.ClampMagnitude(
-                PhysicalInteraction.ThrowVelocity,
-                body.magnitude + 0.5f * __instance.maxThrowForce * mult
+            var cfg = InteractConfig.Instance;
+            var hand = PhysicalInteraction.ThrowHandVelocity;
+            float speed = HandThrow.LaunchSpeed(
+                hand.magnitude,
+                cfg.ThrowSpeed,
+                cfg.ThrowFullSpeed,
+                0.5f * __instance.maxThrowForce * mult
             );
+            var velocity =
+                body + (hand.sqrMagnitude > 1e-6f ? hand.normalized * speed : Vector3.zero);
             float charge = HandThrow.Charge(
-                (velocity - body).magnitude,
+                speed,
                 __instance.minThrowForce,
                 __instance.maxThrowForce,
                 mult,

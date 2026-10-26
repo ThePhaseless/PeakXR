@@ -22,8 +22,10 @@ namespace PeakXR.UI.Menu;
 /// <item>No backdrop on any page: ui.world's BackdropStrip hides the flat-screen backings (registered through
 /// <see cref="CanvasRules.AddCustomMenu"/>) and outlines the text; <see cref="TitleSilhouettes"/> hides the logo's black
 /// reveal copy, which the strip keeps as art.</item>
-/// <item>The canvas Animator (TitleIn slides <c>MainPage/Menu</c> up from below the screen edge) is run to the end of
-/// each non-looping state, and the canvas fades in at its final spot instead; pages fade in when they switch.</item>
+/// <item>On one screen (no group brought to hand) the canvas Animator plays the game's own intro (TitleIn slides
+/// <c>MainPage/Menu</c> up from below the screen edge), cropped to the canvas as a monitor's edge crops it. With groups
+/// at hand it is run to the end of each non-looping state, and the canvas fades in at its final spot instead; pages
+/// fade in when they switch.</item>
 /// <item>A fingertip press on a near button clicks it, next to the laser.</item>
 /// </list>
 /// Anything not found leaves that part as the plain floating panel. Everything is undone when VR stops.
@@ -69,6 +71,7 @@ internal sealed class TitleMenuDepth
     private UIPageHandler pages;
     private UIPage page;
     private Animator intro;
+    private RectMask2D crop;
     private CanvasGroup fade;
     private bool ownFade;
     private float fadeStart;
@@ -95,7 +98,8 @@ internal sealed class TitleMenuDepth
 
     /// <summary>Called every frame from the title placement, before ui.world moves the canvas, with the stage's
     /// fixed eye point: works on the pose the canvas had last frame (it does not move once placed).</summary>
-    public void Tick(Canvas target, Vector3 eye, float reach)
+    /// <param name="oneScreen">Every group stays on the panel: the game's intro plays, cropped to the canvas.</param>
+    public void Tick(Canvas target, Vector3 eye, float reach, bool oneScreen)
     {
         if (target != canvas)
         {
@@ -110,7 +114,13 @@ internal sealed class TitleMenuDepth
         )
             return;
 
-        SkipIntro();
+        if (oneScreen)
+            Crop();
+        else
+        {
+            Uncrop();
+            SkipIntro();
+        }
         var current = pages != null ? pages.currentPage : null;
         if (current != page || Time.unscaledTime >= nextScan)
         {
@@ -134,6 +144,7 @@ internal sealed class TitleMenuDepth
         NearGroups = 0;
         buttons.Clear();
         silhouettes.Restore();
+        Uncrop();
         if (ownFade && fade != null)
             Object.Destroy(fade);
         fade = null;
@@ -168,6 +179,21 @@ internal sealed class TitleMenuDepth
         page = null;
         nextScan = 0f;
         StartFade();
+    }
+
+    /// <summary>A world panel has no screen edge: the canvas rect stands in for it, so the intro's slide-in from
+    /// below shows only inside the screen. A canvas that already masks itself is left alone.</summary>
+    private void Crop()
+    {
+        if (crop == null && !canvas.TryGetComponent(out RectMask2D _))
+            crop = canvas.gameObject.AddComponent<RectMask2D>();
+    }
+
+    private void Uncrop()
+    {
+        if (crop != null)
+            Object.Destroy(crop);
+        crop = null;
     }
 
     private void StartFade()

@@ -7,7 +7,8 @@ using UnityEngine;
 namespace PeakXR.UI.Wheels;
 
 /// <summary>
-/// ui.wheels: the emote wheel and the backpack wheel as small 3D radial menus at the hand that opened them.
+/// ui.wheels: the emote wheel as a small 3D radial menu at the hand that opened it, the backpack wheel in view
+/// toward that hand's lower corner (<see cref="RadialWheels"/>).
 /// The game still opens, closes and resolves the wheels (emote held, interact held on a backpack); only the
 /// slice under the selection comes from VR: the hand flicked away from the wheel centre, or that hand's stick.
 /// The game freezes camera look while a wheel is open, which in a headset would be a world that turns with
@@ -33,7 +34,7 @@ public sealed class UIWheelsFeature : Feature
             "WheelSize",
             0.3f,
             new ConfigDescription(
-                "Diameter of the emote and backpack wheels at your hand, in metres.",
+                "Diameter of the emote wheel at your hand, in metres. The backpack wheel, further out in view, looks as big.",
                 new AcceptableValueRange<float>(0.15f, 0.6f)
             )
         );

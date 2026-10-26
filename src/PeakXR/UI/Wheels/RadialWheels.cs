@@ -22,7 +22,8 @@ namespace PeakXR.UI.Wheels;
 /// The emote wheel is picked by the hand over its drawn ring, the opening hand's stick, or the laser (shown while it
 /// is open; the slices' own pointer enter/exit hover them). Its full-screen dimmer is hidden. The backpack wheel is picked by
 /// inventory.vr (hand movement, <c>Inventory.WheelByHand</c>) through the game's own
-/// <c>TestSelectSliceGamepad</c>; here it only gets a place at the hand, plus its stick as an alternative.
+/// <c>TestSelectSliceGamepad</c>; here it only gets a place in view (<see cref="WheelPlane.InView"/>, toward the
+/// opening hand's lower corner), plus its stick as an alternative.
 /// Both go through the TestSelectSliceGamepad patches (WheelPatches.cs), which read such a call in the wheel's own plane.
 /// </summary>
 [DefaultExecutionOrder(31050)]
@@ -34,6 +35,7 @@ internal sealed class RadialWheels : MonoBehaviour
     private readonly WheelDriver backpack = new("PeakXR_BackpackWheel", handDriven: false);
     private GUIManager gui;
     private EmoteWheel emoteWheel;
+    private EmoteHint hint;
     private bool emoteHeld;
 
     /// <summary>The controller whose menu button was down last, for a refused pause (WheelPatches.PauseRefused).</summary>
@@ -49,12 +51,14 @@ internal sealed class RadialWheels : MonoBehaviour
     private void Awake()
     {
         instance = this;
+        hint = new EmoteHint(transform);
         VRSession.Stopped += OnVRStopped;
     }
 
     private void OnDestroy()
     {
         VRSession.Stopped -= OnVRStopped;
+        hint.Destroy();
         if (instance == this)
             instance = null;
     }
@@ -64,6 +68,7 @@ internal sealed class RadialWheels : MonoBehaviour
         LaserPointer.ForceShow = false;
         emote.Restore();
         backpack.Restore();
+        hint.Hide();
         OnTop.DestroyClones();
     }
 
@@ -122,6 +127,7 @@ internal sealed class RadialWheels : MonoBehaviour
             LaserPointer.ForceShow = false;
             emote.Restore();
             backpack.Restore();
+            hint.Hide();
             return;
         }
 
@@ -129,6 +135,7 @@ internal sealed class RadialWheels : MonoBehaviour
             MenuLeft = VRInput.Left.Menu;
         DenyRefusedOpen();
         emote.Update(gui.emoteWheel, emoteWheel, rig, VRAction.Emote);
+        hint.Tick(gui, emoteWheel, rig, emote.IsOpen, Time.unscaledDeltaTime);
         backpack.Update(
             gui.backpackWheel != null ? gui.backpackWheel.gameObject : null,
             gui.backpackWheel,
@@ -408,10 +415,22 @@ internal sealed class WheelDriver
         OnTop.Set(root, true);
 
         var eye = rig.Head.position.ToNumerics();
-        var handAt = hand.position.ToNumerics();
-        var nearer = WheelPlane.Centre(eye, handAt, WheelPlane.EyeOffset);
-        drawScale = WheelPlane.DrawScale(eye, handAt, nearer);
-        var center = nearer.ToUnity();
+        Vector3 center;
+        if (handDriven)
+        {
+            var handAt = hand.position.ToNumerics();
+            var nearer = WheelPlane.Centre(eye, handAt, WheelPlane.EyeOffset);
+            drawScale = WheelPlane.DrawScale(eye, handAt, nearer);
+            center = nearer.ToUnity();
+        }
+        else
+        {
+            // The backpack chooser opens with the hand over the shoulder or at a friend's pack: drawn there it sat
+            // beside the face, too near to focus (tester). It opens in view instead, toward that hand's lower corner
+            // at a relaxed focus distance; inventory.vr picks its pockets by hand travel, wherever it is drawn.
+            center = WheelPlane.InView(eye, rig.Head.forward.ToNumerics(), handLeft).ToUnity();
+            drawScale = WheelPlane.ViewDrawScale;
+        }
         var facing = center - rig.Head.position;
         if (facing.sqrMagnitude < 1e-4f)
             facing = rig.Head.forward;

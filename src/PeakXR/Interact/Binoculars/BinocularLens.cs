@@ -22,8 +22,8 @@ internal sealed class BinocularLens : MonoBehaviour
     internal static AccessTools.FieldRef<ItemActionBase, Item> ItemOf;
     internal static AccessTools.FieldRef<MainCamera, CameraOverride> CamOverride;
 
-    // Eyepiece lens: distance (m) from the grip toward the head, and quad size.
-    private const float EyepieceOffset = 0.07f;
+    // Eyepiece lens: how far (m) it stands out of the model's eye end toward the head, and quad size.
+    private const float EyepieceOffset = 0.01f;
     private const float EyepieceSize = 0.05f;
 
     // Near-eye lens: 0.35 m ahead, 0.255 m wide, about 40 degrees of view. Leaves at 1.5x EyeDistance.
@@ -65,6 +65,9 @@ internal sealed class BinocularLens : MonoBehaviour
 
     private Action_ShowBinocularOverlay overlay;
     private Item item;
+
+    /// <summary>The eye end of the binoculars' model in the item's frame (<see cref="EyeEnd"/>).</summary>
+    private Vector3 eyeLocal;
 
     private Camera lensCam;
     private RenderTexture texture;
@@ -160,6 +163,7 @@ internal sealed class BinocularLens : MonoBehaviour
     {
         overlay = binoculars;
         item = ItemOf(binoculars);
+        eyeLocal = item != null ? EyeEnd(item) : Vector3.zero;
         placement = Placement.None;
         twistValid = false;
         knob.Reset();
@@ -216,19 +220,32 @@ internal sealed class BinocularLens : MonoBehaviour
         bool left = LocalHold.ItemInLeftHand;
         AimLens(binoculars);
         TwistZoom(binoculars, left);
-        Place(rig, left);
+        Place(rig);
     }
 
     private void AimLens(Action_ShowBinocularOverlay binoculars)
     {
-        if (HandAim.TryHeld(out var origin, out var rotation))
+        var zoom = binoculars.cameraOverride;
+        // From the game's own zoom camera point on the held model (item child "cameraOverride", +Z 0.28 m ahead of
+        // its pivot) along the item's +Z: the view goes where the binoculars visibly point. The override's own
+        // rotation is the head's look (CameraOverride_Binoculars.cs:22), so it is not used.
+        Vector3 origin;
+        Quaternion rotation;
+        bool posed = zoom != null;
+        if (posed)
+        {
+            origin = zoom.transform.position;
+            rotation = item.transform.rotation;
+        }
+        else
+            posed = HandAim.TryHeld(out origin, out rotation);
+        if (posed)
         {
             // Roll-free so a zoom twist does not spin the image.
             var forward = rotation * Vector3.forward;
             var up = Mathf.Abs(forward.y) > 0.98f ? rotation * Vector3.up : Vector3.up;
             lensCam.transform.SetPositionAndRotation(origin, Quaternion.LookRotation(forward, up));
         }
-        var zoom = binoculars.cameraOverride;
         lensCam.fieldOfView = Mathf.Clamp(zoom != null ? zoom.fov : 35f, 1f, 120f);
         if (!lensCam.enabled)
             lensCam.enabled = true;
@@ -272,7 +289,13 @@ internal sealed class BinocularLens : MonoBehaviour
         Haptics.Pulse(left, 0.3f, 0.02f);
     }
 
-    private void Place(VRRig rig, bool left)
+    /// <summary>
+    /// Lens placement from the binoculars' own eye end, never the controller grip: the prefab's <c>Hand_R</c> sits
+    /// 0.25 m to the side of the model's centre, so a lens at the grip was buried in the glove (seen only when a
+    /// fast swing left the welded hand lagging), and raising the eyepieces to the eyes kept the grip too far from
+    /// the head for the near-eye view.
+    /// </summary>
+    private void Place(VRRig rig)
     {
         var head = rig.Head;
         if (head == null)
@@ -282,18 +305,15 @@ internal sealed class BinocularLens : MonoBehaviour
             PlacePanel(head);
             return;
         }
-        var grip = rig.Hand(left);
-        if (grip == null)
-            return;
 
         var headPos = head.position;
-        var gripPos = grip.position;
-        var toHead = headPos - gripPos;
-        float gripDistance = toHead.magnitude;
-        if (gripDistance < 1e-3f)
+        var eyeEnd = item.transform.TransformPoint(eyeLocal);
+        var toHead = headPos - eyeEnd;
+        float eyeDistance = toHead.magnitude;
+        if (eyeDistance < 1e-3f)
             return;
         var eyepiece =
-            gripPos + toHead * (Mathf.Min(EyepieceOffset, gripDistance * 0.5f) / gripDistance);
+            eyeEnd + toHead * (Mathf.Min(EyepieceOffset, eyeDistance * 0.5f) / eyeDistance);
         float distance = Vector3.Distance(headPos, eyepiece);
         float enter = BinocularsConfig.EyeDistance;
         bool near =
@@ -380,6 +400,36 @@ internal sealed class BinocularLens : MonoBehaviour
                 onTop ? (float)CompareFunction.Always : (float)CompareFunction.LessEqual
             );
         material.renderQueue = onTop ? (int)RenderQueue.Overlay : -1;
+    }
+
+    /// <summary>Centre of the model's rear face (lowest +Z of its meshes) in the item's frame; the pivot when it
+    /// has no mesh. Runs once per raise.</summary>
+    private static Vector3 EyeEnd(Item item)
+    {
+        var t = item.transform;
+        var bounds = new Bounds();
+        bool any = false;
+        foreach (var filter in item.GetComponentsInChildren<MeshFilter>())
+        {
+            if (filter.sharedMesh == null)
+                continue;
+            var b = filter.sharedMesh.bounds;
+            var ft = filter.transform;
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = b.center + Vector3.Scale(b.extents, Corner(i));
+                var local = t.InverseTransformPoint(ft.TransformPoint(corner));
+                if (any)
+                    bounds.Encapsulate(local);
+                else
+                    bounds = new Bounds(local, Vector3.zero);
+                any = true;
+            }
+        }
+        return any ? new Vector3(bounds.center.x, bounds.center.y, bounds.min.z) : Vector3.zero;
+
+        static Vector3 Corner(int i) =>
+            new((i & 1) != 0 ? 1f : -1f, (i & 2) != 0 ? 1f : -1f, (i & 4) != 0 ? 1f : -1f);
     }
 
     private bool EnsureResources()

@@ -99,7 +99,7 @@ internal sealed class AvatarConfig
                 "WristOffsetBack",
                 0.07f,
                 new ConfigDescription(
-                    "Metres from the controller grip back to the wrist.",
+                    "Metres from the controller grip back toward the forearm to the wrist.",
                     new AcceptableValueRange<float>(-0.1f, 0.25f)
                 )
             ),
@@ -117,7 +117,7 @@ internal sealed class AvatarConfig
                 "WristOffsetUp",
                 0f,
                 new ConfigDescription(
-                    "Metres from the controller grip upward to the wrist.",
+                    "Metres from the controller grip toward the thumb side to the wrist.",
                     new AcceptableValueRange<float>(-0.1f, 0.1f)
                 )
             ),

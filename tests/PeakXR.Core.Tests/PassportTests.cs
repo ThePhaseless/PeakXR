@@ -107,6 +107,80 @@ public class BookPoseTests
     }
 }
 
+public class BookPoseReadingTests
+{
+    static readonly Vector3 Head = Vector3.Zero;
+    static readonly Vector3 HeadForward = new(0f, 0f, 1f);
+
+    static Vector3 Pose(Vector3 hand, float halfHeight, float lift = 0.15f)
+    {
+        BookPose.Compute(
+            hand,
+            Head,
+            HeadForward,
+            leftHand: true,
+            lift,
+            side: 0.08f,
+            out var pos,
+            out _,
+            halfHeight
+        );
+        return pos;
+    }
+
+    [Fact]
+    public void LowerEdgeClearsTheHoldingHand()
+    {
+        // Tester: the hand covered the guidebook (half height 0.17 m, centre lifted only 0.15 m).
+        var hand = new Vector3(0f, -0.35f, 0.4f);
+        var pos = Pose(hand, 0.17f);
+        Assert.True(pos.Y - 0.17f >= hand.Y + BookPose.HandClearance - 1e-4f);
+    }
+
+    [Fact]
+    public void AHigherLiftSettingStillWins()
+    {
+        var hand = new Vector3(0f, -0.35f, 0.4f);
+        Assert.Equal(-0.35f + 0.33f, Pose(hand, 0.1f, lift: 0.33f).Y, 4);
+    }
+
+    [Fact]
+    public void HandAtTheWaist_BookRisesIntoAComfortableGaze()
+    {
+        var pos = Pose(new Vector3(0f, -0.9f, 0.35f), 0.13f);
+        var flat = MathF.Sqrt(pos.X * pos.X + pos.Z * pos.Z);
+        var below = MathF.Atan2(-pos.Y, flat) * 180f / MathF.PI;
+        Assert.InRange(below, 0f, BookPose.MaxBelowDegrees + 0.01f);
+    }
+
+    [Fact]
+    public void HandUnderTheChin_BookStaysAtReadingDistance()
+    {
+        var pos = Pose(new Vector3(0f, -0.35f, 0.05f), 0.13f);
+        var flat = MathF.Sqrt(pos.X * pos.X + pos.Z * pos.Z);
+        Assert.True(flat >= BookPose.MinReach - 1e-4f);
+        Assert.True(pos.Z > 0f);
+    }
+
+    [Fact]
+    public void ReadablePose_StillFacesTheEyes()
+    {
+        BookPose.Compute(
+            new Vector3(0f, -0.9f, 0.35f),
+            Head,
+            HeadForward,
+            true,
+            0.15f,
+            0.08f,
+            out var pos,
+            out var rot,
+            0.13f
+        );
+        var forward = UnityQuat.Rotate(rot, new Vector3(0f, 0f, 1f));
+        TestUtil.Near(Vector3.Normalize(pos - Head), forward);
+    }
+}
+
 public class PageSwipeTests
 {
     const float Dt = 1f / 90f;

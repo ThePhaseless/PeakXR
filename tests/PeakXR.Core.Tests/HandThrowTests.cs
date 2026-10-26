@@ -40,4 +40,37 @@ public class HandThrowTests
     [Fact]
     public void Charge_IgnoresDegenerateForces() =>
         Assert.Equal(0f, HandThrow.Charge(10f, Max, Max, 1f, 0f));
+
+    // Full launch for Max = 30, multiplier 1: 0.5 * 30 = 15 m/s.
+    const float Full = 15f;
+
+    [Fact]
+    public void Launch_AtTheThrowThresholdIsTheHandsOwnSpeed() =>
+        Assert.Equal(2f, HandThrow.LaunchSpeed(2f, 2f, 7f, Full), 4);
+
+    [Fact]
+    public void Launch_AStrongSwingThrowsLikeAFullVanillaCharge()
+    {
+        // A real arm tops out far below a charged vanilla throw: 7 m/s of hand is a full charge.
+        Assert.Equal(Full, HandThrow.LaunchSpeed(7f, 2f, 7f, Full), 4);
+        Assert.Equal(Full, HandThrow.LaunchSpeed(12f, 2f, 7f, Full), 4);
+    }
+
+    [Fact]
+    public void Launch_RisesSmoothlyBetween()
+    {
+        // Halfway (4.5 m/s): the hand's speed plus half the way to the full launch.
+        Assert.Equal(4.5f + (Full - 4.5f) * 0.5f, HandThrow.LaunchSpeed(4.5f, 2f, 7f, Full), 4);
+        Assert.True(
+            HandThrow.LaunchSpeed(4f, 2f, 7f, Full) < HandThrow.LaunchSpeed(5f, 2f, 7f, Full)
+        );
+    }
+
+    [Fact]
+    public void Launch_NeverAboveAFullVanillaThrow() =>
+        Assert.Equal(Full, HandThrow.LaunchSpeed(40f, 2f, 7f, Full), 4);
+
+    [Fact]
+    public void Launch_IgnoresADegenerateRange() =>
+        Assert.Equal(Full, HandThrow.LaunchSpeed(5f, 7f, 7f, Full), 4);
 }

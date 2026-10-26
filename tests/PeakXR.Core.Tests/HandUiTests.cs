@@ -32,13 +32,13 @@ public class WristPoseTests
     public void Rest_LiesOnTheBackOfTheWrist_BarAcrossTheForearm(bool left)
     {
         var rest = WristHud.Rest(Quaternion.Identity, left);
-        // Grip space: +Z toward the fingers (along the forearm), the back of the left hand -X, of the right +X.
+        // Grip space (GripFrame): fingers along -Y, the back of the left hand -X, of the right +X.
         float dorsal = left ? -1f : 1f;
         // The canvas is seen from its -forward side: that side is the back of the wrist.
         TestUtil.Near(new Vector3(-dorsal, 0f, 0f), Rot(rest, Vector3.UnitZ));
         // Text up toward the fingers, so the bar (canvas x) runs across the wrist.
-        TestUtil.Near(Vector3.UnitZ, Rot(rest, Vector3.UnitY));
-        Assert.True(MathF.Abs(Vector3.Dot(Rot(rest, Vector3.UnitX), Vector3.UnitZ)) < 1e-4f);
+        TestUtil.Near(GripFrame.Fingers, Rot(rest, Vector3.UnitY));
+        Assert.True(MathF.Abs(Vector3.Dot(Rot(rest, Vector3.UnitX), GripFrame.Fingers)) < 1e-4f);
     }
 
     [Fact]
@@ -50,9 +50,12 @@ public class WristPoseTests
         foreach (bool left in new[] { true, false })
         {
             float dorsal = left ? -1f : 1f;
-            // Grip -X (left) or +X (right) toward the eye, +Z up.
-            var hand = UnityQuat.LookRotation(up, Vector3.Cross(eyeToHand * dorsal, up));
+            // Grip X (dorsal side toward the eye) and grip -Y (the fingers) up.
+            var x = -eyeToHand * dorsal;
+            var y = -up;
+            var hand = UnityQuat.LookRotation(Vector3.Cross(x, y), y);
             TestUtil.Near(-eyeToHand, Rot(hand, new Vector3(dorsal, 0f, 0f)));
+            TestUtil.Near(up, Rot(hand, GripFrame.Fingers));
             var rest = UnityQuat.Mul(hand, WristHud.Rest(Quaternion.Identity, left));
             TestUtil.Near(new Vector3(1f, 0f, 0f), Rot(rest, Vector3.UnitX));
             TestUtil.Near(up, Rot(rest, Vector3.UnitY));
@@ -65,7 +68,7 @@ public class WristPoseTests
     public void Anchor_SitsBehindTheGripOnTheBackOfTheWrist(bool left)
     {
         var a = WristHud.Anchor(Vector3.Zero, Quaternion.Identity, left);
-        Assert.True(a.Z < -0.08f, "toward the elbow");
+        Assert.True(Vector3.Dot(a, GripFrame.Forearm) > 0.08f, "toward the elbow");
         Assert.True(left ? a.X < -0.03f : a.X > 0.03f, "out of the back of the wrist");
         var mirror = WristHud.Anchor(Vector3.Zero, Quaternion.Identity, !left);
         TestUtil.Near(new Vector3(-a.X, a.Y, a.Z), mirror);

@@ -36,4 +36,45 @@ public static class WheelPlane
         float toHand = Vector3.Distance(eye, hand);
         return toHand < 1e-5f ? 1f : Vector3.Distance(eye, centre) / toHand;
     }
+
+    /// <summary>A wheel opened in view rather than at the hand sits this far from the eye, metres: past the near
+    /// focus strain zone (closer than about half a metre) and still within a short glance.</summary>
+    public const float ViewDistance = 0.75f;
+
+    /// <summary>Its centre this far toward the opening hand's side of the view, degrees.</summary>
+    public const float ViewSideDegrees = 18f;
+
+    /// <summary>And this far below the line of sight, degrees.</summary>
+    public const float ViewDownDegrees = 12f;
+
+    /// <summary>A wheel at the hand is about this far from the eye; one in view is scaled to look as big.</summary>
+    public const float HandDistance = 0.45f;
+
+    /// <summary>Draw scale of a wheel at <see cref="InView"/> that looks as big as one at the hand.</summary>
+    public const float ViewDrawScale = ViewDistance / HandDistance;
+
+    /// <summary>
+    /// Centre of a wheel opened in front of the face (the backpack chooser), in Unity's convention: along the
+    /// head's view, turned <see cref="ViewSideDegrees"/> toward the opening hand and <see cref="ViewDownDegrees"/>
+    /// down, <see cref="ViewDistance"/> from the eye. Never rolled with the head.
+    /// </summary>
+    public static Vector3 InView(Vector3 eye, Vector3 headForward, bool handLeft)
+    {
+        var up = new Vector3(0f, 1f, 0f);
+        var forward =
+            headForward.LengthSquared() > 1e-8f
+                ? Vector3.Normalize(headForward)
+                : new Vector3(0f, 0f, 1f);
+        var flat = new Vector3(forward.X, 0f, forward.Z);
+        // Looking straight up or down: the yaw is undefined, take any.
+        var right =
+            flat.LengthSquared() > 1e-6f
+                ? Vector3.Normalize(Vector3.Cross(up, flat))
+                : new Vector3(1f, 0f, 0f);
+        var lift = Vector3.Cross(forward, right);
+        float side = MathF.Tan(ViewSideDegrees * MathF.PI / 180f) * (handLeft ? -1f : 1f);
+        float down = MathF.Tan(ViewDownDegrees * MathF.PI / 180f);
+        var dir = Vector3.Normalize(forward + right * side - lift * down);
+        return eye + dir * ViewDistance;
+    }
 }

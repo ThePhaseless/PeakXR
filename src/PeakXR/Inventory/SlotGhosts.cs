@@ -86,7 +86,7 @@ internal sealed class SlotGhosts : MonoBehaviour
         var mesh = quad.GetComponent<MeshFilter>().sharedMesh;
         Destroy(quad);
         if (ringTexture == null)
-            ringTexture = MakeRing(64);
+            ringTexture = MakeRing(256);
         for (int i = 0; i < Max; i++)
         {
             var root = new GameObject($"Slot{i}").transform;
@@ -210,13 +210,17 @@ internal sealed class SlotGhosts : MonoBehaviour
     }
 
     /// <summary>White ring with a faint filled middle and a dark band outside (Core <see cref="SlotRing"/>), alpha in
-    /// the texture so the material colour tints it.</summary>
+    /// the texture so the material colour tints it. 256 px with mipmaps and trilinear filtering: at 64 px without
+    /// mips the 2-texel outline was magnified about four times at the belt and shimmered when small (tester: "very
+    /// low resolution").</summary>
     private static Texture2D MakeRing(int size)
     {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
         {
             name = "PeakXR.SlotRing",
             wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Trilinear,
+            anisoLevel = 4,
         };
         var pixels = new Color32[size * size];
         float half = size / 2f;
@@ -231,7 +235,7 @@ internal sealed class SlotGhosts : MonoBehaviour
             }
         }
         tex.SetPixels32(pixels);
-        tex.Apply(false, true);
+        tex.Apply(updateMipmaps: true, makeNoLongerReadable: true);
         return tex;
     }
 }
