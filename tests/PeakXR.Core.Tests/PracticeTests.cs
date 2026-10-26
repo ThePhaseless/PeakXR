@@ -54,9 +54,15 @@ public class PracticeTests
     {
         var flow = new PracticeFlow();
         flow.Begin(false);
-        for (int i = 0; i < PracticeFlow.Stations.Length; i++)
+        // A skip during a walk to the next zone skips only the walk, so it takes one more skip per zone.
+        for (
+            int i = 0;
+            i < PracticeFlow.Stations.Length * 2 && flow.Phase != PracticePhase.Done;
+            i++
+        )
             flow.Skip();
         Assert.Equal(PracticePhase.Done, flow.Phase);
+        Assert.Equal(PracticeFlow.Stations.Length, flow.Skipped);
         flow.Tick(PracticeFlow.DoneSeconds + 0.01f);
         Assert.Equal(PracticePhase.Exiting, flow.Phase);
     }
