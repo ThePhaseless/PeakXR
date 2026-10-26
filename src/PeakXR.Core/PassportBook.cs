@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace PeakXR.Core;
@@ -12,6 +13,18 @@ public static class BookPose
 {
     static readonly Vector3 Up = new(0f, 1f, 0f);
 
+    /// <summary>The game's chunky hand (thumb up) reaches about this far above the grip pose, metres: a book's lower
+    /// edge stays above it, so the holding hand never covers the page (tester report, guidebook).</summary>
+    public const float HandClearance = 0.1f;
+
+    /// <summary>Nearest a book comes to the eyes, horizontally, metres: a hand pulled in under the chin still leaves
+    /// the page at reading distance.</summary>
+    public const float MinReach = 0.3f;
+
+    /// <summary>Furthest below the line of the eyes a book's centre sits, degrees: a hand resting low lifts the page
+    /// into a comfortable downward gaze instead of out of view.</summary>
+    public const float MaxBelowDegrees = 35f;
+
     /// <param name="hand">Grip position of the holding hand.</param>
     /// <param name="head">Eye position.</param>
     /// <param name="headForward">Head forward, used when the hand is straight below or at the eyes.</param>
@@ -20,6 +33,9 @@ public static class BookPose
     /// <param name="side">Metres toward the free hand, as seen by the reader.</param>
     /// <param name="position">Book centre.</param>
     /// <param name="rotation">Book rotation; +Z points away from the eyes, so a world canvas reads right.</param>
+    /// <param name="halfHeight">Half the open book's height, metres. Above 0 the book also stays readable: its
+    /// lower edge clears the hand by <see cref="HandClearance"/>, and it keeps <see cref="MinReach"/> and
+    /// <see cref="MaxBelowDegrees"/>. Each of these only moves the book up or away from the eyes, never onto the hand.</param>
     public static void Compute(
         Vector3 hand,
         Vector3 head,
@@ -28,9 +44,12 @@ public static class BookPose
         float lift,
         float side,
         out Vector3 position,
-        out Quaternion rotation
+        out Quaternion rotation,
+        float halfHeight = 0f
     )
     {
+        if (halfHeight > 0f)
+            lift = MathF.Max(lift, halfHeight + HandClearance);
         var flat = new Vector3(hand.X - head.X, 0f, hand.Z - head.Z);
         if (flat.LengthSquared() < 1e-4f)
             flat = new Vector3(headForward.X, 0f, headForward.Z);
@@ -40,12 +59,34 @@ public static class BookPose
                 : new Vector3(1f, 0f, 0f);
 
         position = hand + Up * lift + right * (leftHand ? side : -side);
+        if (halfHeight > 0f)
+            position = Readable(position, head, flat);
 
         var toBook = position - head;
         rotation =
             toBook.LengthSquared() > 1e-6f
                 ? UnityQuat.LookRotation(toBook, Up)
                 : UnityQuat.LookRotation(headForward, Up);
+    }
+
+    /// <summary><paramref name="position"/> pushed out to <see cref="MinReach"/> and raised to
+    /// <see cref="MaxBelowDegrees"/> below the eyes, as needed; <paramref name="away"/> is the flat direction to use
+    /// when the book is straight below the eyes.</summary>
+    static Vector3 Readable(Vector3 position, Vector3 head, Vector3 away)
+    {
+        var flat = new Vector3(position.X - head.X, 0f, position.Z - head.Z);
+        float reach = flat.Length();
+        var dir =
+            reach > 1e-4f ? flat / reach
+            : away.LengthSquared() > 1e-8f ? Vector3.Normalize(away)
+            : new Vector3(0f, 0f, 1f);
+        reach = MathF.Max(reach, MinReach);
+        float lowest = head.Y - MathF.Tan(MaxBelowDegrees * MathF.PI / 180f) * reach;
+        return new Vector3(
+            head.X + dir.X * reach,
+            MathF.Max(position.Y, lowest),
+            head.Z + dir.Z * reach
+        );
     }
 }
 

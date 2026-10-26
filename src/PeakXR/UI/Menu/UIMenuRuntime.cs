@@ -31,6 +31,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private AccessTools.FieldRef<Pretitle, bool> skipSplash;
     private readonly HoldToConfirm skipHold = new();
     private readonly LoadDestination destination = new();
+    private readonly DashboardPause dashboardPause = new();
 
     public static UIMenuRuntime Create(
         TitleStage stage,
@@ -176,6 +177,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         if (!VRSession.Active)
             return;
         stage.ApplyOrigin(VRRig.Instance);
+        dashboardPause.Tick(cfg.PauseOnDashboard.Value);
         ModalBellPatch.Tick();
         if (splash)
             UpdateSplashSkip();

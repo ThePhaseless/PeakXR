@@ -28,7 +28,15 @@ namespace PeakXR.Core
         public bool Aiming => _sincePoint <= Window;
 
         /// <returns>True on the frame the gesture fires.</returns>
-        public bool Update(bool pointing, bool gripHeld, bool triggerPressed, float dt)
+        /// <param name="triggerResting">The index partly pulls the trigger, short of the press: the squeeze on its
+        /// way, so the aim holds past <see cref="Window"/> instead of ending on a light press.</param>
+        public bool Update(
+            bool pointing,
+            bool gripHeld,
+            bool triggerPressed,
+            float dt,
+            bool triggerResting = false
+        )
         {
             if (!gripHeld)
             {
@@ -40,7 +48,7 @@ namespace PeakXR.Core
                 _sincePoint = 0f;
                 return false;
             }
-            if (_sincePoint < float.MaxValue)
+            if (_sincePoint < float.MaxValue && !triggerResting)
                 _sincePoint += dt;
             if (!triggerPressed || _sincePoint > Window)
                 return false;

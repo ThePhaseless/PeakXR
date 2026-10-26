@@ -17,8 +17,11 @@ public sealed class UIMenuFeature : Feature
     protected internal override void Install()
     {
         var cfg = UIMenuSettings.Bind(Plugin.Settings);
-        // 0.55 m sat in Meta's 0.5-0.8 m avoid band (vr-practices review P2-5).
+        // 0.55 m sat in Meta's 0.5-0.8 m avoid band (vr-practices review P2-5). 0.45 brought the buttons to the face:
+        // the tester found the menu "too small and too close", so the title is one big screen now.
         ConfigMigration.FromOldDefault(cfg.TitleReach, 0.55f);
+        ConfigMigration.FromOldDefault(cfg.TitleReach, Core.TitleLayout.TouchReach);
+        ConfigMigration.FromOldDefault(cfg.TitleMenuDistance, 2.2f);
         // First, so a missing target leaves no runtime objects behind.
         Patch(typeof(KillLoadingScreenPatch));
         Patch(typeof(LoadSceneProcessPatch));

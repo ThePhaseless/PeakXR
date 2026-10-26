@@ -300,7 +300,7 @@ internal sealed class SpectateView
             Object.Destroy(quad);
         }
         if (arrowTexture == null)
-            arrowTexture = MakeArrow(32);
+            arrowTexture = MakeArrow(128);
         root = new GameObject("PeakXR_SpectateMarks");
         Object.DontDestroyOnLoad(root);
         for (int i = 0; i < Slots; i++)
@@ -330,26 +330,29 @@ internal sealed class SpectateView
     /// <summary>White upward chevron on a clear background.</summary>
     private static Texture2D MakeArrow(int size)
     {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        // Mipmapped and trilinear like the belt rings: a 32 px arrow without mips read blocky in the headset.
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
         {
             name = "PeakXR.SpectateArrow",
             wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Trilinear,
+            anisoLevel = 4,
         };
         var pixels = new Color32[size * size];
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
             {
-                // Distance below the chevron's two arms (an upside-down V), 4 px thick.
+                // Distance below the chevron's two arms (an upside-down V), an eighth of the texture thick.
                 float u = (x + 0.5f) / size - 0.5f;
                 float v = (y + 0.5f) / size;
                 float arm = 0.8f - Mathf.Abs(u) * 1.2f;
-                float a = Mathf.Clamp01(1f - Mathf.Abs(v - arm) * size / 4f);
+                float a = Mathf.Clamp01(1f - Mathf.Abs(v - arm) * 8f);
                 pixels[y * size + x] = new Color32(255, 255, 255, (byte)(255 * a));
             }
         }
         tex.SetPixels32(pixels);
-        tex.Apply(false, true);
+        tex.Apply(updateMipmaps: true, makeNoLongerReadable: true);
         return tex;
     }
 }
