@@ -122,6 +122,10 @@ In VR the VR tab of the settings (title or pause menu) starts with a VR Guide se
 - The practice never runs online. In an online lobby, or in a solo run in progress, Start plays the refused cue at the row (the "Not here, start it from the title" label with `UI.ActionHintText` on) and does nothing.
 - The first time you reach the title in VR, a small offer appears once beside the title panel: a ghost reaching for an apple and two orbs within reach. Rest a hand in the chevron orb to open the comfort-first practice view, or in the cross orb to dismiss it. It also goes away when you pick anything in the menu, and the Practice row stays in the guide for later. Until you choose one of the two orbs, the offer comes back the next time you start the game. Both orbs are plain white, so they don't look like the teal and red of the action cues.
 
+## Item room
+
+With `Sandbox.Enabled` on, the Sandbox page of the VR tab has an Item room row: Enter or leave. It opens the item room in the solo airport (`docs/testing.md`), every item on waist-high tables by kind. Rest a hand in the white chevron orb at a table to restock that table, in the chevron orb at the aisle's start to restock everything, or in the cross orb beside it to go back to the title.
+
 ## Items and fires by hand
 
 Each of these has an on/off setting in the `Interaction` section. With a setting off, the grip and trigger work as before.

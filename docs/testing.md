@@ -7,7 +7,20 @@ The `sandbox` feature spawns every item, mob and entity and removes the risk of 
 1. Set `Sandbox.Enabled = true` in `BepInEx/config/com.thephaseless.peakxr.cfg`. It is off by default.
 2. Play **offline** (solo, no lobby) or as the **host**. The sandbox refuses to act in someone else's lobby.
 3. Keys: `F1` opens the game console (unlocked by the sandbox), `F7` toggles the flat sandbox window (`Sandbox.WindowKey`). `F5` and `Insert` belong to other mods.
-4. The VR UI will call the same `SandboxActions` methods. Until it exists, drive VR sessions with console commands, or put the headset on after spawning from the flat window.
+4. In VR, the item room below covers the items without a keyboard. Everything else still runs from the console or the flat window; put the headset on afterwards.
+
+## Item room
+
+The item room (`sandbox.room`) puts every item of the game on tables in the solo airport, grouped by kind, so you can walk along and try them one after another with only the controllers.
+
+- Enter: in the VR tab (title or pause menu), open the Sandbox page, set Enabled to On, then press Enter or leave on the Item room row under it. From the title it plays solo and builds the room once the airport has loaded; in the solo airport it builds where you stand. Flat: `Sandbox.Room` in the F1 console. Online, in a run or while loading, the button plays the refusal cue at the row and does nothing. With the sandbox off it does the same, and the log says to turn it on.
+- Tables run along the longest open floor from where you stand, starting 2 m ahead. Each kind has its own tables, at most two rows deep, so every item faces a walkway: fire and light, food, medicine, climbing, throw and launch, movement, tools, mystic, bags, other. A label with the kind and its count sits at the left end of each kind's first table. Items hang still at waist height until you pick them up.
+- Beside the tables: a lit fire (the portable stove's) to the right of the fire table, for cooking and lighting; the sandbox test wall with a yellow target to the right of the climbing table, for climbing, pitons, ropes and launchers; an eye chart far down the hall for the binoculars, whose lower lines only read through them. The airport floor is hard, so coconuts and eggs break on it.
+- Restock: rest a hand in the white chevron orb at a kind's first table to put that kind back. Items lying anywhere in the world are removed and fresh ones placed; items in your hands or pack stay. The chevron orb at the aisle's start restocks everything and relights the fire. Flat: `Sandbox.Restock`.
+- Leave: rest a hand in the cross orb at the aisle's start for a second, press the button again, or quit from the pause menu. Each goes back to the title. Boarding the plane closes the room and keeps the run.
+- Statuses work in the room, unlike the rest of the airport, so food, medicine, poison and cold show on the bar. Once they fill 85 % of it they are cleared, and if you pass out or die anyway you are woken or revived.
+- The self-test's progress and save guard (no achievements, stats, ascent completion or quicksave writes) holds while the room is open. Offline only; joining an online room closes it.
+- Left out and listed in the log (`[sandbox.room] N items left out`): build previews (`*Preview`), props (`*_Prop`), constructable templates, creatures (mob items such as the beetle; spawn them from the entity list) and anything without a network view.
 
 ## Console commands
 
@@ -32,6 +45,8 @@ Type in the F1 console, for example `Sandbox.Spawn Rope`. Names are the prefab n
 | `Sandbox.RunSetting <Setting> <value>` | Set a run setting for this run, not saved; `HelpingHand 1` is kick mode. Marks the run custom |
 | `Sandbox.GiveLeft <Item>`, `Sandbox.GiveRight <Item>` | Give an item into that VR hand |
 | `Sandbox.Wall` | Place a climbable test wall 3 m ahead |
+| `Sandbox.Room` | Open the item room (title or solo airport), or leave it |
+| `Sandbox.Restock` | Put every item of the open item room back on its table |
 
 The stamina, status and pass-out commands work offline only and turn god mode off first, because god mode would undo them.
 
@@ -662,4 +677,5 @@ This mode tests one direction with one sender. A second headset is still needed 
 ## Known gaps
 
 - Spawn paths marked "assumed" above have not been run in game.
+- The item room has not run in game yet: the layout's fit in the airport hall, the stove's fire lighting outside a run, and the airport's status switch are reasoned from the decompile. If no constructable builds a campfire, the room has no fire and logs it.
 - `Sandbox.Mob` for prefabs found by the deep scan is a plain network instantiate; some need extra setup the game does after spawning.
