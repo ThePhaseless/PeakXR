@@ -1161,7 +1161,7 @@ internal sealed partial class SelfTestRunner
         HeadFrame(out var head, out _, out var right);
         // Straight up: no teammate there.
         SetHand(dom, head + (dom ? -right : right) * 0.2f + Vector3.up * 0.3f);
-        Script(dom).Rotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+        Script(dom).Rotation = HandLook(Vector3.up, Vector3.forward);
         yield return Wait(0.2f);
         float since = CueMark();
         Script(dom).Trigger = 1f;

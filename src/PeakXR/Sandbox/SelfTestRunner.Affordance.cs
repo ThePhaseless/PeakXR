@@ -537,7 +537,7 @@ internal sealed partial class SelfTestRunner
         bool clear = false;
         foreach (var t in tries)
         {
-            Script(left).Rotation = Quaternion.LookRotation(t.normalized, -forward);
+            Script(left).Rotation = HandLook(t.normalized, -forward);
             yield return Wait(0.15f);
             var aim = rig.Aim(left);
             if (
@@ -591,7 +591,7 @@ internal sealed partial class SelfTestRunner
         float range = spike.climbingSpikeStartDistanceGrounded;
         HeadFrame(out var head, out var forward, out _);
         SetHand(left, head + forward * 0.3f + Vector3.down * 0.2f);
-        Script(left).Rotation = Quaternion.LookRotation(forward, Vector3.up);
+        Script(left).Rotation = HandLook(forward, Vector3.up);
         yield return Wait(0.15f);
         var aim = rig.Aim(left);
         var ahead = rig.Origin.TransformDirection(forward);

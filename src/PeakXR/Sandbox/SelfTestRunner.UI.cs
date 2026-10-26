@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
@@ -152,7 +153,7 @@ internal sealed partial class SelfTestRunner
         );
         // Raised like a watch: fingers up, the back of the hand (grip -x left, +x right) toward the eye.
         var away = Flat(Script(left).Position - VRInput.HeadPosition);
-        Script(left).Rotation = Quaternion.LookRotation(
+        Script(left).Rotation = HandLook(
             Vector3.up,
             Vector3.Cross(away * (left ? -1f : 1f), Vector3.up)
         );
@@ -163,7 +164,7 @@ internal sealed partial class SelfTestRunner
         var rest = UI.World.HudSplit.WristRest;
         float restFacing = Vector3.Angle(rest * Vector3.forward, toWrist);
         var hand = rig.Hand(left);
-        float across = hand != null ? Vector3.Angle(rest * Vector3.right, hand.forward) : 0f;
+        float across = hand != null ? Vector3.Angle(rest * Vector3.right, hand.Fingers()) : 0f;
         float width = UI.World.HudSplit.WristWidthMeters;
         float degrees = 2f * Mathf.Atan2(width * 0.5f, toWrist.magnitude) * Mathf.Rad2Deg;
         // Read from where the player looks: the step raises the wrist into the level gaze (WristHud.LookDegrees).

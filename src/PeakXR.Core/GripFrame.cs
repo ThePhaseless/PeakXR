@@ -34,4 +34,16 @@ public static class GripFrame
         Vector3.UnitX,
         MathF.PI / 2f
     );
+
+    /// <summary>A point or direction given in the hand frame (x across the palm axis, y toward the thumb side, z along
+    /// the fingers) in grip space: <see cref="FromHand"/> applied, (x, -z, y).</summary>
+    public static Vector3 FromHandVector(Vector3 v) => new(v.X, -v.Z, v.Y);
+
+    /// <summary>A pointing ray for a runtime that reports no aim pose: the grip turned halfway from the handle toward
+    /// the fingers, about where OpenXR's aim pose points out of the controller's front (Touch and Index aim run 40 to
+    /// 60 degrees off their grip's +Z).</summary>
+    public static readonly Quaternion AimFromGrip = Quaternion.CreateFromAxisAngle(
+        Vector3.UnitX,
+        MathF.PI / 4f
+    );
 }

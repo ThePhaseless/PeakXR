@@ -199,7 +199,7 @@ internal sealed partial class SelfTestRunner
     void Fist(bool left, Vector3 forward)
     {
         ref var s = ref Script(left);
-        s.Rotation = Quaternion.LookRotation(forward, Vector3.up);
+        s.Rotation = HandLook(forward, Vector3.up);
         s.TriggerTouch = true;
         s.Trigger = 0f;
         s.PrimaryTouch = s.SecondaryTouch = s.StickTouch = false;

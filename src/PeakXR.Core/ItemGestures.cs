@@ -132,7 +132,8 @@ public static class BodyZones
     }
 
     /// <summary>Distance from <paramref name="point"/> to the forearm line behind a tracked hand.</summary>
-    /// <param name="handForward">The hand's forward (unit), toward the fingers.</param>
+    /// <param name="handForward">The hand's forward (unit), toward the fingers: <see cref="GripFrame.Fingers"/> in the
+    /// grip's frame, not its +Z (that runs along the handle).</param>
     public static float ForearmDistance(Vector3 point, Vector3 hand, Vector3 handForward) =>
         SegmentDistance(point, hand - handForward * ForearmStart, hand - handForward * ForearmEnd);
 

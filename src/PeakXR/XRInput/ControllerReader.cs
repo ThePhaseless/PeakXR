@@ -166,6 +166,15 @@ internal sealed class ControllerReader
             rotation.Has && device.TryGetFeatureValue(rotation.Value, out Quaternion q)
                 ? q
                 : Quaternion.identity;
+        // OpenVR reports the raw controller pose; every consumer reads the OpenXR grip (GripFrame).
+        if (
+            VRSession.Running == VRRuntime.OpenVR
+            && PeakXR.XR.OpenVRGrip.TryGet(left, out var gp, out var gr)
+        )
+        {
+            s.Position += s.Rotation * gp;
+            s.Rotation *= gr;
+        }
         if (velocity.Has && device.TryGetFeatureValue(velocity.Value, out Vector3 v))
             s.Velocity = v;
         else if (hadPosition && dt > 0f)

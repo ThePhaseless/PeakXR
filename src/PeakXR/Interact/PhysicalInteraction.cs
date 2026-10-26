@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -572,7 +573,14 @@ internal static class PhysicalInteraction
         }
         IInteractible target = null;
         if (cfg.PhysicalGrab)
-            ctx.Candidate = FindCandidate(c, Eye(rig), pos, t.forward, cfg.GrabRadius, out target);
+            ctx.Candidate = FindCandidate(
+                c,
+                Eye(rig),
+                pos,
+                t.Fingers(),
+                cfg.GrabRadius,
+                out target
+            );
         ctx.CandidateIsAimed = target != null && ReferenceEquals(target, aimedTarget);
         ctx.CandidateIsHandle = target is ClimbHandle;
         if (target is ClimbHandle near)
@@ -1113,7 +1121,7 @@ internal static class PhysicalInteraction
         var t = rig != null ? rig.Hand(left) : null;
         if (c == null || t == null || rig.Head == null || !cfg.PhysicalGrab)
             return null;
-        FindCandidate(c, Eye(rig), t.position, t.forward, cfg.GrabRadius, out var target);
+        FindCandidate(c, Eye(rig), t.position, t.Fingers(), cfg.GrabRadius, out var target);
         return target;
     }
 
@@ -1434,7 +1442,7 @@ internal static class PhysicalInteraction
             !CastHold(
                 eye,
                 handPos,
-                hand.forward,
+                hand.Fingers(),
                 cfg.ClimbRadius,
                 probe.Allowance,
                 held,

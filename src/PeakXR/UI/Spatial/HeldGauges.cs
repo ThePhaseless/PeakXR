@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -178,7 +179,9 @@ internal sealed class HeldGauges
             if (hand == null)
                 return;
             // Outside the holding hand, below the ui.hand progress ring.
-            var p = hand.TransformPoint(new Vector3(left ? -0.06f : 0.06f, 0.02f, -0.02f));
+            var p = hand.TransformPoint(
+                GripAxes.FromHand(new Vector3(left ? -0.06f : 0.06f, 0.02f, -0.02f))
+            );
             var size = SpatialMath.SpanMeters(Vector3.Distance(p, eye), FuelDegrees);
             fuelRoot.transform.SetPositionAndRotation(p, SpatialRuntime.FaceEye(p, eye));
             var s = size / FuelPixels;

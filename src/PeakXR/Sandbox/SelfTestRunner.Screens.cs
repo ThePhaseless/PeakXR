@@ -97,7 +97,7 @@ internal sealed partial class SelfTestRunner
         var p = head + (left ? -right : right) * 0.15f + Vector3.down * 0.2f + forward * 0.2f;
         var dir = rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p));
         Script(left).Position = p;
-        Script(left).Rotation = Quaternion.LookRotation(dir, Vector3.up);
+        Script(left).Rotation = HandLook(dir, Vector3.up);
         // A player looks at the control they point at.
         LookAtPoint(target);
     }
@@ -111,7 +111,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator MeasureTip(bool left, Quaternion trackingRotation)
     {
         tipLeft = left;
-        Script(left).Rotation = trackingRotation;
+        Script(left).Rotation = trackingRotation * HandToGrip;
         for (int i = 0; i < 3; i++)
             yield return null;
         var rig = VRRig.Instance;
@@ -1325,7 +1325,7 @@ internal sealed partial class SelfTestRunner
         {
             Tracked = true,
             Position = position,
-            Rotation = rotation,
+            Rotation = rotation * HandToGrip,
         };
 
     /// <summary>vr.72: the VR keyboard as a platform text dialog opens it (<see cref="VRKeyboard.TryOpenDialog"/>):

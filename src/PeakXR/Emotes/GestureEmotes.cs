@@ -3,6 +3,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -210,7 +211,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         return EmoteGestures.ThumbIntent(
             EmoteGestures.ThumbsUp(
                 LocalAvatar.ControllerCurls(left),
-                Vector3.Dot(hand.up, Vector3.up)
+                Vector3.Dot(hand.ThumbSide(), Vector3.up)
             ),
             sensed,
             holding,

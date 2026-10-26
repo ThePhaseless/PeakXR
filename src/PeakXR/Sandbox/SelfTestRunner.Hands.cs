@@ -1385,11 +1385,11 @@ internal sealed partial class SelfTestRunner
             Script(aimLeft).Position = p;
             Script(aimLeft).Rotation =
                 aimLeft == left
-                    ? Quaternion.LookRotation(
+                    ? HandLook(
                         rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p)),
                         Vector3.up
                     )
-                    : Quaternion.LookRotation(Vector3.down + forward * 0.2f, forward);
+                    : HandLook(Vector3.down + forward * 0.2f, forward);
         }
         yield return Wait(0.3f);
         if (shot)
@@ -1765,8 +1765,11 @@ internal sealed partial class SelfTestRunner
         {
             Tracked = true,
             Position = head + side * 0.18f + Vector3.down * 0.25f + forward * 0.35f,
+            // Fingers ahead, the wrist rolled about them, in the grip's frame.
             Rotation =
-                Quaternion.LookRotation(forward, Vector3.up) * Quaternion.Euler(0f, 0f, roll),
+                Quaternion.LookRotation(forward, Vector3.up)
+                * Quaternion.Euler(0f, 0f, roll)
+                * HandToGrip,
         };
 
     /// <summary>Every input on a scripted hand back to the rest pose's, keeping where it is.</summary>
@@ -1786,7 +1789,7 @@ internal sealed partial class SelfTestRunner
         {
             Tracked = true,
             Position = p,
-            Rotation = Quaternion.LookRotation(p - head, Vector3.up),
+            Rotation = HandLook(p - head, Vector3.up),
             // A finger resting on the trigger: a closed grip is a fist, not a pointing hand.
             TriggerTouch = true,
         };
@@ -1810,7 +1813,7 @@ internal sealed partial class SelfTestRunner
             var origin = VRRig.Instance != null ? VRRig.Instance.Origin : null;
             var target =
                 glancePoint is { } world && origin != null ? origin.InverseTransformPoint(world)
-                : glanceAlong ? hand.Position + hand.Rotation * Vector3.forward * 3f
+                : glanceAlong ? hand.Position + Rig.GripAxes.Fingers(hand.Rotation) * 3f
                 : hand.Position;
             glanceWant = HeadGlance.Aim(heading.N(), (target - VRInput.HeadPosition).N()).U();
             glanceDir = Vector3.Slerp(glanceDir, glanceWant, 1f - Mathf.Exp(-10f * dt));
@@ -1862,8 +1865,30 @@ internal sealed partial class SelfTestRunner
         s.Position = trackingPosition;
         var away = trackingPosition - VRInput.HeadPosition;
         if (away.sqrMagnitude > 1e-4f)
-            s.Rotation = Quaternion.LookRotation(away, Vector3.up);
+            s.Rotation = HandLook(away, Vector3.up);
     }
+
+    static readonly Vector3 FingersLocal = new(
+        Core.GripFrame.Fingers.X,
+        Core.GripFrame.Fingers.Y,
+        Core.GripFrame.Fingers.Z
+    );
+
+    static readonly Quaternion HandToGrip = Quaternion.Inverse(
+        new Quaternion(
+            Core.GripFrame.FromHand.X,
+            Core.GripFrame.FromHand.Y,
+            Core.GripFrame.FromHand.Z,
+            Core.GripFrame.FromHand.W
+        )
+    );
+
+    /// <summary>A scripted grip rotation for a hand whose fingers point along <paramref name="fingers"/> with the thumb
+    /// side toward <paramref name="thumb"/> (GripFrame: the grip's own +Z runs along the handle, its -Y along the
+    /// fingers). Every scripted rotation is written this way, and a scripted hand aims along its fingers
+    /// (RigDriver.UpdateHand), so a pose that points the hand at a target also aims at it.</summary>
+    static Quaternion HandLook(Vector3 fingers, Vector3 thumb) =>
+        Quaternion.LookRotation(fingers, thumb) * HandToGrip;
 
     /// <summary>Eased move of one hand onto a world point, re-read every frame (it may move).</summary>
     IEnumerator MoveTo(bool left, Func<Vector3> world, float seconds)

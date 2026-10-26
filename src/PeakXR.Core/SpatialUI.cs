@@ -343,8 +343,10 @@ namespace PeakXR.Core
     }
 
     /// <summary>
-    /// Where a label for a control sits on a controller, in grip-pose space (x right, y up, z forward along the
-    /// controller), and which control each game prompt maps to in the PeakXR layout (docs/controls.md).
+    /// Where a label for a control sits on a controller, in grip-pose space (<see cref="GripFrame"/>; the tables are
+    /// written in the controller's own frame, x right, y up out of its top, z forward out of its front, and turned
+    /// by <see cref="GripFrame.FromHandVector"/>), and which control each game prompt maps to in the PeakXR layout
+    /// (docs/controls.md).
     /// Positions are approximate for common controllers and keep the label off the outer side, clear of the item.
     /// </summary>
     public static class ControllerLabels
@@ -383,7 +385,7 @@ namespace PeakXR.Core
             }
             if (left)
                 v.X = -v.X;
-            return v;
+            return GripFrame.FromHandVector(v);
         }
 
         /// <summary>
@@ -422,7 +424,7 @@ namespace PeakXR.Core
             }
             if (left)
                 v.X = -v.X;
-            return v;
+            return GripFrame.FromHandVector(v);
         }
 
         /// <summary>Short button name shown beside a label, as printed on an Index controller.</summary>

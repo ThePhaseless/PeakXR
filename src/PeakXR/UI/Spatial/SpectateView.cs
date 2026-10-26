@@ -1,5 +1,6 @@
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Rig;
 using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -197,12 +198,12 @@ internal sealed class SpectateView
         if (hand == null)
             return;
         var p = hand.TransformPoint(ControllerLabels.Offset(control, left).ToUnity());
-        // Points along the controller: forward for stick up, back for stick down.
+        // Points out of the controller's front (toward the fingers): forward for stick up, back for stick down.
         var to = p - eye;
         arrow.SetPositionAndRotation(
             p,
             to.sqrMagnitude > 1e-8f
-                ? Quaternion.LookRotation(to, hand.forward * sign)
+                ? Quaternion.LookRotation(to, hand.Fingers() * sign)
                 : hand.rotation
         );
         var size = SpatialMath.SpanMeters(to.magnitude, ArrowDegrees);

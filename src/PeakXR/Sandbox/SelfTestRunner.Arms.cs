@@ -199,8 +199,9 @@ internal sealed partial class SelfTestRunner
                 VRInput.TestOverride = () =>
                 {
                     ApplyIdle();
-                    VRInput.Left.Rotation *= Quaternion.Euler(0f, 0f, -at);
-                    VRInput.Right.Rotation *= Quaternion.Euler(0f, 0f, at);
+                    // A forearm roll: about the fingers (GripFrame), not the grip's +Z (the handle).
+                    VRInput.Left.Rotation *= Quaternion.AngleAxis(-at, FingersLocal);
+                    VRInput.Right.Rotation *= Quaternion.AngleAxis(at, FingersLocal);
                 };
                 yield return Wait(1f);
                 var left = default(WristSample);
