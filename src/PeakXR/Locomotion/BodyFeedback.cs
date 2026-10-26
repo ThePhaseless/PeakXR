@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Core;
@@ -34,8 +36,16 @@ internal static class BodyFeedback
     private static readonly RateMeter HotRate = new();
     private static readonly RateMeter HazardRate = new();
 
-    /// <summary>Running total of status the hazard zones have added to the local character (<see cref="HazardZone"/>).</summary>
-    private static float hazardTotal;
+    /// <summary>Running totals of the Hot, Cold and other status environmental sources apply to the local character,
+    /// as passed to the game's AddStatus, before its caps (<see cref="ExposureAdd"/>).</summary>
+    private static float heatTotal,
+        coldTotal,
+        hazardTotal;
+
+    /// <summary>Inside an environmental source's game call (<see cref="ExposureSource"/>), or the night cold
+    /// (<see cref="NightCold"/>, Cold only).</summary>
+    private static int inSource;
+    private static bool inNight;
 
     /// <summary>Felt strength (default slider) of the heat or cold rumble at full strength.</summary>
     private const float StatusFelt = 0.35f;
@@ -283,25 +293,12 @@ internal static class BodyFeedback
                 Beats++;
             }
         }
-        // Heat and cold rumbles follow how fast the game is raising those statuses right now, whatever raises them:
-        // night cold (CharacterAfflictions.cs:511), fog (Fog.cs:100, FogSphere.cs:113), a blizzard or wind chill
-        // zone (WindChillZone.cs:207), the desert sun (HotSun.cs:45 through AddSunHeat, CharacterAfflictions.cs:677,
-        // which a parasol or sunscreen blocks), lava heat (Lava.cs:63). A status the game blocks or has maxed does
-        // not rise, so it is not felt; warming at a fire lowers Cold and reads as none.
-        Status(
-            EnvSource.Cold,
-            ColdRate,
-            a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold),
-            BodyGestures.ShiverOn,
-            dt
-        );
-        Status(
-            EnvSource.Heat,
-            HotRate,
-            a.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Hot),
-            BodyGestures.HeatOn,
-            dt
-        );
+        // Heat, cold and hazard rumbles follow how much the environment applies to the body per second, as the
+        // sources pass it to AddStatus (ExposureSource, NightCold): felt while the source acts, even with the status
+        // full; nothing when the source itself holds off (a parasol or sunscreen in the sun, shelter from wind chill,
+        // outside the zone).
+        Status(EnvSource.Cold, ColdRate, coldTotal, BodyGestures.ShiverOn, dt);
+        Status(EnvSource.Heat, HotRate, heatTotal, BodyGestures.HeatOn, dt);
         Status(EnvSource.Hazard, HazardRate, hazardTotal, BodyGestures.HazardOn, dt);
     }
 
@@ -376,41 +373,114 @@ internal static class BodyFeedback
     }
 
     /// <summary>
-    /// StatusEmitter.Update (StatusEmitter.cs:73; WindAffectedStatusEmitter.cs:3 inherits it): a hazard zone (a spore
-    /// cloud, any zone that ticks a status onto the local character, :129) raising a status other than Hot or Cold,
-    /// which the heat and cold rumbles already read. What it really added, after the game's own blocks, goes into the
-    /// hazard rumble's total.
+    /// The game's environmental sources, each applying a status over time through AddStatus while it acts on the body:
+    /// HotSun.Update (HotSun.cs:24; AddSunHeat at :45, which a parasol, glider or sunscreen blocks before AddStatus,
+    /// CharacterAfflictions.cs:677-682), Lava.Heat (Lava.cs:52, :63), Fog.MakePlayerCold (Fog.cs:89, :100),
+    /// FogSphere.SetSharderVars (FogSphere.cs:87, :113), WindChillZone.ApplyStatus (WindChillZone.cs:200, :207, scaled
+    /// by its shelter-aware windPlayerFactor), StatusEmitter.Update (StatusEmitter.cs:73, :129: spore clouds and other
+    /// zones) and GlobalStatusEffects.Update (GlobalStatusEffects.cs:23, :29). A target missing in a game version is
+    /// left out alone, so one renamed source cannot take player.locomotion down.
     /// </summary>
     [HarmonyPatch]
-    internal static class HazardZone
+    internal static class ExposureSource
     {
-        private static MethodBase TargetMethod() =>
-            GameMember.Method(typeof(StatusEmitter), "Update");
-
-        private static void Prefix(StatusEmitter __instance, out float __state) =>
-            __state = Read(__instance);
-
-        private static void Postfix(StatusEmitter __instance, float __state)
+        private static IEnumerable<MethodBase> TargetMethods()
         {
-            float after = Read(__instance);
-            if (after > __state)
-                hazardTotal += after - __state;
+            var targets = new (Type type, string name)[]
+            {
+                (typeof(HotSun), "Update"),
+                (typeof(Lava), "Heat"),
+                (typeof(Fog), "MakePlayerCold"),
+                (typeof(FogSphere), "SetSharderVars"),
+                (typeof(WindChillZone), "ApplyStatus"),
+                (typeof(StatusEmitter), "Update"),
+                (typeof(GlobalStatusEffects), "Update"),
+            };
+            foreach (var (type, name) in targets)
+            {
+                var m = AccessTools.Method(type, name);
+                if (m != null)
+                    yield return m;
+                else
+                    Plugin.Log.LogWarning(
+                        $"[player.locomotion] exposure source {type.Name}.{name} not found; not felt"
+                    );
+            }
         }
 
-        private static float Read(StatusEmitter emitter)
+        private static void Prefix() => inSource++;
+
+        private static Exception Finalizer(Exception __exception)
         {
-            var c = Character.localCharacter;
-            var type = emitter.statusType;
-            if (
-                !VRSession.Active
-                || c == null
-                || type == CharacterAfflictions.STATUSTYPE.Hot
-                || type == CharacterAfflictions.STATUSTYPE.Cold
-            )
-                return float.NaN;
-            return c.refs.afflictions.GetCurrentStatus(type);
+            inSource--;
+            return __exception;
         }
     }
+
+    /// <summary>CharacterAfflictions.UpdateNormalStatuses (CharacterAfflictions.cs:495): the night cold at :511. The
+    /// same call adds Hunger (:515), so only its Cold counts.</summary>
+    [HarmonyPatch]
+    internal static class NightCold
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterAfflictions), "UpdateNormalStatuses");
+
+        private static void Prefix() => inNight = true;
+
+        private static Exception Finalizer(Exception __exception)
+        {
+            inNight = false;
+            return __exception;
+        }
+    }
+
+    /// <summary>
+    /// CharacterAfflictions.AddStatus (CharacterAfflictions.cs:712): inside an environmental source, the amount it
+    /// applies to the local character goes into the heat, cold or hazard total, before any of AddStatus's own limits
+    /// (the status cap, milk, a locked status).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class ExposureAdd
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(CharacterAfflictions),
+                nameof(CharacterAfflictions.AddStatus),
+                [
+                    typeof(CharacterAfflictions.STATUSTYPE),
+                    typeof(float),
+                    typeof(bool),
+                    typeof(bool),
+                    typeof(bool),
+                    typeof(bool),
+                    typeof(bool),
+                ]
+            );
+
+        private static void Prefix(
+            CharacterAfflictions __instance,
+            CharacterAfflictions.STATUSTYPE statusType,
+            float amount
+        )
+        {
+            if ((inSource <= 0 && !inNight) || !(amount > 0f))
+                return;
+            var c = __instance.character;
+            if (c == null || !c.IsLocal)
+                return;
+            if (statusType == CharacterAfflictions.STATUSTYPE.Cold)
+                coldTotal += amount;
+            else if (inSource <= 0)
+                return;
+            else if (statusType == CharacterAfflictions.STATUSTYPE.Hot)
+                heatTotal += amount;
+            else
+                hazardTotal += amount;
+        }
+    }
+
+    /// <summary>Self-test only: counts the AddStatus calls inside as an environmental source.</summary>
+    internal static void SelfTestExposure(bool on) => inSource += on ? 1 : -1;
 
     /// <summary>
     /// CharacterMovement.SetMovementState (CharacterMovement.cs:231, private): sets <c>isSprinting</c> and clears it
