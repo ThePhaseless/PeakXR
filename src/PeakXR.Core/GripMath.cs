@@ -92,6 +92,24 @@ namespace PeakXR.Core
             return Quaternion.Normalize(UnityQuat.Mul(FromTo(current, worldDir), rot));
         }
 
+        /// <summary>
+        /// A two-hand hold of an aimed item: turns <paramref name="rot"/> the least amount so its
+        /// <paramref name="barrel"/> (world direction of its +Z as held in one hand) runs along the two-hand axis
+        /// (<see cref="AimMath.TwoHandDirection"/>), the way a crossbow lies along the arm that steadies it. Hands
+        /// closer than <paramref name="minSeparation"/> leave the one-hand hold as it is.
+        /// </summary>
+        public static Quaternion TwoHandAim(
+            Quaternion rot,
+            Vector3 barrel,
+            Vector3 holdPos,
+            Vector3 supportPos,
+            float minSeparation
+        )
+        {
+            var dir = AimMath.TwoHandDirection(holdPos, supportPos, barrel, minSeparation);
+            return Quaternion.Normalize(UnityQuat.Mul(FromTo(barrel, dir), rot));
+        }
+
         /// <summary>Same rotation axis, angle limited to <paramref name="maxDeg"/>.</summary>
         public static Quaternion LimitAngle(Quaternion q, float maxDeg)
         {

@@ -31,5 +31,6 @@ public sealed class AvatarFeature : Feature
         Patch(typeof(AvatarPatches.ShowBodyWhenDetached));
         Patch(typeof(AvatarPatches.CharacterStart));
         ReachGhost.Create();
+        HeldItemScale.Install();
     }
 }

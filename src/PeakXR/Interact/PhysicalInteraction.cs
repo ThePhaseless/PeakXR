@@ -2020,17 +2020,17 @@ internal static class PhysicalInteraction
             eatTraceLines = 0;
             return;
         }
-        float d =
-            rig.Head != null && mouthHand != null
-                ? NVector3.Distance(
-                    MouthGesture.MouthPoint(
-                        rig.Head.position.N(),
-                        rig.Head.rotation.N(),
-                        Mouth.MouthOffset
-                    ),
-                    mouthHand.position.N()
-                )
-                : -1f;
+        float d = -1f;
+        if (rig.Head != null && mouthHand != null)
+        {
+            var mouth = MouthGesture
+                .MouthPoint(rig.Head.position.N(), rig.Head.rotation.N(), Mouth.MouthOffset)
+                .U();
+            d = Vector3.Distance(
+                mouth,
+                Avatar.HeldItemPoints.Nearest(item, mouthHand, LocalHold.ItemInLeftHand, mouth)
+            );
+        }
         bool inside = d >= 0f && d <= Mouth.ExitRadius;
         bool canUse = item.CanUsePrimary();
         var gui = GUIManager.instance;
@@ -2058,7 +2058,7 @@ internal static class PhysicalInteraction
         eatTraceLines++;
         Plugin.Log.LogDebug(
             $"[interact.eat] f{Time.frameCount} {item.name}: eatAtMouth {cfg.EatAtMouth}, edible {Hold.Edible}, head tracked {VRInput.HeadTracked}, "
-                + $"grip {d:0.000} m from the mouth (inside {inside}), atMouth {atMouth}, trigger {primaryDown}, "
+                + $"item {d:0.000} m from the mouth (inside {inside}), atMouth {atMouth}, trigger {primaryDown}, "
                 + $"edge pressed {PrimaryEdge.Pressed} held {PrimaryEdge.Held}, blocked {useBlocked}; input primary "
                 + $"{input.usePrimaryWasPressed}/{input.usePrimaryIsPressed}/{input.usePrimaryWasReleased} secondary "
                 + $"{input.useSecondaryWasPressed}/{input.useSecondaryIsPressed}/{input.useSecondaryWasReleased} (pressed/held/released); "
@@ -2154,12 +2154,19 @@ internal static class PhysicalInteraction
         )
         {
             bool was = Mouth.Active;
-            // The tracked grip, not the physics item: the eye sits inside the holder's own head collider (a 0.38 m
-            // sphere on the Character layer, which held items collide with), so the item never gets near the mouth.
+            // The item carried by the tracked grip, not the physics item: the eye sits inside the holder's own head
+            // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
+            // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
+            // across, its middle 0.26 m from the grip), so the fist at the mouth held it beside the cheek.
+            var mouth = MouthGesture
+                .MouthPoint(rig.Head.position.N(), rig.Head.rotation.N(), Mouth.MouthOffset)
+                .U();
             atMouth = Mouth.Update(
                 rig.Head.position.N(),
                 rig.Head.rotation.N(),
-                mouthHand.position.N(),
+                Avatar
+                    .HeldItemPoints.Nearest(c.data.currentItem, mouthHand, primaryHand.Left, mouth)
+                    .N(),
                 dt
             );
             if (atMouth && !was)

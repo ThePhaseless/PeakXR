@@ -26,9 +26,29 @@ namespace PeakXR.Core
         static readonly FingerCurls FlatPalm = new FingerCurls(0.2f, 0.15f, 0.15f, 0.15f, 0.15f);
         static readonly FingerCurls Pole = new FingerCurls(0.7f, 0.85f, 0.9f, 0.9f, 0.9f);
 
-        // Maximum bend in degrees per joint (proximal, middle, distal). Thumb bends less.
-        static readonly float[] FingerMax = { 70f, 95f, 65f };
-        static readonly float[] ThumbMax = { 30f, 45f, 55f };
+        // Maximum bend in degrees per joint (proximal, middle, distal). Thumb bends less. The scout's fingers are about
+        // twice its palm long (Character prefab: knuckle 0.063 m from the wrist, finger 0.134 m) and chunky, so a
+        // human fist's 70/95/65 folded the tips back into the palm (tester: "fingers go into the hand"). These close
+        // the fist on a controller-thick handle instead.
+        static readonly float[] FingerMax = { 65f, 90f, 50f };
+        static readonly float[] ThumbMax = { 30f, 45f, 40f };
+
+        /// <summary>The scout's middle finger, knuckle to tip, metres (Character prefab, Middle_1_R to
+        /// Middle_3_R_end).</summary>
+        public const float FingerLength = 0.134f;
+
+        /// <summary>
+        /// Curl at which fingers hug a held item of <paramref name="radius"/> metres instead of passing into it: a
+        /// finger laid round a cylinder bends through its length over the radius (radians), out of the fingers' whole
+        /// bend. 1 (no limit) for a handle thinner than a fist, or an unknown size.
+        /// </summary>
+        public static float WrapCurl(float radius)
+        {
+            if (radius <= 0f)
+                return 1f;
+            float total = (FingerMax[0] + FingerMax[1] + FingerMax[2]) * UnityQuat.Deg2Rad;
+            return FingerCurlMapper.Clamp01(FingerLength / radius / total);
+        }
 
         public static FingerCurls Preset(GripPreset grip)
         {
@@ -48,9 +68,15 @@ namespace PeakXR.Core
         /// <summary>
         /// Curls to show for a hand. A free hand mirrors the controller. A holding hand takes the item's grip
         /// preset, and the index may curl further with the trigger so using the item still shows. A supporting
-        /// hand wraps a pole or, for anything else, cups it with a cylinder grip.
+        /// hand wraps a pole or, for anything else, cups it with a cylinder grip. Either stops at
+        /// <paramref name="wrap"/> (<see cref="WrapCurl"/> of the item's size), where the fingers meet its surface.
         /// </summary>
-        public static FingerCurls Fingers(FingerCurls controller, HandRole role, GripPreset grip)
+        public static FingerCurls Fingers(
+            FingerCurls controller,
+            HandRole role,
+            GripPreset grip,
+            float wrap = 1f
+        )
         {
             if (role == HandRole.Free)
                 return controller;
@@ -60,6 +86,11 @@ namespace PeakXR.Core
                     : Preset(grip);
             if (controller.Index > preset.Index)
                 preset.Index = controller.Index;
+            for (int f = 0; f < FingerCurls.Count; f++)
+            {
+                if (preset[f] > wrap)
+                    preset[f] = wrap;
+            }
             return preset;
         }
 

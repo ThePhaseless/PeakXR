@@ -140,11 +140,12 @@ internal sealed partial class SelfTestRunner
         );
     }
 
-    /// <summary>Farthest the holding hand may be from the mouth when the toot starts: HeldGestures' mouth exit radius
-    /// (0.22 m) plus the scripted approach's last frame.</summary>
+    /// <summary>Farthest the bugle's mouthpiece may be from the mouth when the toot starts: HeldGestures' mouth exit
+    /// radius (0.22 m) plus the scripted approach's last frame.</summary>
     const float BugleMouthExit = 0.25f;
 
-    /// <summary>vr.21: the holding hand at the mouth, tilted 30 degrees up, starts the toot
+    /// <summary>vr.21: the bugle's mouthpiece (<see cref="HeldGestures.BuglePoint"/>) brought to the mouth, tilted 30
+    /// degrees up, starts the toot
     /// (<c>BugleSFX.hold</c>, BugleSFX.cs:76) with the bell's pitch (<c>currentPitch</c>, BugleSFX.cs:74);
     /// moving away ends it.</summary>
     IEnumerator BugleStep(Item prefab)
@@ -177,10 +178,19 @@ internal sealed partial class SelfTestRunner
         float end = Now + 5f;
         while (!sfx.hold && Now < end)
         {
+            // Steer the hand so the mouthpiece, not the hand, comes to the mouth.
+            var mouthpiece = HeldGestures.BuglePoint;
+            var lead =
+                mouthpiece != Vector3.zero ? mouthpiece - rig.Hand(left).position : Vector3.zero;
             SetHand(
                 left,
                 HandScript
-                    .Approach(Script(left).Position.N(), goal.N(), 1.5f, Time.unscaledDeltaTime)
+                    .Approach(
+                        Script(left).Position.N(),
+                        (goal - lead).N(),
+                        1.5f,
+                        Time.unscaledDeltaTime
+                    )
                     .U()
             );
             Script(left).Rotation = tilt;
@@ -196,7 +206,7 @@ internal sealed partial class SelfTestRunner
                     MouthGesture.DefaultOffset
                 )
                 .U(),
-            rig.Hand(left).position
+            HeldGestures.BuglePoint
         );
         float pitch = sfx.currentPitch;
         var aim = rig.Aim(left);
@@ -211,7 +221,7 @@ internal sealed partial class SelfTestRunner
         );
         yield return WaitFor(() => !sfx.hold, 2f);
         var note =
-            $"{item.name}: toot {started} with the hand {gap:0.00} m from the mouth, pitch {pitch:0.00} (bell {expected:0.00}), stopped {!sfx.hold}";
+            $"{item.name}: toot {started} with the mouthpiece {gap:0.00} m from the mouth, pitch {pitch:0.00} (bell {expected:0.00}), stopped {!sfx.hold}";
         if (!started)
             Fail("no toot at the mouth: " + note);
         else if (gap > BugleMouthExit)

@@ -142,7 +142,8 @@ internal static class HandLights
         if (!hand.Tracked || handTransform == null)
             return;
 
-        var point = wick != null ? wick.position : held.Center();
+        // A flare is struck at its tip, not its middle.
+        var point = wick != null ? wick.position : HeldItemPoints.Tip(held);
         float distance = Vector3.Distance(handTransform.position, point);
         var velocity =
             rig.Origin != null ? rig.Origin.TransformVector(hand.Velocity) : hand.Velocity;

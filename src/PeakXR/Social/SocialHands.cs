@@ -1088,6 +1088,10 @@ internal sealed class SocialHands : IGripExtension
                 box = col.bounds;
             any = true;
         }
+        // As the item is drawn in the hand (avatar.local's HeldItemScale): the feed zone meets what the player sees.
+        float f = Avatar.HeldItemScale.Factor(item);
+        if (f < 1f)
+            box = new Bounds(Avatar.HeldItemScale.ToVisual(item, box.center), box.size * f);
         return box;
     }
 

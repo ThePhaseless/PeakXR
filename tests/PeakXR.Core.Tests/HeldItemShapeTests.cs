@@ -24,8 +24,14 @@ public class HeldItemShapeTests
     {
         var min = new Vector3(-0.05f, -0.4f, -0.05f);
         var max = new Vector3(0.05f, 0.3f, 0.05f);
-        Assert.Equal(new Vector3(0f, -0.4f, 0f), HeldItemShape.FarEnd(min, max, new Vector3(0f, 0.25f, 0f)));
-        Assert.Equal(new Vector3(0f, 0.3f, 0f), HeldItemShape.FarEnd(min, max, new Vector3(0f, -0.3f, 0f)));
+        Assert.Equal(
+            new Vector3(0f, -0.4f, 0f),
+            HeldItemShape.FarEnd(min, max, new Vector3(0f, 0.25f, 0f))
+        );
+        Assert.Equal(
+            new Vector3(0f, 0.3f, 0f),
+            HeldItemShape.FarEnd(min, max, new Vector3(0f, -0.3f, 0f))
+        );
     }
 
     [Fact]
@@ -35,7 +41,10 @@ public class HeldItemShapeTests
         var max = new Vector3(1f, 1f, 1f);
         var inside = new Vector3(0.2f, -0.3f, 0.5f);
         Assert.Equal(inside, HeldItemShape.Closest(min, max, inside));
-        Assert.Equal(new Vector3(1f, 0.5f, -1f), HeldItemShape.Closest(min, max, new Vector3(3f, 0.5f, -2f)));
+        Assert.Equal(
+            new Vector3(1f, 0.5f, -1f),
+            HeldItemShape.Closest(min, max, new Vector3(3f, 0.5f, -2f))
+        );
     }
 
     [Fact]
