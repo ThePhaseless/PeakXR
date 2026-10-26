@@ -28,6 +28,7 @@ internal sealed class InteractConfig
         throwSpeed,
         throwScale,
         climbRadius,
+        climbReachAssist,
         climbGain,
         regripGrace,
         lungeSpeed,
@@ -48,6 +49,7 @@ internal sealed class InteractConfig
     public float ThrowSpeed => throwSpeed?.Value ?? 2f;
     public float ThrowScale => throwScale?.Value ?? 1f;
     public float ClimbRadius => climbRadius?.Value ?? 0.1f;
+    public float ClimbReachAssist => climbReachAssist?.Value ?? 0.2f;
     public float ClimbGain => climbGain?.Value ?? 1f;
     public float ClimbRegripGrace => regripGrace?.Value ?? 0.25f;
     public bool StaminaHaptics => staminaHaptics?.Value ?? true;
@@ -201,6 +203,17 @@ internal sealed class InteractConfig
                 new ConfigDescription(
                     "How close (metres) a hand must be to a wall to grab it.",
                     new AcceptableValueRange<float>(0.03f, 0.25f)
+                )
+            ),
+            climbReachAssist = file.Bind(
+                s,
+                "ClimbReachAssist",
+                0.2f,
+                new ConfigDescription(
+                    "How far (metres) past an outstretched hand a grip still catches rock along your reach, so a sloped "
+                        + "face needs no lean. The chalk ring shows where it catches. A bent arm gets none; the hold must "
+                        + "still be within the game's reach of your head. 0: the hand must be on the rock.",
+                    new AcceptableValueRange<float>(0f, 0.35f)
                 )
             ),
             climbGain = file.Bind(

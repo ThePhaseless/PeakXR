@@ -71,6 +71,9 @@ internal static class PhysicalInteraction
         /// <summary>When this hand last let an item go (released its grip on it, or the item left it).</summary>
         public float ItemLeftAt = -10f;
 
+        /// <summary>Until when a climb grip that met the game's regrab cooldown retries while it stays closed.</summary>
+        public float ClimbRetryUntil = -10f;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -128,16 +131,28 @@ internal static class PhysicalInteraction
     private static Vector3 probePoint;
     private static Vector3 probeNormal;
     private static float probeAngle;
+    private static float probeAllowance;
+    private static HoldVerdict probeVerdict;
 
-    /// <summary>The game's wall-grab reach from the camera (<c>TryToStartWallClimb</c>, CharacterClimbing.cs:534).</summary>
-    private const float ClimbReach = 1.25f;
+    /// <summary>The game's wall-grab ray length from the camera (<c>TryToStartWallClimb</c>, CharacterClimbing.cs:534).</summary>
+    private const float GameClimbRay = 1.25f;
+
+    /// <summary>How far behind the hand, toward the eye, the hold probe starts: a tracked hand passes into rock, and a
+    /// ray started inside a collider never meets the face it went through.</summary>
+    private const float ProbeBack = 0.3f;
+
+    /// <summary>Refused faces flatter than this (degrees from up) get no red ring before the grip: walkable ground
+    /// (CharacterMovement.maxAngle 50, CharacterMovement.cs:132) only looks climbable near that limit.</summary>
+    private const float HoverTooFlatFrom = 40f;
+
+    /// <summary><c>ClimbModifierSurface.hasAlwaysClimbableRange</c> and <c>alwaysClimbableRange</c>
+    /// (ClimbModifierSurface.cs:31-33, internal), resolved in Install.</summary>
+    internal static HarmonyLib.AccessTools.FieldRef<ClimbModifierSurface, bool> ModHasRange;
+    internal static HarmonyLib.AccessTools.FieldRef<ClimbModifierSurface, float> ModRange;
 
     /// <summary>Seconds after a pickup grip before an untaken item gets one more interact press: past the game's 0.25 s
     /// equip cooldown (Item.cs:580, CharacterItems.cs:488).</summary>
     private const float PickupRetry = 0.3f;
-
-    /// <summary>Slopes flatter than this are ground, not a refused climb (the game refuses below 50).</summary>
-    private const float SlopeRefusedFrom = 30f;
 
     /// <summary>What a grabbing hand selected; the interaction raycast patch hands it to the game.</summary>
     public static IInteractible GrabTarget { get; private set; }
@@ -222,6 +237,8 @@ internal static class PhysicalInteraction
         TrackFall(c, dt);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
+        RetryClimb(LeftHand, c, rig, cfg, now);
+        RetryClimb(RightHand, c, rig, cfg, now);
         UpdateHover(LeftHand, c, rig, cfg, now);
         UpdateHover(RightHand, c, rig, cfg, now);
         ClimbStow.Tick(c, rig, cfg);
@@ -529,8 +546,6 @@ internal static class PhysicalInteraction
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(hand.Left, pos),
-            NearClimbable =
-                cfg.PhysicalClimb && NearRock(pos, cfg.ClimbRadius, holding ? item : null),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
         };
         ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
@@ -539,13 +554,18 @@ internal static class PhysicalInteraction
         ctx.AtSecondGripTight =
             holding && !thisHolds && AtSecondGrip(hand.Left, pos, cfg.GrabRadius);
         var kind = HoldKind.Normal;
-        probeHit = probeRefused = false;
-        if (ctx.NearClimbable)
+        UseProbe(default);
+        if (cfg.PhysicalClimb)
         {
-            bool holdOk = ProbeHold(rig, pos, t, cfg.ClimbRadius, out kind);
-            if (!holdOk && !c.data.isClimbing)
-                ctx.NearClimbable = false;
-            ctx.HoldConfirmed = holdOk && probeHit;
+            var hold = ProbeHold(c, rig, pos, t, cfg, holding ? item : null);
+            UseProbe(hold);
+            kind = hold.Kind;
+            // The same verdict drew the chalk ring, so a ringed hold is a grip that climbs. No surface along the reach
+            // but rock right at the hand (beside it): the game's own start check decides.
+            ctx.NearClimbable =
+                hold.Verdict == HoldVerdict.Grab
+                || (!hold.Hit && NearRock(pos, cfg.ClimbRadius, holding ? item : null));
+            ctx.HoldConfirmed = hold.Verdict == HoldVerdict.Grab;
         }
         IInteractible target = null;
         if (cfg.PhysicalGrab)
@@ -574,7 +594,7 @@ internal static class PhysicalInteraction
         // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
         var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
-            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe hit {probeHit}, refused {probeRefused}), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}, second grip {(ctx.AtSecondGripTight ? "tight" : ctx.AtSecondGrip ? "loose" : "no")}, candidate aimed {ctx.CandidateIsAimed}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
+            $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe {probeVerdict}, hit {probeHit}, {probeAngle:0} deg, allowance {probeAllowance:0.00} m), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}, second grip {(ctx.AtSecondGripTight ? "tight" : ctx.AtSecondGrip ? "loose" : "no")}, candidate aimed {ctx.CandidateIsAimed}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
         );
         Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
         switch (action)
@@ -610,7 +630,12 @@ internal static class PhysicalInteraction
                 else
                 {
                     action = GripPressAction.None;
-                    DenyClimb(c, rig, cfg, hand.Left, pos);
+                    // CanClimb is false for 0.2 s after any climb ends (CharacterClimbing.cs:580-584,
+                    // Character.cs:1140-1142): a quick regrab after a drop would be lost, so it waits that out.
+                    if (RegrabCooldown(c))
+                        hand.ClimbRetryUntil = now + RegrabWait;
+                    else
+                        DenyClimb(c, rig, cfg, hand.Left, pos);
                 }
                 break;
             case GripPressAction.Regrip:
@@ -637,32 +662,36 @@ internal static class PhysicalInteraction
         }
         hand.Action = action;
         hand.AimedTaker = action == GripPressAction.Interact && ctx.PointedAtTaker;
+        bool unclaimed =
+            action is GripPressAction.None or GripPressAction.Interact
+            && (Interaction.instance == null || Interaction.instance.currentHovered == null);
         // A wall-like surface the game will not grab, and nothing else took the grip: the hand slides off it.
-        if (
-            probeRefused
-            && action is GripPressAction.None or GripPressAction.Interact
-            && (Interaction.instance == null || Interaction.instance.currentHovered == null)
-        )
+        if (probeRefused && unclaimed)
             Affordance.Deny(
                 hand.Left,
                 probePoint,
                 probeAngle > 90f ? DenyReason.Overhang : DenyReason.TooFlat
             );
-        // Closed short of a climbable wall: the hand stops at arm's length, so rock just past the grab range would
-        // otherwise get no cue at all (VR run 64). The grab itself stays capped; this only says "too far".
+        // On rock past the game's reach from the camera: "too far", with where that reach ends.
+        else if (probeVerdict == HoldVerdict.OutOfReach && unclaimed)
+            Affordance.Deny(
+                hand.Left,
+                probePoint,
+                DenyReason.OutOfReach,
+                DenyHint.Range(Eye(rig), probePoint, GameClimbRay)
+            );
+        // Closed short of a climbable wall: rock just past the grab reach would otherwise get no cue at all (VR run
+        // 64). The faint ring showed it while the hand came in; the grip says "too far" and where the reach ends.
         else if (
-            cfg.PhysicalClimb
-            && !ctx.NearClimbable
-            && action is GripPressAction.None or GripPressAction.Interact
-            && (Interaction.instance == null || Interaction.instance.currentHovered == null)
+            probeVerdict == HoldVerdict.Approach
+            && unclaimed
             && ReachAttempt(hand, c, rig, ctx, holding && thisHolds, pos, now)
-            && RockJustBeyond(rig, pos, t, cfg, out var rock)
         )
             Affordance.Deny(
                 hand.Left,
-                rock,
+                probePoint,
                 DenyReason.OutOfReach,
-                DenyHint.Range(pos, rock, cfg.ClimbRadius)
+                DenyHint.Range(pos, probePoint, cfg.ClimbRadius + probeAllowance)
             );
     }
 
@@ -702,49 +731,6 @@ internal static class PhysicalInteraction
             approach,
             eyeToHand
         );
-    }
-
-    /// <summary>
-    /// Climbable rock along the reach (eye through hand) past the grab radius but within
-    /// <see cref="TraversalRefusal.ReachProbe"/> beyond it (<see cref="TraversalRefusal.ReachBand"/>). Only at a
-    /// grip press: one ray.
-    /// </summary>
-    private static bool RockJustBeyond(
-        VRRig rig,
-        Vector3 handPos,
-        Transform hand,
-        InteractConfig cfg,
-        out Vector3 rock
-    )
-    {
-        rock = default;
-        var dir = handPos - Eye(rig);
-        dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : hand.forward;
-        if (
-            !Physics.Raycast(
-                handPos,
-                dir,
-                out var hit,
-                cfg.ClimbRadius + TraversalRefusal.ReachProbe,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
-            return false;
-        bool climbable =
-            hit.collider.TryGetComponent<ClimbModifierSurface>(out _)
-            || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up));
-        if (
-            !climbable
-            || TraversalRefusal.ReachBand(
-                hit.distance,
-                cfg.ClimbRadius,
-                TraversalRefusal.ReachProbe
-            ) == DenyReason.None
-        )
-            return false;
-        rock = hit.point;
-        return true;
     }
 
     /// <summary>
@@ -855,10 +841,10 @@ internal static class PhysicalInteraction
                 left,
                 wall,
                 DenyReason.OutOfReach,
-                DenyHint.Range(eye, wall, ClimbReach)
+                DenyHint.Range(eye, wall, GameClimbRay)
             );
         else if (
-            distance <= ClimbReach
+            distance <= GameClimbRay
             && SinceLastClimbStarted != null
             && SinceLastClimbStarted(c.refs.climbing) <= 1f
             && OutOfStamina(c)
@@ -1205,7 +1191,7 @@ internal static class PhysicalInteraction
             true,
             dir / dist,
             false,
-            Mathf.Min(dist + cfg.ClimbRadius + 0.15f, 1.25f)
+            Mathf.Min(dist + cfg.ClimbRadius + probeAllowance + 0.15f, GameClimbRay)
         );
         if (!c.data.isClimbing)
             return false;
@@ -1215,7 +1201,8 @@ internal static class PhysicalInteraction
 
     /// <summary>
     /// Decision D3: the game's climb ray starts at <c>MainCamera.instance</c> (CharacterClimbing.cs:541), so for this one
-    /// call the camera sits just behind the hand and casts straight into the hold under it. The hold must still lie
+    /// call the camera sits just off the hold the probe found and casts straight into it: the same face, point and
+    /// angle the chalk ring judged, even when the reach allowance put the hold past the hand. The hold must still lie
     /// within the game's 1.25 m of the real camera (<see cref="TraversalRefusal.WallReach"/>). <c>StartClimbRpc</c>
     /// carries only the hit point and normal (:575), so other players see a normal climb.
     /// </summary>
@@ -1238,10 +1225,16 @@ internal static class PhysicalInteraction
             return false;
         dir.Normalize();
         const float Behind = 0.3f;
-        var swap = CameraSwap.Begin(handPos - dir * Behind, Quaternion.LookRotation(dir));
+        var swap = CameraSwap.Begin(hold - dir * Behind, Quaternion.LookRotation(dir));
         try
         {
-            StartWallClimb(c.refs.climbing, true, dir, false, Behind + cfg.ClimbRadius + 0.15f);
+            StartWallClimb(
+                c.refs.climbing,
+                true,
+                dir,
+                false,
+                Behind + (probeHit ? 0f : cfg.ClimbRadius) + 0.15f
+            );
         }
         finally
         {
@@ -1253,77 +1246,206 @@ internal static class PhysicalInteraction
         return true;
     }
 
+    /// <summary>Seconds a climb grip waits out the game's regrab cooldown while it stays closed.</summary>
+    private const float RegrabWait = 0.25f;
+
+    /// <summary>Only the 0.2 s after a climb ended keeps <c>CanClimb</c> false (CharacterClimbing.cs:580-595), not a
+    /// rope or vine.</summary>
+    private static bool RegrabCooldown(Character c) =>
+        c.data.sinceClimb < 0.2f && !c.data.isRopeClimbing && !c.data.isVineClimbing;
+
     /// <summary>
-    /// Looks for the hold under the hand: a short ray through the hand from the head, then along the hand.
-    /// Returns false for a surface the game would refuse to grab (CharacterClimbing.cs:511), so the grip falls
-    /// back to its other actions. A surface with a climb modifier may override its angle (internal always-climbable
-    /// range), so the game decides those itself. No clear surface: also left to the game's own start check.
+    /// A climb grip that met the regrab cooldown climbs once the cooldown is over, if it is still closed on a hold
+    /// (probed again where the hand is now). Otherwise it gets the usual refusal.
     /// </summary>
-    private static bool ProbeHold(
+    private static void RetryClimb(Hand hand, Character c, VRRig rig, InteractConfig cfg, float now)
+    {
+        if (hand.ClimbRetryUntil < 0f)
+            return;
+        if (!hand.Grip.Held || hand.Action != GripPressAction.None || now > hand.ClimbRetryUntil)
+        {
+            hand.ClimbRetryUntil = -10f;
+            return;
+        }
+        if (!c.data.isClimbing && !c.refs.climbing.CanClimb())
+            return;
+        hand.ClimbRetryUntil = -10f;
+        var t = rig.Hand(hand.Left);
+        if (t == null)
+            return;
+        var hold = ProbeHold(c, rig, t.position, t, cfg, c.data.currentItem);
+        UseProbe(hold);
+        if (hold.Verdict != HoldVerdict.Grab)
+            return;
+        if (StartClimb(c, rig, t.position, cfg))
+        {
+            hand.Action = GripPressAction.Climb;
+            CatchPulse(hand.Left, hold.Kind, recentFall, cfg);
+        }
+        else
+            DenyClimb(c, rig, cfg, hand.Left, t.position);
+    }
+
+    /// <summary>What a grip at the hand would meet: the one probe behind the chalk ring, the grip and its refusals.</summary>
+    private struct HoldProbe
+    {
+        public HoldVerdict Verdict;
+        public bool Hit;
+        public Vector3 Point;
+        public Vector3 Normal;
+        public float Angle;
+        public float Allowance;
+        public HoldKind Kind;
+    }
+
+    private static void UseProbe(in HoldProbe hold)
+    {
+        probeVerdict = hold.Verdict;
+        probeHit = hold.Hit;
+        probePoint = hold.Point;
+        probeNormal = hold.Normal;
+        probeAngle = hold.Angle;
+        probeAllowance = hold.Allowance;
+        probeRefused = hold.Verdict is HoldVerdict.TooFlat or HoldVerdict.Overhang;
+    }
+
+    /// <summary>
+    /// Looks for the hold a grip at the hand would take, along the reach (eye through hand) and then along the hand,
+    /// and judges it as the game's climb start would (<see cref="ClimbReach.Judge"/>): the angle through the surface's
+    /// climb modifier (CharacterClimbing.cs:511-532, ClimbModifierSurface.cs:63-70) and the reach from the camera
+    /// (:552-561). An outstretched arm reaches <c>ClimbReachAssist</c> farther along the reach.
+    /// </summary>
+    private static HoldProbe ProbeHold(
+        Character c,
         VRRig rig,
         Vector3 handPos,
         Transform hand,
-        float radius,
-        out HoldKind kind
+        InteractConfig cfg,
+        Item held
     )
     {
-        kind = HoldKind.Normal;
-        if (!CastHold(Eye(rig), handPos, hand.forward, radius, out var hit))
-            return true;
+        var probe = default(HoldProbe);
+        var eye = Eye(rig);
+        probe.Allowance = ClimbReach.Allowance(
+            Vector3.Distance(eye, handPos),
+            cfg.ClimbReachAssist
+        );
+        if (
+            !CastHold(
+                eye,
+                handPos,
+                hand.forward,
+                cfg.ClimbRadius,
+                probe.Allowance,
+                held,
+                out var hit,
+                out float beyond
+            )
+        )
+            return probe;
 
-        // Same lookup as CharacterClimbing.SampleWall (CharacterClimbing.cs:445); only read at grip press.
+        // Same lookup as CharacterClimbing.SampleWall (CharacterClimbing.cs:445).
         var mod = hit.collider.GetComponent<ClimbModifierSurface>();
         bool hasMod = mod != null;
-        kind = ClimbRules.Kind(
+        probe.Kind = ClimbRules.Kind(
             hasMod,
             hasMod && mod.onlySlideDown,
             hasMod && (mod.applyStatus || mod.applyPetrify),
             hasMod ? mod.staminaUsageMultiplier : 1f
         );
-        probeHit = true;
-        probePoint = hit.point;
-        probeNormal = hit.normal;
-        probeAngle = Vector3.Angle(hit.normal, Vector3.up);
-        bool ok = hasMod || ClimbRules.GrabAngleOk(probeAngle);
-        // Ground under the feet is not a climbing attempt: only steep slopes and ceilings count as refused.
-        probeRefused = !ok && probeAngle >= SlopeRefusedFrom;
-        return ok;
+        probe.Hit = true;
+        probe.Point = hit.point;
+        probe.Normal = hit.normal;
+        probe.Angle = Vector3.Angle(hit.normal, Vector3.up);
+        if (
+            hasMod
+            && ModHasRange != null
+            && ModHasRange(mod)
+            && Vector3.Distance(mod.transform.position, c.Center) < ModRange(mod)
+        )
+            probe.Angle = 90f;
+        probe.Verdict = ClimbReach.Judge(
+            beyond,
+            cfg.ClimbRadius,
+            probe.Allowance,
+            Vector3.Distance(eye, hit.point),
+            probe.Angle,
+            c.data.isClimbing
+        );
+        return probe;
     }
 
-    /// <summary>The surface under the hand: a short ray through the hand from the eye, then along the hand.</summary>
+    /// <summary>
+    /// The surface for a grip: along the reach from <see cref="ProbeBack"/> behind the hand to the grab reach plus the
+    /// "too far" band past it; failing a hold within the grab radius there, along the hand. <paramref name="beyond"/>
+    /// is the surface's distance past the hand (negative inside the rock). The held item's own colliders never count
+    /// (VR run 38's held cactus read as rock).
+    /// </summary>
     private static bool CastHold(
         Vector3 eye,
         Vector3 handPos,
         Vector3 handForward,
         float radius,
-        out RaycastHit hit
+        float allowance,
+        Item held,
+        out RaycastHit hit,
+        out float beyond
     )
     {
         var dir = handPos - eye;
-        dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : handForward;
-        return Physics.Raycast(
-                handPos - dir * 0.15f,
+        float eyeToHand = dir.magnitude;
+        dir = eyeToHand > 1e-2f ? dir / eyeToHand : handForward;
+        float back = Mathf.Clamp(eyeToHand - 0.05f, 0f, ProbeBack);
+        float reach = radius + allowance;
+        bool along =
+            Physics.Raycast(
+                handPos - dir * back,
                 dir,
                 out hit,
-                0.3f + radius,
+                back + reach + TraversalRefusal.ReachProbe,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
-            )
-            || Physics.Raycast(
+            ) && !OnHeld(hit, held);
+        beyond = along ? hit.distance - back : float.PositiveInfinity;
+        if (along && beyond <= reach)
+            return true;
+        if (
+            Physics.Raycast(
                 handPos - handForward * 0.1f,
                 handForward,
-                out hit,
-                0.2f + radius,
+                out var ahead,
+                0.1f + radius,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
-            );
+            ) && !OnHeld(ahead, held)
+        )
+        {
+            hit = ahead;
+            beyond = ahead.distance - 0.1f;
+            return true;
+        }
+        return along;
+    }
+
+    private static bool OnHeld(in RaycastHit hit, Item held) =>
+        held != null && hit.collider.GetComponentInParent<Item>() == held;
+
+    /// <summary>A grip of this hand would start or hold a climb right now (<see cref="ProbeHold"/>), for cues that
+    /// warn before it does (<see cref="ClimbStow"/>).</summary>
+    internal static bool WouldCatch(Character c, bool left)
+    {
+        var rig = VRRig.Instance;
+        var t = rig != null ? rig.Hand(left) : null;
+        return t != null
+            && ProbeHold(c, rig, t.position, t, InteractConfig.Instance, c.data.currentItem).Verdict
+                == HoldVerdict.Grab;
     }
 
     /// <summary>
-    /// The "can grab here" cue that replaces the game's climb reticle (<c>sinceCanClimb</c>, CharacterClimbing.cs:566):
-    /// an open, empty hand within <c>ClimbGrabRadius</c> of rock the game would let it grab, within reach, gets the
-    /// chalk ring (<see cref="Climb.ClimbHover"/>) and one contact tick as it first meets the rock. Per frame, two
-    /// casts at most, no allocation.
+    /// The "can grab here" cue that replaces the game's climb reticle (<c>sinceCanClimb</c>, CharacterClimbing.cs:566),
+    /// from the same probe and verdict as the grip (<see cref="ProbeHold"/>): a solid chalk ring and one contact tick
+    /// where a grip now would catch, a faint ring on climbable rock just past the reach, and the red refusal ring
+    /// under an outstretched hand on rock the game will not take. Per frame, two casts at most, no allocation.
     /// </summary>
     private static void UpdateHover(
         Hand hand,
@@ -1346,36 +1468,42 @@ internal static class PhysicalInteraction
             || holdsHere
             || c.data.carrierCondor
             || !c.refs.climbing.CanClimb()
+            // Out of stamina, the game refuses a new grab within 1 s of the last (CharacterClimbing.cs:562).
+            || (
+                !c.data.isClimbing
+                && SinceLastClimbStarted != null
+                && SinceLastClimbStarted(c.refs.climbing) <= 1f
+                && OutOfStamina(c)
+            )
         )
         {
             Climb.ClimbHover.Hide(hand.Left);
             return;
         }
-        var pos = t.position;
+        var hold = ProbeHold(c, rig, t.position, t, cfg, c.data.currentItem);
+        if (hold.Verdict is HoldVerdict.Grab or HoldVerdict.Approach)
+        {
+            bool ready = hold.Verdict == HoldVerdict.Grab;
+            if (Climb.ClimbHover.Show(hand.Left, hold.Point, hold.Normal, ready, now))
+                Affordance.Contact(hand.Left);
+            return;
+        }
+        Climb.ClimbHover.Hide(hand.Left);
+        // Rock the game will not take, under a hand held out for it: the refusal shows before the grip, not after.
         var eye = Eye(rig);
-        if (
-            !Physics.CheckSphere(
-                pos,
-                cfg.ClimbRadius,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-            || !CastHold(eye, pos, t.forward, cfg.ClimbRadius, out var hit)
-            || TraversalRefusal.WallReach(
-                Vector3.Distance(eye, hit.point),
-                TraversalRefusal.GameWallReach
-            ) != DenyReason.None
-            || !(
-                hit.collider.TryGetComponent<ClimbModifierSurface>(out _)
-                || ClimbRules.GrabAngleOk(Vector3.Angle(hit.normal, Vector3.up))
-            )
-        )
-        {
-            Climb.ClimbHover.Hide(hand.Left);
+        if (Vector3.Distance(eye, t.position) < ClimbReach.BentArm)
             return;
-        }
-        if (Climb.ClimbHover.Show(hand.Left, hit.point, hit.normal, now))
-            Affordance.Contact(hand.Left);
+        if (hold.Verdict == HoldVerdict.Overhang)
+            Affordance.Hover(hand.Left, hold.Point, DenyReason.Overhang);
+        else if (hold.Verdict == HoldVerdict.TooFlat && hold.Angle >= HoverTooFlatFrom)
+            Affordance.Hover(hand.Left, hold.Point, DenyReason.TooFlat);
+        else if (hold.Verdict == HoldVerdict.OutOfReach)
+            Affordance.Hover(
+                hand.Left,
+                hold.Point,
+                DenyReason.OutOfReach,
+                DenyHint.Range(eye, hold.Point, GameClimbRay)
+            );
     }
 
     /// <summary>Grab feel by surface: soft for easy holds, a buzz for slippery ones, a strong double beat for hazards.</summary>

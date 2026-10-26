@@ -114,6 +114,78 @@ namespace PeakXR.Core
         }
     }
 
+    /// <summary>What a grip at the hand would do on the rock found along the reach.</summary>
+    public enum HoldVerdict
+    {
+        /// <summary>No rock near the hand, or ground that is walked on, not climbed.</summary>
+        None,
+
+        /// <summary>The grip catches: the game's climb start takes this hold.</summary>
+        Grab,
+
+        /// <summary>Climbable rock just past the grab reach: reach on, or a grip gets "too far".</summary>
+        Approach,
+        TooFlat,
+        Overhang,
+
+        /// <summary>Under the hand, but past the game's reach from the camera.</summary>
+        OutOfReach,
+    }
+
+    /// <summary>
+    /// One verdict for the hover ring, the grip and the refusal cues, mirroring the game's climb start
+    /// (<c>TryToStartWallClimb</c>, CharacterClimbing.cs:534-562), so a ring that says "grab" is a grip that catches.
+    /// An outstretched arm gets a short reach allowance along the reach: inclined faces recede from the body, and the
+    /// flat game grabs them up to 1.25 m from the camera, so a hand-only check made players lean in.
+    /// </summary>
+    public static class ClimbReach
+    {
+        /// <summary>Eye to hand (metres) at or below which the arm is bent and gets no allowance.</summary>
+        public const float BentArm = 0.35f;
+
+        /// <summary>Faces flatter than this (degrees from up) are ground, not a refused climb.</summary>
+        public const float GroundBelow = 30f;
+
+        /// <summary>Extra reach past the grab radius: none for a bent arm, all of <paramref name="assist"/> once the
+        /// arm is held out (<see cref="TraversalRefusal.FullReach"/>), linear between.</summary>
+        public static float Allowance(float eyeToHand, float assist)
+        {
+            float t = (eyeToHand - BentArm) / (TraversalRefusal.FullReach - BentArm);
+            return assist * MathF.Max(0f, MathF.Min(1f, t));
+        }
+
+        /// <param name="beyond">Distance along the reach from the hand to the surface; negative when the hand went
+        /// into the rock.</param>
+        /// <param name="angleFromUp">Surface normal from up, after a climb modifier's override.</param>
+        /// <param name="climbing">Already climbing: a grip only anchors the hand, so any rock in reach holds.</param>
+        public static HoldVerdict Judge(
+            float beyond,
+            float grabRadius,
+            float allowance,
+            float eyeToRock,
+            float angleFromUp,
+            bool climbing
+        )
+        {
+            float reach = grabRadius + allowance;
+            bool angleOk = climbing || ClimbRules.GrabAngleOk(angleFromUp);
+            if (beyond > reach)
+                return
+                    beyond <= reach + TraversalRefusal.ReachProbe
+                    && angleOk
+                    && eyeToRock <= TraversalRefusal.GameWallReach
+                    ? HoldVerdict.Approach
+                    : HoldVerdict.None;
+            if (eyeToRock > TraversalRefusal.GameWallReach)
+                return HoldVerdict.OutOfReach;
+            if (angleOk)
+                return HoldVerdict.Grab;
+            if (angleFromUp > 90f)
+                return HoldVerdict.Overhang;
+            return angleFromUp >= GroundBelow ? HoldVerdict.TooFlat : HoldVerdict.None;
+        }
+    }
+
     /// <summary>
     /// Climb stamina felt in the gripping hands: pulses that quicken as stamina runs low, a strong beat when it
     /// is gone, and a fast buzz while sliding down the wall. Call once per frame; a non-zero result is the
