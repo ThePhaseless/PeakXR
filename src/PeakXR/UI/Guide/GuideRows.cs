@@ -65,12 +65,18 @@ internal sealed class GuideRow : ButtonSetting, IExposedSetting
         this.buttonText = buttonText;
     }
 
+    /// <summary>Leads back or stops (Back, Stop, Previous page): its button keeps the game's red Back look.</summary>
+    public bool IsBack =>
+        Action is GuideAction.Back or GuideAction.PagePrevious
+        || (Action == GuideAction.Practice && PracticeRun.Running);
+
     public override void OnClicked(ISettingHandler settingHandler) => GuideRows.Click(this);
 
     public override string GetButtonText() => buttonText;
 
-    /// <summary>The game ships no button setting, so its build may lack the cell: then the info cell shows the text and
-    /// a click anywhere on the row (<see cref="GuideRowHover"/>) does the same.</summary>
+    /// <summary>The game ships no button setting and its build has no button cell (InputCellMapper asset): then the
+    /// info cell clones the settings page's Back button for it (<see cref="InfoCell"/>). Without one, the row shows
+    /// the text and a click anywhere on it (<see cref="GuideRowHover"/>) does the same.</summary>
     public override GameObject GetSettingUICell()
     {
         var cell = SingletonAsset<InputCellMapper>.Instance.ButtonSettingCell;

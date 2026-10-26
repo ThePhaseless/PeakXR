@@ -290,6 +290,13 @@ internal sealed class GuideStage : MonoBehaviour
             );
             offerCaption.transform.localScale = Vector3.one * 0.0008f;
             var text = offerCaption.AddComponent<TextMeshProUGUI>();
+            // The title menu's own font (TMP's default LiberationSans is no game text).
+            foreach (var t in handler.GetComponentsInChildren<TextMeshProUGUI>(true))
+                if (t.font != null && t.font != TMP_Settings.defaultFontAsset)
+                {
+                    text.font = t.font;
+                    break;
+                }
             text.text = "Practise the VR controls?";
             text.fontSize = 30f;
             text.alignment = TextAlignmentOptions.Center;

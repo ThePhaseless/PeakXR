@@ -93,4 +93,17 @@ public class SettingsPageTests
         Assert.Equal((0, 12), (start, count));
         Assert.Equal(2, SettingsRows.ClampPage(9, 25, 12));
     }
+
+    [Theory]
+    // Short label: the game's own 150 px Back width, right-aligned in a 468 px control area.
+    [InlineData(40f, 100f, 150f, 468f, 1f - 150f / 468f)]
+    // Long label: as wide as its text plus the button's padding.
+    [InlineData(200f, 100f, 150f, 468f, 1f - 300f / 468f)]
+    // Wider than the area: the whole area, never past the row's label.
+    [InlineData(600f, 100f, 150f, 468f, 0f)]
+    // The minimum width wider than a narrow area: still only that area.
+    [InlineData(10f, 100f, 150f, 120f, 0f)]
+    [InlineData(10f, 100f, 150f, 0f, 0f)]
+    public void ButtonLeftAnchor(float text, float inset, float min, float area, float expected) =>
+        Assert.Equal(expected, SettingsRows.ButtonLeftAnchor(text, inset, min, area), 4);
 }
