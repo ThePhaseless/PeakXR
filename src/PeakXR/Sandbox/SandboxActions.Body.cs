@@ -155,11 +155,6 @@ public static partial class SandboxActions
         return true;
     }
 
-    /// <summary>
-    /// A climbable test wall 3 m ahead of the player, 4 m wide and 7 m tall, on the Map layer the climb casts use
-    /// (<c>HelperFunctions.terrainMapMask</c>, CharacterClimbing.cs:418; any collider there climbs). For a map with no
-    /// wall near the player. Local, one at a time (a new one replaces the last); the scene load removes it.
-    /// </summary>
     /// <summary>Removes the test wall, if one stands; true when there was one.</summary>
     public static bool RemoveWall()
     {
@@ -171,6 +166,11 @@ public static partial class SandboxActions
         return true;
     }
 
+    /// <summary>
+    /// A climbable test wall 3 m ahead of the player, 4 m wide and 7 m tall, on the Map layer the climb casts use
+    /// (<c>HelperFunctions.terrainMapMask</c>, CharacterClimbing.cs:418; any collider there climbs). For a map with no
+    /// wall near the player. Local, one at a time (a new one replaces the last); the scene load removes it.
+    /// </summary>
     public static GameObject PlaceWall()
     {
         if (!OfflineGuard())
@@ -178,7 +178,15 @@ public static partial class SandboxActions
         var c = Character.localCharacter;
         var forward = c.data.lookDirection_Flat;
         forward = forward.sqrMagnitude > 1e-4f ? forward.normalized : Vector3.forward;
-        var at = c.Center + forward * 3.25f;
+        return PlaceWall(c.Center + forward * 3.25f, forward);
+    }
+
+    /// <summary>The test wall centred over <paramref name="at"/>, its face toward -<paramref name="forward"/>.</summary>
+    public static GameObject PlaceWall(Vector3 at, Vector3 forward)
+    {
+        if (!OfflineGuard())
+            return null;
+        var c = Character.localCharacter;
         float ground = Physics.Raycast(
             at + Vector3.up * 2f,
             Vector3.down,

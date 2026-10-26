@@ -98,6 +98,22 @@ public static class SandboxCommands
     [ConsoleCommand]
     public static void Wall() => SandboxActions.PlaceWall();
 
+    /// <summary>Open the item room (from the title or the solo airport), or leave it.</summary>
+    [ConsoleCommand]
+    public static void Room() =>
+        ItemRoom.Toggle(
+            Character.localCharacter != null ? Character.localCharacter.Center : Vector3.zero,
+            false
+        );
+
+    /// <summary>Put every item of the open item room back on its table.</summary>
+    [ConsoleCommand]
+    public static void Restock()
+    {
+        if (ItemRoom.Current == null || !ItemRoom.Current.Restock(-1))
+            SandboxActions.Say("No open item room to restock.");
+    }
+
     /// <summary>Add the commands above to the live console list. False until the console has initialised.</summary>
     internal static bool Register()
     {

@@ -95,7 +95,8 @@ public sealed class SelfTestFeature : Feature
 /// kept too: a campfire light writes it (<c>SaveNow</c>, :352-366, from Campfire.cs:505) and the run's end deletes it
 /// (<c>DestroySaveData</c>, :459-469, from Character.cs:893). Both are skipped and logged; nothing in a test run loads
 /// the save back. <see cref="Arm"/> records the file's fingerprint so the run's last step can prove it unchanged.
-/// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>.</para>
+/// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>, and by <c>sandbox.room</c> while the item room is open
+/// (<see cref="Room"/>): the patches then let everything through outside it.</para>
 /// </summary>
 static class SelfTestProgressGuard
 {
@@ -112,6 +113,11 @@ static class SelfTestProgressGuard
 
     /// <summary>All guards are patched: steps that would grant progress or touch the save may run.</summary>
     internal static bool Active;
+
+    /// <summary>The item room is open (<see cref="ItemRoom"/>); the guards block only then, or when armed.</summary>
+    internal static bool Room;
+
+    static bool Blocking => Active || Room;
 
     /// <summary>The quicksave's path and how it looked when the guard was armed.</summary>
     internal static string SavePath;
@@ -135,6 +141,8 @@ static class SelfTestProgressGuard
 
         static bool Prefix()
         {
+            if (!Blocking)
+                return true;
             Plugin.Log.LogInfo(
                 "[selftest] guarded Quicksave.SaveNow: the player's quicksave is kept"
             );
@@ -149,6 +157,8 @@ static class SelfTestProgressGuard
 
         static bool Prefix()
         {
+            if (!Blocking)
+                return true;
             // The rest of DestroySaveData's effect that a test run relies on: no load from the save.
             Quicksave.ShouldUseSaveData = false;
             Plugin.Log.LogInfo(
@@ -168,7 +178,7 @@ static class SelfTestProgressGuard
                 new[] { typeof(ACHIEVEMENTTYPE) }
             );
 
-        static bool Prefix() => false;
+        static bool Prefix() => !Blocking;
     }
 
     [HarmonyPatch]
@@ -181,7 +191,7 @@ static class SelfTestProgressGuard
                 new[] { typeof(STEAMSTATTYPE), typeof(int) }
             );
 
-        static bool Prefix() => false;
+        static bool Prefix() => !Blocking;
     }
 
     [HarmonyPatch]
@@ -196,6 +206,8 @@ static class SelfTestProgressGuard
 
         static bool Prefix(ref int __result)
         {
+            if (!Blocking)
+                return true;
             __result = 0;
             return false;
         }
@@ -207,7 +219,7 @@ static class SelfTestProgressGuard
         static MethodBase TargetMethod() =>
             GameMember.Method(typeof(AchievementManager), "TryCompleteAscent");
 
-        static bool Prefix() => false;
+        static bool Prefix() => !Blocking;
     }
 }
 
