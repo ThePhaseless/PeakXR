@@ -642,7 +642,8 @@ internal sealed partial class SelfTestRunner
             notes.Add(
                 $"{rows.childCount} rows, {rows.rect.height:0} px in a {view.height:0} px view, last row shown at the end {reached}"
             );
-            yield return ShotAt("vr-223-vr-tab-end", last.position);
+            // Framed on the column, as the main shot: the row's pivot sat at its left end and pushed the panel right.
+            yield return ShotAt("vr-223-vr-tab-end", CentreOf(column));
             scroll.verticalNormalizedPosition = 1f;
             if (!reached)
                 fails.Add("scrolling to the end leaves the last row outside the view");

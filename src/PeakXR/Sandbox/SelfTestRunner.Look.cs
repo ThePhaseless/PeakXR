@@ -28,15 +28,19 @@ internal sealed partial class SelfTestRunner
     Vector3 savedCamPosition;
     Quaternion savedCamRotation;
 
-    /// <summary>Both scripted hands hang at the sides, below the view, with what they hold, for shots of a panel;
-    /// the caller ends with <see cref="EndHands"/>.</summary>
+    /// <summary>Both scripted hands hang at the sides, a little behind the eye with the fingers down, so neither
+    /// they nor what they hold reach into a shot of a panel; the caller ends with <see cref="EndHands"/>. Run 6 hung
+    /// them straight below the eye with the fingers ahead, and the shot's wide view still caught the fingers and
+    /// the held passport over the lowest rows.</summary>
     IEnumerator HandsAside()
     {
         BeginHands();
-        HeadFrame(out var head, out _, out var right);
-        scriptLeft.Position = head - right * 0.3f + Vector3.down * 0.75f;
-        scriptRight.Position = head + right * 0.3f + Vector3.down * 0.75f;
-        yield return Wait(0.3f);
+        HeadFrame(out var head, out var forward, out var right);
+        var down = HandLook(Vector3.down, forward);
+        scriptLeft.Position = head - right * 0.3f - forward * 0.25f + Vector3.down * 0.8f;
+        scriptRight.Position = head + right * 0.3f - forward * 0.25f + Vector3.down * 0.8f;
+        scriptLeft.Rotation = scriptRight.Rotation = down;
+        yield return Wait(0.5f);
     }
 
     /// <summary>

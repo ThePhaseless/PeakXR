@@ -1180,7 +1180,8 @@ internal sealed partial class SelfTestRunner
             {
                 inLeft = hot;
                 outRight = cold;
-                yield return Shot("vr-27-warm-hands");
+                // On the flames with the hand in them: the stooped head looks level, over the fire.
+                yield return ShotAt("vr-27-warm-hands", FireGestures.FlameCentre);
             }
             else
             {
