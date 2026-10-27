@@ -103,7 +103,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// A hand's fingertip (4 cm ahead of the aim pose, as the keyboard and passport pokes use) relative to the scripted
+    /// A hand's fingertip (<see cref="Avatar.DrawnHands.PokeTip"/>, as the keyboard and passport pokes use) relative to the scripted
     /// grip, in tracking space, for the current scripted rotation. The rig shows a scripted pose only two frames after
     /// the step sets it (the sampler copies it before the step runs, the rig poses in LateUpdate), so a per-frame
     /// closed loop on the tip overshoots and oscillates; set the rotation, wait, measure once, then place open loop.
@@ -117,7 +117,7 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         var aim = rig.Aim(left);
         tipOffset =
-            rig.Origin.InverseTransformPoint(aim.position + aim.forward * 0.04f)
+            rig.Origin.InverseTransformPoint(Avatar.DrawnHands.PokeTip(rig, left))
             - Script(left).Position;
     }
 
@@ -145,7 +145,7 @@ internal sealed partial class SelfTestRunner
         var centre = rect.TransformPoint(rect.rect.center);
         var onCanvas = canvas.transform.InverseTransformPoint(centre);
         var canvasRect = ((RectTransform)canvas.transform).rect;
-        var tip = aim.position + aim.forward * 0.04f;
+        var tip = Avatar.DrawnHands.PokeTip(VRRig.Instance, left);
         float offRay = Vector3.Cross(aim.forward, centre - aim.position).magnitude;
         var over = LaserPointer.Over;
         Plugin.Log.LogInfo(
@@ -442,7 +442,7 @@ internal sealed partial class SelfTestRunner
             stepNote = $"typed and submitted 'ab12'; fifth key: {note}";
     }
 
-    /// <summary>One poke of the right fingertip (<c>VRKeyboard</c>'s tip: 4 cm ahead of the aim pose) on a key: from
+    /// <summary>One poke of the right fingertip (<c>VRKeyboard</c>'s tip, <see cref="Avatar.DrawnHands.PokeTip"/>) on a key: from
     /// 5 cm in front of it to 1.5 cm past the face, then back. Placed open loop from the measured tip offset
     /// (<see cref="MeasureTip"/>): a per-frame closed loop overshot by the rig's two-frame lag and pressed 'a' twice.</summary>
     IEnumerator PokeKey(char c, KeyKind kind)
@@ -609,7 +609,7 @@ internal sealed partial class SelfTestRunner
             stepNote = $"skin {before} to {after} by poke, restored; {cueNote}";
     }
 
-    /// <summary>One poke of the free hand's fingertip (4 cm ahead of the aim pose, as <see cref="PassportPoke"/>) on a passport
+    /// <summary>One poke of the free hand's fingertip (<see cref="Avatar.DrawnHands.PokeTip"/>, as <see cref="PassportPoke"/>) on a passport
     /// cell, with the index straight (grip closed, no trigger touch): from 5 cm in front of the page to 1.5 cm past it.
     /// Placed open loop from the measured tip offset (<see cref="MeasureTip"/>), on the cell re-read each step.</summary>
     IEnumerator PokeCell(PassportButton cell, bool left)

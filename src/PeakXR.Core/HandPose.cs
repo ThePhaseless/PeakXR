@@ -86,12 +86,18 @@ namespace PeakXR.Core
                     : Preset(grip);
             if (controller.Index > preset.Index)
                 preset.Index = controller.Index;
+            return Wrap(preset, wrap);
+        }
+
+        /// <summary><paramref name="curls"/> with every finger stopped at <paramref name="wrap"/>.</summary>
+        public static FingerCurls Wrap(FingerCurls curls, float wrap)
+        {
             for (int f = 0; f < FingerCurls.Count; f++)
             {
-                if (preset[f] > wrap)
-                    preset[f] = wrap;
+                if (curls[f] > wrap)
+                    curls[f] = wrap;
             }
-            return preset;
+            return curls;
         }
 
         public static float MaxJointAngle(int finger, int joint) =>

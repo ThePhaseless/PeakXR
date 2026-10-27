@@ -22,6 +22,10 @@ internal sealed class HandRig
     public readonly bool IsLeft;
     public readonly bool HasFingers;
 
+    /// <summary>The index fingertip pointing straight (its rest pose), in the hand bone's frame at world size, for the
+    /// poke that follows the drawn fingertip (<see cref="DrawnHands.PokeTip"/>). Null without an index tip bone.</summary>
+    public readonly Vector3? IndexTip;
+
     private readonly Transform[] joints = new Transform[FingerCurls.Count * Joints];
     private readonly Quaternion[] initialLocal = new Quaternion[FingerCurls.Count * Joints];
     private readonly Quaternion[] proximalRest = new Quaternion[FingerCurls.Count];
@@ -56,6 +60,15 @@ internal sealed class HandRig
         up = Vector3.ProjectOnPlane(up, forward);
         if (up.sqrMagnitude < 1e-8f)
             up = Vector3.ProjectOnPlane(Vector3.forward, forward);
+
+        var outer = Joint(1, 2);
+        if (outer != null)
+        {
+            // Index_3_R_end, the tip bone the prefab hangs off the last joint.
+            var end = outer.childCount > 0 ? outer.GetChild(0).localPosition : Vector3.zero;
+            IndexTip =
+                hand.lossyScale.x * (space.PointInHand(outer) + space.RotationInHand(outer) * end);
+        }
 
         var look = Quaternion.LookRotation(forward, up);
         handFromController = Quaternion.Inverse(look);

@@ -122,9 +122,12 @@ internal sealed class LocalAvatar : MonoBehaviour
         var grip = holding ? hold.Profile.Grip : GripPreset.Cylinder;
         // Fingers on the item stop at its drawn surface: the presets close on a handle, and on the game's big props
         // (an apple 0.42 m across) they sank into it.
-        float wrap = holding
-            ? HandPose.WrapCurl(0.5f * hold.Thickness * HeldItemScale.Factor(item))
-            : 1f;
+        float radius = holding ? 0.5f * hold.Thickness * HeldItemScale.Factor(item) : 0f;
+        float wrap = holding ? HandPose.WrapCurl(radius) : 1f;
+        // The smaller drawn fingers stop sooner, on this client only (DrawnHands.Curls); peers get the pose's curls.
+        float drawnWrap = holding ? HandScale.Wrap(radius, DrawnHands.Factor) : 1f;
+        DrawnHands.WrapLeft = Role(holding, true) == HandRole.Free ? 1f : drawnWrap;
+        DrawnHands.WrapRight = Role(holding, false) == HandRole.Free ? 1f : drawnWrap;
         float dt = Time.deltaTime;
 
         if (VRInput.Left.Tracked && rig.LeftHand != null)

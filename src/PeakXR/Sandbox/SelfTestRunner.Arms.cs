@@ -939,7 +939,7 @@ internal sealed partial class SelfTestRunner
     {
         if (skin != null && skin.sharedMesh != null)
         {
-            var bones = skin.bones;
+            var bones = Avatar.DrawnHands.Bones(skin);
             var poses = skin.sharedMesh.bindposes;
             int a = Array.IndexOf(bones, parent.transform);
             int b = Array.IndexOf(bones, child.transform);

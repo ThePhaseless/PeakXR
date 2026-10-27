@@ -50,7 +50,6 @@ internal sealed class VRKeyboard : MonoBehaviour
     private const float Gap = 6f;
     private const float Pad = 24f;
     private const float HeaderHeight = 96f;
-    private const float PokeTipForward = 0.04f;
     private const float PokeTickSeconds = 0.02f;
     private const float FlashSeconds = 0.12f;
     private const int SortingOrder = DrawOrder.Keyboard;
@@ -583,7 +582,7 @@ internal sealed class VRKeyboard : MonoBehaviour
             poke.Reset();
             return;
         }
-        var local = canvasRect.InverseTransformPoint(aim.position + aim.forward * PokeTipForward);
+        var local = canvasRect.InverseTransformPoint(Avatar.DrawnHands.PokeTip(rig, left));
         var scale = canvasRect.lossyScale.x;
         int hit = -1;
         for (int i = 0; i < keyBounds.Length; i++)

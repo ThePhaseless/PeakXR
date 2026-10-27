@@ -35,7 +35,6 @@ internal sealed class TitleMenuDepth
     private const float FadeSeconds = 0.35f;
     private const float RescanSeconds = 2f;
     private const float ModalAlpha = 0.2f;
-    private const float PokeTipForward = 0.04f;
 
     private sealed class Group
     {
@@ -473,7 +472,7 @@ internal sealed class TitleMenuDepth
             poke.Reset();
             return;
         }
-        var tip = aim.position + aim.forward * PokeTipForward;
+        var tip = Avatar.DrawnHands.PokeTip(rig, left);
         Selectable hit = null;
         var front = float.PositiveInfinity;
         foreach (var b in buttons)

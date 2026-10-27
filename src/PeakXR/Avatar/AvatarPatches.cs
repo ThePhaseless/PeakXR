@@ -299,7 +299,10 @@ internal static class AvatarPatches
                 && __instance.IsLocal
                 && __instance.GetComponent<LocalAvatar>() == null
             )
+            {
                 __instance.gameObject.AddComponent<LocalAvatar>();
+                __instance.gameObject.AddComponent<DrawnHands>();
+            }
         }
     }
 }
