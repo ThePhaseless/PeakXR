@@ -496,6 +496,39 @@ internal sealed class RigDriver : MonoBehaviour
 
     private bool haveScale;
 
+    /// <summary>The scout's standing eye height over its floor (game units) for <c>Camera.WorldScaleMode</c> Auto:
+    /// taken from the animation pose at the first upright eye sample of each character, kept across scenes (every
+    /// scout is built the same), the calibration's default until then.</summary>
+    private static float avatarStandingEye = HeightCalibration.DefaultStandingEyeHeight;
+
+    /// <summary>World units per real metre the settings ask for now. Auto: the calibrated standing eye height (a
+    /// standing adult's in seated mode or without a floor-level tracking space, where none is known) over the
+    /// scout's, so head-to-floor is the same in the room and in the game. Its inputs only change on a calibration,
+    /// a seated switch, a new character's first eye sample or a setting, and each change lands behind a blink.</summary>
+    private float WantScale()
+    {
+        if (CameraFeature.WorldScaleModeValue == WorldScaleMode.Manual)
+            return WorldScale.RigScale(CameraFeature.WorldScaleValue);
+        return WorldScale.RigScale(WorldScale.Auto(AutoRealEye(), avatarStandingEye));
+    }
+
+    private float AutoRealEye() =>
+        rig.SeatedMode || !XRRuntimeInfo.FloorTracking
+            ? HeightCalibration.DefaultStandingEyeHeight
+            : RigMath.TrackedEyeHeight(rig.HeightOffset);
+
+    private void LogScale()
+    {
+        if (CameraFeature.WorldScaleModeValue == WorldScaleMode.Manual)
+            Plugin.Log.LogInfo(
+                $"{Tag} World scale {CameraFeature.WorldScaleValue:0.00} (manual): rig x{rig.Scale:0.00}"
+            );
+        else
+            Plugin.Log.LogInfo(
+                $"{Tag} World scale auto {1f / rig.Scale:0.00}: real eyes {AutoRealEye():0.00} m{(rig.SeatedMode ? " (seated: a standing adult's)" : "")} over the scout's standing {avatarStandingEye:0.00}; rig x{rig.Scale:0.00}, the game floor on the real floor"
+            );
+    }
+
     /// <summary>The tracking space's world size (<see cref="VRRig.Scale"/>): head motion, hand reach and, through
     /// <see cref="StereoWidth"/>, the eye separation all scale together.</summary>
     private void ApplyScale(float scale)
@@ -626,6 +659,21 @@ internal sealed class RigDriver : MonoBehaviour
         torsoEyes.Sample(torsoSample, leaning, snap, dt);
         if (first)
         {
+            // The scout's standing eye height for the Auto world scale, from its animation pose: the animated head
+            // over the rig root (targetHeadHeight, CharacterRagdoll.cs:213-218), where the game's standing force holds
+            // the physics head above the ground (CharacterMovement.cs:711-719, 753), plus the eyes over the physics
+            // head. No terrain, so a slope or step under the feet changes nothing; upright, uncrouched and looking
+            // level only (the guards above).
+            var head = CameraPatches.GetBodypart(c, BodypartType.Head);
+            if (head != null && head.Rig != null)
+            {
+                float standing = d.targetHeadHeight + eye.y - head.Rig.position.y;
+                if (
+                    standing >= HeightCalibration.MinPlausibleEyeHeight
+                    && standing <= HeightCalibration.MaxPlausibleEyeHeight
+                )
+                    avatarStandingEye = standing;
+            }
             // The ground straight under the eyes: data.groundPos is one ground contact (CharacterMovement.cs:722-751)
             // and can sit on a step or slope edge (run 6 logged 1.65 m eyes in one scene and 1.46 m in the next).
             float ground = Physics.Raycast(
@@ -640,10 +688,17 @@ internal sealed class RigDriver : MonoBehaviour
                 : d.groundPos.y;
             float avatarEye = eye.y - ground;
             float realEye = RigMath.TrackedEyeHeight(rig.HeightOffset);
+            // The scale this sample asks for (it lands at the next blink), so the floor reads what the player gets;
+            // seated, the floor is the virtual one a standing adult's height under the eyes.
+            float want = WantScale();
+            bool auto = CameraFeature.WorldScaleModeValue == WorldScaleMode.Auto;
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
-                    + $"{avatarEye:0.00} m above the ground; the player's calibrated eyes {realEye:0.00} m (rig "
-                    + $"x{rig.Scale:0.00}: the game floor is reached {WorldScale.FloorReach(avatarEye, realEye, rig.Scale):0.00} m above the real one)"
+                    + $"{avatarEye:0.00} m above the ground (ray), {avatarStandingEye:0.00} m standing (pose); the "
+                    + $"player's calibrated eyes {realEye:0.00} m (world scale {1f / want:0.00} "
+                    + $"{(auto ? $"auto = {AutoRealEye():0.00} / {avatarStandingEye:0.00}" : "manual")}, rig x{want:0.00}: "
+                    + $"the game floor is reached {WorldScale.FloorReach(avatarEye, AutoRealEye(), want):0.00} m above "
+                    + $"the real one{(auto ? ", auto puts them together: expect ~0" : "")})"
             );
         }
     }
@@ -839,13 +894,14 @@ internal sealed class RigDriver : MonoBehaviour
             && (kind != shownKind || target != shownTarget || source != staticSource)
         )
             takeover.Blink();
-        // A new world scale lands behind the same blink as a recenter (Camera.WorldScale).
-        float wantScale = WorldScale.RigScale(CameraFeature.WorldScaleValue);
+        // A new world scale lands behind the same blink as a recenter (Camera.WorldScale, WorldScaleMode).
+        float wantScale = WantScale();
         if (!haveScale)
         {
             // The first placement: nothing to fade from yet.
             rig.Scale = wantScale;
             haveScale = true;
+            LogScale();
         }
         bool pendingScale = !Mathf.Approximately(wantScale, rig.Scale);
         if (pendingRecenter || pendingHeight || pendingScale)
@@ -872,12 +928,12 @@ internal sealed class RigDriver : MonoBehaviour
             else if (pendingHeight)
                 CalibrateHeight();
             pendingRecenter = false;
-            if (pendingScale)
+            // The recenter or calibration just above may have measured a new height: one blink carries both.
+            wantScale = WantScale();
+            if (!Mathf.Approximately(wantScale, rig.Scale))
             {
                 rig.Scale = wantScale;
-                Plugin.Log.LogInfo(
-                    $"{Tag} World scale {CameraFeature.WorldScaleValue:0.00}: rig x{rig.Scale:0.00}"
-                );
+                LogScale();
             }
         }
         if (takeover.Fade > 0f)

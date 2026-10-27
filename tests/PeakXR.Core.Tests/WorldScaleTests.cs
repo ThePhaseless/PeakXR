@@ -57,6 +57,31 @@ public class WorldScaleTests
     }
 
     [Fact]
+    public void Auto_PutsTheRealFloorOnTheGameFloor()
+    {
+        // A 1.52 m real eye on the scout's 1.64 m eyes: the world looks 0.93 its size, and the hand reaches the
+        // game floor at the real floor.
+        float auto = WorldScale.Auto(1.52f, 1.64f);
+        TestUtil.Near(0.93f, auto, 1e-4f);
+        TestUtil.Near(0f, WorldScale.FloorReach(1.64f, 1.52f, WorldScale.RigScale(auto)), 0.01f);
+        // A tall player grows the world past the game's own size.
+        TestUtil.Near(1.1f, WorldScale.Auto(1.80f, 1.64f), 1e-4f);
+    }
+
+    [Fact]
+    public void Auto_StaysInTheSaneBand()
+    {
+        // A height taken kneeling (or a child) never shrinks the world below AutoMin; a giant never past AutoMax.
+        TestUtil.Near(WorldScale.AutoMin, WorldScale.Auto(0.9f, 1.64f));
+        TestUtil.Near(WorldScale.AutoMax, WorldScale.Auto(2.4f, 1.64f));
+        // Implausible heights (untracked headset, a broken eye sample) read as the standing default.
+        TestUtil.Near(1f, WorldScale.Auto(float.NaN, HeightCalibration.DefaultStandingEyeHeight));
+        TestUtil.Near(1f, WorldScale.Auto(HeightCalibration.DefaultStandingEyeHeight, 0f));
+        // Auto values are settable values: RigScale passes them through unclamped.
+        TestUtil.Near(1f / WorldScale.AutoMax, WorldScale.RigScale(WorldScale.AutoMax));
+    }
+
+    [Fact]
     public void FromReferences_IsTheMedianRealOverGameRatio()
     {
         var refs = new (float Game, float Real)[] { (2f, 1f), (1f, 0.8f), (4f, 2.4f) };

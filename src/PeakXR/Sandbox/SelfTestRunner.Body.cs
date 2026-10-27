@@ -2227,9 +2227,9 @@ internal sealed partial class SelfTestRunner
         var rot = VRInput.HeadRotation;
         // The stoop is the player's own (real metres: the crouch reads a share of the real standing height). The
         // controller goes where the crouched scout's hand can go: 0.35 above the game floor, 0.45 ahead and 0.2 to the
-        // right in the world. Under Camera.WorldScale the real floor lies below the game floor (the game floor is
-        // reached first), so a target 0.35 m above the real floor sat at the game floor, out of the avatar's reach
-        // (run 6: 0.25 m short at rig x1.15).
+        // right in the world. WorldScaleMode Auto puts the real floor on the game floor, but a Manual scale can leave
+        // it below (run 6, rig x1.15: a target 0.35 m above the real floor sat on the game floor, 0.25 m out of the
+        // avatar's reach), so the target is placed on the game floor at any scale.
         var low = new Vector3(head.x, eye - 0.47f, head.z) + forward * 0.15f;
         var handFrom = Script(false).Position;
         var headWorld = rig.Origin.TransformPoint(head);
@@ -2279,7 +2279,7 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         var note = F(
-            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller (0.35 above the game floor, rig x{rig.Scale:0.00}), weld released {released}"
+            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller (0.35 above the game floor, {ScaleNote()}), weld released {released}"
         );
         if (!crouched)
             Fail("the avatar did not crouch for the stoop: " + note);

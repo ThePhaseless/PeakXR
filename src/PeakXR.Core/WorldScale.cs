@@ -2,6 +2,14 @@ using System;
 
 namespace PeakXR.Core;
 
+/// <summary>How <c>Camera.WorldScale</c> is chosen. Auto sizes the world to the player's calibrated height
+/// (<see cref="WorldScale.Auto"/>), so head-to-floor is the same in the room and in the game.</summary>
+public enum WorldScaleMode
+{
+    Auto,
+    Manual,
+}
+
 /// <summary>
 /// How big the world looks in VR (<c>Camera.WorldScale</c>, 1 = the game's own units as metres) and the conversions
 /// that go with it. The player grows instead of the world shrinking: the tracking space is scaled by
@@ -13,7 +21,13 @@ public static class WorldScale
     /// <summary>Smallest and largest settable world scale.</summary>
     public const float Min = 0.6f;
 
-    public const float Max = 1f;
+    public const float Max = 1.25f;
+
+    /// <summary>The band <see cref="Auto"/> stays in: a height taken kneeling never shrinks the world below
+    /// <see cref="AutoMin"/>, a very tall player never sees it grow past <see cref="AutoMax"/>.</summary>
+    public const float AutoMin = 0.75f;
+
+    public const float AutoMax = 1.25f;
 
     /// <summary>The derived default never goes below this: a bigger player than this reaches past the scout's 0.6 m
     /// arm at every stretch and sees the floor too close under the scout's eyes.</summary>
@@ -48,7 +62,25 @@ public static class WorldScale
         (0.91f, 1.0f), // luggage cart rail
     };
 
-    /// <summary>The default: the median real-over-game ratio of <see cref="References"/> (0.87), kept in the comfort
+    /// <summary>The <c>Camera.WorldScaleMode</c> Auto scale: the player's calibrated <paramref name="realEye"/> over the
+    /// avatar's standing <paramref name="avatarEye"/> above its floor (both in metres/units). With the eyes on the
+    /// avatar's, this puts the real floor on the game floor (<see cref="FloorReach"/> 0). Clamped to
+    /// [<see cref="AutoMin"/>, <see cref="AutoMax"/>] and rounded to 0.01 so small sample noise lands on the same
+    /// value; a height outside the plausible range reads as <see cref="HeightCalibration.DefaultStandingEyeHeight"/>.</summary>
+    public static float Auto(float realEye, float avatarEye)
+    {
+        realEye = Plausible(realEye);
+        avatarEye = Plausible(avatarEye);
+        return MathF.Round(Math.Clamp(realEye / avatarEye, AutoMin, AutoMax) * 100f) / 100f;
+    }
+
+    private static float Plausible(float eye) =>
+        eye >= HeightCalibration.MinPlausibleEyeHeight
+        && eye <= HeightCalibration.MaxPlausibleEyeHeight
+            ? eye
+            : HeightCalibration.DefaultStandingEyeHeight;
+
+    /// <summary>The <c>Camera.WorldScaleMode</c> Manual default: the median real-over-game ratio of <see cref="References"/> (0.87), kept in the comfort
     /// band.</summary>
     public static readonly float Default = Comfortable(FromReferences(References));
 
@@ -84,7 +116,7 @@ public static class WorldScale
         return r.Length % 2 == 1 ? r[m] : 0.5f * (r[m - 1] + r[m]);
     }
 
-    /// <summary>A measured ratio kept within [<see cref="ComfortMin"/>, <see cref="Max"/>], rounded to 0.01.</summary>
+    /// <summary>A measured ratio kept within [<see cref="ComfortMin"/>, 1], rounded to 0.01.</summary>
     public static float Comfortable(float measured) =>
-        MathF.Round(Math.Clamp(measured, ComfortMin, Max) * 100f) / 100f;
+        MathF.Round(Math.Clamp(measured, ComfortMin, 1f) * 100f) / 100f;
 }

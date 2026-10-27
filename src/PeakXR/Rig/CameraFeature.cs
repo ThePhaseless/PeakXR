@@ -33,9 +33,14 @@ public sealed class CameraFeature : Feature
     internal static ConfigEntry<float> NearClip;
     internal static ConfigEntry<MirrorEye> Mirror;
     internal static ConfigEntry<float> WorldScaleEntry;
+    internal static ConfigEntry<WorldScaleMode> WorldScaleModeEntry;
 
     /// <summary><c>Camera.WorldScale</c>, or its default before the feature binds it.</summary>
     internal static float WorldScaleValue => WorldScaleEntry?.Value ?? WorldScale.Default;
+
+    /// <summary><c>Camera.WorldScaleMode</c>, or its default (Auto) before the feature binds it.</summary>
+    internal static WorldScaleMode WorldScaleModeValue =>
+        WorldScaleModeEntry?.Value ?? WorldScaleMode.Auto;
 
     /// <summary>The menu hold that recenters. Also the pause tap limit (player.locomotion), so the two never
     /// overlap and no hold length is dead.</summary>
@@ -140,13 +145,35 @@ public sealed class CameraFeature : Feature
             "WorldScale",
             WorldScale.Default,
             new ConfigDescription(
-                "How big the world looks in VR. The game's world and props are built about a third larger than real "
-                    + "life for its big-headed scouts; at 1 you see them at the game's own size, lower makes everything "
-                    + "look smaller by growing you: your eye separation, head motion and hand reach all scale together, "
-                    + "and your eyes stay at your character's. Only you see it. Changing it applies behind a short fade.",
+                "With WorldScaleMode Manual: how big the world looks in VR. At 1 you see it at the game's own size; "
+                    + "lower makes everything look smaller by growing you (higher by shrinking you): your eye "
+                    + "separation, head motion and hand reach all scale together, and your eyes stay at your "
+                    + "character's. Only you see it. Changing it applies behind a short fade.",
                 new AcceptableValueRange<float>(WorldScale.Min, WorldScale.Max)
             )
         );
+        WorldScaleModeEntry = Plugin.Settings.Bind(
+            section,
+            "WorldScaleMode",
+            WorldScaleMode.Auto,
+            new ConfigDescription(
+                "Auto sizes the world to your height, measured at each recenter: your eyes stay at your character's "
+                    + "and the game's floor sits on your real floor, so your head is as high above the ground in the "
+                    + "game as in your room. Seated mode uses a standing adult's height instead. Manual uses "
+                    + "WorldScale."
+            )
+        );
+        // The old fixed default (0.87) becomes Auto; a scale the player chose stays, as Manual.
+        if (
+            Framework.ConfigMigration.Once("Camera.WorldScaleMode.FromWorldScale")
+            && !UnityEngine.Mathf.Approximately(WorldScaleEntry.Value, WorldScale.Default)
+        )
+        {
+            WorldScaleModeEntry.Value = WorldScaleMode.Manual;
+            Plugin.Log.LogInfo(
+                $"[config] Camera.WorldScale {WorldScaleEntry.Value} was chosen by hand: WorldScaleMode Manual"
+            );
+        }
         Mirror = Plugin.Settings.Bind(
             section,
             "DesktopMirror",
