@@ -48,6 +48,7 @@ internal static class ToolInput
 
     private static Item cachedItem;
     private static RopeSpool spool;
+    private static RopeTier tier;
     private static Action_ConstructableScoutCannonScroll cannon;
     private static bool holdLeft;
     private static int pendingSteps;
@@ -61,6 +62,7 @@ internal static class ToolInput
         {
             cachedItem = item;
             spool = item != null ? item.GetComponent<RopeSpool>() : null;
+            tier = spool != null ? spool.GetComponent<RopeTier>() : null;
             cannon =
                 item != null ? item.GetComponent<Action_ConstructableScoutCannonScroll>() : null;
             ResetAll();
@@ -109,6 +111,18 @@ internal static class ToolInput
         float dt
     )
     {
+        // While the anchor is being placed the game zeroes the scroll (RopeSpool.cs:125-129): no ticks for a length
+        // that does not change, a refusal at the hand instead.
+        if (tier != null && tier.LookingToPlaceAnchor)
+        {
+            if (steps != 0)
+                UI.Affordances.Affordance.DenyAtHand(holdLeft, DenyReason.NotNow);
+            stepHold = 0f;
+            Pull.Reset();
+            PullGrip.Reset();
+            SpoolStop.Reset();
+            return;
+        }
         if (steps != 0)
         {
             stepHold = StepHoldSeconds;
@@ -183,7 +197,12 @@ internal static class ToolInput
         else if (pendingSteps < -MaxPendingSteps)
             pendingSteps = -MaxPendingSteps;
         if (pendingSteps == 0)
+        {
+            // No wrist turning any more: re-arm the end-stop, so the next push into the limit thunks again.
+            if (KnobFor(holdLeft).Twist.Direction == 0 && KnobFor(!holdLeft).Twist.Direction == 0)
+                CannonStop.Reset();
             return;
+        }
 
         int push = pendingSteps > 0 ? 1 : -1;
         if (pendingSteps > 0)

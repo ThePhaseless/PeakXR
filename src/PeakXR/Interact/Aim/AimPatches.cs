@@ -348,7 +348,9 @@ internal static class AimPatches
             if (held != null && IsSpike(held))
                 __state = HandAim.BeginHeld(held);
             else
-                __state = HandAim.BeginHand(held == null || !LocalHold.ItemInLeftHand);
+                __state = HandAim.BeginHand(
+                    PhysicalInteraction.UseHandLeft(___character, secondary: true)
+                );
         }
 
         private static Exception Finalizer(Exception __exception, CameraSwap __state) =>

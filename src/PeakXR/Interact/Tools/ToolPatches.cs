@@ -49,7 +49,7 @@ internal static class ToolPatches
             ref float ___climbingSpikeTick,
             ItemSlot ___currentClimbingSpikeItemSlot,
             RaycastHit ___climbingSpikeHit,
-            out float __state
+            out (float Tick, ItemSlot Slot) __state
         )
         {
             SpikeHammer.BeforeUpdate(
@@ -58,7 +58,8 @@ internal static class ToolPatches
                 ___currentClimbingSpikeItemSlot,
                 in ___climbingSpikeHit
             );
-            __state = ___climbingSpikeTick;
+            // The slot too: a placed piton refills it with the next one (HammerClimbingSpike, CharacterItems.cs:1086-1094).
+            __state = (___climbingSpikeTick, ___currentClimbingSpikeItemSlot);
         }
 
         private static void Postfix(
@@ -67,7 +68,7 @@ internal static class ToolPatches
             ItemSlot ___currentClimbingSpikeItemSlot,
             ClimbingSpikeComponent ___currentClimbingSpikeComponent,
             RaycastHit ___climbingSpikeHit,
-            float __state
+            (float Tick, ItemSlot Slot) __state
         ) =>
             SpikeCue.After(
                 ___character,

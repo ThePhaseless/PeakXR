@@ -2535,10 +2535,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>interact.items' face spots in world space (HeldGestures: a book 0.35 m ahead of the eyes and 0.12 m
     /// below, a commune item 0.12 m ahead).</summary>
-    static Vector3 FaceSpot(Transform head, bool read) =>
-        read
-            ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
-            : head.position + head.forward * 0.12f;
+    static Vector3 FaceSpot(Transform head, bool read) => HeldGestures.FaceSpot(head, read);
 
     /// <summary>Highest cast progress <see cref="FaceCastUntil"/> saw.</summary>
     float faceProgress;
