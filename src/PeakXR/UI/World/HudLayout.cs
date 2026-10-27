@@ -30,10 +30,10 @@ internal sealed class HudLayout
             PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics()),
             dt
         );
-        var offset = PanelMath.InFront(yaw, cfg.HudDistance.Value, cfg.HudTilt.Value).ToUnity();
+        var offset = PanelMath.InFront(yaw, cfg.HudDistanceWorld, cfg.HudTilt.Value).ToUnity();
         Position = head.position + offset;
         Rotation = Quaternion.LookRotation(offset, Vector3.up);
-        MetersPerPixel = PanelMath.MetersPerPixel(cfg.HudWidth.Value, ReferenceWidth);
+        MetersPerPixel = PanelMath.MetersPerPixel(cfg.HudWidthWorld, ReferenceWidth);
     }
 }
 
@@ -412,7 +412,7 @@ internal sealed class HudSplit
     {
         if (!applied || appliedReticle != ReticleMode.Head || reticleBox.Rect == null)
             return;
-        reticleBox.SetScale(hud.MetersPerPixel * ReticleDistance / cfg.HudDistance.Value);
+        reticleBox.SetScale(hud.MetersPerPixel * ReticleDistance / cfg.HudDistanceWorld);
         reticleBox.Rect.SetPositionAndRotation(
             head.position + head.forward * ReticleDistance,
             head.rotation

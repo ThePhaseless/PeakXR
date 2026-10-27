@@ -1434,9 +1434,12 @@ internal static class PhysicalInteraction
     {
         var probe = default(HoldProbe);
         var eye = Eye(rig);
-        probe.Allowance = ClimbReach.Allowance(
-            Vector3.Distance(eye, handPos),
-            cfg.ClimbReachAssist
+        // Judged on how far your real arm is out, added in real metres (Camera.WorldScale).
+        probe.Allowance = RealScale.World(
+            ClimbReach.Allowance(
+                RealScale.Real(Vector3.Distance(eye, handPos)),
+                cfg.ClimbReachAssist
+            )
         );
         if (
             !CastHold(
@@ -2064,12 +2067,18 @@ internal static class PhysicalInteraction
         float d = -1f;
         if (rig.Head != null && mouthHand != null)
         {
-            var mouth = MouthGesture
-                .MouthPoint(rig.Head.position.N(), rig.Head.rotation.N(), Mouth.MouthOffset)
-                .U();
-            d = Vector3.Distance(
-                mouth,
-                Avatar.HeldItemPoints.Nearest(item, mouthHand, LocalHold.ItemInLeftHand, mouth)
+            // The real mouth under the eyes, in real metres (Camera.WorldScale).
+            var mouth = RealScale.World(
+                MouthGesture
+                    .MouthPoint(rig.Head.position.N(), rig.Head.rotation.N(), Mouth.MouthOffset)
+                    .U(),
+                rig.Head.position
+            );
+            d = RealScale.Real(
+                Vector3.Distance(
+                    mouth,
+                    Avatar.HeldItemPoints.Nearest(item, mouthHand, LocalHold.ItemInLeftHand, mouth)
+                )
             );
         }
         bool inside = d >= 0f && d <= Mouth.ExitRadius;
@@ -2199,14 +2208,25 @@ internal static class PhysicalInteraction
             // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
             // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
             // across, its middle 0.26 m from the grip), so the fist at the mouth held it beside the cheek.
-            var mouth = MouthGesture
-                .MouthPoint(rig.Head.position.N(), rig.Head.rotation.N(), Mouth.MouthOffset)
-                .U();
+            // Your own mouth and reach, in real metres around the eyes (Camera.WorldScale).
+            var head = rig.Head.position;
+            var mouth = RealScale.World(
+                MouthGesture.MouthPoint(head.N(), rig.Head.rotation.N(), Mouth.MouthOffset).U(),
+                head
+            );
             atMouth = Mouth.Update(
-                rig.Head.position.N(),
+                head.N(),
                 rig.Head.rotation.N(),
-                Avatar
-                    .HeldItemPoints.Nearest(c.data.currentItem, mouthHand, primaryHand.Left, mouth)
+                RealScale
+                    .Real(
+                        Avatar.HeldItemPoints.Nearest(
+                            c.data.currentItem,
+                            mouthHand,
+                            primaryHand.Left,
+                            mouth
+                        ),
+                        head
+                    )
                     .N(),
                 dt
             );

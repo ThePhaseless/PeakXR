@@ -108,6 +108,10 @@ internal sealed class ReachGhost : MonoBehaviour
             h.Root.gameObject.SetActive(true);
         if (controller != null)
             h.Root.SetPositionAndRotation(controller.position, controller.rotation);
+        // Your real hand's size at any Camera.WorldScale.
+        var size = Vector3.one * Rig.RealScale.Of;
+        if (h.Root.localScale != size)
+            h.Root.localScale = size;
         if (!Mathf.Approximately(alpha, h.ShownAlpha))
         {
             h.ShownAlpha = alpha;

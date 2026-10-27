@@ -1,0 +1,90 @@
+using System;
+
+namespace PeakXR.Core;
+
+/// <summary>
+/// How big the world looks in VR (<c>Camera.WorldScale</c>, 1 = the game's own units as metres) and the conversions
+/// that go with it. The player grows instead of the world shrinking: the tracking space is scaled by
+/// <see cref="RigScale"/>, so head motion, hand reach and (rig.camera's stereo override) the eye separation all grow
+/// together and nothing reads inconsistent. Tracking-space numbers stay real metres.
+/// </summary>
+public static class WorldScale
+{
+    /// <summary>Smallest and largest settable world scale.</summary>
+    public const float Min = 0.6f;
+
+    public const float Max = 1f;
+
+    /// <summary>The derived default never goes below this: a bigger player than this reaches past the scout's 0.6 m
+    /// arm at every stretch and sees the floor too close under the scout's eyes.</summary>
+    public const float ComfortMin = 0.8f;
+
+    /// <summary>
+    /// Fixed fittings and architecture measured in the game's data (Airport scene, world-space mesh bounds and
+    /// surface heights; game units) against typical real sizes (metres). The scout's own eye height (1.64) and arm
+    /// (0.605) match a real adult 1:1, and so do standard-height fittings (counters, rails, stanchions); doors,
+    /// openings, seat backs and steps are built 15-65% bigger for the 2 m, big-headed scouts. Props (2-3x, an apple
+    /// 0.42 across) are left out: no uniform scale makes them real without shrinking the player's own body.
+    /// </summary>
+    public static readonly (float Game, float Real)[] References =
+    {
+        (2.51f, 2.05f), // door leaf height
+        (0.99f, 0.95f), // door push bar
+        (2.93f, 2.10f), // elevator door leaf height
+        (2.80f, 2.35f), // elevator cabin floor to ceiling
+        (4.03f, 2.20f), // sliding door panel height
+        (0.515f, 0.175f), // photobooth stair rise
+        (0.56f, 0.45f), // seat height
+        (1.41f, 0.85f), // seat back top
+        (0.50f, 0.45f), // bench top
+        (0.545f, 0.45f), // curved bench seat
+        (1.10f, 1.05f), // check-in counter top
+        (0.965f, 1.05f), // gate desk top
+        (0.94f, 0.95f), // kiosk ledge
+        (1.96f, 1.65f), // kiosk total height
+        (0.977f, 0.97f), // stanchion
+        (0.936f, 0.95f), // handrail top
+        (0.885f, 0.95f), // trash bin
+        (0.91f, 1.0f), // luggage cart rail
+    };
+
+    /// <summary>The default: the median real-over-game ratio of <see cref="References"/> (0.87), kept in the comfort
+    /// band.</summary>
+    public static readonly float Default = Comfortable(FromReferences(References));
+
+    /// <summary>World units per real metre of tracking space for a world that looks <paramref name="worldScale"/>
+    /// times its size (clamped; NaN reads as 1).</summary>
+    public static float RigScale(float worldScale)
+    {
+        if (float.IsNaN(worldScale))
+            return 1f;
+        return 1f / Math.Clamp(worldScale, Min, Max);
+    }
+
+    public static float ToWorld(float metres, float rigScale) => metres * rigScale;
+
+    public static float ToReal(float units, float rigScale) => units / rigScale;
+
+    /// <summary>Real hand height above the real floor that reaches the game floor, with the eyes on the avatar's
+    /// (<paramref name="avatarEye"/> units above its feet) and the player's calibrated <paramref name="realEye"/>:
+    /// positive means the game floor is reached before the real one.</summary>
+    public static float FloorReach(float avatarEye, float realEye, float rigScale) =>
+        realEye - avatarEye / rigScale;
+
+    /// <summary>Median of real / game over <paramref name="refs"/>.</summary>
+    public static float FromReferences(ReadOnlySpan<(float Game, float Real)> refs)
+    {
+        if (refs.Length == 0)
+            return 1f;
+        var r = new float[refs.Length];
+        for (int i = 0; i < refs.Length; i++)
+            r[i] = refs[i].Real / refs[i].Game;
+        Array.Sort(r);
+        int m = r.Length / 2;
+        return r.Length % 2 == 1 ? r[m] : 0.5f * (r[m - 1] + r[m]);
+    }
+
+    /// <summary>A measured ratio kept within [<see cref="ComfortMin"/>, <see cref="Max"/>], rounded to 0.01.</summary>
+    public static float Comfortable(float measured) =>
+        MathF.Round(Math.Clamp(measured, ComfortMin, Max) * 100f) / 100f;
+}

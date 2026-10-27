@@ -119,10 +119,10 @@ internal sealed class SpatialRuntime : MonoBehaviour
         if (ready)
         {
             var ui = UIWorldFeature.Settings;
-            var hudMpp = PanelMath.MetersPerPixel(ui.HudWidth.Value, 1920f);
+            var hudMpp = PanelMath.MetersPerPixel(ui.HudWidthWorld, 1920f);
             TextScale = ReadableText.Scale(ui.TextScale.Value);
             DegreesPerPixel = ReadableText.Scaled(
-                SpatialMath.DegreesPerPixel(hudMpp, ui.HudDistance.Value),
+                SpatialMath.DegreesPerPixel(hudMpp, ui.HudDistanceWorld),
                 MinDegreesPerPixel,
                 TextScale
             );
