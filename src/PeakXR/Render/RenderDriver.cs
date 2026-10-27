@@ -50,6 +50,7 @@ internal sealed class RenderDriver : MonoBehaviour
     /// the budget (frames shown twice), never up.</summary>
     private const float IntervalOnlyTarget = 1.25f;
     private readonly HashSet<VolumeComponent> disabledComponents = new();
+    private readonly List<LensFlareComponentSRP> disabledFlares = new();
     private readonly List<ScriptableRendererFeature> toggledFeatures = new();
     private readonly List<bool> toggledFeatureStates = new();
     private readonly List<(OffOnSetting Setting, OffOnMode Value)> forcedSettings = new();
@@ -99,6 +100,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.EdgeDetection.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ComfortSettings.SettingChanged += OnComfortSettingsChanged;
+        RenderFixesFeature.LensFlare.SettingChanged += OnLensFlareChanged;
         if (VRSession.Active)
             Apply();
     }
@@ -113,6 +115,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.EdgeDetection.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ComfortSettings.SettingChanged -= OnComfortSettingsChanged;
+        RenderFixesFeature.LensFlare.SettingChanged -= OnLensFlareChanged;
         Revert();
     }
 
@@ -178,6 +181,7 @@ internal sealed class RenderDriver : MonoBehaviour
             if (c != null)
                 c.active = true;
         disabledComponents.Clear();
+        RestoreLensFlares();
         RestoreFeatures();
         RemoveEyeMatrices();
         RestoreSettings();
@@ -342,7 +346,10 @@ internal sealed class RenderDriver : MonoBehaviour
     /// scenes (found by component type, never by object name): MotionBlur (Fall/PassOut volumes),
     /// LensDistortion and ChromaticAberration (warp, sugar rush, soul statue), DepthOfField (blur volume),
     /// FilmGrain (cold), Vignette (base look; the comfort vignette replaces it), ScreenSpaceLensFlare (a per-eye
-    /// pass whose flares differ between the eyes).
+    /// pass whose flares differ between the eyes). Unless <c>Render.LensFlare</c> is on, also the sun's data-driven
+    /// <see cref="LensFlareComponentSRP"/> (DayNightManager.lensFlare, DayNightManager.cs:66, intensity at :425): in
+    /// MultiPass URP places and occludes it with the mono camera's matrices for both eyes
+    /// (PostProcessPassRenderGraph.RenderLensFlareDataDriven), so it sits apart in each eye or shows in one only.
     /// </summary>
     private void DisableComfortEffects()
     {
@@ -358,10 +365,49 @@ internal sealed class RenderDriver : MonoBehaviour
             if (volume.HasInstantiatedProfile())
                 DisableIn(volume.profile);
         }
-        if (disabledComponents.Count != before)
+        int flaresBefore = disabledFlares.Count;
+        if (!RenderFixesFeature.LensFlare.Value)
+            foreach (
+                var flare in FindObjectsByType<LensFlareComponentSRP>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None
+                )
+            )
+                if (flare.enabled)
+                {
+                    flare.enabled = false;
+                    disabledFlares.Add(flare);
+                }
+        if (disabledComponents.Count != before || disabledFlares.Count != flaresBefore)
             Plugin.Log.LogInfo(
-                $"{Tag} Disabled {disabledComponents.Count - before} post effect(s) unsafe in VR"
+                $"{Tag} Disabled {disabledComponents.Count - before} post effect(s) and {disabledFlares.Count - flaresBefore} lens flare(s) unsafe in VR"
             );
+    }
+
+    /// <summary>The settings tab turns <c>Render.LensFlare</c> on or off live.</summary>
+    private void OnLensFlareChanged(object sender, System.EventArgs e)
+    {
+        if (!applied)
+            return;
+        if (RenderFixesFeature.LensFlare.Value)
+            RestoreLensFlares();
+        else
+            DisableComfortEffects();
+    }
+
+    private void RestoreLensFlares()
+    {
+        foreach (var flare in disabledFlares)
+            if (flare != null)
+                flare.enabled = true;
+        disabledFlares.Clear();
+        disabledComponents.RemoveWhere(c =>
+        {
+            if (c is not ScreenSpaceLensFlare)
+                return false;
+            c.active = true;
+            return true;
+        });
     }
 
     private void DisableIn(VolumeProfile profile)
@@ -375,14 +421,16 @@ internal sealed class RenderDriver : MonoBehaviour
             if (
                 c != null
                 && c.active
-                && c
-                    is MotionBlur
-                        or LensDistortion
-                        or ChromaticAberration
-                        or DepthOfField
-                        or FilmGrain
-                        or Vignette
-                        or ScreenSpaceLensFlare
+                && (
+                    c
+                        is MotionBlur
+                            or LensDistortion
+                            or ChromaticAberration
+                            or DepthOfField
+                            or FilmGrain
+                            or Vignette
+                    || (c is ScreenSpaceLensFlare && !RenderFixesFeature.LensFlare.Value)
+                )
             )
             {
                 c.active = false;
