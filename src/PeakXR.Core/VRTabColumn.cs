@@ -18,6 +18,31 @@ public static class VRTabColumn
     /// <summary>How far the rail turns toward the eye about its edge next to the column.</summary>
     public const float RailDegrees = 18f;
 
+    /// <summary>Farthest off the view, sideways, a setting's preview card may reach before it moves to the panel's
+    /// other side: run 4's card beside the right edge of a menu turned off the view ran out of the frame.</summary>
+    public const float CardComfortDegrees = 40f;
+
+    /// <summary>Whether a preview card goes on the panel's right: yes while its far edge
+    /// (<paramref name="rightFar"/>) stays within <see cref="CardComfortDegrees"/> of <paramref name="forward"/>, else
+    /// on whichever side reaches less far off the view. Yaw only: a low or high row does not move the card.</summary>
+    public static bool CardOnRight(
+        System.Numerics.Vector3 eye,
+        System.Numerics.Vector3 forward,
+        System.Numerics.Vector3 rightFar,
+        System.Numerics.Vector3 leftFar
+    )
+    {
+        float right = Yaw(rightFar - eye, forward);
+        return right <= CardComfortDegrees || right <= Yaw(leftFar - eye, forward);
+    }
+
+    static float Yaw(System.Numerics.Vector3 to, System.Numerics.Vector3 forward)
+    {
+        float a = MathF.Atan2(to.X, to.Z) - MathF.Atan2(forward.X, forward.Z);
+        a = MathF.Abs(MathF.IEEERemainder(a, 2f * MathF.PI));
+        return a / UnityQuat.Deg2Rad;
+    }
+
     /// <summary>Local units spanning <paramref name="degrees"/> at <paramref name="distance"/> metres, for a panel of
     /// <paramref name="metersPerUnit"/>.</summary>
     public static float Width(float degrees, float distance, float metersPerUnit) =>

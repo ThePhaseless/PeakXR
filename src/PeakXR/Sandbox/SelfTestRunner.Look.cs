@@ -28,6 +28,17 @@ internal sealed partial class SelfTestRunner
     Vector3 savedCamPosition;
     Quaternion savedCamRotation;
 
+    /// <summary>Both scripted hands hang at the sides, below the view, with what they hold, for shots of a panel;
+    /// the caller ends with <see cref="EndHands"/>.</summary>
+    IEnumerator HandsAside()
+    {
+        BeginHands();
+        HeadFrame(out var head, out _, out var right);
+        scriptLeft.Position = head - right * 0.3f + Vector3.down * 0.75f;
+        scriptRight.Position = head + right * 0.3f + Vector3.down * 0.75f;
+        yield return Wait(0.3f);
+    }
+
     /// <summary>
     /// <see cref="Shot"/> with the view aimed at <paramref name="target"/> (world space). With
     /// <paramref name="distance"/> above 0 the view also backs off along the eye-to-target line until the target

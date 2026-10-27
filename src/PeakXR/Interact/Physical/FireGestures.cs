@@ -86,12 +86,18 @@ internal static class FireGestures
     private static Campfire farFire;
 
     private static Campfire flameFire;
-    private static ParticleSystemRenderer[] flameRenderers =
-        System.Array.Empty<ParticleSystemRenderer>();
+    private static Campfire loggedFire;
     private static Vector3 flameCentre;
+
+    /// <summary>Live particles of the measured fire; a system past this many reads its first ones.</summary>
+    private static readonly ParticleSystem.Particle[] Particles = new ParticleSystem.Particle[512];
+    private static readonly FlameVolume Volume = new();
 
     /// <summary>Centre of the nearest lit campfire's flames as the fire rumble measures them (self-test).</summary>
     internal static Vector3 FlameCentre => flameCentre;
+
+    /// <summary>Half size of those flames (self-test).</summary>
+    internal static Vector3 FlameExtents => flameExtents;
     private static Vector3 flameExtents;
 
     private static Item flameItem;
@@ -618,58 +624,49 @@ internal static class FireGestures
     }
 
     /// <summary>
-    /// The flames of <paramref name="fire"/> as a box: the live bounds of its fire particles (Campfire.cs:51,
-    /// their renderer, else their child systems' renderers), else a 0.6 m wide, 0.7 m tall flame on
-    /// <see cref="ItemGestures.FireBase"/>. Eased over <see cref="FlameEaseSeconds"/>; a new fire snaps.
+    /// The flames of <paramref name="fire"/> as a box: its fire particles (Campfire.cs:51) read live, each centre
+    /// widened by part of its current size (<see cref="FlameVolume"/>), else a 0.6 m wide, 0.7 m tall flame on
+    /// <see cref="ItemGestures.FireBase"/>. The renderer's bounds were 2.96 x 3.46 x 2.92 m on the beach campfire
+    /// (VR run 5): every billboard at full size, so the whole body felt in the flames. Eased over
+    /// <see cref="FlameEaseSeconds"/>; a new fire snaps.
     /// </summary>
     private static void FlameBounds(Campfire fire, float dt)
     {
         bool fresh = !ReferenceEquals(fire, flameFire);
+        flameFire = fire;
+        var ps = fire.fireParticles;
+        Volume.Reset();
+        if (ps != null)
+        {
+            int n = ps.GetParticles(Particles);
+            bool local = ps.main.simulationSpace == ParticleSystemSimulationSpace.Local;
+            var t = ps.transform;
+            for (int i = 0; i < n; i++)
+            {
+                var at = local ? t.TransformPoint(Particles[i].position) : Particles[i].position;
+                Volume.Add(at.N(), Particles[i].GetCurrentSize(ps));
+            }
+        }
+        bool any = Volume.Count > 0;
+        var centre = any ? Volume.Centre.U() : ItemGestures.FireBase(fire) + Vector3.up * 0.35f;
+        var extents = any ? Volume.Extents.U() : new Vector3(0.3f, 0.35f, 0.3f);
         if (fresh)
         {
-            flameFire = fire;
-            flameRenderers =
-                fire.fireParticles != null
-                    ? fire.fireParticles.GetComponentsInChildren<ParticleSystemRenderer>()
-                    : System.Array.Empty<ParticleSystemRenderer>();
-        }
-        var bounds = default(Bounds);
-        bool any = false;
-        // The fire system's own renderer (first) when it draws; else all its child systems together.
-        for (int i = 0; i < flameRenderers.Length; i++)
-        {
-            var r = flameRenderers[i];
-            if (r == null || !r.enabled)
-                continue;
-            var b = r.bounds;
-            if (b.extents.sqrMagnitude < 1e-4f)
-                continue;
-            if (any)
-                bounds.Encapsulate(b);
-            else
-                bounds = b;
-            any = true;
-            if (i == 0)
-                break;
-        }
-        if (!any)
-            bounds = new Bounds(
-                ItemGestures.FireBase(fire) + Vector3.up * 0.35f,
-                new Vector3(0.6f, 0.7f, 0.6f)
-            );
-        if (fresh)
-        {
-            flameCentre = bounds.center;
-            flameExtents = bounds.extents;
-            Plugin.Log.LogDebug(
-                System.FormattableString.Invariant(
-                    $"[interact.items] fire rumble: {fire.name} flames {(any ? "measured" : "assumed")} {bounds.size.x:0.00} x {bounds.size.y:0.00} x {bounds.size.z:0.00} m, {bounds.center.y - ItemGestures.FireBase(fire).y:0.00} m over the base"
-                )
-            );
+            flameCentre = centre;
+            flameExtents = extents;
+            if (!ReferenceEquals(fire, loggedFire))
+            {
+                loggedFire = fire;
+                Plugin.Log.LogInfo(
+                    System.FormattableString.Invariant(
+                        $"[interact.items] fire rumble: {fire.name} flames {(any ? $"measured from {Volume.Count} particles" : "assumed")} {2f * extents.x:0.00} x {2f * extents.y:0.00} x {2f * extents.z:0.00} m, centre {centre.y - ItemGestures.FireBase(fire).y:0.00} m over the base"
+                    )
+                );
+            }
             return;
         }
         float k = 1f - Mathf.Exp(-dt / FlameEaseSeconds);
-        flameCentre += (bounds.center - flameCentre) * k;
-        flameExtents += (bounds.extents - flameExtents) * k;
+        flameCentre += (centre - flameCentre) * k;
+        flameExtents += (extents - flameExtents) * k;
     }
 }

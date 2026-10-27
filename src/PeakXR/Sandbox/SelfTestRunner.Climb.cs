@@ -2371,24 +2371,24 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.GrabToClimb off";
             yield break;
         }
-        // A step back: at the usual stance the eye is 0.5 m from the face, so a hand 0.45 m short of it sat 0.06-0.11 m
-        // from the eye, and the eye-to-hand reach the probe casts along (PhysicalInteraction.CastHold) swung off the
-        // wall with any head drift (run 1: probe None, hit False). A player reaches from an arm's length out.
-        yield return ToWall(back: 0.3f);
+        // Stood back so the hand stops about an arm's length (0.45-0.5 m) from the eye. Closer, the hand ended at the
+        // mouth (run 5: 0.27 m), where a closed fist is the talk gesture (VoiceRuntime: MicAlwaysOn), and the probe's
+        // eye-to-hand cast (PhysicalInteraction.CastHold) had no reach allowance, so the face at 0.45 m sat 0.05 m
+        // inside its 0.5 m and any head drift took it out (runs 1 and 5: probe None, hit False).
+        yield return ToWall(back: 0.5f);
         if (!wallReady)
             yield break;
         var rig = VRRig.Instance;
         bool left = VRInput.LeftHanded;
         // Along the reach from the eye to the face, the hand stops 0.15 m past the farthest grab reach (ClimbReach).
-        var eye = EyeNow();
-        var dir = (wallFace.point - eye).normalized;
+        // Re-read from the live eye every frame, so the probe's cast runs along the same line as the scripted reach.
         float gap = cfg.ClimbRadius + cfg.ClimbReachAssist + 0.15f;
-        var stop = wallFace.point - dir * gap;
+        Vector3 Dir() => (wallFace.point - EyeNow()).normalized;
+        Vector3 ReachPoint(float back) => wallFace.point - Dir() * (gap + back);
         UI.Affordances.Affordance.ResetGate();
         // A reach for the wall: the hand still moving toward it (0.4 m/s over the last 0.12 m) as the grip closes, the
         // way a player reaches for a hold that turns out too far (TraversalRefusal.ReachAttempt).
-        var windup = stop - dir * 0.12f;
-        yield return MoveTo(left, () => windup, 0.5f);
+        yield return MoveTo(left, () => ReachPoint(0.12f), 0.5f);
         if (OverReach(left) is { } far)
         {
             stepSkip = "the stance left the wall beyond a full arm's reach: " + far;
@@ -2396,16 +2396,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float mark = CueMark();
-        var fromT = rig.Origin.InverseTransformPoint(windup);
-        var toT = rig.Origin.InverseTransformPoint(stop);
         for (float start = Now, t = 0f; t < 0.3f; t = Now - start)
         {
-            SetHand(left, Vector3.Lerp(fromT, toT, t / 0.3f));
+            SetHand(left, rig.Origin.InverseTransformPoint(ReachPoint(0.12f * (1f - t / 0.3f))));
             if (t >= 0.18f)
                 Script(left).Grip = 1f;
             yield return null;
         }
-        SetHand(left, toT);
+        SetHand(left, rig.Origin.InverseTransformPoint(ReachPoint(0f)));
         Script(left).Grip = 1f;
         yield return ExpectCue(left, DenyReason.OutOfReach, mark, false, 1f);
         bool climbed = c.data.isClimbing;

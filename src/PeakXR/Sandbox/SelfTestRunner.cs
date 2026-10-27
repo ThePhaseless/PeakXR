@@ -175,6 +175,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.222-menu-backplate", 30f, BackplateCheck());
             ClosePause();
             yield return VRStep("vr.223-vr-tab-layout", 30f, VRTabLayoutCheck());
+            // Its shots hold the hands aside (HandsAside), also on a failed or timed-out step.
+            if (VRRun)
+                EndHands();
             ClosePause();
             yield return AirportScreenSteps();
         }
