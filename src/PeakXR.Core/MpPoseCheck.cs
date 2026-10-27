@@ -6,7 +6,7 @@ namespace PeakXR.Core;
 /// <summary>
 /// The two-client test's pose comparison (docs/testing.md, "Modded B"): A writes its tracked hands and B writes
 /// A's avatar bones, each in A's body frame as that client sees it, so tools/mp-check.sh compares them without the
-/// network lag in A's position and turn. The frame is <see cref="PoseFrame"/>'s: origin at the physical hip,
+/// network lag in A's position and turn. The frame is PoseFrame's: origin at the physical hip,
 /// turned by the look yaw. Standalone (System.Numerics only) because the observer links it as a source file.
 /// </summary>
 public static class MpPoseFrame

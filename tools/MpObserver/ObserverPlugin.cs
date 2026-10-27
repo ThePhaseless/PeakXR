@@ -214,9 +214,7 @@ sealed class ModLog : ILogListener
                 if (FirstErrors.Count < 20)
                     FirstErrors.Add(source + ": " + text);
             }
-            else if (!peakxr)
-                return;
-            else if ((eventArgs.Level & LogLevel.Warning) != 0)
+            else if (peakxr && (eventArgs.Level & LogLevel.Warning) != 0)
             {
                 PeakXRWarnings++;
                 if (FirstWarnings.Count < 20)
