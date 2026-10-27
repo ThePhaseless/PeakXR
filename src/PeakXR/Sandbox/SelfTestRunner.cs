@@ -413,13 +413,15 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             var row = SettingPreviews.CellOf(hovered);
             if (row != null)
             {
-                // Framed on the row and its preview card together; the row's edge alone cut the panel off.
-                var card = PreviewStage.Instance.Card;
-                var rowCentre = CentreOf(row.transform);
-                yield return ShotAt(
-                    "02-settings-vr-preview",
-                    card != null ? Vector3.Lerp(rowCentre, CentreOf(card), 0.5f) : rowCentre
-                );
+                // The whole settings window and the preview card beside it, both in frame (run 7 cut the title and
+                // rail off at the left).
+                var frame = new List<Vector3>();
+                var canvas = row.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                    VisibleCorners((RectTransform)canvas.rootCanvas.transform, frame);
+                if (PreviewStage.Instance.Card is RectTransform card)
+                    VisibleCorners(card, frame);
+                yield return ShotFraming("02-settings-vr-preview", frame);
             }
             PreviewStage.Instance.HoverExit(hovered);
         }

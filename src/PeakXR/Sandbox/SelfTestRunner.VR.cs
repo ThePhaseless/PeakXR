@@ -643,13 +643,13 @@ internal sealed partial class SelfTestRunner
                 $"{rows.childCount} rows, {rows.rect.height:0} px in a {view.height:0} px view, last row shown at the end {reached}"
             );
             // Framed on the column, as the main shot: the row's pivot sat at its left end and pushed the panel right.
-            yield return ShotAt("vr-223-vr-tab-end", CentreOf(column));
+            yield return ShotAt("vr-223-vr-tab-end", CentreOf(column), 0f, hideBody: true);
             scroll.verticalNormalizedPosition = 1f;
             if (!reached)
                 fails.Add("scrolling to the end leaves the last row outside the view");
         }
         // Its centre: the pivot sits at the column's top edge, which framed the panel low and cut off at the corner.
-        yield return ShotAt("vr-223-vr-tab", CentreOf(column));
+        yield return ShotAt("vr-223-vr-tab", CentreOf(column), 0f, hideBody: true);
         Conclude(fails, notes);
     }
 
