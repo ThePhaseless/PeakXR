@@ -9,12 +9,24 @@ namespace PeakXR.UI.World;
 /// A panel inside a menu canvas with a plate of its own (the VR tab's row column and category rail): the same dark
 /// rounded plate as <see cref="BackplateView"/>, stretched over the panel plus the margin, so each panel is backed
 /// separately instead of one plate around the whole window. Its graphics stay off the canvas plate. Follows
-/// <c>UI.MenuBackplate</c> and its opacity when they change; nothing runs per frame.
+/// <c>UI.MenuBackplate</c> and its opacity when they change; with <c>UI.MenuBackplateAdaptive</c>
+/// <see cref="BackdropProbe"/> fits each one's opacity to what is behind it, as for the canvas plates.
 /// </summary>
 internal sealed class PanelPlate : MonoBehaviour
 {
     private static readonly List<PanelPlate> live = new();
     private Image plate;
+
+    /// <summary>Opacity <see cref="BackdropProbe"/> measured behind this plate, and the one drawn now on its way
+    /// there; negative until measured.</summary>
+    public float Target = -1f;
+    public float Alpha = -1f;
+
+    /// <summary>Every enabled panel plate, for <see cref="BackdropProbe"/>. Index it; do not hold on to it.</summary>
+    internal static List<PanelPlate> Live => live;
+
+    /// <summary>The plate graphic.</summary>
+    public Image Image => plate;
 
     /// <summary>The plate is drawn now (self-test).</summary>
     public bool Shown => plate != null && plate.isActiveAndEnabled;
@@ -66,13 +78,17 @@ internal sealed class PanelPlate : MonoBehaviour
         bool on = cfg.MenuBackplate.Value;
         if (plate.gameObject.activeSelf != on)
             plate.gameObject.SetActive(on);
-        var c = MenuBackplate.Color;
-        plate.color = new Color(c.X, c.Y, c.Z, cfg.MenuBackplateOpacity.Value);
+        BackplateView.SetAlpha(plate, BackplateView.Alpha(Alpha, cfg));
     }
 
     private void OnEnable() => live.Add(this);
 
-    private void OnDisable() => live.Remove(this);
+    private void OnDisable()
+    {
+        live.Remove(this);
+        // Shown again it starts at the full setting until measured.
+        Target = Alpha = -1f;
+    }
 }
 
 /// <summary>Marks a graphic of ours that <see cref="BackdropStrip"/> must leave alone: a panel plate, or a scroll

@@ -3,6 +3,7 @@ using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.UI;
 
 namespace PeakXR.UI.World;
 
@@ -11,7 +12,8 @@ namespace PeakXR.UI.World;
 /// (<c>UI.MenuBackplateAdaptive</c>, <see cref="BackdropContrast"/>): full over sunlit snow or sky, light over a dark
 /// interior. A hidden 32x32 camera at the eye, framed on the plate and starting just short of it, renders the scene
 /// behind it (no hands, laser, fade sphere or menu, no shadows or AA) once every <see cref="ProbeSeconds"/>, one
-/// plate per probe; an async GPU readback brings the pixels back without a stall. The plate then eases toward the
+/// plate per probe, taking turns between the menu canvases' plates and the panels' own (<see cref="PanelPlate"/>: the
+/// VR tab's column, category rail and setting preview card); an async GPU readback brings the pixels back without a stall. The plate then eases toward the
 /// measured opacity every frame: quickly when it must darken, slowly when it may lighten. Nothing allocates per frame.
 /// </summary>
 internal sealed class BackdropProbe
@@ -35,7 +37,9 @@ internal sealed class BackdropProbe
     private readonly System.Action<AsyncGPUReadbackRequest> onReadback;
     private Camera cam;
     private RenderTexture texture;
-    private TrackedCanvas rendering,
+
+    /// <summary>The plate being measured: a <see cref="TrackedCanvas"/> or a <see cref="PanelPlate"/>.</summary>
+    private object rendering,
         reading;
     private int startedFrame;
     private int next;
@@ -47,23 +51,17 @@ internal sealed class BackdropProbe
     public void Tick(VRRig rig, UIWorldSettings cfg, float dt)
     {
         var list = WorldCanvases.Tracked;
+        var panels = PanelPlate.Live;
         bool adaptive = cfg.MenuBackplateAdaptive.Value;
-        var max = cfg.MenuBackplateOpacity.Value;
         for (int i = 0; i < list.Count; i++)
         {
             var t = list[i];
-            if (!adaptive || t.Plate == null || !t.Plate.gameObject.activeInHierarchy)
-            {
-                // A plate that shows again starts at the full setting and lightens once measured: never too thin.
-                t.PlateAlpha = t.PlateTarget = -1f;
-                continue;
-            }
-            if (t.PlateTarget < 0f)
-                continue;
-            var from = t.PlateAlpha < 0f ? max : t.PlateAlpha;
-            t.PlateAlpha = BackdropContrast.Approach(from, Mathf.Min(t.PlateTarget, max), dt);
-            // Whole 8-bit steps, so the colour settles and stops dirtying the canvas.
-            BackplateView.SetAlpha(t, Mathf.Round(BackplateView.Alpha(t, cfg) * 255f) / 255f);
+            Ease(t.Plate, ref t.PlateTarget, ref t.PlateAlpha, adaptive, cfg, dt);
+        }
+        for (int i = 0; i < panels.Count; i++)
+        {
+            var p = panels[i];
+            Ease(p.Image, ref p.Target, ref p.Alpha, adaptive, cfg, dt);
         }
 
         if (rendering != null && Time.frameCount - startedFrame > RenderFrames)
@@ -76,16 +74,44 @@ internal sealed class BackdropProbe
             reading = null;
         if (!adaptive || rendering != null || reading != null || Time.unscaledTime < probeAt)
             return;
-        for (int n = 0; n < list.Count; n++)
+        int total = list.Count + panels.Count;
+        for (int n = 0; n < total; n++)
         {
-            next = (next + 1) % list.Count;
-            var t = list[next];
-            if (t.Plate != null && t.Plate.gameObject.activeInHierarchy && Frame(t, rig))
+            next = (next + 1) % total;
+            bool framed =
+                next < list.Count
+                    ? Frame(list[next], list[next].Plate, list[next].Canvas.gameObject.layer, rig)
+                    : Frame(panels[next - list.Count], panels[next - list.Count].Image, -1, rig);
+            if (framed)
             {
                 probeAt = Time.unscaledTime + ProbeSeconds;
                 return;
             }
         }
+    }
+
+    /// <summary>One plate one frame closer to its measured opacity, written in whole 8-bit steps so the colour
+    /// settles and stops dirtying the canvas. A hidden plate, or adaptive off, forgets the measure: shown again it
+    /// starts at the full setting and lightens once measured, never too thin.</summary>
+    private static void Ease(
+        Image plate,
+        ref float target,
+        ref float alpha,
+        bool adaptive,
+        UIWorldSettings cfg,
+        float dt
+    )
+    {
+        if (!adaptive || plate == null || !plate.gameObject.activeInHierarchy)
+        {
+            alpha = target = -1f;
+            return;
+        }
+        if (target < 0f)
+            return;
+        var max = cfg.MenuBackplateOpacity.Value;
+        alpha = BackdropContrast.Approach(alpha < 0f ? max : alpha, Mathf.Min(target, max), dt);
+        BackplateView.SetAlpha(plate, Mathf.Round(BackplateView.Alpha(alpha, cfg) * 255f) / 255f);
     }
 
     public void Release()
@@ -100,12 +126,15 @@ internal sealed class BackdropProbe
         rendering = reading = null;
     }
 
-    /// <summary>Frames the probe on <paramref name="t"/>'s plate from the eye and lets it render this frame.</summary>
-    private bool Frame(TrackedCanvas t, VRRig rig)
+    /// <summary>Frames the probe on <paramref name="plate"/> from the eye and lets it render this frame;
+    /// <paramref name="owner"/> gets the measure. <paramref name="layer"/>, when set, is culled with the UI layer.</summary>
+    private bool Frame(object owner, Image plate, int layer, VRRig rig)
     {
-        if (rig.Head == null)
+        if (rig.Head == null || plate == null || !plate.gameObject.activeInHierarchy)
             return false;
-        t.Plate.rectTransform.GetWorldCorners(corners);
+        if (layer < 0)
+            layer = plate.gameObject.layer;
+        plate.rectTransform.GetWorldCorners(corners);
         var center = (corners[0] + corners[2]) * 0.5f;
         float width = Vector3.Distance(corners[0], corners[3]);
         float height = Vector3.Distance(corners[0], corners[1]);
@@ -121,7 +150,7 @@ internal sealed class BackdropProbe
         if (MainCamera.instance != null)
             MainCamera.instance.TryGetComponent(out main);
         int mask = main != null ? main.cullingMask : ~0;
-        cam.cullingMask = mask & ~(1 << UiLayer) & ~(1 << t.Canvas.gameObject.layer);
+        cam.cullingMask = mask & ~(1 << UiLayer) & ~(1 << layer);
         if (main != null)
         {
             cam.clearFlags = main.clearFlags;
@@ -133,7 +162,7 @@ internal sealed class BackdropProbe
         cam.aspect = width / height;
         cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(to, Vector3.up));
         cam.enabled = true;
-        rendering = t;
+        rendering = owner;
         startedFrame = Time.frameCount;
         return true;
     }
@@ -201,6 +230,10 @@ internal sealed class BackdropProbe
         for (int i = 0; i + 2 < data.Length; i += 4)
             meter.Add(data[i], data[i + 1], data[i + 2]);
         // Unclamped by the setting here; BackplateView.Alpha caps it when drawn.
-        t.PlateTarget = BackdropContrast.NeededOpacity(meter.Bright(), 1f);
+        var needed = BackdropContrast.NeededOpacity(meter.Bright(), 1f);
+        if (t is TrackedCanvas canvas)
+            canvas.PlateTarget = needed;
+        else if (t is PanelPlate panel)
+            panel.Target = needed;
     }
 }
