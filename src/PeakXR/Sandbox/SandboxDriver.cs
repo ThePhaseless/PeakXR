@@ -1,4 +1,6 @@
+using PeakXR.VR;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Zorro.Core.CLI;
 
 namespace PeakXR.Sandbox;
@@ -20,6 +22,16 @@ internal sealed class SandboxDriver : MonoBehaviour
     {
         host = gameObject.AddComponent<SandboxWindowHost>();
         host.enabled = false;
+        SceneManager.activeSceneChanged += OnScene;
+    }
+
+    void OnDestroy() => SceneManager.activeSceneChanged -= OnScene;
+
+    // Sandbox run settings belong to the run they were set in; back at the title the next run starts clean.
+    static void OnScene(Scene previous, Scene next)
+    {
+        if (next.name == "Title")
+            SandboxActions.RestoreRunSettings();
     }
 
     void Update()
@@ -55,7 +67,15 @@ internal sealed class SandboxDriver : MonoBehaviour
             commandsRegistered = SandboxCommands.Register();
 
         if (Input.GetKeyDown(SandboxFeature.WindowKeyEntry.Value))
-            SandboxWindow.IsOpen = !SandboxWindow.IsOpen;
+        {
+            // The IMGUI window draws only on the desktop mirror, yet it blocks input: in VR it would freeze the player.
+            if (VRSession.Active && !SandboxWindow.IsOpen)
+                Plugin.Log.LogInfo(
+                    "[sandbox] window key ignored in VR: the window shows only on the desktop; use the console."
+                );
+            else
+                SandboxWindow.IsOpen = !SandboxWindow.IsOpen;
+        }
 
         if (Time.unscaledTime >= nextGodTick)
         {

@@ -86,6 +86,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         VR.VRInput.TestOverride = null;
         SandboxActions.Forced = false;
         SelfTestEndGamePatch.Hold = false;
+        SelfTestCampfirePatch.Hold = false;
+        SelfTestInputPatch.HoldPrimary = false;
+        SelfTestInputPatch.DropOnce = false;
         Interact.Binoculars.BinocularsConfig.ForceHold = false;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
