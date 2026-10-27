@@ -7,7 +7,6 @@
     <BepInExPluginName>PeakXR</BepInExPluginName>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
     <PeakManaged>$(PeakDir)/PEAK_Data/Managed</PeakManaged>
     <!-- No game install (CI): compile against the committed reference assemblies (tools/make-refs.sh). -->

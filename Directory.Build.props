@@ -4,20 +4,31 @@
     <Version>0.1.0</Version>
     <!-- Pinned, not "latest": a future SDK must not silently move the language level (see docs/research/stack.md). -->
     <LangVersion>14.0</LangVersion>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Every CA rule at warning; .editorconfig turns off, with a reason, the ones that fight Unity/Harmony/BepInEx. -->
+    <AnalysisLevel>latest-all</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- IDE0005 (unused usings) only runs in a build that writes XML docs; CS1591 (missing docs) is off in .editorconfig. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- CI-like builds (CI=true) turn every analyzer warning into an error. -->
     <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <!-- Analyzers for every project except the test project. -->
-  <ItemGroup Condition="'$(IsTestProject)' != 'true'">
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.313" PrivateAssets="all" />
+  <!-- Bug and code-smell analyzers for every project, tests included. -->
+  <ItemGroup>
+    <PackageReference Include="Roslynator.Analyzers" Version="5.0.1" PrivateAssets="all" />
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- Unity and Harmony analyzers only make sense for the plugin that talks to the game. -->
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR'">
+  <!-- Analyzers for every project except the test project. -->
+  <ItemGroup Condition="'$(IsTestProject)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.317" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Unity analyzers for the game-side plugins (PeakXR, the MpObserver test plugin); Harmony's for PeakXR's patches. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR' Or '$(MSBuildProjectName)' == 'MpObserver'">
     <PackageReference Include="Microsoft.Unity.Analyzers" Version="1.28.0" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR'">
     <PackageReference Include="BUTR.Harmony.Analyzer" Version="1.0.1.50" PrivateAssets="all" />
   </ItemGroup>
 

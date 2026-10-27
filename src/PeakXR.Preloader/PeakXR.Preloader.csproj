@@ -10,7 +10,6 @@
     <RootNamespace>PeakXR.Preloader</RootNamespace>
     <Nullable>disable</Nullable>
     <DebugType>embedded</DebugType>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- BepInEx 5 ships Mono.Cecil 0.10.4; compile against that, not MonoMod's newer transitive one. -->
     <NoWarn>$(NoWarn);NU1605</NoWarn>
   </PropertyGroup>
