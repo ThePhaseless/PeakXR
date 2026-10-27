@@ -61,7 +61,156 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.171-vine-no-path", 30f, VineNoPathStep());
         yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
         yield return HandStep("vr.173-reach-ghost", 20f, ReachGhostStep());
+        yield return HandStep("vr.243-grab-drawn-shape", 25f, DrawnShapeGrabStep());
     }
+
+    /// <summary>
+    /// vr.243: grab reach follows what is drawn where the game's collider does not (ItemGrabShape; the audit in
+    /// docs/research/item-grab-shapes.csv). A Rescue Hook's claw lies outside its only collider: a hand on the claw
+    /// grabs it, one <see cref="DrawnMargin"/> past the grab radius beyond the claw does not. A Glow Mushroom's
+    /// collider stands 0.17 m over its caps: a hand on the collider's top does not grab it, one on the caps does.
+    /// Both float kinematic 0.7 m ahead at chest height, so only the hand decides.
+    /// </summary>
+    IEnumerator DrawnShapeGrabStep()
+    {
+        var cfg = InteractConfig.Instance;
+        if (!cfg.PhysicalGrab)
+        {
+            stepSkip = "Interaction.PhysicalGrab off";
+            yield break;
+        }
+        var all = new List<Item>(SandboxActions.Items);
+        var hookPrefab = FindItem(all, "RescueHook");
+        var glowPrefab = FindItem(all, "Mushroom Glow");
+        if (hookPrefab == null || glowPrefab == null)
+        {
+            Fail("no RescueHook or Mushroom Glow in the item database");
+            yield break;
+        }
+        var rig = VRRig.Instance;
+        HeadFrame(out var head, out var forward, out var right);
+        var ahead = rig.Origin.TransformPoint(head + forward * 0.7f + Vector3.down * 0.35f);
+        var side = rig.Origin.TransformDirection(right);
+        float radius = cfg.GrabRadius;
+        var notes = new List<string>();
+
+        yield return SpawnItem(hookPrefab, ahead - side * 0.4f);
+        if (!stepOk)
+            yield break;
+        var hook = Floating(spawned[spawned.Count - 1]);
+        yield return SpawnItem(glowPrefab, ahead + side * 0.4f);
+        if (!stepOk)
+            yield break;
+        var glow = Floating(spawned[spawned.Count - 1]);
+        yield return Wait(0.3f);
+
+        var claw = Drawn(hook, "RescueClaw");
+        var caps = Drawn(glow, null);
+        if (claw == null || caps == null)
+        {
+            Fail("the hook's claw or the mushroom's mesh is missing");
+            yield break;
+        }
+        // The claw's centre, then outward from the body until the hand is past the grab radius by the margin.
+        var clawCenter = claw.transform.TransformPoint(
+            claw.GetComponent<MeshFilter>().sharedMesh.bounds.center
+        );
+        var outward = (clawCenter - SolidPoint(hook, clawCenter)).normalized;
+        var past = clawCenter;
+        for (int i = 0; i < 200 && DrawnGap(claw, past) < radius + DrawnMargin; i++)
+            past += outward * 0.01f;
+        var high = glow.transform.position + glow.transform.up * 2f;
+        var colliderTop = SolidPoint(glow, high);
+        var capTop = DrawnPoint(caps, high);
+
+        yield return Probe(hook, claw, clawCenter, true, "on the claw");
+        yield return Probe(hook, claw, past, false, "past the claw");
+        yield return Probe(glow, caps, colliderTop, false, "on the collider's top");
+        yield return Probe(glow, caps, capTop, true, "on the caps");
+        if (stepOk)
+            stepNote = string.Join("; ", notes);
+
+        IEnumerator Probe(Item item, Renderer drawn, Vector3 at, bool grabs, string where)
+        {
+            if (!stepOk)
+                yield break;
+            SetHand(false, rig.Origin.InverseTransformPoint(at));
+            yield return Wait(0.2f);
+            var hand = rig.Hand(false).position;
+            var taken = PhysicalInteraction.GripPreview(false);
+            string note = F(
+                $"{item.name} {where}: drawn {DrawnGap(drawn, hand):0.00} m, collider {SolidGap(item, hand):0.00} m, hand off target {Vector3.Distance(hand, at):0.00} m, preview {Label(taken)}"
+            );
+            notes.Add(note);
+            if (Vector3.Distance(hand, at) > 0.03f)
+                Fail("the scripted hand missed its point: " + note);
+            else if (ReferenceEquals(taken, item) != grabs)
+                Fail((grabs ? "no grab on what is drawn: " : "a grab from empty air: ") + note);
+        }
+    }
+
+    /// <summary>How far past the grab radius the vr.243 miss probe stands, metres.</summary>
+    const float DrawnMargin = 0.05f;
+
+    static Item Floating(GameObject go)
+    {
+        var item = go.GetComponent<Item>();
+        if (item.rig != null)
+            item.rig.isKinematic = true;
+        return item;
+    }
+
+    /// <summary>The item's enabled mesh renderer named <paramref name="name"/> (any when null).</summary>
+    static MeshRenderer Drawn(Item item, string name)
+    {
+        foreach (var r in item.GetComponentsInChildren<MeshRenderer>())
+        {
+            if (
+                r.enabled
+                && r.GetComponent<MeshFilter>() != null
+                && (name == null || r.name == name)
+            )
+                return r;
+        }
+        return null;
+    }
+
+    /// <summary>The point of the renderer's mesh box (its own frame) nearest <paramref name="p"/>.</summary>
+    static Vector3 DrawnPoint(Renderer r, Vector3 p)
+    {
+        var b = r.GetComponent<MeshFilter>().sharedMesh.bounds;
+        var local = r.transform.InverseTransformPoint(p);
+        return r.transform.TransformPoint(
+            new Vector3(
+                Mathf.Clamp(local.x, b.min.x, b.max.x),
+                Mathf.Clamp(local.y, b.min.y, b.max.y),
+                Mathf.Clamp(local.z, b.min.z, b.max.z)
+            )
+        );
+    }
+
+    static float DrawnGap(Renderer r, Vector3 p) => Vector3.Distance(DrawnPoint(r, p), p);
+
+    /// <summary>The nearest point of the item's enabled solid colliders (every item's is convex, per the audit).</summary>
+    static Vector3 SolidPoint(Item item, Vector3 p)
+    {
+        var best = item.Center();
+        float d = float.MaxValue;
+        foreach (var col in item.colliders)
+        {
+            if (col == null || !col.enabled || col.isTrigger || !col.gameObject.activeInHierarchy)
+                continue;
+            var q = col.ClosestPoint(p);
+            if ((q - p).sqrMagnitude < d)
+            {
+                d = (q - p).sqrMagnitude;
+                best = q;
+            }
+        }
+        return best;
+    }
+
+    static float SolidGap(Item item, Vector3 p) => Vector3.Distance(SolidPoint(item, p), p);
 
     /// <summary>
     /// vr.173: the ghost hand (avatar.local <see cref="ReachGhost"/>) shows where the real hand is when the character's

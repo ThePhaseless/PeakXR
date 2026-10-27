@@ -56,6 +56,17 @@ internal static class HeldItemScale
         return grip + (world - grip) * f;
     }
 
+    /// <summary>The inverse of <see cref="ToVisual"/>: where on the item at game size a point by its drawn shape
+    /// lies, so a test against its colliders matches what is drawn.</summary>
+    public static Vector3 FromVisual(Item item, Vector3 world)
+    {
+        float f = Factor(item);
+        if (f >= 1f)
+            return world;
+        var grip = item.transform.TransformPoint(pivot);
+        return grip + (world - grip) / f;
+    }
+
     private static bool Bind(Item item)
     {
         if (ReferenceEquals(item, bound) && item != null)
