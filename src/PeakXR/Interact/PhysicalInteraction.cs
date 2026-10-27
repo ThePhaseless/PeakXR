@@ -1077,25 +1077,15 @@ internal static class PhysicalInteraction
     private const float SecondGripReach = 0.25f;
 
     /// <summary>
-    /// The hand is within <paramref name="radius"/> of the item's solid colliders, measured to their real surface. An
-    /// axis-aligned box around a long item held at a slant, or a large trigger on it, reached well past the item:
-    /// VR run 51's grab on a chain 0.45 m from the held launcher joined the launcher.
+    /// The hand is within <paramref name="radius"/> of the item, measured to its colliders' real surface or its drawn
+    /// parts where they disagree (<see cref="ItemGrabShape"/>). An axis-aligned box around a long item held at a
+    /// slant, or a large trigger on it, reached well past the item: VR run 51's grab on a chain 0.45 m from the held
+    /// launcher joined the launcher. The held item is drawn HeldItemScale smaller about its grip, so the hand is
+    /// measured against the item as drawn.
     /// </summary>
-    private static bool NearItem(Item item, Vector3 pos, float radius)
-    {
-        float r2 = radius * radius;
-        bool any = false;
-        foreach (var col in item.colliders)
-        {
-            if (col == null || !col.enabled || col.isTrigger)
-                continue;
-            any = true;
-            var closest = SurfacePoint(col, pos);
-            if ((closest - pos).sqrMagnitude <= r2)
-                return true;
-        }
-        return !any && (item.Center() - pos).sqrMagnitude <= r2;
-    }
+    private static bool NearItem(Item item, Vector3 pos, float radius) =>
+        ItemGrabShape.Distance(item, HeldItemScale.FromVisual(item, pos), out _)
+        <= radius / HeldItemScale.Factor(item);
 
     /// <summary>The free (secondary) hand is at the held item's grip for it: <c>Hand_L</c> under a right-primary
     /// hold, its mirror under a left-primary one (ItemHoldInfo.SecondGrip), never the primary's own grip. Items
@@ -1157,30 +1147,41 @@ internal static class PhysicalInteraction
                 continue;
             if (!it.IsInteractible(c))
                 continue;
-            // Line of sight like the game's interact ray (Interaction.cs:214): a hand pushed through a crate or a
-            // rock fin does not grab what lies behind it. Seen when any of the point nearest the hand, the centre or
-            // the top is clear (GrabSelector.SightPoints): an item partly sunk into uneven ground hides the first two
-            // (VR run 50's vr.10, vr.11 and vr.32 ground pickups failed with the hand on the Apple).
-            var bounds = col.bounds;
+            // Items whose drawn parts and colliders disagree are measured in the pass below, to what is drawn.
+            if (it is Item shaped && ItemGrabShape.Corrected(shaped, out _))
+                continue;
             // The collider's real surface, as the overlap itself measured it: a bounding box's corner of a long item
             // held at a slant, or of Bing Bong's limbs, lies in empty air, ranked the wrong item first and sighted a
             // point the item does not reach. Concave meshes have no exact query and keep their box.
             var point = SurfacePoint(col, pos);
-            GrabSelector.SightPoints(point.N(), bounds.center.N(), bounds.extents.N(), SightPoints);
-            bool seen = false;
-            for (int s = 0; s < GrabSelector.SightPointCount && !seen; s++)
-                seen = Visible(eye, SightPoints[s].U(), it);
-            // The hand already on it sees it, and the eye sees the hand (no fin between): VR mp19's compass 3 cm from
-            // the hand on rocky ground hid from the stooped eye on every point.
-            if (!seen)
-                seen = GrabSelector.Seen(false, Visible(pos, point, it), Visible(eye, pos, it));
-            lastReachable++;
-            if (!seen)
-            {
-                lastHidden++;
+            if (!InSight(eye, pos, point, col.bounds, it))
                 continue;
-            }
             Candidates[count] = it;
+            CandidatePositions[count] = point.N();
+            count++;
+        }
+
+        // Items measured to their drawn parts (ItemGrabShape): a hand on a rescue hook's claw, 0.6 m past its
+        // collider, is out of the overlap's reach; one over a glow mushroom's tall collider is not on the mushroom.
+        float cull = radius + ItemGrabShape.MaxReach;
+        foreach (var item in Item.ALL_ITEMS)
+        {
+            if (count >= Candidates.Length)
+                break;
+            if (
+                item == null
+                || item == c.data.currentItem
+                || (item.transform.position - pos).sqrMagnitude > cull * cull
+                || !ItemGrabShape.Corrected(item, out float reach)
+                || (item.transform.position - pos).sqrMagnitude
+                    > (radius + reach) * (radius + reach)
+                || !item.IsInteractible(c)
+                || ItemGrabShape.Distance(item, pos, out var point) > radius
+            )
+                continue;
+            if (!InSight(eye, pos, point, SolidBounds(item, point), item))
+                continue;
+            Candidates[count] = item;
             CandidatePositions[count] = point.N();
             count++;
         }
@@ -1205,9 +1206,48 @@ internal static class PhysicalInteraction
         return target is Item ? GrabCandidate.Item : GrabCandidate.Interactible;
     }
 
+    /// <summary>
+    /// Line of sight like the game's interact ray (Interaction.cs:214): a hand pushed through a crate or a rock fin
+    /// does not grab what lies behind it. Seen when any of the point nearest the hand, the centre or the top is clear
+    /// (GrabSelector.SightPoints): an item partly sunk into uneven ground hides the first two (VR run 50's vr.10,
+    /// vr.11 and vr.32 ground pickups failed with the hand on the Apple). Counts <see cref="lastReachable"/> and
+    /// <see cref="lastHidden"/>.
+    /// </summary>
+    private static bool InSight(
+        Vector3 eye,
+        Vector3 pos,
+        Vector3 point,
+        Bounds bounds,
+        IInteractible it
+    )
+    {
+        GrabSelector.SightPoints(point.N(), bounds.center.N(), bounds.extents.N(), SightPoints);
+        bool seen = false;
+        for (int s = 0; s < GrabSelector.SightPointCount && !seen; s++)
+            seen = Visible(eye, SightPoints[s].U(), it);
+        // The hand already on it sees it, and the eye sees the hand (no fin between): VR mp19's compass 3 cm from
+        // the hand on rocky ground hid from the stooped eye on every point.
+        if (!seen)
+            seen = GrabSelector.Seen(false, Visible(pos, point, it), Visible(eye, pos, it));
+        lastReachable++;
+        if (!seen)
+            lastHidden++;
+        return seen;
+    }
+
+    /// <summary>World bounds of the item's active solid colliders, grown to <paramref name="point"/>.</summary>
+    private static Bounds SolidBounds(Item item, Vector3 point)
+    {
+        var b = new Bounds(point, Vector3.zero);
+        foreach (var col in item.colliders)
+            if (col != null && col.enabled && !col.isTrigger && col.gameObject.activeInHierarchy)
+                b.Encapsulate(col.bounds);
+        return b;
+    }
+
     /// <summary>Nearest point of the collider to <paramref name="pos"/>: exact where Collider.ClosestPoint is (boxes,
     /// spheres, capsules, convex meshes), else the bounds (a concave mesh).</summary>
-    private static Vector3 SurfacePoint(Collider col, Vector3 pos) =>
+    internal static Vector3 SurfacePoint(Collider col, Vector3 pos) =>
         ExactShape(col) ? col.ClosestPoint(pos) : col.bounds.ClosestPoint(pos);
 
     private static bool ExactShape(Collider col) =>
