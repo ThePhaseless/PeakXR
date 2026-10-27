@@ -16,7 +16,7 @@
 # Idempotent: tarballs are cached in deps/cache and re-verified on every run; the
 # generated projects are rebuilt incrementally by MSBuild.
 #
-# Env: PEAK_DIR (game install, read only), XR_OPENXR_VERSION, XR_MANAGEMENT_VERSION,
+# Env: PEAK_DIR (game install, read only; refs/peak/ stands in when it is absent), XR_OPENXR_VERSION, XR_MANAGEMENT_VERSION,
 #      OPENVR_TAG, SKIP_OPENVR=1.
 set -euo pipefail
 
@@ -44,18 +44,25 @@ command -v dotnet >/dev/null || die "dotnet not on PATH; run through 'mise run d
 # ---------------------------------------------------------------------------------------------
 # Game layout (read only). Find <Game>_Data dynamically instead of assuming PEAK_Data.
 # ---------------------------------------------------------------------------------------------
-[[ -n "${PEAK_DIR:-}" && -d "$PEAK_DIR" ]] || die "PEAK_DIR is not set or does not exist (${PEAK_DIR:-unset})"
 DATA_DIR=""
-for d in "$PEAK_DIR"/*_Data; do
+for d in "${PEAK_DIR:-/nonexistent}"/*_Data; do
     [[ -d "$d/Managed" ]] && { DATA_DIR="$d"; break; }
 done
-[[ -n "$DATA_DIR" ]] || die "no *_Data/Managed folder under $PEAK_DIR"
-MANAGED="$DATA_DIR/Managed"
-log "game data: $DATA_DIR"
+UNITY_VERSION=""
+if [[ -n "$DATA_DIR" ]]; then
+    MANAGED="$DATA_DIR/Managed"
+    log "game data: $DATA_DIR"
+else
+    # No game install (CI): the committed reference assemblies carry the same metadata (tools/make-refs.sh).
+    MANAGED="$ROOT/refs/peak"
+    [[ -f "$MANAGED/versions.txt" ]] || die "PEAK_DIR has no *_Data/Managed (${PEAK_DIR:-unset}) and refs/peak/ is missing"
+    UNITY_VERSION="$(grep -oP '^unity=\K.*' "$MANAGED/versions.txt")"
+    log "no game install at ${PEAK_DIR:-unset}; using refs/peak (Unity $UNITY_VERSION)"
+fi
 
 # Unity version: the data.unity3d / globalgamemanagers header holds it; UnityPlayer.dll is the fallback.
-UNITY_VERSION=""
 for f in "$DATA_DIR/data.unity3d" "$DATA_DIR/globalgamemanagers"; do
+    [[ -z "$UNITY_VERSION" ]] || break
     [[ -f "$f" ]] || continue
     UNITY_VERSION="$(head -c 256 "$f" | strings -n 6 | grep -m1 -oE '^[0-9]{4,}\.[0-9]+\.[0-9]+[abfpx][0-9]+$' || true)"
     [[ -n "$UNITY_VERSION" ]] && break
@@ -80,9 +87,14 @@ version_ge() {
 }
 
 # dll_version DLL: FileVersion from the PE version resource, empty when 0.0.0.0 or absent.
+# Reference assemblies lose that resource; tools/make-refs.sh records it in refs/peak/versions.txt.
 dll_version() {
     local v
-    v="$(strings -el "$1" 2>/dev/null | grep -A1 -xm1 'FileVersion' | tail -n1 || true)"
+    if [[ "$1" == "$ROOT/refs/peak/"* ]]; then
+        v="$(grep -m1 -oP "^file:\Q$(basename "$1")\E=\K.*" "$ROOT/refs/peak/versions.txt" || true)"
+    else
+        v="$(strings -el "$1" 2>/dev/null | grep -A1 -xm1 'FileVersion' | tail -n1 || true)"
+    fi
     [[ "$v" =~ ^[0-9]+(\.[0-9]+)+$ && "$v" != "0.0.0.0" ]] && printf '%s' "$v"
     return 0
 }

@@ -5,12 +5,14 @@
     <RootNamespace>PeakXR</RootNamespace>
     <BepInExPluginGuid>com.thephaseless.peakxr</BepInExPluginGuid>
     <BepInExPluginName>PeakXR</BepInExPluginName>
-    <Version>0.1.0</Version>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
     <PeakManaged>$(PeakDir)/PEAK_Data/Managed</PeakManaged>
+    <!-- No game install (CI): compile against the committed reference assemblies (tools/make-refs.sh). -->
+    <PeakManaged Condition="!Exists('$(PeakManaged)')"
+      >$(MSBuildThisFileDirectory)../../refs/peak</PeakManaged>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,7 +32,7 @@
 
   <Import Project="../XRDeps.props" Condition="Exists('../XRDeps.props')" />
 
-  <!-- Game assemblies are referenced in place and never copied or committed. -->
+  <!-- Game assemblies are referenced in place and never copied; refs/peak/ holds stripped copies. -->
   <ItemGroup>
     <Reference Include="$(PeakManaged)/Assembly-CSharp.dll" Private="false" />
     <Reference Include="$(PeakManaged)/Zorro.*.dll" Private="false" />

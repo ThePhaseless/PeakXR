@@ -11,8 +11,10 @@ them; they are not in this repository.
 
 ## Build
 
-Needs [mise](https://mise.jdx.dev) and a PEAK install. `PEAK_DIR` in `mise.toml` points at the default
-Steam library; override it in `mise.local.toml` if yours is elsewhere.
+Needs [mise](https://mise.jdx.dev). `PEAK_DIR` in `mise.toml` points at the default Steam library;
+override it in `mise.local.toml` or the environment if yours is elsewhere. Without a PEAK install the
+build uses the stripped reference assemblies in `refs/peak/`, which is how CI builds. After a game
+update, run `mise run refs` to regenerate them and commit the result.
 
 ```sh
 mise run build      # fetch XR deps into deps/, then dotnet build
@@ -25,6 +27,18 @@ mise run package    # dist/PeakXR-<version>.zip (Thunderstore layout) and dist/P
 Other tasks: `mise run deploy` copies `dist/PeakXR/BepInEx` into the game, `mise run decompile` refreshes
 `decomp/` after a game update (keeping the old one in `decomp.prev/`), and `mise run compat-check` prints the game and
 Unity versions and checks every patch target and name lookup against the decompile.
+
+## Releasing
+
+Bump `<Version>` in `Directory.Build.props` and commit. Then tag that commit and push the tag:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow checks that the tag matches the version, then builds, tests and packages the
+mod, and creates a GitHub release with `PeakXR-<version>.zip` attached.
 
 ## Install
 
