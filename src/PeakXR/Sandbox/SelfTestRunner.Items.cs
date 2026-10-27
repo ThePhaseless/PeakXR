@@ -63,6 +63,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.173-reach-ghost", 20f, ReachGhostStep());
         yield return HandStep("vr.243-grab-drawn-shape", 25f, DrawnShapeGrabStep());
         yield return HandStep("vr.244-left-hold", 180f, LeftHoldStep());
+        yield return HandStep("vr.245-item-front", 90f, ItemFrontStep());
     }
 
     /// <summary>
@@ -277,25 +278,12 @@ internal sealed partial class SelfTestRunner
                 );
                 if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
                 {
-                    // Held up in front of the face, its middle centred 0.45 m from the eyes, so the whole item is in
-                    // frame: the hand goes where that puts the item's middle (tracking space), then once more to settle.
                     var rest = Script(left).Position;
-                    HeadFrame(out var eyes, out var forward, out _);
-                    var goal = eyes + forward * 0.45f;
-                    Vector3 raised = default;
-                    for (int pass = 0; pass < 2; pass++)
-                    {
-                        HeldItemPoints.World(item, rig.Hand(left), left, middle, out raised);
-                        var offset =
-                            rig.Origin.InverseTransformPoint(raised)
-                            - rig.Origin.InverseTransformPoint(rig.Hand(left).position);
-                        yield return MoveTrack(left, goal - offset, 0.4f);
-                        yield return Wait(0.3f);
-                    }
-                    HeldItemPoints.World(item, rig.Hand(left), left, middle, out raised);
+                    yield return RaiseHeld(item, left, middle);
                     yield return ShotAt(
                         $"vr-244-{itemName.Replace(' ', '-')}-{(left ? "left" : "right")}",
-                        raised
+                        raisedMiddle,
+                        FrameDistance(item, info)
                     );
                     yield return MoveTrack(left, rest, 0.3f);
                 }
@@ -321,6 +309,8 @@ internal sealed partial class SelfTestRunner
                 float.IsNaN(l.Palm) || float.IsNaN(r.Palm)
                     ? "no collider to measure the palm against"
                 : l.Palm > r.Palm + LeftHoldSlack ? "the left palm is off the item"
+                // Collider.ClosestPoint reads 0 inside: a palm sunk into the item (the CactusBall's plain mirror).
+                : l.Palm < r.Palm - LeftHold.DeepTolerance ? "the left palm sinks into the item"
                 : !float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack
                     ? "the left hold's second grip is off the item"
                 : l.HandOff > 0.04f || r.HandOff > 0.04f ? "the welded hand is off its grip"
@@ -344,6 +334,145 @@ internal sealed partial class SelfTestRunner
         // Opposite sides, each clear of the hand by more than a hand's half width.
         static bool Flipped(float a, float b, float clear = 0.03f) =>
             a * b < 0f && Mathf.Abs(a) > clear && Mathf.Abs(b) > clear;
+    }
+
+    /// <summary>Where <see cref="RaiseHeld"/> left the held item's middle, world space.</summary>
+    Vector3 raisedMiddle;
+
+    /// <summary>
+    /// Holds the item up in front of the face, its middle (<paramref name="middle"/>, item frame) centred 0.45 m from
+    /// the eyes: the scripted hand goes where that puts the middle (tracking space), then once more to settle. The
+    /// hand keeps its rest rotation, a fist held up with the forearm toward the eyes.
+    /// </summary>
+    IEnumerator RaiseHeld(Item item, bool left, Vector3 middle)
+    {
+        var rig = VRRig.Instance;
+        HeadFrame(out var eyes, out var forward, out _);
+        var goal = eyes + forward * 0.45f;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            HeldItemPoints.World(item, rig.Hand(left), left, middle, out raisedMiddle);
+            var offset =
+                rig.Origin.InverseTransformPoint(raisedMiddle)
+                - rig.Origin.InverseTransformPoint(rig.Hand(left).position);
+            yield return MoveTrack(left, goal - offset, 0.4f);
+            yield return Wait(0.3f);
+        }
+        HeldItemPoints.World(item, rig.Hand(left), left, middle, out raisedMiddle);
+    }
+
+    /// <summary>How far back along the eye's line a shot of the held item stands so all of it is in frame: from the
+    /// eyes, or farther for a big item (BingBong is over a metre wide as drawn, and the 0.45 m view of it showed only
+    /// cloth).</summary>
+    static float FrameDistance(Item item, ItemHoldInfo info) =>
+        Mathf.Max(
+            0.45f,
+            0.75f * (info.BoundsMax - info.BoundsMin).magnitude * HeldItemScale.Factor(item)
+        );
+
+    /// <summary>vr.245: items whose front matters (Core ItemFront, docs/research/item-fronts.csv): a face, a dial, a
+    /// cover, a packaged food, a medallion.</summary>
+    static readonly string[] FrontItems =
+    {
+        "BingBong",
+        "Compass",
+        "Passport",
+        "Granola Bar",
+        "Amulet_Healing",
+    };
+
+    /// <summary>vr.245 screenshots these in each hand.</summary>
+    static readonly string[] FrontShots = { "BingBong", "Compass" };
+
+    /// <summary>
+    /// vr.245: each front item, held up before the face in the left hand and then the right (<see cref="RaiseHeld"/>),
+    /// shows its front to the eyes: the front (Core <see cref="ItemFront"/>, turned in AvatarPoseDriver.ItemInController)
+    /// as drawn has a positive dot with the way from the item's middle to the eyes. One log line per item and hand; the
+    /// step fails at the end with every item that failed.
+    /// </summary>
+    IEnumerator ItemFrontStep()
+    {
+        var rig = VRRig.Instance;
+        var all = new List<Item>(SandboxActions.Items);
+        var notes = new List<string>();
+        var failures = new List<string>();
+        var info = new ItemHoldInfo();
+        foreach (var itemName in FrontItems)
+        {
+            var prefab = FindItem(all, itemName);
+            if (prefab == null || !string.Equals(prefab.name, itemName, StringComparison.Ordinal))
+            {
+                failures.Add(itemName + " not in the database");
+                continue;
+            }
+            for (int h = 0; h < 2; h++)
+            {
+                bool left = h == 0;
+                string hand = left ? "left" : "right";
+                yield return GiveAndHold(prefab);
+                if (!stepOk)
+                {
+                    if (failures.Count > 0)
+                        failNote += "; before it: " + string.Join("; ", failures);
+                    yield break;
+                }
+                LocalHold.ItemInLeftHand = left;
+                LocalHold.TwoHand = false;
+                // The weld moves to the new hand once the attach has settled (AvatarPoseDriver.ReconcileWeld).
+                yield return Wait(0.8f);
+                var item = HeldItem();
+                if (item == null || !info.Bind(item))
+                {
+                    failures.Add($"{itemName} left the {hand} hand");
+                    continue;
+                }
+                if (!info.HasFront)
+                {
+                    failures.Add($"{itemName} has no front in the table");
+                    yield return ReleaseHeld();
+                    continue;
+                }
+                var rest = Script(left).Position;
+                var middle = (info.BoundsMin + info.BoundsMax) * 0.5f;
+                yield return RaiseHeld(item, left, middle);
+                HeldItemPoints.World(item, rig.Hand(left), left, middle, out var mid);
+                HeldItemPoints.World(
+                    item,
+                    rig.Hand(left),
+                    left,
+                    middle + info.Front * 0.1f,
+                    out var ahead
+                );
+                var eyes = rig.Head.position;
+                float facing = Vector3.Dot((ahead - mid).normalized, (eyes - mid).normalized);
+                string line = F(
+                    $"{itemName} {hand}: front to the eyes {facing:0.00}, middle {Vector3.Distance(mid, eyes):0.00} m from the eyes"
+                );
+                Plugin.Log.LogInfo("[selftest] vr.245 " + line);
+                notes.Add(line);
+                if (facing <= 0f)
+                    failures.Add($"{itemName} shows the player its back: {line}");
+                if (Array.IndexOf(FrontShots, itemName) >= 0)
+                    yield return ShotAt(
+                        $"vr-245-{itemName.Replace(' ', '-')}-{hand}",
+                        mid,
+                        FrameDistance(item, info)
+                    );
+                yield return MoveTrack(left, rest, 0.3f);
+                yield return ReleaseHeld();
+                if (!heldReleased)
+                    failures.Add($"{itemName} stayed in the {hand} hand: {heldReleaseNote}");
+            }
+        }
+        if (failures.Count > 0)
+            Fail(
+                $"{failures.Count} failed: "
+                    + string.Join("; ", failures)
+                    + "; all: "
+                    + string.Join("; ", notes)
+            );
+        else
+            stepNote = string.Join("; ", notes);
     }
 
     bool heldReleased;
@@ -383,6 +512,16 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         heldReleased = HeldItem() == null;
+        // What the release dropped stays in the world: a CactusBall cannot be pocketed (UIData.canPocket false), so
+        // EquipSlot(None) drops it at the hand (CharacterItems.cs:497-502), where it sticks to its holder
+        // (CactusBall.cs:15-20) and stays the hovered interactible, its "CACTUS" name prompt (GUIManager.cs:1045-1057)
+        // floating in every later shot. Remove it so the next hold starts clean.
+        if (heldReleased && held != null)
+        {
+            var view = held.GetComponent<PhotonView>();
+            if (view != null && (view.IsMine || PhotonNetwork.IsMasterClient))
+                PhotonNetwork.Destroy(held.gameObject);
+        }
         if (heldReleased)
             EmptyHotbar(c);
         else

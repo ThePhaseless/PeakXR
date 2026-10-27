@@ -29,6 +29,11 @@ namespace PeakXR.Core
         /// <summary>A left palm this much farther from the item than the right one is still on it, metres.</summary>
         public const float Tolerance = 0.01f;
 
+        /// <summary>A left palm this much nearer the item than the right one (the palm reference sunk into it, where
+        /// <c>Collider.ClosestPoint</c> reads 0) is a different hold, metres: the CactusBall, drawn 0.1 m off its pivot,
+        /// put the plain mirror's palm inside the ball (vr.244: 0.000 m left, 0.121 m right).</summary>
+        public const float DeepTolerance = 0.06f;
+
         /// <summary>A plane earlier in the order wins while its asymmetry is within this of the best (share of the
         /// item's longest side).</summary>
         public const float Margin = 0.02f;
@@ -92,7 +97,8 @@ namespace PeakXR.Core
 
         /// <summary>
         /// The plane for an item: the plain mirror while its palm stays on the item (<paramref name="plainGap"/>
-        /// within <see cref="Tolerance"/> of <paramref name="rightGap"/>) and it keeps the far end's side, else the plane it is most symmetric about
+        /// within <see cref="Tolerance"/> above and <see cref="DeepTolerance"/> below <paramref name="rightGap"/>) and it
+        /// keeps the far end's side, else the plane it is most symmetric about
         /// (asymmetries from <see cref="Asymmetry"/>), in the order Origin, CentreX, CentreZ within
         /// <see cref="Margin"/>. <paramref name="keepForward"/> (a launcher's barrel, an item with a front: <see cref="HasFront"/>) rules out the z plane, and a plane
         /// that turns the item's far end round (<see cref="TurnsEnd"/>) is out unless the item is even across it
@@ -111,7 +117,7 @@ namespace PeakXR.Core
         )
         {
             bool origin = !originTurns || asymOrigin <= Margin;
-            if (origin && plainGap <= rightGap + Tolerance)
+            if (origin && plainGap <= rightGap + Tolerance && plainGap >= rightGap - DeepTolerance)
                 return LeftPlane.Origin;
             bool x = !xTurns || asymX <= Margin;
             bool z = !keepForward && (!zTurns || asymZ <= Margin);

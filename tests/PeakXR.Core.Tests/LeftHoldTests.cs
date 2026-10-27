@@ -102,6 +102,16 @@ public class LeftHoldTests
     }
 
     [Fact]
+    public void Choose_LeavesThePlainMirror_WhenThePalmSinksIntoTheItem()
+    {
+        // The CactusBall (vr.244): drawn 0.1 m off its pivot in x, so the plain mirror put the left palm inside the
+        // ball (0 m: Collider.ClosestPoint of a point inside) while the right one is 0.12 m out. Even across its middle.
+        Assert.Equal(LeftPlane.CentreX, LeftHold.Choose(0.12f, 0f, 0.3f, 0.01f, 0.2f, false));
+        // A little deeper than the right palm is still the same hold.
+        Assert.Equal(LeftPlane.Origin, LeftHold.Choose(0.12f, 0.08f, 0.3f, 0.01f, 0.2f, false));
+    }
+
+    [Fact]
     public void Choose_NeverTurnsALaunchersBarrelBack()
     {
         Assert.Equal(LeftPlane.CentreX, LeftHold.Choose(0.05f, 0.25f, 0.3f, 0.2f, 0.01f, true));

@@ -19,6 +19,12 @@ internal sealed class ItemHoldInfo
     /// it along the two-hand axis (<see cref="GripMath.TwoHandAim"/>).</summary>
     public bool Aimed;
 
+    /// <summary>The side a person turns to their eyes to look at the item (a face, a dial, a cover), in the item's
+    /// frame (Core <see cref="ItemFront"/>, docs/research/item-fronts.csv); false for an item whose use fixes how it
+    /// is held, one with no such side, or one the table does not know.</summary>
+    public bool HasFront;
+    public Vector3 Front;
+
     /// <summary>The drawn meshes' bounds in the item's own frame (the grips' preview hands are inactive by then,
     /// HandVisual.cs:9). Zero size when the item draws nothing.</summary>
     public Vector3 BoundsMin;
@@ -139,6 +145,8 @@ internal sealed class ItemHoldInfo
         public HoldProfile Profile;
         public bool Edible;
         public bool Aimed;
+        public bool HasFront;
+        public Vector3 Front;
         public Vector3 Min;
         public Vector3 Max;
         public LeftFit Left;
@@ -237,8 +245,9 @@ internal sealed class ItemHoldInfo
         fit.LongAxis = LeftHold.HasLongAxis(size.N());
         float asymZ = Asym(LeftPlane.CentreZ);
         // An item whose front and back differ keeps the side the right hold shows the player: no half turn (vr.244:
-        // BingBong showed the back of its head in the left hand).
-        fit.Front = LeftHold.HasFront(asymZ);
+        // BingBong showed the back of its head in the left hand). The front table knows the ones whose front is only
+        // in the texture (docs/research/item-fronts.csv).
+        fit.Front = LeftHold.HasFront(asymZ) || HasFront;
         fit.Plane = LeftHold.Choose(
             rightGap,
             plainGap,
@@ -331,18 +340,22 @@ internal sealed class ItemHoldInfo
             bool any = LocalBounds(target, out entry.Min, out entry.Max);
             var traits = Traits(target, any, entry.Max - entry.Min, out entry.Edible);
             entry.Aimed = (traits & ItemTraits.Shooter) != 0;
+            entry.HasFront = ItemFront.TryGet(target.name, out var front);
+            entry.Front = front.U();
             entry.Profile = ItemHoldTable.Classify(
                 target.UIData?.itemName + " " + target.name,
                 traits
             );
             byId[target.itemID] = entry;
             Plugin.Log.LogDebug(
-                $"[avatar] hold profile {target.name}: {entry.Profile} ({traits}), size {entry.Max - entry.Min}"
+                $"[avatar] hold profile {target.name}: {entry.Profile} ({traits}), size {entry.Max - entry.Min}, front {(entry.HasFront ? "" : "none ")}{entry.Front}"
             );
         }
         Profile = entry.Profile;
         Edible = entry.Edible;
         Aimed = entry.Aimed;
+        HasFront = entry.HasFront;
+        Front = entry.Front;
         BoundsMin = entry.Min;
         BoundsMax = entry.Max;
         return true;
