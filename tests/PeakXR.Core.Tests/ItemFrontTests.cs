@@ -59,57 +59,156 @@ public class ItemFrontTests
             { 160f, -35f, 90f },
         };
 
-    [Theory]
-    [MemberData(nameof(Rotations))]
-    public void Turn_KeepsTheGripAndTheMiddleWhereTheyWere(float x, float y, float z)
+    static float Facing(Vector3 pos, Quaternion rot, Vector3 eyePoint, float scale = 1f)
     {
-        var rot = UnityQuat.Euler(x, y, z);
-        var pos = new Vector3(0.02f, -0.05f, 0.11f);
-        var eye = ItemFront.EyeInGrip(false);
-        ItemFront.Turn(pos, rot, Pivot, Centre, Face, eye, out var p2, out var r2);
-        TestUtil.Near(At(pos, rot, Pivot), At(p2, r2, Pivot), 1e-4f);
-        TestUtil.Near(At(pos, rot, Centre), At(p2, r2, Centre), 1e-4f);
+        var grip = At(pos, rot, Pivot);
+        var mid = grip + scale * UnityQuat.Rotate(rot, Centre - Pivot);
+        return Vector3.Dot(UnityQuat.Rotate(rot, Face), Vector3.Normalize(eyePoint - mid));
+    }
+
+    static float ArmTurnDeg(Quaternion a, Quaternion b)
+    {
+        var u = Vector3.Normalize(UnityQuat.Rotate(a, Centre - Pivot));
+        var v = Vector3.Normalize(UnityQuat.Rotate(b, Centre - Pivot));
+        return MathF.Acos(Math.Clamp(Vector3.Dot(u, v), -1f, 1f)) * UnityQuat.Rad2Deg;
     }
 
     [Theory]
     [MemberData(nameof(Rotations))]
-    public void Turn_FacesTheFront_AsNearTheEyesAsASpinAboutTheMiddleCan(float x, float y, float z)
+    public void Turn_KeepsTheHandOnTheGrip(float x, float y, float z)
     {
         var rot = UnityQuat.Euler(x, y, z);
-        var eye = ItemFront.EyeInGrip(true);
-        ItemFront.Turn(Vector3.Zero, rot, Pivot, Centre, Face, eye, out _, out var r2);
-        float before = Vector3.Dot(UnityQuat.Rotate(rot, Face), eye);
-        float after = Vector3.Dot(UnityQuat.Rotate(r2, Face), eye);
-        // The best a turn about the grip-to-middle axis reaches: the front's and the eyes' parts across it aligned.
-        var axis = Vector3.Normalize(UnityQuat.Rotate(rot, Centre - Pivot));
-        float fa = Vector3.Dot(UnityQuat.Rotate(rot, Face), axis);
-        float ea = Vector3.Dot(eye, axis);
-        float best = fa * ea + MathF.Sqrt(1f - fa * fa) * MathF.Sqrt(1f - ea * ea);
-        Assert.True(after >= before - 1e-4f, $"{after} < {before}");
-        TestUtil.Near(best, after, 1e-3f);
+        var pos = new Vector3(0.02f, -0.05f, 0.11f);
+        ItemFront.Turn(
+            pos,
+            rot,
+            Pivot,
+            Centre,
+            0.75f,
+            Face,
+            ItemFront.EyePoint(false),
+            ItemFront.MaxTilt,
+            out var p2,
+            out var r2
+        );
+        TestUtil.Near(At(pos, rot, Pivot), At(p2, r2, Pivot), 1e-4f);
+    }
+
+    [Theory]
+    [MemberData(nameof(Rotations))]
+    public void Turn_WithoutTilt_OnlySpins_LeavingTheMiddleWhereItWas(float x, float y, float z)
+    {
+        var rot = UnityQuat.Euler(x, y, z);
+        var eye = ItemFront.EyePoint(true);
+        ItemFront.Turn(Vector3.Zero, rot, Pivot, Centre, 1f, Face, eye, 0f, out var p2, out var r2);
+        TestUtil.Near(At(Vector3.Zero, rot, Centre), At(p2, r2, Centre), 1e-4f);
+        Assert.True(Facing(p2, r2, eye) >= Facing(Vector3.Zero, rot, eye) - 1e-4f);
+    }
+
+    [Theory]
+    [MemberData(nameof(Rotations))]
+    public void Turn_TiltsNoFurtherThanItsBudget_AndNeverLessFacing(float x, float y, float z)
+    {
+        var rot = UnityQuat.Euler(x, y, z);
+        var eye = ItemFront.EyePoint(false);
+        ItemFront.Turn(
+            Vector3.Zero,
+            rot,
+            Pivot,
+            Centre,
+            1f,
+            Face,
+            eye,
+            30f,
+            out var p2,
+            out var r2
+        );
+        Assert.True(ArmTurnDeg(rot, r2) <= 30.01f, $"{ArmTurnDeg(rot, r2)} degrees");
+        ItemFront.Turn(Vector3.Zero, rot, Pivot, Centre, 1f, Face, eye, 0f, out var p0, out var r0);
+        Assert.True(Facing(p2, r2, eye) >= Facing(p0, r0, eye) - 1e-3f);
+    }
+
+    [Fact]
+    public void Turn_TiltsADialTheSpinCannotReach_TowardTheEyes()
+    {
+        // The front runs along the grip-to-middle line, so no spin about it moves the front: only the tilt can.
+        var eye = ItemFront.EyePoint(false);
+        var arm = Vector3.Normalize(Centre - Pivot);
+        var rot = GripMath.FromTo(arm, Vector3.Normalize(new Vector3(0f, -1f, 0.6f)));
+        ItemFront.Turn(Vector3.Zero, rot, Pivot, Centre, 1f, arm, eye, 0f, out var ps, out var rs);
+        ItemFront.Turn(
+            Vector3.Zero,
+            rot,
+            Pivot,
+            Centre,
+            1f,
+            arm,
+            eye,
+            ItemFront.MaxTilt,
+            out var pt,
+            out var rt
+        );
+        TestUtil.SameRotation(rot, rs, 0.05f);
+        var mid = At(pt, rt, Centre);
+        float facing = Vector3.Dot(UnityQuat.Rotate(rt, arm), Vector3.Normalize(eye - mid));
+        Assert.True(
+            facing
+                > Vector3.Dot(
+                    UnityQuat.Rotate(rot, arm),
+                    Vector3.Normalize(eye - At(ps, rs, Centre))
+                )
+        );
     }
 
     [Fact]
     public void Turn_ShowsTheFace_OfAnItemHeldFacingAway()
     {
         // The right hold puts the face straight away from the eyes, across the arm from the middle.
-        var eye = ItemFront.EyeInGrip(false);
-        var axis = Vector3.Normalize(Vector3.Cross(eye, new Vector3(0f, 0f, 1f)));
-        var rot = GripMath.FromTo(Face, -eye);
-        var pivot = Vector3.Zero;
+        var eye = ItemFront.EyePoint(false);
+        var dir = Vector3.Normalize(eye);
+        var axis = Vector3.Normalize(Vector3.Cross(dir, new Vector3(0f, 0f, 1f)));
+        var rot = GripMath.FromTo(Face, -dir);
         var centre = UnityQuat.Rotate(Quaternion.Inverse(rot), axis * 0.2f);
-        ItemFront.Turn(Vector3.Zero, rot, pivot, centre, Face, eye, out _, out var r2);
-        Assert.True(Vector3.Dot(UnityQuat.Rotate(r2, Face), eye) > 0.99f);
+        ItemFront.Turn(
+            Vector3.Zero,
+            rot,
+            Vector3.Zero,
+            centre,
+            1f,
+            Face,
+            eye,
+            ItemFront.MaxTilt,
+            out var p2,
+            out var r2
+        );
+        var mid = At(p2, r2, centre);
+        Assert.True(Vector3.Dot(UnityQuat.Rotate(r2, Face), Vector3.Normalize(eye - mid)) > 0.95f);
     }
 
     [Fact]
     public void Turn_AnItemCentredOnTheGrip_TurnsTheFrontStraightAtTheEyes()
     {
         var rot = UnityQuat.Euler(10f, 150f, 30f);
-        var eye = ItemFront.EyeInGrip(false);
-        ItemFront.Turn(Vector3.Zero, rot, Pivot, Pivot, Face, eye, out var p2, out var r2);
-        TestUtil.Near(1f, Vector3.Dot(UnityQuat.Rotate(r2, Face), eye), 1e-3f);
-        TestUtil.Near(At(Vector3.Zero, rot, Pivot), At(p2, r2, Pivot), 1e-4f);
+        var eye = ItemFront.EyePoint(false);
+        ItemFront.Turn(
+            Vector3.Zero,
+            rot,
+            Pivot,
+            Pivot,
+            1f,
+            Face,
+            eye,
+            ItemFront.MaxTilt,
+            out var p2,
+            out var r2
+        );
+        var grip = At(Vector3.Zero, rot, Pivot);
+        TestUtil.Near(
+            1f,
+            Vector3.Dot(UnityQuat.Rotate(r2, Face), Vector3.Normalize(eye - grip)),
+            1e-3f
+        );
+        TestUtil.Near(grip, At(p2, r2, Pivot), 1e-4f);
     }
 
     [Fact]
@@ -117,10 +216,44 @@ public class ItemFrontTests
     {
         // Decided by the hold alone, not by where the head is: the item never swims as the wrist turns.
         var rot = UnityQuat.Euler(25f, 80f, -10f);
-        var eye = ItemFront.EyeInGrip(false);
-        ItemFront.Turn(Vector3.One, rot, Pivot, Centre, Face, eye, out var p1, out var r1);
-        ItemFront.Turn(Vector3.One, rot, Pivot, Centre, Face, eye, out var p2, out var r2);
+        var eye = ItemFront.EyePoint(false);
+        ItemFront.Turn(
+            Vector3.One,
+            rot,
+            Pivot,
+            Centre,
+            0.75f,
+            Face,
+            eye,
+            60f,
+            out var p1,
+            out var r1
+        );
+        ItemFront.Turn(
+            Vector3.One,
+            rot,
+            Pivot,
+            Centre,
+            0.75f,
+            Face,
+            eye,
+            60f,
+            out var p2,
+            out var r2
+        );
         Assert.Equal(p1, p2);
         Assert.Equal(r1, r2);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NaturalGrip_PointsTheEyeLineAtTheEyes_ThumbUp(bool left)
+    {
+        var toEyes = Vector3.Normalize(new Vector3(left ? 0.2f : -0.2f, 0.3f, -0.9f));
+        var up = new Vector3(0f, 1f, 0f);
+        var rot = ItemFront.NaturalGrip(toEyes, up, left);
+        TestUtil.Near(toEyes, UnityQuat.Rotate(rot, ItemFront.EyeInGrip(left)), 1e-4f);
+        Assert.True(Vector3.Dot(UnityQuat.Rotate(rot, GripFrame.ThumbSide), up) > 0.7f);
     }
 }
