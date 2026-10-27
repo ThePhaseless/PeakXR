@@ -52,8 +52,12 @@ internal static class AvatarPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterAnimations), "ConfigureIK");
 
-        private static void Postfix(CharacterAnimations __instance) =>
-            AvatarPoseDriver.Of(animationsCharacter(__instance))?.OnConfigureIK();
+        private static void Postfix(CharacterAnimations __instance)
+        {
+            var d = AvatarPoseDriver.Of(animationsCharacter(__instance));
+            if (d != null)
+                d.OnConfigureIK();
+        }
     }
 
     /// <summary>CharacterAnimations.HandleIK (CharacterAnimations.cs:339, private): sets rig and arm IK weights
@@ -64,8 +68,12 @@ internal static class AvatarPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterAnimations), "HandleIK");
 
-        private static void Postfix(CharacterAnimations __instance) =>
-            Driver(animationsCharacter(__instance))?.OnHandleIK();
+        private static void Postfix(CharacterAnimations __instance)
+        {
+            var d = Driver(animationsCharacter(__instance));
+            if (d != null)
+                d.OnHandleIK();
+        }
     }
 
     /// <summary>CharacterRagdoll.SaveAdditionalTransformPositions (CharacterRagdoll.cs:212, private): writes
@@ -76,8 +84,12 @@ internal static class AvatarPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterRagdoll), "SaveAdditionalTransformPositions");
 
-        private static void Postfix(CharacterRagdoll __instance) =>
-            Driver(ragdollCharacter(__instance))?.OnSaveAdditional();
+        private static void Postfix(CharacterRagdoll __instance)
+        {
+            var d = Driver(ragdollCharacter(__instance));
+            if (d != null)
+                d.OnSaveAdditional();
+        }
     }
 
     /// <summary>CharacterItems.GetItemHoldForward (CharacterItems.cs:701, private): hold torque target.</summary>
@@ -155,8 +167,11 @@ internal static class AvatarPatches
         {
             var c = itemsCharacter(__instance);
             var d = AvatarPoseDriver.Of(c);
-            d?.DestroyItemJoint();
-            d?.EndPassBody();
+            if (d != null)
+            {
+                d.DestroyItemJoint();
+                d.EndPassBody();
+            }
         }
     }
 

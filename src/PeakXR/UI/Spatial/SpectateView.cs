@@ -322,7 +322,9 @@ internal sealed class SpectateView
     /// <summary>Textured, alpha-blended and drawn over the world, on a shader every player build ships.</summary>
     private static Material OnTopTextured(Texture texture)
     {
-        var shader = Shader.Find("UI/Default") ?? Shader.Find("Sprites/Default");
+        var shader = Shader.Find("UI/Default");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
         var material = new Material(shader) { mainTexture = texture, renderQueue = 3100 };
         material.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         return material;

@@ -386,12 +386,13 @@ public static partial class SandboxActions
                     return false;
                 }
                 go = PhotonNetwork.Instantiate(entry.Name, position, rotation, 0);
-                go?.GetComponent<PhotonView>()
-                    .RPC(
-                        "RPCA_InitTornado",
-                        RpcTarget.All,
-                        spawner.GetComponent<PhotonView>().ViewID
-                    );
+                if (go != null)
+                    go.GetComponent<PhotonView>()
+                        .RPC(
+                            "RPCA_InitTornado",
+                            RpcTarget.All,
+                            spawner.GetComponent<PhotonView>().ViewID
+                        );
                 break;
             }
 
@@ -403,7 +404,9 @@ public static partial class SandboxActions
                     return false;
                 }
                 go = PhotonNetwork.Instantiate(entry.Name, Vector3.zero, Quaternion.identity, 0);
-                go?.GetComponent<Bugfix>()?.AttachBug(Character.localCharacter.photonView.ViewID);
+                var bug = go != null ? go.GetComponent<Bugfix>() : null;
+                if (bug != null)
+                    bug.AttachBug(Character.localCharacter.photonView.ViewID);
                 break;
             }
 

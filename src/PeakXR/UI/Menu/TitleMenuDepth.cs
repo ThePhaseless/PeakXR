@@ -165,9 +165,9 @@ internal sealed class TitleMenuDepth
             return;
         canvasRect = (RectTransform)canvas.transform;
         acquiredFrame = Time.frameCount;
-        pages =
-            canvas.GetComponentInParent<UIPageHandler>(true)
-            ?? canvas.GetComponentInChildren<UIPageHandler>(true);
+        pages = canvas.GetComponentInParent<UIPageHandler>(true);
+        if (pages == null)
+            pages = canvas.GetComponentInChildren<UIPageHandler>(true);
         // MainMenuPageHandler.IntroAnimation (A/MainMenuPageHandler.cs:20) is the Animator on the canvas itself.
         intro = canvas.GetComponent<Animator>();
         introState = 0;

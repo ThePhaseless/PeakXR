@@ -282,6 +282,13 @@ internal static class WorldCanvases
         if (size.x < 1f || size.y < 1f)
             size = new Vector2(1920f, 1080f);
 
+        var modal = root.GetComponentInParent<Modal>(true);
+        if (modal == null)
+            modal = root.GetComponentInChildren<Modal>(true);
+        var pages = root.GetComponentInParent<UIPageHandler>(true);
+        if (pages == null)
+            pages = root.GetComponentInChildren<UIPageHandler>(true);
+
         var t = new TrackedCanvas
         {
             Canvas = root,
@@ -290,11 +297,8 @@ internal static class WorldCanvases
             Kind = kind,
             Placement = placement,
             Windows = windows.ToArray(),
-            Modal =
-                root.GetComponentInParent<Modal>(true) ?? root.GetComponentInChildren<Modal>(true),
-            Pages =
-                root.GetComponentInParent<UIPageHandler>(true)
-                ?? root.GetComponentInChildren<UIPageHandler>(true),
+            Modal = modal,
+            Pages = pages,
             Size = size,
             Strip = kind == CanvasKind.Menu || CanvasRules.StripsBackdrops(placement),
         };
@@ -385,9 +389,9 @@ internal static class WorldCanvases
     private static void ResetNameTags(Canvas canvas)
     {
         // shortcut: assumes the prefab tags use identity rotation and unit scale; save the originals if that changes.
-        var names =
-            canvas.GetComponentInParent<UIPlayerNames>(true)
-            ?? canvas.GetComponentInChildren<UIPlayerNames>(true);
+        var names = canvas.GetComponentInParent<UIPlayerNames>(true);
+        if (names == null)
+            names = canvas.GetComponentInChildren<UIPlayerNames>(true);
         if (names == null)
             return;
         foreach (var tag in names.playerNameText)

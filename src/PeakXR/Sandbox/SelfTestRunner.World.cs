@@ -135,9 +135,12 @@ internal sealed partial class SelfTestRunner
     )
     {
         var c = Character.localCharacter;
-        var fire =
-            Nearest<Campfire>(c.Center, f => !f.Lit && f.state == Campfire.FireState.Off && ok(f))
-            ?? Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent && ok(f));
+        var fire = Nearest<Campfire>(
+            c.Center,
+            f => !f.Lit && f.state == Campfire.FireState.Off && ok(f)
+        );
+        if (fire == null)
+            fire = Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent && ok(f));
         was = fire != null ? (fire.state, fire.forceLit) : (Campfire.FireState.Off, false);
         if (fire != null)
         {

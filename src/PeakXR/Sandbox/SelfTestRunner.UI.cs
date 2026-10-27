@@ -320,7 +320,7 @@ internal sealed partial class SelfTestRunner
                     System.StringComparison.Ordinal
                 ),
             2f,
-            $"use prompt still under '{prompt.transform.parent?.name}'"
+            $"use prompt still under '{Name(prompt.transform.parent)}'"
         );
         if (!stepOk)
             yield break;

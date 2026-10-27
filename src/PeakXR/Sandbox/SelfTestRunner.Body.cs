@@ -1814,7 +1814,7 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => c.data.hasParachute, 1f);
         if (!c.data.hasParachute)
         {
-            Fail($"holding {HeldItem()?.name} does not count as a parachute");
+            Fail($"holding {Name(HeldItem())} does not count as a parachute");
             yield break;
         }
         int tugs = EnvironmentCues.Tugs;

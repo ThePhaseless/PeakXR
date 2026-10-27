@@ -1591,7 +1591,9 @@ internal sealed partial class SelfTestRunner
     {
         var items = new List<Item>(SandboxActions.Items);
         var apple = FindItem(items, AppleFragment);
-        var other = FindItem(items, "Airplane Food") ?? FindItem(items, "Granola");
+        var other = FindItem(items, "Airplane Food");
+        if (other == null)
+            other = FindItem(items, "Granola");
         if (apple == null || other == null)
         {
             stepSkip = "no Apple or second one-handed food item";
@@ -2176,7 +2178,7 @@ internal sealed partial class SelfTestRunner
         var h = CueLog.Capture.Hand(left);
         bool twoHandRefusal = h.Reason == DenyReason.NeedsTwoHands && h.ReasonAt >= mark;
         var note =
-            $"{HeldItem()?.name} one-handed: use reached the game {reached}, last cue {h.Reason}";
+            $"{Name(HeldItem())} one-handed: use reached the game {reached}, last cue {h.Reason}";
         if (!reached)
             Fail("the use press of a two-handed tool held one-handed was blocked: " + note);
         else if (twoHandRefusal)

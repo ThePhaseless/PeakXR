@@ -99,7 +99,9 @@ internal static class LidGesture
             : OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
         // A respawn chest takes both hands on its lid; a hand anywhere else on it counts as alone too (a low grip
         // holds it at 0 in BeforeInteraction), so it gets the same refusal instead of a silent hold.
-        var gripped = Grabbed[0] as RespawnChest ?? Grabbed[1] as RespawnChest;
+        var gripped = Grabbed[0] as RespawnChest;
+        if (gripped == null)
+            gripped = Grabbed[1] as RespawnChest;
         if (gripped != null)
         {
             if (ChestGate.Update(both ? 2 : 1, Time.deltaTime))

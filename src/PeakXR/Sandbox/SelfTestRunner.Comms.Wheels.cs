@@ -139,7 +139,7 @@ internal sealed partial class SelfTestRunner
         Fist(holdLeft, forward);
         yield return Wait(1.5f);
         notes.Add(
-            $"pose while holding {HeldItem()?.name}: {GestureEmotes.PlayCount - before} emotes"
+            $"pose while holding {Name(HeldItem())}: {GestureEmotes.PlayCount - before} emotes"
         );
         if (GestureEmotes.PlayCount != before)
         {

@@ -61,7 +61,8 @@ internal readonly struct CameraSwap
             );
         }
         mainT.SetPositionAndRotation(position, rotation);
-        otherT?.SetPositionAndRotation(position, rotation);
+        if (otherT != null)
+            otherT.SetPositionAndRotation(position, rotation);
         return swap;
     }
 

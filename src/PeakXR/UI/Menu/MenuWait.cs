@@ -114,8 +114,9 @@ internal static class ModalBellPatch
         // TransformExtensions.cs:56-61), and ui.world places the panel after this runs, so wait a frame.
         if (pending == null || Time.frameCount == openedFrame)
             return;
-        var canvas =
-            pending.GetComponentInChildren<Canvas>(true) ?? pending.GetComponentInParent<Canvas>();
+        var canvas = pending.GetComponentInChildren<Canvas>(true);
+        if (canvas == null)
+            canvas = pending.GetComponentInParent<Canvas>();
         if (
             canvas != null
             && !WorldCanvases.IsConverted(canvas.rootCanvas)

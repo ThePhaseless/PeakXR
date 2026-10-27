@@ -24,11 +24,13 @@ internal static class MenuWindowOpenPatch
     private static MethodBase TargetMethod() => GameMember.Method(typeof(MenuWindow), "Open");
 
     // The window may sit on a parent of its canvas (PassportManager) or inside it (EndScreen).
-    private static void Postfix(MenuWindow __instance) =>
-        WorldCanvases.Reopen(
-            __instance.GetComponentInParent<Canvas>()
-                ?? __instance.GetComponentInChildren<Canvas>(true)
-        );
+    private static void Postfix(MenuWindow __instance)
+    {
+        var canvas = __instance.GetComponentInParent<Canvas>();
+        if (canvas == null)
+            canvas = __instance.GetComponentInChildren<Canvas>(true);
+        WorldCanvases.Reopen(canvas);
+    }
 }
 
 /// <summary>Nested canvases spawned at runtime (dropdown lists and their blockers) must raycast through

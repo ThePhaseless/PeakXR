@@ -849,7 +849,9 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        var item = NearestGround(i => IsFood(i) == food) ?? NearestGround(_ => true);
+        var item = NearestGround(i => IsFood(i) == food);
+        if (item == null)
+            item = NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }
@@ -891,7 +893,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator PickUpAgain()
     {
-        var item = OnGround(mpItem) ?? NearestGround(_ => true);
+        var item = OnGround(mpItem);
+        if (item == null)
+            item = NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }

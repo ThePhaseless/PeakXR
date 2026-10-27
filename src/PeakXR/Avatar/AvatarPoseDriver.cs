@@ -44,13 +44,15 @@ public partial class AvatarPoseDriver : MonoBehaviour
 
     /// <summary>The character's driver, or null when it has none.</summary>
     public static AvatarPoseDriver Of(Character character) =>
-        character is not null && ByCharacter.TryGetValue(character, out var d) && d != null
+        (object)character != null && ByCharacter.TryGetValue(character, out var d) && d != null
             ? d
             : null;
 
     private void OnDestroy()
     {
-        if (Character is not null)
+        // A reference check on purpose: the character may already be destroyed with this GameObject, and its
+        // entry must still go.
+        if ((object)Character != null)
             ByCharacter.Remove(Character);
     }
 

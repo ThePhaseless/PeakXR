@@ -970,7 +970,9 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        var apple = FindItem(SandboxActions.Items, AppleFragment) ?? prefab;
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
+        if (apple == null)
+            apple = prefab;
         if (!SandboxActions.SpawnItemAt(apple, spot) || SandboxActions.LastSpawned == null)
         {
             Fail(SandboxActions.LastMessage);
@@ -2403,7 +2405,8 @@ internal sealed partial class SelfTestRunner
         {
             Item prefab = null;
             foreach (var fragment in names)
-                prefab ??= FindItem(all, fragment);
+                if (prefab == null)
+                    prefab = FindItem(all, fragment);
             if (prefab == null)
             {
                 missing.Add(names[0]);
@@ -2982,12 +2985,11 @@ internal sealed partial class SelfTestRunner
             stepSkip = "ui.affordance not installed";
             yield break;
         }
-        var prefab =
-            FirstItem(i =>
-                i.canUseOnFriend
-                && i.mustUseOnFriend
-                && i.GetComponent<Action_RestoreHunger>() != null
-            ) ?? FirstItem(i => i.canUseOnFriend && i.mustUseOnFriend);
+        var prefab = FirstItem(i =>
+            i.canUseOnFriend && i.mustUseOnFriend && i.GetComponent<Action_RestoreHunger>() != null
+        );
+        if (prefab == null)
+            prefab = FirstItem(i => i.canUseOnFriend && i.mustUseOnFriend);
         if (prefab == null)
         {
             stepSkip = "no item that must be used on a friend";
