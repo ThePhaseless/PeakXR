@@ -181,5 +181,7 @@ internal sealed class AvatarConfig
             ),
         };
         Instance = c;
+        // 0.55 was derived through the old fixed 0.87 world scale; the world now follows the real eye height (~1).
+        Framework.ConfigMigration.FromOldDefault(c.handScale, 0.55f);
     }
 }

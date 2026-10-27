@@ -3,25 +3,34 @@ namespace PeakXR.Core.Tests;
 public class HandScaleTests
 {
     [Fact]
-    public void Default_DrawsThePalmAtARealHandsWidthThroughTheWorldScale()
+    public void Default_ReadsAsARealHandAtOneToOne()
     {
-        Assert.Equal(0.55f, HandScale.Default, 3);
-        // Seen through the rig's growth, the drawn palm is an adult's 8.5 cm across.
-        float seen =
-            HandScale.ScoutPalmWidth * HandScale.Default / WorldScale.RigScale(WorldScale.Default);
-        TestUtil.Near(0.085f, seen, 0.005f);
+        // The world scale follows the player's real eye height (about 1), so the hand is derived at 1:1.
+        Assert.Equal(0.5f, HandScale.Default, 3);
+        // Drawn over real for width, palm thickness, finger thickness and length: their geometric mean is just
+        // over 1 (rounded up toward the bigger hand), and none is off by more than 2x either way.
+        float log = 0f;
+        foreach (var (game, real) in HandScale.References)
+        {
+            float r = game * HandScale.Default / real;
+            Assert.InRange(r, 0.5f, 2f);
+            log += MathF.Log(r);
+        }
+        Assert.InRange(MathF.Exp(log / HandScale.References.Length), 1f, 1.1f);
     }
 
     [Fact]
-    public void LifeSize_IsTheMedianRatioThroughTheRig_RoundedUpToFiveHundredths()
+    public void LifeSize_IsTheGeometricMeanRatioThroughTheRig_RoundedUpToFiveHundredths()
     {
-        // Median of 0.48, 0.28, 0.42, 0.93 is 0.45; at world scale 1 that is below the range and clamps up.
+        // Geometric mean of 0.48, 0.28, 0.42, 0.93 is 0.48: no one ratio decides.
         TestUtil.Near(0.5f, HandScale.LifeSize(HandScale.References, 1f));
-        // 0.45 x 1.149 = 0.517, rounded up toward the bigger, more readable hand.
-        TestUtil.Near(0.55f, HandScale.LifeSize(HandScale.References, 1f / 0.87f));
+        // Through a grown rig (world scale 0.87) the hand may be drawn bigger.
+        TestUtil.Near(0.6f, HandScale.LifeSize(HandScale.References, 1f / 0.87f));
         // An exact step stays put (no float creep to the next one).
         TestUtil.Near(0.6f, HandScale.LifeSize(new[] { (1f, 0.6f) }, 1f));
         TestUtil.Near(1f, HandScale.LifeSize(new[] { (1f, 2f) }, 1f));
+        // The extremes balance: a 4x and a 1/4x ratio cancel.
+        TestUtil.Near(1f, HandScale.LifeSize(new[] { (1f, 4f), (4f, 1f) }, 1f));
     }
 
     [Fact]
@@ -43,13 +52,8 @@ public class HandScaleTests
     [Fact]
     public void Ghost_MatchesTheDrawnHand()
     {
-        // The ghost is modelled on a real 8.5 cm palm: at the default it is as big as the drawn palm, which is what
-        // the rig's real-size scale gave it before.
-        TestUtil.Near(
-            WorldScale.RigScale(WorldScale.Default),
-            HandScale.Ghost(HandScale.Default, 0.085f),
-            0.06f
-        );
+        // The ghost is modelled on a real 8.5 cm palm: at the default the drawn palm is about that wide too.
+        TestUtil.Near(1f, HandScale.Ghost(HandScale.Default, 0.085f), 0.06f);
         // At game size it grows with the scout's chunky hand.
         TestUtil.Near(0.178f / 0.085f, HandScale.Ghost(1f, 0.085f));
     }

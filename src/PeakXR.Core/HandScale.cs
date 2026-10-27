@@ -12,7 +12,7 @@ namespace PeakXR.Core;
 public static class HandScale
 {
     /// <summary>Smallest and largest settable hand scale.</summary>
-    public const float Min = 0.5f;
+    public const float Min = 0.4f;
 
     public const float Max = 1f;
 
@@ -21,9 +21,9 @@ public static class HandScale
     public const float ScoutPalmWidth = 0.178f;
 
     /// <summary>
-    /// The scout's right hand from the game's data (game units) against an adult hand (metres). Its length is near
-    /// real; its width and thickness are 2-3.5x, which is what reads as chunky. The wrist (0.175 across) and forearm
-    /// (0.205) are a near-uniform tube, so the forearm takes the hand's scale.
+    /// The scout's right hand from the game's data (game units, its rest pose) against an adult hand (metres). Its
+    /// length is near real; its width and thickness are 2-3.5x, which is what reads as chunky. The wrist (0.175
+    /// across) and forearm (0.205) are a near-uniform tube, so the forearm takes the hand's scale.
     /// </summary>
     public static readonly (float Game, float Real)[] References =
     {
@@ -33,20 +33,26 @@ public static class HandScale
         (0.205f, 0.190f), // hand length, wrist joint to fingertip
     };
 
-    /// <summary>The default: the hand at an adult's size through the default world scale (0.55; the palm 8.5 cm
-    /// across as seen).</summary>
-    public static readonly float Default = LifeSize(
-        References,
-        WorldScale.RigScale(WorldScale.Default)
-    );
+    /// <summary>The default (0.5): the hand at an adult's size at 1:1, the world scale that follows the player's real
+    /// eye height lands near. Seen at 1:1: 8.9 cm wide, a 5.3 cm palm, 2.3 cm fingers, 10.3 cm long.</summary>
+    public static readonly float Default = LifeSize(References, 1f);
 
     /// <summary>
     /// The scale that draws the hand life-size for a rig <paramref name="rigScale"/> world units per real metre: the
-    /// median real/game ratio of <paramref name="refs"/> times the rig's growth, rounded up to 0.05 (the bigger hand
-    /// reads better) and kept in range.
+    /// geometric mean of the real/game ratios of <paramref name="refs"/> (width, thickness and length weigh alike,
+    /// a hand too thick by as much as it is too short cancels out) times the rig's growth, rounded up to 0.05 (the
+    /// bigger hand reads better) and kept in range.
     /// </summary>
-    public static float LifeSize(ReadOnlySpan<(float Game, float Real)> refs, float rigScale) =>
-        Clamp(MathF.Ceiling(WorldScale.FromReferences(refs) * rigScale * 20f - 1e-3f) / 20f);
+    public static float LifeSize(ReadOnlySpan<(float Game, float Real)> refs, float rigScale)
+    {
+        if (refs.Length == 0)
+            return Max;
+        float log = 0f;
+        foreach (var (game, real) in refs)
+            log += MathF.Log(real / game);
+        float mean = MathF.Exp(log / refs.Length);
+        return Clamp(MathF.Ceiling(mean * rigScale * 20f - 1e-3f) / 20f);
+    }
 
     /// <summary>A setting kept in [<see cref="Min"/>, <see cref="Max"/>]; NaN reads as the game's size.</summary>
     public static float Clamp(float scale) =>
