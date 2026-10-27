@@ -40,6 +40,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<bool> EdgeDetection;
     internal static ConfigEntry<float> ShadowDistance;
     internal static ConfigEntry<bool> ComfortSettings;
+    internal static ConfigEntry<bool> LensFlare;
 
     public override string Id => "render.fixes";
 
@@ -183,6 +184,17 @@ public sealed class RenderFixesFeature : Feature
             new ConfigDescription(
                 "While in VR, turn on the game's 'Reduce Camera Bobbing' and photosensitive mode (halved shake, "
                     + "softer screen flashes). Your saved game settings are restored when VR stops."
+            )
+        );
+
+        LensFlare = Plugin.Settings.Bind(
+            section,
+            "LensFlare",
+            false,
+            new ConfigDescription(
+                "Keep the sun's lens flare in VR. Off by default: a lens flare is a camera artifact eyes do not see, and "
+                    + "URP draws it from the mono camera in each MultiPass eye, so it lands in a different place per eye "
+                    + "or in one eye only, which strains the eyes. The sun itself still shines in the sky."
             )
         );
 
