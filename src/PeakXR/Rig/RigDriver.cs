@@ -417,13 +417,15 @@ internal sealed class RigDriver : MonoBehaviour
             boundCharacter = c;
             massEyes.Reset();
             torsoEyes.Reset();
+            standingEye.Reset();
             needInitialRecenter = c != null;
             snap = true;
             // A spawn or respawn can put the body (and the eyes) in rock.
             if (c != null)
                 eyeGuard.Arm();
         }
-        UpdateEyeOffset(c, dt);
+        bool eyeSampled = UpdateEyeOffset(c, dt, out var eyePoint);
+        MeasureStandingEye(c, eyeSampled, eyePoint);
         HandleRecenterInput(c, dt);
         float upright = c != null && Upright(c) ? 1f : 0f;
         rootBlend = snap ? upright : Mathf.MoveTowards(rootBlend, upright, dt / RootBlendSeconds);
@@ -496,15 +498,15 @@ internal sealed class RigDriver : MonoBehaviour
 
     private bool haveScale;
 
-    /// <summary>The scout's standing eye height over its floor (game units) for <c>Camera.WorldScaleMode</c> Auto:
-    /// taken from the animation pose at the first upright eye sample of each character, kept across scenes (every
-    /// scout is built the same), the calibration's default until then.</summary>
+    /// <summary>The scout's standing eye height over the ground (game units) for <c>Camera.WorldScaleMode</c> Auto:
+    /// measured over a steady stand on flat ground (<see cref="MeasureStandingEye"/>), kept across scenes (every
+    /// scout is built the same), the calibration's default until the first measure.</summary>
     private static float avatarStandingEye = HeightCalibration.DefaultStandingEyeHeight;
 
     /// <summary>World units per real metre the settings ask for now. Auto: the calibrated standing eye height (a
     /// standing adult's in seated mode or without a floor-level tracking space, where none is known) over the
     /// scout's, so head-to-floor is the same in the room and in the game. Its inputs only change on a calibration,
-    /// a seated switch, a new character's first eye sample or a setting, and each change lands behind a blink.</summary>
+    /// a seated switch, a standing-eye measure past its deadband or a setting, and each change lands behind a blink.</summary>
     private float WantScale()
     {
         if (CameraFeature.WorldScaleModeValue == WorldScaleMode.Manual)
@@ -525,7 +527,7 @@ internal sealed class RigDriver : MonoBehaviour
             );
         else
             Plugin.Log.LogInfo(
-                $"{Tag} World scale auto {1f / rig.Scale:0.00}: real eyes {AutoRealEye():0.00} m{(rig.SeatedMode ? " (seated: a standing adult's)" : "")} over the scout's standing {avatarStandingEye:0.00}; rig x{rig.Scale:0.00}, the game floor on the real floor"
+                $"{Tag} World scale auto {1f / rig.Scale:0.00}: real eyes {AutoRealEye():0.00} m{(rig.SeatedMode ? " (seated: a standing adult's)" : "")} over the scout's standing {avatarStandingEye:0.000} ({(haveStandingEye ? "measured" : "default until measured")}); rig x{rig.Scale:0.000}{(haveStandingEye ? ", the game floor on the real floor" : "")}"
             );
     }
 
@@ -623,10 +625,11 @@ internal sealed class RigDriver : MonoBehaviour
     /// point <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1355): that sits on top of the head,
     /// about 0.2 m above the eyes, and straight over the torso, so looking down showed the top of your own body.
     /// </summary>
-    private void UpdateEyeOffset(Character c, float dt)
+    private bool UpdateEyeOffset(Character c, float dt, out Vector3 eye)
     {
+        eye = Vector3.zero;
         if (c == null)
-            return;
+            return false;
         var d = c.data;
         if (
             !d.fullyConscious
@@ -641,39 +644,24 @@ internal sealed class RigDriver : MonoBehaviour
             || Time.unscaledTime < turnHoldUntil
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
         )
-            return;
+            return false;
         // Only the unleaned eyes (EyeCalibration): any lean puts them on the headset, and sampling that would carry
         // the head's offset into the anchor and slide the view after the head. The lean waits for convergence.
         var driver = AvatarPoseDriver.Of(c);
         bool leaning = driver != null && driver.LeanWeight > 0f;
-        if (leaning || !TryEyePoint(c, out var eye))
-            return;
+        if (leaning || !TryEyePoint(c, out eye))
+            return false;
         float facing = Mathf.Atan2(d.lookDirection_Flat.x, d.lookDirection_Flat.z) * Mathf.Rad2Deg;
         var sample = RigMath.EyeOffset(eye.N(), ViewRoot(c).N(), facing);
         var torsoSample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
-            return;
+            return false;
         bool first = !massEyes.Have;
         // Snap only while the view is placed anyway (a new character, a recenter); otherwise glide, never jump.
         massEyes.Sample(sample, leaning, snap, dt);
         torsoEyes.Sample(torsoSample, leaning, snap, dt);
         if (first)
         {
-            // The scout's standing eye height for the Auto world scale, from its animation pose: the animated head
-            // over the rig root (targetHeadHeight, CharacterRagdoll.cs:213-218), where the game's standing force holds
-            // the physics head above the ground (CharacterMovement.cs:711-719, 753), plus the eyes over the physics
-            // head. No terrain, so a slope or step under the feet changes nothing; upright, uncrouched and looking
-            // level only (the guards above).
-            var head = CameraPatches.GetBodypart(c, BodypartType.Head);
-            if (head != null && head.Rig != null)
-            {
-                float standing = d.targetHeadHeight + eye.y - head.Rig.position.y;
-                if (
-                    standing >= HeightCalibration.MinPlausibleEyeHeight
-                    && standing <= HeightCalibration.MaxPlausibleEyeHeight
-                )
-                    avatarStandingEye = standing;
-            }
             // The ground straight under the eyes: data.groundPos is one ground contact (CharacterMovement.cs:722-751)
             // and can sit on a step or slope edge (run 6 logged 1.65 m eyes in one scene and 1.46 m in the next).
             float ground = Physics.Raycast(
@@ -686,21 +674,87 @@ internal sealed class RigDriver : MonoBehaviour
             )
                 ? under.point.y
                 : d.groundPos.y;
-            float avatarEye = eye.y - ground;
-            float realEye = RigMath.TrackedEyeHeight(rig.HeightOffset);
-            // The scale this sample asks for (it lands at the next blink), so the floor reads what the player gets;
-            // seated, the floor is the virtual one a standing adult's height under the eyes.
-            float want = WantScale();
-            bool auto = CameraFeature.WorldScaleModeValue == WorldScaleMode.Auto;
+            // The first upright frame only: the standing height is measured over a steady stand (MeasureStandingEye).
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
-                    + $"{avatarEye:0.00} m above the ground (ray), {avatarStandingEye:0.00} m standing (pose); the "
-                    + $"player's calibrated eyes {realEye:0.00} m (world scale {1f / want:0.00} "
-                    + $"{(auto ? $"auto = {AutoRealEye():0.00} / {avatarStandingEye:0.00}" : "manual")}, rig x{want:0.00}: "
-                    + $"the game floor is reached {WorldScale.FloorReach(avatarEye, AutoRealEye(), want):0.00} m above "
-                    + $"the real one{(auto ? ", auto puts them together: expect ~0" : "")})"
+                    + $"{eye.y - ground:0.00} m above the ground on the first upright frame; the player's calibrated "
+                    + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m"
             );
         }
+        return true;
+    }
+
+    /// <summary>Ground at most this tilted (cos 8 degrees) counts as flat for the standing eye height.</summary>
+    private const float FlatGroundY = 0.99f;
+
+    /// <summary>Body speed (m/s) under which the scout counts as standing still.</summary>
+    private const float StillSpeed = 0.2f;
+
+    /// <summary>This character's standing eye height over flat ground (<see cref="StandingEye"/>).</summary>
+    private readonly StandingEye standingEye = new();
+
+    private static bool haveStandingEye;
+
+    /// <summary>
+    /// Measures the scout's standing eye height for the Auto world scale the way the floor is judged: its eyes to the
+    /// ground under them, over a steady stand (upright as for the eye offset, still, no stick, flat ground that the
+    /// game's own ground contact agrees with), as a median (<see cref="StandingEye"/>). Not the animation's head
+    /// target (targetHeadHeight, CharacterRagdoll.cs:213-218): run 10's physics head sat 0.08-0.09 m under it in
+    /// every scene (the standing force, CharacterMovement.cs:711-719, only pushes toward it), so the floor missed by
+    /// that much, and the first upright frame at the beach, soon after its wake-up fall (Character.cs:2029-2035),
+    /// read the scout 0.14 m lower than at the airport with bent legs (hip 0.43 m against 0.57 m over the ground,
+    /// eyes 0.99 m over the hip in both). The session keeps one value; a later scene changes it only past <see cref="StandingEye.Deadband"/>.
+    /// </summary>
+    private void MeasureStandingEye(Character c, bool upright, Vector3 eye)
+    {
+        if (c == null || standingEye.Measured)
+            return;
+        var d = c.data;
+        float height = float.NaN;
+        if (
+            upright
+            && d.passedOutOnTheBeach <= 0f
+            && d.groundNormal.y >= FlatGroundY
+            && d.avarageVelocity.sqrMagnitude < StillSpeed * StillSpeed
+            && c.input.movementInput.sqrMagnitude < 0.01f
+            && Physics.Raycast(
+                eye,
+                Vector3.down,
+                out var under,
+                4f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            && under.normal.y >= FlatGroundY
+            && Mathf.Abs(under.point.y - d.groundPos.y) < 0.05f
+        )
+            height = eye.y - under.point.y;
+        if (!standingEye.Update(!float.IsNaN(height), height, Time.unscaledTime))
+            return;
+        float measured = standingEye.Value;
+        float before = avatarStandingEye;
+        avatarStandingEye = StandingEye.Keep(haveStandingEye ? before : float.NaN, measured);
+        string kept =
+            !haveStandingEye ? "first this session"
+            : avatarStandingEye == before
+                ? $"kept {before:0.00} (within {StandingEye.Deadband:0.00} m)"
+            : $"changed from {before:0.00}";
+        haveStandingEye = true;
+        float ground = eye.y - height;
+        float hip = c.refs.hip != null ? c.refs.hip.Rig.position.y - ground : float.NaN;
+        var head = CameraPatches.GetBodypart(c, BodypartType.Head);
+        float pose =
+            head != null && head.Rig != null
+                ? d.targetHeadHeight + eye.y - head.Rig.position.y
+                : float.NaN;
+        // The scale this asks for lands at the next blink; the floor line reads this scene's stand through it.
+        float want = WantScale();
+        bool auto = CameraFeature.WorldScaleModeValue == WorldScaleMode.Auto;
+        Plugin.Log.LogInfo(
+            $"{Tag} Scout stands with its eyes {measured:0.000} m over flat ground (median of {standingEye.Count} frames after {StandingEye.SettleSeconds:0} s still, spread {standingEye.Spread:0.000} m, hip {hip:0.00} m, animation head target {pose:0.00} m); using {avatarStandingEye:0.000} m, {kept}; "
+                + $"world scale {1f / want:0.000} {(auto ? $"auto = {AutoRealEye():0.00} / {avatarStandingEye:0.000}" : "manual")}, rig x{want:0.000}: "
+                + $"the game floor is reached {WorldScale.FloorReach(measured, AutoRealEye(), want):0.000} m above the real one{(auto ? " (auto: within 0.02)" : "")}"
+        );
     }
 
     /// <summary>On foot and under control: the view may ride the mass centre and avatar.local may lean.</summary>
