@@ -151,7 +151,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.244: lopsided items the plain x mirror put 2-14 cm off the left hand (docs/research/item-grab-shapes.md
-    /// "Left-hand holds"), then three symmetric controls.</summary>
+    /// "Left-hand holds"), BingBong (turned half round for the left hand, its face to the back), then three symmetric
+    /// controls.</summary>
     static readonly string[] LeftHoldItems =
     {
         "Shell Big",
@@ -163,13 +164,14 @@ internal sealed partial class SelfTestRunner
         "CactusBall",
         "Amulet_Healing",
         "Parasol",
+        "BingBong",
         "Sports Drink",
         "Warpsketball",
         "Bandages",
     };
 
-    /// <summary>vr.244 screenshots one hold per hand of these.</summary>
-    static readonly string[] LeftHoldShots = { "Shell Big", "Glizzy" };
+    /// <summary>vr.244 screenshots one hold per hand of these, the hand raised in front of the face.</summary>
+    static readonly string[] LeftHoldShots = { "Shell Big", "Glizzy", "BingBong" };
 
     /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres.</summary>
     const float LeftHoldSlack = 0.02f;
@@ -253,12 +255,34 @@ internal sealed partial class SelfTestRunner
                     Plane = info.LeftPlaneUsed,
                     EvenEnds = info.LeftTurnsEnd,
                 };
+                var held = side[h];
+                // Every hold's numbers, passing or not.
+                Plugin.Log.LogInfo(
+                    F(
+                        $"[selftest] vr.244 {itemName} {(left ? "left" : "right")}: plane {held.Plane}{(held.EvenEnds ? " (even ends)" : "")}, palm {held.Palm:0.000} m, second {held.Second:0.000} m, hand on grip {held.HandOff:0.000} m, middle in {held.MidIn:0.00}, far end in {held.EndIn:0.00} up {held.EndUp:0.00}"
+                    )
+                );
                 if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
+                {
+                    // Held up in front of the face, a little to its own side, as a player looks at what they hold.
+                    var rest = Script(left).Position;
+                    HeadFrame(out var eyes, out var ahead, out var across);
+                    yield return MoveTrack(
+                        left,
+                        eyes
+                            + ahead * 0.4f
+                            + across * (left ? -0.12f : 0.12f)
+                            + Vector3.down * 0.1f,
+                        0.4f
+                    );
+                    yield return Wait(0.3f);
+                    HeldItemPoints.World(item, rig.Hand(left), left, middle, out var raised);
                     yield return ShotAt(
                         $"vr-244-{itemName.Replace(' ', '-')}-{(left ? "left" : "right")}",
-                        mid,
-                        0.6f
+                        raised
                     );
+                    yield return MoveTrack(left, rest, 0.3f);
+                }
                 yield return ReleaseHeld();
                 if (!heldReleased)
                     lost =
@@ -330,8 +354,14 @@ internal sealed partial class SelfTestRunner
         if (HeldItem() != null)
         {
             heldReleaseNote = "a drop tap left it in hand; ";
-            c.refs.items.EquipSlot(Zorro.Core.Optionable<byte>.None);
+            var items = c.refs.items;
+            items.EquipSlot(Zorro.Core.Optionable<byte>.None);
             yield return WaitFor(() => HeldItem() == null, 2f);
+            // An item that cannot be pocketed leaves the hand at once, but the put-away's EquipSlotRpc(-1) follows
+            // 0.15 s later (CharacterItems.cs:500-538) and stashes and destroys whatever is in the hand by then
+            // (:568-572): run 12 gave the next cactus inside that window and lost it ("left the right hand").
+            yield return WaitFor(() => items.currentSelectedSlot.IsNone, 1f);
+            yield return null;
         }
         heldReleased = HeldItem() == null;
         if (heldReleased)
