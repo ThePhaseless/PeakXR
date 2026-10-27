@@ -77,21 +77,27 @@ internal static class BackplateView
 
     /// <summary>The plate's opacity: the setting, or with <c>UI.MenuBackplateAdaptive</c> what
     /// <see cref="BackdropProbe"/> measured behind it (never above the setting).</summary>
-    public static float Alpha(TrackedCanvas t, UIWorldSettings cfg)
+    public static float Alpha(TrackedCanvas t, UIWorldSettings cfg) => Alpha(t.PlateAlpha, cfg);
+
+    /// <summary>As <see cref="Alpha(TrackedCanvas, UIWorldSettings)"/> for any plate's measured
+    /// <paramref name="plateAlpha"/> (negative: not measured yet).</summary>
+    public static float Alpha(float plateAlpha, UIWorldSettings cfg)
     {
         var max = cfg.MenuBackplateOpacity.Value;
-        return cfg.MenuBackplateAdaptive.Value && t.PlateAlpha >= 0f
-            ? Mathf.Min(t.PlateAlpha, max)
+        return cfg.MenuBackplateAdaptive.Value && plateAlpha >= 0f
+            ? Mathf.Min(plateAlpha, max)
             : max;
     }
 
+    public static void SetAlpha(TrackedCanvas t, float alpha) => SetAlpha(t.Plate, alpha);
+
     /// <summary>Writes the plate colour only when it changed: each write dirties the canvas.</summary>
-    public static void SetAlpha(TrackedCanvas t, float alpha)
+    public static void SetAlpha(Image plate, float alpha)
     {
         var c = MenuBackplate.Color;
         var color = new Color(c.X, c.Y, c.Z, alpha);
-        if (t.Plate != null && t.Plate.color != color)
-            t.Plate.color = color;
+        if (plate != null && plate.color != color)
+            plate.color = color;
     }
 
     /// <summary>The content is spread over more than <see cref="MenuBackplate.MaxSpanDegrees"/> of view (the title's
