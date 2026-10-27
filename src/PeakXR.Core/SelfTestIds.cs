@@ -84,6 +84,7 @@ public static class SelfTestIds
         "vr.06-features",
         "vr.07-comfort",
         "vr.08-arm-reach",
+        "vr.08b-hand-scale",
         "vr.09-belt-view",
         "vr.10-grab-right",
         "vr.100-thorn-pluck",

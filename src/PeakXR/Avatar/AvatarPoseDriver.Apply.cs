@@ -1565,11 +1565,16 @@ public partial class AvatarPoseDriver
             return;
         }
         var pose = Pose;
+        // The local VR player's smaller drawn fingers stop on the item sooner; the pose (and peers) keep the
+        // game-size curls.
         if (pose.HasLeftHand)
-            leftRig.Curl(pose.LeftFingers);
+            leftRig.Curl(DrawnHands.Curls(Owner, true, pose.LeftFingers));
         if (pose.HasRightHand)
-            rightRig.Curl(pose.RightFingers);
+            rightRig.Curl(DrawnHands.Curls(Owner, false, pose.RightFingers));
     }
+
+    /// <summary>A hand's rig once calibrated, else null.</summary>
+    internal HandRig HandRigOf(bool left) => rigReady ? (left ? leftRig : rightRig) : null;
 
     private void RestoreFingers()
     {

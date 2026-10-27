@@ -27,6 +27,9 @@ internal sealed class ReachGhost : MonoBehaviour
     private const float Proximal = 0.042f;
     private const float Distal = 0.034f;
 
+    /// <summary>The palm's width across the knuckles (its ellipsoid's Y), metres.</summary>
+    private const float GhostPalm = 0.085f;
+
     /// <summary>Thumb's rest angle up toward the thumb side, and how far a full curl folds each finger joint.</summary>
     private const float ThumbRaise = 40f;
     private const float FingerFold = 80f;
@@ -108,8 +111,8 @@ internal sealed class ReachGhost : MonoBehaviour
             h.Root.gameObject.SetActive(true);
         if (controller != null)
             h.Root.SetPositionAndRotation(controller.position, controller.rotation);
-        // Your real hand's size at any Camera.WorldScale.
-        var size = Vector3.one * Rig.RealScale.Of;
+        // As big as the avatar's drawn hand (Avatar.HandScale): the palm below is a real hand's.
+        var size = Vector3.one * HandScale.Ghost(DrawnHands.Factor, GhostPalm);
         if (h.Root.localScale != size)
             h.Root.localScale = size;
         if (!Mathf.Approximately(alpha, h.ShownAlpha))
@@ -168,7 +171,7 @@ internal sealed class ReachGhost : MonoBehaviour
             mesh,
             h.Material,
             new Vector3(back, 0f, -0.01f),
-            new Vector3(0.032f, 0.085f, 0.095f)
+            new Vector3(0.032f, GhostPalm, 0.095f)
         );
         for (int i = 1; i < FingerCurls.Count; i++)
         {

@@ -14,9 +14,6 @@ namespace PeakXR.UI.Passport;
 /// </summary>
 internal static class PassportPoke
 {
-    // The same fingertip the VR keyboard pokes with: 4 cm ahead of the aim pose.
-    private const float TipForward = 0.04f;
-
     private static readonly PokeButton Poke = new();
 
     /// <summary>True while a poke drives the click, so the lock refusal lands on the poking hand.</summary>
@@ -52,7 +49,8 @@ internal static class PassportPoke
             Poke.Reset();
             return;
         }
-        var tip = aim.position + aim.forward * TipForward;
+        // The drawn index fingertip, as the VR keyboard pokes with.
+        var tip = Avatar.DrawnHands.PokeTip(rig, left);
         PassportButton hit = null;
         foreach (var b in passport.buttons)
         {

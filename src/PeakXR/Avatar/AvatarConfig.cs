@@ -25,7 +25,8 @@ internal sealed class AvatarConfig
         handPitch,
         handYaw,
         handRoll,
-        heldItemScale;
+        heldItemScale,
+        handScale;
 
     public bool ArmIK => armIK?.Value ?? true;
     public bool Fingers => fingers?.Value ?? true;
@@ -42,6 +43,8 @@ internal sealed class AvatarConfig
     public float HandYaw => handYaw?.Value ?? 0f;
     public float HandRoll => handRoll?.Value ?? 0f;
     public float HeldItemScale => heldItemScale?.Value ?? DefaultHeldItemScale;
+    public float HandScale => handScale?.Value ?? Core.HandScale.Default;
+    public ConfigEntry<float> HandScaleEntry => handScale;
 
     /// <summary>The game's props are sized for a flat camera between two hands (an apple 0.42 m across, the rope
     /// shooter 1.3 m long); three quarters keeps them recognisable while they stop filling the view.</summary>
@@ -152,6 +155,18 @@ internal sealed class AvatarConfig
                 new ConfigDescription(
                     "Hand rotation tweak in degrees (roll, mirrored for the left hand).",
                     new AcceptableValueRange<float>(-90f, 90f)
+                )
+            ),
+            handScale = file.Bind(
+                s,
+                "HandScale",
+                Core.HandScale.Default,
+                new ConfigDescription(
+                    "Draws your own hands smaller (your forearms and upper arms taper to match), about where you hold the "
+                        + "controller, so the game's chunky cartoon hands read like real hands in front of your eyes. The "
+                        + "default is a real hand's size. Only what you see: grabbing, reach, physics and what other players "
+                        + "see keep the game's size. 1 = game size.",
+                    new AcceptableValueRange<float>(Core.HandScale.Min, Core.HandScale.Max)
                 )
             ),
             heldItemScale = file.Bind(
