@@ -876,6 +876,8 @@ internal static class WorldCanvases
     /// frame.</summary>
     private static void HookScrolls(TrackedCanvas t)
     {
+        // Lists destroyed since the last scan (every VR-tab fill rebuilds its scrollers) would pile up here.
+        t.HookedScrolls.RemoveWhere(s => s == null);
         t.Canvas.GetComponentsInChildren(true, scrolls);
         foreach (var sr in scrolls)
             if (t.HookedScrolls.Add(sr))

@@ -730,7 +730,7 @@ internal sealed partial class SelfTestRunner
             yield return Until(
                 () => !Zorro.UI.Modal.Modal.IsOpen,
                 1f,
-                $"the {hand} laser click did not answer the modal (button '{button.name}'; laser over '{(LaserPointer.Over != null ? LaserPointer.Over.name : "nothing")}' from the {(LaserPointer.OverLeft ? "left" : "right")}, pressed '{(LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing")}')"
+                $"the {hand} laser click did not answer the modal (button '{button.name}'; laser over '{(LaserPointer.Over != null ? LaserPointer.Over.name : "nothing")}' from the {(LaserPointer.OverLeft ? "left" : "right")})"
             );
             if (!stepOk)
                 yield break;

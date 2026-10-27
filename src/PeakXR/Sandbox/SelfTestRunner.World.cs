@@ -2586,8 +2586,7 @@ internal sealed partial class SelfTestRunner
         for (int attempt = 0; attempt < 3; attempt++)
         {
             yield return LaserPress(end.nextButton);
-            pressed =
-                LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing";
+            pressed = LaserPointer.Over != null ? LaserPointer.Over.name : "nothing";
             yield return WaitFor(
                 () => RunFlowRuntime.CreditsWaiting || LoadingScreenHandler.loading,
                 6f
@@ -2598,7 +2597,7 @@ internal sealed partial class SelfTestRunner
         if (!RunFlowRuntime.CreditsWaiting && !LoadingScreenHandler.loading)
         {
             Fail(
-                $"Next did not close the end screen after 3 laser presses (last press on {pressed}, "
+                $"Next did not close the end screen after 3 laser presses (laser over {pressed} after the last press, "
                     + $"Next active {end.nextButton.gameObject.activeInHierarchy}, interactable {end.nextButton.interactable})"
             );
             yield break;

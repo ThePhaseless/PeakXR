@@ -143,7 +143,19 @@ internal static class VRTab
 
         result.Add(Header("PEAKXR_SECTION_COMPAT", "Compatibility"));
         AppendCompat(result);
-        return VRSession.Active ? OnePage(result) : result;
+        return OnePage(result);
+    }
+
+    /// <summary>Fills the VR tab again when it is on show, so starting or stopping VR with it open swaps the headset
+    /// grid and the flat paged column (ui.world calls this once the menu is placed in, or put back from, the world).</summary>
+    public static void RelayIfShown()
+    {
+        var menu = Guide.GuideRows.Menu;
+        if (menu == null || !menu.isActiveAndEnabled)
+            return;
+        var tabs = UISettingsFeature.TabsRef(menu);
+        if (tabs != null && tabs.selectedButton != null && tabs.selectedButton.category == Category)
+            menu.ShowSettings(Category);
     }
 
     /// <summary>Rail key of the VR Guide page.</summary>
@@ -264,8 +276,8 @@ internal static class VRTab
         return failed;
     }
 
-    /// <summary>Rows per page of the single-column VR fallback (<see cref="VRTabGrid"/> could not lay the tab out):
-    /// the settings window has no scroll view, and on a world panel the rows past the screen's bottom edge hang below
+    /// <summary>Rows per page of the single column (flat play, or <see cref="VRTabGrid"/> could not lay the tab out):
+    /// the settings window has no scroll view (SettingsPageShared/Content/Parent is a bare VerticalLayoutGroup), and on a world panel the rows past the screen's bottom edge hang below
     /// it into the scene instead of being cut off. Measured from the window when it fills.</summary>
     public static int PageRows = 7;
 

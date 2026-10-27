@@ -14,7 +14,7 @@ namespace PeakXR.UI.Guide;
 /// <summary>
 /// Plays VR Guide demos beside the settings panel, with the settings previews' timing (<see cref="PreviewClock"/>:
 /// a rest of the laser on a row starts it, a click restarts it) and placement (beside the row's right edge, see
-/// <see cref="PreviewStage.RowRightEdge"/>). The ghost and its caption are built when a demo starts and destroyed
+/// <see cref="VRTabGrid.RowOuterEdge"/>). The ghost and its caption are built when a demo starts and destroyed
 /// when it ends or the tab closes. Also offers the practice once, beside the title panel on the first VR visit.
 /// </summary>
 internal sealed class GuideStage : MonoBehaviour
@@ -256,7 +256,7 @@ internal sealed class GuideStage : MonoBehaviour
         Vector3 edge,
             right;
         if (panel != null)
-            PreviewStage.RowRightEdge(panel, corners, out edge, out right);
+            VRTabGrid.RowOuterEdge(panel, corners, out edge, out right);
         else
         {
             edge = handler.transform.position;
