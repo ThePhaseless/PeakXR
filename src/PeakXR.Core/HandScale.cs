@@ -33,12 +33,9 @@ public static class HandScale
         (0.205f, 0.190f), // hand length, wrist joint to fingertip
     };
 
-    /// <summary>The default: the hand at an adult's size through the default world scale (0.55; the palm 8.5 cm
-    /// across as seen).</summary>
-    public static readonly float Default = LifeSize(
-        References,
-        WorldScale.RigScale(WorldScale.Default)
-    );
+    /// <summary>The default: the hand at an adult's size through the default world scale, <c>Camera.WorldScaleMode</c>
+    /// Auto, which keeps the rig near x1 for an adult (0.5; the palm 8.9 cm across as seen).</summary>
+    public static readonly float Default = LifeSize(References, 1f);
 
     /// <summary>
     /// The scale that draws the hand life-size for a rig <paramref name="rigScale"/> world units per real metre: the

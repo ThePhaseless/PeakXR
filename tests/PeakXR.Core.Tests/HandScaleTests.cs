@@ -5,10 +5,9 @@ public class HandScaleTests
     [Fact]
     public void Default_DrawsThePalmAtARealHandsWidthThroughTheWorldScale()
     {
-        Assert.Equal(0.55f, HandScale.Default, 3);
-        // Seen through the rig's growth, the drawn palm is an adult's 8.5 cm across.
-        float seen =
-            HandScale.ScoutPalmWidth * HandScale.Default / WorldScale.RigScale(WorldScale.Default);
+        Assert.Equal(0.5f, HandScale.Default, 3);
+        // Camera.WorldScaleMode Auto keeps the rig near x1, where the drawn palm is about an adult's 8.5 cm across.
+        float seen = HandScale.ScoutPalmWidth * HandScale.Default;
         TestUtil.Near(0.085f, seen, 0.005f);
     }
 
@@ -45,11 +44,7 @@ public class HandScaleTests
     {
         // The ghost is modelled on a real 8.5 cm palm: at the default it is as big as the drawn palm, which is what
         // the rig's real-size scale gave it before.
-        TestUtil.Near(
-            WorldScale.RigScale(WorldScale.Default),
-            HandScale.Ghost(HandScale.Default, 0.085f),
-            0.06f
-        );
+        TestUtil.Near(1f, HandScale.Ghost(HandScale.Default, 0.085f), 0.06f);
         // At game size it grows with the scout's chunky hand.
         TestUtil.Near(0.178f / 0.085f, HandScale.Ghost(1f, 0.085f));
     }

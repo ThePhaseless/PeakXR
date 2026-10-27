@@ -320,7 +320,7 @@ internal sealed partial class SelfTestRunner
             $"appeared at {spawnAt}, {Vector3.Distance(spawnAt, controllerAt):0.00} m from the controller, {height:0.00} m over the ground, flat range {flatRange:0.0} m"
         );
         var note =
-            $"{ThrowItemName}: {launchNote}; {releaseNote}; {spawnNote}; {firstContact}; {throwFacing}";
+            $"{ThrowItemName}: {launchNote}; {releaseNote}; {spawnNote}; {firstContact}; {throwFacing}; {ScaleNote()}";
         switch (verdict)
         {
             case ThrowVerdict.Ok:

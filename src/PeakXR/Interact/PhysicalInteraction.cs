@@ -1063,11 +1063,12 @@ internal static class PhysicalInteraction
     private static bool secondaryChord;
 
     /// <summary>The tracked hand's fitted release velocity, rotated from tracking space to world: relative to the
-    /// body, since the rig moves with it.</summary>
+    /// body, since the rig moves with it. Real metres per second (Camera.WorldScale): throw, lunge and push speeds
+    /// are the player's own arm speed, so a tall player under the Auto scale (rig below x1) throws as hard.</summary>
     private static Vector3 HandVelocity(Hand hand, VRRig rig)
     {
         var local = hand.Throw.GetReleaseVelocity().U();
-        return rig.Origin != null ? rig.Origin.TransformVector(local) : local;
+        return rig.Origin != null ? rig.Origin.rotation * local : local;
     }
 
     /// <summary>How close (metres) to the held item's surface a free hand counts as on it.</summary>

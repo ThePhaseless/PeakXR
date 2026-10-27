@@ -138,6 +138,7 @@ internal sealed partial class SelfTestRunner
             notes.Add("avatar eye renderers not found, eye placement not judged");
         }
         notes.Add(idle ? "idle hands" : "live controllers, not judged");
+        notes.Add(ScaleNote());
         notes.Add(
             c.data.currentItem != null ? "holding " + c.data.currentItem.name : "nothing held"
         );
@@ -559,6 +560,7 @@ internal sealed partial class SelfTestRunner
                 // Ghosts are placed in LateUpdate; let a frame pass with the current pose.
                 yield return null;
             }
+            notes.Add(ScaleNote());
             var down = JudgeBelt(c, cam, scripted, fails, notes);
             JudgeOwnBody(c, cam.transform.position, fails, notes);
             yield return ShotAt("vr-09-belt-view", cam.transform.position + down);
@@ -956,4 +958,11 @@ internal sealed partial class SelfTestRunner
     }
 
     static string F(FormattableString s) => FormattableString.Invariant(s);
+
+    /// <summary>The world scale a step ran at (Camera.WorldScaleMode; Auto sits near x1 for an adult-height head),
+    /// for notes whose numbers depend on it.</summary>
+    static string ScaleNote() =>
+        F(
+            $"world scale {1f / Rig.RealScale.Of:0.00} {Rig.CameraFeature.WorldScaleModeValue}, rig x{Rig.RealScale.Of:0.00}"
+        );
 }
