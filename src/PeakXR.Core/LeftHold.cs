@@ -94,7 +94,7 @@ namespace PeakXR.Core
         /// The plane for an item: the plain mirror while its palm stays on the item (<paramref name="plainGap"/>
         /// within <see cref="Tolerance"/> of <paramref name="rightGap"/>) and it keeps the far end's side, else the plane it is most symmetric about
         /// (asymmetries from <see cref="Asymmetry"/>), in the order Origin, CentreX, CentreZ within
-        /// <see cref="Margin"/>. <paramref name="keepForward"/> (a launcher's barrel) rules out the z plane, and a plane
+        /// <see cref="Margin"/>. <paramref name="keepForward"/> (a launcher's barrel, an item with a front: <see cref="HasFront"/>) rules out the z plane, and a plane
         /// that turns the item's far end round (<see cref="TurnsEnd"/>) is out unless the item is even across it
         /// (asymmetry within <see cref="Margin"/>). With none left, the plain mirror.
         /// </summary>
@@ -128,6 +128,32 @@ namespace PeakXR.Core
                 return LeftPlane.CentreX;
             return z ? LeftPlane.CentreZ : LeftPlane.Origin;
         }
+
+        /// <summary>The longest side must be this many times the next for the item to have a far end worth keeping.</summary>
+        public const float LongAxisRatio = 1.15f;
+
+        /// <summary>Asymmetry across z (<see cref="Asymmetry"/>) above which the item has a front: its back is not its
+        /// front, so a half turn (<see cref="LeftPlane.CentreZ"/>) would show the player the wrong side.</summary>
+        public const float FrontAsymmetry = 0.06f;
+
+        /// <summary>The item has a far end: its longest side clearly leads the next (<see cref="LongAxisRatio"/>). A
+        /// ball or a plush as wide as it is tall has none, so turning it round changes nothing the player sees.</summary>
+        public static bool HasLongAxis(Vector3 size)
+        {
+            float a = Math.Abs(size.X),
+                b = Math.Abs(size.Y),
+                c = Math.Abs(size.Z);
+            float longest = Math.Max(a, Math.Max(b, c));
+            float second =
+                longest == a ? Math.Max(b, c)
+                : longest == b ? Math.Max(a, c)
+                : Math.Max(a, b);
+            return longest >= LongAxisRatio * second;
+        }
+
+        /// <summary>The item's front and back differ (<paramref name="asymZ"/> over <see cref="FrontAsymmetry"/>): keep
+        /// the side the right hold shows the player facing them, so no half turn.</summary>
+        public static bool HasFront(float asymZ) => asymZ > FrontAsymmetry;
 
         /// <summary>Whether mirroring across <paramref name="plane"/> puts the item's far end (from the grip, along
         /// its longest side) on the grip's other side: the item would lie the other way round in the left hand, a

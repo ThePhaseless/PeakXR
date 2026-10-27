@@ -73,17 +73,24 @@ internal sealed class ItemHoldInfo
         return float.IsInfinity(gap) ? float.NaN : gap;
     }
 
+    /// <summary>The bound item's front and back differ, so its left hold keeps the side facing the player (self-test
+    /// notes).</summary>
+    internal bool LeftHasFront => item != null && Left().Front;
+
     /// <summary>The plane the bound item's left hold mirrors across (self-test notes).</summary>
     internal LeftPlane LeftPlaneUsed => item != null ? Left().Plane : LeftPlane.Origin;
 
-    /// <summary>The left hold turns the bound item's far end round: only across a plane the item is even about, where
-    /// that end looks the same as the other (self-test vr.244 skips its far-end check then).</summary>
+    /// <summary>The bound item's far end means nothing in the left hold: it has no long axis, or the hold turns it round
+    /// across a plane the item is even about, where that end looks the same as the other (self-test vr.244 skips its
+    /// far-end check then).</summary>
     internal bool LeftTurnsEnd
     {
         get
         {
             if (item == null || GripRight == null)
                 return false;
+            if (!Left().LongAxis)
+                return true;
             ref readonly var left = ref Left();
             var grip = GripRight.localPosition.N();
             return LeftHold.TurnsEnd(
@@ -145,6 +152,12 @@ internal sealed class ItemHoldInfo
         public Vector3 Centre;
         public Vector3 Shift;
         public Vector3 SecondShift;
+
+        /// <summary>The item has a far end (<see cref="LeftHold.HasLongAxis"/>).</summary>
+        public bool LongAxis;
+
+        /// <summary>The item's front and back differ (<see cref="LeftHold.HasFront"/>).</summary>
+        public bool Front;
     }
 
     private static readonly LeftFit PlainMirror;
@@ -217,18 +230,25 @@ internal sealed class ItemHoldInfo
         // The far end along the longest side, away from the grip: a plane that turns it round is out (vr.244: the
         // colliders read the checkpoint flag nearly as even across x as across z, and the x plane put its pole's far
         // end behind the fist).
+        // Only an item with a long axis has a far end to keep: a ball or a plush as wide as it is tall has none (vr.244:
+        // the CactusBall's "far end" swung round across x and nothing a player sees changed).
         var grip = GripRight.localPosition.N();
         var end = HeldItemShape.FarEnd(BoundsMin.N(), BoundsMax.N(), grip);
+        fit.LongAxis = LeftHold.HasLongAxis(size.N());
+        float asymZ = Asym(LeftPlane.CentreZ);
+        // An item whose front and back differ keeps the side the right hold shows the player: no half turn (vr.244:
+        // BingBong showed the back of its head in the left hand).
+        fit.Front = LeftHold.HasFront(asymZ);
         fit.Plane = LeftHold.Choose(
             rightGap,
             plainGap,
             Asym(LeftPlane.Origin),
             Asym(LeftPlane.CentreX),
-            Asym(LeftPlane.CentreZ),
-            Aimed,
-            LeftHold.TurnsEnd(LeftPlane.Origin, centre, grip, end),
-            LeftHold.TurnsEnd(LeftPlane.CentreX, centre, grip, end),
-            LeftHold.TurnsEnd(LeftPlane.CentreZ, centre, grip, end)
+            asymZ,
+            Aimed || fit.Front,
+            fit.LongAxis && LeftHold.TurnsEnd(LeftPlane.Origin, centre, grip, end),
+            fit.LongAxis && LeftHold.TurnsEnd(LeftPlane.CentreX, centre, grip, end),
+            fit.LongAxis && LeftHold.TurnsEnd(LeftPlane.CentreZ, centre, grip, end)
         );
         fit.Centre = centre.U();
         fit.Shift = ShiftFor(palm, rightGap, fit.Plane, centre);

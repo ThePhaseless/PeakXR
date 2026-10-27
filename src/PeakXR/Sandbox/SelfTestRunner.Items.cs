@@ -230,6 +230,14 @@ internal sealed partial class SelfTestRunner
                     .U();
                 HeldItemPoints.World(item, hand, left, middle, out var mid);
                 HeldItemPoints.World(item, hand, left, far, out var end);
+                // The item's +Z as drawn, against the way to the eyes: which of its sides faces the player.
+                HeldItemPoints.World(
+                    item,
+                    hand,
+                    left,
+                    middle + Vector3.forward * 0.1f,
+                    out var ahead
+                );
                 // Toward the body's midline from this hand, along the face's right.
                 float inward = left ? 1f : -1f;
                 var driver = AvatarPoseDriver.Of(c);
@@ -254,29 +262,37 @@ internal sealed partial class SelfTestRunner
                     EndUp = Vector3.Dot(end - hand.position, head.up),
                     Plane = info.LeftPlaneUsed,
                     EvenEnds = info.LeftTurnsEnd,
+                    Front = info.LeftHasFront,
+                    Facing = Vector3.Dot(
+                        (ahead - mid).normalized,
+                        (head.position - mid).normalized
+                    ),
                 };
                 var held = side[h];
                 // Every hold's numbers, passing or not.
                 Plugin.Log.LogInfo(
                     F(
-                        $"[selftest] vr.244 {itemName} {(left ? "left" : "right")}: plane {held.Plane}{(held.EvenEnds ? " (even ends)" : "")}, palm {held.Palm:0.000} m, second {held.Second:0.000} m, hand on grip {held.HandOff:0.000} m, middle in {held.MidIn:0.00}, far end in {held.EndIn:0.00} up {held.EndUp:0.00}"
+                        $"[selftest] vr.244 {itemName} {(left ? "left" : "right")}: plane {held.Plane}{(held.EvenEnds ? " (even ends)" : "")}, palm {held.Palm:0.000} m, second {held.Second:0.000} m, hand on grip {held.HandOff:0.000} m, middle in {held.MidIn:0.00}, far end in {held.EndIn:0.00} up {held.EndUp:0.00}, +Z to the eyes {held.Facing:0.00}{(held.Front ? " (has a front)" : "")}"
                     )
                 );
                 if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
                 {
-                    // Held up in front of the face, a little to its own side, as a player looks at what they hold.
+                    // Held up in front of the face, its middle centred 0.45 m from the eyes, so the whole item is in
+                    // frame: the hand goes where that puts the item's middle (tracking space), then once more to settle.
                     var rest = Script(left).Position;
-                    HeadFrame(out var eyes, out var ahead, out var across);
-                    yield return MoveTrack(
-                        left,
-                        eyes
-                            + ahead * 0.4f
-                            + across * (left ? -0.12f : 0.12f)
-                            + Vector3.down * 0.1f,
-                        0.4f
-                    );
-                    yield return Wait(0.3f);
-                    HeldItemPoints.World(item, rig.Hand(left), left, middle, out var raised);
+                    HeadFrame(out var eyes, out var forward, out _);
+                    var goal = eyes + forward * 0.45f;
+                    Vector3 raised = default;
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        HeldItemPoints.World(item, rig.Hand(left), left, middle, out raised);
+                        var offset =
+                            rig.Origin.InverseTransformPoint(raised)
+                            - rig.Origin.InverseTransformPoint(rig.Hand(left).position);
+                        yield return MoveTrack(left, goal - offset, 0.4f);
+                        yield return Wait(0.3f);
+                    }
+                    HeldItemPoints.World(item, rig.Hand(left), left, middle, out raised);
                     yield return ShotAt(
                         $"vr-244-{itemName.Replace(' ', '-')}-{(left ? "left" : "right")}",
                         raised
@@ -298,7 +314,7 @@ internal sealed partial class SelfTestRunner
             var l = side[0];
             var r = side[1];
             string note = F(
-                $"{itemName} ({l.Plane}{(l.EvenEnds ? ", even ends" : "")}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}"
+                $"{itemName} ({l.Plane}{(l.EvenEnds ? ", even ends" : "")}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}, +Z to the eyes L {l.Facing:0.00} R {r.Facing:0.00}{(l.Front ? " (has a front)" : "")}"
             );
             notes.Add(note);
             string verdict =
@@ -311,6 +327,9 @@ internal sealed partial class SelfTestRunner
                 : Flipped(l.MidIn, r.MidIn)
                 || (!l.EvenEnds && (Flipped(l.EndIn, r.EndIn) || Flipped(l.EndUp, r.EndUp)))
                     ? "the item turns the other way in the left hand"
+                // Only the z plane turns the item half round; on any other the side facing the player must stay so.
+                : l.Plane != LeftPlane.CentreZ && Flipped(l.Facing, r.Facing, 0.3f)
+                    ? "the item shows the player its other side in the left hand"
                 : null;
             if (verdict != null)
                 failures.Add(verdict + ": " + note);
@@ -323,8 +342,8 @@ internal sealed partial class SelfTestRunner
             stepNote = string.Join("; ", notes);
 
         // Opposite sides, each clear of the hand by more than a hand's half width.
-        static bool Flipped(float a, float b) =>
-            a * b < 0f && Mathf.Abs(a) > 0.03f && Mathf.Abs(b) > 0.03f;
+        static bool Flipped(float a, float b, float clear = 0.03f) =>
+            a * b < 0f && Mathf.Abs(a) > clear && Mathf.Abs(b) > clear;
     }
 
     bool heldReleased;
@@ -382,6 +401,12 @@ internal sealed partial class SelfTestRunner
 
         /// <summary>The left hold turns the item round across a plane it is even about: its ends look alike.</summary>
         public bool EvenEnds;
+
+        /// <summary>The item's front and back differ (ItemHoldInfo.LeftHasFront).</summary>
+        public bool Front;
+
+        /// <summary>Cosine between the item's +Z as drawn and the way from it to the eyes.</summary>
+        public float Facing;
     }
 
     /// <summary>How far past the grab radius the vr.243 miss probe stands, metres.</summary>
