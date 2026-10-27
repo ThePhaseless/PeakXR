@@ -12,7 +12,6 @@ using PeakXR.XR;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace PeakXR.UI.Settings;
 

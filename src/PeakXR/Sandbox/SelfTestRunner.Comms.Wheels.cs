@@ -7,7 +7,6 @@ using PeakXR.Framework;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Wheels;
 using PeakXR.VR;
-using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;

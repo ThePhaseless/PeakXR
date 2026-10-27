@@ -1,6 +1,5 @@
 using System.Reflection;
 using HarmonyLib;
-using Peak;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;

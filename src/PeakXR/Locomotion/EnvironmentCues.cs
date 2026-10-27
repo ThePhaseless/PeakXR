@@ -3,7 +3,6 @@ using HarmonyLib;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
-using PeakXR.Interact;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;

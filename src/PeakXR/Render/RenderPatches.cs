@@ -3,7 +3,6 @@ using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
 using PeakXR.VR;
-using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace PeakXR.Render;

@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace PeakXR.Core.Tests;
 
 public class ContrastTests

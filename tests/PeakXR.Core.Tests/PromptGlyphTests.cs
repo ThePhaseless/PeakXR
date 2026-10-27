@@ -1,5 +1,3 @@
-using System;
-
 namespace PeakXR.Core.Tests;
 
 public class PromptGlyphTests

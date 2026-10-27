@@ -18,7 +18,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR;
-using Zorro.Core;
 using Zorro.Settings;
 using Vector3 = UnityEngine.Vector3;
 

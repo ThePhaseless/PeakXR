@@ -5,7 +5,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
-using Zorro.Settings;
 using Zorro.UI;
 using Object = UnityEngine.Object;
 

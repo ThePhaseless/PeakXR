@@ -5,7 +5,6 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
-using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;

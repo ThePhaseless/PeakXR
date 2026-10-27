@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Comfort;
 using PeakXR.Core;

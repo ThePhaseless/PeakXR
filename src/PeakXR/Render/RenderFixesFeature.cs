@@ -1,6 +1,5 @@
 using BepInEx.Configuration;
 using PeakXR.Framework;
-using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Render;
