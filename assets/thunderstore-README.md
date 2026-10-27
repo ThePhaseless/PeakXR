@@ -2,7 +2,7 @@
 
 Play PEAK in VR.
 
-Early, untested release. Nothing in PeakXR has been run in a headset yet, so expect bugs and report them on GitHub.
+Early release. It has only been tested with SteamVR, mostly on Linux, so expect bugs and report them on GitHub.
 
 ## What it does
 
@@ -20,10 +20,12 @@ Early, untested release. Nothing in PeakXR has been run in a headset yet, so exp
 - Linux (Proton) only: add these Steam launch options
 
 ```
-WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11
+WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan
 ```
 
-The override lets BepInEx load under Proton. `-force-d3d11` is the best-tested path through Proton's OpenXR bridge.
+The override lets BepInEx load under Proton. `-force-vulkan` picks Vulkan, the only graphics API tested in VR under Proton.
+
+On Windows, PEAK starts on Direct3D12, which usually runs VR slower. Add `-force-d3d11` to the launch options, or pick "PEAK using DX11" when Steam asks.
 
 ## Install
 
@@ -41,12 +43,13 @@ The override lets BepInEx load under Proton. `-force-d3d11` is the best-tested p
 
 Default layout for a right-handed player. Set `Input.DominantHand = Left` to swap the controllers.
 
-- Left stick: move. Click: sprint. Hold the click: push to talk.
+- Left stick: move. Click: sprint.
 - Right stick: left/right turn, up/down change item. Click: crouch.
 - Grip: grab or interact. Trigger: use the item in that hand.
 - Right A: jump. Right B: drop (hold to charge a throw).
 - Left A: put the item away. Hold it for the backpack. Left B: ping. Hold it for the emote wheel.
 - Menu: tap to pause, hold one second to recenter.
+- Talk: hold a free hand at your mouth like a walkie-talkie (when the game's mic mode is Push To Talk). No button talks by default.
 - Valve Index: squeeze a trackpad firmly to get the menu button.
 
 Full table, wheels, passport and guidebook, Vive and WMR notes:
@@ -72,7 +75,7 @@ Other options include head- or hand-relative movement, sprint and crouch as togg
 
 ## Known limitations
 
-- No headset, controller or runtime combination has been verified yet.
+- Only SteamVR has been tested. Other OpenXR runtimes and controllers may not work.
 - OpenXR under Proton is new and may not work on your setup.
 - The on-screen keyboard has no symbol layer.
 - A game update can break a feature. PeakXR switches off only the broken feature and keeps going.
