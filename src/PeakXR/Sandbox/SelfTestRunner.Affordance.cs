@@ -377,7 +377,7 @@ internal sealed partial class SelfTestRunner
     /// rising note, no reach ray), and with <c>UI.ActionHintText</c> off no label.</summary>
     IEnumerator HintsOffStep()
     {
-        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        var hook = FindItem(SandboxActions.Items, "RescueHook");
         if (hook == null)
         {
             stepSkip = "no RescueHook item";
@@ -644,7 +644,7 @@ internal sealed partial class SelfTestRunner
     /// hint.</summary>
     IEnumerator DenyTwoHandStep()
     {
-        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        var hook = FindItem(SandboxActions.Items, "RescueHook");
         if (hook == null)
         {
             stepSkip = "no RescueHook item";
@@ -664,7 +664,7 @@ internal sealed partial class SelfTestRunner
     /// has its own reason (UseDenial.Why), covered by vr.94 and the vr.16x steps.</summary>
     IEnumerator DenyUnusableStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;

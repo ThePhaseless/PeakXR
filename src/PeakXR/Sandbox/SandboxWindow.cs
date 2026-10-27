@@ -62,7 +62,7 @@ internal sealed class SandboxWindow
         {
             GUI.Label(
                 new Rect(Pad, y, w, 22f),
-                "Inactive: enable Sandbox.Enabled; works offline or as host only."
+                "Inactive: enable Sandbox.Enabled; works offline (Play Solo) only."
             );
             y += 24f;
         }

@@ -419,16 +419,7 @@ internal sealed partial class SelfTestRunner
         }
         if (!needSpot)
             return null;
-        if (
-            !Physics.Raycast(
-                c.Center,
-                Vector3.down,
-                out var ground,
-                3f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!Terrain(c.Center, Vector3.down, 3f, out var ground))
             return "no ground within 3 m under the body";
         return OpenProblem(ground);
     }
@@ -453,29 +444,11 @@ internal sealed partial class SelfTestRunner
             for (int i = 0; i < 8; i++)
             {
                 var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
-                if (
-                    Physics.Raycast(
-                        at,
-                        dir,
-                        out hit,
-                        SettleClear,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                )
+                if (Terrain(at, dir, SettleClear, out hit))
                     return F($"{hit.collider.name} {hit.distance:0.00} m away {h:0.0} m up");
             }
         }
-        if (
-            Physics.Raycast(
-                ground.point + Vector3.up * 0.5f,
-                Vector3.up,
-                out hit,
-                SettleHeadroom - 0.5f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(ground.point + Vector3.up * 0.5f, Vector3.up, SettleHeadroom - 0.5f, out hit))
             return F($"{hit.collider.name} overhead, {hit.distance + 0.5f:0.00} m up");
         return null;
     }
@@ -492,14 +465,7 @@ internal sealed partial class SelfTestRunner
             {
                 var dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
                 if (
-                    Physics.Raycast(
-                        around + dir * r + Vector3.up * 3f,
-                        Vector3.down,
-                        out var ground,
-                        6f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
+                    Terrain(around + dir * r + Vector3.up * 3f, Vector3.down, 6f, out var ground)
                     && OpenProblem(ground, maxSlope) == null
                 )
                     return ground.point;
@@ -518,14 +484,5 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Ground under the body, or its centre when none is near.</summary>
     static Vector3 Feet(Character c) =>
-        Physics.Raycast(
-            c.Center,
-            Vector3.down,
-            out var hit,
-            3f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? hit.point
-            : c.Center;
+        Terrain(c.Center, Vector3.down, 3f, out var hit) ? hit.point : c.Center;
 }

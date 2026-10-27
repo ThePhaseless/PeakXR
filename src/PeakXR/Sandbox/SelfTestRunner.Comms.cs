@@ -700,7 +700,7 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 0f, 0.1f);
 
         // A hand holding an item the game will not use (overrideUsability false, Item.cs:797-802).
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -983,16 +983,7 @@ internal sealed partial class SelfTestRunner
         {
             var dir = Quaternion.Euler(0f, PingYaws[i], 0f) * forward;
             var aim = c.Center + dir * 4f;
-            if (
-                Physics.Raycast(
-                    aim + Vector3.up * 2f,
-                    Vector3.down,
-                    out var ground,
-                    6f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground))
                 aim = ground.point;
             if (i == 0)
                 first = aim;

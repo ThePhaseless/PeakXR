@@ -891,14 +891,7 @@ internal sealed partial class SelfTestRunner
         slab.transform.localScale = new Vector3(3f, 0.4f, 8f);
         Physics.SyncTransforms();
         if (
-            !Physics.Raycast(
-                centre + Vector3.up * 6f,
-                Vector3.down,
-                out var top,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
+            !Terrain(centre + Vector3.up * 6f, Vector3.down, 8f, out var top)
             || top.collider.gameObject != slab
         )
         {
@@ -1210,14 +1203,7 @@ internal sealed partial class SelfTestRunner
         wall.transform.localScale = new Vector3(3f, 3f, 0.3f);
         Physics.SyncTransforms();
         float WallAhead() =>
-            Physics.Raycast(
-                rig.Head.position,
-                Flat(rig.Head.forward),
-                out var hit,
-                3f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
+            Terrain(rig.Head.position, Flat(rig.Head.forward), 3f, out var hit)
                 ? hit.distance
                 : float.PositiveInfinity;
         yield return Wait(0.3f);
@@ -1750,7 +1736,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator BalloonTieStep()
     {
         var c = Character.localCharacter;
-        var balloon = FindItem(new List<Item>(SandboxActions.Items), "Balloon");
+        var balloon = FindItem(SandboxActions.Items, "Balloon");
         yield return GiveAndHold(balloon);
         if (!stepOk)
             yield break;
@@ -1822,7 +1808,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no open sky above the spawn";
             yield break;
         }
-        var chute = FindItem(new List<Item>(SandboxActions.Items), "Parachute");
+        var chute = FindItem(SandboxActions.Items, "Parachute");
         yield return GiveAndHold(chute);
         if (!stepOk)
             yield break;
@@ -2233,14 +2219,7 @@ internal sealed partial class SelfTestRunner
         var low = new Vector3(head.x, eye - 0.47f, head.z) + forward * 0.15f;
         var handFrom = Script(false).Position;
         var headWorld = rig.Origin.TransformPoint(head);
-        float ground = Physics.Raycast(
-            headWorld,
-            Vector3.down,
-            out var under,
-            4f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
+        float ground = Terrain(headWorld, Vector3.down, 4f, out var under)
             ? under.point.y
             : c.data.groundPos.y;
         var reachWorld =
@@ -2328,19 +2307,9 @@ internal sealed partial class SelfTestRunner
         var controller = new Vector3(head.x, realFloor + 0.1f, head.z) + forward * 0.4f;
         SetHand(false, controller);
         yield return Wait(0.3f);
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         var top = rig.Origin.TransformPoint(new Vector3(controller.x, seatedEye, controller.z));
-        if (
-            apple == null
-            || !Physics.Raycast(
-                top,
-                Vector3.down,
-                out var ground,
-                6f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (apple == null || !Terrain(top, Vector3.down, 6f, out var ground))
         {
             Fail("no apple or no ground under the hand");
             yield break;

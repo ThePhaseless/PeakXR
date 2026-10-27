@@ -1093,14 +1093,7 @@ internal sealed partial class SelfTestRunner
         KioskDock.Measure(kiosk.transform, out var centre, out var top);
         var bounds = KioskBounds(kiosk);
         // The eye's height over the floor now, kept at the new spot.
-        float eyeUp = Physics.Raycast(
-            c.Center,
-            Vector3.down,
-            out var floorNow,
-            3f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
+        float eyeUp = Terrain(c.Center, Vector3.down, 3f, out var floorNow)
             ? rig.Head.position.y - floorNow.point.y
             : 1.6f;
         var forward = Flat(kiosk.transform.forward);
@@ -1117,16 +1110,7 @@ internal sealed partial class SelfTestRunner
                 + KioskStandOff;
             var spot = new Vector3(bounds.center.x, top, bounds.center.z) + dir * reach;
             // Down from the kiosk's top: the floor under the airport roof, never the roof.
-            if (
-                !Physics.Raycast(
-                    spot,
-                    Vector3.down,
-                    out var floor,
-                    top - bounds.min.y + 1f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (!Terrain(spot, Vector3.down, top - bounds.min.y + 1f, out var floor))
             {
                 tried.Add($"{heading:0} deg: no floor");
                 continue;
@@ -1268,16 +1252,7 @@ internal sealed partial class SelfTestRunner
         {
             // Not WarpTo: its ground ray starts 3 m up, which can be above the airport roof (as ToKiosk).
             var to = c.Center + gap.normalized * (gap.magnitude - 0.5f);
-            if (
-                Physics.Raycast(
-                    to,
-                    Vector3.down,
-                    out var floor,
-                    3f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(to, Vector3.down, 3f, out var floor))
                 to = floor.point;
             warpedForProp = true;
             c.photonView.RPC(

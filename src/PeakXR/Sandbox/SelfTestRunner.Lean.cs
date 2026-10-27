@@ -398,16 +398,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Ground height under <paramref name="at"/>, NaN without ground within 3 m.</summary>
     static float GroundY(Vector3 at) =>
-        Physics.Raycast(
-            at + Vector3.up * 1f,
-            Vector3.down,
-            out var hit,
-            4f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? hit.point.y
-            : float.NaN;
+        Terrain(at + Vector3.up * 1f, Vector3.down, 4f, out var hit) ? hit.point.y : float.NaN;
 
     void Drift(string phase, List<string> fails, List<string> notes, float maxView)
     {

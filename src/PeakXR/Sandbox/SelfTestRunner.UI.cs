@@ -230,28 +230,13 @@ internal sealed partial class SelfTestRunner
     /// (<c>interactNameText</c>, GUIManager.cs:1051) is drawn there, readable (run with <c>UI.TargetNames</c> on).</summary>
     IEnumerator TargetPromptStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
-        {
-            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
-            yield break;
-        }
-        var world =
-            SandboxActions.LastSpawned != null
-                ? SandboxActions.LastSpawned.GetComponent<Item>()
-                : null;
-        spawned.Add(SandboxActions.LastSpawned);
-        if (world == null)
-        {
-            Fail("spawned Apple has no Item");
-            yield break;
-        }
         // Deterministic hover: the rest hands do not point, so the game's ray comes from the head (Interaction.cs:196);
         // hold the Apple still on that ray, 0.8 m out, instead of letting it fall off it.
-        if (world.rig != null)
-            world.rig.isKinematic = true;
+        var world = SpawnTestItem(AppleFragment, spot);
+        if (world == null)
+            yield break;
         float until = Now + 5f;
         while (Now < until && !ReferenceEquals(Interaction.instance.currentHovered, world))
         {
@@ -322,7 +307,7 @@ internal sealed partial class SelfTestRunner
     /// holding hand's trigger for a few seconds, readable to a player who looks at that hand.</summary>
     IEnumerator ButtonLabelStep()
     {
-        yield return GiveAndHold(FindItem(new List<Item>(SandboxActions.Items), AppleFragment));
+        yield return GiveAndHold(FindItem(SandboxActions.Items, AppleFragment));
         if (!stepOk)
             yield break;
         var prompt = GUIManager.instance.itemPromptMain;
@@ -526,7 +511,7 @@ internal sealed partial class SelfTestRunner
     /// (<c>ropeLengthText</c>, UI_Rope.cs:68) readable to a player who looks at the spool.</summary>
     IEnumerator RopeGaugeStep()
     {
-        yield return GiveAndHold(FindItem(new List<Item>(SandboxActions.Items), "RopeSpool"));
+        yield return GiveAndHold(FindItem(SandboxActions.Items, "RopeSpool"));
         if (!stepOk)
             yield break;
         var rope = GUIManager.instance.ui_rope;
@@ -582,26 +567,11 @@ internal sealed partial class SelfTestRunner
     /// <paramref name="found"/>; a failed step instead if the game never makes it the target.</summary>
     IEnumerator HoveredApple(System.Action<Item> found)
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
-        {
-            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
-            yield break;
-        }
-        spawned.Add(SandboxActions.LastSpawned);
-        var world =
-            SandboxActions.LastSpawned != null
-                ? SandboxActions.LastSpawned.GetComponent<Item>()
-                : null;
+        var world = SpawnTestItem(AppleFragment, spot);
         if (world == null)
-        {
-            Fail("spawned Apple has no Item");
             yield break;
-        }
-        if (world.rig != null)
-            world.rig.isKinematic = true;
         yield return HoverOnHeadRay(world, head);
         if (!ReferenceEquals(Interaction.instance.currentHovered, world))
         {
