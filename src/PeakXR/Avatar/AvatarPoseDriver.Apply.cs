@@ -1566,6 +1566,24 @@ public partial class AvatarPoseDriver
             pos = xp.U() + xr.U() * cPos;
             rot = xr.U() * cRot;
         }
+        if (hold.HasFront)
+        {
+            // Its face, dial or cover turned toward the eyes of a hand held up to look at it, about the grip-to-middle
+            // line so the item stays in the palm (Core ItemFront). Fixed per item and hand: no swimming as the wrist
+            // turns, and peers running the mod draw the same.
+            ItemFront.Turn(
+                pos.N(),
+                rot.N(),
+                hold.HoldPivot(rig.IsLeft).N(),
+                ((hold.BoundsMin + hold.BoundsMax) * 0.5f).N(),
+                hold.Front.N(),
+                ItemFront.EyeInGrip(rig.IsLeft),
+                out var tp,
+                out var tr
+            );
+            pos = tp.U();
+            rot = tr.U();
+        }
         return true;
     }
 
