@@ -133,7 +133,7 @@ namespace PeakXR.Core
             _have = true;
             _left = left;
             _right = right;
-            _average += (sample - _average) * (1f - MathF.Exp(-dt / TimeConstant));
+            _average += (sample - _average) * ExpSmooth.Factor(1f / TimeConstant, dt);
             Active = Active ? _average > ExitSpeed : _average > EnterSpeed;
             return Active;
         }

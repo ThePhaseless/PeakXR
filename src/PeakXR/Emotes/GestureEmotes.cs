@@ -130,12 +130,13 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool holding = c.data.currentItem != null;
         bool leftFree = !holding || (!LocalHold.TwoHand && !LocalHold.ItemInLeftHand);
         bool rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
-        var l = rig.LeftHand.position;
-        var r = rig.RightHand.position;
         // A grip that took or started something (a handle, a friend, a lid), or a hand at a hold where it would
         // climb (the climb ring shows), is busy, not gesturing: reaching up a rock face looks like a cheer.
-        bool leftBusy = MidGrab(true) || AtHold(l);
-        bool rightBusy = MidGrab(false) || AtHold(r);
+        bool leftBusy = MidGrab(true) || AtHold(rig.LeftHand.position);
+        bool rightBusy = MidGrab(false) || AtHold(rig.RightHand.position);
+        // The gesture thresholds (EmoteGestures, WaveGesture) are the player's real metres around the head.
+        var l = Rig.RealScale.Real(rig.LeftHand.position, head);
+        var r = Rig.RealScale.Real(rig.RightHand.position, head);
         bool leftOpen =
             leftFree && !leftBusy && VRInput.Left.Tracked && VRInput.Left.Grip < OpenGrip;
         bool rightOpen =
@@ -204,7 +205,7 @@ internal sealed class GestureEmotes : MonoBehaviour
             || state.ThumbrestTouch
             || state.Primary
             || state.Secondary;
-        var p = hand.position;
+        var p = Rig.RealScale.Real(hand.position, head);
         var flat = forward;
         flat.y = 0f;
         flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;

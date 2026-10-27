@@ -2,6 +2,37 @@ namespace PeakXR.Core.Tests;
 
 public class ArmMathTests
 {
+    [Fact]
+    public void SolveTwoBone_TinyForearm_DoesNotThrow()
+    {
+        var s = Vector3.Zero;
+        var e = new Vector3(0f, -0.3f, 0f);
+        var h = e + new Vector3(5e-5f, 0f, 0f);
+        ArmMath.SolveTwoBone(s, e, h, new Vector3(0.1f, -0.25f, 0.1f), Vector3.UnitX, out _, out _);
+    }
+
+    [Fact]
+    public void SolveTwoBone_ForearmFoldedBack_StraightensOntoTheTarget()
+    {
+        // The forearm points straight back along the upper arm: straightening it is a half turn.
+        var s = Vector3.Zero;
+        var e = new Vector3(0f, -0.3f, 0f);
+        var h = new Vector3(0f, -0.05f, 0f);
+        var target = new Vector3(0f, -0.4f, 0.2f);
+        ArmMath.SolveTwoBone(
+            s,
+            e,
+            h,
+            target,
+            new Vector3(1f, -0.3f, 0f),
+            out var upper,
+            out var lower
+        );
+        var (elbow, hand) = Apply(s, e, h, upper, lower);
+        TestUtil.Near(target, hand, 1e-3f);
+        TestUtil.Near(0.3f, elbow.Length(), 1e-4f);
+    }
+
     static readonly Vector3 Right = Vector3.UnitX;
     static readonly Vector3 Up = Vector3.UnitY;
     static readonly Vector3 Forward = Vector3.UnitZ;

@@ -162,7 +162,7 @@ namespace PeakXR.Core
                 );
         }
 
-        public static bool TryReadVec(
+        internal static bool TryReadVec(
             string line,
             string key,
             out float x,

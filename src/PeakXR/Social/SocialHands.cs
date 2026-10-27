@@ -151,6 +151,16 @@ internal sealed class SocialHands : IGripExtension
 
     public bool TryHeldRelease(in GripHookContext ctx) => false;
 
+    /// <summary>VR stopped: drop both hands' grips and targets, so a grip held then never resumes with VR.</summary>
+    public void Reset()
+    {
+        RaycastTarget = null;
+        FeedTarget = null;
+        FeedReady = false;
+        Clear(0);
+        Clear(1);
+    }
+
     private void Clear(int h)
     {
         kinds[h] = SocialKind.None;
@@ -473,12 +483,6 @@ internal sealed class SocialHands : IGripExtension
         RaycastTarget = null;
         FeedTarget = null;
         FeedReady = false;
-        if (!VRSession.Active || c != Character.localCharacter)
-        {
-            Clear(0);
-            Clear(1);
-            return;
-        }
         var cfg = SocialConfig.Instance;
         Validate(c, 0);
         Validate(c, 1);

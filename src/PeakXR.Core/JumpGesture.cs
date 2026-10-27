@@ -79,7 +79,7 @@ public sealed class JumpGesture
         _sinceTilted = MathF.Abs(pitchDegrees) > MaxPitch ? 0f : _sinceTilted + dt;
         if (_have)
         {
-            float k = 1f - MathF.Exp(-dt / Smoothing);
+            float k = ExpSmooth.Factor(1f / Smoothing, dt);
             _headSpeed += ((headY - _head) / dt - _headSpeed) * k;
             if ((leftY - _left) / dt > HandSpeed && (rightY - _right) / dt > HandSpeed)
                 _sinceHands = 0f;

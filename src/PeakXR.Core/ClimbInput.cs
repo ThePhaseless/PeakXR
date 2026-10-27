@@ -53,10 +53,7 @@ namespace PeakXR.Core
         /// <summary>Exponential smoothing toward <paramref name="target"/>; rate &lt;= 0 snaps.</summary>
         public static Vector2 Smooth(Vector2 current, Vector2 target, float rate, float dt)
         {
-            if (rate <= 0f)
-                return target;
-            float a = 1f - MathF.Exp(-rate * dt);
-            return current + (target - current) * a;
+            return current + (target - current) * ExpSmooth.Factor(rate, dt);
         }
 
         /// <summary>

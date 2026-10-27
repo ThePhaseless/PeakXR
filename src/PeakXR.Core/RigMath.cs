@@ -40,20 +40,6 @@ namespace PeakXR.Core
                     + new Vector3(0f, eyeHeight, 0f)
                 );
 
-        /// <summary>
-        /// New calibrated spot after turning the rig by <paramref name="deltaYawDeg"/>, chosen so the
-        /// head (at <paramref name="headXZ"/> in tracking space) keeps its world position: turning pivots
-        /// around the player's head instead of the room centre.
-        /// </summary>
-        public static Vector2 PivotCenter(Vector2 headXZ, Vector2 centerXZ, float deltaYawDeg)
-        {
-            Vector3 offset = RotateYaw(
-                -deltaYawDeg,
-                new Vector3(headXZ.X - centerXZ.X, 0f, headXZ.Y - centerXZ.Y)
-            );
-            return new Vector2(headXZ.X - offset.X, headXZ.Y - offset.Z);
-        }
-
         /// <summary>Rig yaw that makes the headset's current heading match the body's heading.</summary>
         public static float RecenterYaw(float bodyYawDeg, float hmdLocalYawDeg) =>
             LookMath.WrapDegrees(bodyYawDeg - hmdLocalYawDeg);
@@ -263,14 +249,8 @@ namespace PeakXR.Core
             : followWalking ? MathF.Min(rate, FollowVerticalRate)
             : MathF.Min(rate, GroundedVerticalRate);
 
-        static float Blend(float rate, float dt)
-        {
-            if (rate < 0f)
-                return 1f;
-            if (rate == 0f || dt <= 0f)
-                return 0f;
-            return 1f - MathF.Exp(-rate * dt);
-        }
+        // Follow's own rule: 0 holds an axis (a still vertical); negative snaps like ExpSmooth.
+        static float Blend(float rate, float dt) => rate == 0f ? 0f : ExpSmooth.Factor(rate, dt);
     }
 }
 

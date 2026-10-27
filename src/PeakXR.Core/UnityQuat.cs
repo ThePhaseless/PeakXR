@@ -35,47 +35,6 @@ namespace PeakXR.Core
             return Mul(Mul(qy, qx), qz);
         }
 
-        /// <summary>Unity's <c>q.eulerAngles</c>: degrees, each component in [0, 360).</summary>
-        public static Vector3 ToEuler(Quaternion q)
-        {
-            q = Quaternion.Normalize(q);
-            float xx = q.X * q.X,
-                yy = q.Y * q.Y,
-                zz = q.Z * q.Z;
-            float xy = q.X * q.Y,
-                xz = q.X * q.Z,
-                yz = q.Y * q.Z;
-            float wx = q.W * q.X,
-                wy = q.W * q.Y,
-                wz = q.W * q.Z;
-
-            // Rotation matrix R = Ry * Rx * Rz, so R[1][2] = -sin(x) and |R[1][0..1]| = cos(x).
-            float m12 = 2f * (yz - wx);
-            float m10 = 2f * (xy + wz);
-            float m11 = 1f - 2f * (xx + zz);
-            float cx = MathF.Sqrt(m10 * m10 + m11 * m11);
-            float x = MathF.Atan2(-m12, cx);
-            float y,
-                z;
-            if (cx > 1e-4f)
-            {
-                float m02 = 2f * (xz + wy);
-                float m22 = 1f - 2f * (xx + yy);
-                y = MathF.Atan2(m02, m22);
-                z = MathF.Atan2(m10, m11);
-            }
-            else
-            {
-                // Gimbal lock: fold all heading into Y and report zero roll.
-                float m00 = 1f - 2f * (yy + zz);
-                float m20 = 2f * (xz - wy);
-                y = MathF.Atan2(-m20, m00);
-                z = 0f;
-            }
-
-            return new Vector3(Wrap360(x * Rad2Deg), Wrap360(y * Rad2Deg), Wrap360(z * Rad2Deg));
-        }
-
         /// <summary>Heading-only rotation about +Y that keeps the yaw of <paramref name="q"/>.</summary>
         public static Quaternion YawOnly(Quaternion q) =>
             Quaternion.CreateFromAxisAngle(Up, HeadingRadians(q));
@@ -159,15 +118,6 @@ namespace PeakXR.Core
                 q = new Quaternion((m02 + m20) / s, (m12 + m21) / s, 0.25f * s, (m10 - m01) / s);
             }
             return Quaternion.Normalize(q);
-        }
-
-        static float Wrap360(float deg)
-        {
-            deg %= 360f;
-            if (deg < 0f)
-                deg += 360f;
-            // Values just below 0 can round up to exactly 360 in float.
-            return deg >= 360f ? 0f : deg;
         }
     }
 }

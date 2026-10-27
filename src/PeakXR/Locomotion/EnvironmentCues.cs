@@ -146,8 +146,16 @@ internal static class EnvironmentCues
                 1f,
                 max
             );
-            // Ragdolled or about to pass out, the game bounces at 1 (:100-103).
-            if (d.fallSeconds > 0f || character.refs.afflictions.shouldPassOut)
+            // Under an open parasol (:96-99), ragdolled or about to pass out (:100-103), the game bounces at 1.
+            if (
+                (
+                    d.currentItem
+                    && d.currentItem.TryGetComponent<Parasol>(out var parasol)
+                    && parasol.isOpen
+                )
+                || d.fallSeconds > 0f
+                || character.refs.afflictions.shouldPassOut
+            )
                 bounce = 1f;
             LastBounce = BodyCues.BounceAmplitude(bounce, max);
             Bounces++;

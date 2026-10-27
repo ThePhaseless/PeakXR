@@ -39,7 +39,7 @@ namespace PeakXR.Core
 
             if (Catching)
             {
-                float alpha = 1f - MathF.Exp(-Rate * dt);
+                float alpha = ExpSmooth.Factor(Rate, dt);
                 Yaw = LookMath.WrapDegrees(Yaw + delta * alpha);
                 if (MathF.Abs(LookMath.WrapDegrees(targetYaw - Yaw)) <= Settle)
                     Catching = false;

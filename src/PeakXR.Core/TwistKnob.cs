@@ -30,7 +30,7 @@ namespace PeakXR.Core
         {
             if (dt > 0f)
             {
-                float a = 1f - MathF.Exp(-RateSmoothing * dt);
+                float a = ExpSmooth.Factor(RateSmoothing, dt);
                 _rate += (deltaDegrees / dt - _rate) * a;
             }
             Direction =
@@ -61,15 +61,7 @@ namespace PeakXR.Core
         public static float TwistAngle(Quaternion from, Quaternion to, Vector3 localAxis)
         {
             var rel = UnityQuat.Mul(Quaternion.Inverse(from), to);
-            var axis = Vector3.Normalize(localAxis);
-            var v = new Vector3(rel.X, rel.Y, rel.Z);
-            float proj = Vector3.Dot(v, axis);
-            float angle = 2f * MathF.Atan2(proj, rel.W) * UnityQuat.Rad2Deg;
-            if (angle > 180f)
-                angle -= 360f;
-            else if (angle < -180f)
-                angle += 360f;
-            return angle;
+            return ArmTwist.TwistAngle(rel, Vector3.Normalize(localAxis)) * UnityQuat.Rad2Deg;
         }
     }
 }

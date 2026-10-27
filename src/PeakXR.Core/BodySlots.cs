@@ -210,16 +210,8 @@ namespace PeakXR.Core
             return MathF.Atan2(-f.Y, flat) * UnityQuat.Rad2Deg;
         }
 
-        /// <summary>Unity's <c>Mathf.DeltaAngle</c>: shortest signed difference <paramref name="to"/> - <paramref name="from"/> in degrees.</summary>
-        public static float DeltaAngle(float from, float to)
-        {
-            float d = (to - from) % 360f;
-            if (d > 180f)
-                d -= 360f;
-            else if (d < -180f)
-                d += 360f;
-            return d;
-        }
+        /// <summary>Unity's <c>Mathf.DeltaAngle</c>: shortest signed difference <paramref name="to"/> - <paramref name="from"/> in degrees, in (-180, 180].</summary>
+        public static float DeltaAngle(float from, float to) => LookMath.WrapDegrees(to - from);
     }
 
     /// <summary>

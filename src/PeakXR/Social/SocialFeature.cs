@@ -1,5 +1,6 @@
 using PeakXR.Framework;
 using PeakXR.Interact;
+using PeakXR.VR;
 
 namespace PeakXR.Social;
 
@@ -31,5 +32,7 @@ public sealed class SocialFeature : Feature
         Patch(typeof(SocialPatches.Grasp));
         UI.Affordances.Affordance.ReasonContext = SocialHands.RefusalContext;
         GripHooks.Register(SocialHands.Instance);
+        // Tick only runs in VR (SocialPatches.IsLocal), so the grips it would clear are cleared when VR stops.
+        VRSession.Stopped += SocialHands.Instance.Reset;
     }
 }

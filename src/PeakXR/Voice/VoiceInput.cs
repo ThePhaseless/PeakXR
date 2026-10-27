@@ -13,9 +13,6 @@ public static class VoiceInput
     /// <summary>Set every frame by the binding layer: true while a push-to-talk table binding is held.</summary>
     public static bool PushToTalkHeld;
 
-    /// <summary>Same as writing <see cref="PushToTalkHeld"/>.</summary>
-    public static void SetPushToTalk(bool held) => PushToTalkHeld = held;
-
     /// <summary>True while the VR voice controls press the game's key (<see cref="PeakXR.Core.VoiceKeys.Key"/>): the
     /// walkie-talkie hand in Push To Talk, the palm over the mouth in Push To Mute, the push-to-talk button.</summary>
     public static bool GestureHeld { get; internal set; }

@@ -29,9 +29,6 @@ namespace PeakXR.Core
         /// <summary>0 = no vignette, 1 = fully closed.</summary>
         public float Intensity { get; private set; }
 
-        /// <summary>1 - <see cref="Intensity"/>: 1 = fully open view.</summary>
-        public float Aperture => 1f - Intensity;
-
         public float Update(float linearSpeed, float angularSpeed, float dt)
         {
             if (!Enabled)
@@ -46,7 +43,7 @@ namespace PeakXR.Core
             );
             float target = Math.Clamp(Strength, 0f, 1f) * drive;
             float rate = target > Intensity ? AttackRate : ReleaseRate;
-            float alpha = rate > 0f ? 1f - MathF.Exp(-rate * dt) : 1f;
+            float alpha = ExpSmooth.Factor(rate, dt);
             Intensity += (target - Intensity) * alpha;
             return Intensity;
         }

@@ -125,7 +125,7 @@ namespace PeakXR.Core
 
         public FingerCurls Update(FingerCurls target, float dt)
         {
-            float alpha = Rate > 0f ? 1f - MathF.Exp(-Rate * dt) : 1f;
+            float alpha = ExpSmooth.Factor(Rate, dt);
             Current.Thumb += (target.Thumb - Current.Thumb) * alpha;
             Current.Index += (target.Index - Current.Index) * alpha;
             Current.Middle += (target.Middle - Current.Middle) * alpha;

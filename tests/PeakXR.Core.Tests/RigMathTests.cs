@@ -39,35 +39,6 @@ public class RigMathTests
     }
 
     [Fact]
-    public void PivotCenter_KeepsHeadFixedInWorldWhenTurning()
-    {
-        var anchor = new Vector3(1f, 2f, 3f);
-        var center = new Vector2(0.3f, 0.5f);
-        var head = new Vector2(-0.4f, 0.9f);
-        const float eye = 1.6f;
-        const float yaw = 20f;
-        const float delta = 30f;
-
-        Vector3 Head(float y, Vector2 c) =>
-            RigMath.OriginPosition(anchor, y, c, eye)
-            + RigMath.RotateYaw(y, new Vector3(head.X, eye, head.Y));
-
-        Vector3 before = Head(yaw, center);
-        Vector2 newCenter = RigMath.PivotCenter(head, center, delta);
-        Vector3 after = Head(yaw + delta, newCenter);
-
-        TestUtil.Near(before, after, 1e-4f);
-    }
-
-    [Fact]
-    public void PivotCenter_NoTurn_KeepsCenter()
-    {
-        var c = new Vector2(0.3f, -0.7f);
-        Vector2 r = RigMath.PivotCenter(new Vector2(1f, 1f), c, 0f);
-        TestUtil.Near(new Vector3(c.X, 0f, c.Y), new Vector3(r.X, 0f, r.Y), 1e-6f);
-    }
-
-    [Fact]
     public void RecenterYaw_AlignsHeadsetWithBody()
     {
         float yaw = RigMath.RecenterYaw(bodyYawDeg: 100f, hmdLocalYawDeg: 30f);

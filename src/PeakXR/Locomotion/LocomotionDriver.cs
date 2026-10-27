@@ -109,7 +109,7 @@ internal sealed class LocomotionDriver : MonoBehaviour
             headVelocity = Vector3.Lerp(
                 headVelocity,
                 (head - lastHead) / dt,
-                1f - Mathf.Exp(-10f * dt)
+                ExpSmooth.Factor(10f, dt)
             );
         else
             headVelocity = Vector3.zero;

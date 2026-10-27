@@ -541,7 +541,7 @@ public static class DenyTintMath
     }
 
     /// <summary>The UI colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
-    public static bool IsFlat(Vector4 baseColor, Vector4 now) =>
+    internal static bool IsFlat(Vector4 baseColor, Vector4 now) =>
         Gap(now, Flat(baseColor, 1f)) < 0.02f && Gap(now, baseColor) > 0.02f;
 
     /// <summary>The ghost colour <paramref name="now"/> is the full red of <paramref name="baseColor"/>.</summary>
