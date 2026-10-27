@@ -62,7 +62,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
         yield return HandStep("vr.173-reach-ghost", 20f, ReachGhostStep());
         yield return HandStep("vr.243-grab-drawn-shape", 25f, DrawnShapeGrabStep());
-        yield return HandStep("vr.244-left-hold", 120f, LeftHoldStep());
+        yield return HandStep("vr.244-left-hold", 180f, LeftHoldStep());
     }
 
     /// <summary>
@@ -204,7 +204,12 @@ internal sealed partial class SelfTestRunner
                 bool left = h == 0;
                 yield return GiveAndHold(prefab);
                 if (!stepOk)
+                {
+                    // The give itself failed: say so with what was judged before it.
+                    if (failures.Count > 0)
+                        failNote += "; before it: " + string.Join("; ", failures);
                     yield break;
+                }
                 LocalHold.ItemInLeftHand = left;
                 LocalHold.TwoHand = false;
                 // The weld moves to the new hand once the attach has settled (AvatarPoseDriver.ReconcileWeld).
@@ -254,16 +259,16 @@ internal sealed partial class SelfTestRunner
                         mid,
                         0.6f
                     );
-                yield return DropHeld();
-                if (!stepOk)
-                    yield break;
+                yield return ReleaseHeld();
+                if (!heldReleased)
+                    lost =
+                        $"{itemName} stayed in the {(left ? "left" : "right")} hand: {heldReleaseNote}";
             }
             if (lost != null)
             {
                 failures.Add(lost);
-                yield return DropHeld();
-                if (!stepOk)
-                    yield break;
+                if (HeldItem() != null)
+                    yield return ReleaseHeld();
                 continue;
             }
             var l = side[0];
@@ -296,6 +301,43 @@ internal sealed partial class SelfTestRunner
         // Opposite sides, each clear of the hand by more than a hand's half width.
         static bool Flipped(float a, float b) =>
             a * b < 0f && Mathf.Abs(a) > 0.03f && Mathf.Abs(b) > 0.03f;
+    }
+
+    bool heldReleased;
+    string heldReleaseNote;
+
+    /// <summary>
+    /// Lets go of the held item within a few seconds, whatever it is, and says whether it went
+    /// (<see cref="heldReleased"/>), never failing the step. A drop tap first; a sticky item (the cactus ball) aborts a
+    /// drop below its throw charge (CharacterItems.cs:277-289), so it, or anything else still held, goes through the
+    /// game's own put-away, <c>EquipSlot(None)</c> (CharacterItems.cs:482-505, as climbing stows it: ClimbStow),
+    /// which pockets or drops it. The hotbar is emptied after so the next give finds a free slot.
+    /// </summary>
+    IEnumerator ReleaseHeld()
+    {
+        var c = Character.localCharacter;
+        var held = HeldItem();
+        heldReleaseNote = "";
+        if (held != null && !held.TryGetComponent<StickyItemComponent>(out _))
+        {
+            float end = Now + 1.5f;
+            while (HeldItem() != null && Now < end)
+            {
+                SelfTestInputPatch.DropOnce = true;
+                yield return Wait(0.3f);
+            }
+        }
+        if (HeldItem() != null)
+        {
+            heldReleaseNote = "a drop tap left it in hand; ";
+            c.refs.items.EquipSlot(Zorro.Core.Optionable<byte>.None);
+            yield return WaitFor(() => HeldItem() == null, 2f);
+        }
+        heldReleased = HeldItem() == null;
+        if (heldReleased)
+            EmptyHotbar(c);
+        else
+            heldReleaseNote += "EquipSlot(None) left it in hand too";
     }
 
     struct Hold
