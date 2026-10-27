@@ -21,7 +21,7 @@ internal static class HeldItemScale
     private static readonly List<Vector3> scales = new();
     private static Item bound;
     private static bool eligible;
-    private static Vector3 pivot;
+    private static readonly ItemHoldInfo hold = new();
     private static int depth;
     private static bool applied;
 
@@ -52,7 +52,7 @@ internal static class HeldItemScale
         float f = Factor(item);
         if (f >= 1f)
             return world;
-        var grip = item.transform.TransformPoint(pivot);
+        var grip = item.transform.TransformPoint(Pivot(item));
         return grip + (world - grip) * f;
     }
 
@@ -63,9 +63,14 @@ internal static class HeldItemScale
         float f = Factor(item);
         if (f >= 1f)
             return world;
-        var grip = item.transform.TransformPoint(pivot);
+        var grip = item.transform.TransformPoint(Pivot(item));
         return grip + (world - grip) / f;
     }
+
+    /// <summary>The grip the hand bone is put on (AvatarPoseDriver.ItemInController), which stays put: <c>Hand_R</c>,
+    /// or where the left hold puts it (ItemHoldInfo.HoldPivot).</summary>
+    private static Vector3 Pivot(Item item) =>
+        hold.Bind(item) ? hold.HoldPivot(LocalHold.ItemInLeftHand) : Vector3.zero;
 
     private static bool Bind(Item item)
     {
@@ -92,11 +97,6 @@ internal static class HeldItemScale
             && item.GetComponent<Flare>() == null
             && item.GetComponentInChildren<Action_Torch>() == null;
         var root = item.transform;
-        var grip = root.Find("Hand_R");
-        if (grip == null)
-            grip = root.Find("Hand_L");
-        // The grip the hand bone is put on (AvatarPoseDriver.ItemInController) stays put.
-        pivot = grip != null ? grip.localPosition : Vector3.zero;
         for (int i = 0; i < root.childCount; i++)
         {
             var part = root.GetChild(i);
@@ -117,6 +117,7 @@ internal static class HeldItemScale
             return;
         positions.Clear();
         scales.Clear();
+        var pivot = Pivot(item);
         for (int i = 0; i < parts.Count; i++)
         {
             var part = parts[i];

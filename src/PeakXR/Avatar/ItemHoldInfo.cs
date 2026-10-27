@@ -30,10 +30,9 @@ internal sealed class ItemHoldInfo
     public Transform GripLeft;
 
     /// <summary>
-    /// World position of the secondary hand's grip on the bound item: <c>Hand_L</c> for a right-primary hold, its
-    /// mirror across the item's local X for a left-primary one (<see cref="HoldHands.ItemLocal"/>), since the left
-    /// hold is the mirror image of the right, where it is drawn (<see cref="HeldItemScale.ToVisual"/>). False when
-    /// the item has no <c>Hand_L</c>.
+    /// World position of the secondary hand's grip on the bound item: <c>Hand_L</c> for a right-primary hold, where
+    /// the left hold puts it for a left-primary one (<see cref="HoldLocal"/>), where it is drawn
+    /// (<see cref="HeldItemScale.ToVisual"/>). False when the item has no <c>Hand_L</c>.
     /// </summary>
     public bool SecondGrip(bool primaryLeft, out Vector3 world)
     {
@@ -43,9 +42,53 @@ internal sealed class ItemHoldInfo
         var local = item.transform.InverseTransformPoint(GripLeft.position);
         world = HeldItemScale.ToVisual(
             item,
-            item.transform.TransformPoint(HoldHands.ItemLocal(local.N(), primaryLeft).U())
+            item.transform.TransformPoint(HoldLocal(local, primaryLeft, primaryGrip: false))
         );
         return true;
+    }
+
+    /// <summary>
+    /// A grip point of the item as the game authored it for a right-primary hold (<c>Hand_R</c> for the holding hand,
+    /// <c>Hand_L</c> for the second) where this hold has it: reflected across the item's left-hold plane and shifted
+    /// back onto the item for a left-primary hold (<see cref="LeftHold"/>).
+    /// </summary>
+    public Vector3 HoldLocal(Vector3 gameLocal, bool primaryLeft, bool primaryGrip)
+    {
+        if (!primaryLeft || item == null)
+            return gameLocal;
+        ref readonly var left = ref Left();
+        return LeftHold.Reflect(gameLocal.N(), left.Plane, left.Centre.N()).U()
+            + (primaryGrip ? left.Shift : left.SecondShift);
+    }
+
+    /// <summary>How far this hold's palm (the holding hand's with <paramref name="primaryGrip"/>, else the second
+    /// hand's) is from the item's colliders, metres; NaN without that grip or an enabled collider. Self-test vr.244.
+    /// </summary>
+    internal float HoldGap(bool primaryLeft, bool primaryGrip)
+    {
+        var grip = primaryGrip ? GripRight : GripLeft;
+        if (item == null || grip == null)
+            return float.NaN;
+        float gap = Gap(HoldLocal(Palm(grip), primaryLeft, primaryGrip), out _);
+        return float.IsInfinity(gap) ? float.NaN : gap;
+    }
+
+    /// <summary>The plane the bound item's left hold mirrors across (self-test notes).</summary>
+    internal LeftPlane LeftPlaneUsed => item != null ? Left().Plane : LeftPlane.Origin;
+
+    /// <summary>The holding hand's grip in the item frame for this hold: the pivot the item is drawn smaller
+    /// about.</summary>
+    public Vector3 HoldPivot(bool primaryLeft) =>
+        HoldLocal(GripLocal, primaryLeft, primaryGrip: true);
+
+    /// <summary>The item-frame pose that follows the plain mirror of the right hold for a left-primary hold
+    /// (<see cref="LeftHold.Correction"/>).</summary>
+    public void LeftCorrection(out Vector3 pos, out Quaternion rot)
+    {
+        ref readonly var left = ref Left();
+        LeftHold.Correction(left.Plane, left.Centre.N(), left.Shift.N(), out var p, out var r);
+        pos = p.U();
+        rot = r.U();
     }
 
     /// <summary>The grip the holding hand takes (<c>Hand_R</c>, else <c>Hand_L</c>; mirrored for the left hand),
@@ -72,13 +115,155 @@ internal sealed class ItemHoldInfo
         public bool Aimed;
         public Vector3 Min;
         public Vector3 Max;
+        public LeftFit Left;
     }
+
+    /// <summary>The left-primary hold of an item id, measured once its colliders are on.</summary>
+    private struct LeftFit
+    {
+        public bool Ready;
+        public LeftPlane Plane;
+        public Vector3 Centre;
+        public Vector3 Shift;
+        public Vector3 SecondShift;
+    }
+
+    private static readonly LeftFit PlainMirror;
 
     private static readonly Dictionary<ushort, Entry> byId = new();
     private static readonly List<MeshFilter> filters = new();
     private static readonly List<SkinnedMeshRenderer> skins = new();
 
     private Item item;
+
+    private static readonly System.Numerics.Vector3[] probes = new System.Numerics.Vector3[
+        LeftHold.ProbeCount
+    ];
+    private static readonly float[] probeGaps = new float[LeftHold.ProbeCount];
+    private static readonly float[] reflectedGaps = new float[LeftHold.ProbeCount];
+
+    /// <summary>The bound item's left hold: measured on the first call its colliders allow (Item.SetState makes them
+    /// solid while held, Item.cs:779), cached per item id; the plain mirror until then.</summary>
+    private ref readonly LeftFit Left()
+    {
+        if (!byId.TryGetValue(item.itemID, out var entry))
+            return ref PlainMirror;
+        if (!entry.Left.Ready && MeasureLeft(ref entry.Left))
+        {
+            byId[item.itemID] = entry;
+            Plugin.Log.LogDebug(
+                $"[avatar] left hold {item.name}: mirror {entry.Left.Plane}, shift {entry.Left.Shift.magnitude:0.000} m, second {entry.Left.SecondShift.magnitude:0.000} m"
+            );
+        }
+        leftFit = entry.Left;
+        return ref leftFit;
+    }
+
+    private LeftFit leftFit;
+
+    /// <summary>
+    /// Fits the left hold to the item's colliders (the drawn meshes are not readable at runtime; the colliders of
+    /// most items are their own convex meshes): the plane by <see cref="LeftHold.Choose"/>, then the shifts that put
+    /// the left palm and the second hand's palm back as near the item as in the right hold. Palms are the centres of
+    /// the game's preview hands under each grip (HandVisual.cs:9 only hides them). False while no collider is on.
+    /// </summary>
+    private bool MeasureLeft(ref LeftFit fit)
+    {
+        var cols = item.colliders;
+        bool any = false;
+        if (cols != null)
+        {
+            foreach (var col in cols)
+                any |= col != null && col.enabled && col.gameObject.activeInHierarchy;
+        }
+        if (!any || GripRight == null)
+            return false;
+        var size = BoundsMax - BoundsMin;
+        float longest = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
+        var centre = ((BoundsMin + BoundsMax) * 0.5f).N();
+
+        var palm = Palm(GripRight);
+        float rightGap = Gap(palm, out _);
+        float plainGap = Gap(LeftHold.Reflect(palm.N(), LeftPlane.Origin, centre).U(), out _);
+
+        LeftHold.Probes(BoundsMin.N(), BoundsMax.N(), probes);
+        for (int i = 0; i < probes.Length; i++)
+            probeGaps[i] = Gap(probes[i].U(), out _);
+        float Asym(LeftPlane plane)
+        {
+            for (int i = 0; i < probes.Length; i++)
+                reflectedGaps[i] = Gap(LeftHold.Reflect(probes[i], plane, centre).U(), out _);
+            return LeftHold.Asymmetry(probeGaps, reflectedGaps, longest);
+        }
+        fit.Plane = LeftHold.Choose(
+            rightGap,
+            plainGap,
+            Asym(LeftPlane.Origin),
+            Asym(LeftPlane.CentreX),
+            Asym(LeftPlane.CentreZ),
+            Aimed
+        );
+        fit.Centre = centre.U();
+        fit.Shift = ShiftFor(palm, rightGap, fit.Plane, centre);
+        if (GripLeft != null)
+        {
+            var second = Palm(GripLeft);
+            fit.SecondShift = ShiftFor(second, Gap(second, out _), fit.Plane, centre);
+        }
+        fit.Ready = true;
+        return true;
+
+        Vector3 ShiftFor(Vector3 rightPalm, float gap, LeftPlane plane, System.Numerics.Vector3 c)
+        {
+            var leftPalm = LeftHold.Reflect(rightPalm.N(), plane, c).U();
+            Gap(leftPalm, out var closest);
+            return LeftHold.Shift(gap, leftPalm.N(), closest.N()).U();
+        }
+    }
+
+    /// <summary>Centre of the game's preview hand under <paramref name="grip"/> in the item frame, else the grip.</summary>
+    private Vector3 Palm(Transform grip)
+    {
+        var t = item.transform;
+        if (
+            grip.childCount > 0
+            && grip.GetChild(0).TryGetComponent(out MeshFilter preview)
+            && preview.sharedMesh != null
+        )
+            return t.InverseTransformPoint(
+                preview.transform.TransformPoint(preview.sharedMesh.bounds.center)
+            );
+        return t.InverseTransformPoint(grip.position);
+    }
+
+    /// <summary>Distance from an item-frame point to the item's enabled colliders, and the nearest point on them
+    /// (Collider.ClosestPoint: the point itself inside one).</summary>
+    private float Gap(Vector3 local, out Vector3 closest)
+    {
+        var t = item.transform;
+        var world = t.TransformPoint(local);
+        float best = float.PositiveInfinity;
+        closest = local;
+        foreach (var col in item.colliders)
+        {
+            // ClosestPoint takes no concave mesh; no item has one (docs/research/item-grab-shapes.md).
+            if (
+                col == null
+                || !col.enabled
+                || !col.gameObject.activeInHierarchy
+                || col is MeshCollider { convex: false }
+            )
+                continue;
+            var q = col.ClosestPoint(world);
+            float d = (q - world).sqrMagnitude;
+            if (d < best)
+            {
+                best = d;
+                closest = t.InverseTransformPoint(q);
+            }
+        }
+        return Mathf.Sqrt(best);
+    }
 
     /// <summary>Refreshes this cache entry for <paramref name="target"/>; cheap when the item is unchanged.</summary>
     public bool Bind(Item target)

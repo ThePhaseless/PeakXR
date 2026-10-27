@@ -62,6 +62,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.172-warp-refund", 25f, WarpRefundStep());
         yield return HandStep("vr.173-reach-ghost", 20f, ReachGhostStep());
         yield return HandStep("vr.243-grab-drawn-shape", 25f, DrawnShapeGrabStep());
+        yield return HandStep("vr.244-left-hold", 120f, LeftHoldStep());
     }
 
     /// <summary>
@@ -147,6 +148,151 @@ internal sealed partial class SelfTestRunner
             else if (ReferenceEquals(taken, item) != grabs)
                 Fail((grabs ? "no grab on what is drawn: " : "a grab from empty air: ") + note);
         }
+    }
+
+    /// <summary>vr.244: lopsided items the plain x mirror put 2-14 cm off the left hand (docs/research/item-grab-shapes.md
+    /// "Left-hand holds"), then three symmetric controls.</summary>
+    static readonly string[] LeftHoldItems =
+    {
+        "Shell Big",
+        "Flag_Plantable_Checkpoint",
+        "FireWood",
+        "Glizzy",
+        "Glizzy_CattailVariant",
+        "Marshmallow",
+        "CactusBall",
+        "Amulet_Healing",
+        "Parasol",
+        "Sports Drink",
+        "Warpsketball",
+        "Bandages",
+    };
+
+    /// <summary>vr.244 screenshots one hold per hand of these.</summary>
+    static readonly string[] LeftHoldShots = { "Shell Big", "Glizzy" };
+
+    /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres.</summary>
+    const float LeftHoldSlack = 0.02f;
+
+    /// <summary>
+    /// vr.244: each item in the left hand, then the right (ItemHoldInfo.HoldLocal, Core LeftHold). The holding palm and
+    /// the second hand's palm (the game's preview-hand centres under its grips) are as near the item's colliders on the
+    /// left as on the right, within <see cref="LeftHoldSlack"/>; the welded hand sits on the hold's grip; and the
+    /// item's middle and far end lie on the same side of the hand toward the face, inward and up, in both.
+    /// </summary>
+    IEnumerator LeftHoldStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var all = new List<Item>(SandboxActions.Items);
+        var notes = new List<string>();
+        var info = new ItemHoldInfo();
+        foreach (var itemName in LeftHoldItems)
+        {
+            var prefab = FindItem(all, itemName);
+            if (prefab == null || !string.Equals(prefab.name, itemName, StringComparison.Ordinal))
+            {
+                notes.Add(itemName + " not in the database");
+                continue;
+            }
+            var side = new Hold[2];
+            for (int h = 0; h < 2 && stepOk; h++)
+            {
+                bool left = h == 0;
+                yield return GiveAndHold(prefab);
+                if (!stepOk)
+                    yield break;
+                LocalHold.ItemInLeftHand = left;
+                LocalHold.TwoHand = false;
+                // The weld moves to the new hand once the attach has settled (AvatarPoseDriver.ReconcileWeld).
+                yield return Wait(0.8f);
+                var item = HeldItem();
+                if (item == null || !info.Bind(item))
+                {
+                    Fail($"{itemName} left the {(left ? "left" : "right")} hand");
+                    yield break;
+                }
+                var hand = rig.Hand(left);
+                var head = rig.Head;
+                var middle = (info.BoundsMin + info.BoundsMax) * 0.5f;
+                var far = HeldItemShape
+                    .FarEnd(info.BoundsMin.N(), info.BoundsMax.N(), info.GripLocal.N())
+                    .U();
+                HeldItemPoints.World(item, hand, left, middle, out var mid);
+                HeldItemPoints.World(item, hand, left, far, out var end);
+                // Toward the body's midline from this hand, along the face's right.
+                float inward = left ? 1f : -1f;
+                var driver = AvatarPoseDriver.Of(c);
+                var body = c.refs
+                    .ragdoll
+                    .partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R]
+                    .Rig;
+                var grip = item.transform.TransformPoint(
+                    info.HoldLocal(info.GripLocal, left, primaryGrip: true)
+                );
+                side[h] = new Hold
+                {
+                    Palm = info.HoldGap(left, true),
+                    Second = info.HoldGap(left, false),
+                    // Welded, the hand body is on the grip; free of the weld it follows the controller instead.
+                    HandOff =
+                        driver != null && !driver.HeldItemFree
+                            ? Vector3.Distance(body.position, grip)
+                            : float.NaN,
+                    MidIn = Vector3.Dot(mid - hand.position, head.right) * inward,
+                    EndIn = Vector3.Dot(end - hand.position, head.right) * inward,
+                    EndUp = Vector3.Dot(end - hand.position, head.up),
+                    Plane = info.LeftPlaneUsed,
+                };
+                if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
+                    yield return ShotAt(
+                        $"vr-244-{itemName.Replace(' ', '-')}-{(left ? "left" : "right")}",
+                        mid,
+                        0.6f
+                    );
+                yield return DropHeld();
+                if (!stepOk)
+                    yield break;
+            }
+            var l = side[0];
+            var r = side[1];
+            string note = F(
+                $"{itemName} ({l.Plane}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}"
+            );
+            notes.Add(note);
+            if (float.IsNaN(l.Palm) || float.IsNaN(r.Palm))
+                Fail("no collider to measure the palm against: " + note);
+            else if (l.Palm > r.Palm + LeftHoldSlack)
+                Fail("the left palm is off the item: " + note);
+            else if (!float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack)
+                Fail("the left hold's second grip is off the item: " + note);
+            else if (l.HandOff > 0.04f || r.HandOff > 0.04f)
+                Fail("the welded hand is off its grip: " + note);
+            else if (
+                Flipped(l.MidIn, r.MidIn)
+                || Flipped(l.EndIn, r.EndIn)
+                || Flipped(l.EndUp, r.EndUp)
+            )
+                Fail("the item turns the other way in the left hand: " + note);
+            if (!stepOk)
+                yield break;
+        }
+        stepNote = string.Join("; ", notes);
+
+        // Opposite sides, each clear of the hand by more than a hand's half width.
+        static bool Flipped(float a, float b) =>
+            a * b < 0f && Mathf.Abs(a) > 0.03f && Mathf.Abs(b) > 0.03f;
+    }
+
+    struct Hold
+    {
+        public float Palm;
+        public float Second;
+        public float HandOff;
+        public float MidIn;
+        public float EndIn;
+        public float EndUp;
+        public LeftPlane Plane;
     }
 
     /// <summary>How far past the grab radius the vr.243 miss probe stands, metres.</summary>

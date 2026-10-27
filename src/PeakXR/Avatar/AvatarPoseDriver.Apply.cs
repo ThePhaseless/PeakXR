@@ -1479,14 +1479,17 @@ public partial class AvatarPoseDriver
     {
         var axis = Vector3.forward;
         float best = 0.1f;
-        // The grips as this hold has them: mirrored for a left-primary hold (HoldHands.ItemLocal).
+        // The grips as this hold has them: where the left hold puts them for a left-primary hold
+        // (ItemHoldInfo.HoldLocal).
         bool left = Pose.ItemInLeftHand;
-        Consider(hold.GripLeft, item.transform, anchorLocal, left, ref axis, ref best);
-        Consider(hold.GripRight, item.transform, anchorLocal, left, ref axis, ref best);
+        Consider(hold, hold.GripLeft, false, item.transform, anchorLocal, left, ref axis, ref best);
+        Consider(hold, hold.GripRight, true, item.transform, anchorLocal, left, ref axis, ref best);
         return axis;
 
         static void Consider(
+            ItemHoldInfo hold,
             Transform grip,
+            bool primaryGrip,
             Transform itemTransform,
             Vector3 anchorLocal,
             bool primaryLeft,
@@ -1497,9 +1500,11 @@ public partial class AvatarPoseDriver
             if (grip == null)
                 return;
             var local =
-                HoldHands
-                    .ItemLocal(itemTransform.InverseTransformPoint(grip.position).N(), primaryLeft)
-                    .U() - anchorLocal;
+                hold.HoldLocal(
+                    itemTransform.InverseTransformPoint(grip.position),
+                    primaryLeft,
+                    primaryGrip
+                ) - anchorLocal;
             if (local.magnitude > best)
             {
                 best = local.magnitude;
@@ -1521,7 +1526,8 @@ public partial class AvatarPoseDriver
 
     /// <summary>
     /// Item pose in a controller's frame: the right hand puts the item's <c>Hand_R</c> grip on its hand bone;
-    /// the left hand holds the mirror image of that (vanilla clients keep showing it in the right hand).
+    /// the left hand holds the mirror image of that about the item's left-hold plane (vanilla clients keep showing it
+    /// in the right hand).
     /// </summary>
     private bool ItemInController(HandRig rig, out Vector3 pos, out Quaternion rot)
     {
@@ -1548,10 +1554,18 @@ public partial class AvatarPoseDriver
 
         rightRig.ControllerToBone(out var tPos, out var tRot);
         GripMath.ItemInHand(gripPos.N(), gripRot.N(), tPos.N(), tRot.N(), out var xp, out var xr);
-        if (rig.IsLeft)
-            GripMath.MirrorX(ref xp, ref xr);
         pos = xp.U();
         rot = xr.U();
+        if (rig.IsLeft)
+        {
+            // The mirror image of the right hold about the item's own left-hold plane, its palm kept on the item
+            // (ItemHoldInfo.LeftCorrection): a rigid item mirrored at x = 0 left the hand up to 14 cm off a lopsided
+            // model (Shell Big, the checkpoint flag).
+            GripMath.MirrorX(ref xp, ref xr);
+            hold.LeftCorrection(out var cPos, out var cRot);
+            pos = xp.U() + xr.U() * cPos;
+            rot = xr.U() * cRot;
+        }
         return true;
     }
 

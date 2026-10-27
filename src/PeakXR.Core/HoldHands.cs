@@ -5,13 +5,14 @@ namespace PeakXR.Core
     /// <summary>
     /// Which hand holds the item is set per item: the primary hand is the one whose grip started the hold, the
     /// secondary the other one, whichever side each is. The game only knows a right-hand hold (its <c>Hand_R</c> grip,
-    /// <c>Hand_L</c> for the other hand); a left-primary hold is its mirror image (<see cref="GripMath.MirrorX"/>), so
-    /// every grip point of the item is mirrored across the item's local X for it.
+    /// <c>Hand_L</c> for the other hand); a left-primary hold is its mirror image about one of the item's own planes,
+    /// kept on the item (<see cref="LeftHold"/>).
     /// </summary>
     public static class HoldHands
     {
-        /// <summary>A grip point of the item (item-local, as the game authored it for a right-primary hold) for the
-        /// hold whose primary hand is the left one when <paramref name="primaryLeft"/>.</summary>
+        /// <summary>A grip point of the item (item-local, as the game authored it for a right-primary hold) mirrored
+        /// across the item's x = 0 for a left-primary hold: <see cref="LeftHold"/>'s plain mirror, before its plane
+        /// and shift (the runtime uses ItemHoldInfo.HoldLocal).</summary>
         public static Vector3 ItemLocal(Vector3 gameLocal, bool primaryLeft) =>
             primaryLeft ? new Vector3(-gameLocal.X, gameLocal.Y, gameLocal.Z) : gameLocal;
 
