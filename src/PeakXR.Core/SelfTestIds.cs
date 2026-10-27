@@ -191,6 +191,7 @@ public static class SelfTestIds
         "vr.24-lift-lid",
         "vr.241-long-crouch-hint",
         "vr.243-grab-drawn-shape",
+        "vr.244-left-hold",
         "vr.25-cook-over-fire",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",

@@ -24,7 +24,7 @@ internal static class HeldItemPoints
         if (!Frame(item, hand, left, out var origin, out var rot))
             return false;
         local = HeldBookSize
-            .ScaleAbout(local.N(), info.GripLocal.N(), HeldItemScale.Factor(item))
+            .ScaleAbout(local.N(), info.HoldPivot(left).N(), HeldItemScale.Factor(item))
             .U();
         world = origin + rot * local;
         return true;
@@ -41,7 +41,12 @@ internal static class HeldItemPoints
             return hand != null ? hand.position : target;
         var min = info.BoundsMin.N();
         var max = info.BoundsMax.N();
-        HeldItemShape.ScaleAbout(ref min, ref max, info.GripLocal.N(), HeldItemScale.Factor(item));
+        HeldItemShape.ScaleAbout(
+            ref min,
+            ref max,
+            info.HoldPivot(left).N(),
+            HeldItemScale.Factor(item)
+        );
         var local = (Quaternion.Inverse(rot) * (target - origin)).N();
         return origin + rot * HeldItemShape.Closest(min, max, local).U();
     }
