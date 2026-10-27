@@ -114,6 +114,9 @@ internal sealed class PreviewStage : MonoBehaviour
 
     private readonly PreviewClock clock = new();
     private readonly Vector3[] corners = new Vector3[4];
+    private readonly Vector3[] railCorners = new Vector3[4];
+    private RectTransform cardRow;
+    private RectTransform cardRail;
     private readonly object fadeOwner = new();
     private readonly VignetteMesh vignette = new();
     private readonly Transform[] slots = new Transform[BodyInventory.MaxSlots];
@@ -424,16 +427,42 @@ internal sealed class PreviewStage : MonoBehaviour
     }
 
     /// <summary>Beside the row's outer edge (<see cref="VRTabGrid.RowOuterEdge"/>), in the menu's plane and pixel scale,
-    /// so it reads like the menu.</summary>
+    /// so it reads like the menu; past the rail on the left instead when the right side would run out of comfortable
+    /// view (<see cref="VRTabColumn.CardOnRight"/>).</summary>
     private void PlaceCard(RectTransform row, float alpha)
     {
         VRTabGrid.RowOuterEdge(row, corners, out var edge, out var outward);
         var mpp = row.lossyScale.x;
+        float half = CardWidth * 0.5f * mpp;
+        var at = edge + outward * (0.04f + half);
+        var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        if (!ReferenceEquals(row, cardRow))
+        {
+            cardRow = row;
+            var layout = row.GetComponentInParent<VRTabLayout>();
+            cardRail =
+                layout != null && layout.Rail != null
+                    ? layout.Rail.transform as RectTransform
+                    : null;
+        }
+        if (head != null && cardRail != null)
+        {
+            cardRail.GetWorldCorners(railCorners);
+            var railLeft = (railCorners[0] + railCorners[1]) * 0.5f;
+            railLeft.y = edge.y;
+            var left = railLeft - outward * (0.04f + half);
+            if (
+                !VRTabColumn.CardOnRight(
+                    head.position.N(),
+                    head.forward.N(),
+                    (at + outward * half).N(),
+                    (left - outward * half).N()
+                )
+            )
+                at = left;
+        }
         var t = card.transform;
-        t.SetPositionAndRotation(
-            edge + outward * (0.04f + CardWidth * 0.5f * mpp) - row.forward * 0.002f,
-            row.rotation
-        );
+        t.SetPositionAndRotation(at - row.forward * 0.002f, row.rotation);
         t.localScale = new Vector3(mpp, mpp, mpp);
         cardGroup.alpha = alpha;
         if (!card.activeSelf)

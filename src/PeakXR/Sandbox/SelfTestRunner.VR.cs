@@ -526,6 +526,8 @@ internal sealed partial class SelfTestRunner
             if (longest == null || g.Rows.Count > longest.Rows.Count)
                 longest = g;
         VRTabGrid.Select(menu, longest.Key);
+        // The idle hands rest in front of the face, and with the passport they hold covered the lower rows (run 4).
+        yield return HandsAside();
         yield return Wait(0.8f);
         var layout = menu.m_settingsContentParent.GetComponent<VRTabLayout>();
         if (!VRTabGrid.Shown || layout == null || layout.Grid == null || layout.Rail == null)

@@ -331,7 +331,12 @@ internal static class Affordance
         bool forceText = false
     )
     {
-        if (!Enabled || !Gate.Allow(reason, left, Time.unscaledTime))
+        // A refusal on show at this hand keeps it; the caller tells again later (false: not shown).
+        if (
+            !Enabled
+            || AffordanceRuntime.RefusalShowing(left)
+            || !Gate.Allow(reason, left, Time.unscaledTime)
+        )
             return false;
         CueLog.Capture.Reason(left, reason, notice: true, Time.unscaledTime);
         AffordanceRuntime.Show(

@@ -32,17 +32,20 @@ public static class EnvironmentFeel
     /// <see cref="FlameOnset"/> outside it, smooth (smoothstep) between. Distance is measured along the line from
     /// the centre, so the side and the top of a tall flame feel alike at the same gap.
     /// </summary>
-    public static float FlameStrength(Vector3 point, Vector3 centre, Vector3 extents)
+    public static float FlameStrength(Vector3 point, Vector3 centre, Vector3 extents) =>
+        1f - SmoothStep(-FullInset, FlameOnset, FlameGap(point, centre, extents));
+
+    /// <summary>Metres <paramref name="point"/> lies outside the flame ellipsoid's surface, along the line from its
+    /// centre; negative inside.</summary>
+    public static float FlameGap(Vector3 point, Vector3 centre, Vector3 extents)
     {
         var e = Vector3.Max(extents, new Vector3(0.01f));
         var d = point - centre;
         float k = (d / e).Length();
         if (k < 1e-6f)
-            return 1f;
+            return float.NegativeInfinity;
         float dist = d.Length();
-        float radius = dist / k;
-        float outside = dist - radius;
-        return 1f - SmoothStep(-FullInset, FlameOnset, outside);
+        return dist - dist / k;
     }
 
     /// <summary>Strength (0 to 1) of a status rising at <paramref name="ratePerSecond"/>: half at
@@ -75,6 +78,45 @@ public static class EnvironmentFeel
         v < 0f ? 0f
         : v > 1f ? 1f
         : v;
+}
+
+/// <summary>
+/// The visible flames of a fire as a box: its live flame particles' centres, each widened by <see cref="Fill"/> of its
+/// size. A particle renderer's own bounds count every billboard at its full size and grew to 3 x 3.5 x 3 m on a
+/// beach campfire (VR run 5), so a hand a metre out read as inside the flames.
+/// </summary>
+public sealed class FlameVolume
+{
+    /// <summary>Part of a flame billboard's size its visible fire reaches from the particle centre: the flame
+    /// texture fills about the middle half of its quad.</summary>
+    public const float Fill = 0.25f;
+
+    Vector3 min,
+        max;
+
+    public int Count { get; private set; }
+
+    public Vector3 Centre => (min + max) * 0.5f;
+
+    public Vector3 Extents => (max - min) * 0.5f;
+
+    public void Reset() => Count = 0;
+
+    public void Add(Vector3 position, float size)
+    {
+        var r = new Vector3(MathF.Max(size, 0f) * Fill);
+        if (Count == 0)
+        {
+            min = position - r;
+            max = position + r;
+        }
+        else
+        {
+            min = Vector3.Min(min, position - r);
+            max = Vector3.Max(max, position + r);
+        }
+        Count++;
+    }
 }
 
 /// <summary>1D value noise: random values on whole numbers, joined by a quintic curve, so it has no steps and no

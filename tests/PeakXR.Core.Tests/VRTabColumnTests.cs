@@ -73,3 +73,35 @@ public class VRTabColumnTests
         Assert.False(VRTabColumn.Shows(940f, 1000f, 0f, viewport));
     }
 }
+
+public class PreviewCardSideTests
+{
+    static readonly System.Numerics.Vector3 Eye = System.Numerics.Vector3.Zero;
+    static readonly System.Numerics.Vector3 Ahead = new(0f, 0f, 1f);
+
+    static System.Numerics.Vector3 At(float degrees) =>
+        new(MathF.Sin(degrees * MathF.PI / 180f), 0f, MathF.Cos(degrees * MathF.PI / 180f));
+
+    [Fact]
+    public void Right_WhileItsFarEdgeIsComfortable() =>
+        Assert.True(VRTabColumn.CardOnRight(Eye, Ahead, At(30f), At(-10f)));
+
+    [Fact]
+    public void Left_WhenTheRightRunsOutOfViewAndTheLeftHasRoom() =>
+        Assert.False(VRTabColumn.CardOnRight(Eye, Ahead, At(55f), At(-35f)));
+
+    [Fact]
+    public void Right_WhenNeitherSideIsComfortableButItIsNearer() =>
+        Assert.True(VRTabColumn.CardOnRight(Eye, Ahead, At(50f), At(-60f)));
+
+    [Fact]
+    public void HeightDoesNotCount() =>
+        Assert.True(
+            VRTabColumn.CardOnRight(
+                Eye,
+                Ahead,
+                At(30f) + new System.Numerics.Vector3(0f, -2f, 0f),
+                At(-20f)
+            )
+        );
+}

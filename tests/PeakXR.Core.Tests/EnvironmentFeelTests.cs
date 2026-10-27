@@ -188,3 +188,45 @@ public class EnvironmentFeelTests
         Assert.True(v > 0.99f);
     }
 }
+
+public class FlameVolumeTests
+{
+    [Fact]
+    public void Gap_IsTheDistanceOutsideTheSurface()
+    {
+        var centre = new Vector3(0, 0.4f, 0);
+        var extents = new Vector3(0.3f, 0.4f, 0.3f);
+        Assert.Equal(
+            0.2f,
+            EnvironmentFeel.FlameGap(new Vector3(0.5f, 0.4f, 0), centre, extents),
+            4
+        );
+        Assert.True(EnvironmentFeel.FlameGap(new Vector3(0.1f, 0.4f, 0), centre, extents) < 0f);
+    }
+
+    [Fact]
+    public void Box_SpansTheParticlesWidenedByPartOfTheirSize()
+    {
+        var v = new FlameVolume();
+        v.Add(new Vector3(-0.2f, 0.1f, 0f), 0.4f);
+        v.Add(new Vector3(0.2f, 0.5f, 0f), 0.8f);
+        Assert.Equal(2, v.Count);
+        float r1 = 0.4f * FlameVolume.Fill,
+            r2 = 0.8f * FlameVolume.Fill;
+        var min = new Vector3(-0.2f - r1, 0.1f - r1, -r2);
+        var max = new Vector3(0.2f + r2, 0.5f + r2, r2);
+        TestUtil.Near((min + max) / 2f, v.Centre);
+        TestUtil.Near((max - min) / 2f, v.Extents);
+    }
+
+    [Fact]
+    public void Box_ResetsBetweenFrames()
+    {
+        var v = new FlameVolume();
+        v.Add(new Vector3(5f, 5f, 5f), 3f);
+        v.Reset();
+        v.Add(Vector3.Zero, 0.4f);
+        TestUtil.Near(Vector3.Zero, v.Centre);
+        TestUtil.Near(new Vector3(0.4f * FlameVolume.Fill), v.Extents);
+    }
+}

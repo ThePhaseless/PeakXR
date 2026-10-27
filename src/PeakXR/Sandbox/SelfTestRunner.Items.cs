@@ -1154,6 +1154,7 @@ internal sealed partial class SelfTestRunner
             inRight = 0f,
             outLeft = 0f;
         string far = null;
+        var gaps = new string[2];
         for (int pass = 0; pass < 2 && far == null; pass++)
         {
             bool left = pass == 0;
@@ -1165,6 +1166,16 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.8f);
             float hot = EnvironmentRumble.Level(EnvSource.Fire, left);
             float cold = EnvironmentRumble.Level(EnvSource.Fire, !left);
+            // How far each hand is outside the measured flame surface (negative inside), for the note.
+            float Gap(bool l) =>
+                EnvironmentFeel.FlameGap(
+                    VRRig.Instance.Hand(l).position.N(),
+                    FireGestures.FlameCentre.N(),
+                    FireGestures.FlameExtents.N()
+                );
+            gaps[pass] = F(
+                $"{(left ? "left" : "right")} in at {Gap(left):0.00} m, other at {Gap(!left):0.00} m"
+            );
             if (left)
             {
                 inLeft = hot;
@@ -1177,8 +1188,9 @@ internal sealed partial class SelfTestRunner
                 outLeft = cold;
             }
         }
+        var size = FireGestures.FlameExtents * 2f;
         var note = F(
-            $"{fire.name}: fire rumble left in the flames {inLeft:0.00} (right away {outRight:0.00}), right in the flames {inRight:0.00} (left away {outLeft:0.00})"
+            $"{fire.name}: fire rumble left in the flames {inLeft:0.00} (right away {outRight:0.00}), right in the flames {inRight:0.00} (left away {outLeft:0.00}); flames {size.x:0.00} x {size.y:0.00} x {size.z:0.00} m; surface gaps {gaps[0]}; {gaps[1]}"
         );
         if (far != null)
             Fail(far);

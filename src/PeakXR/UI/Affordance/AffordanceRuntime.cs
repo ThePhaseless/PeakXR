@@ -214,6 +214,19 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             instance.tintOwner = instance.denied;
     }
 
+    /// <summary>A refusal (not a notice) is still on show at this hand: what the player just tried and why it failed
+    /// outranks a notice, which waits instead of replacing it (vr.47: a MicAlwaysOn notice took the hand's cue).</summary>
+    public static bool RefusalShowing(bool left)
+    {
+        var self = instance;
+        if (self == null)
+            return false;
+        var d = self.denials[left ? 0 : 1];
+        return d.Reason != DenyReason.None
+            && !d.Notice
+            && !DenyFade.Over(Time.unscaledTime - d.At, d.HeldUntil - d.At);
+    }
+
     /// <param name="notice">Information, not a refusal: no red ring, a single soft tick, the label in the hint colour.</param>
     /// <param name="forceText">The label shows while this cue does, as a first-time label would.</param>
     public static void Show(
