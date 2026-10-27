@@ -190,7 +190,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>LoadingScreenHandler.OnLoadingStart (A/LoadingScreenHandler.cs:16, raised at :119).</summary>
-    public void OnLoadingStart(string sceneName)
+    public void OnLoadingStart(string _)
     {
         if (!VRSession.Active)
             return;
@@ -200,7 +200,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     }
 
     /// <summary>LoadingScreenHandler.OnLoadingDone (A/LoadingScreenHandler.cs:14, raised at :129).</summary>
-    public void OnLoadingDone(string sceneName)
+    public void OnLoadingDone(string _)
     {
         if (!VRSession.Active && !space.Shown)
             return;

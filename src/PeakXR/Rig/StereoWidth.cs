@@ -105,6 +105,8 @@ internal static class StereoWidth
                 old,
                 viewType.GetField(name, any) ?? throw new MissingMemberException("XRView." + name)
             );
+        // Block(variables, params expressions): the variables array is not one of the expressions.
+#pragma warning disable S3220
         var body = Expression.Block(
             new[] { old },
             Expression.Assign(old, item),
@@ -123,6 +125,7 @@ internal static class StereoWidth
                 )
             )
         );
+#pragma warning restore S3220
         return Expression
             .Lambda<Action<XRPass, int, Matrix4x4, Matrix4x4>>(body, pass, index, view, prev)
             .Compile();

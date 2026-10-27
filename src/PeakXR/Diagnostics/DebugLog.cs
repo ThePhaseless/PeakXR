@@ -59,7 +59,10 @@ internal static class DebugLog
         if (attached)
             return;
         attached = true;
+        // BepInEx's Logger owns registered listeners and disposes them at shutdown.
+#pragma warning disable CA2000
         BepInEx.Logging.Logger.Listeners.Add(new Listener());
+#pragma warning restore CA2000
         Application.logMessageReceivedThreaded += OnUnityLog;
     }
 
@@ -74,7 +77,10 @@ internal static class DebugLog
             {
                 try
                 {
+                    // Open for the whole session on purpose; AutoFlush keeps it complete if the game dies.
+#pragma warning disable S2930
                     trace = new StreamWriter(TracePath, append: false) { AutoFlush = true };
+#pragma warning restore S2930
                 }
                 catch (IOException e)
                 {

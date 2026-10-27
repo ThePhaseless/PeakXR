@@ -1172,7 +1172,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             File.AppendAllText(logPath, line + "\n");
         }
-        catch (IOException) { }
+        catch (IOException)
+        {
+            // The line is already in the BepInEx log; a locked report file must not stop the run.
+        }
     }
 
     void Abort(string reason)

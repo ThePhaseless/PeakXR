@@ -115,7 +115,6 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < 3; i++)
             yield return null;
         var rig = VRRig.Instance;
-        var aim = rig.Aim(left);
         tipOffset =
             rig.Origin.InverseTransformPoint(Avatar.DrawnHands.PokeTip(rig, left))
             - Script(left).Position;
@@ -406,7 +405,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         // The left hand well below the desk, so only the right one pokes.
-        HeadFrame(out var head, out var forward, out var right);
+        HeadFrame(out var head, out _, out var right);
         Script(true).Position = head - right * 0.3f + Vector3.down * 0.7f;
         yield return Until(() => VRKeyboard.HasPose, 2f, "keyboard not placed");
         yield return Wait(0.4f);

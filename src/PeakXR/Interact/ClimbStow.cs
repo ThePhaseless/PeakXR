@@ -74,7 +74,7 @@ internal static class ClimbStow
 
         Snapshot(c, d.currentItem);
         if (held != null && heldDrops && !busy)
-            WarnNearWall(c, rig, cfg);
+            WarnNearWall(c, cfg);
         FindDropped(now);
         if (marked != null)
             MarkDropped(now);
@@ -123,7 +123,7 @@ internal static class ClimbStow
 
     /// <summary>The free hand is where a grab would start a climb: the same probe and verdict as the grip and its
     /// chalk ring (<see cref="PhysicalInteraction.WouldCatch"/>).</summary>
-    private static void WarnNearWall(Character c, VRRig rig, InteractConfig cfg)
+    private static void WarnNearWall(Character c, InteractConfig cfg)
     {
         if (
             !cfg.PhysicalClimb

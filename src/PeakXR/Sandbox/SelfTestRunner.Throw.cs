@@ -214,7 +214,6 @@ internal sealed partial class SelfTestRunner
         }
         var landed = thrown.Center();
         ThrowReport(
-            c,
             from,
             bodyForward,
             spawnAt,
@@ -248,7 +247,6 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The vr.13 note and verdict.</summary>
     void ThrowReport(
-        Character c,
         Vector3 from,
         Vector3 bodyForward,
         Vector3 spawnAt,

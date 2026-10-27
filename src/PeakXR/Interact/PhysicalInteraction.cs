@@ -677,7 +677,7 @@ internal static class PhysicalInteraction
                     if (RegrabCooldown(c))
                         hand.ClimbRetryUntil = now + RegrabWait;
                     else
-                        DenyClimb(c, rig, cfg, hand.Left, pos);
+                        DenyClimb(c, rig, hand.Left, pos);
                 }
                 break;
             case GripPressAction.Regrip:
@@ -905,13 +905,7 @@ internal static class PhysicalInteraction
     /// climber out of stamina cannot grab again within 1 s of the last grab (:562), and a condor's prey cannot grab
     /// at all (:562). Says which, and for reach marks where the head's reach ends.
     /// </summary>
-    private static void DenyClimb(
-        Character c,
-        VRRig rig,
-        InteractConfig cfg,
-        bool left,
-        Vector3 handPos
-    )
+    private static void DenyClimb(Character c, VRRig rig, bool left, Vector3 handPos)
     {
         if (!c.refs.climbing.CanClimb())
             return;
@@ -1466,7 +1460,7 @@ internal static class PhysicalInteraction
             CatchPulse(hand.Left, hold.Kind, recentFall, cfg);
         }
         else
-            DenyClimb(c, rig, cfg, hand.Left, t.position);
+            DenyClimb(c, rig, hand.Left, t.position);
     }
 
     /// <summary>What a grip at the hand would meet: the one probe behind the chalk ring, the grip and its refusals.</summary>

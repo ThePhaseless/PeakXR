@@ -62,9 +62,9 @@ internal sealed partial class SelfTestRunner
         // moving, "standing: body moved 0.551 m").
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
         // Run 24 leaned into the crashed plane's seats: face open ground first, or say what is in the way.
-        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
-            Fail("no clear 1.3 m to lean into in any heading: " + blocked);
+            Fail("no clear 1.3 m to lean into in any heading: " + obstacle);
             yield break;
         }
         rig.RotateYaw(turn);

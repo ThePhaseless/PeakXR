@@ -110,7 +110,7 @@ internal static partial class WorldHolds
             nextStatueLook = Time.unscaledTime + PillarLookSeconds;
             statue = Object.FindFirstObjectByType<ScoutStatue>();
         }
-        AmuletBase amulet = null;
+        AmuletBase amulet;
         int[] slots = null;
         if (
             !amuletHeld

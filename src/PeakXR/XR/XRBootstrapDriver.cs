@@ -202,10 +202,11 @@ sealed class XRBootstrapDriver : MonoBehaviour
             return;
         }
         var supported = input.GetSupportedTrackingOriginModes();
-        if (
-            (supported & TrackingOriginModeFlags.Floor) != 0
-            && input.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor)
-        )
+        // TrackingOriginModeFlags is a bit set without [Flags] (Unity's XRInputSubsystem API).
+#pragma warning disable S3265
+        bool floorSupported = (supported & TrackingOriginModeFlags.Floor) != 0;
+#pragma warning restore S3265
+        if (floorSupported && input.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor))
             XRRuntimeInfo.FloorTracking = true;
         else
             Plugin.Log.LogWarning(

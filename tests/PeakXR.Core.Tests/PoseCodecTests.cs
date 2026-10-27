@@ -203,7 +203,7 @@ public class PoseCodecTests
     {
         var buf = new byte[PoseCodec.MaxSize];
         int len = PoseCodec.Encode(Full(new Random(2)), buf);
-        buf[0] = (byte)(PoseCodec.Version + 1);
+        buf[0] = PoseCodec.Version + 1;
         Assert.False(PoseCodec.Decode(buf, len, out _));
     }
 

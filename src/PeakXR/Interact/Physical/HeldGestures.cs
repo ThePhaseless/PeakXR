@@ -76,7 +76,7 @@ internal static class HeldGestures
     /// <summary>The face gesture holds primary this frame (self-test reads it).</summary>
     public static bool AtFace => facing;
 
-    public static void Tick(Character c, VRRig rig, ItemGesturesConfig cfg, float dt)
+    public static void Tick(VRRig rig, ItemGesturesConfig cfg, float dt)
     {
         var hand = ItemGestures.HoldingHand(rig);
         if (ItemGestures.ItemChanged)

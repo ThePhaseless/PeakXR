@@ -95,7 +95,7 @@ public class StepFilterTests
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PeakXR.sln")))
             dir = dir.Parent;
         Assert.NotNull(dir);
-        var sandbox = Path.Combine(dir!.FullName, "src", "PeakXR", "Sandbox");
+        var sandbox = Path.Combine(dir.FullName, "src", "PeakXR", "Sandbox");
         var call = new Regex(
             @"\b(?:Run|VRStep|HandStep|Restoring|SocialStep|ScreenHandStep|PeakHandStep|ItemStep|Skip|MpStep)\(\s*""([^""]+)"""
         );

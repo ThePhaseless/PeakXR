@@ -8,7 +8,18 @@ public class ArmMathTests
         var s = Vector3.Zero;
         var e = new Vector3(0f, -0.3f, 0f);
         var h = e + new Vector3(5e-5f, 0f, 0f);
-        ArmMath.SolveTwoBone(s, e, h, new Vector3(0.1f, -0.25f, 0.1f), Vector3.UnitX, out _, out _);
+        var thrown = Record.Exception(() =>
+            ArmMath.SolveTwoBone(
+                s,
+                e,
+                h,
+                new Vector3(0.1f, -0.25f, 0.1f),
+                Vector3.UnitX,
+                out _,
+                out _
+            )
+        );
+        Assert.Null(thrown);
     }
 
     [Fact]

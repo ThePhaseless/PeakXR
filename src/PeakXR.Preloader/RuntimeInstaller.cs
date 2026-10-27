@@ -190,7 +190,7 @@ public sealed class RuntimeInstaller
             _log.LogInfo($"Installing {rel}");
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dst));
         var tmp = dst + ".peakxr-tmp";
         File.Copy(src, tmp, true);
         if (File.Exists(dst))

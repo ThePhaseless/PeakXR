@@ -86,7 +86,10 @@ internal sealed class ChoiceRow
 
     public override void Load(ISettingsSaveLoad loader) { }
 
-    public override void Save(ISettingsSaveLoad saver) { }
+    public override void Save(ISettingsSaveLoad saver)
+    {
+        // The row's BepInEx config entry is the store (ApplyValue writes it), not the game's settings file.
+    }
 
     public override void ApplyValue() { }
 
@@ -156,7 +159,10 @@ internal sealed class SliderRow : FloatSetting, IExposedSetting, IConfigRow
 
     public override void Load(ISettingsSaveLoad loader) => Value = Read();
 
-    public override void Save(ISettingsSaveLoad saver) { }
+    public override void Save(ISettingsSaveLoad saver)
+    {
+        // The row's BepInEx config entry is the store (ApplyValue writes it), not the game's settings file.
+    }
 
     public override void ApplyValue()
     {
@@ -210,7 +216,10 @@ internal sealed class TextRow : StringSetting, IExposedSetting, IConfigRow
 
     public override void Load(ISettingsSaveLoad loader) => Value = Read();
 
-    public override void Save(ISettingsSaveLoad saver) { }
+    public override void Save(ISettingsSaveLoad saver)
+    {
+        // The row's BepInEx config entry is the store (ApplyValue writes it), not the game's settings file.
+    }
 
     /// <summary>Applied per keystroke; text that does not parse yet is ignored until it does.</summary>
     public override void ApplyValue()
@@ -271,7 +280,10 @@ internal sealed class InfoRow : Setting, IExposedSetting
 
     public override void Load(ISettingsSaveLoad loader) { }
 
-    public override void Save(ISettingsSaveLoad saver) { }
+    public override void Save(ISettingsSaveLoad saver)
+    {
+        // Nothing to save: an info row only shows text.
+    }
 
     public override void ApplyValue() { }
 

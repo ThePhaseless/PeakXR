@@ -813,7 +813,6 @@ internal sealed partial class SelfTestRunner
             Fail("the torch left the hand after the warp to the fuse");
             yield break;
         }
-        float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
         // A player tips the torch down toward a low fuse, so the flame leads the hand instead of standing 0.5 m over
         // it (run 53: a flame upright over the hand put the hand 0.27 m under the floor to reach a fuse at the feet).
         // Of the wrist turns a player can make, keep the one that brings the flame lowest under the hand.
@@ -843,7 +842,7 @@ internal sealed partial class SelfTestRunner
             Fail("the torch left the hand while tipping it toward the fuse");
             yield break;
         }
-        inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
+        float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
         // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left. A
         // flame not yet at the hand leads by nothing, so the goal stays at the fuse.
         var lead = inHand < TorchInHand ? rig.Hand(left).position - flame.position : Vector3.zero;

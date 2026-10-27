@@ -929,9 +929,9 @@ internal sealed partial class SelfTestRunner
         // Run 29: after vr.15 the view faced the crashed plane, and the pack spawned in its hull landed 2.4 m up, out
         // of reach. Face open ground first, as vr.45 does.
         var rig = VRRig.Instance;
-        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
-            Fail("no open ground to drop the pack on in any heading: " + blocked);
+            Fail("no open ground to drop the pack on in any heading: " + obstacle);
             yield break;
         }
         rig.RotateYaw(turn);
@@ -1049,7 +1049,6 @@ internal sealed partial class SelfTestRunner
             Fail($"needs a Backpack and an Apple item and body slots (valid {inv.Valid})");
             yield break;
         }
-        var head = VRRig.Instance.Head;
         var spot = GroundAhead(PropSetOut);
 
         // Wear a pack: the wheel's Wear slice calls Backpack.Wear (BackpackWheel.cs:133), the plain pickup into

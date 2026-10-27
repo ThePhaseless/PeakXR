@@ -67,9 +67,9 @@ internal static class ItemGestures
         float dt = Time.deltaTime;
         FireGestures.Tick(c, rig, cfg, dt);
         LidGesture.Tick(cfg);
-        HeldGestures.Tick(c, rig, cfg, dt);
-        ParasolRunner.Instance.Tick(c, input, cfg, dt);
-        CookWarning(c);
+        HeldGestures.Tick(rig, cfg, dt);
+        ParasolRunner.Instance.Tick(input, cfg, dt);
+        CookWarning();
     }
 
     /// <summary>Patched before Item.CancelUsePrimary/CancelUseSecondary: a cast of the local VR player's held
@@ -187,7 +187,7 @@ internal static class ItemGestures
     /// Campfire.cs:312-349) is under way and finishing it would burn, wreck or blow up the item. Urgency follows the
     /// hold, so the warning speeds up as the cook nears done.
     /// </summary>
-    private static void CookWarning(Character c)
+    private static void CookWarning()
     {
         var interaction = Interaction.instance;
         if (

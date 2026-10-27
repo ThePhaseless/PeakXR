@@ -77,7 +77,7 @@ internal static class UseDenial
         )
             return DenyReason.UsedUp;
         if (!(rope || vine))
-            return Other(c, item, out hint);
+            return Other(item, out hint);
         if (!HandAim.TryHeld(out var origin, out var rotation))
             return DenyReason.CantUse;
         var dir = rotation * Vector3.forward;
@@ -119,7 +119,7 @@ internal static class UseDenial
 
     /// <summary>The reason for the items that are neither shooters nor used up: wrecked food, an effigy with nobody
     /// down, a build spot the game refuses, a claw with nothing in reach.</summary>
-    private static DenyReason Other(Character c, Item item, out DenyHint hint)
+    private static DenyReason Other(Item item, out DenyHint hint)
     {
         hint = default;
         // ItemCooking.Wreck (ItemCooking.cs:195-210) strips the actions and blocks use.

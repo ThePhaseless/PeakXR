@@ -320,11 +320,6 @@ internal sealed partial class SelfTestRunner
         Note(note);
     }
 
-    /// <summary>The drawn point of <paramref name="vine"/> nearest <paramref name="eye"/>, where a hand grips it (the
-    /// same drawn-point offset as the vine steps' spot, <c>colliderOffset</c>, JungleVine.cs:296).</summary>
-    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye) =>
-        NearestVineSpot(vine, eye, null);
-
     /// <summary>The vine's point nearest <paramref name="eye"/>, skipping points in the face (under 0.3 m) and,
     /// with <paramref name="avoid"/>, within 0.45 m of it: run 49's free hand gripped the chain beside the held
     /// launcher, and the grip read as a second hand on the launcher instead of the chain.</summary>

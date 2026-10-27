@@ -360,7 +360,7 @@ internal sealed partial class SelfTestRunner
             ItemPrompt.Main,
             out var glyph,
             out _,
-            out var from,
+            out _,
             out var to
         );
         float toHand = shown ? Vector3.Distance(to, hand.position) : -1f;

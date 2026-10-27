@@ -93,7 +93,7 @@ internal static class SpikeHammer
             Strike(RightStrike, false, rig, in hit);
         int needed = ToolsConfig.Instance.HammerStrikes;
         float castTime = slot.prefab.usingTimePrimary;
-        tick = HammerCast.TickBeforeUpdate(strikes, needed, castTime, Time.deltaTime, elapsed);
+        tick = HammerCast.TickBeforeUpdate(strikes, needed, castTime, elapsed);
         elapsed += Time.deltaTime;
         // All strikes in before the capped time (HammerCast.MaxSpeedup): keep holding, it is nearly in.
         if (strikes >= needed && tick + Time.deltaTime < castTime)

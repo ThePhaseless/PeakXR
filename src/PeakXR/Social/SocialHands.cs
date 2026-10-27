@@ -865,8 +865,8 @@ internal sealed class SocialHands : IGripExtension
         forward.y = 0f;
         // One-handed play (Accessibility.OneHanded): the one open palm pushed is the shove, fed in as both hands.
         bool one = VRInput.OneHanded;
-        ref var l = ref VRInput.Hand(one ? VRInput.LeftHanded : true);
-        ref var r = ref VRInput.Hand(one ? VRInput.LeftHanded : false);
+        ref var l = ref VRInput.Hand(!one || VRInput.LeftHanded);
+        ref var r = ref VRInput.Hand(one && VRInput.LeftHanded);
         bool open = l.Grip < 0.3f && r.Grip < 0.3f;
         if (
             !l.Tracked

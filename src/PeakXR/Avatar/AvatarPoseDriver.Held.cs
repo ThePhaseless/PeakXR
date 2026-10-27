@@ -199,8 +199,10 @@ public partial class AvatarPoseDriver
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
         // The local gate waits for the equip's own attach to settle (CharacterItems.cs:600-618, sinceItemAttach): at
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
-        bool free = Owner.IsLocal
-            ? (Owner.data.sinceItemAttach > AttachSettle || weldGate.Released)
+        bool free =
+            !Owner.IsLocal
+            || (
+                (Owner.data.sinceItemAttach > AttachSettle || weldGate.Released)
                 && weldGate.Update(
                     toController,
                     toItem,
@@ -208,7 +210,7 @@ public partial class AvatarPoseDriver
                     shortfall,
                     toController > weldGate.Release && ReachBlocked(left, ctrlBone)
                 )
-            : true;
+            );
         remoteFree = !Owner.IsLocal;
         if (free != wasFree && Owner.IsLocal)
         {

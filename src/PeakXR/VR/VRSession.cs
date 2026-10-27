@@ -30,8 +30,11 @@ public static class VRSession
     /// patch targets still resolve (after a game update) without a headset or SteamVR.</summary>
     public static bool CompatProbe { get; internal set; }
 
+    // Raised one handler at a time through GetInvocationList in SetActive, which Sonar does not follow.
+#pragma warning disable S3264
     public static event Action Started;
     public static event Action Stopped;
+#pragma warning restore S3264
 
     internal static void SetActive(bool active)
     {
@@ -43,14 +46,14 @@ public static class VRSession
             return;
         // One handler at a time with a line before each, so a native crash in one is attributable; a throwing
         // handler must not skip the later ones (rig, render, input restore).
-        foreach (Action handler in handlers.GetInvocationList())
+        foreach (var handler in handlers.GetInvocationList())
         {
             var name =
                 $"VRSession.{(active ? "Started" : "Stopped")} -> {handler.Method.DeclaringType?.FullName}.{handler.Method.Name}";
             Plugin.Log.LogDebug(name);
             try
             {
-                handler();
+                ((Action)handler)();
             }
             catch (Exception e)
             {

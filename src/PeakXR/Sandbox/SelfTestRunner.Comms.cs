@@ -393,7 +393,10 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
         }
         int recentered = 0;
+        // Sonar misses that the local function writes the captured counter the waits below read.
+#pragma warning disable S2123
         void Count() => recentered++;
+#pragma warning restore S2123
         float hold = PeakXR.Rig.CameraFeature.RecenterSeconds;
         rig.Recentered += Count;
         try

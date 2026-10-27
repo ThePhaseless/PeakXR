@@ -72,7 +72,6 @@ internal sealed class LaserPointer
     private readonly List<RaycastResult> results = new();
     private readonly LineRenderer line;
     private readonly Transform cursor;
-    private readonly Transform rim;
     private readonly Material cursorMaterial;
     private readonly Material beamMaterial;
     private bool hoverLook;
@@ -136,8 +135,7 @@ internal sealed class LaserPointer
             cursor
         );
         ring.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.LaserBeam;
-        rim = ring.transform;
-        rim.localScale = Vector3.one * RimScale;
+        ring.transform.localScale = Vector3.one * RimScale;
 
         SetVisible(false, false);
     }

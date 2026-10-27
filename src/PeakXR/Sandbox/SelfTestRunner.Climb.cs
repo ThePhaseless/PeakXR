@@ -2397,7 +2397,6 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator FreeHandPocketStep()
     {
-        var c = Character.localCharacter;
         var rig = VRRig.Instance;
         var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)

@@ -418,9 +418,9 @@ internal sealed partial class SelfTestRunner
         float standing = XRRuntimeInfo.FloorTracking
             ? eye
             : HeightCalibration.DefaultStandingEyeHeight;
-        if (!FaceOpen(c, rig, 6f, out string blocked))
+        if (!FaceOpen(c, rig, 6f, out string obstacle))
         {
-            stepSkip = "no heading with 6 m of open ground: " + blocked;
+            stepSkip = "no heading with 6 m of open ground: " + obstacle;
             yield break;
         }
         yield return Wait(0.5f);
@@ -484,9 +484,9 @@ internal sealed partial class SelfTestRunner
         float standing = XRRuntimeInfo.FloorTracking
             ? eye
             : HeightCalibration.DefaultStandingEyeHeight;
-        if (!FaceOpen(c, rig, 6f, out string blocked))
+        if (!FaceOpen(c, rig, 6f, out string obstacle))
         {
-            stepSkip = "no heading with 6 m of open ground: " + blocked;
+            stepSkip = "no heading with 6 m of open ground: " + obstacle;
             yield break;
         }
         yield return Wait(0.5f);
