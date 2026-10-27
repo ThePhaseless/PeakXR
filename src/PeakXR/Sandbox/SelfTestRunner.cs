@@ -705,14 +705,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             var eye = c.Head;
             var ahead = c.Center + forward * ApproachStart;
             if (
-                !Physics.Raycast(
-                    ahead + Vector3.up * 10f,
-                    Vector3.down,
-                    out var ground,
-                    30f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                !Terrain(ahead + Vector3.up * 10f, Vector3.down, 30f, out var ground)
                 || Physics.Linecast(
                     eye,
                     ground.point + Vector3.up * 1.5f,
@@ -1274,6 +1267,17 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         return (nl >= 0 ? text.Substring(0, nl) : text).Trim();
     }
 
+    /// <summary>A ray against terrain and map colliders, triggers ignored: the cast the game's climbing uses.</summary>
+    static bool Terrain(Vector3 from, Vector3 dir, float range, out RaycastHit hit) =>
+        Physics.Raycast(
+            from,
+            dir,
+            out hit,
+            range,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+
     static Item HeldItem()
     {
         var c = Character.localCharacter;
@@ -1289,7 +1293,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// <summary>The item named exactly <paramref name="fragment"/>, else the first whose name contains it. "Compass"
     /// matched "Cheat Compass" first, whose use warps to Caldera (Action_WarpToBiome.cs:33) and shut the beach
     /// segment for the rest of VR run 27.</summary>
-    static Item FindItem(List<Item> items, string fragment)
+    static Item FindItem(IReadOnlyList<Item> items, string fragment)
     {
         foreach (var item in items)
         {

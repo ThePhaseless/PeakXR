@@ -131,7 +131,7 @@ internal sealed partial class SelfTestRunner
         }
 
         // Negative: the full pose out in front on the hand that holds an item.
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;

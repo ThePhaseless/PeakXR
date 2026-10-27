@@ -174,13 +174,11 @@ internal sealed partial class SelfTestRunner
             float yaw = (i + 1) / 2 * 45f * (i % 2 == 0 ? 1f : -1f);
             var ahead = head.position + Quaternion.Euler(0f, yaw, 0f) * start * outward;
             if (
-                Physics.Raycast(
+                Terrain(
                     new Vector3(ahead.x, feet + 0.6f, ahead.z),
                     Vector3.down,
-                    out var ground,
                     1.2f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
+                    out var ground
                 )
                 && Mathf.Abs(ground.point.y - feet) <= 0.3f
             )
@@ -222,16 +220,7 @@ internal sealed partial class SelfTestRunner
         if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut || under > 0.3f)
         {
             var ahead = head.position + Flat(head.forward) * PropSetOut;
-            if (
-                Physics.Raycast(
-                    ahead + Vector3.up * 0.5f,
-                    Vector3.down,
-                    out var ground,
-                    4f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(ahead + Vector3.up * 0.5f, Vector3.down, 4f, out var ground))
                 ahead = ground.point + Vector3.up * PropDrop;
             else
                 ahead = spot;
@@ -260,7 +249,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator GrabStep(bool left)
     {
         var c = Character.localCharacter;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             Fail("no Apple item");
@@ -354,7 +343,7 @@ internal sealed partial class SelfTestRunner
     /// item changes (<see cref="StatusEffect"/>) the right way, so the step sets that status first.</summary>
     IEnumerator EatStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -755,14 +744,8 @@ internal sealed partial class SelfTestRunner
         // Its own level ray from just under the eye: WallInFront falls back to rays at the far point FindWall started
         // from, and run 57's "high" hold came from one of those, 0.97 m under the eye.
         if (
-            Physics.Raycast(
-                rig.Head.position + Vector3.down * 0.1f,
-                -Flat(hit.normal),
-                out var high,
-                0.9f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            ) && ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+            Terrain(rig.Head.position + Vector3.down * 0.1f, -Flat(hit.normal), 0.9f, out var high)
+            && ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
         )
             hit = high;
         var hold = hit.point + hit.normal * 0.04f;
@@ -1427,7 +1410,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator HolsterStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -2039,30 +2022,9 @@ internal sealed partial class SelfTestRunner
         var normal = Flat(wall.normal);
         var body = c.Center;
         var atFace = new Vector3(body.x, wall.point.y, body.z);
-        return Physics.Raycast(
-                body + Vector3.up * upFromCenter,
-                -normal,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-            || Physics.Raycast(
-                atFace,
-                -normal,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-            || Physics.Raycast(
-                atFace,
-                (wall.point - atFace).normalized,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            );
+        return Terrain(body + Vector3.up * upFromCenter, -normal, 2f, out hit)
+            || Terrain(atFace, -normal, 2f, out hit)
+            || Terrain(atFace, (wall.point - atFace).normalized, 2f, out hit);
     }
 
     /// <summary>
@@ -2143,16 +2105,7 @@ internal sealed partial class SelfTestRunner
             for (int i = 0; i < Rays; i++)
             {
                 var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
-                if (
-                    !Physics.Raycast(
-                        origin,
-                        dir,
-                        out var hit,
-                        Range,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                )
+                if (!Terrain(origin, dir, Range, out var hit))
                     continue;
                 float away = Vector3.Distance(home, hit.point);
                 if (away >= best)
@@ -2165,16 +2118,7 @@ internal sealed partial class SelfTestRunner
                 bool steep = true;
                 foreach (float up in WallProfileHeights)
                 {
-                    if (
-                        !Physics.Raycast(
-                            origin + Vector3.up * up,
-                            dir,
-                            out var above,
-                            hit.distance + 1f,
-                            HelperFunctions.terrainMapMask,
-                            QueryTriggerInteraction.Ignore
-                        )
-                    )
+                    if (!Terrain(origin + Vector3.up * up, dir, hit.distance + 1f, out var above))
                     {
                         steep = false;
                         break;
@@ -2190,26 +2134,13 @@ internal sealed partial class SelfTestRunner
                 if (!steep)
                     continue;
                 if (
-                    !Physics.Raycast(
-                        origin + Vector3.up * headroom,
-                        dir,
-                        out var high,
-                        hit.distance + 1.5f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+                    !Terrain(origin + Vector3.up * headroom, dir, hit.distance + 1.5f, out var high)
+                    || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
                 )
                     continue;
                 var front = hit.point + Flat(hit.normal) * 0.6f;
                 if (
-                    !Physics.Raycast(
-                        front + Vector3.up * 2f,
-                        Vector3.down,
-                        out var ground,
-                        6f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
+                    !Terrain(front + Vector3.up * 2f, Vector3.down, 6f, out var ground)
                     || Vector3.Angle(ground.normal, Vector3.up) > 40f
                 )
                     continue;

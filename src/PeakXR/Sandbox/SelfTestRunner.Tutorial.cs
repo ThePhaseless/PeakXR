@@ -506,7 +506,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator PromptGlyphStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
         if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
@@ -651,7 +651,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator TargetNamesStep(bool colourBlind)
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         var head = VRRig.Instance.Head;
         var c = Character.localCharacter;
         var right = Vector3.Cross(Vector3.up, Flat(head.forward)).normalized;

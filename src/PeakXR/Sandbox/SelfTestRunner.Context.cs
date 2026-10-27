@@ -254,13 +254,11 @@ internal sealed partial class SelfTestRunner
                 gap.y = 0f;
                 if (
                     gap.magnitude <= 0.6f
-                    || !Physics.Raycast(
+                    || !Terrain(
                         near - gap.normalized * 0.5f + Vector3.up * 2f,
                         Vector3.down,
-                        out var ground,
                         6f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
+                        out var ground
                     )
                 )
                     break;
@@ -943,14 +941,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The ground under <paramref name="p"/>, as <c>WarpPlayerRPC</c> wants it.</summary>
     static Vector3 StandUnder(Vector3 p) =>
-        Physics.Raycast(
-            p + Vector3.up * 2f,
-            Vector3.down,
-            out var hit,
-            12f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
+        Terrain(p + Vector3.up * 2f, Vector3.down, 12f, out var hit)
             ? hit.point + Vector3.up * 0.1f
             : p;
 }

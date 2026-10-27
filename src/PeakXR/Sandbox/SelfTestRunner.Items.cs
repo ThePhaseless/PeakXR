@@ -692,7 +692,7 @@ internal sealed partial class SelfTestRunner
         // A filtered run skips the wrapper's setup and teardown too, not only the step.
         if (Filtered(id))
             yield break;
-        var item = FindItem(new List<Item>(SandboxActions.Items), fragment);
+        var item = FindItem(SandboxActions.Items, fragment);
         if (item == null)
         {
             if (VRRun)
@@ -970,7 +970,7 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment) ?? prefab;
+        var apple = FindItem(SandboxActions.Items, AppleFragment) ?? prefab;
         if (!SandboxActions.SpawnItemAt(apple, spot) || SandboxActions.LastSpawned == null)
         {
             Fail(SandboxActions.LastMessage);
@@ -1087,16 +1087,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         string on = "no ground hit";
-        if (
-            Physics.Raycast(
-                stand + Vector3.up * 3f,
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(stand + Vector3.up * 3f, Vector3.down, 8f, out var ground))
         {
             stand = ground.point + Vector3.up * 0.1f;
             on = "on " + ground.collider.name;
@@ -2374,14 +2365,7 @@ internal sealed partial class SelfTestRunner
             AllYaws,
             () =>
                 SpoolRay(vr, out var origin, out var aim)
-                && Physics.Raycast(
-                    origin,
-                    aim,
-                    out var at,
-                    tier.maxAnchorGhostDistance,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                && Terrain(origin, aim, tier.maxAnchorGhostDistance, out var at)
                 && Vector3.Distance(at.point, c.Center) < tier.maxAnchorDistance - 0.3f
         );
     }

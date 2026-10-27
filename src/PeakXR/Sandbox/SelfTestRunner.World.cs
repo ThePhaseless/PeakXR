@@ -530,16 +530,7 @@ internal sealed partial class SelfTestRunner
         // 0.55 m ahead: kneeling beside the bones with the book 0.4 m over the hips is in reach (0.7 m ahead with a
         // standing head was 1.0-1.1 m from the shoulder).
         var spot = SandboxActions.FrontPoint(0.55f);
-        if (
-            Physics.Raycast(
-                spot + Vector3.up * 2f,
-                Vector3.down,
-                out var ground,
-                5f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(spot + Vector3.up * 2f, Vector3.down, 5f, out var ground))
             spot = ground.point;
         var skeleton = Object
             .Instantiate(prefab, spot + Vector3.up * 0.3f, Quaternion.identity)
@@ -1151,14 +1142,7 @@ internal sealed partial class SelfTestRunner
                 Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
             var probe = new Vector3(box.center.x, box.max.y + 0.5f, box.center.z) + dir * reach;
             if (
-                Physics.Raycast(
-                    probe,
-                    Vector3.down,
-                    out var ground,
-                    box.size.y + 1.5f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                Terrain(probe, Vector3.down, box.size.y + 1.5f, out var ground)
                 && ground.collider.GetComponentInParent<Luggage>() == null
                 && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
             )
@@ -1515,16 +1499,7 @@ internal sealed partial class SelfTestRunner
             return null;
         var forward = Flat(rig.Head.forward);
         var at = Character.localCharacter.Center + forward * 3f;
-        if (
-            Physics.Raycast(
-                at + Vector3.up * 3f,
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(at + Vector3.up * 3f, Vector3.down, 8f, out var ground))
             at = ground.point;
         placed = Photon.Pun.PhotonNetwork.Instantiate(
             prefab.name,
@@ -2503,14 +2478,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>Terrain or map ground straight under <paramref name="p"/>, cast from 200 m above it.</summary>
     static bool GroundUnder(Vector3 p, out Vector3 ground)
     {
-        bool hit = Physics.Raycast(
-            p + Vector3.up * 200f,
-            Vector3.down,
-            out var info,
-            1000f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        );
+        bool hit = Terrain(p + Vector3.up * 200f, Vector3.down, 1000f, out var info);
         ground = hit ? info.point : p;
         return hit;
     }
@@ -2734,16 +2702,7 @@ internal sealed partial class SelfTestRunner
         var stand = target + Flat(side == default ? c.Center - target : side) * distance;
         // From just above the target, not far above: a ray from high up lands on top of the prop itself.
         float top = target.y + 0.5f;
-        if (
-            Physics.Raycast(
-                new Vector3(stand.x, top, stand.z),
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(new Vector3(stand.x, top, stand.z), Vector3.down, 8f, out var ground))
             stand = ground.point + Vector3.up * 0.1f;
         warpedForProp = true;
         c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, stand), false);

@@ -216,14 +216,8 @@ internal sealed partial class SelfTestRunner
         // :343-344) and the catch reaches 0.3 m above the centre. FindWall only proves 1.2 m of face, so on a lower wall
         // the requested position leaves the face, the game ends the climb (:266-271) and the body tops out: nothing to catch.
         bool roomy =
-            Physics.Raycast(
-                c.Center + Vector3.up * 2f,
-                -Flat(wall.normal),
-                out var top,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            ) && ClimbRules.GrabAngleOk(Vector3.Angle(top.normal, Vector3.up));
+            Terrain(c.Center + Vector3.up * 2f, -Flat(wall.normal), 2f, out var top)
+            && ClimbRules.GrabAngleOk(Vector3.Angle(top.normal, Vector3.up));
 
         // The throw: 0.15 s straight up, let go 70 % of the way at twice the lunge speed (at least 4 m/s).
         float speed = Mathf.Max(2f * cfg.LungeSpeed, 4f);
@@ -723,14 +717,7 @@ internal sealed partial class SelfTestRunner
                 var p = center + Quaternion.AngleAxis(i * 30f, Vector3.up) * forward * r;
                 // From 6 m up the first hit is the ground under open sky (an overhang would be hit first).
                 if (
-                    !Physics.Raycast(
-                        p + Vector3.up * 6f,
-                        Vector3.down,
-                        out var hit,
-                        12f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
+                    !Terrain(p + Vector3.up * 6f, Vector3.down, 12f, out var hit)
                     || hit.normal.y < 0.8f
                 )
                     continue;
@@ -1095,13 +1082,11 @@ internal sealed partial class SelfTestRunner
         outNow.y = 0f;
         if (
             outNow.magnitude > 0.75f
-            && Physics.Raycast(
+            && Terrain(
                 rig.Head.position + Vector3.down * 0.3f,
                 Flat(rig.Head.forward),
-                out var near,
                 0.75f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
+                out var near
             )
         )
         {
@@ -1359,7 +1344,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no PointPinger or interact.ping not installed";
             yield break;
         }
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             Fail("no Apple item");
@@ -1568,14 +1553,7 @@ internal sealed partial class SelfTestRunner
             )
                 continue;
             if (
-                !Physics.Raycast(
-                    chest + dir * 1.2f,
-                    Vector3.down,
-                    out var ground,
-                    3f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                !Terrain(chest + dir * 1.2f, Vector3.down, 3f, out var ground)
                 || Mathf.Abs(ground.point.y - feet.y) > 0.4f
             )
                 continue;
@@ -1675,7 +1653,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             Fail("no Apple item");
@@ -1786,14 +1764,7 @@ internal sealed partial class SelfTestRunner
         Vector3 FacePoint(Vector3 from)
         {
             return
-                Physics.Raycast(
-                    from,
-                    -wallFace.normal,
-                    out var onFace,
-                    3f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                Terrain(from, -wallFace.normal, 3f, out var onFace)
                 && onFace.collider == wallCollider
                 ? onFace.point
                 : wallCollider.ClosestPoint(from);
@@ -2175,7 +2146,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var entry = Interact.InteractConfig.Instance.RequireTwoHandsEntry;
-        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        var hook = FindItem(SandboxActions.Items, "RescueHook");
         if (entry == null || hook == null)
         {
             stepSkip = "interact.physical not bound or no RescueHook";
@@ -2223,7 +2194,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ItemHandNoHangStep()
     {
         var c = Character.localCharacter;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null || !ClimbHands.HandleHands)
         {
             stepSkip = apple == null ? "no Apple item" : "Interaction.PitonGripHang off";
@@ -2426,7 +2397,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             Fail("no Apple item");
@@ -3560,14 +3531,7 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < 6; i++)
         {
             if (
-                !Physics.Raycast(
-                    c.Center + Vector3.up * 0.5f,
-                    forward,
-                    out var face,
-                    1.5f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                !Terrain(c.Center + Vector3.up * 0.5f, forward, 1.5f, out var face)
                 || face.collider.gameObject != block
             )
                 break;

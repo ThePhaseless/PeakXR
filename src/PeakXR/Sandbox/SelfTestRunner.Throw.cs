@@ -59,14 +59,7 @@ internal sealed partial class SelfTestRunner
         {
             var at = eye + dir * d;
             if (
-                Physics.Raycast(
-                    new Vector3(at.x, feet + 2f, at.z),
-                    Vector3.down,
-                    out var ground,
-                    3f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                Terrain(new Vector3(at.x, feet + 2f, at.z), Vector3.down, 3f, out var ground)
                 && ground.point.y > feet + 0.3f
             )
                 return true;
