@@ -1,28 +1,27 @@
-namespace PeakXR.Core
-{
-    /// <summary>
-    /// OpenXR session states (XrSessionState, OpenXR spec) and which of them give the app input focus. Named in the
-    /// logs because a session that never reaches FOCUSED pauses input and holds the 0.6 focus fade: every step
-    /// that needs input then fails for that one reason.
-    /// </summary>
-    public static class XRFocus
-    {
-        /// <summary>FOCUSED (5), or 0 before the runtime reports a state.</summary>
-        public static bool Focused(int state) => state is 0 or 5;
+namespace PeakXR.Core;
 
-        public static string Name(int state) =>
-            state switch
-            {
-                0 => "not reported",
-                1 => "IDLE",
-                2 => "READY",
-                3 => "SYNCHRONIZED",
-                4 => "VISIBLE",
-                5 => "FOCUSED",
-                6 => "STOPPING",
-                7 => "LOSS_PENDING",
-                8 => "EXITING",
-                _ => "state " + state,
-            };
-    }
+/// <summary>
+/// OpenXR session states (XrSessionState, OpenXR spec) and which of them give the app input focus. Named in the
+/// logs because a session that never reaches FOCUSED pauses input and holds the 0.6 focus fade: every step
+/// that needs input then fails for that one reason.
+/// </summary>
+public static class XRFocus
+{
+    /// <summary>FOCUSED (5), or 0 before the runtime reports a state.</summary>
+    public static bool Focused(int state) => state is 0 or 5;
+
+    public static string Name(int state) =>
+        state switch
+        {
+            0 => "not reported",
+            1 => "IDLE",
+            2 => "READY",
+            3 => "SYNCHRONIZED",
+            4 => "VISIBLE",
+            5 => "FOCUSED",
+            6 => "STOPPING",
+            7 => "LOSS_PENDING",
+            8 => "EXITING",
+            _ => "state " + state,
+        };
 }

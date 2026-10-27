@@ -1,64 +1,63 @@
 using System;
 
-namespace PeakXR.Core
+namespace PeakXR.Core;
+
+/// <summary>
+/// Comfort vignette intensity driven by artificial (stick-driven) linear and angular speed.
+/// Call <see cref="Update"/> once per frame.
+/// </summary>
+public sealed class ComfortVignette
 {
-    /// <summary>
-    /// Comfort vignette intensity driven by artificial (stick-driven) linear and angular speed.
-    /// Call <see cref="Update"/> once per frame.
-    /// </summary>
-    public sealed class ComfortVignette
+    public bool Enabled = true;
+
+    /// <summary>Maximum intensity, 0..1.</summary>
+    public float Strength = 0.6f;
+
+    /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength: any artificial
+    /// motion starts it, and it is full at walking speed (vr.17 walked 2.7 m/s).</summary>
+    public float LinearMin = 0.2f,
+        LinearMax = 2.5f;
+
+    /// <summary>Angular speed (deg/s) where the vignette starts and where it reaches full strength.</summary>
+    public float AngularMin = 30f,
+        AngularMax = 120f;
+
+    /// <summary>Exponential smoothing rates (1/s) while closing and while opening.</summary>
+    public float AttackRate = 8f,
+        ReleaseRate = 4f;
+
+    /// <summary>0 = no vignette, 1 = fully closed.</summary>
+    public float Intensity { get; private set; }
+
+    public float Update(float linearSpeed, float angularSpeed, float dt)
     {
-        public bool Enabled = true;
-
-        /// <summary>Maximum intensity, 0..1.</summary>
-        public float Strength = 0.6f;
-
-        /// <summary>Linear speed (m/s) where the vignette starts and where it reaches full strength: any artificial
-        /// motion starts it, and it is full at walking speed (vr.17 walked 2.7 m/s).</summary>
-        public float LinearMin = 0.2f,
-            LinearMax = 2.5f;
-
-        /// <summary>Angular speed (deg/s) where the vignette starts and where it reaches full strength.</summary>
-        public float AngularMin = 30f,
-            AngularMax = 120f;
-
-        /// <summary>Exponential smoothing rates (1/s) while closing and while opening.</summary>
-        public float AttackRate = 8f,
-            ReleaseRate = 4f;
-
-        /// <summary>0 = no vignette, 1 = fully closed.</summary>
-        public float Intensity { get; private set; }
-
-        public float Update(float linearSpeed, float angularSpeed, float dt)
+        if (!Enabled)
         {
-            if (!Enabled)
-            {
-                Intensity = 0f;
-                return 0f;
-            }
-
-            float drive = MathF.Max(
-                Ramp(linearSpeed, LinearMin, LinearMax),
-                Ramp(MathF.Abs(angularSpeed), AngularMin, AngularMax)
-            );
-            float target = Math.Clamp(Strength, 0f, 1f) * drive;
-            float rate = target > Intensity ? AttackRate : ReleaseRate;
-            float alpha = ExpSmooth.Factor(rate, dt);
-            Intensity += (target - Intensity) * alpha;
-            return Intensity;
+            Intensity = 0f;
+            return 0f;
         }
 
-        public void Reset() => Intensity = 0f;
+        float drive = MathF.Max(
+            Ramp(linearSpeed, LinearMin, LinearMax),
+            Ramp(MathF.Abs(angularSpeed), AngularMin, AngularMax)
+        );
+        float target = Math.Clamp(Strength, 0f, 1f) * drive;
+        float rate = target > Intensity ? AttackRate : ReleaseRate;
+        float alpha = ExpSmooth.Factor(rate, dt);
+        Intensity += (target - Intensity) * alpha;
+        return Intensity;
+    }
 
-        /// <summary>How far the speed curve drives the vignette at <paramref name="v"/> (0..1): 0 below
-        /// <paramref name="min"/>, 1 from <paramref name="max"/>. Also the settings preview's curve.</summary>
-        public static float Drive(float v, float min, float max) => Ramp(v, min, max);
+    public void Reset() => Intensity = 0f;
 
-        static float Ramp(float v, float min, float max)
-        {
-            if (max <= min)
-                return v >= min ? 1f : 0f;
-            return Math.Clamp((v - min) / (max - min), 0f, 1f);
-        }
+    /// <summary>How far the speed curve drives the vignette at <paramref name="v"/> (0..1): 0 below
+    /// <paramref name="min"/>, 1 from <paramref name="max"/>. Also the settings preview's curve.</summary>
+    public static float Drive(float v, float min, float max) => Ramp(v, min, max);
+
+    static float Ramp(float v, float min, float max)
+    {
+        if (max <= min)
+            return v >= min ? 1f : 0f;
+        return Math.Clamp((v - min) / (max - min), 0f, 1f);
     }
 }
