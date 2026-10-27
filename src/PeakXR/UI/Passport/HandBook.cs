@@ -120,6 +120,25 @@ internal static class HandBook
         return true;
     }
 
+    /// <summary>
+    /// Where the passport canvas's pivot goes so its centre lands on <paramref name="centre"/>. PassportUI/Canvas keeps
+    /// its pivot off centre (vr.129 logged a middle cell at canvas (646, 404) of 1280x720), so posing the pivot put
+    /// the page's corner on the book pose: the page rose half its height and slid half its width away (vr.70, 0.38 m
+    /// from the hand instead of 0.24 m).
+    /// </summary>
+    internal static Vector3 PivotFor(
+        RectTransform canvas,
+        Vector3 centre,
+        Quaternion rotation,
+        float widthMeters
+    )
+    {
+        var rect = canvas.rect;
+        return rect.width > 1f
+            ? centre - rotation * (Vector3)(rect.center * (widthMeters / rect.width))
+            : centre;
+    }
+
     /// <summary>Half size of the open book for the swipe zone, metres.</summary>
     internal static Vector2 HalfExtents(bool passport)
     {
@@ -211,6 +230,12 @@ internal sealed class PassportPlacement : ICanvasPlacement
             rotation = Quaternion.identity;
             return PlacementResult.Default;
         }
+        position = HandBook.PivotFor(
+            (RectTransform)canvas.transform,
+            position,
+            rotation,
+            widthMeters
+        );
         Crop(canvas);
         return PlacementResult.Placed;
     }
@@ -319,8 +344,8 @@ internal sealed class HandBookRuntime : MonoBehaviour
         Quaternion rotation;
         if (passport)
         {
-            var rect = HandBook.PassportCanvas.transform;
-            position = rect.position;
+            var rect = (RectTransform)HandBook.PassportCanvas.transform;
+            position = rect.TransformPoint(rect.rect.center);
             rotation = rect.rotation;
         }
         else if (!HandBook.TryPose(rig, left, false, out position, out rotation))
@@ -396,7 +421,15 @@ internal sealed class HandBookRuntime : MonoBehaviour
             && WorldCanvases.IsConverted(canvas)
             && HandBook.TryPose(rig, left, true, out var position, out var rotation)
         )
-            canvas.transform.SetPositionAndRotation(position, rotation);
+            canvas.transform.SetPositionAndRotation(
+                HandBook.PivotFor(
+                    (RectTransform)canvas.transform,
+                    position,
+                    rotation,
+                    cfg.PassportWidth.Value
+                ),
+                rotation
+            );
     }
 
     /// <summary>Only the local holder's book is moved (vanilla checks the same, A/Guidebook.cs:178); the

@@ -479,6 +479,9 @@ internal static class BodyFeedback
         }
     }
 
+    /// <summary>Cold the environment has applied to the local character so far (self-test).</summary>
+    internal static float ColdExposure => coldTotal;
+
     /// <summary>Self-test only: counts the AddStatus calls inside as an environmental source.</summary>
     internal static void SelfTestExposure(bool on) => inSource += on ? 1 : -1;
 

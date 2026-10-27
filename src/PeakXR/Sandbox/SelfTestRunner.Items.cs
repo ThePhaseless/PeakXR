@@ -1157,8 +1157,9 @@ internal sealed partial class SelfTestRunner
         for (int pass = 0; pass < 2 && far == null; pass++)
         {
             bool left = pass == 0;
-            // The flames as interact.items measures them this frame (their particle bounds' centre).
-            yield return MoveTrack(left, FireGestures.FlameCentre, 0.5f);
+            // The flames as interact.items measures them (their particle bounds' centre), a world point: reached
+            // stooping, as the flames sit low and ahead (a tracking-space move put the hand 362 m off).
+            yield return ReachDown(left, () => FireGestures.FlameCentre, 0.5f);
             yield return MoveTrack(!left, low + (left ? right : -right) * 0.2f, 0.5f);
             far = OverReach(left);
             yield return Wait(0.8f);

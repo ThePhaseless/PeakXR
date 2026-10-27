@@ -927,8 +927,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.70: the passport through <c>PassportManager.ToggleOpen</c> (PassportManager.cs:113, what using the
-    /// passport item calls, Action_Passport.cs:5); ui.passport places it at the hand: the page centre within the book's
-    /// lift and side shift (BookPose) of the holding hand, plus slack for the cropped canvas.</summary>
+    /// passport item calls, Action_Passport.cs:5); ui.passport places it at the hand: the page centre on the book pose
+    /// (BookPose) and its lower edge just over the holding hand.</summary>
     IEnumerator PassportShot()
     {
         var passport = PassportManager.instance;
@@ -951,15 +951,28 @@ internal sealed partial class SelfTestRunner
             Fail($"passport canvas placed {canvas != null}, book hand {hand != null}");
         else if (PassportFeature.Settings.PassportAtHand.Value)
         {
+            // Held, not floating: the page centre on the book pose (BookPose through HandBook.TryPose), and its lower
+            // edge just over the hand, clear of it by BookPose.HandClearance but no higher than the lift setting puts it.
             var cfg = PassportFeature.Settings;
-            float gap = Vector3.Distance(CentreOf(canvas.transform), hand.position);
-            float most = cfg.BookLift.Value + cfg.BookSide.Value + 0.15f;
-            stepNote =
-                $"passport canvas {canvas.renderMode}, page centre {gap:0.00} m from the book hand";
-            if (gap > most)
-                Fail(
-                    $"the passport page is {gap:0.00} m from the hand holding it (at most {most:0.00} m)"
-                );
+            bool left = HandBook.BookInLeftHand();
+            var centre = CentreOf(canvas.transform);
+            HandBook.TryPose(VRRig.Instance, left, true, out var pose, out _);
+            var corners = new Vector3[4];
+            ((RectTransform)canvas.transform).GetWorldCorners(corners);
+            float edge = Mathf.Min(corners[0].y, corners[3].y) - hand.position.y;
+            float half = HandBook.HalfExtents(true).y;
+            float lowest = BookPose.HandClearance - 0.02f;
+            float highest = Mathf.Max(cfg.BookLift.Value - half, BookPose.HandClearance) + 0.05f;
+            float off = Vector3.Distance(centre, pose);
+            stepNote = F(
+                $"passport canvas {canvas.renderMode}, {(left ? "left" : "right")} book hand: page centre {Vector3.Distance(centre, hand.position):0.00} m from it, {off:0.000} m off the book pose, lower edge {edge:0.00} m over the hand (allowed {lowest:0.00}-{highest:0.00})"
+            );
+            if (off > 0.03f)
+                Fail("the passport page is not on the book pose: " + stepNote);
+            else if (edge < lowest)
+                Fail("the hand covers the passport page: " + stepNote);
+            else if (edge > highest)
+                Fail("the passport page floats above the hand holding it: " + stepNote);
         }
         else
             stepNote = $"passport canvas {canvas.renderMode} (PassportAtHand off)";

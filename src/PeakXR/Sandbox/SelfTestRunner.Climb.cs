@@ -1197,9 +1197,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// Offline the sandbox's 7 m test wall, online a map wall (<see cref="FindWall"/>); the player is warped 0.6 m
     /// in front of it, turned to face it, and <see cref="wallFace"/> is the face in front. Sets the skip or failure
-    /// when it cannot.
+    /// when it cannot. <paramref name="back"/> stands the player that much farther out.
     /// </summary>
-    IEnumerator ToWall(float headroom = 1.2f)
+    IEnumerator ToWall(float headroom = 1.2f, float back = 0f)
     {
         wallReady = false;
         var c = Character.localCharacter;
@@ -1212,7 +1212,12 @@ internal sealed partial class SelfTestRunner
             stepSkip = NoWall;
             yield break;
         }
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, wallStand), false);
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            CentreOver(c, wallStand + Flat(wallBase.normal) * back),
+            false
+        );
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);
@@ -2366,7 +2371,10 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.GrabToClimb off";
             yield break;
         }
-        yield return ToWall();
+        // A step back: at the usual stance the eye is 0.5 m from the face, so a hand 0.45 m short of it sat 0.06-0.11 m
+        // from the eye, and the eye-to-hand reach the probe casts along (PhysicalInteraction.CastHold) swung off the
+        // wall with any head drift (run 1: probe None, hit False). A player reaches from an arm's length out.
+        yield return ToWall(back: 0.3f);
         if (!wallReady)
             yield break;
         var rig = VRRig.Instance;
