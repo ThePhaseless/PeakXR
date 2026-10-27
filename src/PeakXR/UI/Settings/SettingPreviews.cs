@@ -91,8 +91,16 @@ internal sealed class RowHover : MonoBehaviour, IPointerEnterHandler, IPointerEx
 /// </summary>
 internal sealed class PreviewStage : MonoBehaviour
 {
-    private const float CardWidth = 560f;
+    private const float CardWidth = 760f;
+
+    /// <summary>Least card height; a longer description grows it (<see cref="cardHeight"/>).</summary>
     private const float CardHeight = 320f;
+
+    private float cardHeight = CardHeight;
+    private PanelPlate cardPlate;
+
+    /// <summary>The info card while one shows (self-test framing).</summary>
+    internal Transform Card => card != null && card.activeSelf ? card.transform : null;
     private const float LineWidth = 0.004f;
     private const float SnapStepSeconds = 0.6f;
     private const float PreviewFade = 0.6f;
@@ -334,7 +342,10 @@ internal sealed class PreviewStage : MonoBehaviour
             text.font = label.font;
             tagText.font = label.font;
         }
-        // No card behind the text: an outline keeps it readable against the world.
+        // The rows' own text size, in the same units (the card is drawn at the row's scale): run 6's 28 read as small
+        // print beside the restyled rows.
+        if (label != null)
+            text.fontSize = Mathf.Clamp(label.fontSize, 28f, 72f);
         TextHalo.Apply(text);
         var def = entry.Definition;
         var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
@@ -345,8 +356,14 @@ internal sealed class PreviewStage : MonoBehaviour
             $"<uppercase>{SettingsRows.Prettify(def.Key)}</uppercase>   {value}\n"
             + $"<size=80%>{NoParse(entry.Description?.Description)}</size>"
             + (note != null ? $"\n<size=80%><color=#FF7575>{note}</color></size>" : "");
-        // The turn dial takes the lower part of the card.
-        cardText.offsetMin = new Vector2(24f, kind == PreviewKind.Turn ? CardHeight * 0.5f : 20f);
+        // The turn dial takes the lower part of the card; the card grows to fit the text above it.
+        float dial = kind == PreviewKind.Turn ? CardHeight * 0.5f : 20f;
+        cardHeight = Mathf.Max(
+            CardHeight,
+            text.GetPreferredValues(text.text, CardWidth - 48f, 0f).y + dial + 20f
+        );
+        ((RectTransform)card.transform).sizeDelta = new Vector2(CardWidth, cardHeight);
+        cardText.offsetMin = new Vector2(24f, dial);
     }
 
     /// <summary>Config text is shown as typed: a '&lt;' in a value or description is not a TMP tag.</summary>
@@ -463,6 +480,18 @@ internal sealed class PreviewStage : MonoBehaviour
         }
         var t = card.transform;
         t.SetPositionAndRotation(at - row.forward * 0.002f, row.rotation);
+        // The VR tab's own panel plate (as its column and rail), at the column's scale within the window so its
+        // margin and corners match theirs.
+        if (cardPlate == null)
+        {
+            var inside = row.GetComponentInParent<Canvas>();
+            var window = inside != null ? inside.rootCanvas : null;
+            float windowScale = window != null ? window.transform.lossyScale.x : mpp;
+            cardPlate = PanelPlate.Add(
+                (RectTransform)card.transform,
+                mpp / Mathf.Max(windowScale, 1e-6f)
+            );
+        }
         t.localScale = new Vector3(mpp, mpp, mpp);
         cardGroup.alpha = alpha;
         if (!card.activeSelf)
@@ -577,7 +606,8 @@ internal sealed class PreviewStage : MonoBehaviour
         var mpp = t.localScale.x;
         var up = t.up;
         var side = t.right;
-        var center = t.position - up * (CardHeight * 0.22f * mpp) - t.forward * 0.004f;
+        var center =
+            t.position - up * ((cardHeight * 0.5f - CardHeight * 0.28f) * mpp) - t.forward * 0.004f;
         var radius = CardHeight * 0.2f * mpp;
         for (int i = 0; i < 32; i++)
         {
@@ -711,7 +741,7 @@ internal sealed class PreviewStage : MonoBehaviour
     private void DrawTag(Transform head, float alpha)
     {
         var t = card.transform;
-        var position = t.position + t.up * (CardHeight * 0.5f * t.localScale.x + 0.08f);
+        var position = t.position + t.up * (cardHeight * 0.5f * t.localScale.x + 0.08f);
         var toTag = position - head.position;
         var distance = Mathf.Max(0.01f, toTag.magnitude);
         var size =

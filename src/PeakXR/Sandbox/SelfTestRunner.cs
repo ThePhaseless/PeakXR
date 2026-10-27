@@ -412,13 +412,13 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             var row = SettingPreviews.CellOf(hovered);
             if (row != null)
             {
-                VRTabGrid.RowOuterEdge(
-                    (RectTransform)row.transform,
-                    edgeCorners,
-                    out var edge,
-                    out _
+                // Framed on the row and its preview card together; the row's edge alone cut the panel off.
+                var card = PreviewStage.Instance.Card;
+                var rowCentre = CentreOf(row.transform);
+                yield return ShotAt(
+                    "02-settings-vr-preview",
+                    card != null ? Vector3.Lerp(rowCentre, CentreOf(card), 0.5f) : rowCentre
                 );
-                yield return ShotAt("02-settings-vr-preview", edge);
             }
             PreviewStage.Instance.HoverExit(hovered);
         }
