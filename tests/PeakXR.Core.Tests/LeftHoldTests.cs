@@ -108,6 +108,72 @@ public class LeftHoldTests
     }
 
     [Fact]
+    public void Choose_RejectsAPlaneThatTurnsTheFarEndRound()
+    {
+        // The checkpoint flag in the headset (vr.244): the colliders read it nearly as even across x as across z, and
+        // the x plane put its pole's far end on the other side of the fist.
+        Assert.Equal(
+            LeftPlane.CentreZ,
+            LeftHold.Choose(
+                0.22f,
+                0.33f,
+                0.4f,
+                0.04f,
+                0.031f,
+                false,
+                xTurns: true,
+                originTurns: true
+            )
+        );
+        // Even across the plane, turning it round shows the same item: allowed.
+        Assert.Equal(
+            LeftPlane.CentreX,
+            LeftHold.Choose(
+                0.05f,
+                0.25f,
+                0.3f,
+                0.01f,
+                0.03f,
+                false,
+                xTurns: true,
+                originTurns: true
+            )
+        );
+        // Every plane turns it and none is even: the plain mirror, as before.
+        Assert.Equal(
+            LeftPlane.Origin,
+            LeftHold.Choose(0.05f, 0.25f, 0.3f, 0.2f, 0.1f, false, true, true, true)
+        );
+    }
+
+    [Fact]
+    public void Choose_LeavesThePlainMirror_WhenItTurnsAnUnevenItemRound()
+    {
+        // The palm stays on, but the item lies the other way round: the z plane keeps it.
+        Assert.Equal(
+            LeftPlane.CentreZ,
+            LeftHold.Choose(0.05f, 0.05f, 0.3f, 0.2f, 0.01f, false, originTurns: true, xTurns: true)
+        );
+        // Even across x = 0 (a ball): turning it round shows the same thing.
+        Assert.Equal(
+            LeftPlane.Origin,
+            LeftHold.Choose(0.05f, 0.05f, 0.01f, 0.2f, 0.3f, false, originTurns: true)
+        );
+    }
+
+    [Fact]
+    public void TurnsEnd_WhenTheReflectedFarEndCrossesTheGrip()
+    {
+        // The flag: pole along x, grip near one end, far end at the other.
+        var centre = new Vector3(0.46f, 0.23f, 0.08f);
+        var grip = new Vector3(0.19f, 0.19f, -0.09f);
+        var end = new Vector3(1.15f, 0.23f, 0.08f);
+        Assert.True(LeftHold.TurnsEnd(LeftPlane.CentreX, centre, grip, end));
+        Assert.True(LeftHold.TurnsEnd(LeftPlane.Origin, centre, grip, end));
+        Assert.False(LeftHold.TurnsEnd(LeftPlane.CentreZ, centre, grip, end));
+    }
+
+    [Fact]
     public void Asymmetry_IsZeroForAMirrorPair_AndScalesWithSize()
     {
         var d = new[] { 0.1f, 0.2f, 0.3f };

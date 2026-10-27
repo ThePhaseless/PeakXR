@@ -76,6 +76,25 @@ internal sealed class ItemHoldInfo
     /// <summary>The plane the bound item's left hold mirrors across (self-test notes).</summary>
     internal LeftPlane LeftPlaneUsed => item != null ? Left().Plane : LeftPlane.Origin;
 
+    /// <summary>The left hold turns the bound item's far end round: only across a plane the item is even about, where
+    /// that end looks the same as the other (self-test vr.244 skips its far-end check then).</summary>
+    internal bool LeftTurnsEnd
+    {
+        get
+        {
+            if (item == null || GripRight == null)
+                return false;
+            ref readonly var left = ref Left();
+            var grip = GripRight.localPosition.N();
+            return LeftHold.TurnsEnd(
+                left.Plane,
+                left.Centre.N(),
+                grip,
+                HeldItemShape.FarEnd(BoundsMin.N(), BoundsMax.N(), grip)
+            );
+        }
+    }
+
     /// <summary>The holding hand's grip in the item frame for this hold: the pivot the item is drawn smaller
     /// about.</summary>
     public Vector3 HoldPivot(bool primaryLeft) =>
@@ -195,13 +214,21 @@ internal sealed class ItemHoldInfo
                 reflectedGaps[i] = Gap(LeftHold.Reflect(probes[i], plane, centre).U(), out _);
             return LeftHold.Asymmetry(probeGaps, reflectedGaps, longest);
         }
+        // The far end along the longest side, away from the grip: a plane that turns it round is out (vr.244: the
+        // colliders read the checkpoint flag nearly as even across x as across z, and the x plane put its pole's far
+        // end behind the fist).
+        var grip = GripRight.localPosition.N();
+        var end = HeldItemShape.FarEnd(BoundsMin.N(), BoundsMax.N(), grip);
         fit.Plane = LeftHold.Choose(
             rightGap,
             plainGap,
             Asym(LeftPlane.Origin),
             Asym(LeftPlane.CentreX),
             Asym(LeftPlane.CentreZ),
-            Aimed
+            Aimed,
+            LeftHold.TurnsEnd(LeftPlane.Origin, centre, grip, end),
+            LeftHold.TurnsEnd(LeftPlane.CentreX, centre, grip, end),
+            LeftHold.TurnsEnd(LeftPlane.CentreZ, centre, grip, end)
         );
         fit.Centre = centre.U();
         fit.Shift = ShiftFor(palm, rightGap, fit.Plane, centre);

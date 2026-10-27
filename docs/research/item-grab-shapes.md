@@ -62,10 +62,13 @@ Findings:
 
 The rule (Core `LeftHold`, cached per item id by `ItemHoldInfo`):
 
-1. Keep the plain mirror while the left palm (the preview hand's centre) stays within 1 cm of the right palm's distance to the item.
-2. Otherwise mirror across the plane the item is most nearly symmetric about: x = 0, x through the drawn centre (an item drawn off its pivot sideways, like Shell Big), or z through the drawn centre. The z plane is the item turned half round its up axis, for the flag, skewers, firewood and the Berrynana. Planes are tried in that order, within 2% of the longest side of the best. A launcher never takes the z plane, because that would turn its barrel back.
-3. Then shift each grip toward the item until its palm is as far from it as in the right hold.
+1. A plane is ruled out if it puts the item's far end on the other side of the grip, unless the item is even across that plane. The far end is the end of the longest side away from the grip. Ruling it out keeps a flag's pole pointing past the fist, not back along the arm.
+2. Keep the plain mirror while the left palm (the preview hand's centre) stays within 1 cm of the right palm's distance to the item, and the plain mirror isn't ruled out.
+3. Otherwise mirror across the plane the item is most nearly symmetric about: x = 0, x through the drawn centre (an item drawn off its pivot sideways), or z through the drawn centre. The z plane is the item turned half round its up axis, for the flag, skewers, firewood, Shell Big and the Berrynana. Planes are tried in that order, within 2% of the longest side of the best. A launcher never takes the z plane, because that would turn its barrel back. If every plane is ruled out, the plain mirror stays.
+4. Then shift each grip toward the item until its palm is as far from it as in the right hold.
 
-Meshes aren't readable at runtime: only 6 of the 346 meshes in `resources.assets` have Read/Write. So the runtime measures against the item's colliders with `Collider.ClosestPoint`, once they are solid in the hand (Item.cs:779), and the symmetry from 26 probes around the drawn box. Checked against the real meshes, this leaves one item off by more than 2 cm: RitualDagger's second grip, 2.9 cm, and the game's own `Hand_L` there is already 35 cm off the dagger. Plane counts: 177 Origin, 6 CentreX, 9 CentreZ. 60 items get a shift of up to 0.14 m.
+Meshes aren't readable at runtime: only 6 of the 346 meshes in `resources.assets` have Read/Write. So the runtime measures against the item's colliders with `Collider.ClosestPoint`, once they are solid in the hand (Item.cs:779), and the symmetry from 26 probes around the drawn box. Checked against the real meshes, this leaves one item off by more than 2 cm: RitualDagger's second grip, 2.9 cm, and the game's own `Hand_L` there is already 35 cm off the dagger. Plane counts: 166 Origin, 7 CentreX, 19 CentreZ. 62 items get a shift of up to 0.18 m.
 
-Self-test `vr.244-left-hold` checks this in the game: it holds the flagged items and three symmetric controls in each hand.
+The probe symmetry and the mesh symmetry can disagree near the 2% margin. In the headset the colliders read the checkpoint flag as nearly as even across x as across z, so the runtime took the x plane, and the pole pointed back past the fist in the left hand. The far-end rule closes that case, whichever plane the probes prefer.
+
+Self-test `vr.244-left-hold` checks this in the game: it holds the flagged items and three symmetric controls in each hand, judges every item and fails at the end with all those that failed.
