@@ -875,7 +875,7 @@ internal sealed partial class SelfTestRunner
             // A held item that does not follow its hand cannot be brought anywhere: say so instead of a fuse miss.
             Fail(
                 F(
-                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldItemFree}); the held item does not follow a stooped hand"
+                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldReleased}); the held item does not follow a stooped hand"
                 )
             );
             yield break;

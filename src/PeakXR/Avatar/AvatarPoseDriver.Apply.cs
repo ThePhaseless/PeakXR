@@ -117,9 +117,6 @@ public partial class AvatarPoseDriver
     /// not hand-carried. Read by the self-test (vr.87).</summary>
     internal float HeldItemGap { get; private set; } = -1f;
 
-    /// <summary>The local held item currently follows the controller free of the ragdoll hand.</summary>
-    internal bool HeldItemFree => weldGate.Released;
-
     /// <summary>The free item whose colliders ignore this body's, and those colliders (local physics only).</summary>
     private Item passItem;
     private Collider[] passItemColliders;
@@ -142,9 +139,6 @@ public partial class AvatarPoseDriver
                 d.currentRagdollControll
             );
     }
-
-    /// <summary>True when the rig has finger bones that the driver can curl.</summary>
-    public bool HasFingerBones => rigReady && (leftRig.HasFingers || rightRig.HasFingers);
 
     private Character Owner =>
         Character != null ? Character : (Character = GetComponent<Character>());
@@ -182,7 +176,7 @@ public partial class AvatarPoseDriver
                 $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}, physics step {Time.fixedDeltaTime * 1000f:0.0} ms"
             );
         SplitForLegShift(c.refs.ragdoll.partList);
-        if (c.IsLocal && PeakXR.VR.VRSession.Active)
+        if (c.IsLocal)
             ArmsPastHead(parts);
         bodyFrame = c.refs.rigCreator != null ? c.refs.rigCreator.transform : c.transform;
         if (c.refs.ikLeft != null)
@@ -204,16 +198,14 @@ public partial class AvatarPoseDriver
     /// The local VR player's arms pass beside the scout's oversized head instead of bumping it. A controller raised
     /// overhead puts the upper arm about 16 cm from the head's centre, inside the scout's head collider, so the ragdoll
     /// arm was shoved 12-15 degrees off its target and the hand landed 15 cm short (run 48, vr.08), though a person's
-    /// head never blocks that reach. Local physics only: peers see the network pose.
+    /// head never blocks that reach. Local physics only: peers see the network pose. Only while VR runs
+    /// (<see cref="LateUpdate"/> follows the session).
     /// </summary>
-    private static void ArmsPastHead(
-        System.Collections.Generic.Dictionary<BodypartType, Bodypart> parts
-    )
+    private void ArmsPastHead(System.Collections.Generic.Dictionary<BodypartType, Bodypart> parts)
     {
         if (!parts.TryGetValue(BodypartType.Head, out var headPart))
             return;
         var headColliders = headPart.GetComponentsInChildren<Collider>();
-        int pairs = 0;
         foreach (var side in ArmRoots)
         {
             if (!parts.TryGetValue(side, out var arm))
@@ -224,14 +216,31 @@ public partial class AvatarPoseDriver
                     continue;
                 foreach (var h in headColliders)
                 {
-                    if (h.isTrigger || h == a)
-                        continue;
-                    Physics.IgnoreCollision(a, h);
-                    pairs++;
+                    if (!h.isTrigger && h != a)
+                        headPairs.Add((a, h));
                 }
             }
         }
-        Plugin.Log.LogInfo($"[avatar.local] arms pass the head: {pairs} collider pairs ignored");
+        SetArmsPastHead(PeakXR.VR.VRSession.Active);
+        Plugin.Log.LogInfo(
+            $"[avatar.local] arms pass the head while in VR: {headPairs.Count} collider pairs"
+        );
+    }
+
+    /// <summary>The arm and head collider pairs <see cref="ArmsPastHead"/> ignores: a flat body bumps its head again
+    /// once VR stops.</summary>
+    private readonly System.Collections.Generic.List<(Collider arm, Collider head)> headPairs =
+        new();
+    private bool armsPastHeadOn;
+
+    private void SetArmsPastHead(bool ignore)
+    {
+        armsPastHeadOn = ignore;
+        foreach (var (a, h) in headPairs)
+        {
+            if (a != null && h != null)
+                Physics.IgnoreCollision(a, h, ignore);
+        }
     }
 
     /// <summary>The upper arms: their children carry the elbows and hands.</summary>
@@ -404,6 +413,8 @@ public partial class AvatarPoseDriver
     private void LateUpdate()
     {
         var c = Owner;
+        if (headPairs.Count > 0 && armsPastHeadOn != PeakXR.VR.VRSession.Active)
+            SetArmsPastHead(PeakXR.VR.VRSession.Active);
         if (HasFreshPose && c != null)
             armBlend.Update(ArmsTracked(c), Time.deltaTime);
         else
@@ -1102,6 +1113,7 @@ public partial class AvatarPoseDriver
         if (
             item == null
             || item.rig == null
+            || armBlend.Weight <= 0f
             || !TryGetItemWorldPose(out var target, out var targetRot)
         )
         {
@@ -1179,7 +1191,7 @@ public partial class AvatarPoseDriver
             // Welded or free, the held item passes through its holder's body: crouched at a stoop, a welded apple
             // met the knees and held the hand 0.31 m off its controller while the free one, already passing the
             // body, let the same arm reach 0.12 m (vr65-66 vr.230).
-            if (!ReferenceEquals(passItem, item))
+            if (!ReferenceEquals(passItem, item) && EquipSettled)
             {
                 PassBody(item);
                 Plugin.Log.LogInfo(
@@ -1206,8 +1218,9 @@ public partial class AvatarPoseDriver
             DestroyItemJoint();
             DestroyHandJoint(BodypartType.Hand_L, body);
             DestroyHandJoint(BodypartType.Hand_R, body);
-            PassBody(item);
         }
+        if (!ReferenceEquals(passItem, item) && EquipSettled)
+            PassBody(item);
         var handVelocity = haveLastTarget && dt > 0f ? (target - lastTarget) / dt : Vector3.zero;
         lastTarget = target;
         haveLastTarget = true;
@@ -1244,6 +1257,10 @@ public partial class AvatarPoseDriver
         }
         return true;
     }
+
+    /// <summary>The equip has re-enabled the item's colliders (CharacterItems.cs:612-631, sinceItemAttach reset at
+    /// :617): ignore pairs set while they are disabled are dropped by the physics engine.</summary>
+    private bool EquipSettled => Owner.data.sinceItemAttach > AttachSettle;
 
     /// <summary>
     /// A held item, welded or free, passes through its holder's own body, as a real hand carries a torch past its own

@@ -32,9 +32,6 @@ internal static class StereoWidth
     private static Action<XRPass, int, Matrix4x4, Matrix4x4> setView;
     private static readonly Dictionary<int, Matrix4x4> lastCenter = new();
 
-    /// <summary>The eye separation follows the rig scale (false: real IPD, see the log).</summary>
-    internal static bool Working => working;
-
     internal static void Install()
     {
         if (tried)

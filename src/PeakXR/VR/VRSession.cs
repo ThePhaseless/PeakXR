@@ -41,13 +41,21 @@ public static class VRSession
         var handlers = active ? Started : Stopped;
         if (handlers == null)
             return;
-        // One handler at a time with a line before each, so a native crash in one is attributable.
+        // One handler at a time with a line before each, so a native crash in one is attributable; a throwing
+        // handler must not skip the later ones (rig, render, input restore).
         foreach (Action handler in handlers.GetInvocationList())
         {
-            Plugin.Log.LogDebug(
-                $"VRSession.{(active ? "Started" : "Stopped")} -> {handler.Method.DeclaringType?.FullName}.{handler.Method.Name}"
-            );
-            handler();
+            var name =
+                $"VRSession.{(active ? "Started" : "Stopped")} -> {handler.Method.DeclaringType?.FullName}.{handler.Method.Name}";
+            Plugin.Log.LogDebug(name);
+            try
+            {
+                handler();
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError($"{name} threw: {e}");
+            }
         }
     }
 

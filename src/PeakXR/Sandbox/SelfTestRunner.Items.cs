@@ -255,7 +255,7 @@ internal sealed partial class SelfTestRunner
                     Second = info.HoldGap(left, false),
                     // Welded, the hand body is on the grip; free of the weld it follows the controller instead.
                     HandOff =
-                        driver != null && !driver.HeldItemFree
+                        driver != null && !driver.HeldReleased
                             ? Vector3.Distance(body.position, grip)
                             : float.NaN,
                     MidIn = Vector3.Dot(mid - hand.position, head.right) * inward,
