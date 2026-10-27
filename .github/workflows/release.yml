@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag matches <Version>
+        run: |
+          version="$(grep -m1 -oP '(?<=<Version>)[^<]+' Directory.Build.props)"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match <Version>$version</Version> in Directory.Build.props (expected v$version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - uses: jdx/mise-action@v5
+      - uses: actions/cache@v6
+        with:
+          path: deps/cache
+          key: xr-deps-${{ hashFiles('tools/fetch-xr-deps.sh') }}
+      - run: mise run format-check
+      - run: mise run build
+      - run: mise run test
+      - run: mise run package
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" "dist/PeakXR-$VERSION.zip"
+          --title "PeakXR $VERSION" --generate-notes --verify-tag
