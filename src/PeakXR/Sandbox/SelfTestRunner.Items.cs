@@ -384,11 +384,30 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.245 screenshots these in each hand.</summary>
     static readonly string[] FrontShots = { "BingBong", "Compass" };
 
+    /// <summary>vr.245: the least dot between a held item's front and the way from its middle to the eyes.</summary>
+    const float FrontMinFacing = 0.9f;
+
     /// <summary>
-    /// vr.245: each front item, held up before the face in the left hand and then the right (<see cref="RaiseHeld"/>),
+    /// The natural hold of Core <see cref="ItemFront"/>: the fist 0.45 m (<see cref="ItemFront.ViewDistance"/>) before
+    /// the eyes, a little low and to its own side, turned so <see cref="ItemFront.EyeInGrip"/> runs from it to the
+    /// eyes with the thumb end up (<see cref="ItemFront.NaturalGrip"/>). MoveTrack aims the scripted hand away from the
+    /// head as it goes (SetHand), so the rotation is set once it arrives.
+    /// </summary>
+    IEnumerator HoldNaturally(bool left)
+    {
+        HeadFrame(out var eyes, out var forward, out var right);
+        float side = left ? -1f : 1f;
+        var toEyes = (-0.9f * forward + 0.33f * Vector3.up - 0.2f * side * right).normalized;
+        yield return MoveTrack(left, eyes - toEyes * ItemFront.ViewDistance, 0.4f);
+        Script(left).Rotation = ItemFront.NaturalGrip(toEyes.N(), Vector3.up.N(), left).U();
+        yield return Wait(0.4f);
+    }
+
+    /// <summary>
+    /// vr.245: each front item, held in the natural hold in the left hand and then the right (<see cref="HoldNaturally"/>),
     /// shows its front to the eyes: the front (Core <see cref="ItemFront"/>, turned in AvatarPoseDriver.ItemInController)
-    /// as drawn has a positive dot with the way from the item's middle to the eyes. One log line per item and hand; the
-    /// step fails at the end with every item that failed.
+    /// as drawn has a dot of at least <see cref="FrontMinFacing"/> with the way from the item's middle to the eyes. One
+    /// log line per item and hand; the step fails at the end with every item that failed.
     /// </summary>
     IEnumerator ItemFrontStep()
     {
@@ -434,7 +453,7 @@ internal sealed partial class SelfTestRunner
                 }
                 var rest = Script(left).Position;
                 var middle = (info.BoundsMin + info.BoundsMax) * 0.5f;
-                yield return RaiseHeld(item, left, middle);
+                yield return HoldNaturally(left);
                 HeldItemPoints.World(item, rig.Hand(left), left, middle, out var mid);
                 HeldItemPoints.World(
                     item,
@@ -450,8 +469,8 @@ internal sealed partial class SelfTestRunner
                 );
                 Plugin.Log.LogInfo("[selftest] vr.245 " + line);
                 notes.Add(line);
-                if (facing <= 0f)
-                    failures.Add($"{itemName} shows the player its back: {line}");
+                if (facing < FrontMinFacing)
+                    failures.Add($"{itemName} does not face the eyes: {line}");
                 if (Array.IndexOf(FrontShots, itemName) >= 0)
                     yield return ShotAt(
                         $"vr-245-{itemName.Replace(' ', '-')}-{hand}",

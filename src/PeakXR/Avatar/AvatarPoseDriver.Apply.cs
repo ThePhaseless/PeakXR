@@ -1568,16 +1568,19 @@ public partial class AvatarPoseDriver
         }
         if (hold.HasFront)
         {
-            // Its face, dial or cover turned toward the eyes of a hand held up to look at it, about the grip-to-middle
-            // line so the item stays in the palm (Core ItemFront). Fixed per item and hand: no swimming as the wrist
-            // turns, and peers running the mod draw the same.
+            // Its face, dial or cover turned toward the eyes of a hand held up to look at it: a spin about the
+            // grip-to-middle line, then a bounded tilt about the grip, the hand staying on the grip (Core ItemFront).
+            // Fixed per item and hand: no swimming as the wrist turns. Aimed from where the middle is drawn
+            // (HeldItemScale shrinks only the local player's own item), so peers' holds differ by a few degrees at most.
             ItemFront.Turn(
                 pos.N(),
                 rot.N(),
                 hold.HoldPivot(rig.IsLeft).N(),
                 ((hold.BoundsMin + hold.BoundsMax) * 0.5f).N(),
+                HeldItemScale.Factor(item),
                 hold.Front.N(),
-                ItemFront.EyeInGrip(rig.IsLeft),
+                ItemFront.EyePoint(rig.IsLeft),
+                ItemFront.MaxTilt,
                 out var tp,
                 out var tr
             );
