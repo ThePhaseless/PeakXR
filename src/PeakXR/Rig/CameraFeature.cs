@@ -183,7 +183,6 @@ public sealed class CameraFeature : Feature
 
         CameraPatches.Resolve();
         Patch(typeof(CameraPatches.MovementLateUpdate));
-        Patch(typeof(CameraPatches.ShakeRotation));
 
         VRSession.Started += RigDriver.OnVRStarted;
         VRSession.Stopped += RigDriver.OnVRStopped;

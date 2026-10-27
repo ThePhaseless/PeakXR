@@ -51,8 +51,9 @@ internal static class CameraPatches
     /// MainCameraMovement.LateUpdate (MainCameraMovement.cs:61, [DefaultExecutionOrder(500)]). In VR the whole
     /// method still runs, so its side effects stay (spectate selection and switching at :175, ghost spawn and
     /// retarget at :141-152, spectate zoom data, StopSpectating ghost cleanup, god cam reset), but the pose
-    /// and FOV it writes (CharacterCam :272, Spectate :154-172, OverrideCam :309, ragdoll roll :283-297) are
-    /// put back afterwards. The rig then places the camera at the HMD.
+    /// and FOV it writes (CharacterCam :272, Spectate :154-172, OverrideCam :309, ragdoll roll and the
+    /// GamefeelHandler.GetRotation shake :283-297, god cam's shake GodCam.cs:152 via :66) are put back afterwards.
+    /// The rig then places the camera at the HMD.
     /// </summary>
     [HarmonyPatch]
     internal static class MovementLateUpdate
@@ -83,25 +84,6 @@ internal static class CameraPatches
             var cam = main != null ? Cam(main) : null;
             if (cam != null && __state.Fov > 0f)
                 cam.fieldOfView = __state.Fov;
-        }
-    }
-
-    /// <summary>
-    /// GamefeelHandler.GetRotation (GamefeelHandler.cs:26): the summed spring and Perlin shake angles that
-    /// MainCameraMovement.cs:297 adds to the view. Zero in VR: the view only moves with the head.
-    /// </summary>
-    [HarmonyPatch]
-    internal static class ShakeRotation
-    {
-        private static MethodBase TargetMethod() =>
-            GameMember.Method(typeof(GamefeelHandler), nameof(GamefeelHandler.GetRotation));
-
-        private static bool Prefix(ref Vector3 __result)
-        {
-            if (!VRSession.Active)
-                return true;
-            __result = Vector3.zero;
-            return false;
         }
     }
 }

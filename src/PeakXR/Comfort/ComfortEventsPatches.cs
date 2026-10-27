@@ -52,7 +52,8 @@ internal static class ComfortEventsPatches
     /// PerlinShake.AddShake(float, float, float) (PerlinShake.cs:28): every camera shake ends here
     /// (GamefeelHandler.AddPerlinShake :46 and AddPerlinShakeProximity :56, the Vector3 overload :38; rows IC-13,
     /// IC-35, CH-16, CH-21, ST-07, ST-09, ST-12, EN-07, EN-17, EN-23, EN-25, EN-43, EN-49, EN-52, EN-56). Its
-    /// rotation is already zeroed by rig.camera (GamefeelHandler.GetRotation); here it becomes a comfort cue.
+    /// rotation never reaches the headset (rig.camera puts back the pose MainCameraMovement.LateUpdate writes, shake
+    /// included); here it becomes a comfort cue.
     /// </summary>
     [HarmonyPatch]
     internal static class Shake
