@@ -9,10 +9,10 @@ namespace PeakXR.Sandbox;
 
 /// <summary>
 /// <c>vr.08b-hand-scale</c>: the own hands drawn at <c>Avatar.HandScale</c>'s default and at the game's size (1), a
-/// screenshot of each. The right hand is measured as drawn: the body mesh's hand vertices (thumb left out) skinned
-/// here the way the GPU skins them, from the bones the mesh draws and its bind poses, for the width along the
-/// index-to-pinky line, the thickness across the palm and the length from the drawn wrist. Run 1 baked the mesh
-/// instead and read the Scout transform's x0.33 twice (7.7 cm at game size against 18-26 cm offline). It fails when
+/// screenshot of each. The right hand is measured as drawn: the body mesh baked as it renders, its hand vertices
+/// (thumb left out) found by their nearest drawn bone, for the width along the index-to-pinky line, the thickness
+/// across the palm and the length from the drawn wrist. Run 1 read the bake through the Scout transform's x0.33
+/// twice (7.7 cm at game size against 18-26 cm offline); the bake's frame is now checked against the bones. It fails when
 /// the width ratio is off the setting, when the game-size width is outside the measured prefab's range (a units
 /// slip), when the drawn wrist parts from the drawn forearm, or when the physical hands sit differently at the two
 /// settings (drawing must never move the ragdoll). The setting is put back afterwards.
@@ -158,10 +158,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// The <paramref name="left"/> hand as drawn this frame: its body-mesh vertices (dominant bone the hand or
-    /// under it, thumb left out) skinned from the bones the mesh draws now (the proxies while drawn smaller) and
-    /// the bind poses, the GPU's own sum. Width along the index-to-pinky line (second joints: the knuckles share one
-    /// point), thickness across the palm, length from the drawn wrist down the hand.
+    /// The <paramref name="left"/> hand as drawn this frame: the body mesh baked as it renders (its source mesh is not
+    /// readable, run 2), each vertex given to its nearest drawn bone, and the hand's own (under the hand bone, the
+    /// thumb's outer joints left out; the thumb's root shares the palm's point) measured. Width along the
+    /// index-to-pinky line (second joints: the knuckles share one point), thickness across the palm, length from the
+    /// drawn wrist down the hand. Zero when the bake does not line up with the bones.
     /// </summary>
     static HandSize DrawnHandSize(Character c, bool left)
     {
@@ -182,8 +183,7 @@ internal sealed partial class SelfTestRunner
             else if (t.name.StartsWith("Pinky_1", StringComparison.Ordinal))
                 pinky = t;
         }
-        var mesh = skin.sharedMesh;
-        if (index == null || middle == null || pinky == null || mesh == null)
+        if (index == null || middle == null || pinky == null)
             return default;
         var across = (index.GetChild(0).position - pinky.GetChild(0).position).normalized;
         var along = Vector3
@@ -194,47 +194,85 @@ internal sealed partial class SelfTestRunner
 
         var real = DrawnHands.Bones(skin);
         var drawn = skin.bones;
-        var bind = mesh.bindposes;
-        var owned = new bool[real.Length];
-        var skinning = new Matrix4x4[drawn.Length];
-        for (int i = 0; i < real.Length && i < drawn.Length && i < bind.Length; i++)
+        var points = new Vector3[drawn.Length];
+        var owned = new bool[drawn.Length];
+        for (int i = 0; i < drawn.Length; i++)
         {
-            var b = real[i];
+            var b = i < real.Length ? real[i] : null;
+            points[i] = drawn[i] != null ? drawn[i].position : Vector3.positiveInfinity;
             owned[i] =
                 b != null
-                && (b == hand || b.IsChildOf(hand))
-                && !b.name.StartsWith("Thumb", StringComparison.Ordinal);
-            skinning[i] = drawn[i] != null ? drawn[i].localToWorldMatrix * bind[i] : Matrix4x4.zero;
+                && b != hand
+                && b.IsChildOf(hand)
+                && !(
+                    b.name.StartsWith("Thumb", StringComparison.Ordinal) && b.name.IndexOf('1') < 0
+                );
         }
-        var verts = mesh.vertices;
-        var weights = mesh.boneWeights;
-        Vector3 lo = Vector3.positiveInfinity,
-            hi = Vector3.negativeInfinity;
-        for (int v = 0; v < verts.Length && v < weights.Length; v++)
+        var baked = new Mesh();
+        try
         {
-            var w = weights[v];
-            if (w.boneIndex0 >= owned.Length || !owned[w.boneIndex0])
-                continue;
-            var p =
-                w.weight0 * skinning[w.boneIndex0].MultiplyPoint3x4(verts[v])
-                + w.weight1 * skinning[w.boneIndex1].MultiplyPoint3x4(verts[v])
-                + w.weight2 * skinning[w.boneIndex2].MultiplyPoint3x4(verts[v])
-                + w.weight3 * skinning[w.boneIndex3].MultiplyPoint3x4(verts[v]);
-            var d = new Vector3(
-                Vector3.Dot(p, across),
-                Vector3.Dot(p, palm),
-                Vector3.Dot(p - wrist, along)
-            );
-            lo = Vector3.Min(lo, d);
-            hi = Vector3.Max(hi, d);
+            skin.BakeMesh(baked, false);
+            var verts = baked.vertices;
+            // The bake's frame: the renderer's position and rotation, or its whole matrix (the Scout's x0.33 too).
+            // Run 1 took the whole matrix and read the hand at a third of its size; the frame whose vertices meet
+            // the drawn middle finger is the one the bake is in.
+            var tr = skin.transform;
+            var rigid = Matrix4x4.TRS(tr.position, tr.rotation, Vector3.one);
+            var full = tr.localToWorldMatrix;
+            var probe = DrawnHands.DrawnBone(middle.GetChild(0)).position;
+            float dRigid = NearestVertex(verts, rigid, probe);
+            float dFull = NearestVertex(verts, full, probe);
+            var toWorld = dRigid <= dFull ? rigid : full;
+            if (Mathf.Min(dRigid, dFull) > 0.1f)
+                return default;
+            Vector3 lo = Vector3.positiveInfinity,
+                hi = Vector3.negativeInfinity;
+            foreach (var v in verts)
+            {
+                var p = toWorld.MultiplyPoint3x4(v);
+                if ((p - wrist).sqrMagnitude > 0.25f)
+                    continue;
+                int best = -1;
+                float bestSq = float.PositiveInfinity;
+                for (int i = 0; i < points.Length; i++)
+                {
+                    float sq = (points[i] - p).sqrMagnitude;
+                    if (sq < bestSq)
+                    {
+                        bestSq = sq;
+                        best = i;
+                    }
+                }
+                if (best < 0 || !owned[best])
+                    continue;
+                var d = new Vector3(
+                    Vector3.Dot(p, across),
+                    Vector3.Dot(p, palm),
+                    Vector3.Dot(p - wrist, along)
+                );
+                lo = Vector3.Min(lo, d);
+                hi = Vector3.Max(hi, d);
+            }
+            if (hi.x < lo.x)
+                return default;
+            return new HandSize
+            {
+                Width = hi.x - lo.x,
+                Thickness = hi.y - lo.y,
+                Length = hi.z,
+            };
         }
-        if (hi.x < lo.x)
-            return default;
-        return new HandSize
+        finally
         {
-            Width = hi.x - lo.x,
-            Thickness = hi.y - lo.y,
-            Length = hi.z,
-        };
+            UnityEngine.Object.Destroy(baked);
+        }
+    }
+
+    static float NearestVertex(Vector3[] verts, Matrix4x4 toWorld, Vector3 point)
+    {
+        float best = float.PositiveInfinity;
+        foreach (var v in verts)
+            best = Mathf.Min(best, (toWorld.MultiplyPoint3x4(v) - point).sqrMagnitude);
+        return Mathf.Sqrt(best);
     }
 }
