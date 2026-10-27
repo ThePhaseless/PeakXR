@@ -110,7 +110,9 @@ internal static class ModalBellPatch
     /// <summary>Called every frame by ui.menu's runtime; does nothing unless a modal just opened.</summary>
     public static void Tick()
     {
-        if (pending == null)
+        // Open's ClearChildren destroys the previous modal's buttons only at frame end (Zorro.Core
+        // TransformExtensions.cs:56-61), and ui.world places the panel after this runs, so wait a frame.
+        if (pending == null || Time.frameCount == openedFrame)
             return;
         var canvas =
             pending.GetComponentInChildren<Canvas>(true) ?? pending.GetComponentInParent<Canvas>();
@@ -122,7 +124,10 @@ internal static class ModalBellPatch
             return;
         var button =
             pending.bodyParent != null ? pending.bodyParent.GetComponentInChildren<Button>() : null;
-        var at = button != null ? button.transform.position : pending.headerParent.position;
+        var at =
+            button != null ? button.transform.position
+            : pending.headerParent != null ? pending.headerParent.position
+            : pending.transform.position;
         pending = null;
         Affordance.Inform(
             LaserPointer.PressLeft,

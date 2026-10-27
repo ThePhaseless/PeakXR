@@ -55,7 +55,9 @@ internal sealed class LaserPointer
     /// <summary>The hand whose trigger made the last laser press, so a click handler can cue on that hand.</summary>
     public static bool PressLeft { get; private set; }
 
-    /// <summary>The control under the last laser press (null over none), for a refusal that tints it.</summary>
+    /// <summary>
+    /// The control under the laser press being handled (null over none or once released), for a refusal that tints it.
+    /// </summary>
     public static Selectable PressedControl { get; private set; }
 
     /// <summary>What the laser is over this frame (null over nothing) and from which hand, for self-test logs.</summary>
@@ -422,6 +424,8 @@ internal sealed class LaserPointer
             ExecuteEvents.Execute(data.pointerDrag, data, ExecuteEvents.endDragHandler);
         data.dragging = false;
         data.pointerDrag = null;
+        // The click has run; a later refusal (keyboard Cancel, a scripted click) must not tint this control.
+        PressedControl = null;
     }
 
     private void Cancel()
@@ -438,6 +442,7 @@ internal sealed class LaserPointer
         data.pointerClick = null;
         data.pointerDrag = null;
         data.dragging = false;
+        PressedControl = null;
         HandleEnterExit(null);
     }
 

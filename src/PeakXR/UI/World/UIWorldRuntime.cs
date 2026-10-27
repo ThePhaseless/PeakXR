@@ -29,6 +29,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
     private FadeSphere sphere;
     private VRRig sphereRig;
     private float rescanAt;
+    private bool relayVRTab;
 
     private Transitions transitions;
     private Transition[] transitionList = noTransitions;
@@ -75,7 +76,11 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         {
             Ready = ready;
             if (ready)
+            {
                 WorldCanvases.ConvertAll();
+                // Laid out for the headset once the menu stands in the world: the grid sizes rows in metres.
+                relayVRTab = true;
+            }
             else
             {
                 split.Restore();
@@ -89,6 +94,9 @@ internal sealed class UIWorldRuntime : MonoBehaviour
                 foreach (var renderer in transitionRenderers)
                     if (renderer != null)
                         renderer.forceRenderingOff = false;
+                // Back to the flat paged column; a rig lost while VR runs keeps the grid until it returns.
+                if (!VRSession.Active)
+                    Settings.VRTab.RelayIfShown();
             }
         }
         if (!Ready)
@@ -111,6 +119,11 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         var dt = Time.unscaledDeltaTime;
         hud.Update(rig.Head, cfg, dt);
         var interactive = WorldCanvases.Update(rig.Head, hud, cfg);
+        if (relayVRTab)
+        {
+            relayVRTab = false;
+            Settings.VRTab.RelayIfShown();
+        }
         backdrop.Tick(rig, cfg, dt);
         split.Sync(cfg, rig);
         split.PoseWrist(rig, cfg);
