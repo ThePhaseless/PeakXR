@@ -57,17 +57,20 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator VRStep(string id, float timeout, IEnumerator body)
     {
-        // A filtered run skips the wrapper's setup and teardown too, not only the step.
-        if (Filtered(id))
-            yield break;
-        if (!VRRun)
-            yield break;
-        if (!VRSession.Active)
-        {
-            Skip(id, "VR not active");
-            yield break;
-        }
-        yield return Run(id, timeout, body);
+        if (VRStepRuns(id))
+            yield return Run(id, timeout, body);
+    }
+
+    /// <summary>Whether a VR step runs at all; a filtered run skips the wrapper's setup and teardown too, not only
+    /// the step.</summary>
+    bool VRStepRuns(string id)
+    {
+        if (Filtered(id) || !VRRun)
+            return false;
+        if (VRSession.Active)
+            return true;
+        Skip(id, "VR not active");
+        return false;
     }
 
     /// <summary>vr.00: XR display running; what xr.bootstrap logs at activation (XRBootstrapDriver.Activate).</summary>

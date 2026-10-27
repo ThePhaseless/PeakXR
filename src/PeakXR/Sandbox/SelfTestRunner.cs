@@ -1278,6 +1278,31 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             QueryTriggerInteraction.Ignore
         );
 
+    /// <summary>Spawns the item named <paramref name="fragment"/> at <paramref name="at"/>, held still (kinematic) and
+    /// cleaned up after the step; null after a <see cref="Fail"/>.</summary>
+    Item SpawnTestItem(string fragment, Vector3 at)
+    {
+        var prefab = FindItem(SandboxActions.Items, fragment);
+        if (prefab == null || !SandboxActions.SpawnItemAt(prefab, at))
+        {
+            Fail(prefab == null ? $"no {fragment} item" : SandboxActions.LastMessage);
+            return null;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail($"spawned {fragment} has no Item");
+            return null;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        return world;
+    }
+
     static Item HeldItem()
     {
         var c = Character.localCharacter;

@@ -76,19 +76,16 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>One scripted-hands step: a clean start (empty hands and hotbar), the body, then a guarded teardown
     /// that lets go and clears the override whether the step passed, failed, threw or timed out.</summary>
-    IEnumerator HandStep(string id, float timeout, IEnumerator body)
+    IEnumerator HandStep(string id, float timeout, IEnumerator body) =>
+        ScriptedHandsStep(id, timeout, HandSetup(body));
+
+    /// <summary>The shared wrapper of <see cref="HandStep"/> and <see cref="PeakHandStep"/>: <paramref name="setup"/>
+    /// starts the hands and runs the body.</summary>
+    IEnumerator ScriptedHandsStep(string id, float timeout, IEnumerator setup)
     {
-        // A filtered run skips the wrapper's setup and teardown too, not only the step.
-        if (Filtered(id))
+        if (!VRStepRuns(id))
             yield break;
-        if (!VRRun)
-            yield break;
-        if (!VRSession.Active)
-        {
-            Skip(id, "VR not active");
-            yield break;
-        }
-        yield return Run(id, timeout, HandSetup(body));
+        yield return Run(id, timeout, setup);
         yield return Guard(
             HandsRelease(),
             Now + 5f,

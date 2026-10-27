@@ -1728,36 +1728,8 @@ internal sealed partial class SelfTestRunner
     /// vr.93 and vr.86 ran there, the latter ungrounded). Jumps to the Peak instead, whose landing the jump itself
     /// checks, then runs <paramref name="body"/> with the usual teardown.
     /// </summary>
-    IEnumerator PeakHandStep(string id, float timeout, IEnumerator body)
-    {
-        // A filtered run skips the wrapper's setup and teardown too, not only the step.
-        if (Filtered(id))
-            yield break;
-        if (!VRRun)
-            yield break;
-        if (!VRSession.Active)
-        {
-            Skip(id, "VR not active");
-            yield break;
-        }
-        yield return Run(id, timeout, PeakSetup(id, body));
-        yield return Guard(
-            HandsRelease(),
-            Now + 5f,
-            e =>
-                Plugin.Log.LogWarning(
-                    $"[selftest] {id} teardown: {(e == null ? "timeout" : e.Message)}"
-                )
-        );
-        EndHands();
-        ClosePause();
-        yield return Guard(DropHeld(), Now + 4f, _ => { });
-        yield return Wait(0.3f);
-        Safe("hands.despawn", Despawn);
-        Safe("hands.sweep", SweepNewItems);
-        Recover();
-        yield return Wait(0.5f);
-    }
+    IEnumerator PeakHandStep(string id, float timeout, IEnumerator body) =>
+        ScriptedHandsStep(id, timeout, PeakSetup(id, body));
 
     IEnumerator PeakSetup(string id, IEnumerator body)
     {
