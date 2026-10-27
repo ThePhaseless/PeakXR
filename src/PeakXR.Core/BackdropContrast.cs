@@ -41,7 +41,7 @@ public static class BackdropContrast
     public static float Approach(float current, float target, float dt)
     {
         float seconds = target > current ? DarkenSeconds : LightenSeconds;
-        float k = 1f - MathF.Exp(-3f * MathF.Max(dt, 0f) / seconds);
+        float k = ExpSmooth.Factor(3f / seconds, dt);
         return current + (target - current) * k;
     }
 

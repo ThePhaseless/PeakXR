@@ -75,7 +75,7 @@ namespace PeakXR.Core
                     MaxSideDeg
                 );
             var dir = up + MathF.Tan(pitch * Deg2Rad) * forward + MathF.Tan(roll * Deg2Rad) * right;
-            swing = FromTo(from, dir);
+            swing = GripMath.FromTo(from, dir);
             return true;
         }
 
@@ -120,23 +120,6 @@ namespace PeakXR.Core
             var flat = want - vertical;
             float len = flat.Length();
             return len <= WantDeadband ? vertical : vertical + flat * ((len - WantDeadband) / len);
-        }
-
-        /// <summary>Shortest rotation turning direction <paramref name="a"/> onto <paramref name="b"/>.</summary>
-        public static Quaternion FromTo(Vector3 a, Vector3 b)
-        {
-            float la = a.Length();
-            float lb = b.Length();
-            if (la < 1e-6f || lb < 1e-6f)
-                return Quaternion.Identity;
-            a /= la;
-            b /= lb;
-            var axis = Vector3.Cross(a, b);
-            float sin = axis.Length();
-            float cos = Vector3.Dot(a, b);
-            if (sin < 1e-6f)
-                return Quaternion.Identity; // parallel; an exact flip never happens within the limits
-            return Quaternion.CreateFromAxisAngle(axis / sin, MathF.Atan2(sin, cos));
         }
     }
 }

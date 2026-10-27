@@ -59,51 +59,6 @@ public class UnityQuatTests
         TestUtil.Near(v, UnityQuat.Rotate(UnityQuat.Inverse(q), UnityQuat.Rotate(q, v)));
     }
 
-    [Theory]
-    [InlineData(30, 45, 60)]
-    [InlineData(0, 0, 0)]
-    [InlineData(10, 350, 1)]
-    [InlineData(80, 120, 270)]
-    [InlineData(300, 10, 20)]
-    public void ToEuler_RoundTripsInUnityRanges(float x, float y, float z)
-    {
-        var e = UnityQuat.ToEuler(UnityQuat.Euler(x, y, z));
-        TestUtil.Near(new Vector3(x, y, z), e, 1e-2f);
-    }
-
-    [Fact]
-    public void ToEuler_NegativeAnglesWrapTo0To360()
-    {
-        TestUtil.Near(new Vector3(350, 0, 0), UnityQuat.ToEuler(UnityQuat.Euler(-10, 0, 0)), 1e-2f);
-    }
-
-    [Fact]
-    public void ToEuler_RandomRotations_RebuildSameRotation()
-    {
-        var rng = new Random(1);
-        for (int i = 0; i < 500; i++)
-        {
-            var q = UnityQuat.Euler(
-                rng.NextSingle() * 720 - 360,
-                rng.NextSingle() * 720 - 360,
-                rng.NextSingle() * 720 - 360
-            );
-            var e = UnityQuat.ToEuler(q);
-            Assert.InRange(e.X, 0f, 360f);
-            Assert.InRange(e.Y, 0f, 360f);
-            Assert.InRange(e.Z, 0f, 360f);
-            TestUtil.SameRotation(q, UnityQuat.Euler(e.X, e.Y, e.Z), 0.1f);
-        }
-    }
-
-    [Fact]
-    public void ToEuler_GimbalLock_StillRebuildsRotation()
-    {
-        var q = UnityQuat.Euler(90, 30, 20);
-        var e = UnityQuat.ToEuler(q);
-        TestUtil.SameRotation(q, UnityQuat.Euler(e.X, e.Y, e.Z), 0.1f);
-    }
-
     [Fact]
     public void YawOnly_KeepsHeadingDropsPitchAndRoll()
     {

@@ -11,6 +11,15 @@ public class LazyYawFollowTests
         };
 
     [Fact]
+    public void NegativeRate_NeverTurnsAwayFromTheHead()
+    {
+        var f = Make();
+        f.Rate = -4f;
+        f.Update(0f, 0.1f);
+        Assert.Equal(90f, f.Update(90f, 0.1f));
+    }
+
+    [Fact]
     public void FirstUpdate_SnapsToTarget()
     {
         var f = Make();

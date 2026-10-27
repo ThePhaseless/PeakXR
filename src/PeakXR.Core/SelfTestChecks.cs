@@ -51,15 +51,7 @@ namespace PeakXR.Core
         }
 
         /// <summary>Signed heading change from <paramref name="from"/> to <paramref name="to"/> in degrees, in (-180, 180].</summary>
-        public static float YawDelta(float from, float to)
-        {
-            float d = (to - from) % 360f;
-            if (d > 180f)
-                d -= 360f;
-            else if (d <= -180f)
-                d += 360f;
-            return d;
-        }
+        public static float YawDelta(float from, float to) => LookMath.WrapDegrees(to - from);
 
         /// <summary>
         /// Farthest a throw at <paramref name="speed"/> from <paramref name="height"/> above the landing spot can carry

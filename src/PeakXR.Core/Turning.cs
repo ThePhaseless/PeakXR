@@ -15,18 +15,22 @@ namespace PeakXR.Core
 
         bool _armed = true;
         float _timer;
+        int _sign;
 
         /// <summary>Returns the yaw delta in degrees for this frame (0 when no snap fires).</summary>
         public float Update(float stickX, float dt)
         {
             float mag = MathF.Abs(stickX);
-            if (_armed)
+            int sign = MathF.Sign(stickX);
+            // A flick straight to the other side is a fresh press even though the stick never centred.
+            if (_armed || (mag >= ActivateThreshold && sign != _sign))
             {
                 if (mag < ActivateThreshold)
                     return 0f;
                 _armed = false;
                 _timer = 0f;
-                return MathF.Sign(stickX) * Angle;
+                _sign = sign;
+                return sign * Angle;
             }
 
             if (mag < ReleaseThreshold)
@@ -35,14 +39,20 @@ namespace PeakXR.Core
                 return 0f;
             }
 
-            if (RepeatDelay <= 0f || mag < ActivateThreshold)
+            if (mag < ActivateThreshold)
+            {
+                // Eased off between the thresholds: the hold is over, the repeat delay starts again.
+                _timer = 0f;
+                return 0f;
+            }
+            if (RepeatDelay <= 0f)
                 return 0f;
             _timer += dt;
             // Small tolerance so that summed frame times hit the delay on the expected frame.
             if (_timer < RepeatDelay - 1e-5f)
                 return 0f;
             _timer -= RepeatDelay;
-            return MathF.Sign(stickX) * Angle;
+            return _sign * Angle;
         }
 
         public void Reset()

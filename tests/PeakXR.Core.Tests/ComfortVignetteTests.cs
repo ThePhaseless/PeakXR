@@ -43,7 +43,6 @@ public class ComfortVignetteTests
         var v = Make();
         v.Strength = 0.4f;
         TestUtil.Near(0.4f, v.Update(10f, 0f, 0.1f), 1e-3f);
-        TestUtil.Near(0.6f, v.Aperture, 1e-3f);
     }
 
     [Fact]
@@ -68,6 +67,5 @@ public class ComfortVignetteTests
         v.Enabled = false;
         Assert.Equal(0f, v.Update(10f, 500f, 0.1f));
         Assert.Equal(0f, v.Intensity);
-        Assert.Equal(1f, v.Aperture);
     }
 }

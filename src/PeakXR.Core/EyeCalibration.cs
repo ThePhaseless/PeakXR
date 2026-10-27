@@ -34,7 +34,8 @@ namespace PeakXR.Core
         {
             if (leaning)
                 return false;
-            Offset = Have || !snap ? Vector2.Lerp(Offset, sample, 1f - MathF.Exp(-dt)) : sample;
+            Offset =
+                Have || !snap ? Vector2.Lerp(Offset, sample, ExpSmooth.Factor(1f, dt)) : sample;
             Have = true;
             if (Vector2.Distance(Offset, sample) < ConvergedWithin)
                 Converged = true;

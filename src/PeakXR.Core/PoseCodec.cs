@@ -69,9 +69,6 @@ namespace PeakXR.Core
         const int FingersSize = 2 * FingerCurls.Count;
         public const int MaxSize = HeaderSize + 3 * PartSize + FingersSize;
 
-        /// <summary>Largest encodable position component, in metres.</summary>
-        public const float MaxPosition = 32.767f;
-
         const float InvSqrt2 = 0.70710678f;
         const int RotBits = 10;
         const int RotMax = (1 << RotBits) - 1;

@@ -203,7 +203,7 @@ public static class PracticeZones
 
     static readonly float[] Headings = { 0f, 30f, -30f, 60f, -60f, 90f, -90f, 135f, -135f, 180f };
 
-    public static int FallbackHeadings => Headings.Length;
+    internal static int FallbackHeadings => Headings.Length;
 
     /// <summary>Every heading at the zone's distance, then every heading again nearer.</summary>
     public static int FallbackAttempts => Headings.Length * 2;

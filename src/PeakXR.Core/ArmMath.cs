@@ -84,7 +84,7 @@ namespace PeakXR.Core
         }
 
         /// <summary>Unit direction of the elbow off the shoulder-hand line, or zero for a straight arm.</summary>
-        public static Vector3 BendDirection(Vector3 shoulder, Vector3 elbow, Vector3 hand)
+        internal static Vector3 BendDirection(Vector3 shoulder, Vector3 elbow, Vector3 hand)
         {
             var off = BendOffset(shoulder, elbow, hand);
             return off.LengthSquared() > 1e-8f ? Vector3.Normalize(off) : Vector3.Zero;
@@ -127,7 +127,8 @@ namespace PeakXR.Core
             float a = u.Length();
             float b = v.Length();
             float dist = st.Length();
-            if (a < 1e-5f || b < 1e-5f || dist < 1e-5f)
+            // A bone under 0.1 mm would cross the reach clamp's bounds below (|a - b| + 1e-4 > a + b - 1e-4).
+            if (a < 1e-4f || b < 1e-4f || dist < 1e-5f)
                 return;
             var n = Vector3.Cross(u, v);
             var straighten = Quaternion.Identity;
@@ -135,7 +136,7 @@ namespace PeakXR.Core
             // straighten the forearm and bend toward the hint instead, or a lean in flips the elbow up or back.
             if (n.Length() < StraightSin * a * b)
             {
-                straighten = BodyLean.FromTo(v, u);
+                straighten = GripMath.FromTo(v, u);
                 v = u * (b / a);
                 n = Vector3.Cross(hint - shoulder, u);
             }
@@ -148,7 +149,7 @@ namespace PeakXR.Core
             );
             float bend = System.MathF.Acos(System.Math.Clamp(Vector3.Dot(u, v) / (a * b), -1f, 1f));
             var open = Quaternion.CreateFromAxisAngle(n, System.MathF.PI - interior - bend);
-            var swing = BodyLean.FromTo(elbow + Vector3.Transform(v, open) - shoulder, st);
+            var swing = GripMath.FromTo(elbow + Vector3.Transform(v, open) - shoulder, st);
             upper = swing;
             lower = Quaternion.Multiply(swing, Quaternion.Multiply(open, straighten));
         }
