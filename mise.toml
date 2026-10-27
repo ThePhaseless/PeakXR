@@ -4,13 +4,16 @@ dotnet = "10"
 "dotnet:csharpier" = "1.3.0"
 # Thunderstore CLI; only used for future publishing (see thunderstore.toml)
 "dotnet:tcli" = "0.2.4"
+# Reference-only game assemblies in refs/peak/ (tools/make-refs.sh, `mise run refs`)
+"dotnet:JetBrains.Refasmer.CliTool" = "2.0.3"
 # JSON parsing in tools/*.sh (Unity registry metadata, asmdefs)
 jq = "1.8"
 
 [env]
 # ilspycmd targets net8; let it run on the newer mise-managed runtime
 DOTNET_ROLL_FORWARD = "Major"
-PEAK_DIR = "{{env.HOME}}/.local/share/Steam/steamapps/common/PEAK"
+# An outer PEAK_DIR wins (e.g. PEAK_DIR=/nonexistent to build against refs/peak/ like CI).
+PEAK_DIR = "{{ get_env(name='PEAK_DIR', default=env.HOME ~ '/.local/share/Steam/steamapps/common/PEAK') }}"
 
 # ---------------------------------------------------------------------------------------------
 # Tasks. Scripts live in tools/; every task runs with the tools and env above.
@@ -66,3 +69,7 @@ run = "bash tools/decompile.sh"
 [tasks.compat-check]
 description = "Print game, Unity and XR deps versions; check patch targets against decomp/ (and decomp.prev/)"
 run = "bash tools/compat-check.sh"
+
+[tasks.refs]
+description = "Regenerate the committed reference-only game assemblies in refs/peak/ (after a game update)"
+run = "bash tools/make-refs.sh"

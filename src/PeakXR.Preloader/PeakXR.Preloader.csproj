@@ -8,7 +8,6 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>PeakXR.Preloader</AssemblyName>
     <RootNamespace>PeakXR.Preloader</RootNamespace>
-    <Version>0.1.0</Version>
     <Nullable>disable</Nullable>
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

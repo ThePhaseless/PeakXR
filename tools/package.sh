@@ -23,8 +23,10 @@ die() { printf '\033[1;31m[package] error:\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v zip >/dev/null || die "missing tool: zip"
 
-VERSION="$(grep -m1 -oP '(?<=<Version>)[^<]+' "$ROOT/src/PeakXR/PeakXR.csproj" || true)"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "src/PeakXR/PeakXR.csproj <Version> must be Major.Minor.Patch for Thunderstore (got '${VERSION}')"
+VERSION="$(grep -m1 -oP '(?<=<Version>)[^<]+' "$ROOT/Directory.Build.props" || true)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Directory.Build.props <Version> must be Major.Minor.Patch for Thunderstore (got '${VERSION}')"
+# thunderstore.toml follows the same version, so a later tcli publish cannot drift from the zip.
+sed -i "s/^versionNumber = .*/versionNumber = \"$VERSION\"/" "$ROOT/thunderstore.toml"
 
 PLUGIN_BIN="$(dirname "$(find "$ROOT/src/PeakXR/bin/$CONFIG" -name PeakXR.dll -print -quit 2>/dev/null || true)")"
 PRELOADER_BIN="$(dirname "$(find "$ROOT/src/PeakXR.Preloader/bin/$CONFIG" -name PeakXR.Preloader.dll -print -quit 2>/dev/null || true)")"
