@@ -128,6 +128,9 @@ internal sealed class BodyInventory : IGripExtension
             secondPulseAt = -1f;
             Haptics.Pulse(secondPulseLeft, 0.5f, 0.04f);
         }
+        // A draw waits for a put-away still landing (Interact.PutAwayGuard): its RPC would stash what the draw equips.
+        if (pendingKey >= 0 && Interact.PutAwayGuard.Pending)
+            pendingFrame = Time.frameCount;
         if (pendingKey >= 0 && Time.frameCount - pendingFrame > 1)
         {
             // DoSwitching returned early on one of its gates (mid-use, climbing, cooldown...): say so.
@@ -592,7 +595,12 @@ internal sealed class BodyInventory : IGripExtension
     /// <summary>Hotbar key press for <c>SelectSlotWasPressed</c>: true once for the pending key, within two frames.</summary>
     public bool ConsumeKey(CharacterInput input, int key)
     {
-        if (pendingKey != key || Time.frameCount - pendingFrame > 1 || input.itemSwitchBlocked)
+        if (
+            pendingKey != key
+            || Time.frameCount - pendingFrame > 1
+            || input.itemSwitchBlocked
+            || Interact.PutAwayGuard.Pending
+        )
             return false;
         var c = Character.localCharacter;
         if (c == null || c.input != input)

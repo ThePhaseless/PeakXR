@@ -2179,6 +2179,13 @@ internal static class PhysicalInteraction
                 case GripPressAction.GrabInteractible:
                     // Picked up: a grip still closed on it stops holding interact, so a cook or light gesture gets a
                     // fresh press (Interaction.cs:116 only starts a hold after interact was up).
+                    // A put-away that dropped the held item (a climb start) has not landed yet: its RPC would stash the
+                    // item this pickup equips (PutAwayGuard). Hold the press, and its retry, until it has.
+                    if (hand.Target is Item && !hand.Confirmed && PutAwayGuard.Pending)
+                    {
+                        hand.RetryAt = now + PickupRetry;
+                        break;
+                    }
                     if (hand.Target is Item grabbed && !ConfirmPickup(hand, c, grabbed, now))
                         break;
                     interactDown = hand.Injected = true;
