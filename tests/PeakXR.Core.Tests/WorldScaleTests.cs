@@ -59,13 +59,13 @@ public class WorldScaleTests
     [Fact]
     public void Auto_PutsTheRealFloorOnTheGameFloor()
     {
-        // A 1.52 m real eye on the scout's 1.64 m eyes: the world looks 0.93 its size, and the hand reaches the
-        // game floor at the real floor.
-        float auto = WorldScale.Auto(1.52f, 1.64f);
-        TestUtil.Near(0.93f, auto, 1e-4f);
-        TestUtil.Near(0f, WorldScale.FloorReach(1.64f, 1.52f, WorldScale.RigScale(auto)), 0.01f);
-        // A tall player grows the world past the game's own size.
-        TestUtil.Near(1.1f, WorldScale.Auto(1.80f, 1.64f), 1e-4f);
+        // A 1.60 m real eye on the scout's 1.56 m eyes over flat ground: the hand reaches the game floor exactly at
+        // the real floor. Not rounded: 0.01 of scale is 1.6 cm at the floor (run 10 logged 0.08 m with a pose height).
+        float auto = WorldScale.Auto(1.60f, 1.56f);
+        TestUtil.Near(1.60f / 1.56f, auto, 1e-5f);
+        TestUtil.Near(0f, WorldScale.FloorReach(1.56f, 1.60f, WorldScale.RigScale(auto)), 1e-4f);
+        // A short player shrinks the world below the game's own size.
+        TestUtil.Near(1.42f / 1.56f, WorldScale.Auto(1.42f, 1.56f), 1e-5f);
     }
 
     [Fact]

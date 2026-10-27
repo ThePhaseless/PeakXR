@@ -65,13 +65,14 @@ public static class WorldScale
     /// <summary>The <c>Camera.WorldScaleMode</c> Auto scale: the player's calibrated <paramref name="realEye"/> over the
     /// avatar's standing <paramref name="avatarEye"/> above its floor (both in metres/units). With the eyes on the
     /// avatar's, this puts the real floor on the game floor (<see cref="FloorReach"/> 0). Clamped to
-    /// [<see cref="AutoMin"/>, <see cref="AutoMax"/>] and rounded to 0.01 so small sample noise lands on the same
-    /// value; a height outside the plausible range reads as <see cref="HeightCalibration.DefaultStandingEyeHeight"/>.</summary>
+    /// [<see cref="AutoMin"/>, <see cref="AutoMax"/>], not rounded (0.01 of scale is 1.6 cm at the floor; the
+    /// measured height has its own deadband, <see cref="StandingEye.Keep"/>); a height outside the plausible range
+    /// reads as <see cref="HeightCalibration.DefaultStandingEyeHeight"/>.</summary>
     public static float Auto(float realEye, float avatarEye)
     {
         realEye = Plausible(realEye);
         avatarEye = Plausible(avatarEye);
-        return MathF.Round(Math.Clamp(realEye / avatarEye, AutoMin, AutoMax) * 100f) / 100f;
+        return Math.Clamp(realEye / avatarEye, AutoMin, AutoMax);
     }
 
     private static float Plausible(float eye) =>
