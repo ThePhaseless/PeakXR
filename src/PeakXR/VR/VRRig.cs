@@ -51,6 +51,13 @@ public class VRRig : MonoBehaviour
     /// camera feature applies it to the hand transforms (<see cref="SeatedReach"/>). 1 = off.</summary>
     public float SeatedReachGain = 1f;
 
+    /// <summary>World units per real metre of tracking space (<c>Camera.WorldScale</c>, applied by the camera feature as
+    /// <see cref="Origin"/>'s scale behind a fade): head motion, hand reach and the eye separation grow together, so
+    /// the world looks smaller. Tracking-space values (<see cref="VRInput"/>, <see cref="RoomAnchor"/>,
+    /// <see cref="HeightOffset"/>) stay in real metres; world positions read through <see cref="Origin"/> are scaled.
+    /// 1 at the title stage.</summary>
+    public float Scale = 1f;
+
     /// <summary>Metres the first-person view rises above the body's eye point. player.locomotion sets it to the torso's
     /// drop while a physical crouch lowers the body, so the view stays at the real head; 0 otherwise.</summary>
     public float CrouchLift;

@@ -74,7 +74,7 @@ internal static class VRTabGrid
         float distance =
             head != null
                 ? Vector3.Distance(head.position, content.TransformPoint(area.center))
-                : World.UIWorldFeature.Settings.MenuDistance.Value;
+                : World.UIWorldFeature.Settings.MenuDistanceWorld;
 
         var groups = VRTab.BuildGroups();
         int selected = groups.FindIndex(g =>

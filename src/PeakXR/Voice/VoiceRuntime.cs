@@ -136,11 +136,23 @@ internal sealed class VoiceRuntime : MonoBehaviour
         bool leftMute = Palm(leftPalm, muteOn && leftFree, true, rig, headPos, headRot, dt);
         bool rightMute = Palm(rightPalm, muteOn && rightFree, false, rig, headPos, headRot, dt);
         bool leftTalk =
-            Track(leftMouth, talkOn && leftFree, headPos, headRot, rig.LeftHand.position, dt)
-            && !leftMute;
+            Track(
+                leftMouth,
+                talkOn && leftFree,
+                headPos,
+                headRot,
+                Rig.RealScale.Real(rig.LeftHand.position, rig.Head.position),
+                dt
+            ) && !leftMute;
         bool rightTalk =
-            Track(rightMouth, talkOn && rightFree, headPos, headRot, rig.RightHand.position, dt)
-            && !rightMute;
+            Track(
+                rightMouth,
+                talkOn && rightFree,
+                headPos,
+                headRot,
+                Rig.RealScale.Real(rig.RightHand.position, rig.Head.position),
+                dt
+            ) && !rightMute;
         bool talk = leftTalk || rightTalk;
         bool mute = leftMute || rightMute;
         bool button = ButtonHeld(cfg.PushToTalkButton.Value);
@@ -246,7 +258,9 @@ internal sealed class VoiceRuntime : MonoBehaviour
         var palm = left ? t.right : -t.right;
         var c = LocalAvatar.ControllerCurls(left);
         float curl = (c.Index + c.Middle + c.Ring + c.Pinky) * 0.25f;
-        return gesture.Update(headPos, headRot, t.position.N(), palm.N(), curl, dt);
+        // Your own mouth: the hand in real metres around the eyes (Camera.WorldScale).
+        var hand = Rig.RealScale.Real(t.position, rig.Head.position);
+        return gesture.Update(headPos, headRot, hand.N(), palm.N(), curl, dt);
     }
 
     private static bool Track(

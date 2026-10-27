@@ -175,12 +175,19 @@ internal static class HeldGestures
         )
             return;
         var head = rig.Head;
-        var mouth = MouthGesture
-            .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
-            .U();
+        var mouth = RealScale.World(
+            MouthGesture
+                .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
+                .U(),
+            head.position
+        );
         if (
-            Vector3.Distance(HeldItemPoints.Nearest(ItemGestures.Held, hand, left, mouth), mouth)
-            < AwayFromMouth
+            RealScale.Real(
+                Vector3.Distance(
+                    HeldItemPoints.Nearest(ItemGestures.Held, hand, left, mouth),
+                    mouth
+                )
+            ) < AwayFromMouth
         )
             return;
         Affordance.DenyAtHand(left, DenyReason.NotHere, DenyHint.At(mouth), ItemGestures.Held);
@@ -197,7 +204,12 @@ internal static class HeldGestures
         // The mouthpiece, not the hand: the game's bugle is held under its loop, its mouthpiece 0.2 m above the grip
         // (tester: "the trigger point should be where the mouthpiece is, not where the hand is").
         BuglePoint = Mouthpiece(ItemGestures.Held, hand, ItemGestures.HoldLeft);
-        bool at = Mouth.Update(rig.Head.position.N(), rig.Head.rotation.N(), BuglePoint.N(), dt);
+        bool at = Mouth.Update(
+            rig.Head.position.N(),
+            rig.Head.rotation.N(),
+            RealScale.Real(BuglePoint, rig.Head.position).N(),
+            dt
+        );
         if (at && !tooting)
             Haptics.Pulse(ItemGestures.HoldLeft, 0.3f, 0.05f);
         tooting = at;
@@ -219,10 +231,15 @@ internal static class HeldGestures
         flat.y = 0f;
         flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
         // The hand or the item it holds against the body, whichever is nearer: a bandage roll is pressed with the item.
-        var point = hand.position.N();
-        var chest = head.position + Vector3.down * ChestBelowEyes;
-        var itemPoint = HeldItemPoints
-            .Nearest(ItemGestures.Held, hand, ItemGestures.HoldLeft, chest)
+        // Your own chest and forearm: judged in real metres around the eyes (Camera.WorldScale).
+        var eye = head.position;
+        var point = RealScale.Real(hand.position, eye).N();
+        var chest = eye + Vector3.down * RealScale.World(ChestBelowEyes);
+        var itemPoint = RealScale
+            .Real(
+                HeldItemPoints.Nearest(ItemGestures.Held, hand, ItemGestures.HoldLeft, chest),
+                eye
+            )
             .N();
         float distance = Mathf.Min(
             BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius),
@@ -234,13 +251,22 @@ internal static class HeldGestures
         var other = rig.Hand(!ItemGestures.HoldLeft);
         if (!LocalHold.TwoHand && other != null && VRInput.Hand(!ItemGestures.HoldLeft).Tracked)
         {
-            var onArm = HeldItemPoints
-                .Nearest(ItemGestures.Held, hand, ItemGestures.HoldLeft, other.position)
+            var onArm = RealScale
+                .Real(
+                    HeldItemPoints.Nearest(
+                        ItemGestures.Held,
+                        hand,
+                        ItemGestures.HoldLeft,
+                        other.position
+                    ),
+                    eye
+                )
                 .N();
+            var otherReal = RealScale.Real(other.position, eye).N();
             float arm =
                 Mathf.Min(
-                    BodyZones.ForearmDistance(point, other.position.N(), other.Fingers().N()),
-                    BodyZones.ForearmDistance(onArm, other.position.N(), other.Fingers().N())
+                    BodyZones.ForearmDistance(point, otherReal, other.Fingers().N()),
+                    BodyZones.ForearmDistance(onArm, otherReal, other.Fingers().N())
                 ) - ForearmRadius;
             if (arm < distance)
             {

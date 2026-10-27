@@ -47,6 +47,15 @@ public enum StatusOverlayMode
 /// <summary>Config entries for world-space UI. Read live every frame, so changes apply at once.</summary>
 internal sealed class UIWorldSettings
 {
+    /// <summary>Menu and HUD placement in world units: the settings are real metres from your eyes, kept at any
+    /// <c>Camera.WorldScale</c> (<see cref="Rig.RealScale"/>), and their widths grow with the distance, so the
+    /// angles are the same.</summary>
+    public float MenuDistanceWorld => Rig.RealScale.World(MenuDistance.Value);
+
+    public float MenuWidthWorld => Rig.RealScale.World(MenuWidth.Value);
+    public float HudDistanceWorld => Rig.RealScale.World(HudDistance.Value);
+    public float HudWidthWorld => Rig.RealScale.World(HudWidth.Value);
+
     public ConfigEntry<float> MenuDistance,
         MenuWidth,
         MenuTilt,

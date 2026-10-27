@@ -32,6 +32,10 @@ public sealed class CameraFeature : Feature
     internal static ConfigEntry<float> RecenterHoldSeconds;
     internal static ConfigEntry<float> NearClip;
     internal static ConfigEntry<MirrorEye> Mirror;
+    internal static ConfigEntry<float> WorldScaleEntry;
+
+    /// <summary><c>Camera.WorldScale</c>, or its default before the feature binds it.</summary>
+    internal static float WorldScaleValue => WorldScaleEntry?.Value ?? WorldScale.Default;
 
     /// <summary>The menu hold that recenters. Also the pause tap limit (player.locomotion), so the two never
     /// overlap and no hold length is dead.</summary>
@@ -129,6 +133,18 @@ public sealed class CameraFeature : Feature
             new ConfigDescription(
                 "Near clip plane in metres while in VR, so hands and held items close to the face stay visible.",
                 new AcceptableValueRange<float>(0.01f, 0.1f)
+            )
+        );
+        WorldScaleEntry = Plugin.Settings.Bind(
+            section,
+            "WorldScale",
+            WorldScale.Default,
+            new ConfigDescription(
+                "How big the world looks in VR. The game's world and props are built about a third larger than real "
+                    + "life for its big-headed scouts; at 1 you see them at the game's own size, lower makes everything "
+                    + "look smaller by growing you: your eye separation, head motion and hand reach all scale together, "
+                    + "and your eyes stay at your character's. Only you see it. Changing it applies behind a short fade.",
+                new AcceptableValueRange<float>(WorldScale.Min, WorldScale.Max)
             )
         );
         Mirror = Plugin.Settings.Bind(

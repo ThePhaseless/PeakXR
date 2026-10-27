@@ -584,8 +584,8 @@ internal static class WorldCanvases
         PanelMath.MenuMetersPerPixel(
             t.ContentSize.x,
             t.ContentSize.y,
-            cfg.MenuWidth.Value,
-            cfg.MenuDistance.Value
+            cfg.MenuWidthWorld,
+            cfg.MenuDistanceWorld
         );
 
     /// <summary>
@@ -597,7 +597,7 @@ internal static class WorldCanvases
     /// </summary>
     private static void ClearWalls(TrackedCanvas t, UIWorldSettings cfg, float? turned)
     {
-        var wanted = cfg.MenuDistance.Value;
+        var wanted = cfg.MenuDistanceWorld;
         var depth = PanelDepth(t, t.Yaw, cfg);
         var clear = PanelMath.ClearDistance(wanted, depth);
         if (turned == null)
@@ -659,10 +659,10 @@ internal static class WorldCanvases
     /// </summary>
     private static float PanelDepth(TrackedCanvas t, float yaw, UIWorldSettings cfg)
     {
-        var wanted = cfg.MenuDistance.Value;
+        var wanted = cfg.MenuDistanceWorld;
         var size = t.ContentSize.x >= 1f && t.ContentSize.y >= 1f ? t.ContentSize : t.Size;
         var half =
-            0.5f * PanelMath.MenuMetersPerPixel(size.x, size.y, cfg.MenuWidth.Value, wanted) * size;
+            0.5f * PanelMath.MenuMetersPerPixel(size.x, size.y, cfg.MenuWidthWorld, wanted) * size;
         var offset = PanelMath.InFront(yaw, wanted, cfg.MenuTilt.Value).ToUnity();
         var rotation = Quaternion.LookRotation(offset, Vector3.up);
         float depth = float.PositiveInfinity;
@@ -712,7 +712,7 @@ internal static class WorldCanvases
             if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
                 continue;
             float px = text.fontSize * text.transform.lossyScale.y / canvasScale;
-            emDegrees.Add(ReadableText.Degrees(px * mpp, cfg.MenuDistance.Value));
+            emDegrees.Add(ReadableText.Degrees(px * mpp, cfg.MenuDistanceWorld));
         }
         if (emDegrees.Count == 0)
             return "no text";

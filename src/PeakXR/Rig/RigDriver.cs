@@ -317,6 +317,7 @@ internal sealed class RigDriver : MonoBehaviour
         if (instance == null)
             instance = Create();
         instance.enabled = true;
+        StereoWidth.Install();
     }
 
     internal static void OnVRStopped()
@@ -431,7 +432,13 @@ internal sealed class RigDriver : MonoBehaviour
         ViewOffset = Vector3.zero;
         LeanEye = null;
         if (rig.OriginOverride)
+        {
+            // The title stage and its menus stand at the game's own size; the scale returns behind the load.
+            ApplyScale(1f);
+            rig.Scale = 1f;
+            haveScale = false;
             ResetTakeover();
+        }
         else
             PlaceOrigin(c, dt);
         ViewOnBody = !rig.OriginOverride && shownKind == ViewKind.FirstPerson;
@@ -486,6 +493,21 @@ internal sealed class RigDriver : MonoBehaviour
     }
 
     private Vector3 EyePosition() => headBlocked ? blockedEye : rig.Head.position;
+
+    private bool haveScale;
+
+    /// <summary>The tracking space's world size (<see cref="VRRig.Scale"/>): head motion, hand reach and, through
+    /// <see cref="StereoWidth"/>, the eye separation all scale together.</summary>
+    private void ApplyScale(float scale)
+    {
+        var s = Vector3.one * scale;
+        if (rig.Origin.localScale == s)
+            return;
+        rig.Origin.localScale = s;
+        // Cameras stay unscaled (the fallback rides the head): StereoWidth widens the eyes, once.
+        if (fallbackCam != null)
+            fallbackCam.transform.localScale = Vector3.one / scale;
+    }
 
     private void UpdateHead()
     {
@@ -606,7 +628,8 @@ internal sealed class RigDriver : MonoBehaviour
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
                     + $"{eye.y - d.groundPos.y:0.00} m above the ground; the player's calibrated eyes "
-                    + $"{RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m (world scale 1:1)"
+                    + $"{RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m (rig x{rig.Scale:0.00}: the game floor is "
+                    + $"reached {WorldScale.FloorReach(eye.y - d.groundPos.y, RigMath.TrackedEyeHeight(rig.HeightOffset), rig.Scale):0.00} m above the real one)"
             );
     }
 
@@ -801,7 +824,16 @@ internal sealed class RigDriver : MonoBehaviour
             && (kind != shownKind || target != shownTarget || source != staticSource)
         )
             takeover.Blink();
-        if (pendingRecenter || pendingHeight)
+        // A new world scale lands behind the same blink as a recenter (Camera.WorldScale).
+        float wantScale = WorldScale.RigScale(CameraFeature.WorldScaleValue);
+        if (!haveScale)
+        {
+            // The first placement: nothing to fade from yet.
+            rig.Scale = wantScale;
+            haveScale = true;
+        }
+        bool pendingScale = !Mathf.Approximately(wantScale, rig.Scale);
+        if (pendingRecenter || pendingHeight || pendingScale)
             takeover.Blink();
 
         takeover.FadeSeconds = CameraFeature.FadeSeconds.Value;
@@ -825,6 +857,13 @@ internal sealed class RigDriver : MonoBehaviour
             else if (pendingHeight)
                 CalibrateHeight();
             pendingRecenter = false;
+            if (pendingScale)
+            {
+                rig.Scale = wantScale;
+                Plugin.Log.LogInfo(
+                    $"{Tag} World scale {CameraFeature.WorldScaleValue:0.00}: rig x{rig.Scale:0.00}"
+                );
+            }
         }
         if (takeover.Fade > 0f)
             VRFade.Set(this, takeover.Fade);
@@ -937,8 +976,10 @@ internal sealed class RigDriver : MonoBehaviour
             anchor.N(),
             yaw,
             rig.RoomAnchor,
-            RigMath.TrackedEyeHeight(rig.HeightOffset)
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.Scale
         );
+        ApplyScale(rig.Scale);
         rig.Origin.SetPositionAndRotation(origin.U(), Quaternion.Euler(0f, yaw, 0f));
 
         // Spectating: the watched player's head and body never fill the eyes (a lean or a slow follow can carry the
@@ -1416,7 +1457,8 @@ internal sealed class RigDriver : MonoBehaviour
         // Only when the game switched its camera off (end cutscene); with no game camera at all (between
         // scenes) whatever the UI shows keeps rendering.
         SetFallback(boundCam != null && !mainLive && VRSession.Active);
-        float near = CameraFeature.NearClip.Value;
+        // Real centimetres in front of the eye, at any world scale.
+        float near = CameraFeature.NearClip.Value * rig.Scale;
         if (mainLive)
         {
             if (boundCam.nearClipPlane != near)

@@ -23,17 +23,22 @@ namespace PeakXR.Core
         /// <summary>
         /// World position of the tracking origin so that a head standing on the calibrated spot
         /// (<paramref name="centerXZ"/> in tracking space) at <paramref name="eyeHeight"/> lands exactly on
-        /// <paramref name="eyeAnchor"/>, with the tracking space turned by <paramref name="yawDeg"/>.
+        /// <paramref name="eyeAnchor"/>, with the tracking space turned by <paramref name="yawDeg"/> and scaled by
+        /// <paramref name="scale"/> world units per tracked metre (<see cref="WorldScale.RigScale"/>).
         /// </summary>
         public static Vector3 OriginPosition(
             Vector3 eyeAnchor,
             float yawDeg,
             Vector2 centerXZ,
-            float eyeHeight
+            float eyeHeight,
+            float scale = 1f
         ) =>
             eyeAnchor
-            - RotateYaw(yawDeg, new Vector3(centerXZ.X, 0f, centerXZ.Y))
-            - new Vector3(0f, eyeHeight, 0f);
+            - scale
+                * (
+                    RotateYaw(yawDeg, new Vector3(centerXZ.X, 0f, centerXZ.Y))
+                    + new Vector3(0f, eyeHeight, 0f)
+                );
 
         /// <summary>
         /// New calibrated spot after turning the rig by <paramref name="deltaYawDeg"/>, chosen so the
