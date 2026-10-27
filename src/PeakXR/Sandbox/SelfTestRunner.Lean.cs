@@ -253,8 +253,6 @@ internal sealed partial class SelfTestRunner
         leanHip = new Bounds(c.refs.hip.Rig.position, Vector3.zero);
     }
 
-    /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
-    /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
     int extremeLines;
 
     /// <summary>
@@ -280,6 +278,8 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
+    /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
     IEnumerator Track(Character c, VRRig rig, Vector3 to, float seconds, float hold)
     {
         var from = leanOffset;

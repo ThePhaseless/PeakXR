@@ -11,7 +11,7 @@ namespace PeakXR.Sandbox;
 
 /// <summary>
 /// The <c>vr.6x</c> steps: ui.affordance. Scripted hands try things the game refuses and each step proves the whole
-/// cue (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>: reason, ring, sound, haptic, red preview),
+/// cue (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>: reason, ring, sound, haptic, red preview),
 /// not just that the action failed.
 /// </summary>
 internal sealed partial class SelfTestRunner
@@ -747,7 +747,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for the cue of
     /// <paramref name="expected"/> on that hand on every channel, the held item's red preview included
-    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>); other denials meanwhile do not end the
+    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>); other denials meanwhile do not end the
     /// wait. The held item must also stay in the hand with its uses unspent: a cue over a use that went through
     /// is no refusal.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected, bool along = false)

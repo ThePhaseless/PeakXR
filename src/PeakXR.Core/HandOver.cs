@@ -50,9 +50,6 @@ public sealed class HandOver
     /// <summary>The trigger is the hand-over's this frame: the caller keeps it from the item's primary use.</summary>
     public bool SuppressPrimary { get; private set; }
 
-    /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
-    /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
-    /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
     /// <summary>Seconds an applying hand may wobble out of the zone, trigger still held, before the hand-over ends
     /// (MP run 15: a frame's wobble past the mouth ended the feed for good, the trigger never re-armed).</summary>
     public float Grace = 0.4f;
@@ -60,6 +57,9 @@ public sealed class HandOver
     private bool applying;
     private float outFor;
 
+    /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
+    /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
+    /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
     /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
     public HandOverState Update(
         bool inZone,

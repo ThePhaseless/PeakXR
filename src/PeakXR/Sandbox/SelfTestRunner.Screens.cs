@@ -876,7 +876,7 @@ internal sealed partial class SelfTestRunner
         Conclude(fails, notes);
     }
 
-    /// <summary>What the ghost must show for <paramref name="topic"/>, checked against the mechanic itself rather
+    /// <summary>What the ghost must show for a topic (<see cref="Wrong"/>), checked against the mechanic itself rather
     /// than against GuideTable: the finger gun (grip and trigger lit together), a closed hand inside the talk gesture's
     /// mouth radius (MouthGesture), an open hand there for mute, and the stick lit on the hand the spectate binding
     /// reads (BindingTable.Default) and never on the other. Accumulates one loop's frames.</summary>

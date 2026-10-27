@@ -699,16 +699,6 @@ internal sealed partial class SelfTestRunner
     float carryMark;
     string flameNote = "";
 
-    /// <summary>
-    /// A lit torch's flame brought to a fuse the way a player lights one. The torch is given and lit where the player
-    /// stands, as vr.26 lights it (vr41 lost it given and lit beside the placed cannon); the body warps 0.8 m beside the
-    /// fuse, on the side away from a cannon's entry (it pulls in and launches whoever is within 1 m of it, dropping
-    /// what they hold, ScoutCannon.cs:66-110); the head stoops until it is at most <see cref="StoopReach"/> over the
-    /// hand's goal, as a player kneels at a fuse low on its prop (vr45 and vr46: a standing body's ragdoll arm stalled
-    /// the flame 0.96 m short and the hand never moved); then the hand carries the flame onto the fuse's collider
-    /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
-    /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
-    /// </summary>
     /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
     const float TorchInHand = 0.45f;
 
@@ -733,6 +723,16 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest a held item may sit from its controller-held pose (m), standing or stooped.</summary>
     const float ItemOnHand = 0.15f;
 
+    /// <summary>
+    /// A lit torch's flame brought to a fuse the way a player lights one. The torch is given and lit where the player
+    /// stands, as vr.26 lights it (vr41 lost it given and lit beside the placed cannon); the body warps 0.8 m beside the
+    /// fuse, on the side away from a cannon's entry (it pulls in and launches whoever is within 1 m of it, dropping
+    /// what they hold, ScoutCannon.cs:66-110); the head stoops until it is at most <see cref="StoopReach"/> over the
+    /// hand's goal, as a player kneels at a fuse low on its prop (vr45 and vr46: a standing body's ragdoll arm stalled
+    /// the flame 0.96 m short and the hand never moved); then the hand carries the flame onto the fuse's collider
+    /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
+    /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
+    /// </summary>
     IEnumerator FlameToFuse(Item torchPrefab, Component fuse, Func<bool> done, float seconds)
     {
         var c = Character.localCharacter;

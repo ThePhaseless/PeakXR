@@ -144,11 +144,6 @@ internal sealed partial class SelfTestRunner
     /// <summary>Where a prop is set down when it rests outside that band: in front of the feet, in a squat's reach.</summary>
     const float PropSetOut = 0.55f;
 
-    /// <summary>
-    /// Where a prop for a stooped grab is set down: on the ground <paramref name="outward"/> m ahead of the eye, a
-    /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
-    /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
-    /// </summary>
     /// <summary>Height (m) over the ground a prop is set at: clear of its own collider (8 cm started an Apple inside
     /// the terrain, which it then fell through, run 53), low enough that it drops without bouncing away.</summary>
     const float PropDrop = 0.25f;
@@ -157,6 +152,11 @@ internal sealed partial class SelfTestRunner
     /// height over the tracking floor.</summary>
     static float TrackedFloorY() => VRRig.Instance.Head.position.y - VRInput.HeadPosition.y;
 
+    /// <summary>
+    /// Where a prop for a stooped grab is set down: on the ground <paramref name="outward"/> m ahead of the eye, a
+    /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
+    /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
+    /// </summary>
     static Vector3 GroundAhead(float outward)
     {
         var head = VRRig.Instance.Head;
@@ -2069,8 +2069,6 @@ internal sealed partial class SelfTestRunner
         return best < float.MaxValue;
     }
 
-    /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
-    /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
     /// <summary>Rings (m) around the player <see cref="FindWall"/> searches; online, where no test wall can be
     /// placed, it reaches further for a steep enough face.</summary>
     static readonly float[] WallRings = { 15f, 35f, 60f };
@@ -2084,6 +2082,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>The angle profile (deg from up at the hold and above it) of the last wall <see cref="FindWall"/> chose.</summary>
     internal static string WallProfile = "";
 
+    /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
+    /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
     static void WallsFrom(
         Vector3 spot,
         Vector3 home,
