@@ -413,6 +413,19 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             var row = SettingPreviews.CellOf(hovered);
             if (row != null)
             {
+                // The card's text must read at the row label's size: both sizes, as set and as drawn.
+                var rowLabel = row.m_text;
+                var cardLabel = PreviewStage.Instance.CardLabel;
+                if (
+                    rowLabel != null
+                    && cardLabel != null
+                    && PreviewStage.Instance.Card is { } shown
+                )
+                    Plugin.Log.LogInfo(
+                        F(
+                            $"[selftest] preview card text: row label {rowLabel.fontSize:0.#} at scale {rowLabel.transform.lossyScale.y:0.00000} ({rowLabel.fontSize * rowLabel.transform.lossyScale.y * 1000f:0.0} mm), row scale {row.transform.lossyScale.y:0.00000}; card text {cardLabel.fontSize:0.#} at scale {cardLabel.transform.lossyScale.y:0.00000} ({cardLabel.fontSize * cardLabel.transform.lossyScale.y * 1000f:0.0} mm), card canvas scale {shown.lossyScale.y:0.00000}, card {((RectTransform)shown).rect.size}, wrap {cardLabel.textWrappingMode}, overflow {cardLabel.overflowMode}, autosize {cardLabel.enableAutoSizing}"
+                        )
+                    );
                 // The whole settings window and the preview card beside it, both in frame (run 7 cut the title and
                 // rail off at the left).
                 var frame = new List<Vector3>();

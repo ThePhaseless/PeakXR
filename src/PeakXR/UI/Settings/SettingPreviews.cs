@@ -342,10 +342,10 @@ internal sealed class PreviewStage : MonoBehaviour
             text.font = label.font;
             tagText.font = label.font;
         }
-        // The rows' own text size, in the same units (the card is drawn at the row's scale): run 6's 28 read as small
-        // print beside the restyled rows.
+        // The row label's size as drawn: the card is drawn at the row's scale (PlaceCard), but the label sits under
+        // the row with its own scale, so its font size alone is in other units (runs 6 and 7: small print).
         if (label != null)
-            text.fontSize = Mathf.Clamp(label.fontSize, 28f, 72f);
+            text.fontSize = LabelSizeInRowUnits(label, cell.transform);
         TextHalo.Apply(text);
         var def = entry.Definition;
         var value = NoParse(TomlTypeConverter.ConvertToString(entry.BoxedValue, entry.SettingType));
@@ -365,6 +365,16 @@ internal sealed class PreviewStage : MonoBehaviour
         ((RectTransform)card.transform).sizeDelta = new Vector2(CardWidth, cardHeight);
         cardText.offsetMin = new Vector2(24f, dial);
     }
+
+    /// <summary>The label's font size in <paramref name="row"/>'s units: what makes the card text, drawn at the row's
+    /// scale, read at the label's angular size.</summary>
+    internal static float LabelSizeInRowUnits(TMP_Text label, Transform row) =>
+        label.fontSize
+        * Mathf.Abs(label.transform.lossyScale.y)
+        / Mathf.Max(Mathf.Abs(row.lossyScale.y), 1e-6f);
+
+    /// <summary>The info card's text (self-test).</summary>
+    internal TMP_Text CardLabel => text;
 
     /// <summary>Config text is shown as typed: a '&lt;' in a value or description is not a TMP tag.</summary>
     private static string NoParse(string s) =>
@@ -393,7 +403,11 @@ internal sealed class PreviewStage : MonoBehaviour
         text.fontSize = 28f;
         text.color = Color.white;
         text.alignment = TextAlignmentOptions.TopLeft;
-        text.overflowMode = TextOverflowModes.Ellipsis;
+        // Set outright: a new text takes the game's TMP defaults, and run 7's card ran its lines past its right edge.
+        // The card grows to fit (FillCard), so nothing overflows.
+        text.enableAutoSizing = false;
+        text.textWrappingMode = TextWrappingModes.Normal;
+        text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = false;
 
         sampleTag = new GameObject("PeakXR_SettingPreviewTag", typeof(RectTransform));
