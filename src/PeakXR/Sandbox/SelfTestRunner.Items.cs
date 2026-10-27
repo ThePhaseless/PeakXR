@@ -186,6 +186,8 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         var all = new List<Item>(SandboxActions.Items);
         var notes = new List<string>();
+        // Every item is held and judged; the step fails at the end with all that failed, so one cannot hide the rest.
+        var failures = new List<string>();
         var info = new ItemHoldInfo();
         foreach (var itemName in LeftHoldItems)
         {
@@ -196,7 +198,8 @@ internal sealed partial class SelfTestRunner
                 continue;
             }
             var side = new Hold[2];
-            for (int h = 0; h < 2 && stepOk; h++)
+            string lost = null;
+            for (int h = 0; h < 2 && lost == null; h++)
             {
                 bool left = h == 0;
                 yield return GiveAndHold(prefab);
@@ -209,8 +212,8 @@ internal sealed partial class SelfTestRunner
                 var item = HeldItem();
                 if (item == null || !info.Bind(item))
                 {
-                    Fail($"{itemName} left the {(left ? "left" : "right")} hand");
-                    yield break;
+                    lost = $"{itemName} left the {(left ? "left" : "right")} hand";
+                    break;
                 }
                 var hand = rig.Hand(left);
                 var head = rig.Head;
@@ -243,6 +246,7 @@ internal sealed partial class SelfTestRunner
                     EndIn = Vector3.Dot(end - hand.position, head.right) * inward,
                     EndUp = Vector3.Dot(end - hand.position, head.up),
                     Plane = info.LeftPlaneUsed,
+                    EvenEnds = info.LeftTurnsEnd,
                 };
                 if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
                     yield return ShotAt(
@@ -254,30 +258,40 @@ internal sealed partial class SelfTestRunner
                 if (!stepOk)
                     yield break;
             }
+            if (lost != null)
+            {
+                failures.Add(lost);
+                yield return DropHeld();
+                if (!stepOk)
+                    yield break;
+                continue;
+            }
             var l = side[0];
             var r = side[1];
             string note = F(
-                $"{itemName} ({l.Plane}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}"
+                $"{itemName} ({l.Plane}{(l.EvenEnds ? ", even ends" : "")}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}"
             );
             notes.Add(note);
-            if (float.IsNaN(l.Palm) || float.IsNaN(r.Palm))
-                Fail("no collider to measure the palm against: " + note);
-            else if (l.Palm > r.Palm + LeftHoldSlack)
-                Fail("the left palm is off the item: " + note);
-            else if (!float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack)
-                Fail("the left hold's second grip is off the item: " + note);
-            else if (l.HandOff > 0.04f || r.HandOff > 0.04f)
-                Fail("the welded hand is off its grip: " + note);
-            else if (
-                Flipped(l.MidIn, r.MidIn)
-                || Flipped(l.EndIn, r.EndIn)
-                || Flipped(l.EndUp, r.EndUp)
-            )
-                Fail("the item turns the other way in the left hand: " + note);
-            if (!stepOk)
-                yield break;
+            string verdict =
+                float.IsNaN(l.Palm) || float.IsNaN(r.Palm)
+                    ? "no collider to measure the palm against"
+                : l.Palm > r.Palm + LeftHoldSlack ? "the left palm is off the item"
+                : !float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack
+                    ? "the left hold's second grip is off the item"
+                : l.HandOff > 0.04f || r.HandOff > 0.04f ? "the welded hand is off its grip"
+                : Flipped(l.MidIn, r.MidIn)
+                || (!l.EvenEnds && (Flipped(l.EndIn, r.EndIn) || Flipped(l.EndUp, r.EndUp)))
+                    ? "the item turns the other way in the left hand"
+                : null;
+            if (verdict != null)
+                failures.Add(verdict + ": " + note);
         }
-        stepNote = string.Join("; ", notes);
+        if (failures.Count > 0)
+            Fail(
+                $"{failures.Count} of {LeftHoldItems.Length} items: " + string.Join("; ", failures)
+            );
+        else
+            stepNote = string.Join("; ", notes);
 
         // Opposite sides, each clear of the hand by more than a hand's half width.
         static bool Flipped(float a, float b) =>
@@ -293,6 +307,9 @@ internal sealed partial class SelfTestRunner
         public float EndIn;
         public float EndUp;
         public LeftPlane Plane;
+
+        /// <summary>The left hold turns the item round across a plane it is even about: its ends look alike.</summary>
+        public bool EvenEnds;
     }
 
     /// <summary>How far past the grab radius the vr.243 miss probe stands, metres.</summary>

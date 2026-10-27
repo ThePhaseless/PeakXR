@@ -92,9 +92,11 @@ namespace PeakXR.Core
 
         /// <summary>
         /// The plane for an item: the plain mirror while its palm stays on the item (<paramref name="plainGap"/>
-        /// within <see cref="Tolerance"/> of <paramref name="rightGap"/>), else the plane it is most symmetric about
+        /// within <see cref="Tolerance"/> of <paramref name="rightGap"/>) and it keeps the far end's side, else the plane it is most symmetric about
         /// (asymmetries from <see cref="Asymmetry"/>), in the order Origin, CentreX, CentreZ within
-        /// <see cref="Margin"/>. <paramref name="keepForward"/> (a launcher's barrel) rules out the z plane.
+        /// <see cref="Margin"/>. <paramref name="keepForward"/> (a launcher's barrel) rules out the z plane, and a plane
+        /// that turns the item's far end round (<see cref="TurnsEnd"/>) is out unless the item is even across it
+        /// (asymmetry within <see cref="Margin"/>). With none left, the plain mirror.
         /// </summary>
         public static LeftPlane Choose(
             float rightGap,
@@ -102,20 +104,36 @@ namespace PeakXR.Core
             float asymOrigin,
             float asymX,
             float asymZ,
-            bool keepForward
+            bool keepForward,
+            bool originTurns = false,
+            bool xTurns = false,
+            bool zTurns = false
         )
         {
-            if (plainGap <= rightGap + Tolerance)
+            bool origin = !originTurns || asymOrigin <= Margin;
+            if (origin && plainGap <= rightGap + Tolerance)
                 return LeftPlane.Origin;
-            float best = Math.Min(asymOrigin, asymX);
-            if (!keepForward)
+            bool x = !xTurns || asymX <= Margin;
+            bool z = !keepForward && (!zTurns || asymZ <= Margin);
+            float best = float.PositiveInfinity;
+            if (origin)
+                best = asymOrigin;
+            if (x)
+                best = Math.Min(best, asymX);
+            if (z)
                 best = Math.Min(best, asymZ);
-            if (asymOrigin <= best + Margin)
+            if (origin && asymOrigin <= best + Margin)
                 return LeftPlane.Origin;
-            if (asymX <= best + Margin)
+            if (x && asymX <= best + Margin)
                 return LeftPlane.CentreX;
-            return LeftPlane.CentreZ;
+            return z ? LeftPlane.CentreZ : LeftPlane.Origin;
         }
+
+        /// <summary>Whether mirroring across <paramref name="plane"/> puts the item's far end (from the grip, along
+        /// its longest side) on the grip's other side: the item would lie the other way round in the left hand, a
+        /// flag's pole pointing back past the fist.</summary>
+        public static bool TurnsEnd(LeftPlane plane, Vector3 centre, Vector3 grip, Vector3 end) =>
+            Vector3.Dot(Reflect(end, plane, centre) - grip, end - grip) <= 0f;
 
         /// <summary>How unlike its reflection an item is: the mean difference of the surface distances at the probes
         /// and at their reflections, over the item's longest side.</summary>
