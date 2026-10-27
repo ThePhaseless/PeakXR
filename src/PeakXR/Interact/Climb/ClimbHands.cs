@@ -184,8 +184,13 @@ internal static class ClimbHands
         if (now != mode || obj != held)
         {
             // The game let go of the line or handle while a hand still held it (stamina, a ragdoll, a broken piton,
-            // the rope gone): torn off. A hand-made release goes through LetGo, which has already left the mode.
-            if (now == Mode.None)
+            // the rope gone): torn off. A hand-made release goes through LetGo, which has already left the mode. A
+            // setting turned off mid-hang (RopeHands, HandleHands) also gives None while the game still holds on.
+            var cd = c.data;
+            if (
+                now == Mode.None
+                && !(cd.isRopeClimbing || cd.isVineClimbing || cd.currentClimbHandle != null)
+            )
             {
                 TornIfHeld(LeftHand);
                 TornIfHeld(RightHand);

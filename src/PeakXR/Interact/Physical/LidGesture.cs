@@ -262,16 +262,6 @@ internal static class LidGesture
     /// <summary>The chest whose untracked hold was refused, so it is refused once per hold.</summary>
     private static Luggage refusedHold;
 
-    /// <summary>The hand whose grip presses the game's interact as the fallback, else the dominant hand.</summary>
-    private static bool InteractingHand()
-    {
-        if (PhysicalInteraction.HandAction(true) == GripPressAction.Interact)
-            return true;
-        if (PhysicalInteraction.HandAction(false) == GripPressAction.Interact)
-            return false;
-        return VRInput.LeftHanded;
-    }
-
     public static void BeforeInteraction(Interaction interaction)
     {
         var held = interaction.currentHeldInteractible as Luggage;
@@ -299,7 +289,7 @@ internal static class LidGesture
         {
             refusedHold = held;
             Affordance.Deny(
-                WorldHolds.HandOn(held, InteractingHand()),
+                WorldHolds.HandOn(held, WorldHolds.InteractingHand(VRInput.LeftHanded)),
                 held.Center(),
                 DenyReason.NeedsTwoHands,
                 default,

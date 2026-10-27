@@ -116,9 +116,7 @@ internal static class ClimbStow
         var selected = c.refs.items.currentSelectedSlot;
         heldSlotSome = selected.IsSome;
         heldSlot = selected.IsSome ? selected.Value : (byte)0;
-        heldDrops =
-            !item.UIData.canPocket
-            || (selected.IsSome && selected.Value == 250 && !c.player.GetItemSlot(250).IsEmpty());
+        heldDrops = PutAwayGuard.PutAwayDrops(c, item);
         heldLeft = LocalHold.ItemInLeftHand;
         heldPos = item.Center();
     }

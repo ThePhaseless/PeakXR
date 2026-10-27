@@ -192,11 +192,11 @@ internal static class PingInput
         if (input.pingWasPressed)
             CheckPress(c);
 
-        // Use mapping of interact.physical: the holding hand's trigger is primary, the other secondary
-        // (right is primary when empty-handed).
-        bool primaryLeft = holding && LocalHold.ItemInLeftHand;
-        Suppress(LeftHand, input, primaryLeft);
-        Suppress(RightHand, input, !primaryLeft);
+        // Use mapping of interact.physical (one-handed, one hand's trigger is both uses).
+        bool primaryLeft = PhysicalInteraction.UseHandLeft(c, secondary: false);
+        bool secondaryLeft = PhysicalInteraction.UseHandLeft(c, secondary: true);
+        Suppress(LeftHand, input, primaryLeft, secondaryLeft);
+        Suppress(RightHand, input, !primaryLeft, !secondaryLeft);
     }
 
     /// <summary>The press PointPinger.Update would drop (PointPinger.cs:75-81, canPing :38-48): passed out or still
@@ -275,7 +275,7 @@ internal static class PingInput
             Affordance.Inform(freeLeft, free.position, DenyReason.UseOtherHand, DenyHint.On(free));
     }
 
-    private static void Suppress(Hand hand, CharacterInput input, bool primary)
+    private static void Suppress(Hand hand, CharacterInput input, bool primary, bool secondary)
     {
         if (!hand.SuppressUse)
             return;
@@ -286,7 +286,7 @@ internal static class PingInput
             if (releaseFrame)
                 input.usePrimaryWasReleased = false;
         }
-        else
+        if (secondary)
         {
             input.useSecondaryWasPressed = input.useSecondaryIsPressed = false;
             if (releaseFrame)

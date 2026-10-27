@@ -46,6 +46,8 @@ internal static class ItemGestures
         if (!VRSession.Active || rig == null || c != Character.localCharacter || !active)
         {
             Bind(null);
+            Skeletons.Stop();
+            NearHips = null;
             FireGestures.Reset();
             LidGesture.Reset();
             HeldGestures.Reset();
@@ -55,9 +57,12 @@ internal static class ItemGestures
         var item = c.data.currentItem;
         Bind(item != null ? item : null);
         // Skeletons report from their own Update; take last frame's nearest and start a new search.
-        NearHips = hipsSeen ? seenHips.N() : null;
-        hipsSeen = false;
-        seenSq = NearSkeleton * NearSkeleton;
+        Skelleton near = null;
+        if (Use == UseGesture.Read && Held != null)
+            near = Skeletons.Restart(Held.transform.position, NearSkeleton);
+        else
+            Skeletons.Stop();
+        NearHips = near != null && near.hip != null ? near.Center().N() : null;
         var cfg = ItemGesturesConfig.Instance;
         float dt = Time.deltaTime;
         FireGestures.Tick(c, rig, cfg, dt);
@@ -270,33 +275,22 @@ internal static class ItemGestures
         return ItemUse.Trigger(use, cfg.TriggerEats) switch
         {
             TriggerUse.Gesture => use == UseGesture.Read ? cfg.ReadAtFace : cfg.CommuneAtFace,
-            // Food and drink go to the mouth, when there is a mouth route; an item the game will not use anyway
-            // keeps the trigger, so its own refusal (UseDenial) says why.
-            TriggerUse.Mouth => InteractConfig.Instance.EatAtMouth && item.CanUsePrimary(),
+            // Food and drink go to the mouth, when there is a mouth route (a tracked head); an item the game will not
+            // use anyway keeps the trigger, so its own refusal (UseDenial) says why.
+            TriggerUse.Mouth => InteractConfig.Instance.EatAtMouth
+                && VRInput.HeadTracked
+                && item.CanUsePrimary(),
             _ => false,
         };
     }
 
-    private static bool hipsSeen;
-    private static Vector3 seenHips;
-    private static float seenSq;
+    private static readonly SkeletonSearch Skeletons = new();
 
     /// <summary>The hips of the skeleton nearest the book hand last frame, or null (<see cref="ReadZone"/>).</summary>
     public static System.Numerics.Vector3? NearHips { get; private set; }
 
     /// <summary>Patched after Skelleton.Update: while a read item is held, keeps the nearest skeleton's hips.</summary>
-    public static void SeeSkeleton(Skelleton skeleton)
-    {
-        if (Use != UseGesture.Read || Held == null)
-            return;
-        var hips = skeleton.Center();
-        float d = (hips - Held.transform.position).sqrMagnitude;
-        if (d >= seenSq)
-            return;
-        seenSq = d;
-        seenHips = hips;
-        hipsSeen = true;
-    }
+    public static void SeeSkeleton(Skelleton skeleton) => Skeletons.See(skeleton);
 
     /// <summary>The held item goes to the mouth to be used (eat, drink, blow up): interact.physical's eat route.</summary>
     public static bool AtMouth(Item item) => ItemUse.AtMouth(UseOf(item));

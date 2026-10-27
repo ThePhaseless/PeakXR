@@ -167,6 +167,7 @@ internal sealed class BinocularLens : MonoBehaviour
         placement = Placement.None;
         twistValid = false;
         knob.Reset();
+        zoomStop.Reset();
         enabled = true;
     }
 
@@ -276,7 +277,12 @@ internal sealed class BinocularLens : MonoBehaviour
         int steps = knob.Update(delta, Time.deltaTime);
         var zoom = binoculars.cameraOverride as CameraOverride_Binoculars;
         if (steps == 0 || zoom == null)
+        {
+            // A wrist that stopped turning re-arms the end-stop, so the next push into the limit thunks again.
+            if (knob.Direction == 0)
+                zoomStop.Reset();
             return;
+        }
         // Positive twist about the hand's forward is counter-clockwise seen from behind the hand: zoom out.
         // AdjustFOV clamps to the item's own range (CameraOverride_Binoculars.cs:27-30).
         float range = zoom.maxFov - zoom.minFov;

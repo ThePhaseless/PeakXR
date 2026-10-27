@@ -187,10 +187,11 @@ internal static class InteractPatches
             )
                 interactableResult = null;
             State.KeepPointedHold(__instance, c, ref interactableResult, __state);
-            // A fallback grip's press that DoInteraction turns into Item.Interact this frame (Interaction.cs:116-124):
+            // A fallback grip's press that DoInteraction turns into Item.Interact this frame (Interaction.cs:108-125:
+            // interact held and readyToInteract, not only its press edge, so a grip already holding interact counts):
             // the pickup belongs to that grip's hand.
             if (
-                c.input.interactWasPressed
+                c.input.interactIsPressed
                 && __instance.readyToInteract
                 && PhysicalInteraction.GripInteractActive
                 && interactableResult is Item picked
