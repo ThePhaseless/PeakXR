@@ -2223,14 +2223,30 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float eye = RigMath.TrackedEyeHeight(rig.HeightOffset);
-        float floor = XRRuntimeInfo.FloorTracking
-            ? 0f
-            : eye - HeightCalibration.DefaultStandingEyeHeight;
         HeadFrame(out var head, out var forward, out var right);
         var rot = VRInput.HeadRotation;
+        // The stoop is the player's own (real metres: the crouch reads a share of the real standing height). The
+        // controller goes where the crouched scout's hand can go: 0.35 above the game floor, 0.45 ahead and 0.2 to the
+        // right in the world. Under Camera.WorldScale the real floor lies below the game floor (the game floor is
+        // reached first), so a target 0.35 m above the real floor sat at the game floor, out of the avatar's reach
+        // (run 6: 0.25 m short at rig x1.15).
         var low = new Vector3(head.x, eye - 0.47f, head.z) + forward * 0.15f;
         var handFrom = Script(false).Position;
-        var handTo = new Vector3(head.x, floor + 0.35f, head.z) + forward * 0.45f + right * 0.2f;
+        var headWorld = rig.Origin.TransformPoint(head);
+        float ground = Physics.Raycast(
+            headWorld,
+            Vector3.down,
+            out var under,
+            4f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? under.point.y
+            : c.data.groundPos.y;
+        var reachWorld =
+            new Vector3(headWorld.x, ground + 0.35f, headWorld.z)
+            + rig.Origin.rotation * (forward * 0.45f + right * 0.2f);
+        var handTo = rig.Origin.InverseTransformPoint(reachWorld);
         float start = Now;
         while (Now - start < 0.8f)
         {
@@ -2263,7 +2279,7 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         var note = F(
-            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller, weld released {released}"
+            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller (0.35 above the game floor, rig x{rig.Scale:0.00}), weld released {released}"
         );
         if (!crouched)
             Fail("the avatar did not crouch for the stoop: " + note);
