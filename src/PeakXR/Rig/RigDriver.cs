@@ -625,12 +625,27 @@ internal sealed class RigDriver : MonoBehaviour
         massEyes.Sample(sample, leaning, snap, dt);
         torsoEyes.Sample(torsoSample, leaning, snap, dt);
         if (first)
+        {
+            // The ground straight under the eyes: data.groundPos is one ground contact (CharacterMovement.cs:722-751)
+            // and can sit on a step or slope edge (run 6 logged 1.65 m eyes in one scene and 1.46 m in the next).
+            float ground = Physics.Raycast(
+                eye,
+                Vector3.down,
+                out var under,
+                4f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? under.point.y
+                : d.groundPos.y;
+            float avatarEye = eye.y - ground;
+            float realEye = RigMath.TrackedEyeHeight(rig.HeightOffset);
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
-                    + $"{eye.y - d.groundPos.y:0.00} m above the ground; the player's calibrated eyes "
-                    + $"{RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m (rig x{rig.Scale:0.00}: the game floor is "
-                    + $"reached {WorldScale.FloorReach(eye.y - d.groundPos.y, RigMath.TrackedEyeHeight(rig.HeightOffset), rig.Scale):0.00} m above the real one)"
+                    + $"{avatarEye:0.00} m above the ground; the player's calibrated eyes {realEye:0.00} m (rig "
+                    + $"x{rig.Scale:0.00}: the game floor is reached {WorldScale.FloorReach(avatarEye, realEye, rig.Scale):0.00} m above the real one)"
             );
+        }
     }
 
     /// <summary>On foot and under control: the view may ride the mass centre and avatar.local may lean.</summary>
