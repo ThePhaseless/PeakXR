@@ -645,7 +645,8 @@ internal sealed partial class SelfTestRunner
             if (!reached)
                 fails.Add("scrolling to the end leaves the last row outside the view");
         }
-        yield return ShotAt("vr-223-vr-tab", column.position);
+        // Its centre: the pivot sits at the column's top edge, which framed the panel low and cut off at the corner.
+        yield return ShotAt("vr-223-vr-tab", CentreOf(column));
         Conclude(fails, notes);
     }
 

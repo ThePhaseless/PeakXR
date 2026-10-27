@@ -1375,65 +1375,68 @@ internal sealed partial class SelfTestRunner
         yield return Wait(1f);
     }
 
-    /// <summary>vr.211: Cold applied by an environmental source gives the cold rumble; once nothing applies Cold, the
-    /// rumble fades out.</summary>
+    /// <summary>vr.211: the cold rumble follows cold exposure (BodyFeedback.ExposureAdd): present while a scripted
+    /// source applies Cold (<see cref="BodyFeedback.SelfTestExposure"/>), gone within <see cref="ShiverFade"/> once
+    /// it stops. Exposure, not the bar: Cold that stops rising under a source still rumbles (commit 95e4493).</summary>
     IEnumerator ShiverStep()
     {
-        var c = Character.localCharacter;
+        var a = Character.localCharacter.refs.afflictions;
         bodyRestore = () => SandboxActions.ClearStatus(STATUS.Cold);
-        float rising = 0f;
-        for (int i = 0; i < 4; i++)
+        // Through the sandbox once, for its offline guard, god-mode lift and refusal check.
+        if (!Exposed(() => SandboxActions.AddStatus(STATUS.Cold, 0.001f)))
         {
-            // Applied as an environmental source would (BodyFeedback.ExposureSource), so the rumble reads it.
-            BodyFeedback.SelfTestExposure(true);
-            bool added;
-            try
-            {
-                added = SandboxActions.AddStatus(STATUS.Cold, 0.05f);
-            }
-            finally
-            {
-                BodyFeedback.SelfTestExposure(false);
-            }
-            if (!added)
-            {
-                stepSkip = "the game refused Cold (airport?)";
-                yield break;
-            }
-            yield return Wait(0.3f);
-            rising = Mathf.Max(
-                rising,
-                Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true)
-            );
+            stepSkip = "the game refused Cold (airport?)";
+            yield break;
         }
-        // Steady means the game's own Cold has not risen for the meter to empty: night cold
-        // (CharacterAfflictions.cs:509-511) keeps adding, and each rise is real cold that rumbles. Cold falling
-        // (warming) reads as none. Bounded: 6 s, then the step skips.
-        var a = c.refs.afflictions;
-        float cold = a.GetCurrentStatus(STATUS.Cold);
-        float still = Now;
-        float steady = -1f;
-        float until = Now + 6f;
-        while (Now < until && steady < 0f)
+        // A cold source applying 0.05 Cold per second, as fog or a wind chill zone does each frame.
+        float end = Now + 2f;
+        while (Now < end)
         {
-            float now = a.GetCurrentStatus(STATUS.Cold);
-            if (now > cold)
-                still = Now;
-            cold = now;
-            if (Now - still >= 3f)
-                steady = Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true);
+            float dt = Time.deltaTime;
+            Exposed(() => a.AddStatus(STATUS.Cold, ShiverRate * dt));
             yield return null;
         }
+        float exposed = Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true);
+        float total = BodyFeedback.ColdExposure;
+        float stopped = Now;
+        float faded = -1f;
+        while (Now - stopped < ShiverFade + 1f && faded < 0f)
+        {
+            if (Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true) <= 0.03f)
+                faded = Now - stopped;
+            yield return null;
+        }
+        // Real cold (night cold, CharacterAfflictions.cs:509-511; fog; wind chill) keeps the rumble going rightly.
+        bool other = BodyFeedback.ColdExposure > total;
         SandboxActions.ClearStatus(STATUS.Cold);
         var note = F(
-            $"cold rumble while rising {rising:0.000}, after 3 s steady {steady:0.000} (cold {cold:0.00})"
+            $"cold rumble under {ShiverRate:0.00}/s exposure {exposed:0.000}, at most 0.03 {(faded >= 0f ? F($"{faded:0.0} s") : "never")} after it stopped (bound {ShiverFade:0.0} s), Cold {a.GetCurrentStatus(STATUS.Cold):0.00}"
         );
-        if (steady < 0f)
-            stepSkip = "Cold kept rising for 6 s (night cold): " + note;
-        else if (rising < 0.1f || steady > 0.03f)
+        if (other && (faded < 0f || faded > ShiverFade))
+            stepSkip = "a real cold source exposed the player after the scripted one: " + note;
+        else if (exposed < 0.1f || faded < 0f || faded > ShiverFade)
             Fail(note);
         else
             stepNote = note;
+    }
+
+    const float ShiverRate = 0.05f;
+
+    /// <summary>Fade bound after exposure stops: BodyFeedback's RateMeter (tau 0.8 s, smoothed twice) under a 0.2 s
+    /// rumble ease takes about 3.7 s from 0.05/s down to 0.03, since half strength sits at a low 0.03/s.</summary>
+    const float ShiverFade = 4.5f;
+
+    static bool Exposed(Func<bool> add)
+    {
+        BodyFeedback.SelfTestExposure(true);
+        try
+        {
+            return add();
+        }
+        finally
+        {
+            BodyFeedback.SelfTestExposure(false);
+        }
     }
 
     /// <summary>
