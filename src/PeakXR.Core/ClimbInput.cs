@@ -13,6 +13,15 @@ public static class ClimbInput
     static readonly Vector3 WorldUp = new Vector3(0f, 1f, 0f);
 
     /// <summary>
+    /// A lost controller freezes a rope, vine or handle hang (no release, no let-go), so a tracking blink never drops
+    /// the climber. Only a hand in use counts: one still anchored, or any controller in two-handed play. One-handed
+    /// play leaves the other controller untracked for good, and it must not freeze the one hand forever.
+    /// </summary>
+    /// <param name="theOneHand">This is the controller one-handed play reads.</param>
+    public static bool FreezesHang(bool tracked, bool anchored, bool oneHanded, bool theOneHand) =>
+        !tracked && (anchored || !oneHanded || theOneHand);
+
+    /// <summary>
     /// Wall speed at full stick, m/s, to pass as <c>climbSpeed</c> to <see cref="FromBodyVelocity"/>. The game asks
     /// for <c>climbSpeed * multiplier</c> per second, but <c>SampleWall</c> casts from 0.4 m off the wall to 1 m
     /// behind the requested point, so on a flat wall only 0.4/1.4 of each step lands (CharacterClimbing.cs:327, :412).
