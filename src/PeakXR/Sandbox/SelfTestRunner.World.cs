@@ -1391,7 +1391,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
-        yield return ApproachFire(fireBase);
+        // Not ApproachFire's 0.95 m: there the idle hold (hand ~0.45 m ahead, the apple's centre ~0.26 m past it) put
+        // the food 0.28 m out, inside the cook column, before the carry began (run 17). From 1.5 m it rests 0.7-0.9 m
+        // out, in the warmth band (0.6-1.1 m).
+        yield return WarpFacing(fireBase, 1.5f);
         if (!fire.Lit)
         {
             fire.LightWithoutReveal();
