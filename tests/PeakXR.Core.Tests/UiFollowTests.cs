@@ -178,27 +178,59 @@ public class PanelMathTests
     }
 
     [Fact]
-    public void ClearDistance_NoWall_KeepsWantedDistance()
+    public void FitBeforeWall_NoWall_KeepsWantedDistanceWithDepth()
     {
-        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, float.PositiveInfinity));
-        Assert.Equal(1.8f, PanelMath.ClearDistance(1.8f, 2.5f));
+        Assert.Equal((1.8f, false), PanelMath.FitBeforeWall(1.8f, float.PositiveInfinity));
+        Assert.Equal((1.8f, false), PanelMath.FitBeforeWall(1.8f, 2.5f));
     }
 
     [Fact]
-    public void ClearDistance_WallCloser_StopsInFrontOfIt()
+    public void FitBeforeWall_WallCloser_StopsInFrontOfItWithDepth()
     {
-        TestUtil.Near(1.0f - PanelMath.WallGap, PanelMath.ClearDistance(1.8f, 1.0f));
+        var (distance, onTop) = PanelMath.FitBeforeWall(1.8f, 1.0f);
+        TestUtil.Near(1.0f - PanelMath.WallGap, distance);
+        Assert.False(onTop);
+        // Just outside the floor: still pulled in, still depth tested.
+        (distance, onTop) = PanelMath.FitBeforeWall(1.8f, PanelMath.ComfortFloor + 0.12f);
+        TestUtil.Near(PanelMath.ComfortFloor + 0.02f, distance);
+        Assert.False(onTop);
     }
 
     [Fact]
-    public void EdgeDepth_ProjectsAnEdgeRayHitOntoTheViewLine()
+    public void FitBeforeWall_WallInsideTheFloor_HoldsTheFloorAndDrawsOnTop()
     {
-        // Edge ray to (0.8, 0, 1.8): a hit 0.985 m along it lies 0.9 m ahead.
+        Assert.Equal((PanelMath.ComfortFloor, true), PanelMath.FitBeforeWall(1.8f, 0.2f));
+        // Menus pass their own, higher floor.
+        Assert.Equal(
+            (PanelMath.NearestMenuDistance, true),
+            PanelMath.FitBeforeWall(1.8f, 0.2f, PanelMath.NearestMenuDistance)
+        );
+    }
+
+    [Fact]
+    public void FitBeforeWall_WantedNearerThanTheFloor_IsNeverPushedOut()
+    {
+        Assert.Equal((0.4f, true), PanelMath.FitBeforeWall(0.4f, 0.1f));
+        Assert.Equal((0.4f, false), PanelMath.FitBeforeWall(0.4f, 1f));
+    }
+
+    [Fact]
+    public void FitBeforeWall_CustomMargin_KeepsThatGap()
+    {
+        var (distance, onTop) = PanelMath.FitBeforeWall(30f, 10f, margin: 1f);
+        TestUtil.Near(9f, distance);
+        Assert.False(onTop);
+    }
+
+    [Fact]
+    public void DepthAlong_ProjectsASampleRayHitOntoTheCentreLine()
+    {
+        // Edge ray to (0.8, 0, 1.8): a hit halfway along it lies 0.9 m ahead.
         var length = MathF.Sqrt(1.8f * 1.8f + 0.8f * 0.8f);
-        TestUtil.Near(0.9f, PanelMath.EdgeDepth(length / 2f, 1.8f, 0.8f));
-        Assert.Equal(1.8f, PanelMath.EdgeDepth(1.8f, 1.8f, 0f));
+        TestUtil.Near(0.9f, PanelMath.DepthAlong(length / 2f, 1.8f, length));
+        Assert.Equal(1.8f, PanelMath.DepthAlong(1.8f, 1.8f, 1.8f));
         Assert.True(
-            float.IsPositiveInfinity(PanelMath.EdgeDepth(float.PositiveInfinity, 1.8f, 0.8f))
+            float.IsPositiveInfinity(PanelMath.DepthAlong(float.PositiveInfinity, 1.8f, length))
         );
     }
 
@@ -257,14 +289,6 @@ public class PanelMathTests
     public void PickOpenYaw_BoxedIn_TakesTheMostOpen()
     {
         Assert.Equal(1, PanelMath.PickOpenYaw(new[] { 0.3f, 0.65f, 0.4f }));
-    }
-
-    [Fact]
-    public void ClearDistance_WallAtTheFace_KeepsNearestReadableDistance()
-    {
-        Assert.Equal(PanelMath.NearestMenuDistance, PanelMath.ClearDistance(1.8f, 0.2f));
-        // A wanted distance already nearer than the floor is never pushed out.
-        Assert.Equal(0.4f, PanelMath.ClearDistance(0.4f, 0.1f));
     }
 
     [Fact]

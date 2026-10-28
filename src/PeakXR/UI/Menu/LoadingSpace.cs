@@ -383,11 +383,11 @@ internal sealed class LoadingSpace : MonoBehaviour, ICanvasPlacement
         rotation = facing;
     }
 
-    private void OnEnable() => Application.onBeforeRender += TrackHead;
+    private void OnEnable() => LatePose.Posed += TrackHead;
 
     private void OnDestroy() => RoomUp = false;
 
-    private void OnDisable() => Application.onBeforeRender -= TrackHead;
+    private void OnDisable() => LatePose.Posed -= TrackHead;
 
     private void LateUpdate()
     {

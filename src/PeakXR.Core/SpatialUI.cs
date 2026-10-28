@@ -14,6 +14,17 @@ public static class SpatialMath
     public const float TargetNear = 0.4f;
     public const float TargetFar = 2f;
 
+    /// <summary>
+    /// Up hint for a label that looks straight at the eye along <paramref name="sight"/> (eye to label): world up, so
+    /// the text never rolls and faces the eye in pitch too (no squashing when looked down at). Within a few degrees
+    /// of vertical world up no longer fixes the roll, so the head's up does: the text stays upright in the view.
+    /// </summary>
+    public static Vector3 FaceUp(Vector3 sight, Vector3 headUp)
+    {
+        float n = sight.Length();
+        return n > 1e-6f && MathF.Abs(sight.Y / n) < 0.995f ? Vector3.UnitY : headUp;
+    }
+
     /// <summary>Metres per canvas pixel that make one pixel subtend <paramref name="degreesPerPixel"/>.</summary>
     public static float MetersPerPixel(float distance, float degreesPerPixel) =>
         MathF.Max(distance, 0f) * MathF.Tan(degreesPerPixel * UnityQuat.Deg2Rad);

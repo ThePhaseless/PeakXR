@@ -54,6 +54,9 @@ internal sealed class TrackedCanvas
     /// <summary>Menus: brought closer by a wall test since the last log line.</summary>
     public bool Moved;
 
+    /// <summary>Drawn on top: a wall held the panel nearer than its margin (<see cref="PanelMath.FitBeforeWall"/>).</summary>
+    public bool WallOnTop;
+
     /// <summary>Plate opacity <see cref="BackdropProbe"/> measured for the background behind this menu, and the
     /// opacity drawn now on its way there; negative until the first measure.</summary>
     public float PlateTarget = -1f;
@@ -361,6 +364,9 @@ internal static class WorldCanvases
             if (c != null)
                 c.sortingOrder = order;
         t.OriginalOrders.Clear();
+        // Unconditional: custom placements (end report, keyboard) mark their own canvas on top.
+        t.WallOnTop = false;
+        OnTop.SetWall(t.Rect, false);
         BackdropStrip.Restore(t, panelsOnly: false);
         BackplateView.Remove(t);
         t.Converted = false;
@@ -430,16 +436,18 @@ internal static class WorldCanvases
             switch (t.Kind)
             {
                 case CanvasKind.Hud:
-                    Apply(t, hud.Position, hud.Rotation, hud.MetersPerPixel * t.Size.x);
+                    Apply(t, hud.Position, hud.Rotation, hud.Scale * hud.MetersPerPixel * t.Size.x);
+                    DrawOnTop(t, hud.OnTop);
                     break;
                 case CanvasKind.Info:
                     // A little closer than the HUD so the two never z-fight.
                     Apply(
                         t,
-                        hud.Position - hud.Rotation * new Vector3(0f, 0f, 0.02f),
+                        hud.Position - hud.Rotation * new Vector3(0f, 0f, 0.02f * hud.Scale),
                         hud.Rotation,
-                        hud.MetersPerPixel * t.Size.x
+                        hud.Scale * hud.MetersPerPixel * t.Size.x
                     );
+                    DrawOnTop(t, hud.OnTop);
                     break;
                 case CanvasKind.Custom:
                     var result = t.Placement.Place(
@@ -603,7 +611,7 @@ internal static class WorldCanvases
     {
         var wanted = cfg.MenuDistanceWorld;
         var depth = PanelDepth(t, t.Yaw, cfg);
-        var clear = PanelMath.ClearDistance(wanted, depth);
+        var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth, PanelMath.NearestMenuDistance);
         if (turned == null)
             clear = Mathf.Min(clear, t.Scale * wanted);
         var scale = clear / wanted;
@@ -613,11 +621,17 @@ internal static class WorldCanvases
         {
             t.Scale = scale;
             var offset = PanelMath
-                .InFront(t.Yaw, Mathf.Max(0.5f, clear - t.Stack), cfg.MenuTilt.Value)
+                .InFront(
+                    t.Yaw,
+                    Mathf.Max(PanelMath.ComfortFloor, clear - t.Stack),
+                    cfg.MenuTilt.Value
+                )
                 .ToUnity();
             t.Position = t.Eye + offset;
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
         }
+        // Re-marked on every test: a new page brings graphics the last mark never saw.
+        DrawOnTop(t, onTop, remark: true);
         if (turned != null || (!t.Retest && t.Moved))
         {
             t.Moved = false;
@@ -657,9 +671,8 @@ internal static class WorldCanvases
     private static int limitSample;
 
     /// <summary>
-    /// How far ahead along <paramref name="yaw"/> the nearest wall stands in front of any part of the panel, as a
-    /// depth on its centre line (infinity for none): <see cref="PanelMath.PanelSamples"/> rays from the eye to points
-    /// across the panel as drawn at <c>UI.MenuDistance</c>. Placement only, never per frame.
+    /// How far ahead along <paramref name="yaw"/> the nearest wall stands in front of any part of the menu, as a
+    /// depth on its centre line (infinity for none), with the panel as drawn at <c>UI.MenuDistance</c>.
     /// </summary>
     private static float PanelDepth(TrackedCanvas t, float yaw, UIWorldSettings cfg)
     {
@@ -668,7 +681,20 @@ internal static class WorldCanvases
         var half =
             0.5f * PanelMath.MenuMetersPerPixel(size.x, size.y, cfg.MenuWidthWorld, wanted) * size;
         var offset = PanelMath.InFront(yaw, wanted, cfg.MenuTilt.Value).ToUnity();
-        var rotation = Quaternion.LookRotation(offset, Vector3.up);
+        return WallDepth(t.Eye, offset, Quaternion.LookRotation(offset, Vector3.up), half);
+    }
+
+    /// <summary>
+    /// The wall test every world panel shares (menus, HUD, end report, cinema screen, keyboard, banners): how far
+    /// ahead the nearest wall stands in front of any part of a panel centred at <paramref name="eye"/> +
+    /// <paramref name="offset"/>, turned <paramref name="rotation"/>, <paramref name="half"/> metres half extents, as
+    /// a depth on its centre line (infinity for none). <see cref="PanelMath.PanelSamples"/> rays from the eye to
+    /// points across the panel; feed the result to <see cref="PanelMath.FitBeforeWall"/>. Placement only, never
+    /// per frame at full rate.
+    /// </summary>
+    internal static float WallDepth(Vector3 eye, Vector3 offset, Quaternion rotation, Vector2 half)
+    {
+        var distance = offset.magnitude;
         float depth = float.PositiveInfinity;
         limit = null;
         var backfaces = Physics.queriesHitBackfaces;
@@ -678,12 +704,9 @@ internal static class WorldCanvases
             for (int i = 0; i < PanelMath.PanelSamples; i++)
             {
                 var s = PanelMath.PanelSample(i, half.x, half.y);
-                var hit = WallAlong(
-                    t.Eye,
-                    offset + rotation * new Vector3(s.X, s.Y, 0f),
-                    out var c
-                );
-                var d = PanelMath.EdgeDepth(hit, wanted, s.Length());
+                var toPoint = offset + rotation * new Vector3(s.X, s.Y, 0f);
+                var hit = WallAlong(eye, toPoint, out var c);
+                var d = PanelMath.DepthAlong(hit, distance, toPoint.magnitude);
                 if (d < depth)
                 {
                     depth = d;
@@ -697,6 +720,16 @@ internal static class WorldCanvases
             Physics.queriesHitBackfaces = backfaces;
         }
         return depth;
+    }
+
+    /// <summary>Draws <paramref name="t"/> on top while a wall holds it nearer than its margin, depth tested again
+    /// once the wall clears. Walks the canvas only on a change, or with <paramref name="remark"/> while on top.</summary>
+    private static void DrawOnTop(TrackedCanvas t, bool on, bool remark = false)
+    {
+        if (t.WallOnTop == on && !(on && remark))
+            return;
+        t.WallOnTop = on;
+        OnTop.SetWall(t.Rect, on);
     }
 
     private static readonly List<float> emDegrees = new();
@@ -742,9 +775,10 @@ internal static class WorldCanvases
         var line =
             $"[ui.world] menu '{name}' {(turned != null ? "opened" : "resized")} at {clear:0.00} m{turn}: {why}; "
             + MedianEm(t, cfg);
-        if (depth - PanelMath.WallGap < PanelMath.NearestMenuDistance)
+        if (t.WallOnTop)
             Plugin.Log.LogWarning(
-                line + $"; held at the {PanelMath.NearestMenuDistance:0.0} m minimum"
+                line
+                    + $"; held at the {PanelMath.NearestMenuDistance:0.0} m minimum and drawn on top"
             );
         else
             Plugin.Log.LogInfo(line);

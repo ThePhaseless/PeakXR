@@ -28,10 +28,15 @@ public sealed class CameraTakeover
     /// <summary>Seconds the screen stays black after a switch.</summary>
     public float HoldSeconds = 0.1f;
 
+    /// <summary>The fade actually drawn (0 clear, 1 black), set by the caller each frame: a switch waits for it to
+    /// be black (<see cref="FadeCut"/>). 1 by default, which switches as soon as <see cref="Fade"/> is.</summary>
+    public float DrawnFade = 1f;
+
     Phase _phase;
     bool _committed;
     float _wantTimer;
     float _holdTimer;
+    float _outTimer;
     bool _blink;
 
     /// <summary>The view to show now: false = first person, true = detached.</summary>
@@ -79,7 +84,10 @@ public sealed class CameraTakeover
 
         bool needSwitch = _committed != Detached || _blink;
         if (needSwitch && (_phase == Phase.Idle || _phase == Phase.FadingIn))
+        {
             _phase = Phase.FadingOut;
+            _outTimer = 0f;
+        }
 
         switch (_phase)
         {
@@ -91,14 +99,17 @@ public sealed class CameraTakeover
                     break;
                 }
                 Fade = FadeSeconds <= 0f ? 1f : System.Math.Min(1f, Fade + dt / FadeSeconds);
-                if (Fade >= 1f)
+                _outTimer += dt;
+                if (Fade >= 1f && FadeCut.Ready(DrawnFade, _outTimer))
                     SwitchAtBlack();
                 break;
 
             case Phase.Hold:
                 if (_committed != Detached || _blink)
                 {
-                    SwitchAtBlack();
+                    _outTimer += dt;
+                    if (FadeCut.Ready(DrawnFade, _outTimer))
+                        SwitchAtBlack();
                     break;
                 }
                 _holdTimer += dt;
@@ -119,6 +130,7 @@ public sealed class CameraTakeover
         _blink = false;
         SwitchedThisFrame = true;
         _holdTimer = 0f;
+        _outTimer = 0f;
         _phase = Phase.Hold;
     }
 

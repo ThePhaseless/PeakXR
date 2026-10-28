@@ -117,22 +117,34 @@ public static class PanelMath
         return new Vector3(MathF.Sin(y) * flat, -distance * MathF.Sin(t), MathF.Cos(y) * flat);
     }
 
-    /// <summary>Space left between a menu and the wall that pulled it in, metres.</summary>
+    /// <summary>Space left between a panel and the wall that pulled it in, metres.</summary>
     public const float WallGap = 0.1f;
 
-    /// <summary>A wall never pulls a menu nearer than this: still readable and inside laser and poke reach.</summary>
+    /// <summary>Nearest any world panel is placed, metres: nearer, the eyes strain to converge on it.</summary>
+    public const float ComfortFloor = 0.5f;
+
+    /// <summary>A wall never pulls a menu nearer than this: inside laser and poke reach, and enough above
+    /// <see cref="ComfortFloor"/> for the few centimetres newer menus stack in front of older ones.</summary>
     public const float NearestMenuDistance = 0.6f;
 
     /// <summary>
-    /// Distance for a menu that wants to sit <paramref name="wanted"/> metres away when the first wall along
-    /// that line is <paramref name="wallDistance"/> away (infinity for none): just in front of the wall, so
-    /// the panel is not drawn inside it, but never nearer than <see cref="NearestMenuDistance"/>.
+    /// The one rule for a world panel (menu, HUD, end report, cinema screen, keyboard, banner) that wants to sit
+    /// <paramref name="wanted"/> metres away when the nearest geometry along its sight lines is
+    /// <paramref name="wallDistance"/> away (infinity for none): at <paramref name="wanted"/> when that clears, else
+    /// <paramref name="margin"/> in front of the wall, never nearer than <paramref name="floor"/> (a wanted distance
+    /// already nearer is kept). Held where the margin is not kept, it is drawn on top with no depth test, so it
+    /// reads clearly instead of clipping into the rock.
     /// </summary>
-    public static float ClearDistance(float wanted, float wallDistance)
+    public static (float Distance, bool OnTop) FitBeforeWall(
+        float wanted,
+        float wallDistance,
+        float floor = ComfortFloor,
+        float margin = WallGap
+    )
     {
-        if (!(wallDistance - WallGap < wanted))
-            return wanted;
-        return MathF.Min(wanted, MathF.Max(NearestMenuDistance, wallDistance - WallGap));
+        float before = wallDistance - margin;
+        float distance = before < wanted ? MathF.Min(wanted, MathF.Max(floor, before)) : wanted;
+        return (distance, distance > before);
     }
 
     /// <summary>
@@ -154,12 +166,13 @@ public static class PanelMath
     }
 
     /// <summary>
-    /// Depth along the view line of a wall hit <paramref name="hit"/> metres along the ray to a panel edge
-    /// <paramref name="halfWidth"/> to the side of a panel <paramref name="distance"/> away. The panel keeps its
-    /// angular size when pulled in, so its edge stays on that ray and this depth is what it must clear.
+    /// Depth along the panel's centre line of a wall hit <paramref name="hit"/> metres along the ray to a panel
+    /// point <paramref name="sampleDistance"/> from the eye, for a panel <paramref name="distance"/> away. A
+    /// pulled-in panel keeps its angular size, so every point stays on its own ray and this depth is what it must
+    /// clear, whatever the panel's tilt.
     /// </summary>
-    public static float EdgeDepth(float hit, float distance, float halfWidth) =>
-        hit * distance / MathF.Sqrt(distance * distance + halfWidth * halfWidth);
+    public static float DepthAlong(float hit, float distance, float sampleDistance) =>
+        sampleDistance > 1e-6f ? hit * distance / sampleDistance : hit;
 
     /// <summary>Points of a panel face tested for walls: a 5 x 3 grid, so a curved wall that cuts only a
     /// corner, a pillar between the centre and an edge, or a floor under the bottom row is seen.</summary>
@@ -168,7 +181,7 @@ public static class PanelMath
     /// <summary>
     /// Offset of sample <paramref name="index"/> (0 to <see cref="PanelSamples"/> - 1) from the panel centre,
     /// in the panel plane, for a panel <paramref name="halfWidth"/> by <paramref name="halfHeight"/> half
-    /// extents. Its length is the half width <see cref="EdgeDepth"/> takes for that sample's ray.
+    /// extents.
     /// </summary>
     public static Vector2 PanelSample(int index, float halfWidth, float halfHeight) =>
         new((index % 5 - 2) * 0.5f * halfWidth, (index / 5 - 1) * halfHeight);

@@ -1,3 +1,4 @@
+using PeakXR.Core;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
@@ -11,7 +12,8 @@ namespace PeakXR.UI.RunFlow;
 /// turns MainCamera off (PeakHandler.cs:77) and plays on scene cameras that move on their own; strapped
 /// to the HMD that is forced camera motion. The active cutscene camera is redirected into a texture
 /// owned here and shown on a screen placed once in front of the player. Its target texture and eye
-/// mask are restored when it changes or the cutscene ends. No per-frame allocation.
+/// mask are restored when it changes or the cutscene ends. Rock nearer than 3 m pulls the screen in at the same
+/// angular size, drawn on top at the comfort floor (<see cref="PanelMath.FitBeforeWall"/>). No per-frame allocation.
 /// </summary>
 internal sealed class CinemaScreen
 {
@@ -177,7 +179,8 @@ internal sealed class CinemaScreen
         screen.SetActive(true);
     }
 
-    /// <summary>World-locked: placed once in front of the head, again only after a big move.</summary>
+    /// <summary>World-locked: placed once in front of the head, again only after a big move. Placement only, so
+    /// the wall test never runs per frame.</summary>
     private void Place(Transform head)
     {
         var t = screen.transform;
@@ -190,11 +193,22 @@ internal sealed class CinemaScreen
             forward = Vector3.forward;
         forward.Normalize();
         var width = cfg.CutsceneScreenWidth.Value;
-        t.SetPositionAndRotation(
-            head.position + forward * Distance,
-            Quaternion.LookRotation(forward, Vector3.up)
+        var height = width * TextureHeight / TextureWidth;
+        var rotation = Quaternion.LookRotation(forward, Vector3.up);
+        var depth = WorldCanvases.WallDepth(
+            head.position,
+            forward * Distance,
+            rotation,
+            new Vector2(0.5f * width, 0.5f * height)
         );
-        t.localScale = new Vector3(width, width * TextureHeight / TextureWidth, 1f);
+        var (clear, onTop) = PanelMath.FitBeforeWall(Distance, depth);
+        var scale = clear / Distance;
+        t.SetPositionAndRotation(head.position + forward * clear, rotation);
+        t.localScale = new Vector3(width * scale, height * scale, 1f);
+        material.SetInt(
+            "unity_GUIZTestMode",
+            (int)(onTop ? CompareFunction.Always : CompareFunction.LessEqual)
+        );
         placed = true;
     }
 

@@ -5,7 +5,9 @@ public class DrawOrderTests
     [Fact]
     public void HandUi_SortsUnderEveryComfortOverlay()
     {
-        Assert.Equal(short.MaxValue, DrawOrder.Fade);
+        // Only the head-in-wall cue draws over the fade: it explains the black.
+        Assert.Equal(short.MaxValue, DrawOrder.WallCue);
+        Assert.True(DrawOrder.Fade < DrawOrder.WallCue);
         Assert.True(DrawOrder.Rim < DrawOrder.Fade);
         Assert.True(DrawOrder.Vignette < DrawOrder.Rim);
         Assert.True(DrawOrder.LaserCursor < DrawOrder.Vignette);

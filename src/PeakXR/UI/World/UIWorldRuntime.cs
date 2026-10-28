@@ -47,14 +47,14 @@ internal sealed class UIWorldRuntime : MonoBehaviour
     {
         pointer = new LaserPointer(transform);
         SceneManager.sceneLoaded += OnSceneLoaded;
-        Application.onBeforeRender += OnBeforeRender;
+        LatePose.Posed += OnBeforeRender;
         WorldCanvases.Scan(includeInactive: true);
     }
 
     private void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        Application.onBeforeRender -= OnBeforeRender;
+        LatePose.Posed -= OnBeforeRender;
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)

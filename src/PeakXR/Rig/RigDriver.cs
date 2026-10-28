@@ -214,6 +214,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
     private readonly HoldCue holdCue = new();
+    private readonly WallCue wallCue = new();
     private bool recenterLeft = true;
 
     /// <summary>The recenter hold ring, for the self-test (vr.185); null without a rig driver.</summary>
@@ -383,7 +384,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnEnable()
     {
-        Application.onBeforeRender += OnBeforeRender;
+        LatePose.SetRig(OnBeforeRender);
         mirror.Enable();
         needInitialRecenter = true;
         snap = true;
@@ -391,9 +392,10 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnDisable()
     {
-        Application.onBeforeRender -= OnBeforeRender;
+        LatePose.SetRig(null);
         mirror.Disable();
         holdCue.Show(null, null, 0f, 0f);
+        wallCue.Show(null, false, Vector3.zero);
         spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
@@ -412,6 +414,7 @@ internal sealed class RigDriver : MonoBehaviour
     private void OnDestroy()
     {
         holdCue.Destroy();
+        wallCue.Destroy();
         spectateFloor.Destroy();
         if (instance == this)
             instance = null;
@@ -843,10 +846,14 @@ internal sealed class RigDriver : MonoBehaviour
         // A Menu the bug-report chord holds is not a recenter hold.
         bool left = VRInput.Left.Menu && !Diagnostics.DebugGesture.MenuTaken(true),
             right = VRInput.Right.Menu && !Diagnostics.DebugGesture.MenuTaken(false);
+        // Both sticks clicked: the recenter every controller has (a Touch Menu may never reach the game).
+        bool sticks = Diagnostics.DebugGesture.SticksHeld;
         // The ring goes to the controller whose button is held; with both down it stays where it is.
-        if (left != right)
+        if (sticks && !left && !right)
+            recenterLeft = VRInput.OffHandLeft;
+        else if (left != right)
             recenterLeft = left;
-        bool fired = recenterPress.Update(left || right, dt);
+        bool fired = recenterPress.Update(left || right || sticks, dt);
         holdCue.Show(
             rig.Hand(recenterLeft),
             rig.Head,
@@ -988,6 +995,8 @@ internal sealed class RigDriver : MonoBehaviour
             takeover.Blink();
 
         takeover.FadeSeconds = CameraFeature.FadeSeconds.Value;
+        // The drawn fade eases at UI.FadeSeconds, slower than this ramp: switch only once it is black.
+        takeover.DrawnFade = UI.Common.FadeView.Alpha;
         takeover.Update(want, dt);
         if (takeover.SwitchedThisFrame)
         {
@@ -1310,6 +1319,14 @@ internal sealed class RigDriver : MonoBehaviour
             VRFade.Set(wallFadeOwner, 1f);
         else
             VRFade.Clear(wallFadeOwner);
+        // Say why it is black: toward the body is open space for a head leaned into rock; the chase view and the
+        // eye guard clear by themselves, so they get the ring alone.
+        bool leaned = headBlocked && !chase && c != null;
+        wallCue.Show(
+            rig.Head,
+            headBlocked || eyeGuard.Black,
+            leaned ? c.Center - rig.Head.position : Vector3.zero
+        );
     }
 
     /// <summary><paramref name="to"/>, or pulled toward <paramref name="from"/> to stop <see cref="ChaseMargin"/>

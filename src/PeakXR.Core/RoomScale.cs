@@ -274,13 +274,16 @@ public sealed class RoomScaleFollow
 
 /// <summary>
 /// Sequences a room-scale recenter under a fade, so the view never jumps in sight: the fade target goes black,
-/// and after <see cref="FadeTime"/> <see cref="Update"/> returns true once (snap the anchor then) and the target
-/// clears. A started fade always ends in a recenter.
+/// and after <see cref="FadeTime"/>, once the drawn fade is black (<see cref="FadeCut"/>), <see cref="Update"/>
+/// returns true once (snap the anchor then) and the target clears. A started fade always ends in a recenter.
 /// </summary>
 public sealed class RecenterFade
 {
     /// <summary>Seconds the screen gets to go dark before the snap.</summary>
     public float FadeTime = 0.25f;
+
+    /// <summary>The fade actually drawn (0 clear, 1 black), set by the caller each frame; 1 by default.</summary>
+    public float DrawnFade = 1f;
 
     float _timer = -1f;
 
@@ -298,7 +301,7 @@ public sealed class RecenterFade
             return false;
         }
         _timer += dt;
-        if (_timer < FadeTime)
+        if (_timer < FadeTime || !FadeCut.Ready(DrawnFade, _timer))
             return false;
         _timer = -1f;
         return true;

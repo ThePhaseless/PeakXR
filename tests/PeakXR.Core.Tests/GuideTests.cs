@@ -23,6 +23,15 @@ public class GuideTests
         Assert.True(demo.Left != null || demo.Right != null, "a demo shows at least one hand");
     }
 
+    [Fact]
+    public void Recenter_ShownOnBothSticks_TheChordEveryControllerHas()
+    {
+        var demo = GuideTable.Get(GuideTopic.PauseRecenter);
+        Assert.Contains(demo.Left.Keys, k => k.Button == GuideButton.StickClick);
+        Assert.Contains(demo.Right.Keys, k => k.Button == GuideButton.StickClick);
+        Assert.Contains("both sticks", demo.Caption, System.StringComparison.Ordinal);
+    }
+
     [Theory]
     [MemberData(nameof(Topics))]
     public void EveryTrack_IsSortedAndInsideTheLoop(GuideTopic topic)

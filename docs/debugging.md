@@ -4,12 +4,13 @@ PeakXR always keeps a short history of what just happened: its last 500 log line
 
 ## Save a report
 
-- In play: hold Menu on one controller and click the other controller's stick, then keep both held for 1.5 s. The Menu hand feels the hold fill up. On Quest controllers that is the left Menu (≡) and the right stick.
+- In play, on any controller: click both sticks in and keep holding them. At 1 s you recenter; then the off hand feels a second hold fill, and 1.5 s later the report is saved. Letting go before that saves nothing.
+- In play, where Menu reaches the game (not Quest or Rift under SteamVR, whose Menu goes to the SteamVR dashboard): hold Menu on one controller and click the other controller's stick, then keep both held for 1.5 s. The Menu hand feels the hold fill up. This one does not recenter first.
 - In a menu: open the VR tab in the game's settings, go to the Debug section and press "Save bug report".
 
 You hear the notice bell and feel a tick, a ring appears at your hand and "Bug report saved" shows next to it. While one report is still being written, a second try gets the wait cue.
 
-The gesture never pauses, recenters, sprints or crouches. Click the stick within a second of pressing Menu, though: once you have held Menu for a full second, the recenter has already happened. One-handed play has no gesture, so use the VR tab buttons there.
+The Menu gesture never pauses, recenters, sprints or crouches. Click the stick within a second of pressing Menu, though: once you have held Menu for a full second, the recenter has already happened. One-handed play has no gesture, so use the VR tab buttons there.
 
 ## Drop a marker
 

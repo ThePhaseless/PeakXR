@@ -31,6 +31,11 @@ internal sealed class BinocularLens : MonoBehaviour
     private const float NearEyeSize = 0.255f;
     private const float NearEyeExit = 1.5f;
 
+    /// <summary>Degrees of view the near-eye image spans (about 40); the zoom steadying measures magnification
+    /// against it for every placement.</summary>
+    private static readonly float NearEyeViewFov =
+        2f * Mathf.Atan(NearEyeSize * 0.5f / NearEyeDistance) * Mathf.Rad2Deg;
+
     // Panel fallback: 0.5 m wide, 1 m ahead and slightly low; follows the head's yaw lazily.
     private const float PanelDistance = 1f;
     private const float PanelSize = 0.5f;
@@ -86,6 +91,11 @@ internal sealed class BinocularLens : MonoBehaviour
     private bool twistValid;
     private bool twistLeft;
     private Quaternion lastHandRotation;
+
+    /// <summary>Steadied lens forward and its damping velocity (<see cref="BinocularSteady"/>); invalid snaps.</summary>
+    private bool aimValid;
+    private Vector3 aimForward;
+    private Vector3 aimVelocity;
 
     /// <summary>Binoculars were raised in VR: hand the view to the lens and keep vanilla off the headset.</summary>
     public static void Begin(Action_ShowBinocularOverlay binoculars)
@@ -169,6 +179,7 @@ internal sealed class BinocularLens : MonoBehaviour
         eyeLocal = item != null ? EyeEnd(item) : Vector3.zero;
         placement = Placement.None;
         twistValid = false;
+        aimValid = false;
         knob.Reset();
         zoomStop.Reset();
         enabled = true;
@@ -180,6 +191,7 @@ internal sealed class BinocularLens : MonoBehaviour
         overlay = null;
         item = null;
         twistValid = false;
+        aimValid = false;
         knob.Reset();
         enabled = false;
     }
@@ -214,6 +226,7 @@ internal sealed class BinocularLens : MonoBehaviour
         {
             Release();
             twistValid = false;
+            aimValid = false;
             return;
         }
         ClearOverride(binoculars);
@@ -268,14 +281,33 @@ internal sealed class BinocularLens : MonoBehaviour
         }
         else
             posed = HandAim.TryHeld(out origin, out rotation);
+        float fov = Mathf.Clamp(zoom != null ? zoom.fov : 35f, 1f, 120f);
         if (posed)
         {
+            // Hand tremor is magnified by the zoom: ease the aim, critically damped, longer the more it zooms.
+            var raw = rotation * Vector3.forward;
+            if (aimValid)
+            {
+                aimForward = Vector3.SmoothDamp(
+                    aimForward,
+                    raw,
+                    ref aimVelocity,
+                    BinocularSteady.SmoothTime(fov, NearEyeViewFov)
+                );
+                aimValid = aimForward.sqrMagnitude > 1e-4f;
+            }
+            if (!aimValid)
+            {
+                aimForward = raw;
+                aimVelocity = Vector3.zero;
+                aimValid = true;
+            }
+            var forward = aimForward.normalized;
             // Roll-free so a zoom twist does not spin the image.
-            var forward = rotation * Vector3.forward;
             var up = Mathf.Abs(forward.y) > 0.98f ? rotation * Vector3.up : Vector3.up;
             lensCam.transform.SetPositionAndRotation(origin, Quaternion.LookRotation(forward, up));
         }
-        lensCam.fieldOfView = Mathf.Clamp(zoom != null ? zoom.fov : 35f, 1f, 120f);
+        lensCam.fieldOfView = fov;
         if (!lensCam.enabled)
             lensCam.enabled = true;
     }

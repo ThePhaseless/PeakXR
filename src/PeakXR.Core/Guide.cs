@@ -1013,18 +1013,23 @@ public static class GuideTable
             new GuideDemo(
                 GuideTopic.PauseRecenter,
                 "Pause and recenter",
-                "Tap Menu to pause. Hold it for a second to recenter.",
+                "Tap Menu to pause. Hold both sticks in to recenter.",
                 3.4f,
                 null,
                 T(
                     K(0f, RestL),
                     K(0.3f, RestL, button: GuideButton.Menu),
                     K(0.5f, RestL),
-                    K(1.6f, RestL, button: GuideButton.Menu),
+                    K(1.6f, RestL, button: GuideButton.StickClick),
                     K(2.7f, RestL),
                     K(3.4f, RestL)
                 ),
-                restRight,
+                T(
+                    K(0f, RestR),
+                    K(1.6f, RestR, button: GuideButton.StickClick),
+                    K(2.7f, RestR),
+                    K(3.4f, RestR)
+                ),
                 new[]
                 {
                     P(GuideShape.Panel, 0.5f, V(0f, -0.15f, 0.7f), 0.5f, 1.4f),

@@ -22,6 +22,9 @@ public sealed class UIWorldFeature : Feature
         Settings.MenuBackplate.SettingChanged += (_, _) => WorldCanvases.OnBackplateChanged();
         Settings.MenuBackplateOpacity.SettingChanged += (_, _) =>
             WorldCanvases.OnBackplateChanged();
+        // Off, the plates must drop the last measured opacity and return to the fixed one.
+        Settings.MenuBackplateAdaptive.SettingChanged += (_, _) =>
+            WorldCanvases.OnBackplateChanged();
         HudSplit.Resolve();
 
         Patch(typeof(CanvasScalerEnablePatch));

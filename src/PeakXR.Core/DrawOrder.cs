@@ -7,11 +7,15 @@ namespace PeakXR.Core;
 /// </summary>
 public static class DrawOrder
 {
-    /// <summary>The head-locked fade sphere: covers everything.</summary>
-    public const short Fade = short.MaxValue;
+    /// <summary>The head-in-wall cue: over the fade it explains, so the player sees why it is black and where to
+    /// move.</summary>
+    public const short WallCue = short.MaxValue;
+
+    /// <summary>The head-locked fade sphere: covers everything else.</summary>
+    public const short Fade = short.MaxValue - 1;
 
     /// <summary>The peripheral status rim.</summary>
-    public const short Rim = short.MaxValue - 1;
+    public const short Rim = short.MaxValue - 2;
 
     /// <summary>The comfort vignette.</summary>
     public const short Vignette = short.MaxValue - 3;
