@@ -691,8 +691,7 @@ internal sealed class RenderDriver : MonoBehaviour
                     $"the GPU keeps up with {fits:0} Hz: set the headset's refresh rate to it, or lower the runtime's resolution or Render.RenderScale"
                 )
                 : "lower the runtime's resolution or Render.RenderScale";
-        var api = SystemInfo.graphicsDeviceType;
-        string apiAdvice = GraphicsAdvice.For(api.ToString(), XRBootstrapDriver.UnderWine);
+        string apiAdvice = XRBootstrapDriver.ApiAdvice(SystemInfo.graphicsDeviceType);
         return head
             + System.FormattableString.Invariant(
                 $"; the GPU needs p50/p95 {r.Gpu.P50:0.00}/{r.Gpu.P95:0.00} ms of it at render scale {CurrentScale:0.00}; {advice}"

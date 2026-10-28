@@ -291,10 +291,21 @@ sealed class XRBootstrapDriver : MonoBehaviour
     {
         var api = SystemInfo.graphicsDeviceType;
         Plugin.Log.LogInfo($"{Tag} Graphics API {api}{(UnderWine ? " (Proton)" : "")}");
-        var advice = GraphicsAdvice.For(api.ToString(), UnderWine);
+        var advice = ApiAdvice(api);
         if (advice != null)
             Plugin.Log.LogWarning($"{Tag} {advice}");
     }
+
+    /// <summary>The <see cref="GraphicsAdvice"/> for this GPU and graphics API: NVIDIA (vendor 0x10DE) and Proton's
+    /// Wayland driver change what works under Proton.</summary>
+    internal static string ApiAdvice(UnityEngine.Rendering.GraphicsDeviceType api) =>
+        GraphicsAdvice.For(
+            api.ToString(),
+            UnderWine,
+            SystemInfo.graphicsDeviceVendorID == 0x10DE,
+            Environment.GetEnvironmentVariable("PROTON_ENABLE_WAYLAND") is { Length: > 0 } w
+                && w != "0"
+        );
 
     /// <summary>Wine sets these in every process it runs, Proton included.</summary>
     internal static bool UnderWine =>

@@ -84,13 +84,23 @@ one is running; see [Check that it works](#check-that-it-works).
    Linux if you prefer a mod manager.
 3. Set PEAK's launch options in Steam (Properties, General, Launch options):
 
+   AMD or Intel GPU:
+
    ```
    WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan
    ```
 
-   The DLL override lets BepInEx load under Proton. `-force-vulkan` makes the game use Vulkan, the only
-   graphics API tested in VR so far. On a Proton launch without Wine's VR registry keys, D3D12 and D3D11
-   fail to create a device and the game falls back to Vulkan anyway.
+   NVIDIA GPU:
+
+   ```
+   PROTON_ENABLE_WAYLAND=0 WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11
+   ```
+
+   The DLL override lets BepInEx load under Proton. On AMD and Intel, Vulkan is the tested graphics API.
+   On NVIDIA, Vulkan VR crashes in Proton's OpenXR bridge, so use Direct3D11. Proton's Wayland driver
+   (on by default in some Proton builds, such as Proton-CachyOS) never offers the OpenXR extensions to
+   Direct3D, so VR does not start until `PROTON_ENABLE_WAYLAND=0` switches it back to X11. If the game
+   picks the wrong path, the log's `[xr.bootstrap]` line says which launch options to use.
 4. Start PEAK once without VR, wait for the title screen, and quit.
 5. Copy the `BepInEx` folder from the PeakXR zip into the game folder, merging it with the one there.
 6. Start SteamVR with your headset, then start PEAK from Steam. On a laptop

@@ -465,4 +465,47 @@ public class GraphicsAdviceTests
         Assert.NotNull(advice);
         Assert.Contains("-force-vulkan", advice);
     }
+
+    [Fact]
+    public void VulkanUnderProtonOnNvidia_PointsToDirect3D11OnX11()
+    {
+        var advice = GraphicsAdvice.For(
+            "Vulkan",
+            underWine: true,
+            nvidia: true,
+            waylandDriver: false
+        );
+        Assert.NotNull(advice);
+        Assert.Contains("-force-d3d11", advice);
+        Assert.DoesNotContain("add -force-vulkan", advice);
+    }
+
+    [Fact]
+    public void Direct3D11UnderProtonOnNvidiaWithX11_NeedsNoAdvice() =>
+        Assert.Null(
+            GraphicsAdvice.For("Direct3D11", underWine: true, nvidia: true, waylandDriver: false)
+        );
+
+    [Theory]
+    [InlineData("Direct3D11")]
+    [InlineData("Direct3D12")]
+    public void Direct3DUnderProtonOnWaylandDriver_PointsToX11(string api)
+    {
+        var advice = GraphicsAdvice.For(api, underWine: true, nvidia: true, waylandDriver: true);
+        Assert.NotNull(advice);
+        Assert.Contains("PROTON_ENABLE_WAYLAND=0", advice);
+    }
+
+    [Fact]
+    public void Direct3D12UnderProtonOnNvidia_PointsToDirect3D11()
+    {
+        var advice = GraphicsAdvice.For(
+            "Direct3D12",
+            underWine: true,
+            nvidia: true,
+            waylandDriver: false
+        );
+        Assert.NotNull(advice);
+        Assert.Contains("-force-d3d11", advice);
+    }
 }

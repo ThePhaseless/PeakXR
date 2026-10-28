@@ -150,4 +150,4 @@ Snap turn 30° (smooth turn, when chosen, at 60°/s), vignette on (medium) from 
 - `mise run test`: unit tests for `PeakXR.Core` (math, codec, comfort, gestures).
 - In game: `sandbox` feature plus PEAK_MX for flat checks; SteamVR for headset tests; the unattended self-test and the two-client test (`docs/testing.md`).
 - After a game update: `mise run compat-check` (rule 7).
-- Linux launch options: `WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan`.
+- Linux launch options: `WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan` on AMD and Intel; `PROTON_ENABLE_WAYLAND=0 WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11` on NVIDIA (Proton's OpenXR bridge crashes Vulkan VR there, and its Wayland driver hides the OpenXR extensions from Direct3D).

@@ -19,11 +19,19 @@ Early release. It has only been tested with SteamVR, mostly on Linux, so expect 
 - SteamVR, or another OpenXR runtime
 - Linux (Proton) only: add these Steam launch options
 
+AMD or Intel GPU:
+
 ```
 WINEDLLOVERRIDES="winhttp=n,b" %command% -force-vulkan
 ```
 
-The override lets BepInEx load under Proton. `-force-vulkan` picks Vulkan, the only graphics API tested in VR under Proton.
+NVIDIA GPU:
+
+```
+PROTON_ENABLE_WAYLAND=0 WINEDLLOVERRIDES="winhttp=n,b" %command% -force-d3d11
+```
+
+The override lets BepInEx load under Proton. On NVIDIA, Vulkan VR crashes in Proton's OpenXR bridge, and Proton's Wayland driver keeps Direct3D from starting VR, so use Direct3D11 on X11.
 
 On Windows, PEAK starts on Direct3D12, which usually runs VR slower. Add `-force-d3d11` to the launch options, or pick "PEAK using DX11" when Steam asks.
 
