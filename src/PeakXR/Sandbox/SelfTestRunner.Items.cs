@@ -174,11 +174,16 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.244 screenshots one hold per hand of these, the hand raised in front of the face.</summary>
     static readonly string[] LeftHoldShots = { "Shell Big", "Glizzy", "BingBong" };
 
-    /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres. The right
-    /// hold is the game's own grip (ItemHoldInfo.HoldLocal returns it unchanged), so this is the absolute bound too: no
-    /// fixed distance works, as the game's preview-hand centre sits 0.16-0.26 m off the colliders of the Flag,
-    /// BingBong, Sports Drink, Warpsketball and Bandages in its own right hold (runs 20 and 21).</summary>
+    /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres. A relative
+    /// bound: no fixed palm distance works, as the game's preview-hand centre sits 0.16-0.26 m off the colliders of the
+    /// Flag, BingBong, Sports Drink, Warpsketball and Bandages in its own right hold (runs 20 and 21). The absolute
+    /// anchor is <see cref="GameGripTolerance"/>: the right hold must be the game's own.</summary>
     const float LeftHoldSlack = 0.02f;
+
+    /// <summary>Most the welded right hand may sit off the item's own <c>Hand_R</c> (where vanilla puts the hand,
+    /// CharacterItems.cs:861), metres: a break that moved both hands' holds alike passes the left-against-right
+    /// checks, never this one.</summary>
+    const float GameGripTolerance = 0.04f;
 
     /// <summary>
     /// vr.244: each item in the left hand, then the right (ItemHoldInfo.HoldLocal, Core LeftHold). The holding palm and
@@ -252,14 +257,18 @@ internal sealed partial class SelfTestRunner
                 var grip = item.transform.TransformPoint(
                     info.HoldLocal(info.GripLocal, left, primaryGrip: true)
                 );
+                // The game's own grip, read from the item itself (not ItemHoldInfo), for the right hand only.
+                var gameGrip = left ? null : item.transform.Find("Hand_R");
+                bool welded = driver != null && !driver.HeldReleased;
                 side[h] = new Hold
                 {
                     Palm = info.HoldGap(left, true),
                     Second = info.HoldGap(left, false),
                     // Welded, the hand body is on the grip; free of the weld it follows the controller instead.
-                    HandOff =
-                        driver != null && !driver.HeldReleased
-                            ? Vector3.Distance(body.position, grip)
+                    HandOff = welded ? Vector3.Distance(body.position, grip) : float.NaN,
+                    GameGripOff =
+                        welded && gameGrip != null
+                            ? Vector3.Distance(body.position, gameGrip.position)
                             : float.NaN,
                     MidIn = Vector3.Dot(mid - hand.position, head.right) * inward,
                     EndIn = Vector3.Dot(end - hand.position, head.right) * inward,
@@ -305,7 +314,7 @@ internal sealed partial class SelfTestRunner
             var l = side[0];
             var r = side[1];
             string note = F(
-                $"{itemName} ({l.Plane}{(l.EvenEnds ? ", even ends" : "")}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000}, middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}, +Z to the eyes L {l.Facing:0.00} R {r.Facing:0.00}{(l.Front ? " (has a front)" : "")}"
+                $"{itemName} ({l.Plane}{(l.EvenEnds ? ", even ends" : "")}): palm L {l.Palm:0.000} R {r.Palm:0.000}, second L {l.Second:0.000} R {r.Second:0.000}, hand on grip L {l.HandOff:0.000} R {r.HandOff:0.000} (R on the game's Hand_R {r.GameGripOff:0.000}), middle in L {l.MidIn:0.00} R {r.MidIn:0.00}, end in L {l.EndIn:0.00} R {r.EndIn:0.00} up L {l.EndUp:0.00} R {r.EndUp:0.00}, +Z to the eyes L {l.Facing:0.00} R {r.Facing:0.00}{(l.Front ? " (has a front)" : "")}"
             );
             notes.Add(note);
             string verdict =
@@ -322,6 +331,11 @@ internal sealed partial class SelfTestRunner
                 : !float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack
                     ? "the left hold's second grip is off the item"
                 : l.HandOff > 0.04f || r.HandOff > 0.04f ? "the welded hand is off its grip"
+                // NaN too: an item without Hand_R, or one the weld let go, is not the game's own hold.
+                : !(r.GameGripOff <= GameGripTolerance)
+                    ? F(
+                        $"the right hold is not the game's own: the welded right hand is {r.GameGripOff:0.000} m off the item's Hand_R"
+                    )
                 : Flipped(l.MidIn, r.MidIn)
                 || (!l.EvenEnds && (Flipped(l.EndIn, r.EndIn) || Flipped(l.EndUp, r.EndUp)))
                     ? "the item turns the other way in the left hand"
@@ -560,6 +574,9 @@ internal sealed partial class SelfTestRunner
         public float Palm;
         public float Second;
         public float HandOff;
+
+        /// <summary>Right hand only: the welded hand body to the item's own <c>Hand_R</c>, metres.</summary>
+        public float GameGripOff;
         public float MidIn;
         public float EndIn;
         public float EndUp;
