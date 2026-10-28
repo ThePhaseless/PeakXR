@@ -112,6 +112,7 @@ internal static class XRInputSampler
             dirty = true;
         }
         VRInput.TestOverride?.Invoke();
+        StickChordInput.Update();
         AfterSample?.Invoke();
     }
 

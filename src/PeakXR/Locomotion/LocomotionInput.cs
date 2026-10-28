@@ -306,7 +306,8 @@ internal static class LocomotionInput
     }
 
     /// <summary>One controller as the layout reads it. Its stick click comes through the stick chord's window
-    /// (<c>Diagnostics.DebugGesture.StickClick</c>), so the first stick of a recenter chord never sprints or crouches.</summary>
+    /// (<see cref="XRInput.StickChordInput.Click"/>), so the first stick of a recenter chord never sprints or
+    /// crouches.</summary>
     private static ControllerInput Controller(in HandState h, bool left) =>
         new()
         {
@@ -314,7 +315,7 @@ internal static class LocomotionInput
             Grip = h.Grip,
             Primary = h.Primary,
             Secondary = h.Secondary,
-            StickClick = Diagnostics.DebugGesture.StickClick(left),
+            StickClick = XRInput.StickChordInput.Click(left),
             Menu = h.Menu,
             Stick = Num2(h.Stick),
         };

@@ -856,7 +856,7 @@ internal sealed class RigDriver : MonoBehaviour
         bool left = VRInput.Left.Menu && !Diagnostics.DebugGesture.MenuTaken(true),
             right = VRInput.Right.Menu && !Diagnostics.DebugGesture.MenuTaken(false);
         // Both sticks clicked: the recenter every controller has (a Touch Menu may never reach the game).
-        bool sticks = Diagnostics.DebugGesture.SticksHeld;
+        bool sticks = XRInput.StickChordInput.Held;
         // The ring goes to the controller whose button is held; with both down it stays where it is.
         if (sticks && !left && !right)
             recenterLeft = VRInput.OffHandLeft;
