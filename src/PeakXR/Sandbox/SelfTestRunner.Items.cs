@@ -177,6 +177,11 @@ internal sealed partial class SelfTestRunner
     /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres.</summary>
     const float LeftHoldSlack = 0.02f;
 
+    /// <summary>Farthest a holding palm may be from the item in either hand, metres: the left-against-right check
+    /// alone passes two holds that are both off the item. The game's own right hold put the CactusBall's palm 0.121 m
+    /// off (docs/research/item-grab-shapes.md, rule 3); the offline table has every vr.244 item under 0.02 m.</summary>
+    const float MaxHoldPalm = 0.15f;
+
     /// <summary>
     /// vr.244: each item in the left hand, then the right (ItemHoldInfo.HoldLocal, Core LeftHold). The holding palm and
     /// the second hand's palm (the game's preview-hand centres under its grips) are as near the item's colliders on the
@@ -197,7 +202,7 @@ internal sealed partial class SelfTestRunner
             var prefab = FindItem(all, itemName);
             if (prefab == null || !string.Equals(prefab.name, itemName, StringComparison.Ordinal))
             {
-                notes.Add(itemName + " not in the database");
+                failures.Add(itemName + " not in the database");
                 continue;
             }
             var side = new Hold[2];
@@ -308,6 +313,10 @@ internal sealed partial class SelfTestRunner
             string verdict =
                 float.IsNaN(l.Palm) || float.IsNaN(r.Palm)
                     ? "no collider to measure the palm against"
+                : float.IsNaN(l.HandOff) || float.IsNaN(r.HandOff)
+                    ? "the hand on the grip was not measured (the weld let the item go)"
+                : l.Palm > MaxHoldPalm || r.Palm > MaxHoldPalm
+                    ? F($"a palm is more than {MaxHoldPalm:0.00} m off the item")
                 : l.Palm > r.Palm + LeftHoldSlack ? "the left palm is off the item"
                 // Collider.ClosestPoint reads 0 inside: a palm sunk into the item (the CactusBall's plain mirror).
                 : l.Palm < r.Palm - LeftHold.DeepTolerance ? "the left palm sinks into the item"
@@ -695,8 +704,9 @@ internal sealed partial class SelfTestRunner
         var item = FindItem(SandboxActions.Items, fragment);
         if (item == null)
         {
-            if (VRRun)
-                Skip(id, "no item matching " + fragment);
+            // The item database is the offline fixture: a named item gone from it (a game update renamed or cut it)
+            // fails the step instead of skipping it unseen.
+            yield return HandStep(id, 5f, MissingItem(fragment));
             yield break;
         }
         // The scripted setup's budget plus the item's own use time.
@@ -705,6 +715,12 @@ internal sealed partial class SelfTestRunner
             timeout + GameTiming.Budget(GameTiming.UseSeconds(item)),
             body(item)
         );
+    }
+
+    IEnumerator MissingItem(string fragment)
+    {
+        Fail($"no item matching '{fragment}' in the item database");
+        yield break;
     }
 
     /// <summary>Farthest the bugle's mouthpiece may be from the mouth when the toot starts: HeldGestures' mouth exit
@@ -1875,6 +1891,7 @@ internal sealed partial class SelfTestRunner
         // Item.StartUsePrimary sets isUsingPrimary (Item.cs:849-855); an eaten or spent item leaves the hand.
         // Held through the item's own use time, so a slow cast gets to finish (finishedCast, Item.cs:883).
         bool started = false;
+        bool leftHand = false;
         float progress = 0f;
         float useTime = GameTiming.UseSeconds(held);
         // Binoculars in VR run in Hold mode: raised while use is held, lowered by the release alone.
@@ -1886,7 +1903,7 @@ internal sealed partial class SelfTestRunner
         {
             if (held == null || HeldItem() != held)
             {
-                started = true;
+                leftHand = true;
                 break;
             }
             HoldUse(way, left);
@@ -1929,15 +1946,20 @@ internal sealed partial class SelfTestRunner
             yield return KeepRope(shot);
         }
         bool gone = held == null || HeldItem() != held;
+        bool consumed = c.data.lastConsumedItem != consumedBefore;
+        // Leaving the hand is a use only when the use spent the item: destroyed (eaten, used up, turned into another
+        // item) or logged as consumed. A drop or a slip leaves it whole in the world.
+        bool destroyed = held == null;
+        if (leftHand && !started)
+            started = destroyed || consumed;
         var note =
-            $"used by {UseWayText(way)}: primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}";
+            $"used by {UseWayText(way)}: primary use started {started}, cast progress {progress:0.00} of {useTime:0.0} s, left the hand {gone}{(leftHand ? $" (destroyed {destroyed}, consumed {consumed})" : "")}";
         BinocularsConfig.ForceHold = false;
         if (binoculars != null)
         {
             note +=
                 $", Hold mode: raised while held {raisedWhileHeld}, raised after release {binoculars != null && binoculars.binocularsActive}; {BinocularGiveNre}";
         }
-        bool consumed = c.data.lastConsumedItem != consumedBefore;
         float hungerAfter = food ? afflictions.GetCurrentStatus(status) : 0f;
         if (food)
             note +=
@@ -1953,7 +1975,10 @@ internal sealed partial class SelfTestRunner
         if (ropeShooter != null && shot != null)
             note += $", rope {ropeMissing ?? "spawned anchored to it"}";
         if (!started)
-            Fail("primary use never started: " + note);
+            Fail(
+                (leftHand ? "left the hand without being used: " : "primary use never started: ")
+                    + note
+            );
         else if (binoculars != null && (!raisedWhileHeld || binoculars.binocularsActive))
             Fail("binoculars Hold mode: " + note);
         else if (food && !consumed)

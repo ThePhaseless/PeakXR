@@ -72,4 +72,35 @@ public class LookOverrideTests
         o.Update(new Vector2(-180f, 0f), new Vector2(180f, 0f), Dt);
         Assert.Equal(0f, o.Weight);
     }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-1f)]
+    public void NoBlendTime_ReturnsToTheHmdAtOnce(float blend)
+    {
+        var o = new LookOverride { HoldTime = 0.05f, BlendTime = blend };
+        var hmd = new Vector2(10f, 5f);
+        o.Update(Vector2.Zero, hmd, Dt);
+        var last = o.Update(new Vector2(60f, 20f), hmd, Dt);
+        Assert.Equal(1f, o.Weight);
+        for (int i = 0; i < 5; i++)
+            last = o.Update(last, hmd, Dt);
+        Assert.Equal(0f, o.Weight);
+        Assert.Equal(hmd, last);
+    }
+
+    [Fact]
+    public void Reset_HandsTheLookBackToTheHmd()
+    {
+        var o = new LookOverride();
+        o.Update(Vector2.Zero, Vector2.Zero, Dt);
+        o.Update(new Vector2(90f, 30f), Vector2.Zero, Dt);
+        Assert.Equal(1f, o.Weight);
+        o.Reset();
+        Assert.Equal(0f, o.Weight);
+        // A value unlike last frame's write is not taken for a script right after a reset.
+        var hmd = new Vector2(-20f, 4f);
+        Assert.Equal(hmd, o.Update(new Vector2(45f, -10f), hmd, Dt));
+        Assert.Equal(0f, o.Weight);
+    }
 }

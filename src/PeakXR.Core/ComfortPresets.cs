@@ -165,6 +165,17 @@ public static class ComfortPresets
         return ComfortPreset.Custom;
     }
 
+    /// <summary>
+    /// At startup, whether the config's preset name was edited by hand and should be applied: it names a preset while
+    /// the values match a different one. Values that match no preset were edited themselves, so the name becomes
+    /// Custom instead; a Custom name follows whatever its values match.
+    /// </summary>
+    public static bool NamedPresetWins(ComfortPreset named, ComfortProfile values)
+    {
+        var match = Identify(values);
+        return named != ComfortPreset.Custom && match != ComfortPreset.Custom && match != named;
+    }
+
     static bool Matches(ComfortProfile a, ComfortProfile b)
     {
         if (a.Turn != b.Turn || a.Vignette != b.Vignette || !Near(a.MoveSmoothing, b.MoveSmoothing))

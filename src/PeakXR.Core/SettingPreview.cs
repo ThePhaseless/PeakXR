@@ -100,7 +100,6 @@ public static class SettingPreviewTable
         {
             ("XR", "PauseInputOnFocusLoss") => null,
             ("XR", _) => Restart,
-            ("Interaction.Binoculars", "LensResolution") => Restart,
             ("UI", "TitleOnBeach") => "Applies the next time the title screen loads.",
             ("Render", "RenderScale") =>
                 "Applies once the slider rests for a moment. Higher is sharper but costs frame rate.",

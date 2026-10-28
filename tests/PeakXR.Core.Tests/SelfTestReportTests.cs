@@ -63,6 +63,40 @@ public class SelfTestReportTests
     }
 
     [Fact]
+    public void SkipAfterAPeakXRException_FailsWithTheExceptionLine()
+    {
+        var r = new SelfTestReport();
+        r.Begin("vr.42-rope", 0f);
+        r.Exception("NullReferenceException: boom\n  at PeakXR.Interact.Foo ()");
+        r.Skip("vr.42-rope", "no rope");
+
+        Assert.False(r.Steps[0].Skipped);
+        Assert.False(r.Steps[0].Passed);
+        Assert.Equal(1, r.Failed);
+        Assert.Equal(
+            "vr.42-rope FAIL 0.00s skipped (no rope) after a PeakXR exception | NullReferenceException: boom",
+            r.Line(0)
+        );
+    }
+
+    [Fact]
+    public void SkipOfARunningStep_KeepsItsFirstLogAndVanillaNote()
+    {
+        var r = new SelfTestReport();
+        r.Begin("vr.43-vine", 0f);
+        r.Error("Missing sound");
+        r.Exception("vanilla boom", "  at ItemOptimizer.Update ()");
+        r.Skip("vr.43-vine", "no vine");
+
+        Assert.True(r.Steps[0].Skipped);
+        Assert.Equal(0, r.Passed + r.Failed);
+        Assert.Equal(
+            "vr.43-vine SKIP 0.00s no vine vanilla: vanilla boom | Missing sound",
+            r.Line(0)
+        );
+    }
+
+    [Fact]
     public void SafeName_KeepsLettersDigitsAndDashes()
     {
         Assert.Equal(

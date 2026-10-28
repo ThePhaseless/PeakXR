@@ -841,7 +841,9 @@ internal sealed partial class SelfTestRunner
             var eye = VRRig.Instance.Head.position;
             float fromFall = Vector3.Distance(eye, c.VirtualCenter);
             view = $", eye {fromFall:0.0} m from where the body fell, label on the body {onBody}";
-            if (fromFall > 8f)
+            // The game's spectate camera stays within its 5 m zoom and 0.5 m lift of the body
+            // (MainCameraMovement.cs:35,172); 1 m more for where the body lies against where it fell.
+            if (fromFall > 6.5f)
                 Fail($"spectate view {fromFall:0.0} m from where the body fell");
             if (spectating && SpatialFeature.Settings.SpectateOnPlayer.Value && !onBody)
                 Fail("'spectating' label still on the HUD, not over the body");

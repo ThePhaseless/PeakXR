@@ -87,7 +87,8 @@ internal sealed partial class SelfTestRunner
         );
         if (settled > CompassToleranceDeg)
             Fail("needle not on its heading: " + note);
-        else if (turned < 45f)
+        // About two thirds of the quarter turn: runs measured 79 deg.
+        else if (turned < 60f)
             Fail("the compass did not turn with the hand: " + note);
         else if (error > CompassToleranceDeg)
             Fail("the needle turned with the compass instead of keeping its heading: " + note);

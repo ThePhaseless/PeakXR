@@ -129,9 +129,10 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("regroup", 60f, true, WalkTo(HostCenter, 1.5f, true));
         yield return MpStep("luggage", 300f, true, OpenLuggage());
         yield return MpStep("grab", 40f, true, GrabNearest(food: false));
-        yield return MpStep("drop", 15f, true, DropByButton());
-        yield return MpStep("pickup", 40f, true, PickUpAgain());
-        yield return MpStep("throw", 60f, true, ThrowToHost());
+        // One item passes along this chain (mpItem): a link after a failed one would judge what that failure left.
+        yield return MpStep("drop", 15f, true, DropByButton(), after: "grab");
+        yield return MpStep("pickup", 40f, true, PickUpAgain(), after: "drop");
+        yield return MpStep("throw", 60f, true, ThrowToHost(), after: "pickup");
         yield return MpStep("eat", 150f, true, Eat());
         // 120 s: the walk back from eat's food to the thrown item can be 100 m (MP run 35 timed out at 60 s on it).
         yield return MpStep("holster", 120f, true, Holster());
@@ -145,14 +146,19 @@ internal sealed partial class SelfTestRunner
     /// <summary>One checkpoint: the step, then its line in a-checkpoints.jsonl, a screenshot, a short still hold and
     /// the hands back at rest. A passed step keeps its grips, so a held item stays held; a failed or skipped one opens
     /// both, so a grip left closed on a failure cannot hold the next step back.</summary>
-    IEnumerator MpStep(string id, float timeout, bool vr, IEnumerator body)
+    IEnumerator MpStep(string id, float timeout, bool vr, IEnumerator body, string after = null)
     {
         cpExtra.Clear();
         cpItemId = -1;
-        if (vr && !VRSession.Active)
+        string skip =
+            vr && !VRSession.Active ? "VR not active"
+            : after != null && !StepPassed(after)
+                ? after + " did not pass, and this step carries on its item"
+            : null;
+        if (skip != null)
         {
-            Skip(id, "VR not active");
-            WriteCheckpoint(id, "skip", "VR not active");
+            Skip(id, skip);
+            WriteCheckpoint(id, "skip", skip);
             yield break;
         }
         yield return Run(id, timeout, vr && MpReady ? MpSettled(body) : body);
@@ -844,16 +850,32 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
+    /// <summary>The last report line for <paramref name="id"/> passed.</summary>
+    bool StepPassed(string id)
+    {
+        for (int i = report.Steps.Count - 1; i >= 0; i--)
+        {
+            if (report.Steps[i].Id == id)
+                return report.Steps[i].Passed && !report.Steps[i].Skipped;
+        }
+        return false;
+    }
+
     IEnumerator GrabNearest(bool food)
     {
         yield return FreeHands();
         if (!stepOk)
             yield break;
         var item = NearestGround(i => IsFood(i) == food);
-        if (item == null)
+        bool fallback = item == null;
+        if (fallback)
             item = NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
+        if (fallback && mpItem != null)
+            Note(
+                $"{stepNote ?? "grabbed"}; no {(food ? "food" : "non-food")} item near, took {mpItem.name} instead"
+            );
     }
 
     /// <summary>Drop through <c>Interaction.DropButton</c> (default DominantSecondary): a tap is the game's drop with no
@@ -891,11 +913,15 @@ internal sealed partial class SelfTestRunner
         stepNote = $"dropped {dropped.name}";
     }
 
+    /// <summary>Picks up the item the drop step left; another item would not test the pickup of a dropped one.</summary>
     IEnumerator PickUpAgain()
     {
         var item = OnGround(mpItem);
         if (item == null)
-            item = NearestGround(_ => true);
+        {
+            Fail("the dropped item is no longer on the ground to pick up");
+            yield break;
+        }
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }

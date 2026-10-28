@@ -52,4 +52,39 @@ public class HeadGlanceTests
         var flat = new Vector3(d.X, 0f, d.Z);
         Assert.True(Deg(flat, Forward) <= HeadGlance.MaxYaw + 0.01f);
     }
+
+    static void Unit(Vector3 d)
+    {
+        Assert.True(float.IsFinite(d.X) && float.IsFinite(d.Y) && float.IsFinite(d.Z), $"{d}");
+        TestUtil.Near(1f, d.Length());
+    }
+
+    [Fact]
+    public void TargetAtTheHead_KeepsTheLevelHeading()
+    {
+        // A heading that is not unit length or not level still gives the level heading.
+        var heading = new Vector3(0f, 0.4f, 3f);
+        TestUtil.Near(Forward, HeadGlance.Aim(heading, Vector3.Zero));
+        TestUtil.Near(Forward, HeadGlance.Aim(heading, new Vector3(0f, 1e-7f, 0f)));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(-1f)]
+    public void StraightUpOrDown_PitchesToTheNeckLimitOnTheHeading(float y)
+    {
+        var d = HeadGlance.Aim(Forward, new Vector3(0f, y, 0f));
+        Unit(d);
+        Assert.Equal(y > 0f ? HeadGlance.MaxUp : -HeadGlance.MaxDown, Pitch(d), 2);
+        Assert.True(MathF.Abs(d.X) < 1e-4f && d.Z > 0f);
+    }
+
+    [Fact]
+    public void StraightBehind_StaysFiniteAndWithinTheNeck()
+    {
+        var d = HeadGlance.Aim(Forward, new Vector3(0f, 0f, -2f));
+        Unit(d);
+        var flat = new Vector3(d.X, 0f, d.Z);
+        Assert.True(Deg(flat, Forward) <= HeadGlance.MaxYaw + 0.01f);
+    }
 }

@@ -24,7 +24,12 @@ public class UiReviewTests
     }
 
     [Fact]
-    public void ButtonGlyph_IsAsBigAsItsLabel() => Assert.Equal(1f, ButtonLabelStyle.GlyphScale);
+    public void ButtonGlyph_StaysReadableWhenItsLabelIsAtTheFloor()
+    {
+        // A label drawn at the smallest readable size: its button name, scaled from it, must still read.
+        int label = ReadableText.MinPixels(0.045f);
+        Assert.True(label * ButtonLabelStyle.GlyphScale * 0.045f >= ReadableText.MinDegrees);
+    }
 
     [Fact]
     public void TitleTouchReach_IsOutsideTheAvoidBand()
@@ -45,6 +50,7 @@ public class UiReviewTests
     [InlineData("UI.Pointer", "HoverHaptics", "Haptics.UI.Pointer")]
     [InlineData("Interaction", "CookOverFire", "Items")]
     [InlineData("Interaction", "HandIntoPortal", "Items")]
+    [InlineData("Interaction", "TriggerEats", "Items")]
     [InlineData("Interaction", "GrabToClimb", "Interaction")]
     [InlineData("Comfort", "Vignette", "Comfort")]
     public void DisplaySection_GathersVibrationAndItemGestures(

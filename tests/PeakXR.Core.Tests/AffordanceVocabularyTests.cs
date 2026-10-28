@@ -73,14 +73,13 @@ public class AffordanceVocabularyTests
     }
 
     [Fact]
-    public void SpotSet_HoldsUpToFourInOrder_AndDropsTheRest()
+    public void SpotSet_HoldsUpToCapacityInOrder_AndDropsTheRest()
     {
         var s = default(SpotSet);
         Assert.Equal(0, s.Count);
         for (int i = 0; i < 6; i++)
             s = s.And(new Vector3(i, 0f, 0f));
         Assert.Equal(SpotSet.Capacity, s.Count);
-        Assert.Equal(4, SpotSet.Capacity);
         for (int i = 0; i < s.Count; i++)
             Assert.Equal(i, s[i].X);
         Assert.Equal(Vector3.Zero, s[7]);

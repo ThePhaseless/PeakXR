@@ -421,4 +421,61 @@ public class ViewHoldTests
         }
         Assert.True(worst < 0.001f, $"held offset moved {worst:0.000} m during the lean");
     }
+
+    [Fact]
+    public void FirstUpdate_StartsOnTheBody_AndDoesNotHoldUntilEngaged()
+    {
+        var hold = new ViewHold();
+        Assert.Equal(Base, hold.Update(Base, true, Dt));
+        Assert.False(hold.Holding);
+        for (float t = Dt; t < ViewHold.EngageSeconds - 2f * Dt; t += Dt)
+            hold.Update(Base, true, Dt);
+        Assert.False(hold.Holding);
+        // Not still: the timer starts over.
+        hold.Update(Base, false, Dt);
+        Assert.False(hold.Holding);
+    }
+
+    [Fact]
+    public void CarryAndLean_BeforeAnyUpdate_StartOnTheBody()
+    {
+        var a = new ViewHold();
+        Assert.Equal(Base, a.Carry(Base));
+        Assert.False(a.Holding);
+        var b = new ViewHold();
+        Assert.Equal(Base, b.Lean(Base, bleed: true));
+        Assert.Equal(0f, b.Offset);
+    }
+
+    static ViewHold HeldOffBody()
+    {
+        var hold = new ViewHold();
+        for (float t = 0f; t < 1f; t += Dt)
+            hold.Update(Base, true, Dt);
+        hold.Update(Base + new Vector3(0.03f, 0f, 0f), true, Dt);
+        Assert.True(hold.Holding && hold.Offset > 0.02f);
+        return hold;
+    }
+
+    [Fact]
+    public void Lean_AWarp_SnapsOntoTheBody()
+    {
+        var hold = HeldOffBody();
+        var far = Base + new Vector3(0f, 0f, 2f);
+        Assert.Equal(far, hold.Lean(far, bleed: false));
+        Assert.Equal(0f, hold.Offset);
+        Assert.False(hold.Holding);
+    }
+
+    [Fact]
+    public void Reset_ForgetsTheHeldPoint()
+    {
+        var hold = HeldOffBody();
+        hold.Reset();
+        Assert.False(hold.Holding);
+        Assert.Equal(0f, hold.Offset);
+        // The next update starts on the body, not on the old held point, even within the deadband.
+        var body = Base + new Vector3(0.04f, 0f, 0f);
+        Assert.Equal(body, hold.Update(body, true, Dt));
+    }
 }

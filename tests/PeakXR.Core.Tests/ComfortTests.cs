@@ -155,6 +155,27 @@ public class ComfortTests
     }
 
     [Fact]
+    public void NamedPresetWins_WhenTheNameWasEditedOverAnotherPresetsValues()
+    {
+        var moderate = ComfortPresets.Get(ComfortPreset.Moderate);
+        Assert.True(ComfortPresets.NamedPresetWins(ComfortPreset.Intense, moderate));
+        Assert.True(ComfortPresets.NamedPresetWins(ComfortPreset.Comfortable, moderate));
+    }
+
+    [Fact]
+    public void NamedPresetWins_NotForMatchingCustomOrUnmatchedValues()
+    {
+        var moderate = ComfortPresets.Get(ComfortPreset.Moderate);
+        Assert.False(ComfortPresets.NamedPresetWins(ComfortPreset.Moderate, moderate));
+        // Custom is no preset to apply: its name follows the values.
+        Assert.False(ComfortPresets.NamedPresetWins(ComfortPreset.Custom, moderate));
+        // Values matching no preset were edited by hand: the name becomes Custom.
+        var edited = moderate;
+        edited.SnapAngle = 45f;
+        Assert.False(ComfortPresets.NamedPresetWins(ComfortPreset.Intense, edited));
+    }
+
+    [Fact]
     public void Ramp_ZeroTimePassesThrough()
     {
         var r = new InputRamp { RiseTime = 0f };

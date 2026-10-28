@@ -666,7 +666,7 @@ internal sealed partial class SelfTestRunner
         var rig = VRRig.Instance;
         if (!FindWall(c, out var wall, out var stand))
         {
-            stepSkip = NoWall;
+            NoWallFound();
             yield break;
         }
         var normal = Flat(wall.normal);
@@ -810,7 +810,7 @@ internal sealed partial class SelfTestRunner
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
             $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
-        if (rise < 0.1f)
+        if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
         else if (c.data.isClimbing)
             Fail("climb did not stop: " + note);
@@ -870,14 +870,21 @@ internal sealed partial class SelfTestRunner
         yield return Shot("vr-17-move");
         // The comfort vignette shows at walking speed (vr-practices-review P0-1): its clear angle while walking.
         float clear = 90f,
-            speed = 0f;
+            viewSpeed = 0f;
         float start = Now;
+        var w0 = c.Center;
         while (Now - start < 0.4f)
         {
             clear = Mathf.Min(clear, VignetteShape.InnerAngle(LocomotionDriver.Intensity));
-            speed = Mathf.Max(speed, LocomotionDriver.ViewSpeed);
+            viewSpeed = Mathf.Max(viewSpeed, LocomotionDriver.ViewSpeed);
             yield return null;
         }
+        // The speed the bound is judged at comes from the body's own displacement, not the driver's reading: a
+        // driver that under-reads its speed would otherwise excuse its own missing vignette.
+        var w1 = c.Center;
+        float speed =
+            Vector2.Distance(new Vector2(w0.x, w0.z), new Vector2(w1.x, w1.z))
+            / Mathf.Max(Now - start, 1e-3f);
         Script(hand).Stick = Vector2.zero;
         yield return Wait(0.3f);
         var to = c.Center;
@@ -894,7 +901,7 @@ internal sealed partial class SelfTestRunner
         );
         bool bound = ComfortConfig.Vignette && expected <= MaxWalkClear;
         var note =
-            $"walked {moved:0.00} m in 1 s; vignette clear to {clear:0} deg at {speed:0.0} m/s";
+            $"walked {moved:0.00} m in 1 s; vignette clear to {clear:0} deg at {speed:0.0} m/s (driver read {viewSpeed:0.0} m/s)";
         if (moved < 0.5f)
             Fail(note);
         else if (bound && clear > MaxWalkClear)
@@ -1179,6 +1186,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var emoting = GameMember.Field<CharacterAnimations, bool>("emoting");
+        // The hovered slice's emote (private EmoteWheel.chosenEmoteData, EmoteWheel.cs:14, set by Hover :91-95).
+        var chosenEmote = GameMember.Field<EmoteWheel, EmoteWheelData>("chosenEmoteData");
         bool hand = !VRInput.LeftHanded;
         Script(hand).Secondary = true;
         yield return Until(() => gui.emoteWheel.activeInHierarchy, 2f, "emote wheel did not open");
@@ -1192,6 +1201,9 @@ internal sealed partial class SelfTestRunner
         var wheel = gui.emoteWheel.GetComponentInChildren<EmoteWheel>(true);
         string chosen =
             wheel != null && wheel.selectedEmoteName != null ? wheel.selectedEmoteName.text : "";
+        // Play Dead falls instead of emoting (CharacterAnimations.cs:419-424); any other emote must set emoting.
+        var chosenData = wheel != null ? chosenEmote(wheel) : null;
+        bool playDead = chosenData != null && chosenData.anim == "A_Scout_Emote_PlayDead";
         var pointer = wheel != null ? ProbeEmoteWheel(wheel) : "no EmoteWheel";
         pointer ??= WheelCovered(wheel);
         yield return ShotAt(
@@ -1206,7 +1218,7 @@ internal sealed partial class SelfTestRunner
         );
         bool started = false;
         yield return WaitFor(
-            () => started = emoting(c.refs.animations) || c.data.fallSeconds > 0f,
+            () => started = emoting(c.refs.animations) || playDead && c.data.fallSeconds > 0f,
             1.5f
         );
         var note = $"hovered '{chosen}', emote started {started}, pointer {pointer ?? "ok"}";
@@ -1304,7 +1316,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.19: each hand in turn, alone, aims at the pause menu's Resume button
     /// (<c>PauseMenuMainPage.resumeButton</c>, PauseMenuMainPage.cs:56) while the other points at the floor, and pulls
-    /// its trigger. A hand that drives the laser (<c>UI.PointerHand</c>; LastUsed: one pull moves the laser there and
+    /// its trigger. A hand that drives the laser (<c>UI.Pointer.PointerHand</c>; LastUsed: one pull moves the laser there and
     /// clicks, <see cref="PointerHands"/>) closes the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304) with the
     /// press from that hand; a hand the setting leaves out must not.</summary>
     IEnumerator LaserStep()
@@ -2031,6 +2043,21 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     const string NoWall =
         "no climbable wall with walkable ground in front near the player or any suitcase or campfire of this segment";
+
+    /// <summary>No wall for a climb step. Offline the sandbox's test wall always stands one up (FindWall, LungeWall), so
+    /// none there is a broken fixture and fails the step instead of skipping it with every climb step after it;
+    /// online, where no test wall can be placed, the map may simply have none.</summary>
+    void NoWallFound()
+    {
+        if (Photon.Pun.PhotonNetwork.OfflineMode)
+            Fail("offline, yet not even the sandbox test wall gave a climbable face: " + NoWall);
+        else
+            stepSkip = NoWall;
+    }
+
+    /// <summary>Least rise (m) of the body or its climb point for <see cref="PullDown"/>'s 0.4 m arm pull: about 60% of
+    /// it. Runs measured 0.40 m (vr.15) and 0.41-0.42 m (vr.42); 0.1 m passed a pull that lost most of its motion.</summary>
+    const float MinPullRise = 0.25f;
 
     /// <param name="headroom">Metres above the face that must still be climbable (vr.46's lunge rises past 1.2 m).</param>
     static bool FindWall(Character c, out RaycastHit wall, out Vector3 stand, float headroom = 1.2f)

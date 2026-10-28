@@ -305,7 +305,11 @@ internal sealed partial class SelfTestRunner
         if (!PassportFeature.Settings.SwipeToFlip.Value)
         {
             notes.Add("SwipeToFlip off: page end not tried");
-            stepNote = string.Join("; ", notes);
+            // Neither half ran: say so rather than pass on nothing.
+            if (locked == null)
+                stepSkip = string.Join("; ", notes);
+            else
+                stepNote = string.Join("; ", notes);
             yield break;
         }
         for (int i = 0; i < 60 && HandBook.FlipPage(1); i++)
@@ -694,7 +698,8 @@ internal sealed partial class SelfTestRunner
         var ui = UIWorldFeature.Settings;
         if (ui != null && ui.PointerHand.Value != PointerHandMode.LastUsed)
         {
-            stepSkip = $"UI.PointerHand is {ui.PointerHand.Value}: the laser never changes hands";
+            stepSkip =
+                $"UI.Pointer.PointerHand is {ui.PointerHand.Value}: the laser never changes hands";
             yield break;
         }
         Zorro.UI.Modal.Modal.TestModal();

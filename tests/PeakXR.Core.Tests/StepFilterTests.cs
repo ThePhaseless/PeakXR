@@ -97,7 +97,7 @@ public class StepFilterTests
         Assert.NotNull(dir);
         var sandbox = Path.Combine(dir.FullName, "src", "PeakXR", "Sandbox");
         var call = new Regex(
-            @"\b(?:Run|VRStep|HandStep|Restoring|SocialStep|ScreenHandStep|PeakHandStep|ItemStep|Skip|MpStep|WithOn)\(\s*""([^""]+)"""
+            @"\b(?:Run|VRStep|HandStep|Restoring|SocialStep|ScreenHandStep|PeakHandStep|ScriptedHandsStep|PeakSetup|ItemStep|Skip|MpStep|WithOn)\(\s*""([^""]+)"""
         );
         var found = Directory
             .GetFiles(sandbox, "SelfTestRunner*.cs")

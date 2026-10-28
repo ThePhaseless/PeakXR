@@ -83,4 +83,36 @@ public class HandWidgetPlaceTests
             );
         }
     }
+
+    static bool Finite(Vector3 v) =>
+        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+
+    [Theory]
+    [InlineData(90f)]
+    [InlineData(-90f)]
+    public void Parked_LookingStraightUpOrDown_KeepsTheHeadsYaw(float pitchDeg)
+    {
+        // Forward parallel to up: the yaw comes from where the face is turned, not from a degenerate forward.
+        var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.6f);
+        var head = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitchDeg * MathF.PI / 180f);
+        var p = Ring(Mouth, head: head);
+        Assert.True(Finite(p));
+        TestUtil.Near(Ring(Mouth, head: yaw), p, 1e-3f);
+    }
+
+    [Fact]
+    public void HandAtTheEye_ParksFully()
+    {
+        var p = Ring(Eye);
+        Assert.True(Finite(p));
+        TestUtil.Near(HandWidgetPlace.RingParked, p);
+    }
+
+    [Fact]
+    public void AboveHand_LiftedOntoTheEye_StaysFinite()
+    {
+        // Lifted exactly onto the eye there is no direction toward it: the lifted point stands.
+        var hand = Eye - Vector3.UnitY * 0.08f;
+        Assert.Equal(Eye, HandWidgetPlace.AboveHand(hand, Eye, 0.08f, 0.03f));
+    }
 }

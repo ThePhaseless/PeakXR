@@ -13,7 +13,8 @@ namespace PeakXR.UI.World;
 /// interior. A hidden 32x32 camera at the eye, framed on the plate and starting just short of it, renders the scene
 /// behind it (no hands, laser, fade sphere or menu, no shadows or AA) once every <see cref="ProbeSeconds"/>, one
 /// plate per probe, taking turns between the menu canvases' plates and the panels' own (<see cref="PanelPlate"/>: the
-/// VR tab's column, category rail and setting preview card); an async GPU readback brings the pixels back without a stall. The plate then eases toward the
+/// VR tab's column, category rail and setting preview card), so with the VR tab open each plate is measured about every
+/// 2 s; an async GPU readback brings the pixels back without a stall. The plate then eases toward the
 /// measured opacity every frame: quickly when it must darken, slowly when it may lighten. Nothing allocates per frame.
 /// </summary>
 internal sealed class BackdropProbe
