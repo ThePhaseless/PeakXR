@@ -120,7 +120,7 @@ A self-test run grants the player's profile nothing. `SelfTestProgressGuard` blo
 
 Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
 
-VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-vulkan -peakxr-selftest` and without `-peakxr-novr`. The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
+VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-vulkan -peakxr-selftest` and without `-peakxr-novr` (on Windows, `-force-d3d11` in place of `-force-vulkan`; see the README). The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
 
 ### Running only some steps
 
@@ -141,7 +141,7 @@ In a VR run each step also writes a `[selftest] frames <step>:` line to `LogOutp
 
 ### Live input
 
-Launch with `-force-vulkan -peakxr-selftest -peakxr-selftest-hold` (VR, SteamVR running). The script runs `00-title`, `vr.00` to `vr.03`, `01-airport`, `04-beach`, `vr.05` and `vr.06`, skips the settings, items, use, mob and segment steps, writes `PeakXR-selftest.log` and then leaves the game running on the beach. It quits 20 minutes later. Another session can now drive virtual Index controllers through SteamVR.
+Launch with `-force-vulkan -peakxr-selftest -peakxr-selftest-hold` (VR, SteamVR running). The script runs `00-title`, `vr.00` to `vr.03`, `01-airport`, `04-beach`, `vr.05`, `vr.06`, `vr.231`, `04b-bug-report`, `vr.08`, `vr.08b`, `vr.09` and `vr.33` with the real controllers, skips the tutorial, settings, items, use, mob and segment steps, writes `PeakXR-selftest.log` and then leaves the game running on the beach. It quits 20 minutes later. In that time you, or a SteamVR driver with virtual controllers, can drive the controllers.
 
 With `-peakxr-selftest` (hold or not) every VR sample is diffed and changes are logged to `BepInEx/LogOutput.log` (flushed per line), one line per edge:
 
@@ -194,6 +194,7 @@ VR runs only:
 | `vr.03-canvases` | airport | No active root canvas that ui.world converts is still screen space (its own Hidden and Fade rules are exempt); the note counts world and overlay canvases. Conversion only: ui.05 (wrist HUD) and vr.04 (menu) check placement in view; screenshot `vr-03-airport` |
 | `vr.04-settings-panel` | airport | The pause menu with the VR tab is world space, 0.5 to 4 m from the head and within 45° of the view, and the row label nearest the view is readable from the head (`Legibility`). Its flat-screen backdrops are hidden but still take raycasts, and no row strip is drawn on the page as opened, on any page of any VR tab rail entry, on the longest game tab (scrolled to its end when it scrolls), or on the VR tab again after that tab change; screenshot `vr-04-settings` |
 | `vr.222-menu-backplate` | airport, after `vr.04` | The pause menu on the VR tab gets a dark backplate (`UI.MenuBackplate`) within 2 s. Each plate edge sits `MenuBackplate.MarginPixels` (24 px) outside the drawn content, within 2 px; it is not a full-canvas panel around smaller content, spans at most `MenuBackplate.MaxSpanDegrees` (70°) of view and takes no raycasts. Checked again on the Compatibility page, so the plate follows a page change; screenshot `vr-222-menu-backplate`. `SKIP` when `UI.MenuBackplate` is off |
+| `vr.223-vr-tab-layout` | airport, after `vr.222` | The VR tab is laid out for a headset. On its longest category the row column spans at most `VRTabColumn.MaxColumnDegrees` (35°) from the eye; the rail is a panel of its own, turned `VRTabColumn.RailDegrees` (18°) toward the eye with its own plate; every text on show meets `ReadableText.MinDegrees` (1.3°); and scrolling to the end brings the last row fully into view |
 | `vr.70-passport` | airport | `PassportManager.ToggleOpen` opens the passport. With `UI.Passport.PassportAtHand` on, the page centre must sit within 0.03 m of the book pose (`HandBook.TryPose`), and its lower edge between `BookPose.HandClearance` - 0.02 m and the larger of `BookLift` minus half the page height and `HandClearance`, plus 0.05 m, over the hand holding the book; screenshot `vr-70-passport` aimed between page and hand, then it closes |
 | `vr.71-kiosk` | airport, ScreenHandStep, scripted hands | Stands 0.45 m out from the check-in kiosk's solid collider bounds, facing it, on the first of 8 headings (45 degrees apart from its forward) with floor and a clear view of the kiosk and the pass dock spot; it warps only when more than 0.3 m from that spot. A hand line 0.35 m under the eyes (and at least 0.1 m under the kiosk top) must meet the kiosk's near face; when that face is more than 0.6 m out, the player steps in until it is 0.5 m ahead. The dominant hand on the face, within 1.0 m of the eyes, holds the grip through the kiosk's interactTime until the boarding pass opens, docked by ui.lobby. A pass drawn in depth fails if any corner is hidden from the eye by geometry; a pass drawn on top is not judged, and the note says which. Screenshot `vr-71-kiosk`; then every window closes. Fails if no clear spot, no kiosk face at hand height, or the pass stays shut. |
 | `vr.72-keyboard` | airport | The VR keyboard opens as a platform text dialog (`VRKeyboard.TryOpenDialog`) and is placed within 0.85 m of the eyes, its keys facing them, nothing in between; screenshot `vr-72-keyboard`; Cancel closes it without submitting |
@@ -202,7 +203,8 @@ VR runs only:
 | `vr.231-frame-budget` | beach, after `vr.06` | Waits 1 s to settle, then measures 5 s of standing still. It compares the p95 frame interval with 1.1 times the display's frame budget (`FrameBudget.SelfTestMargin`, 12.2 ms at 90 Hz). By default it only reports: it passes with the frames line, whether the frame was over budget, and how many adaptive quality steps landed and at what render scale. With `-peakxr-perf-strict` an over-budget p95 fails. SKIP when there is no sane refresh rate (60 to 240 Hz from the display or `XRDevice.refreshRate`. SteamVR's OpenXR runtime reports a throttled 72 Hz headset as 36, 24 or 18 Hz, so a whole fraction of the session's rate keeps that rate. The desktop monitor's rate shows in the frames lines but never sets a budget) or fewer than 30 frames arrive |
 | `vr.46-lunge` | beach, after `vr.44c` | Offline the sandbox's 7 m test wall stands with its face 0.6 m ahead; online it is a map wall with 2.8 m of face above the grip (the jump rises about 1.4 m; on a lower wall the body tops out and there is nothing to catch). One gripping hand climbs and pulls up (up to 0.4 m, ending inside a player's reach), then is thrown straight up at twice `Interaction.LungeSpeed` (at least 4 m/s) and lets go: the game's climb jump must fire within 0.4 s (`RPCA_ClimbJump` resets `sinceClimbJump`) and the throwing hand must get the whoosh feel. With no climbable face 2 m above the body the catch is not tested and the step is SKIP once the jump fired. Otherwise the same hand must catch the wall again (the note gives the time against the 0.6 s grace), the climb must not have ended in between, and the body must rise at least 0.3 m from the throw to the catch; screenshot `vr-46-lunge`. Then, with ui.affordance on, god mode off and both stamina bars held at 0 until out of stamina for 0.6 s, the same throw must get the NoStamina refusal (stamina bar red) on that hand within 1.5 s, carried by sound and haptic since the climbing hand is out of sight, and no climb jump. SKIP if ArmLunge off or no wall |
 | `vr.08-arm-reach` | beach | Waits for the arms to be tracked (`AvatarPoseDriver.ArmWeight` 1), then samples the ragdoll arm chain for 50 physics ticks. With idle hands each arm fails above x1.15 stretch, with an elbow pointing up or back, or with an empty hand more than 0.15 m off its target. The scripted hands then hold two reaches (out to the side and up, and overhead). Each fails on 0.15 m target error, x1.15 stretch, or the avatar arm pointing more than 25 degrees off the shoulder-to-controller line. With real controllers (hold mode) it only reports. It also fails when the eye, with the idle-sway view hold's offset taken out (`RigDriver.ViewHeld`), sits more than `MaxEyeError` from the avatar's eye renderers, or when that hold exceeds its 0.05 m deadband by more than 0.01 m. Last, the still scripted hands hold the idle pose and wrists rolled +120 and -120 degrees: each ragdoll wrist (twist of the hand off its bind pose about the forearm, `AvatarPoseDriver.WristTwist`) fails above 105 degrees, the forearm or hand body or the wrist twist turning more than 20 degrees in one physics tick (a flip), or the hand pointing more than 30 degrees off its target; screenshots `vr.08-arm-reach` and `vr.08-arm-reach-wrist0`, `-wrist+120`, `-wrist-120`. The note names the world scale it ran at (`Camera.WorldScaleMode` Auto puts an adult-height head near rig x1, which the reach limits assume) |
-| `vr.09-belt-view` | beach, after `vr.08` | In a VR run the scripted head looks 60 degrees down and the camera must follow it within 5 degrees. Each hotbar ghost must be drawn within 40 degrees of the camera's view axis, and either drawn on top or clear of the local body's colliders. With a live headset it is judged from a computed 60 degree down view. Unless `Avatar.OwnBody` is Vanilla, the own outfit at both elbows and knees must be drawn: each body and costume material's `_VertexGhost` and `_UseRawVertexColor` go through Core `BodyGhost` at the limb's flat distance from the eye (the game's first-person ghost takes the outfit within 1 m and leaves hands and feet). SKIP when body slots or ghosts are off; screenshot `vr-09-belt-view`. The note names the world scale it ran at |
+| `vr.08b-hand-scale` | beach, after `vr.08` | The own hands drawn at `Avatar.HandScale`'s default and at the game's size (1), with a screenshot of each. The right hand is measured as drawn (width across the knuckles, thickness, length from the wrist). Fails when the width ratio is more than 0.05 off the setting, the game-size width is outside 0.12 to 0.32 m, the drawn wrist parts from the drawn forearm, or the physical hands sit more than 0.02 m differently at the two settings (drawing must never move the ragdoll). The setting goes back |
+| `vr.09-belt-view` | beach, after `vr.08b` | In a VR run the scripted head looks 60 degrees down and the camera must follow it within 5 degrees. Each hotbar ghost must be drawn within 40 degrees of the camera's view axis, and either drawn on top or clear of the local body's colliders. With a live headset it is judged from a computed 60 degree down view. Unless `Avatar.OwnBody` is Vanilla, the own outfit at both elbows and knees must be drawn: each body and costume material's `_VertexGhost` and `_UseRawVertexColor` go through Core `BodyGhost` at the limb's flat distance from the eye (the game's first-person ghost takes the outfit within 1 m and leaves hands and feet). SKIP when body slots or ghosts are off; screenshot `vr-09-belt-view`. The note names the world scale it ran at |
 | `vr.33-ragdoll-arms` | beach, after `vr.09` | With the arms tracked, a 2 s fall (`RPCA_Fall` on the local character) releases the tracked arm IK (`AvatarPoseDriver.ArmWeight` 0 within 1 s). While the body falls, each ragdoll hand stays within 0.9 m of the chest and each tracked hand target within 1.5 m of the hip. With `Camera.DetachOnRagdoll` on and the ThirdPerson takeover view, the view must detach during the fall and the own head must not stay hidden while it is detached; once the view is back on the body the head must be hidden again. The arms are tracked again within 6 s of the fall ending, then pass vr.08's idle judgement and its two reaches; screenshots `vr.33-ragdoll-arms` and `vr.33-ragdoll-arms-after` |
 | `vr.07-comfort` | beach, after the mobs | A knockback away from the view (`RPCA_AddForceAtPosition` on the local character, force 60, just over comfort.events' threshold) pulses the comfort vignette with its ring drawn, which opens again within 2 s; then `WarpToSpawn` (a warp inside the segment) must leave `VRFade.Target` at 0 within 10 s, with the eye not inside rock unless the view is black; screenshot `vr-07-knockback` at the pulse's peak |
 | `vr.235-ragdoll-vignette` | beach, after `vr.07` | A 1 s fall (`RPCA_Fall` on the local character) pulses the comfort vignette at the ragdoll onset (`ComfortEvents.Ragdoll` default VignettePulse), which opens again within 2 s; the note gives the peak and the settle time. SKIP: `ComfortEvents.Ragdoll` not VignettePulse or `ComfortEvents.Intensity` 0 |
@@ -249,13 +251,15 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | `vr.44b-handle-rest` | beach, after vr.54 | Hangs on a placed piton, sets stamina to 0.3. Expects the Progress feel on the gripping hand within 1.5 s. SKIP if PitonGripHang off, or if the piton cracked first (vr.56 covers it). |
 | `vr.44c-pickaxe-hang` | beach, after vr.44 | As vr.44 with a placed pickaxe: the spike item whose hammered prefab's `ClimbHandle.isPickaxe` is set; fails if the placed handle is not a pickaxe. A grip on its handle hangs and still hangs 1 s later; opening the hand lets go. SKIP if PitonGripHang off, no wall, or no item places a pickaxe handle. |
 | `vr.46b-lunge-too-soon` | beach, first of ClimbSteps, after vr.46 | Grips a tall wall, pokes sinceClimbJump to 0.2, throws the hand upward. Expects the TooSoon refusal cue at that hand (no tint) and no climb jump (clock not reset). SKIP if ArmLunge off. |
-| `vr.47-climb-deny-reach` | beach, after vr.46b | Stands at the test wall, 0.5 m farther out than the other wall steps so the hand stops an arm's length (about 0.45-0.5 m) from the eye, clear of the mouth (a fist there is the talk gesture) and with the reach allowance the probe gives an outstretched arm; the hand moves toward the face at 0.4 m/s along the line from the live eye, re-read every frame, and closes 0.15 m past the farthest grab reach (`ClimbGrabRadius` plus `ClimbReachAssist`). Expects the OutOfReach cue on that hand and no climb. SKIP if the stance leaves the wall beyond a full arm's reach, or PhysicalClimb off. |
+| `vr.46c-reach-no-lunge` | beach, after vr.46b | Climbing on one hand, that hand lets go at chest height moving up at the lunge speed and closes on the wall again 0.12 s later, as a hand-over-hand reach does. Expects no climb jump and no refusal. |
+| `vr.47-climb-deny-reach` | beach, after vr.46c | Stands at the test wall, 0.5 m farther out than the other wall steps so the hand stops an arm's length (about 0.45-0.5 m) from the eye, clear of the mouth (a fist there is the talk gesture) and with the reach allowance the probe gives an outstretched arm; the hand moves toward the face at 0.4 m/s along the line from the live eye, re-read every frame, and closes 0.15 m past the farthest grab reach (`ClimbGrabRadius` plus `ClimbReachAssist`). Expects the OutOfReach cue on that hand and no climb. SKIP if the stance leaves the wall beyond a full arm's reach, or PhysicalClimb off. |
 | `vr.47b-free-hand-pocket` | beach, after vr.47 | Gives an Apple in the right hand and spawns a second on the ground 0.55 m ahead (set back there if it rolls outside 0.35 to 0.7 m from the eye), then stoops as in `vr.10` and grips it with the left. Fails first if the left hand does not pick it up, naming the hand-to-Apple distance and the stoop; then asserts the Stowed cue at the left hand within 1 s, and the first Apple stays in the right hand with the left empty. SKIP if the give fails. |
 | `vr.47d-ping-at-item` | beach, after vr.47b | An Apple is dropped 1.2 m ahead of the head (past the grab radius, inside the game's 2 m interact reach). After the ping cooldown the right hand makes the finger gun (grip closed, index off the trigger) aimed at it for 1 s, then squeezes the trigger. Fails if the Apple lies past the pointed interact's ray (`Interaction.distance` less the hand's offset from the eye, plus 1.5 times `area`), since nothing could pick it up there. The squeeze must ping within 2 s (`PingInput.LastPinged`), and the Apple must stay on the ground with the hand empty after the aim and 0.5 s after the ping (`GripIntent.DeferPointedInteract`). SKIP if no PointPinger or interact.ping not installed. |
 | `vr.47e-arrive-in-closed-grip` | beach, after vr.47d | The right hand is given an Apple and closes its grip; a second one-handed food (Airplane Food, else Granola) is given while the grip stays closed and the game equips it. A fast release swing (from 0.25 m right of and 0.15 m under the head, 0.9 m forward and 0.15 m up) must keep it in hand (`ReleaseArming`). After a fresh close at the windup the same release must throw it, the hand empty within 1.5 s. SKIP if neither item exists or the give fails. |
 | `vr.238-grip-toggle-item` | beach, after vr.47e | `Interaction.GripMode` set to Toggle for the step. The right hand is given an Apple, closes its grip (0.1 s) and opens it slowly (0.4 s): the contact feel must reach that hand within 1 s, the grip must be latched (`GripToggle.Latched`) and the Apple still held 1 s later. A full squeeze held 0.25 s and a slow 0.4 s opening must give the cancel feel within 1 s, end the latch and drop the Apple within 1.5 s (`ReleaseToDrop` applies to the unlatch). The setting goes back. SKIP if `ReleaseToDrop` is off, there is no Apple item or the give fails. |
 | `vr.47f-grab-on-slope` | beach, after vr.238 | A 25 degree Map-layer slab rising away is placed 0.7 m ahead of the feet and 0.15 m up; an Apple on it is held kinematic with its centre 2 cm under the slab's surface. The right hand moves onto the Apple's centre and grips, and must hold it within 3 s (the grab's line of sight takes the item's top when its centre and nearest point are under the surface, `GrabSelector.SightPoints`). Fails if there is no Apple item. |
-| `vr.48-climb-deny-steep` | beach, after vr.47f | Places a 40 degree slab 0.6 m ahead and 0.4 m under the eye, then a ceiling tilted 5 degrees 0.35 m ahead and 0.25 m above it. Asserts no chalk ring under the open hand on the slope, the TooFlat then the Overhang cue on the grips (each within 1 s, ring in view), and no climbing on either. SKIP if PhysicalClimb off. |
+| `vr.61b-two-hands-optional` | beach, after vr.47f | With `Interaction.RequireTwoHands` off, a two-handed tool held in one hand works as in the flat game: the use press reaches the game and no NeedsTwoHands refusal fires (`vr.61` covers the refusal with the setting on). The setting goes back. |
+| `vr.48-climb-deny-steep` | beach, after vr.61b | Places a 40 degree slab 0.6 m ahead and 0.4 m under the eye, then a ceiling tilted 5 degrees 0.35 m ahead and 0.25 m above it. Asserts no chalk ring under the open hand on the slope, the TooFlat then the Overhang cue on the grips (each within 1 s, ring in view), and no climbing on either. SKIP if PhysicalClimb off. |
 | `vr.48b-surface-texture` | beach, after vr.48 | Adds a ClimbModifierSurface (stamina use 0.3) to the wall, grips it. Asserts the climb reads that surface (`CharacterData.climbMod`), the ClimbCue.Texture tick reaches the hand within 2 s, and no deny cue. SKIP if Interaction.ClimbSurfaceFeel off. |
 | `vr.49-condor` | beach, after vr.48b | Pokes a stand-in Condor into CharacterData.carrierCondor and grips the wall within reach. Expects the Carried cue and asserts no climbing. Shortcut, named in the note: a real carry needs a scene condor with its nest. No SKIP besides the wall being missing. |
 | `vr.50-climb-hover` | beach, after vr.49 | Open hand at the wall. Asserts the solid ClimbHover chalk ring is drawn (a faint one may show while the hand comes in), at least 2 cm off the wall plane (ClimbHover.Lift 2.5 cm, so it clears rough rock), and a Contact feel arrives with no deny cue; then a grip must climb and the ring must go. SKIP if Interaction.ClimbHoverRing off. |
@@ -265,7 +269,10 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | `vr.53-forced-detach` | beach, after vr.52 | Grips the wall, then calls StopAnyClimbing while the hand still grips. Expects the Cancel feel on that hand; reports a note only, no failing assertion beyond the feel. |
 | `vr.237-grip-toggle-climb` | beach, after vr.53 | `Interaction.GripMode` set to Toggle for the step. Grips the wall with the dominant hand, then opens the grip over 0.3 s: the contact feel must reach that hand within 1 s, the grip must be latched (`GripToggle.Latched`) and the body still climbing 1.5 s later with the grip open. A full squeeze held 0.25 s and a slow 0.4 s opening must give the cancel feel within 1 s, end the latch and, with no other hand on the wall, end the climb within `ClimbRegripGrace` + 1.5 s. The setting goes back. |
 | `vr.54-mantle` | beach, after vr.237 | Builds a 1.7 m Map-layer ledge, climbs hand over hand. Asserts the climb starts, PhysicalInteraction.LastMantleAt marks a mantle, feet end within 0.3 m of the top, and a Contact settle tick follows. SKIP if PhysicalClimb off. |
-| `vr.55-handle-occupied` | beach, after vr.44b | Sets ClimbHandle.hanger on a placed piton to a stand-in Character, grips it. Expects the Occupied cue (piton red) and asserts neither hanging (currentClimbHandle) nor wall climbing happens. |
+| `vr.44d-hammer-spike` | beach, after vr.44b | Holding use with a climbing spike aimed at the test wall starts the game's cast, and the free hand strikes the preview `Interaction.Tools.HammerStrikes` times (3 by default). The spike must go in sooner than the item's hold time, but no sooner than `HammerCast.MaxSpeedup` (1.5x) allows. |
+| `vr.44f-spike-second-slot` | beach, after vr.44d | Spikes in two slots, the second one drawn. Vanilla places only from the first spike slot, so the press at a wall in range does nothing; it must get the CantUse cue with the spike red and the ring on the first spike's belt slot. No cast starts and both spikes stay. |
+| `vr.44e-item-hand-no-hang` | beach, after vr.44f | With an Apple in the right hand, that hand closing on a placed piton keeps the Apple, does not hang and gets HandsFull. The empty left hand then hangs, and the Apple stays in the right hand. |
+| `vr.55-handle-occupied` | beach, after vr.44e | Sets ClimbHandle.hanger on a placed piton to a stand-in Character, grips it. Expects the Occupied cue (piton red) and asserts neither hanging (currentClimbHandle) nor wall climbing happens. |
 | `vr.56-fragile-piton` | beach, after vr.55 | Hangs on a hammered piton fitted with the game's ShittyPiton when its prefab has none. Expects the Danger feel once it cracks (1 to 5 s into the hang), then the break (four cracks 1.5 s apart) and the Cancel feel; fails if it never breaks. SKIP if PitonGripHang off. |
 | `vr.57-rope-deny-stamina` | beach, after vr.42c | Hangs a rope, empties stamina, grips the rope. Asserts the NoStamina cue (tinted) fires, and neither isRopeClimbing nor wall climbing starts. SKIP if stamina cannot be set. |
 | `vr.58-rope-deny-unanchored` | beach, after vr.57 | Pokes Rope.attachmenState to unattached, grips a rope segment. Asserts the Unanchored cue (rope tinted), no rope climb and no wall climb. Fails if the rope has no segments. |
@@ -342,6 +349,8 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | `vr.170-throw-mid-cast` | VR run, ItemStep apple fragment | The trigger starts the eat cast, then the hand swings and lets go as in vr.13. The release gives TooSoon with the item red, the item stays in the hand and PhysicalInteraction.ThrowCount does not change. SKIP: ui.affordance not installed, or cast under 0.5 s. |
 | `vr.171-vine-no-path` | VR run, items steps | A vine or chain shooter turned until WillAttach passes, at terrain that refuses every hang the shot tries when a full turn finds some; otherwise every path try is forced to fail, a shortcut the note names. Fired on the holding hand's trigger, the cast gives NoPath with the shooter red and no new JungleVine. SKIP: ui.affordance not installed, no shooter item, or no terrain in its window. |
 | `vr.172-warp-refund` | VR run, items steps | The warp compass held on the trigger with nobody alive beyond its minimumDistance gives NeedsFriend with the compass red when the game refunds the use, the uses left end where they started, and the player moves less than 2 m. SKIP: ui.affordance not installed, no compass item, or someone to warp to. |
+| `vr.173-reach-ghost` | VR run, items steps | The ghost hand shows where the real hand is when the character's arm cannot get there, and only then: none with the hand at rest; standing tall with the right controller on the floor 0.6 m ahead (past the arm's reach from a standing shoulder) it fades in; back at rest it fades out. |
+| `vr.243-grab-drawn-shape` | VR run, items steps, after vr.173 | Grab reach follows what is drawn where the game's collider does not (`ItemGrabShape`, `docs/research/item-grab-shapes.csv`). A Rescue Hook's claw lies outside its only collider: a hand on the claw grabs it, one 0.05 m past the grab radius beyond the claw does not. A Glow Mushroom's collider stands 0.17 m over its caps: a hand on the collider's top does not grab it, one on the caps does. Both float kinematic 0.7 m ahead at chest height. |
 
 #### Friends
 
@@ -383,6 +392,7 @@ More VR steps, grouped by area rather than by run order. The end-of-run slot is 
 | `vr.130-connecting-wait` | AirportScreenSteps, ScreenHandStep, scripted hands, boarding pass | Opens the kiosk by hand as vr.71. With the load flag faked on (shortcut named in the note), a laser press on Start gives DenyReason.NotNow with tint on the right hand. Runs right after vr.116; the player then warps back to spawn. SKIP if no kiosk or pass, or Start not interactable. |
 | `vr.131-modal-bell` | AirportScreenSteps, ScreenHandStep, scripted hands | Modal.TestModal opens a modal (shortcut: the game's console test). After 0.5 s the left laser clicks its first interactable button, which must close it within 1 s; with both lasers aimed at the floor, the next modal must ring NotNow (no tint) on the left hand within 1.5 s and nothing on the right. Then the same with the right hand, after the same 0.5 s. SKIP unless UI.PointerHand is LastUsed. |
 | `vr.132-guide-comms-rows` | AirportScreenSteps, plain VRStep, no hands | GhostDemo on a stage plays guide topics Ping, Mic, Mute, Spectate for one loop each. Each stays alive on its topic, plays at least one cue sound and shows its real gesture: Ping, grip and trigger lit together; Mic, a closed ghost hand within MouthGesture.Radius of the ghost mouth; Mute, an open hand there and no closed one; Spectate, the stick lit only on the hand bound to SpectateNext. Fails if no rig. |
+| `vr.134-guide-new-rows` | AirportScreenSteps, plain VRStep, after vr.132 | Every guide row added for the newer mechanics opens: its demo plays a loop on a ghost stage and sounds its cue at least once, and the practice lists the Refused and Recenter drills (`PracticeFlow.Stations`). |
 | `vr.187-passport-swipe` | AirportScreenSteps, ScreenHandStep, scripted hands, passport | On the passport's first tab, a forward swipe of the free hand across the page turns it (activeType or page changes) with no EndStop bump. SKIP if no passport, UI.Passport.SwipeToFlip off, or fewer than two tabs. |
 | `vr.133-target-names` | CommsSteps via PromptGlyphSteps, VR hand step | Empty right hand reaches an Apple low beside you: it glows and, with TargetNames off, shows no name; the glow goes when the hand leaves. With TargetNames on, the Apple on the head's ray shows its name. Runs with TargetPrompt turned on. |
 | `vr.221-colorblind-names` | CommsSteps via PromptGlyphSteps, VR hand step | With TargetNames off and ColorBlindNames set to On, an Apple held on the head's ray becomes the hovered target and shows its name; screenshot `vr-221-colorblind-names`. Runs with TargetPrompt turned on; both settings go back after the step. |
@@ -458,62 +468,54 @@ Results:
 
 ## Two-client multiplayer test
 
-This run covers part of the live test plan in `docs/multiplayer-compat.md` without anyone at the keyboard. Client A is PeakXR in VR on the main Steam account. Its hands are scripted through `VRInput.TestOverride`, the same way as the self-test's `vr.*` steps. Client B is a second Steam account in Flatpak Steam, running vanilla PEAK plus one test plugin, `MpObserver`, that watches A and acts only on B's own character. The two accounts must be Steam friends.
+This run covers part of the live test plan in `docs/multiplayer-compat.md` without anyone at the keyboard. Client A is PeakXR in VR on one Steam account. Its hands are scripted through `VRInput.TestOverride`, the same way as the self-test's `vr.*` steps. Client B is a second Steam account with its own copy of the game (on one Linux machine: a second Steam install such as Flatpak Steam, or another OS user), running vanilla PEAK plus one test plugin, `MpObserver`, that watches A and acts only on B's own character. The two accounts must be Steam friends.
 
 B hosts a lobby through the title menu's Host button and writes `lobby.json`. A joins that lobby through the game's own `SteamLobbyHandler.TryJoinLobby`, then plays a scripted sequence. After each step A appends a line to `a-checkpoints.jsonl`. B answers each line with its own snapshot of A's character under the same name. A sends nothing beyond what PeakXR always sends. B sends no custom RPC or event, sets no property and never calls anything on A's character; it uses only the game's own methods on its own character, as a player could, and only when A asks (requests below).
 
 ### Shared directory
 
-Both clients use `~/.var/app/com.valvesoftware.Steam/peakxr-mp`. Flatpak Steam's sandbox has a private `/tmp` and hides the real home, but it mounts its own `~/.var/app/com.valvesoftware.Steam` at the same host path. Native Steam and a direct Proton launch see that path as well, so both sides read and write the same files. Both plugins use this directory when `-mpdir` is not given. They find the home from `$HOME`, or from Wine's `WINEHOMEDIR` when Wine hides `HOME`. The launch commands below still pass `-mpdir` so that nothing depends on that lookup. Each side deletes its own old files when it starts: A deletes `a-*`, and B deletes `b-*` and `lobby.json`.
+Both clients read and write one directory, `$MP_DIR` below. Pass it to both with `-mpdir`. When the two clients run on one Linux machine with B in Flatpak Steam, pick a folder under Flatpak Steam's own data folder in your home: Flatpak's sandbox hides the rest of the home and has a private `/tmp`, but it mounts that folder at the same host path, so native Steam and a direct Proton launch see it too. Without `-mpdir`, both plugins fall back to `peakxr-mp` in that Flatpak folder (`MpTestFiles.MpDir.DefaultUnderHome`), taking the home from `$HOME` or, when Wine hides `HOME`, from Wine's `WINEHOMEDIR`. Each side deletes its own old files when it starts: A deletes `a-*`, and B deletes `b-*` and `lobby.json`.
 
 ### Client B setup (once)
 
-The Flatpak copy is `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/PEAK`. It must be on the same build as A (`version.txt`). Give it the BepInEx loader and MpObserver only, never PeakXR or its preloader:
+B's game folder, `$B_DIR` below, must be on the same build as A (`version.txt`). Give it the BepInEx loader and MpObserver only, never PeakXR or its preloader. From the repo root, with `$PEAK_DIR` as A's game folder (which has BepInExPack_PEAK):
 
 ```sh
 mise run build-observer
-SRC=~/.local/share/Steam/steamapps/common/PEAK            # A's copy, which has BepInExPack_PEAK
-B=~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/PEAK
-cp "$SRC"/{winhttp.dll,doorstop_config.ini,.doorstop_version} "$B"/
-mkdir -p "$B/BepInEx/plugins/MpObserver"
-cp -r "$SRC/BepInEx/core" "$B/BepInEx/"
-cp dist/MpObserver/MpObserver.dll "$B/BepInEx/plugins/MpObserver/"
+cp "$PEAK_DIR"/{winhttp.dll,doorstop_config.ini,.doorstop_version} "$B_DIR"/
+mkdir -p "$B_DIR/BepInEx/plugins/MpObserver"
+cp -r "$PEAK_DIR/BepInEx/core" "$B_DIR/BepInEx/"
+cp dist/MpObserver/MpObserver.dll "$B_DIR/BepInEx/plugins/MpObserver/"
 ```
 
-BepInEx only loads under Proton when Wine prefers the native `winhttp.dll`. Pick one of these:
+Under Proton, BepInEx only loads when Wine prefers the native `winhttp.dll`. Set B's launch options in its Steam to `WINEDLLOVERRIDES="winhttp=n,b" %command% -mpobs -mpdir <MP_DIR>`, with `<MP_DIR>` written out in full. With the flags in the launch options, a plain `-applaunch` needs no arguments. MpObserver stays idle on any launch without `-mpobs`. Instead of the DLL override you can add `"winhttp"="native,builtin"` under `[Software\\Wine\\DllOverrides]` in the `user.reg` of B's Proton prefix (`steamapps/compatdata/3527290/pfx` in B's Steam library). Launch PEAK once first so that the prefix exists, and edit the file only while the game is closed.
 
-- Launch options. In Flatpak Steam, open PEAK's Properties and set the launch options to `WINEDLLOVERRIDES="winhttp=n,b" %command% -mpobs -mpdir /home/<user>/.var/app/com.valvesoftware.Steam/peakxr-mp`. With the flags in the launch options, a plain `-applaunch` needs no arguments. MpObserver stays idle on any launch without `-mpobs`.
-- Prefix registry, as in the native setup. Launch PEAK once from Flatpak Steam so that the prefix exists, quit it, and then add `"winhttp"="native,builtin"` under `[Software\\Wine\\DllOverrides]` in `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/3527290/pfx/user.reg`. Edit the file only while the game is closed.
-
-Check the setup by launching B once. `BepInEx/LogOutput.log` in B's copy must list `MpObserver` and nothing from PeakXR.
+Check the setup by launching B once. `BepInEx/LogOutput.log` in B's game folder must list `MpObserver` and nothing from PeakXR.
 
 MpObserver puts B under the same progress and save guard as the self-test: B earns no achievements or stats, completes no ascent, and never writes or deletes its quicksave. The log names each call it blocks. If a guarded game method is missing, the observer refuses to start. It records a fingerprint of B's quicksave at the start and at the end, and `tools/mp-check.sh` fails when the two differ. On A, the progress guard is `SelfTestProgressGuard`: the self-test ends with `99-save-untouched` and the MP script with `save-untouched`.
 
 ### Launch
 
-Start B first, before SteamVR, because Steam can block game launches while SteamVR runs (the VR Theater prompt):
+Start B first, before SteamVR, because Steam can block game launches while SteamVR runs (the VR Theater prompt). With B in Flatpak Steam, for example:
 
 ```sh
-flatpak run com.valvesoftware.Steam -applaunch 3527290 \
-  -mpobs -mpdir /home/<user>/.var/app/com.valvesoftware.Steam/peakxr-mp
+flatpak run com.valvesoftware.Steam -applaunch 3527290 -mpobs -mpdir "$MP_DIR"
 ```
 
 Leave out the flags when they are already in the launch options. `steam://run/3527290` also works, but Steam asks for confirmation when that URL carries arguments, and nobody is there to click. B waits for the title, switches the lobby type to Friends (A joins by id), presses Host, and writes `lobby.json` once the Airport room is ready.
 
-Then start SteamVR with a headset (a virtual one works) and launch A directly through Proton, as in the VR self-test:
+Then start SteamVR with a headset (a virtual one works) and launch A with `-force-vulkan -peakxr-mptest -mpdir "$MP_DIR"` (in PeakXR's usual launch options, see the README). To skip Steam's launch prompt on Linux, launch PEAK through Proton directly. `$PROTON` is the Proton build Steam runs PEAK with, and `$STEAM_DIR` is A's Steam folder:
 
 ```sh
-PEAK=~/.local/share/Steam/steamapps/common/PEAK
-cd "$PEAK" && \
-STEAM_COMPAT_DATA_PATH=~/.local/share/Steam/steamapps/compatdata/3527290 \
-STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.local/share/Steam \
+cd "$PEAK_DIR" && \
+STEAM_COMPAT_DATA_PATH="$STEAM_DIR/steamapps/compatdata/3527290" \
+STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_DIR" \
 SteamAppId=3527290 SteamGameId=3527290 \
 WINEDLLOVERRIDES="winhttp=n,b" \
-"$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest-x86_64_v3/proton" run "$PEAK/PEAK.exe" \
-  -force-vulkan -peakxr-mptest -mpdir "$HOME/.var/app/com.valvesoftware.Steam/peakxr-mp"
+"$PROTON/proton" run "$PEAK_DIR/PEAK.exe" -force-vulkan -peakxr-mptest -mpdir "$MP_DIR"
 ```
 
-Under the vr-test-mcp's SteamVR (ALVR on the Radeon), also set `VK_DRIVER_FILES` and `MESA_VK_DEVICE_SELECT` as in the self-test notes. `-peakxr-mptest` cannot be combined with `-peakxr-selftest`. A waits up to 4 minutes for a `lobby.json` written in the last 30 minutes. Without VR, the steps marked VR below are `SKIP`.
+`-peakxr-mptest` cannot be combined with `-peakxr-selftest`. A waits up to 4 minutes for a `lobby.json` written in the last 30 minutes. Without VR, the steps marked VR below are `SKIP`.
 
 A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes after hosting if nobody joined, or 15 minutes after A joined.
 
@@ -540,6 +542,7 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `feed` (VR) | Grabs food that can be fed to a friend, walks to 0.75 m from B, holds it toward B's head within 0.85 m of A's head until A's `lastConsumedItem` changes. SKIP with no such food within 40 m | `SendFeedDataRPC` from A, `GetFedItemRPC` on B |
 | `feed-refuse` (VR) | Picks up a reachable one-handed item that is not food and cannot be used on a friend, walks to B (one more step in when B's head is over 0.7 m away, SKIP over 0.95 m), holds it toward B's head for up to 4 s; expects CantUse with the item red | No `GetFedItemRPC` or `SendFeedDataRPC` up to the next checkpoint |
 | `reach-deny` (VR) | Walks to 0.6 m from B (SKIP if B needs help now) and grips B's right hand, one step closer if it is out of a real arm's reach, else SKIP; expects NotInTrouble with no tint and no reach for 0.5 s | No local `RPCA_Fall` |
+| `reach-look` (VR) | Asks B to web itself, then grips B's hand while looking well to the side, past the game's 60° reach cone: nobody is pulled up, so A must get WrongAngle at that hand once. Then A looks at B and the game's reach catches B | The usual snapshot |
 | `reach` (VR) | Asks B to web itself (SKIP if B still needs no help), then grips B's hand as in `reach-deny`; `sinceGrabFriend` must drop under 0.3 s within 3 s | B's Web at 0.05 or less and B's own `sinceGrabFriend` at 5 s or less |
 | `kick-mode` (VR) | Grips B's hand (no kick for 1 s), then shoves with both open palms; `isKicking` must turn on | A local `RPCA_Fall` |
 | `carry` (VR) | Asks B to pass out (B adds Injury if Hunger is refused, so it stays out; SKIP if B's statuses still sum under 1), stoops and lifts B with both hands (SKIP when the stoop leaves a hand out of reach; a worn pack on A must give the Dropped cue), stands and carries B for 2 s with the grips open, then puts B down | Remote `RPCA_StartCarry`, then `RPCA_Drop` at least 1.5 s later, and no `RPCA_UnPassOut` on B in between |
@@ -548,6 +551,8 @@ A quits after writing `a-done.json`. B quits when it sees that file, 10 minutes 
 | `campfire-far` (VR) | Grips the logs of an unlit campfire out of B's morale radius; expects FriendsFar and the fire stays off | No `Light_Rpc` |
 | `spectate` (VR) | Passes out (`Character.PassOut`), waits until the view settles on A's own body, flicks the dominant stick up; expects CantSwitch and the view still on A. Stays down through the checkpoint | B sees A fully passed out |
 | `save-untouched` | Checks A's quicksave against its fingerprint from when `SelfTestProgressGuard` armed; FAIL if the guard is not armed or the save changed. Then A wakes itself | The usual snapshot; mp-check compares B's own quicksave fingerprints in `b-summary.json` |
+
+Before `join`, A runs `mp.title` (waits up to 180 s for the title menu) and, in VR, `vr.00-session`. Neither writes a checkpoint.
 
 `scene-button` (VR) runs after `ping` and before `board`: A grips a scene button only the host can press (a host-owned trigger) and expects the Blocked cue, and B must see no `RPCA_Trigger`. The social checkpoints from `feed-refuse` on run after `feed`, and `spectate` is last. Between them A asks B to wake when B is passed out, dead or struggling.
 
@@ -609,28 +614,22 @@ The default run pairs A with a vanilla B. This second mode gives B PeakXR as wel
 
 PeakXR already has a flat switch. With the preloader's `Runtime.Mode = Disabled` (or the launch option `-peakxr-novr`), the preloader sets `PEAKXR_RUNTIME=Disabled` and installs no XR runtime files. The plugin then skips every feature with `VROnly` and never creates the XR bootstrap, so XR never starts. The flat-safe features stay on: `net.pose`, `avatar.local`, `avatar.emotes`, `ui.settings` and `sandbox`. Leaving `Mode` at `OpenXR` on a machine without a headset is a different path: the VR features install, the bootstrap tries OpenXR and logs an error when nothing starts, and that error would fail the check below. B gets `Mode = Disabled` in its config file, so its Steam launch options stay as they are.
 
-Today B is the Linux user `peakb` with its own Steam, and both sides use `/tmp/peakxr-mp-shared`. B's launch options are `WINEDLLOVERRIDES="winhttp=n,b" %command% -mpobs -force-vulkan -mpdir /tmp/peakxr-mp-shared`. Install with B's game closed, from the repo root:
+B keeps its usual launch options from the vanilla setup (`-mpobs -mpdir <MP_DIR>`, plus `-force-vulkan` under Proton). Install with B's game closed, from the repo root. When B is another OS user, copy into `$B_DIR` as that user, so the files stay B's:
 
 ```sh
 mise run package && mise run build-observer
-MP=/tmp/peakxr-mp-shared
-BX=/home/peakb/.local/share/Steam/steamapps/common/PEAK/BepInEx
-rm -rf "$MP/peakxr-b" && cp -r dist/PeakXR/BepInEx "$MP/peakxr-b"
-cp dist/MpObserver/MpObserver.dll "$MP/peakxr-b/"
-printf '[Runtime]\nMode = Disabled\n' > "$MP/peakxr-b/PeakXR.Preloader.cfg"
-chmod -R a+rX "$MP/peakxr-b"
-sudo -S -p '' -u peakb rm -rf "$BX/plugins/PeakXR" "$BX/patchers/PeakXR" < ~/.sudo
-sudo -S -p '' -u peakb cp -r "$MP/peakxr-b/plugins/PeakXR" "$BX/plugins/" < ~/.sudo
-sudo -S -p '' -u peakb cp -r "$MP/peakxr-b/patchers/PeakXR" "$BX/patchers/" < ~/.sudo
-sudo -S -p '' -u peakb cp "$MP/peakxr-b/PeakXR.Preloader.cfg" "$BX/config/" < ~/.sudo
-sudo -S -p '' -u peakb cp "$MP/peakxr-b/MpObserver.dll" "$BX/plugins/MpObserver/" < ~/.sudo
-rm -rf "$MP/peakxr-b"
+BX="$B_DIR/BepInEx"
+rm -rf "$BX/plugins/PeakXR" "$BX/patchers/PeakXR"
+cp -r dist/PeakXR/BepInEx/plugins/PeakXR "$BX/plugins/"
+cp -r dist/PeakXR/BepInEx/patchers/PeakXR "$BX/patchers/"
+printf '[Runtime]\nMode = Disabled\n' > "$BX/config/PeakXR.Preloader.cfg"
+cp dist/MpObserver/MpObserver.dll "$BX/plugins/MpObserver/"
 ```
 
 Launch both sides as usual, B first. After the run:
 
 ```sh
-tools/mp-check.sh --modded-b /tmp/peakxr-mp-shared
+tools/mp-check.sh --modded-b "$MP_DIR"
 ```
 
 B's `BepInEx/LogOutput.log` should show `PEAKXR_RUNTIME=Disabled` and `[compat] xr.bootstrap Skipped (VR disabled)`.
@@ -656,14 +655,13 @@ A's checkpoints carry `poseHead`, `poseL` and `poseR` while its arms follow the 
 - B sent no event 151 and logged no PeakXR or BepInEx errors.
 - A sent event 151.
 
-Switch B back to vanilla, with B's game closed. This removes PeakXR's plugin, preloader, both config files and the preloader's state file, and keeps MpObserver and BepInEx:
+Switch B back to vanilla, with B's game closed (again as B's user). This removes PeakXR's plugin, preloader, both config files and the preloader's state file, and keeps MpObserver and BepInEx:
 
 ```sh
-B=/home/peakb/.local/share/Steam/steamapps/common/PEAK
-sudo -S -p '' -u peakb rm -rf "$B/BepInEx/plugins/PeakXR" "$B/BepInEx/patchers/PeakXR" \
-  "$B/BepInEx/config/com.thephaseless.peakxr.cfg" "$B/BepInEx/config/PeakXR.Preloader.cfg" \
-  "$B/PEAK_Data/PeakXR.Preloader.state" < ~/.sudo
-sudo -S -p '' -u peakb ls "$B/BepInEx/plugins" "$B/BepInEx/patchers" < ~/.sudo
+rm -rf "$B_DIR/BepInEx/plugins/PeakXR" "$B_DIR/BepInEx/patchers/PeakXR" \
+  "$B_DIR/BepInEx/config/com.thephaseless.peakxr.cfg" "$B_DIR/BepInEx/config/PeakXR.Preloader.cfg" \
+  "$B_DIR/PEAK_Data/PeakXR.Preloader.state"
+ls "$B_DIR/BepInEx/plugins" "$B_DIR/BepInEx/patchers"
 ```
 
 The listing must show only `MpObserver` under plugins and nothing under patchers. With `Mode = Disabled`, the preloader never put XR files into `PEAK_Data`. If B ever ran PeakXR with another mode, run it once more with `Mode = Disabled` before removing it, so the preloader takes its files out of `PEAK_Data/Plugins/x86_64` and `PEAK_Data/UnitySubsystems`. The next vanilla `tools/mp-check.sh` fails if PeakXR still loaded on B.

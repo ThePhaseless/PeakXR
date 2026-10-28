@@ -1,10 +1,8 @@
 # PeakXR stack decisions
 
-Researched 2026-10-19 (today). Audience: agents building PeakXR. Builds on `docs/research/vr-prior-art.md` (not repeated). Tags: (verified) = checked against a downloaded file, registry, decompile or a test I ran; (doc) = vendor documentation; (community) = forum or wiki, unconfirmed; (inference) = my reading. Versions come from live registry queries on this date.
+Researched 2026-10-19. Audience: agents building PeakXR. Builds on `docs/research/vr-prior-art.md` (not repeated). Tags: (verified) = checked against a downloaded file, registry, decompile or a test I ran; (doc) = vendor documentation; (community) = forum or wiki, unconfirmed; (inference) = my reading. Versions come from live registry queries on this date.
 
 Clean-room: nothing here comes from PeakVR, PEAK_VR, LCVR, CWVR or RepoXR source. About those mods: public READMEs, Thunderstore pages and issue titles only.
-
-Scratch artifacts (may be gone): `/tmp/claude-1000/-home-thephaseless-Projects-PeakVR/67bcec5d-4ac1-4d42-9483-f1385773aa56/scratchpad/{pk,sdk10,uptest,trial}`.
 
 ---
 

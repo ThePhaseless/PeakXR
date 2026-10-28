@@ -327,6 +327,8 @@ Risks (rank): (1) Overlay-only UI: nothing visible until converted. (2) Camera h
 ---------------------------------------------------------------------------
 ## 10. Re-extraction notes (for game updates)
 
+`script.py` (not in the repo) is a short UnityPy script that loads the game's data files and dumps scene objects (canvases, cameras, volumes) and URP assets with their typetrees.
+
 ```
 uvx --from UnityPy --with TypeTreeGeneratorAPI python -I script.py <PEAK>/PEAK_Data/data.unity3d <PEAK>
 # env.files[bundle].files['level3'] = Airport; typetree needs TypeTreeGenerator("6000.3.15f1").load_local_game(<PEAK root>) (root, not _Data)
