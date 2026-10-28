@@ -32,11 +32,18 @@ sealed class XRBootstrapDriver : MonoBehaviour
 {
     const string Tag = "[xr.bootstrap]";
 
+    /// <summary>Frames the crash guard stays open after the session is set up: the first ones wait on the display
+    /// and submit to the compositor, native calls that can still take the process down.</summary>
+    const int GuardedFrames = 3;
+
     readonly List<XRDisplaySubsystem> displays = new();
     readonly List<XRInputSubsystem> inputs = new();
     XRBackend backend;
     bool started;
     bool lastFocus = true;
+
+    /// <summary>This launch's crash guard is written and not yet cleared (<see cref="XRStartSentinel"/>).</summary>
+    bool guarded;
 
     IEnumerator Start()
     {
@@ -63,10 +70,14 @@ sealed class XRBootstrapDriver : MonoBehaviour
             if (candidate == null)
                 continue;
 
-            // The crash guard covers the native init calls only: a crash there never returns.
-            XRStartSentinel.Starting();
+            // One crash guard per launch, from the first native init until a runtime runs (or all failed cleanly), so
+            // OpenXR failing cleanly and OpenVR then crashing still counts as one crashed start.
+            if (!guarded)
+            {
+                guarded = true;
+                XRStartSentinel.Starting();
+            }
             bool up = TryInitialize(candidate) && TryStartSubsystems(candidate);
-            XRStartSentinel.Finished();
             if (!up)
             {
                 SafeShutdown(candidate);
@@ -89,11 +100,25 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
             if (!Activate(candidate))
                 continue;
+            for (int i = 0; i < GuardedFrames; i++)
+                yield return null;
+            EndGuard();
             yield break;
         }
 
+        EndGuard();
         Plugin.Log.LogError($"{Tag} No XR runtime started; VR stays off and the game runs flat");
         VRSession.Running = VRRuntime.Disabled;
+    }
+
+    /// <summary>The start came back (a running session's first frames submitted, or every runtime failed cleanly,
+    /// or the game quit normally): this launch did not crash.</summary>
+    void EndGuard()
+    {
+        if (!guarded)
+            return;
+        guarded = false;
+        XRStartSentinel.Finished();
     }
 
     static bool TryStartSubsystems(XRBackend candidate)
@@ -346,6 +371,7 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
     void OnDestroy()
     {
+        EndGuard();
         InputDevices.deviceConnected -= OnDeviceConnected;
         if (backend != null)
             SafeShutdown(backend);
