@@ -56,7 +56,6 @@ sealed class XRBootstrapDriver : MonoBehaviour
                 );
         }
 
-        XRStartSentinel.Starting();
         foreach (var runtime in order)
         {
             Plugin.Log.LogInfo($"{Tag} Trying {runtime}");
@@ -64,19 +63,12 @@ sealed class XRBootstrapDriver : MonoBehaviour
             if (candidate == null)
                 continue;
 
-            if (!TryInitialize(candidate))
+            // The crash guard covers the native init calls only: a crash there never returns.
+            XRStartSentinel.Starting();
+            bool up = TryInitialize(candidate) && TryStartSubsystems(candidate);
+            XRStartSentinel.Finished();
+            if (!up)
             {
-                SafeShutdown(candidate);
-                continue;
-            }
-
-            try
-            {
-                candidate.StartSubsystems();
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError($"{Tag} {runtime}: starting subsystems threw: {e}");
                 SafeShutdown(candidate);
                 continue;
             }
@@ -97,17 +89,26 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
             if (!Activate(candidate))
                 continue;
-            XRStartSentinel.Finished();
             yield break;
         }
 
         Plugin.Log.LogError($"{Tag} No XR runtime started; VR stays off and the game runs flat");
         VRSession.Running = VRRuntime.Disabled;
-        XRStartSentinel.Finished();
     }
 
-    /// <summary>Quitting while the runtime still starts is not a crash.</summary>
-    void OnApplicationQuit() => XRStartSentinel.Finished();
+    static bool TryStartSubsystems(XRBackend candidate)
+    {
+        try
+        {
+            candidate.StartSubsystems();
+            return true;
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogError($"{Tag} {candidate.Runtime}: starting subsystems threw: {e}");
+            return false;
+        }
+    }
 
     static XRBackend Prepare(VRRuntime runtime)
     {
