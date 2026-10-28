@@ -103,7 +103,7 @@ UI at the player's own hands, wrists and held items (wheels, wrist display, item
 | Hotbar, backpack, temporary slot | belt of 3D slots; 2D cells hidden | `inventory.vr` | `Inventory.SlotGhosts` |
 | Rope length (`UI_Rope`), item fuel | next to the held spool; fuel arc beside the holding hand | `ui.spatial` | `UI.HeldItemGauges` |
 | Throw charge bar (`throwGO`, button fallback) | above the throwing hand | `ui.spatial` | `UI.HeldItemGauges` |
-| Biome title (`heroObject`), fog, lava, gloom and ghost banners, ascent title (`AscentUI`), endgame countdown, win and lose cards (`EndgameCounter`) | world-locked sign up to 30 m ahead along your view when it appears, above the horizon, brought in to just before a cliff in the way (not nearer than 0.5 m) at the same angular size, so it never shows through nearer rock; placed again once you turn more than 40° from it or move 20 m | `ui.spatial` | `UI.WorldBanners` |
+| Biome title (`heroObject`), fog, lava, gloom and ghost banners, ascent title (`AscentUI`), endgame countdown, win and lose cards (`EndgameCounter`) | world-locked sign up to 30 m ahead along your view when it appears, above the horizon, brought in to just before a cliff in the way (not nearer than 0.5 m) at the same angular size, so it never shows through nearer rock; placed again once you have looked more than 45° from it for 1 s or moved 20 m | `ui.spatial` | `UI.WorldBanners` |
 | Quicksave toast, mute icon, voice indicators | off-hand wrist, below the status bar (body panel in `HudMode = Body`) | `ui.spatial` | `UI.HUD.HudMode` |
 | Emote and backpack wheels | emote at the opening hand, backpack in view toward its corner | `ui.wheels` | |
 | Friend item-use feed | on a hand | `ui.hand` | `UI.Hand.FriendFeed` |
