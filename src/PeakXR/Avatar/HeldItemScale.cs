@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -8,7 +9,7 @@ namespace PeakXR.Avatar;
 /// <summary>
 /// Draws the local VR player's held item smaller (<c>Interaction.HeldItemScale</c>) about the grip the hand holds,
 /// so the game's oversized props stop filling the view (tester: "shrink items while they are held"). Render time
-/// only: the item's parts are scaled in <c>beginContextRendering</c> and put back in <c>endContextRendering</c>, so
+/// only: the item's parts are scaled when the headset's render context begins and put back when it ends, so
 /// physics, colliders, the network and every peer keep the game's size. Gestures that test a point on the item map
 /// it through <see cref="ToVisual"/> so they trigger where the item is drawn.
 /// Left out: items another feature presents at a set size (passport and guidebook books, binocular lenses, a
@@ -22,7 +23,6 @@ internal static class HeldItemScale
     private static Item bound;
     private static bool eligible;
     private static readonly ItemHoldInfo hold = new();
-    private static int depth;
     private static bool applied;
 
     public static void Install()
@@ -108,7 +108,8 @@ internal static class HeldItemScale
 
     private static void Begin(ScriptableRenderContext context, List<Camera> cameras)
     {
-        if (depth++ > 0)
+        // Once a frame, for the headset render only; manual camera renders (guidebook, title card) keep game size.
+        if (applied || !HeadsetContext.Renders(cameras))
             return;
         var c = Character.localCharacter;
         var item = c != null && c.data != null ? c.data.currentItem : null;
@@ -137,9 +138,7 @@ internal static class HeldItemScale
 
     private static void End(ScriptableRenderContext context, List<Camera> cameras)
     {
-        if (depth > 0)
-            depth--;
-        if (depth == 0)
+        if (HeadsetContext.Renders(cameras))
             Restore();
     }
 
