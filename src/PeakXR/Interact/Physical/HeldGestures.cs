@@ -200,7 +200,7 @@ internal static class HeldGestures
         if (
             RealScale.Real(
                 Vector3.Distance(
-                    HeldItemPoints.Nearest(ItemGestures.Held, hand, left, mouth),
+                    ItemGestures.MouthContact(ItemGestures.Held, hand, left, mouth),
                     mouth
                 )
             ) < AwayFromMouth

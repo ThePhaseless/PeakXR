@@ -9,6 +9,7 @@ using PeakXR.Interact.Binoculars;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.Interact.Tools;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using Photon.Pun;
@@ -45,7 +46,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.27-warm-hands", 30f, WarmStep());
         yield return WarpBack();
         yield return HandStep("vr.160-use-routes", 40f, UseRoutesStep());
-        yield return ItemStep("vr.161-drink", "Antidote", 25f, DrinkStep);
+        yield return ItemStep("vr.161-drink", "Antidote", 35f, DrinkStep);
         yield return ItemStep("vr.162-build-not-at-mouth", "Checkpoint Flag", 20f, NotAtMouthStep);
         yield return ItemStep("vr.163-build", "Checkpoint Flag", 30f, BuildStep);
         yield return ItemStep("vr.164-commune-guard", "Cursed Skull", 25f, CommuneGuardStep);
@@ -2116,7 +2117,16 @@ internal sealed partial class SelfTestRunner
             Script(left).Trigger = 1f;
         }
         else if (way == UseWay.Mouth)
-            ApproachHand(left, MouthGoal());
+        {
+            // A drink counts only by its opening (HeldItemPoints.Opening), so that goes to the mouth, not the hand.
+            var item = HeldItem();
+            ApproachHand(
+                left,
+                item != null && ItemGestures.UseOf(item) == UseGesture.Drink
+                    ? MouthGoal(left, HeldItemPoints.Opening(item, VRRig.Instance.Hand(left), left))
+                    : MouthGoal()
+            );
+        }
         else
             ApproachHand(
                 left,
@@ -2637,8 +2647,45 @@ internal sealed partial class SelfTestRunner
         return stepSkip == null;
     }
 
-    /// <summary>vr.161: a drink raised to the mouth (interact.physical's mouth route for Drink) is drunk through its
-    /// cast (<c>lastFinishedCast</c>, Item.cs:272): the status it cures (Poison for the Antidote,
+    /// <summary>interact.physical's mouth zone sizes (<see cref="MouthGesture"/> defaults), real metres.</summary>
+    static readonly MouthGesture MouthZone = new();
+
+    /// <summary>Tracking-space hand goal that puts <paramref name="itemPoint"/> (a world point on the held item, read
+    /// each frame) on the mouth interact.physical measures, in real metres below the eyes.</summary>
+    static Vector3 MouthGoal(bool left, Vector3 itemPoint)
+    {
+        var rig = VRRig.Instance;
+        return rig.Origin.InverseTransformPoint(
+            WorldMouth() - (itemPoint - rig.Hand(left).position)
+        );
+    }
+
+    /// <summary>The mouth interact.physical routes to, in the world.</summary>
+    static Vector3 WorldMouth()
+    {
+        var head = VRRig.Instance.Head;
+        return RealScale.World(
+            MouthGesture
+                .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
+                .U(),
+            head.position
+        );
+    }
+
+    /// <summary>A held drink's base: the middle of its drawn bounds' bottom, opposite its opening.</summary>
+    static Vector3 DrinkBase(Item item, Transform hand, bool left)
+    {
+        var info = HeldItemPoints.Info(item);
+        if (info == null)
+            return hand.position;
+        var b = (info.BoundsMin + info.BoundsMax) * 0.5f;
+        b.y = info.BoundsMin.y;
+        return HeldItemPoints.World(item, hand, left, b, out var p) ? p : hand.position;
+    }
+
+    /// <summary>vr.161: a drink raised to the mouth by its base, its opening a bottle's length away, is not drunk
+    /// (the whole-item rule drank here); raised by its opening (<see cref="HeldItemPoints.Opening"/>) it is drunk
+    /// through its cast (<c>lastFinishedCast</c>, Item.cs:272): the status it cures (Poison for the Antidote,
     /// <c>Action_ModifyStatus</c>, Action_ModifyStatus.cs:21, set up with <c>AddStatus</c>,
     /// CharacterAfflictions.cs:712) falls, and no refusal cue fires.</summary>
     IEnumerator DrinkStep(Item prefab)
@@ -2669,6 +2716,49 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         string triggerNote = mouthTriggerNote;
+        var rig = VRRig.Instance;
+
+        // The base at the mouth for the mouth dwell and a whole cast: no cast while the opening stays clear.
+        float baseGap = float.MaxValue;
+        float openingGap = float.MaxValue;
+        bool baseCast = false;
+        float baseEnd = Now + GameTiming.UseSeconds(item) + 1f;
+        while (Now < baseEnd && item != null && c.data.currentItem == item)
+        {
+            var hand = rig.Hand(left);
+            var mouth = WorldMouth();
+            var bottom = DrinkBase(item, hand, left);
+            ApproachHand(left, MouthGoal(left, bottom));
+            float opening = RealScale.Real(
+                Vector3.Distance(HeldItemPoints.Opening(item, hand, left), mouth)
+            );
+            openingGap = Mathf.Min(openingGap, opening);
+            baseGap = Mathf.Min(baseGap, RealScale.Real(Vector3.Distance(bottom, mouth)));
+            // A cast with the opening inside the exit radius is a right drink on the way in, not the base's.
+            baseCast |=
+                opening > MouthZone.ExitRadius && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        PullAway(left);
+        yield return Wait(0.5f);
+        var baseNote =
+            $"base at the mouth: nearest {baseGap:0.00} m, opening nearest {openingGap:0.00} m, cast {baseCast}";
+        if (baseCast)
+        {
+            Fail($"{prefab.name} drunk by its base: " + baseNote);
+            yield break;
+        }
+        if (baseGap > MouthZone.Radius)
+        {
+            Fail($"{prefab.name}'s base never reached the mouth, nothing judged: " + baseNote);
+            yield break;
+        }
+        if (item == null || c.data.currentItem != item)
+        {
+            Fail($"{prefab.name} left the hand with its base at the mouth: " + baseNote);
+            yield break;
+        }
+
         var afflictions = c.refs.afflictions;
         SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
         float before = afflictions.GetCurrentStatus(status);
@@ -2694,7 +2784,7 @@ internal sealed partial class SelfTestRunner
             }
             if (item == null || c.data.currentItem != item)
                 break;
-            ApproachHand(left, MouthGoal());
+            ApproachHand(left, MouthGoal(left, HeldItemPoints.Opening(item, rig.Hand(left), left)));
             progress = Mathf.Max(progress, item.castProgress);
             yield return null;
         }
@@ -2703,7 +2793,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         float after = afflictions.GetCurrentStatus(status);
         var note =
-            $"{prefab.name}: {triggerNote}; drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
+            $"{prefab.name}: {triggerNote}; {baseNote}; by the opening drunk {drunk}, cast progress {progress:0.00} of {useTime:0.0} s, {status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
         if (!drunk)
             Fail(
                 (

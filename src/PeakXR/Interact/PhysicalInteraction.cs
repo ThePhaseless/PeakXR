@@ -2307,7 +2307,12 @@ internal static class PhysicalInteraction
             d = RealScale.Real(
                 Vector3.Distance(
                     mouth,
-                    Avatar.HeldItemPoints.Nearest(item, mouthHand, LocalHold.ItemInLeftHand, mouth)
+                    Physical.ItemGestures.MouthContact(
+                        item,
+                        mouthHand,
+                        LocalHold.ItemInLeftHand,
+                        mouth
+                    )
                 )
             );
         }
@@ -2441,7 +2446,8 @@ internal static class PhysicalInteraction
             // The item carried by the tracked grip, not the physics item: the eye sits inside the holder's own head
             // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
             // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
-            // across, its middle 0.26 m from the grip), so the fist at the mouth held it beside the cheek.
+            // across, its middle 0.26 m from the grip), so the fist at the mouth held it beside the cheek. A drink by its
+            // opening only: by its nearest point a long bottle drank with its base at the cheek.
             // Your own mouth and reach, in real metres around the eyes (Camera.WorldScale).
             var head = rig.Head.position;
             var mouth = RealScale.World(
@@ -2453,7 +2459,7 @@ internal static class PhysicalInteraction
                 rig.Head.rotation.N(),
                 RealScale
                     .Real(
-                        Avatar.HeldItemPoints.Nearest(
+                        Physical.ItemGestures.MouthContact(
                             c.data.currentItem,
                             mouthHand,
                             primaryHand.Left,
