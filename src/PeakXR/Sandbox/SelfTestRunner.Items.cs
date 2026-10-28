@@ -2076,15 +2076,10 @@ internal sealed partial class SelfTestRunner
         else if (way == UseWay.Mouth)
             ApproachHand(left, MouthGoal());
         else
-        {
-            var rig = VRRig.Instance;
             ApproachHand(
                 left,
-                rig.Origin.InverseTransformPoint(
-                    FaceSpot(rig.Head, ItemGestures.Use == UseGesture.Read)
-                )
+                FaceGoal(ItemGestures.Held, left, ItemGestures.Use == UseGesture.Read)
             );
-        }
     }
 
     /// <summary>Stops giving the use: button up, trigger released, or the hand back from the mouth or face.</summary>
@@ -2524,6 +2519,20 @@ internal sealed partial class SelfTestRunner
     /// below, a commune item 0.12 m ahead).</summary>
     static Vector3 FaceSpot(Transform head, bool read) => HeldGestures.FaceSpot(head, read);
 
+    /// <summary>Tracking-space hand goal that puts the held item where HeldGestures measures it: a read by the book's
+    /// middle (<see cref="HeldGestures.ItemMiddle"/>, a hand-to-middle lead of about 0.4 m on the Book of Bones), so
+    /// the hand goes to the spot minus that lead, re-read each frame; a commune item by its nearest point, so the
+    /// hand goes to the spot itself.</summary>
+    static Vector3 FaceGoal(Item item, bool left, bool read)
+    {
+        var rig = VRRig.Instance;
+        var spot = FaceSpot(rig.Head, read);
+        var hand = rig.Hand(left);
+        if (read && item != null && hand != null)
+            spot -= HeldGestures.ItemMiddle(item, hand, left) - hand.position;
+        return rig.Origin.InverseTransformPoint(spot);
+    }
+
     /// <summary>Highest cast progress <see cref="FaceCastUntil"/> saw.</summary>
     float faceProgress;
 
@@ -2540,7 +2549,6 @@ internal sealed partial class SelfTestRunner
     IEnumerator FaceCastUntil(Item item, bool left, bool read, float stopAt)
     {
         var c = Character.localCharacter;
-        var rig = VRRig.Instance;
         faceProgress = 0f;
         faceSeen = false;
         faceDanger = false;
@@ -2550,7 +2558,7 @@ internal sealed partial class SelfTestRunner
             Now < end && item != null && c.data.currentItem == item && item.castProgress < stopAt
         )
         {
-            ApproachHand(left, rig.Origin.InverseTransformPoint(FaceSpot(rig.Head, read)));
+            ApproachHand(left, FaceGoal(item, left, read));
             faceSeen |= HeldGestures.AtFace;
             faceProgress = Mathf.Max(faceProgress, item.castProgress);
             yield return null;
@@ -2894,7 +2902,9 @@ internal sealed partial class SelfTestRunner
         yield return GripTo(left, 1f, 0.1f);
         yield return FaceCastUntil(item, left, read: true, 0.3f);
         float cancelMark = CueMark();
-        yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
+        // No cast, nothing to cancel: let the checks below name why (run 17 reported only the missing Cancel).
+        if (faceSeen)
+            yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
         yield return Wait(0.3f);
         bool kept = item != null && c.data.currentItem == item;
         var note =

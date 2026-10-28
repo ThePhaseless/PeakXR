@@ -343,8 +343,9 @@ internal static class HeldGestures
             : hand.position;
     }
 
-    /// <summary>The middle of the held item's drawn bounds on the holding hand.</summary>
-    private static Vector3 ItemMiddle(Item item, Transform hand, bool left)
+    /// <summary>The middle of the held item's drawn bounds on the holding hand (the read point; self-test vr.165
+    /// steers it to the read spot).</summary>
+    internal static Vector3 ItemMiddle(Item item, Transform hand, bool left)
     {
         var info = HeldItemPoints.Info(item);
         return
