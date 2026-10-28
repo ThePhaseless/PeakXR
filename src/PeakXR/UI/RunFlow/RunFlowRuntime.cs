@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using PeakXR.Comfort;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.UI.Affordances;
@@ -471,7 +472,18 @@ internal sealed class RunFlowRuntime : MonoBehaviour
 
     private void UpdateRumble(float dt)
     {
-        var amplitude = rumble.Update(dt);
+        // A world shake is a comfort-events Shake: the same Intensity and Haptics/treatment gate scale it, with
+        // ShakeHaptics on top (ComfortPolicy.Resolve at full magnitude is that gate times Intensity).
+        var gate = ComfortPolicy
+            .Resolve(
+                ComfortEvent.Shake,
+                ComfortEventsConfig.Treatment(ComfortEvent.Shake),
+                1f,
+                ComfortEventsConfig.Intensity,
+                ComfortEventsConfig.Haptics
+            )
+            .Haptic;
+        var amplitude = rumble.Update(dt) * gate;
         if (amplitude < 0.01f || Time.unscaledTime < nextRumblePulse)
             return;
         nextRumblePulse = Time.unscaledTime + RumblePulseInterval;

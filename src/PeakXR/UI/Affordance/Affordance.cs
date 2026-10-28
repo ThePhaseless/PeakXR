@@ -311,7 +311,9 @@ internal static class Affordance
             left,
             p.Amplitude,
             p.Seconds,
-            feel == CueFeel.Danger ? HapticPriority.Alert : HapticPriority.Cue
+            feel == CueFeel.Danger ? HapticPriority.Alert : HapticPriority.Cue,
+            // Progress ticks every 0.12 s: a duck tail after each would all but silence the fire rumble.
+            duckTail: feel != CueFeel.Progress
         );
         CueLog.Capture.Feel(left, feel, p.Amplitude, delivered, Haptics.Muted, Time.unscaledTime);
     }

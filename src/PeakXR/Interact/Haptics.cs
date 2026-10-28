@@ -41,9 +41,16 @@ internal static class Haptics
         Send(left, amplitude, seconds, HapticPriority.Cue, HapticScale.Cue);
 
     /// <summary>A gameplay pulse at <paramref name="priority"/>: Alert for refusals and danger, Ambient for
-    /// background feel (heartbeat, wind, texture, shiver, warmth).</summary>
-    public static bool Pulse(bool left, float amplitude, float seconds, HapticPriority priority) =>
-        Send(left, amplitude, seconds, priority, HapticScale.Cue);
+    /// background feel (heartbeat, wind, texture, shiver, warmth). <paramref name="duckTail"/> false for a tick that
+    /// repeats faster than <see cref="HapticChannel.DuckTail"/> (a hold's progress), so background feel resumes
+    /// between ticks.</summary>
+    public static bool Pulse(
+        bool left,
+        float amplitude,
+        float seconds,
+        HapticPriority priority,
+        bool duckTail = true
+    ) => Send(left, amplitude, seconds, priority, HapticScale.Cue, duckTail);
 
     /// <summary>A UI tick (menus, wheels, keyboard, wrist status): the same slider and mute, at the UI scale.</summary>
     public static bool Ui(bool left, float amplitude, float seconds) =>
@@ -63,7 +70,8 @@ internal static class Haptics
         float amplitude,
         float seconds,
         HapticPriority priority,
-        float scale
+        float scale,
+        bool duckTail = true
     )
     {
         var cfg = InteractConfig.Instance;
@@ -84,7 +92,7 @@ internal static class Haptics
             if (!impulse)
                 return false;
             float now = Time.unscaledTime;
-            if (!Channels[left ? 0 : 1].Allow(priority, now, seconds))
+            if (!Channels[left ? 0 : 1].Allow(priority, now, seconds, duckTail))
             {
                 Dropped++;
                 return false;

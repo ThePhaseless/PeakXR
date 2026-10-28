@@ -95,6 +95,15 @@ public class CreditsSkipTests
 public class HeatGradientTests
 {
     [Fact]
+    public void CookFill_StartsAtTheHeatSearchPeak_AndGrows()
+    {
+        // Food entering the column felt the search ramp at 0.25; the cook ramp must not drop below it.
+        Assert.Equal(0.25f, HeatGradient.CookFill(0f, 0.25f), 3);
+        Assert.Equal(1f, HeatGradient.CookFill(1f, 0.25f), 3);
+        Assert.True(HeatGradient.CookFill(0.5f, 0.25f) > HeatGradient.CookFill(0.1f, 0.25f));
+    }
+
+    [Fact]
     public void WarmerTowardTheColumn()
     {
         Assert.Equal(0f, HeatGradient.Closeness(0.6f, 0.5f));

@@ -197,32 +197,50 @@ public sealed class StaminaHaptics
     public float SlideSpeed = 1f;
 
     float _timer;
+    int _mode;
+
+    /// <summary>The pulse's priority: a slide or empty stamina is a danger warning (Alert), so the game's
+    /// out-of-stamina camera shake rumble cannot cut it; low stamina is a cue. Neither is background feel, so both
+    /// play at <c>HapticDetail.Essential</c>.</summary>
+    public HapticPriority Priority => _mode == LowMode ? HapticPriority.Cue : HapticPriority.Alert;
+
+    const int LowMode = 3;
 
     public float Update(float staminaFraction, bool outOfStamina, float slideSpeed, float dt)
     {
         float interval,
             amplitude;
+        int mode;
         if (slideSpeed > SlideSpeed)
         {
             interval = 0.05f;
             amplitude = MathF.Min(1f, 0.3f + slideSpeed / 20f);
+            mode = 1;
         }
         else if (outOfStamina)
         {
             interval = 0.15f;
             amplitude = 0.7f;
+            mode = 2;
         }
         else if (staminaFraction < LowStamina)
         {
             float t = MathF.Max(0f, staminaFraction) / LowStamina;
             interval = 0.25f + 0.75f * t;
             amplitude = 0.5f - 0.3f * t;
+            mode = LowMode;
         }
         else
         {
             _timer = 0f;
+            _mode = 0;
             return 0f;
         }
+
+        // A new mode (low to sliding, say) pulses at once instead of waiting out the old mode's interval (up to 1 s).
+        if (mode != _mode)
+            _timer = 0f;
+        _mode = mode;
 
         _timer -= dt;
         if (_timer > 0f)
@@ -231,5 +249,9 @@ public sealed class StaminaHaptics
         return amplitude;
     }
 
-    public void Reset() => _timer = 0f;
+    public void Reset()
+    {
+        _timer = 0f;
+        _mode = 0;
+    }
 }

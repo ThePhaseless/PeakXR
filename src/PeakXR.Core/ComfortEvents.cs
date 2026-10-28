@@ -193,6 +193,9 @@ namespace PeakXR.Core
     {
         const int Slots = 8;
 
+        /// <summary>Seconds between rumble pulses; a hit in between waits for the next one instead of being lost.</summary>
+        public const float HapticInterval = 0.08f;
+
         /// <summary>Seconds for the vignette to open after a pulse ends.</summary>
         public float VignetteRelease = 0.3f;
 
@@ -205,7 +208,8 @@ namespace PeakXR.Core
         bool _fadeRequested;
         float _detachLeft;
         float _hapticAmp,
-            _hapticSec;
+            _hapticSec,
+            _hapticWait;
 
         public float Vignette { get; private set; }
 
@@ -217,7 +221,8 @@ namespace PeakXR.Core
 
         public bool Detached => _detachLeft > 0f;
 
-        /// <summary>Rumble to play this frame (0 = none).</summary>
+        /// <summary>Rumble to play this frame (0 = none): the strongest asked for since the last pulse, at most one
+        /// pulse per <see cref="HapticInterval"/>.</summary>
         public float HapticAmplitude { get; private set; }
         public float HapticSeconds { get; private set; }
 
@@ -278,9 +283,17 @@ namespace PeakXR.Core
             if (_detachLeft > 0f)
                 _detachLeft -= dt;
 
-            HapticAmplitude = _hapticAmp;
-            HapticSeconds = _hapticSec;
-            _hapticAmp = _hapticSec = 0f;
+            if (_hapticWait > 0f)
+                _hapticWait -= dt;
+            if (_hapticAmp > 0f && _hapticWait <= 0f)
+            {
+                HapticAmplitude = _hapticAmp;
+                HapticSeconds = Math.Max(_hapticSec, HapticInterval);
+                _hapticAmp = _hapticSec = 0f;
+                _hapticWait = HapticInterval;
+            }
+            else
+                HapticAmplitude = HapticSeconds = 0f;
         }
 
         public void Reset()
@@ -290,7 +303,7 @@ namespace PeakXR.Core
             Vignette = Fade = 0f;
             _fadeHold = _detachLeft = 0f;
             _fadeRequested = SnapBlack = false;
-            _hapticAmp = _hapticSec = 0f;
+            _hapticAmp = _hapticSec = _hapticWait = 0f;
             HapticAmplitude = HapticSeconds = 0f;
         }
 

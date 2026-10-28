@@ -92,7 +92,7 @@ internal sealed class RunFlowSettings
                 "ShakeHaptics",
                 0.5f,
                 new ConfigDescription(
-                    "Controller rumble strength for big world events that shake the camera in flat play (rising lava, freed soul, portal). 0 = off.",
+                    "Controller rumble strength for big world events that shake the camera in flat play (rising lava, freed soul, portal). It is a camera shake, so ComfortEvents.Intensity scales it too, and it plays only while ComfortEvents.Shake is HapticPulse or ComfortEvents.Haptics is on. 0 = off.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             ),

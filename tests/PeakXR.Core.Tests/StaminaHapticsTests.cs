@@ -51,4 +51,36 @@ public class StaminaHapticsTests
         int sliding = CountPulses(new StaminaHaptics(), 0.8f, false, 5f, 1f);
         Assert.InRange(sliding, 10, int.MaxValue);
     }
+
+    [Theory]
+    [InlineData(0f, true, 0f)]
+    [InlineData(0.8f, false, 5f)]
+    [InlineData(0.1f, false, 0f)]
+    public void Warnings_SurviveEssential(float stamina, bool outOf, float slide)
+    {
+        var h = new StaminaHaptics();
+        Assert.True(h.Update(stamina, outOf, slide, 0.01f) > 0f);
+        // Essential drops only background feel; running out on a wall is a warning the hand must get.
+        Assert.True(HapticScale.Plays(HapticDetail.Essential, h.Priority));
+    }
+
+    [Fact]
+    public void OutOfStaminaAndSliding_AreAlerts_SoAShakeRumbleCannotCutThem()
+    {
+        var h = new StaminaHaptics();
+        h.Update(0f, true, 0f, 0.01f);
+        Assert.Equal(HapticPriority.Alert, h.Priority);
+        h = new StaminaHaptics();
+        h.Update(0.8f, false, 5f, 0.01f);
+        Assert.Equal(HapticPriority.Alert, h.Priority);
+    }
+
+    [Fact]
+    public void ModeChange_PulsesAtOnce()
+    {
+        // A low-stamina pulse waits up to 1 s for the next; a slide starting now must buzz now, not after that wait.
+        var h = new StaminaHaptics();
+        Assert.True(h.Update(0.29f, false, 0f, 0.01f) > 0f);
+        Assert.True(h.Update(0.29f, false, 5f, 0.01f) > 0f);
+    }
 }

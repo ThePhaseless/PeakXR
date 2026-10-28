@@ -23,9 +23,6 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     /// <summary>A body jump this far in one frame, with no run transition, is a teleport.</summary>
     private const float TeleportDistance = 4f;
 
-    /// <summary>Rumble no more often than this, so per-frame shakes and drags do not flood the runtime.</summary>
-    private const float HapticInterval = 0.08f;
-
     /// <summary>Seconds the scene-cut fade may hold before it gives up (a leave that never completes).</summary>
     private const float SceneCutTimeout = 5f;
 
@@ -69,7 +66,6 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     private Character tracked;
     private Vector3 lastCenter;
     private bool scriptedLook;
-    private float nextHaptic;
     private float cutUntil = -1f;
 
     /// <summary>Radius of the blind haze around the eyes: hands, held items and the wrist display nearer than
@@ -170,12 +166,24 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             return;
         var r = Resolve(ComfortEvent.Shake, amount / 10f);
         // ui.runflow rumbles some world shakes itself (its ShakeHaptics); one rumble per shake.
-        if (RunFlowFeature.TakeShake())
+        if (RunFlowFeature.TakeShake() || ClimbBeatOwnsShake())
             r.Haptic = 0f;
         if (r.Haptic > 0f)
             r.HapticSeconds = Mathf.Clamp(duration, 0.05f, 0.5f);
         if (r.Any)
             instance.pulses.Add(r);
+    }
+
+    /// <summary>CharacterClimbing.Update (CharacterClimbing.cs:127-130) shakes the camera every 0.1 s while a climber
+    /// is out of stamina. The gripping hands already beat for that (<c>Interaction.StaminaHaptics</c>, interact.physical),
+    /// and a steady rumble on top would bury the beat, so the beat owns that shake's feel.</summary>
+    private static bool ClimbBeatOwnsShake()
+    {
+        var c = Character.localCharacter;
+        return c != null
+            && c.data.isClimbing
+            && c.data.outOfStaminaFor > 0f
+            && InteractConfig.Instance.StaminaHaptics;
     }
 
     /// <summary>The local body was launched: its treatment lasts until it lands.</summary>
@@ -275,10 +283,10 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
             VRFade.Clear(fadeOwner);
         RigDriver.EventDetach = pulses.Detached;
         ShowHaze(ComfortPolicy.BlindHaze(ComfortEventsPatches.BlindWash.Strength));
-        if (pulses.HapticAmplitude > 0f && Time.unscaledTime >= nextHaptic)
+        // ComfortPulses spaces the pulses and keeps the strongest hit asked for in between.
+        if (pulses.HapticAmplitude > 0f)
         {
-            nextHaptic = Time.unscaledTime + HapticInterval;
-            float seconds = Mathf.Max(pulses.HapticSeconds, HapticInterval);
+            float seconds = pulses.HapticSeconds;
             float left = 1f,
                 right = 1f;
             var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
