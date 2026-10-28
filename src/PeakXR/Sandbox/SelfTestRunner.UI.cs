@@ -178,10 +178,23 @@ internal sealed partial class SelfTestRunner
         bool onTop = UI.Common.OnTop.AllOnTop(root);
         float cold = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold);
         string where = afflictions > 0 ? "" : ColdSlotWhere(root);
+        // The plate hugs what is drawn (bar, shown segments), not the room the bar's groups reserve.
+        var plateSize = UI.World.HudSplit.WristPlateSize;
+        var drawnMin = UI.World.HudSplit.WristPlateContentMin;
+        var drawnMax = UI.World.HudSplit.WristPlateContentMax;
+        bool plateFits = MenuBackplate.FitsContent(
+            UI.World.HudSplit.WristPlateCenter.N(),
+            plateSize.N(),
+            drawnMin.N(),
+            drawnMax.N(),
+            UI.World.HudSplit.WristPlatePad,
+            2f
+        );
+        var groups = UI.World.HudSplit.WristGroupsSize;
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
@@ -199,6 +212,8 @@ internal sealed partial class SelfTestRunner
             Fail("wrist HUD is depth tested: the arm can cover it");
         else if (afflictions == 0)
             Fail("Cold affliction not shown on the wrist");
+        else if (!plateFits)
+            Fail("wrist plate is not fitted to the drawn bar");
     }
 
     /// <summary>Where the stamina bar's Cold segment is when the wrist does not show it, for the step note.</summary>

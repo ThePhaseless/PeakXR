@@ -88,4 +88,44 @@ public class MenuBackplateTests
     [Fact]
     public void Scattered_NoDistance_GetsNoPlate() =>
         Assert.True(MenuBackplate.Scattered(1f, 1f, 0f));
+
+    private static int Sign(params (bool Drawn, float X, float W)[] parts)
+    {
+        int h = MenuBackplate.FoldStart;
+        foreach (var p in parts)
+            h = MenuBackplate.Fold(h, p.Drawn, p.X, 0f, p.W, 20f);
+        return h;
+    }
+
+    [Fact]
+    public void Fold_SameDrawnParts_SameSignature() =>
+        Assert.Equal(
+            Sign((true, 0f, 400f), (false, 300f, 60f)),
+            Sign((true, 0f, 400f), (false, 300f, 60f))
+        );
+
+    [Fact]
+    public void Fold_PartShownOrHidden_ChangesSignature() =>
+        Assert.NotEqual(
+            Sign((true, 0f, 400f), (false, 300f, 60f)),
+            Sign((true, 0f, 400f), (true, 300f, 60f))
+        );
+
+    [Fact]
+    public void Fold_DrawnPartResizedOrMoved_ChangesSignature()
+    {
+        Assert.NotEqual(Sign((true, 0f, 400f)), Sign((true, 0f, 412f)));
+        Assert.NotEqual(Sign((true, 0f, 400f)), Sign((true, 6f, 400f)));
+    }
+
+    [Fact]
+    public void Fold_HiddenPartChangingOrSubPixelJitter_KeepsSignature()
+    {
+        // A hidden part's tween (the extra bar shrinking away) and float noise must not trigger a re-measure.
+        Assert.Equal(
+            Sign((true, 0f, 400f), (false, 300f, 60f)),
+            Sign((true, 0f, 400f), (false, 0f, 5f))
+        );
+        Assert.Equal(Sign((true, 0f, 400f)), Sign((true, 0.1f, 400.1f)));
+    }
 }

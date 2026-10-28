@@ -10,6 +10,8 @@ internal static class Num
 {
     public static NVector3 N(this Vector3 v) => new(v.x, v.y, v.z);
 
+    public static System.Numerics.Vector2 N(this Vector2 v) => new(v.x, v.y);
+
     public static NQuaternion N(this Quaternion q) => new(q.x, q.y, q.z, q.w);
 
     public static Vector3 U(this NVector3 v) => new(v.X, v.Y, v.Z);
