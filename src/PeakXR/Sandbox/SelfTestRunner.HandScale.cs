@@ -13,14 +13,21 @@ namespace PeakXR.Sandbox;
 /// (thumb left out) found by their nearest drawn bone, for the width along the index-to-pinky line, the thickness
 /// across the palm and the length from the drawn wrist. Run 1 read the bake through the Scout transform's x0.33
 /// twice (7.7 cm at game size against 18-26 cm offline); the bake's frame is now checked against the bones. It fails when
-/// the width ratio is off the setting, when the game-size width is outside the measured prefab's range (a units
+/// the drawn index-to-pinky knuckle span (second joints, on the drawn bones) is off the setting, when the mesh width
+/// ratio is far off it (<see cref="MeshRatioSlack"/>), when the game-size width is outside the measured prefab's range (a units
 /// slip), when the drawn wrist parts from the drawn forearm, or when the physical hands sit differently at the two
 /// settings (drawing must never move the ragdoll). The setting is put back afterwards.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
-    /// <summary>Ratio slack between the measured widths and the setting (the hands sway between the samples).</summary>
+    /// <summary>Ratio slack between the drawn knuckle spans and the setting (the hands sway between the samples).</summary>
     const float HandScaleSlack = 0.05f;
+
+    /// <summary>Ratio slack for the baked mesh's width. Its vertices go to their nearest drawn bone, and which ones the
+    /// hand gets moves with the arm's pose: at the same 0.50 hand (length 0.110 m both times) run 20 read 0.141 m and
+    /// run 21, its arms in another pose (vr.08 elbows 0.40 back against 0.26), 0.166 m. The ratio is judged on the bones; this only catches a mesh
+    /// that stopped following them (a ratio near 1).</summary>
+    const float MeshRatioSlack = 0.15f;
 
     /// <summary>Game-size width of the open or curled scout hand: 0.18 (a fist) to 0.26 (open, outer joints
     /// straight) from the prefab skinned offline in PeakXR's finger poses.</summary>
@@ -34,7 +41,8 @@ internal sealed partial class SelfTestRunner
     {
         public float Width,
             Thickness,
-            Length;
+            Length,
+            Knuckles;
     }
 
     IEnumerator HandScaleCheck()
@@ -85,10 +93,23 @@ internal sealed partial class SelfTestRunner
         {
             entry.Value = before;
         }
-        float ratio = sizes[1].Width > 1e-4f ? sizes[0].Width / sizes[1].Width : 0f;
-        notes.Add(F($"drawn/game width {ratio:0.00} (setting {HandScale.Default:0.00})"));
+        float ratio = sizes[1].Knuckles > 1e-4f ? sizes[0].Knuckles / sizes[1].Knuckles : 0f;
+        float meshRatio = sizes[1].Width > 1e-4f ? sizes[0].Width / sizes[1].Width : 0f;
+        notes.Add(
+            F(
+                $"drawn/game knuckle span {ratio:0.00}, mesh width {meshRatio:0.00} (setting {HandScale.Default:0.00})"
+            )
+        );
         if (Mathf.Abs(ratio - HandScale.Default) > HandScaleSlack)
-            fails.Add(F($"drawn width ratio {ratio:0.00}, setting {HandScale.Default:0.00}"));
+            fails.Add(
+                F($"drawn knuckle span ratio {ratio:0.00}, setting {HandScale.Default:0.00}")
+            );
+        if (Mathf.Abs(meshRatio - HandScale.Default) > MeshRatioSlack)
+            fails.Add(
+                F(
+                    $"drawn mesh width ratio {meshRatio:0.00}, setting {HandScale.Default:0.00}: the mesh does not follow the drawn bones"
+                )
+            );
         if (sizes[1].Width < MinGameWidth || sizes[1].Width > MaxGameWidth)
             fails.Add(
                 F(
@@ -191,6 +212,10 @@ internal sealed partial class SelfTestRunner
             .normalized;
         var palm = Vector3.Cross(across, along);
         var wrist = DrawnHands.DrawnBone(hand).position;
+        float knuckles = Vector3.Distance(
+            DrawnHands.DrawnBone(index.GetChild(0)).position,
+            DrawnHands.DrawnBone(pinky.GetChild(0)).position
+        );
 
         var real = DrawnHands.Bones(skin);
         var drawn = skin.bones;
@@ -260,6 +285,7 @@ internal sealed partial class SelfTestRunner
                 Width = hi.x - lo.x,
                 Thickness = hi.y - lo.y,
                 Length = hi.z,
+                Knuckles = knuckles,
             };
         }
         finally
