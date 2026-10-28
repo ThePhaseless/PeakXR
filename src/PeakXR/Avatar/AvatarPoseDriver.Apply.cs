@@ -795,7 +795,8 @@ public partial class AvatarPoseDriver
     /// <inheritdoc cref="ReachGap(bool, out float)"/>
     /// <param name="shoulder">The shoulder in the physics frame, before the body-to-head shift.</param>
     /// <param name="bone">Where the controller puts the hand bone.</param>
-    /// <param name="arm">The arm's length.</param>
+    /// <param name="arm">The reach the hand is judged on: the arm, or the player's reach while the reach map carries
+    /// the hand (<see cref="ArmReach.GhostReach"/>).</param>
     internal bool ReachGap(
         bool left,
         out float gap,
@@ -825,6 +826,13 @@ public partial class AvatarPoseDriver
         // Reach past the arm from where the shoulder belongs under the tracked head, never the body's lag (vr72).
         if (!PhysicsShoulder(left, out shoulder, out arm))
             return false;
+        // An empty standing hand is mapped onto the arm out to the player's own reach (Reach): only past that is it
+        // out of reach. The bare arm alone showed the ghost at rest under a rig above x1 (vr.173, run 17).
+        arm = ArmReach.GhostReach(
+            arm,
+            Mathf.Max(reachL.Reach, reachR.Reach),
+            left ? reachWeightL : reachWeightR
+        );
         gap = GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm);
         return true;
     }

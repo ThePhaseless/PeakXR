@@ -74,6 +74,30 @@ public class ArmReachTests
     }
 
     [Fact]
+    public void PlayerReach_IsWhereTheMapReachesTheBentArm()
+    {
+        foreach (float player in new[] { 0f, 0.72f, 0.86f, 5f })
+        {
+            float p = ArmReach.PlayerReach(Avatar, player);
+            TestUtil.Near(Bent, ArmReach.Map(p, Avatar, player), 1e-4f);
+            Assert.True(ArmReach.Map(p - 0.02f, Avatar, player) < Bent, $"player {player}");
+        }
+        TestUtil.Near(Bent * ArmReach.MinPlayer, ArmReach.PlayerReach(Avatar, 0f));
+        TestUtil.Near(0.72f, ArmReach.PlayerReach(Avatar, 0.72f));
+        TestUtil.Near(Bent * ArmReach.MaxPlayer, ArmReach.PlayerReach(Avatar, 5f));
+    }
+
+    [Fact]
+    public void GhostReach_MappedHandReachesThePlayersReach_HeldHandTheArm()
+    {
+        // Run 17 (rig x1.095): a resting empty hand 0.72 m from the shoulder, past the bare arm, within the player's.
+        TestUtil.Near(0.72f, ArmReach.GhostReach(Avatar, 0.72f, 1f));
+        TestUtil.Near(Avatar, ArmReach.GhostReach(Avatar, 0.72f, 0f));
+        TestUtil.Near((Avatar + 0.72f) * 0.5f, ArmReach.GhostReach(Avatar, 0.72f, 0.5f));
+        TestUtil.Near(Avatar, ArmReach.GhostReach(Avatar, 0.72f, float.NaN));
+    }
+
+    [Fact]
     public void Target_CloseHandUnchanged()
     {
         var shoulder = new Vector3(0.2f, 1.1f, 0f);
