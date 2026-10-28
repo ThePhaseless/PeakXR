@@ -226,6 +226,16 @@ internal static class PhysicalInteraction
         var rig = VRRig.Instance;
         if (!VRSession.Active || rig == null || c != Character.localCharacter)
         {
+            // VR stopped or the rig is gone (scene load): nothing a hand held carries over.
+            foreach (var hand in Hands)
+            {
+                hand.Action = GripPressAction.None;
+                hand.Target = null;
+            }
+            physicalClimb = false;
+            climbInput = Vector2.zero;
+            lastItem = null;
+            LocalHold.Reset();
             AimHand = -1;
             lungePending = false;
             Climb.ClimbHover.Hide(true);
@@ -281,12 +291,18 @@ internal static class PhysicalInteraction
 
     private static void TrackHeldItem(Character c, float now)
     {
-        var item = c.data.currentItem;
-        if (item == lastItem)
+        // By reference: a held item PhotonNetwork.Destroy'd (eaten, used up) is Unity-equal to null, so `==` never
+        // saw it leave. A destroyed one still in currentItem counts as gone.
+        var item = c.data.currentItem != null ? c.data.currentItem : null;
+        if (ReferenceEquals(item, lastItem))
             return;
-        if (lastItem != null && item != lastItem)
+        if ((object)lastItem != null)
+        {
             (LocalHold.ItemInLeftHand ? LeftHand : RightHand).ItemLeftAt = now;
-        if (lastItem != null && item == null)
+            // A pocketing pickup still pending belongs to the item that left (TakePocketing).
+            pocketingUntil = -10f;
+        }
+        if ((object)lastItem != null && item == null)
             LogItemLeft(c, lastItem);
         lastItem = item;
         LocalHold.TwoHand = false;
@@ -520,6 +536,19 @@ internal static class PhysicalInteraction
         return target is Peak.ScoutStatue or Skelleton ? AimedTarget.ItemTaker : AimedTarget.Other;
     }
 
+    /// <summary>
+    /// The hand whose trigger drives the primary (or <paramref name="secondary"/>) use: the holding hand is primary,
+    /// right when empty-handed (one-handed: the dominant hand), the other hand secondary. One-handed, the same hand
+    /// does both (secondary is its trigger with the stick clicked in). The one rule for every reader of a use's hand.
+    /// </summary>
+    internal static bool UseHandLeft(Character c, bool secondary)
+    {
+        bool one = VRInput.OneHanded;
+        bool primaryLeft =
+            c != null && Holding(c, out _) ? LocalHold.ItemInLeftHand : one && VRInput.LeftHanded;
+        return secondary && !one ? !primaryLeft : primaryLeft;
+    }
+
     private static bool Holding(Character c, out Item item)
     {
         item = c.data.currentItem;
@@ -648,7 +677,7 @@ internal static class PhysicalInteraction
                     if (RegrabCooldown(c))
                         hand.ClimbRetryUntil = now + RegrabWait;
                     else
-                        DenyClimb(c, rig, cfg, hand.Left, pos);
+                        DenyClimb(c, rig, hand.Left, pos);
                 }
                 break;
             case GripPressAction.Regrip:
@@ -833,10 +862,15 @@ internal static class PhysicalInteraction
     /// </summary>
     internal static bool TakePocketing()
     {
-        if (!VRSession.Active || Time.time > pocketingUntil)
-            return false;
+        var c = Character.localCharacter;
+        // With nothing in hand there is nothing to keep: a stale window must not pocket an ordinary pickup.
+        bool take =
+            VRSession.Active
+            && Time.time <= pocketingUntil
+            && c != null
+            && c.data.currentItem != null;
         pocketingUntil = -10f;
-        return true;
+        return take;
     }
 
     /// <summary>
@@ -871,13 +905,7 @@ internal static class PhysicalInteraction
     /// climber out of stamina cannot grab again within 1 s of the last grab (:562), and a condor's prey cannot grab
     /// at all (:562). Says which, and for reach marks where the head's reach ends.
     /// </summary>
-    private static void DenyClimb(
-        Character c,
-        VRRig rig,
-        InteractConfig cfg,
-        bool left,
-        Vector3 handPos
-    )
+    private static void DenyClimb(Character c, VRRig rig, bool left, Vector3 handPos)
     {
         if (!c.refs.climbing.CanClimb())
             return;
@@ -1432,7 +1460,7 @@ internal static class PhysicalInteraction
             CatchPulse(hand.Left, hold.Kind, recentFall, cfg);
         }
         else
-            DenyClimb(c, rig, cfg, hand.Left, t.position);
+            DenyClimb(c, rig, hand.Left, t.position);
     }
 
     /// <summary>What a grip at the hand would meet: the one probe behind the chalk ring, the grip and its refusals.</summary>
@@ -2223,10 +2251,7 @@ internal static class PhysicalInteraction
         // clicked in is the secondary use (use on a friend, Item.cs:819; the empty-hand reach, Character.cs:1200),
         // latched for the whole pull.
         bool one = VRInput.OneHanded;
-        var primaryHand =
-            holding ? (LocalHold.ItemInLeftHand ? LeftHand : RightHand)
-            : one && VRInput.LeftHanded ? LeftHand
-            : RightHand;
+        var primaryHand = UseHandLeft(c, secondary: false) ? LeftHand : RightHand;
         if (primaryHand.Trigger.Pressed)
             secondaryChord = one && VRInput.Hand(primaryHand.Left).StickClick;
         bool chord = one && secondaryChord;

@@ -381,7 +381,8 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
         }
         if (haze == null)
         {
-            hazeMaterial ??= UIMaterials.Create(Color.clear, drawOnTop: false, renderQueue: 3100);
+            if (hazeMaterial == null)
+                hazeMaterial = UIMaterials.Create(Color.clear, drawOnTop: false, renderQueue: 3100);
             haze = UIMaterials.MeshObject(
                 "PeakXR_BlindHaze",
                 UIMaterials.SphereMesh(),

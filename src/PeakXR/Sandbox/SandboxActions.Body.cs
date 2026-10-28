@@ -22,6 +22,14 @@ public static partial class SandboxActions
 {
     static GameObject testWall;
 
+    // What SetRunSetting overwrote, so RestoreRunSettings can put it back before a later run, a hosted lobby
+    // (SyncData carries IsCustomRun to guests, RunSettings.cs:561-568) or a boarding-pass SaveToDisk (:272) sees it.
+    static readonly System.Collections.Generic.Dictionary<
+        RunSettings.SETTINGTYPE,
+        int
+    > runSettingsBefore = new();
+    static bool customRunBefore;
+
     static bool OfflineGuard()
     {
         if (!Guard())
@@ -122,24 +130,43 @@ public static partial class SandboxActions
     /// <summary>
     /// A run setting (<c>RunSettings.SetValue</c>, RunSettings.cs:426), not saved to disk. The game reads custom
     /// values only in a custom run outside the airport (:348), so this marks the run custom, which also blocks
-    /// achievements for it (:136). HelpingHand 1 is kick mode (CharacterGrabbing.cs:33).
+    /// achievements for it (:136). HelpingHand 1 is kick mode (CharacterGrabbing.cs:33). The game clears the custom
+    /// flag only from the boarding pass, so <see cref="RestoreRunSettings"/> undoes all of it on the title scene and
+    /// when the sandbox deactivates.
     /// </summary>
     public static bool SetRunSetting(RunSettings.SETTINGTYPE type, int value)
     {
         if (!OfflineGuard())
             return false;
         RunSettings.Init();
+        int before = RunSettings.GetValue(type, forceGetCustomValue: true);
         if (!RunSettings.SetValue(type, value))
         {
             Say($"No run setting {type}.");
             return false;
         }
+        if (runSettingsBefore.Count == 0)
+            customRunBefore = RunSettings.IsCustomRun;
+        if (!runSettingsBefore.ContainsKey(type))
+            runSettingsBefore[type] = before;
         RunSettings.IsCustomRun = true;
         bool airport = Character.localCharacter.inAirport;
         Say(
             $"Run setting {type} = {RunSettings.GetValue(type, forceGetCustomValue: true)}{(airport ? " (applies after the airport)" : "")}."
         );
         return true;
+    }
+
+    /// <summary>Puts back every run setting and the custom-run flag <see cref="SetRunSetting"/> changed.</summary>
+    internal static void RestoreRunSettings()
+    {
+        if (runSettingsBefore.Count == 0)
+            return;
+        foreach (var pair in runSettingsBefore)
+            RunSettings.SetValue(pair.Key, pair.Value);
+        RunSettings.IsCustomRun = customRunBefore;
+        runSettingsBefore.Clear();
+        Say("Run settings restored.");
     }
 
     /// <summary><see cref="GiveItem(Item)"/> into one VR hand: interact.physical puts the next held item in the hand

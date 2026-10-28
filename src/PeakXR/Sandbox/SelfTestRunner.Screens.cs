@@ -115,7 +115,6 @@ internal sealed partial class SelfTestRunner
         for (int i = 0; i < 3; i++)
             yield return null;
         var rig = VRRig.Instance;
-        var aim = rig.Aim(left);
         tipOffset =
             rig.Origin.InverseTransformPoint(Avatar.DrawnHands.PokeTip(rig, left))
             - Script(left).Position;
@@ -406,7 +405,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         // The left hand well below the desk, so only the right one pokes.
-        HeadFrame(out var head, out var forward, out var right);
+        HeadFrame(out var head, out _, out var right);
         Script(true).Position = head - right * 0.3f + Vector3.down * 0.7f;
         yield return Until(() => VRKeyboard.HasPose, 2f, "keyboard not placed");
         yield return Wait(0.4f);
@@ -730,7 +729,7 @@ internal sealed partial class SelfTestRunner
             yield return Until(
                 () => !Zorro.UI.Modal.Modal.IsOpen,
                 1f,
-                $"the {hand} laser click did not answer the modal (button '{button.name}'; laser over '{(LaserPointer.Over != null ? LaserPointer.Over.name : "nothing")}' from the {(LaserPointer.OverLeft ? "left" : "right")}, pressed '{(LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing")}')"
+                $"the {hand} laser click did not answer the modal (button '{button.name}'; laser over '{(LaserPointer.Over != null ? LaserPointer.Over.name : "nothing")}' from the {(LaserPointer.OverLeft ? "left" : "right")})"
             );
             if (!stepOk)
                 yield break;
@@ -877,7 +876,7 @@ internal sealed partial class SelfTestRunner
         Conclude(fails, notes);
     }
 
-    /// <summary>What the ghost must show for <paramref name="topic"/>, checked against the mechanic itself rather
+    /// <summary>What the ghost must show for a topic (<see cref="Wrong"/>), checked against the mechanic itself rather
     /// than against GuideTable: the finger gun (grip and trigger lit together), a closed hand inside the talk gesture's
     /// mouth radius (MouthGesture), an open hand there for mute, and the stick lit on the hand the spectate binding
     /// reads (BindingTable.Default) and never on the other. Accumulates one loop's frames.</summary>
@@ -1093,14 +1092,7 @@ internal sealed partial class SelfTestRunner
         KioskDock.Measure(kiosk.transform, out var centre, out var top);
         var bounds = KioskBounds(kiosk);
         // The eye's height over the floor now, kept at the new spot.
-        float eyeUp = Physics.Raycast(
-            c.Center,
-            Vector3.down,
-            out var floorNow,
-            3f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
+        float eyeUp = Terrain(c.Center, Vector3.down, 3f, out var floorNow)
             ? rig.Head.position.y - floorNow.point.y
             : 1.6f;
         var forward = Flat(kiosk.transform.forward);
@@ -1117,16 +1109,7 @@ internal sealed partial class SelfTestRunner
                 + KioskStandOff;
             var spot = new Vector3(bounds.center.x, top, bounds.center.z) + dir * reach;
             // Down from the kiosk's top: the floor under the airport roof, never the roof.
-            if (
-                !Physics.Raycast(
-                    spot,
-                    Vector3.down,
-                    out var floor,
-                    top - bounds.min.y + 1f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (!Terrain(spot, Vector3.down, top - bounds.min.y + 1f, out var floor))
             {
                 tried.Add($"{heading:0} deg: no floor");
                 continue;
@@ -1268,16 +1251,7 @@ internal sealed partial class SelfTestRunner
         {
             // Not WarpTo: its ground ray starts 3 m up, which can be above the airport roof (as ToKiosk).
             var to = c.Center + gap.normalized * (gap.magnitude - 0.5f);
-            if (
-                Physics.Raycast(
-                    to,
-                    Vector3.down,
-                    out var floor,
-                    3f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(to, Vector3.down, 3f, out var floor))
                 to = floor.point;
             warpedForProp = true;
             c.photonView.RPC(

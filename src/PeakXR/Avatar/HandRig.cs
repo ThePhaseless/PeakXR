@@ -50,11 +50,15 @@ internal sealed class HandRig
         var space = new BoneSpace(hand, skin, joints);
         var forward = Vector3.up;
         var up = Vector3.forward;
-        var middle = Joint(2, 1) ?? Joint(1, 1);
+        var middle = Joint(2, 1);
+        if (middle == null)
+            middle = Joint(1, 1);
         if (middle != null)
             forward = space.PointInHand(middle).normalized;
         var index = Joint(1, 1);
-        var pinky = Joint(4, 1) ?? Joint(3, 1);
+        var pinky = Joint(4, 1);
+        if (pinky == null)
+            pinky = Joint(3, 1);
         if (index != null && pinky != null)
             up = space.PointInHand(index) - space.PointInHand(pinky);
         up = Vector3.ProjectOnPlane(up, forward);
@@ -80,7 +84,9 @@ internal sealed class HandRig
         for (int f = 0; f < FingerCurls.Count; f++)
         {
             var p = Joint(f, 0);
-            var tip = Joint(f, 2) ?? Joint(f, 1);
+            var tip = Joint(f, 2);
+            if (tip == null)
+                tip = Joint(f, 1);
             if (p == null || tip == null)
                 continue;
             HasFingers = true;

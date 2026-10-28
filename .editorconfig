@@ -16,12 +16,79 @@ indent_size = 2
 # Banned: default interface methods (wrong-method/generic crashes on Mono) and [ModuleInitializer]
 # (Mono does not reliably run <Module>.cctor). Use abstract base classes and Feature.Install().
 
-# Analyzer severities. Everything below is suppressed (none) because it does not fit a Unity/BepInEx mod.
+# Analyzers: .NET CA rules (AnalysisLevel latest-all), IDE code style, Roslynator, SonarAnalyzer, Meziantou (not tests),
+# Microsoft.Unity.Analyzers and BUTR.Harmony.Analyzer (plugin only). Every rule turned off below says why.
 
+# --- Compiler -----------------------------------------------------------------------------------------------------
+# XML docs are written only so IDE0005 runs; docs stay optional and may cover just the non-obvious parameters.
+dotnet_diagnostic.CS1591.severity = none
+dotnet_diagnostic.CS1573.severity = none
+# A cref to an overloaded method names the whole group; the compiler's pick of one overload is fine.
+dotnet_diagnostic.CS0419.severity = none
+
+# --- IDE code style (enforced in the build) -----------------------------------------------------------------------
+# Unused code and dead stores.
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0051.severity = warning
+dotnet_diagnostic.IDE0052.severity = warning
+dotnet_diagnostic.IDE0059.severity = warning
+dotnet_diagnostic.IDE0060.severity = warning
+dotnet_diagnostic.IDE0035.severity = warning
+# Redundant casts, suppressions, discards and literals.
+dotnet_diagnostic.IDE0004.severity = warning
+dotnet_diagnostic.IDE0080.severity = warning
+dotnet_diagnostic.IDE0100.severity = warning
+dotnet_diagnostic.IDE0110.severity = warning
+# Broken format strings and suppression attributes.
+dotnet_diagnostic.IDE0043.severity = warning
+dotnet_diagnostic.IDE0076.severity = warning
+dotnet_diagnostic.IDE0077.severity = warning
+# Modifier order and file-scoped namespaces, as the codebase already writes them.
+dotnet_diagnostic.IDE0036.severity = warning
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_diagnostic.IDE0161.severity = warning
+
+# --- CA (.NET analyzers) ------------------------------------------------------------------------------------------
 # Public fields: Unity-facing state holders and hot-path structs use plain fields (no property call overhead, MonoBehaviour-style).
 dotnet_diagnostic.CA1051.severity = none
 # Static mutable fields are the shared contract surface (VRInput.*, config values); changing them to properties churns every consumer.
 dotnet_diagnostic.CA2211.severity = none
+# Naming: PoseFlags is a plain enum (not [Flags]) and RemotePoseStream is not a System.IO.Stream; both names are the domain terms.
+dotnet_diagnostic.CA1711.severity = none
+# Generic parameter names F/D mirror the game-member helper's field/delegate naming.
+dotnet_diagnostic.CA1715.severity = none
+# Underscores: generated BepInEx MyPluginInfo constants and Method_State_Expected test names.
+dotnet_diagnostic.CA1707.severity = none
+# Harmony TargetMethod() must return MethodBase; a narrower return type does not help and breaks the convention.
+dotnet_diagnostic.CA1859.severity = none
+# Unity null: `obj == null` is also true for a destroyed UnityEngine.Object, which this rule calls dead code.
+dotnet_diagnostic.CA1508.severity = none
+# Null-argument guards: nullable is off and callers are this mod; the guards would add a branch to every hot-path helper.
+dotnet_diagnostic.CA1062.severity = none
+# Unity creates MonoBehaviours with AddComponent<T>(), so internal components look never-instantiated.
+dotnet_diagnostic.CA1812.severity = none
+# Catch-all is deliberate at the game boundary: a mod exception must log and fall back, never break the game loop.
+dotnet_diagnostic.CA1031.severity = none
+# Value types here are poses and inputs that are never compared or hashed; Equals overrides would be dead code.
+dotnet_diagnostic.CA1815.severity = none
+# Byte-sized enums are the wire format (PoseCodec, DenyReason in cues).
+dotnet_diagnostic.CA1028.severity = none
+# string.Contains/Replace(string) are already ordinal; CA1309/CA1310 still flag the culture-sensitive overloads.
+dotnet_diagnostic.CA1307.severity = none
+# Lower-case normalisation of ids and names, not a security comparison.
+dotnet_diagnostic.CA1308.severity = none
+# Events are plain Action delegates (allocation-free), not EventHandler(sender, args); names follow the domain (BeforeX).
+dotnet_diagnostic.CA1003.severity = none
+dotnet_diagnostic.CA1713.severity = none
+# Nested public types (Meter, Capture) scope helpers to their owner on purpose.
+dotnet_diagnostic.CA1034.severity = none
+# Arrays exposed as-is are read-only by convention; copies or immutable wrappers would allocate per frame.
+dotnet_diagnostic.CA1819.severity = none
+# BepInEx plugin ids are reverse-DNS strings, not GUIDs.
+dotnet_diagnostic.CA2243.severity = none
+
+# --- Meziantou ----------------------------------------------------------------------------------------------------
+# Non-readonly static fields: same reason as CA2211.
 dotnet_diagnostic.MA0069.severity = none
 # One file per type: small related types (enum + owner, Harmony patch classes) deliberately share a file.
 dotnet_diagnostic.MA0048.severity = none
@@ -31,19 +98,84 @@ dotnet_diagnostic.MA0099.severity = none
 dotnet_diagnostic.MA0008.severity = none
 # Event handler shape: VR events are plain Action delegates, not EventHandler(sender, args), to stay allocation-free.
 dotnet_diagnostic.MA0046.severity = none
-# Naming: PoseFlags is a plain enum (not [Flags]) and RemotePoseStream is not a System.IO.Stream; both names are the domain terms.
-dotnet_diagnostic.CA1711.severity = none
-# Generic parameter names F/D mirror the game-member helper's field/delegate naming.
-dotnet_diagnostic.CA1715.severity = none
-# Underscores in generated BepInEx MyPluginInfo constants.
-dotnet_diagnostic.CA1707.severity = none
-# Harmony TargetMethod() must return MethodBase; a narrower return type does not help and breaks the convention.
-dotnet_diagnostic.CA1859.severity = none
 # string == is already ordinal in C#; rewriting every comparison as string.Equals adds noise only.
 dotnet_diagnostic.MA0006.severity = none
 # Method length: draw/setup methods in IMGUI code are linear; splitting hurts readability.
 dotnet_diagnostic.MA0051.severity = none
 
+# --- Microsoft.Unity.Analyzers ------------------------------------------------------------------------------------
+# ?. ?? ??= and `is null` skip Unity's destroyed-object check, so they act on dead objects: errors, not hints.
+dotnet_diagnostic.UNT0007.severity = warning
+dotnet_diagnostic.UNT0008.severity = warning
+dotnet_diagnostic.UNT0023.severity = warning
+dotnet_diagnostic.UNT0029.severity = warning
+
+# --- Roslynator ---------------------------------------------------------------------------------------------------
+# `in` on mutable pose/input structs avoids copying them; their members are read as fields, so no defensive copies.
+dotnet_diagnostic.RCS1242.severity = none
+# Param-only doc comments are the house style when a summary would restate the member name.
+dotnet_diagnostic.RCS1139.severity = none
+
+# --- SonarAnalyzer ------------------------------------------------------------------------------------------------
+# Public fields and public static mutable state: same reasons as CA1051/CA2211 above.
+dotnet_diagnostic.S1104.severity = none
+dotnet_diagnostic.S2223.severity = none
+dotnet_diagnostic.S2386.severity = none
+dotnet_diagnostic.S3887.severity = none
+# Static state set from MonoBehaviour messages and singletons (instance = this) is how Unity components publish state.
+dotnet_diagnostic.S2696.severity = none
+dotnet_diagnostic.S3010.severity = none
+# Unused private members: Sonar ignores the Harmony/Unity suppressors, so it flags every Prefix/Postfix/TargetMethod;
+# IDE0051/IDE0052 (above) report unused members with those suppressors applied.
+dotnet_diagnostic.S1144.severity = none
+# Unity messages (Update, OnDestroy, ...) must be instance methods.
+dotnet_diagnostic.S2325.severity = none
+# Floats are compared exactly only for change detection and sentinels (MaxValue, -1, a stored copy), never computed results.
+dotnet_diagnostic.S1244.severity = none
+# LINQ in place of loops allocates; hot paths stay allocation-free.
+dotnet_diagnostic.S3267.severity = none
+# Chained ternaries are the selector idiom here; CSharpier lays them out one branch per line.
+dotnet_diagnostic.S3358.severity = none
+# CSharpier formats nested loops without braces flush, which this rule reads as misleading indentation.
+dotnet_diagnostic.S3973.severity = none
+# Vector maths swaps components on purpose (perpendiculars, axis remaps, Atan2(x, y) headings).
+dotnet_diagnostic.S2234.severity = none
+# Lazy init inline (`x != null ? x : x = Make()`) is the Unity-null-safe form of ??=.
+dotnet_diagnostic.S1121.severity = none
+# Components return null for "none" (Transform is IEnumerable, so Sonar asks for an empty collection).
+dotnet_diagnostic.S1168.severity = none
+# Reflection into private members is how the mod reaches the game and XR plugin internals.
+dotnet_diagnostic.S3011.severity = none
+# Unity hierarchy paths are always '/'-separated, whatever the OS.
+dotnet_diagnostic.S1075.severity = none
+# Empty MonoBehaviours are tags found with GetComponent.
+dotnet_diagnostic.S2094.severity = none
+# Endless `for (int i = 0; ; i++)` scans with an inner break, and index skips while parsing escapes.
+dotnet_diagnostic.S1994.severity = none
+dotnet_diagnostic.S127.severity = none
+# Short notes built with += in the self-test harness, never in frame loops.
+dotnet_diagnostic.S1643.severity = none
+# DateTime only formats wall-clock ticks for logs and reports; the kind never matters.
+dotnet_diagnostic.S6562.severity = none
+# Nested report types reuse their owner's member names on purpose (FrameClock.Report.Trusted mirrors FrameClock.Trusted).
+dotnet_diagnostic.S3218.severity = none
+# Same as CA1711: PoseFlags is the wire-format term.
+dotnet_diagnostic.S2344.severity = none
+# Overloads sit next to the code they serve; ordering is not enforced.
+dotnet_diagnostic.S4136.severity = none
+# Helpers live next to their callers across partial classes; nesting them in one type does not help.
+dotnet_diagnostic.S3398.severity = none
+# State-machine steps keep one shape even when a step is a constant (ReleaseArming.OnPress).
+dotnet_diagnostic.S3400.severity = none
+
 [tests/**.cs]
 # Test data arrays are inline on purpose; static fields per case would obscure the arrange step.
 dotnet_diagnostic.CA1861.severity = none
+# Seeded System.Random drives deterministic fuzz tests; nothing is security-sensitive.
+dotnet_diagnostic.CA5394.severity = none
+# xunit discovers public test classes; the test assembly is not a library.
+dotnet_diagnostic.CA1515.severity = none
+
+[**/obj/**.cs]
+# Build-generated sources (BepInEx MyPluginInfo).
+generated_code = true

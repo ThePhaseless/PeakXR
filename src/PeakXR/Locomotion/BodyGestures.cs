@@ -293,7 +293,9 @@ internal static class BodyGestures
         uprightFor = upright && !Crouch.Crouched ? uprightFor + dt : 0f;
         if (uprightFor > 0.5f)
         {
-            standAbove = haveStand ? Mathf.Lerp(standAbove, above, 1f - Mathf.Exp(-dt)) : above;
+            standAbove = haveStand
+                ? Mathf.Lerp(standAbove, above, ExpSmooth.Factor(1f, dt))
+                : above;
             haveStand = true;
         }
 

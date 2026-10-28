@@ -349,16 +349,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>Distance from <paramref name="from"/> down to terrain or map geometry; -1 when none within
     /// <paramref name="range"/>.</summary>
     static float GroundBelow(Vector3 from, float range) =>
-        Physics.Raycast(
-            from,
-            Vector3.down,
-            out var hit,
-            range,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? hit.distance
-            : -1f;
+        Terrain(from, Vector3.down, range, out var hit) ? hit.distance : -1f;
 
     /// <summary>
     /// The game's Peak warp target, <c>MapHandler.respawnThePeak</c> (MapHandler.cs:101, used only by the debug
@@ -408,14 +399,7 @@ internal sealed partial class SelfTestRunner
             {
                 var at = peak.position + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * r;
                 found =
-                    Physics.Raycast(
-                        at + Vector3.up * 200f,
-                        Vector3.down,
-                        out hit,
-                        1000f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
+                    Terrain(at + Vector3.up * 200f, Vector3.down, 1000f, out hit)
                     && Vector3.Angle(hit.normal, Vector3.up) <= 30f;
             }
             if (found)

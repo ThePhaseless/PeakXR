@@ -151,6 +151,16 @@ internal sealed class SocialHands : IGripExtension
 
     public bool TryHeldRelease(in GripHookContext ctx) => false;
 
+    /// <summary>VR stopped: drop both hands' grips and targets, so a grip held then never resumes with VR.</summary>
+    public void Reset()
+    {
+        RaycastTarget = null;
+        FeedTarget = null;
+        FeedReady = false;
+        Clear(0);
+        Clear(1);
+    }
+
     private void Clear(int h)
     {
         kinds[h] = SocialKind.None;
@@ -473,12 +483,6 @@ internal sealed class SocialHands : IGripExtension
         RaycastTarget = null;
         FeedTarget = null;
         FeedReady = false;
-        if (!VRSession.Active || c != Character.localCharacter)
-        {
-            Clear(0);
-            Clear(1);
-            return;
-        }
         var cfg = SocialConfig.Instance;
         Validate(c, 0);
         Validate(c, 1);
@@ -861,8 +865,8 @@ internal sealed class SocialHands : IGripExtension
         forward.y = 0f;
         // One-handed play (Accessibility.OneHanded): the one open palm pushed is the shove, fed in as both hands.
         bool one = VRInput.OneHanded;
-        ref var l = ref VRInput.Hand(one ? VRInput.LeftHanded : true);
-        ref var r = ref VRInput.Hand(one ? VRInput.LeftHanded : false);
+        ref var l = ref VRInput.Hand(!one || VRInput.LeftHanded);
+        ref var r = ref VRInput.Hand(one && VRInput.LeftHanded);
         bool open = l.Grip < 0.3f && r.Grip < 0.3f;
         if (
             !l.Tracked

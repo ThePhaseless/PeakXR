@@ -24,12 +24,15 @@ public class Plugin : BaseUnityPlugin
         Diagnostics.DebugLog.Attach();
 
         var args = System.Environment.GetCommandLineArgs();
+        // BepInEx's Logger owns registered listeners and disposes them at shutdown.
+#pragma warning disable CA2000
         if (System.Array.IndexOf(args, "-peakxr-selftest") >= 0)
             BepInEx.Logging.Logger.Listeners.Add(
                 new FlushingLogListener(
                     System.IO.Path.Combine(Paths.BepInExRootPath, "PeakXR-trace.log")
                 )
             );
+#pragma warning restore CA2000
 
         VRSession.Requested = VRSession.ReadRequestedRuntime();
         VRSession.CompatProbe = System.Array.IndexOf(args, "-peakxr-compat") >= 0;

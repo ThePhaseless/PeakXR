@@ -4,6 +4,13 @@ namespace PeakXR.Core.Tests;
 
 public class BodySlotsTests
 {
+    [Fact]
+    public void DeltaAngle_HalfTurnIsPositive_LikeWrapDegrees()
+    {
+        Assert.Equal(180f, BodySlotLayout.DeltaAngle(0f, -180f));
+        Assert.Equal(180f, BodySlotLayout.DeltaAngle(0f, 180f));
+    }
+
     static readonly Vector3 NeckPos = new(0.3f, 1.45f, -0.2f);
 
     static Vector3 HeadFromNeck(Quaternion headRot) =>

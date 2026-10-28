@@ -14,10 +14,11 @@ internal static class UIMaterials
     public static Material Create(Color color, bool drawOnTop, int renderQueue)
     {
         if (shader == null)
-            shader =
-                Shader.Find("Hidden/Internal-Colored")
-                ?? Shader.Find("UI/Default")
-                ?? Shader.Find("Sprites/Default");
+            shader = Shader.Find("Hidden/Internal-Colored");
+        if (shader == null)
+            shader = Shader.Find("UI/Default");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
 
         var ztest = (int)(drawOnTop ? CompareFunction.Always : CompareFunction.LessEqual);
         var material = new Material(shader) { color = color, renderQueue = renderQueue };

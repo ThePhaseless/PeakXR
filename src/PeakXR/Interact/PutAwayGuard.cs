@@ -21,6 +21,21 @@ internal static class PutAwayGuard
     /// <summary>An equip now would be undone by a pending put-away: hold it back for a frame or two.</summary>
     public static bool Pending => VRSession.Active && Window.Pending(Time.realtimeSinceStartup);
 
+    /// <summary>Putting <paramref name="item"/> away drops it instead of pocketing it: EquipSlot's drop test
+    /// (CharacterItems.cs:498), an unpocketable item or one held from the backpack slot (250) while that slot is
+    /// full.</summary>
+    internal static bool PutAwayDrops(Character c, Item item)
+    {
+        var selected = c.refs.items.currentSelectedSlot;
+        return !item.UIData.canPocket
+            || (
+                selected.IsSome
+                && selected.Value == 250
+                && c.player != null
+                && !c.player.GetItemSlot(250).IsEmpty()
+            );
+    }
+
     /// <summary>CharacterItems.EquipSlot(Optionable&lt;byte&gt;) (CharacterItems.cs:482): a put-away that drops the held
     /// item waits for frames before its RPC (:484-505).</summary>
     [HarmonyPatch]
@@ -50,16 +65,7 @@ internal static class PutAwayGuard
                 && (c.refs.movement.rocketActive || c.refs.movement.rocketLit)
             )
                 return;
-            var selected = __instance.currentSelectedSlot;
-            bool drops =
-                !item.UIData.canPocket
-                || (
-                    selected.IsSome
-                    && selected.Value == 250
-                    && c.player != null
-                    && !c.player.GetItemSlot(250).IsEmpty()
-                );
-            if (drops)
+            if (PutAwayDrops(c, item))
                 Window.Begin(
                     Time.realtimeSinceStartup,
                     target.IsSome ? target.Value : PutAwayWindow.NoSlot

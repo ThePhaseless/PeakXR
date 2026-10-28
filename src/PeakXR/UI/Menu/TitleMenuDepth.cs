@@ -20,7 +20,7 @@ namespace PeakXR.UI.Menu;
 /// line to arm's reach and turns to face the eye: the signpost and the studio logos come to hand, the logo, timer and
 /// credits stay out in the scene, and big pages (settings) stay a reading panel.</item>
 /// <item>No backdrop on any page: ui.world's BackdropStrip hides the flat-screen backings (registered through
-/// <see cref="CanvasRules.AddCustomMenu"/>) and outlines the text; <see cref="TitleSilhouettes"/> hides the logo's black
+/// <see cref="PeakXR.UI.World.CanvasRules.AddCustomMenu"/>) and outlines the text; <see cref="TitleSilhouettes"/> hides the logo's black
 /// reveal copy, which the strip keeps as art.</item>
 /// <item>On one screen (no group brought to hand) the canvas Animator plays the game's own intro (TitleIn slides
 /// <c>MainPage/Menu</c> up from below the screen edge), cropped to the canvas as a monitor's edge crops it. With groups
@@ -165,9 +165,9 @@ internal sealed class TitleMenuDepth
             return;
         canvasRect = (RectTransform)canvas.transform;
         acquiredFrame = Time.frameCount;
-        pages =
-            canvas.GetComponentInParent<UIPageHandler>(true)
-            ?? canvas.GetComponentInChildren<UIPageHandler>(true);
+        pages = canvas.GetComponentInParent<UIPageHandler>(true);
+        if (pages == null)
+            pages = canvas.GetComponentInChildren<UIPageHandler>(true);
         // MainMenuPageHandler.IntroAnimation (A/MainMenuPageHandler.cs:20) is the Animator on the canvas itself.
         intro = canvas.GetComponent<Animator>();
         introState = 0;

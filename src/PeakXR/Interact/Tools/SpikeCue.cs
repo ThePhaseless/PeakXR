@@ -33,7 +33,7 @@ internal static class SpikeCue
 
     public static void After(
         Character c,
-        float tickBefore,
+        (float Tick, ItemSlot Slot) before,
         float tickAfter,
         ItemSlot spikeSlot,
         ClimbingSpikeComponent spike,
@@ -41,7 +41,9 @@ internal static class SpikeCue
     )
     {
         outOfRangeFrame = -10;
-        bool slotKept = spikeSlot != null;
+        // Placing empties the slot and refills it with the next piton (CharacterItems.cs:1086-1094): only the same slot
+        // object, still set, means nothing was placed.
+        bool slotKept = spikeSlot != null && ReferenceEquals(spikeSlot, before.Slot);
         var cam = MainCamera.instance;
         if (
             c == null
@@ -49,7 +51,7 @@ internal static class SpikeCue
             || spike == null
             || cam == null
             || c.data.climbingSpikeCount <= 0
-            || !Affordance.Enabled
+            || !VRSession.Active
         )
             return;
         var d = c.data;
@@ -59,7 +61,7 @@ internal static class SpikeCue
         // The hand interact.aim aims from (AimPatches.ClimbingSpike): the holding hand, else the secondary-use hand.
         bool left = heldSpike
             ? LocalHold.ItemInLeftHand
-            : held == null || !LocalHold.ItemInLeftHand;
+            : PhysicalInteraction.UseHandLeft(c, secondary: true);
         var origin = cam.transform.position;
         var dir = cam.transform.forward;
 
@@ -67,7 +69,7 @@ internal static class SpikeCue
         // CharacterItems.cs:1086-1087): the hand moved out of range.
         var input = c.input;
         if (
-            tickBefore > 0f
+            before.Tick > 0f
             && tickAfter == 0f
             && slotKept
             && (input.usePrimaryIsPressed || input.useSecondaryIsPressed)

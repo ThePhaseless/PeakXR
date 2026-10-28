@@ -9,7 +9,7 @@ namespace PeakXR.Sandbox;
 /// Creative/test mode (feature id <c>sandbox</c>): unlocks the game's built-in console, adds sandbox
 /// console commands, god mode, item and entity spawning, and a flat IMGUI window, so every item,
 /// interaction and mob can be exercised in VR and flat. Opt-in via <c>Sandbox.Enabled</c>, and it only acts
-/// offline or as the master client (see <see cref="SandboxActions.Active"/>). Runs in flat play too.
+/// offline (see <see cref="SandboxActions.Active"/>). Runs in flat play too.
 /// The actions live in <see cref="SandboxActions"/> so the VR panel can call them later.
 /// </summary>
 public sealed class SandboxFeature : Feature
@@ -34,7 +34,7 @@ public sealed class SandboxFeature : Feature
             false,
             new ConfigDescription(
                 "Creative/test mode: unlocks the built-in console and adds spawners and god mode. "
-                    + "Only active offline or when you are the host."
+                    + "Only active offline (Play Solo)."
             )
         );
         WindowKeyEntry = Plugin.Settings.Bind(

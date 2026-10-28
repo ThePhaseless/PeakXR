@@ -24,11 +24,13 @@ internal static class MenuWindowOpenPatch
     private static MethodBase TargetMethod() => GameMember.Method(typeof(MenuWindow), "Open");
 
     // The window may sit on a parent of its canvas (PassportManager) or inside it (EndScreen).
-    private static void Postfix(MenuWindow __instance) =>
-        WorldCanvases.Reopen(
-            __instance.GetComponentInParent<Canvas>()
-                ?? __instance.GetComponentInChildren<Canvas>(true)
-        );
+    private static void Postfix(MenuWindow __instance)
+    {
+        var canvas = __instance.GetComponentInParent<Canvas>();
+        if (canvas == null)
+            canvas = __instance.GetComponentInChildren<Canvas>(true);
+        WorldCanvases.Reopen(canvas);
+    }
 }
 
 /// <summary>Nested canvases spawned at runtime (dropdown lists and their blockers) must raycast through
@@ -66,7 +68,8 @@ internal static class CameraQuadPatch
 }
 
 /// <summary>Name tags are placed by WorldToScreenPoint, meaningless in stereo; put each tag at the
-/// player's head in the world instead. A/UIPlayerNames.cs:46 <c>UpdateName</c> (screen projection at L57).</summary>
+/// player's head in the world instead. A/UIPlayerNames.cs:46 <c>UpdateName</c> (screen projection at L57), called from
+/// A/IsLookedAt.cs:35-49 <c>Update</c>.</summary>
 [HarmonyPatch]
 internal static class PlayerNamePatch
 {
@@ -81,8 +84,12 @@ internal static class PlayerNamePatch
         if (index < 0 || index >= names.Length || names[index] == null)
             return;
 
+        // IsLookedAt.Update calls this before UIWorldRuntime refreshes Ready in LateUpdate; VR may have stopped since.
+        var rig = VRRig.Instance;
+        var head = rig != null ? rig.Head : null;
+        if (head == null)
+            return;
         var tag = names[index].transform;
-        var head = VRRig.Instance.Head;
         var toTag = position - head.position;
         var distance = toTag.magnitude;
         if (distance < 0.01f)

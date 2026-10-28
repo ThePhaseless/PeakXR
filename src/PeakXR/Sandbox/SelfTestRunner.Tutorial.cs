@@ -506,26 +506,11 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator PromptGlyphStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
-        {
-            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
-            yield break;
-        }
-        spawned.Add(SandboxActions.LastSpawned);
-        var world =
-            SandboxActions.LastSpawned != null
-                ? SandboxActions.LastSpawned.GetComponent<Item>()
-                : null;
+        var world = SpawnTestItem(AppleFragment, spot);
         if (world == null)
-        {
-            Fail("spawned Apple has no Item");
             yield break;
-        }
-        if (world.rig != null)
-            world.rig.isKinematic = true;
         var gui = GUIManager.instance;
         var verbText = gui.interactPromptText.canvasRenderer;
         var fails = new List<string>();
@@ -651,29 +636,14 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator TargetNamesStep(bool colourBlind)
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
         var head = VRRig.Instance.Head;
         var c = Character.localCharacter;
         var right = Vector3.Cross(Vector3.up, Flat(head.forward)).normalized;
         var spot = head.position + Flat(head.forward) * 0.35f + right * 0.3f;
         spot.y = c.Center.y;
-        if (apple == null || !SandboxActions.SpawnItemAt(apple, spot))
-        {
-            Fail(apple == null ? "no Apple item" : SandboxActions.LastMessage);
-            yield break;
-        }
-        spawned.Add(SandboxActions.LastSpawned);
-        var world =
-            SandboxActions.LastSpawned != null
-                ? SandboxActions.LastSpawned.GetComponent<Item>()
-                : null;
+        var world = SpawnTestItem(AppleFragment, spot);
         if (world == null)
-        {
-            Fail("spawned Apple has no Item");
             yield break;
-        }
-        if (world.rig != null)
-            world.rig.isKinematic = true;
         var gui = GUIManager.instance;
         var names = SpatialFeature.Settings.TargetNames;
         bool namesWas = names.Value;

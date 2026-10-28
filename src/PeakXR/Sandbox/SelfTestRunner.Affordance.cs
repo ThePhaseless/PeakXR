@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
@@ -12,7 +11,7 @@ namespace PeakXR.Sandbox;
 
 /// <summary>
 /// The <c>vr.6x</c> steps: ui.affordance. Scripted hands try things the game refuses and each step proves the whole
-/// cue (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>: reason, ring, sound, haptic, red preview),
+/// cue (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>: reason, ring, sound, haptic, red preview),
 /// not just that the action failed.
 /// </summary>
 internal sealed partial class SelfTestRunner
@@ -377,7 +376,7 @@ internal sealed partial class SelfTestRunner
     /// rising note, no reach ray), and with <c>UI.ActionHintText</c> off no label.</summary>
     IEnumerator HintsOffStep()
     {
-        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        var hook = FindItem(SandboxActions.Items, "RescueHook");
         if (hook == null)
         {
             stepSkip = "no RescueHook item";
@@ -644,7 +643,7 @@ internal sealed partial class SelfTestRunner
     /// hint.</summary>
     IEnumerator DenyTwoHandStep()
     {
-        var hook = FindItem(new List<Item>(SandboxActions.Items), "RescueHook");
+        var hook = FindItem(SandboxActions.Items, "RescueHook");
         if (hook == null)
         {
             stepSkip = "no RescueHook item";
@@ -664,7 +663,7 @@ internal sealed partial class SelfTestRunner
     /// has its own reason (UseDenial.Why), covered by vr.94 and the vr.16x steps.</summary>
     IEnumerator DenyUnusableStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -748,7 +747,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Presses the trigger of <paramref name="left"/> and waits up to 1 s for the cue of
     /// <paramref name="expected"/> on that hand on every channel, the held item's red preview included
-    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float)"/>); other denials meanwhile do not end the
+    /// (<see cref="ExpectCue(bool, DenyReason, float, bool, float, bool)"/>); other denials meanwhile do not end the
     /// wait. The held item must also stay in the hand with its uses unspent: a cue over a use that went through
     /// is no refusal.</summary>
     IEnumerator PressAndExpect(bool left, DenyReason expected, bool along = false)

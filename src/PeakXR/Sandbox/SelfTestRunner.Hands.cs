@@ -76,19 +76,16 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>One scripted-hands step: a clean start (empty hands and hotbar), the body, then a guarded teardown
     /// that lets go and clears the override whether the step passed, failed, threw or timed out.</summary>
-    IEnumerator HandStep(string id, float timeout, IEnumerator body)
+    IEnumerator HandStep(string id, float timeout, IEnumerator body) =>
+        ScriptedHandsStep(id, timeout, HandSetup(body));
+
+    /// <summary>The shared wrapper of <see cref="HandStep"/> and <see cref="PeakHandStep"/>: <paramref name="setup"/>
+    /// starts the hands and runs the body.</summary>
+    IEnumerator ScriptedHandsStep(string id, float timeout, IEnumerator setup)
     {
-        // A filtered run skips the wrapper's setup and teardown too, not only the step.
-        if (Filtered(id))
+        if (!VRStepRuns(id))
             yield break;
-        if (!VRRun)
-            yield break;
-        if (!VRSession.Active)
-        {
-            Skip(id, "VR not active");
-            yield break;
-        }
-        yield return Run(id, timeout, HandSetup(body));
+        yield return Run(id, timeout, setup);
         yield return Guard(
             HandsRelease(),
             Now + 5f,
@@ -147,11 +144,6 @@ internal sealed partial class SelfTestRunner
     /// <summary>Where a prop is set down when it rests outside that band: in front of the feet, in a squat's reach.</summary>
     const float PropSetOut = 0.55f;
 
-    /// <summary>
-    /// Where a prop for a stooped grab is set down: on the ground <paramref name="outward"/> m ahead of the eye, a
-    /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
-    /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
-    /// </summary>
     /// <summary>Height (m) over the ground a prop is set at: clear of its own collider (8 cm started an Apple inside
     /// the terrain, which it then fell through, run 53), low enough that it drops without bouncing away.</summary>
     const float PropDrop = 0.25f;
@@ -160,6 +152,11 @@ internal sealed partial class SelfTestRunner
     /// height over the tracking floor.</summary>
     static float TrackedFloorY() => VRRig.Instance.Head.position.y - VRInput.HeadPosition.y;
 
+    /// <summary>
+    /// Where a prop for a stooped grab is set down: on the ground <paramref name="outward"/> m ahead of the eye, a
+    /// few centimetres up, so it neither falls nor starts inside the body. Run 50: spawned 0.45 m ahead at body
+    /// height, the Apple dropped against the body's capsule (the eyes sit 0.2 m ahead of it) and was flung 2.35 m.
+    /// </summary>
     static Vector3 GroundAhead(float outward)
     {
         var head = VRRig.Instance.Head;
@@ -174,13 +171,11 @@ internal sealed partial class SelfTestRunner
             float yaw = (i + 1) / 2 * 45f * (i % 2 == 0 ? 1f : -1f);
             var ahead = head.position + Quaternion.Euler(0f, yaw, 0f) * start * outward;
             if (
-                Physics.Raycast(
+                Terrain(
                     new Vector3(ahead.x, feet + 0.6f, ahead.z),
                     Vector3.down,
-                    out var ground,
                     1.2f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
+                    out var ground
                 )
                 && Mathf.Abs(ground.point.y - feet) <= 0.3f
             )
@@ -222,16 +217,7 @@ internal sealed partial class SelfTestRunner
         if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut || under > 0.3f)
         {
             var ahead = head.position + Flat(head.forward) * PropSetOut;
-            if (
-                Physics.Raycast(
-                    ahead + Vector3.up * 0.5f,
-                    Vector3.down,
-                    out var ground,
-                    4f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(ahead + Vector3.up * 0.5f, Vector3.down, 4f, out var ground))
                 ahead = ground.point + Vector3.up * PropDrop;
             else
                 ahead = spot;
@@ -260,7 +246,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator GrabStep(bool left)
     {
         var c = Character.localCharacter;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             Fail("no Apple item");
@@ -354,7 +340,7 @@ internal sealed partial class SelfTestRunner
     /// item changes (<see cref="StatusEffect"/>) the right way, so the step sets that status first.</summary>
     IEnumerator EatStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -755,14 +741,8 @@ internal sealed partial class SelfTestRunner
         // Its own level ray from just under the eye: WallInFront falls back to rays at the far point FindWall started
         // from, and run 57's "high" hold came from one of those, 0.97 m under the eye.
         if (
-            Physics.Raycast(
-                rig.Head.position + Vector3.down * 0.1f,
-                -Flat(hit.normal),
-                out var high,
-                0.9f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            ) && ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+            Terrain(rig.Head.position + Vector3.down * 0.1f, -Flat(hit.normal), 0.9f, out var high)
+            && ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
         )
             hit = high;
         var hold = hit.point + hit.normal * 0.04f;
@@ -949,9 +929,9 @@ internal sealed partial class SelfTestRunner
         // Run 29: after vr.15 the view faced the crashed plane, and the pack spawned in its hull landed 2.4 m up, out
         // of reach. Face open ground first, as vr.45 does.
         var rig = VRRig.Instance;
-        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
-            Fail("no open ground to drop the pack on in any heading: " + blocked);
+            Fail("no open ground to drop the pack on in any heading: " + obstacle);
             yield break;
         }
         rig.RotateYaw(turn);
@@ -1069,7 +1049,6 @@ internal sealed partial class SelfTestRunner
             Fail($"needs a Backpack and an Apple item and body slots (valid {inv.Valid})");
             yield break;
         }
-        var head = VRRig.Instance.Head;
         var spot = GroundAhead(PropSetOut);
 
         // Wear a pack: the wheel's Wear slice calls Backpack.Wear (BackpackWheel.cs:133), the plain pickup into
@@ -1427,7 +1406,7 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator HolsterStep()
     {
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -2039,30 +2018,9 @@ internal sealed partial class SelfTestRunner
         var normal = Flat(wall.normal);
         var body = c.Center;
         var atFace = new Vector3(body.x, wall.point.y, body.z);
-        return Physics.Raycast(
-                body + Vector3.up * upFromCenter,
-                -normal,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-            || Physics.Raycast(
-                atFace,
-                -normal,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-            || Physics.Raycast(
-                atFace,
-                (wall.point - atFace).normalized,
-                out hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            );
+        return Terrain(body + Vector3.up * upFromCenter, -normal, 2f, out hit)
+            || Terrain(atFace, -normal, 2f, out hit)
+            || Terrain(atFace, (wall.point - atFace).normalized, 2f, out hit);
     }
 
     /// <summary>
@@ -2111,8 +2069,6 @@ internal sealed partial class SelfTestRunner
         return best < float.MaxValue;
     }
 
-    /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
-    /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
     /// <summary>Rings (m) around the player <see cref="FindWall"/> searches; online, where no test wall can be
     /// placed, it reaches further for a steep enough face.</summary>
     static readonly float[] WallRings = { 15f, 35f, 60f };
@@ -2126,6 +2082,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>The angle profile (deg from up at the hold and above it) of the last wall <see cref="FindWall"/> chose.</summary>
     internal static string WallProfile = "";
 
+    /// <summary>One <see cref="FindWall"/> seed: 24 level rays at three heights within 40 m of
+    /// <paramref name="spot"/>; keeps a face nearer <paramref name="home"/> than <paramref name="best"/>.</summary>
     static void WallsFrom(
         Vector3 spot,
         Vector3 home,
@@ -2143,16 +2101,7 @@ internal sealed partial class SelfTestRunner
             for (int i = 0; i < Rays; i++)
             {
                 var dir = Quaternion.Euler(0f, i * 360f / Rays, 0f) * Vector3.forward;
-                if (
-                    !Physics.Raycast(
-                        origin,
-                        dir,
-                        out var hit,
-                        Range,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                )
+                if (!Terrain(origin, dir, Range, out var hit))
                     continue;
                 float away = Vector3.Distance(home, hit.point);
                 if (away >= best)
@@ -2165,16 +2114,7 @@ internal sealed partial class SelfTestRunner
                 bool steep = true;
                 foreach (float up in WallProfileHeights)
                 {
-                    if (
-                        !Physics.Raycast(
-                            origin + Vector3.up * up,
-                            dir,
-                            out var above,
-                            hit.distance + 1f,
-                            HelperFunctions.terrainMapMask,
-                            QueryTriggerInteraction.Ignore
-                        )
-                    )
+                    if (!Terrain(origin + Vector3.up * up, dir, hit.distance + 1f, out var above))
                     {
                         steep = false;
                         break;
@@ -2190,26 +2130,13 @@ internal sealed partial class SelfTestRunner
                 if (!steep)
                     continue;
                 if (
-                    !Physics.Raycast(
-                        origin + Vector3.up * headroom,
-                        dir,
-                        out var high,
-                        hit.distance + 1.5f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    ) || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+                    !Terrain(origin + Vector3.up * headroom, dir, hit.distance + 1.5f, out var high)
+                    || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
                 )
                     continue;
                 var front = hit.point + Flat(hit.normal) * 0.6f;
                 if (
-                    !Physics.Raycast(
-                        front + Vector3.up * 2f,
-                        Vector3.down,
-                        out var ground,
-                        6f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
-                    )
+                    !Terrain(front + Vector3.up * 2f, Vector3.down, 6f, out var ground)
                     || Vector3.Angle(ground.normal, Vector3.up) > 40f
                 )
                     continue;

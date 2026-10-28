@@ -1,6 +1,3 @@
-using System;
-using System.Numerics;
-
 namespace PeakXR.Core.Tests;
 
 public class ViewHoldTests
@@ -118,12 +115,11 @@ public class ViewHoldTests
     public void SlowCreepPastTheDeadband_IsFollowed()
     {
         var hold = new ViewHold();
-        Vector3 raw = Base;
         Vector3 o = Base;
         // A body sliding 2 cm/s without crossing any gate: the view never trails it by more than the deadband.
         for (float t = 0f; t < 10f; t += Dt)
         {
-            raw = Base + new Vector3(0.02f * t, 0f, 0f);
+            var raw = Base + new Vector3(0.02f * t, 0f, 0f);
             o = hold.Update(raw, true, Dt);
             Assert.True((raw - o).Length() <= ViewHold.Deadband + 1e-4f);
         }
@@ -146,7 +142,7 @@ public class ViewHoldTests
         var hold = new ViewHold();
         var shift = Vector3.Zero;
         Vector3 view = default;
-        Vector3 bodyEye = default;
+        Vector3 bodyEye;
         float t = phase;
         for (; t < phase + 3f; t += Dt)
         {

@@ -44,15 +44,20 @@ internal static class AvatarPatches
         AvatarPoseDriver.Of(c) is { HasFreshPose: true } d ? d : null;
 
     /// <summary>CharacterAnimations.ConfigureIK (CharacterAnimations.cs:390): runs in the physics tick right after
-    /// the animated pose is evaluated (CharacterRagdoll.cs:170), for local and remote characters.</summary>
+    /// the animated pose is evaluated (CharacterRagdoll.cs:170), for local and remote characters. Every driver, fresh
+    /// or stale: a stale pose hands the lean, legs and fingers back to vanilla there.</summary>
     [HarmonyPatch]
     internal static class ConfigureIK
     {
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterAnimations), "ConfigureIK");
 
-        private static void Postfix(CharacterAnimations __instance) =>
-            Driver(animationsCharacter(__instance))?.OnConfigureIK();
+        private static void Postfix(CharacterAnimations __instance)
+        {
+            var d = AvatarPoseDriver.Of(animationsCharacter(__instance));
+            if (d != null)
+                d.OnConfigureIK();
+        }
     }
 
     /// <summary>CharacterAnimations.HandleIK (CharacterAnimations.cs:339, private): sets rig and arm IK weights
@@ -63,8 +68,12 @@ internal static class AvatarPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterAnimations), "HandleIK");
 
-        private static void Postfix(CharacterAnimations __instance) =>
-            Driver(animationsCharacter(__instance))?.OnHandleIK();
+        private static void Postfix(CharacterAnimations __instance)
+        {
+            var d = Driver(animationsCharacter(__instance));
+            if (d != null)
+                d.OnHandleIK();
+        }
     }
 
     /// <summary>CharacterRagdoll.SaveAdditionalTransformPositions (CharacterRagdoll.cs:212, private): writes
@@ -75,8 +84,12 @@ internal static class AvatarPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterRagdoll), "SaveAdditionalTransformPositions");
 
-        private static void Postfix(CharacterRagdoll __instance) =>
-            Driver(ragdollCharacter(__instance))?.OnSaveAdditional();
+        private static void Postfix(CharacterRagdoll __instance)
+        {
+            var d = Driver(ragdollCharacter(__instance));
+            if (d != null)
+                d.OnSaveAdditional();
+        }
     }
 
     /// <summary>CharacterItems.GetItemHoldForward (CharacterItems.cs:701, private): hold torque target.</summary>
@@ -95,7 +108,7 @@ internal static class AvatarPatches
         }
     }
 
-    /// <summary>CharacterItems.GetItemHoldUp (CharacterItems.cs:704, private): hold torque target.</summary>
+    /// <summary>CharacterItems.GetItemHoldUp (CharacterItems.cs:696, private): hold torque target.</summary>
     [HarmonyPatch]
     internal static class HoldUp
     {
@@ -128,7 +141,8 @@ internal static class AvatarPatches
 
     /// <summary>CharacterItems.HoldItem (CharacterItems.cs:170, private): the held item's spring toward its hold
     /// point, every physics tick. A local held item the ragdoll arm cannot bring to the controller follows it free of
-    /// the hand instead (<see cref="AvatarPoseDriver.FollowHeld"/>).</summary>
+    /// the hand instead (<see cref="AvatarPoseDriver.FollowHeld"/>). Every driver, fresh or stale: once the pose goes
+    /// stale FollowHeld re-welds a free item.</summary>
     [HarmonyPatch]
     internal static class HoldItem
     {
@@ -137,12 +151,12 @@ internal static class AvatarPatches
 
         private static bool Prefix(CharacterItems __instance, Item item)
         {
-            var d = Driver(itemsCharacter(__instance));
+            var d = AvatarPoseDriver.Of(itemsCharacter(__instance));
             return d == null || !d.FollowHeld(item);
         }
     }
 
-    /// <summary>CharacterItems.UnAttachItem (CharacterItems.cs:~722, private): remove our single-hand weld too.</summary>
+    /// <summary>CharacterItems.UnAttachItem (CharacterItems.cs:665, private): remove our single-hand weld too.</summary>
     [HarmonyPatch]
     internal static class UnAttachItem
     {
@@ -153,8 +167,11 @@ internal static class AvatarPatches
         {
             var c = itemsCharacter(__instance);
             var d = AvatarPoseDriver.Of(c);
-            d?.DestroyItemJoint();
-            d?.EndPassBody();
+            if (d != null)
+            {
+                d.DestroyItemJoint();
+                d.EndPassBody();
+            }
         }
     }
 

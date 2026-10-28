@@ -12,7 +12,6 @@ using PeakXR.XR;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace PeakXR.UI.Settings;
 
@@ -510,20 +509,6 @@ internal sealed class PreviewStage : MonoBehaviour
         cardGroup.alpha = alpha;
         if (!card.activeSelf)
             card.SetActive(true);
-    }
-
-    /// <summary>Middle of the row's right edge and the panel's rightward direction, in world space; shared with the
-    /// VR Guide demos so both stand beside the row the same way. <paramref name="corners"/> is scratch space.</summary>
-    internal static void RowRightEdge(
-        RectTransform row,
-        Vector3[] corners,
-        out Vector3 edge,
-        out Vector3 right
-    )
-    {
-        row.GetWorldCorners(corners);
-        right = (corners[3] - corners[0]).normalized;
-        edge = (corners[2] + corners[3]) * 0.5f;
     }
 
     // ---- per-frame samples ----

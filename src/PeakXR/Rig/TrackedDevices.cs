@@ -44,13 +44,14 @@ internal sealed class TrackedDevices
             position = default;
             return false;
         }
-        if (!head.TryGetFeatureValue(CommonUsages.centerEyePosition, out position))
-            if (!head.TryGetFeatureValue(CommonUsages.devicePosition, out position))
-                return false;
-        if (!head.TryGetFeatureValue(CommonUsages.centerEyeRotation, out rotation))
-            if (!head.TryGetFeatureValue(CommonUsages.deviceRotation, out rotation))
-                return false;
-        return true;
+        return (
+                head.TryGetFeatureValue(CommonUsages.centerEyePosition, out position)
+                || head.TryGetFeatureValue(CommonUsages.devicePosition, out position)
+            )
+            && (
+                head.TryGetFeatureValue(CommonUsages.centerEyeRotation, out rotation)
+                || head.TryGetFeatureValue(CommonUsages.deviceRotation, out rotation)
+            );
     }
 
     /// <summary>Controller aim pose in tracking space, when the provider reports one (OpenXR does).</summary>

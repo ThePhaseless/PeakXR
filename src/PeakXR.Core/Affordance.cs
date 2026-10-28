@@ -552,11 +552,6 @@ public static class DenyFade
         return 1f - (age - In - Hold) / Out;
     }
 
-    /// <summary>
-    /// As <see cref="Alpha(float)"/>, but the attempt that was refused stayed held for <paramref name="heldFor"/>
-    /// seconds after it (equal to <paramref name="age"/> while still held): the cue holds at full until the release,
-    /// then fades, so a player holding the trigger never watches the reason vanish mid-attempt.
-    /// </summary>
     /// <summary>A refusal held by a grip that is also carrying an item would stay up for the whole carry: cap it.</summary>
     public const float CarryCap = 1.5f;
 
@@ -567,6 +562,11 @@ public static class DenyFade
     public static float HoldCap(bool byTrigger, bool carrying) =>
         byTrigger || !carrying ? float.PositiveInfinity : CarryCap;
 
+    /// <summary>
+    /// As <see cref="Alpha(float)"/>, but the attempt that was refused stayed held for <paramref name="heldFor"/>
+    /// seconds after it (equal to <paramref name="age"/> while still held): the cue holds at full until the release,
+    /// then fades, so a player holding the trigger never watches the reason vanish mid-attempt.
+    /// </summary>
     public static float Alpha(float age, float heldFor)
     {
         if (age <= 0f)
@@ -601,7 +601,7 @@ public static class DenyFade
 }
 
 /// <summary>Range check for a pre-emptive "can't" cue with hysteresis on the "can" side only: it never shows
-/// "can't" inside the game's limit, and once in range it turns out only past <paramref name="margin"/>, so the cue
+/// "can't" inside the game's limit, and once in range it turns out only past the margin (<see cref="Within"/>), so the cue
 /// does not flicker. A refused press is checked against the exact limit, not this.</summary>
 public static class DenyRange
 {

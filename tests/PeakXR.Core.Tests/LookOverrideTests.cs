@@ -32,8 +32,8 @@ public class LookOverrideTests
     {
         var o = new LookOverride { HoldTime = 0.1f, BlendTime = 0.4f };
         var hmd = Vector2.Zero;
-        var last = o.Update(Vector2.Zero, hmd, Dt);
-        last = o.Update(new Vector2(60f, 0f), hmd, Dt);
+        o.Update(Vector2.Zero, hmd, Dt);
+        var last = o.Update(new Vector2(60f, 0f), hmd, Dt);
 
         float prevWeight = o.Weight;
         bool sawPartial = false;
@@ -57,8 +57,8 @@ public class LookOverrideTests
     public void YawBlend_TakesTheShortWayAndWraps()
     {
         var o = new LookOverride { HoldTime = 0f, BlendTime = 1f };
-        var last = o.Update(Vector2.Zero, new Vector2(170f, 0f), Dt);
-        last = o.Update(new Vector2(-170f, 0f), new Vector2(170f, 0f), Dt);
+        o.Update(Vector2.Zero, new Vector2(170f, 0f), Dt);
+        var last = o.Update(new Vector2(-170f, 0f), new Vector2(170f, 0f), Dt);
         last = o.Update(last, new Vector2(170f, 0f), 0.5f);
         Assert.True(MathF.Abs(last.X) > 170f, $"got {last.X}");
         Assert.True(last.X <= 180f && last.X > -180f);

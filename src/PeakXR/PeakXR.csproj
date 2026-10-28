@@ -5,10 +5,8 @@
     <RootNamespace>PeakXR</RootNamespace>
     <BepInExPluginGuid>com.thephaseless.peakxr</BepInExPluginGuid>
     <BepInExPluginName>PeakXR</BepInExPluginName>
-    <Version>0.1.0</Version>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
     <PeakManaged>$(PeakDir)/PEAK_Data/Managed</PeakManaged>
   </PropertyGroup>

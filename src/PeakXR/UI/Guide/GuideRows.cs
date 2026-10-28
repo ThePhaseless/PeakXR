@@ -9,7 +9,6 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using Zorro.Core;
 using Zorro.Settings;
-using Zorro.Settings.DebugUI;
 
 namespace PeakXR.UI.Guide;
 

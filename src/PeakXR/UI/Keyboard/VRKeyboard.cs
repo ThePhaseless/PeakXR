@@ -569,7 +569,8 @@ internal sealed class VRKeyboard : MonoBehaviour
     /// <summary>Close: leave the field, keeping what was typed, or abort the dialog.</summary>
     private void Dismiss()
     {
-        field?.DeactivateInputField();
+        if (field != null)
+            field.DeactivateInputField();
         Close(submitted: false);
     }
 

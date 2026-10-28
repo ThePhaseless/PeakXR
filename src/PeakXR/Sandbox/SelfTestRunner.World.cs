@@ -135,9 +135,12 @@ internal sealed partial class SelfTestRunner
     )
     {
         var c = Character.localCharacter;
-        var fire =
-            Nearest<Campfire>(c.Center, f => !f.Lit && f.state == Campfire.FireState.Off && ok(f))
-            ?? Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent && ok(f));
+        var fire = Nearest<Campfire>(
+            c.Center,
+            f => !f.Lit && f.state == Campfire.FireState.Off && ok(f)
+        );
+        if (fire == null)
+            fire = Nearest<Campfire>(c.Center, f => f.state != Campfire.FireState.Spent && ok(f));
         was = fire != null ? (fire.state, fire.forceLit) : (Campfire.FireState.Off, false);
         if (fire != null)
         {
@@ -530,16 +533,7 @@ internal sealed partial class SelfTestRunner
         // 0.55 m ahead: kneeling beside the bones with the book 0.4 m over the hips is in reach (0.7 m ahead with a
         // standing head was 1.0-1.1 m from the shoulder).
         var spot = SandboxActions.FrontPoint(0.55f);
-        if (
-            Physics.Raycast(
-                spot + Vector3.up * 2f,
-                Vector3.down,
-                out var ground,
-                5f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(spot + Vector3.up * 2f, Vector3.down, 5f, out var ground))
             spot = ground.point;
         var skeleton = Object
             .Instantiate(prefab, spot + Vector3.up * 0.3f, Quaternion.identity)
@@ -705,16 +699,6 @@ internal sealed partial class SelfTestRunner
     float carryMark;
     string flameNote = "";
 
-    /// <summary>
-    /// A lit torch's flame brought to a fuse the way a player lights one. The torch is given and lit where the player
-    /// stands, as vr.26 lights it (vr41 lost it given and lit beside the placed cannon); the body warps 0.8 m beside the
-    /// fuse, on the side away from a cannon's entry (it pulls in and launches whoever is within 1 m of it, dropping
-    /// what they hold, ScoutCannon.cs:66-110); the head stoops until it is at most <see cref="StoopReach"/> over the
-    /// hand's goal, as a player kneels at a fuse low on its prop (vr45 and vr46: a standing body's ragdoll arm stalled
-    /// the flame 0.96 m short and the hand never moved); then the hand carries the flame onto the fuse's collider
-    /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
-    /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
-    /// </summary>
     /// <summary>Farthest a held torch's flame sits from the hand holding it (m): the torch's length and grip.</summary>
     const float TorchInHand = 0.45f;
 
@@ -739,6 +723,16 @@ internal sealed partial class SelfTestRunner
     /// <summary>Farthest a held item may sit from its controller-held pose (m), standing or stooped.</summary>
     const float ItemOnHand = 0.15f;
 
+    /// <summary>
+    /// A lit torch's flame brought to a fuse the way a player lights one. The torch is given and lit where the player
+    /// stands, as vr.26 lights it (vr41 lost it given and lit beside the placed cannon); the body warps 0.8 m beside the
+    /// fuse, on the side away from a cannon's entry (it pulls in and launches whoever is within 1 m of it, dropping
+    /// what they hold, ScoutCannon.cs:66-110); the head stoops until it is at most <see cref="StoopReach"/> over the
+    /// hand's goal, as a player kneels at a fuse low on its prop (vr45 and vr46: a standing body's ragdoll arm stalled
+    /// the flame 0.96 m short and the hand never moved); then the hand carries the flame onto the fuse's collider
+    /// (FireGestures: within 0.12 m of it; vr43 aimed at its transform) until <paramref name="done"/> or
+    /// <paramref name="seconds"/>. Fails when the torch is lost or the hand ends past a player's reach.
+    /// </summary>
     IEnumerator FlameToFuse(Item torchPrefab, Component fuse, Func<bool> done, float seconds)
     {
         var c = Character.localCharacter;
@@ -819,7 +813,6 @@ internal sealed partial class SelfTestRunner
             Fail("the torch left the hand after the warp to the fuse");
             yield break;
         }
-        float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
         // A player tips the torch down toward a low fuse, so the flame leads the hand instead of standing 0.5 m over
         // it (run 53: a flame upright over the hand put the hand 0.27 m under the floor to reach a fuse at the feet).
         // Of the wrist turns a player can make, keep the one that brings the flame lowest under the hand.
@@ -849,7 +842,7 @@ internal sealed partial class SelfTestRunner
             Fail("the torch left the hand while tipping it toward the fuse");
             yield break;
         }
-        inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
+        float inHand = Vector3.Distance(rig.Hand(left).position, flame.position);
         // Where the hand puts the flame on the fuse, stooping on the way; the carry then closes what is left. A
         // flame not yet at the hand leads by nothing, so the goal stays at the fuse.
         var lead = inHand < TorchInHand ? rig.Hand(left).position - flame.position : Vector3.zero;
@@ -875,7 +868,7 @@ internal sealed partial class SelfTestRunner
             // A held item that does not follow its hand cannot be brought anywhere: say so instead of a fuse miss.
             Fail(
                 F(
-                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldItemFree}); the held item does not follow a stooped hand"
+                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldReleased}); the held item does not follow a stooped hand"
                 )
             );
             yield break;
@@ -1151,14 +1144,7 @@ internal sealed partial class SelfTestRunner
                 Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
             var probe = new Vector3(box.center.x, box.max.y + 0.5f, box.center.z) + dir * reach;
             if (
-                Physics.Raycast(
-                    probe,
-                    Vector3.down,
-                    out var ground,
-                    box.size.y + 1.5f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                Terrain(probe, Vector3.down, box.size.y + 1.5f, out var ground)
                 && ground.collider.GetComponentInParent<Luggage>() == null
                 && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
             )
@@ -1515,16 +1501,7 @@ internal sealed partial class SelfTestRunner
             return null;
         var forward = Flat(rig.Head.forward);
         var at = Character.localCharacter.Center + forward * 3f;
-        if (
-            Physics.Raycast(
-                at + Vector3.up * 3f,
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(at + Vector3.up * 3f, Vector3.down, 8f, out var ground))
             at = ground.point;
         placed = Photon.Pun.PhotonNetwork.Instantiate(
             prefab.name,
@@ -1753,36 +1730,8 @@ internal sealed partial class SelfTestRunner
     /// vr.93 and vr.86 ran there, the latter ungrounded). Jumps to the Peak instead, whose landing the jump itself
     /// checks, then runs <paramref name="body"/> with the usual teardown.
     /// </summary>
-    IEnumerator PeakHandStep(string id, float timeout, IEnumerator body)
-    {
-        // A filtered run skips the wrapper's setup and teardown too, not only the step.
-        if (Filtered(id))
-            yield break;
-        if (!VRRun)
-            yield break;
-        if (!VRSession.Active)
-        {
-            Skip(id, "VR not active");
-            yield break;
-        }
-        yield return Run(id, timeout, PeakSetup(id, body));
-        yield return Guard(
-            HandsRelease(),
-            Now + 5f,
-            e =>
-                Plugin.Log.LogWarning(
-                    $"[selftest] {id} teardown: {(e == null ? "timeout" : e.Message)}"
-                )
-        );
-        EndHands();
-        ClosePause();
-        yield return Guard(DropHeld(), Now + 4f, _ => { });
-        yield return Wait(0.3f);
-        Safe("hands.despawn", Despawn);
-        Safe("hands.sweep", SweepNewItems);
-        Recover();
-        yield return Wait(0.5f);
-    }
+    IEnumerator PeakHandStep(string id, float timeout, IEnumerator body) =>
+        ScriptedHandsStep(id, timeout, PeakSetup(id, body));
 
     IEnumerator PeakSetup(string id, IEnumerator body)
     {
@@ -2503,14 +2452,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>Terrain or map ground straight under <paramref name="p"/>, cast from 200 m above it.</summary>
     static bool GroundUnder(Vector3 p, out Vector3 ground)
     {
-        bool hit = Physics.Raycast(
-            p + Vector3.up * 200f,
-            Vector3.down,
-            out var info,
-            1000f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        );
+        bool hit = Terrain(p + Vector3.up * 200f, Vector3.down, 1000f, out var info);
         ground = hit ? info.point : p;
         return hit;
     }
@@ -2646,8 +2588,7 @@ internal sealed partial class SelfTestRunner
         for (int attempt = 0; attempt < 3; attempt++)
         {
             yield return LaserPress(end.nextButton);
-            pressed =
-                LaserPointer.PressedControl != null ? LaserPointer.PressedControl.name : "nothing";
+            pressed = LaserPointer.Over != null ? LaserPointer.Over.name : "nothing";
             yield return WaitFor(
                 () => RunFlowRuntime.CreditsWaiting || LoadingScreenHandler.loading,
                 6f
@@ -2658,7 +2599,7 @@ internal sealed partial class SelfTestRunner
         if (!RunFlowRuntime.CreditsWaiting && !LoadingScreenHandler.loading)
         {
             Fail(
-                $"Next did not close the end screen after 3 laser presses (last press on {pressed}, "
+                $"Next did not close the end screen after 3 laser presses (laser over {pressed} after the last press, "
                     + $"Next active {end.nextButton.gameObject.activeInHierarchy}, interactable {end.nextButton.interactable})"
             );
             yield break;
@@ -2734,16 +2675,7 @@ internal sealed partial class SelfTestRunner
         var stand = target + Flat(side == default ? c.Center - target : side) * distance;
         // From just above the target, not far above: a ray from high up lands on top of the prop itself.
         float top = target.y + 0.5f;
-        if (
-            Physics.Raycast(
-                new Vector3(stand.x, top, stand.z),
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(new Vector3(stand.x, top, stand.z), Vector3.down, 8f, out var ground))
             stand = ground.point + Vector3.up * 0.1f;
         warpedForProp = true;
         c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, stand), false);

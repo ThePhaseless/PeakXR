@@ -5,7 +5,6 @@ using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
-using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -195,11 +194,12 @@ internal static class BodyFeedback
         // A7: a jump press the game turned down (see JumpTry), unless it became a climb grab.
         if (refusedFrame >= 0 && Time.frameCount > refusedFrame)
         {
-            if (!d.isClimbingAnything && Time.frameCount - refusedFrame <= 3)
-            {
-                if (BodyHand(DominantLeft, out bool hand))
-                    Affordance.Deny(hand, feet, DenyReason.TooSoon);
-            }
+            if (
+                !d.isClimbingAnything
+                && Time.frameCount - refusedFrame <= 3
+                && BodyHand(DominantLeft, out bool hand)
+            )
+                Affordance.Deny(hand, feet, DenyReason.TooSoon);
             refusedFrame = -10;
         }
 
@@ -470,11 +470,9 @@ internal static class BodyFeedback
                 return;
             if (statusType == CharacterAfflictions.STATUSTYPE.Cold)
                 coldTotal += amount;
-            else if (inSource <= 0)
-                return;
-            else if (statusType == CharacterAfflictions.STATUSTYPE.Hot)
+            else if (inSource > 0 && statusType == CharacterAfflictions.STATUSTYPE.Hot)
                 heatTotal += amount;
-            else
+            else if (inSource > 0)
                 hazardTotal += amount;
         }
     }
@@ -513,11 +511,11 @@ internal static class BodyFeedback
                 && input.movementInput.y > 0.01f
                 && (input.sprintIsPressed || input.sprintToggleWasPressed);
             bool exerting = body && (__state || d.sinceJump < 0.5f);
-            if (StaminaOut.Update(empty, exerting, wanted, Time.unscaledTime))
-            {
-                if (BodyHand(!DominantLeft, out bool hand))
-                    Affordance.DenyStamina(hand);
-            }
+            if (
+                StaminaOut.Update(empty, exerting, wanted, Time.unscaledTime)
+                && BodyHand(!DominantLeft, out bool hand)
+            )
+                Affordance.DenyStamina(hand);
         }
     }
 

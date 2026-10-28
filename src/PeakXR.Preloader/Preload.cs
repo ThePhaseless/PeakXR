@@ -35,11 +35,17 @@ public static class Preload
     // Required by BepInEx 5: no target assemblies, so Patch is never called.
     public static IEnumerable<string> TargetDLLs => Enumerable.Empty<string>();
 
-    public static void Patch(AssemblyDefinition _) { }
+    public static void Patch(AssemblyDefinition _)
+    {
+        // Never called: TargetDLLs is empty.
+    }
 
     public static void Initialize()
     {
+        // Read by the finally block even when the catch itself throws.
+#pragma warning disable S1854
         var mode = RuntimeMode.Disabled;
+#pragma warning restore S1854
         RuntimeInstaller installer = null;
         try
         {

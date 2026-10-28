@@ -88,8 +88,10 @@ internal sealed class SpectateFloor
         if (go != null)
             Object.Destroy(go);
         parent = origin;
-        mesh ??= GridMesh();
-        material ??= UIMaterials.Create(Tint, drawOnTop: false, renderQueue: 3050);
+        if (mesh == null)
+            mesh = GridMesh();
+        if (material == null)
+            material = UIMaterials.Create(Tint, drawOnTop: false, renderQueue: 3050);
         // The tracking origin sits on your real floor (RigMath.OriginPosition), a hair above it to avoid flicker.
         go = UIMaterials.MeshObject("PeakXR_SpectateFloor", mesh, material, origin);
         go.transform.localPosition = new Vector3(0f, 0.005f, 0f);

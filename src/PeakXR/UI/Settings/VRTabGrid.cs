@@ -5,7 +5,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
-using Zorro.Settings;
 using Zorro.UI;
 using Object = UnityEngine.Object;
 
@@ -337,7 +336,7 @@ internal static class VRTabGrid
     }
 
     /// <summary>Puts <paramref name="rt"/> at a top-left corner given in the content's space.</summary>
-    private static RectTransform Place(
+    private static void Place(
         RectTransform rt,
         Rect area,
         float left,
@@ -350,7 +349,6 @@ internal static class VRTabGrid
         rt.pivot = new Vector2(0f, 1f);
         rt.sizeDelta = new Vector2(width, height);
         rt.anchoredPosition = new Vector2(left - area.xMin, top - area.yMax);
-        return rt;
     }
 
     /// <summary>

@@ -110,7 +110,7 @@ internal static partial class WorldHolds
             nextStatueLook = Time.unscaledTime + PillarLookSeconds;
             statue = Object.FindFirstObjectByType<ScoutStatue>();
         }
-        AmuletBase amulet = null;
+        AmuletBase amulet;
         int[] slots = null;
         if (
             !amuletHeld
@@ -182,7 +182,7 @@ internal static partial class WorldHolds
 
     /// <summary>The hand whose grip presses the game's interact as the fallback (a pointed or head-aimed grip),
     /// else <paramref name="fallback"/>: the hand that feels a hold it did not grab by hand.</summary>
-    private static bool InteractingHand(bool fallback)
+    internal static bool InteractingHand(bool fallback)
     {
         if (PhysicalInteraction.HandAction(true) == GripPressAction.Interact)
             return true;
@@ -259,7 +259,8 @@ internal static partial class WorldHolds
         );
     }
 
-    private static string Name(IInteractible it) =>
+    /// <summary>A target's name for logs ("nothing" for none).</summary>
+    internal static string Name(IInteractible it) =>
         it is Component comp && comp != null ? comp.name
         : it == null ? "nothing"
         : it.GetType().Name;

@@ -265,11 +265,9 @@ internal static class LocomotionInput
                 DenyLoneSpectate(c, VRAction.SpectatePrevious, dominantLeft);
         }
         input.unselectSlotWasPressed |= canSwitch && Mapper.Pressed(VRAction.PutAway);
+        // No selectBackpackWasPressed: the game samples it (CharacterInput.cs:257) but never reads it.
         if (Mapper.Pressed(VRAction.Backpack))
-        {
-            input.selectBackpackWasPressed = true;
             backpackFrame = Time.frameCount;
-        }
         input.pingWasPressed |= Mapper.Pressed(VRAction.Ping);
         wroteSticky = true;
     }
@@ -579,7 +577,6 @@ internal static class LocomotionInput
             return;
         wroteSticky = false;
         input.pingWasPressed = false;
-        input.selectBackpackWasPressed = false;
         input.scrollForwardWasPressed = input.scrollForwardIsPressed = false;
         input.scrollBackwardWasPressed = input.scrollBackwardIsPressed = false;
         input.spectateLeftWasPressed = input.spectateRightWasPressed = false;

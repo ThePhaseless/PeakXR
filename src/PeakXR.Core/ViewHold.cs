@@ -205,7 +205,8 @@ public sealed class LeanMotion
         }
         if (dt > 0f)
         {
-            velocity += ((eyeShift - last) / dt - velocity) * (1f - MathF.Exp(-dt / SmoothSeconds));
+            velocity +=
+                ((eyeShift - last) / dt - velocity) * ExpSmooth.Factor(1f / SmoothSeconds, dt);
             last = eyeShift;
         }
         return velocity.Length();

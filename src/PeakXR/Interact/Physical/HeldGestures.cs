@@ -76,7 +76,7 @@ internal static class HeldGestures
     /// <summary>The face gesture holds primary this frame (self-test reads it).</summary>
     public static bool AtFace => facing;
 
-    public static void Tick(Character c, VRRig rig, ItemGesturesConfig cfg, float dt)
+    public static void Tick(VRRig rig, ItemGesturesConfig cfg, float dt)
     {
         var hand = ItemGestures.HoldingHand(rig);
         if (ItemGestures.ItemChanged)
@@ -92,7 +92,16 @@ internal static class HeldGestures
             Mouth.Reset();
             Body.Reset();
             Face.Reset();
-            facing = false;
+            pressing = tooting = facing = haveBodyHand = false;
+            // No face to hold it to: a trigger refused for a face-only item (TriggerRefused) says so at the hand.
+            bool left = ItemGestures.HoldLeft;
+            Trigger.Update(VRInput.Hand(left).Trigger, dt);
+            if (
+                Trigger.Pressed
+                && InteractConfig.Instance.TriggerUse
+                && ItemGestures.TriggerRefused(ItemGestures.Held)
+            )
+                Affordance.DenyAtHand(left, DenyReason.NotNow, default, ItemGestures.Held);
             return;
         }
         UpdateBugle(rig, cfg, hand, dt);
@@ -114,10 +123,7 @@ internal static class HeldGestures
             MouthHint(rig, hand, left, use);
             return;
         }
-        var head = rig.Head;
-        var spot = read
-            ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
-            : head.position + head.forward * CommuneAhead;
+        var spot = FaceSpot(rig.Head, read);
         // The item, not the controller: the open book's middle at the read spot, the item itself eye to eye (the game's
         // props are big; a cursed skull held at the eyes by the hand sat beside the head).
         var item = ItemGestures.Held;
@@ -125,7 +131,7 @@ internal static class HeldGestures
             ? ItemMiddle(item, hand, left)
             : HeldItemPoints.Nearest(item, hand, left, spot);
         float distance = Mathf.Max(
-            Vector3.Distance(at, spot) - (read ? ReadZone.Radius : CommuneRadius),
+            RealScale.Real(Vector3.Distance(at, spot)) - (read ? ReadZone.Radius : CommuneRadius),
             0f
         );
         // The book over bones revives (interact.world); it must never read there.
@@ -155,6 +161,16 @@ internal static class HeldGestures
             );
         }
     }
+
+    /// <summary>Where the face gesture holds the item: the read spot (<see cref="ReadZone"/>) or just in front of the
+    /// eyes, placed in real metres around them (Camera.WorldScale) like the mouth and chest zones.</summary>
+    internal static Vector3 FaceSpot(Transform head, bool read) =>
+        RealScale.World(
+            read
+                ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
+                : head.position + head.forward * CommuneAhead,
+            head.position
+        );
 
     /// <summary>Clear of the mouth zone (interact.physical eats within its 0.12 m radius), metres.</summary>
     private const float AwayFromMouth = 0.2f;

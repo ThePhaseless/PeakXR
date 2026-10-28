@@ -10,7 +10,8 @@ jq = "1.8"
 [env]
 # ilspycmd targets net8; let it run on the newer mise-managed runtime
 DOTNET_ROLL_FORWARD = "Major"
-PEAK_DIR = "{{env.HOME}}/.local/share/Steam/steamapps/common/PEAK"
+# An outer PEAK_DIR wins (a Steam library elsewhere).
+PEAK_DIR = "{{ get_env(name='PEAK_DIR', default=env.HOME ~ '/.local/share/Steam/steamapps/common/PEAK') }}"
 
 # ---------------------------------------------------------------------------------------------
 # Tasks. Scripts live in tools/; every task runs with the tools and env above.
@@ -38,6 +39,10 @@ echo "dist/MpObserver/MpObserver.dll"
 description = "Run the unit tests (Release)"
 run = "dotnet test PeakXR.sln -c Release"
 
+[tasks.test-core]
+description = "Run the Core unit tests only; needs no game install (what GitHub CI runs)"
+run = "dotnet test tests/PeakXR.Core.Tests -c Release"
+
 [tasks.coverage]
 description = "Run the unit tests with coverlet coverage (cobertura XML in TestResults/)"
 run = 'dotnet test PeakXR.sln -c Release --coverlet --coverlet-output-format cobertura --coverlet-include "[PeakXR.Core]*"'
@@ -55,6 +60,10 @@ description = "Build the Thunderstore zip and an unpacked copy into dist/"
 depends = ["build"]
 run = "bash tools/package.sh"
 
+[tasks.release]
+description = "Tag v<Version>, build and package against the local game install, and publish a GitHub release with the zip"
+run = "bash tools/release.sh"
+
 [tasks.deploy]
 description = "Copy dist/PeakXR/BepInEx into the game's BepInEx folder (run `mise run package` first)"
 run = "bash tools/deploy.sh"
@@ -66,3 +75,4 @@ run = "bash tools/decompile.sh"
 [tasks.compat-check]
 description = "Print game, Unity and XR deps versions; check patch targets against decomp/ (and decomp.prev/)"
 run = "bash tools/compat-check.sh"
+

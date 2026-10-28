@@ -93,7 +93,7 @@ internal sealed partial class Observer : MonoBehaviour
     IEnumerator Flow()
     {
         // Title: the main page with its Host button (MainMenuMainPage.cs:43 PlayButton) and no load running.
-        MainMenuMainPage page = null;
+        MainMenuMainPage page;
         float end = Now + 180f;
         while (
             (page = FindAnyObjectByType<MainMenuMainPage>()) == null
@@ -126,7 +126,7 @@ internal sealed partial class Observer : MonoBehaviour
         page.PlayButton.onClick.Invoke();
         Note("host clicked");
         var lobbies = GameHandler.GetService<SteamLobbyHandler>();
-        CSteamID lobby = default;
+        CSteamID lobby;
         end = Now + 240f;
         while (
             !SceneManager.GetActiveScene().name.Contains("Airport", StringComparison.Ordinal)

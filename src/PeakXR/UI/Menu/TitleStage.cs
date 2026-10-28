@@ -95,7 +95,7 @@ internal sealed class TitleStage : ICanvasPlacement
     }
 
     /// <summary>Places the rig origin so the player's head stands over <see cref="feet"/> facing the
-    /// title camera's direction. Fixed once the headset is tracked, so walking around still works.
+    /// title camera's direction. Fixed once the headset is tracked, so walking around still works, until a recenter.
     /// Holds <see cref="VRRig.OriginOverride"/> while the stage is active so the camera feature keeps out.</summary>
     public void ApplyOrigin(VRRig rig)
     {
@@ -108,6 +108,7 @@ internal sealed class TitleStage : ICanvasPlacement
         {
             Release();
             rig.OriginOverride = true;
+            rig.Recentered += Unlatch;
             overridden = rig;
         }
         if (!originFixed)
@@ -126,10 +127,16 @@ internal sealed class TitleStage : ICanvasPlacement
         rig.Origin.SetPositionAndRotation(originPosition, originRotation);
     }
 
+    /// <summary>A recenter re-stands the player over the stage from where the head is now.</summary>
+    private void Unlatch() => originFixed = false;
+
     private void Release()
     {
         if (overridden != null)
+        {
             overridden.OriginOverride = false;
+            overridden.Recentered -= Unlatch;
+        }
         overridden = null;
     }
 

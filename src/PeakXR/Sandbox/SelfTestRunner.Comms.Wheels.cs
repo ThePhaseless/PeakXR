@@ -7,7 +7,6 @@ using PeakXR.Framework;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Wheels;
 using PeakXR.VR;
-using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -30,7 +29,6 @@ internal sealed partial class SelfTestRunner
     IEnumerator WheelClimbingStep()
     {
         var c = Character.localCharacter;
-        var rig = VRRig.Instance;
         var gui = GUIManager.instance;
         if (gui == null || gui.emoteWheel == null)
         {
@@ -131,7 +129,7 @@ internal sealed partial class SelfTestRunner
         }
 
         // Negative: the full pose out in front on the hand that holds an item.
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         yield return GiveAndHold(apple);
         if (!stepOk)
             yield break;
@@ -140,7 +138,7 @@ internal sealed partial class SelfTestRunner
         Fist(holdLeft, forward);
         yield return Wait(1.5f);
         notes.Add(
-            $"pose while holding {HeldItem()?.name}: {GestureEmotes.PlayCount - before} emotes"
+            $"pose while holding {Name(HeldItem())}: {GestureEmotes.PlayCount - before} emotes"
         );
         if (GestureEmotes.PlayCount != before)
         {
@@ -226,9 +224,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var rig = VRRig.Instance;
-        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
-            Fail("no open ground to drop the pack on in any heading: " + blocked);
+            Fail("no open ground to drop the pack on in any heading: " + obstacle);
             yield break;
         }
         rig.RotateYaw(turn);

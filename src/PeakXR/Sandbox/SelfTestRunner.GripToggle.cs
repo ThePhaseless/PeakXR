@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.VR;
@@ -89,7 +88,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = "Interaction.ReleaseToDrop off";
             yield break;
         }
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment);
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
         if (apple == null)
         {
             stepSkip = "no Apple item";

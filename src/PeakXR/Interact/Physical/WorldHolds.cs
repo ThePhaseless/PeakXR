@@ -123,9 +123,7 @@ internal static partial class WorldHolds
     /// (Skelleton.Interact, Skelleton.cs:65-71, Action_BookOfBonesAnim.Open), which moves the item's render centre
     /// up out of the zone and ended the hold it had just started (vr32: 0.49 m above, over nothing).</summary>
     private static Vector3 bookPoint;
-    private static bool bookOut;
-    private static Skelleton seen;
-    private static float seenSq;
+    private static readonly SkeletonSearch Skeletons = new();
     private static Skelleton bookTarget;
 
     /// <summary>The skeleton the book is held over this frame, for the self-test (vr.84).</summary>
@@ -160,11 +158,8 @@ internal static partial class WorldHolds
 
     private static void TickBook(Character c, bool active)
     {
-        var skeleton = seen;
-        seen = null;
-        seenSq = BookSearch * BookSearch;
         var item = c.data.currentItem;
-        bookOut =
+        bool bookOut =
             active
             && VRSession.Active
             && WorldHoldsFeature.BookOverBones.Value
@@ -172,6 +167,7 @@ internal static partial class WorldHolds
             && item.CompareTag("BookOfBones");
         if (!bookOut)
         {
+            Skeletons.Stop();
             Book.Reset();
             bookTarget = null;
             return;
@@ -180,6 +176,7 @@ internal static partial class WorldHolds
         var rig = VRRig.Instance;
         var hand = rig != null ? rig.Hand(left) : null;
         bookPoint = hand != null ? hand.position : item.Center();
+        var skeleton = Skeletons.Restart(bookPoint, BookSearch);
         if (skeleton == null || !ReferenceEquals(skeleton, bookTarget))
         {
             Book.Reset();
@@ -234,17 +231,7 @@ internal static partial class WorldHolds
     {
         private static MethodBase TargetMethod() => GameMember.Method(typeof(Skelleton), "Update");
 
-        private static void Postfix(Skelleton __instance)
-        {
-            if (!bookOut || __instance.hip == null)
-                return;
-            float sq = (__instance.Center() - bookPoint).sqrMagnitude;
-            if (sq < seenSq)
-            {
-                seenSq = sq;
-                seen = __instance;
-            }
-        }
+        private static void Postfix(Skelleton __instance) => Skeletons.See(__instance);
     }
 
     /// <summary>

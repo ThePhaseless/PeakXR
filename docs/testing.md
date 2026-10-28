@@ -5,8 +5,8 @@ The `sandbox` feature spawns every item, mob and entity and removes the risk of 
 ## Setup
 
 1. Set `Sandbox.Enabled = true` in `BepInEx/config/com.thephaseless.peakxr.cfg`. It is off by default.
-2. Play **offline** (solo, no lobby) or as the **host**. The sandbox refuses to act in someone else's lobby.
-3. Keys: `F1` opens the game console (unlocked by the sandbox), `F7` toggles the flat sandbox window (`Sandbox.WindowKey`). `F5` and `Insert` belong to other mods.
+2. Play **offline** (Play Solo, no lobby). The sandbox refuses to act in any online lobby, your own included, so it never touches players who did not opt in.
+3. Keys: `F1` opens the game console (unlocked by the sandbox), `F7` toggles the flat sandbox window (`Sandbox.WindowKey`; flat only, in VR it is ignored because the window shows only on the desktop and would block your input). `F5` and `Insert` belong to other mods.
 4. In VR, the item room below covers the items without a keyboard. Everything else still runs from the console or the flat window; put the headset on afterwards.
 
 ## Item room
@@ -42,7 +42,7 @@ Type in the F1 console, for example `Sandbox.Spawn Rope`. Names are the prefab n
 | `Sandbox.Stamina <current> <extra>`, `Sandbox.MaxStamina <max>` | Set the stamina bar and the bonus bar; max stamina is set through Hunger |
 | `Sandbox.AddStatus <Type> <amount>`, `Sandbox.ClearStatus <Type>` | Add a status the game's way (Cold, Poison, Injury...), or set one to 0 |
 | `Sandbox.PassOut` | Pass out (the game's own command); `Sandbox.Revive` wakes you |
-| `Sandbox.RunSetting <Setting> <value>` | Set a run setting for this run, not saved; `HelpingHand 1` is kick mode. Marks the run custom |
+| `Sandbox.RunSetting <Setting> <value>` | Set a run setting for this run, not saved; `HelpingHand 1` is kick mode. Marks the run custom until the title screen, where the old values and flag come back |
 | `Sandbox.GiveLeft <Item>`, `Sandbox.GiveRight <Item>` | Give an item into that VR hand |
 | `Sandbox.Wall` | Place a climbable test wall 3 m ahead |
 | `Sandbox.Room` | Open the item room (title or solo airport), or leave it |
@@ -110,7 +110,6 @@ With god mode on, repeat each in VR and then flat:
 - Ragdoll, pass out, `Sandbox.Revive`: the camera fades or detaches; no motion sickness trigger; control returns.
 - `Sandbox.Jump` to each segment and `Sandbox.Warp`: fade, rig follows the character, UI re-anchors.
 - `Sandbox.SetTime` at 0, 12, 21: lighting and fog render correctly in both eyes.
-- Multiplayer smoke test: host with the sandbox, a second client without it; spawned items and mobs show up for the client, nothing desyncs.
 
 ## Unattended self-test
 
@@ -556,7 +555,7 @@ Before `join`, A runs `mp.title` (waits up to 180 s for the title menu) and, in 
 
 `scene-button` (VR) runs after `ping` and before `board`: A grips a scene button only the host can press (a host-owned trigger) and expects the Blocked cue, and B must see no `RPCA_Trigger`. The social checkpoints from `feed-refuse` on run after `feed`, and `spectate` is last. Between them A asks B to wake when B is passed out, dead or struggling.
 
-A step that finds nothing to do (no wall or no food within 40 m, no host-owned scene button, no pack on B) is `SKIP`. `kick-mode` is also `SKIP` unless the host run has kick mode on (`Sandbox.RunSetting HelpingHand 1`). Run 4 (one VR client, one unmodded client, before the social and world checkpoints) gave 16 pass, 0 fail, 2 skip (`eat` and `feed`, no food in range), and `tools/mp-check.sh` printed no `FAIL`.
+A step that finds nothing to do (no wall or no food within 40 m, no host-owned scene button, no pack on B) is `SKIP`. `kick-mode` is also `SKIP` unless the host run has kick mode on (`HelpingHand`); `Sandbox.RunSetting` sets it only offline and for that run, so it cannot carry into a hosted lobby. Run 4 (one VR client, one unmodded client, before the social and world checkpoints) gave 16 pass, 0 fail, 2 skip (`eat` and `feed`, no food in range), and `tools/mp-check.sh` printed no `FAIL`.
 
 ### Observer requests
 

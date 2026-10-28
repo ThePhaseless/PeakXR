@@ -3,6 +3,27 @@ namespace PeakXR.Core.Tests;
 public class TurnTests
 {
     [Fact]
+    public void Snap_ReversingWithoutCentering_TurnsTheOtherWay()
+    {
+        var s = new SnapTurn();
+        Assert.Equal(30f, s.Update(0.9f, 0.01f));
+        Assert.Equal(-30f, s.Update(-0.9f, 0.01f));
+    }
+
+    [Fact]
+    public void Snap_RepeatTimerRestartsAfterStickEasesBelowActivate()
+    {
+        var s = new SnapTurn { RepeatDelay = 0.5f };
+        Assert.Equal(30f, s.Update(1f, 0.1f));
+        Assert.Equal(0f, s.Update(1f, 0.4f));
+        // Eased between the thresholds: no release, but the hold is over, so the delay starts afresh.
+        Assert.Equal(0f, s.Update(0.5f, 0.1f));
+        Assert.Equal(0f, s.Update(1f, 0.1f));
+        Assert.Equal(0f, s.Update(1f, 0.3f));
+        Assert.Equal(30f, s.Update(1f, 0.1f));
+    }
+
+    [Fact]
     public void Snap_FiresOnceWhenCrossingActivate()
     {
         var s = new SnapTurn();

@@ -86,10 +86,9 @@ public static partial class SandboxActions
     /// <summary>The object the last successful item or entity spawn created, so the self-test can check and remove it.</summary>
     internal static GameObject LastSpawned { get; private set; }
 
-    /// <summary>True when the sandbox may act: enabled, and either offline or we are the master client.
-    /// This keeps it out of other people's lobbies.</summary>
-    public static bool Active =>
-        Enabled && (PhotonNetwork.OfflineMode || PhotonNetwork.IsMasterClient);
+    /// <summary>True when the sandbox may act: enabled and offline (Play Solo). Hosting does not count: its spawns,
+    /// mobs and run settings would reach guests who never opted in.</summary>
+    public static bool Active => Enabled && PhotonNetwork.OfflineMode;
 
     public static bool GodMode { get; private set; }
 
@@ -114,7 +113,7 @@ public static partial class SandboxActions
         }
         if (!Active)
         {
-            Say("Sandbox only works offline or as the host.");
+            Say("Sandbox only works offline (Play Solo).");
             return false;
         }
         if (needCharacter && Character.localCharacter == null)
@@ -270,36 +269,51 @@ public static partial class SandboxActions
     )
     {
         int spawned = 0;
-        for (int i = 0; i < list.Count; i++)
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        try
         {
-            if (!Active)
-                break;
-
-            var p = new Vector3(positions[i].X, positions[i].Y, positions[i].Z);
-            // Drop each item onto the terrain below its grid slot so slopes do not bury or float it.
-            var hit = HelperFunctions.LineCheck(
-                p + Vector3.up * 8f,
-                p + Vector3.down * 40f,
-                HelperFunctions.LayerType.TerrainMap
-            );
-            if (hit.transform != null)
-                p = hit.point + Vector3.up * 0.3f;
-
-            if (
-                list[i] != null
-                && PhotonNetwork.InstantiateItemRoom(
-                    list[i].gameObject.name,
-                    p,
-                    Quaternion.identity
-                ) != null
-            )
-                spawned++;
-
-            if ((i + 1) % TestLinePerFrame == 0)
-                yield return null;
+            for (int i = 0; i < list.Count; i++)
+            {
+                // A scene change (a jump, the plane, quitting) would drop the rest into the next map.
+                if (!Active || UnityEngine.SceneManagement.SceneManager.GetActiveScene() != scene)
+                    break;
+                if (TrySpawnLineItem(list[i], positions[i]))
+                    spawned++;
+                if ((i + 1) % TestLinePerFrame == 0)
+                    yield return null;
+            }
         }
-        testLineRunning = false;
+        finally
+        {
+            testLineRunning = false;
+        }
         Say($"Test line done: {spawned} of {list.Count} items spawned.");
+    }
+
+    /// <summary>One test-line item, dropped onto the terrain below its grid slot so slopes do not bury or float it.
+    /// Skips prefabs without a PhotonView and logs a throwing one, as the item room does (ItemRoom.Spawn).</summary>
+    static bool TrySpawnLineItem(Item item, System.Numerics.Vector3 slot)
+    {
+        if (item == null || !item.TryGetComponent<PhotonView>(out _))
+            return false;
+        var p = new Vector3(slot.X, slot.Y, slot.Z);
+        var hit = HelperFunctions.LineCheck(
+            p + Vector3.up * 8f,
+            p + Vector3.down * 40f,
+            HelperFunctions.LayerType.TerrainMap
+        );
+        if (hit.transform != null)
+            p = hit.point + Vector3.up * 0.3f;
+        try
+        {
+            return PhotonNetwork.InstantiateItemRoom(item.gameObject.name, p, Quaternion.identity)
+                != null;
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"[sandbox] test line: {item.name} did not spawn: {e.Message}");
+            return false;
+        }
     }
 
     // ---------------------------------------------------------------- mobs and entities
@@ -372,12 +386,13 @@ public static partial class SandboxActions
                     return false;
                 }
                 go = PhotonNetwork.Instantiate(entry.Name, position, rotation, 0);
-                go?.GetComponent<PhotonView>()
-                    .RPC(
-                        "RPCA_InitTornado",
-                        RpcTarget.All,
-                        spawner.GetComponent<PhotonView>().ViewID
-                    );
+                if (go != null)
+                    go.GetComponent<PhotonView>()
+                        .RPC(
+                            "RPCA_InitTornado",
+                            RpcTarget.All,
+                            spawner.GetComponent<PhotonView>().ViewID
+                        );
                 break;
             }
 
@@ -389,7 +404,9 @@ public static partial class SandboxActions
                     return false;
                 }
                 go = PhotonNetwork.Instantiate(entry.Name, Vector3.zero, Quaternion.identity, 0);
-                go?.GetComponent<Bugfix>()?.AttachBug(Character.localCharacter.photonView.ViewID);
+                var bug = go != null ? go.GetComponent<Bugfix>() : null;
+                if (bug != null)
+                    bug.AttachBug(Character.localCharacter.photonView.ViewID);
                 break;
             }
 
@@ -631,6 +648,7 @@ public static partial class SandboxActions
     /// <summary>Called by the driver when the sandbox stops being active.</summary>
     internal static void Deactivate()
     {
+        RestoreRunSettings();
         if (GodMode)
         {
             GodMode = false;

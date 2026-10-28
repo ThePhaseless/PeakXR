@@ -199,7 +199,10 @@ internal sealed class ItemHoldInfo
         return ref leftFit;
     }
 
+    // A field, not a local: the method above returns it by ref.
+#pragma warning disable S1450
     private LeftFit leftFit;
+#pragma warning restore S1450
 
     /// <summary>
     /// Fits the left hold to the item's colliders (the drawn meshes are not readable at runtime; the colliders of

@@ -99,7 +99,9 @@ internal static class LidGesture
             : OnLid[0] && OnLid[1] && ReferenceEquals(Grabbed[0], Grabbed[1]);
         // A respawn chest takes both hands on its lid; a hand anywhere else on it counts as alone too (a low grip
         // holds it at 0 in BeforeInteraction), so it gets the same refusal instead of a silent hold.
-        var gripped = Grabbed[0] as RespawnChest ?? Grabbed[1] as RespawnChest;
+        var gripped = Grabbed[0] as RespawnChest;
+        if (gripped == null)
+            gripped = Grabbed[1] as RespawnChest;
         if (gripped != null)
         {
             if (ChestGate.Update(both ? 2 : 1, Time.deltaTime))
@@ -262,16 +264,6 @@ internal static class LidGesture
     /// <summary>The chest whose untracked hold was refused, so it is refused once per hold.</summary>
     private static Luggage refusedHold;
 
-    /// <summary>The hand whose grip presses the game's interact as the fallback, else the dominant hand.</summary>
-    private static bool InteractingHand()
-    {
-        if (PhysicalInteraction.HandAction(true) == GripPressAction.Interact)
-            return true;
-        if (PhysicalInteraction.HandAction(false) == GripPressAction.Interact)
-            return false;
-        return VRInput.LeftHanded;
-    }
-
     public static void BeforeInteraction(Interaction interaction)
     {
         var held = interaction.currentHeldInteractible as Luggage;
@@ -299,7 +291,7 @@ internal static class LidGesture
         {
             refusedHold = held;
             Affordance.Deny(
-                WorldHolds.HandOn(held, InteractingHand()),
+                WorldHolds.HandOn(held, WorldHolds.InteractingHand(VRInput.LeftHanded)),
                 held.Center(),
                 DenyReason.NeedsTwoHands,
                 default,

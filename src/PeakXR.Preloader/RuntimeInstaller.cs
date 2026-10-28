@@ -50,7 +50,8 @@ public sealed class RuntimeInstaller
     /// With <paramref name="openVRFallback"/> and mode OpenXR, the OpenVR plugin is installed next to
     /// it so the plugin can fall back to it when OpenXR does not start (it only registers subsystem
     /// descriptors; nothing starts until a loader asks). Returns the mode that is actually usable
-    /// (Disabled when the runtime files are missing).</summary>
+    /// (OpenVR when OpenXR's files are missing and the fallback is on, Disabled when the runtime files are
+    /// missing).</summary>
     public RuntimeMode Apply(RuntimeMode mode, bool openVRFallback = false)
     {
         _log.LogInfo($"Game data folder: {_dataDir}");
@@ -62,6 +63,15 @@ public sealed class RuntimeInstaller
         if (mode != RuntimeMode.Disabled)
         {
             activeManifest = Install(mode);
+            if (activeManifest == null && mode == RuntimeMode.OpenXR && openVRFallback)
+            {
+                activeManifest = Install(RuntimeMode.OpenVR);
+                if (activeManifest != null)
+                {
+                    _log.LogWarning("OpenXR runtime files are missing; starting with OpenVR");
+                    mode = RuntimeMode.OpenVR;
+                }
+            }
             if (activeManifest == null)
             {
                 _log.LogError(
@@ -180,7 +190,7 @@ public sealed class RuntimeInstaller
             _log.LogInfo($"Installing {rel}");
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dst));
         var tmp = dst + ".peakxr-tmp";
         File.Copy(src, tmp, true);
         if (File.Exists(dst))

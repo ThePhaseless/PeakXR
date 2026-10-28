@@ -62,9 +62,9 @@ internal sealed partial class SelfTestRunner
         // moving, "standing: body moved 0.551 m").
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
         // Run 24 leaned into the crashed plane's seats: face open ground first, or say what is in the way.
-        if (!ClearHeading(c, rig, out float turn, out string blocked))
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
-            Fail("no clear 1.3 m to lean into in any heading: " + blocked);
+            Fail("no clear 1.3 m to lean into in any heading: " + obstacle);
             yield break;
         }
         rig.RotateYaw(turn);
@@ -253,8 +253,6 @@ internal sealed partial class SelfTestRunner
         leanHip = new Bounds(c.refs.hip.Rig.position, Vector3.zero);
     }
 
-    /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
-    /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
     int extremeLines;
 
     /// <summary>
@@ -280,6 +278,8 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>Eases the scripted lean to <paramref name="to"/> over <paramref name="seconds"/>, holds it for
+    /// <paramref name="hold"/> seconds, and tracks the body root, rig origin and hip every frame.</summary>
     IEnumerator Track(Character c, VRRig rig, Vector3 to, float seconds, float hold)
     {
         var from = leanOffset;
@@ -398,16 +398,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Ground height under <paramref name="at"/>, NaN without ground within 3 m.</summary>
     static float GroundY(Vector3 at) =>
-        Physics.Raycast(
-            at + Vector3.up * 1f,
-            Vector3.down,
-            out var hit,
-            4f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? hit.point.y
-            : float.NaN;
+        Terrain(at + Vector3.up * 1f, Vector3.down, 4f, out var hit) ? hit.point.y : float.NaN;
 
     void Drift(string phase, List<string> fails, List<string> notes, float maxView)
     {

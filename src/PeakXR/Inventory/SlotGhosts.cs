@@ -203,7 +203,9 @@ internal sealed class SlotGhosts : MonoBehaviour
     /// otherwise hide the rings from the eyes, as it did in the headset.</summary>
     private static Material TexturedMaterial(Texture texture, int queue)
     {
-        var shader = Shader.Find("UI/Default") ?? Shader.Find("Sprites/Default");
+        var shader = Shader.Find("UI/Default");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
         var material = new Material(shader) { mainTexture = texture, renderQueue = queue };
         material.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
         return material;

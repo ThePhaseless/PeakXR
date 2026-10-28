@@ -174,10 +174,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
         // The hand the cue belongs to: the one at the mouth, else the wrist.
         var ui = PeakXR.UI.World.UIWorldFeature.Settings;
         bool wristLeft = ui != null ? ui.WristLeft : VRInput.OffHandLeft;
-        bool cueLeft =
-            leftMute || leftTalk ? true
-            : rightMute || rightTalk ? false
-            : wristLeft;
+        bool cueLeft = leftMute || leftTalk || (!rightMute && !rightTalk && wristLeft);
         var cueHand = rig.Hand(cueLeft);
         Transform atMouth =
             leftMute || leftTalk ? rig.LeftHand

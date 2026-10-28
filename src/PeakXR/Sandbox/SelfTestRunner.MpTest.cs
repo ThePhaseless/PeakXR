@@ -311,16 +311,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Tilt (deg) of the terrain under <paramref name="from"/>; 90 with no ground within 3 m.</summary>
     static float Slope(Vector3 from) =>
-        Physics.Raycast(
-            from,
-            Vector3.down,
-            out var hit,
-            3f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
-            ? Vector3.Angle(hit.normal, Vector3.up)
-            : 90f;
+        Terrain(from, Vector3.down, 3f, out var hit) ? Vector3.Angle(hit.normal, Vector3.up) : 90f;
 
     /// <summary>A holding hand's bone off its tracked hand by at most this (m) counts as settled.</summary>
     const float HandSettledGap = 0.1f;
@@ -586,16 +577,7 @@ internal sealed partial class SelfTestRunner
         // Only an empty hand fires (PingInput.cs:42-52) and the Airport puts a passport in the right hand.
         bool left = HeldItem() != null && !LocalHold.ItemInLeftHand;
         var aim = host.Center + Flat(c.Center - host.Center) * 1.5f;
-        if (
-            Physics.Raycast(
-                aim + Vector3.up * 2f,
-                Vector3.down,
-                out var ground,
-                6f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground))
             aim = ground.point;
         MpPingProbe.Last = null;
         HeadFrame(out var head, out var forward, out var right);
@@ -752,16 +734,7 @@ internal sealed partial class SelfTestRunner
                 + Mathf.Abs(dir.z) * bounds.extents.z
                 + KioskStandOff;
             var spot = new Vector3(bounds.center.x, top, bounds.center.z) + dir * reach;
-            if (
-                Physics.Raycast(
-                    spot,
-                    Vector3.down,
-                    out var floor,
-                    top - bounds.min.y + 1f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (Terrain(spot, Vector3.down, top - bounds.min.y + 1f, out var floor))
                 spots.Add(floor.point);
         }
         spots.Sort((a, b) => FlatDistance(a, c.Center).CompareTo(FlatDistance(b, c.Center)));
@@ -876,7 +849,9 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        var item = NearestGround(i => IsFood(i) == food) ?? NearestGround(_ => true);
+        var item = NearestGround(i => IsFood(i) == food);
+        if (item == null)
+            item = NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }
@@ -918,7 +893,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator PickUpAgain()
     {
-        var item = OnGround(mpItem) ?? NearestGround(_ => true);
+        var item = OnGround(mpItem);
+        if (item == null)
+            item = NearestGround(_ => true);
         yield return GrabWorld(item);
         mpItem = HeldItem();
     }
@@ -1071,16 +1048,7 @@ internal sealed partial class SelfTestRunner
         var from = face.point + flat * 0.6f;
         for (float up = 0f; up <= 1.001f; up += 0.25f)
         {
-            if (
-                !Physics.Raycast(
-                    from + Vector3.up * up,
-                    -flat,
-                    out var hit,
-                    1.6f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            if (!Terrain(from + Vector3.up * up, -flat, 1.6f, out var hit))
                 return false;
             float a = Vector3.Angle(hit.normal, Vector3.up);
             if (a < MinWallAngle || a > MaxPullAngle)
@@ -1750,16 +1718,7 @@ internal sealed partial class SelfTestRunner
         if (item == null)
             return false;
         var at = item.Center();
-        if (
-            !Physics.Raycast(
-                at + Vector3.up * 0.5f,
-                Vector3.down,
-                out var ground,
-                3f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!Terrain(at + Vector3.up * 0.5f, Vector3.down, 3f, out var ground))
             return false;
         if (Vector3.Angle(ground.normal, Vector3.up) > FetchSlope)
             return false;
@@ -1779,16 +1738,7 @@ internal sealed partial class SelfTestRunner
             return "item gone";
         var at = item.Center();
         var state = $"{item.itemState}, kinematic {(item.rig != null && item.rig.isKinematic)}";
-        if (
-            !Physics.Raycast(
-                at + Vector3.up * 0.5f,
-                Vector3.down,
-                out var ground,
-                3f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (!Terrain(at + Vector3.up * 0.5f, Vector3.down, 3f, out var ground))
             return $"no terrain within 2.5 m under it ({state})";
         return F(
             $"lies on {ground.collider.name}, {Vector3.Angle(ground.normal, Vector3.up):0} deg slope, centre {at.y - ground.point.y:0.00} m above it ({state})"

@@ -28,7 +28,7 @@ Clean-room boundary: code comes from your own reasoning, the game decompile, Uni
 
 mise provides everything, rootless: run `mise trust` once in a new worktree, then `mise run build` and `mise run test` (or `mise exec -- dotnet ...`). Game folder writes (`mise run deploy`) belong to the user.
 
-Run `mise run format` (CSharpier) before every commit; `mise run format-check` must be clean. Analyzers (Meziantou, Microsoft.Unity, BUTR.Harmony, CA rules at `latest-recommended`) run in every build; with `CI=true` all warnings are errors, so fix them or tune `.editorconfig` with a one-line reason. Never use default interface methods or `[ModuleInitializer]` (Unity Mono). `mise run coverage` writes cobertura XML to `TestResults/`.
+Run `mise run format` (CSharpier) before every commit; `mise run format-check` must be clean. Analyzers run in every build: CA rules at `latest-all`, enforced IDE style rules, Roslynator, SonarAnalyzer, Meziantou, and for the plugin Microsoft.Unity and BUTR.Harmony. With `CI=true` all warnings are errors: fix them, or turn a rule off in `.editorconfig` (grouped by analyzer) or with a `#pragma` around a false positive, each with a one-line reason. Test a `UnityEngine.Object` with `== null` / `!= null`, which see destroyed objects (UNT0007/0008/0023/0029 are errors). Never use default interface methods or `[ModuleInitializer]` (Unity Mono). `mise run coverage` writes cobertura XML to `TestResults/`.
 
 ## Done means
 

@@ -1,6 +1,3 @@
-using System;
-using System.Numerics;
-
 namespace PeakXR.Core.Tests;
 
 public class HeadGlanceTests

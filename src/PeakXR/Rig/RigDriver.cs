@@ -440,6 +440,12 @@ internal sealed class RigDriver : MonoBehaviour
             rig.Scale = 1f;
             haveScale = false;
             ResetTakeover();
+            // The stage places the origin itself (TitleStage re-latches on Recentered).
+            if (pendingRecenter)
+            {
+                pendingRecenter = false;
+                rig.RaiseRecentered();
+            }
         }
         else
             PlaceOrigin(c, dt);
@@ -548,12 +554,11 @@ internal sealed class RigDriver : MonoBehaviour
     {
         // A scripted self-test head (vr.45 leans, vr.40 crouches) must move the view and the avatar's lean like a
         // real one; run 26 read the static HMD here, so the avatar never saw the lean the hands and room-scale did.
-        if (VRInput.TestOverride != null && VRInput.HeadTracked)
-        {
-            headTracked = true;
-            rig.Head.SetLocalPositionAndRotation(VRInput.HeadPosition, VRInput.HeadRotation);
-        }
-        else if (devices.TryGetHead(out var p, out var r))
+        if (
+            VRInput.HeadTracked
+            && VRInput.TestOverride == null
+            && devices.TryGetHead(out var p, out var r)
+        )
         {
             headTracked = true;
             rig.Head.SetLocalPositionAndRotation(p, r);
@@ -589,7 +594,11 @@ internal sealed class RigDriver : MonoBehaviour
         // Without an aim pose of its own, a hand aims from its grip: a runtime (the OpenVR plugin) out of the
         // controller's front (GripFrame.AimFromGrip), a scripted self-test hand along its fingers (GripFrame.FromHand,
         // SelfTestRunner.HandLook), never up the handle.
-        if (VRInput.TestOverride == null && devices.TryGetAim(left, out var p, out var r))
+        if (
+            VRInput.TestOverride == null
+            && h.Tracked
+            && devices.TryGetAim(left, out var p, out var r)
+        )
             aim.SetLocalPositionAndRotation(p + drop, r);
         else if (h.Tracked)
             aim.SetLocalPositionAndRotation(
@@ -954,6 +963,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             // The first placement: nothing to fade from yet.
             rig.Scale = wantScale;
+            ApplyScale(rig.Scale);
             haveScale = true;
             LogScale();
         }
@@ -975,18 +985,25 @@ internal sealed class RigDriver : MonoBehaviour
             staticPoint = source != null ? source.position : anchor;
             staticSourceLast = staticPoint;
             staticSince = Time.unscaledTime;
-            FaceStaticView(source);
             snap = true;
             if (pendingRecenter)
+            {
                 Recenter(c, HeightCause.Recenter);
+                // Back on the body, the recenter's yaw replaces the one saved before the shot.
+                if (shownKind != ViewKind.Static)
+                    haveSavedYaw = false;
+            }
             else if (pendingHeight)
                 CalibrateHeight();
             pendingRecenter = false;
+            // After the recenter, which would otherwise turn a still shot's viewer away from the cutscene camera.
+            FaceStaticView(source);
             // The recenter or calibration just above may have measured a new height: one blink carries both.
             wantScale = WantScale();
             if (!Mathf.Approximately(wantScale, rig.Scale))
             {
                 rig.Scale = wantScale;
+                ApplyScale(rig.Scale);
                 LogScale();
             }
         }

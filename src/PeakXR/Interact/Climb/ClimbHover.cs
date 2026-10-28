@@ -87,8 +87,10 @@ internal static class ClimbHover
 
     private static LineRenderer Build(bool left)
     {
-        readyMaterial ??= UIMaterials.Create(Chalk, drawOnTop: false, renderQueue: 3100);
-        faintMaterial ??= UIMaterials.Create(FaintChalk, drawOnTop: false, renderQueue: 3100);
+        if (readyMaterial == null)
+            readyMaterial = UIMaterials.Create(Chalk, drawOnTop: false, renderQueue: 3100);
+        if (faintMaterial == null)
+            faintMaterial = UIMaterials.Create(FaintChalk, drawOnTop: false, renderQueue: 3100);
         var go = new GameObject(left ? "PeakXR_ClimbHoverL" : "PeakXR_ClimbHoverR");
         Object.DontDestroyOnLoad(go);
         var line = go.AddComponent<LineRenderer>();

@@ -46,7 +46,11 @@ abstract class ManagedXRBackend : XRBackend
         return manager.activeLoader != null;
     }
 
-    public override void StartSubsystems() => manager?.StartSubsystems();
+    public override void StartSubsystems()
+    {
+        if (manager != null)
+            manager.StartSubsystems();
+    }
 
     public override void Shutdown()
     {

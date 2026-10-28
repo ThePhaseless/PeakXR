@@ -370,16 +370,11 @@ internal static class FireGestures
                 : "none";
         Plugin.Log.LogDebug(
             $"[interact.light] f{Time.frameCount} {item.name}: lit {lit}, flame kind {flameKind}, target "
-                + $"{LightName(target)} at {distance:0.00} m (enter {TouchEnter:0.00}), touching {touching} "
+                + $"{WorldHolds.Name(target)} at {distance:0.00} m (enter {TouchEnter:0.00}), touching {touching} "
                 + $"(interact requested {touching}); nearest listed campfire within 2 m {nearText} of "
-                + $"{(all != null ? all.Count : -1)} listed; hovered {LightName(hovered)}, hold on {LightName(held)}"
+                + $"{(all != null ? all.Count : -1)} listed; hovered {WorldHolds.Name(hovered)}, hold on {WorldHolds.Name(held)}"
         );
     }
-
-    private static string LightName(IInteractible it) =>
-        it is Component comp && comp != null ? comp.name
-        : it == null ? "nothing"
-        : it.GetType().Name;
 
     /// <summary>
     /// An unlit campfire lights only with every living scout within <c>moraleBoostRadius</c> of it

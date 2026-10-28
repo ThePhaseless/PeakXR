@@ -255,7 +255,7 @@ internal sealed partial class SelfTestRunner
                     Second = info.HoldGap(left, false),
                     // Welded, the hand body is on the grip; free of the weld it follows the controller instead.
                     HandOff =
-                        driver != null && !driver.HeldItemFree
+                        driver != null && !driver.HeldReleased
                             ? Vector3.Distance(body.position, grip)
                             : float.NaN,
                     MidIn = Vector3.Dot(mid - hand.position, head.right) * inward,
@@ -692,7 +692,7 @@ internal sealed partial class SelfTestRunner
         // A filtered run skips the wrapper's setup and teardown too, not only the step.
         if (Filtered(id))
             yield break;
-        var item = FindItem(new List<Item>(SandboxActions.Items), fragment);
+        var item = FindItem(SandboxActions.Items, fragment);
         if (item == null)
         {
             if (VRRun)
@@ -970,7 +970,9 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var head = VRRig.Instance.Head;
         var spot = head.position + Flat(head.forward) * 0.8f + Vector3.down * 0.2f;
-        var apple = FindItem(new List<Item>(SandboxActions.Items), AppleFragment) ?? prefab;
+        var apple = FindItem(SandboxActions.Items, AppleFragment);
+        if (apple == null)
+            apple = prefab;
         if (!SandboxActions.SpawnItemAt(apple, spot) || SandboxActions.LastSpawned == null)
         {
             Fail(SandboxActions.LastMessage);
@@ -1087,16 +1089,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         string on = "no ground hit";
-        if (
-            Physics.Raycast(
-                stand + Vector3.up * 3f,
-                Vector3.down,
-                out var ground,
-                8f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        if (Terrain(stand + Vector3.up * 3f, Vector3.down, 8f, out var ground))
         {
             stand = ground.point + Vector3.up * 0.1f;
             on = "on " + ground.collider.name;
@@ -2374,14 +2367,7 @@ internal sealed partial class SelfTestRunner
             AllYaws,
             () =>
                 SpoolRay(vr, out var origin, out var aim)
-                && Physics.Raycast(
-                    origin,
-                    aim,
-                    out var at,
-                    tier.maxAnchorGhostDistance,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                && Terrain(origin, aim, tier.maxAnchorGhostDistance, out var at)
                 && Vector3.Distance(at.point, c.Center) < tier.maxAnchorDistance - 0.3f
         );
     }
@@ -2419,7 +2405,8 @@ internal sealed partial class SelfTestRunner
         {
             Item prefab = null;
             foreach (var fragment in names)
-                prefab ??= FindItem(all, fragment);
+                if (prefab == null)
+                    prefab = FindItem(all, fragment);
             if (prefab == null)
             {
                 missing.Add(names[0]);
@@ -2535,10 +2522,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>interact.items' face spots in world space (HeldGestures: a book 0.35 m ahead of the eyes and 0.12 m
     /// below, a commune item 0.12 m ahead).</summary>
-    static Vector3 FaceSpot(Transform head, bool read) =>
-        read
-            ? ReadZone.Spot(head.position.N(), head.forward.N()).U()
-            : head.position + head.forward * 0.12f;
+    static Vector3 FaceSpot(Transform head, bool read) => HeldGestures.FaceSpot(head, read);
 
     /// <summary>Highest cast progress <see cref="FaceCastUntil"/> saw.</summary>
     float faceProgress;
@@ -3001,12 +2985,11 @@ internal sealed partial class SelfTestRunner
             stepSkip = "ui.affordance not installed";
             yield break;
         }
-        var prefab =
-            FirstItem(i =>
-                i.canUseOnFriend
-                && i.mustUseOnFriend
-                && i.GetComponent<Action_RestoreHunger>() != null
-            ) ?? FirstItem(i => i.canUseOnFriend && i.mustUseOnFriend);
+        var prefab = FirstItem(i =>
+            i.canUseOnFriend && i.mustUseOnFriend && i.GetComponent<Action_RestoreHunger>() != null
+        );
+        if (prefab == null)
+            prefab = FirstItem(i => i.canUseOnFriend && i.mustUseOnFriend);
         if (prefab == null)
         {
             stepSkip = "no item that must be used on a friend";

@@ -254,13 +254,11 @@ internal sealed partial class SelfTestRunner
                 gap.y = 0f;
                 if (
                     gap.magnitude <= 0.6f
-                    || !Physics.Raycast(
+                    || !Terrain(
                         near - gap.normalized * 0.5f + Vector3.up * 2f,
                         Vector3.down,
-                        out var ground,
                         6f,
-                        HelperFunctions.terrainMapMask,
-                        QueryTriggerInteraction.Ignore
+                        out var ground
                     )
                 )
                     break;
@@ -321,11 +319,6 @@ internal sealed partial class SelfTestRunner
             );
         Note(note);
     }
-
-    /// <summary>The drawn point of <paramref name="vine"/> nearest <paramref name="eye"/>, where a hand grips it (the
-    /// same drawn-point offset as the vine steps' spot, <c>colliderOffset</c>, JungleVine.cs:296).</summary>
-    static Vector3 NearestVineSpot(JungleVine vine, Vector3 eye) =>
-        NearestVineSpot(vine, eye, null);
 
     /// <summary>The vine's point nearest <paramref name="eye"/>, skipping points in the face (under 0.3 m) and,
     /// with <paramref name="avoid"/>, within 0.45 m of it: run 49's free hand gripped the chain beside the held
@@ -943,14 +936,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The ground under <paramref name="p"/>, as <c>WarpPlayerRPC</c> wants it.</summary>
     static Vector3 StandUnder(Vector3 p) =>
-        Physics.Raycast(
-            p + Vector3.up * 2f,
-            Vector3.down,
-            out var hit,
-            12f,
-            HelperFunctions.terrainMapMask,
-            QueryTriggerInteraction.Ignore
-        )
+        Terrain(p + Vector3.up * 2f, Vector3.down, 12f, out var hit)
             ? hit.point + Vector3.up * 0.1f
             : p;
 }

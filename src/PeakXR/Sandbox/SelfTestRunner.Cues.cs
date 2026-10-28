@@ -55,15 +55,14 @@ internal sealed partial class SelfTestRunner
     )
     {
         cueNote = null;
-        string why;
         while (
-            !CueLog.Capture.Fired(left, reason, since, tint, out why) && CueLog.Now < since + within
+            !CueLog.Capture.Fired(left, reason, since, tint, out _) && CueLog.Now < since + within
         )
             yield return null;
         // A glancing head may still be turning when the cue fires; judge the view once the eyes are on the hand.
         if (seen)
             yield return GlanceSettled(0.4f);
-        if (!CueLog.Capture.Fired(left, reason, since, tint, out why))
+        if (!CueLog.Capture.Fired(left, reason, since, tint, out string why))
             Fail(
                 $"{reason} cue on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}"
             );
@@ -131,10 +130,9 @@ internal sealed partial class SelfTestRunner
     {
         // As ExpectCue: a failed feel must not leave the previous cue's description for the step's note.
         cueNote = null;
-        string why;
-        while (!CueLog.Capture.Felt(left, feel, since, out why) && CueLog.Now < since + within)
+        while (!CueLog.Capture.Felt(left, feel, since, out _) && CueLog.Now < since + within)
             yield return null;
-        if (CueLog.Capture.Felt(left, feel, since, out why))
+        if (CueLog.Capture.Felt(left, feel, since, out string why))
             cueNote = why;
         else
             Fail($"{feel} on the {(left ? "left" : "right")} hand within {within:0.0} s: {why}");
@@ -142,10 +140,9 @@ internal sealed partial class SelfTestRunner
 
     IEnumerator ExpectNoCue(bool left, float since, float within = 1f)
     {
-        string why;
-        while (CueLog.Capture.Quiet(left, since, out why) && CueLog.Now < since + within)
+        while (CueLog.Capture.Quiet(left, since, out _) && CueLog.Now < since + within)
             yield return null;
-        if (!CueLog.Capture.Quiet(left, since, out why))
+        if (!CueLog.Capture.Quiet(left, since, out string why))
             Fail($"expected no cue on the {(left ? "left" : "right")} hand: {why}");
     }
 }

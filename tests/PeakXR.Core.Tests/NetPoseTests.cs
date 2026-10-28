@@ -414,7 +414,7 @@ public class HandshakeTests
     [Fact]
     public void ProtocolMatchesCodecVersion()
     {
-        Assert.Equal((int)PoseCodec.Version, Handshake.Protocol);
+        Assert.Equal(PoseCodec.Version, Handshake.Protocol);
     }
 }
 
@@ -560,14 +560,18 @@ public class RemotePoseStreamTests
     {
         var rng = new Random(5);
         var s = new RemotePoseStream();
-        for (int i = 0; i < 2000; i++)
+        var thrown = Record.Exception(() =>
         {
-            var d = new byte[rng.Next(0, 80)];
-            rng.NextBytes(d);
-            if (d.Length > 0)
-                d[0] = PoseCodec.Version;
-            s.Accept(d, rng.Next(-5, d.Length + 5), i * 0.05);
-        }
+            for (int i = 0; i < 2000; i++)
+            {
+                var d = new byte[rng.Next(0, 80)];
+                rng.NextBytes(d);
+                if (d.Length > 0)
+                    d[0] = PoseCodec.Version;
+                s.Accept(d, rng.Next(-5, d.Length + 5), i * 0.05);
+            }
+        });
+        Assert.Null(thrown);
     }
 }
 

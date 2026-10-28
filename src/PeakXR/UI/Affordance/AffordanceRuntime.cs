@@ -8,7 +8,6 @@ using PeakXR.VR;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.UI;
 
 namespace PeakXR.UI.Affordances;
 

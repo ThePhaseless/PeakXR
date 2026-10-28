@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+# The plugin compiles against the game's own assemblies, which are not in this repository, so CI checks
+# formatting and the game-independent Core library and its tests. Releases are built locally (tools/release.sh).
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    env:
+      # Analyzer warnings are errors (Directory.Build.props).
+      CI: "true"
+      MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: mise run format-check
+      - run: mise run test-core

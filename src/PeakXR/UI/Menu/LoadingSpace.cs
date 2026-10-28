@@ -5,7 +5,6 @@ using PeakXR.UI.World;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.UI;
 using Zorro.Core;

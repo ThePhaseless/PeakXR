@@ -86,6 +86,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         VR.VRInput.TestOverride = null;
         SandboxActions.Forced = false;
         SelfTestEndGamePatch.Hold = false;
+        SelfTestCampfirePatch.Hold = false;
+        SelfTestInputPatch.HoldPrimary = false;
+        SelfTestInputPatch.DropOnce = false;
         Interact.Binoculars.BinocularsConfig.ForceHold = false;
         Application.logMessageReceived -= OnLog;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
@@ -702,14 +705,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             var eye = c.Head;
             var ahead = c.Center + forward * ApproachStart;
             if (
-                !Physics.Raycast(
-                    ahead + Vector3.up * 10f,
-                    Vector3.down,
-                    out var ground,
-                    30f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
+                !Terrain(ahead + Vector3.up * 10f, Vector3.down, 30f, out var ground)
                 || Physics.Linecast(
                     eye,
                     ground.point + Vector3.up * 1.5f,
@@ -1176,7 +1172,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         {
             File.AppendAllText(logPath, line + "\n");
         }
-        catch (IOException) { }
+        catch (IOException)
+        {
+            // The line is already in the BepInEx log; a locked report file must not stop the run.
+        }
     }
 
     void Abort(string reason)
@@ -1271,6 +1270,42 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         return (nl >= 0 ? text.Substring(0, nl) : text).Trim();
     }
 
+    /// <summary>A ray against terrain and map colliders, triggers ignored: the cast the game's climbing uses.</summary>
+    static bool Terrain(Vector3 from, Vector3 dir, float range, out RaycastHit hit) =>
+        Physics.Raycast(
+            from,
+            dir,
+            out hit,
+            range,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+
+    /// <summary>Spawns the item named <paramref name="fragment"/> at <paramref name="at"/>, held still (kinematic) and
+    /// cleaned up after the step; null after a <see cref="Fail"/>.</summary>
+    Item SpawnTestItem(string fragment, Vector3 at)
+    {
+        var prefab = FindItem(SandboxActions.Items, fragment);
+        if (prefab == null || !SandboxActions.SpawnItemAt(prefab, at))
+        {
+            Fail(prefab == null ? $"no {fragment} item" : SandboxActions.LastMessage);
+            return null;
+        }
+        spawned.Add(SandboxActions.LastSpawned);
+        var world =
+            SandboxActions.LastSpawned != null
+                ? SandboxActions.LastSpawned.GetComponent<Item>()
+                : null;
+        if (world == null)
+        {
+            Fail($"spawned {fragment} has no Item");
+            return null;
+        }
+        if (world.rig != null)
+            world.rig.isKinematic = true;
+        return world;
+    }
+
     static Item HeldItem()
     {
         var c = Character.localCharacter;
@@ -1286,7 +1321,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// <summary>The item named exactly <paramref name="fragment"/>, else the first whose name contains it. "Compass"
     /// matched "Cheat Compass" first, whose use warps to Caldera (Action_WarpToBiome.cs:33) and shut the beach
     /// segment for the rest of VR run 27.</summary>
-    static Item FindItem(List<Item> items, string fragment)
+    static Item FindItem(IReadOnlyList<Item> items, string fragment)
     {
         foreach (var item in items)
         {

@@ -100,13 +100,13 @@ public class HammerCastTests
     const float Dt = 0.02f;
 
     static bool Completes(int strikes, float elapsed) =>
-        HammerCast.TickBeforeUpdate(strikes, 3, Cast, Dt, elapsed) + Dt >= Cast;
+        HammerCast.TickBeforeUpdate(strikes, 3, Cast, elapsed) + Dt >= Cast;
 
     [Fact]
     public void NoStrikes_HoldPlacesAtTheGamesTime()
     {
         // External review #7: hammering must never be slower than holding the button.
-        TestUtil.Near(0.7f, HammerCast.TickBeforeUpdate(0, 3, Cast, Dt, 0.7f), 1e-5f);
+        TestUtil.Near(0.7f, HammerCast.TickBeforeUpdate(0, 3, Cast, 0.7f), 1e-5f);
         Assert.False(Completes(0, 1.4f));
         Assert.True(Completes(0, 1.49f));
     }
@@ -115,7 +115,7 @@ public class HammerCastTests
     public void PartialStrikes_NeverSlowTheHold()
     {
         for (float e = 0f; e < Cast; e += 0.05f)
-            Assert.True(HammerCast.TickBeforeUpdate(2, 3, Cast, Dt, e) >= e - 1e-5f);
+            Assert.True(HammerCast.TickBeforeUpdate(2, 3, Cast, e) >= e - 1e-5f);
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class HammerCastTests
 
     [Fact]
     public void NoCastTime_StaysAboveZero() =>
-        Assert.True(HammerCast.TickBeforeUpdate(3, 3, 0f, Dt, 0.5f) > 0f);
+        Assert.True(HammerCast.TickBeforeUpdate(3, 3, 0f, 0.5f) > 0f);
 }
 
 public class GliderSteerTests

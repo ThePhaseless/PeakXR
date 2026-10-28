@@ -1,6 +1,5 @@
 using System.Reflection;
 using HarmonyLib;
-using Peak;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
@@ -145,18 +144,27 @@ internal static partial class WorldHolds
     }
 
     /// <summary>Flare.TriggerHelicopter (Flare.cs:43, PunRPC on every client): sent by the flare its holder lit at
-    /// the peak (Flare.cs:36-38).</summary>
+    /// the peak (Flare.cs:36-38). Every client's Flare.Update sends it until its own PeakHandler.summonedHelicopter
+    /// is set (Flare.cs:36, set by SummonHelicopter, PeakHandler.cs:61), so it arrives once per lobby player: only the
+    /// first call, the one that summons, gets the notice.</summary>
     [HarmonyPatch]
     internal static class FlareSummon
     {
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Flare), "TriggerHelicopter");
 
-        private static void Postfix(Flare __instance)
+        private static void Prefix(out bool __state)
+        {
+            var peak = Zorro.Core.Singleton<PeakHandler>.Instance;
+            __state = peak != null && peak.summonedHelicopter;
+        }
+
+        private static void Postfix(Flare __instance, bool __state)
         {
             var item = __instance.item;
             if (
-                !VRSession.Active
+                __state
+                || !VRSession.Active
                 || item == null
                 || item.holderCharacter == null
                 || !item.holderCharacter.IsLocal

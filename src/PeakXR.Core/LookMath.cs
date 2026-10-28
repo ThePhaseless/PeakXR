@@ -1,84 +1,83 @@
 using System;
 using System.Numerics;
 
-namespace PeakXR.Core
+namespace PeakXR.Core;
+
+/// <summary>Converts headset rotation to PEAK's look values.</summary>
+public static class LookMath
 {
-    /// <summary>Converts headset rotation to PEAK's look values.</summary>
-    public static class LookMath
+    public const float MaxPitch = 85f;
+
+    /// <summary>Wraps an angle in degrees to (-180, 180].</summary>
+    public static float WrapDegrees(float deg)
     {
-        public const float MaxPitch = 85f;
+        deg %= 360f;
+        if (deg <= -180f)
+            deg += 360f;
+        else if (deg > 180f)
+            deg -= 360f;
+        return deg;
+    }
 
-        /// <summary>Wraps an angle in degrees to (-180, 180].</summary>
-        public static float WrapDegrees(float deg)
+    /// <summary>
+    /// PEAK look values from a world-space head rotation: X = yaw in degrees wrapped to (-180, 180],
+    /// Y = pitch in degrees with positive looking up, clamped to [-85, 85]. Roll is ignored.
+    /// </summary>
+    public static Vector2 ToLookValues(Quaternion hmdWorldRot)
+    {
+        float yaw = WrapDegrees(UnityQuat.HeadingRadians(hmdWorldRot) * UnityQuat.Rad2Deg);
+        Vector3 f = UnityQuat.Rotate(hmdWorldRot, new Vector3(0f, 0f, 1f));
+        float pitch = MathF.Asin(Math.Clamp(f.Y, -1f, 1f)) * UnityQuat.Rad2Deg;
+        return new Vector2(yaw, Math.Clamp(pitch, -MaxPitch, MaxPitch));
+    }
+
+    /// <summary>Headings (degrees from the game's spawn look) a new body may face, nearest first, round the
+    /// whole circle: the spawn turn happens behind the loading screen, so any of them is free.</summary>
+    public static readonly float[] SpawnYawSteps =
+    {
+        0f,
+        30f,
+        -30f,
+        60f,
+        -60f,
+        90f,
+        -90f,
+        120f,
+        -120f,
+        150f,
+        -150f,
+        180f,
+    };
+
+    /// <summary>The first of several headings (ordered by preference) whose nearest wall is at least
+    /// <paramref name="enough"/> metres away, else the most open one.</summary>
+    public static int PickOpen(float[] wallDepths, float enough)
+    {
+        int best = 0;
+        for (int i = 0; i < wallDepths.Length; i++)
         {
-            deg %= 360f;
-            if (deg <= -180f)
-                deg += 360f;
-            else if (deg > 180f)
-                deg -= 360f;
-            return deg;
+            if (wallDepths[i] >= enough)
+                return i;
+            if (wallDepths[i] > wallDepths[best])
+                best = i;
         }
+        return best;
+    }
 
-        /// <summary>
-        /// PEAK look values from a world-space head rotation: X = yaw in degrees wrapped to (-180, 180],
-        /// Y = pitch in degrees with positive looking up, clamped to [-85, 85]. Roll is ignored.
-        /// </summary>
-        public static Vector2 ToLookValues(Quaternion hmdWorldRot)
-        {
-            float yaw = WrapDegrees(UnityQuat.HeadingRadians(hmdWorldRot) * UnityQuat.Rad2Deg);
-            Vector3 f = UnityQuat.Rotate(hmdWorldRot, new Vector3(0f, 0f, 1f));
-            float pitch = MathF.Asin(Math.Clamp(f.Y, -1f, 1f)) * UnityQuat.Rad2Deg;
-            return new Vector2(yaw, Math.Clamp(pitch, -MaxPitch, MaxPitch));
-        }
+    /// <summary>Past this yaw the synced half float steps 8 degrees or more (CharacterSyncData.cs:62).</summary>
+    public const float YawSafetyLimit = 8192f;
 
-        /// <summary>Headings (degrees from the game's spawn look) a new body may face, nearest first, round the
-        /// whole circle: the spawn turn happens behind the loading screen, so any of them is free.</summary>
-        public static readonly float[] SpawnYawSteps =
-        {
-            0f,
-            30f,
-            -30f,
-            60f,
-            -60f,
-            90f,
-            -90f,
-            120f,
-            -120f,
-            150f,
-            -150f,
-            180f,
-        };
-
-        /// <summary>The first of several headings (ordered by preference) whose nearest wall is at least
-        /// <paramref name="enough"/> metres away, else the most open one.</summary>
-        public static int PickOpen(float[] wallDepths, float enough)
-        {
-            int best = 0;
-            for (int i = 0; i < wallDepths.Length; i++)
-            {
-                if (wallDepths[i] >= enough)
-                    return i;
-                if (wallDepths[i] > wallDepths[best])
-                    best = i;
-            }
-            return best;
-        }
-
-        /// <summary>Past this yaw the synced half float steps 8 degrees or more (CharacterSyncData.cs:62).</summary>
-        public const float YawSafetyLimit = 8192f;
-
-        /// <summary>
-        /// <paramref name="next"/> unwrapped to the turn nearest <paramref name="previous"/>. Remote peers linearly
-        /// interpolate the synced yaw from its current value (CharacterSyncer.cs:93, :139-141), so a jump from 179 to
-        /// -179, or any pull-back by whole turns, spins the avatar on their screens. Like vanilla mouse look
-        /// (CharacterMovement.cs:286) the value accumulates. With <paramref name="rebase"/> (nobody can see the
-        /// avatar) it wraps to one turn; past <see cref="YawSafetyLimit"/> it wraps anyway, before the half float
-        /// gets coarse and long before it overflows.
-        /// </summary>
-        public static float ContinueYaw(float previous, float next, bool rebase = false)
-        {
-            float yaw = previous + WrapDegrees(next - previous);
-            return rebase || Math.Abs(yaw) > YawSafetyLimit ? WrapDegrees(yaw) : yaw;
-        }
+    /// <summary>
+    /// <paramref name="next"/> unwrapped to the turn nearest <paramref name="previous"/>. Remote peers linearly
+    /// interpolate the synced yaw from its current value (CharacterSyncer.cs:93, :139-141), so a jump from 179 to
+    /// -179, or any pull-back by whole turns, spins the avatar on their screens. Like vanilla mouse look
+    /// (CharacterMovement.cs:286) the value accumulates. With <paramref name="rebase"/> (nobody can see the
+    /// avatar) it wraps to one turn; past <see cref="YawSafetyLimit"/> it wraps anyway, before the half float
+    /// gets coarse and long before it overflows.
+    /// </summary>
+    public static float ContinueYaw(float previous, float next, bool rebase = false)
+    {
+        float yaw = previous + WrapDegrees(next - previous);
+        return rebase || Math.Abs(yaw) > YawSafetyLimit ? WrapDegrees(yaw) : yaw;
     }
 }

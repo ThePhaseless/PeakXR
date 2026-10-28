@@ -115,15 +115,14 @@ internal static class ShowSettingsPatch
             return;
         Guide.GuideRows.Menu = __instance;
         // VR: category rail and a grid of pages; the comfort-first practice view stays its short single column.
-        if (VRSession.Active)
-        {
-            if (
-                !(Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
-                && VRTabGrid.TryShow(__instance)
-            )
-                return;
-            VRTab.PageRows = VRTabGrid.FallbackRows(__instance);
-        }
+        if (
+            VRSession.Active
+            && !(Guide.GuideRows.ComfortFirst && Guide.GuideRows.Shown)
+            && VRTabGrid.TryShow(__instance)
+        )
+            return;
+        // Flat play and the VR fallback: one column paged to the window, which does not scroll.
+        VRTab.PageRows = VRTabGrid.FallbackRows(__instance);
         var first = true;
         foreach (var setting in VRTab.BuildRows())
             Spawn(__instance, setting, ref first);

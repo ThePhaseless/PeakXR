@@ -74,6 +74,7 @@ internal sealed class NetPoseSync
     ushort sequence;
     Character localCharacter;
     AvatarPoseDriver localDriver;
+    double driverRetryAt;
     int loggedErrors;
 
     void Start()
@@ -211,13 +212,16 @@ internal sealed class NetPoseSync
         if (character != localCharacter)
         {
             localCharacter = character;
-            character.TryGetComponent(out localDriver);
+            localDriver = null;
+            driverRetryAt = 0;
         }
         if (localDriver == null)
         {
-            // The avatar feature may attach the driver after the character spawned.
-            character.TryGetComponent(out localDriver);
-            if (localDriver == null)
+            // The avatar feature may attach the driver after the character spawned: look twice a second, not per frame.
+            if (now < driverRetryAt)
+                return;
+            driverRetryAt = now + 0.5;
+            if (!character.TryGetComponent(out localDriver))
                 return;
         }
         if (

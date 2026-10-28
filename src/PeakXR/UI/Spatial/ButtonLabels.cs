@@ -220,7 +220,10 @@ internal sealed class ButtonLabels
                 SetGlyph(i);
             }
             // Top to bottom as the buttons sit on the controller: up the handle is the grip's +Z (GripFrame).
+            // Overwrites the NaN "not shown" set at the top of the loop, which the continues above keep.
+#pragma warning disable S4143
             rank[i] = ControllerLabels.Spot(control, left).Z;
+#pragma warning restore S4143
             if (ControllerLabels.Touched(control, left ? touchLeft : touchRight))
             {
                 if (left)

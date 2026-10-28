@@ -66,7 +66,7 @@ internal sealed class ParasolRunner : IGripExtension
 
     public bool TryHeldRelease(in GripHookContext ctx) => false;
 
-    public void Tick(Character c, CharacterInput input, ItemGesturesConfig cfg, float dt)
+    public void Tick(CharacterInput input, ItemGesturesConfig cfg, float dt)
     {
         var parasol = ItemGestures.Parasol;
         if (ItemGestures.ItemChanged || parasol == null || !cfg.ParasolRunner)

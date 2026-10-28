@@ -394,7 +394,8 @@ internal sealed class PracticeRun : MonoBehaviour
         wheelSeen = false;
         climbFor = 0f;
         confirmAt = rig.Head.position + rig.Head.forward * 0.5f;
-        apple ??= FindApple();
+        if (apple == null)
+            apple = FindApple();
         Plugin.Log.LogInfo(
             $"[ui.guide] practice station {Flow.Index + 1}/{PracticeFlow.Stations.Length}: {s}"
         );

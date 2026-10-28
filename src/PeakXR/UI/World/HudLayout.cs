@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.Inventory;
 using PeakXR.UI.Common;
 using PeakXR.UI.Spatial;
@@ -52,6 +53,7 @@ internal sealed class HudSplit
     private readonly HudBox reticleBox = new("PeakXR_Reticle");
     private readonly HudBox wristBox = new("PeakXR_Wrist");
     private GUIManager gui;
+    private bool inventoryActive;
     private RectTransform hudRoot;
     private bool applied,
         appliedWrist,
@@ -114,6 +116,8 @@ internal sealed class HudSplit
             wristBox.Forget();
             applied = false;
             gui = current;
+            // Feature states settle at startup; read here, not per frame (FeatureManager.Get walks a list).
+            inventoryActive = FeatureManager.IsActive<InventoryFeature>();
         }
         if (gui == null || gui.hudCanvas == null)
             return;
@@ -124,7 +128,11 @@ internal sealed class HudSplit
         // (inventory.vr) the 2D hotbar stays hidden on the panel instead of filling the wrist.
         var plate = SpectateView.ClaimsStatus;
         // Keyed on the settings, not on SlotGhosts.Showing, so focus loss (dashboard) does not re-lay the wrist.
-        var bodyHotbar = InventoryConfig.Instance.BodySlots && InventoryConfig.Instance.Ghosts;
+        // A failed or skipped inventory.vr draws no body hotbar, so the 2D one keeps its wrist spot.
+        var bodyHotbar =
+            inventoryActive
+            && InventoryConfig.Instance.BodySlots
+            && InventoryConfig.Instance.Ghosts;
         if (
             applied
             && reticle == appliedReticle

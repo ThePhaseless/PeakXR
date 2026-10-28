@@ -66,7 +66,7 @@ public static class EnvironmentFeel
     /// <summary>Moves <paramref name="current"/> toward <paramref name="target"/> with time constant
     /// <paramref name="tau"/>: continuous, so a source switching on or off fades rather than steps.</summary>
     public static float Ease(float current, float target, float dt, float tau) =>
-        tau > 0f ? current + (target - current) * (1f - MathF.Exp(-dt / tau)) : target;
+        current + (target - current) * ExpSmooth.Factor(1f / tau, dt);
 
     static float SmoothStep(float edge0, float edge1, float x)
     {

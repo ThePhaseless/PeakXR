@@ -1767,7 +1767,7 @@ public static class GuideTable
         );
     }
 
-    /// <summary>Hand over hand: each hand grips high and pulls down while the body rises by <paramref name="rise"/>.</summary>
+    /// <summary>Hand over hand: each hand grips high and pulls down while the body rises 0.35 m.</summary>
     static GuideDemo Climb(
         GuideTopic topic,
         string name,
