@@ -33,8 +33,15 @@ internal static class SocialPatches
         [HarmonyPriority(Priority.First)]
         private static void Postfix(CharacterInput __instance)
         {
-            if (IsLocal(__instance, out _))
-                SocialHands.Instance.CaptureVanilla(__instance);
+            try
+            {
+                if (IsLocal(__instance, out _))
+                    SocialHands.Instance.CaptureVanilla(__instance);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<SocialFeature>(e);
+            }
         }
     }
 
@@ -48,8 +55,15 @@ internal static class SocialPatches
         [HarmonyPriority(Priority.VeryLow)]
         private static void Postfix(CharacterInput __instance)
         {
-            if (IsLocal(__instance, out var c))
-                SocialHands.Instance.Tick(c, __instance, Time.deltaTime);
+            try
+            {
+                if (IsLocal(__instance, out var c))
+                    SocialHands.Instance.Tick(c, __instance, Time.deltaTime);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<SocialFeature>(e);
+            }
         }
     }
 
@@ -62,10 +76,17 @@ internal static class SocialPatches
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(CharacterInput __instance)
         {
-            if (!IsLocal(__instance, out var c))
-                return;
-            SocialHands.Instance.GuardGiveUp(c, __instance);
-            SocialHands.Instance.GuardHandOver(__instance);
+            try
+            {
+                if (!IsLocal(__instance, out var c))
+                    return;
+                SocialHands.Instance.GuardGiveUp(c, __instance);
+                SocialHands.Instance.GuardHandOver(__instance);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<SocialFeature>(e);
+            }
         }
     }
 
@@ -166,14 +187,18 @@ internal static class SocialPatches
     [HarmonyPatch]
     internal static class ThornHover
     {
-        private static readonly AccessTools.FieldRef<ThornOnMe, MaterialPropertyBlock> Block =
-            GameMember.Field<ThornOnMe, MaterialPropertyBlock>("mpb");
+        private static AccessTools.FieldRef<ThornOnMe, MaterialPropertyBlock> Block;
 
-        private static MethodBase[] TargetMethods() =>
+        private static MethodBase[] TargetMethods()
+        {
+            // Resolved here, inside Install's Patch call: a static initializer would run at the first hover instead.
+            Block = GameMember.Field<ThornOnMe, MaterialPropertyBlock>("mpb");
+            return
             [
                 GameMember.Method(typeof(ThornOnMe), "HoverEnter"),
                 GameMember.Method(typeof(ThornOnMe), "HoverExit"),
             ];
+        }
 
         private static bool Prefix(ThornOnMe __instance)
         {

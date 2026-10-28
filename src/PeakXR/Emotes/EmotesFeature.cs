@@ -81,6 +81,19 @@ public sealed class EmotesFeature : Feature
 
         private static void Postfix(CharacterAnimations __instance, string emoteName)
         {
+            // Runs on a peer's RPC, for flat clients too: a throw would reach Photon's RPC dispatch.
+            try
+            {
+                Apply(__instance, emoteName);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<EmotesFeature>(e);
+            }
+        }
+
+        private static void Apply(CharacterAnimations __instance, string emoteName)
+        {
             if (emoteName == PlayDead)
                 return;
             var character = __instance.GetComponent<Character>();

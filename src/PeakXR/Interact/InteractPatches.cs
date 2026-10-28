@@ -24,9 +24,16 @@ internal static class InteractPatches
         [HarmonyPriority(Priority.Low)]
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                PhysicalInteraction.Tick(c, __instance, playerMovementActive);
+            try
+            {
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    PhysicalInteraction.Tick(c, __instance, playerMovementActive);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<PhysicalInteractionFeature>(e);
+            }
         }
     }
 
@@ -221,6 +228,19 @@ internal static class InteractPatches
 
         private static void Prefix(CharacterItems __instance)
         {
+            // A throw here would skip the drop itself.
+            try
+            {
+                Apply(__instance);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<PhysicalInteractionFeature>(e);
+            }
+        }
+
+        private static void Apply(CharacterItems __instance)
+        {
             var c = Character.localCharacter;
             if (c == null || c.refs.items != __instance || !c.input.dropWasReleased)
                 return;
@@ -307,7 +327,17 @@ internal static class InteractPatches
         private static void Prefix(CharacterItems __instance)
         {
             var c = Character.localCharacter;
-            Active = c != null && __instance == c.refs.items && PhysicalInteraction.TakePocketing();
+            try
+            {
+                Active =
+                    c != null && __instance == c.refs.items && PhysicalInteraction.TakePocketing();
+            }
+            catch (Exception e)
+            {
+                // A throw here would skip the pickup's answer and lose the item: let vanilla equip it.
+                Active = false;
+                PatchGuard.Fail<PhysicalInteractionFeature>(e);
+            }
         }
 
         private static Exception Finalizer(Exception __exception)

@@ -218,9 +218,16 @@ internal static partial class WorldHolds
         [HarmonyPriority(Priority.High)]
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                Tick(c, playerMovementActive);
+            try
+            {
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    Tick(c, playerMovementActive);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<WorldHoldsFeature>(e);
+            }
         }
     }
 

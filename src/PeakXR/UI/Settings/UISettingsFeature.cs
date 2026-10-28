@@ -61,6 +61,19 @@ internal static class SettingsMenuEnablePatch
 
     private static void Prefix(SharedSettingsMenu __instance)
     {
+        // Flat players too: a throw here would leave the game's settings menu half set up.
+        try
+        {
+            AddTab(__instance);
+        }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<UISettingsFeature>(e);
+        }
+    }
+
+    private static void AddTab(SharedSettingsMenu __instance)
+    {
         var tabs = UISettingsFeature.TabsRef(__instance);
         if (tabs == null)
             return;
@@ -104,6 +117,18 @@ internal static class ShowSettingsPatch
         );
 
     private static void Postfix(SharedSettingsMenu __instance, SettingsCategory category)
+    {
+        try
+        {
+            Fill(__instance, category);
+        }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<UISettingsFeature>(e);
+        }
+    }
+
+    private static void Fill(SharedSettingsMenu __instance, SettingsCategory category)
     {
         foreach (var spawned in UISettingsFeature.CellsRef(__instance))
             World.RowStripReport.Born(spawned);

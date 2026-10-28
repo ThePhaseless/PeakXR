@@ -22,9 +22,16 @@ internal static class ItemGesturesPatches
         [HarmonyPriority(Priority.High)]
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                ItemGestures.Tick(c, __instance, playerMovementActive);
+            try
+            {
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    ItemGestures.Tick(c, __instance, playerMovementActive);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<ItemGesturesFeature>(e);
+            }
         }
     }
 
