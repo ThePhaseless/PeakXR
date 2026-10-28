@@ -178,19 +178,33 @@ internal sealed partial class SelfTestRunner
         bool onTop = UI.Common.OnTop.AllOnTop(root);
         float cold = c.refs.afflictions.GetCurrentStatus(CharacterAfflictions.STATUSTYPE.Cold);
         string where = afflictions > 0 ? "" : ColdSlotWhere(root);
-        // The plate hugs what is drawn (bar, shown segments), not the room the bar's groups reserve.
-        var plateSize = UI.World.HudSplit.WristPlateSize;
-        var drawnMin = UI.World.HudSplit.WristPlateContentMin;
-        var drawnMax = UI.World.HudSplit.WristPlateContentMax;
-        bool plateFits = MenuBackplate.FitsContent(
-            UI.World.HudSplit.WristPlateCenter.N(),
-            plateSize.N(),
-            drawnMin.N(),
-            drawnMax.N(),
-            UI.World.HudSplit.WristPlatePad,
-            2f
-        );
+        // The plate hugs what is drawn (bar, shown segments), not the room the bar's groups reserve. Measured here
+        // from the drawn graphics' and the plate's own corners, not from what the fit stored.
+        bool drawn = MeasureWristDrawn(root, out var drawnMin, out var drawnMax);
+        bool plateShown = MeasureWristPlate(root, out var plateMin, out var plateMax);
+        var plateSize = plateMax - plateMin;
+        // The fit may lag the content by up to one signature step (MenuBackplate.FoldPixels).
+        float plateTolerance = MenuBackplate.FoldPixels + 1f;
+        bool plateFits =
+            drawn
+            && plateShown
+            && MenuBackplate.FitsContent(
+                ((plateMin + plateMax) * 0.5f).N(),
+                plateSize.N(),
+                drawnMin.N(),
+                drawnMax.N(),
+                UI.World.HudSplit.WristPlatePad,
+                plateTolerance
+            );
         var groups = UI.World.HudSplit.WristGroupsSize;
+        bool unshrunk =
+            plateShown
+            && MenuBackplate.Unshrunk(
+                plateSize.N(),
+                groups.N(),
+                UI.World.HudSplit.WristPlatePad,
+                plateTolerance
+            );
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
@@ -212,8 +226,67 @@ internal sealed partial class SelfTestRunner
             Fail("wrist HUD is depth tested: the arm can cover it");
         else if (afflictions == 0)
             Fail("Cold affliction not shown on the wrist");
+        else if (!drawn)
+            Fail("wrist HUD draws nothing");
+        else if (!plateShown)
+            Fail("wrist plate not shown");
+        else if (unshrunk)
+            Fail("wrist plate fills the groups' reserved room, not the drawn bar");
         else if (!plateFits)
             Fail("wrist plate is not fitted to the drawn bar");
+    }
+
+    /// <summary>Box-space bounds of every graphic under the wrist box that reaches the screen (active, enabled, visible
+    /// alpha after canvas groups, not empty), the plate aside. The ui.05 oracle, apart from HudSplit's own fit.</summary>
+    static bool MeasureWristDrawn(RectTransform root, out Vector2 min, out Vector2 max)
+    {
+        min = new Vector2(float.MaxValue, float.MaxValue);
+        max = new Vector2(float.MinValue, float.MinValue);
+        if (root == null)
+            return false;
+        var plate = UI.World.HudSplit.WristPlate;
+        var corners = new Vector3[4];
+        bool any = false;
+        foreach (var g in root.GetComponentsInChildren<UnityEngine.UI.Graphic>(false))
+        {
+            if (
+                g == plate
+                || !g.enabled
+                || g.color.a < 0.01f
+                || g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() <= 0.01f
+            )
+                continue;
+            g.rectTransform.GetWorldCorners(corners);
+            var a = (Vector2)root.InverseTransformPoint(corners[0]);
+            var b = (Vector2)root.InverseTransformPoint(corners[2]);
+            if (Mathf.Abs(b.x - a.x) < 0.5f || Mathf.Abs(b.y - a.y) < 0.5f)
+                continue;
+            min = Vector2.Min(min, Vector2.Min(a, b));
+            max = Vector2.Max(max, Vector2.Max(a, b));
+            any = true;
+        }
+        return any;
+    }
+
+    /// <summary>Box-space bounds of the wrist plate as drawn; false when it is missing or hidden.</summary>
+    static bool MeasureWristPlate(RectTransform root, out Vector2 min, out Vector2 max)
+    {
+        min = max = default;
+        var plate = UI.World.HudSplit.WristPlate;
+        if (
+            root == null
+            || plate == null
+            || plate.transform.parent != root
+            || !plate.isActiveAndEnabled
+        )
+            return false;
+        var corners = new Vector3[4];
+        plate.rectTransform.GetWorldCorners(corners);
+        Vector2 a = root.InverseTransformPoint(corners[0]);
+        Vector2 b = root.InverseTransformPoint(corners[2]);
+        min = Vector2.Min(a, b);
+        max = Vector2.Max(a, b);
+        return true;
     }
 
     /// <summary>Where the stamina bar's Cold segment is when the wrist does not show it, for the step note.</summary>

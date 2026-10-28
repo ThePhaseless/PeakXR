@@ -60,6 +60,13 @@ public static class MenuBackplate
             && MathF.Abs(contentMax.Y + margin - hi.Y) <= tolerance;
     }
 
+    /// <summary>A <paramref name="plate"/> within <paramref name="tolerance"/> of the room its content's groups
+    /// <paramref name="reserved"/> plus the margin, both ways: fitted to the groups' rects (which keep room for parts
+    /// that are mostly hidden) instead of shrinking to what is drawn.</summary>
+    public static bool Unshrunk(Vector2 plate, Vector2 reserved, float margin, float tolerance) =>
+        plate.X >= reserved.X + (2f * margin) - tolerance
+        && plate.Y >= reserved.Y + (2f * margin) - tolerance;
+
     /// <summary>The plate covers most of the canvas both ways while what the menu draws, plus the margin, does not:
     /// a 16:9 screen panel instead of a plate fitted to the content. A settings window whose tabs, rail and rows
     /// really fill the canvas gets a canvas-sized plate and is not one (VR run 47: 1705x991 px drawn).</summary>
@@ -95,8 +102,13 @@ public static class MenuBackplate
     /// <summary>Seed for <see cref="Fold"/>.</summary>
     public const int FoldStart = 17;
 
+    /// <summary>Step, in canvas pixels, of the positions and sizes <see cref="Fold"/> keys on: about one headset
+    /// pixel on the wrist at reading distance and well inside a plate's margin, so a plate up to one step stale still
+    /// covers its content. Finer steps re-measured nearly every frame while the stamina fill animated.</summary>
+    public const float FoldPixels = 4f;
+
     /// <summary>Folds one part of a plate's content into a change signature: whether it is drawn and, if so, its
-    /// position and size in half-pixel steps. A plate refitted only when the signature changes follows parts that
+    /// position and size in <see cref="FoldPixels"/> steps. A plate refitted only when the signature changes follows parts that
     /// appear, vanish, move or resize, without measuring world corners every frame or reacting to hidden parts.</summary>
     public static int Fold(int hash, bool drawn, float x, float y, float width, float height)
     {
@@ -105,12 +117,12 @@ public static class MenuBackplate
             hash = hash * 31 + (drawn ? 1 : 0);
             if (!drawn)
                 return hash;
-            hash = hash * 31 + HalfPixels(x);
-            hash = hash * 31 + HalfPixels(y);
-            hash = hash * 31 + HalfPixels(width);
-            return hash * 31 + HalfPixels(height);
+            hash = hash * 31 + Step(x);
+            hash = hash * 31 + Step(y);
+            hash = hash * 31 + Step(width);
+            return hash * 31 + Step(height);
         }
     }
 
-    private static int HalfPixels(float v) => (int)MathF.Round(v * 2f);
+    private static int Step(float v) => (int)MathF.Floor(v / FoldPixels);
 }

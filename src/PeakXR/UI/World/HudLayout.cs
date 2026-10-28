@@ -141,6 +141,9 @@ internal sealed class HudSplit
     /// taller than the bar.</summary>
     private readonly List<UnityEngine.UI.Graphic> wristGraphics = new();
     private int plateSignature;
+
+    /// <summary>Children of the wrist box when <see cref="wristGraphics"/> was filled: a part added later refills it.</summary>
+    private int measuredChildren;
     private static readonly Vector3[] corners = new Vector3[4];
 
     /// <summary>Drawn wrist content the plate was last fitted to, box pixels (self-test).</summary>
@@ -150,6 +153,9 @@ internal sealed class HudSplit
     /// <summary>The wrist plate's centre and size, box pixels (self-test).</summary>
     public static Vector2 WristPlateCenter,
         WristPlateSize;
+
+    /// <summary>The wrist plate, for the self-test's own measurement (null without a wrist display).</summary>
+    public static UnityEngine.UI.Graphic WristPlate { get; private set; }
 
     /// <summary>Size of the moved groups' rects, which set the wrist layout and scale (self-test).</summary>
     public static Vector2 WristGroupsSize;
@@ -300,12 +306,14 @@ internal sealed class HudSplit
             WristGroupsSize = bounds.size;
         }
         box.GetComponentsInChildren(true, wristGraphics);
+        measuredChildren = box.childCount;
         plateSignature = 0;
         FitWristPlate(box);
     }
 
     /// <summary>Fits <see cref="wristPlate"/> to the graphics drawn now. Each frame folds their visibility, size and
-    /// local position into a signature (no allocation, no world corners); only a change re-measures.
+    /// local position into a signature (no allocation, no world corners), in <see cref="MenuBackplate.FoldPixels"/>
+    /// steps: the stamina fill's per-frame lerp (A/StaminaBar.cs:126) re-measures once per step, not every frame.
     /// shortcut: a parent moving with no graphic under it changing is missed until the next change; fold parent
     /// positions in if a part ever slides that way.</summary>
     private void FitWristPlate(RectTransform box)
@@ -392,6 +400,7 @@ internal sealed class HudSplit
             wristPlate.raycastTarget = false;
             var c = MenuBackplate.Color;
             wristPlate.color = new Color(c.X, c.Y, c.Z, WristPlateOpacity);
+            WristPlate = wristPlate;
         }
         wristPlate.transform.SetAsFirstSibling();
     }
@@ -498,7 +507,10 @@ internal sealed class HudSplit
         var hand = rig.Hand(cfg.WristLeft);
         if (hand == null)
             return;
-        if (ShownMask(wristBox.Rect) != measuredMask)
+        if (
+            ShownMask(wristBox.Rect) != measuredMask
+            || wristBox.Rect.childCount != measuredChildren
+        )
         {
             MeasureWrist(wristBox.Rect);
             // A part the game showed for the first time may carry a graphic not yet drawn on top.

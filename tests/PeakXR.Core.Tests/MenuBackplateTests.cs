@@ -128,4 +128,24 @@ public class MenuBackplateTests
         );
         Assert.Equal(Sign((true, 0f, 400f)), Sign((true, 0.1f, 400.1f)));
     }
+
+    [Fact]
+    public void Fold_AnimatingFillMovingUnderOneStep_KeepsSignature()
+    {
+        // The stamina fill lerps its width every frame (A/StaminaBar.cs:126); moves inside one FoldPixels step must
+        // not re-measure the plate.
+        Assert.Equal(Sign((true, 0f, 400f)), Sign((true, 0f, 401.5f)));
+        Assert.Equal(Sign((true, 0f, 400f)), Sign((true, 1.5f, 400f)));
+    }
+
+    [Fact]
+    public void Unshrunk_APlateAroundTheReservedGroups()
+    {
+        var reserved = new Vector2(900, 200);
+        Assert.True(MenuBackplate.Unshrunk(new Vector2(928, 228), reserved, 14f, 4f));
+        // Fitted to a bar narrower and lower than the room its groups reserve.
+        Assert.False(MenuBackplate.Unshrunk(new Vector2(628, 88), reserved, 14f, 4f));
+        // Only as wide as the groups: it still shrank in height.
+        Assert.False(MenuBackplate.Unshrunk(new Vector2(928, 88), reserved, 14f, 4f));
+    }
 }
