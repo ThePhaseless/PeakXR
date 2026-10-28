@@ -1613,11 +1613,12 @@ internal sealed partial class SelfTestRunner
     const float FireStand = 0.95f;
 
     /// <summary>Warps a step back from the fire, faces it, and walks in (move stick at half tilt) until the body
-    /// is <see cref="FireStand"/> out or stops getting closer: logs, stones or a bench in the way stop it, as they
-    /// stop a player. A warp straight to <see cref="FireStand"/> can land on the fire's props and be pushed off.</summary>
-    IEnumerator ApproachFire(Vector3 fireBase)
+    /// is <paramref name="stand"/> out (<see cref="FireStand"/> by default) or stops getting closer: logs, stones or a
+    /// bench in the way stop it, as they stop a player. A warp straight to the stand can land on the fire's props and
+    /// be pushed off.</summary>
+    IEnumerator ApproachFire(Vector3 fireBase, float stand = FireStand)
     {
-        yield return WarpFacing(fireBase, FireStand + 0.8f);
+        yield return WarpFacing(fireBase, stand + 0.8f);
         var c = Character.localCharacter;
         bool hand = !VRInput.LeftHanded;
         float start = FlatDistance(c.Center, fireBase);
@@ -1625,7 +1626,7 @@ internal sealed partial class SelfTestRunner
         float bestAt = Now;
         float end = Now + 4f;
         Script(hand).Stick = new Vector2(0f, 0.5f);
-        while (Now < end && best > FireStand && Now - bestAt < 0.5f)
+        while (Now < end && best > stand && Now - bestAt < 0.5f)
         {
             yield return null;
             float d = FlatDistance(c.Center, fireBase);
@@ -2089,7 +2090,7 @@ internal sealed partial class SelfTestRunner
         if (way == UseWay.Trigger)
             Script(left).Trigger = 0f;
         else if (way != UseWay.Button)
-            PullAway(left);
+            PullAway(left, lower: way == UseWay.Face && ItemGestures.Use == UseGesture.Read);
     }
 
     /// <summary>A lantern's fuel entry (<c>DataEntryKey.Fuel</c>, Lantern.cs:171); -1 when it has none.</summary>
@@ -2508,12 +2509,22 @@ internal sealed partial class SelfTestRunner
                 .U()
         );
 
-    /// <summary>The hand straight back to its rest beside the body, in one frame.</summary>
-    void PullAway(bool left)
+    /// <summary>The hand straight back to its rest beside the body, in one frame; <paramref name="lower"/> takes it
+    /// a further <see cref="ReadLower"/> down to the waist.</summary>
+    void PullAway(bool left, bool lower = false)
     {
         HeadFrame(out var head, out var forward, out var right);
-        SetHand(left, Rest(head, forward, left ? -right : right).Position);
+        SetHand(
+            left,
+            Rest(head, forward, left ? -right : right).Position
+                + Vector3.down * (lower ? ReadLower : 0f)
+        );
     }
+
+    /// <summary>How far below the rest a lowered book goes, metres. The read is judged on the book's middle, about
+    /// 0.4 m up and in from the hand on the Book of Bones: with the hand only back at the rest the middle stayed within
+    /// the read's 0.22 m exit, the read went on and no Cancel came (vr.165, run 18).</summary>
+    const float ReadLower = 0.3f;
 
     /// <summary>interact.items' face spots in world space (HeldGestures: a book 0.35 m ahead of the eyes and 0.12 m
     /// below, a commune item 0.12 m ahead).</summary>
@@ -2566,7 +2577,7 @@ internal sealed partial class SelfTestRunner
         if (item != null)
             faceProgress = Mathf.Max(faceProgress, item.castProgress);
         faceDanger = CueLog.Capture.Felt(left, CueFeel.Danger, dangerMark, out _);
-        PullAway(left);
+        PullAway(left, lower: read);
     }
 
     /// <summary>Skips a face step when a feature it needs is off. True when it can run.</summary>
@@ -2907,9 +2918,13 @@ internal sealed partial class SelfTestRunner
             yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
         yield return Wait(0.3f);
         bool kept = item != null && c.data.currentItem == item;
+        // Run 18: the read went on after the hand came back to the rest, 1.3 s short of a skeleton.
+        bool reading = item != null && item.isUsingPrimary;
         var note =
-            $"{prefab.name} ({ItemGestures.UseOf(item)}, usable {canUse}): AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, lowered: skeleton {c.data.isSkeleton}, still held {kept}";
-        if (faceProgress < 0.3f)
+            $"{prefab.name} ({ItemGestures.UseOf(item)}, usable {canUse}): AtFace {faceSeen}, cast {faceProgress:0.00} of {useTime:0.0} s, lowered: still reading {reading} (face hold {HeldGestures.AtFace}), skeleton {c.data.isSkeleton}, still held {kept}";
+        if (reading)
+            Fail("the read went on after the book was lowered: " + note);
+        else if (faceProgress < 0.3f)
             Fail("the cast did not run in front of the eyes: " + note);
         else if (Affordance.Enabled && !faceDanger)
             Fail("no danger warning as the face hold started: " + note);
