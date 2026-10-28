@@ -671,6 +671,15 @@ internal sealed class RigDriver : MonoBehaviour
             // Mid-turn the look heading is new but the ragdoll still faces the old one: a skewed sample.
             || Time.unscaledTime < turnHoldUntil
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
+            // The first sample (a snap) waits for a still stand, past the beach wake-up: the first upright frame after
+            // the wake-up fall reads a body still rising (eyes 1.32-1.43 m over the ground against 1.77 m standing),
+            // and the calibration kept what that frame said (run 21: eyes 0.16 m ahead of the mass centre on that
+            // frame, 0.12 m for the whole beach, a taller back-tilted stand and a hip bobbing 0.03 m; run 20: 0.25 m).
+            || !massEyes.Have
+                && (
+                    d.passedOutOnTheBeach > 0f
+                    || d.avarageVelocity.sqrMagnitude >= StillSpeed * StillSpeed
+                )
         )
             return false;
         // Only the unleaned eyes (EyeCalibration): any lean puts them on the headset, and sampling that would carry
