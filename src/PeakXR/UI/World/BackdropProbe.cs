@@ -32,20 +32,42 @@ internal sealed class BackdropProbe
     /// <summary>Unity's built-in UI layer.</summary>
     private const int UiLayer = 5;
 
-    private readonly BackdropContrast.Meter meter = new();
+    private static readonly BackdropContrast.Meter Meter = new();
     private readonly Vector3[] corners = new Vector3[4];
-    private readonly System.Action<AsyncGPUReadbackRequest> onReadback;
+    private readonly Readback[] readbacks = { new(), new() };
     private Camera cam;
     private RenderTexture texture;
 
-    /// <summary>The plate being measured: a <see cref="TrackedCanvas"/> or a <see cref="PanelPlate"/>.</summary>
-    private object rendering,
-        reading;
+    /// <summary>The plate being rendered: a <see cref="TrackedCanvas"/> or a <see cref="PanelPlate"/>.</summary>
+    private object rendering;
+
+    /// <summary>The readback in flight that may still set its plate; one that timed out is abandoned.</summary>
+    private Readback reading;
     private int startedFrame;
     private int next;
     private float probeAt;
 
-    public BackdropProbe() => onReadback = OnReadback;
+    /// <summary>One GPU readback tagged with the plate it measured, with its own callback so a late result can only
+    /// reach that plate (or be dropped), never the plate probed after it. Pooled: nothing allocates per probe.</summary>
+    private sealed class Readback
+    {
+        public readonly System.Action<AsyncGPUReadbackRequest> Done;
+
+        /// <summary>The plate to set; null once abandoned or done.</summary>
+        public object Target;
+        public bool Busy;
+
+        public Readback() => Done = OnDone;
+
+        private void OnDone(AsyncGPUReadbackRequest request)
+        {
+            var target = Target;
+            Target = null;
+            Busy = false;
+            if (target != null && !request.hasError)
+                Apply(target, request);
+        }
+    }
 
     /// <summary>Eases every shown plate toward its measured opacity, and starts the next probe when due.</summary>
     public void Tick(VRRig rig, UIWorldSettings cfg, float dt)
@@ -70,8 +92,12 @@ internal sealed class BackdropProbe
             cam.enabled = false;
             rendering = null;
         }
-        if (reading != null && Time.frameCount - startedFrame > ReadbackFrames)
+        if (reading != null && (!reading.Busy || Time.frameCount - startedFrame > ReadbackFrames))
+        {
+            // Done, or late: a late result is dropped, the plate is measured again on its next turn.
+            reading.Target = null;
             reading = null;
+        }
         if (!adaptive || rendering != null || reading != null || Time.unscaledTime < probeAt)
             return;
         int total = list.Count + panels.Count;
@@ -123,7 +149,10 @@ internal sealed class BackdropProbe
             Object.Destroy(texture);
         cam = null;
         texture = null;
-        rendering = reading = null;
+        rendering = null;
+        reading = null;
+        foreach (var r in readbacks)
+            r.Target = null;
     }
 
     /// <summary>Frames the probe on <paramref name="plate"/> from the eye and lets it render this frame;
@@ -214,26 +243,38 @@ internal sealed class BackdropProbe
         if (camera != cam || rendering == null)
             return;
         cam.enabled = false;
-        reading = rendering;
+        var owner = rendering;
         rendering = null;
-        AsyncGPUReadback.Request(texture, 0, TextureFormat.RGBA32, onReadback);
+        // shortcut: two pooled readbacks; if both are lost and never call back, probing pauses (Unity always calls back).
+        foreach (var r in readbacks)
+            if (!r.Busy)
+            {
+                r.Busy = true;
+                r.Target = owner;
+                reading = r;
+                startedFrame = Time.frameCount;
+                AsyncGPUReadback.Request(texture, 0, TextureFormat.RGBA32, r.Done);
+                return;
+            }
     }
 
-    private void OnReadback(AsyncGPUReadbackRequest request)
+    /// <summary>Sets the measure on <paramref name="target"/>, unless that plate was destroyed meanwhile.</summary>
+    private static void Apply(object target, AsyncGPUReadbackRequest request)
     {
-        var t = reading;
-        reading = null;
-        if (t == null || request.hasError)
+        if (target is PanelPlate p && (p == null || p.Image == null))
+            return;
+        if (target is TrackedCanvas c && c.Plate == null)
             return;
         var data = request.GetData<byte>();
+        var meter = Meter;
         meter.Clear();
         for (int i = 0; i + 2 < data.Length; i += 4)
             meter.Add(data[i], data[i + 1], data[i + 2]);
         // Unclamped by the setting here; BackplateView.Alpha caps it when drawn.
         var needed = BackdropContrast.NeededOpacity(meter.Bright(), 1f);
-        if (t is TrackedCanvas canvas)
+        if (target is TrackedCanvas canvas)
             canvas.PlateTarget = needed;
-        else if (t is PanelPlate panel)
+        else if (target is PanelPlate panel)
             panel.Target = needed;
     }
 }
