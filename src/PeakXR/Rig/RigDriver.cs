@@ -214,6 +214,7 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly CameraTakeover takeover = new();
     private readonly LongPress recenterPress = new();
     private readonly HoldCue holdCue = new();
+    private readonly WallCue wallCue = new();
     private bool recenterLeft = true;
 
     /// <summary>The recenter hold ring, for the self-test (vr.185); null without a rig driver.</summary>
@@ -392,6 +393,7 @@ internal sealed class RigDriver : MonoBehaviour
         Application.onBeforeRender -= OnBeforeRender;
         mirror.Disable();
         holdCue.Show(null, null, 0f, 0f);
+        wallCue.Show(null, false, Vector3.zero);
         spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
@@ -410,6 +412,7 @@ internal sealed class RigDriver : MonoBehaviour
     private void OnDestroy()
     {
         holdCue.Destroy();
+        wallCue.Destroy();
         spectateFloor.Destroy();
         if (instance == this)
             instance = null;
@@ -1314,6 +1317,14 @@ internal sealed class RigDriver : MonoBehaviour
             VRFade.Set(wallFadeOwner, 1f);
         else
             VRFade.Clear(wallFadeOwner);
+        // Say why it is black: toward the body is open space for a head leaned into rock; the chase view and the
+        // eye guard clear by themselves, so they get the ring alone.
+        bool leaned = headBlocked && !chase && c != null;
+        wallCue.Show(
+            rig.Head,
+            headBlocked || eyeGuard.Black,
+            leaned ? c.Center - rig.Head.position : Vector3.zero
+        );
     }
 
     /// <summary><paramref name="to"/>, or pulled toward <paramref name="from"/> to stop <see cref="ChaseMargin"/>
