@@ -21,10 +21,6 @@ public sealed class ComfortEventsFeature : Feature
     {
         ComfortEventsConfig.Bind(Plugin.Settings);
         ComfortEventsPatches.Resolve();
-        ComfortEventsPatches.CinematicJitter.Smoothing = GameMember.Field<
-            Peak.CinematicScreenShake,
-            float
-        >("smoothing");
 
         Patch(typeof(ComfortEventsPatches.Shake));
         Patch(typeof(ComfortEventsPatches.Fall));

@@ -63,6 +63,9 @@ public sealed class SandboxFeature : Feature
             "set_statusesLocked"
         );
         Patch(typeof(FallDamagePatch));
+        // Required: a run that used the sandbox must not overwrite the quicksave or unlock anything
+        // (SandboxActions.RunMark); the guards let everything through in a normal run.
+        SelfTestProgressGuard.PatchOnce(Patch);
 
         // Optional: the window still works without them, it just cannot free the mouse or block game input.
         TryPatch(typeof(WindowInputPatch));

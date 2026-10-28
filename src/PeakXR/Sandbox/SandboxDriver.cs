@@ -27,11 +27,16 @@ internal sealed class SandboxDriver : MonoBehaviour
 
     void OnDestroy() => SceneManager.activeSceneChanged -= OnScene;
 
-    // Sandbox run settings belong to the run they were set in; back at the title the next run starts clean.
+    // Sandbox run settings belong to the run they were set in; back at the title the next run starts clean. The
+    // progress guard's run mark ends at the title or the airport too (SandboxRunMark).
     static void OnScene(Scene previous, Scene next)
     {
         if (next.name == "Title")
             SandboxActions.RestoreRunSettings();
+        bool wasMarked = SandboxActions.RunMark.Marked;
+        SandboxActions.RunMark.SceneLoaded(next.name, SandboxActions.GodMode);
+        if (wasMarked && !SandboxActions.RunMark.Marked)
+            Plugin.Log.LogInfo($"[sandbox] new run at {next.name}: progress is saved again");
     }
 
     void Update()
@@ -81,6 +86,10 @@ internal sealed class SandboxDriver : MonoBehaviour
         {
             nextGodTick = Time.unscaledTime + GodInterval;
             SandboxActions.GodTick();
+            // The game's own console, which the sandbox unlocks, can spawn and warp too.
+            if (DebugUIHandler.IsOpen)
+                SandboxActions.MarkRun();
+            SandboxActions.TellRunMark();
         }
     }
 }

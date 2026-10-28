@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
@@ -92,6 +93,13 @@ public static partial class SandboxActions
 
     public static bool GodMode { get; private set; }
 
+    /// <summary>This run used the sandbox: <see cref="SelfTestProgressGuard"/> keeps the player's quicksave,
+    /// achievements, stats and ascents as they were until the next run (Play Solo has no other guard: a campfire
+    /// after a spawn would overwrite the real quicksave, Campfire.cs:505, and achievements would unlock).</summary>
+    internal static readonly SandboxRunMark RunMark = new();
+
+    const string RunNotice = "Sandbox run: progress and achievements are not saved";
+
     public static string LastMessage { get; private set; } = "";
 
     public static event Action<string> Message;
@@ -121,7 +129,43 @@ public static partial class SandboxActions
             Say("No local character yet (load into a run first).");
             return false;
         }
+        MarkRun();
         return true;
+    }
+
+    /// <summary>Marks this run as a sandbox run (<see cref="RunMark"/>). The self-test and the item room hold the
+    /// progress guard themselves.</summary>
+    internal static void MarkRun()
+    {
+        if (!SelfTestProgressGuard.Active && !SelfTestProgressGuard.Room)
+            RunMark.Use();
+    }
+
+    /// <summary>Tells the player once per marked run that it saves nothing: at the off hand in VR (retried until it
+    /// shows), in the console and the flat window otherwise. Called by the driver a few times a second.</summary>
+    internal static void TellRunMark()
+    {
+        if (!RunMark.NoticeDue)
+            return;
+        if (VRSession.Active)
+        {
+            bool left = VRInput.OffHandLeft;
+            var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+            if (
+                hand == null
+                || !Affordance.Inform(
+                    left,
+                    hand.position,
+                    DenyReason.HappenedHere,
+                    DenyHint.Wrist(),
+                    RunNotice,
+                    forceText: true
+                )
+            )
+                return;
+        }
+        RunMark.NoticeShown();
+        Say(RunNotice + ".");
     }
 
     static bool InRoom => PhotonNetwork.CurrentRoom != null;

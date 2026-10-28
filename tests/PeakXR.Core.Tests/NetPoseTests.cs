@@ -616,3 +616,205 @@ public class PoseRateTests
         Assert.Equal(1.5 / PoseRate.MinRate, PoseRate.Delay(0.1, 7), 6);
     }
 }
+
+public class YawHistoryTests
+{
+    [Fact]
+    public void Sample_Empty_ReturnsFalse()
+    {
+        Assert.False(new YawHistory().Sample(1.0, out _));
+    }
+
+    [Fact]
+    public void Sample_InterpolatesBetweenFrames()
+    {
+        var h = new YawHistory();
+        h.Push(1.0, 10f);
+        h.Push(1.1, 30f);
+        Assert.True(h.Sample(1.05, out float yaw));
+        TestUtil.Near(20f, yaw);
+    }
+
+    [Fact]
+    public void Sample_OutsideTheRange_HoldsTheNearestEnd()
+    {
+        var h = new YawHistory();
+        h.Push(1.0, 10f);
+        h.Push(1.1, 30f);
+        Assert.True(h.Sample(0.5, out float early));
+        TestUtil.Near(10f, early);
+        Assert.True(h.Sample(2.0, out float late));
+        TestUtil.Near(30f, late);
+    }
+
+    [Fact]
+    public void Sample_KeepsUnwrappedYaw()
+    {
+        // lookValues.x accumulates past 360 like vanilla mouse look; a plain lerp is what the body sees too.
+        var h = new YawHistory();
+        h.Push(1.0, 350f);
+        h.Push(1.1, 370f);
+        Assert.True(h.Sample(1.05, out float yaw));
+        TestUtil.Near(360f, yaw);
+    }
+
+    [Fact]
+    public void Push_AfterAGap_ForgetsTheOldTurn()
+    {
+        var h = new YawHistory();
+        h.Push(1.0, 0f);
+        h.Push(1.0 + YawHistory.ResetAfter + 0.1, 90f);
+        Assert.True(h.Sample(1.5, out float yaw));
+        TestUtil.Near(90f, yaw);
+    }
+
+    [Fact]
+    public void ManyFrames_StayBoundedAndSampleRecentHistory()
+    {
+        var h = new YawHistory();
+        int frames = 10 * YawHistory.Capacity;
+        for (int i = 0; i < frames; i++)
+            h.Push(i / 144.0, i);
+        Assert.True(h.Count <= YawHistory.Capacity);
+        double now = (frames - 1) / 144.0;
+        Assert.True(h.Sample(now - 0.1, out float yaw));
+        TestUtil.Near((float)((now - 0.1) * 144.0), yaw, 1e-2f);
+    }
+
+    [Fact]
+    public void HeadTurn_WithStillHands_KeepsTheRemoteHandStill()
+    {
+        // The VR sender turns its head (and so lookValues.x) 90 degrees while its hand stays put in the world. The
+        // receiver plays the pose 0.2 s late; rebuilt with the yaw of that same moment, the hand does not swing.
+        const double delay = 0.2;
+        var root = new Vector3(0f, 1f, 0f);
+        var hand = new Vector3(0.3f, 1.2f, 0.4f);
+        var poses = new PoseBuffer { Delay = delay };
+        var yaws = new YawHistory();
+        float swingWithCurrentYaw = 0f;
+        for (int frame = 0; frame <= 90; frame++)
+        {
+            double t = frame / 90.0;
+            float yaw = (float)Math.Min(90.0, t * 360.0); // a quarter turn in 0.25 s
+            if (frame % 3 == 0)
+            {
+                var world = new PosePacket
+                {
+                    Flags = PoseFlags.RightHand | PoseFlags.VrActive,
+                    Sequence = (ushort)(frame + 1),
+                    RightHandPosition = hand,
+                    RightHandRotation = Quaternion.Identity,
+                };
+                poses.Push(PoseFrame.ToLocal(world, root, yaw), t);
+            }
+            yaws.Push(t, yaw);
+            if (t < delay)
+                continue;
+            Assert.True(poses.Sample(t, out var local));
+            Assert.True(yaws.Sample(t - delay, out float pastYaw));
+            TestUtil.Near(hand, PoseFrame.ToWorld(local, root, pastYaw).RightHandPosition, 0.03f);
+            swingWithCurrentYaw = Math.Max(
+                swingWithCurrentYaw,
+                Vector3.Distance(hand, PoseFrame.ToWorld(local, root, yaw).RightHandPosition)
+            );
+        }
+        // The old rebuild (the receiver's current yaw) swung the hand by tens of centimetres.
+        Assert.True(swingWithCurrentYaw > 0.2f, $"swing {swingWithCurrentYaw}");
+    }
+}
+
+public class HandshakeCompatTests
+{
+    const int VrBit = 1 << 16;
+
+    [Fact]
+    public void SameMajor_AnyMinor_IsAPeer()
+    {
+        var peers = new PeerTable();
+        Assert.True(peers.Set(5, Handshake.Protocol | (3 << 8) | VrBit));
+        Assert.True(peers.IsVr(5));
+    }
+
+    [Fact]
+    public void ReservedHighBits_AreIgnored()
+    {
+        var peers = new PeerTable();
+        Assert.True(peers.Set(5, Handshake.Encode(true) | (1 << 24)));
+        Assert.True(peers.IsVr(5));
+    }
+
+    [Fact]
+    public void OtherMajor_IsAMismatchWithTheProtocolSeen()
+    {
+        Assert.True(Handshake.Mismatch(2 | VrBit, out int seen));
+        Assert.Equal(2, seen);
+        Assert.False(new PeerTable().Set(5, 2 | VrBit));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("1")]
+    [InlineData(0)]
+    public void VanillaOrGarbage_IsNoMismatch(object value)
+    {
+        Assert.False(Handshake.Mismatch(value, out _));
+    }
+
+    [Fact]
+    public void Compatible_IsNoMismatch()
+    {
+        Assert.False(Handshake.Mismatch(Handshake.Encode(true), out _));
+        Assert.False(Handshake.Mismatch(Handshake.Protocol | (7 << 8), out _));
+    }
+}
+
+public class PoseSignatureTests
+{
+    static byte[] Encoded(PoseFlags flags, int extra = 0)
+    {
+        var p = new PosePacket
+        {
+            Flags = flags,
+            Sequence = 1,
+            RightHandPosition = new Vector3(0.2f, 0.3f, 0.4f),
+            RightHandRotation = Quaternion.Identity,
+        };
+        var buf = new byte[PoseCodec.MaxSize + extra];
+        int len = PoseCodec.Encode(p, buf);
+        Array.Resize(ref buf, len + extra);
+        return buf;
+    }
+
+    [Fact]
+    public void TrailingExtensionBytes_AreIgnored()
+    {
+        // A later minor version appends data after the known parts; this build still reads the parts.
+        var data = Encoded(PoseFlags.RightHand | PoseFlags.VrActive, extra: 6);
+        var s = new RemotePoseStream();
+        Assert.Equal(PoseAccept.Accepted, s.Accept(data, data.Length, 1.0));
+    }
+
+    [Fact]
+    public void WithoutTheVrActiveBit_IsNotAPosePacket()
+    {
+        // Every sender sets VrActive: another mod's byte[] on event 151 that starts with 1 rarely does.
+        var data = Encoded(PoseFlags.RightHand);
+        Assert.Equal(PoseAccept.Malformed, new RemotePoseStream().Accept(data, data.Length, 1.0));
+    }
+
+    [Fact]
+    public void Oversized_IsNotAPosePacket()
+    {
+        var data = Encoded(
+            PoseFlags.RightHand | PoseFlags.VrActive,
+            extra: PoseCodec.MaxPacketSize
+        );
+        Assert.Equal(PoseAccept.Malformed, new RemotePoseStream().Accept(data, data.Length, 1.0));
+    }
+
+    [Fact]
+    public void MaxPacketSize_LeavesRoomForExtensions()
+    {
+        Assert.True(PoseCodec.MaxPacketSize > PoseCodec.MaxSize);
+    }
+}

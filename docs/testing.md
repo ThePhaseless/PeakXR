@@ -6,6 +6,7 @@ The `sandbox` feature spawns every item, mob and entity and removes the risk of 
 
 1. Set `Sandbox.Enabled = true` in `BepInEx/config/com.thephaseless.peakxr.cfg`. It is off by default.
 2. Play **offline** (Play Solo, no lobby). The sandbox refuses to act in any online lobby, your own included, so it never touches players who did not opt in.
+   Once you use a sandbox action or open the console, the run saves nothing: no quicksave write or delete, no achievements, stats or ascents. A notice at the off hand (the console in flat play) says so once. Progress counts again from the next title or airport, unless god mode is still on.
 3. Keys: `F1` opens the game console (unlocked by the sandbox), `F7` toggles the flat sandbox window (`Sandbox.WindowKey`; flat only, in VR it is ignored because the window shows only on the desktop and would block your input). `F5` and `Insert` belong to other mods.
 4. In VR, the item room below covers the items without a keyboard. Everything else still runs from the console or the flat window; put the headset on afterwards.
 

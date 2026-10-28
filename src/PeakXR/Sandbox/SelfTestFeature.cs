@@ -61,8 +61,7 @@ public sealed class SelfTestFeature : Feature
         Patch(typeof(SelfTestUseProbe));
         Patch(typeof(SelfTestEndGamePatch));
         Patch(typeof(SelfTestCampfirePatch));
-        foreach (var guard in SelfTestProgressGuard.Patches)
-            Patch(guard);
+        SelfTestProgressGuard.PatchOnce(Patch);
         SelfTestProgressGuard.Arm(Id);
         SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
             "bingbong"
@@ -95,8 +94,9 @@ public sealed class SelfTestFeature : Feature
 /// kept too: a campfire light writes it (<c>SaveNow</c>, :352-366, from Campfire.cs:505) and the run's end deletes it
 /// (<c>DestroySaveData</c>, :459-469, from Character.cs:893). Both are skipped and logged; nothing in a test run loads
 /// the save back. <see cref="Arm"/> records the file's fingerprint so the run's last step can prove it unchanged.
-/// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>, and by <c>sandbox.room</c> while the item room is open
-/// (<see cref="Room"/>): the patches then let everything through outside it.</para>
+/// Used by <c>sandbox.selftest</c> and <c>sandbox.mptest</c>, by <c>sandbox.room</c> while the item room is open
+/// (<see cref="Room"/>), and by <c>sandbox</c> for a run that used any sandbox action
+/// (<see cref="SandboxActions.RunMark"/>): the patches let everything through otherwise.</para>
 /// </summary>
 static class SelfTestProgressGuard
 {
@@ -114,10 +114,23 @@ static class SelfTestProgressGuard
     /// <summary>All guards are patched: steps that would grant progress or touch the save may run.</summary>
     internal static bool Active;
 
-    /// <summary>The item room is open (<see cref="ItemRoom"/>); the guards block only then, or when armed.</summary>
+    /// <summary>The item room is open (<see cref="ItemRoom"/>); the guards block only then, when armed, or in a
+    /// sandbox run.</summary>
     internal static bool Room;
 
-    static bool Blocking => Active || Room;
+    static bool patched;
+
+    static bool Blocking => Active || Room || SandboxActions.RunMark.Marked;
+
+    /// <summary>Applies every <see cref="Patches"/> class once, whichever feature installs first.</summary>
+    internal static void PatchOnce(Action<Type> patch)
+    {
+        if (patched)
+            return;
+        foreach (var guard in Patches)
+            patch(guard);
+        patched = true;
+    }
 
     /// <summary>The quicksave's path and how it looked when the guard was armed.</summary>
     internal static string SavePath;
@@ -144,7 +157,7 @@ static class SelfTestProgressGuard
             if (!Blocking)
                 return true;
             Plugin.Log.LogInfo(
-                "[selftest] guarded Quicksave.SaveNow: the player's quicksave is kept"
+                "[progress-guard] guarded Quicksave.SaveNow: the player's quicksave is kept"
             );
             return false;
         }
@@ -162,7 +175,7 @@ static class SelfTestProgressGuard
             // The rest of DestroySaveData's effect that a test run relies on: no load from the save.
             Quicksave.ShouldUseSaveData = false;
             Plugin.Log.LogInfo(
-                "[selftest] guarded Quicksave.DestroySaveData: the player's quicksave is kept"
+                "[progress-guard] guarded Quicksave.DestroySaveData: the player's quicksave is kept"
             );
             return false;
         }
