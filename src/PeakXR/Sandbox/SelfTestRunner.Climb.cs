@@ -3119,8 +3119,11 @@ internal sealed partial class SelfTestRunner
                 yield return null;
                 var p = api.GetPosition(c.data.ropePercent);
                 float dt = Time.deltaTime;
+                // Flat() normalises, so take the level distance directly: dividing a unit vector by dt read the frame rate.
+                var level = p - last;
+                level.y = 0f;
                 if (dt > 0f)
-                    peak = Mathf.Max(peak, Flat(p - last).magnitude / dt);
+                    peak = Mathf.Max(peak, level.magnitude / dt);
                 last = p;
                 float x = Vector3.Dot(p, axis);
                 lo = Mathf.Min(lo, x);
