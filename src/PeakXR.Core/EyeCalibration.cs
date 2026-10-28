@@ -38,6 +38,20 @@ public sealed class EyeCalibration
     public bool FirstSampleNeedsBlink(Vector2 sample) =>
         !Have && Vector2.Distance(Offset, sample) > BlinkAbove;
 
+    /// <summary>How long a first sample that needs a blink waits for a fade that comes anyway (a scene load, a
+    /// respawn, a loading screen lifting) before it gets a blink of its own.</summary>
+    public const float FadeWaitSeconds = 3f;
+
+    /// <summary>When a first sample that needs a blink lands: inside a fade that is already black, else behind its
+    /// own blink once <see cref="FadeWaitSeconds"/> passed without one. A new character's first still stand used to
+    /// blink at once, unprompted.</summary>
+    /// <param name="viewBlack">The drawn view is black now (any fade).</param>
+    /// <param name="waited">Seconds since the sample was taken.</param>
+    public static EyeLanding Land(bool viewBlack, float waited) =>
+        viewBlack ? EyeLanding.Now
+        : waited >= FadeWaitSeconds ? EyeLanding.Blink
+        : EyeLanding.Wait;
+
     /// <returns>Whether the sample was used.</returns>
     public bool Sample(Vector2 sample, bool leaning, float dt)
     {
@@ -56,4 +70,17 @@ public sealed class EyeCalibration
         Have = false;
         Converged = false;
     }
+}
+
+/// <summary>What to do with a pending first eye sample this frame (<see cref="EyeCalibration.Land"/>).</summary>
+public enum EyeLanding
+{
+    /// <summary>Keep it pending: a fade may still come.</summary>
+    Wait,
+
+    /// <summary>The view is black: apply it now.</summary>
+    Now,
+
+    /// <summary>No fade came: ask for a blink and apply it at black.</summary>
+    Blink,
 }

@@ -248,9 +248,11 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly EyeCalibration massEyes = new(DefaultEyeOffset);
     private readonly EyeCalibration torsoEyes = new(DefaultTorsoEyeOffset);
 
-    /// <summary>A first eye sample that would visibly move the view, waiting for the blink it lands behind
-    /// (<see cref="EyeCalibration.FirstSampleNeedsBlink"/>); applied when the takeover switches at black.</summary>
+    /// <summary>A first eye sample that would visibly move the view (<see cref="EyeCalibration.FirstSampleNeedsBlink"/>),
+    /// waiting for black: a fade already on its way, else its own blink (<see cref="LandPendingEyes"/>). Applied when
+    /// the view is black or the takeover switches at black.</summary>
     private bool pendingEyes;
+    private float pendingEyesSince;
     private System.Numerics.Vector2 pendingMassEyes,
         pendingTorsoEyes;
     private string pendingEyesLog;
@@ -407,6 +409,8 @@ internal sealed class RigDriver : MonoBehaviour
         SetFallback(false);
         UnbindMainCamera();
         takeover.Reset(false);
+        // The reset drops any blink a pending first eye sample waits for: take a fresh one when VR is back.
+        pendingEyes = false;
         shownKind = ViewKind.FirstPerson;
         VRFade.Clear(this);
         VRFade.Clear(wallFadeOwner);
@@ -452,6 +456,7 @@ internal sealed class RigDriver : MonoBehaviour
                 eyeGuard.Arm();
         }
         bool eyeSampled = UpdateEyeOffset(c, dt, out var eyePoint);
+        LandPendingEyes(dt);
         MeasureStandingEye(c, eyeSampled, eyePoint);
         HandleRecenterInput(c, dt);
         float upright = c != null && Upright(c) ? 1f : 0f;
@@ -718,7 +723,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             pendingMassEyes = sample;
             pendingTorsoEyes = torsoSample;
-            takeover.Blink();
+            pendingEyesSince = Time.unscaledTime;
         }
         else
         {
@@ -746,14 +751,48 @@ internal sealed class RigDriver : MonoBehaviour
                 + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m";
             if (blink)
             {
-                // Logged when it lands, once the blink is black.
+                // Logged when it lands, once the view is black.
                 pendingEyes = true;
-                pendingEyesLog = line + "; applied behind a blink";
+                pendingEyesLog = line;
             }
             else
                 Plugin.Log.LogInfo(line + "; applied at once (too small a change to see)");
         }
         return true;
+    }
+
+    /// <summary>
+    /// A pending first eye sample lands inside a fade that is black anyway (scene load, respawn, loading screen) when one
+    /// comes within <see cref="EyeCalibration.FadeWaitSeconds"/>; only then does it ask for a blink of its own, again
+    /// every frame, so a blink dropped on the way (a takeover reset) never leaves it pending for good.
+    /// </summary>
+    private void LandPendingEyes(float dt)
+    {
+        if (!pendingEyes)
+            return;
+        switch (
+            EyeCalibration.Land(
+                UI.Common.FadeView.Alpha >= 0.99f,
+                Time.unscaledTime - pendingEyesSince
+            )
+        )
+        {
+            case EyeLanding.Now:
+                ApplyPendingEyes(dt, "applied inside a fade");
+                snap = true;
+                break;
+            case EyeLanding.Blink:
+                takeover.Blink();
+                break;
+        }
+    }
+
+    private void ApplyPendingEyes(float dt, string how)
+    {
+        pendingEyes = false;
+        massEyes.Sample(pendingMassEyes, false, dt);
+        torsoEyes.Sample(pendingTorsoEyes, false, dt);
+        Plugin.Log.LogInfo($"{pendingEyesLog}; {how}");
     }
 
     /// <summary>Ground at most this tilted (cos 8 degrees) counts as flat for the standing eye height.</summary>
@@ -1056,12 +1095,7 @@ internal sealed class RigDriver : MonoBehaviour
             staticSince = Time.unscaledTime;
             snap = true;
             if (pendingEyes)
-            {
-                pendingEyes = false;
-                massEyes.Sample(pendingMassEyes, false, dt);
-                torsoEyes.Sample(pendingTorsoEyes, false, dt);
-                Plugin.Log.LogInfo(pendingEyesLog);
-            }
+                ApplyPendingEyes(dt, "applied behind a blink");
             if (pendingRecenter)
             {
                 Recenter(c, HeightCause.Recenter);

@@ -63,4 +63,30 @@ public class EyeCalibrationTests
         Assert.False(cal.Converged);
         Assert.Equal(new Vector2(0.1f, 0.8f), cal.Offset);
     }
+
+    [Fact]
+    public void AFirstSampleNeedingABlink_WaitsForAFadeFirst()
+    {
+        // A new character's first still stand: no unprompted blink while a scene load, respawn or loading screen
+        // fade may still come.
+        Assert.Equal(EyeLanding.Wait, EyeCalibration.Land(viewBlack: false, waited: 0f));
+        Assert.Equal(
+            EyeLanding.Wait,
+            EyeCalibration.Land(false, EyeCalibration.FadeWaitSeconds * 0.9f)
+        );
+    }
+
+    [Fact]
+    public void AFadeAlreadyBlack_TakesTheFirstSample()
+    {
+        Assert.Equal(EyeLanding.Now, EyeCalibration.Land(viewBlack: true, waited: 0f));
+        Assert.Equal(
+            EyeLanding.Now,
+            EyeCalibration.Land(true, EyeCalibration.FadeWaitSeconds * 2f)
+        );
+    }
+
+    [Fact]
+    public void NoFadeInTheWindow_Blinks() =>
+        Assert.Equal(EyeLanding.Blink, EyeCalibration.Land(false, EyeCalibration.FadeWaitSeconds));
 }
