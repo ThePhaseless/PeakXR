@@ -151,18 +151,26 @@ public sealed class SelfTestReport
         current = null;
     }
 
-    /// <summary>Record a step that was not run (no standalone spawn path); counts as neither pass nor fail.</summary>
+    /// <summary>
+    /// Record a step that was not run (no standalone spawn path); counts as neither pass nor fail. A running step of
+    /// that id keeps its first log line and vanilla note, and fails instead when it logged a PeakXR exception: a
+    /// skip must not hide a bug that fired before the step gave up.
+    /// </summary>
     public void Skip(string id, string note)
     {
+        var s = current != null && current.Id == id ? current : new StepResult { Id = id };
         current = null;
-        steps.Add(
-            new StepResult
-            {
-                Id = id,
-                Skipped = true,
-                Note = note,
-            }
-        );
+        if (s.SawException)
+        {
+            s.Note = "skipped (" + note + ") after a PeakXR exception";
+            Failed++;
+        }
+        else
+        {
+            s.Note = note;
+            s.Skipped = true;
+        }
+        steps.Add(s);
     }
 
     /// <summary><c>id PASS|FAIL|SKIP 1.23s [note] [| first log line]</c>.</summary>

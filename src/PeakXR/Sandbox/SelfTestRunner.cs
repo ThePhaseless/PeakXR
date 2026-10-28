@@ -682,8 +682,15 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         mobs.Clear();
         mobs.AddRange(MobCatalog.Entries);
         stepNote = mobs.Count.ToString(CultureInfo.InvariantCulture) + " entities";
+        // Each entity is its own mob.* step: a scan that comes back short makes those steps vanish, not fail.
+        if (mobs.Count < MinMobEntities)
+            Fail($"only {mobs.Count} entities, expected at least {MinMobEntities}");
         yield break;
     }
+
+    /// <summary>Fewest entities the deep scan may find: the VR run of 2026-10-28 found 43; the floor leaves room for a
+    /// game update that drops a few, while a broken scan (nothing from Photon's cache or Resources) fails.</summary>
+    const int MinMobEntities = 35;
 
     /// <summary>Mobs judged by how far they come toward the player: spawned at a fixed distance straight ahead, so the
     /// start does not depend on where the spawn rule lands (run 61: AntiSphere_Projectile started 6.1 m off instead of

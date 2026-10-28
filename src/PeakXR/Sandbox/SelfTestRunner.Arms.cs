@@ -65,6 +65,10 @@ internal sealed partial class SelfTestRunner
     /// controller-to-wrist offset.</summary>
     const float MaxFollowDegrees = 25f;
 
+    /// <summary>Farthest the view's eye may sit from the head bone's body: inside a scout's big head. shortcut: a
+    /// generous first bound, not yet measured over runs (the note logs the distance); tighten it from the logs.</summary>
+    const float MaxEyeFromHeadBone = 0.4f;
+
     IEnumerator ArmReachCheck()
     {
         var fails = new List<string>();
@@ -132,7 +136,24 @@ internal sealed partial class SelfTestRunner
                         $"the view hold keeps the view {held.magnitude:0.00} m off the body, past its {ViewHold.Deadband:0.00} m deadband"
                     )
                 );
+            // A second oracle: the eye renderers are also what the rig anchors on (RigDriver.TryEyePoint), so a wrong
+            // renderer set would pass the check above. The head bone must be near too.
+            if (parts.TryGetValue(BodypartType.Head, out var headPart))
+            {
+                float bone = Vector3.Distance(head.position - held, headPart.Rig.position);
+                notes.Add(F($"eye {bone:0.00} m from the head bone"));
+                if (bone > MaxEyeFromHeadBone)
+                    fails.Add(
+                        F(
+                            $"eye {bone:0.00} m from the head bone > {MaxEyeFromHeadBone:0.00} m: the eyes it rides are not on this head"
+                        )
+                    );
+            }
+            else
+                fails.Add("no head bone to cross-check the eye with");
         }
+        else if (head != null && VRSession.Active)
+            fails.Add("avatar eye renderers not found: the view's eye anchor cannot be judged");
         else
         {
             notes.Add("avatar eye renderers not found, eye placement not judged");

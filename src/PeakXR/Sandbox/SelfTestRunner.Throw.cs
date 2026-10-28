@@ -213,6 +213,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var landed = thrown.Center();
+        bool rested = still >= 0.3f;
         ThrowReport(
             from,
             bodyForward,
@@ -223,7 +224,8 @@ internal sealed partial class SelfTestRunner
             clamp,
             probe,
             releasedAt,
-            landed
+            landed,
+            rested
         );
         if (probe != null)
             Destroy(probe);
@@ -256,7 +258,8 @@ internal sealed partial class SelfTestRunner
         float clamp,
         ThrowProbe probe,
         float releasedAt,
-        Vector3 landed
+        Vector3 landed,
+        bool rested
     )
     {
         float g = Physics.gravity.magnitude;
@@ -302,7 +305,7 @@ internal sealed partial class SelfTestRunner
             )
             : "no contact seen";
         string launchNote = F(
-            $"landed {distance:0.0} m away at {landed}, launch {launch:0.0} m/s (clamp {clamp:0.0}), max range {range:0.0} m"
+            $"landed {distance:0.0} m away at {landed}{(rested ? "" : " (still moving after 5 s: not its rest)")}, launch {launch:0.0} m/s (clamp {clamp:0.0}), max range {range:0.0} m"
         );
         string releaseNote = F(
             $"release {velocity} m/s, pitch {pitch:0} deg, heading {heading:0} deg off the body forward, hand {PhysicalInteraction.LastThrowHand} + hip {PhysicalInteraction.LastThrowBody}"

@@ -173,7 +173,7 @@ internal sealed partial class SelfTestRunner
             && !FindWall(c, out wall, out stand, LungeHeadroom)
         )
         {
-            stepSkip = NoWall;
+            NoWallFound();
             yield break;
         }
         c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, stand), false);
@@ -520,9 +520,9 @@ internal sealed partial class SelfTestRunner
             + $"after letting go {c.data.isRopeClimbing}";
         if (far != null)
             Fail(far + ": " + note);
-        else if (rise < 0.1f)
+        else if (rise < MinPullRise)
             Fail("arm pull did not climb the rope: " + note);
-        else if (rise2 < 0.1f)
+        else if (rise2 < MinPullRise)
             Fail("the second hand's pull did not climb on: " + note);
         else if (!kept)
             Fail("a regrip inside the grace dropped the rope: " + note);
@@ -778,13 +778,16 @@ internal sealed partial class SelfTestRunner
         );
         yield return Wait(0.3f);
         bool still = c.data.isVineClimbing;
-        float moved = Vector3.Dot(vine.GetPosition(c.data.vinePercent, 1, 1) - start, along);
+        // Off the vine, vinePercent is stale: a fall must not read as a climb (as the rope step's rise).
+        float moved = still
+            ? Vector3.Dot(vine.GetPosition(c.data.vinePercent, 1, 1) - start, along)
+            : 0f;
         yield return GripTo(left, 0f, 0.1f);
         yield return WaitFor(() => !c.data.isVineClimbing, 1.5f);
         var note =
             $"climb point moved {moved:0.00} m along the vine for a 0.40 m pull, on the vine after the pull "
             + $"{still}, after letting go {c.data.isVineClimbing}";
-        if (moved < 0.1f)
+        if (moved < MinPullRise)
             Fail("arm pull did not move along the vine: " + note);
         else if (c.data.isVineClimbing)
             Fail("letting go did not leave the vine: " + note);
@@ -998,7 +1001,7 @@ internal sealed partial class SelfTestRunner
         }
         if (!FindWall(c, out var wall, out var stand))
         {
-            stepSkip = NoWall;
+            NoWallFound();
             yield break;
         }
         var normal = Flat(wall.normal);
@@ -1194,7 +1197,7 @@ internal sealed partial class SelfTestRunner
             && !FindWall(c, out wallBase, out wallStand, headroom)
         )
         {
-            stepSkip = NoWall;
+            NoWallFound();
             yield break;
         }
         c.photonView.RPC(
@@ -1727,7 +1730,7 @@ internal sealed partial class SelfTestRunner
         var tools = Interact.Tools.ToolsConfig.Instance;
         if (!tools.HammerSpikes)
         {
-            stepSkip = "Tools.HammerSpikes off";
+            stepSkip = "Interaction.Tools.HammerSpikes off";
             yield break;
         }
         var spike = FindItemComponent<ClimbingSpikeComponent>();
