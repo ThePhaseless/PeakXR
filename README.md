@@ -104,7 +104,9 @@ one is running; see [Check that it works](#check-that-it-works).
   set as the OpenXR runtime.
 - If the view is dimmed and the controllers do nothing, SteamVR's dashboard is open on top of the game.
   Close it with the controller's system button.
-- Hold the menu button for a second to recenter your view and recalibrate eye height.
+- Click both sticks in and hold them for a second to recenter your view and recalibrate eye height. This
+  works on every controller. Where the menu button reaches the game (not Quest or Rift under SteamVR),
+  holding it does the same, and a tap pauses.
 
 ### Playing with friends
 
@@ -143,9 +145,11 @@ run. With `Mode = OpenXR` and `OpenVRFallback = true` (the default), the OpenVR 
 if OpenXR does not start within `[XR] StartTimeoutSeconds`, the game tries OpenVR, and if that fails as
 well it runs flat.
 
-If the VR runtime crashes the game while it starts, twice in a row, the next launch starts flat and says
-so on the title screen. PeakXR notes each start in `BepInEx/config/PeakXR-xr-start.txt` and deletes the file
-once VR runs; delete it yourself to try VR again after fixing SteamVR or the headset.
+If the VR runtime crashes the game while it starts up, twice in a row, later launches start flat and say so
+on the title screen. PeakXR writes `BepInEx/config/PeakXR-xr-start.txt` just before the runtime starts and
+deletes it as soon as that call returns, so closing the game or SteamVR while it waits for the headset does
+not count. Once SteamVR or the headset is fixed, press Try VR again on the VR settings tab (or delete the
+file) and restart. Test launches (`-peakxr-selftest`, `-peakxr-mptest`, `-peakxr-compat`) skip this guard.
 
 When SteamVR quits during play, OpenXR leaves the game running flat. Valve's OpenVR plugin quits the game
 instead, as SteamVR expects of its apps.
@@ -153,5 +157,5 @@ instead, as SteamVR expects of its apps.
 Every other option is in `BepInEx/config/com.thephaseless.peakxr.cfg`, and in VR also in the VR tab of
 the game's settings: camera under `[Camera]`, rendering under `[Render]`, runtime start-up under `[XR]`,
 and comfort under `[Comfort]` and `[ComfortEvents]`. [docs/controls.md](docs/controls.md) lists the
-controls and the settings behind them. To report a bug, see [docs/debugging.md](docs/debugging.md): hold Menu
-on one controller and click the other stick for 1.5 s, then send the folder it saves.
+controls and the settings behind them. To report a bug, see [docs/debugging.md](docs/debugging.md): click
+both sticks in and keep holding them past the recenter, 2.5 s in all, then send the folder it saves.
