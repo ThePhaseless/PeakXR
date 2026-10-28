@@ -376,16 +376,17 @@ internal static class PhysicalInteraction
             hand.Action = GripPressAction.None;
     }
 
-    /// <summary>The hand's controller has been untracked past <see cref="BlinkHold.MaxSeconds"/>: its grip opens. The
-    /// stale throw samples are dropped so what it held falls instead of flying off, and a soft note at the hand says
-    /// it let go (the controller itself may be off, so no buzz).</summary>
-    private static void LostForGood(Hand hand, VRRig rig)
+    /// <summary>The hand's controller is gone (<see cref="BlinkHold"/>: disconnected, or untracked past
+    /// <see cref="BlinkHold.MaxSeconds"/>): its grip opens like a slow release, so the held item drops, or stays with
+    /// <c>ReleaseToDrop</c> off. The stale throw samples are dropped so it never flies off, and a soft note at the
+    /// hand says the grip opened (the controller itself may be off, so no buzz).</summary>
+    private static void LostForGood(Hand hand, VRRig rig, bool disconnected)
     {
         hand.Throw.Clear();
         if (!hand.Grip.Held)
             return;
         Plugin.Log.LogInfo(
-            $"[interact.physical] {(hand.Left ? "left" : "right")} controller untracked for {BlinkHold.MaxSeconds:0.##} s: its grip opens"
+            $"[interact.physical] {(hand.Left ? "left" : "right")} controller {(disconnected ? "disconnected" : $"untracked for {BlinkHold.MaxSeconds:0.##} s")}: its grip opens"
         );
         var at = rig != null ? rig.Hand(hand.Left) : null;
         if (at != null)
@@ -403,14 +404,14 @@ internal static class PhysicalInteraction
     )
     {
         ref var state = ref VRInput.Hand(hand.Left);
-        // A tracking blink keeps the last grip and trigger, as ClimbHands and BodyInventory do: opening the hand there
+        // Lost tracking keeps the last grip and trigger, as ClimbHands and BodyInventory do: opening the hand there
         // dropped or threw the item from stale throw samples, then the grip closing again regrabbed it. A latched
-        // Toggle grip already reads 1 through the blink (GripLatch keeps its latch untracked). One-handed play's
-        // unused controller is never tracked: it reads open. A controller lost for good (switched off, flat, out of the
-        // room) must not hold forever: past BlinkHold.MaxSeconds it reads open too, and lets go as a plain drop.
+        // Toggle grip already reads 1 through it (GripLatch keeps its latch untracked). One-handed play's unused
+        // controller is never tracked: it reads open. A controller that is gone (disconnected, or untracked past
+        // BlinkHold.MaxSeconds) must not hold forever: it reads open too, a release without a throw.
         bool unused = VRInput.OneHanded && hand.Left != VRInput.LeftHanded;
-        if (hand.Blink.Update(state.Tracked || unused, dt))
-            LostForGood(hand, rig);
+        if (hand.Blink.Update(state.Tracked || unused, state.Disconnected && !unused, dt))
+            LostForGood(hand, rig, state.Disconnected);
         bool open = unused || hand.Blink.Expired;
         hand.Grip.Update(
             state.Tracked ? state.Grip

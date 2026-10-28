@@ -159,7 +159,10 @@ internal sealed class ControllerReader
     {
         s = default;
         if (!device.isValid)
+        {
+            s.Disconnected = true;
             return;
+        }
 
         s.Haptics = haptics;
         s.Tracked = !isTracked.Has || Bool(isTracked);

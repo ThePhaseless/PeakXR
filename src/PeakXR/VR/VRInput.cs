@@ -8,6 +8,10 @@ namespace PeakXR.VR;
 public struct HandState
 {
     public bool Tracked;
+
+    /// <summary>The runtime has no device for this hand (switched off, flat, unpaired). Default false, so a scripted
+    /// or blanked hand counts as present.</summary>
+    public bool Disconnected;
     public Vector3 Position;
     public Quaternion Rotation;
     public Vector3 Velocity;

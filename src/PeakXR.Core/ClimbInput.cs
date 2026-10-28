@@ -4,29 +4,39 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
-/// How long a hand's grip outlives its tracking. A tracking blink keeps the last grip (opening the hand there dropped
-/// or threw items, and dropped climbers), but a controller that powered off, ran flat or left the room never comes
-/// back: after <see cref="MaxSeconds"/> untracked the grip reads open, so the item drops and the anchor lets go.
+/// How long a hand's grip outlives its tracking. Lost tracking keeps the last grip (opening the hand there dropped
+/// or threw items, and dropped climbers), and normal play loses it for seconds: a Lighthouse controller hidden behind
+/// the body, a WMR or Reverb G2 controller behind the back or out of the headset cameras' view. Only a controller
+/// that is really gone opens: one the runtime reports disconnected (switched off, flat) at once, and one untracked
+/// for <see cref="MaxSeconds"/>, which covers a runtime that keeps a dead controller as an untracked device.
 /// </summary>
 public sealed class BlinkHold
 {
-    /// <summary>Longer than a blink (an occluded controller, a base-station hiccup), short enough to notice.</summary>
-    public const float MaxSeconds = 1.75f;
+    /// <summary>Far longer than any occlusion in play (a look over the shoulder, a reach behind the back), short
+    /// enough that a dead controller does not hold an item or a rope for good.</summary>
+    public const float MaxSeconds = 8f;
 
     private float lost;
+    private bool gone;
 
-    /// <summary>The hand has been untracked past <see cref="MaxSeconds"/>: treat its grip as opened.</summary>
-    public bool Expired => lost >= MaxSeconds;
+    /// <summary>The hand's controller disconnected or has been untracked past <see cref="MaxSeconds"/>: treat its
+    /// grip as opened, until it is tracked again.</summary>
+    public bool Expired => gone || lost >= MaxSeconds;
 
+    /// <param name="tracked">The controller's pose is tracked this frame.</param>
+    /// <param name="disconnected">The runtime has no device for this hand (switched off, flat, unpaired).</param>
+    /// <param name="dt">Seconds since the last update.</param>
     /// <returns>True on the frame the hold expires (the caller's one log line or cue).</returns>
-    public bool Update(bool tracked, float dt)
+    public bool Update(bool tracked, bool disconnected, float dt)
     {
+        bool was = Expired;
         if (tracked)
         {
             lost = 0f;
+            gone = false;
             return false;
         }
-        bool was = Expired;
+        gone |= disconnected;
         lost += Math.Max(dt, 0f);
         return Expired && !was;
     }
