@@ -399,3 +399,83 @@ public class BugReportTextTests
         Assert.Equal("abc", text);
     }
 }
+
+public class StickChordTests
+{
+    const float Dt = 0.1f;
+
+    static int Reports(StickChord c, float seconds, bool l, bool r, bool blocked = false)
+    {
+        int n = 0;
+        for (float t = 0f; t < seconds - 1e-4f; t += Dt)
+            if (c.Update(l, r, blocked, Dt) == BugChordEvent.Report)
+                n++;
+        return n;
+    }
+
+    [Fact]
+    public void BothSticks_Active_OneStickNot()
+    {
+        var c = new StickChord();
+        Reports(c, 0.3f, true, false);
+        Assert.False(c.Active);
+        Assert.False(c.StickTaken(true));
+        c.Update(true, true, false, Dt);
+        Assert.True(c.Active);
+        Assert.True(c.StickTaken(true));
+        Assert.True(c.StickTaken(false));
+    }
+
+    [Fact]
+    public void HeldPastRecenterAndReport_OneReport()
+    {
+        var c = new StickChord { RecenterSeconds = 1f, ReportSeconds = 1.5f };
+        Assert.Equal(0, Reports(c, 2.3f, true, true));
+        Assert.Equal(1, Reports(c, 2f, true, true));
+    }
+
+    [Fact]
+    public void ReleasedAfterRecenter_NoReportNoMarker()
+    {
+        var c = new StickChord { RecenterSeconds = 1f, ReportSeconds = 1.5f };
+        Reports(c, 1.3f, true, true);
+        Assert.Equal(BugChordEvent.None, c.Update(true, false, false, Dt));
+        Assert.False(c.Active);
+    }
+
+    [Fact]
+    public void ReportProgress_StartsAfterTheRecenter()
+    {
+        var c = new StickChord { RecenterSeconds = 1f, ReportSeconds = 1.5f };
+        Reports(c, 0.8f, true, true);
+        Assert.Equal(0f, c.ReportProgress, 3);
+        Reports(c, 1f, true, true);
+        Assert.InRange(c.ReportProgress, 0.4f, 0.65f);
+    }
+
+    [Fact]
+    public void Blocked_NeverStarts()
+    {
+        var c = new StickChord();
+        Assert.Equal(0, Reports(c, 4f, true, true, blocked: true));
+        Assert.False(c.Active);
+        Assert.False(c.StickTaken(true));
+    }
+
+    [Fact]
+    public void Taken_ThroughEachReleaseFrame()
+    {
+        var c = new StickChord();
+        c.Update(true, true, false, Dt);
+        c.Update(true, false, false, Dt);
+        Assert.True(c.StickTaken(false));
+        Assert.True(c.StickTaken(true));
+        c.Update(true, false, false, Dt);
+        Assert.False(c.StickTaken(false));
+        Assert.True(c.StickTaken(true));
+        c.Update(false, false, false, Dt);
+        Assert.True(c.StickTaken(true));
+        c.Update(false, false, false, Dt);
+        Assert.False(c.StickTaken(true));
+    }
+}

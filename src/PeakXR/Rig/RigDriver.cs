@@ -841,10 +841,14 @@ internal sealed class RigDriver : MonoBehaviour
         // A Menu the bug-report chord holds is not a recenter hold.
         bool left = VRInput.Left.Menu && !Diagnostics.DebugGesture.MenuTaken(true),
             right = VRInput.Right.Menu && !Diagnostics.DebugGesture.MenuTaken(false);
+        // Both sticks clicked: the recenter every controller has (a Touch Menu may never reach the game).
+        bool sticks = Diagnostics.DebugGesture.SticksHeld;
         // The ring goes to the controller whose button is held; with both down it stays where it is.
-        if (left != right)
+        if (sticks && !left && !right)
+            recenterLeft = VRInput.OffHandLeft;
+        else if (left != right)
             recenterLeft = left;
-        bool fired = recenterPress.Update(left || right, dt);
+        bool fired = recenterPress.Update(left || right || sticks, dt);
         holdCue.Show(
             rig.Hand(recenterLeft),
             rig.Head,

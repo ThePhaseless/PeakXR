@@ -488,3 +488,73 @@ public static class BugReportText
         return sb.Append(text, from, text.Length - from).ToString();
     }
 }
+
+/// <summary>
+/// Both stick clicks held together: the recenter and bug-report chord that works on every controller. Under SteamVR
+/// a Touch left Menu opens the dashboard and the right controller has none, so Menu alone cannot be relied on. The
+/// caller recenters while <see cref="Active"/> lasts <see cref="RecenterSeconds"/>; holding on for
+/// <see cref="ReportSeconds"/> more saves a report. Both sticks are taken from the chord's start through each one's
+/// release frame (<see cref="StickTaken"/>), so the layout's sprint and crouch let go while it is held.
+/// </summary>
+public sealed class StickChord
+{
+    public float RecenterSeconds = 1f;
+    public float ReportSeconds = 1.5f;
+
+    private bool fired;
+    private bool takenL;
+    private bool takenR;
+    private bool outL;
+    private bool outR;
+
+    /// <summary>Both sticks are held now, as one chord.</summary>
+    public bool Active { get; private set; }
+
+    /// <summary>Seconds the current chord has been held.</summary>
+    public float Held { get; private set; }
+
+    /// <summary>0..1 of the report hold, which starts once the recenter time has passed; 0 while not active.</summary>
+    public float ReportProgress =>
+        !Active
+            ? 0f
+            : Math.Max(0f, Math.Min(1f, (Held - RecenterSeconds) / Math.Max(1e-3f, ReportSeconds)));
+
+    /// <summary>This frame, the chord owns that controller's stick click.</summary>
+    public bool StickTaken(bool left) => left ? outL : outR;
+
+    /// <param name="blocked">Another chord (the Menu one) holds a stick: never start.</param>
+    public BugChordEvent Update(bool stickL, bool stickR, bool blocked, float dt)
+    {
+        var e = BugChordEvent.None;
+        bool both = stickL && stickR;
+        if (!Active)
+        {
+            if (both && !blocked)
+            {
+                Active = true;
+                Held = 0f;
+                fired = false;
+                takenL = takenR = true;
+            }
+        }
+        else if (both)
+        {
+            Held += dt;
+            if (!fired && Held >= RecenterSeconds + ReportSeconds)
+            {
+                fired = true;
+                e = BugChordEvent.Report;
+            }
+        }
+        else
+            Active = false;
+        // Each stick stays taken through the frame it reads released.
+        outL = takenL;
+        outR = takenR;
+        if (!stickL)
+            takenL = false;
+        if (!stickR)
+            takenR = false;
+        return e;
+    }
+}

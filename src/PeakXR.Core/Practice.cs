@@ -16,7 +16,7 @@ public enum PracticeStation : byte
     /// <summary>Reach for an apple just out of reach: the refusal cue.</summary>
     Refused,
 
-    /// <summary>Hold Menu to recenter.</summary>
+    /// <summary>Hold both sticks in (or Menu, where it reaches the game) to recenter.</summary>
     Recenter,
 
     /// <summary>Climb a hanging rope (the airport's climbing wall carries one).</summary>

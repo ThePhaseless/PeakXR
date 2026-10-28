@@ -229,7 +229,7 @@ internal static class BodyGestures
                 DenyReason.HappenedHere,
                 DenyHint.Wrist(),
                 System.FormattableString.Invariant(
-                    $"Still crouched: stand up, or hold Menu {CameraFeature.RecenterSeconds:0.#} s to recenter"
+                    $"Still crouched: stand up, or hold both sticks in for {CameraFeature.RecenterSeconds:0.#} s to recenter"
                 )
             );
     }
