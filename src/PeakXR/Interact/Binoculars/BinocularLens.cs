@@ -71,6 +71,9 @@ internal sealed class BinocularLens : MonoBehaviour
 
     private Camera lensCam;
     private RenderTexture texture;
+
+    /// <summary>Half-size target for the small eyepiece lens (<see cref="LensCadence"/>), made on first use.</summary>
+    private RenderTexture eyepieceTexture;
     private Material material;
     private GameObject quad;
     private Transform quadTransform;
@@ -222,6 +225,31 @@ internal sealed class BinocularLens : MonoBehaviour
         AimLens(binoculars);
         TwistZoom(binoculars, left);
         Place(rig);
+        Cadence();
+    }
+
+    /// <summary>The eyepiece lens renders every other frame into a half-size texture; near-eye and panel views keep
+    /// full rate and size (<see cref="LensCadence"/>).</summary>
+    private void Cadence()
+    {
+        bool eyepiece = placement == Placement.Eyepiece;
+        if (eyepiece && eyepieceTexture == null)
+        {
+            int size = LensCadence.EyepieceSize(texture.width);
+            eyepieceTexture = new RenderTexture(size, size, 24)
+            {
+                name = "PeakXR.BinocularLens.Eyepiece",
+            };
+            eyepieceTexture.Create();
+        }
+        var target = eyepiece ? eyepieceTexture : texture;
+        bool retargeted = lensCam.targetTexture != target;
+        if (retargeted)
+        {
+            lensCam.targetTexture = target;
+            material.mainTexture = target;
+        }
+        lensCam.enabled = LensCadence.Render(eyepiece, retargeted, Time.frameCount);
     }
 
     private void AimLens(Action_ShowBinocularOverlay binoculars)
@@ -486,7 +514,7 @@ internal sealed class BinocularLens : MonoBehaviour
         }
         // Renderer index stays the pipeline default, as on the game's main camera: its fog pass keeps the zoomed
         // view as hazy as the eyes see it. A third shadow-map render and AA are not worth it for a small lens
-        // image, so this camera skips both. shortcut: renders every frame; render at half rate if profiling says so.
+        // image, so this camera skips both. Far clip stays the main camera's (1500 m): seeing far is the point.
         var data = lensCam.GetUniversalAdditionalCameraData();
         data.renderType = CameraRenderType.Base;
         data.allowXRRendering = false;
@@ -538,8 +566,14 @@ internal sealed class BinocularLens : MonoBehaviour
             texture.Release();
             Destroy(texture);
         }
+        if (eyepieceTexture != null)
+        {
+            eyepieceTexture.Release();
+            Destroy(eyepieceTexture);
+        }
         lensCam = null;
         texture = null;
+        eyepieceTexture = null;
         material = null;
         quad = null;
         quadTransform = null;
