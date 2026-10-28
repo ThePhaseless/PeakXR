@@ -451,27 +451,22 @@ internal sealed partial class SelfTestRunner
         var sign = gui.heroObject.transform.parent;
         var head = VRRig.Instance.Head;
         float d = sign != null ? Vector3.Distance(sign.position, head.position) : 0f;
-        // The sign stands at the first solid hit along its direction, clamped to 4-30 m, else at 30 m
-        // (WorldBanners.Sign.Place): repeat that ray.
+        // The sign stands just before the nearest rock in front of any part of it, at most 30 m and never nearer than
+        // the comfort floor (WorldBanners.Sign.Place): repeat that test from here.
         float expected = WorldBanners.Distance;
         if (sign != null && d > 0.01f)
         {
-            var dir = (sign.position - head.position) / d;
-            if (
-                Physics.Raycast(
-                    head.position + dir * 0.5f,
-                    dir,
-                    out var hit,
-                    WorldBanners.Distance,
-                    Physics.DefaultRaycastLayers,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
-                expected = Mathf.Clamp(
-                    hit.distance,
-                    WorldBanners.NearestDistance,
-                    WorldBanners.Distance
-                );
+            var part = (RectTransform)gui.heroObject.transform;
+            var mpp = SpatialMath.MetersPerPixel(
+                WorldBanners.Distance,
+                SpatialRuntime.DegreesPerPixel
+            );
+            expected = WorldBanners.ClearDistance(
+                head.position,
+                (sign.position - head.position) * (WorldBanners.Distance / d),
+                sign.rotation,
+                0.5f * mpp * part.localScale.x * part.rect.size
+            );
         }
         yield return Shot("ui-03-world-banner");
         var fails = new List<string>();

@@ -1,5 +1,6 @@
 using PeakXR.Core;
 using PeakXR.UI.Common;
+using PeakXR.UI.World;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -12,16 +13,18 @@ namespace PeakXR.UI.Spatial;
 /// the ascent title (<c>AscentUI</c>, A/AscentUI.cs:5) and the endgame countdown, win and lose cards
 /// (<c>GUIManager.endgame</c>, :69; <c>EndgameCounter</c>, A/EndgameCounter.cs:7-11) get signs too. A sign is placed
 /// when the game shows it, along your head yaw and above the horizon (out of the lower view while climbing), and is
-/// placed again if you turn far away from it or move far from it. A cliff in the way brings it closer, at the same
-/// angular size, so the two eyes never disagree about its depth. The game's own typing and fades still play.
+/// placed again if you turn away from it or move far from it. A cliff in the way brings it in to just before the
+/// rock, at the same angular size (<see cref="PanelMath.FitBeforeWall"/>, the rule every world panel shares), so
+/// the sign, drawn on top, never shows through nearer rock at a depth the two eyes disagree with. The game's own
+/// typing and fades still play.
 /// </summary>
 internal sealed class WorldBanners
 {
     internal const float Distance = 30f;
-    internal const float NearestDistance = 4f;
 
-    /// <summary>Re-place a shown sign once it is this far off your heading, in degrees...</summary>
-    private const float ReplaceDegrees = 100f;
+    /// <summary>Re-place a shown sign once it is this far off your heading, in degrees, so it stays in the view
+    /// of a 90-110 degree headset...</summary>
+    private const float ReplaceDegrees = 40f;
 
     /// <summary>...or once you are this far from where it was placed, in metres.</summary>
     private const float ReplaceMeters = 20f;
@@ -159,24 +162,44 @@ internal sealed class WorldBanners
             var far = SpatialMath
                 .Banner(eye.ToNumerics(), yaw, Distance, elevationDegrees)
                 .ToUnity();
-            var dir = (far - eye).normalized;
-            float d = Distance;
-            // Start past the player's own colliders; placement only, never per frame.
-            if (
-                Physics.Raycast(
-                    eye + dir * 0.5f,
-                    dir,
-                    out var hit,
-                    Distance,
-                    Physics.DefaultRaycastLayers,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
-                d = Mathf.Clamp(hit.distance, NearestDistance, Distance);
-            position = eye + dir * d;
+            var mpp = SpatialMath.MetersPerPixel(Distance, SpatialRuntime.DegreesPerPixel);
+            var offset = far - eye;
+            var d = ClearDistance(
+                eye,
+                offset,
+                SpatialRuntime.FaceEyeYaw(far, eye, forward),
+                0.5f * mpp * PixelSize()
+            );
+            position = eye + offset * (d / offset.magnitude);
             placedFrom = eye;
             rotation = SpatialRuntime.FaceEyeYaw(position, eye, forward);
             metersPerPixel = SpatialMath.MetersPerPixel(d, SpatialRuntime.DegreesPerPixel);
         }
+
+        /// <summary>The sign's size in box pixels: its largest moved part. Placement only.</summary>
+        private Vector2 PixelSize()
+        {
+            var size = Vector2.zero;
+            for (int i = 0; i < Box.Count; i++)
+            {
+                var item = Box.Item(i);
+                if (item != null)
+                    size = Vector2.Max(size, item.rect.size * item.localScale.x);
+            }
+            return size;
+        }
     }
+
+    /// <summary>Distance for a sign wanted at <see cref="Distance"/> along <paramref name="offset"/>, half extents
+    /// <paramref name="half"/> metres there: just before the nearest rock in front of any part of it. Placement
+    /// only (also ui.03's check).</summary>
+    internal static float ClearDistance(
+        Vector3 eye,
+        Vector3 offset,
+        Quaternion rotation,
+        Vector2 half
+    ) =>
+        PanelMath
+            .FitBeforeWall(offset.magnitude, WorldCanvases.WallDepth(eye, offset, rotation, half))
+            .Distance;
 }
