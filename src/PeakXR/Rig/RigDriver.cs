@@ -990,6 +990,8 @@ internal sealed class RigDriver : MonoBehaviour
             takeover.Blink();
 
         takeover.FadeSeconds = CameraFeature.FadeSeconds.Value;
+        // The drawn fade eases at UI.FadeSeconds, slower than this ramp: switch only once it is black.
+        takeover.DrawnFade = UI.Common.FadeView.Alpha;
         takeover.Update(want, dt);
         if (takeover.SwitchedThisFrame)
         {

@@ -121,6 +121,9 @@ internal sealed class EmoteState : MonoBehaviour
     /// <summary>The backflip launch comes 0.35 s in and lands about a second later (CharacterAnimations.cs:435).</summary>
     private const float FadeSeconds = 1.4f;
 
+    /// <summary>Seconds from the emote's start to the backflip launch (CharacterAnimations.cs:435).</summary>
+    private const float LaunchSeconds = 0.35f;
+
     private Character character;
     private AvatarPoseDriver driver;
     private float startTime;
@@ -133,9 +136,18 @@ internal sealed class EmoteState : MonoBehaviour
         startTime = Time.time;
         if (driver != null)
             driver.ArmsSuspended = suspend;
+        // A new emote mid-backflip replaces this one: drop its fade first, or nothing would ever clear it.
+        StopFade();
         fading = fade;
         if (fade)
-            VRFade.Set(this, 1f);
+        {
+            // Safety timeout: the hold lapses on its own even if this component never gets to clear it.
+            VRFade.Set(this, 1f, FadeSeconds + 1f);
+            // The launch comes LaunchSeconds in: a fade slower than that (UI.FadeSeconds up to 1.5 s) would show
+            // it, so go black at once instead.
+            if (UI.Common.FadeView.Seconds > LaunchSeconds - 0.05f)
+                UI.Common.FadeView.Snap(1f);
+        }
         enabled = true;
     }
 

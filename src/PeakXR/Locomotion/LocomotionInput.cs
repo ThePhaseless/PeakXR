@@ -385,6 +385,7 @@ internal static class LocomotionInput
             FollowDrops++;
         lastCanFollow = canFollow;
         WarnFar(c, canFollow, stickIdle);
+        Fade.DrawnFade = UI.Common.FadeView.Alpha;
         if (Fade.Update(Follow.RecenterNeeded, dt))
             Follow.Recenter(head);
         rig.RoomAnchor = Follow.Anchor;
