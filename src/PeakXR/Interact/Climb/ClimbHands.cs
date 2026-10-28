@@ -49,11 +49,14 @@ internal static class ClimbHands
     /// <summary>Distance (metres) from a handle within which a closing grip holds it.</summary>
     internal const float HandleRadius = 0.1f;
 
-    /// <summary>Rope pump tuning: head speed deadzone (m/s), gain (m/s² per m/s), cap (m/s²). The game's own climber
-    /// weight on the segment is 1 m/s² (Rope.cs:23, :167-171).</summary>
+    /// <summary>Rope pump tuning: head speed deadzone (m/s), gain (m/s² per m/s), cap (m/s²) and the climb point's level
+    /// swing speed (m/s) past which it stops adding. The game's own climber weight on the segment is 1 m/s² straight
+    /// down (Rope.cs:23, :167-171) and nothing sideways. Run 22 pumped a 2.5 m rope to 1.20 m peak to peak with a 3 m/s²
+    /// cap and no ceiling; 0.8 m/s bounds that to about 0.8 m, a slow sway instead of a swing that drags the view.</summary>
     private const float PumpDeadzone = 0.25f,
         PumpGain = 4f,
-        PumpMax = 3f;
+        PumpMax = 2f,
+        PumpMaxSwing = 0.8f;
 
     /// <summary>Percent step either side of the climb point used to read the line's direction.</summary>
     private const float PercentProbe = 0.02f;
@@ -149,8 +152,9 @@ internal static class ClimbHands
             s,
             "RopeSwingPump",
             true,
-            "On a rope you put out yourself, lean your head along the swing to pump it higher, as shifting your weight "
-                + "would. Still: the rope swings as in the flat game."
+            "On a rope you put out yourself, lean your head back and forth with the swing to pump it higher, as "
+                + "shifting your weight would. It takes a few leans in rhythm to start, and the swing stays gentle. A "
+                + "single lean, looking around or climbing never moves the rope. Off: the rope swings as in the flat game."
         );
     }
 
@@ -660,10 +664,12 @@ internal static class ClimbHands
 
     /// <summary>
     /// D7: the head leaning along the swing pushes the whole rope (<see cref="RopePump"/>). Only the rope's owner
-    /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent.
+    /// simulates it (Rope.cs:155); vanilla syncs the result, so nothing new is sent. Only a clear pump pushes
+    /// (<see cref="PumpIntent"/>: a rhythm of leans in phase with the swing). Vanilla puts no sideways force on a rope
+    /// (Rope.cs:167-171, CharacterRopeHandling.cs:125-131), but every head move past the deadzone used to push the
+    /// whole line: a 0.25 m lean in to catch the rope added about 1 m/s to every segment, a 1 m swing on a 2.5 m rope.
     /// shortcut: a rope someone else owns does not pump, since pushing it would need a message to its owner. The
-    /// first clear pump on such a rope in a hold (<see cref="PumpIntent"/>: a rhythm of leans, never a look around)
-    /// gets NotHere at the gripping hand instead of nothing.
+    /// first clear pump on such a rope in a hold gets NotHere at the gripping hand instead of nothing.
     /// </summary>
     private static void Pump(Character c, VRRig rig, bool holding, float dt)
     {
@@ -679,19 +685,21 @@ internal static class ClimbHands
             swingValid = false;
             return;
         }
+        if (rig.Origin != null)
+            velocity = rig.Origin.TransformVector(velocity);
+        // RopeClimbingAPI.GetPosition indexes the segment list unchecked (RopeClimbingAPI.cs:77-83).
+        var segments = rope.GetRopeSegments();
+        var point =
+            rope.climbingAPI != null && segments != null && segments.Count >= 2
+                ? rope.climbingAPI.GetPosition(c.data.ropePercent)
+                : c.Center;
+        var swing = swingValid ? (point - lastSwingPoint) / dt : Vector3.zero;
+        lastSwingPoint = point;
+        swingValid = true;
+        // Looking around, the lean in to catch the rope and the bob of a climb never pump; a rhythm of leans does.
+        bool pumping = Intent.Update(velocity.N(), swing.N(), Time.time, dt);
         if (!rope.photonView.IsMine || SelfTestNotMine)
         {
-            if (rig.Origin != null)
-                velocity = rig.Origin.TransformVector(velocity);
-            // Refuse only a clear pump (PumpIntent): looking around or leaning to grab on a friend's rope stays quiet.
-            var point =
-                rope.climbingAPI != null
-                    ? rope.climbingAPI.GetPosition(c.data.ropePercent)
-                    : c.Center;
-            var swing = swingValid ? (point - lastSwingPoint) / dt : Vector3.zero;
-            lastSwingPoint = point;
-            swingValid = true;
-            bool pumping = Intent.Update(velocity.N(), swing.N(), Time.time, dt);
             if (RopePump.RefuseOnce(false, pumping ? 1f : 0f, ref pumpRefused))
             {
                 bool left = LeftHand.Anchored || !RightHand.Anchored;
@@ -699,16 +707,19 @@ internal static class ClimbHands
             }
             return;
         }
-        var segments = rope.GetRopeSegments();
-        if (segments == null || segments.Count < 2)
+        if (!pumping || segments == null || segments.Count < 2)
             return;
         if (rope != pumpRope || segments.Count != pumpSegments)
             CachePumpBodies(rope, segments);
         if (pumpCount == 0)
             return;
-        if (rig.Origin != null)
-            velocity = rig.Origin.TransformVector(velocity);
-        var push = RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax).U();
+        var push = RopePump
+            .Limit(
+                RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax),
+                swing.N(),
+                PumpMaxSwing
+            )
+            .U();
         LastPump = push.magnitude;
         if (LastPump <= 0f)
             return;

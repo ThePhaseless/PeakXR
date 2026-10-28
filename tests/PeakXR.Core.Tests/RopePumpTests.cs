@@ -35,6 +35,30 @@ public class RopePumpTests
     }
 
     [Fact]
+    public void SwingAtTheComfortCeiling_PushAlongItIsDropped()
+    {
+        var push = new Vector3(2f, 0f, 0f);
+        Assert.Equal(Vector3.Zero, RopePump.Limit(push, new Vector3(0.8f, 0f, 0f), 0.8f));
+        Assert.Equal(Vector3.Zero, RopePump.Limit(push, new Vector3(1.5f, -3f, 0.2f), 0.8f));
+    }
+
+    [Fact]
+    public void SwingBelowTheCeiling_KeepsThePush()
+    {
+        var push = new Vector3(2f, 0f, 0f);
+        Assert.Equal(push, RopePump.Limit(push, new Vector3(0.5f, 0f, 0f), 0.8f));
+        // Only the level swing counts: a rope dropping fast as the climber moves is not a swing.
+        Assert.Equal(push, RopePump.Limit(push, new Vector3(0.5f, -3f, 0f), 0.8f));
+    }
+
+    [Fact]
+    public void LeanAgainstAFastSwing_StillBrakesIt()
+    {
+        var push = new Vector3(-2f, 0f, 0f);
+        Assert.Equal(push, RopePump.Limit(push, new Vector3(1.5f, 0f, 0f), 0.8f));
+    }
+
+    [Fact]
     public void PumpOnSomeoneElsesRope_RefusedOncePerHold()
     {
         bool refused = false;

@@ -220,6 +220,7 @@ public static class SelfTestIds
         "vr.42b-rope-pump",
         "vr.42c-rope-end-stop",
         "vr.42d-pump-not-mine",
+        "vr.42e-rope-lean-calm",
         "vr.43-vine",
         "vr.43b-vine-look-back",
         "vr.43c-vine-slide",
