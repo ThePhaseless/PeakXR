@@ -119,17 +119,27 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Whether a point is inside level geometry: within <see cref="EyeRadius"/> of a surface, or inside a
     /// closed mesh (the first face above it is a back face, and the same collider shows a back face below it too).
     /// Also read by the self-test.</summary>
-    internal static bool EyeInside(Vector3 eye)
+    internal static bool EyeInside(Vector3 eye) => EyeInside(eye, out _);
+
+    /// <inheritdoc cref="EyeInside(Vector3)"/>
+    /// <param name="eye">The point to test.</param>
+    /// <param name="by">The collider the eye is in or against (for the log); null when clear.</param>
+    internal static bool EyeInside(Vector3 eye, out Collider by)
     {
+        by = null;
         if (
-            Physics.CheckSphere(
+            Physics.OverlapSphereNonAlloc(
                 eye,
                 EyeRadius,
+                nearHits,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
-            )
+            ) > 0
         )
+        {
+            by = nearHits[0];
             return true;
+        }
         // A point inside a non-convex mesh collider overlaps nothing, and a default ray from it passes the faces
         // turned away from it; with back faces on, the first face above is a back face (normal up). A one-sided
         // surface overhead (thin platform, ledge, upper floor) looks the same from below, so the same collider must
@@ -160,7 +170,10 @@ internal sealed class RigDriver : MonoBehaviour
             );
             for (int i = 0; i < count; i++)
                 if (insideHits[i].collider == above.collider && insideHits[i].normal.y < 0f)
+                {
+                    by = above.collider;
                     return true;
+                }
             return false;
         }
         finally
@@ -170,6 +183,7 @@ internal sealed class RigDriver : MonoBehaviour
     }
 
     private static readonly RaycastHit[] insideHits = new RaycastHit[16];
+    private static readonly Collider[] nearHits = new Collider[1];
 
     /// <summary>An eye closer than this (m) to rock sees the inside of it (near clip 0.03 m).</summary>
     private const float EyeRadius = 0.05f;
@@ -1278,11 +1292,14 @@ internal sealed class RigDriver : MonoBehaviour
             chaseBlock.Update(dt, false, false);
         }
         bool wasBlack = eyeGuard.Black;
-        bool inside = live && (onBody || chase) && eyeGuard.Watching && EyeInside(EyePosition());
+        var eye = EyePosition();
+        Collider rock = null;
+        bool inside = live && (onBody || chase) && eyeGuard.Watching && EyeInside(eye, out rock);
         eyeGuard.Update(dt, inside);
         if (eyeGuard.Black != wasBlack)
             Plugin.Log.LogInfo(
-                eyeGuard.Black ? $"{Tag} Eye inside rock after a jump ({shownKind}): holding black"
+                eyeGuard.Black
+                    ? $"{Tag} Eye inside rock after a jump ({shownKind}): holding black; eye {eye}, in {(rock != null ? rock.name + " (" + LayerMask.LayerToName(rock.gameObject.layer) + ")" : "?")}"
                 : inside
                     ? $"{Tag} Eye still inside rock after {eyeGuard.MaxHoldSeconds:0} s: view back anyway"
                 : $"{Tag} Eye clear of rock: view back"

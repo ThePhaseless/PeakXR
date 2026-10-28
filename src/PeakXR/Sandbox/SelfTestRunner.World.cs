@@ -1049,7 +1049,7 @@ internal sealed partial class SelfTestRunner
             // AltarNear, 0.35 m). vr43 only called Interact_CastFinished, the guard behind a finished vanilla hold.
             int socket = Mathf.Clamp(amulet.amuletIndex, 0, statue.amuletObjects.Length - 1);
             var socketAt = WorldHolds.SocketCenter(statue.amuletObjects[socket]);
-            yield return WarpBeside(socketAt, 0.7f);
+            yield return WarpBeside(socketAt, 0.7f, StatueFront(statue));
             yield return GiveAndHold(amulet.GetComponent<Item>());
             if (!stepOk)
                 yield break;
@@ -2058,6 +2058,29 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>The way the summit statue's sockets face, away from its body: the warps came from the Peak landing
+    /// (-z), behind the statue, and stood the body on its base inside it (AmuletScoutStatue/Mesh spans z
+    /// 2269.9-2272.3 with the sockets at 2271.4-2271.7, Peak run).</summary>
+    static Vector3 StatueFront(ScoutStatue statue)
+    {
+        var body = new Bounds(statue.transform.position, Vector3.zero);
+        foreach (var r in statue.GetComponentsInChildren<Renderer>())
+            if (r.enabled)
+                body.Encapsulate(r.bounds);
+        var sockets = Vector3.zero;
+        int n = 0;
+        foreach (var socket in statue.amuletObjects)
+        {
+            if (socket == null)
+                continue;
+            sockets += WorldHolds.SocketCenter(socket);
+            n++;
+        }
+        var outward = n > 0 ? sockets / n - body.center : Vector3.zero;
+        outward.y = 0f;
+        return outward.sqrMagnitude > 1e-4f ? outward.normalized : default;
+    }
+
     /// <summary>One vr.89b stand: <paramref name="back"/> metres from the socket's foot, the amulet in one hand, the
     /// free hand pointed at the socket from within arm's reach, gripping until the statue's hold puts it in.</summary>
     IEnumerator PointInsert(ScoutStatue statue, AmuletBase amulet, float back, List<string> notes)
@@ -2069,7 +2092,8 @@ internal sealed partial class SelfTestRunner
         // body falls in that hand's grab sphere (vr72: the amulet hand's grip resolved to GrabInteractible). So the
         // amulet is given and gripped 2.5 m out, aimed at the ground with the head looking down (a scripted grip reads
         // as a point, GripIntent.IsPointing, vr69), and carried in.
-        yield return WarpBeside(target, 2.5f);
+        var front = StatueFront(statue);
+        yield return WarpBeside(target, 2.5f, front);
         var me = Character.localCharacter;
         yield return Landed(me);
         yield return GiveAndHold(amulet.GetComponent<Item>());
@@ -2084,7 +2108,7 @@ internal sealed partial class SelfTestRunner
         int holdsAtGive = WorldHolds.StatueHolds;
         yield return GripTo(left, 1f, 0.1f);
         yield return Wait(0.2f);
-        yield return WarpBeside(target, back);
+        yield return WarpBeside(target, back, front);
         // Landed and still before the point (vr69 failed with the torso still moving after the warp).
         yield return Landed(me);
         if (WorldHolds.StatueHolds > holdsAtGive || !ReferenceEquals(HeldItem(), held))
@@ -2705,22 +2729,43 @@ internal sealed partial class SelfTestRunner
 
     static bool Usable(Button b) => b != null && b.gameObject.activeInHierarchy && b.interactable;
 
+    /// <summary>How far <see cref="WarpBeside"/> steps out per try, and at most, when the eye lands in rock.</summary>
+    const float StepOut = 0.25f;
+    const float StepOutMax = 1.5f;
+
     /// <summary>Warps onto the ground <paramref name="distance"/> from <paramref name="target"/> on the side the player
-    /// came from, centre over the spot (<see cref="CentreOver"/>, the warp moves the body's centre,
-    /// Character.cs:1904-1910), facing it. Sets <see cref="warpedForProp"/>.</summary>
+    /// came from (or <paramref name="side"/>), centre over the spot (<see cref="CentreOver"/>, the warp moves the
+    /// body's centre, Character.cs:1904-1910), facing it, stepping further out while the eye lands in rock. Sets
+    /// <see cref="warpedForProp"/>.</summary>
     IEnumerator WarpBeside(Vector3 target, float distance, Vector3 side = default)
     {
         var c = Character.localCharacter;
-        var stand = target + Flat(side == default ? c.Center - target : side) * distance;
-        // From just above the target, not far above: a ray from high up lands on top of the prop itself.
-        float top = target.y + 0.5f;
-        if (Terrain(new Vector3(stand.x, top, stand.z), Vector3.down, 8f, out var ground))
-            stand = ground.point + Vector3.up * 0.1f;
-        warpedForProp = true;
-        c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, stand), false);
-        yield return Wait(0.5f);
-        yield return WaitFor(() => !c.warping, 3f);
-        yield return Wait(1.5f);
+        var away = Flat(side == default ? c.Center - target : side);
+        // A stand whose ground ray starts inside the prop lands on it with the eye in it: vr.89 stood on the summit
+        // statue's base with the eye in its arms (AmuletScoutStatue/Mesh, a rendered Map-layer mesh), and the eye
+        // guard held black 5 s (Peak run). Step out until the eye is clear.
+        for (float outBy = distance; outBy <= distance + StepOutMax; outBy += StepOut)
+        {
+            var stand = target + away * outBy;
+            // From just above the target, not far above: a ray from high up lands on top of the prop itself.
+            float top = target.y + 0.5f;
+            if (Terrain(new Vector3(stand.x, top, stand.z), Vector3.down, 8f, out var ground))
+                stand = ground.point + Vector3.up * 0.1f;
+            warpedForProp = true;
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                Photon.Pun.RpcTarget.All,
+                CentreOver(c, stand),
+                false
+            );
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1.5f);
+            var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
+            if (!VRSession.Active || head == null || !Rig.RigDriver.EyeInside(head.position))
+                break;
+            Note(F($"stand {outBy:0.00} m from {target} put the eye in rock; stepping out"));
+        }
         var rig = VRRig.Instance;
         rig.RotateYaw(
             Vector3.SignedAngle(Flat(rig.Head.forward), Flat(target - c.Center), Vector3.up)
