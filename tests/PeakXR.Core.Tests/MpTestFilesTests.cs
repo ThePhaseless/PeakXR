@@ -100,6 +100,24 @@ public class MpDirTests
         Assert.Null(MpDir.UnixHome(null, @"C:\users\steamuser"));
     }
 
+    [Theory]
+    [InlineData("/home/u/mp", false, false, true)] // about to be created
+    [InlineData("/home/u/mp", true, true, true)] // made by an earlier run
+    [InlineData("/home/u/Documents", true, false, false)] // someone's folder
+    [InlineData("/home/u/.var/app/com.valvesoftware.Steam/peakxr-mp", true, false, true)] // the default
+    [InlineData(@"Z:\home\u\.var\app\com.valvesoftware.Steam\peakxr-mp\", true, false, true)]
+    [InlineData("/", true, true, false)]
+    [InlineData(@"C:\", true, true, false)]
+    [InlineData("/home/u/", true, true, false)]
+    [InlineData(@"Z:\home\u", true, true, false)]
+    [InlineData("", false, false, false)]
+    public void ClearsOldFilesOnlyInItsOwnFolder(
+        string dir,
+        bool exists,
+        bool marked,
+        bool clear
+    ) => Assert.Equal(clear, MpDir.MayClear(dir, "/home/u", exists, marked));
+
     [Fact]
     public void UnixPathMapsToWineZDriveOnWindowsOnly()
     {

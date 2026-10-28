@@ -11,7 +11,7 @@ namespace PeakXR.Framework;
 /// </summary>
 internal sealed class FlushingLogListener : ILogListener
 {
-    private readonly StreamWriter writer;
+    private StreamWriter writer;
 
     public FlushingLogListener(string path)
     {
@@ -20,10 +20,21 @@ internal sealed class FlushingLogListener : ILogListener
 
     public void LogEvent(object sender, LogEventArgs eventArgs)
     {
-        if (eventArgs.Source.SourceName != MyPluginInfo.PLUGIN_NAME)
+        if (writer == null || eventArgs.Source.SourceName != MyPluginInfo.PLUGIN_NAME)
             return;
-        writer.WriteLine($"{DateTime.Now:HH:mm:ss.fff} [{eventArgs.Level}] {eventArgs.Data}");
+        try
+        {
+            writer.WriteLine($"{DateTime.Now:HH:mm:ss.fff} [{eventArgs.Level}] {eventArgs.Data}");
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException)
+        {
+            // A full disk or a lost file must not throw into every Plugin.Log call: stop writing the file.
+            writer = null;
+            UnityEngine.Debug.LogWarning(
+                $"[PeakXR] trace file stopped (write failed: {e.Message})"
+            );
+        }
     }
 
-    public void Dispose() => writer.Dispose();
+    public void Dispose() => writer?.Dispose();
 }

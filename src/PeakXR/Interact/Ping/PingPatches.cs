@@ -24,11 +24,18 @@ internal static class PingPatches
         [HarmonyPriority(Priority.VeryLow)]
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
-            if (!VRSession.Active)
-                return;
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                PingInput.Tick(c, __instance, playerMovementActive);
+            try
+            {
+                if (!VRSession.Active)
+                    return;
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    PingInput.Tick(c, __instance, playerMovementActive);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<PingFeature>(e);
+            }
         }
     }
 

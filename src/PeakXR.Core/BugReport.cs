@@ -451,6 +451,39 @@ public static class BugReportText
         }
     }
 
+    private static readonly Regex ReportFolder = new(
+        @"^(?<stamp>\d{8}-\d{6})(?:-(?<n>\d+))?$",
+        RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1)
+    );
+
+    /// <summary>The report folders among <paramref name="names"/> past the newest <paramref name="keep"/>, oldest
+    /// first. Only names <see cref="FolderName"/> makes count: anything else in the folder is the player's.</summary>
+    public static IReadOnlyList<string> Stale(IEnumerable<string> names, int keep)
+    {
+        var reports = new List<(string Stamp, int N, string Name)>();
+        foreach (var name in names)
+        {
+            var m = ReportFolder.Match(name);
+            if (m.Success)
+                reports.Add(
+                    (
+                        m.Groups["stamp"].Value,
+                        m.Groups["n"].Success ? int.Parse(m.Groups["n"].Value, C) : 1,
+                        name
+                    )
+                );
+        }
+        reports.Sort(
+            (a, b) =>
+                a.Stamp != b.Stamp ? string.CompareOrdinal(a.Stamp, b.Stamp) : a.N.CompareTo(b.N)
+        );
+        var stale = new List<string>();
+        for (int i = 0; i < reports.Count - keep; i++)
+            stale.Add(reports[i].Name);
+        return stale;
+    }
+
     /// <summary>
     /// The privacy pass over every text file: each name (player nicknames, the OS user) becomes its label wherever it
     /// stands as a whole word, longest names first so "Ann Lee" wins over "Ann"; the account name in a home folder

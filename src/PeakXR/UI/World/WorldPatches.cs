@@ -56,14 +56,24 @@ internal static class CameraQuadPatch
 
     private static bool Prefix(CameraQuad __instance)
     {
-        if (!UIWorldRuntime.Ready)
+        // The rig's head can be gone for a frame around a scene load: vanilla places the quad then.
+        var rig = VRRig.Instance;
+        if (!UIWorldRuntime.Ready || rig == null || rig.Head == null)
             return true;
-        StatusOverlays.Place(
-            __instance.transform,
-            VRRig.Instance,
-            UIWorldFeature.Settings.StatusOverlays.Value
-        );
-        return false;
+        try
+        {
+            StatusOverlays.Place(
+                __instance.transform,
+                rig,
+                UIWorldFeature.Settings.StatusOverlays.Value
+            );
+            return false;
+        }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<UIWorldFeature>(e);
+            return true;
+        }
     }
 }
 

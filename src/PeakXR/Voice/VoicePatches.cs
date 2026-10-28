@@ -23,15 +23,22 @@ internal static class PushToTalkSamplePatch
     [HarmonyPriority(Priority.Low)]
     private static void Postfix(CharacterInput __instance, bool playerMovementActive)
     {
-        var held = VRSession.Active && VoiceInput.Held;
-        if (!held && !forced)
-            return;
-        __instance.pushToTalkPressed = VoicePushToTalk.Merge(
-            __instance.pushToTalkPressed,
-            held,
-            playerMovementActive,
-            ref forced
-        );
+        try
+        {
+            var held = VRSession.Active && VoiceInput.Held;
+            if (!held && !forced)
+                return;
+            __instance.pushToTalkPressed = VoicePushToTalk.Merge(
+                __instance.pushToTalkPressed,
+                held,
+                playerMovementActive,
+                ref forced
+            );
+        }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<VoiceFeature>(e);
+        }
     }
 }
 

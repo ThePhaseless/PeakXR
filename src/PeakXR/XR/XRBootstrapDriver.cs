@@ -56,6 +56,7 @@ sealed class XRBootstrapDriver : MonoBehaviour
                 );
         }
 
+        XRStartSentinel.Starting();
         foreach (var runtime in order)
         {
             Plugin.Log.LogInfo($"{Tag} Trying {runtime}");
@@ -94,13 +95,19 @@ sealed class XRBootstrapDriver : MonoBehaviour
                 continue;
             }
 
-            Activate(candidate);
+            if (!Activate(candidate))
+                continue;
+            XRStartSentinel.Finished();
             yield break;
         }
 
         Plugin.Log.LogError($"{Tag} No XR runtime started; VR stays off and the game runs flat");
         VRSession.Running = VRRuntime.Disabled;
+        XRStartSentinel.Finished();
     }
+
+    /// <summary>Quitting while the runtime still starts is not a crash.</summary>
+    void OnApplicationQuit() => XRStartSentinel.Finished();
 
     static XRBackend Prepare(VRRuntime runtime)
     {
@@ -167,7 +174,34 @@ sealed class XRBootstrapDriver : MonoBehaviour
         }
     }
 
-    void Activate(XRBackend running)
+    /// <summary>False when setting up the running session threw: it is shut down and the game stays flat, never
+    /// half on (a running display the rest of the mod does not know about).</summary>
+    bool Activate(XRBackend running)
+    {
+        try
+        {
+            ActivateSession(running);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogError(
+                $"{Tag} {running.Runtime}: setting up the running session threw, shutting it down: {e}"
+            );
+            InputDevices.deviceConnected -= OnDeviceConnected;
+            started = false;
+            backend = null;
+            XRRuntimeInfo.Display = null;
+            XRRuntimeInfo.Input = null;
+            XRRuntimeInfo.Description = "none";
+            VRSession.Running = VRRuntime.Disabled;
+            VRSession.SetActive(false);
+            SafeShutdown(running);
+            return false;
+        }
+    }
+
+    void ActivateSession(XRBackend running)
     {
         backend = running;
         started = true;

@@ -299,6 +299,34 @@ public static class MpDir
         return wineHomeDir.Substring(Prefix.Length).Replace('\\', '/');
     }
 
+    /// <summary>Marks a folder the two-client test made, so a later run may delete its own old files there.</summary>
+    public const string Marker = ".peakxr-mp";
+
+    /// <summary>
+    /// Whether a client may delete its old <c>a-*</c> / <c>b-*</c> files in <paramref name="dir"/>, a path from the
+    /// command line: never a drive root or the home folder itself, and otherwise only a folder the test makes now,
+    /// marked as its own (<see cref="Marker"/>) or the default one.
+    /// </summary>
+    public static bool MayClear(string dir, string home, bool exists, bool hasMarker)
+    {
+        var d = Normal(dir);
+        if (d.Length == 0 || d == "/" || (d.Length == 2 && d[1] == ':') || d == Normal(home))
+            return false;
+        // Under Proton the folder is reached through Wine's Z: drive (ToNative), the home is a Unix path.
+        if (
+            d.StartsWith("Z:/", StringComparison.OrdinalIgnoreCase)
+            && d.Substring(2) == Normal(home)
+        )
+            return false;
+        return !exists || hasMarker || d.EndsWith("/" + DefaultUnderHome, StringComparison.Ordinal);
+    }
+
+    static string Normal(string path)
+    {
+        var p = (path ?? "").Replace('\\', '/');
+        return p.Length > 1 ? p.TrimEnd('/') : p;
+    }
+
     /// <summary>Under Proton a Unix path is reached through Wine's <c>Z:</c> drive, which maps <c>/</c>.</summary>
     public static string ToNative(string path, bool windows) =>
         windows && path.StartsWith('/') ? "Z:" + path.Replace('/', '\\') : path;

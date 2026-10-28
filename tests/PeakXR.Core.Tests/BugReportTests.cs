@@ -355,6 +355,26 @@ public class BugReportTextTests
         Assert.Equal("20261023-140322-3", BugReportText.FolderName(now, taken.Contains));
     }
 
+    [Fact]
+    public void Stale_KeepsTheNewestReportsAndLeavesOtherFoldersAlone()
+    {
+        var names = new[]
+        {
+            "20261023-140322-10",
+            "20261023-140322",
+            "my notes",
+            "20261024-090000",
+            "20261023-140322-2",
+            "20261022-235959",
+        };
+
+        Assert.Equal(
+            new[] { "20261022-235959", "20261023-140322", "20261023-140322-2" },
+            BugReportText.Stale(names, keep: 2)
+        );
+        Assert.Empty(BugReportText.Stale(names, keep: 5));
+    }
+
     static readonly KeyValuePair<string, string>[] Names =
     {
         new("Al", "player 2"),

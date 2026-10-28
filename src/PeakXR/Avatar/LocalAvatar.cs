@@ -84,7 +84,6 @@ internal sealed class LocalAvatar : MonoBehaviour
     private void Awake()
     {
         character = GetComponent<Character>();
-        driver = AvatarPoseDriver.For(character);
     }
 
     private void LateUpdate()
@@ -94,6 +93,10 @@ internal sealed class LocalAvatar : MonoBehaviour
         var rig = VRRig.Instance;
         if (!active || rig == null || rig.Head == null)
             return;
+        // Created on the first VR frame, not in Awake: when XR fails to start this component stays inert and the
+        // character keeps vanilla IK and held items (the driver takes over CharacterItems.HoldItem).
+        if (driver == null)
+            driver = AvatarPoseDriver.For(character);
 
         var pose = new AvatarPose
         {

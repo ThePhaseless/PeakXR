@@ -13,6 +13,16 @@
     <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <!-- Release DLLs and PDBs carry no build-machine paths (PDB path, CallerFilePath, source paths, SourceLink map):
+       in a git checkout the SDK's SourceLink maps the repo to /_/; without git, PathMap does. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="Exists('$(MSBuildThisFileDirectory).git')"
+      >true</ContinuousIntegrationBuild>
+    <PathMap Condition="!Exists('$(MSBuildThisFileDirectory).git')"
+      >$(MSBuildThisFileDirectory)=/_/</PathMap>
+  </PropertyGroup>
+
   <!-- Bug and code-smell analyzers for every project, tests included. -->
   <ItemGroup>
     <PackageReference Include="Roslynator.Analyzers" Version="5.0.1" PrivateAssets="all" />

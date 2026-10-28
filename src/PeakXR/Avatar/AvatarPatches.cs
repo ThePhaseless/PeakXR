@@ -24,6 +24,7 @@ internal static class AvatarPatches
     public static void Resolve()
     {
         MaxAngle = GameMember.Field<CharacterMovement, float>("maxAngle");
+        AvatarPoseDriver.VanillaAttach = GameMember.Method(typeof(CharacterItems), "AttachItem");
         animationsCharacter = GameMember.Field<CharacterAnimations, Character>("character");
         ragdollCharacter = GameMember.Field<CharacterRagdoll, Character>("character");
         itemsCharacter = GameMember.Field<CharacterItems, Character>("character");
@@ -54,9 +55,16 @@ internal static class AvatarPatches
 
         private static void Postfix(CharacterAnimations __instance)
         {
-            var d = AvatarPoseDriver.Of(animationsCharacter(__instance));
-            if (d != null)
-                d.OnConfigureIK();
+            try
+            {
+                var d = AvatarPoseDriver.Of(animationsCharacter(__instance));
+                if (d != null)
+                    d.OnConfigureIK();
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+            }
         }
     }
 
@@ -70,9 +78,16 @@ internal static class AvatarPatches
 
         private static void Postfix(CharacterAnimations __instance)
         {
-            var d = Driver(animationsCharacter(__instance));
-            if (d != null)
-                d.OnHandleIK();
+            try
+            {
+                var d = Driver(animationsCharacter(__instance));
+                if (d != null)
+                    d.OnHandleIK();
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+            }
         }
     }
 
@@ -86,9 +101,16 @@ internal static class AvatarPatches
 
         private static void Postfix(CharacterRagdoll __instance)
         {
-            var d = Driver(ragdollCharacter(__instance));
-            if (d != null)
-                d.OnSaveAdditional();
+            try
+            {
+                var d = Driver(ragdollCharacter(__instance));
+                if (d != null)
+                    d.OnSaveAdditional();
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+            }
         }
     }
 
@@ -134,8 +156,16 @@ internal static class AvatarPatches
 
         private static bool Prefix(CharacterItems __instance, Item item)
         {
-            var d = Driver(itemsCharacter(__instance));
-            return d == null || !d.AttachToHoldingHand(item);
+            try
+            {
+                var d = Driver(itemsCharacter(__instance));
+                return d == null || !d.AttachToHoldingHand(item);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+                return true;
+            }
         }
     }
 
@@ -151,8 +181,16 @@ internal static class AvatarPatches
 
         private static bool Prefix(CharacterItems __instance, Item item)
         {
-            var d = AvatarPoseDriver.Of(itemsCharacter(__instance));
-            return d == null || !d.FollowHeld(item);
+            try
+            {
+                var d = AvatarPoseDriver.Of(itemsCharacter(__instance));
+                return d == null || !d.FollowHeld(item);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+                return true;
+            }
         }
     }
 
@@ -165,12 +203,18 @@ internal static class AvatarPatches
 
         private static void Postfix(CharacterItems __instance)
         {
-            var c = itemsCharacter(__instance);
-            var d = AvatarPoseDriver.Of(c);
-            if (d != null)
+            try
             {
-                d.DestroyItemJoint();
-                d.EndPassBody();
+                var d = AvatarPoseDriver.Of(itemsCharacter(__instance));
+                if (d != null)
+                {
+                    d.DestroyItemJoint();
+                    d.EndPassBody();
+                }
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
             }
         }
     }

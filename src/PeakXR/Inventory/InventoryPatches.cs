@@ -21,12 +21,19 @@ internal static class InventoryPatches
         [HarmonyPriority(Priority.VeryLow)]
         private static void Postfix(CharacterInput __instance)
         {
-            var c = Character.localCharacter;
-            if (c == null || c.input != __instance || !VRSession.Active)
-                return;
-            BodyInventory.Instance.Tick(c, __instance, Time.deltaTime);
-            SlotGhosts.Ensure();
-            HotbarHider.Sync(SlotGhosts.Showing);
+            try
+            {
+                var c = Character.localCharacter;
+                if (c == null || c.input != __instance || !VRSession.Active)
+                    return;
+                BodyInventory.Instance.Tick(c, __instance, Time.deltaTime);
+                SlotGhosts.Ensure();
+                HotbarHider.Sync(SlotGhosts.Showing);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<InventoryFeature>(e);
+            }
         }
     }
 

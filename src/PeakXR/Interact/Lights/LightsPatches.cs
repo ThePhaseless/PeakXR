@@ -19,9 +19,16 @@ internal static class LightsPatches
         [HarmonyPriority(Priority.VeryLow)]
         private static void Postfix(CharacterInput __instance)
         {
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                HandLights.Tick(c, __instance);
+            try
+            {
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    HandLights.Tick(c, __instance);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<HandLightsFeature>(e);
+            }
         }
     }
 }

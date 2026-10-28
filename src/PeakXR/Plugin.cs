@@ -36,6 +36,14 @@ public class Plugin : BaseUnityPlugin
 
         VRSession.Requested = VRSession.ReadRequestedRuntime();
         VRSession.CompatProbe = System.Array.IndexOf(args, "-peakxr-compat") >= 0;
+        // Crash-loop guard; self-test runs are relaunched by their harness and must not silently go flat.
+        if (
+            VRSession.Requested != VRRuntime.Disabled
+            && !VRSession.CompatProbe
+            && System.Array.IndexOf(args, "-peakxr-selftest") < 0
+            && XR.XRStartSentinel.StartFlat()
+        )
+            VRSession.Requested = VRRuntime.Disabled;
         Log.LogInfo(
             $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION}, game {UnityEngine.Application.version}, "
                 + $"Unity {UnityEngine.Application.unityVersion}, runtime {VRSession.Requested}"

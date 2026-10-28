@@ -84,11 +84,9 @@ public partial class AvatarPoseDriver
     /// (<see cref="FollowHeld"/>): the ghost hand's own fade-in start.</summary>
     private const float SpringReachSlack = 0.05f;
 
-    private static System.Reflection.MethodBase vanillaAttach;
-
-    /// <summary>CharacterItems.AttachItem (CharacterItems.cs:641, private), resolved on first use.</summary>
-    private static System.Reflection.MethodBase VanillaAttach =>
-        vanillaAttach ??= Framework.GameMember.Method(typeof(CharacterItems), "AttachItem");
+    /// <summary>CharacterItems.AttachItem (CharacterItems.cs:641, private), resolved by
+    /// <see cref="AvatarPatches.Resolve"/> at install so a renamed member fails the feature, not a physics tick.</summary>
+    internal static System.Reflection.MethodBase VanillaAttach;
 
     /// <summary>How far the <paramref name="left"/> arm (shoulder to wrist of its IK chain) cannot reach
     /// <paramref name="bone"/> right now, metres.</summary>

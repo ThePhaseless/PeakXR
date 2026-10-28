@@ -30,7 +30,7 @@ Debug mode costs a little frame time, so turn it on, reproduce the bug, save a r
 
 ## Where the files go
 
-Each report is a folder in `BepInEx/PeakXR-reports/`, named for the time you saved it, for example `20261023-140322`:
+Each report is a folder in `BepInEx/PeakXR-reports/`, named for the time you saved it, for example `20261023-140322`. PeakXR keeps the newest 20 and deletes older report folders when it saves a new one; move a report elsewhere to keep it. Each report folder holds:
 
 | File | What it holds |
 |---|---|

@@ -176,6 +176,10 @@ dotnet_diagnostic.CA5394.severity = none
 # xunit discovers public test classes; the test assembly is not a library.
 dotnet_diagnostic.CA1515.severity = none
 
+[src/PeakXR.Preloader/RuntimeInstaller.cs]
+# Also compiled into the test project, whose global usings make some of its usings redundant there.
+dotnet_diagnostic.IDE0005.severity = none
+
 [**/obj/**.cs]
 # Build-generated sources (BepInEx MyPluginInfo).
 generated_code = true

@@ -228,8 +228,9 @@ internal static class SoulShakeOwnerPatch
 [HarmonyPatch]
 internal static class BeachWakeupPatch
 {
-    /// <summary>True only inside StartPassedOutOnTheBeach in Skip mode; read by <see cref="BeachFallPatch"/>.</summary>
-    internal static bool SkipFall;
+    /// <summary>Set only inside StartPassedOutOnTheBeach in Skip mode: the character whose Fall
+    /// <see cref="BeachFallPatch"/> drops. Cleared by the finalizer, so a throw cannot leave it armed.</summary>
+    internal static Character SkipFallOf;
 
     private static MethodBase TargetMethod() =>
         GameMember.Method(typeof(Character), "StartPassedOutOnTheBeach");
@@ -240,18 +241,29 @@ internal static class BeachWakeupPatch
             return;
         var mode = RunFlowFeature.Settings.BeachWakeup.Value;
         if (mode == BeachWakeupMode.Skip)
-            SkipFall = true;
+            SkipFallOf = __instance;
         else if (mode == BeachWakeupMode.Fade)
-            RunFlowRuntime.OnBeachWakeup(__instance);
+        {
+            // A throw here would skip the run start itself (starting curse, challenge items).
+            try
+            {
+                RunFlowRuntime.OnBeachWakeup(__instance);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<RunFlowFeature>(e);
+            }
+        }
     }
 
     private static void Postfix(Character __instance)
     {
-        if (!SkipFall)
-            return;
-        SkipFall = false;
-        __instance.data.passedOutOnTheBeach = 0f;
+        if (ReferenceEquals(__instance, SkipFallOf))
+            __instance.data.passedOutOnTheBeach = 0f;
     }
+
+    /// <summary>Runs after the postfix, and on a throw, which used to leave the skip armed for every later Fall.</summary>
+    private static void Finalizer() => SkipFallOf = null;
 }
 
 /// <summary>Skip mode only: drop the beach Fall(7). A/Character.cs:1732
@@ -262,7 +274,8 @@ internal static class BeachFallPatch
     private static MethodBase TargetMethod() =>
         GameMember.Method(typeof(Character), "Fall", new[] { typeof(float), typeof(float) });
 
-    private static bool Prefix() => !BeachWakeupPatch.SkipFall;
+    private static bool Prefix(Character __instance) =>
+        !ReferenceEquals(__instance, BeachWakeupPatch.SkipFallOf);
 }
 
 /// <summary>The eyelid full-screen renderer feature is a flat overlay; in VR (Fade or Skip mode) it
@@ -289,12 +302,21 @@ internal static class EyeBlinkPatch
             || RunFlowFeature.Settings.BeachWakeup.Value == BeachWakeupMode.Vanilla
         )
             return true;
-        var f = feature(__instance);
-        if (f != null && f.isActive)
+        try
         {
-            f.SetActive(false);
-            __instance.eyeBlinkMaterial.SetFloat("_EyeOpen", 1f);
+            var f = feature(__instance);
+            if (f != null && f.isActive)
+            {
+                f.SetActive(false);
+                if (__instance.eyeBlinkMaterial != null)
+                    __instance.eyeBlinkMaterial.SetFloat("_EyeOpen", 1f);
+            }
+            return false;
         }
-        return false;
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<RunFlowFeature>(e);
+            return true;
+        }
     }
 }

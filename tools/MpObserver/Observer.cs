@@ -56,10 +56,28 @@ internal sealed partial class Observer : MonoBehaviour
 
     void Start()
     {
+        var marker = Path.Combine(Dir, MpDir.Marker);
+        bool clear = MpDir.MayClear(
+            Dir,
+            MpDir.UnixHome(
+                Environment.GetEnvironmentVariable("HOME"),
+                Environment.GetEnvironmentVariable("WINEHOMEDIR")
+            ),
+            Directory.Exists(Dir),
+            File.Exists(marker)
+        );
         Directory.CreateDirectory(Dir);
-        foreach (var old in Directory.GetFiles(Dir, "b-*"))
-            File.Delete(old);
-        File.Delete(Path.Combine(Dir, "lobby.json"));
+        if (clear)
+        {
+            File.WriteAllText(marker, "");
+            foreach (var old in Directory.GetFiles(Dir, "b-*"))
+                File.Delete(old);
+            File.Delete(Path.Combine(Dir, "lobby.json"));
+        }
+        else
+            ObserverPlugin.Log.LogWarning(
+                $"not deleting old b-* files in {Dir}: the test did not make that folder; use an empty one"
+            );
         outPath = Path.Combine(Dir, "b-observer.jsonl");
         Application.logMessageReceived += OnLog;
         PhotonNetwork.NetworkingClient.EventReceived += OnEvent;

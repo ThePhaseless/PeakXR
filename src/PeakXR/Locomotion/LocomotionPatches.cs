@@ -22,11 +22,18 @@ internal static class LocomotionPatches
 
         private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
-            if (!VRSession.Active)
-                return;
-            var c = Character.localCharacter;
-            if (c != null && c.input == __instance)
-                LocomotionInput.Apply(c, __instance, playerMovementActive);
+            try
+            {
+                if (!VRSession.Active)
+                    return;
+                var c = Character.localCharacter;
+                if (c != null && c.input == __instance)
+                    LocomotionInput.Apply(c, __instance, playerMovementActive);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<LocomotionFeature>(e);
+            }
         }
     }
 

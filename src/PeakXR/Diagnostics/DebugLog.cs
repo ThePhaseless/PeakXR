@@ -197,9 +197,22 @@ internal static class DebugLog
             {
                 Lines.Add(e);
                 if (Verbose && trace != null)
-                    trace.WriteLine(
-                        $"{new DateTime(e.Wall):HH:mm:ss.fff} [{e.Level}] {eventArgs.Data}"
-                    );
+                {
+                    try
+                    {
+                        trace.WriteLine(
+                            $"{new DateTime(e.Wall):HH:mm:ss.fff} [{e.Level}] {eventArgs.Data}"
+                        );
+                    }
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                    {
+                        // A full disk or a lost file must not throw into every Plugin.Log call: drop the file sink.
+                        trace = null;
+                        UnityEngine.Debug.LogWarning(
+                            $"[PeakXR] {TracePath} stopped (write failed: {ex.Message})"
+                        );
+                    }
+                }
             }
         }
 
