@@ -12,9 +12,9 @@ them; they are not in this repository.
 ## Build
 
 Needs [mise](https://mise.jdx.dev). `PEAK_DIR` in `mise.toml` points at the default Steam library;
-override it in `mise.local.toml` or the environment if yours is elsewhere. Without a PEAK install the
-build uses the stripped reference assemblies in `refs/peak/`, which is how CI builds. After a game
-update, run `mise run refs` to regenerate them and commit the result.
+override it in `mise.local.toml` or the environment if yours is elsewhere. The plugin compiles against
+the game's own assemblies, so building it needs PEAK installed. GitHub CI only checks formatting and runs
+the Core tests (`mise run test-core`), which need no game.
 
 ```sh
 mise run build      # fetch XR deps into deps/, then dotnet build
@@ -30,15 +30,16 @@ Unity versions and checks every patch target and name lookup against the decompi
 
 ## Releasing
 
-Bump `<Version>` in `Directory.Build.props` and commit. Then tag that commit and push the tag:
+Releases are built on a machine with PEAK installed. Bump `<Version>` in `Directory.Build.props`, commit
+and push to `master`, then run:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+mise run release
 ```
 
-The release workflow checks that the tag matches the version, then builds, tests and packages the
-mod, and creates a GitHub release with `PeakXR-<version>.zip` attached.
+It checks the tree is clean and pushed and that `v<version>` is a new tag, runs the format check, a
+warnings-as-errors build, the tests and the package, then pushes the tag and creates a GitHub release
+with `PeakXR-<version>.zip` attached.
 
 ## Install
 

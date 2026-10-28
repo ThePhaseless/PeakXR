@@ -16,8 +16,10 @@ defaults:
   run:
     shell: bash
 
+# The plugin compiles against the game's own assemblies, which are not in this repository, so CI checks
+# formatting and the game-independent Core library and its tests. Releases are built locally (tools/release.sh).
 jobs:
-  build:
+  core:
     runs-on: ubuntu-latest
     env:
       # Analyzer warnings are errors (Directory.Build.props).
@@ -26,12 +28,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
-      # Unity and Valve XR tarballs fetched by tools/fetch-xr-deps.sh; their versions live in the script.
-      - uses: actions/cache@v6
-        with:
-          path: deps/cache
-          key: xr-deps-${{ hashFiles('tools/fetch-xr-deps.sh') }}
       - run: mise run format-check
-      # No game on the runner: the projects compile against refs/peak/.
-      - run: mise run build
-      - run: mise run test
+      - run: mise run test-core
