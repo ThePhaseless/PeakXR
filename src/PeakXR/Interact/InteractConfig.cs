@@ -126,7 +126,9 @@ internal sealed class InteractConfig
                 s,
                 "HandAimedInteract",
                 true,
-                "Point (grip closed, index straight) to aim interaction with that hand instead of your head."
+                "Point (grip closed, index straight) with your thumb resting on the stick or a button to aim interaction "
+                    + "with that hand instead of your head. With the thumb lifted, the point is the finger gun and pings "
+                    + "instead (Interaction.Ping.FingerGunPing)."
             ),
             triggerUse = file.Bind(
                 s,

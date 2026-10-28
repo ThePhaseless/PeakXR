@@ -82,7 +82,9 @@ internal sealed class PingConfig
                 Section,
                 "FingerGunPing",
                 true,
-                "Point (grip closed, index straight), then squeeze the trigger while the grip stays closed to ping. "
+                "Point (grip closed, index straight) with your thumb lifted off the stick, the buttons and the thumbrest, "
+                    + "then squeeze the trigger while the grip stays closed to ping. With the thumb resting, the point aims "
+                    + "interaction instead (Interaction.HandAimedInteract). "
                     + "That trigger squeeze does not also use the held item."
             ),
             aimPreview = file.Bind(

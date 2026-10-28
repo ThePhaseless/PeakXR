@@ -58,7 +58,7 @@ internal sealed class RunFlowSettings
                 Section,
                 "CutsceneScreen",
                 true,
-                "Used when Comfort.CutsceneView is Screen: show the end cutscene and credits on a large screen in front of you instead of moving your view."
+                "Used when ComfortEvents.CutsceneView is Screen: show the end cutscene and credits on a large screen in front of you instead of moving your view."
             ),
             CutsceneScreenWidth = cfg.Bind(
                 Section,
