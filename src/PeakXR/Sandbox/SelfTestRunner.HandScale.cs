@@ -43,6 +43,9 @@ internal sealed partial class SelfTestRunner
             Thickness,
             Length,
             Knuckles;
+
+        /// <summary>How the index joint was read: the chain up to its proxied ancestor, the proxy, its scale.</summary>
+        public string Probe;
     }
 
     IEnumerator HandScaleCheck()
@@ -73,7 +76,7 @@ internal sealed partial class SelfTestRunner
                 var s = sizes[i];
                 notes.Add(
                     F(
-                        $"at {scales[i]:0.00}: {s.Width:0.000} wide, {s.Thickness:0.000} thick, {s.Length:0.000} long (seen {Seen(s.Width)}/{Seen(s.Thickness)}/{Seen(s.Length)} cm)"
+                        $"at {scales[i]:0.00}: {s.Width:0.000} wide, {s.Thickness:0.000} thick, {s.Length:0.000} long (seen {Seen(s.Width)}/{Seen(s.Thickness)}/{Seen(s.Length)} cm), knuckle span {s.Knuckles:0.000} via {s.Probe}"
                     )
                 );
                 if (scales[i] < 1f)
@@ -213,8 +216,8 @@ internal sealed partial class SelfTestRunner
         var palm = Vector3.Cross(across, along);
         var wrist = DrawnHands.DrawnBone(hand).position;
         float knuckles = Vector3.Distance(
-            DrawnPoint(index.GetChild(0)),
-            DrawnPoint(pinky.GetChild(0))
+            DrawnPoint(index.GetChild(0), out string knuckleProbe),
+            DrawnPoint(pinky.GetChild(0), out _)
         );
 
         var real = DrawnHands.Bones(skin);
@@ -286,6 +289,7 @@ internal sealed partial class SelfTestRunner
                 Thickness = hi.y - lo.y,
                 Length = hi.z,
                 Knuckles = knuckles,
+                Probe = knuckleProbe,
             };
         }
         finally
@@ -294,17 +298,31 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>Where <paramref name="bone"/> is drawn: carried by its nearest proxied ancestor. Run 22 read the second
-    /// finger joints through <see cref="DrawnHands.DrawnBone"/> and got the real bones back (span ratio 1.00 against a
-    /// 0.47 mesh): DrawnHands proxies only the bones the meshes list, and those joints are evidently not listed.</summary>
-    static Vector3 DrawnPoint(Transform bone)
+    /// <summary>Where <paramref name="bone"/> is drawn: carried by its nearest proxied ancestor (DrawnHands proxies
+    /// only the bones the meshes list), or where it is when the hands are drawn at the game's size.
+    /// <paramref name="probe"/> says how: the chain walked, whether a proxy was found, its scale, whether drawn.</summary>
+    static Vector3 DrawnPoint(Transform bone, out string probe)
     {
+        var chain = new List<string>();
         var a = bone;
         while (a != null && DrawnHands.DrawnBone(a) == a)
+        {
+            chain.Add(a.name);
             a = a.parent;
-        return a == null
+            // Past the hand nothing of this joint is proxied.
+            if (chain.Count > 6)
+            {
+                a = null;
+                break;
+            }
+        }
+        var proxy = a != null ? DrawnHands.DrawnBone(a) : null;
+        probe = F(
+            $"{string.Join(">", chain)}{(chain.Count > 0 ? ">" : "")}{(a != null ? a.name : "none")}, proxy {(proxy != null ? "y" : "n")}{(proxy != null ? F($" scale {proxy.lossyScale.x:0.000}") : "")}, drawn {DrawnHands.Drawn}"
+        );
+        return proxy == null
             ? bone.position
-            : DrawnHands.DrawnBone(a).TransformPoint(a.InverseTransformPoint(bone.position));
+            : proxy.TransformPoint(a.InverseTransformPoint(bone.position));
     }
 
     static float NearestVertex(Vector3[] verts, Matrix4x4 toWorld, Vector3 point)
