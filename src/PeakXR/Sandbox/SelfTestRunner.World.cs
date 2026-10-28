@@ -1379,6 +1379,10 @@ internal sealed partial class SelfTestRunner
         return best + Flat(from - center) * 0.02f;
     }
 
+    /// <summary>vr.83c's food distance from the fire base: 0.25 m outside the cook column (FireGestures' 0.6 m), well
+    /// inside its 0.5 m warmth margin.</summary>
+    const float WarmthOut = 0.85f;
+
     /// <summary>vr.83c: food carried toward a lit fire's heat column but held 0.25 m short of it feels the warmth ramp
     /// (progress feel) without the game holding the fire or cooking.</summary>
     IEnumerator CookWarmthStep(Item foodPrefab)
@@ -1391,10 +1395,6 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
-        // Not ApproachFire's 0.95 m: there the idle hold (hand ~0.45 m ahead, the apple's centre ~0.26 m past it) put
-        // the food 0.28 m out, inside the cook column, before the carry began (run 17). From 1.5 m it rests 0.7-0.9 m
-        // out, in the warmth band (0.6-1.1 m).
-        yield return WarpFacing(fireBase, 1.5f);
         if (!fire.Lit)
         {
             fire.LightWithoutReveal();
@@ -1402,16 +1402,37 @@ internal sealed partial class SelfTestRunner
             if (!stepOk)
                 yield break;
         }
+        // Take the food well clear of the column (an earlier fire step may have left the body at the fire).
+        yield return WarpFacing(fireBase, 2.5f);
         yield return GiveAndHold(foodPrefab);
         if (!stepOk)
             yield break;
         var food = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
+        // Stand so the idle hold already puts the food in the warmth band, measured from this hold: a fixed stand
+        // left it in the cook column at 0.95 m (run 17: food 0.72 m ahead of the body, 0.28 m out) or out of the band
+        // at 2.01 m (run 18: the carry then reached 1.10 m from the eye).
+        var ahead = Flat(VRRig.Instance.Head.forward);
+        var held = food != null ? food.Center() - c.Center : Vector3.zero;
+        float lead = Vector3.Dot(new Vector3(held.x, 0f, held.z), ahead);
+        yield return ApproachFire(fireBase, WarmthOut + lead);
+        if (food == null)
+            yield break;
+        float idleOut = FlatDistance(food.Center(), fireBase);
+        if (idleOut < WarmthOut - 0.2f || idleOut > WarmthOut + 0.2f)
+        {
+            Fail(
+                F(
+                    $"could not stand with the idle food in the warmth band: food {lead:0.00} m ahead of the body, stand {WarmthOut + lead:0.00} m asked, body {FlatDistance(c.Center, fireBase):0.00} m out, food {idleOut:0.00} m out"
+                )
+            );
+            yield break;
+        }
         int before = Cooked(food);
         // FireGestures: the column is 0.6 m around the base, 0.2 to 1 m up; the warmth reaches 0.5 m past it. 0.85 m
         // up is waist height, in reach of a standing player (0.55 m up was knee height, past an arm).
-        var goal = fireBase + Flat(c.Center - fireBase) * 0.85f + Vector3.up * 0.85f;
+        var goal = fireBase + Flat(c.Center - fireBase) * WarmthOut + Vector3.up * 0.85f;
         var interaction = Interaction.instance;
         bool heldFire = false;
         float mark = CueMark();
