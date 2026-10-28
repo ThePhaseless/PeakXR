@@ -26,7 +26,22 @@ internal static class AimPatches
 
     private static bool On => VRSession.Active && AimConfig.Instance.AimFromHand;
 
-    private static CameraSwap Held(Item item) => On ? HandAim.BeginHeld(item) : default;
+    /// <summary>Every aim prefix starts here: an error leaves the camera where it is, so the game call aims as
+    /// vanilla instead of the prefix throwing into it.</summary>
+    private static CameraSwap Held(Item item)
+    {
+        if (!On)
+            return default;
+        try
+        {
+            return HandAim.BeginHeld(item);
+        }
+        catch (Exception e)
+        {
+            PatchGuard.Fail<AimFeature>(e);
+            return default;
+        }
+    }
 
     /// <summary>Recoil on the holding hand, and softer on the supporting hand of a two-hand hold.</summary>
     private static void Shot(Item item, float amplitude, float seconds)
@@ -276,16 +291,27 @@ internal static class AimPatches
 
         private static void Prefix(Constructable __instance, out State __state)
         {
-            var mc = MainCamera.instance;
-            var head = mc != null ? mc.transform.position : Vector3.zero;
-            var swap = Held(__instance.item);
-            float reach = __instance.maxConstructDistance;
-            if (swap.Active)
+            __state = new State(default, -1f);
+            try
+            {
+                var mc = MainCamera.instance;
+                var head = mc != null ? mc.transform.position : Vector3.zero;
+                var swap = Held(__instance.item);
+                // Set before the reach changes, so the finalizer puts the camera back whatever throws next.
+                __state = new State(swap, -1f);
+                if (!swap.Active)
+                    return;
+                float reach = __instance.maxConstructDistance;
                 __instance.maxConstructDistance = Mathf.Max(
                     0f,
                     reach - Vector3.Distance(head, mc.transform.position)
                 );
-            __state = new State(swap, swap.Active ? reach : -1f);
+                __state = new State(swap, reach);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<AimFeature>(e);
+            }
         }
 
         private static Exception Finalizer(

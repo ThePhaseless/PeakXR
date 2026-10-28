@@ -366,8 +366,18 @@ internal static class InteractPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Item), "DenyPickupRPC");
 
-        private static void Postfix(Item __instance) =>
-            PhysicalInteraction.PickupDenied(__instance);
+        // An RPC: a throw here would reach Photon's dispatch.
+        private static void Postfix(Item __instance)
+        {
+            try
+            {
+                PhysicalInteraction.PickupDenied(__instance);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<PhysicalInteractionFeature>(e);
+            }
+        }
     }
 
     /// <summary>CharacterItems.EquipSlot (CharacterItems.cs:482): skipped only inside a pocketing pickup's answer
