@@ -67,6 +67,7 @@ internal static class BugReport
         try
         {
             Directory.CreateDirectory(Root);
+            Prune();
             var name = BugReportText.FolderName(
                 DateTime.Now,
                 n => Directory.Exists(Path.Combine(Root, n))
@@ -89,6 +90,28 @@ internal static class BugReport
             LastError = e.Message;
             Affordance.Deny(left, at, DenyReason.CantUse);
             return false;
+        }
+    }
+
+    /// <summary>Reports kept on disk, the new one included; each holds a log, a screenshot and pose history.</summary>
+    private const int KeepReports = 20;
+
+    /// <summary>Deletes the oldest report folders so the new one makes <see cref="KeepReports"/>.</summary>
+    private static void Prune()
+    {
+        var names = new List<string>();
+        foreach (var dir in Directory.GetDirectories(Root))
+            names.Add(Path.GetFileName(dir));
+        foreach (var stale in BugReportText.Stale(names, KeepReports - 1))
+        {
+            try
+            {
+                Directory.Delete(Path.Combine(Root, stale), recursive: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Plugin.Log.LogWarning($"[debug] could not remove old report {stale}: {e.Message}");
+            }
         }
     }
 

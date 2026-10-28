@@ -67,9 +67,27 @@ internal sealed partial class SelfTestRunner
         cpPath = Path.Combine(MpDirectory, "a-checkpoints.jsonl");
         try
         {
+            var marker = Path.Combine(MpDirectory, MpDir.Marker);
+            bool clear = MpDir.MayClear(
+                MpDirectory,
+                MpDir.UnixHome(
+                    Environment.GetEnvironmentVariable("HOME"),
+                    Environment.GetEnvironmentVariable("WINEHOMEDIR")
+                ),
+                Directory.Exists(MpDirectory),
+                File.Exists(marker)
+            );
             Directory.CreateDirectory(MpDirectory);
-            foreach (var old in Directory.GetFiles(MpDirectory, "a-*"))
-                File.Delete(old);
+            if (clear)
+            {
+                File.WriteAllText(marker, "");
+                foreach (var old in Directory.GetFiles(MpDirectory, "a-*"))
+                    File.Delete(old);
+            }
+            else
+                Plugin.Log.LogWarning(
+                    $"[mptest] not deleting old a-* files in {MpDirectory}: the test did not make that folder; use an empty one"
+                );
             File.WriteAllText(logPath, Header() + "\n");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
