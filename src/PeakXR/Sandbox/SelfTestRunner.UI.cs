@@ -166,7 +166,26 @@ internal sealed partial class SelfTestRunner
         var hand = rig.Hand(left);
         float across = hand != null ? Vector3.Angle(rest * Vector3.right, hand.Fingers()) : 0f;
         float width = UI.World.HudSplit.WristWidthMeters;
-        float degrees = 2f * Mathf.Atan2(width * 0.5f, toWrist.magnitude) * Mathf.Rad2Deg;
+        // The bar as drawn: its frame's own world corners, read against UI.WristWidth and the wrist anchor. VR build
+        // 7c3814a scaled the groups' rects (with the frame's 1214 px stencil mask) to the setting, so the 614 px frame
+        // was half as wide and its centre a few cm off the anchor while WristWidthMeters still read the setting.
+        bool frameMeasured = WristFrameWorld(
+            UI.World.HudSplit.WristRoot,
+            out float frameMeters,
+            out var frameCentre
+        );
+        float eye = toWrist.magnitude;
+        float wanted = WristHud.Width(
+            WristHud.ScaledWidth(cfg.WristWidth.Value, cfg.TextScale.Value),
+            eye,
+            UI.World.HudSplit.WristPulse
+        );
+        float wantedDegrees = 2f * Mathf.Atan2(wanted * 0.5f, eye) * Mathf.Rad2Deg;
+        float degrees =
+            2f * Mathf.Atan2((frameMeasured ? frameMeters : width) * 0.5f, eye) * Mathf.Rad2Deg;
+        float centreOff = frameMeasured
+            ? Vector3.Distance(frameCentre, wrist)
+            : float.PositiveInfinity;
         // Read from where the player looks: the step raises the wrist into the level gaze (WristHud.LookDegrees).
         float off = Vector3.Angle(head.forward, toWrist);
         var root = UI.World.HudSplit.WristRoot;
@@ -229,7 +248,7 @@ internal sealed partial class SelfTestRunner
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}; bar frame {frameHi - frameLo:0} px{barNote}, plate on it {plateOnBar}"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}; bar frame {frameHi - frameLo:0} px{barNote}, plate on it {plateOnBar}; frame {frameMeters * 100f:0.0} cm ({degrees:0.0} deg, UI.WristWidth wants {wanted * 100f:0.0} cm, {wantedDegrees:0.0} deg), centre {centreOff * 1000f:0} mm off the wrist anchor"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
@@ -241,6 +260,12 @@ internal sealed partial class SelfTestRunner
             Fail("watch face is not on the side of the wrist that faces the eye");
         else if (Mathf.Abs(across - 90f) > 15f)
             Fail("wrist bar does not run across the wrist");
+        else if (!frameMeasured)
+            Fail("stamina bar frame not on the wrist");
+        else if (Mathf.Abs(degrees - wantedDegrees) > WristSizeTolerance * wantedDegrees)
+            Fail("wrist bar is not drawn at UI.WristWidth");
+        else if (centreOff > WristSizeTolerance * wanted)
+            Fail("wrist bar is not centred on the wrist anchor");
         else if (degrees < 12f)
             Fail("wrist HUD too small to read");
         else if (!onTop)
@@ -257,6 +282,33 @@ internal sealed partial class SelfTestRunner
             Fail("wrist plate is not as long as the stamina bar's frame");
         else if (!plateFits)
             Fail("wrist plate is not fitted to the drawn bar");
+    }
+
+    /// <summary>ui.05's slack on the bar's width and centre, as a fraction of the wanted width: the pose and the alert
+    /// pulse it reads may be a frame apart (a 0.6 s sine pulse of +20 % moves the width at most about 1.2 % a frame at
+    /// 90 Hz, SpatialUI.cs:314-315), while the bug it guards against was 50 % (a 614 px frame scaled as 1214 px).</summary>
+    const float WristSizeTolerance = 0.03f;
+
+    /// <summary>World width (bottom edge) and centre of the stamina bar's frame on the wrist; false when it is not
+    /// there.</summary>
+    static bool WristFrameWorld(RectTransform root, out float meters, out Vector3 centre)
+    {
+        meters = 0f;
+        centre = default;
+        var gui = GUIManager.instance;
+        var frame = gui != null && gui.bar != null ? gui.bar.staminaBarOutline : null;
+        if (
+            root == null
+            || frame == null
+            || !frame.gameObject.activeInHierarchy
+            || !frame.IsChildOf(root)
+        )
+            return false;
+        var corners = new Vector3[4];
+        frame.GetWorldCorners(corners);
+        meters = Vector3.Distance(corners[0], corners[3]);
+        centre = (corners[0] + corners[2]) * 0.5f;
+        return true;
     }
 
     /// <summary>Box-space x span of the stamina bar's own art: its frame (the game sizes it to the bar,

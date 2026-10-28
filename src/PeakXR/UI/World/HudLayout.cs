@@ -298,12 +298,27 @@ internal sealed class HudSplit
                 bounds = b;
             any = true;
         }
-        // Layout and scale follow the groups' rects, so the bar does not jump when a part shows; the plate does not.
         if (any)
+            WristGroupsSize = bounds.size;
+        // Layout and scale follow the stamina bar's frame (A/StaminaBar.cs:135), the bar the player reads, so
+        // UI.WristWidth is its width and WristPosition its centre, and nothing jumps when a part shows. The groups'
+        // rects also hold the frame's 1214 px stencil mask (Bar/OutlineMask): the bar came out half as wide, off-centre.
+        // shortcut: a frame grown past 614 px by overflowing afflictions (statusSum > 1) when this runs shrinks the
+        // bar until the next measure; measure at statusSum 1 if that shows up in play.
+        var frame = gui != null && gui.bar != null ? gui.bar.staminaBarOutline : null;
+        if (frame != null && frame.gameObject.activeInHierarchy && frame.IsChildOf(box))
         {
+            frame.GetWorldCorners(corners);
+            Vector2 a = box.InverseTransformPoint(corners[0]);
+            Vector2 b = box.InverseTransformPoint(corners[2]);
+            wristCenter = (a + b) * 0.5f;
+            wristSpan = Mathf.Max(1f, Mathf.Abs(b.x - a.x));
+        }
+        else if (any)
+        {
+            // No bar on the wrist (spectating moves it to the friend's nameplate): the hotbar groups set the layout.
             wristCenter = bounds.center;
             wristSpan = Mathf.Max(1f, bounds.size.x);
-            WristGroupsSize = bounds.size;
         }
         box.GetComponentsInChildren(true, wristGraphics);
         // The bar's OutlineMask (Image + Mask, showMaskGraphic off) spans 1214 px round the 614 px frame it clips and
