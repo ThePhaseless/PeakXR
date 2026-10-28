@@ -88,6 +88,24 @@ public class SettingMigrationTests
         Assert.False(RunSaved(raw, out _));
     }
 
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    [InlineData("1e39")]
+    public void RescaleSaved_ANonFiniteValueIsLeftAlone(string raw) =>
+        Assert.False(RunSaved(raw, out _));
+
+    [Theory]
+    [InlineData(120f, "Comfort.SmoothTurnSpeed.From120")]
+    [InlineData(0.15f, "Comfort.SmoothTurnSpeed.From0.15")]
+    [InlineData(0.1f, "Comfort.SmoothTurnSpeed.From0.1")]
+    public void MarkerKey_WritesTheShortRoundTripForm(float oldDefault, string expected) =>
+        Assert.Equal(
+            expected,
+            SettingMigration.MarkerKey("Comfort", "SmoothTurnSpeed", oldDefault)
+        );
+
     [Fact]
     public void RescaleSaved_NothingSavedOrAlreadyRan_NoRescale()
     {

@@ -31,6 +31,9 @@ public class SettingPreviewTests
     [InlineData("Inventory", "SlotLayout", PreviewKind.BeltSlots)]
     [InlineData("Render", "RenderScale", PreviewKind.Info)]
     [InlineData("Voice", "Anything", PreviewKind.Info)]
+    [InlineData("Comfort", "NoSuchKey", PreviewKind.Info)]
+    [InlineData("Inventory", "NoSuchKey", PreviewKind.Info)]
+    [InlineData("UI.HUD", "NoSuchKey", PreviewKind.Info)]
     public void Kind_by_section_and_key(string section, string key, PreviewKind expected)
     {
         Assert.Equal(expected, SettingPreviewTable.KindFor(section, key));
@@ -51,7 +54,7 @@ public class SettingPreviewTests
     [Theory]
     [InlineData("XR", "DepthSubmission", true)]
     [InlineData("XR", "FallbackToOpenVR", true)]
-    [InlineData("Interaction.Binoculars", "LensResolution", true)]
+    [InlineData("Interaction.Binoculars", "LensResolution", false)]
     [InlineData("UI", "TitleOnBeach", true)]
     [InlineData("Render", "RenderScale", true)]
     [InlineData("XR", "PauseInputOnFocusLoss", false)]

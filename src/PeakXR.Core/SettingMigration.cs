@@ -74,6 +74,8 @@ public static class SettingMigration
                 CultureInfo.InvariantCulture,
                 out float saved
             )
+            // "NaN" and "Infinity" parse, but no setting can hold them.
+            || !float.IsFinite(saved)
         )
             return false;
         value = Rescaled(saved, oldDefault, newDefault, factor, min, max, true, false);
@@ -81,7 +83,9 @@ public static class SettingMigration
     }
 
     /// <summary>Config key that records one migration ran: the setting and the default it moved off, so a later
-    /// default change of the same setting gets its own marker.</summary>
+    /// default change of the same setting gets its own marker. "R" writes the same short text on Unity's Mono and on
+    /// .NET for every value that round-trips at 7 digits (all hand-written defaults), so existing markers keep their
+    /// keys.</summary>
     public static string MarkerKey(string section, string key, float oldDefault) =>
-        section + "." + key + ".From" + oldDefault.ToString(CultureInfo.InvariantCulture);
+        section + "." + key + ".From" + oldDefault.ToString("R", CultureInfo.InvariantCulture);
 }

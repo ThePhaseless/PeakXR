@@ -171,8 +171,13 @@ internal static class ComfortConfig
             // Into Comfortable as if picked from the default (Moderate) chase follow: still the view.
             SetChaseFollow(ComfortPreset.Moderate, saved);
         }
-        Framework.ConfigMigration.FromOldDefault(smoothSpeed, 120f);
-        Framework.ConfigMigration.FromOldDefault(moveSmoothing, 0.15f);
+        // A Custom config left on an old default: the smooth turn speed moves only while snap turning, where it was
+        // never felt; a smooth turner has been playing at 120 deg/s, and the move ramp is always felt, so both stay.
+        Framework.ConfigMigration.FromOldDefault(
+            smoothSpeed,
+            120f,
+            inEffect: Turn == TurnMode.Smooth
+        );
 
         preset.SettingChanged += OnPresetChanged;
         turnMode.SettingChanged += OnValueChanged;
@@ -181,8 +186,17 @@ internal static class ComfortConfig
         vignette.SettingChanged += OnValueChanged;
         vignetteStrength.SettingChanged += OnValueChanged;
         moveSmoothing.SettingChanged += OnValueChanged;
-        // A hand-edited config file can disagree with its preset name.
-        OnValueChanged(null, EventArgs.Empty);
+        // A hand-edited config file can disagree with its preset name: a name edited over another preset's values
+        // applies that preset; values matching no preset make it Custom.
+        var values = Current();
+        if (ComfortPresets.NamedPresetWins(appliedPreset, values))
+        {
+            Apply(ComfortPresets.Get(appliedPreset));
+            SetChaseFollow(ComfortPresets.Identify(values), appliedPreset);
+            Plugin.Log.LogInfo($"[comfort] Preset {appliedPreset} set in the config file: applied");
+        }
+        else
+            OnValueChanged(null, EventArgs.Empty);
     }
 
     private static ComfortProfile Current() =>

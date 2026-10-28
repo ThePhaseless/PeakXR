@@ -47,6 +47,7 @@ public static class SettingsGrid
         "CommuneAtFace",
         "BookOverBones",
         "GuardWastedItems",
+        "TriggerEats",
         "AmuletInSocket",
         "PalmsOnPillar",
         "HandIntoPortal",

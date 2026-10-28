@@ -81,12 +81,20 @@ internal static class ConfigMigration
         return true;
     }
 
-    public static void FromOldDefault(ConfigEntry<float> entry, float oldDefault)
+    /// <param name="inEffect">The saved value is what the player has been playing with, so it counts as their
+    /// choice: the migration is marked as run without moving it.</param>
+    public static void FromOldDefault(
+        ConfigEntry<float> entry,
+        float oldDefault,
+        bool inEffect = false
+    )
     {
         var def = entry.Definition;
         var marker = Marker(def, oldDefault);
         var newDefault = (float)entry.DefaultValue;
-        var move = SettingMigration.ShouldMove(entry.Value, oldDefault, newDefault, marker.Value);
+        var move =
+            !inEffect
+            && SettingMigration.ShouldMove(entry.Value, oldDefault, newDefault, marker.Value);
         marker.Value = true;
         if (!move)
             return;
