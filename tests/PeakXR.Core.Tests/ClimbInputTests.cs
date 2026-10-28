@@ -156,16 +156,16 @@ public class BlinkHoldTests
     {
         var b = new BlinkHold();
         // A Lighthouse controller behind the body, a WMR one behind the back: seconds untracked, still held.
-        Assert.False(b.Update(false, false, 5f));
+        Assert.False(b.Update(false, false, false, 5f));
         Assert.False(b.Expired);
-        Assert.False(b.Update(true, false, 0.01f));
+        Assert.False(b.Update(true, false, false, 0.01f));
         int fired = 0;
         for (int i = 0; i < 200; i++)
-            if (b.Update(false, false, 0.05f))
+            if (b.Update(false, false, false, 0.05f))
                 fired++;
         Assert.Equal(1, fired);
         Assert.True(b.Expired);
-        b.Update(true, false, 0.01f);
+        b.Update(true, false, false, 0.01f);
         Assert.False(b.Expired);
     }
 
@@ -174,20 +174,63 @@ public class BlinkHoldTests
     {
         var b = new BlinkHold();
         for (int i = 0; i < 40; i++)
-            Assert.False(b.Update(false, false, 0.1f));
+            Assert.False(b.Update(false, false, false, 0.1f));
         Assert.False(b.Expired);
     }
 
     [Fact]
-    public void ADisconnectedController_OpensAtOnce_UntilTrackedAgain()
+    public void ARadioHiccup_KeepsTheGrip()
     {
         var b = new BlinkHold();
-        Assert.True(b.Update(false, true, 0.01f));
+        // The runtime drops the device for a second (a radio hiccup, a profile reload) and brings it back.
+        for (int i = 0; i < 10; i++)
+            Assert.False(b.Update(false, true, false, 0.1f));
+        Assert.False(b.Expired);
+        Assert.False(b.Update(true, false, false, 0.01f));
+        Assert.False(b.Expired);
+    }
+
+    [Fact]
+    public void ADisconnectedController_OpensAfterTheGrace_UntilTrackedAgain()
+    {
+        var b = new BlinkHold();
+        int fired = 0;
+        for (float t = 0f; t < BlinkHold.DisconnectSeconds + 0.2f; t += 0.05f)
+            if (b.Update(false, true, false, 0.05f))
+                fired++;
+        Assert.Equal(1, fired);
         Assert.True(b.Expired);
         // Back as a device but not tracked yet: still open, never fired twice.
-        Assert.False(b.Update(false, false, 0.01f));
+        Assert.False(b.Update(false, false, false, 0.01f));
         Assert.True(b.Expired);
-        b.Update(true, false, 0.01f);
+        b.Update(true, false, false, 0.01f);
         Assert.False(b.Expired);
+    }
+
+    [Fact]
+    public void ADisconnectThatFlaps_NeedsTheGraceInOneGo()
+    {
+        var b = new BlinkHold();
+        for (int i = 0; i < 3; i++)
+        {
+            for (int j = 0; j < 15; j++)
+                b.Update(false, true, false, 0.1f);
+            b.Update(false, false, false, 0.1f);
+        }
+        // 4.5 s of drops in 1.5 s bursts: no single drop is long enough, and 4.8 s untracked is under MaxSeconds.
+        Assert.False(b.Expired);
+    }
+
+    [Fact]
+    public void WhileTheRuntimeHasFocus_NothingOpens_ThenTheClockResumes()
+    {
+        var b = new BlinkHold();
+        // The SteamVR dashboard is open: controllers may read untracked or vanish, and multiplayer does not pause.
+        for (int i = 0; i < 300; i++)
+            Assert.False(b.Update(false, i % 2 == 0, true, 0.1f));
+        Assert.False(b.Expired);
+        // Focus back, the controller really gone: it opens after the grace, counted from the dashboard closing.
+        Assert.False(b.Update(false, true, false, BlinkHold.DisconnectSeconds * 0.5f));
+        Assert.True(b.Update(false, true, false, BlinkHold.DisconnectSeconds * 0.6f));
     }
 }

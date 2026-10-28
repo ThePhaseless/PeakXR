@@ -376,8 +376,7 @@ internal static class PhysicalInteraction
             hand.Action = GripPressAction.None;
     }
 
-    /// <summary>The hand's controller is gone (<see cref="BlinkHold"/>: disconnected, or untracked past
-    /// <see cref="BlinkHold.MaxSeconds"/>): its grip opens like a slow release, so the held item drops, or stays with
+    /// <summary>The hand's controller is gone (<see cref="BlinkHold"/>: disconnected or untracked for long): its grip opens like a slow release, so the held item drops, or stays with
     /// <c>ReleaseToDrop</c> off. The stale throw samples are dropped so it never flies off, and a soft note at the
     /// hand says the grip opened (the controller itself may be off, so no buzz).</summary>
     private static void LostForGood(Hand hand, VRRig rig, bool disconnected)
@@ -386,7 +385,7 @@ internal static class PhysicalInteraction
         if (!hand.Grip.Held)
             return;
         Plugin.Log.LogInfo(
-            $"[interact.physical] {(hand.Left ? "left" : "right")} controller {(disconnected ? "disconnected" : $"untracked for {BlinkHold.MaxSeconds:0.##} s")}: its grip opens"
+            $"[interact.physical] {(hand.Left ? "left" : "right")} controller {BlinkHold.Why(disconnected)}: its grip opens"
         );
         var at = rig != null ? rig.Hand(hand.Left) : null;
         if (at != null)
@@ -408,9 +407,17 @@ internal static class PhysicalInteraction
         // dropped or threw the item from stale throw samples, then the grip closing again regrabbed it. A latched
         // Toggle grip already reads 1 through it (GripLatch keeps its latch untracked). One-handed play's unused
         // controller is never tracked: it reads open. A controller that is gone (disconnected, or untracked past
-        // BlinkHold.MaxSeconds) must not hold forever: it reads open too, a release without a throw.
+        // BlinkHold.MaxSeconds) must not hold forever: it reads open too, a release without a throw. Never while the
+        // runtime has focus (dashboard open): multiplayer does not pause, and the player is not playing.
         bool unused = VRInput.OneHanded && hand.Left != VRInput.LeftHanded;
-        if (hand.Blink.Update(state.Tracked || unused, state.Disconnected && !unused, dt))
+        if (
+            hand.Blink.Update(
+                state.Tracked || unused,
+                state.Disconnected && !unused,
+                !VRSession.HasFocus,
+                dt
+            )
+        )
             LostForGood(hand, rig, state.Disconnected);
         bool open = unused || hand.Blink.Expired;
         hand.Grip.Update(

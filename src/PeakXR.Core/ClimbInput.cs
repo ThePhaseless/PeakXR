@@ -7,8 +7,12 @@ namespace PeakXR.Core;
 /// How long a hand's grip outlives its tracking. Lost tracking keeps the last grip (opening the hand there dropped
 /// or threw items, and dropped climbers), and normal play loses it for seconds: a Lighthouse controller hidden behind
 /// the body, a WMR or Reverb G2 controller behind the back or out of the headset cameras' view. Only a controller
-/// that is really gone opens: one the runtime reports disconnected (switched off, flat) at once, and one untracked
-/// for <see cref="MaxSeconds"/>, which covers a runtime that keeps a dead controller as an untracked device.
+/// that is really gone opens: one the runtime reports disconnected for <see cref="DisconnectSeconds"/> in one go
+/// (switched off, flat; a radio hiccup or a profile reload drops the device for less), and one untracked for
+/// <see cref="MaxSeconds"/>, which covers a runtime that keeps a dead controller as an untracked device. While the
+/// runtime holds input focus (its dashboard is open) the clock stops: the player is not playing then, multiplayer
+/// does not pause, and SteamVR may report the controllers untracked or gone, so opening the grip would drop a climber
+/// or an item the player never let go of. The clock resumes where it stopped when focus comes back.
 /// </summary>
 public sealed class BlinkHold
 {
@@ -16,28 +20,44 @@ public sealed class BlinkHold
     /// enough that a dead controller does not hold an item or a rope for good.</summary>
     public const float MaxSeconds = 8f;
 
+    /// <summary>Longer than a radio hiccup or a controller profile reload (under a second), short enough that a
+    /// switched-off controller lets go about as soon as the player looks for it.</summary>
+    public const float DisconnectSeconds = 2f;
+
     private float lost;
+    private float off;
     private bool gone;
 
-    /// <summary>The hand's controller disconnected or has been untracked past <see cref="MaxSeconds"/>: treat its
-    /// grip as opened, until it is tracked again.</summary>
+    /// <summary>The hand's controller has been disconnected for <see cref="DisconnectSeconds"/> or untracked past
+    /// <see cref="MaxSeconds"/>: treat its grip as opened, until it is tracked again.</summary>
     public bool Expired => gone || lost >= MaxSeconds;
+
+    /// <summary>Why the hold expired, for the caller's log line.</summary>
+    public static string Why(bool disconnected) =>
+        disconnected
+            ? $"disconnected for {DisconnectSeconds:0.##} s"
+            : $"untracked for {MaxSeconds:0.##} s";
 
     /// <param name="tracked">The controller's pose is tracked this frame.</param>
     /// <param name="disconnected">The runtime has no device for this hand (switched off, flat, unpaired).</param>
+    /// <param name="paused">The runtime holds input focus (dashboard open): the hold neither runs down nor opens.</param>
     /// <param name="dt">Seconds since the last update.</param>
     /// <returns>True on the frame the hold expires (the caller's one log line or cue).</returns>
-    public bool Update(bool tracked, bool disconnected, float dt)
+    public bool Update(bool tracked, bool disconnected, bool paused, float dt)
     {
         bool was = Expired;
         if (tracked)
         {
-            lost = 0f;
+            lost = off = 0f;
             gone = false;
             return false;
         }
-        gone |= disconnected;
-        lost += Math.Max(dt, 0f);
+        if (paused)
+            return false;
+        dt = Math.Max(dt, 0f);
+        lost += dt;
+        off = disconnected ? off + dt : 0f;
+        gone |= off >= DisconnectSeconds;
         return Expired && !was;
     }
 }

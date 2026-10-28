@@ -353,13 +353,16 @@ internal static class ClimbHands
     }
 
     /// <summary>An untracked hand keeps its last grip, so an occluded controller never opens it. Only a controller
-    /// that is gone (<see cref="BlinkHold"/>: disconnected, or untracked for <see cref="BlinkHold.MaxSeconds"/>)
+    /// that is gone (<see cref="BlinkHold"/>: disconnected or untracked for long, never while the runtime has focus)
     /// opens, and its anchor lets go as a hand-made release would.</summary>
     private static void UpdateGrip(Hand hand, in HandState state, float dt)
     {
-        if (hand.Blink.Update(state.Tracked, state.Disconnected, dt) && hand.Anchored)
+        if (
+            hand.Blink.Update(state.Tracked, state.Disconnected, !VRSession.HasFocus, dt)
+            && hand.Anchored
+        )
             Plugin.Log.LogInfo(
-                $"[interact.climb] {(hand.Left ? "left" : "right")} controller {(state.Disconnected ? "disconnected" : $"untracked for {BlinkHold.MaxSeconds:0.##} s")}: its grip opens"
+                $"[interact.climb] {(hand.Left ? "left" : "right")} controller {BlinkHold.Why(state.Disconnected)}: its grip opens"
             );
         if (state.Tracked)
             hand.Grip.Update(state.Grip, dt);
