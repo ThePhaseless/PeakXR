@@ -25,6 +25,10 @@ internal sealed class BackdropProbe
     /// (hands, laser, the menu itself) stays out of the measure.</summary>
     private const float NearShare = 0.9f;
 
+    /// <summary>How far (m) past the plate the probe sees. The game's camera draws to 1500 m; beyond this its fog
+    /// has the distance near sky colour anyway, and culling the far valley is most of a probe render's CPU cost.</summary>
+    private const float FarReach = 200f;
+
     /// <summary>Frames to wait for the probe's render or readback before giving up on it.</summary>
     private const int RenderFrames = 3;
     private const int ReadbackFrames = 30;
@@ -155,8 +159,8 @@ internal sealed class BackdropProbe
         {
             cam.clearFlags = main.clearFlags;
             cam.backgroundColor = main.backgroundColor;
-            cam.farClipPlane = main.farClipPlane;
         }
+        cam.farClipPlane = Mathf.Min(main != null ? main.farClipPlane : 1000f, distance + FarReach);
         cam.nearClipPlane = distance * NearShare;
         cam.fieldOfView = 2f * Mathf.Atan(height * 0.5f / distance) * Mathf.Rad2Deg;
         cam.aspect = width / height;
