@@ -28,6 +28,9 @@ namespace PeakXR.Net;
 /// PUN internals use 200-212 (<c>PunEvent</c>), Photon Realtime 210-255 (<c>EventCode</c>), Photon Voice
 /// 202/203 on its own client; PUN's TurnManager (1-2) is unused. Photon leaves 0-199 to the game
 /// (https://doc.photonengine.com/pun/current/gameplay/rpcsandraiseevent).
+/// Another mod may pick 151 too, so a packet counts only from a handshake peer in VR and only if it passes
+/// <see cref="RemotePoseStream"/>'s checks (version byte, VrActive flag, length, reach); the first one per peer
+/// that fails is logged.
 ///
 /// Packet size and bandwidth: the payload is a <see cref="PoseCodec"/> blob, 44 bytes with head, both
 /// hands and fingers (4 header + 3 x 10 pose + 10 fingers). Photon adds about 30 bytes of event and
@@ -54,28 +57,37 @@ internal sealed class NetPoseSync
     sealed class Remote
     {
         public readonly RemotePoseStream Stream = new();
+        public readonly YawHistory Yaw = new();
         public Character Character;
         public AvatarPoseDriver Driver;
+        public bool LoggedBadPacket;
     }
 
     readonly PeerTable peers = new();
     readonly Dictionary<int, Remote> remotes = new();
+
+    // Actors whose incompatible handshake was logged this room, so a split is named once, not on every update.
+    readonly HashSet<int> loggedMismatch = new();
     readonly PoseSendGate gate = new();
 
     // One reused buffer per possible encoded size (4 + 10k bytes, k = 0..4): Photon sends a byte[]
     // whole, so a single MaxSize buffer would pad short packets.
     readonly byte[][] sendBuffers = new byte[5][];
     readonly byte[] encodeScratch = new byte[PoseCodec.MaxSize];
-    readonly byte[] receiveScratch = new byte[PoseCodec.MaxSize];
+    readonly byte[] receiveScratch = new byte[PoseCodec.MaxPacketSize];
     readonly RaiseEventOptions sendOptions = new() { CachingOption = EventCaching.DoNotCache };
 
     bool registered;
     int publishedValue = -1;
+    double handshakeRetryAt;
     ushort sequence;
     Character localCharacter;
     AvatarPoseDriver localDriver;
     double driverRetryAt;
-    int loggedErrors;
+
+    // Separate budgets: a peer sending bad packets must not silence this client's own send or apply errors.
+    int loggedUpdateErrors;
+    int loggedReceiveErrors;
 
     void Start()
     {
@@ -102,13 +114,18 @@ internal sealed class NetPoseSync
         double now = Time.realtimeSinceStartupAsDouble;
         try
         {
+            if (publishedValue == -1 && now >= handshakeRetryAt)
+            {
+                handshakeRetryAt = now + 1.0;
+                PublishHandshake();
+            }
             SendLocalPose(now);
             ApplyRemotePoses(now);
         }
         catch (Exception e)
         {
             // Never let a pose glitch break the frame; log a few and stay quiet after that.
-            if (loggedErrors++ < 5)
+            if (loggedUpdateErrors++ < 5)
                 Plugin.Log.LogError($"[net.pose] {e}");
         }
     }
@@ -123,8 +140,23 @@ internal sealed class NetPoseSync
         int value = Handshake.Encode(VRSession.Active);
         if (value == publishedValue)
             return;
-        publishedValue = value;
-        local.SetCustomProperties(new Hashtable { [Handshake.Key] = value });
+        // Cached only once Photon took it; a refusal (not in a room yet, client busy) is retried from Update.
+        publishedValue = local.SetCustomProperties(new Hashtable { [Handshake.Key] = value })
+            ? value
+            : -1;
+    }
+
+    /// <summary>Applies an actor's handshake; an incompatible PeakXR build is named once per room, since the two
+    /// players otherwise just see each other's vanilla arms with no hint why.</summary>
+    bool SetPeer(int actor, object value)
+    {
+        if (Handshake.Mismatch(value, out int theirs) && loggedMismatch.Add(actor))
+            Plugin.Log.LogWarning(
+                $"[net.pose] actor {actor} runs PeakXR pose protocol {theirs & 0xFF}.{theirs >> 8}, this build "
+                    + $"{Handshake.Protocol & 0xFF}.{Handshake.Protocol >> 8}: no tracked hands between you two; "
+                    + "update both to the same PeakXR release"
+            );
+        return peers.Set(actor, value);
     }
 
     void RebuildPeers()
@@ -132,7 +164,7 @@ internal sealed class NetPoseSync
         peers.Clear();
         remotes.Clear();
         foreach (var player in PhotonNetwork.PlayerListOthers)
-            peers.Set(player.ActorNumber, PropertyOf(player.CustomProperties));
+            SetPeer(player.ActorNumber, PropertyOf(player.CustomProperties));
     }
 
     static object PropertyOf(Hashtable props) =>
@@ -150,13 +182,14 @@ internal sealed class NetPoseSync
     {
         peers.Clear();
         remotes.Clear();
+        loggedMismatch.Clear();
         localCharacter = null;
         localDriver = null;
     }
 
     public void OnPlayerEnteredRoom(PhotonPlayer newPlayer)
     {
-        if (peers.Set(newPlayer.ActorNumber, PropertyOf(newPlayer.CustomProperties)))
+        if (SetPeer(newPlayer.ActorNumber, PropertyOf(newPlayer.CustomProperties)))
             gate.Reset();
     }
 
@@ -177,7 +210,7 @@ internal sealed class NetPoseSync
             return;
         int actor = targetPlayer.ActorNumber;
         bool wasPeer = peers.IsPeer(actor);
-        if (!peers.Set(actor, changedProps[Handshake.Key]))
+        if (!SetPeer(actor, changedProps[Handshake.Key]))
             return;
         if (!peers.IsVr(actor))
             remotes.Remove(actor); // left VR: stop applying, the driver falls back to vanilla animation
@@ -300,7 +333,7 @@ internal sealed class NetPoseSync
         }
         catch (Exception e)
         {
-            if (loggedErrors++ < 5)
+            if (loggedReceiveErrors++ < 5)
                 Plugin.Log.LogWarning($"[net.pose] dropped a bad pose packet: {e.Message}");
         }
     }
@@ -327,14 +360,16 @@ internal sealed class NetPoseSync
                 length = bytes.Length;
                 break;
             case ByteArraySlice slice:
+                // Up to MaxPacketSize, so a newer minor version's trailing data still fits (PoseCodec remarks);
+                // anything longer fails validation below.
                 bool fits =
                     slice.Buffer != null
-                    && slice.Count <= receiveScratch.Length
                     && slice.Offset >= 0
+                    && slice.Count >= 0
                     && slice.Offset + slice.Count <= slice.Buffer.Length;
-                if (fits)
-                    Buffer.BlockCopy(slice.Buffer, slice.Offset, receiveScratch, 0, slice.Count);
                 length = slice.Count;
+                if (fits && length <= receiveScratch.Length)
+                    Buffer.BlockCopy(slice.Buffer, slice.Offset, receiveScratch, 0, length);
                 // A pooled slice (UseByteArraySlicePoolForEvents) goes back to the pool once copied.
                 slice.Release();
                 if (!fits)
@@ -352,7 +387,16 @@ internal sealed class NetPoseSync
             remote = new Remote();
             remotes.Add(sender, remote);
         }
-        remote.Stream.Accept(data, length, Time.realtimeSinceStartupAsDouble);
+        var result = remote.Stream.Accept(data, length, Time.realtimeSinceStartupAsDouble);
+        if (result == PoseAccept.Malformed && !remote.LoggedBadPacket)
+        {
+            // Once per peer: likely another mod raising event 151 too, or a PeakXR build with another layout.
+            remote.LoggedBadPacket = true;
+            Plugin.Log.LogWarning(
+                $"[net.pose] actor {sender} sent event {PoseEventCode} that is not a valid pose "
+                    + $"({length} bytes, first byte {(length > 0 ? data[0] : -1)}); dropping such packets quietly"
+            );
+        }
     }
 
     void ApplyRemotePoses(double now)
@@ -379,13 +423,19 @@ internal sealed class NetPoseSync
             )
                 continue;
 
+            // The game's synced yaw is current, the pose is played `delay` late: rebuild it with the yaw of the
+            // playback moment so head turns do not swing the hands (PoseFrame remarks).
+            remote.Yaw.Push(now, yaw);
             remote.Stream.Buffer.Delay = delay;
-            if (!remote.Stream.Buffer.Sample(now, out var local))
+            if (
+                !remote.Stream.Buffer.Sample(now, out var local)
+                || !remote.Yaw.Sample(now - delay, out float playbackYaw)
+            )
                 continue;
 
             if (remote.Driver == null || remote.Driver.gameObject != character.gameObject)
                 remote.Driver = AvatarPoseDriver.For(character);
-            var world = PoseFrame.ToWorld(local, root, yaw);
+            var world = PoseFrame.ToWorld(local, root, playbackYaw);
             remote.Driver.SetPose(ToAvatarPose(world));
         }
     }

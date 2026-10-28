@@ -8,6 +8,11 @@ namespace PeakXR.Core;
 /// physical hip, rotated by the look yaw. Both values are already synced by vanilla
 /// (<c>hipLocation</c> and <c>lookValues.x</c>), so sender and receiver rebuild the same frame
 /// for a character and hands stay attached to the body while it walks or turns.
+/// <para>The receiver plays poses back late (<see cref="PoseBuffer.Delay"/>), while the yaw the game syncs is
+/// current. A VR player's look yaw follows the head, so the pose is rebuilt with the yaw of the playback moment
+/// (<see cref="YawHistory"/>, sampled at the same now minus delay), not the current one: otherwise hands swing ahead
+/// on every head turn and jump on snap turns. The hip stays current on purpose, so hands keep up with a walking
+/// body.</para>
 /// </summary>
 public static class PoseFrame
 {

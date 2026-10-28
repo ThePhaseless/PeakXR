@@ -118,3 +118,69 @@ public sealed class PoseBuffer
 
     double TimeAt(int i) => times[(start + i) % Capacity];
 }
+
+/// <summary>
+/// The receiver's view of one remote character's look yaw over the last moments, recorded once a frame, so the pose
+/// played <see cref="PoseBuffer.Delay"/> late is rebuilt with the yaw of that same moment (<see cref="PoseFrame"/>).
+/// Rebuilding it with the current yaw swung the hands ahead on every head turn and jumped them on snap turns.
+/// Yaw is lerped plainly, unwrapped, as vanilla's CharacterSyncer does. Allocation-free after construction.
+/// </summary>
+public sealed class YawHistory
+{
+    /// <summary>A second at 144 Hz, well past the longest playback delay (0.3 s).</summary>
+    public const int Capacity = 160;
+
+    /// <summary>A gap this long (the stream went silent) drops the old samples.</summary>
+    public const double ResetAfter = 0.5;
+
+    readonly double[] times = new double[Capacity];
+    readonly float[] yaws = new float[Capacity];
+    int start,
+        count;
+
+    public int Count => count;
+
+    public void Push(double time, float yaw)
+    {
+        if (count > 0 && time - TimeAt(count - 1) >= ResetAfter)
+            count = 0;
+        if (count == Capacity)
+        {
+            start = (start + 1) % Capacity;
+            count--;
+        }
+        int i = (start + count) % Capacity;
+        times[i] = time;
+        yaws[i] = yaw;
+        count++;
+    }
+
+    /// <summary>The yaw at <paramref name="time"/>, held at the ends of the history. Samples older than the one
+    /// just before <paramref name="time"/> are dropped, so call it with a time that only moves forward.</summary>
+    public bool Sample(double time, out float yaw)
+    {
+        if (count == 0)
+        {
+            yaw = 0f;
+            return false;
+        }
+        while (count >= 2 && TimeAt(1) <= time)
+        {
+            start = (start + 1) % Capacity;
+            count--;
+        }
+        if (count == 1 || time <= TimeAt(0))
+        {
+            yaw = YawAt(0);
+            return true;
+        }
+        double t0 = TimeAt(0);
+        float f = (float)((time - t0) / (TimeAt(1) - t0));
+        yaw = YawAt(0) + (YawAt(1) - YawAt(0)) * f;
+        return true;
+    }
+
+    double TimeAt(int i) => times[(start + i) % Capacity];
+
+    float YawAt(int i) => yaws[(start + i) % Capacity];
+}

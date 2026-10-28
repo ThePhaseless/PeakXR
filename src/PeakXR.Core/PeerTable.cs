@@ -5,16 +5,34 @@ namespace PeakXR.Core;
 
 /// <summary>
 /// The <c>PeakXR</c> Photon player property. Its value is an int: the low 16 bits hold the pose
-/// protocol version, bit 16 says the player is in VR right now. Vanilla clients ignore unknown
-/// player properties, so this is how modded peers find each other without touching vanilla traffic.
+/// protocol (bits 0-7 the major version, which is the packet's version byte; bits 8-15 a minor version),
+/// bit 16 says the player is in VR right now, bits 17-30 are reserved and ignored. Vanilla clients ignore
+/// unknown player properties, so this is how modded peers find each other without touching vanilla traffic.
 /// </summary>
+/// <remarks>
+/// Peers with the same major version talk; the minor is free for additive changes (trailing packet data, see
+/// <see cref="PoseCodec"/>), so a build that adds one still talks to this one. The current value is unchanged
+/// from the first release (major 1, minor 0), so older builds still pair with it; they compare all 16 bits,
+/// so a future minor pairs only with this build and later.
+/// </remarks>
 public static class Handshake
 {
     public const string Key = "PeakXR";
     public const int Protocol = PoseCodec.Version;
     const int VrBit = 1 << 16;
+    const int MajorMask = 0xFF;
 
     public static int Encode(bool vrActive) => Protocol | (vrActive ? VrBit : 0);
+
+    /// <summary>True when a peer that announced <paramref name="protocol"/> can exchange poses with this build.</summary>
+    public static bool Compatible(int protocol) => (protocol & MajorMask) == (Protocol & MajorMask);
+
+    /// <summary>
+    /// True when <paramref name="value"/> is a PeakXR handshake this build cannot talk to: worth one log line, since
+    /// the two players silently see each other's vanilla arms. False for vanilla (no property) and for garbage.
+    /// </summary>
+    public static bool Mismatch(object value, out int protocol) =>
+        TryParse(value, out protocol, out _) && !Compatible(protocol);
 
     public static bool TryParse(object value, out int protocol, out bool vrActive)
     {
@@ -49,7 +67,7 @@ public sealed class PeerTable
     {
         if (
             !Handshake.TryParse(propertyValue, out int protocol, out bool vr)
-            || protocol != Handshake.Protocol
+            || !Handshake.Compatible(protocol)
         )
             return Remove(actor);
 
@@ -121,7 +139,11 @@ public sealed class RemotePoseStream
     {
         if (!bucket.TryTake(now))
             return PoseAccept.RateLimited;
-        if (!PoseCodec.Decode(data, length, out var pose) || !Plausible(pose))
+        if (
+            length > PoseCodec.MaxPacketSize
+            || !PoseCodec.Decode(data, length, out var pose)
+            || !Plausible(pose)
+        )
             return PoseAccept.Malformed;
         if (!Buffer.Push(pose, now))
             return PoseAccept.OutOfOrder;
@@ -129,8 +151,15 @@ public sealed class RemotePoseStream
         return PoseAccept.Accepted;
     }
 
+    /// <summary>
+    /// Event 151 is not ours alone (any mod on a VR peer may raise it), so beyond the codec's version byte and minimum
+    /// length a pose must carry <see cref="PoseFlags.VrActive"/> (every sender sets it), fit in
+    /// <see cref="PoseCodec.MaxPacketSize"/> and keep head and hands near the hip.
+    /// </summary>
     static bool Plausible(in PosePacket p)
     {
+        if (!p.VrActive)
+            return false;
         const float max = MaxPartDistance * MaxPartDistance;
         if (p.HasHead && p.HeadPosition.LengthSquared() > max)
             return false;

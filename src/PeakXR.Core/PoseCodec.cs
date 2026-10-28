@@ -59,7 +59,11 @@ public struct PosePacket
 /// <see cref="PoseFlags.TwoHandHold"/>): they are pure flags that add no payload, and <see cref="SizeFor"/>
 /// only counts the part bits, so a version 1 decoder that predates them reads the same parts from the same
 /// offsets and simply ignores bits 6 and 7. Bumping the version would make those peers drop every packet.
-/// Bump it only when the byte layout changes.
+/// Bump it only when the existing bytes change meaning (it is the handshake's major version).
+/// <para>All eight flag bits are taken. Anything new goes after the parts as trailing data, announced by a
+/// handshake minor version (<see cref="Handshake"/>): <see cref="Decode"/> reads only <see cref="SizeFor"/> bytes and
+/// ignores the rest, and receivers accept packets up to <see cref="MaxPacketSize"/>. Start such data with an
+/// extension flags byte so later additions can follow it.</para>
 /// </remarks>
 public static class PoseCodec
 {
@@ -68,6 +72,9 @@ public static class PoseCodec
     const int PartSize = 10;
     const int FingersSize = 2 * FingerCurls.Count;
     public const int MaxSize = HeaderSize + 3 * PartSize + FingersSize;
+
+    /// <summary>Largest packet a receiver accepts: <see cref="MaxSize"/> plus room for trailing extension data.</summary>
+    public const int MaxPacketSize = 128;
 
     const float InvSqrt2 = 0.70710678f;
     const int RotBits = 10;
