@@ -120,6 +120,14 @@ public sealed class ReachLearner
     float _spanMin = float.MaxValue;
     float _spanTime;
 
+    /// <summary>Forgets the reach, e.g. after a world-scale change: it was learned in the old world units.</summary>
+    public void Reset()
+    {
+        Reach = 0f;
+        _spanMin = float.MaxValue;
+        _spanTime = 0f;
+    }
+
     /// <param name="distance">Controller to avatar shoulder (m).</param>
     /// <param name="rise">How far the controller is above the shoulder (m).</param>
     /// <param name="valid">The caller's own gates: upright, empty hand, body at rest, view settled.</param>

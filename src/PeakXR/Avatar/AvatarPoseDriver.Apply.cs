@@ -859,6 +859,9 @@ public partial class AvatarPoseDriver
     /// <summary>The player's reach, learned per arm (<see cref="ReachLearner"/>); the map uses the longer.</summary>
     private readonly ReachLearner reachL = new();
     private readonly ReachLearner reachR = new();
+
+    /// <summary>The world scale (<see cref="Rig.RealScale.Of"/>) the local reach was learned under.</summary>
+    private float reachScale = 1f;
     private float reachWeightL;
     private float reachWeightR;
     private bool haveReachL;
@@ -898,6 +901,14 @@ public partial class AvatarPoseDriver
     private Vector3 Reach(bool left, TwoBoneIKConstraint ik, Vector3 target)
     {
         var c = Owner;
+        // The reach is learned in world units: a world-scale change (Manual, or Auto's recenter, seated or standing
+        // eye measure) makes it stale, so it is learned again.
+        if (c.IsLocal && !Mathf.Approximately(Rig.RealScale.Of, reachScale))
+        {
+            reachScale = Rig.RealScale.Of;
+            reachL.Reset();
+            reachR.Reset();
+        }
         var item = c.data.currentItem;
         bool holding = item != null && (Pose.TwoHandHold || Pose.ItemInLeftHand == left);
         bool upright = Rig.RigDriver.Upright(c);

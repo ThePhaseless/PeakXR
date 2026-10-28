@@ -363,12 +363,22 @@ public partial class AvatarPoseDriver
     private void ReconcileWeld()
     {
         var item = Owner.data.currentItem;
-        if (item != null && handoffReweld && !HandingOff && itemJoint == null && !remoteFree)
-        {
+        // The flag stays until a weld is back: a re-weld declined now (arms released, a stale pose) is retried, or
+        // the item would stay with no joint at all.
+        if (
+            handoffReweld
+            && (
+                itemJoint != null
+                || (
+                    item != null
+                    && !HandingOff
+                    && !remoteFree
+                    && !weldGate.Released
+                    && AttachToHoldingHand(item)
+                )
+            )
+        )
             handoffReweld = false;
-            if (!weldGate.Released && !ArmsSuspended && armBlend.Weight >= 1f)
-                AttachToHoldingHand(item);
-        }
         if (HandingOff)
             return;
         // A peer carries the item free of the hand, and a local item the gate let go is FollowHeld's: no weld to
@@ -409,13 +419,10 @@ public partial class AvatarPoseDriver
         var item = Owner.data.currentItem;
         var pose = Pose;
         bool left = pose.ItemInLeftHand;
-        if (
-            item != null
-            && ReferenceEquals(item, handoffItem)
-            && left != handoffLeft
-            && HasFreshPose
-            && (left ? pose.HasLeftHand : pose.HasRightHand)
-        )
+        bool same = ReferenceEquals(item, handoffItem);
+        // A stale pose cannot ease the item over: the handoff waits for a fresh one, so handoffLeft keeps the old hand.
+        bool fresh = HasFreshPose && (left ? pose.HasLeftHand : pose.HasRightHand);
+        if (item != null && same && left != handoffLeft && fresh)
         {
             var inv = Quaternion.Inverse(left ? pose.LeftHandRotation : pose.RightHandRotation);
             handoffPos =
@@ -432,14 +439,15 @@ public partial class AvatarPoseDriver
                 handoffReweld = true;
             }
         }
-        else if (!ReferenceEquals(item, handoffItem))
+        else if (!same)
         {
             // Another item: no ease or weld left over from the last one.
             handoffAt = -10f;
             handoffReweld = false;
         }
         handoffItem = item;
-        handoffLeft = left;
+        if (fresh || !same)
+            handoffLeft = left;
     }
 
     private void DestroyHandJoint(BodypartType part, Rigidbody itemRig)

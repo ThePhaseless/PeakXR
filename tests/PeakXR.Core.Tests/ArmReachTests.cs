@@ -209,4 +209,16 @@ public class ArmReachTests
         float w = ArmReach.StepWeight(1f, false, false, Tick);
         TestUtil.Near(1f - Tick / ArmReach.FadeSeconds, w);
     }
+
+    [Fact]
+    public void Learner_ResetForgetsTheReach()
+    {
+        // A world-scale change: the reach was learned in the old world units.
+        var l = new ReachLearner();
+        Hold(l, 0.7f, 0.5f);
+        l.Reset();
+        Assert.Equal(0f, l.Reach);
+        Hold(l, 0.6f, 0.5f);
+        TestUtil.Near(0.6f, l.Reach);
+    }
 }
