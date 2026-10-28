@@ -212,6 +212,17 @@ public class SteadyRumbleTests
         Assert.True(ch.Allow(HapticPriority.Environment, 10.06f + HapticChannel.DuckTail, 0.15f));
     }
 
+    [Fact]
+    public void ProgressTicks_DoNotDuckTheEnvironmentRumble()
+    {
+        // A hold's progress ticks come every 0.12 s: with the tail after each, the fire rumble all but stopped.
+        var ch = new HapticChannel();
+        Assert.True(ch.Allow(HapticPriority.Cue, 10f, ProgressRamp.Seconds, duckTail: false));
+        Assert.True(
+            ch.Allow(HapticPriority.Environment, 10f + ProgressRamp.Seconds + 0.005f, 0.2f)
+        );
+    }
+
     [Theory]
     [InlineData(HapticDetail.Full, true)]
     [InlineData(HapticDetail.Essential, false)]

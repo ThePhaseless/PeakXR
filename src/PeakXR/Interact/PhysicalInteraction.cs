@@ -1993,9 +1993,9 @@ internal static class PhysicalInteraction
             if (amplitude > 0f)
             {
                 if (leftGrip)
-                    Haptics.Pulse(true, amplitude, 0.04f, HapticPriority.Ambient);
+                    Haptics.Pulse(true, amplitude, 0.04f, StaminaBeat.Priority);
                 if (rightGrip)
-                    Haptics.Pulse(false, amplitude, 0.04f, HapticPriority.Ambient);
+                    Haptics.Pulse(false, amplitude, 0.04f, StaminaBeat.Priority);
                 return;
             }
         }

@@ -187,13 +187,18 @@ internal static class FireGestures
         }
         GestureRequests.Interact(fire);
 
-        // Only once the game holds this campfire: the warmth is the cook progress, not just the zone.
+        // The warmth is the cook progress once the game holds this campfire, and never weaker than the heat search
+        // peaked at the column's edge (HeatGradient.CookFill), so stepping in to cook never feels like a drop.
         var interaction = Interaction.instance;
-        if (interaction == null || !ReferenceEquals(interaction.currentHeldInteractible, fire))
-            return;
+        bool cooking =
+            interaction != null && ReferenceEquals(interaction.currentHeldInteractible, fire);
         Affordance.Progress(
             ItemGestures.HoldLeft,
-            Mathf.Clamp01(interaction.constantInteractableProgress)
+            HeatGradient.CookFill(
+                cooking ? interaction.constantInteractableProgress : 0f,
+                HeatSearchMax
+            ),
+            hold: cooking
         );
     }
 

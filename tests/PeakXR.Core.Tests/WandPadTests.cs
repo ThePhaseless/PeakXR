@@ -41,6 +41,17 @@ public class WandPadTests
     }
 
     [Fact]
+    public void MoveHand_CentreClickIsBY_NotAWalk()
+    {
+        // The wand's stand-in for the off hand's B/Y: tap pings, hold opens the emote wheel.
+        var p = WandPad.Map(new Vector2(0.1f, -0.1f), true, true);
+        Assert.True(p.Secondary);
+        Assert.Equal(Vector2.Zero, p.Stick);
+        Assert.False(p.Primary || p.StickClick);
+        Assert.False(WandPad.Map(new Vector2(0f, 0.5f), true, true).Secondary);
+    }
+
+    [Fact]
     public void TurnHand_SideClicksTurn_TopAndBottomAreButtons_CentreIsTheStickClick()
     {
         var right = WandPad.Map(new Vector2(0.8f, 0.1f), true, false);

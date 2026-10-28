@@ -286,6 +286,43 @@ public class ComfortPulsesTests
     }
 
     [Fact]
+    public void Haptic_AHitInsideTheCooldownIsKept()
+    {
+        var p = new ComfortPulses();
+        p.Add(new ComfortResponse { Haptic = 0.3f, HapticSeconds = 0.12f });
+        p.Update(0.01f);
+        TestUtil.Near(0.3f, p.HapticAmplitude);
+        // A hit 0.02 s later lands inside the rumble's spacing: it waits for the next pulse, it is not lost.
+        p.Update(0.01f);
+        p.Add(new ComfortResponse { Haptic = 0.9f, HapticSeconds = 0.12f });
+        float felt = 0f;
+        for (int i = 0; i < 10; i++)
+        {
+            p.Update(0.01f);
+            felt = Math.Max(felt, p.HapticAmplitude);
+        }
+        TestUtil.Near(0.9f, felt);
+    }
+
+    [Fact]
+    public void Haptic_PulsesAreSpacedByTheInterval()
+    {
+        var p = new ComfortPulses();
+        int pulses = 0;
+        for (int i = 0; i < 100; i++)
+        {
+            p.Add(new ComfortResponse { Haptic = 0.5f, HapticSeconds = 0.12f });
+            p.Update(0.01f);
+            if (p.HapticAmplitude > 0f)
+            {
+                pulses++;
+                Assert.True(p.HapticSeconds >= ComfortPulses.HapticInterval);
+            }
+        }
+        Assert.InRange(pulses, 11, 13);
+    }
+
+    [Fact]
     public void Reset_ClearsEverything()
     {
         var p = new ComfortPulses();

@@ -369,4 +369,42 @@ public class ControllerProfileTests
         Assert.Equal(1f, b.Grip);
         Assert.True(b.TriggerTouch);
     }
+
+    [Fact]
+    public void Index_ThumbOnTheTrackpadRests()
+    {
+        // A thumb on the Index trackpad is not lifted: a pointed grip there must not read as a finger gun.
+        var b = Map(Index, new ControllerSample { PadTouch = true });
+        Assert.True(b.ThumbrestTouch);
+        Assert.False(b.Menu);
+        Assert.False(Map(Index, default).ThumbrestTouch);
+    }
+
+    [Fact]
+    public void ProfilesWithoutTriggerTouch_SaySo()
+    {
+        foreach (var usages in new[] { ViveWand, ReverbG2, WindowsMotion, Simple })
+            Assert.True(Map(usages, default).NoTriggerTouch);
+        foreach (var usages in new[] { Index, Touch })
+            Assert.False(Map(usages, default).NoTriggerTouch);
+    }
+
+    [Fact]
+    public void ProfilesWithoutTriggerTouch_NeverReadAGripAsPointing()
+    {
+        // A Vive wand's finger off the trigger is unknown, not straight: every grip read as a point (and, thumb
+        // off the pad, a finger gun). Treated as resting on the trigger, a grip is a fist.
+        var b = Map(ViveWand, new ControllerSample { Grip = 1f });
+        var curls = FingerCurlMapper.Map(
+            b.Trigger,
+            b.TriggerTouch || b.NoTriggerTouch,
+            b.Grip,
+            false
+        );
+        Assert.False(GripIntent.IsPointing(curls));
+        // A controller that senses the finger still points.
+        b = Map(Touch, new ControllerSample { Grip = 1f });
+        curls = FingerCurlMapper.Map(b.Trigger, b.TriggerTouch || b.NoTriggerTouch, b.Grip, false);
+        Assert.True(GripIntent.IsPointing(curls));
+    }
 }

@@ -33,7 +33,12 @@ public sealed class GhostFade
     public float Update(float gap, float dt)
     {
         if (shown)
+        {
             shown = gap >= Exit;
+            // The next shortfall waits its own Persist; the old count would re-show it at once (flicker).
+            if (!shown)
+                pending = 0f;
+        }
         else
         {
             pending = gap > Enter ? pending + MathF.Max(dt, 0f) : 0f;

@@ -83,7 +83,9 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 source,
                 hasItem,
                 LocalHold.ItemInLeftHand,
-                PhysicalInteraction.AimHand
+                PhysicalInteraction.AimHand,
+                GripHand(),
+                VRInput.LeftHanded
             );
         }
         ringSource = source;
@@ -98,6 +100,17 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         var rig = VRRig.Instance;
         if (UIWorldRuntime.Ready && rig != null)
             Pose(rig, HandWidgetsFeature.Settings);
+    }
+
+    /// <summary>The hand whose grip presses the game's interact (a grab or the grip fallback): -1 none, 0 left,
+    /// 1 right; the left wins a tie.</summary>
+    private static int GripHand()
+    {
+        static bool Presses(GripPressAction a) =>
+            a is GripPressAction.GrabInteractible or GripPressAction.Interact;
+        if (Presses(PhysicalInteraction.HandAction(true)))
+            return 0;
+        return Presses(PhysicalInteraction.HandAction(false)) ? 1 : -1;
     }
 
     private void Sync(MovedWidget widget, bool onHand, Transform item, string name)

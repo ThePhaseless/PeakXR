@@ -76,8 +76,8 @@ public static class SteadyRumble
 
 /// <summary>
 /// One hand's haptic channel: which pulse plays now, until when, at what priority. A pulse of lower priority than
-/// the one still playing is dropped; ambient feel also waits <see cref="DuckTail"/> after any cue, so the cue reads
-/// alone. A pattern (the refusal triple) holds the channel for its whole length with <see cref="Hold"/>, gaps
+/// the one still playing is dropped; ambient feel also waits <see cref="DuckTail"/> after any cue but a hold's
+/// progress ticks, so the cue reads alone. A pattern (the refusal triple) holds the channel for its whole length with <see cref="Hold"/>, gaps
 /// included. Plain fields: allocation-free.
 /// </summary>
 public struct HapticChannel
@@ -87,18 +87,23 @@ public struct HapticChannel
 
     private float until;
     private HapticPriority priority;
+    private bool tailed;
 
     /// <summary>
     /// Whether a pulse of <paramref name="p"/> lasting <paramref name="seconds"/> may go out at
     /// <paramref name="now"/>; when it may, it takes the channel.
     /// </summary>
-    public bool Allow(HapticPriority p, float now, float seconds)
+    /// <param name="duckTail">False for a pulse that repeats faster than the tail (a hold's progress ticks): it
+    /// leaves no tail, or the background would never come back between ticks.</param>
+    public bool Allow(HapticPriority p, float now, float seconds, bool duckTail = true)
     {
         float tail =
-            p <= HapticPriority.Ambient && priority > HapticPriority.Ambient ? DuckTail : 0f;
+            p <= HapticPriority.Ambient && priority > HapticPriority.Ambient && tailed
+                ? DuckTail
+                : 0f;
         if (now < until + tail && p < priority)
             return false;
-        Take(p, now, seconds);
+        Take(p, now, seconds, duckTail);
         return true;
     }
 
@@ -108,14 +113,17 @@ public struct HapticChannel
     {
         if (now < until && p < priority)
             return;
-        Take(p, now, seconds);
+        Take(p, now, seconds, true);
     }
 
-    private void Take(HapticPriority p, float now, float seconds)
+    private void Take(HapticPriority p, float now, float seconds, bool tail)
     {
         float end = now + Math.Max(seconds, 0f);
-        // The same priority keeps a later end (a held pattern's own pulses); a new priority or a free channel starts over.
-        until = now < until && p == priority ? Math.Max(until, end) : end;
+        // The same priority keeps a later end (a held pattern's own pulses) and any tail it asked for; a new priority
+        // or a free channel starts over.
+        bool same = now < until && p == priority;
+        until = same ? Math.Max(until, end) : end;
+        tailed = same ? tailed || tail : tail;
         priority = p;
     }
 }

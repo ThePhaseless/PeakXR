@@ -52,6 +52,7 @@ internal sealed class ControllerReader
         thumbrestTouch,
         menu,
         padClick,
+        padTouch,
         isTracked;
     private XRInputSampler.Usage<Vector2> stick,
         pad;
@@ -131,6 +132,7 @@ internal sealed class ControllerReader
 
         pad = XRInputSampler.Usage<Vector2>.Find(n, "Secondary2DAxis");
         padClick = XRInputSampler.Usage<bool>.Find(n, "Secondary2DAxisClick");
+        padTouch = XRInputSampler.Usage<bool>.Find(n, "Secondary2DAxisTouch");
         padForce = XRInputSampler.Usage<float>.Find(n, "Secondary2DAxisForce");
         layout = ControllerLayout.From(n);
 
@@ -201,6 +203,7 @@ internal sealed class ControllerReader
             ThumbrestTouch = Bool(thumbrestTouch),
             Menu = Bool(menu),
             PadClick = Bool(padClick),
+            PadTouch = Bool(padTouch),
             Stick = XRInputSampler.N(Vec2(stick)),
             Pad = XRInputSampler.N(Vec2(pad)),
         };
@@ -223,6 +226,7 @@ internal sealed class ControllerReader
         s.StickTouch = b.StickTouch;
         s.ThumbrestTouch = b.ThumbrestTouch;
         s.Menu = b.Menu;
+        s.NoTriggerTouch = b.NoTriggerTouch;
         s.WandPad = layout.EmulateFaceButtons && layout.PadIsStick;
 
         s.SkeletalCurls = ReadCurls() ? curls : null;

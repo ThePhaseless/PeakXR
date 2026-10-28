@@ -19,6 +19,34 @@ public class HandProgressTests
         bool expectedLeft
     ) => Assert.Equal(expectedLeft, ProgressHand.PickLeft(source, hasItem, itemInLeft, aimHand));
 
+    [Theory]
+    // A plain grip hold (no ray) with the left hand: the ring goes to the left hand, not the right.
+    [InlineData(false, false, 0, false, true)]
+    [InlineData(false, false, 1, true, false)]
+    // The free hand gripping while the other holds an item.
+    [InlineData(true, false, 0, false, true)]
+    // No hand acting: the dominant hand (Input.DominantHand, or the one controller one-handed).
+    [InlineData(false, false, -1, true, true)]
+    [InlineData(false, false, -1, false, false)]
+    public void PickLeft_InteractableHold_UsesTheGrippingHandThenTheDominant(
+        bool hasItem,
+        bool itemInLeft,
+        int gripHand,
+        bool leftHanded,
+        bool expectedLeft
+    ) =>
+        Assert.Equal(
+            expectedLeft,
+            ProgressHand.PickLeft(
+                ProgressSource.Interactable,
+                hasItem,
+                itemInLeft,
+                -1,
+                gripHand,
+                leftHanded
+            )
+        );
+
     [Fact]
     public void Hidden_IsSilent()
     {

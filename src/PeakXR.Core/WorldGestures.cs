@@ -78,6 +78,11 @@ public static class HeatGradient
         distance <= 0f ? 1f
         : distance >= range ? 0f
         : 1f - distance / range;
+
+    /// <summary>The cook ramp's fill for the game's cook <paramref name="progress"/>: it starts at
+    /// <paramref name="floor"/>, where the heat search ramp peaked, so starting to cook is never a drop.</summary>
+    public static float CookFill(float progress, float floor) =>
+        floor + (1f - floor) * System.Math.Clamp(progress, 0f, 1f);
 }
 
 /// <summary>A palm laid on a surface (the soul pillar): the hand within <c>maxDistance</c> of the surface point

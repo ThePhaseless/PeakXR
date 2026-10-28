@@ -51,6 +51,20 @@ public class ReachGhostTests
     }
 
     [Fact]
+    public void AShortfallRightAfterHidingWaitsItsPersistAgain()
+    {
+        // Shown, hidden for one frame, then short again: the new shortfall must last Persist before it shows,
+        // or the ghost flickers back at once.
+        var f = new GhostFade();
+        Settle(f, 0.2f);
+        f.Update(0f, 0.02f);
+        float hidden = f.Alpha;
+        for (int i = 0; i < 5; i++)
+            f.Update(0.2f, 0.02f);
+        Assert.True(f.Alpha < hidden, $"{f.Alpha} >= {hidden}");
+    }
+
+    [Fact]
     public void FadesRatherThanPops()
     {
         var f = new GhostFade();

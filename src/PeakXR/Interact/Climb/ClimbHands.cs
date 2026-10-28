@@ -261,9 +261,9 @@ internal static class ClimbHands
             if (amplitude > 0f)
             {
                 if (l)
-                    Haptics.Pulse(true, amplitude, 0.04f, HapticPriority.Ambient);
+                    Haptics.Pulse(true, amplitude, 0.04f, StaminaBeat.Priority);
                 if (r)
-                    Haptics.Pulse(false, amplitude, 0.04f, HapticPriority.Ambient);
+                    Haptics.Pulse(false, amplitude, 0.04f, StaminaBeat.Priority);
             }
         }
     }
