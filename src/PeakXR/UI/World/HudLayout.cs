@@ -68,8 +68,8 @@ internal sealed class HudLayout
             nextWallTest = now + WallTestInterval;
             var half = 0.5f * MetersPerPixel * new Vector2(ReferenceWidth, ReferenceHeight);
             var depth = WorldCanvases.WallDepth(head.position, offset, Rotation, half);
-            var (clear, top) = PanelMath.FitBeforeWall(wanted, depth);
-            OnTop = onTop.Update(top, depth - PanelMath.WallGap - clear, now - lastWallTest);
+            var (clear, _) = PanelMath.FitBeforeWall(wanted, depth);
+            OnTop = onTop.Update(wanted, depth, now - lastWallTest);
             lastWallTest = now;
             Scale = clear / wanted;
         }
