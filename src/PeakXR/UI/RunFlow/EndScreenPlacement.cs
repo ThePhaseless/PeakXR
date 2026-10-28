@@ -10,7 +10,9 @@ namespace PeakXR.UI.RunFlow;
 /// Canvas_End (EndScreen: scout report, timeline, unlock popups, WaitingForPlayersUI; R2 §2.1) as a
 /// wide world-locked panel. It is placed once in front of the player when the end screen opens and
 /// only re-placed if they end up more than 4 m away, so the dense animated report never swims with
-/// the head. The game's own menu width is too narrow for the timeline.
+/// the head. The game's own menu width is too narrow for the timeline. Rock nearer than
+/// <c>EndScreenDistance</c> pulls it in at the same angular size, drawn on top at the comfort floor
+/// (<see cref="PanelMath.FitBeforeWall"/>).
 /// </summary>
 internal sealed class EndScreenPlacement : ICanvasPlacement
 {
@@ -22,6 +24,7 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
     private Canvas placedFor;
     private Vector3 panelPosition;
     private Quaternion panelRotation = Quaternion.identity;
+    private float scale = 1f;
 
     public EndScreenPlacement(RunFlowSettings cfg) => this.cfg = cfg;
 
@@ -49,10 +52,20 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
         if (open && (!wasOpen || far))
         {
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            var offset = PanelMath.InFront(yaw, cfg.EndScreenDistance.Value, Tilt).ToUnity();
-            panelPosition = head.position + offset;
+            var wanted = cfg.EndScreenDistance.Value;
+            var offset = PanelMath.InFront(yaw, wanted, Tilt).ToUnity();
             panelRotation = Quaternion.LookRotation(offset, Vector3.up);
+            var size = ((RectTransform)canvas.transform).rect.size;
+            var half =
+                0.5f
+                * cfg.EndScreenWidth.Value
+                * new Vector2(1f, size.x >= 1f ? size.y / size.x : 9f / 16f);
+            var depth = WorldCanvases.WallDepth(head.position, offset, panelRotation, half);
+            var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth);
+            scale = clear / wanted;
+            panelPosition = head.position + offset * scale;
             placedFor = canvas;
+            OnTop.SetWall(canvas.transform, onTop);
         }
         wasOpen = open;
         // Closed: keep the last pose of this canvas (a new scene's canvas starts unplaced); ui.world
@@ -62,7 +75,7 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
 
         position = panelPosition;
         rotation = panelRotation;
-        widthMeters = cfg.EndScreenWidth.Value;
+        widthMeters = cfg.EndScreenWidth.Value * scale;
         return PlacementResult.Placed;
     }
 }

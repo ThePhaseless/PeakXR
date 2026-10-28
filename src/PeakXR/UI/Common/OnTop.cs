@@ -21,11 +21,19 @@ internal sealed class OnTop : MonoBehaviour, IMaterialModifier
     private static readonly List<Graphic> Scratch = new();
 
     private Graphic graphic;
-    private bool on;
+    private bool on,
+        wall;
 
     /// <summary>Turns drawing on top on or off for every graphic under <paramref name="root"/>, inactive ones
     /// included. Call again after the game adds children (a new feed row).</summary>
-    public static void Set(Transform root, bool onTop)
+    public static void Set(Transform root, bool onTop) => Mark(root, onTop, wall: false);
+
+    /// <summary>Like <see cref="Set"/>, for a whole panel held in front of rock nearer than the comfort floor
+    /// (<see cref="PanelMath.FitBeforeWall"/>). A flag of its own, so clearing it never puts hand UI inside that
+    /// panel (the wrist box under the HUD) back to depth tested.</summary>
+    public static void SetWall(Transform root, bool onTop) => Mark(root, onTop, wall: true);
+
+    private static void Mark(Transform root, bool onTop, bool wall)
     {
         if (root == null)
             return;
@@ -42,10 +50,13 @@ internal sealed class OnTop : MonoBehaviour, IMaterialModifier
                 m = g.gameObject.AddComponent<OnTop>();
             }
             m.graphic = g;
-            if (m.on == onTop)
-                continue;
-            m.on = onTop;
-            g.SetMaterialDirty();
+            bool was = m.on || m.wall;
+            if (wall)
+                m.wall = onTop;
+            else
+                m.on = onTop;
+            if (was != (m.on || m.wall))
+                g.SetMaterialDirty();
         }
         Scratch.Clear();
     }
@@ -115,7 +126,7 @@ internal sealed class OnTop : MonoBehaviour, IMaterialModifier
 
     public Material GetModifiedMaterial(Material baseMaterial)
     {
-        if (!on || baseMaterial == null)
+        if (!(on || wall) || baseMaterial == null)
             return baseMaterial;
         if (!Clones.TryGetValue(baseMaterial, out var clone) || clone == null)
         {
@@ -128,7 +139,7 @@ internal sealed class OnTop : MonoBehaviour, IMaterialModifier
 
     private void OnDestroy()
     {
-        if (on && graphic != null)
+        if ((on || wall) && graphic != null)
             graphic.SetMaterialDirty();
     }
 }
