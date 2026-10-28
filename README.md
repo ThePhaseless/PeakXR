@@ -50,8 +50,9 @@ You need:
 - A PC VR headset with SteamVR, or another OpenXR runtime such as Meta Quest Link or Virtual Desktop. Only
   SteamVR has been tested.
 - [BepInExPack_PEAK](https://thunderstore.io/c/peak/p/BepInEx/BepInExPack_PEAK/), the mod loader.
-- The PeakXR zip. There is no public release yet: build it with `mise run package` (see [Build](#build)),
-  which writes `dist/PeakXR-<version>.zip`.
+- The PeakXR zip, `PeakXR-<version>.zip`, from the
+  [GitHub releases](https://github.com/ThePhaseless/PeakXR/releases), or built yourself with
+  `mise run package` (see [Build](#build)).
 
 To find the game folder, right-click PEAK in your Steam library and pick Manage, then Browse local files.
 On Linux it is usually `~/.local/share/Steam/steamapps/common/PEAK`.
