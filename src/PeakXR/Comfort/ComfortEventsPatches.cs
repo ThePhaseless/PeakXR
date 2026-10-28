@@ -453,7 +453,8 @@ internal static class ComfortEventsPatches
     /// position (ST-64, MF-51). In VR the camera keeps its smooth path without the jitter, and CinematicScreenShake's
     /// jitter becomes a shake cue (rumble by default). CutsceneShake's is a constant prefab wobble (nothing writes
     /// <c>shake</c>), so it gets no cue: it would rumble for the whole cutscene. Presentation only: these components
-    /// move nothing else.
+    /// move nothing else. The game's own Update still runs, with only the shake amount neutralised around it, so a
+    /// change to the camera path in a game update carries over.
     /// </summary>
     [HarmonyPatch]
     internal static class CutsceneJitter
@@ -461,46 +462,43 @@ internal static class ComfortEventsPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CutsceneShake), "Update");
 
-        private static bool Prefix(CutsceneShake __instance)
+        // Zero for the game's Update, then the prefab value back, so flat play after VR keeps its wobble.
+        private static void Prefix(CutsceneShake __instance, out float __state)
         {
-            if (!VRSession.Active)
-                return true;
-            var t = __instance.transform;
-            if (__instance.follow != null)
-                t.position = Vector3.Lerp(
-                    t.position,
-                    __instance.follow.position,
-                    __instance.smooth * Time.deltaTime
-                );
-            return false;
+            __state = __instance.shake;
+            if (VRSession.Active)
+                __instance.shake = 0f;
         }
+
+        private static void Postfix(CutsceneShake __instance, float __state) =>
+            __instance.shake = __state;
     }
 
     /// <inheritdoc cref="CutsceneJitter"/>
     [HarmonyPatch]
     internal static class CinematicJitter
     {
-        /// <summary>CinematicScreenShake.smoothing (Peak/CinematicScreenShake.cs:11, private).</summary>
-        internal static AccessTools.FieldRef<CinematicScreenShake, float> Smoothing;
+        /// <summary>Stands in for the real shake during the game's Update: its jitter is micrometres, and the decay
+        /// the game applies to it (shake / Probe) is replayed on the real amount, so the decay stays the game's.</summary>
+        private const float Probe = 1e-4f;
 
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CinematicScreenShake), "Update");
 
-        private static bool Prefix(CinematicScreenShake __instance)
+        private static void Prefix(CinematicScreenShake __instance, out float __state)
         {
+            __state = float.NaN;
             if (!VRSession.Active)
-                return true;
-            float smoothing = Smoothing(__instance);
-            var t = __instance.transform;
-            if (__instance.returnPoint != null)
-                t.position = Vector3.Lerp(
-                    t.position,
-                    __instance.returnPoint.position,
-                    smoothing * 2f * Time.deltaTime
-                );
-            ComfortEventsRuntime.RaiseShake(__instance.shake * 0.1f, 0.1f);
-            __instance.shake = Mathf.Lerp(__instance.shake, 0f, smoothing * Time.deltaTime);
-            return false;
+                return;
+            __state = __instance.shake;
+            ComfortEventsRuntime.RaiseShake(__state * 0.1f, 0.1f);
+            __instance.shake = Probe;
+        }
+
+        private static void Postfix(CinematicScreenShake __instance, float __state)
+        {
+            if (!float.IsNaN(__state))
+                __instance.shake = __state * (__instance.shake / Probe);
         }
     }
 
@@ -540,7 +538,8 @@ internal static class ComfortEventsPatches
     /// Mirage.fadeMirage (Mirage.cs:27) dissolves a desert mirage into particles that sample a mono screen-space
     /// render (MirageManager.sampleCamera MirageManager.cs:13, UVs from WorldToScreenPoint Mirage.cs:62), wrong
     /// in both eyes (ST-67, EN-58). In VR the mirage just vanishes at the same distance: its objects hide and the
-    /// particles stay off.
+    /// particles are cleared in the same frame, before they draw. The game's fadeMirage still runs (its one
+    /// offscreen sample render, Play, the delayed hide), so a change to it in a game update carries over.
     /// </summary>
     [HarmonyPatch]
     internal static class MirageFade
@@ -548,16 +547,16 @@ internal static class ComfortEventsPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Mirage), nameof(Mirage.fadeMirage));
 
-        private static bool Prefix(Mirage __instance)
+        private static void Postfix(Mirage __instance)
         {
             if (!VRSession.Active)
-                return true;
-            __instance.hasFaded = true;
+                return;
+            if (__instance.ps != null)
+                __instance.ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             if (__instance.hideObjects && __instance.objectsToHide != null)
                 foreach (var go in __instance.objectsToHide)
                     if (go != null)
                         go.SetActive(false);
-            return false;
         }
     }
 
