@@ -243,7 +243,17 @@ internal static class BeachWakeupPatch
         if (mode == BeachWakeupMode.Skip)
             SkipFallOf = __instance;
         else if (mode == BeachWakeupMode.Fade)
-            RunFlowRuntime.OnBeachWakeup(__instance);
+        {
+            // A throw here would skip the run start itself (starting curse, challenge items).
+            try
+            {
+                RunFlowRuntime.OnBeachWakeup(__instance);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<RunFlowFeature>(e);
+            }
+        }
     }
 
     private static void Postfix(Character __instance)
