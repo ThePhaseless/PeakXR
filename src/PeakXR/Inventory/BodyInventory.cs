@@ -571,7 +571,7 @@ internal sealed class BodyInventory : IGripExtension
     // ------------------------------------------------------------------ helpers
 
     /// <summary>The <c>CharacterItems.DoSwitching</c> gates (CharacterItems.cs:735), checked up front for feedback.</summary>
-    private static bool SwitchBlocked(Character c)
+    internal static bool SwitchBlocked(Character c)
     {
         var item = c.data.currentItem;
         if (item != null && (item.progress > 0f || item.lastFinishedCast + 0.1f > Time.time))
@@ -612,7 +612,7 @@ internal sealed class BodyInventory : IGripExtension
     /// <summary>Hand-lock cue: two short pulses instead of a silent failure (IC-05).</summary>
     /// <summary>Why <see cref="SwitchBlocked"/> holds: climbing (CharacterItems.cs:735-741), mid-use or just used
     /// (the cooldown at :72-84), else a generic busy state.</summary>
-    private static DenyReason BlockReason(Character c)
+    internal static DenyReason BlockReason(Character c)
     {
         if (c.data.isClimbing || c.data.isRopeClimbing)
             return DenyReason.NotWhileClimbing;

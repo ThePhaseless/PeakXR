@@ -265,6 +265,7 @@ internal static class LocomotionInput
                 DenyLoneSpectate(c, VRAction.SpectatePrevious, dominantLeft);
         }
         input.unselectSlotWasPressed |= canSwitch && Mapper.Pressed(VRAction.PutAway);
+        DenyBlockedSwitch(c, dominantLeft);
         // No selectBackpackWasPressed: the game samples it (CharacterInput.cs:257) but never reads it.
         if (Mapper.Pressed(VRAction.Backpack))
             backpackFrame = Time.frameCount;
@@ -525,6 +526,44 @@ internal static class LocomotionInput
     /// switched away from (MainCameraMovement.HandleSpecSelection, :189), and a lone teammate has no next one
     /// (SwapSpecPlayer, :221). CantSwitch at the hand whose stick flicked.
     /// </summary>
+    private static readonly VRAction[] SwitchActions =
+    {
+        VRAction.HotbarNext,
+        VRAction.HotbarPrevious,
+        VRAction.PutAway,
+        VRAction.Backpack,
+    };
+
+    /// <summary>A stick item switch, X put-away or X-hold backpack the game will ignore (CharacterItems.DoSwitching,
+    /// CharacterItems.cs:735: climbing, on a rope, mid-use, a sticky item, locked from switching) gets the body
+    /// slots' refusal cue at the pressing hand instead of nothing.</summary>
+    private static void DenyBlockedSwitch(Character c, bool dominantLeft)
+    {
+        foreach (var action in SwitchActions)
+        {
+            if (!Mapper.Pressed(action))
+                continue;
+            if (Inventory.BodyInventory.SwitchBlocked(c))
+                Affordance.DenyAtHand(
+                    ActionLeft(action, dominantLeft),
+                    Inventory.BodyInventory.BlockReason(c)
+                );
+            return;
+        }
+    }
+
+    /// <summary>The controller an action is on, for its cue (the off hand if the layout does not say).</summary>
+    private static bool ActionLeft(VRAction action, bool dominantLeft) =>
+        ControllerLabels.ForAction(
+            action,
+            dominantLeft,
+            LocalHold.ItemInLeftHand,
+            out var actionLeft,
+            out _
+        )
+            ? actionLeft
+            : !dominantLeft;
+
     private static void DenyLoneSpectate(Character c, VRAction action, bool dominantLeft)
     {
         var spec = MainCameraMovement.specCharacter;
@@ -542,18 +581,7 @@ internal static class LocomotionInput
         }
         if (other)
             return;
-        bool left = !dominantLeft;
-        if (
-            ControllerLabels.ForAction(
-                action,
-                dominantLeft,
-                LocalHold.ItemInLeftHand,
-                out var actionLeft,
-                out _
-            )
-        )
-            left = actionLeft;
-        Affordance.DenyAtHand(left, DenyReason.CantSwitch);
+        Affordance.DenyAtHand(ActionLeft(action, dominantLeft), DenyReason.CantSwitch);
     }
 
     /// <summary>
