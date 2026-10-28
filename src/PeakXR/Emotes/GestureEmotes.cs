@@ -176,7 +176,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         if (Time.time < nextAt)
             return;
         if (cheered)
-            Play(c, cheerEmote, !VRInput.LeftHanded, rig.Hand(!VRInput.LeftHanded));
+            Play(c, cheerEmote, VRInput.OffHandLeft, rig.Hand(VRInput.OffHandLeft));
         else if (wavedLeft || wavedRight)
             Play(c, wave, wavedLeft, rig.Hand(wavedLeft));
         else if (thumbLeft || thumbRight)

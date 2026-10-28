@@ -83,4 +83,18 @@ public class BodyCueHandTests
         Assert.True(BodyCueHand.Pick(true, false, false, true, false, out bool left));
         Assert.False(left);
     }
+
+    [Fact]
+    public void OneHanded_NeverPicksTheSwitchedOffController()
+    {
+        // Accessibility.OneHanded: the other controller reads idle (never busy, no cue), but nobody holds it.
+        Assert.True(
+            BodyCueHand.Pick(true, true, false, false, false, out bool left, otherOff: true)
+        );
+        Assert.True(left);
+        Assert.True(BodyCueHand.Pick(false, false, false, false, false, out left, otherOff: true));
+        Assert.False(left);
+        // The one hand's own refusal is up: the body cue yields instead of moving to the dead controller.
+        Assert.False(BodyCueHand.Pick(true, false, false, true, false, out _, otherOff: true));
+    }
 }

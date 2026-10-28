@@ -250,13 +250,17 @@ internal static class BodyFeedback
     internal static bool BodyHand(bool preferLeft, out bool left)
     {
         float now = Time.unscaledTime;
+        // One-handed: the one controller is the only hand that can feel or show anything.
+        if (VRInput.OneHanded)
+            preferLeft = VRInput.OffHandLeft;
         return BodyCueHand.Pick(
             preferLeft,
             Busy(true),
             Busy(false),
             now - CueLog.Capture.Hand(true).ReasonAt < OwnCueSeconds,
             now - CueLog.Capture.Hand(false).ReasonAt < OwnCueSeconds,
-            out left
+            out left,
+            otherOff: VRInput.OneHanded
         );
     }
 
