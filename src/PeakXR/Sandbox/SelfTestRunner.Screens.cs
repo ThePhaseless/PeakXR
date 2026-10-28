@@ -3,6 +3,7 @@ using HarmonyLib;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Framework;
+using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Guide;
 using PeakXR.UI.Keyboard;
@@ -1155,6 +1156,19 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
             yield return Wait(1.5f);
+        }
+        // The turn, the face ray and the step-in all read the eye, so the view must be back on the body: run 22 still
+        // showed the chase view 2.6 s after the warp (eye 3 m behind and 1 m over the body), and the step-in it
+        // measured carried the body 3 m through the kiosk.
+        yield return WaitFor(() => RigDriver.ViewOnBody, 5f);
+        if (!RigDriver.ViewOnBody)
+        {
+            Fail(
+                F(
+                    $"the view stayed off the body after the warp to the kiosk (detached {RigDriver.ViewDetached}, ragdoll control {c.data.currentRagdollControll:0.00}, falling {c.data.fallSeconds:0.00} s, passed out {c.data.passedOut})"
+                )
+            );
+            yield break;
         }
         rig.RotateYaw(
             Vector3.SignedAngle(
