@@ -3069,16 +3069,22 @@ internal sealed partial class SelfTestRunner
             Fail("the head sway never pushed the rope: " + note);
         else if (pumped < still + 0.1f)
             Fail("pumping did not swing the rope farther: " + note);
+        // 0.8 m end to end, plus room for the rope's bending past the pendulum estimate.
+        else if (pumped > 2f * ClimbHands.PumpMaxAmplitude + 0.25f)
+            Fail("pumping swung the rope past the comfort ceiling: " + note);
         else
             Note(note);
         yield return LetGoAll(c);
     }
 
     /// <summary>
-    /// vr.42e: on the player's own rope, the head moves a player makes without meaning to pump (one 0.3 m lean in, as
-    /// to catch the rope, held and brought back, then looking round 60 degrees either way with a few cm of drift) never
-    /// push it: ClimbHands.LastPump stays 0 and the climb point sways no more than with a still head. Before the pump
-    /// waited for a rhythm (<see cref="PumpIntent"/>), that one lean added about 1 m/s to every segment.
+    /// vr.42e: on the player's own rope, the head moves a player makes without meaning to pump never push it:
+    /// ClimbHands.LastPump stays 0 and the climb point sways no more than with a still head. One 0.3 m lean in, as to
+    /// catch the rope, held and brought back, makes exactly <see cref="PumpIntent.Strokes"/> - 1 strokes on a still rope
+    /// (checked, so a lean too weak to count fails the step instead of passing it); a quick look round about the neck follows inside
+    /// <see cref="PumpIntent.MaxGap"/>, swinging the eyes fast enough that the eyes' motion alone would complete the
+    /// rhythm (checked with a PumpIntent of the step's own), so reading the eyes instead of the neck would push. Before the pump waited for a rhythm, that one lean
+    /// added about 1 m/s to every segment; before it read the neck, a quick look round counted as strokes.
     /// </summary>
     IEnumerator RopeLeanCalmStep()
     {
@@ -3102,13 +3108,16 @@ internal sealed partial class SelfTestRunner
         var api = testRope.climbingAPI;
         var rig = VRRig.Instance;
         var along = Flat(VRInput.HeadRotation * Vector3.forward);
-        var side = Vector3.Cross(Vector3.up, along);
         float lo = float.MaxValue,
             hi = float.MinValue,
             peak = 0f,
             push = 0f;
+        // The stimulus's own check: the raw eye motion read as PumpIntent reads it on a still rope.
+        var eyes = new PumpIntent();
+        bool eyesPump = false;
         var axis = Flat(rig.Origin.TransformDirection(along));
         var last = api.GetPosition(c.data.ropePercent);
+        var lastEye = VRInput.HeadPosition;
         IEnumerator Measure(float seconds)
         {
             lo = float.MaxValue;
@@ -3129,6 +3138,14 @@ internal sealed partial class SelfTestRunner
                 lo = Mathf.Min(lo, x);
                 hi = Mathf.Max(hi, x);
                 push = Mathf.Max(push, ClimbHands.LastPump);
+                if (dt > 0f)
+                    eyesPump |= eyes.Update(
+                        ((VRInput.HeadPosition - lastEye) / dt).N(),
+                        System.Numerics.Vector3.Zero,
+                        Now,
+                        dt
+                    );
+                lastEye = VRInput.HeadPosition;
             }
         }
         yield return Measure(3f);
@@ -3142,34 +3159,53 @@ internal sealed partial class SelfTestRunner
         });
         var baseHead = VRInput.HeadPosition;
         var baseTurn = VRInput.HeadRotation;
+        // The eyes sit above and ahead of the neck's pivot; a little off ClimbHands' own neck model on purpose.
+        var eyeOffset = new Vector3(0f, 0.09f, 0.1f);
+        var neck = baseHead - baseTurn * eyeOffset;
         float start = Now;
         VRInput.TestOverride = () =>
         {
             hands();
             float t = Now - start;
-            // 0-2 s: one lean in, 0.3 m (0.47 m/s at its fastest), and back; 2-6 s: look round about the neck.
-            float lean = t < 2f ? 0.3f * Mathf.Sin(Mathf.PI * t / 2f) : 0f;
-            float look = t < 2f ? 0f : t - 2f;
-            VRInput.HeadRotation =
-                Quaternion.AngleAxis(60f * Mathf.Sin(1.2f * look), Vector3.up) * baseTurn;
-            VRInput.HeadPosition =
-                baseHead
-                + along * lean
-                + side * (0.04f * Mathf.Sin(1.2f * look))
-                + along * (0.03f * (1f - Mathf.Cos(1.7f * look)));
+            // 0-2.1 s: one lean in, 0.3 m (0.59 m/s at its fastest, above MinHeadSpeed for 0.4 s), held, and back:
+            // two strokes. Then at once a quick look round, 70 degrees either way at up to 280 degrees/s.
+            float lean =
+                t < 0.8f ? 0.15f * (1f - Mathf.Cos(Mathf.PI * t / 0.8f))
+                : t < 1.3f ? 0.3f
+                : t < 2.1f ? 0.15f * (1f + Mathf.Cos(Mathf.PI * (t - 1.3f) / 0.8f))
+                : 0f;
+            float look = t < 2.1f ? 0f : t - 2.1f;
+            var turn = Quaternion.AngleAxis(70f * Mathf.Sin(4f * look), Vector3.up) * baseTurn;
+            VRInput.HeadRotation = turn;
+            VRInput.HeadPosition = neck + along * lean + turn * eyeOffset;
         };
-        yield return Measure(6f);
+        eyes.Reset();
+        eyesPump = false;
+        yield return Measure(2.1f);
+        int leanStrokes = eyes.Count;
+        bool leanPumps = eyesPump;
+        yield return Measure(4f);
         VRInput.TestOverride = hands;
         yield return Measure(2f);
         float moved = hi - lo;
         bool held = c.data.isRopeClimbing;
         var note = F(
-            $"climb point sway peak to peak still {still:0.00} m (peak {stillPeak:0.00} m/s), after a lean in and a look round {moved:0.00} m (peak {peak:0.00} m/s), push {push:0.0} m/s², on the rope {held}"
+            $"climb point sway peak to peak still {still:0.00} m (peak {stillPeak:0.00} m/s), after a lean in and a look round {moved:0.00} m (peak {peak:0.00} m/s), push {push:0.0} m/s², lean strokes {leanStrokes}/{PumpIntent.Strokes}, eyes alone would pump {eyesPump}, on the rope {held}"
         );
         if (!held)
             Fail("fell off the rope: " + note);
         else if (push > 0f)
             Fail("a lean or a look round pushed the rope: " + note);
+        else if (leanPumps || leanStrokes != PumpIntent.Strokes - 1)
+            Fail(
+                "the lean did not make one stroke short of a pump, so the step proves nothing: "
+                    + note
+            );
+        else if (!eyesPump)
+            Fail(
+                "the look round never moved the eyes like a stroke, so the step proves nothing: "
+                    + note
+            );
         else if (moved > still + 0.1f)
             Fail("the rope swung after a lean or a look round: " + note);
         else

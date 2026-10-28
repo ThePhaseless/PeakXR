@@ -49,14 +49,16 @@ internal static class ClimbHands
     /// <summary>Distance (metres) from a handle within which a closing grip holds it.</summary>
     internal const float HandleRadius = 0.1f;
 
-    /// <summary>Rope pump tuning: head speed deadzone (m/s), gain (m/s² per m/s), cap (m/s²) and the climb point's level
-    /// swing speed (m/s) past which it stops adding. The game's own climber weight on the segment is 1 m/s² straight
-    /// down (Rope.cs:23, :167-171) and nothing sideways. Run 22 pumped a 2.5 m rope to 1.20 m peak to peak with a 3 m/s²
-    /// cap and no ceiling; 0.8 m/s bounds that to about 0.8 m, a slow sway instead of a swing that drags the view.</summary>
+    /// <summary>Rope pump tuning: head speed deadzone (m/s), gain (m/s² per m/s) and cap (m/s²). The game's own climber
+    /// weight on the segment is 1 m/s² straight down (Rope.cs:23, :167-171) and nothing sideways.</summary>
     private const float PumpDeadzone = 0.25f,
         PumpGain = 4f,
-        PumpMax = 2f,
-        PumpMaxSwing = 0.8f;
+        PumpMax = 2f;
+
+    /// <summary>The swing's amplitude (metres out from under the anchor, <see cref="RopePump.Amplitude"/>) past which
+    /// pumping stops adding: 0.8 m end to end on a rope of any length, a slow sway instead of a swing that drags the
+    /// view. Run 22 pumped a 2.5 m rope to 1.20 m peak to peak with no ceiling.</summary>
+    internal const float PumpMaxAmplitude = 0.4f;
 
     /// <summary>Percent step either side of the climb point used to read the line's direction.</summary>
     private const float PercentProbe = 0.02f;
@@ -92,6 +94,8 @@ internal static class ClimbHands
     private static readonly PumpIntent Intent = new();
     private static Vector3 lastSwingPoint;
     private static bool swingValid;
+    private static Transform swingSegment;
+    private static Rigidbody swingBody;
 
     /// <summary>This hold already got its refusal for pumping a rope someone else owns.</summary>
     private static bool pumpRefused;
@@ -207,8 +211,9 @@ internal static class ClimbHands
         // With a menu or wheel open, or a controller in use lost, the hands' state is frozen: nobody falls off a rope
         // because a menu ate the grip or tracking blinked. One-handed play's unused controller never freezes it.
         bool frozen = !active || Lost(LeftHand) || Lost(RightHand);
+        // Pump is skipped while frozen: its frame-to-frame samples restart afterwards, not span the gap.
         if (frozen)
-            headValid = false;
+            headValid = swingValid = false;
         else
         {
             Release(LeftHand);
@@ -313,6 +318,8 @@ internal static class ClimbHands
         pumpRefused = false;
         Intent.Reset();
         swingValid = false;
+        swingSegment = null;
+        swingBody = null;
 
         LastPump = 0f;
         piton = next == Mode.Handle && obj is ClimbHandle h ? h.GetComponent<ShittyPiton>() : null;
@@ -676,7 +683,8 @@ internal static class ClimbHands
     /// </summary>
     private static void Pump(Character c, VRRig rig, bool holding, float dt)
     {
-        var head = VRInput.HeadPosition;
+        // The neck, not the eyes: a quick look round swings the eyes about it past the stroke speed.
+        var head = RopePump.Neck(VRInput.HeadPosition.N(), VRInput.HeadRotation.N()).U();
         bool valid = headValid;
         var velocity = valid ? (head - lastHead) / dt : Vector3.zero;
         lastHead = head;
@@ -696,7 +704,27 @@ internal static class ClimbHands
             rope.climbingAPI != null && segments != null && segments.Count >= 2
                 ? rope.climbingAPI.GetPosition(c.data.ropePercent)
                 : c.Center;
-        var swing = swingValid ? (point - lastSwingPoint) / dt : Vector3.zero;
+        // The held segment's own velocity: the segments move in FixedUpdate (Rope.cs:153), so a per-frame position
+        // difference read 0 on frames without a physics step and let pushes through. A remote rope's collider
+        // segments have no simulated body; they only feed the refusal's rhythm check.
+        var segment =
+            rope.climbingAPI != null && segments != null && segments.Count >= 2
+                ? rope.climbingAPI.GetSegmentFromPercent(c.data.ropePercent)
+                : null;
+        if (segment != swingSegment)
+        {
+            swingSegment = segment;
+            swingBody =
+                segment != null
+                && segment.TryGetComponent<Rigidbody>(out var body)
+                && !body.isKinematic
+                    ? body
+                    : null;
+        }
+        var swing =
+            swingBody != null ? swingBody.linearVelocity
+            : swingValid ? (point - lastSwingPoint) / dt
+            : Vector3.zero;
         lastSwingPoint = point;
         swingValid = true;
         // Looking around, the lean in to catch the rope and the bob of a climb never pump; a rhythm of leans does.
@@ -716,11 +744,16 @@ internal static class ClimbHands
             CachePumpBodies(rope, segments);
         if (pumpCount == 0)
             return;
+        // Segment 0 is the anchored end (Rope.AttachToAnchor_Rpc ties it, Rope.cs:259-282). shortcut: a rope draped
+        // over an edge rests out from under its anchor, so it reads as swinging and pumps less or not at all; a rest
+        // line learnt from the rope's calm pose would fix it if players miss pumping there.
+        float amplitude = RopePump.Amplitude(point.N(), segments[0].position.N(), swing.N());
         var push = RopePump
             .Limit(
                 RopePump.Push(velocity.N(), PumpDeadzone, PumpGain, PumpMax),
                 swing.N(),
-                PumpMaxSwing
+                amplitude,
+                PumpMaxAmplitude
             )
             .U();
         LastPump = push.magnitude;

@@ -38,6 +38,20 @@ public class PumpIntentTests
         );
     }
 
+    /// <summary>A quick look left and right (70 degrees either way, 280 degrees/s at its fastest) about a neck whose
+    /// eyes sit a little off the pump's own model: the eyes swing back and forth past 0.4 m/s, a rhythm the raw eye
+    /// motion would count as a pump. The neck under them barely moves.</summary>
+    [Fact]
+    public void FastLookRound_AboutTheNeck_IsNoPump()
+    {
+        var eyeOffset = new Vector3(0f, 0.09f, 0.1f);
+        Quaternion Turn(float t) =>
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.22f * MathF.Sin(4f * t));
+        Vector3 Eye(float t) => Vector3.Transform(eyeOffset, Turn(t));
+        Assert.True(Run(Eye, Still, 6f));
+        Assert.False(Run(t => RopePump.Neck(Eye(t), Turn(t)), Still, 6f));
+    }
+
     [Fact]
     public void LeaningToGrab_IsNoPump()
     {

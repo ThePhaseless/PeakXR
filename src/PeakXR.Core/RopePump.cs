@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace PeakXR.Core;
@@ -9,6 +10,17 @@ namespace PeakXR.Core;
 /// </summary>
 public static class RopePump
 {
+    /// <summary>The eyes' offset from the neck's pivot in head space (up, forward), metres: a typical neck model.
+    /// Turning or nodding the head swings the tracked eyes about this pivot without shifting any weight.</summary>
+    public static readonly Vector3 NeckToEye = new(0f, 0.075f, 0.08f);
+
+    private const float Gravity = 9.81f;
+
+    /// <summary>The neck's pivot under the tracked eyes. A lean moves it; a look round or a nod does not, so the pump
+    /// reads this instead of the eyes: a quick look round swings the eyes about 0.1 m at 0.4 m/s and more.</summary>
+    public static Vector3 Neck(Vector3 eye, Quaternion rotation) =>
+        eye - Vector3.Transform(NeckToEye, rotation);
+
     /// <param name="headVelocity">The tracked head's velocity relative to the body, world axes, m/s.</param>
     /// <param name="deadzone">Level head speed (m/s) below which nothing happens.</param>
     /// <param name="gain">Acceleration (m/s²) per m/s of head speed.</param>
@@ -32,19 +44,39 @@ public static class RopePump
     }
 
     /// <summary>
-    /// The comfort ceiling on a pumped swing: once the climb point swings level at <paramref name="maxSwingSpeed"/>
-    /// (m/s) or faster, a push that would add to it is dropped, so the view's sway stays bounded however hard the
-    /// player pumps. A push against the swing still brakes it.
+    /// How far the climb point would swing out from under the rope's anchor (metres, level) if nothing pushed it: the
+    /// pendulum's amplitude from its offset and its speed, sqrt(x² + v²·ℓ/g), with ℓ the drop from the anchor. A speed
+    /// ceiling alone never bounded the swing: pushes below it near the ends of each swing kept adding energy.
+    /// </summary>
+    /// <param name="point">The climb point, world, metres.</param>
+    /// <param name="anchor">The rope's anchored end, world, metres.</param>
+    /// <param name="swingVelocity">The climb point's velocity, world axes, m/s.</param>
+    public static float Amplitude(Vector3 point, Vector3 anchor, Vector3 swingVelocity)
+    {
+        var x = new Vector2(point.X - anchor.X, point.Z - anchor.Z);
+        var v = new Vector2(swingVelocity.X, swingVelocity.Z);
+        float length = MathF.Max(anchor.Y - point.Y, 0.5f);
+        return MathF.Sqrt(x.LengthSquared() + v.LengthSquared() * length / Gravity);
+    }
+
+    /// <summary>
+    /// The comfort ceiling on a pumped swing: once its <see cref="Amplitude"/> reaches <paramref name="maxAmplitude"/>
+    /// (metres), a push that would add energy (one along the swing's level velocity, or any push while it stands at
+    /// the end of a swing) is dropped, so the view's sway stays bounded however hard the player pumps. A push against
+    /// the swing still brakes it.
     /// </summary>
     /// <param name="push">Acceleration from <see cref="Push"/>.</param>
     /// <param name="swingVelocity">The climb point's velocity, world axes, m/s.</param>
-    public static Vector3 Limit(Vector3 push, Vector3 swingVelocity, float maxSwingSpeed)
+    /// <param name="amplitude">The swing's <see cref="Amplitude"/>.</param>
+    public static Vector3 Limit(
+        Vector3 push,
+        Vector3 swingVelocity,
+        float amplitude,
+        float maxAmplitude
+    )
     {
         var swing = new Vector3(swingVelocity.X, 0f, swingVelocity.Z);
-        return
-            swing.LengthSquared() >= maxSwingSpeed * maxSwingSpeed && Vector3.Dot(push, swing) > 0f
-            ? Vector3.Zero
-            : push;
+        return amplitude >= maxAmplitude && Vector3.Dot(push, swing) >= 0f ? Vector3.Zero : push;
     }
 
     /// <summary>
@@ -82,6 +114,9 @@ public sealed class PumpIntent
     private float lastAt = float.NegativeInfinity;
     private int count;
 
+    /// <summary>Strokes in the current rhythm (self-test vr.42e checks a lean reaches <see cref="Strokes"/> - 1).</summary>
+    public int Count => count;
+
     public void Reset()
     {
         strokeDir = lastDir = Vector3.Zero;
@@ -91,7 +126,8 @@ public sealed class PumpIntent
         count = 0;
     }
 
-    /// <param name="headVelocity">The head's velocity relative to the body, world axes, m/s.</param>
+    /// <param name="headVelocity">The head's (<see cref="RopePump.Neck"/>) velocity relative to the body, world axes,
+    /// m/s.</param>
     /// <param name="swingVelocity">The climb point's velocity on the rope, world axes, m/s.</param>
     /// <returns>True while the pumping rhythm holds.</returns>
     public bool Update(Vector3 headVelocity, Vector3 swingVelocity, float now, float dt)
