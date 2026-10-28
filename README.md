@@ -100,7 +100,11 @@ one is running; see [Check that it works](#check-that-it-works).
    On NVIDIA, Vulkan VR crashes in Proton's OpenXR bridge, so use Direct3D11. Proton's Wayland driver
    (on by default in some Proton builds, such as Proton-CachyOS) never offers the OpenXR extensions to
    Direct3D, so VR does not start until `PROTON_ENABLE_WAYLAND=0` switches it back to X11. If the game
-   picks the wrong path, the log's `[xr.bootstrap]` line says which launch options to use.
+   picks the wrong path, the log's `[xr.bootstrap]` lines say which launch options to use. The
+   `Graphics API` line shows what that advice rests on: the GPU's vendor id and name, whether it counts
+   as NVIDIA and why, and whether the Wayland driver is on. On Direct3D, Proton's DXVK reports an NVIDIA
+   GPU as AMD unless NVAPI is on, so PeakXR goes by the GPU's name there. If the name doesn't say either,
+   the advice covers both vendors.
 4. Start PEAK once without VR, wait for the title screen, and quit.
 5. Copy the `BepInEx` folder from the PeakXR zip into the game folder, merging it with the one there.
 6. Start SteamVR with your headset, then start PEAK from Steam. On a laptop
@@ -157,8 +161,10 @@ well it runs flat.
 
 If the game ends while VR is starting, twice in a row, later launches start flat and say so on the title
 screen. PeakXR writes `BepInEx/config/PeakXR-xr-start.txt` just before the first VR runtime starts and deletes
-it once VR is running and has shown its first frames, once every runtime has failed without crashing, or when
-the game quits normally. The start includes the wait for the headset (up to `[XR] StartTimeoutSeconds` per
+it once VR is running and the runtime reports one of its frames shown, once every runtime has failed without
+crashing, or when the game quits normally. Under OpenVR that report is SteamVR's frame present count; under
+OpenXR it is the session reaching VISIBLE or FOCUSED. If no report comes within 10 s of rendering, PeakXR
+deletes the file anyway and logs a warning that no frame was reported shown. The start includes the wait for the headset (up to `[XR] StartTimeoutSeconds` per
 runtime) and the OpenVR fallback, so a kill in that time counts too, such as Steam's Stop or ending the game
 from a task manager. Once SteamVR or the headset is fixed, press Try VR again on the VR settings tab (or
 delete the file) and restart. Test launches (`-peakxr-selftest`, `-peakxr-mptest`, `-peakxr-compat`) skip this guard.

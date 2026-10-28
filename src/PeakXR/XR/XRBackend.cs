@@ -37,6 +37,14 @@ abstract class XRBackend
 
     /// <summary>One line for the log: runtime name and version where the provider exposes them.</summary>
     public virtual string Describe() => Runtime.ToString();
+
+    /// <summary>The runtime reports a frame of ours presented or shown, for the crash guard; <paramref name="signal"/>
+    /// says what was read, for the log.</summary>
+    public virtual bool FramesShown(out string signal)
+    {
+        signal = "no frame report from this runtime";
+        return false;
+    }
 }
 
 /// <summary>Factory that keeps every XR-typed constructor behind a non-inlined call.</summary>

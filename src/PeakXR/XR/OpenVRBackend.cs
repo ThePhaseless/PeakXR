@@ -68,6 +68,21 @@ sealed class OpenVRBackend : ManagedXRBackend
         }
     }
 
+    /// <summary>Valve's display provider sets <c>framePresentCount</c> from the compositor's
+    /// <c>GetFrameTiming</c> (<c>m_nNumFramePresents</c>, unity-xr-plugin Providers/Display/Display.cpp), so 1 or more
+    /// means SteamVR presented one of our frames.</summary>
+    public override bool FramesShown(out string signal)
+    {
+        var display = XRRuntimeInfo.Display;
+        if (display == null || !display.TryGetFramePresentCount(out int presents))
+        {
+            signal = "OpenVR frame present count not reported";
+            return false;
+        }
+        signal = $"OpenVR compositor frame present count {presents}";
+        return presents > 0;
+    }
+
     static void PushUserSettings(OpenVRSettings settings)
     {
         try

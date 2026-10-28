@@ -150,6 +150,16 @@ sealed class OpenXRBackend : ManagedXRBackend
         }
     }
 
+    /// <summary>Unity's OpenXR provider (UnityOpenXR.dll 1.16.1) registers no frame present count stat, only dropped
+    /// frames, GPU times and motion-to-photon, so the session state is the signal: VISIBLE or FOCUSED means the
+    /// runtime shows the app to the user (OpenXR spec, XrSessionState).</summary>
+    public override bool FramesShown(out string signal)
+    {
+        int state = XRSessionState.OpenXRState;
+        signal = "OpenXR session " + Core.XRFocus.Name(state);
+        return Core.XRStartGuard.OpenXRShown(state);
+    }
+
     public override string Describe()
     {
         try

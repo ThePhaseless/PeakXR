@@ -9,10 +9,11 @@ namespace PeakXR.XR;
 
 /// <summary>
 /// The file behind <see cref="XRStartGuard"/>: written once per launch right before the first runtime's native init
-/// and deleted once a runtime runs with its first frames submitted (three frames after the session is set up), or
-/// every runtime failed without crashing, or the game quits normally. Everything in between counts: the native init
-/// and subsystem start of each runtime tried (OpenXR, then the OpenVR fallback), the wait for the display (up to
-/// <c>XR.StartTimeoutSeconds</c> per runtime), the session setup and those first frames. So a process that ends in
+/// and deleted once a runtime runs and reports a frame shown (OpenVR's frame present count, OpenXR's VISIBLE or FOCUSED
+/// state; at least three frames after the session is set up, else after <see cref="XRStartGuard.ShownTimeoutSeconds"/>
+/// with a warning), or every runtime failed without crashing, or the game quits normally. Everything in between
+/// counts: the native init and subsystem start of each runtime tried (OpenXR, then the OpenVR fallback), the wait for
+/// the display (up to <c>XR.StartTimeoutSeconds</c> per runtime), the session setup and those first frames. So a process that ends in
 /// that window any other way counts as a crashed start, a kill included (Steam's Stop, closing the window from the
 /// task manager while it waits for the headset). After two such starts in a row, launches start flat and say so on
 /// the title screen, until the VR tab's "Try VR again" deletes the file. Test and compat launches (<c>-peakxr-selftest</c>, <c>-peakxr-mptest</c>, <c>-peakxr-compat</c>) never
@@ -75,8 +76,8 @@ internal static class XRStartSentinel
         }
     }
 
-    /// <summary>The start came back: a runtime runs and submitted its first frames, every runtime failed cleanly, or
-    /// the game quit normally.</summary>
+    /// <summary>The start came back: a runtime runs and reported a frame shown (or rendered until the timeout), every
+    /// runtime failed cleanly, or the game quit normally.</summary>
     internal static void Finished()
     {
         if (Ignored)

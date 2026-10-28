@@ -32,10 +32,6 @@ sealed class XRBootstrapDriver : MonoBehaviour
 {
     const string Tag = "[xr.bootstrap]";
 
-    /// <summary>Frames the crash guard stays open after the session is set up: the first ones wait on the display
-    /// and submit to the compositor, native calls that can still take the process down.</summary>
-    const int GuardedFrames = 3;
-
     readonly List<XRDisplaySubsystem> displays = new();
     readonly List<XRInputSubsystem> inputs = new();
     XRBackend backend;
@@ -100,8 +96,33 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
             if (!Activate(candidate))
                 continue;
-            for (int i = 0; i < GuardedFrames; i++)
+            float since = Time.realtimeSinceStartup;
+            int frames = 0;
+            XRStartGuard.Close close;
+            string signal;
+            while (
+                (
+                    close = XRStartGuard.CloseAt(
+                        candidate.FramesShown(out signal),
+                        frames,
+                        Time.realtimeSinceStartup - since
+                    )
+                ) == XRStartGuard.Close.Open
+            )
+            {
                 yield return null;
+                frames++;
+            }
+            float waited = Time.realtimeSinceStartup - since;
+            if (close == XRStartGuard.Close.Shown)
+                Plugin.Log.LogInfo(
+                    $"{Tag} Crash guard closed: {signal} after {frames} frames ({waited:0.0} s)"
+                );
+            else
+                Plugin.Log.LogWarning(
+                    $"{Tag} Crash guard closed after {frames} rendered frames ({waited:0.0} s) without the runtime "
+                        + $"reporting a frame shown ({signal}); the process survived the start"
+                );
             EndGuard();
             yield break;
         }
@@ -111,8 +132,8 @@ sealed class XRBootstrapDriver : MonoBehaviour
         VRSession.Running = VRRuntime.Disabled;
     }
 
-    /// <summary>The start came back (a running session's first frames submitted, or every runtime failed cleanly,
-    /// or the game quit normally): this launch did not crash.</summary>
+    /// <summary>The start came back (a running session's frames reported shown or rendered past the timeout, or
+    /// every runtime failed cleanly, or the game quit normally): this launch did not crash.</summary>
     void EndGuard()
     {
         if (!guarded)
@@ -290,22 +311,34 @@ sealed class XRBootstrapDriver : MonoBehaviour
     static void WarnGraphicsApi()
     {
         var api = SystemInfo.graphicsDeviceType;
-        Plugin.Log.LogInfo($"{Tag} Graphics API {api}{(UnderWine ? " (Proton)" : "")}");
-        var advice = ApiAdvice(api);
+        var advice = ApiAdvice(api, out var gpu);
+        Plugin.Log.LogInfo($"{Tag} Graphics API {api}{(UnderWine ? " (Proton)" : "")}; {gpu}");
         if (advice != null)
             Plugin.Log.LogWarning($"{Tag} {advice}");
     }
 
-    /// <summary>The <see cref="GraphicsAdvice"/> for this GPU and graphics API: NVIDIA (vendor 0x10DE) and Proton's
-    /// Wayland driver change what works under Proton.</summary>
-    internal static string ApiAdvice(UnityEngine.Rendering.GraphicsDeviceType api) =>
-        GraphicsAdvice.For(
-            api.ToString(),
-            UnderWine,
-            SystemInfo.graphicsDeviceVendorID == 0x10DE,
+    /// <summary>The <see cref="GraphicsAdvice"/> for this GPU and graphics API: NVIDIA and Proton's Wayland driver
+    /// change what works under Proton. <paramref name="gpu"/> is what the verdict rests on, for the log.</summary>
+    internal static string ApiAdvice(GraphicsDeviceType api, out string gpu)
+    {
+        int vendor = SystemInfo.graphicsDeviceVendorID;
+        string device = SystemInfo.graphicsDeviceName;
+        bool wine = UnderWine;
+        bool? nvidia = GraphicsAdvice.Nvidia(vendor, device, api.ToString(), wine, out var how);
+        bool wayland =
             Environment.GetEnvironmentVariable("PROTON_ENABLE_WAYLAND") is { Length: > 0 } w
-                && w != "0"
-        );
+            && w != "0";
+        string verdict = nvidia switch
+        {
+            true => "yes",
+            false => "no",
+            null => "unknown",
+        };
+        gpu =
+            $"GPU vendor 0x{vendor:X4} \"{device}\"; NVIDIA {verdict} ({how}); "
+            + $"Proton Wayland driver {(wayland ? "on" : "off")}";
+        return GraphicsAdvice.For(api.ToString(), wine, nvidia, wayland);
+    }
 
     /// <summary>Wine sets these in every process it runs, Proton included.</summary>
     internal static bool UnderWine =>

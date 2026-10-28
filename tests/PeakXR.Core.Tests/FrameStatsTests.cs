@@ -508,4 +508,46 @@ public class GraphicsAdviceTests
         Assert.NotNull(advice);
         Assert.Contains("-force-d3d11", advice);
     }
+
+    // DXVK (dxgi.hideNvidiaGpu=Auto, NVAPI off) reports an NVIDIA GPU as AMD 0x1002 but keeps the real
+    // description string: dxvk src/dxgi/dxgi_adapter.cpp GetAdapterDesc, master 0cfe089.
+    [Theory]
+    [InlineData(0x1002, "NVIDIA GeForce RTX 3080")]
+    [InlineData(0x1002, "Quadro P4000")]
+    [InlineData(0xDEAD, "geforce gtx 1080")]
+    [InlineData(0x10DE, "")]
+    public void HiddenOrRealNvidia_IsNvidia(int vendor, string name) =>
+        Assert.True(GraphicsAdvice.Nvidia(vendor, name, "Direct3D11", underWine: true, out _));
+
+    [Theory]
+    [InlineData(0x1002, "AMD Radeon RX 6700 XT (RADV NAVI22)", "Direct3D11", true)]
+    [InlineData(0x8086, "Intel(R) Arc(TM) A770 Graphics", "Direct3D12", true)]
+    [InlineData(0x1002, "", "Vulkan", true)]
+    [InlineData(0x1002, "DXVK Device", "Direct3D11", false)]
+    public void OtherVendors_AreNotNvidia(int vendor, string name, string api, bool wine) =>
+        Assert.False(GraphicsAdvice.Nvidia(vendor, name, api, wine, out _));
+
+    [Theory]
+    [InlineData(0x1002, "DXVK Device")]
+    [InlineData(0xDEAD, null)]
+    public void DirectXUnderProtonWithNoVendorInTheName_IsUnknown(int vendor, string name)
+    {
+        Assert.Null(
+            GraphicsAdvice.Nvidia(vendor, name, "Direct3D12", underWine: true, out var how)
+        );
+        Assert.Contains("DXVK", how);
+    }
+
+    [Theory]
+    [InlineData("Direct3D11")]
+    [InlineData("Direct3D12")]
+    public void UnknownVendorUnderProton_GivesAdviceForBothVendors(string api)
+    {
+        var advice = GraphicsAdvice.For(api, underWine: true, nvidia: null);
+        Assert.NotNull(advice);
+        Assert.Contains("-force-d3d11", advice);
+        Assert.Contains("PROTON_ENABLE_WAYLAND=0", advice);
+        Assert.Contains("AMD or Intel", advice);
+        Assert.DoesNotContain("add -force-vulkan", advice);
+    }
 }
