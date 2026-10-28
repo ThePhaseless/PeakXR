@@ -223,8 +223,9 @@ public static class PanelMath
 /// <summary>
 /// The HUD's drawn-on-top flag with hysteresis. <see cref="PanelMath.FitBeforeWall"/> flips it the moment the wall
 /// margin is crossed, so a climber's HUD at the edge of it switched between on top and depth tested at every wall test
-/// (flicker, and text sinking into the rock). On at once; off only once the panel has stood
-/// <see cref="ClearMargin"/> clear of the margin for <see cref="ClearSeconds"/>.
+/// (flicker, and text sinking into the rock). On at once; off only once the wall has stood
+/// <see cref="ClearMargin"/> beyond the point where it would hold the panel at the comfort floor, for
+/// <see cref="ClearSeconds"/>.
 /// </summary>
 public sealed class WallOnTopHold
 {
@@ -235,11 +236,17 @@ public sealed class WallOnTopHold
 
     public bool OnTop { get; private set; }
 
-    /// <param name="onTop">This test's answer (<see cref="PanelMath.FitBeforeWall"/>).</param>
-    /// <param name="spare">Metres between the panel and the wall less its margin; negative inside the margin.</param>
+    /// <param name="wanted">The panel's wanted distance, metres.</param>
+    /// <param name="wallDistance">This test's wall depth (infinity for none), as fed to
+    /// <see cref="PanelMath.FitBeforeWall"/>.</param>
     /// <param name="dt">Seconds since the last test.</param>
-    public bool Update(bool onTop, float spare, float dt)
+    public bool Update(float wanted, float wallDistance, float dt)
     {
+        var (_, onTop) = PanelMath.FitBeforeWall(wanted, wallDistance);
+        // How far the wall's margin is past the nearest the panel may sit. Measured against the panel's own distance
+        // it read 0 whenever the wall pulled the panel in (the panel sits right at the margin), so a HUD stayed on
+        // top for a whole climb.
+        float spare = wallDistance - PanelMath.WallGap - MathF.Min(wanted, PanelMath.ComfortFloor);
         if (onTop)
         {
             OnTop = true;
@@ -255,14 +262,15 @@ public sealed class WallOnTopHold
 }
 
 /// <summary>
-/// When a world-locked sign (<c>WorldBanners</c>) moves back in front of the player. Re-placing it at every 40 degree
-/// glance popped it about the view; now it stays put until it has been well out of view
-/// (<see cref="AwayDegrees"/>) for <see cref="AwaySeconds"/>, or the player moved far from where it was placed.
+/// When a world-locked sign (<c>WorldBanners</c>) moves back in front of the player. Re-placing it at every glance
+/// popped it about the view; now it stays put until it has been out of view (<see cref="AwayDegrees"/>) for
+/// <see cref="AwaySeconds"/>, or the player moved far from where it was placed.
 /// </summary>
 public sealed class SignDwell
 {
-    /// <summary>Off the heading by more than this, the sign is out of a 90-110 degree headset's view.</summary>
-    public const float AwayDegrees = 60f;
+    /// <summary>Off the heading by more than this, the sign is past the edge of a 90-100 degree headset view (half
+    /// of it); the dwell keeps a glance from moving it.</summary>
+    public const float AwayDegrees = 45f;
     public const float AwaySeconds = 1f;
 
     private float away;

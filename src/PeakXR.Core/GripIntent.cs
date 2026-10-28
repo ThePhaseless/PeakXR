@@ -45,6 +45,20 @@ public enum GripReleaseAction
     Extension,
 }
 
+/// <summary>What the game did with an accepted pickup, so the hand that asked gets the cue that says so
+/// (<see cref="GripIntent.PickupAnswer"/>).</summary>
+public enum PickupCue
+{
+    /// <summary>In a pocket, or in the hand that asked: the success tick.</summary>
+    Success,
+
+    /// <summary>Equipped over the item that was in hand: a notice, the item in hand changed.</summary>
+    Swapped,
+
+    /// <summary>Dropped behind the hip (pockets full while climbing): the refusal.</summary>
+    Dropped,
+}
+
 /// <summary>State of one hand and its surroundings at the moment its grip closes.</summary>
 public struct GripContext
 {
@@ -268,6 +282,21 @@ public static class GripIntent
             return GripReleaseAction.Throw;
         return releaseToDrop ? GripReleaseAction.Drop : GripReleaseAction.Keep;
     }
+
+    /// <summary>The temporary slot the game fills when the pockets are full (<c>Player.tempFullSlot</c>).</summary>
+    public const byte TempSlot = 250;
+
+    /// <summary>
+    /// The cue for the game's answer to a pickup (<c>CharacterItems.OnPickupAccepted</c>, CharacterItems.cs:440-465)
+    /// into <paramref name="slot"/>. A pocket slot is a pickup that worked. The temporary slot (pockets full) is
+    /// dropped behind the hip while climbing (:445-452), and otherwise equipped (:457): over the held item when
+    /// something was <paramref name="holding"/>, which swaps what is in hand, so that is a notice, not a success.
+    /// </summary>
+    public static PickupCue PickupAnswer(byte slot, bool climbing, bool holding) =>
+        slot != TempSlot ? PickupCue.Success
+        : climbing ? PickupCue.Dropped
+        : holding ? PickupCue.Swapped
+        : PickupCue.Success;
 
     /// <summary>
     /// Why a release that <see cref="OnRelease"/> made a throw or drop must keep the item instead, or None. The

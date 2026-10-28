@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using PeakXR.Core;
@@ -20,6 +21,18 @@ public static class PatchGuard
 {
     private static readonly FaultTally Tally = new();
 
+    /// <summary>Per call site (the compiler's file path and line): its <c>File.cs:line</c> name, its tally key and its
+    /// feature, built on the first error there, so a site erroring every frame allocates nothing after that.</summary>
+    private static readonly Dictionary<(string File, int Line), Site> Sites = new();
+
+    private sealed class Site
+    {
+        public string Name;
+        public string Key;
+        public Feature Feature;
+        public string Id;
+    }
+
     /// <summary>Every caught error, with its site (<c>File.cs:line</c>). Raised for repeats too.</summary>
     public static event Action<string, Exception> Caught;
 
@@ -33,19 +46,34 @@ public static class PatchGuard
     {
         try
         {
-            var site = $"{Path.GetFileName(file)}:{line}";
-            Report(FeatureManager.Get<TFeature>(), typeof(TFeature).Name, error, site);
-            Caught?.Invoke(site, error);
+            if (!Sites.TryGetValue((file, line), out var site))
+            {
+                var feature = FeatureManager.Get<TFeature>();
+                var id = feature?.Id ?? typeof(TFeature).Name;
+                var name = $"{Path.GetFileName(file)}:{line}";
+                site = new Site
+                {
+                    Name = name,
+                    Key = id + "|" + name,
+                    Feature = feature,
+                    Id = id,
+                };
+                Sites[(file, line)] = site;
+            }
+            Report(site, error);
+            Caught?.Invoke(site.Name, error);
         }
 #pragma warning disable S2486, S108, RCS1075 // the guard itself must never throw into game code
         catch { }
 #pragma warning restore S2486, S108, RCS1075
     }
 
-    private static void Report(Feature feature, string owner, Exception error, string site)
+    private static void Report(Site at, Exception error)
     {
-        var id = feature?.Id ?? owner;
-        switch (Tally.Record(id + "|" + site, Time.frameCount, Time.realtimeSinceStartup))
+        var feature = at.Feature;
+        var id = at.Id;
+        var site = at.Name;
+        switch (Tally.Record(at.Key, Time.frameCount, Time.realtimeSinceStartup))
         {
             case FaultAction.Log:
                 Plugin.Log.LogError(

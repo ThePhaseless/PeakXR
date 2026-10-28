@@ -1,6 +1,7 @@
 using BepInEx.Configuration;
 using PeakXR.Framework;
 using PeakXR.UI.Settings;
+using PeakXR.VR;
 using PeakXR.XRInput;
 using UnityEngine;
 
@@ -63,6 +64,7 @@ public sealed class DebugFeature : Feature
             (at, left) => DebugGesture.DropMarker(left, at, "VR tab")
         );
         XRInputSampler.AfterSample += DebugGesture.Update;
+        VRSession.Stopped += DebugGesture.OnVRStopped;
         var go = new GameObject("PeakXR_Debug");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<DebugDriver>();

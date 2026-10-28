@@ -145,6 +145,26 @@ internal sealed partial class SelfTestRunner
                 );
                 if (EyeRendererOffHead(c, headPart.transform) is { } stray)
                     fails.Add($"eye renderer {stray} is not under this character's head bone");
+                // An independent oracle: where the scout prefab's rest pose puts the eyes relative to its head bone,
+                // carried onto this character's head bone now. It shares nothing with the rig's eye pipeline (the
+                // renderers' live bounds, the calibration against the body).
+                if (RestPoseEye(headPart.transform) is { } restEye)
+                {
+                    float restOff = Vector3.Distance(head.position - held, restEye);
+                    notes.Add(
+                        F($"eye {restOff:0.00} m from the prefab's rest-pose eyes on the head bone")
+                    );
+                    if (restOff > MaxRestEyeError)
+                        fails.Add(
+                            F(
+                                $"eye {restOff:0.00} m from the prefab's rest-pose eyes on the head bone > {MaxRestEyeError:0.00} m"
+                            )
+                        );
+                }
+                else if (VRSession.Active)
+                    fails.Add(
+                        "no rest-pose eyes in the Character prefab to cross-check the eye with"
+                    );
             }
             else
                 fails.Add("no head bone to cross-check the eye with");
@@ -168,19 +188,66 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The first eye renderer (CustomizationRefs.EyeRenderers, as RigDriver.TryEyeRenderers reads them) not
-    /// under <paramref name="headBone"/>, or null when all are.</summary>
+    /// under <paramref name="headBone"/>, or null when all are. No renderer at all is a fault too.</summary>
     static string EyeRendererOffHead(Character c, Transform headBone)
     {
         var custom = c.refs.customization;
         var eyes = custom != null && custom.refs != null ? custom.refs.EyeRenderers : null;
-        if (eyes == null)
-            return null;
-        foreach (var r in eyes)
+        int seen = 0;
+        if (eyes != null)
+            foreach (var r in eyes)
+            {
+                if (r == null)
+                    continue;
+                seen++;
+                if (!r.transform.IsChildOf(headBone))
+                    return r.name;
+            }
+        return seen == 0 ? "(none: the character has no eye renderers)" : null;
+    }
+
+    /// <summary>Most the view's eye may sit off <see cref="RestPoseEye"/>, metres: the face animates the eye cards
+    /// a little against the head, but the vanilla camera point (0.2 m above the eyes) or a body-anchored eye left
+    /// behind a moving head is well past it. Needs in-game confirmation.</summary>
+    const float MaxRestEyeError = 0.06f;
+
+    /// <summary>The Character prefab's eye cards (CustomizationRefs.EyeRenderers) in its head bone's frame, at rest:
+    /// the prefab Photon spawns the player from (CharacterSpawner.cs:245, Resources "Character").</summary>
+    static Vector3? restEyeLocal;
+
+    /// <summary>Where the prefab's rest-pose eyes sit on <paramref name="headBone"/> now; null when the prefab, its head
+    /// bone or its eye cards cannot be found.</summary>
+    static Vector3? RestPoseEye(Transform headBone)
+    {
+        if (restEyeLocal == null)
         {
-            if (r != null && !r.transform.IsChildOf(headBone))
-                return r.name;
+            var prefab = Resources.Load<GameObject>("Character");
+            var refs =
+                prefab != null ? prefab.GetComponentInChildren<CustomizationRefs>(true) : null;
+            Transform restHead = null;
+            if (prefab != null)
+                foreach (var part in prefab.GetComponentsInChildren<Bodypart>(true))
+                    if (part.partType == BodypartType.Head)
+                        restHead = part.transform;
+            if (refs == null || refs.EyeRenderers == null || restHead == null)
+                return null;
+            var sum = Vector3.zero;
+            int n = 0;
+            // The meshes' own centres (local bounds): a prefab asset's renderers have no live world bounds. A skinned
+            // mesh's local bounds are in its root bone's frame.
+            foreach (var r in refs.EyeRenderers)
+                if (r != null)
+                {
+                    var space =
+                        r is SkinnedMeshRenderer s && s.rootBone != null ? s.rootBone : r.transform;
+                    sum += space.TransformPoint(r.localBounds.center);
+                    n++;
+                }
+            if (n == 0)
+                return null;
+            restEyeLocal = restHead.InverseTransformPoint(sum / n);
         }
-        return null;
+        return headBone.TransformPoint(restEyeLocal.Value);
     }
 
     /// <summary>Wrist rolls (degrees off the idle pose about the grip's pointing axis, same sense on both hands) the

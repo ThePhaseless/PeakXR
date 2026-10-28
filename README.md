@@ -145,11 +145,13 @@ run. With `Mode = OpenXR` and `OpenVRFallback = true` (the default), the OpenVR 
 if OpenXR does not start within `[XR] StartTimeoutSeconds`, the game tries OpenVR, and if that fails as
 well it runs flat.
 
-If the VR runtime crashes the game while it starts up, twice in a row, later launches start flat and say so
-on the title screen. PeakXR writes `BepInEx/config/PeakXR-xr-start.txt` just before the runtime starts and
-deletes it as soon as that call returns, so closing the game or SteamVR while it waits for the headset does
-not count. Once SteamVR or the headset is fixed, press Try VR again on the VR settings tab (or delete the
-file) and restart. Test launches (`-peakxr-selftest`, `-peakxr-mptest`, `-peakxr-compat`) skip this guard.
+If the game ends while VR is starting, twice in a row, later launches start flat and say so on the title
+screen. PeakXR writes `BepInEx/config/PeakXR-xr-start.txt` just before the first VR runtime starts and deletes
+it once VR is running and has shown its first frames, once every runtime has failed without crashing, or when
+the game quits normally. The start includes the wait for the headset (up to `[XR] StartTimeoutSeconds` per
+runtime) and the OpenVR fallback, so a kill in that time counts too, such as Steam's Stop or ending the game
+from a task manager. Once SteamVR or the headset is fixed, press Try VR again on the VR settings tab (or
+delete the file) and restart. Test launches (`-peakxr-selftest`, `-peakxr-mptest`, `-peakxr-compat`) skip this guard.
 
 When SteamVR quits during play, OpenXR leaves the game running flat. Valve's OpenVR plugin quits the game
 instead, as SteamVR expects of its apps.

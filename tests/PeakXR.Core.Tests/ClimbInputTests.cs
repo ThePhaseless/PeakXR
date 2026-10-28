@@ -152,19 +152,42 @@ public class ClimbInputSettleTests
 public class BlinkHoldTests
 {
     [Fact]
-    public void ShortBlink_KeepsTheGrip_LongLoss_OpensItOnce()
+    public void Occlusion_KeepsTheGrip_LongLossOpensItOnce()
     {
         var b = new BlinkHold();
-        Assert.False(b.Update(false, 1f));
+        // A Lighthouse controller behind the body, a WMR one behind the back: seconds untracked, still held.
+        Assert.False(b.Update(false, false, 5f));
         Assert.False(b.Expired);
-        Assert.False(b.Update(true, 0.01f));
+        Assert.False(b.Update(true, false, 0.01f));
         int fired = 0;
-        for (int i = 0; i < 40; i++)
-            if (b.Update(false, 0.05f))
+        for (int i = 0; i < 200; i++)
+            if (b.Update(false, false, 0.05f))
                 fired++;
         Assert.Equal(1, fired);
         Assert.True(b.Expired);
-        b.Update(true, 0.01f);
+        b.Update(true, false, 0.01f);
+        Assert.False(b.Expired);
+    }
+
+    [Fact]
+    public void FourSecondsBehindTheBack_StillHeld()
+    {
+        var b = new BlinkHold();
+        for (int i = 0; i < 40; i++)
+            Assert.False(b.Update(false, false, 0.1f));
+        Assert.False(b.Expired);
+    }
+
+    [Fact]
+    public void ADisconnectedController_OpensAtOnce_UntilTrackedAgain()
+    {
+        var b = new BlinkHold();
+        Assert.True(b.Update(false, true, 0.01f));
+        Assert.True(b.Expired);
+        // Back as a device but not tracked yet: still open, never fired twice.
+        Assert.False(b.Update(false, false, 0.01f));
+        Assert.True(b.Expired);
+        b.Update(true, false, 0.01f);
         Assert.False(b.Expired);
     }
 }

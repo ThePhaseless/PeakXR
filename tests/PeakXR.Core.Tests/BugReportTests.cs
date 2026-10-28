@@ -478,6 +478,24 @@ public class StickChordTests
     }
 
     [Fact]
+    public void StickPressedAsTheOtherPendingTapLetsGo_IsItsOwnPress()
+    {
+        var c = new StickChord { Window = 0.18f };
+        c.Update(true, false, false, 0.05f);
+        Assert.False(c.Click(true));
+        // Same frame: the left tap ends, the right stick goes down. The left tap reaches the layout, the right
+        // press waits its own window, then passes.
+        c.Update(false, true, false, 0.05f);
+        Assert.True(c.Click(true));
+        Assert.False(c.Click(false));
+        Assert.False(c.Active);
+        Assert.False(c.StickTaken(false));
+        for (int i = 0; i < 4; i++)
+            c.Update(false, true, false, 0.05f);
+        Assert.True(c.Click(false));
+    }
+
+    [Fact]
     public void LoneStickHeld_PassesThroughAfterTheWindow()
     {
         var c = new StickChord { Window = 0.18f };

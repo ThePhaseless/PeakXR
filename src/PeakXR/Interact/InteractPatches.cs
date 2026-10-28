@@ -313,11 +313,13 @@ internal static class InteractPatches
     /// hand only pocketed something. While such a pocketing pickup is pending
     /// (<see cref="PhysicalInteraction.TakePocketing"/>) that equip is skipped: the item stays in the pocket slot
     /// <c>Player.AddItem</c> gave it (Item.cs:617) and the held item stays in hand. Never for the temporary slot
-    /// (250, Player.cs:137-141): vanilla fills it only with the item it equips, so that equip runs and the item ends
-    /// in the hand, a pickup that worked (the success tick). A climber's temporary-slot item is dropped behind the
-    /// hip instead (CharacterItems.cs:445-452): that hand gets the pockets-full cue (the grip refuses both up front;
-    /// this covers pockets filled while the answer was on its way). Also the pickup's success tick
-    /// (<see cref="PhysicalInteraction.PickupAccepted"/>). Local only: the equip is the owner's own call.
+    /// (250, Player.cs:137-141): vanilla fills it only with the item it equips, so that equip runs. Into empty hands
+    /// that is a pickup that worked (the success tick); over a held item it swaps what is in hand, so the hand that
+    /// asked gets a notice that says so, not the tick. A climber's temporary-slot item is dropped behind the hip
+    /// instead (CharacterItems.cs:445-452): that hand gets the pockets-full cue (the grip refuses both up front; this
+    /// covers pockets filled while the answer was on its way). Core <see cref="GripIntent.PickupAnswer"/> picks the
+    /// cue; the success tick is <see cref="PhysicalInteraction.PickupAccepted"/>. Local only: the equip is the
+    /// owner's own call.
     /// </summary>
     [HarmonyPatch]
     internal static class KeepHeldOnPocket
@@ -328,9 +330,6 @@ internal static class InteractPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterItems), "OnPickupAccepted");
 
-        /// <summary><c>Player.tempFullSlot</c>'s id (Player.cs:137-141, CharacterItems.cs:445).</summary>
-        private const byte TempSlot = 250;
-
         private static void Prefix(CharacterItems __instance, byte slotID)
         {
             var c = Character.localCharacter;
@@ -339,16 +338,18 @@ internal static class InteractPatches
             try
             {
                 bool pocketing = PhysicalInteraction.TakePocketing();
-                Active = pocketing && slotID != TempSlot;
-                // The temporary slot is equipped into the hand (:457), so the pickup worked; only a climber's is
-                // dropped behind the hip instead (:445-452), and that is the refusal.
-                bool dropped = slotID == TempSlot && c.data.isClimbingAnything;
-                bool? asked = PhysicalInteraction.PickupAccepted(cue: !dropped);
-                if (dropped)
-                    Affordance.DenyAtHand(
-                        asked ?? !LocalHold.ItemInLeftHand,
-                        DenyReason.PocketsFull
-                    );
+                Active = pocketing && slotID != GripIntent.TempSlot;
+                var cue = GripIntent.PickupAnswer(
+                    slotID,
+                    c.data.isClimbingAnything,
+                    c.data.currentItem != null
+                );
+                bool? asked = PhysicalInteraction.PickupAccepted(cue: cue == PickupCue.Success);
+                bool left = asked ?? !LocalHold.ItemInLeftHand;
+                if (cue == PickupCue.Dropped)
+                    Affordance.DenyAtHand(left, DenyReason.PocketsFull);
+                else if (cue == PickupCue.Swapped)
+                    PhysicalInteraction.PickupSwapped(left);
             }
             catch (Exception e)
             {

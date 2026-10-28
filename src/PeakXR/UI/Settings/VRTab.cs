@@ -259,7 +259,12 @@ internal static class VRTab
                     "Try VR again"
                 )
                 {
-                    Run = (_, _) => XR.XRStartSentinel.Retry(),
+                    Run = (_, _) =>
+                    {
+                        XR.XRStartSentinel.Retry();
+                        // The row is built only while the guard is tripped: refill the tab so it goes.
+                        Guide.GuideRows.Rebuild();
+                    },
                 }
             );
         int failed = 0;

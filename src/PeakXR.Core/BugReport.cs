@@ -633,7 +633,8 @@ public sealed class StickChord
         bool blocked
     )
     {
-        if (!blocked && (other == Phase.Pending || (other == Phase.Chord && otherDown)))
+        // A pending other stick let go this very frame is its own tap (Step passes it on), not half of a chord.
+        if (!blocked && otherDown && other is Phase.Pending or Phase.Chord)
         {
             self = other = Phase.Chord;
             return true;

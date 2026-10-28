@@ -348,14 +348,14 @@ internal static class ClimbHands
             Haptics.Pulse(hand.Left, 0.35f, 0.12f);
     }
 
-    /// <summary>An untracked hand keeps its last grip, so a tracking blink never opens it, but only for
-    /// <see cref="BlinkHold.MaxSeconds"/>: a controller lost for good (switched off, flat) opens, and its anchor lets
-    /// go as a hand-made release would.</summary>
+    /// <summary>An untracked hand keeps its last grip, so an occluded controller never opens it. Only a controller
+    /// that is gone (<see cref="BlinkHold"/>: disconnected, or untracked for <see cref="BlinkHold.MaxSeconds"/>)
+    /// opens, and its anchor lets go as a hand-made release would.</summary>
     private static void UpdateGrip(Hand hand, in HandState state, float dt)
     {
-        if (hand.Blink.Update(state.Tracked, dt) && hand.Anchored)
+        if (hand.Blink.Update(state.Tracked, state.Disconnected, dt) && hand.Anchored)
             Plugin.Log.LogInfo(
-                $"[interact.climb] {(hand.Left ? "left" : "right")} controller untracked for {BlinkHold.MaxSeconds:0.##} s: its grip opens"
+                $"[interact.climb] {(hand.Left ? "left" : "right")} controller {(state.Disconnected ? "disconnected" : $"untracked for {BlinkHold.MaxSeconds:0.##} s")}: its grip opens"
             );
         if (state.Tracked)
             hand.Grip.Update(state.Grip, dt);
@@ -363,7 +363,8 @@ internal static class ClimbHands
             hand.Grip.Update(0f, dt);
     }
 
-    /// <summary>A hang freezes while a hand in use is untracked, until that hand's blink hold runs out.</summary>
+    /// <summary>A hang freezes while a hand in use is untracked, until that hand's blink hold runs out (the
+    /// controller is gone).</summary>
     private static bool Lost(Hand hand) =>
         ClimbInput.FreezesHang(
             VRInput.Hand(hand.Left).Tracked || hand.Blink.Expired,

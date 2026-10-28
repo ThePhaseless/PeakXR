@@ -1,6 +1,7 @@
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
+using PeakXR.XRInput;
 using UnityEngine;
 
 namespace PeakXR.Diagnostics;
@@ -11,22 +12,17 @@ namespace PeakXR.Diagnostics;
 /// Menu is the only one that does nothing on press, so the chord is built on it: rig.camera's recenter and the
 /// layout's pause, sprint and crouch skip the controls it takes (<see cref="MenuTaken"/>, <see cref="StickTaken"/>).
 /// Runs right after the VR sample (VR only), before any reader of those buttons. Under SteamVR a Touch left Menu
-/// opens the dashboard and the right one has none, so the both-sticks chord (Core <see cref="StickChord"/>) works on
-/// every controller: held for the recenter time it recenters (rig.camera reads <see cref="SticksHeld"/>), held on
-/// past that it saves a report. A lone stick click reaches the layout only once the chord window has passed
-/// (<see cref="StickClick"/>), so the first stick in never flips a sprint or crouch toggle. The two chords never run
-/// together: the Menu one cannot start while the sticks are held, nor the sticks one while Menu holds a stick. One-handed
-/// play blanks the other controller, so it uses the VR tab buttons.
+/// opens the dashboard and the right one has none, so the both-sticks chord works on every controller: held for the
+/// recenter time it recenters, held on past that it saves a report. That chord belongs to input
+/// (<see cref="StickChordInput"/>: sprint, crouch and the recenter never depend on this feature); this class only
+/// reads its report hold. The two chords never run together: the Menu one cannot start while the sticks are held,
+/// nor the sticks one while Menu holds a stick. One-handed play blanks the other controller, so it uses the VR tab
+/// buttons.
 /// </summary>
 internal static class DebugGesture
 {
     private static readonly BugChord Chord = new();
-    private static readonly StickChord Sticks = new();
     private static bool wasActive;
-
-    /// <summary>The stick chord's window: long enough for two thumbs pressed "together", short enough that a lone
-    /// sprint or crouch click does not feel late.</summary>
-    private const float ChordWindow = 0.18f;
 
     /// <summary>A report waits this long at most for the view to clear (a recenter blink), then saves anyway.</summary>
     private const float ClearWaitSeconds = 2f;
@@ -37,14 +33,12 @@ internal static class DebugGesture
 
     public static bool MenuTaken(bool left) => Chord.MenuTaken(left);
 
-    public static bool StickTaken(bool left) => Chord.StickTaken(left) || Sticks.StickTaken(left);
+    public static bool StickTaken(bool left) =>
+        Chord.StickTaken(left) || StickChordInput.Taken(left);
 
-    /// <summary>The stick click the controller layout reads: held back for the chord window, never while a chord
-    /// holds it.</summary>
-    public static bool StickClick(bool left) => Sticks.Click(left);
-
-    /// <summary>Both stick clicks are held as one chord: rig.camera's recenter hold.</summary>
-    public static bool SticksHeld => Sticks.Active;
+    /// <summary><c>VRSession.Stopped</c>: a report waiting for a clear view is dropped, never saved on the next
+    /// start.</summary>
+    public static void OnVRStopped() => reportPending = false;
 
     /// <summary><c>XRInputSampler.AfterSample</c>: once per VR frame.</summary>
     public static void Update()
@@ -55,8 +49,9 @@ internal static class DebugGesture
             VRInput.Right.Menu,
             VRInput.Right.StickClick,
             Time.unscaledDeltaTime,
-            blocked: Sticks.Active
+            blocked: StickChordInput.Held
         );
+        StickChordInput.MenuChordActive = Chord.Active;
         UpdateSticks();
         SavePendingReport();
         bool menuLeft = Chord.MenuLeft;
@@ -105,21 +100,12 @@ internal static class DebugGesture
     /// was, and saves at the end.</summary>
     private static void UpdateSticks()
     {
-        Sticks.RecenterSeconds = Rig.CameraFeature.RecenterSeconds;
-        Sticks.ReportSeconds = Chord.ReportSeconds;
-        // One-handed play has one stick: nothing to wait for.
-        Sticks.Window = VRInput.OneHanded ? 0f : ChordWindow;
-        var e = Sticks.Update(
-            VRInput.Left.StickClick,
-            VRInput.Right.StickClick,
-            Chord.Active,
-            Time.unscaledDeltaTime
-        );
         bool off = VRInput.OffHandLeft;
-        if (e == BugChordEvent.Report)
+        float progress = StickChordInput.Sticks.ReportProgress;
+        if (StickChordInput.ReportNow)
             RequestReport(off);
-        else if (Sticks.ReportProgress > 0f && Sticks.ReportProgress < 1f)
-            Affordance.Progress(off, Sticks.ReportProgress);
+        else if (progress > 0f && progress < 1f)
+            Affordance.Progress(off, progress);
     }
 
     /// <summary>A marker in the rings and the log, confirmed by the notice cue and its number.</summary>

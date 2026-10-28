@@ -3,10 +3,11 @@ using System.Globalization;
 namespace PeakXR.Core;
 
 /// <summary>
-/// Crash-loop guard for the XR start. The plugin records each XR start in a file right before the runtime's native
-/// init calls and deletes it as soon as they return, so the file only survives a start that took the process down
-/// inside them. Two such starts in a row make launches flat until the player asks to try VR again, so a native
-/// crash in the runtime cannot keep the game from starting.
+/// Crash-loop guard for the XR start. The plugin records each launch's XR start in a file right before the first
+/// runtime's native init and deletes it once a runtime runs with its first frames submitted (or every runtime failed
+/// cleanly), so the file only survives a launch whose process ended during the start. Two such launches in a row
+/// make launches flat until the player asks to try VR again, so a native crash in the runtime cannot keep the game
+/// from starting.
 /// </summary>
 public static class XRStartGuard
 {

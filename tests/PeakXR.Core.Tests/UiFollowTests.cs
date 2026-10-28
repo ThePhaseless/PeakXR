@@ -336,21 +336,42 @@ public class PanelMathTests
 
 public class WallOnTopHoldTests
 {
+    const float Wanted = 1.2f;
+    const float Dt = 0.1f;
+
+    /// <summary>One wall test the way HudLayout runs it: the wall depth in, the held flag out.</summary>
+    static bool Test(WallOnTopHold h, float wall, float seconds)
+    {
+        bool onTop = false;
+        for (float t = 0f; t < seconds - 1e-4f; t += Dt)
+            onTop = h.Update(Wanted, wall, Dt);
+        return onTop;
+    }
+
     [Fact]
     public void OnAtOnce_OffOnlyAfterAClearDwell()
     {
         var h = new WallOnTopHold();
-        Assert.True(h.Update(true, -0.02f, 0.1f));
-        // Just past the margin: stays on.
-        for (int i = 0; i < 10; i++)
-            Assert.True(h.Update(false, 0.01f, 0.1f));
-        // Clearly clear, but only for 0.2 s, then back in: still on.
-        h.Update(false, 0.2f, 0.1f);
-        h.Update(false, 0.2f, 0.1f);
-        Assert.True(h.Update(true, -0.01f, 0.1f));
-        h.Update(false, 0.2f, 0.1f);
-        h.Update(false, 0.2f, 0.1f);
-        Assert.False(h.Update(false, 0.2f, 0.1f));
+        // Rock inside the comfort floor: drawn on top at once.
+        Assert.True(Test(h, 0.4f, Dt));
+        // Right at the floor's margin: held on (no flicker at the edge).
+        Assert.True(Test(h, PanelMath.ComfortFloor + PanelMath.WallGap, 1f));
+        // Clearly clear but only for 0.2 s, then back in: still on.
+        Assert.True(Test(h, 0.9f, 0.2f));
+        Assert.True(Test(h, 0.4f, Dt));
+        // A wall at 0.9 m pulls the HUD in to 0.8 m, depth tested: it turns off after the dwell.
+        Assert.True(Test(h, 0.9f, 0.2f));
+        Assert.False(Test(h, 0.9f, 0.2f));
+    }
+
+    [Fact]
+    public void AClimbWallBetweenTheFloorAndTheWantedDistance_DoesNotKeepItOnTop()
+    {
+        var h = new WallOnTopHold();
+        Assert.True(Test(h, 0.55f, Dt));
+        Assert.True(Test(h, 0.6f, 0.5f));
+        Assert.False(Test(h, 0.9f, 0.5f));
+        Assert.False(Test(h, 1.0f, 2f));
     }
 }
 
@@ -360,13 +381,22 @@ public class SignDwellTests
     public void Glances_DoNotReplace_ALongLookAwayDoes()
     {
         var d = new SignDwell();
-        Assert.False(d.Update(45f, false, 0.5f));
-        Assert.False(d.Update(45f, false, 5f));
+        Assert.False(d.Update(40f, false, 0.5f));
+        Assert.False(d.Update(40f, false, 5f));
         Assert.False(d.Update(80f, false, 0.6f));
         Assert.False(d.Update(30f, false, 0.1f));
         Assert.False(d.Update(80f, false, 0.6f));
         Assert.True(d.Update(80f, false, 0.5f));
         d.Reset();
         Assert.True(d.Update(0f, true, 0.01f));
+    }
+
+    [Fact]
+    public void HalfAHeadsetFovAway_ForTheDwell_Replaces()
+    {
+        // 50 degrees off is outside half of a 90-100 degree view: the sign is out of sight.
+        var d = new SignDwell();
+        Assert.False(d.Update(50f, false, 0.6f));
+        Assert.True(d.Update(50f, false, 0.5f));
     }
 }

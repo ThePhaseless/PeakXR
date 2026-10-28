@@ -671,7 +671,7 @@ internal sealed class RigDriver : MonoBehaviour
             // Mid-turn the look heading is new but the ragdoll still faces the old one: a skewed sample.
             || Time.unscaledTime < turnHoldUntil
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
-            // The first sample (a snap) waits for a still stand, past the beach wake-up: the first upright frame after
+            // The first sample (taken at once) waits for a still stand, past the beach wake-up: the first upright frame after
             // the wake-up fall reads a body still rising (eyes 1.32-1.43 m over the ground against 1.77 m standing),
             // and the calibration kept what that frame said (run 21: eyes 0.16 m ahead of the mass centre on that
             // frame, 0.12 m for the whole beach, a taller back-tilted stand and a hip bobbing 0.03 m; run 20: 0.25 m).
@@ -694,9 +694,10 @@ internal sealed class RigDriver : MonoBehaviour
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
             return false;
         bool first = !massEyes.Have;
-        // Snap only while the view is placed anyway (a new character, a recenter); otherwise glide, never jump.
-        massEyes.Sample(sample, leaning, snap, dt);
-        torsoEyes.Sample(torsoSample, leaning, snap, dt);
+        // The first sample replaces the starting guess at once, even though the view was placed frames ago (it waits
+        // for a still stand); later ones glide, never jump.
+        massEyes.Sample(sample, leaning, dt);
+        torsoEyes.Sample(torsoSample, leaning, dt);
         if (first)
         {
             // The ground straight under the eyes: data.groundPos is one ground contact (CharacterMovement.cs:722-751)
@@ -711,10 +712,10 @@ internal sealed class RigDriver : MonoBehaviour
             )
                 ? under.point.y
                 : d.groundPos.y;
-            // The first upright frame only: the standing height is measured over a steady stand (MeasureStandingEye).
+            // The first sample only: the standing height is measured over a steady stand (MeasureStandingEye).
             Plugin.Log.LogInfo(
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
-                    + $"{eye.y - ground:0.00} m above the ground on the first upright frame; the player's calibrated "
+                    + $"{eye.y - ground:0.00} m above the ground on the first still stand (taken at once); the player's calibrated "
                     + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m"
             );
         }
@@ -856,7 +857,7 @@ internal sealed class RigDriver : MonoBehaviour
         bool left = VRInput.Left.Menu && !Diagnostics.DebugGesture.MenuTaken(true),
             right = VRInput.Right.Menu && !Diagnostics.DebugGesture.MenuTaken(false);
         // Both sticks clicked: the recenter every controller has (a Touch Menu may never reach the game).
-        bool sticks = Diagnostics.DebugGesture.SticksHeld;
+        bool sticks = XRInput.StickChordInput.Held;
         // The ring goes to the controller whose button is held; with both down it stays where it is.
         if (sticks && !left && !right)
             recenterLeft = VRInput.OffHandLeft;
