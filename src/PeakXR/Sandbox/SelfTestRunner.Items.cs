@@ -174,13 +174,11 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.244 screenshots one hold per hand of these, the hand raised in front of the face.</summary>
     static readonly string[] LeftHoldShots = { "Shell Big", "Glizzy", "BingBong" };
 
-    /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres.</summary>
+    /// <summary>How much farther than the right hold's a left hold may put a palm from the item, metres. The right
+    /// hold is the game's own grip (ItemHoldInfo.HoldLocal returns it unchanged), so this is the absolute bound too: no
+    /// fixed distance works, as the game's preview-hand centre sits 0.16-0.26 m off the colliders of the Flag,
+    /// BingBong, Sports Drink, Warpsketball and Bandages in its own right hold (runs 20 and 21).</summary>
     const float LeftHoldSlack = 0.02f;
-
-    /// <summary>Farthest a holding palm may be from the item in either hand, metres: the left-against-right check
-    /// alone passes two holds that are both off the item. The game's own right hold put the CactusBall's palm 0.121 m
-    /// off (docs/research/item-grab-shapes.md, rule 3); the offline table has every vr.244 item under 0.02 m.</summary>
-    const float MaxHoldPalm = 0.15f;
 
     /// <summary>
     /// vr.244: each item in the left hand, then the right (ItemHoldInfo.HoldLocal, Core LeftHold). The holding palm and
@@ -315,9 +313,10 @@ internal sealed partial class SelfTestRunner
                     ? "no collider to measure the palm against"
                 : float.IsNaN(l.HandOff) || float.IsNaN(r.HandOff)
                     ? "the hand on the grip was not measured (the weld let the item go)"
-                : l.Palm > MaxHoldPalm || r.Palm > MaxHoldPalm
-                    ? F($"a palm is more than {MaxHoldPalm:0.00} m off the item")
-                : l.Palm > r.Palm + LeftHoldSlack ? "the left palm is off the item"
+                : l.Palm > r.Palm + LeftHoldSlack
+                    ? F(
+                        $"the left palm is off the item: {l.Palm:0.000} m against the game's right hold's {r.Palm:0.000} m"
+                    )
                 // Collider.ClosestPoint reads 0 inside: a palm sunk into the item (the CactusBall's plain mirror).
                 : l.Palm < r.Palm - LeftHold.DeepTolerance ? "the left palm sinks into the item"
                 : !float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack

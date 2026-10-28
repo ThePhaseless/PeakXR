@@ -288,7 +288,14 @@ internal sealed partial class SelfTestRunner
             )
             : 0f;
         float slope = contact ? Vector3.Angle(probe.Normal, Vector3.up) : 0f;
-        float range = SelfTestChecks.MaxThrowRange(clamp, from.y - landed.y + 1f, g);
+        // The clamp bounds the flight, which ends at the first contact: a roll or bounce after it (run 21: an apple
+        // touched down 9 m out and rolled downhill to 43 m, still moving) is the slope's, not the throw's.
+        var flightEnd = contact && !probe.OwnBody ? probe.Point : landed;
+        float flight = Vector2.Distance(
+            new Vector2(from.x, from.z),
+            new Vector2(flightEnd.x, flightEnd.z)
+        );
+        float range = SelfTestChecks.MaxThrowRange(clamp, from.y - flightEnd.y + 1f, g);
         var verdict = SelfTestChecks.JudgeThrow(
             distance,
             MinThrowDistance,
@@ -305,7 +312,7 @@ internal sealed partial class SelfTestRunner
             )
             : "no contact seen";
         string launchNote = F(
-            $"landed {distance:0.0} m away at {landed}{(rested ? "" : " (still moving after 5 s: not its rest)")}, launch {launch:0.0} m/s (clamp {clamp:0.0}), max range {range:0.0} m"
+            $"landed {distance:0.0} m away at {landed}{(rested ? "" : " (still moving after 5 s: not its rest)")}, flew {flight:0.0} m, launch {launch:0.0} m/s (clamp {clamp:0.0}), max range {range:0.0} m"
         );
         string releaseNote = F(
             $"release {velocity} m/s, pitch {pitch:0} deg, heading {heading:0} deg off the body forward, hand {PhysicalInteraction.LastThrowHand} + hip {PhysicalInteraction.LastThrowBody}"
@@ -318,7 +325,7 @@ internal sealed partial class SelfTestRunner
         switch (verdict)
         {
             case ThrowVerdict.Ok:
-                if (launch > clamp * 1.1f + 0.5f || distance > range + 1f)
+                if (launch > clamp * 1.1f + 0.5f || flight > range + 1f)
                     Fail("throw beyond the vanilla clamp: " + note);
                 else
                     stepNote = note;

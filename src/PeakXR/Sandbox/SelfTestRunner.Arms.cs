@@ -65,10 +65,6 @@ internal sealed partial class SelfTestRunner
     /// controller-to-wrist offset.</summary>
     const float MaxFollowDegrees = 25f;
 
-    /// <summary>Farthest the view's eye may sit from the head bone's body: inside a scout's big head. shortcut: a
-    /// generous first bound, not yet measured over runs (the note logs the distance); tighten it from the logs.</summary>
-    const float MaxEyeFromHeadBone = 0.4f;
-
     IEnumerator ArmReachCheck()
     {
         var fails = new List<string>();
@@ -137,17 +133,18 @@ internal sealed partial class SelfTestRunner
                     )
                 );
             // A second oracle: the eye renderers are also what the rig anchors on (RigDriver.TryEyePoint), so a wrong
-            // renderer set would pass the check above. The head bone must be near too.
+            // renderer set would pass the check above. The scout's eye cards hang off its head bone (Head > Face > Eye
+            // Card L/R in the prefab), so each must sit under this character's head. A distance bound cannot say it:
+            // the head bone is the neck joint of a big head, the eyes 0.46 m above it (run 21).
             if (parts.TryGetValue(BodypartType.Head, out var headPart))
             {
-                float bone = Vector3.Distance(head.position - held, headPart.Rig.position);
-                notes.Add(F($"eye {bone:0.00} m from the head bone"));
-                if (bone > MaxEyeFromHeadBone)
-                    fails.Add(
-                        F(
-                            $"eye {bone:0.00} m from the head bone > {MaxEyeFromHeadBone:0.00} m: the eyes it rides are not on this head"
-                        )
-                    );
+                notes.Add(
+                    F(
+                        $"eye {Vector3.Distance(head.position - held, headPart.Rig.position):0.00} m from the head bone"
+                    )
+                );
+                if (EyeRendererOffHead(c, headPart.transform) is { } stray)
+                    fails.Add($"eye renderer {stray} is not under this character's head bone");
             }
             else
                 fails.Add("no head bone to cross-check the eye with");
@@ -168,6 +165,22 @@ internal sealed partial class SelfTestRunner
         yield return JudgeReaches(c, driver, fails, notes);
         yield return JudgeWristRolls(c, driver, fails, notes);
         Conclude(fails, notes);
+    }
+
+    /// <summary>The first eye renderer (CustomizationRefs.EyeRenderers, as RigDriver.TryEyeRenderers reads them) not
+    /// under <paramref name="headBone"/>, or null when all are.</summary>
+    static string EyeRendererOffHead(Character c, Transform headBone)
+    {
+        var custom = c.refs.customization;
+        var eyes = custom != null && custom.refs != null ? custom.refs.EyeRenderers : null;
+        if (eyes == null)
+            return null;
+        foreach (var r in eyes)
+        {
+            if (r != null && !r.transform.IsChildOf(headBone))
+                return r.name;
+        }
+        return null;
     }
 
     /// <summary>Wrist rolls (degrees off the idle pose about the grip's pointing axis, same sense on both hands) the
