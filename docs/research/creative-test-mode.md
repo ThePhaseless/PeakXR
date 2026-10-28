@@ -1,5 +1,5 @@
 # PEAK creative/test mode research (2026-10-19)
-Game: PEAK 2.6.b (version.txt), Mono build (PEAK_Data/Managed + MonoBleedingEdge present) -> BepInEx 5.x. Nothing installed in game dir (no BepInEx folder yet). Host OS Linux (Proton): see "Linux".
+Game: PEAK 2.6.b (version.txt), Mono build (PEAK_Data/Managed + MonoBleedingEdge present) -> BepInEx 5.x. For Linux (Proton), see the Linux/Proton note under A.
 
 ## A. Web
 
@@ -31,11 +31,11 @@ Game: PEAK 2.6.b (version.txt), Mono build (PEAK_Data/Managed + MonoBleedingEdge
 | Snosz-TerrainRandomiser | 1.2.0 / 2026-09-08 | Seeded terrain / pick biome variants | 5.4.75301, Snosz-PhotonCustomPropsUtils 1.1.0 | ? | host/all? | https://thunderstore.io/c/peak/p/Snosz/TerrainRandomiser/ |
 | Others seen | | KystoStudio-Admin_menukz 2.6.1 (F5 admin menu, bot spawner, fly, inf stamina; deps 5.4.2100); LIGHTNING_X-CubeX 3.4.1 (menu, host controls); RuangfafaPersonalTeam-PEAK_MENU_CN 0.4.0 (item spawn, tp; deps AutoHookGenPatcher, DetourContext_Dispose_Fix); k1r_gamer-PEAK_AIO_APEX 1.1.2 (ImGui; inventory editor, enemy spawn host-only, needs penswer-DearImGuiInjection); penswer-Everything; CptPICHU-TrueFinalAscent 2.9.4 | | | | |
 
-Recommendation: BepInExPack_PEAK 5.4.75301 + PEAK_MX (single menu: god, stamina, items, entities, biome tp; MIT, updated 5 days ago) + Console_Unlocker (cheap access to all first-party commands: Item.Add, SetTimeOfDay, JumpToSegment, SetMapNumber, InfiniteStamina). Optional: So_Fly (noclip), ItemSpawnerEnhanced (MIT item browser), PeakAMap (map pick). Caveat: Console_Unlocker last updated 2025-06 (pre-2.x); if it fails on 2.6, our own plugin can do its job in one line (see B.2).
+Recommendation: BepInExPack_PEAK 5.4.75301 + PEAK_MX (single menu: god, stamina, items, entities, biome tp; MIT, updated 2026-10-07) + Console_Unlocker (cheap access to all first-party commands: Item.Add, SetTimeOfDay, JumpToSegment, SetMapNumber, InfiniteStamina). Optional: So_Fly (noclip), ItemSpawnerEnhanced (MIT item browser), PeakAMap (map pick). Caveat: Console_Unlocker last updated 2025-06 (pre-2.x); if it fails on 2.6, our own plugin can do its job in one line (see B.2).
 Anti-cheat risk: PEAK_MX/KinTheInfinite-PeakAntiCheatReborn exist; only use in private lobbies. Mods mark modded lobbies; use solo/offline for VR tests.
 Mod-menu mods are IMGUI/UGUI screen-space: they likely will NOT render in VR; rely on console hotkeys or our own VR UI calling APIs in B.
 
-## B. Local decomp (/home/thephaseless/Projects/PeakVR/decomp/)
+## B. Game decompile (`decomp/`, gitignored; `mise run decompile` writes it)
 Paths relative to Assembly-CSharp/ unless noted.
 
 ### B.1 Built-in dev console (Zorro.Core.CLI)

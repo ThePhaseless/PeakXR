@@ -4,7 +4,7 @@
 
 Researched 2026-10-19, redacted 2026-10-22. Audience: agents building our PEAK VR mod. Facts marked (verified) were checked against downloaded files or primary sources. (inference) = my reading, not stated by a source.
 
-Local facts about the game (verified from `~/.local/share/Steam/steamapps/common/PEAK`): Unity `6000.3.15f1` (UnityPlayer.dll + data.unity3d header), game build 2.6.b / Steam buildid 25739797, Mono (`MonoBleedingEdge/`), `PEAK_Data/Managed/Unity.InputSystem.dll` = com.unity.inputsystem **1.19.0**, URP (`Unity.RenderPipelines.Universal.Runtime.dll`), `UnityEngine.XRModule.dll` + `UnityEngine.VRModule.dll` + `UnityEngine.SubsystemsModule.dll` present, **no** Unity.XR.* managed DLLs, **no** `PEAK_Data/UnitySubsystems/`, no UnityOpenXR.dll. `PEAK_Data/Plugins/x86_64/` has only steam_api64, EOSSDK, opus, webrtc, AudioIn, lib_burst_generated, MemoryWrapper-*. `D3D12/D3D12Core.dll` beside the exe.
+Facts about the game (verified from the installed game folder, `$PEAK_DIR`): Unity `6000.3.15f1` (UnityPlayer.dll + data.unity3d header), game build 2.6.b / Steam buildid 25739797, Mono (`MonoBleedingEdge/`), `PEAK_Data/Managed/Unity.InputSystem.dll` = com.unity.inputsystem **1.19.0**, URP (`Unity.RenderPipelines.Universal.Runtime.dll`), `UnityEngine.XRModule.dll` + `UnityEngine.VRModule.dll` + `UnityEngine.SubsystemsModule.dll` present, **no** Unity.XR.* managed DLLs, **no** `PEAK_Data/UnitySubsystems/`, no UnityOpenXR.dll. `PEAK_Data/Plugins/x86_64/` has only steam_api64, EOSSDK, opus, webrtc, AudioIn, lib_burst_generated, MemoryWrapper-*. `D3D12/D3D12Core.dll` beside the exe.
 
 ---
 
@@ -136,9 +136,10 @@ Tested 2026-10-19 with .NET 9 SDK, target `netstandard2.1`, references = PEAK's 
 - Non-Steam VR needs GE-Proton (10-33) patches; irrelevant for Steam-launched PEAK.
 
 ### 4.5 DX11 vs DX12 vs Vulkan for PEAK
-- Steam launch options defined for app 3527290 (verified in local `~/.local/share/Steam/appcache/appinfo.vdf`): `option1` "PEAK using DX12" executable `PEAK.exe` no args (default for windows); `option2` "PEAK using DX11" arguments `-force-d3d11`; `option3` "PEAK using Vulkan" arguments `-force-vulkan`; also a `linux` "Steam Deck Default" entry with `-force-vulkan` (internal-playtesting config; PEAK has no public native Linux build).
+- Steam launch options defined for app 3527290 (verified in the Steam client's `appcache/appinfo.vdf`): `option1` "PEAK using DX12" executable `PEAK.exe` no args (default for windows); `option2` "PEAK using DX11" arguments `-force-d3d11`; `option3` "PEAK using Vulkan" arguments `-force-vulkan`; also a `linux` "Steam Deck Default" entry with `-force-vulkan` (internal-playtesting config; PEAK has no public native Linux build).
 - So default = **DX12**; force DX11 with `-force-d3d11` (standard Unity player flag). Also `-force-vulkan`, `-force-d3d12`. A public PEAK VR mod README says "-force-d3d11 can give an extra 10-27 FPS"; its 1.2.0 release notes mention a desktop mirror fix on Vulkan (so Vulkan VR works on native Windows).
 - Recommendation for Proton: `-force-d3d11` (DXVK; wineopenxr maps `XR_KHR_D3D11_enable` -> `XR_KHR_vulkan_enable`). D3D12 via vkd3d-proton is supported since Proton 9.0-3 but is the heavier, less-exercised path; PEAK's Steam forum threads mention DX12 crashes (Tropics biome) with DX11/Vulkan as workarounds (https://steamcommunity.com/app/3527290/discussions/0/603033240727548733/ is only tangential). Our mod should detect the graphics API (`SystemInfo.graphicsDeviceType`) and warn if it is Direct3D12 or Vulkan.
+- Superseded by testing (2026-10-21, `docs/test-report.md`, "Graphics API"): under Proton launched without Wine's VR registry keys, D3D11 and D3D12 both failed to create an OpenXR device and Unity fell back to Vulkan, which is the API every Proton VR run used. `GraphicsAdvice` (`src/PeakXR.Core/GraphicsAdvice.cs`) now advises `-force-vulkan` under Proton and `-force-d3d11` instead of Direct3D12 on Windows; Vulkan gets no warning.
 - OpenXR graphics binding in Unity is chosen from the active GfxDevice (D3D11/D3D12/Vulkan) automatically; no setting needed.
 
 ---

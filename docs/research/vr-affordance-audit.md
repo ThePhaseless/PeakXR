@@ -4,11 +4,11 @@ On a flat screen the crosshair, the prompt and the greyed-out item tell the play
 
 Related documents: `docs/mechanics.md` has the per-mechanic inventory (row ids such as IT-09 point into it), `docs/research/vr-immersion-audit.md` covers gesture upgrades, and `docs/multiplayer-compat.md` already lists three parity refusals (too far, wrong angle, keep holding) that go through `ParityFeedback`. This audit does not repeat their analysis.
 
-Paths: `A/` is `decomp/Assembly-CSharp/`; `src/` is `src/PeakXR/`; `core/` is `src/PeakXR.Core/`. Decomp line numbers were read from the files. PeakXR line numbers are for commit `fb58e97` and drift, so look up PeakXR code by function name. Prefab-only values (for example `climbingSpikeStartDistance`) are not in the decompile; read them from the component at runtime.
+Paths: `A/` is `decomp/Assembly-CSharp/`. PeakXR paths are relative to the repo root. Decomp line numbers were read from the files. PeakXR line numbers are for commit `fb58e97` and drift, so look up PeakXR code by function name. Prefab-only values (for example `climbingSpikeStartDistance`) are not in the decompile; read them from the component at runtime.
 
 ## How to read the scores
 
-F is frustration from 1 (shrug) to 5 (player thinks the mod is broken or loses an item). Q is how often a VR player meets it in a normal run, 1 (rare) to 5 (every few minutes). Score is F x Q. Cue types: pre-emptive means shown while the hand hovers or aims, before the attempt; on-failure means shown when the attempt just did nothing. A haptic alone is never enough for a rule the player has not learned, so each entry names a short label as well. Labels are 20 characters or fewer. Names in code font such as `NoStamina` are `DenyReason` values from `core/Affordance.cs`; "new" marks a reason that does not exist yet.
+F is frustration from 1 (shrug) to 5 (player thinks the mod is broken or loses an item). Q is how often a VR player meets it in a normal run, 1 (rare) to 5 (every few minutes). Score is F x Q. Cue types: pre-emptive means shown while the hand hovers or aims, before the attempt; on-failure means shown when the attempt just did nothing. A haptic alone is never enough for a rule the player has not learned, so each entry names a short label as well. Labels are 20 characters or fewer. Names in code font such as `NoStamina` are `DenyReason` values from `src/PeakXR.Core/Affordance.cs`; "new" marks a reason that does not exist yet. Many of those have since been added, some under other names (`PocketsFull`, `ItemWouldDrop`, `PackWouldDrop`); `DenyReason` in `src/PeakXR.Core/Affordance.cs` is the current list.
 
 ## Ranked summary
 
@@ -21,7 +21,7 @@ F is frustration from 1 (shrug) to 5 (player thinks the mod is broken or loses a
 | 5 | Interaction reach is 2 m from the head | 3x5 = 15 | `Interaction.cs:7`, `:204`, `:214` | Existing `OutOfReach` ring plus a reach-end marker |
 | 6 | Lighting a campfire needs every living player in range | 4x3 = 12 | `Campfire.cs:322`, `:377-388` | Pre-emptive "Friends too far" on the log, before the 5 s hold |
 | 7 | Pickup with a full inventory | 4x3 = 12 | `Item.cs:580-583`, `Player.cs:268-287` | Red tint on the item, "Inventory full" |
-| 8 | Two-handed item used with one hand (PeakXR rule) | 4x3 = 12 | `src/Interact/PhysicalInteraction.cs` Inject, `core/ItemHold.cs:163` | `NeedsTwoHands` at the holding hand (wired in working tree) |
+| 8 | Two-handed item used with one hand (PeakXR rule) | 4x3 = 12 | `src/PeakXR/Interact/PhysicalInteraction.cs` Inject, `src/PeakXR.Core/ItemHold.cs:163` | `NeedsTwoHands` at the holding hand (wired) |
 | 9 | Carrying a downed friend: both hands, pack dropped, item put away | 4x3 = 12 | `CharacterInteractible.cs:77-88`, `CharacterCarrying.cs:51-67` | "Needs both hands", "Pack will drop" |
 | 10 | Rope shooter: grounded, ammo, 30 m | 4x3 = 12 | `RopeShooter.cs:122-138` | Aim line turns red with the reason |
 | 11 | Vine shooter: grounded, pitch window, 40 m | 4x3 = 12 | `VineShooter.cs:71-92` | Aim line red, "Aim lower" or "Aim higher" |
@@ -57,7 +57,7 @@ Rule: `CharacterClimbing.AcceptableGrabAngle` (`A/CharacterClimbing.cs:511-532`)
 
 VR: a hand pressed flat on the floor, a ceiling or a shallow slab looks like a hold. The wall may also be within arm's reach but over 1.25 m from the eye, so a lean-in grab fails.
 
-PeakXR: `PhysicalInteraction.OnGripPress` runs `ProbeHold`, which mirrors the angle test through `ClimbRules.GrabAngleOk` (`core/ClimbAssist.cs:64`) and quietly drops the grip to other actions; `StartClimb` returns false when the game starts nothing. The working tree now calls `Affordance.Deny` with `TooFlat`, `Overhang`, `OutOfReach` (with the 1.25 m boundary) and `NoStamina` there. Gaps: `ProbeHold` returns true when its short rays find nothing, so "no wall within reach" shows only as the `OutOfReach` branch.
+PeakXR: `PhysicalInteraction.OnGripPress` runs `ProbeHold`, which mirrors the angle test through `ClimbRules.GrabAngleOk` (`src/PeakXR.Core/ClimbAssist.cs:64`) and quietly drops the grip to other actions; `StartClimb` returns false when the game starts nothing. It now calls `Affordance.Deny` with `TooFlat`, `Overhang`, `OutOfReach` (with the 1.25 m boundary) and `NoStamina` there. Gaps: `ProbeHold` returns true when its short rays find nothing, so "no wall within reach" shows only as the `OutOfReach` branch.
 
 Cue: on-failure label at the hand plus a slip haptic (already designed). A pre-emptive version is possible because `ProbeHold` runs on grip press only; a per-frame probe while a hand hovers within `ClimbRadius` of terrain could tint the hand, but this is optional.
 
@@ -75,9 +75,9 @@ Cue: pre-emptive, on the holding hand when the other hand's grip closes on a cli
 
 Rule: `UpdateClimbingSpikeUse` (`A/CharacterItems.cs:981-1027`). The ray starts at the camera and runs `climbingSpikeStartDistance` while climbing or `climbingSpikeStartDistanceGrounded` otherwise, on the terrain-map layer only (`:1072-1076`; prefab values in `ClimbingSpikeComponent.cs:10-16`). If it misses, the tick resets and nothing shows (`:1006-1009`). Primary start needs `!isClimbingAnything && climbingSpikeSelected`; secondary needs `climbingSpikeSelected || isClimbingAnything` (`:1012`, `:1019`). Once started, the cast cancels when the preview is farther from the camera than `climbingSpikePreviewDisableDistance(Grounded)` (`:971-979`, `:989-992`) or when the start button is released (`:994-998`). There is no wall-angle limit. The piton lands after `usingTimePrimary` seconds.
 
-VR: PeakXR swaps the strikes for the hold timer (`src/Interact/Tools/SpikeHammer.cs:33-79`): a strike is a hand within 0.2 m of the preview point moving at least 1.2 m/s into the wall (`:28-30`, `:81-95`). With no strike the tick stays at the minimum. A player who pulls the trigger at a wall beyond arm reach, or who strikes too softly, sees the preview and nothing else. Releasing the trigger between strikes cancels the cast silently.
+VR: PeakXR swaps the strikes for the hold timer (`src/PeakXR/Interact/Tools/SpikeHammer.cs:33-79`): a strike is a hand within 0.2 m of the preview point moving at least 1.2 m/s into the wall (`:28-30`, `:81-95`). With no strike the tick stays at the minimum. A player who pulls the trigger at a wall beyond arm reach, or who strikes too softly, sees the preview and nothing else. Releasing the trigger between strikes cancels the cast silently.
 
-PeakXR: `SpikeHammer.BeforeUpdate`, `AimPatches.ClimbingSpike` (`src/Interact/Aim/AimPatches.cs:253-273`). `ParityFeedback.KeepHolding` already covers "all strikes in, hold time not run".
+PeakXR: `SpikeHammer.BeforeUpdate`, `AimPatches.ClimbingSpike` (`src/PeakXR/Interact/Aim/AimPatches.cs:253-273`). `ParityFeedback.KeepHolding` already covers "all strikes in, hold time not run".
 
 Cue: while casting, if the hand-to-preview distance is above the strike radius for over 1 s, hover an `OutOfReach` ring at the preview with the walking distance. If a hand enters the radius slower than `MinSpeed`, label "Strike harder" (new `TooSlow`). When the trigger is released with `climbingSpikeCastProgress` above 0, a short deny haptic and `MovedAway` if the preview left range. With a spike selected and `RaycastClimbingSpikeStart()` false while the trigger is held, `NoWall` "No wall in reach".
 
@@ -87,7 +87,7 @@ Rule: rope grab needs `!interactor.OutOfStamina()` (`A/RopeSegment.cs:52`), vine
 
 VR: the hand closes on the rope and nothing happens, or the arms pull and the body will not rise.
 
-PeakXR: `FindCandidate` filters ropes through `IsInteractible` (`src/Interact/PhysicalInteraction.cs`, line check at the `it.IsInteractible(c)` test), so the grip falls through silently. `StaminaBeat` and `ClimbHands` give haptics only once climbing. `UpdateClimb` zeroes the up stick when exhausted (`slideOnly || outOfStamina`).
+PeakXR: `FindCandidate` filters ropes through `IsInteractible` (`src/PeakXR/Interact/PhysicalInteraction.cs`, line check at the `it.IsInteractible(c)` test), so the grip falls through silently. `StaminaBeat` and `ClimbHands` give haptics only once climbing. `UpdateClimb` zeroes the up stick when exhausted (`slideOnly || outOfStamina`).
 
 Cue: on a grip within reach of a rope or vine segment while `c.OutOfStamina()`, `NoStamina` at the hand ("No stamina"). While climbing with `outOfStaminaFor > 0` and the arms pulling up, hover the same label at the wrist rather than another pulse.
 
@@ -97,7 +97,7 @@ Rule: `Interaction.distance = 2f` (`A/Interaction.cs:7`), ray origin `MainCamera
 
 VR: a pointing hand reaches farther than the head would, and the game would accept a pick the head cannot make.
 
-PeakXR: `InteractPatches.Raycasts` shortens the hand ray by the hand's offset from the head (`src/Interact/InteractPatches.cs:96-121`) and `ReportTooFar` (`:72-93`, called at `:144`) calls `ParityFeedback.Denied(TooFar)` when the full ray would have found something. The working tree forwards that to `Affordance.Deny(OutOfReach)` with the reach end.
+PeakXR: `InteractPatches.Raycasts` shortens the hand ray by the hand's offset from the head (`src/PeakXR/Interact/InteractPatches.cs:96-121`) and `ReportTooFar` (`:72-93`, called at `:144`) calls `ParityFeedback.Denied(TooFar)` when the full ray would have found something. `ParityFeedback` forwards that to `Affordance.Deny(OutOfReach)` with the reach end.
 
 Cue: on-failure ring is wired. The pre-emptive faint ray the affordance runtime draws while pointing is the right second half. Grab by hand overlap (`FindCandidate`) uses `GrabRadius` at the hand and is not subject to the 2 m rule.
 
@@ -107,7 +107,7 @@ Rule: the hold finishes in `Campfire.Interact_CastFinished` and lights only `els
 
 VR: touching a lit torch to the logs starts a 5 s hold (`cookTime`, `:40`, `:429-432`) with crackle haptics, then nothing happens. The prompt text with names is on the HUD, easily missed.
 
-PeakXR: `FireGestures.UpdateLight` (`src/Interact/Physical/FireGestures.cs:127-153`) finds the unlit campfire in `FindLightable` (`:199`, campfire block near `:240`) and calls `GestureRequests.Interact(target)` at `:149`. A grip hold on an unlit fire reaches the same `Interact_CastFinished` through `PhysicalInteraction`.
+PeakXR: `FireGestures.UpdateLight` (`src/PeakXR/Interact/Physical/FireGestures.cs:127-153`) finds the unlit campfire in `FindLightable` (`:199`, campfire block near `:240`) and calls `GestureRequests.Interact(target)` at `:149`. A grip hold on an unlit fire reaches the same `Interact_CastFinished` through `PhysicalInteraction`.
 
 Cue: pre-emptive. Before `GestureRequests.Interact(target)`, if `target is Campfire fire && !fire.EveryoneInRange(out var names, fire.moraleBoostRadius)`, deny with the missing names under the log: "Friends too far" (new `FriendsFar`), no crackle, no hold. The method is public.
 
@@ -119,15 +119,15 @@ VR: the grab pulses success, the hand closes, the item stays put.
 
 PeakXR: `PhysicalInteraction.OnGripPress` `GrabItem` case plays `Haptics.Pulse(0.6, 0.05)` before the game decides (`:256-261`); `FindCandidate` checks only `IsInteractible`.
 
-Cue: pre-emptive in `FindCandidate`: for an `Item` candidate, if `!c.player.HasEmptySlot(item.itemID)` or `c.data.isClimbingAnything && !item.UIData.canPocket` or the 0.25 s lockout is running, skip the success pulse and deny. Label "Inventory full" (new `InventoryFull`), "Not while climbing" for the climbing case (`NotWhileClimbing`), "Pack slot taken" for the second backpack. The slot ghosts (`src/Inventory/SlotGhosts.cs`) already show a full belt.
+Cue: pre-emptive in `FindCandidate`: for an `Item` candidate, if `!c.player.HasEmptySlot(item.itemID)` or `c.data.isClimbingAnything && !item.UIData.canPocket` or the 0.25 s lockout is running, skip the success pulse and deny. Label "Inventory full" (new `InventoryFull`), "Not while climbing" for the climbing case (`NotWhileClimbing`), "Pack slot taken" for the second backpack. The slot ghosts (`src/PeakXR/Inventory/SlotGhosts.cs`) already show a full belt.
 
 ### 8. Two-handed item used with one hand
 
-Rule: not a game rule. `ItemHoldTable.CanUse` (`core/ItemHold.cs:163`) blocks primary and secondary use of a `TwoHanded` profile (antizooka, rescue hook and claw at `:89-93`, and large items by size, `:145`) unless the free hand grips it. Vanilla would fire.
+Rule: not a game rule. `ItemHoldTable.CanUse` (`src/PeakXR.Core/ItemHold.cs:163`) blocks primary and secondary use of a `TwoHanded` profile (antizooka, rescue hook and claw at `:89-93`, and large items by size, `:145`) unless the free hand grips it. Vanilla would fire.
 
 VR: the item fires in vanilla, so a player used to the flat game, or to a one-hand-capable item, squeezes the trigger and nothing happens.
 
-PeakXR: `PhysicalInteraction.Inject` zeroes the use inputs and sets `useBlocked` (block starting at `if (holding && !ItemHoldTable.CanUse(...))`). The working tree adds `Affordance.DenyAtHand(NeedsTwoHands)` with the second grip as the hint.
+PeakXR: `PhysicalInteraction.Inject` zeroes the use inputs and sets `useBlocked` (block starting at `if (holding && !ItemHoldTable.CanUse(...))`). It also calls `Affordance.DenyAtHand(NeedsTwoHands)` with the second grip as the hint.
 
 Cue: on-failure at the trigger press, wired. Pre-emptive: tint the item's second grip (`Hand_L` or `Hand_R` child) while the free hand is away.
 
@@ -135,7 +135,7 @@ Cue: on-failure at the trigger press, wired. Pre-emptive: tint the item's second
 
 Rule: `CanBeCarried` needs `fullyPassedOut && !dead && !carrier` and not a bot (`A/CharacterInteractible.cs:77-88`); the 3 s hold is not used, a single `Interact` starts it (`:114-124`). `StartCarry` first puts away the held item (`CharacterCarrying.cs:51`) and `RPCA_StartCarry` drops a worn backpack at the friend's torso (`:59-67`). Carrying ends when the friend wakes or dies (`:29-32`). Hotbar slot 4 while carrying drops the friend (`CharacterItems.cs:821-824`).
 
-VR: PeakXR requires both hands on the friend (`CarryBothHands`, `src/Social/SocialHands.cs:335-340`). A single grip on a downed friend does nothing and gives no hint. A player who grips with a pack on loses the pack without a warning.
+VR: PeakXR requires both hands on the friend (`CarryBothHands`, `src/PeakXR/Social/SocialHands.cs:335-340`). A single grip on a downed friend does nothing and gives no hint. A player who grips with a pack on loses the pack without a warning.
 
 PeakXR: `SocialHands.Find` (`:197-207`) picks `Kind.Carry`; `ActiveInteract` withholds the interact until both hands agree.
 
@@ -147,7 +147,7 @@ Rule: `RopeShooter.WillAttach` (`A/RopeShooter.cs:122-138`) is false when `!isGr
 
 VR: the aim line is white and always looks valid. Airborne or at a wall 35 m away, the trigger is dead.
 
-PeakXR: `AimPatches.RopeShooterWillAttach` (`src/Interact/Aim/AimPatches.cs:57-71`) runs the check with the camera moved to the hand; `AimReticle.TryAim` draws the line (`src/Interact/Aim/AimReticle.cs:55-87`) and `Classify` already reads `maxLength` (`:100`).
+PeakXR: `AimPatches.RopeShooterWillAttach` (`src/PeakXR/Interact/Aim/AimPatches.cs:57-71`) runs the check with the camera moved to the hand; `AimReticle.TryAim` draws the line (`src/PeakXR/Interact/Aim/AimReticle.cs:55-87`) and `Classify` already reads `maxLength` (`:100`).
 
 Cue: pre-emptive in `AimReticle.LateUpdate`: while the trigger is touched, if `!item.CanUsePrimary()`, tint the dot and line `Affordance.DenyColor` and set the label by order: not grounded "Stand on ground" (new `NeedsGround`), `!HasAmmo` "Used up", no hit within `maxLength` "No wall in reach". `CanUsePrimary` is public and, for these tools, equals the game's own validity check.
 
@@ -183,11 +183,11 @@ Cue: pre-emptive, from `tier.ropeAnchor != null && tier.ropeAnchor.Ghost`: label
 
 ### 14. Opening the hand: no drop by default, `canDrop` and `canThrow` false
 
-Rule: drop needs `UIData.canDrop` (`A/CharacterItems.cs:259`) and no use in progress (`:254-258`); `canThrow` only hides the throw prompt (`Item.cs:71`, `GUIManager.cs:1183`). PeakXR throws when the release speed is at least `ThrowSpeed` (default 2 m/s) and otherwise keeps the item unless `ReleaseToDrop` is on (default false, `core/GripIntent.cs`, `OnRelease`).
+Rule: drop needs `UIData.canDrop` (`A/CharacterItems.cs:259`) and no use in progress (`:254-258`); `canThrow` only hides the throw prompt (`Item.cs:71`, `GUIManager.cs:1183`). PeakXR throws when the release speed is at least `ThrowSpeed` (default 2 m/s) and otherwise keeps the item unless `ReleaseToDrop` is on (default false, `src/PeakXR.Core/GripIntent.cs`, `OnRelease`).
 
 VR: an open hand should let go. Instead the item stays held. A non-throwable item swung hard stays too.
 
-PeakXR: `OnGripRelease` (`src/Interact/PhysicalInteraction.cs`, the `GripIntent.OnRelease` call). The working tree already calls `Affordance.DenyAtHand(CantThrow)` for a fast release of a `canThrow = false` item.
+PeakXR: `OnGripRelease` (`src/PeakXR/Interact/PhysicalInteraction.cs`, the `GripIntent.OnRelease` call). It calls `Affordance.DenyAtHand(CantThrow)` for a fast release of a `canThrow = false` item.
 
 Cue: a slow release that keeps the item gets a single soft tick on that hand and, the first three times per session, the hint "Swing to throw, or use drop". Items with `canDrop = false`: `CantUse`-style "Can't drop this".
 
@@ -197,7 +197,7 @@ Rule: `EquipSlot` stows only a `canPocket` item that is not in the overflow slot
 
 VR: the hand reaches the belt slot and the slot accepts it visually.
 
-PeakXR: `BodyInventory.Holster` (`src/Inventory/BodyInventory.cs:328-348`), `SwitchBlocked` (`:502`), `DoublePulse` (`:536`). The cue exists but says nothing about why. `SwitchBlocked` lacks `afflictions.isStruggling`.
+PeakXR: `BodyInventory.Holster` (`src/PeakXR/Inventory/BodyInventory.cs:328-348`), `SwitchBlocked` (`:502`), `DoublePulse` (`:536`). The cue exists but says nothing about why. `SwitchBlocked` lacks `afflictions.isStruggling`.
 
 Cue: keep the double pulse and add a label chosen by the failing test: "Lit, can't stow" (new `ItemLit`) for `canPocket` false, "Won't fit here" (`CantHolster`) for slot 250, `NotWhileClimbing` for the climbing gates, `TooSoon` for the cooldown.
 
@@ -217,7 +217,7 @@ Rule: the climb jump needs `sinceClimbJump > 1f && outOfStaminaFor < 0.5f` and a
 
 VR: a fast upward hand release is read as a lunge. During the 1 s cooldown or when exhausted it does nothing but let go.
 
-PeakXR: `PhysicalInteraction.TryLunge`. The working tree now denies `NoStamina` when exhausted; the cooldown case still returns silently.
+PeakXR: `PhysicalInteraction.TryLunge`. It denies `NoStamina` when exhausted. Fixed since: the cooldown case denies `TooSoon` too (`PhysicalInteraction.TryLunge`).
 
 Cue: `TooSoon` at the throwing hand for the cooldown (the lunge velocity was valid, so the player meant it).
 
@@ -227,7 +227,7 @@ Rule: `ShittyPiton` picks `totalSecondsOfHang = Random.Range(1f, 5f)` at start (
 
 VR: a player trusts a hand-held piton with full body weight.
 
-PeakXR: `ClimbHands` handle mode (`src/Interact/Climb/ClimbHands.cs`), no crack feedback beyond the game's camera shake.
+PeakXR: `ClimbHands` handle mode (`src/PeakXR/Interact/Climb/ClimbHands.cs`), no crack feedback beyond the game's camera shake.
 
 Cue: on-event only. Hook `ShittyPiton.Crack` and pulse the hanging hand with a rising pattern per crack (1 of 4), and fire a "Piton failing" label on the first crack so the player knows to move.
 
@@ -235,7 +235,7 @@ Cue: on-event only. Hook `ShittyPiton.Crack` and pulse the hanging hand with a r
 
 Rule: a `canUseOnFriend` item needs `Interaction.hasValidTargetCharacter` when `mustUseOnFriend` (`A/Item.cs:831-840`, `:984`, `:1039`). The target is valid only if alive, not you, and either passed out or within `maxCharacterInteractAngle = 90f` of facing you (flat look vectors, `A/CharacterInteractible.cs:92-99`, `:156-181`); items with `overrideFeedAngle` use their own window (`:167-172`), such as `RitualDagger` (100 to 180) per `docs/multiplayer-compat.md`.
 
-VR: PeakXR feeds when the item is held within 0.22 m of the friend's head (0.3 m exit, 0.25 s dwell; 0.08 m larger at the torso for healing items) and relaxes the facing test for normal items (`src/Social/SocialHands.cs:35-37`, `UpdateFeed`, `src/Social/SocialPatches.cs:112-140`). It does not relax it for `overrideFeedAngle` items.
+VR: PeakXR feeds when the item is held within 0.22 m of the friend's head (0.3 m exit, 0.25 s dwell; 0.08 m larger at the torso for healing items) and relaxes the facing test for normal items (`src/PeakXR/Social/SocialHands.cs:35-37`, `UpdateFeed`, `src/PeakXR/Social/SocialPatches.cs:112-140`). It does not relax it for `overrideFeedAngle` items.
 
 PeakXR: `SocialPatches.Raycasts` postfix forwards `WrongAngle` through `ParityFeedback` (`:100-103`) only for `overrideFeedAngle` items after the dwell.
 
@@ -247,7 +247,7 @@ Rule: the game's pick drops candidates whose line from the camera is blocked by 
 
 VR: a hand pushed through a crate, rock or thin wall overlaps an item that cannot be picked up.
 
-PeakXR: `FindCandidate` repeats the check from the eye (`src/Interact/PhysicalInteraction.cs`, line-of-sight block with the 5 cm margin) and skips silently.
+PeakXR: `FindCandidate` repeats the check from the eye (`src/PeakXR/Interact/PhysicalInteraction.cs`, line-of-sight block with the 5 cm margin) and skips silently.
 
 Cue: if the only candidate was dropped for blocking, show a red ring on its closest point and label "Blocked" (new `Blocked`).
 
@@ -255,7 +255,7 @@ Cue: if the only candidate was dropped for blocking, show a red ring on its clos
 
 Rule: a held item with `StickyItemComponent` sets `currentStickyItem` (`A/CharacterData.cs:419-435`). Interaction is off while it is held (`Interaction.cs:59-69`), item switching is refused (`CharacterItems.cs:741-745`), and `DoDropping` returns without dropping if `throwChargeLevel < throwChargeRequirement` (`:276-289`; value in the prefab).
 
-VR: `InteractPatches.Dropping` sets `throwChargeLevel = 0f` for a hand throw (`src/Interact/InteractPatches.cs:171-198`), so a swing can never meet the requirement. The ball stays glued; only the drop button held down charges.
+VR: `InteractPatches.Dropping` sets `throwChargeLevel = 0f` for a hand throw (`src/PeakXR/Interact/InteractPatches.cs:171-198`), so a swing can never meet the requirement. The ball stays glued; only the drop button held down charges.
 
 PeakXR: `SocialHands.UpdateStickyCue` pulses once when the ball sticks.
 
@@ -283,7 +283,7 @@ Cue: deny haptic on trigger press while the preview is invalid, label by cause: 
 
 Rule: the vanilla wheel greys out an empty pocket when `currentItem.UIData.canBackpack` is false (`A/BackpackWheelSlice.cs:80-86`); a lit flare sets it false (`Flare.cs:31`). `CharacterBackpackHandler.StashInBackpack` does not check it (`:127-136`), and `EquipSlot` then drops a non-pocketable item (`CharacterItems.cs:498`) after the slot has been emptied.
 
-PeakXR: `BodyInventory.ReleaseAtShoulder` (`src/Inventory/BodyInventory.cs:350-380`) tests only free pocket, held slot, switch gates and rocket pack. This may lose or duplicate a lit flare; verify in game.
+PeakXR: `BodyInventory.ReleaseAtShoulder` (`src/PeakXR/Inventory/BodyInventory.cs:350-380`) tests only free pocket, held slot, switch gates and rocket pack. This may lose or duplicate a lit flare; verify in game.
 
 Cue: add `item.UIData.canBackpack && item.UIData.canPocket` to the checks and deny "Won't fit here" otherwise.
 
@@ -311,7 +311,7 @@ Cue: tint the progress ring red and play the deny tick when a hold with progress
 
 Rule: a lit campfire is interactible only to someone holding an item with `cooking.canBeCooked` (`A/Campfire.cs:341-356`; `ItemCooking.cs:48`); a spent one never (`:347`). The cook takes `cookTime = 5f` (`:40`). The cooked count is not capped by a refusal: `FinishCookingImpl` increments to 12 (`ItemCooking.cs:175-188`), and benefits drop above 2 cooks and poison starts at 4 (`:213-257`).
 
-VR: `FireGestures.UpdateCook` (`src/Interact/Physical/FireGestures.cs:81-125`) only starts for cookable items over a lit fire, so a non-cookable item over fire gives no feedback.
+VR: `FireGestures.UpdateCook` (`src/PeakXR/Interact/Physical/FireGestures.cs:81-125`) only starts for cookable items over a lit fire, so a non-cookable item over fire gives no feedback.
 
 Cue: hovering a non-cookable held item in the heat column: "Can't cook this" (new `CantCook`). Optionally a tick at each completed cook with the count shown by the item tint (already the game's).
 
@@ -325,7 +325,7 @@ Cue: `TooSoon` only if the same attempt repeats within 1 s, not on first try.
 
 ### 29. Respawn chest and luggage
 
-Rule: closed luggage is the only interactible one (`A/Luggage.cs:168-170`, `:209-211`). A respawn chest revives only when `Ascents.canReviveDead && Character.PlayerIsDeadOrDown()` and otherwise spawns items (`RespawnChest.cs:53-61`). PeakXR also needs both hands on a respawn chest lid (`src/Interact/Physical/LidGesture.cs`, `fraction = both ? ... : 0f`).
+Rule: closed luggage is the only interactible one (`A/Luggage.cs:168-170`, `:209-211`). A respawn chest revives only when `Ascents.canReviveDead && Character.PlayerIsDeadOrDown()` and otherwise spawns items (`RespawnChest.cs:53-61`). PeakXR also needs both hands on a respawn chest lid (`src/PeakXR/Interact/Physical/LidGesture.cs`, `fraction = both ? ... : 0f`).
 
 VR: a one-handed lift on a respawn chest does not progress.
 
@@ -335,7 +335,7 @@ Cue: `NeedsTwoHands` on the second lid grip when only one hand holds it. An open
 
 Rule: sprint needs forward input, `CheckSprint` (not climbing, rope, vine or hanging; conscious; held item not in use and `blocksSprint` false, `A/Character.cs:1500-1526`) and, on the ground, regular stamina (`CharacterMovement.cs:263`). Crouch only while grounded and cleared by sprint or 0.2 s airborne (`:241-256`).
 
-PeakXR: `BodyGestures.Apply` (`src/Locomotion/BodyGestures.cs:57-110`).
+PeakXR: `BodyGestures.Apply` (`src/PeakXR/Locomotion/BodyGestures.cs:57-110`).
 
 Cue: when an arm swing meets the sprint threshold but the game would refuse it, nothing visual; a single tick is enough.
 
@@ -343,7 +343,7 @@ Cue: when an arm swing meets the sprint threshold but the game would refuse it, 
 
 Rule: `canPing` needs `fullyConscious` and outside `coolDown` (`A/PointPinger.cs:24-47`); the ray must hit the terrain-map layer (`:58`, `:68-72`).
 
-PeakXR: `src/Interact/Ping/PingPatches.cs:49-63`, `PingInput`.
+PeakXR: `src/PeakXR/Interact/Ping/PingPatches.cs:49-63`, `PingInput`.
 
 Cue: `TooSoon` on the cooldown; a ping into the sky gets no hit and no cue, which is a short "No surface".
 
@@ -359,7 +359,7 @@ Cue: optional pre-emptive "Not hungry" tint on the item at the mouth when the Hu
 
 Rule: `Interaction.canInteract` is false when passed out, fully passed out, input blocked or a sticky item is held (`A/Interaction.cs:59-69`). `CharacterItems.Update` skips switching, dropping and using while `isStruggling` (`:183`); `DoUsing` skips when passed out (`:199`). Ping needs `fullyConscious`. Emote wheel and others are off when dead.
 
-PeakXR: `GuardGiveUp` (`src/Social/SocialHands.cs`) and the status UI already cover these states.
+PeakXR: `GuardGiveUp` (`src/PeakXR/Social/SocialHands.cs`) and the status UI already cover these states.
 
 Cue: none beyond the existing struggle prompt and spectate UI.
 
@@ -381,15 +381,15 @@ Cue: none needed.
 
 ## What ui.affordance shows
 
-The `ui.affordance` feature (`src/UI/Affordance/`, Core logic in `core/Affordance.cs`) is the one place a refusal is reported. A refusal says why, and it also shows what would work, at the place where the player will try again.
+The `ui.affordance` feature (`src/PeakXR/UI/Affordance/`, Core logic in `src/PeakXR.Core/Affordance.cs`) is the one place a refusal is reported. A refusal says why, and it also shows what would work, at the place where the player will try again.
 
 - `Affordance.Deny(left, pos, reason, hint)` is for an attempt that just did nothing: a grip, a trigger press, a release. `Affordance.Hover(left, pos, reason, hint)` is the pre-emptive state. Callers send it every frame while it holds, and it fades 0.15 s after they stop.
 - Shape carries the meaning, so the cue reads without colour or words. The refused spot gets a small ring (1.8 degrees across) with a glyph inside: a slash for "no", a bar for "full", a sweeping quarter arc for "wait". A notice is a ring with a pin standing on it. Colour backs this up: red for refused, teal for what works and for notices. A `DenyHint` adds the valid spot as a double ring that breathes slowly (plus or minus 8 % at 1 Hz), joined to the refused spot by a thin line along which a small chevron travels toward the valid spot every 1.2 s, so direction and distance are visible at a glance. The hint is one of: the spot where the action works (`At`), a spot that moves with a transform such as a grip or the wrist (`On`, `Wrist`), or the end of a range plus the distance still to close (`Range`, `Closer`).
 - Sound: every cue plays a short quiet tone at its spot, in 3D, through the game's own SFX player and mixer group, so the game's sound volume applies. Refused is two notes falling a fourth (520 to 390 Hz, 0.17 s). Would-work is two notes rising a fifth (523 to 784 Hz), played at the valid spot 0.15 s after the refused one. A notice is one soft bell (880 Hz, 0.22 s). Pure sine tones with soft edges don't resemble the game's foley. A hover sounds once when it starts, at 60 % volume, and at most once per reason and hand every 0.9 s.
-- Text is optional: `UI.ActionHintText`, off by default. With it off no label is built. With it on, the label has two lines, the reason and then the next step, with "Move 0.4 m closer" when the hint knows the distance. It uses the game's prompt font, sits above the hand when the refusal is at the hand and above the spot otherwise (below it for an overhang), pulled toward the eye off the surface and never nearer than 0.45 m, and draws over the world. Rings and lines are depth-tested and lifted off the surface they mark, so a ring behind rock stays hidden. A hover earns the label after 0.4 s of steady aim, and one label shows at a time until it fades.
+- Text is optional: `UI.ActionHintText`, off by default. With it off, only the first refusal of each kind gets a label (`UI.FirstTimeRefusalLabels`). With it on, the label has two lines, the reason and then the next step, with "Move 0.4 m closer" when the hint knows the distance. It uses the game's prompt font, sits above the hand when the refusal is at the hand and above the spot otherwise (below it for an overhang), pulled toward the eye off the surface and never nearer than 0.45 m, and draws over the world. Rings and lines are depth-tested and lifted off the surface they mark, so a ring behind rock stays hidden. A hover earns the label after 0.4 s of steady aim, and one label shows at a time until it fades.
 - Haptic: three soft ticks (0.32 amplitude, 20 ms, 70 ms apart). A grip that slides off rock gets three fading ticks instead. Success cues are single pulses and a hazard hold is two strong beats, so neither can be mistaken for this pattern. Strength follows `Interaction.HapticStrength` and `Interaction.Haptics`.
 - Rate limit: once per reason and hand every 0.9 s; another reason or hand is never held back. The label fades in over 0.12 s, holds 1.1 s and fades out over 0.4 s, so nothing flashes.
-- Settings: `UI.ActionHints` (on), `UI.ReachRay` (on, the pointing ray) and `UI.ActionHintText` (off). With hints off, and in flat play, every call is a no-op; the body slots, the pickup tick and `ParityFeedback` then keep their old haptics.
+- Settings (`src/PeakXR/UI/Affordance/AffordanceFeature.cs`): `UI.ActionHints` (on), `UI.ReachRay` (on, the pointing ray), `UI.ActionHintText` (off), `UI.FirstTimeRefusalLabels` (on: the first refusal of each kind shows its label even with `ActionHintText` off) and `UI.CueVolume` (1, range 0 to 2). Refusals always cue; `ActionHints` off hides only the "would work" marks and the reach ray. In flat play every call is a no-op.
 - `ParityFeedback.Denied` (reach clamp, feed angle, piton time) forwards here and keeps its bare haptic only for the case where ui.affordance did not install.
 
 Every row below plays the refused note at the refused spot (the bell for notices) and, when it has a valid spot, the rising note there. The Label column applies only with `UI.ActionHintText` on. Unless the row says otherwise, the refused glyph is the slash.
@@ -399,7 +399,7 @@ Every row below plays the refused note at the refused spot (the bell for notices
 | 1 Wall grab, angle | grip on rock the game will not grab, nothing else took the grip | ring at the probed surface, slip ticks | none; the next step is in words | "Overhang / Grip the side instead", "Too flat to climb / Walk up it" | `PhysicalInteraction.OnGripPress`, `ProbeHold` |
 | 1 Wall grab, reach | climb start refused, wall over 1.35 m from the eye (1.25 m plus the 0.1 m of the game's thickened retries) | ring at the wall | ring where the 1.25 m head reach ends on the eye-to-wall line | "Too far / Move 0.3 m closer" | `PhysicalInteraction.DenyClimb` |
 | 1, 4 Stamina | climb start refused under the game's own rule (within 1 s of the last climb start and out of stamina), or an arm lunge refused while exhausted | ring at the wall or hand | ring on the wrist stamina bar, following the wrist (HUD on wrist only) | "No stamina / Rest to recover" | `DenyClimb`, `TryLunge` |
-| 3 Piton range | holding a spike with a finger on its trigger (or a real pull for a pocketed spike while climbing) and the wall past `climbingSpikeStartDistance(Grounded)` by more than 0.1 m, never inside the range; or a press the game refused | aim line turns the deny colour, ring on the wall | ring at the end of the real range on the aim line | "No wall in reach / Move 0.6 m closer" | `src/Interact/Tools/SpikeCue.cs` from the `UpdateClimbingSpikeUse` postfix |
+| 3 Piton range | holding a spike with a finger on its trigger (or a real pull for a pocketed spike while climbing) and the wall past `climbingSpikeStartDistance(Grounded)` by more than 0.1 m, never inside the range; or a press the game refused | aim line turns the deny colour, ring on the wall | ring at the end of the real range on the aim line | "No wall in reach / Move 0.6 m closer" | `src/PeakXR/Interact/Tools/SpikeCue.cs` from the `UpdateClimbingSpikeUse` postfix |
 | 3 Piton cast lost | cast cancelled with the button held: aim moved past the preview disable distance | ring at the preview | ring where the disable distance ends | "Moved too far / Move 0.2 m closer" | `SpikeCue` |
 | 3 Piton time | all strikes in, vanilla hold time still running | ring with a sweeping arc (wait) at the preview | none; the hold ring shows the time | "Keep holding / Hold the trigger" | `SpikeHammer` via `ParityFeedback` |
 | 5 Interaction reach | while a hand points, the menu laser is not showing and the game's own pass (sphere fallback included) found nothing | interactible straight ahead past the reach gets a hover ring | the hand ray is drawn exactly as long as the clamped reach (`Interaction.distance` minus the hand's offset from the camera), with a teal ring at its end when an interactible lies past it | "Too far / Move 0.5 m closer" after 0.4 s; on a press, via `ParityFeedback` | `AffordanceRuntime.UpdateRay`, `InteractPatches.Raycasts` |
@@ -407,19 +407,19 @@ Every row below plays the refused note at the refused spot (the bell for notices
 | 7 Pickup | grip on an item with no free slot, or a non-pocketable item while climbing | ring with a bar (full) on the item, in place of the success tick | none | "Pockets full / Drop or stash an item", "Not while climbing" | `OnGripPress`, GrabItem |
 | 8 Two-handed item | trigger with a two-handed item in one hand | ring at the holding hand | ring on the item's grip for the free hand (`Hand_L`/`Hand_R`), following the item | "Needs both hands / Grip with the other hand" | `PhysicalInteraction.Inject` |
 | 9 Carry | one hand on a passed-out friend for 0.6 s with `CarryBothHands`, once per grip | ring at the gripping hand | ring on the friend's body at the free hand's side | "Needs both hands" | `SocialHands.NudgeCarry` |
-| 10, 11 Shooters | finger on the trigger while the shooter's own `WillAttach` fails; or a press | aim line turns the deny colour, hover ring at its end | vine aimed too steep: ring where an aim inside the 0.5 / -0.7 window, same heading, would attach, only if that ray hits terrain in range | "Feet on the ground", "Used up", "No wall in reach", "Too steep up / Aim lower" | `AimReticle`, `src/Interact/UseDenial.cs` |
+| 10, 11 Shooters | finger on the trigger while the shooter's own `WillAttach` fails; or a press | aim line turns the deny colour, hover ring at its end | vine aimed too steep: ring where an aim inside the 0.5 / -0.7 window, same heading, would attach, only if that ray hits terrain in range | "Feet on the ground", "Used up", "No wall in reach", "Too steep up / Aim lower" | `AimReticle`, `src/PeakXR/Interact/UseDenial.cs` |
 | 12 Unusable item | trigger on an item whose `CanUsePrimary` is false | ring at the hand, in place of the success tick | none | "Used up", "Can't use this now" | `Inject`, `UseDenial` |
 | 14 Throw | a fast release of an item with `canThrow` false | ring at the hand | none | "Can't throw this / Open slowly to drop it" | `OnGripRelease` |
 | 15, 24 Holster and stash | a release over a slot or shoulder the game refuses | ring with a bar (full) at the hand; a ring with an arc for "too soon" and "can't switch now" | none | "Can't holster this / Carry or drop it", "Backpack full / Free a pocket first", "Not while climbing", "Too soon", "Can't switch now" | `BodyInventory.DoublePulse` with `BlockReason`; the shoulder stash now also checks `canBackpack` |
 | 19 Feed angle | item at a friend's mouth outside the item's feed window | ring at the friend | ring 0.7 m in front of the friend along the middle of the window: where to stand | "Wrong angle / Face them from the ring" | `SocialPatches.Raycasts` via `ParityFeedback` |
 
-| 2 Climb takes the item | holding an item that would drop (not pocketable, or in the overflow slot) while the free hand is in grip range of rock the game would grab | ring on the held item | none | "Climbing drops <item>" after 0.4 s. The climb grip is never refused or delayed | `src/Interact/ClimbStow.cs` `WarnNearWall` |
+| 2 Climb takes the item | holding an item that would drop (not pocketable, or in the overflow slot) while the free hand is in grip range of rock the game would grab | ring on the held item | none | "Climbing drops <item>" after 0.4 s. The climb grip is never refused or delayed | `src/PeakXR/Interact/ClimbStow.cs` `WarnNearWall` |
 | 2 Item dropped | a climb, rope, vine or carry start dropped the item | none (a notice: the bell at the item) | teal ring with a pin on the fallen item, for 5 s or until picked up | "<item> fell here" | `ClimbStow.FindDropped`, `MarkDropped` |
 | 2 Item stowed | a climb, rope, vine or carry start put the item in its slot | none (a notice: one soft tick, the bell at the slot) | chevron from the hand to the belt slot that now holds it, double ring on the slot | "Stowed on your belt" | `ClimbStow.Tick`, `BodyInventory.SlotWorld` |
 | 21 Sticky ball | a gentle release or drop-button tap below the item's `throwChargeRequirement` | ring at the hand | none | "Stuck to your hand / Swing hard to throw it" | `InteractPatches.Dropping` |
 
-Keeping the item in the free hand while climbing is not possible: vanilla equips nothing for every climb start, and peers would see the difference. A hand throw now sends the charge a vanilla throw would need for the hand's speed (`core/HandThrow.cs`), at least the sticky requirement, and takes the look-direction force the master adds for that charge off the item's velocity, so the item still leaves along the hand. That fixes case 21; a gentle release of a sticky item stays refused, as in vanilla.
+Keeping the item in the free hand while climbing is not possible: vanilla equips nothing for every climb start, and peers would see the difference. A hand throw now sends the charge a vanilla throw would need for the hand's speed (`src/PeakXR.Core/HandThrow.cs`), at least the sticky requirement, and takes the look-direction force the master adds for that charge off the item's velocity, so the item still leaves along the hand. That fixes case 21; a gentle release of a sticky item stays refused, as in vanilla.
 
-Not wired yet: case 13 (rope spool anchor), 16 (slack rope), 18 (weak piton), 20, 22, 23 and 25 to 34.
+Wired since this audit: case 13, the spool's tie-off (`src/PeakXR/Interact/UseDenial.cs`); 16, slack or unanchored rope (`src/PeakXR.Core/TraversalRefusal.cs`, `src/PeakXR/Interact/Climb/TraversalGrips.cs`); 17's cooldown (`TooSoon` in `PhysicalInteraction.TryLunge`); 18, the weak piton's cracks (`src/PeakXR/Interact/Climb/ClimbHands.cs`); 22 and 23 (`UseDenial`); 25 (`HandsFull` in `src/PeakXR/Social/SocialHands.cs`); 27 (`FireGestures.RefuseCook`); 29 (`src/PeakXR/Interact/Physical/LidGesture.cs`); 30, the sprint gate (`src/PeakXR/Locomotion/BodyFeedback.cs`); 31 (`src/PeakXR/Interact/Ping/PingInput.cs`, `PingPatches.cs`); 34 (`EmoteGestures.WheelRefusal` in `src/PeakXR.Core/EmoteGestures.cs`). Not wired yet: 20, 26, 28 and 32; 33 needs no cue.
 
 Needs headset tuning: ring size (1.8 degrees) and line width, the deny and hint colours against snow and desert, label offset above the hand, the 0.4 s hover delay, the three-tick amplitude on Index and Quest motors, and whether the pointing ray is welcome or clutter. A friend out of sight gets no ring yet; an edge arrow toward them is not built. Sounds: the 0.3 volume, the 25 m range, and whether the tones sit well under the game mix on both headset speakers and headphones.

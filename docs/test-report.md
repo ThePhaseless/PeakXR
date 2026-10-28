@@ -46,11 +46,11 @@ Open in runs 31 and 32:
 
 The four skips are things the game can't provide in this run: a pickaxe handle, a cheer emote, and two objects from the hardest late-game route.
 
-PEAK 2.6.b, Unity 6000.3.15f1, Proton-CachyOS 11.0, BepInEx 5.4.23.3 (BepInExPack_PEAK 5.4.75301), PEAK_MX 1.1.2 loaded alongside. Runs from 2026-10-21, master `eb8157c` for the first runs. Later runs name their own commit.
+PEAK 2.6.b, Unity 6000.3.15f1, Proton 11.0 on Linux, BepInEx 5.4.23.3 (BepInExPack_PEAK 5.4.75301), PEAK_MX 1.1.2 loaded alongside. Runs from 2026-10-21, master `eb8157c` for the first runs. Later runs name their own commit.
 
 ## Install and boot
 
-- BepInEx loads under Proton with `"winhttp"="native,builtin"` set in the game's Wine prefix (`user.reg`, backup next to it). That replaces the `WINEDLLOVERRIDES` launch option.
+- BepInEx loads under Proton with `"winhttp"="native,builtin"` set in the game's Wine prefix (`user.reg`). That replaces the `WINEDLLOVERRIDES` launch option.
 - PeakXR's preloader and plugin load. The title screen shows no exceptions in `Player.log`.
 - The version check still reports `VersionOkay: true` and Photon still uses app version `2.6`, so lobbies with unmodded players work as before.
 
@@ -81,7 +81,7 @@ Thirteen steps are skipped on purpose. The BingBong tool effects, the chain, the
 
 ## VR
 
-PeakXR runs in VR. Setup: SteamVR with an ALVR virtual headset (static head at 1.6 m, 1088x1216 per eye at 72 Hz) on the Radeon 780M, PEAK launched directly through Proton-CachyOS, OpenXR, MultiPass, `Render.RenderScale` 0.6.
+PeakXR runs in VR. Setup: SteamVR with an ALVR virtual headset (static head at 1.6 m, 1088x1216 per eye at 72 Hz) on an integrated GPU, PEAK launched directly through Proton, OpenXR, MultiPass, `Render.RenderScale` 0.6.
 
 The full self-test ran inside the headset session, so the creative-mode coverage above was repeated in VR: 194 items spawned, 10 held and used, 31 entities spawned, all segments and times of day. Results: 254 pass, 2 fail, 13 skip (run VR1); 254 pass, 3 fail, 12 skip (run VR2); after the fixes below, 256 pass, 0 fail, 13 skip (run VR3). The VR-specific checks, as of VR3:
 
@@ -100,7 +100,7 @@ Headset screenshots from the stream show correct stereo, the character's own arm
 
 Three problems came up and were fixed:
 
-- The first launch crashed inside SteamVR's client library one second after the session started. DXVK had picked the RTX 4070 while SteamVR ran on the Radeon. The game and SteamVR have to use the same GPU; for this setup that means `VK_DRIVER_FILES` limited to RADV and `MESA_VK_DEVICE_SELECT=1002:15bf!`.
+- The first launch crashed inside SteamVR's client library one second after the session started. The test machine has two GPUs, and DXVK had picked a different one from SteamVR. The game and SteamVR have to use the same GPU; with Mesa drivers, `VK_DRIVER_FILES` and `MESA_VK_DEVICE_SELECT` pin the game to SteamVR's GPU.
 - The game image filled only the top-left part of each eye, with stale pixels around it. Under OpenXR MultiPass, `XRSettings.renderViewportScale` shrinks the rendered area but the runtime still receives the full image, so dynamic resolution now stays off under OpenXR (`07c8bcf`). Run VR3 kept the setting on in the config and the headset showed the full frame.
 - The pause menu was never positioned, because a closed quit-confirm popup inside its canvas made the canvas count as closed (`d75f6d4`).
 
@@ -112,7 +112,7 @@ On this Proton setup (direct `proton run`, no Wine VR registry keys) D3D12 and D
 
 ## VR runs after the immersion features
 
-Setup: SteamVR with an ALVR virtual Index, Radeon 780M, Vulkan, OpenXR MultiPass, full self-test.
+Setup: SteamVR with an ALVR virtual Index, integrated GPU, Vulkan, OpenXR MultiPass, full self-test.
 
 | Run | Commit | Pass | Fail | Skip |
 |---|---|---|---|---|
@@ -193,7 +193,7 @@ The 13 skipped entities are now tested in their game context:
 - VR Guide in the VR settings tab (`vr.30`): the Grab and Climb demos play, with cue sounds beside their rows.
 - Offline practice in the solo airport (`vr.31`): the turn station passes and the exit leads back to the title.
 
-Headset visual checks, from MCP screenshots:
+Headset visual checks, from headset screenshots:
 
 - Arms now bend with the elbows down. Before, the elbows pointed sideways and the forearms looked like flat bands, because the game's elbow IK hint had weight 0.
 - The pause menu sits on a soft translucent rounded backdrop, with the laser.
@@ -203,7 +203,7 @@ Desktop mirror: it was upside down and cropped, because the provider's mirror `s
 
 ## Hand-driven checks
 
-The self-test also drives PeakXR's own input layer with scripted controller poses and buttons (steps vr.10 to vr.20), and another session drove the virtual Index controllers live through SteamVR while PEAK idled on the beach.
+The self-test also drives PeakXR's own input layer with scripted controller poses and buttons (steps vr.10 to vr.20), and a separate live test drove the virtual Index controllers through SteamVR while PEAK idled on the beach.
 
 Scripted hands, run 18 (266 pass, 1 fail at the time of that report): grabbing with either hand, throwing (landed 2.8 to 3.0 m away at about 6 m/s, inside the vanilla clamp), two-hand holds, snap turn, stick walking, the emote wheel, clicking the pause menu with the laser, holstering to a body slot and drawing back, and climbing all pass. Climbing needed a fix: the game only moves a climber 2/7 of the requested step on a flat wall, so arm pulls were scaled against the wrong speed; a 0.4 m pull now lifts the body 0.39 m.
 
@@ -224,10 +224,6 @@ Earlier runs failed (run 3: 7 pass, 9 fail, 2 skip). The fix that made run 4 cle
 
 `tools/MpObserver` is the read-only observer plugin on the unmodded client, and `-peakxr-mptest` is PeakXR's scripted side. The static audit in `docs/multiplayer-compat.md` still covers what the test does not drive.
 
-## REA
-
-rea-agents 6.7.0 is registered for Claude Code (`~/.claude.json`). `rea mcp doctor` reports healthy: 207/207 tools, 6/6 prompts, request flow OK. A live `inspect_managed_members` call read `CharacterAnimations` from the game's `Assembly-CSharp.dll`.
-
 ## Not tested yet
 
-Still untested: finger curls from real hand tracking, and two VR players in one lobby. Feeding another player over the network and a second PeakXR client (in flat mode) have both been tested since this list was written. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from the 780M runs say nothing about a real setup on the RTX 4070.
+Still untested: finger curls from real hand tracking, and two VR players in one lobby. Feeding another player over the network and a second PeakXR client (in flat mode) have both been tested since this list was written. No person has yet tried these in a headset: comfort tuning, haptic and audio cue levels, wrist HUD readability, and real hand tracking. Performance numbers from these integrated-GPU runs say nothing about a typical desktop VR setup.

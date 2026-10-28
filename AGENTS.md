@@ -4,8 +4,8 @@ PeakXR is a clean-room, MIT-licensed BepInEx 5 VR mod for PEAK (Unity 6000.3.15f
 
 ## Sources
 
-- Game decompile (read-only, gitignored): `/home/thephaseless/Projects/PeakVR/decomp/`. Read it from that absolute path even inside a worktree.
-- Game install (read-only): `$PEAK_DIR` (`~/.local/share/Steam/steamapps/common/PEAK`).
+- Game decompile (read-only, gitignored): `decomp/` in the main checkout, written by `mise run decompile` from `$PEAK_DIR`. A worktree has no copy: read the main checkout's `decomp/`.
+- Game install (read-only): `$PEAK_DIR`, the PEAK folder under Steam's `steamapps/common/`.
 - `docs/research/game-player-items-net.md`: character, camera, input, items, IK, netcode patch points.
 - `docs/research/game-ui-settings-render.md`: scenes, canvases, settings menu, URP, volumes, comfort hazards.
 - `docs/research/vr-prior-art.md`: XR injection approach, Proton notes, comfort practice.

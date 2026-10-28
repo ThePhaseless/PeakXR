@@ -91,7 +91,7 @@ one is running; see [Check that it works](#check-that-it-works).
    fail to create a device and the game falls back to Vulkan anyway.
 4. Start PEAK once without VR, wait for the title screen, and quit.
 5. Copy the `BepInEx` folder from the PeakXR zip into the game folder, merging it with the one there.
-6. Start SteamVR with your headset (for example through ALVR), then start PEAK from Steam. On a laptop
+6. Start SteamVR with your headset, then start PEAK from Steam. On a laptop
    with two GPUs, SteamVR and PEAK have to run on the same GPU, the one that drives the headset.
 
 ### Check that it works
