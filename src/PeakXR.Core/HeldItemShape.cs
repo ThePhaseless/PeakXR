@@ -24,6 +24,12 @@ public static class HeldItemShape
         return end;
     }
 
+    /// <summary>Centre of the box's top (+Y) face: a drink's opening. Every drink the game has stands along its own
+    /// +Y with the neck, cap or carton ridge on top (within 2 cm of this point) and the grip off-centre by as little
+    /// as 2 cm, so the model's up axis is surer than the end away from the grip.</summary>
+    public static Vector3 Opening(Vector3 min, Vector3 max) =>
+        new((min.X + max.X) * 0.5f, max.Y, (min.Z + max.Z) * 0.5f);
+
     /// <summary>The point of the box nearest <paramref name="p"/>; <paramref name="p"/> itself when inside.</summary>
     public static Vector3 Closest(Vector3 min, Vector3 max, Vector3 p) =>
         Vector3.Clamp(p, min, max);

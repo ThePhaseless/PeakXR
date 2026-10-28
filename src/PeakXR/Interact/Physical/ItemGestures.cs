@@ -295,6 +295,13 @@ internal static class ItemGestures
     /// <summary>The held item goes to the mouth to be used (eat, drink, blow up): interact.physical's eat route.</summary>
     public static bool AtMouth(Item item) => ItemUse.AtMouth(UseOf(item));
 
+    /// <summary>The point of the held item that must reach <paramref name="mouth"/>: a drink's opening, so a long
+    /// bottle's base or side at the cheek does not drink; food and a balloon by their nearest point.</summary>
+    public static Vector3 MouthContact(Item item, Transform hand, bool left, Vector3 mouth) =>
+        UseOf(item) == UseGesture.Drink
+            ? HeldItemPoints.Opening(item, hand, left)
+            : HeldItemPoints.Nearest(item, hand, left, mouth);
+
     /// <summary>The game data <see cref="ItemUse.Classify"/> reads: Item.cs:39-75 (UIData), ItemUseFeedback.cs:5,
     /// and the item's action and behaviour components.</summary>
     public static ItemUseFacts Facts(Item item)

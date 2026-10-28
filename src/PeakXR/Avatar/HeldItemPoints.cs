@@ -51,6 +51,25 @@ internal static class HeldItemPoints
         return origin + rot * HeldItemShape.Closest(min, max, local).U();
     }
 
+    /// <summary>A held drink's opening (<see cref="HeldItemShape.Opening"/>) where it is drawn on the tracked hand.
+    /// The hand itself when the item has no shape.</summary>
+    public static Vector3 Opening(Item item, Transform hand, bool left)
+    {
+        var i = Info(item);
+        return
+            i != null
+            && i.BoundsMax != i.BoundsMin
+            && World(
+                item,
+                hand,
+                left,
+                HeldItemShape.Opening(i.BoundsMin.N(), i.BoundsMax.N()).U(),
+                out var p
+            )
+            ? p
+            : hand.position;
+    }
+
     /// <summary>Where a held item with no flame transform burns or is struck (a flare): the end of its longest side
     /// away from the grip, on the item as it lies and as it is drawn. Its centre when it has no shape.</summary>
     public static Vector3 Tip(Item item)
