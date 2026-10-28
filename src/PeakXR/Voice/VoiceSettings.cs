@@ -37,7 +37,7 @@ internal sealed class VoiceSettings
                 "PushToTalkButton",
                 "None",
                 new ConfigDescription(
-                    "A button that also works as the game's push-to-talk key while held. None by default: every button already has a job (jump, crouch, sprint, ping, drop, pocket), so the button you pick still does that too. The log names the clash.",
+                    "A button that works as the game's push-to-talk key while held. None by default: every button already has a job (jump, crouch, sprint, ping, drop, pocket), and the button you pick gives that job up so one press never does two things. The log names the job it replaces.",
                     new AcceptableValueList<string>(ButtonName.All)
                 )
             ),

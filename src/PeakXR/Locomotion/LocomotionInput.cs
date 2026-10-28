@@ -64,7 +64,11 @@ internal static class LocomotionInput
     }
 
     private static bool warnedFar;
-    private static bool pointTrigger;
+    private static bool pointTriggerLeft;
+    private static bool pointTriggerRight;
+
+    /// <summary>The hand that pulled the trigger for <see cref="watchGoal"/>: its cues land there.</summary>
+    private static bool watchLeft;
     private static Character watchGoal;
     private static float watchNextPress;
     private static int watchPressesLeft;
@@ -438,7 +442,7 @@ internal static class LocomotionInput
     private const float WatchStep = 0.6f;
 
     /// <summary>
-    /// WS-D4: while spectating, point the dominant hand at a teammate and pull its trigger to watch them. Vanilla
+    /// WS-D4: while spectating, point either hand at a teammate and pull its trigger to watch them. Vanilla
     /// only steps through players (SwapSpecPlayer, MainCameraMovement.cs:221), so this presses its own "next" once
     /// per <see cref="WatchStep"/> until that teammate is watched: nothing new reaches the network. A contact tick
     /// when the view lands on them; CantSwitch at the hand when nobody is pointed at or they cannot be watched.
@@ -450,23 +454,23 @@ internal static class LocomotionInput
         bool spectating
     )
     {
-        ref var hand = ref VRInput.Hand(dominantLeft);
-        bool down = spectating && hand.Tracked && hand.Trigger > (pointTrigger ? 0.3f : 0.7f);
-        bool pressed = down && !pointTrigger;
-        pointTrigger = down;
+        bool pressedLeft = TriggerPressed(ref pointTriggerLeft, VRInput.Left, spectating);
+        bool pressedRight = TriggerPressed(ref pointTriggerRight, VRInput.Right, spectating);
         if (!spectating)
         {
             watchGoal = null;
             return;
         }
         var spec = MainCameraMovement.specCharacter;
-        if (pressed)
+        if (pressedLeft || pressedRight)
         {
-            var pick = PointedTeammate(c, dominantLeft);
+            // Both at once: the dominant hand points.
+            watchLeft = pressedLeft && pressedRight ? dominantLeft : pressedLeft;
+            var pick = PointedTeammate(c, watchLeft);
             if (pick == null)
-                Affordance.DenyAtHand(dominantLeft, DenyReason.CantSwitch);
+                Affordance.DenyAtHand(watchLeft, DenyReason.CantSwitch);
             else if (pick == spec)
-                Affordance.Contact(dominantLeft);
+                Affordance.Contact(watchLeft);
             else
             {
                 watchGoal = pick;
@@ -478,14 +482,14 @@ internal static class LocomotionInput
             return;
         if (spec == watchGoal)
         {
-            Affordance.Contact(dominantLeft);
+            Affordance.Contact(watchLeft);
             watchGoal = null;
             return;
         }
         // Your own body cannot be switched away from (MainCameraMovement.cs:189).
         if (!watchGoal.data.canBeSpectated || watchPressesLeft <= 0 || spec == c)
         {
-            Affordance.DenyAtHand(dominantLeft, DenyReason.CantSwitch);
+            Affordance.DenyAtHand(watchLeft, DenyReason.CantSwitch);
             watchGoal = null;
             return;
         }
@@ -496,7 +500,16 @@ internal static class LocomotionInput
         watchNextPress = Time.unscaledTime + WatchStep;
     }
 
-    /// <summary>The watchable teammate nearest the dominant hand's pointing ray, within <see cref="PointCone"/>.</summary>
+    /// <summary>A tracked hand's trigger crossed into a full pull this frame (0.7 in, 0.3 out).</summary>
+    private static bool TriggerPressed(ref bool down, in HandState hand, bool spectating)
+    {
+        bool now = spectating && hand.Tracked && hand.Trigger > (down ? 0.3f : 0.7f);
+        bool pressed = now && !down;
+        down = now;
+        return pressed;
+    }
+
+    /// <summary>The watchable teammate nearest that hand's pointing ray, within <see cref="PointCone"/>.</summary>
     private static Character PointedTeammate(Character self, bool dominantLeft)
     {
         var rig = VRRig.Instance;

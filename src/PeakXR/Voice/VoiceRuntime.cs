@@ -135,10 +135,11 @@ internal sealed class VoiceRuntime : MonoBehaviour
         bool muteOn = cfg.PalmMute.Value;
         bool leftMute = Palm(leftPalm, muteOn && leftFree, true, rig, headPos, headRot, dt);
         bool rightMute = Palm(rightPalm, muteOn && rightFree, false, rig, headPos, headRot, dt);
+        // An untracked hand keeps its last pose (RigDriver.UpdateHand): lost at the mouth, it would hold the mic open.
         bool leftTalk =
             Track(
                 leftMouth,
-                talkOn && leftFree,
+                talkOn && leftFree && VRInput.Left.Tracked,
                 headPos,
                 headRot,
                 Rig.RealScale.Real(rig.LeftHand.position, rig.Head.position),
@@ -147,7 +148,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
         bool rightTalk =
             Track(
                 rightMouth,
-                talkOn && rightFree,
+                talkOn && rightFree && VRInput.Right.Tracked,
                 headPos,
                 headRot,
                 Rig.RealScale.Real(rig.RightHand.position, rig.Head.position),
