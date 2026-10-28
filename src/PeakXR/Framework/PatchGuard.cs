@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using PeakXR.Core;
@@ -11,14 +10,18 @@ namespace PeakXR.Framework;
 /// Error containment for Harmony patch bodies. An exception thrown into game code hurts whoever the patch runs for:
 /// a throwing CharacterInput.Sample postfix skips the rest of CharacterMovement.Update (CharacterMovement.cs:198-213,
 /// a frozen player), and a throwing prefix skips the original. Hot patch bodies catch and hand the error here
-/// (prefixes that can skip the original then return true). The first error per site is logged with its stack and
-/// marks the feature degraded in the compat report; a feature that keeps failing (<see cref="FaultTally"/>) is
-/// unpatched on the next frame, so the game falls back to flat behaviour for it.
+/// (prefixes that can skip the original then return true), so the site's VR logic stops at the error and vanilla
+/// carries on. The first error per site is logged with its stack and marks the feature degraded; a site that keeps
+/// failing (<see cref="FaultTally"/>) marks it failing. Nothing is unpatched: features read each other's state at
+/// install (who owns grip, who drives movement), and pulling one out at runtime would strand the others.
+/// Every caught error reaches <see cref="Caught"/>, so the self-test fails the step that caused it.
 /// </summary>
 public static class PatchGuard
 {
     private static readonly FaultTally Tally = new();
-    private static readonly List<Feature> PendingOff = new();
+
+    /// <summary>Every caught error, with its site (<c>File.cs:line</c>). Raised for repeats too.</summary>
+    public static event Action<string, Exception> Caught;
 
     /// <summary>Call from a patch body's catch block. Never throws.</summary>
     public static void Fail<TFeature>(
@@ -30,12 +33,9 @@ public static class PatchGuard
     {
         try
         {
-            Report(
-                FeatureManager.Get<TFeature>(),
-                typeof(TFeature).Name,
-                error,
-                $"{Path.GetFileName(file)}:{line}"
-            );
+            var site = $"{Path.GetFileName(file)}:{line}";
+            Report(FeatureManager.Get<TFeature>(), typeof(TFeature).Name, error, site);
+            Caught?.Invoke(site, error);
         }
 #pragma warning disable S2486, S108, RCS1075 // the guard itself must never throw into game code
         catch { }
@@ -45,7 +45,7 @@ public static class PatchGuard
     private static void Report(Feature feature, string owner, Exception error, string site)
     {
         var id = feature?.Id ?? owner;
-        switch (Tally.Record(id, site, Time.realtimeSinceStartup))
+        switch (Tally.Record(id + "|" + site, Time.frameCount, Time.realtimeSinceStartup))
         {
             case FaultAction.Log:
                 Plugin.Log.LogError(
@@ -55,42 +55,18 @@ public static class PatchGuard
                     feature.FailureReason =
                         $"degraded: error at {site}: {error.GetBaseException().Message}";
                 break;
-            case FaultAction.Disable:
+            case FaultAction.Persistent:
                 Plugin.Log.LogError(
-                    $"[{id}] keeps failing at {site}; turning it off for this session: {error.GetBaseException().Message}"
+                    $"[{id}] keeps failing at {site} ({FaultTally.PersistentFrames}+ frames in "
+                        + $"{FaultTally.WindowSeconds:0} s); its VR logic there stops at the error every time: "
+                        + error.GetBaseException().Message
                 );
                 if (feature is { State: FeatureState.Active })
-                {
-                    feature.State = FeatureState.Failed;
                     feature.FailureReason =
-                        $"turned off after repeated errors at {site}: {error.GetBaseException().Message}";
-                    if (PendingOff.Count == 0)
-                        Application.onBeforeRender += UnpatchPending;
-                    PendingOff.Add(feature);
-                }
+                        $"failing: keeps erroring at {site}: {error.GetBaseException().Message}";
                 break;
             case FaultAction.Quiet:
                 break;
         }
-    }
-
-    /// <summary>Unpatch outside any patched game method: the failing one may still be on the stack when
-    /// <see cref="Fail{TFeature}"/> runs.</summary>
-    private static void UnpatchPending()
-    {
-        Application.onBeforeRender -= UnpatchPending;
-        foreach (var feature in PendingOff)
-        {
-            try
-            {
-                feature.Harmony?.UnpatchSelf();
-                Plugin.Log.LogWarning($"[compat] {feature.Id} unpatched: {feature.FailureReason}");
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError($"[compat] could not unpatch {feature.Id}: {e}");
-            }
-        }
-        PendingOff.Clear();
     }
 }

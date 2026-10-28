@@ -279,7 +279,12 @@ internal sealed partial class SelfTestRunner
         for (var z = PracticeZone.Basics; z <= PracticeZone.Social; z++)
         {
             run.TryZone(z, out var spot);
-            if (PracticeLayout.InScenery(spot.Feet + Vector3.up * 1.3f, 0.25f))
+            // Only spots the layout chose: the start (and a zone that fell back onto it) is where the body already
+            // stands, and a sphere there touches the walls of a cramped spawn or the held item, not a bad spot.
+            if (
+                spot.Feet != start.Feet
+                && PracticeLayout.InScenery(spot.Feet + Vector3.up * 1.3f, 0.25f)
+            )
                 fails.Add($"{z} zone spot inside scenery");
             note.Append(
                 F(

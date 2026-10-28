@@ -78,6 +78,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     void Awake()
     {
         Application.logMessageReceived += OnLog;
+        PatchGuard.Caught += OnGuarded;
         BepInEx.Logging.Logger.Listeners.Add(bootstrapTail);
     }
 
@@ -91,6 +92,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         SelfTestInputPatch.DropOnce = false;
         Interact.Binoculars.BinocularsConfig.ForceHold = false;
         Application.logMessageReceived -= OnLog;
+        PatchGuard.Caught -= OnGuarded;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
     }
 
@@ -1174,6 +1176,31 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             report.Error(condition);
     }
 
+    /// <summary>A patch error the guard caught never reaches Unity's log, so it fails the running step here.</summary>
+    void OnGuarded(string site, Exception e) =>
+        report.Exception(
+            $"guarded at {site}: {e.GetType().Name}: {e.Message} @ {SelfTestReport.ThrowSite(e.StackTrace)}",
+            e.StackTrace
+        );
+
+    /// <summary>A feature a guarded patch error degraded fails the run once, at its end, even when no step was
+    /// running to catch the error (scene loads, between steps).</summary>
+    void ReportDegraded()
+    {
+        if (degradedReported)
+            return;
+        degradedReported = true;
+        foreach (var f in FeatureManager.Features)
+        {
+            if (f.State != FeatureState.Active || f.FailureReason == null)
+                continue;
+            report.Begin("compat." + f.Id, Now);
+            report.End(false, Now, f.FailureReason);
+        }
+    }
+
+    bool degradedReported;
+
     void Record(int index)
     {
         var line = report.Line(index);
@@ -1209,6 +1236,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             SandboxActions.Forced = false;
         VR.VRInput.TestOverride = null;
 
+        ReportDegraded();
         int skipped = report.Steps.Count - report.Passed - report.Failed;
         var sb = new StringBuilder(Header()).Append('\n');
         for (int i = 0; i < report.Steps.Count; i++)

@@ -487,6 +487,7 @@ internal sealed partial class SelfTestRunner
                 .Append(kv.Key)
                 .Append("\":")
                 .Append(kv.Value);
+        ReportDegraded();
         int skipped = report.Steps.Count - report.Passed - report.Failed;
         var done = new JsonLine()
             .Num("t", Unix)

@@ -61,7 +61,7 @@ public sealed class SelfTestFeature : Feature
         Patch(typeof(SelfTestUseProbe));
         Patch(typeof(SelfTestEndGamePatch));
         Patch(typeof(SelfTestCampfirePatch));
-        SelfTestProgressGuard.PatchOnce(Patch);
+        SelfTestProgressGuard.PatchOnce();
         SelfTestProgressGuard.Arm(Id);
         SelfTestRunner.BingBongRef = GameMember.Field<BingBongForceAbilities, Transform>(
             "bingbong"
@@ -118,17 +118,29 @@ static class SelfTestProgressGuard
     /// sandbox run.</summary>
     internal static bool Room;
 
+    // Its own Harmony: on a feature's, the guards would go with that feature's rollback (a failed Install unpatches
+    // its Harmony) while the next feature believed them applied.
+    static readonly Harmony harmony = new(MyPluginInfo.PLUGIN_GUID + ".progress-guard");
     static bool patched;
 
     static bool Blocking => Active || Room || SandboxActions.RunMark.Marked;
 
-    /// <summary>Applies every <see cref="Patches"/> class once, whichever feature installs first.</summary>
-    internal static void PatchOnce(Action<Type> patch)
+    /// <summary>Applies every <see cref="Patches"/> class once, whichever feature installs first. Throws (and leaves
+    /// none applied) when a target is missing, failing the calling feature.</summary>
+    internal static void PatchOnce()
     {
         if (patched)
             return;
-        foreach (var guard in Patches)
-            patch(guard);
+        try
+        {
+            foreach (var guard in Patches)
+                harmony.CreateClassProcessor(guard).Patch();
+        }
+        catch
+        {
+            harmony.UnpatchSelf();
+            throw;
+        }
         patched = true;
     }
 

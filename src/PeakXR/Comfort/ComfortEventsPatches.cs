@@ -462,7 +462,8 @@ internal static class ComfortEventsPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CutsceneShake), "Update");
 
-        // Zero for the game's Update, then the prefab value back, so flat play after VR keeps its wobble.
+        // Zero for the game's Update, then the prefab value back, so flat play after VR keeps its wobble. The
+        // finalizer restores it even when the game's Update throws.
         private static void Prefix(CutsceneShake __instance, out float __state)
         {
             __state = __instance.shake;
@@ -470,8 +471,11 @@ internal static class ComfortEventsPatches
                 __instance.shake = 0f;
         }
 
-        private static void Postfix(CutsceneShake __instance, float __state) =>
-            __instance.shake = __state;
+        private static void Finalizer(CutsceneShake __instance, float __state)
+        {
+            if (__instance != null)
+                __instance.shake = __state;
+        }
     }
 
     /// <inheritdoc cref="CutsceneJitter"/>
@@ -491,14 +495,28 @@ internal static class ComfortEventsPatches
             if (!VRSession.Active)
                 return;
             __state = __instance.shake;
-            ComfortEventsRuntime.RaiseShake(__state * 0.1f, 0.1f);
             __instance.shake = Probe;
+            try
+            {
+                ComfortEventsRuntime.RaiseShake(__state * 0.1f, 0.1f);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<ComfortEventsFeature>(e);
+            }
         }
 
-        private static void Postfix(CinematicScreenShake __instance, float __state)
+        // A finalizer, so the real amount comes back even when the game's Update throws: left at Probe, the shake
+        // would be lost for flat play.
+        private static void Finalizer(
+            CinematicScreenShake __instance,
+            Exception __exception,
+            float __state
+        )
         {
-            if (!float.IsNaN(__state))
-                __instance.shake = __state * (__instance.shake / Probe);
+            if (float.IsNaN(__state) || __instance == null)
+                return;
+            __instance.shake = __exception == null ? __state * (__instance.shake / Probe) : __state;
         }
     }
 
@@ -551,12 +569,19 @@ internal static class ComfortEventsPatches
         {
             if (!VRSession.Active)
                 return;
-            if (__instance.ps != null)
-                __instance.ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            if (__instance.hideObjects && __instance.objectsToHide != null)
-                foreach (var go in __instance.objectsToHide)
-                    if (go != null)
-                        go.SetActive(false);
+            try
+            {
+                if (__instance.ps != null)
+                    __instance.ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                if (__instance.hideObjects && __instance.objectsToHide != null)
+                    foreach (var go in __instance.objectsToHide)
+                        if (go != null)
+                            go.SetActive(false);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<ComfortEventsFeature>(e);
+            }
         }
     }
 

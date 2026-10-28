@@ -12,48 +12,57 @@ public enum FaultAction
     /// <summary>Seen before: say nothing, so a per-frame error cannot flood the log.</summary>
     Quiet,
 
-    /// <summary>The owner keeps failing: turn it off (once).</summary>
-    Disable,
+    /// <summary>The site keeps failing (once per site): report it as failing, not just degraded.</summary>
+    Persistent,
 }
 
 /// <summary>
-/// Error policy for Harmony patch bodies: an error in a patch must never reach game code, and a feature that throws
-/// every frame is turned off, while one that throws now and then (a race at scene load) only logs. Counts per owner
-/// inside a sliding window, so a sporadic error never adds up to a shutdown over a long session.
+/// Error policy for Harmony patch bodies, per site (file:line of the catch). A site is persistent once it failed on at
+/// least <see cref="PersistentFrames"/> distinct frames within the last <see cref="WindowSeconds"/>, spread over at
+/// least <see cref="MinSpanSeconds"/>. Distinct frames, so a patch that runs once per character fails once per frame
+/// however many characters there are; the span, so a scene-load race (a few frames) or a one-second hitch only logs;
+/// the sliding window, so an error now and then never adds up over a long session.
 /// </summary>
 public sealed class FaultTally
 {
-    /// <summary>Errors within <see cref="WindowSeconds"/> that turn an owner off: under half a second of
-    /// per-frame errors at 90 Hz.</summary>
-    public const int DisableAfter = 30;
+    /// <summary>Failing frames within the window: two thirds of a second of every frame at 90 Hz.</summary>
+    public const int PersistentFrames = 60;
 
-    public const float WindowSeconds = 5f;
+    public const float WindowSeconds = 10f;
 
-    readonly HashSet<string> sites = new(StringComparer.Ordinal);
-    readonly Dictionary<string, Owner> owners = new(StringComparer.Ordinal);
+    public const float MinSpanSeconds = 2f;
 
-    sealed class Owner
+    readonly Dictionary<string, Site> sites = new(StringComparer.Ordinal);
+
+    sealed class Site
     {
-        public float WindowStart;
-        public int Count;
-        public bool Disabled;
+        public readonly Queue<float> Frames = new();
+        public int LastFrame = int.MinValue;
+        public bool Persistent;
     }
 
-    public FaultAction Record(string owner, string site, float now)
+    /// <param name="site">Owner and place, e.g. <c>player.locomotion|LocomotionPatches.cs:35</c>.</param>
+    /// <param name="frame">The frame number, so several errors in one frame count once.</param>
+    /// <param name="now">Seconds, any monotonic clock.</param>
+    public FaultAction Record(string site, int frame, float now)
     {
-        if (!owners.TryGetValue(owner, out var o))
-            owners[owner] = o = new Owner { WindowStart = now };
-        if (now - o.WindowStart > WindowSeconds)
+        bool first = !sites.TryGetValue(site, out var s);
+        if (first)
+            sites[site] = s = new Site();
+        if (s.Persistent)
+            return FaultAction.Quiet;
+        if (frame != s.LastFrame)
         {
-            o.WindowStart = now;
-            o.Count = 0;
+            s.LastFrame = frame;
+            s.Frames.Enqueue(now);
         }
-        o.Count++;
-        bool first = sites.Add(owner + "|" + site);
-        if (!o.Disabled && o.Count >= DisableAfter)
+        while (s.Frames.Count > 0 && now - s.Frames.Peek() > WindowSeconds)
+            s.Frames.Dequeue();
+        if (s.Frames.Count >= PersistentFrames && now - s.Frames.Peek() >= MinSpanSeconds)
         {
-            o.Disabled = true;
-            return FaultAction.Disable;
+            s.Persistent = true;
+            s.Frames.Clear();
+            return FaultAction.Persistent;
         }
         return first ? FaultAction.Log : FaultAction.Quiet;
     }

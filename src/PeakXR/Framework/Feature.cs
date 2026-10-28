@@ -32,7 +32,11 @@ public abstract class Feature
     /// <summary>False skips the feature for this run, for opt-in tools such as the launch-flag self-test.</summary>
     public virtual bool Requested => true;
 
+    /// <summary>Final once installed: nothing turns a feature off at runtime (<see cref="PatchGuard"/> only reports),
+    /// so a feature may read another's state once in its Install.</summary>
     public FeatureState State { get; internal set; } = FeatureState.Pending;
+
+    /// <summary>Why it failed or was skipped; on an active feature, the runtime errors that degraded it.</summary>
     public string FailureReason { get; internal set; }
 
     protected internal Harmony Harmony { get; internal set; }

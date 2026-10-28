@@ -237,6 +237,8 @@ internal static class VRTab
         return false;
     }
 
+    private static Guide.GuideRow tryVR;
+
     /// <summary>The runtime, then every feature with failed ones first; returns how many failed.</summary>
     private static int AppendCompat(List<Setting> result)
     {
@@ -248,6 +250,18 @@ internal static class VRTab
                 false
             )
         );
+        if (XR.XRStartSentinel.Tripped)
+            result.Add(
+                tryVR ??= new Guide.GuideRow(
+                    Guide.GuideAction.Run,
+                    GuideTopic.Count,
+                    Loc.Set("PEAKXR_TRY_VR", "VR crashed on start"),
+                    "Try VR again"
+                )
+                {
+                    Run = (_, _) => XR.XRStartSentinel.Retry(),
+                }
+            );
         int failed = 0;
         // Failed features first, so a broken install is visible without scrolling.
         foreach (
@@ -263,7 +277,8 @@ internal static class VRTab
                     : $"{feature.State}: {feature.FailureReason}";
             var color = feature.State switch
             {
-                FeatureState.Active => Active,
+                // Active with a reason: degraded by patch errors (PatchGuard).
+                FeatureState.Active => feature.FailureReason == null ? Active : Failed,
                 FeatureState.Failed => Failed,
                 _ => Muted,
             };

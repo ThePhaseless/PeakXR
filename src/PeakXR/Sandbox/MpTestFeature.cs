@@ -43,7 +43,7 @@ public sealed class MpTestFeature : Feature
         Patch(typeof(InputEdgeCharacterPatch));
         InputEdgeLog.Install();
         // A test run grants the player's profile nothing and leaves their quicksave as it was.
-        SelfTestProgressGuard.PatchOnce(Patch);
+        SelfTestProgressGuard.PatchOnce();
         SelfTestProgressGuard.Arm(Id);
 
         var dir = MpDir.ToNative(
