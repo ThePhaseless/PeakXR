@@ -859,16 +859,21 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         // A held item must stay on its stooped hand (avatar.local FollowHeld lets it leave a ragdoll arm that cannot
-        // reach): within ItemOnHand of its controller-held pose once the hand has settled.
+        // reach): within ItemOnHand of its controller-held pose once the hand has settled. A welded torch leaves the
+        // arm only after WeldGate.ReleaseHold (0.9 s since d2dc744; this wait was 0.5 s from when it was 0.2 s): runs
+        // 20 and 21 came in already free of the hand from the warp, run 22 re-welded and was judged 0.5 s in.
         float inHandGap = Gap();
-        yield return WaitFor(() => flame == null || (Gap() >= 0f && Gap() <= ItemOnHand), 0.5f);
+        yield return WaitFor(
+            () => flame == null || (Gap() >= 0f && Gap() <= ItemOnHand),
+            new WeldGate().ReleaseHold + 0.5f
+        );
         float stoopedGap = Gap();
         if (flame == null || stoopedGap < 0f || stoopedGap > ItemOnHand)
         {
             // A held item that does not follow its hand cannot be brought anywhere: say so instead of a fuse miss.
             Fail(
                 F(
-                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m before it, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldReleased}); the held item does not follow a stooped hand"
+                    $"the held {torch.name} is {stoopedGap:0.00} m from its place in the {(left ? "left" : "right")} hand after the stoop ({inHandGap:0.00} m as the reach ended, stooped {headDrop:0.00} m, free of the ragdoll hand {driver != null && driver.HeldReleased}); the held item does not follow a stooped hand"
                 )
             );
             yield break;
