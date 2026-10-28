@@ -200,9 +200,9 @@ internal static class ClimbHands
         if (mode == Mode.None || dt <= 0f)
             return;
 
-        // With a menu or wheel open, or a controller lost, the hands' state is frozen: nobody falls off a rope
-        // because a menu ate the grip or tracking blinked.
-        bool frozen = !active || !VRInput.Left.Tracked || !VRInput.Right.Tracked;
+        // With a menu or wheel open, or a controller in use lost, the hands' state is frozen: nobody falls off a rope
+        // because a menu ate the grip or tracking blinked. One-handed play's unused controller never freezes it.
+        bool frozen = !active || Lost(LeftHand) || Lost(RightHand);
         if (frozen)
             headValid = false;
         else
@@ -347,6 +347,14 @@ internal static class ClimbHands
         else
             Haptics.Pulse(hand.Left, 0.35f, 0.12f);
     }
+
+    private static bool Lost(Hand hand) =>
+        ClimbInput.FreezesHang(
+            VRInput.Hand(hand.Left).Tracked,
+            hand.Anchored,
+            VRInput.OneHanded,
+            hand.Left == VRInput.LeftHanded
+        );
 
     private static void Release(Hand hand)
     {

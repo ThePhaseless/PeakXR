@@ -292,8 +292,11 @@ internal static class InteractPatches
     /// the new slot (:457), which would swap a VR player's held item out of the hand holding it when the other, free
     /// hand only pocketed something. While such a pocketing pickup is pending
     /// (<see cref="PhysicalInteraction.TakePocketing"/>) that equip is skipped: the item stays in the pocket slot
-    /// <c>Player.AddItem</c> gave it (Item.cs:617) and the held item stays in hand. Local only: the equip is the
-    /// owner's own call.
+    /// <c>Player.AddItem</c> gave it (Item.cs:617) and the held item stays in hand. Never for the temporary slot
+    /// (250, Player.cs:137-141): vanilla fills it only with the item it equips, so that equip runs and the hand
+    /// gets the pockets-full cue (the grip refuses this up front; this covers pockets filled while the answer was
+    /// on its way). Also the pickup's success tick (<see cref="PhysicalInteraction.PickupAccepted"/>). Local only:
+    /// the equip is the owner's own call.
     /// </summary>
     [HarmonyPatch]
     internal static class KeepHeldOnPocket
@@ -304,10 +307,19 @@ internal static class InteractPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterItems), "OnPickupAccepted");
 
-        private static void Prefix(CharacterItems __instance)
+        /// <summary><c>Player.tempFullSlot</c>'s id (Player.cs:137-141, CharacterItems.cs:445).</summary>
+        private const byte TempSlot = 250;
+
+        private static void Prefix(CharacterItems __instance, byte slotID)
         {
             var c = Character.localCharacter;
-            Active = c != null && __instance == c.refs.items && PhysicalInteraction.TakePocketing();
+            if (c == null || __instance != c.refs.items)
+                return;
+            bool pocketing = PhysicalInteraction.TakePocketing();
+            Active = pocketing && slotID != TempSlot;
+            PhysicalInteraction.PickupAccepted(cue: Active || !pocketing);
+            if (pocketing && !Active)
+                Affordance.DenyAtHand(!LocalHold.ItemInLeftHand, DenyReason.PocketsFull);
         }
 
         private static Exception Finalizer(Exception __exception)
@@ -315,6 +327,18 @@ internal static class InteractPatches
             Active = false;
             return __exception;
         }
+    }
+
+    /// <summary>Item.DenyPickupRPC (Item.cs:598-602): the master refused a pickup and the item is back in the world.
+    /// The hand that asked gets the refusal cue (<see cref="PhysicalInteraction.PickupDenied"/>).</summary>
+    [HarmonyPatch]
+    internal static class PickupDenied
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(Item), "DenyPickupRPC");
+
+        private static void Postfix(Item __instance) =>
+            PhysicalInteraction.PickupDenied(__instance);
     }
 
     /// <summary>CharacterItems.EquipSlot (CharacterItems.cs:482): skipped only inside a pocketing pickup's answer

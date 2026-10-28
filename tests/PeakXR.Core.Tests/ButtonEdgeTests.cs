@@ -67,4 +67,16 @@ public class ButtonEdgeTests
         TestUtil.Near(0.1f, a.HeldTime, 1e-6f);
         Assert.Equal(0.9f, a.Value);
     }
+
+    [Fact]
+    public void Analog_HeldThroughABlink_ByFeedingItsOwnValue()
+    {
+        // A tracking blink keeps the last grip: no release, no second press.
+        var a = new AnalogButton(0.6f, 0.4f);
+        a.Update(1f, 0.01f);
+        a.Update(a.Value, 0.01f);
+        Assert.True(a.Held);
+        Assert.False(a.Pressed);
+        Assert.False(a.Released);
+    }
 }
