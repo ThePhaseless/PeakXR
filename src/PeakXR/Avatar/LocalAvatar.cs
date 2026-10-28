@@ -70,7 +70,15 @@ internal sealed class LocalAvatar : MonoBehaviour
             || h.ThumbrestTouch
             || h.Primary
             || h.Secondary;
-        return FingerCurlMapper.Map(h.Trigger, h.TriggerTouch, h.Grip, thumb, h.SkeletalCurls);
+        // Without a trigger touch sensor the index counts as resting on the trigger: a pointed grip or finger gun
+        // inferred from "not touched" made every grip a point on a Vive wand.
+        return FingerCurlMapper.Map(
+            h.Trigger,
+            h.TriggerTouch || h.NoTriggerTouch,
+            h.Grip,
+            thumb,
+            h.SkeletalCurls
+        );
     }
 
     private void Awake()

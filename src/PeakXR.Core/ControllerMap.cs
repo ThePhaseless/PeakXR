@@ -32,6 +32,9 @@ public struct ControllerLayout
     /// a player could never climb or grab, so a held select is the grip and not A/X.</summary>
     public bool SelectIsGrip;
 
+    /// <summary>A trigger touch sensor (<c>TriggerTouch</c>, or <c>IndexTouch</c> on some runtimes).</summary>
+    public bool HasTriggerTouch;
+
     public static ControllerLayout From(IReadOnlyList<string> usages)
     {
         bool Has(string name) => XRUsageNames.Find(usages, name) != null;
@@ -51,6 +54,7 @@ public struct ControllerLayout
             && !l.HasGrip
             && !Has("TriggerButton")
             && !Has("GripButton");
+        l.HasTriggerTouch = Has("TriggerTouch") || Has("IndexTouch");
         return l;
     }
 }
@@ -76,6 +80,9 @@ public struct ControllerSample
     public bool ThumbrestTouch;
     public bool Menu;
     public bool PadClick;
+
+    /// <summary>A thumb on the separate trackpad (<c>Secondary2DAxisTouch</c>, the Index and WMR pads).</summary>
+    public bool PadTouch;
     public Vector2 Stick;
     public Vector2 Pad;
 }
@@ -97,6 +104,10 @@ public struct ControllerButtons
     /// <summary>A thumb rests on the thumbrest: resting, not lifted.</summary>
     public bool ThumbrestTouch;
     public bool Menu;
+
+    /// <summary>The controller cannot sense a finger on the trigger (Vive wand, WMR, Reverb G2, Khronos simple), so
+    /// <see cref="TriggerTouch"/> only means a pull and a finger off the trigger is unknown, not straight.</summary>
+    public bool NoTriggerTouch;
 }
 
 /// <summary>Maps raw usages to hand buttons by <see cref="ControllerLayout"/>.</summary>
@@ -124,9 +135,11 @@ public static class ControllerMap
             : l.SelectIsGrip ? (s.Primary ? 1f : 0f)
             : (s.GripButton ? 1f : 0f);
         b.TriggerTouch = s.TriggerTouch || b.Trigger > TriggerTouchPull;
+        b.NoTriggerTouch = !l.HasTriggerTouch;
         b.Stick = s.Stick;
         b.StickTouch = s.StickTouch;
-        b.ThumbrestTouch = s.ThumbrestTouch;
+        // A thumb on the trackpad rests like one on the thumbrest: not lifted, so no finger gun.
+        b.ThumbrestTouch = s.ThumbrestTouch || s.PadTouch;
         b.Menu =
             s.Menu
             || (l.PadMenuClick && s.PadClick)

@@ -89,7 +89,8 @@ public struct WandPadState
 /// <summary>
 /// A Vive wand's trackpad reports its position whenever the thumb rests on it, so read as a stick it walks,
 /// turns and flicks the hotbar by itself (review #22). Everything here needs a click. The move hand (the off
-/// hand) walks toward the thumb while clicked and sprints with a click at the rim. The turn hand turns with a
+/// hand) walks toward the thumb while clicked and sprints with a click at the rim; a click in its centre is its
+/// B/Y (ping, held: emote wheel), which a wand otherwise lacks. The turn hand turns with a
 /// click on either side; its top and bottom clicks are B/Y and A/X and its centre the stick click, and none of
 /// those also flicks or turns. Hotbar and scroll flicks are left to the belt and the wrist gestures.
 /// </summary>
@@ -100,6 +101,9 @@ public static class WandPad
 
     /// <summary>Turn-hand clicks closer to the middle than this (sideways) are the stick click, not a turn.</summary>
     public const float TurnSide = 0.5f;
+
+    /// <summary>Move-hand clicks closer to the middle than this are B/Y, not a walk.</summary>
+    public const float MoveCentre = 0.3f;
 
     /// <param name="oneHanded">Accessibility.OneHanded: the one wand's top and bottom clicks walk forward and back
     /// (the stick Y one-handed walking reads) instead of being B and A, the top rim also sprints (stick click), the
@@ -112,6 +116,13 @@ public static class WandPad
             return s;
         if (moveHand)
         {
+            // The centre stands in for the off hand's B/Y (tap pings, hold opens the emote wheel): a wand has no
+            // face buttons, and a click there would only creep.
+            if (pad.Length() < MoveCentre)
+            {
+                s.Secondary = true;
+                return s;
+            }
             s.Stick = pad;
             s.StickClick = pad.Length() >= SprintRim;
             return s;

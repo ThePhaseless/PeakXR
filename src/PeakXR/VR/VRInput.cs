@@ -25,9 +25,14 @@ public struct HandState
     public bool StickClick;
     public bool StickTouch;
 
-    /// <summary>A thumb rests on the Touch thumbrest: a resting thumb, never a finger gun's lifted one.</summary>
+    /// <summary>A thumb rests on the Touch thumbrest or the Index/WMR trackpad: a resting thumb, never a finger
+    /// gun's lifted one.</summary>
     public bool ThumbrestTouch;
     public bool Menu;
+
+    /// <summary>The controller cannot sense a finger on the trigger (Vive wand, WMR, Reverb G2): a finger off the
+    /// trigger is unknown, so the hand never reads as pointing (<c>ControllerButtons.NoTriggerTouch</c>).</summary>
+    public bool NoTriggerTouch;
 
     /// <summary>Per-finger curls from skeletal input or hand tracking when the runtime offers them,
     /// otherwise null and fingers are derived from the analog values.</summary>
