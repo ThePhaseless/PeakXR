@@ -48,9 +48,9 @@ internal sealed class SpatialRuntime : MonoBehaviour
         go.AddComponent<SpatialRuntime>();
     }
 
-    private void OnEnable() => Application.onBeforeRender += OnBeforeRender;
+    private void OnEnable() => LatePose.Posed += OnBeforeRender;
 
-    private void OnDisable() => Application.onBeforeRender -= OnBeforeRender;
+    private void OnDisable() => LatePose.Posed -= OnBeforeRender;
 
     private void OnDestroy() => ReleaseAll();
 

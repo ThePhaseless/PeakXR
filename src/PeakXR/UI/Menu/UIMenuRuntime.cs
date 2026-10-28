@@ -53,7 +53,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private void OnEnable()
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
-        Application.onBeforeRender += OnBeforeRender;
+        LatePose.Posed += OnBeforeRender;
         VRSession.Started += OnVRStarted;
         VRSession.Stopped += OnVRStopped;
     }
@@ -61,7 +61,7 @@ internal sealed class UIMenuRuntime : MonoBehaviour
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        Application.onBeforeRender -= OnBeforeRender;
+        LatePose.Posed -= OnBeforeRender;
         VRSession.Started -= OnVRStarted;
         VRSession.Stopped -= OnVRStopped;
     }

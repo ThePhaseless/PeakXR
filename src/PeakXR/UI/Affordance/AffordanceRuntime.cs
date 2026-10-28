@@ -434,13 +434,13 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 
     private void OnEnable()
     {
-        Application.onBeforeRender += Pose;
+        LatePose.Posed += Pose;
         UnityEngine.SceneManagement.SceneManager.sceneUnloaded += SceneUnloaded;
     }
 
     private void OnDisable()
     {
-        Application.onBeforeRender -= Pose;
+        LatePose.Posed -= Pose;
         UnityEngine.SceneManagement.SceneManager.sceneUnloaded -= SceneUnloaded;
     }
 

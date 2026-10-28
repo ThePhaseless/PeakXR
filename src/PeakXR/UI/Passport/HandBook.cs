@@ -289,9 +289,9 @@ internal sealed class HandBookRuntime : MonoBehaviour
         go.AddComponent<HandBookRuntime>();
     }
 
-    private void OnEnable() => Application.onBeforeRender += OnBeforeRender;
+    private void OnEnable() => LatePose.Posed += OnBeforeRender;
 
-    private void OnDisable() => Application.onBeforeRender -= OnBeforeRender;
+    private void OnDisable() => LatePose.Posed -= OnBeforeRender;
 
     private void LateUpdate()
     {

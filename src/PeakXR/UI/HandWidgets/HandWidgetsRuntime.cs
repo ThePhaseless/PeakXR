@@ -39,9 +39,9 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
         go.AddComponent<HandWidgetsRuntime>();
     }
 
-    private void OnEnable() => Application.onBeforeRender += OnBeforeRender;
+    private void OnEnable() => LatePose.Posed += OnBeforeRender;
 
-    private void OnDisable() => Application.onBeforeRender -= OnBeforeRender;
+    private void OnDisable() => LatePose.Posed -= OnBeforeRender;
 
     private void LateUpdate()
     {

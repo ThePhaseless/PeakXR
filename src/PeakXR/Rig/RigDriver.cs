@@ -382,7 +382,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnEnable()
     {
-        Application.onBeforeRender += OnBeforeRender;
+        LatePose.SetRig(OnBeforeRender);
         mirror.Enable();
         needInitialRecenter = true;
         snap = true;
@@ -390,7 +390,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void OnDisable()
     {
-        Application.onBeforeRender -= OnBeforeRender;
+        LatePose.SetRig(null);
         mirror.Disable();
         holdCue.Show(null, null, 0f, 0f);
         wallCue.Show(null, false, Vector3.zero);
