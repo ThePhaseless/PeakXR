@@ -972,19 +972,26 @@ internal static class PhysicalInteraction
 
     /// <summary>Pockets full while holding something: the game equipped the picked item over the held one
     /// (<see cref="InteractPatches.KeepHeldOnPocket"/>). A notice at the hand that asked, the item in hand changed;
-    /// never the success tick.</summary>
+    /// never the success tick. The notice waits while a refusal shows at that hand or one just played there; then the
+    /// hand still gets the notice note and a tick, so the swap is never silent.</summary>
     internal static void PickupSwapped(bool left)
     {
         var rig = VRRig.Instance;
         var t = rig != null ? rig.Hand(left) : null;
-        if (t != null)
-            Affordance.Inform(
+        if (
+            t != null
+            && Affordance.Inform(
                 left,
                 t.position,
                 DenyReason.HappenedHere,
                 default,
                 "Pockets full: swapped into your hand"
-            );
+            )
+        )
+            return;
+        if (t != null)
+            Affordance.Play(CueSound.Notice, t.position, 0.6f);
+        Haptics.Pulse(left, 0.3f, 0.05f);
     }
 
     /// <summary>The master refused the pickup (Item.DenyPickupRPC, Item.cs:598-602, the item back in the world): the
