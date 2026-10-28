@@ -470,6 +470,44 @@ public static class CueEdge
         float a = edgeDegrees * UnityQuat.Deg2Rad;
         return eye + (f * MathF.Cos(a) + outward * MathF.Sin(a)) * depth;
     }
+
+    /// <summary>Gap between the edge copy's ring and its reason label, degrees.</summary>
+    public const float LabelGap = 1f;
+
+    /// <summary>
+    /// Angle from the edge copy's centre to its label's centre so the label (<paramref name="labelWidthDegrees"/> by
+    /// <paramref name="labelHeightDegrees"/>) clears a ring of <paramref name="ringDegrees"/>, measured along the
+    /// pointer (<paramref name="outwardRight"/>, <paramref name="outwardUp"/>: its components on the view's right and up).
+    /// </summary>
+    public static float LabelClear(
+        float ringDegrees,
+        float labelWidthDegrees,
+        float labelHeightDegrees,
+        float outwardRight,
+        float outwardUp
+    ) =>
+        ringDegrees * 0.5f
+        + LabelGap
+        + (MathF.Abs(outwardRight) * labelWidthDegrees + MathF.Abs(outwardUp) * labelHeightDegrees)
+            * 0.5f;
+
+    /// <summary>The reason label's centre for an edge copy at <paramref name="copy"/>: <paramref name="clearDegrees"/>
+    /// back toward the view centre (against <paramref name="outward"/>), at the copy's depth, so the label shows with
+    /// the copy and never further out of view.</summary>
+    public static Vector3 LabelSpot(Vector3 eye, Vector3 copy, Vector3 outward, float clearDegrees)
+    {
+        var to = copy - eye;
+        float depth = to.Length();
+        if (depth < 1e-6f)
+            return copy;
+        var dir = to / depth;
+        var inward = -(outward - dir * Vector3.Dot(outward, dir));
+        if (inward.LengthSquared() < 1e-8f)
+            return copy;
+        inward = Vector3.Normalize(inward);
+        float a = clearDegrees * UnityQuat.Deg2Rad;
+        return eye + (dir * MathF.Cos(a) + inward * MathF.Sin(a)) * depth;
+    }
 }
 
 /// <summary>Comfort-safe motion of the "would work" part: slow, small, never a flash.</summary>

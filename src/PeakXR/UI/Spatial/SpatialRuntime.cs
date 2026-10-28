@@ -1,3 +1,4 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -199,7 +200,18 @@ internal sealed class SpatialRuntime : MonoBehaviour
             : Quaternion.identity;
     }
 
-    /// <summary>Like <see cref="FaceEye"/> but turning on yaw only, so text at a target stays level.</summary>
+    /// <summary>Like <see cref="FaceEye(Vector3, Vector3)"/>, for text read from any angle (a target prompt, a refusal
+    /// label): full look-at the eye so looking down never squashes it, roll fixed by world up, or by
+    /// <paramref name="headUp"/> when seen straight from above or below (<see cref="SpatialMath.FaceUp"/>).</summary>
+    public static Quaternion FaceEye(Vector3 position, Vector3 eye, Vector3 headUp)
+    {
+        var to = position - eye;
+        return to.sqrMagnitude > 1e-8f
+            ? Quaternion.LookRotation(to, SpatialMath.FaceUp(to.N(), headUp.N()).U())
+            : Quaternion.identity;
+    }
+
+    /// <summary>Like <see cref="FaceEye(Vector3, Vector3)"/> but turning on yaw only, so text at a target stays level.</summary>
     public static Quaternion FaceEyeYaw(Vector3 position, Vector3 eye, Vector3 fallbackForward)
     {
         var to = position - eye;
