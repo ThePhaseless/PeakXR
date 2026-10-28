@@ -29,8 +29,10 @@ internal sealed class TraversalGrips : IGripExtension
     private const float VineRise = 1.5f;
 
     // Jungle and camp scenes put many trigger and prop colliders around the hand: room for all of them, so the line is
-    // not cut off the end of the list.
-    private static readonly Collider[] Hits = new Collider[128];
+    // not cut off the end of the list. A full list grows (once, kept for the session) and the check runs again.
+    private static Collider[] hits = new Collider[128];
+
+    private const int MaxHits = 1024;
 
     /// <summary>What the last grip check found, for self-test notes (vr.57-59).</summary>
     internal static string LastNote = "";
@@ -89,14 +91,21 @@ internal sealed class TraversalGrips : IGripExtension
     {
         // Up to VineRise above the hand: a vine's trigger capsules sit colliderOffset above the drawn vine the hand
         // holds, more than SearchRadius on some vines (run 34's vr.59 found none).
-        int n = Physics.OverlapCapsuleNonAlloc(
-            pos,
-            pos + Vector3.up * VineRise,
-            SearchRadius,
-            Hits,
-            Physics.AllLayers,
-            QueryTriggerInteraction.Collide
-        );
+        int n;
+        while (true)
+        {
+            n = Physics.OverlapCapsuleNonAlloc(
+                pos,
+                pos + Vector3.up * VineRise,
+                SearchRadius,
+                hits,
+                Physics.AllLayers,
+                QueryTriggerInteraction.Collide
+            );
+            if (n < hits.Length || hits.Length >= MaxHits)
+                break;
+            hits = new Collider[hits.Length * 2];
+        }
         bool found = false;
         bool outOfStamina = PhysicalInteraction.OutOfStamina(c);
         int ropes = 0,
@@ -104,8 +113,8 @@ internal sealed class TraversalGrips : IGripExtension
             handles = 0;
         for (int i = 0; i < n && !found; i++)
         {
-            var col = Hits[i];
-            Hits[i] = null;
+            var col = hits[i];
+            hits[i] = null;
             if (col == null)
                 continue;
             if (col.TryGetComponent<RopeSegment>(out var segment))
@@ -125,7 +134,7 @@ internal sealed class TraversalGrips : IGripExtension
             }
         }
         for (int i = 0; i < n; i++)
-            Hits[i] = null;
+            hits[i] = null;
         LastNote = System.FormattableString.Invariant(
             $"grip check: {n} colliders, rope {ropes}, vine {vines} (capsule {vineCapsule}, hand {vineGap:0.00} m off it), handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
         );

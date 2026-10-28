@@ -244,18 +244,55 @@ internal static class AimPatches
     /// <summary>Constructable.Update (Constructable.cs:44, protected virtual): range check from the camera at :52,
     /// and TryUpdatePreview (:77, ray at :79) with CreateOrMovePreview (:100, yaw from camera forward at
     /// :113,118), which are only called from here. CheckpointConstructable (CheckpointConstructable.cs:3) only
-    /// overrides FinishConstruction; ScoutEffigy.Update (ScoutEffigy.cs:8) calls base.Update.</summary>
+    /// overrides FinishConstruction; ScoutEffigy.Update (ScoutEffigy.cs:8) calls base.Update. Every range check
+    /// (:52, :79, :139) reads <c>maxConstructDistance</c> (:13) from the camera, now at the hand: it is shortened by
+    /// the hand's offset from the head for the call, so nothing is placed farther from the head than vanilla allows
+    /// (as InteractPatches.Raycasts does for interaction).</summary>
     [HarmonyPatch]
     internal static class ConstructableUpdate
     {
+        internal readonly struct State
+        {
+            public readonly CameraSwap Swap;
+            public readonly float Distance;
+
+            public State(CameraSwap swap, float distance)
+            {
+                Swap = swap;
+                Distance = distance;
+            }
+
+            /// <summary>Finalizer body, static for the same reason as <see cref="CameraSwap.Restore"/>.</summary>
+            public static Exception Restore(Constructable target, Exception exception, State state)
+            {
+                if (state.Distance >= 0f)
+                    target.maxConstructDistance = state.Distance;
+                return CameraSwap.Restore(exception, state.Swap);
+            }
+        }
+
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Constructable), "Update");
 
-        private static void Prefix(Constructable __instance, out CameraSwap __state) =>
-            __state = Held(__instance.item);
+        private static void Prefix(Constructable __instance, out State __state)
+        {
+            var mc = MainCamera.instance;
+            var head = mc != null ? mc.transform.position : Vector3.zero;
+            var swap = Held(__instance.item);
+            float reach = __instance.maxConstructDistance;
+            if (swap.Active)
+                __instance.maxConstructDistance = Mathf.Max(
+                    0f,
+                    reach - Vector3.Distance(head, mc.transform.position)
+                );
+            __state = new State(swap, swap.Active ? reach : -1f);
+        }
 
-        private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            CameraSwap.Restore(__exception, __state);
+        private static Exception Finalizer(
+            Constructable __instance,
+            Exception __exception,
+            State __state
+        ) => State.Restore(__instance, __exception, __state);
     }
 
     /// <summary>Action_RaycastDart.FireDart (Action_RaycastDart.cs:37, private): ray and sphere cast from the

@@ -384,8 +384,23 @@ internal static class PhysicalInteraction
     )
     {
         ref var state = ref VRInput.Hand(hand.Left);
-        hand.Grip.Update(state.Tracked ? state.Grip : 0f, dt);
-        hand.Trigger.Update(state.Tracked ? state.Trigger : 0f, dt);
+        // A tracking blink keeps the last grip and trigger, as ClimbHands and BodyInventory do: opening the hand there
+        // dropped or threw the item from stale throw samples, then the grip closing again regrabbed it. A latched
+        // Toggle grip already reads 1 through the blink (GripLatch keeps its latch untracked). One-handed play's
+        // unused controller is never tracked: it reads open.
+        bool unused = VRInput.OneHanded && hand.Left != VRInput.LeftHanded;
+        hand.Grip.Update(
+            state.Tracked ? state.Grip
+                : unused ? 0f
+                : hand.Grip.Value,
+            dt
+        );
+        hand.Trigger.Update(
+            state.Tracked ? state.Trigger
+                : unused ? 0f
+                : hand.Trigger.Value,
+            dt
+        );
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
         // The trigger squeeze of a finger-gun ping cancels the pointing grip's pending interact.
@@ -538,14 +553,15 @@ internal static class PhysicalInteraction
 
     /// <summary>
     /// The hand whose trigger drives the primary (or <paramref name="secondary"/>) use: the holding hand is primary,
-    /// right when empty-handed (one-handed: the dominant hand), the other hand secondary. One-handed, the same hand
-    /// does both (secondary is its trigger with the stick clicked in). The one rule for every reader of a use's hand.
+    /// the dominant hand when empty-handed (one-handed: the one controller), the other hand secondary. One-handed, the
+    /// same hand does both (secondary is its trigger with the stick clicked in). The one rule for every reader of a
+    /// use's hand.
     /// </summary>
     internal static bool UseHandLeft(Character c, bool secondary)
     {
         bool one = VRInput.OneHanded;
         bool primaryLeft =
-            c != null && Holding(c, out _) ? LocalHold.ItemInLeftHand : one && VRInput.LeftHanded;
+            c != null && Holding(c, out _) ? LocalHold.ItemInLeftHand : VRInput.LeftHanded;
         return secondary && !one ? !primaryLeft : primaryLeft;
     }
 
@@ -578,13 +594,16 @@ internal static class PhysicalInteraction
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
             // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the
             // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
-            // a join here would pre-empt (extensions are never asked once the press is SecondHand).
+            // a join here would pre-empt (extensions are never asked once the press is SecondHand). Only while the
+            // runner can claim it (ParasolRunner.ClaimPress: grounded, not climbing): mid-glide the hand joins.
             HeldBothHandsInGame =
                 holding
                 && !item.rightHandOnly
                 && !(
                     Physical.ItemGestures.Parasol != null
                     && Physical.ItemGesturesConfig.Instance.ParasolRunner
+                    && c.data.isGrounded
+                    && !c.data.isClimbing
                 ),
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
@@ -652,6 +671,21 @@ internal static class PhysicalInteraction
                 extension.BeginPress(hook);
                 break;
             case GripPressAction.GrabItem:
+                // A free hand's pocketing grab with every pocket full would land in the game's temporary slot
+                // (Player.cs:137-141), which vanilla only fills with the item it then puts in hand (CharacterItems.cs:457).
+                if (holding && target is Item stow && stow is not Backpack && !PocketFree(c.player))
+                {
+                    Affordance.Deny(
+                        hand.Left,
+                        stow.Center(),
+                        DenyReason.PocketsFull,
+                        default,
+                        stow
+                    );
+                    hand.Action = GripPressAction.None;
+                    hand.AimedTaker = false;
+                    return;
+                }
                 hand.Target = target;
                 FreeInteract(hand);
                 // A free hand's grab while another item is held goes to the pockets: the held hand stays as it is.
@@ -858,11 +892,63 @@ internal static class PhysicalInteraction
             hand.Confirmed = false;
             if (pocketing)
                 pocketingUntil = now + 3f;
+            pickupHand = hand;
+            pickupItem = target as Item;
+            pickupUntil = now + 3f;
         }
+    }
+
+    /// <summary>One of the hotbar pockets (<c>Player.itemSlots</c>, Player.cs:17) is empty: the temporary slot does not
+    /// count.</summary>
+    private static bool PocketFree(Player p)
+    {
+        if (p == null)
+            return true;
+        foreach (var slot in p.itemSlots)
+        {
+            if (slot != null && slot.IsEmpty())
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Until when the master's answer to a free hand's pickup counts as a pocketing one.</summary>
     private static float pocketingUntil = -10f;
+
+    /// <summary>The grip whose item pickup waits for the master's answer (<see cref="PickupAccepted"/>,
+    /// <see cref="PickupDenied"/>), and the ground item it asked for.</summary>
+    private static Hand pickupHand;
+
+    private static Item pickupItem;
+    private static float pickupUntil = -10f;
+
+    /// <summary>The master accepted this player's pickup (CharacterItems.OnPickupAccepted, CharacterItems.cs:440): the
+    /// success tick or Stowed notice now, not when the item merely left the world locally (Item.cs:589).
+    /// <paramref name="cue"/> false: the caller gives its own cue.</summary>
+    internal static void PickupAccepted(bool cue)
+    {
+        var hand = pickupHand;
+        pickupHand = null;
+        pickupItem = null;
+        if (hand == null || Time.time > pickupUntil || hand.Confirmed)
+            return;
+        hand.Confirmed = true;
+        if (cue)
+            PickupDone(hand);
+    }
+
+    /// <summary>The master refused the pickup (Item.DenyPickupRPC, Item.cs:598-602, the item back in the world): the
+    /// refusal cue at the hand that asked, even if it has opened since.</summary>
+    internal static void PickupDenied(Item item)
+    {
+        var hand = pickupHand;
+        if (hand == null || item == null || item != pickupItem || Time.time > pickupUntil)
+            return;
+        pickupHand = null;
+        pickupItem = null;
+        hand.Confirmed = true;
+        Affordance.Deny(hand.Left, item.Center(), DenyReason.PocketsFull, default, item);
+    }
 
     /// <summary>
     /// A free hand's pocketing pickup is pending: true once, for the game's answer to it, which must then not equip
@@ -888,17 +974,18 @@ internal static class PhysicalInteraction
     /// </summary>
     private static bool ConfirmPickup(Hand hand, Character c, Item grabbed, float now)
     {
-        bool taken =
-            grabbed == null
-            || grabbed == c.data.currentItem
-            || !grabbed.gameObject.activeInHierarchy;
-        if (taken)
+        // Gone from the world (destroyed after the master's answer) or in hand: done. The tick itself comes from the
+        // master's answer (PickupAccepted); this only stops pressing.
+        if (grabbed == null || grabbed == c.data.currentItem)
         {
-            if (!hand.Confirmed)
+            if (!hand.Confirmed && grabbed != null)
                 PickupDone(hand);
             hand.Confirmed = true;
             return false;
         }
+        // Hidden while the master decides (Item.cs:589): no press, no retry and no tick until it answers.
+        if (!grabbed.gameObject.activeInHierarchy)
+            return false;
         if (!hand.Confirmed && !hand.Retried && now >= hand.RetryAt)
         {
             hand.Retried = true;
@@ -1991,25 +2078,33 @@ internal static class PhysicalInteraction
             Haptics.Pulse(hand.Left, 0.6f, 0.05f);
     }
 
-    private static readonly Collider[] HandleHits = new Collider[32];
+    /// <summary>Grows when a search fills it (once, kept for the session), so no handle is cut off its end.</summary>
+    private static Collider[] handleHits = new Collider[32];
 
     /// <summary>The "would work" spot for a condor's prey: the nearest free piton or handle within 5 m.</summary>
     private static DenyHint NearestHandle(Vector3 from)
     {
-        int n = Physics.OverlapSphereNonAlloc(
-            from,
-            5f,
-            HandleHits,
-            Physics.AllLayers,
-            QueryTriggerInteraction.Collide
-        );
+        int n;
+        while (true)
+        {
+            n = Physics.OverlapSphereNonAlloc(
+                from,
+                5f,
+                handleHits,
+                Physics.AllLayers,
+                QueryTriggerInteraction.Collide
+            );
+            if (n < handleHits.Length || handleHits.Length >= 1024)
+                break;
+            handleHits = new Collider[handleHits.Length * 2];
+        }
         ClimbHandle best = null;
         float bestSq = float.MaxValue;
         for (int i = 0; i < n; i++)
         {
             var handle =
-                HandleHits[i] != null ? HandleHits[i].GetComponentInParent<ClimbHandle>() : null;
-            HandleHits[i] = null;
+                handleHits[i] != null ? handleHits[i].GetComponentInParent<ClimbHandle>() : null;
+            handleHits[i] = null;
             if (handle == null || handle.hanger != null)
                 continue;
             float d = (handle.transform.position - from).sqrMagnitude;
@@ -2111,10 +2206,11 @@ internal static class PhysicalInteraction
             AimHand = 0;
         else if (r && RightHand.Action == GripPressAction.Interact)
             AimHand = 1;
+        // Both pointing: the dominant hand aims (Input.DominantHand mirrors the layout, docs/controls.md).
+        else if (l && (!r || VRInput.LeftHanded))
+            AimHand = 0;
         else if (r)
             AimHand = 1;
-        else if (l)
-            AimHand = 0;
     }
 
     private static int eatTrace = -1;
