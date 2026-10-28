@@ -44,6 +44,22 @@ public class HapticMixTests
     }
 
     [Fact]
+    public void Channel_HeldWhileAPatternRuns_EvenAfterItsOwnPulses()
+    {
+        // The stamina beat at Alert checks Held and yields, so the refusal triple is never cut.
+        var ch = new HapticChannel();
+        Assert.False(ch.Held(10f));
+        ch.Hold(HapticPriority.Alert, 10f, 0.3f);
+        Assert.True(ch.Allow(HapticPriority.Alert, 10.01f, 0.02f));
+        Assert.True(ch.Held(10.2f));
+        Assert.False(ch.Held(10.31f));
+        // A plain pulse is not a held pattern.
+        var plain = new HapticChannel();
+        Assert.True(plain.Allow(HapticPriority.Alert, 10f, 0.3f));
+        Assert.False(plain.Held(10.1f));
+    }
+
+    [Fact]
     public void Channel_LowerNeverCutsAHigherOneStillPlaying()
     {
         var ch = new HapticChannel();

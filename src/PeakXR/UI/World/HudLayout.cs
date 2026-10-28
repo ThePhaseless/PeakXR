@@ -25,8 +25,15 @@ internal sealed class HudLayout
     /// <summary>Seconds between wall tests: the HUD moves with the head every frame, its 15 rays need not.</summary>
     private const float WallTestInterval = 0.1f;
 
+    /// <summary>Seconds between re-marks of the HUD while it is drawn on top: graphics the game adds meanwhile (a new
+    /// hotbar slot, a status icon) get the on-top material too.</summary>
+    private const float RemarkInterval = 0.5f;
+
     private readonly LazyYawFollow follow = new();
+    private readonly WallOnTopHold onTop = new();
     private float nextWallTest;
+    private float lastWallTest;
+    private float nextRemark;
 
     public Vector3 Position;
     public Quaternion Rotation = Quaternion.identity;
@@ -37,8 +44,12 @@ internal sealed class HudLayout
     /// <summary>How far a wall pulled the HUD in, as a fraction of <c>UI.HudDistance</c> (1: not at all).</summary>
     public float Scale = 1f;
 
-    /// <summary>A wall holds the HUD nearer than its margin: draw it (and the info canvases) on top.</summary>
+    /// <summary>A wall holds the HUD nearer than its margin: draw it (and the info canvases) on top. Held a moment
+    /// past the margin (<see cref="WallOnTopHold"/>), so it does not flicker at the edge.</summary>
     public bool OnTop;
+
+    /// <summary>This frame, walk the HUD again for graphics added while it is on top.</summary>
+    public bool Remark;
 
     public void Update(Transform head, UIWorldSettings cfg, float dt)
     {
@@ -57,9 +68,14 @@ internal sealed class HudLayout
             nextWallTest = now + WallTestInterval;
             var half = 0.5f * MetersPerPixel * new Vector2(ReferenceWidth, ReferenceHeight);
             var depth = WorldCanvases.WallDepth(head.position, offset, Rotation, half);
-            (var clear, OnTop) = PanelMath.FitBeforeWall(wanted, depth);
+            var (clear, top) = PanelMath.FitBeforeWall(wanted, depth);
+            OnTop = onTop.Update(top, depth - PanelMath.WallGap - clear, now - lastWallTest);
+            lastWallTest = now;
             Scale = clear / wanted;
         }
+        Remark = OnTop && now >= nextRemark;
+        if (Remark)
+            nextRemark = now + RemarkInterval;
         Position = head.position + offset * Scale;
     }
 }

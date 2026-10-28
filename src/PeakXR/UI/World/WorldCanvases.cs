@@ -437,7 +437,7 @@ internal static class WorldCanvases
             {
                 case CanvasKind.Hud:
                     Apply(t, hud.Position, hud.Rotation, hud.Scale * hud.MetersPerPixel * t.Size.x);
-                    DrawOnTop(t, hud.OnTop);
+                    DrawOnTop(t, hud.OnTop, hud.Remark);
                     break;
                 case CanvasKind.Info:
                     // A little closer than the HUD so the two never z-fight.
@@ -447,7 +447,7 @@ internal static class WorldCanvases
                         hud.Rotation,
                         hud.Scale * hud.MetersPerPixel * t.Size.x
                     );
-                    DrawOnTop(t, hud.OnTop);
+                    DrawOnTop(t, hud.OnTop, hud.Remark);
                     break;
                 case CanvasKind.Custom:
                     var result = t.Placement.Place(

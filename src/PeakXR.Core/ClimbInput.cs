@@ -4,6 +4,35 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
+/// How long a hand's grip outlives its tracking. A tracking blink keeps the last grip (opening the hand there dropped
+/// or threw items, and dropped climbers), but a controller that powered off, ran flat or left the room never comes
+/// back: after <see cref="MaxSeconds"/> untracked the grip reads open, so the item drops and the anchor lets go.
+/// </summary>
+public sealed class BlinkHold
+{
+    /// <summary>Longer than a blink (an occluded controller, a base-station hiccup), short enough to notice.</summary>
+    public const float MaxSeconds = 1.75f;
+
+    private float lost;
+
+    /// <summary>The hand has been untracked past <see cref="MaxSeconds"/>: treat its grip as opened.</summary>
+    public bool Expired => lost >= MaxSeconds;
+
+    /// <returns>True on the frame the hold expires (the caller's one log line or cue).</returns>
+    public bool Update(bool tracked, float dt)
+    {
+        if (tracked)
+        {
+            lost = 0f;
+            return false;
+        }
+        bool was = Expired;
+        lost += Math.Max(dt, 0f);
+        return Expired && !was;
+    }
+}
+
+/// <summary>
 /// Turns arm-pulled body motion into the stick input the game's wall climbing reads, so physical climbing moves
 /// through the game's own climb code (speed limits, stamina cost, slides) instead of moving the body directly.
 /// Axes match <c>CharacterClimbing.GetRequestedPostition</c>: Y along the wall's up, X along its right.

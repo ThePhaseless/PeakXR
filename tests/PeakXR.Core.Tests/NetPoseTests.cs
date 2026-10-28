@@ -686,16 +686,26 @@ public class YawHistoryTests
     {
         // The VR sender turns its head (and so lookValues.x) 90 degrees while its hand stays put in the world. The
         // receiver plays the pose 0.2 s late; rebuilt with the yaw of that same moment, the hand does not swing.
+        // The receiver's yaw is vanilla's: CharacterSyncer.Update (CharacterSyncer.cs:132-141) lerps from the yaw
+        // shown at each package to the received one over one serialization interval, so it trails the sender.
         const double delay = 0.2;
+        const double interval = 1.0 / 30.0;
         var root = new Vector3(0f, 1f, 0f);
         var hand = new Vector3(0.3f, 1.2f, 0.4f);
         var poses = new PoseBuffer { Delay = delay };
         var yaws = new YawHistory();
-        float swingWithCurrentYaw = 0f;
+        var uncompensated = new YawHistory();
+        float shown = 0f,
+            from = 0f,
+            to = 0f;
+        double since = 0.0;
+        float swingWithCurrentYaw = 0f,
+            swingUncompensated = 0f;
         for (int frame = 0; frame <= 90; frame++)
         {
             double t = frame / 90.0;
             float yaw = (float)Math.Min(90.0, t * 360.0); // a quarter turn in 0.25 s
+            // The package is read before the frame's Update (OnDeserialize resets the clock, Update then adds dt).
             if (frame % 3 == 0)
             {
                 var world = new PosePacket
@@ -706,20 +716,38 @@ public class YawHistoryTests
                     RightHandRotation = Quaternion.Identity,
                 };
                 poses.Push(PoseFrame.ToLocal(world, root, yaw), t);
+                from = shown;
+                to = yaw;
+                since = 0.0;
             }
-            yaws.Push(t, yaw);
+            since += 1.0 / 90.0;
+            shown = from + (to - from) * (float)Math.Min(1.0, since / interval);
+            yaws.Push(t, shown);
+            uncompensated.Push(t, shown);
             if (t < delay)
                 continue;
             Assert.True(poses.Sample(t, out var local));
-            Assert.True(yaws.Sample(t - delay, out float pastYaw));
+            Assert.True(
+                yaws.Sample(
+                    PoseRate.YawSampleTime(t, delay, PoseRate.SyncerLag(interval, 1.0 / 90.0)),
+                    out float pastYaw
+                )
+            );
             TestUtil.Near(hand, PoseFrame.ToWorld(local, root, pastYaw).RightHandPosition, 0.03f);
+            Assert.True(uncompensated.Sample(t - delay, out float staleYaw));
+            swingUncompensated = Math.Max(
+                swingUncompensated,
+                Vector3.Distance(hand, PoseFrame.ToWorld(local, root, staleYaw).RightHandPosition)
+            );
             swingWithCurrentYaw = Math.Max(
                 swingWithCurrentYaw,
-                Vector3.Distance(hand, PoseFrame.ToWorld(local, root, yaw).RightHandPosition)
+                Vector3.Distance(hand, PoseFrame.ToWorld(local, root, shown).RightHandPosition)
             );
         }
-        // The old rebuild (the receiver's current yaw) swung the hand by tens of centimetres.
+        // The old rebuild (the receiver's current yaw) swung the hand by tens of centimetres, and reading the yaw at
+        // the playback moment without the syncer's lag left it a serialization interval (12 degrees here) behind.
         Assert.True(swingWithCurrentYaw > 0.2f, $"swing {swingWithCurrentYaw}");
+        Assert.True(swingUncompensated > 0.06f, $"uncompensated swing {swingUncompensated}");
     }
 }
 

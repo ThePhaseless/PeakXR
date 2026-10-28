@@ -902,12 +902,13 @@ public partial class AvatarPoseDriver
     {
         var c = Owner;
         // The reach is learned in world units: a world-scale change (Manual, or Auto's recenter, seated or standing
-        // eye measure) makes it stale, so it is learned again.
+        // eye measure) carries it into the new units instead of starting over at every small Auto rescale.
         if (c.IsLocal && !Mathf.Approximately(Rig.RealScale.Of, reachScale))
         {
+            float factor = Rig.RealScale.Of / reachScale;
             reachScale = Rig.RealScale.Of;
-            reachL.Reset();
-            reachR.Reset();
+            reachL.Rescale(factor);
+            reachR.Rescale(factor);
         }
         var item = c.data.currentItem;
         bool holding = item != null && (Pose.TwoHandHold || Pose.ItemInLeftHand == left);

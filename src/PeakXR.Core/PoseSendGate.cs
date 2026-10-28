@@ -72,6 +72,25 @@ public static class PoseRate
     /// <summary>Playback delay in seconds: the configured one, or 1.5 send intervals at the rate peers use.</summary>
     public static double Delay(double configured, int peers) =>
         Math.Max(configured, 1.5 / ForPeers(MaxRate, peers));
+
+    /// <summary>
+    /// When to read the receiver's own record of a remote's look yaw (<see cref="YawHistory"/>) for a pose played
+    /// <paramref name="delay"/> late. Vanilla CharacterSyncer.Update (CharacterSyncer.cs:132-141) lerps lookValues from
+    /// the value shown at each package to the received one over one serialization interval, so the yaw it shows
+    /// trails the sender by about that interval on top of the network, which the pose stream does not: reading that
+    /// much later lines the two up. Never later than now, the newest yaw recorded.
+    /// </summary>
+    /// <param name="syncLag">The syncer's lerp lag: <see cref="SyncerLag"/>.</param>
+    public static double YawSampleTime(double now, double delay, double syncLag) =>
+        now - Math.Max(0.0, delay - Math.Max(0.0, syncLag));
+
+    /// <summary>CharacterSyncer's yaw lag behind the received value: one serialization interval, less the frame its
+    /// first lerp step already covers (the package is read before the frame's Update, which adds that frame's
+    /// deltaTime before lerping).</summary>
+    /// <param name="interval">1 / PhotonNetwork.SerializationRate.</param>
+    /// <param name="frame">This frame's Time.deltaTime.</param>
+    public static double SyncerLag(double interval, double frame) =>
+        Math.Max(0.0, interval - Math.Max(0.0, frame));
 }
 
 /// <summary>Token bucket rate limiter: allows bursts up to the capacity, then a steady rate.</summary>

@@ -65,10 +65,10 @@ internal static class ComfortEventsPatches
                 [typeof(float), typeof(float), typeof(float)]
             );
 
-        private static void Prefix(float amount, float duration)
+        private static void Prefix(float amount, float duration, float scale)
         {
             if (VRSession.Active)
-                ComfortEventsRuntime.RaiseShake(amount, duration);
+                ComfortEventsRuntime.RaiseShake(amount, duration, scale);
         }
     }
 

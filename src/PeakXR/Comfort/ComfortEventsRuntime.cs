@@ -160,13 +160,14 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     }
 
     /// <summary>A camera shake: rumble length follows the shake, capped so long quakes pulse instead.</summary>
-    internal static void RaiseShake(float amount, float duration)
+    /// <param name="scale">PerlinShake.AddShake's noise scale; NaN when unknown.</param>
+    internal static void RaiseShake(float amount, float duration, float scale = float.NaN)
     {
         if (instance == null || !VRSession.Active || amount <= 0.01f)
             return;
         var r = Resolve(ComfortEvent.Shake, amount / 10f);
         // ui.runflow rumbles some world shakes itself (its ShakeHaptics); one rumble per shake.
-        if (RunFlowFeature.TakeShake() || ClimbBeatOwnsShake())
+        if (RunFlowFeature.TakeShake() || ClimbBeatOwnsShake(duration, scale))
             r.Haptic = 0f;
         if (r.Haptic > 0f)
             r.HapticSeconds = Mathf.Clamp(duration, 0.05f, 0.5f);
@@ -175,16 +176,29 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
     }
 
     /// <summary>CharacterClimbing.Update (CharacterClimbing.cs:127-130) shakes the camera every 0.1 s while a climber
-    /// is out of stamina. The gripping hands already beat for that (<c>Interaction.StaminaHaptics</c>, interact.physical),
-    /// and a steady rumble on top would bury the beat, so the beat owns that shake's feel.</summary>
-    private static bool ClimbBeatOwnsShake()
+    /// is out of stamina, with <c>AddPerlinShake(3 * outOfStaminaFor, 0.2f, 10f)</c>. The gripping hands already beat
+    /// for that (<c>Interaction.StaminaHaptics</c>, interact.physical), and a steady rumble on top would bury the beat,
+    /// so the beat owns that one shake's feel, and only while it is really playing (it pulses every 0.15 s out of
+    /// stamina): with PhysicalClimb off, in a regrip grace or under a refusal the beat is quiet and the shake rumbles.
+    /// Every other shake rumbles as before.</summary>
+    private static bool ClimbBeatOwnsShake(float duration, float scale)
     {
         var c = Character.localCharacter;
         return c != null
+            && Mathf.Approximately(duration, ClimbShakeSeconds)
+            && Mathf.Approximately(scale, ClimbShakeScale)
             && c.data.isClimbing
             && c.data.outOfStaminaFor > 0f
-            && InteractConfig.Instance.StaminaHaptics;
+            && Time.unscaledTime - Haptics.BeatAt <= BeatGap;
     }
+
+    /// <summary>The out-of-stamina climb shake's duration and noise scale (CharacterClimbing.cs:129).</summary>
+    private const float ClimbShakeSeconds = 0.2f;
+    private const float ClimbShakeScale = 10f;
+
+    /// <summary>The beat counts as playing this long after its last pulse: its out-of-stamina interval (0.15 s) and a
+    /// slow frame.</summary>
+    private const float BeatGap = 0.25f;
 
     /// <summary>The local body was launched: its treatment lasts until it lands.</summary>
     internal static void RaiseLaunch(float magnitude)
