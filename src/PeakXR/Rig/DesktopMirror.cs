@@ -52,7 +52,14 @@ internal sealed class DesktopMirror
     {
         var eye = CameraFeature.Mirror.Value;
         var display = XRRuntimeInfo.Display;
-        if (eye == MirrorEye.Off || !VRSession.Active || display == null || !display.running)
+        // Only after the headset render: manual camera renders (guidebook, title card) are contexts too.
+        if (
+            eye == MirrorEye.Off
+            || !VRSession.Active
+            || display == null
+            || !display.running
+            || !HeadsetContext.Renders(cameras)
+        )
             return;
 
         int mode =

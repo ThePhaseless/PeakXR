@@ -238,6 +238,8 @@ internal sealed class RigDriver : MonoBehaviour
     private AudioListener fallbackListener;
     private bool fallbackActive;
     private float nextListenerScan;
+    private float nextListenerFind;
+    private AudioListener[] sceneListeners = System.Array.Empty<AudioListener>();
 
     private Character boundCharacter;
 
@@ -1650,6 +1652,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             Plugin.Log.LogInfo($"{Tag} Game camera disabled (cutscene): rendering from the rig");
             nextListenerScan = 0f;
+            nextListenerFind = 0f;
             KeepFallbackExclusive();
             PointVoiceAt(fallbackListener);
             return;
@@ -1683,13 +1686,23 @@ internal sealed class RigDriver : MonoBehaviour
             silencedCameras.Add(cam);
         }
 
-        // Cutscene cameras switch on their own listeners by animation; check twice a second, not per frame.
-        if (Time.unscaledTime < nextListenerScan)
+        // Cutscene cameras switch on their own listeners by animation; check twice a second, not per frame. The
+        // listeners (inactive ones too) are found once and every 5 s after, for any spawned later.
+        float now = Time.unscaledTime;
+        if (now < nextListenerScan)
             return;
-        nextListenerScan = Time.unscaledTime + 0.5f;
-        foreach (var l in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
+        nextListenerScan = now + 0.5f;
+        if (now >= nextListenerFind)
         {
-            if (!l.enabled || l.gameObject.scene.buildIndex < 0)
+            nextListenerFind = now + 5f;
+            sceneListeners = FindObjectsByType<AudioListener>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None
+            );
+        }
+        foreach (var l in sceneListeners)
+        {
+            if (l == null || !l.isActiveAndEnabled || l.gameObject.scene.buildIndex < 0)
                 continue;
             l.enabled = false;
             mutedListeners.Add(l);

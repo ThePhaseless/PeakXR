@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using PeakXR.Core;
@@ -30,7 +29,10 @@ internal static class StereoWidth
     private static bool warned;
     private static Action<XRLayout, Camera> previous;
     private static Action<XRPass, int, Matrix4x4, Matrix4x4> setView;
-    private static readonly Dictionary<int, Matrix4x4> lastCenter = new();
+
+    // The head camera's pose last layout: one slot, since only the head camera is widened (a new camera each scene).
+    private static int lastCamera;
+    private static Matrix4x4 lastCenter;
 
     internal static void Install()
     {
@@ -140,8 +142,9 @@ internal static class StereoWidth
         float scale = rig.Scale;
         var center = camera.worldToCameraMatrix;
         int id = camera.GetInstanceID();
-        var before = lastCenter.TryGetValue(id, out var c) ? c : center;
-        lastCenter[id] = center;
+        var before = id == lastCamera ? lastCenter : center;
+        lastCamera = id;
+        lastCenter = center;
         if (Mathf.Approximately(scale, 1f))
             return;
         // A scaled camera transform is left to Unity (it may already scale the eyes): widen only around a unit one.
