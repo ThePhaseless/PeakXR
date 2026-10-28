@@ -56,12 +56,16 @@ internal static class TextHalo
     private const string OutlineOn = "OUTLINE_ON";
     private static readonly Dictionary<(int, bool, bool), Material> clones = new();
 
+    // Instance ids of the clones, to spot a text that already has one in O(1). Ids, not references, so the set pins
+    // nothing; at most four clones per game font material, so it never needs pruning.
+    private static readonly HashSet<int> cloneIds = new();
+
     /// <summary>Gives <paramref name="text"/> a halo material. Returns the material it had, or null when
     /// nothing changed (no SDF underlay support, or already outlined or underlaid).</summary>
     public static Material Apply(TMP_Text text)
     {
         var source = text.fontSharedMaterial;
-        if (source == null || clones.ContainsValue(source))
+        if (source == null || cloneIds.Contains(source.GetInstanceID()))
             return null;
         if (
             source.IsKeywordEnabled(UnderlayOn)
@@ -81,6 +85,7 @@ internal static class TextHalo
                 return null;
             }
             clones[key] = halo;
+            cloneIds.Add(halo.GetInstanceID());
         }
         text.fontSharedMaterial = halo;
         return source;
