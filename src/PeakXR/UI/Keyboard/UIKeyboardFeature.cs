@@ -32,9 +32,10 @@ public sealed class UIKeyboardFeature : Feature
             section,
             "KeyboardDistance",
             0.55f,
+            // The floor is PanelMath.ComfortFloor; BepInEx clamps a saved 0.3-0.5 m into range on load.
             Range(
                 "Distance of the keyboard from your head, in metres. Within arm's reach you can poke the keys.",
-                0.3f,
+                0.5f,
                 1.5f
             )
         );

@@ -30,7 +30,7 @@ internal sealed class KeyboardPlacement : ICanvasPlacement
     {
         position = VRKeyboard.PanelPosition;
         rotation = VRKeyboard.PanelRotation;
-        widthMeters = UIKeyboardFeature.Width.Value;
+        widthMeters = UIKeyboardFeature.Width.Value * VRKeyboard.PanelScale;
         return VRKeyboard.HasPose ? PlacementResult.Placed : PlacementResult.Hidden;
     }
 }
@@ -68,6 +68,9 @@ internal sealed class VRKeyboard : MonoBehaviour
     public static bool HasPose { get; private set; }
     public static Vector3 PanelPosition { get; private set; }
     public static Quaternion PanelRotation { get; private set; } = Quaternion.identity;
+
+    /// <summary>How far a wall pulled the keyboard in, as a fraction of <c>KeyboardDistance</c> (1: not at all).</summary>
+    public static float PanelScale { get; private set; } = 1f;
 
     private readonly PokeButton[] pokes = { new(), new() };
     private readonly TextEntry entry = new();
@@ -432,11 +435,22 @@ internal sealed class VRKeyboard : MonoBehaviour
         var head = rig.Head;
         var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
         var tilt = UIKeyboardFeature.Tilt.Value;
-        var offset = PanelMath.InFront(yaw, UIKeyboardFeature.Distance.Value, tilt).ToUnity();
-        PanelPosition = head.position + offset;
+        var wanted = UIKeyboardFeature.Distance.Value;
+        var offset = PanelMath.InFront(yaw, wanted, tilt).ToUnity();
         // Square to the sight line, then leaned back like a desk: hands resting below the sight line reach the
         // near rows without covering them, and the typed line on the far edge stays in view.
         PanelRotation = Quaternion.Euler(tilt + DeskTilt, yaw, 0f);
+        // Rock nearer than that (a wall at your face) pulls it in along its sight lines, drawn on top at the floor.
+        var size = canvasRect.sizeDelta;
+        var half =
+            0.5f
+            * UIKeyboardFeature.Width.Value
+            * new Vector2(1f, size.x >= 1f ? size.y / size.x : 0.5f);
+        var depth = WorldCanvases.WallDepth(head.position, offset, PanelRotation, half);
+        var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth);
+        PanelScale = clear / wanted;
+        PanelPosition = head.position + offset * PanelScale;
+        OnTop.SetWall(canvasRect, onTop);
         HasPose = true;
 
         field = input;

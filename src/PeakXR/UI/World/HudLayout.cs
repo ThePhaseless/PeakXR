@@ -13,16 +13,32 @@ namespace PeakXR.UI.World;
 
 /// <summary>
 /// Body-locked anchor for the HUD: follows head position at once and head yaw lazily, so the HUD
-/// stays put during small glances and re-centres after a real turn.
+/// stays put during small glances and re-centres after a real turn. Rock nearer than <c>UI.HudDistance</c> (a
+/// cliff face while climbing) pulls it in at the same angular size, and drawn on top at the comfort floor
+/// (<see cref="PanelMath.FitBeforeWall"/>), so it never sits inside the wall.
 /// </summary>
 internal sealed class HudLayout
 {
     private const float ReferenceWidth = 1920f;
+    private const float ReferenceHeight = 1080f;
+
+    /// <summary>Seconds between wall tests: the HUD moves with the head every frame, its 15 rays need not.</summary>
+    private const float WallTestInterval = 0.1f;
+
     private readonly LazyYawFollow follow = new();
+    private float nextWallTest;
 
     public Vector3 Position;
     public Quaternion Rotation = Quaternion.identity;
+
+    /// <summary>Metres per HUD pixel at <c>UI.HudDistance</c>; times <see cref="Scale"/> where it is drawn.</summary>
     public float MetersPerPixel = 0.001f;
+
+    /// <summary>How far a wall pulled the HUD in, as a fraction of <c>UI.HudDistance</c> (1: not at all).</summary>
+    public float Scale = 1f;
+
+    /// <summary>A wall holds the HUD nearer than its margin: draw it (and the info canvases) on top.</summary>
+    public bool OnTop;
 
     public void Update(Transform head, UIWorldSettings cfg, float dt)
     {
@@ -31,10 +47,20 @@ internal sealed class HudLayout
             PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics()),
             dt
         );
-        var offset = PanelMath.InFront(yaw, cfg.HudDistanceWorld, cfg.HudTilt.Value).ToUnity();
-        Position = head.position + offset;
+        var wanted = cfg.HudDistanceWorld;
+        var offset = PanelMath.InFront(yaw, wanted, cfg.HudTilt.Value).ToUnity();
         Rotation = Quaternion.LookRotation(offset, Vector3.up);
         MetersPerPixel = PanelMath.MetersPerPixel(cfg.HudWidthWorld, ReferenceWidth);
+        var now = Time.unscaledTime;
+        if (now >= nextWallTest)
+        {
+            nextWallTest = now + WallTestInterval;
+            var half = 0.5f * MetersPerPixel * new Vector2(ReferenceWidth, ReferenceHeight);
+            var depth = WorldCanvases.WallDepth(head.position, offset, Rotation, half);
+            (var clear, OnTop) = PanelMath.FitBeforeWall(wanted, depth);
+            Scale = clear / wanted;
+        }
+        Position = head.position + offset * Scale;
     }
 }
 
