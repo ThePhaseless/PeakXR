@@ -25,6 +25,7 @@ internal static class BackplateView
     public static bool Counts(TrackedCanvas t, Graphic g) =>
         g != t.Plate
         && g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() > 0.01f
+        && !PointerHitRule.MaskOnly(g)
         && Mathf.Abs(t.Rect.InverseTransformPoint(g.rectTransform.position).z) < OffPlanePixels
         && g.GetComponentInParent<PanelPlate>() == null;
 

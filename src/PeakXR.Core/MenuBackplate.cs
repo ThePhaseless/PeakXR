@@ -54,11 +54,23 @@ public static class MenuBackplate
     {
         var lo = center - size * 0.5f;
         var hi = center + size * 0.5f;
-        return MathF.Abs(contentMin.X - margin - lo.X) <= tolerance
-            && MathF.Abs(contentMin.Y - margin - lo.Y) <= tolerance
-            && MathF.Abs(contentMax.X + margin - hi.X) <= tolerance
-            && MathF.Abs(contentMax.Y + margin - hi.Y) <= tolerance;
+        return FitsSpan(lo.X, hi.X, contentMin.X, contentMax.X, margin, tolerance)
+            && FitsSpan(lo.Y, hi.Y, contentMin.Y, contentMax.Y, margin, tolerance);
     }
+
+    /// <summary>Along one axis: the plate's ends lie <paramref name="margin"/> outside the part's, within
+    /// <paramref name="tolerance"/>. Checks a plate against one named part (the stamina bar's frame) along its length
+    /// when other parts set its height.</summary>
+    public static bool FitsSpan(
+        float plateLo,
+        float plateHi,
+        float partLo,
+        float partHi,
+        float margin,
+        float tolerance
+    ) =>
+        MathF.Abs(partLo - margin - plateLo) <= tolerance
+        && MathF.Abs(partHi + margin - plateHi) <= tolerance;
 
     /// <summary>A <paramref name="plate"/> within <paramref name="tolerance"/> of the room its content's groups
     /// <paramref name="reserved"/> plus the margin, both ways: fitted to the groups' rects (which keep room for parts

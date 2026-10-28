@@ -138,7 +138,7 @@ internal sealed class HudSplit
     /// <summary>Every graphic under the wrist box, shown or not, refilled when a group shows or hides: the plate
     /// hugs the ones drawn now. The groups' own rects reserve room for parts that are mostly hidden (extra stamina,
     /// affliction segments, the morale text, the numb mushrooms at alpha 0), which left the plate far wider and
-    /// taller than the bar.</summary>
+    /// taller than the bar. Stencil-only masks are left out (<see cref="PointerHitRule.MaskOnly"/>).</summary>
     private readonly List<UnityEngine.UI.Graphic> wristGraphics = new();
     private int plateSignature;
 
@@ -306,6 +306,9 @@ internal sealed class HudSplit
             WristGroupsSize = bounds.size;
         }
         box.GetComponentsInChildren(true, wristGraphics);
+        // The bar's OutlineMask (Image + Mask, showMaskGraphic off) spans 1214 px round the 614 px frame it clips and
+        // drew the plate twice the bar's length. The game never toggles these masks, so they are dropped here, once.
+        wristGraphics.RemoveAll(PointerHitRule.MaskOnly);
         measuredChildren = box.childCount;
         plateSignature = 0;
         FitWristPlate(box);

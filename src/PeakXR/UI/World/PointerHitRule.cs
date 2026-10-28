@@ -30,9 +30,13 @@ internal static class PointerHitRule
         var renderer = g.canvasRenderer;
         if (g.color.a * renderer.GetAlpha() * renderer.GetInheritedAlpha() < MinAlpha)
             return false;
-        // A mask that hides its own graphic (scroll viewports) draws nothing.
-        return !(g.TryGetComponent<Mask>(out var mask) && mask.enabled && !mask.showMaskGraphic);
+        return !MaskOnly(g);
     }
+
+    /// <summary>A mask that hides its own graphic (scroll viewports, the stamina bar's 1214 px OutlineMask) writes
+    /// only the stencil: active, enabled and opaque, yet nothing reaches the screen.</summary>
+    public static bool MaskOnly(Graphic g) =>
+        g.TryGetComponent<Mask>(out var mask) && mask.enabled && !mask.showMaskGraphic;
 
     /// <summary>Part of something interactable: a button's padding, a scroll view's gaps, a dropdown's
     /// click-outside blocker, a settings row's hover preview, a wheel slice's hit mask.</summary>

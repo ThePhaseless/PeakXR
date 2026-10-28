@@ -148,4 +148,14 @@ public class MenuBackplateTests
         // Only as wide as the groups: it still shrank in height.
         Assert.False(MenuBackplate.Unshrunk(new Vector2(928, 88), reserved, 14f, 4f));
     }
+
+    [Fact]
+    public void FitsSpan_APlateAroundTheBarFrame_NotAroundItsTwiceAsWideMask()
+    {
+        // The stamina bar's frame spans -7..607 px; its hidden stencil mask (Bar/OutlineMask, 1214 px) -7..1207.
+        Assert.True(MenuBackplate.FitsSpan(-21f, 621f, -7f, 607f, 14f, 5f));
+        Assert.False(MenuBackplate.FitsSpan(-21f, 1221f, -7f, 607f, 14f, 5f));
+        // Too short also fails: the frame pokes out.
+        Assert.False(MenuBackplate.FitsSpan(-21f, 590f, -7f, 607f, 14f, 5f));
+    }
 }

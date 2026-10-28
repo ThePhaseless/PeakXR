@@ -205,10 +205,31 @@ internal sealed partial class SelfTestRunner
                 UI.World.HudSplit.WristPlatePad,
                 plateTolerance
             );
+        // Independent of any "is it drawn" rule: along its length the plate hugs the bar's own frame (VR build
+        // 7c3814a drew it twice as long, round the bar's hidden OutlineMask, and both rules agreed).
+        bool barOnly = WristBarFrame(
+            root,
+            out float frameLo,
+            out float frameHi,
+            out string barNote
+        );
+        bool plateOnBar =
+            !barOnly
+            || (
+                plateShown
+                && MenuBackplate.FitsSpan(
+                    plateMin.x,
+                    plateMax.x,
+                    frameLo,
+                    frameHi,
+                    UI.World.HudSplit.WristPlatePad,
+                    plateTolerance
+                )
+            );
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}; bar frame {frameHi - frameLo:0} px{barNote}, plate on it {plateOnBar}"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
@@ -232,12 +253,63 @@ internal sealed partial class SelfTestRunner
             Fail("wrist plate not shown");
         else if (unshrunk)
             Fail("wrist plate fills the groups' reserved room, not the drawn bar");
+        else if (!plateOnBar)
+            Fail("wrist plate is not as long as the stamina bar's frame");
         else if (!plateFits)
             Fail("wrist plate is not fitted to the drawn bar");
     }
 
+    /// <summary>Box-space x span of the stamina bar's own art: its frame (the game sizes it to the bar,
+    /// A/StaminaBar.cs:135) and the shield and campfire icons beside it when shown (A/StaminaBar.cs:180-181). False,
+    /// with a note, when something else on the wrist (hotbar, extra stamina, dying bar) may set the plate's length.</summary>
+    static bool WristBarFrame(RectTransform root, out float lo, out float hi, out string note)
+    {
+        lo = hi = 0f;
+        note = "";
+        var gui = GUIManager.instance;
+        var bar = gui != null ? gui.bar : null;
+        if (root == null || bar == null || !bar.staminaBarOutline.IsChildOf(root))
+        {
+            note = " (bar not on the wrist)";
+            return false;
+        }
+        static bool Shown(Component c, Transform root) =>
+            c != null && c.gameObject.activeInHierarchy && c.transform.IsChildOf(root);
+        if (
+            (bar.extraBar != null && bar.extraBar.gameObject.activeInHierarchy)
+            || (gui.items != null && gui.items.Length > 0 && Shown(gui.items[0], root))
+            || Shown(gui.backpack, root)
+            || (gui.dyingBarObject != null && Shown(gui.dyingBarObject.transform, root))
+        )
+        {
+            note = " (other wrist parts shown, not checked)";
+            return false;
+        }
+        lo = float.MaxValue;
+        hi = float.MinValue;
+        var corners = new Vector3[4];
+        foreach (
+            var part in new[]
+            {
+                bar.staminaBarOutline,
+                (RectTransform)bar.shield.transform,
+                (RectTransform)bar.campfire.transform,
+            }
+        )
+        {
+            if (!part.gameObject.activeInHierarchy)
+                continue;
+            part.GetWorldCorners(corners);
+            float a = root.InverseTransformPoint(corners[0]).x;
+            float b = root.InverseTransformPoint(corners[2]).x;
+            lo = Mathf.Min(lo, Mathf.Min(a, b));
+            hi = Mathf.Max(hi, Mathf.Max(a, b));
+        }
+        return true;
+    }
+
     /// <summary>Box-space bounds of every graphic under the wrist box that reaches the screen (active, enabled, visible
-    /// alpha after canvas groups, not empty), the plate aside. The ui.05 oracle, apart from HudSplit's own fit.</summary>
+    /// alpha after canvas groups, not a stencil-only mask, not empty), the plate aside. The ui.05 oracle, apart from HudSplit's own fit.</summary>
     static bool MeasureWristDrawn(RectTransform root, out Vector2 min, out Vector2 max)
     {
         min = new Vector2(float.MaxValue, float.MaxValue);
@@ -254,6 +326,7 @@ internal sealed partial class SelfTestRunner
                 || !g.enabled
                 || g.color.a < 0.01f
                 || g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() <= 0.01f
+                || UI.World.PointerHitRule.MaskOnly(g)
             )
                 continue;
             g.rectTransform.GetWorldCorners(corners);
