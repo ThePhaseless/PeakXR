@@ -22,10 +22,8 @@ public sealed class ItemRoomFeature : Feature
     {
         if (!FeatureManager.IsActive<SandboxFeature>())
             throw new InvalidOperationException("the sandbox feature is not active");
-        // The guards block only while armed or while the room is open (SelfTestProgressGuard.Room).
-        if (!SelfTestProgressGuard.Active)
-            foreach (var guard in SelfTestProgressGuard.Patches)
-                Patch(guard);
+        // The guards block only while armed, in a sandbox run, or while the room is open (SelfTestProgressGuard.Room).
+        SelfTestProgressGuard.PatchOnce(Patch);
         // Optional: without it the room still opens, with the airport's statuses switched off as usual.
         try
         {

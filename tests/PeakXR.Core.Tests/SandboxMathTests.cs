@@ -100,3 +100,54 @@ public class NameFilterTests
         Assert.True(NameFilter.Matches(null, NameFilter.Parse("")));
     }
 }
+
+public class SandboxRunMarkTests
+{
+    [Fact]
+    public void FirstUse_MarksTheRunAndAsksForOneNotice()
+    {
+        var m = new SandboxRunMark();
+        Assert.False(m.Marked);
+        m.Use();
+        Assert.True(m.Marked);
+        Assert.True(m.NoticeDue);
+        m.NoticeShown();
+        m.Use();
+        Assert.True(m.Marked);
+        Assert.False(m.NoticeDue);
+    }
+
+    [Theory]
+    [InlineData("Title")]
+    [InlineData("Airport")]
+    public void NewRun_ClearsTheMark(string scene)
+    {
+        var m = new SandboxRunMark();
+        m.Use();
+        m.SceneLoaded(scene, godMode: false);
+        Assert.False(m.Marked);
+        Assert.False(m.NoticeDue);
+        m.Use();
+        Assert.True(m.NoticeDue);
+    }
+
+    [Fact]
+    public void LevelLoad_KeepsTheMark()
+    {
+        // Spawned in the airport, then boarded: the run that follows is still a sandbox run.
+        var m = new SandboxRunMark();
+        m.Use();
+        m.SceneLoaded("Level_0", godMode: false);
+        Assert.True(m.Marked);
+    }
+
+    [Fact]
+    public void GodModeStillOn_CarriesTheMarkIntoTheNextRun()
+    {
+        var m = new SandboxRunMark();
+        m.Use();
+        m.NoticeShown();
+        m.SceneLoaded("Airport", godMode: true);
+        Assert.True(m.Marked);
+    }
+}

@@ -68,3 +68,35 @@ public static class NameFilter
         return true;
     }
 }
+
+/// <summary>
+/// Whether this run used the sandbox, so it must not touch the player's real progress (quicksave, achievements,
+/// stats, ascents) and the player hears about that once. A run spans from the title or the airport to the next one:
+/// anything spawned or switched on in the airport rides into the run that boards from it. God mode still on when a
+/// new run starts keeps the mark.
+/// </summary>
+public sealed class SandboxRunMark
+{
+    public bool Marked { get; private set; }
+
+    /// <summary>The player has not been told yet that this run saves nothing.</summary>
+    public bool NoticeDue { get; private set; }
+
+    public void Use()
+    {
+        if (Marked)
+            return;
+        Marked = true;
+        NoticeDue = true;
+    }
+
+    public void NoticeShown() => NoticeDue = false;
+
+    public void SceneLoaded(string scene, bool godMode)
+    {
+        if (godMode || (scene != "Title" && scene != "Airport"))
+            return;
+        Marked = false;
+        NoticeDue = false;
+    }
+}
