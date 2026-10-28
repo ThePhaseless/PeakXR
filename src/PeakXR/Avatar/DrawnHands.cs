@@ -62,9 +62,13 @@ internal sealed class DrawnHands : MonoBehaviour
     /// <summary>The drawn hands are on: the meshes draw the proxies.</summary>
     public static bool Drawn => local != null && local.swapped;
 
-    /// <summary>The drawn proxy of a real bone, or the bone itself when it has none.</summary>
+    /// <summary>The drawn proxy of a real bone, or the bone itself when it has none or the hands are drawn at the
+    /// game's size: the proxies then stop being posed and keep their last smaller pose (run 23's vr.08b read the 0.50
+    /// proxies at 1.00 and got a span ratio of 1.00).</summary>
     public static Transform DrawnBone(Transform bone) =>
-        local != null && bone != null && local.proxyOf.TryGetValue(bone, out var p) ? p : bone;
+        local != null && local.swapped && bone != null && local.proxyOf.TryGetValue(bone, out var p)
+            ? p
+            : bone;
 
     /// <summary>The bones <paramref name="skin"/> had before the proxies (its own when unchanged).</summary>
     public static Transform[] Bones(SkinnedMeshRenderer skin)
