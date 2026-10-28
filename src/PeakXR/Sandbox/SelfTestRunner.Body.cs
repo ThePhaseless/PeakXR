@@ -1362,11 +1362,18 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.211: the cold rumble follows cold exposure (BodyFeedback.ExposureAdd): present while a scripted
     /// source applies Cold (<see cref="BodyFeedback.SelfTestExposure"/>), gone within <see cref="ShiverFade"/> once
-    /// it stops. Exposure, not the bar: Cold that stops rising under a source still rumbles (commit 95e4493).</summary>
+    /// it stops. Exposure, not the bar: Cold that stops rising under a source still rumbles (commit 95e4493). The
+    /// level's own cold sources are kept off the rumble for the step (<see cref="BodyFeedback.SelfTestIsolate"/>):
+    /// fog or wind chill held it over 0.03 after the scripted source stopped (run17).</summary>
     IEnumerator ShiverStep()
     {
         var a = Character.localCharacter.refs.afflictions;
-        bodyRestore = () => SandboxActions.ClearStatus(STATUS.Cold);
+        BodyFeedback.SelfTestIsolate(true);
+        bodyRestore = () =>
+        {
+            BodyFeedback.SelfTestIsolate(false);
+            SandboxActions.ClearStatus(STATUS.Cold);
+        };
         // Through the sandbox once, for its offline guard, god-mode lift and refusal check.
         if (!Exposed(() => SandboxActions.AddStatus(STATUS.Cold, 0.001f)))
         {
@@ -1382,7 +1389,6 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         float exposed = Interact.EnvironmentRumble.Level(Interact.EnvSource.Cold, true);
-        float total = BodyFeedback.ColdExposure;
         float stopped = Now;
         float faded = -1f;
         while (Now - stopped < ShiverFade + 1f && faded < 0f)
@@ -1391,15 +1397,10 @@ internal sealed partial class SelfTestRunner
                 faded = Now - stopped;
             yield return null;
         }
-        // Real cold (night cold, CharacterAfflictions.cs:509-511; fog; wind chill) keeps the rumble going rightly.
-        bool other = BodyFeedback.ColdExposure > total;
-        SandboxActions.ClearStatus(STATUS.Cold);
         var note = F(
             $"cold rumble under {ShiverRate:0.00}/s exposure {exposed:0.000}, at most 0.03 {(faded >= 0f ? F($"{faded:0.0} s") : "never")} after it stopped (bound {ShiverFade:0.0} s), Cold {a.GetCurrentStatus(STATUS.Cold):0.00}"
         );
-        if (other && (faded < 0f || faded > ShiverFade))
-            stepSkip = "a real cold source exposed the player after the scripted one: " + note;
-        else if (exposed < 0.1f || faded < 0f || faded > ShiverFade)
+        if (exposed < 0.1f || faded < 0f || faded > ShiverFade)
             Fail(note);
         else
             stepNote = note;
