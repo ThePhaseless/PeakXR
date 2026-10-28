@@ -824,7 +824,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             Fail("in " + now + " after the jump");
         if (segment == Segment.Peak)
             yield return PeakGround();
-        yield return Shot(shot ?? "06-segment-" + segment);
+        // After the clear: the Peak jump lands in the void inside the volcano and PeakGround warps 360 m up through
+        // it, so the eye guard held black as the shot was taken (every Peak shot a flat 13,0,0 in run 17 and the
+        // Peak run).
+        yield return ShotWhenClear(shot ?? "06-segment-" + segment, 4f);
         yield return Landing();
     }
 
@@ -1106,7 +1109,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return WaitFor(() => !VRSession.Active || ViewClear, seconds);
         if (VRSession.Active && !ViewClear)
             Note(
-                $"view still faded ({FadeView.Alpha:0.00}, loading room {LoadingSpace.RoomUp}) at the shot"
+                $"view still faded ({FadeView.Alpha:0.00}, loading room {LoadingSpace.RoomUp}, eye guard black {Rig.RigDriver.EyeGuardBlack}) at the shot"
             );
         yield return Shot(name);
     }
