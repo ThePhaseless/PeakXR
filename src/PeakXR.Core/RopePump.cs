@@ -32,6 +32,22 @@ public static class RopePump
     }
 
     /// <summary>
+    /// The comfort ceiling on a pumped swing: once the climb point swings level at <paramref name="maxSwingSpeed"/>
+    /// (m/s) or faster, a push that would add to it is dropped, so the view's sway stays bounded however hard the
+    /// player pumps. A push against the swing still brakes it.
+    /// </summary>
+    /// <param name="push">Acceleration from <see cref="Push"/>.</param>
+    /// <param name="swingVelocity">The climb point's velocity, world axes, m/s.</param>
+    public static Vector3 Limit(Vector3 push, Vector3 swingVelocity, float maxSwingSpeed)
+    {
+        var swing = new Vector3(swingVelocity.X, 0f, swingVelocity.Z);
+        return
+            swing.LengthSquared() >= maxSwingSpeed * maxSwingSpeed && Vector3.Dot(push, swing) > 0f
+            ? Vector3.Zero
+            : push;
+    }
+
+    /// <summary>
     /// A pump (<paramref name="push"/> above 0, from <see cref="Push"/>) on a rope this player cannot push, since
     /// only its owner simulates it: true once per hold, so the lean gets one refusal instead of silence or a stream.
     /// </summary>
@@ -48,7 +64,8 @@ public static class RopePump
 /// Whether the player is clearly pumping a rope, not just moving: a rhythm of level head leans back and forth, each
 /// at least <see cref="MinHeadSpeed"/> for <see cref="MinStroke"/>, <see cref="Strokes"/> of them with at most
 /// <see cref="MaxGap"/> between, and in phase with the swing whenever the rope swings. Looking around, turning the head
-/// or one lean to grab never gets there. Gates the refusal for pumping a rope someone else owns. Allocation-free.
+/// or one lean to grab never gets there. Gates the push itself (a lean in to catch the rope swung it about 1 m) and
+/// the refusal for pumping a rope someone else owns. Allocation-free.
 /// </summary>
 public sealed class PumpIntent
 {

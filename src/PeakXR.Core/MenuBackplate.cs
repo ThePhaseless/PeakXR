@@ -91,4 +91,26 @@ public static class MenuBackplate
     /// <summary>Angle a span of <paramref name="size"/> metres covers, centred at <paramref name="distance"/>.</summary>
     public static float SpanDegrees(float size, float distance) =>
         2f * MathF.Atan(size * 0.5f / distance) * (180f / MathF.PI);
+
+    /// <summary>Seed for <see cref="Fold"/>.</summary>
+    public const int FoldStart = 17;
+
+    /// <summary>Folds one part of a plate's content into a change signature: whether it is drawn and, if so, its
+    /// position and size in half-pixel steps. A plate refitted only when the signature changes follows parts that
+    /// appear, vanish, move or resize, without measuring world corners every frame or reacting to hidden parts.</summary>
+    public static int Fold(int hash, bool drawn, float x, float y, float width, float height)
+    {
+        unchecked
+        {
+            hash = hash * 31 + (drawn ? 1 : 0);
+            if (!drawn)
+                return hash;
+            hash = hash * 31 + HalfPixels(x);
+            hash = hash * 31 + HalfPixels(y);
+            hash = hash * 31 + HalfPixels(width);
+            return hash * 31 + HalfPixels(height);
+        }
+    }
+
+    private static int HalfPixels(float v) => (int)MathF.Round(v * 2f);
 }

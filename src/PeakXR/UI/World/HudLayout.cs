@@ -132,8 +132,27 @@ internal sealed class HudSplit
     private UnityEngine.UI.Image wristPlate;
 
     /// <summary>Plate margin round the wrist parts, in HUD pixels, and its opacity.</summary>
-    private const float WristPlatePad = 14f;
+    internal const float WristPlatePad = 14f;
     private const float WristPlateOpacity = 0.85f;
+
+    /// <summary>Every graphic under the wrist box, shown or not, refilled when a group shows or hides: the plate
+    /// hugs the ones drawn now. The groups' own rects reserve room for parts that are mostly hidden (extra stamina,
+    /// affliction segments, the morale text, the numb mushrooms at alpha 0), which left the plate far wider and
+    /// taller than the bar.</summary>
+    private readonly List<UnityEngine.UI.Graphic> wristGraphics = new();
+    private int plateSignature;
+    private static readonly Vector3[] corners = new Vector3[4];
+
+    /// <summary>Drawn wrist content the plate was last fitted to, box pixels (self-test).</summary>
+    public static Vector2 WristPlateContentMin,
+        WristPlateContentMax;
+
+    /// <summary>The wrist plate's centre and size, box pixels (self-test).</summary>
+    public static Vector2 WristPlateCenter,
+        WristPlateSize;
+
+    /// <summary>Size of the moved groups' rects, which set the wrist layout and scale (self-test).</summary>
+    public static Vector2 WristGroupsSize;
 
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
@@ -273,20 +292,82 @@ internal sealed class HudSplit
                 bounds = b;
             any = true;
         }
+        // Layout and scale follow the groups' rects, so the bar does not jump when a part shows; the plate does not.
         if (any)
         {
             wristCenter = bounds.center;
             wristSpan = Mathf.Max(1f, bounds.size.x);
+            WristGroupsSize = bounds.size;
         }
-        if (wristPlate != null)
+        box.GetComponentsInChildren(true, wristGraphics);
+        plateSignature = 0;
+        FitWristPlate(box);
+    }
+
+    /// <summary>Fits <see cref="wristPlate"/> to the graphics drawn now. Each frame folds their visibility, size and
+    /// local position into a signature (no allocation, no world corners); only a change re-measures.
+    /// shortcut: a parent moving with no graphic under it changing is missed until the next change; fold parent
+    /// positions in if a part ever slides that way.</summary>
+    private void FitWristPlate(RectTransform box)
+    {
+        if (wristPlate == null)
+            return;
+        int signature = MenuBackplate.FoldStart;
+        for (int i = 0; i < wristGraphics.Count; i++)
+        {
+            var g = wristGraphics[i];
+            bool drawn = Drawn(g);
+            var r = drawn ? g.rectTransform.rect : default;
+            var at = drawn ? g.rectTransform.localPosition : default;
+            signature = MenuBackplate.Fold(
+                signature,
+                drawn,
+                at.x + r.x,
+                at.y + r.y,
+                r.width,
+                r.height
+            );
+        }
+        if (signature == plateSignature)
+            return;
+        plateSignature = signature;
+
+        var min = new Vector2(float.MaxValue, float.MaxValue);
+        var max = new Vector2(float.MinValue, float.MinValue);
+        for (int i = 0; i < wristGraphics.Count; i++)
+        {
+            var g = wristGraphics[i];
+            if (!Drawn(g))
+                continue;
+            g.rectTransform.GetWorldCorners(corners);
+            Vector2 a = box.InverseTransformPoint(corners[0]);
+            Vector2 b = box.InverseTransformPoint(corners[2]);
+            min = Vector2.Min(min, Vector2.Min(a, b));
+            max = Vector2.Max(max, Vector2.Max(a, b));
+        }
+        bool any = MenuBackplate.Fit(min.N(), max.N(), WristPlatePad, out var center, out var size);
+        if (any)
         {
             var rt = wristPlate.rectTransform;
-            rt.anchoredPosition = bounds.center;
-            rt.sizeDelta = (Vector2)bounds.size + 2f * WristPlatePad * Vector2.one;
-            if (wristPlate.gameObject.activeSelf != any)
-                wristPlate.gameObject.SetActive(any);
+            rt.anchoredPosition = WristPlateCenter = new Vector2(center.X, center.Y);
+            rt.sizeDelta = WristPlateSize = new Vector2(size.X, size.Y);
+            WristPlateContentMin = min;
+            WristPlateContentMax = max;
         }
+        if (wristPlate.gameObject.activeSelf != any)
+            wristPlate.gameObject.SetActive(any);
     }
+
+    /// <summary>A graphic of the wrist parts that reaches the screen: shown, enabled, not faded out by its colour or a
+    /// canvas group, and not empty. Our plate never counts.</summary>
+    private bool Drawn(UnityEngine.UI.Graphic g) =>
+        g != null
+        && g != wristPlate
+        && g.isActiveAndEnabled
+        && g.color.a >= 0.01f
+        && g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() > 0.01f
+        && g.rectTransform.rect.width > 0.5f
+        && g.rectTransform.rect.height > 0.5f;
 
     /// <summary>Puts <see cref="wristPlate"/> first in <paramref name="box"/> (a new box after a scene change gets a
     /// new plate); <see cref="MeasureWrist"/> fits it. Drawn on top with the box, under the parts.</summary>
@@ -423,6 +504,8 @@ internal sealed class HudSplit
             // A part the game showed for the first time may carry a graphic not yet drawn on top.
             OnTop.Set(wristBox.Rect, true);
         }
+        else
+            FitWristPlate(wristBox.Rect);
 
         // Like a watch face: on the back of the wrist, the side that faces the eye when the wrist is raised to read
         // it, the bar across the wrist and text up toward the fingers (WristHud.Rest, mirrored per hand). Raised off

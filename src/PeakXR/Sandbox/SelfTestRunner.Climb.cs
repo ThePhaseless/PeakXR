@@ -70,6 +70,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.56-fragile-piton", 40f, FragilePitonStep());
         yield return Restoring("vr.42b-rope-pump", 45f, RopePumpStep());
         yield return WarpBack();
+        yield return Restoring("vr.42e-rope-lean-calm", 40f, RopeLeanCalmStep());
+        yield return WarpBack();
         yield return Restoring("vr.42d-pump-not-mine", 40f, RopePumpNotMineStep());
         yield return WarpBack();
         yield return Restoring("vr.42c-rope-end-stop", 40f, RopeEndStep());
@@ -3013,6 +3015,7 @@ internal sealed partial class SelfTestRunner
         hi = float.MinValue;
         // Pump as a person does: lean the head the way the swing is moving, up to 0.25 m each way at 1 m/s. Run 35's
         // fixed 0.35 Hz sway ran out of phase with this rope's own swing and damped it (0.23 m still, 0.07 m pumped).
+        // A still rope gets leans back and forth at the head's own rate: only a rhythm pumps (PumpIntent).
         var hands = applyHands;
         OnRestore(() =>
         {
@@ -3041,6 +3044,8 @@ internal sealed partial class SelfTestRunner
             lastX = x;
             if (Mathf.Abs(v) > 0.05f)
                 target = 0.25f * Mathf.Sign(v);
+            else if (Mathf.Approximately(offset, target))
+                target = -target;
             offset = Mathf.MoveTowards(offset, target, dt);
             // The swing built up by pumping: its last 3 s.
             if (!measuring && Now >= measureFrom)
@@ -3064,6 +3069,106 @@ internal sealed partial class SelfTestRunner
             Fail("the head sway never pushed the rope: " + note);
         else if (pumped < still + 0.1f)
             Fail("pumping did not swing the rope farther: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.42e: on the player's own rope, the head moves a player makes without meaning to pump (one 0.3 m lean in, as
+    /// to catch the rope, held and brought back, then looking round 60 degrees either way with a few cm of drift) never
+    /// push it: ClimbHands.LastPump stays 0 and the climb point sways no more than with a still head. Before the pump
+    /// waited for a rhythm (<see cref="PumpIntent"/>), that one lean added about 1 m/s to every segment.
+    /// </summary>
+    IEnumerator RopeLeanCalmStep()
+    {
+        var c = Character.localCharacter;
+        if (!ClimbHands.RopeHands || !ClimbHands.RopePumping)
+        {
+            stepSkip = "Interaction.RopeHandOverHand or Interaction.RopeSwingPump off";
+            yield break;
+        }
+        yield return HangRope(4.2f, 10f);
+        if (testRope == null)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        yield return GrabRope(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return Wait(1f);
+        var api = testRope.climbingAPI;
+        var rig = VRRig.Instance;
+        var along = Flat(VRInput.HeadRotation * Vector3.forward);
+        var side = Vector3.Cross(Vector3.up, along);
+        float lo = float.MaxValue,
+            hi = float.MinValue,
+            peak = 0f,
+            push = 0f;
+        var axis = Flat(rig.Origin.TransformDirection(along));
+        var last = api.GetPosition(c.data.ropePercent);
+        IEnumerator Measure(float seconds)
+        {
+            lo = float.MaxValue;
+            hi = float.MinValue;
+            peak = 0f;
+            for (float end = Now + seconds; Now < end && c.data.isRopeClimbing; )
+            {
+                yield return null;
+                var p = api.GetPosition(c.data.ropePercent);
+                float dt = Time.deltaTime;
+                if (dt > 0f)
+                    peak = Mathf.Max(peak, Flat(p - last).magnitude / dt);
+                last = p;
+                float x = Vector3.Dot(p, axis);
+                lo = Mathf.Min(lo, x);
+                hi = Mathf.Max(hi, x);
+                push = Mathf.Max(push, ClimbHands.LastPump);
+            }
+        }
+        yield return Measure(3f);
+        float still = hi - lo;
+        float stillPeak = peak;
+        var hands = applyHands;
+        OnRestore(() =>
+        {
+            if (VRInput.TestOverride != hands && VRInput.TestOverride != IdleHands)
+                VRInput.TestOverride = finished ? null : IdleHands;
+        });
+        var baseHead = VRInput.HeadPosition;
+        var baseTurn = VRInput.HeadRotation;
+        float start = Now;
+        VRInput.TestOverride = () =>
+        {
+            hands();
+            float t = Now - start;
+            // 0-2 s: one lean in, 0.3 m (0.47 m/s at its fastest), and back; 2-6 s: look round about the neck.
+            float lean = t < 2f ? 0.3f * Mathf.Sin(Mathf.PI * t / 2f) : 0f;
+            float look = t < 2f ? 0f : t - 2f;
+            VRInput.HeadRotation =
+                Quaternion.AngleAxis(60f * Mathf.Sin(1.2f * look), Vector3.up) * baseTurn;
+            VRInput.HeadPosition =
+                baseHead
+                + along * lean
+                + side * (0.04f * Mathf.Sin(1.2f * look))
+                + along * (0.03f * (1f - Mathf.Cos(1.7f * look)));
+        };
+        yield return Measure(6f);
+        VRInput.TestOverride = hands;
+        yield return Measure(2f);
+        float moved = hi - lo;
+        bool held = c.data.isRopeClimbing;
+        var note = F(
+            $"climb point sway peak to peak still {still:0.00} m (peak {stillPeak:0.00} m/s), after a lean in and a look round {moved:0.00} m (peak {peak:0.00} m/s), push {push:0.0} m/s², on the rope {held}"
+        );
+        if (!held)
+            Fail("fell off the rope: " + note);
+        else if (push > 0f)
+            Fail("a lean or a look round pushed the rope: " + note);
+        else if (moved > still + 0.1f)
+            Fail("the rope swung after a lean or a look round: " + note);
         else
             Note(note);
         yield return LetGoAll(c);
