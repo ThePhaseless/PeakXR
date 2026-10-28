@@ -537,3 +537,20 @@ public class GripIntentTests
         Assert.Equal(GripPressAction.Regrip, GripIntent.OnPress(ItemHandByAPiton(0.09f, 0.0f)));
     }
 }
+
+public class PickupAnswerTests
+{
+    [Theory]
+    // A pocket slot: the pickup worked.
+    [InlineData((byte)1, false, true, PickupCue.Success)]
+    [InlineData((byte)1, true, true, PickupCue.Success)]
+    // Pockets full, empty hands: the temporary slot is equipped into the hand that asked.
+    [InlineData((byte)250, false, false, PickupCue.Success)]
+    // Pockets full while holding something: vanilla equips it over the held item.
+    [InlineData((byte)250, false, true, PickupCue.Swapped)]
+    // Pockets full while climbing: vanilla drops it behind the hip.
+    [InlineData((byte)250, true, true, PickupCue.Dropped)]
+    [InlineData((byte)250, true, false, PickupCue.Dropped)]
+    public void TheCueSaysWhatTheGameDid(byte slot, bool climbing, bool holding, PickupCue cue) =>
+        Assert.Equal(cue, GripIntent.PickupAnswer(slot, climbing, holding));
+}

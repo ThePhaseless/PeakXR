@@ -963,6 +963,23 @@ internal static class PhysicalInteraction
         return hand.Left;
     }
 
+    /// <summary>Pockets full while holding something: the game equipped the picked item over the held one
+    /// (<see cref="InteractPatches.KeepHeldOnPocket"/>). A notice at the hand that asked, the item in hand changed;
+    /// never the success tick.</summary>
+    internal static void PickupSwapped(bool left)
+    {
+        var rig = VRRig.Instance;
+        var t = rig != null ? rig.Hand(left) : null;
+        if (t != null)
+            Affordance.Inform(
+                left,
+                t.position,
+                DenyReason.HappenedHere,
+                default,
+                "Pockets full: swapped into your hand"
+            );
+    }
+
     /// <summary>The master refused the pickup (Item.DenyPickupRPC, Item.cs:598-602, the item back in the world): the
     /// refusal cue at the hand that asked, even if it has opened since.</summary>
     internal static void PickupDenied(Item item)
