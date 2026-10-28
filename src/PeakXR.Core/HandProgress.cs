@@ -27,14 +27,26 @@ public enum ProgressPulse
 public static class ProgressHand
 {
     /// <param name="aimHand">Hand whose ray drives interaction: -1 none, 0 left, 1 right.</param>
-    public static bool PickLeft(ProgressSource source, bool hasItem, bool itemInLeft, int aimHand)
+    /// <param name="gripHand">Hand whose grip presses interact: -1 none, 0 left, 1 right.</param>
+    /// <param name="leftHanded">The dominant hand is the left (or the one controller, one-handed).</param>
+    public static bool PickLeft(
+        ProgressSource source,
+        bool hasItem,
+        bool itemInLeft,
+        int aimHand,
+        int gripHand = -1,
+        bool leftHanded = false
+    )
     {
         if (source is ProgressSource.Item or ProgressSource.ClimbingSpike)
             return itemInLeft;
         if (aimHand >= 0)
             return aimHand == 0;
-        // Interact button without a hand ray: the free hand is the one reaching out.
-        return hasItem && !itemInLeft;
+        // A grip pressing interact without a ray: that hand is the one holding on.
+        if (gripHand >= 0)
+            return gripHand == 0;
+        // Interact button without a hand ray: the free hand is the one reaching out, else the dominant one.
+        return hasItem ? !itemInLeft : leftHanded;
     }
 }
 
