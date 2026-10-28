@@ -29,6 +29,15 @@ public sealed class EyeCalibration
 
     public bool Converged { get; private set; }
 
+    /// <summary>Most the first sample may move the offset (metres) and still land in view: about the tracking jitter of a
+    /// still head, too small to see. A bigger first change is applied behind a blink.</summary>
+    public const float BlinkAbove = 0.02f;
+
+    /// <summary>Taking <paramref name="sample"/> as the first one would move the view visibly: the caller applies it
+    /// behind a blink (fade to black, apply, fade back), never as a jump in view.</summary>
+    public bool FirstSampleNeedsBlink(Vector2 sample) =>
+        !Have && Vector2.Distance(Offset, sample) > BlinkAbove;
+
     /// <returns>Whether the sample was used.</returns>
     public bool Sample(Vector2 sample, bool leaning, float dt)
     {

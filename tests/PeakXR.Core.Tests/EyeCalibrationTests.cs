@@ -15,6 +15,17 @@ public class EyeCalibrationTests
     }
 
     [Fact]
+    public void OnlyAFirstSampleThatWouldVisiblyMoveTheView_NeedsABlink()
+    {
+        var cal = new EyeCalibration(new Vector2(0.1f, 0.6f));
+        Assert.True(cal.FirstSampleNeedsBlink(Eyes));
+        Assert.False(cal.FirstSampleNeedsBlink(new Vector2(0.1f, 0.61f)));
+        cal.Sample(Eyes, false, 0.011f);
+        // Later samples glide: never a blink.
+        Assert.False(cal.FirstSampleNeedsBlink(new Vector2(0.1f, 0.6f)));
+    }
+
+    [Fact]
     public void LaterSamples_GlideNeverJump()
     {
         var cal = new EyeCalibration(new Vector2(0.1f, 0.6f));

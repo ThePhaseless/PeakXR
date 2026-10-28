@@ -248,6 +248,13 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly EyeCalibration massEyes = new(DefaultEyeOffset);
     private readonly EyeCalibration torsoEyes = new(DefaultTorsoEyeOffset);
 
+    /// <summary>A first eye sample that would visibly move the view, waiting for the blink it lands behind
+    /// (<see cref="EyeCalibration.FirstSampleNeedsBlink"/>); applied when the takeover switches at black.</summary>
+    private bool pendingEyes;
+    private System.Numerics.Vector2 pendingMassEyes,
+        pendingTorsoEyes;
+    private string pendingEyesLog;
+
     /// <summary>1: the view rides the mass centre (upright on foot, where the lean runs); 0: the torso, as before the
     /// lean. On a pitched body (climbing, hanging, gliding, ragdolled) a root at the hip puts the eyes 0.8 (1 - cos
     /// pitch) off, twice the torso's error, so the root blends over <see cref="RootBlendSeconds"/>, never in a frame.</summary>
@@ -436,6 +443,7 @@ internal sealed class RigDriver : MonoBehaviour
             boundCharacter = c;
             massEyes.Reset();
             torsoEyes.Reset();
+            pendingEyes = false;
             standingEye.Reset();
             needInitialRecenter = c != null;
             snap = true;
@@ -671,7 +679,7 @@ internal sealed class RigDriver : MonoBehaviour
             // Mid-turn the look heading is new but the ragdoll still faces the old one: a skewed sample.
             || Time.unscaledTime < turnHoldUntil
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
-            // The first sample (taken at once) waits for a still stand, past the beach wake-up: the first upright frame after
+            // The first sample (taken whole) waits for a still stand, past the beach wake-up: the first upright frame after
             // the wake-up fall reads a body still rising (eyes 1.32-1.43 m over the ground against 1.77 m standing),
             // and the calibration kept what that frame said (run 21: eyes 0.16 m ahead of the mass centre on that
             // frame, 0.12 m for the whole beach, a taller back-tilted stand and a hip bobbing 0.03 m; run 20: 0.25 m).
@@ -693,11 +701,30 @@ internal sealed class RigDriver : MonoBehaviour
         var torsoSample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
             return false;
+        // One first sample waits for its blink; newer ones would not match the line logged for it.
+        if (pendingEyes)
+            return true;
         bool first = !massEyes.Have;
-        // The first sample replaces the starting guess at once, even though the view was placed frames ago (it waits
-        // for a still stand); later ones glide, never jump.
-        massEyes.Sample(sample, leaning, dt);
-        torsoEyes.Sample(torsoSample, leaning, dt);
+        // The first sample replaces the starting guess outright: a glide from the guess is the slow drift the still
+        // stand gate exists to avoid. It comes long after the view was placed, so a change big enough to see lands
+        // behind a blink (PlaceOrigin applies it at black), never as a jump in view; later samples glide.
+        bool blink =
+            first
+            && (
+                massEyes.FirstSampleNeedsBlink(sample)
+                || torsoEyes.FirstSampleNeedsBlink(torsoSample)
+            );
+        if (blink)
+        {
+            pendingMassEyes = sample;
+            pendingTorsoEyes = torsoSample;
+            takeover.Blink();
+        }
+        else
+        {
+            massEyes.Sample(sample, leaning, dt);
+            torsoEyes.Sample(torsoSample, leaning, dt);
+        }
         if (first)
         {
             // The ground straight under the eyes: data.groundPos is one ground contact (CharacterMovement.cs:722-751)
@@ -713,11 +740,18 @@ internal sealed class RigDriver : MonoBehaviour
                 ? under.point.y
                 : d.groundPos.y;
             // The first sample only: the standing height is measured over a steady stand (MeasureStandingEye).
-            Plugin.Log.LogInfo(
+            var line =
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
-                    + $"{eye.y - ground:0.00} m above the ground on the first still stand (taken at once); the player's calibrated "
-                    + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m"
-            );
+                + $"{eye.y - ground:0.00} m above the ground on the first still stand; the player's calibrated "
+                + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m";
+            if (blink)
+            {
+                // Logged when it lands, once the blink is black.
+                pendingEyes = true;
+                pendingEyesLog = line + "; applied behind a blink";
+            }
+            else
+                Plugin.Log.LogInfo(line + "; applied at once (too small a change to see)");
         }
         return true;
     }
@@ -1021,6 +1055,13 @@ internal sealed class RigDriver : MonoBehaviour
             staticSourceLast = staticPoint;
             staticSince = Time.unscaledTime;
             snap = true;
+            if (pendingEyes)
+            {
+                pendingEyes = false;
+                massEyes.Sample(pendingMassEyes, false, dt);
+                torsoEyes.Sample(pendingTorsoEyes, false, dt);
+                Plugin.Log.LogInfo(pendingEyesLog);
+            }
             if (pendingRecenter)
             {
                 Recenter(c, HeightCause.Recenter);
