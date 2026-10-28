@@ -213,8 +213,8 @@ internal sealed partial class SelfTestRunner
         var palm = Vector3.Cross(across, along);
         var wrist = DrawnHands.DrawnBone(hand).position;
         float knuckles = Vector3.Distance(
-            DrawnHands.DrawnBone(index.GetChild(0)).position,
-            DrawnHands.DrawnBone(pinky.GetChild(0)).position
+            DrawnPoint(index.GetChild(0)),
+            DrawnPoint(pinky.GetChild(0))
         );
 
         var real = DrawnHands.Bones(skin);
@@ -292,6 +292,19 @@ internal sealed partial class SelfTestRunner
         {
             UnityEngine.Object.Destroy(baked);
         }
+    }
+
+    /// <summary>Where <paramref name="bone"/> is drawn: carried by its nearest proxied ancestor. Run 22 read the second
+    /// finger joints through <see cref="DrawnHands.DrawnBone"/> and got the real bones back (span ratio 1.00 against a
+    /// 0.47 mesh): DrawnHands proxies only the bones the meshes list, and those joints are evidently not listed.</summary>
+    static Vector3 DrawnPoint(Transform bone)
+    {
+        var a = bone;
+        while (a != null && DrawnHands.DrawnBone(a) == a)
+            a = a.parent;
+        return a == null
+            ? bone.position
+            : DrawnHands.DrawnBone(a).TransformPoint(a.InverseTransformPoint(bone.position));
     }
 
     static float NearestVertex(Vector3[] verts, Matrix4x4 toWorld, Vector3 point)
