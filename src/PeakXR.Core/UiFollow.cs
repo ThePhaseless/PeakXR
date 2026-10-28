@@ -219,3 +219,61 @@ public static class PanelMath
         return MathF.Min(cap, MathF.Min(fitWidth, fitHeight));
     }
 }
+
+/// <summary>
+/// The HUD's drawn-on-top flag with hysteresis. <see cref="PanelMath.FitBeforeWall"/> flips it the moment the wall
+/// margin is crossed, so a climber's HUD at the edge of it switched between on top and depth tested at every wall test
+/// (flicker, and text sinking into the rock). On at once; off only once the panel has stood
+/// <see cref="ClearMargin"/> clear of the margin for <see cref="ClearSeconds"/>.
+/// </summary>
+public sealed class WallOnTopHold
+{
+    public const float ClearMargin = 0.05f;
+    public const float ClearSeconds = 0.3f;
+
+    private float clearFor;
+
+    public bool OnTop { get; private set; }
+
+    /// <param name="onTop">This test's answer (<see cref="PanelMath.FitBeforeWall"/>).</param>
+    /// <param name="spare">Metres between the panel and the wall less its margin; negative inside the margin.</param>
+    /// <param name="dt">Seconds since the last test.</param>
+    public bool Update(bool onTop, float spare, float dt)
+    {
+        if (onTop)
+        {
+            OnTop = true;
+            clearFor = 0f;
+        }
+        else if (OnTop)
+        {
+            clearFor = spare >= ClearMargin ? clearFor + dt : 0f;
+            OnTop = clearFor < ClearSeconds;
+        }
+        return OnTop;
+    }
+}
+
+/// <summary>
+/// When a world-locked sign (<c>WorldBanners</c>) moves back in front of the player. Re-placing it at every 40 degree
+/// glance popped it about the view; now it stays put until it has been well out of view
+/// (<see cref="AwayDegrees"/>) for <see cref="AwaySeconds"/>, or the player moved far from where it was placed.
+/// </summary>
+public sealed class SignDwell
+{
+    /// <summary>Off the heading by more than this, the sign is out of a 90-110 degree headset's view.</summary>
+    public const float AwayDegrees = 60f;
+    public const float AwaySeconds = 1f;
+
+    private float away;
+
+    /// <summary>Starts over (the sign was just placed).</summary>
+    public void Reset() => away = 0f;
+
+    /// <returns>True when the sign should be placed again now.</returns>
+    public bool Update(float offDegrees, bool movedFar, float dt)
+    {
+        away = offDegrees > AwayDegrees ? away + dt : 0f;
+        return movedFar || away >= AwaySeconds;
+    }
+}

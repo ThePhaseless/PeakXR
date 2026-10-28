@@ -38,6 +38,9 @@ internal static class PhysicalInteraction
         public readonly AnalogButton Grip = new(0.6f, 0.4f);
         public readonly AnalogButton Trigger = new(0.6f, 0.4f);
         public readonly ThrowEstimator Throw = new();
+
+        /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
+        public readonly BlinkHold Blink = new();
         public GripPressAction Action;
         public IInteractible Target;
         public IGripExtension Extension;
@@ -373,6 +376,22 @@ internal static class PhysicalInteraction
             hand.Action = GripPressAction.None;
     }
 
+    /// <summary>The hand's controller has been untracked past <see cref="BlinkHold.MaxSeconds"/>: its grip opens. The
+    /// stale throw samples are dropped so what it held falls instead of flying off, and a soft note at the hand says
+    /// it let go (the controller itself may be off, so no buzz).</summary>
+    private static void LostForGood(Hand hand, VRRig rig)
+    {
+        hand.Throw.Clear();
+        if (!hand.Grip.Held)
+            return;
+        Plugin.Log.LogInfo(
+            $"[interact.physical] {(hand.Left ? "left" : "right")} controller untracked for {BlinkHold.MaxSeconds:0.##} s: its grip opens"
+        );
+        var at = rig != null ? rig.Hand(hand.Left) : null;
+        if (at != null)
+            Affordance.Play(CueSound.Notice, at.position, 0.5f);
+    }
+
     private static void UpdateHand(
         Hand hand,
         Character c,
@@ -387,17 +406,21 @@ internal static class PhysicalInteraction
         // A tracking blink keeps the last grip and trigger, as ClimbHands and BodyInventory do: opening the hand there
         // dropped or threw the item from stale throw samples, then the grip closing again regrabbed it. A latched
         // Toggle grip already reads 1 through the blink (GripLatch keeps its latch untracked). One-handed play's
-        // unused controller is never tracked: it reads open.
+        // unused controller is never tracked: it reads open. A controller lost for good (switched off, flat, out of the
+        // room) must not hold forever: past BlinkHold.MaxSeconds it reads open too, and lets go as a plain drop.
         bool unused = VRInput.OneHanded && hand.Left != VRInput.LeftHanded;
+        if (hand.Blink.Update(state.Tracked || unused, dt))
+            LostForGood(hand, rig);
+        bool open = unused || hand.Blink.Expired;
         hand.Grip.Update(
             state.Tracked ? state.Grip
-                : unused ? 0f
+                : open ? 0f
                 : hand.Grip.Value,
             dt
         );
         hand.Trigger.Update(
             state.Tracked ? state.Trigger
-                : unused ? 0f
+                : open ? 0f
                 : hand.Trigger.Value,
             dt
         );
@@ -925,16 +948,18 @@ internal static class PhysicalInteraction
     /// <summary>The master accepted this player's pickup (CharacterItems.OnPickupAccepted, CharacterItems.cs:440): the
     /// success tick or Stowed notice now, not when the item merely left the world locally (Item.cs:589).
     /// <paramref name="cue"/> false: the caller gives its own cue.</summary>
-    internal static void PickupAccepted(bool cue)
+    /// <returns>Whether the hand that asked is the left one; null when no hand's pickup was waiting.</returns>
+    internal static bool? PickupAccepted(bool cue)
     {
         var hand = pickupHand;
         pickupHand = null;
         pickupItem = null;
         if (hand == null || Time.time > pickupUntil || hand.Confirmed)
-            return;
+            return null;
         hand.Confirmed = true;
         if (cue)
             PickupDone(hand);
+        return hand.Left;
     }
 
     /// <summary>The master refused the pickup (Item.DenyPickupRPC, Item.cs:598-602, the item back in the world): the
@@ -1993,9 +2018,9 @@ internal static class PhysicalInteraction
             if (amplitude > 0f)
             {
                 if (leftGrip)
-                    Haptics.Pulse(true, amplitude, 0.04f, StaminaBeat.Priority);
+                    Haptics.Beat(true, amplitude, StaminaBeat.Priority);
                 if (rightGrip)
-                    Haptics.Pulse(false, amplitude, 0.04f, StaminaBeat.Priority);
+                    Haptics.Beat(false, amplitude, StaminaBeat.Priority);
                 return;
             }
         }

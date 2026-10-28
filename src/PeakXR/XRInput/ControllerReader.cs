@@ -23,6 +23,9 @@ internal sealed class ControllerReader
     private readonly InputDeviceCharacteristics side;
     private readonly List<InputFeatureUsage> scratch = new();
     private readonly List<Bone> bones = new();
+
+    /// <summary>A Vive wand pad click, judged from where it started (Core <see cref="WandPadLatch"/>).</summary>
+    private readonly WandPadLatch wandLatch = new();
     private readonly NVector3[] joints = new NVector3[8];
     private readonly float[] curls = new float[FingerCurls.Count];
     private readonly XRInputSampler.Usage<float>[] fingerUsages = new XRInputSampler.Usage<float>[
@@ -212,7 +215,8 @@ internal sealed class ControllerReader
             layout,
             raw,
             moveHand: left != VRInput.LeftHanded,
-            oneHanded: VRInput.OneHanded
+            oneHanded: VRInput.OneHanded,
+            wand: wandLatch
         );
         s.Trigger = b.Trigger;
         s.Grip = b.Grip;
@@ -228,6 +232,7 @@ internal sealed class ControllerReader
         s.Menu = b.Menu;
         s.NoTriggerTouch = b.NoTriggerTouch;
         s.WandPad = layout.EmulateFaceButtons && layout.PadIsStick;
+        s.SecondaryCancelled = s.WandPad && wandLatch.Cancelled;
 
         s.SkeletalCurls = ReadCurls() ? curls : null;
     }

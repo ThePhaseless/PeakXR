@@ -395,7 +395,7 @@ internal sealed class RigDriver : MonoBehaviour
         LatePose.SetRig(null);
         mirror.Disable();
         holdCue.Show(null, null, 0f, 0f);
-        wallCue.Show(null, false, Vector3.zero);
+        wallCue.Show(null, null, false, Vector3.zero);
         spectateFloor.Hide();
         SetFallback(false);
         UnbindMainCamera();
@@ -1324,6 +1324,7 @@ internal sealed class RigDriver : MonoBehaviour
         bool leaned = headBlocked && !chase && c != null;
         wallCue.Show(
             rig.Head,
+            rig.HeadCamera != null ? rig.HeadCamera.transform : null,
             headBlocked || eyeGuard.Black,
             leaned ? c.Center - rig.Head.position : Vector3.zero
         );

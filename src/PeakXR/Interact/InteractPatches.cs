@@ -313,10 +313,11 @@ internal static class InteractPatches
     /// hand only pocketed something. While such a pocketing pickup is pending
     /// (<see cref="PhysicalInteraction.TakePocketing"/>) that equip is skipped: the item stays in the pocket slot
     /// <c>Player.AddItem</c> gave it (Item.cs:617) and the held item stays in hand. Never for the temporary slot
-    /// (250, Player.cs:137-141): vanilla fills it only with the item it equips, so that equip runs and the hand
-    /// gets the pockets-full cue (the grip refuses this up front; this covers pockets filled while the answer was
-    /// on its way). Also the pickup's success tick (<see cref="PhysicalInteraction.PickupAccepted"/>). Local only:
-    /// the equip is the owner's own call.
+    /// (250, Player.cs:137-141): vanilla fills it only with the item it equips, so that equip runs and the item ends
+    /// in the hand, a pickup that worked (the success tick). A climber's temporary-slot item is dropped behind the
+    /// hip instead (CharacterItems.cs:445-452): that hand gets the pockets-full cue (the grip refuses both up front;
+    /// this covers pockets filled while the answer was on its way). Also the pickup's success tick
+    /// (<see cref="PhysicalInteraction.PickupAccepted"/>). Local only: the equip is the owner's own call.
     /// </summary>
     [HarmonyPatch]
     internal static class KeepHeldOnPocket
@@ -339,9 +340,15 @@ internal static class InteractPatches
             {
                 bool pocketing = PhysicalInteraction.TakePocketing();
                 Active = pocketing && slotID != TempSlot;
-                PhysicalInteraction.PickupAccepted(cue: Active || !pocketing);
-                if (pocketing && !Active)
-                    Affordance.DenyAtHand(!LocalHold.ItemInLeftHand, DenyReason.PocketsFull);
+                // The temporary slot is equipped into the hand (:457), so the pickup worked; only a climber's is
+                // dropped behind the hip instead (:445-452), and that is the refusal.
+                bool dropped = slotID == TempSlot && c.data.isClimbingAnything;
+                bool? asked = PhysicalInteraction.PickupAccepted(cue: !dropped);
+                if (dropped)
+                    Affordance.DenyAtHand(
+                        asked ?? !LocalHold.ItemInLeftHand,
+                        DenyReason.PocketsFull
+                    );
             }
             catch (Exception e)
             {

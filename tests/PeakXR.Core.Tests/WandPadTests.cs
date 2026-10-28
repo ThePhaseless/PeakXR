@@ -176,3 +176,42 @@ public class WandPadTests
         Assert.Equal(Vector2.Zero, p.Stick);
     }
 }
+
+public class WandPadLatchTests
+{
+    [Fact]
+    public void CentreClickSlidingToTheRim_EndsBYWithoutATap_ThenSprints()
+    {
+        var l = new WandPadLatch();
+        Assert.True(l.Map(Vector2.Zero, true, moveHand: true).Secondary);
+        Assert.False(l.Cancelled);
+        var rim = l.Map(new Vector2(0f, 0.95f), true, moveHand: true);
+        Assert.True(l.Cancelled);
+        Assert.False(rim.Secondary);
+        Assert.True(rim.StickClick);
+        // Back across the centre: still no B/Y for this click.
+        Assert.False(l.Map(Vector2.Zero, true, moveHand: true).Secondary);
+        Assert.False(l.Cancelled);
+        l.Map(Vector2.Zero, false, moveHand: true);
+        Assert.True(l.Map(Vector2.Zero, true, moveHand: true).Secondary);
+    }
+
+    [Fact]
+    public void RimClickCrossingTheCentre_NeverBecomesBY()
+    {
+        var l = new WandPadLatch();
+        Assert.True(l.Map(new Vector2(0.9f, 0f), true, moveHand: true).StickClick);
+        var mid = l.Map(new Vector2(0.1f, 0f), true, moveHand: true);
+        Assert.False(mid.Secondary);
+        Assert.False(l.Cancelled);
+    }
+
+    [Fact]
+    public void TurnHand_MapsAsBefore()
+    {
+        var l = new WandPadLatch();
+        Assert.True(l.Map(Vector2.Zero, true, moveHand: false).StickClick);
+        Assert.True(l.Map(new Vector2(0f, 0.9f), true, moveHand: false).Secondary);
+        Assert.False(l.Cancelled);
+    }
+}

@@ -88,6 +88,12 @@ public struct HapticChannel
     private float until;
     private HapticPriority priority;
     private bool tailed;
+    private float heldUntil;
+
+    /// <summary>A pattern taken with <see cref="Hold"/> (the refusal triple) is still running at
+    /// <paramref name="now"/>. A repeating pulse of the same priority (the climb stamina beat at Alert) checks it and
+    /// yields, since an equal priority would otherwise cut the pattern.</summary>
+    public readonly bool Held(float now) => now < heldUntil;
 
     /// <summary>
     /// Whether a pulse of <paramref name="p"/> lasting <paramref name="seconds"/> may go out at
@@ -114,6 +120,7 @@ public struct HapticChannel
         if (now < until && p < priority)
             return;
         Take(p, now, seconds, true);
+        heldUntil = now + Math.Max(seconds, 0f);
     }
 
     private void Take(HapticPriority p, float now, float seconds, bool tail)

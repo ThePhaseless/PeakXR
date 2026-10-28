@@ -243,10 +243,18 @@ public sealed class BugChord
     /// <summary>This frame, the chord owns that controller's stick click: the layout's sprint or crouch ignores it.</summary>
     public bool StickTaken(bool left) => stickOut && left != MenuLeft;
 
-    public BugChordEvent Update(bool menuL, bool stickL, bool menuR, bool stickR, float dt)
+    /// <param name="blocked">The both-sticks chord is held: never start, so one gesture never saves two reports.</param>
+    public BugChordEvent Update(
+        bool menuL,
+        bool stickL,
+        bool menuR,
+        bool stickR,
+        float dt,
+        bool blocked = false
+    )
     {
         var e = BugChordEvent.None;
-        if (!Active)
+        if (!Active && !blocked)
         {
             bool leftMenu = menuL && stickR;
             if (leftMenu || (menuR && stickL))
@@ -258,7 +266,7 @@ public sealed class BugChord
                 menuTaken = stickTaken = true;
             }
         }
-        else
+        else if (Active)
         {
             bool menu = MenuLeft ? menuL : menuR;
             bool stick = MenuLeft ? stickR : stickL;
@@ -523,20 +531,40 @@ public static class BugReportText
 }
 
 /// <summary>
-/// Both stick clicks held together: the recenter and bug-report chord that works on every controller. Under SteamVR
-/// a Touch left Menu opens the dashboard and the right controller has none, so Menu alone cannot be relied on. The
-/// caller recenters while <see cref="Active"/> lasts <see cref="RecenterSeconds"/>; holding on for
-/// <see cref="ReportSeconds"/> more saves a report. Both sticks are taken from the chord's start through each one's
-/// release frame (<see cref="StickTaken"/>), so the layout's sprint and crouch let go while it is held.
+/// Both stick clicks pressed together: the recenter and bug-report chord that works on every controller. Under
+/// SteamVR a Touch left Menu opens the dashboard and the right controller has none, so Menu alone cannot be relied
+/// on. The caller recenters while <see cref="Active"/> lasts <see cref="RecenterSeconds"/>; holding on for
+/// <see cref="ReportSeconds"/> more saves a report.
+/// <para>Sprint and crouch sit on the stick clicks as toggles, so the first stick in must not reach the layout before
+/// the chord is known: a lone click waits <see cref="Window"/> (<see cref="Click"/> reads up meanwhile). If the other
+/// stick joins in that window it is the chord, and neither press reaches the layout until each is released
+/// (<see cref="StickTaken"/>, its release frame included). Otherwise the press goes through, late by the window, and a
+/// click let go inside the window is passed on as a one-frame tap. A stick pressed while the other is already passing
+/// through, or while <c>blocked</c>, goes straight through.</para>
 /// </summary>
 public sealed class StickChord
 {
     public float RecenterSeconds = 1f;
     public float ReportSeconds = 1.5f;
 
+    /// <summary>Seconds a lone stick click waits for the other one. 0 (one-handed play, one stick) passes at once.</summary>
+    public float Window = 0.18f;
+
+    private enum Phase : byte
+    {
+        Idle,
+        Pending,
+        Pass,
+        Chord,
+    }
+
     private bool fired;
-    private bool takenL;
-    private bool takenR;
+    private Phase phaseL;
+    private Phase phaseR;
+    private float waitL;
+    private float waitR;
+    private bool clickL;
+    private bool clickR;
     private bool outL;
     private bool outR;
 
@@ -552,42 +580,110 @@ public sealed class StickChord
             ? 0f
             : Math.Max(0f, Math.Min(1f, (Held - RecenterSeconds) / Math.Max(1e-3f, ReportSeconds)));
 
-    /// <summary>This frame, the chord owns that controller's stick click.</summary>
+    /// <summary>This frame, the chord owns that controller's stick click (its release frame included).</summary>
     public bool StickTaken(bool left) => left ? outL : outR;
+
+    /// <summary>The stick click the controller layout (sprint, crouch) sees this frame.</summary>
+    public bool Click(bool left) => left ? clickL : clickR;
 
     /// <param name="blocked">Another chord (the Menu one) holds a stick: never start.</param>
     public BugChordEvent Update(bool stickL, bool stickR, bool blocked, float dt)
     {
-        var e = BugChordEvent.None;
-        bool both = stickL && stickR;
+        bool newL = stickL && phaseL == Phase.Idle;
+        bool newR = stickR && phaseR == Phase.Idle;
+        bool start = false;
+        if (newL && newR)
+        {
+            phaseL = phaseR = blocked ? Phase.Pass : Phase.Chord;
+            start = !blocked;
+        }
+        else if (newL)
+            start = Press(ref phaseL, ref waitL, ref phaseR, stickR, blocked);
+        else if (newR)
+            start = Press(ref phaseR, ref waitR, ref phaseL, stickL, blocked);
+
+        clickL = Step(ref phaseL, ref waitL, stickL, newL, dt, out outL);
+        clickR = Step(ref phaseR, ref waitR, stickR, newR, dt, out outR);
+
+        bool was = Active;
+        Active = phaseL == Phase.Chord && phaseR == Phase.Chord && stickL && stickR;
+        if (start || (Active && !was))
+        {
+            Held = 0f;
+            fired = false;
+            return BugChordEvent.None;
+        }
         if (!Active)
+            return BugChordEvent.None;
+        Held += dt;
+        if (fired || Held < RecenterSeconds + ReportSeconds)
+            return BugChordEvent.None;
+        fired = true;
+        return BugChordEvent.Report;
+    }
+
+    /// <summary>A stick just went down: the chord if the other waits in its window (or still holds a chord), else
+    /// its own window, or straight through.</summary>
+    /// <returns>A chord started.</returns>
+    private bool Press(
+        ref Phase self,
+        ref float wait,
+        ref Phase other,
+        bool otherDown,
+        bool blocked
+    )
+    {
+        if (!blocked && (other == Phase.Pending || (other == Phase.Chord && otherDown)))
         {
-            if (both && !blocked)
-            {
-                Active = true;
-                Held = 0f;
-                fired = false;
-                takenL = takenR = true;
-            }
+            self = other = Phase.Chord;
+            return true;
         }
-        else if (both)
-        {
-            Held += dt;
-            if (!fired && Held >= RecenterSeconds + ReportSeconds)
-            {
-                fired = true;
-                e = BugChordEvent.Report;
-            }
-        }
+        if (blocked || Window <= 0f || other == Phase.Pass)
+            self = Phase.Pass;
         else
-            Active = false;
-        // Each stick stays taken through the frame it reads released.
-        outL = takenL;
-        outR = takenR;
-        if (!stickL)
-            takenL = false;
-        if (!stickR)
-            takenR = false;
-        return e;
+        {
+            self = Phase.Pending;
+            wait = 0f;
+        }
+        return false;
+    }
+
+    /// <returns>The click the layout sees.</returns>
+    private bool Step(
+        ref Phase phase,
+        ref float wait,
+        bool down,
+        bool fresh,
+        float dt,
+        out bool taken
+    )
+    {
+        taken = phase == Phase.Chord;
+        switch (phase)
+        {
+            case Phase.Pending:
+                if (!down)
+                {
+                    // Let go inside the window: the tap it was, one frame long.
+                    phase = Phase.Idle;
+                    return true;
+                }
+                if (!fresh)
+                    wait += dt;
+                if (wait < Window)
+                    return false;
+                phase = Phase.Pass;
+                return true;
+            case Phase.Pass:
+                if (!down)
+                    phase = Phase.Idle;
+                return down;
+            case Phase.Chord:
+                if (!down)
+                    phase = Phase.Idle;
+                return false;
+            default:
+                return false;
+        }
     }
 }

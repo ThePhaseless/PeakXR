@@ -10,7 +10,9 @@ namespace PeakXR.Rig;
 /// the middle of the view, drawn above the fade, with a chevron toward open space (<see cref="WallCueMath"/>: up is
 /// ahead, down behind), and a soft note from that side on entering. Without it the view just goes dark and the
 /// player cannot tell why or where to move. The eye guard's hold has nowhere to move to, so it shows the ring alone.
-/// Head-locked only while the world is hidden, so it carries no motion against the scene.
+/// Head-locked only while the world is hidden, so it carries no motion against the scene: it appears once the drawn
+/// fade is fully black (<see cref="BlackEnough"/>), not while the scene still shows through, and it rides the eye the
+/// view renders from (the held eye outside the rock, not the head inside it), so it sits centred and still.
 /// </summary>
 internal sealed class WallCue
 {
@@ -26,6 +28,9 @@ internal sealed class WallCue
     private const float Spread = 0.011f;
     private const float Drop = 0.009f;
 
+    /// <summary>The drawn fade (<see cref="FadeView.Alpha"/>) at or above which the world is hidden.</summary>
+    private const float BlackEnough = 0.99f;
+
     private readonly WallCueGate gate = new();
     private Mesh ringMesh;
     private Mesh chevronMesh;
@@ -36,12 +41,14 @@ internal sealed class WallCue
     /// <summary>The ring is drawn (self-test).</summary>
     public bool Visible => ring != null && ring.activeSelf;
 
-    /// <param name="head">The rig head; null hides the cue.</param>
+    /// <param name="head">The rig head (its layer, the sound's place); null hides the cue.</param>
+    /// <param name="eye">The transform the view renders from (the headset camera, at the held eye while the head is
+    /// in rock); null uses <paramref name="head"/>.</param>
     /// <param name="black">The wall fade or the eye guard holds black.</param>
     /// <param name="toOpen">World direction toward open space, or zero when moving cannot help.</param>
-    public void Show(Transform head, bool black, Vector3 toOpen)
+    public void Show(Transform head, Transform eye, bool black, Vector3 toOpen)
     {
-        bool visible = head != null && black;
+        bool visible = head != null && black && FadeView.Alpha >= BlackEnough;
         if (gate.Update(visible, Time.unscaledTime) && toOpen != Vector3.zero)
             Affordance.Play(CueSound.Notice, head.position + toOpen.normalized * 0.5f, 0.5f);
         if (!visible)
@@ -50,15 +57,17 @@ internal sealed class WallCue
                 ring.SetActive(false);
             return;
         }
+        var parent = eye != null ? eye : head;
         if (ring == null)
-            Build(head);
-        else if (ring.transform.parent != head)
-            ring.transform.SetParent(head, false);
+            Build(parent, head.gameObject.layer);
+        else if (ring.transform.parent != parent)
+            ring.transform.SetParent(parent, false);
         if (!ring.activeSelf)
             ring.SetActive(true);
+        var forward = parent.forward;
         float degrees = WallCueMath.ArrowDegrees(
             new System.Numerics.Vector3(toOpen.x, toOpen.y, toOpen.z),
-            new System.Numerics.Vector3(head.forward.x, head.forward.y, head.forward.z)
+            new System.Numerics.Vector3(forward.x, forward.y, forward.z)
         );
         bool arrow = !float.IsNaN(degrees);
         if (chevron.activeSelf != arrow)
@@ -79,14 +88,14 @@ internal sealed class WallCue
             Object.Destroy(material);
     }
 
-    private void Build(Transform head)
+    private void Build(Transform parent, int layer)
     {
         material = UIMaterials.Create(Affordance.HintColor, drawOnTop: true, renderQueue: 5000);
         ringMesh = RingMesh();
         chevronMesh = ChevronMesh();
-        ring = UIMaterials.MeshObject("PeakXR.WallCue", ringMesh, material, head);
+        ring = UIMaterials.MeshObject("PeakXR.WallCue", ringMesh, material, parent);
         ring.transform.localPosition = new Vector3(0f, 0f, Distance);
-        ring.layer = head.gameObject.layer;
+        ring.layer = layer;
         ring.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.WallCue;
         chevron = UIMaterials.MeshObject(
             "PeakXR.WallCueArrow",
@@ -94,7 +103,7 @@ internal sealed class WallCue
             material,
             ring.transform
         );
-        chevron.layer = head.gameObject.layer;
+        chevron.layer = layer;
         chevron.GetComponent<MeshRenderer>().sortingOrder = DrawOrder.WallCue;
     }
 

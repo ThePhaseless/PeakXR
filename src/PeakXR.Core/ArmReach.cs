@@ -128,6 +128,20 @@ public sealed class ReachLearner
         _spanTime = 0f;
     }
 
+    /// <summary>A world-scale change: the learned reach moves into the new world units (<paramref name="factor"/> =
+    /// new scale / old), so Auto's small rescales do not throw away what was learned. A held span starts over.</summary>
+    public void Rescale(float factor)
+    {
+        if (!(factor > 0f) || float.IsInfinity(factor))
+        {
+            Reset();
+            return;
+        }
+        Reach *= factor;
+        _spanMin = float.MaxValue;
+        _spanTime = 0f;
+    }
+
     /// <param name="distance">Controller to avatar shoulder (m).</param>
     /// <param name="rise">How far the controller is above the shoulder (m).</param>
     /// <param name="valid">The caller's own gates: upright, empty hand, body at rest, view settled.</param>

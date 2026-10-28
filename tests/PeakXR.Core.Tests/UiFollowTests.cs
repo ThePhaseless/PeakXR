@@ -333,3 +333,40 @@ public class PanelMathTests
         Assert.True(PanelMath.MenuMetersPerPixel(0f, 0f, 1.6f, 1.8f) > 0f);
     }
 }
+
+public class WallOnTopHoldTests
+{
+    [Fact]
+    public void OnAtOnce_OffOnlyAfterAClearDwell()
+    {
+        var h = new WallOnTopHold();
+        Assert.True(h.Update(true, -0.02f, 0.1f));
+        // Just past the margin: stays on.
+        for (int i = 0; i < 10; i++)
+            Assert.True(h.Update(false, 0.01f, 0.1f));
+        // Clearly clear, but only for 0.2 s, then back in: still on.
+        h.Update(false, 0.2f, 0.1f);
+        h.Update(false, 0.2f, 0.1f);
+        Assert.True(h.Update(true, -0.01f, 0.1f));
+        h.Update(false, 0.2f, 0.1f);
+        h.Update(false, 0.2f, 0.1f);
+        Assert.False(h.Update(false, 0.2f, 0.1f));
+    }
+}
+
+public class SignDwellTests
+{
+    [Fact]
+    public void Glances_DoNotReplace_ALongLookAwayDoes()
+    {
+        var d = new SignDwell();
+        Assert.False(d.Update(45f, false, 0.5f));
+        Assert.False(d.Update(45f, false, 5f));
+        Assert.False(d.Update(80f, false, 0.6f));
+        Assert.False(d.Update(30f, false, 0.1f));
+        Assert.False(d.Update(80f, false, 0.6f));
+        Assert.True(d.Update(80f, false, 0.5f));
+        d.Reset();
+        Assert.True(d.Update(0f, true, 0.01f));
+    }
+}

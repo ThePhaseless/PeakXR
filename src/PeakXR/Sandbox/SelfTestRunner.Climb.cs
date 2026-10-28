@@ -2334,7 +2334,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.47: a grip that closes just short of a climbable wall gets OutOfReach (<see cref="HoldVerdict.Approach"/>),
-    /// never silence. The player stands at the test wall and the hand reaches toward it, stopping 0.15 m past
+    /// never silence. The player stands at the test wall and the hand reaches toward it, stopping 0.05 m past
     /// the grab reach (<c>ClimbGrabRadius</c> plus the full <c>ClimbReachAssist</c>); the grip gets the OutOfReach cue
     /// on that hand and does not climb.
     /// </summary>
@@ -2356,9 +2356,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         var rig = VRRig.Instance;
         bool left = VRInput.LeftHanded;
-        // Along the reach from the eye to the face, the hand stops 0.15 m past the farthest grab reach (ClimbReach).
+        // Along the reach from the eye to the face, the hand stops 0.05 m past the farthest grab reach (ClimbReach).
+        // The grip closes while the hand is still 0.05-0.06 m back (the loop below, plus a frame of lag), so the face
+        // is 0.40-0.41 m past it at the press: past any grab reach (radius + allowance, at most 0.3 m) and inside the
+        // probe's band (that reach + TraversalRefusal.ReachProbe) even with no allowance (0.5 m). The old 0.15 m put
+        // the face 0.50 m out at the press, right at the band's end with the allowance near 0, so about 1 cm of head
+        // position decided pass or fail (baseline run: probe None, hit False, eye-hand 0.38 m).
         // Re-read from the live eye every frame, so the probe's cast runs along the same line as the scripted reach.
-        float gap = cfg.ClimbRadius + cfg.ClimbReachAssist + 0.15f;
+        float gap = cfg.ClimbRadius + cfg.ClimbReachAssist + 0.05f;
         Vector3 Dir() => (wallFace.point - EyeNow()).normalized;
         Vector3 ReachPoint(float back) => wallFace.point - Dir() * (gap + back);
         UI.Affordances.Affordance.ResetGate();

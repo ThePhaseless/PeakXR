@@ -52,6 +52,23 @@ internal static class Haptics
         bool duckTail = true
     ) => Send(left, amplitude, seconds, priority, HapticScale.Cue, duckTail);
 
+    /// <summary>When the climb stamina beat last went out on either hand (unscaled time): the out-of-stamina camera
+    /// shake's rumble stays off only while the beat really plays (ComfortEventsRuntime).</summary>
+    public static float BeatAt { get; private set; } = float.NegativeInfinity;
+
+    /// <summary>One climb stamina beat pulse (<c>StaminaHaptics</c>). At Alert (empty stamina, sliding) it would cut a
+    /// refusal triple of the same priority, so it yields while a pattern holds the hand
+    /// (<see cref="HapticChannel.Held"/>).</summary>
+    public static bool Beat(bool left, float amplitude, HapticPriority priority)
+    {
+        if (Channels[left ? 0 : 1].Held(Time.unscaledTime))
+            return false;
+        bool sent = Send(left, amplitude, 0.04f, priority, HapticScale.Cue);
+        if (sent)
+            BeatAt = Time.unscaledTime;
+        return sent;
+    }
+
     /// <summary>A UI tick (menus, wheels, keyboard, wrist status): the same slider and mute, at the UI scale.</summary>
     public static bool Ui(bool left, float amplitude, float seconds) =>
         Send(left, amplitude, seconds, HapticPriority.Cue, HapticScale.Ui);

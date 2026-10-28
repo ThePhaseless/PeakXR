@@ -407,6 +407,10 @@ internal sealed class NetPoseSync
             NetPoseFeature.InterpolationDelayMs.Value * 0.001,
             peers.Count
         );
+        double syncLag = PoseRate.SyncerLag(
+            1.0 / Mathf.Max(1, PhotonNetwork.SerializationRate),
+            Time.deltaTime
+        );
 
         foreach (var entry in remotes)
         {
@@ -424,12 +428,16 @@ internal sealed class NetPoseSync
                 continue;
 
             // The game's synced yaw is current, the pose is played `delay` late: rebuild it with the yaw of the
-            // playback moment so head turns do not swing the hands (PoseFrame remarks).
+            // playback moment so head turns do not swing the hands (PoseFrame remarks). That yaw is CharacterSyncer's
+            // lerped one, a serialization interval behind what it received (PoseRate.YawSampleTime).
             remote.Yaw.Push(now, yaw);
             remote.Stream.Buffer.Delay = delay;
             if (
                 !remote.Stream.Buffer.Sample(now, out var local)
-                || !remote.Yaw.Sample(now - delay, out float playbackYaw)
+                || !remote.Yaw.Sample(
+                    PoseRate.YawSampleTime(now, delay, syncLag),
+                    out float playbackYaw
+                )
             )
                 continue;
 

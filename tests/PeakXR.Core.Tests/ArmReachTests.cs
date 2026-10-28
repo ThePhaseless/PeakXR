@@ -125,6 +125,17 @@ public class ArmReachTests
     }
 
     [Fact]
+    public void Learner_Rescale_KeepsTheReachInNewUnits()
+    {
+        var l = new ReachLearner();
+        Hold(l, 0.7f, 0.5f);
+        l.Rescale(1.1f);
+        TestUtil.Near(0.77f, l.Reach);
+        l.Rescale(0f);
+        Assert.Equal(0f, l.Reach);
+    }
+
+    [Fact]
     public void Learner_IgnoresAOneFrameSpike()
     {
         // A warp, respawn or tracking pop: one frame under the cap, at rest (hip velocity 0).

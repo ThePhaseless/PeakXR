@@ -148,3 +148,23 @@ public class ClimbInputSettleTests
         bool freezes
     ) => Assert.Equal(freezes, ClimbInput.FreezesHang(tracked, anchored, oneHanded, theOneHand));
 }
+
+public class BlinkHoldTests
+{
+    [Fact]
+    public void ShortBlink_KeepsTheGrip_LongLoss_OpensItOnce()
+    {
+        var b = new BlinkHold();
+        Assert.False(b.Update(false, 1f));
+        Assert.False(b.Expired);
+        Assert.False(b.Update(true, 0.01f));
+        int fired = 0;
+        for (int i = 0; i < 40; i++)
+            if (b.Update(false, 0.05f))
+                fired++;
+        Assert.Equal(1, fired);
+        Assert.True(b.Expired);
+        b.Update(true, 0.01f);
+        Assert.False(b.Expired);
+    }
+}

@@ -418,6 +418,38 @@ internal sealed partial class SelfTestRunner
         );
     }
 
+    /// <summary>ui.03's own reading of the banner rule, written apart from WorldBanners so the step does not check the
+    /// rule against itself: rays from <paramref name="eye"/> through a 5 x 3 grid over the sign's face at 30 m; the sign
+    /// belongs 0.1 m before the nearest rock any of them meets (by depth along the centre line), at most 30 m and
+    /// never nearer than 0.5 m.</summary>
+    private static float BannerRayDistance(
+        Vector3 eye,
+        Vector3 centre,
+        Quaternion rotation,
+        Vector2 half
+    )
+    {
+        float nearest = float.PositiveInfinity;
+        var backfaces = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        try
+        {
+            for (int x = -2; x <= 2; x++)
+            for (int y = -1; y <= 1; y++)
+            {
+                var to = centre + rotation * new Vector3(x * 0.5f * half.x, y * half.y, 0f);
+                float hit = UI.World.WorldCanvases.WallAlong(eye, to, out _);
+                if (!float.IsInfinity(hit))
+                    nearest = Mathf.Min(nearest, hit * centre.magnitude / to.magnitude);
+            }
+        }
+        finally
+        {
+            Physics.queriesHitBackfaces = backfaces;
+        }
+        return Mathf.Clamp(nearest - 0.1f, 0.5f, WorldBanners.Distance);
+    }
+
     /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a sign ahead, 30 m out or
     /// nearer where terrain is in the way.</summary>
     IEnumerator BannerStep()
@@ -450,9 +482,9 @@ internal sealed partial class SelfTestRunner
         string dayLine = gui.heroTimeOfDayText.text;
         var sign = gui.heroObject.transform.parent;
         var head = VRRig.Instance.Head;
-        float d = sign != null ? Vector3.Distance(sign.position, head.position) : 0f;
-        // The sign stands just before the nearest rock in front of any part of it, at most 30 m and never nearer than
-        // the comfort floor (WorldBanners.Sign.Place): repeat that test from here.
+        // Measured from the eye the sign was placed from, not the head now: the rule is checked, not re-run.
+        var from = WorldBanners.HeroPlacedFrom;
+        float d = sign != null ? Vector3.Distance(sign.position, from) : 0f;
         float expected = WorldBanners.Distance;
         if (sign != null && d > 0.01f)
         {
@@ -461,9 +493,9 @@ internal sealed partial class SelfTestRunner
                 WorldBanners.Distance,
                 SpatialRuntime.DegreesPerPixel
             );
-            expected = WorldBanners.ClearDistance(
-                head.position,
-                (sign.position - head.position) * (WorldBanners.Distance / d),
+            expected = BannerRayDistance(
+                from,
+                (sign.position - from) * (WorldBanners.Distance / d),
                 sign.rotation,
                 0.5f * mpp * part.localScale.x * part.rect.size
             );
