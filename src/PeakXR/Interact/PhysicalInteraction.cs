@@ -576,8 +576,16 @@ internal static class PhysicalInteraction
             HoldingItem = holding,
             ThisHandHolds = thisHolds,
             HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
-            // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651).
-            HeldBothHandsInGame = holding && !item.rightHandOnly,
+            // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the
+            // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
+            // a join here would pre-empt (extensions are never asked once the press is SecondHand).
+            HeldBothHandsInGame =
+                holding
+                && !item.rightHandOnly
+                && !(
+                    Physical.ItemGestures.Parasol != null
+                    && Physical.ItemGesturesConfig.Instance.ParasolRunner
+                ),
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,

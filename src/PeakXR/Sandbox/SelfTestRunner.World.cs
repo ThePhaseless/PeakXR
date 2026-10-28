@@ -1391,7 +1391,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var fireBase = ItemGestures.FireBase(fire);
-        yield return ApproachFire(fireBase);
+        // Not ApproachFire's 0.95 m: there the idle hold (hand ~0.45 m ahead, the apple's centre ~0.26 m past it) put
+        // the food 0.28 m out, inside the cook column, before the carry began (run 17). From 1.5 m it rests 0.7-0.9 m
+        // out, in the warmth band (0.6-1.1 m).
+        yield return WarpFacing(fireBase, 1.5f);
         if (!fire.Lit)
         {
             fire.LightWithoutReveal();
@@ -2415,7 +2418,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// Warps onto summit ground just past (<paramref name="past"/>) or short of the last progress point in z, the line
     /// the game's <c>IsAtPeak</c> draws (MountainProgressHandler.cs:198-205), and checks the body is on that side.
-    /// Ground more than 3 m off the height of the ground under the point is a ledge or the void and is not used.
+    /// Ground more than 3 m off the height of the ground on the line is a ledge or the void and is not used. Probed
+    /// along the body's x first, where the Peak landing stands on summit ground, then along the point's own x: 2-7 m
+    /// past the point at its x 0 no ground lay within 3 m while the landing stood grounded at x 6.1 (vr.93, run17).
     /// </summary>
     IEnumerator SummitSide(bool past)
     {
@@ -2428,23 +2433,36 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var last = points[points.Length - 1].transform.position;
-        if (!GroundUnder(last, out var summit))
+        var tried = new List<string>();
+        foreach (float x in new[] { c.Center.x, last.x })
         {
-            Fail($"no ground under the last progress point {last}");
-            yield break;
-        }
-        foreach (float dz in SummitSteps)
-        {
-            var probe = new Vector3(last.x, last.y, last.z + (past ? dz : -dz));
-            if (!GroundUnder(probe, out var ground) || Mathf.Abs(ground.y - summit.y) > 3f)
+            if (!GroundUnder(new Vector3(x, last.y, last.z), out var summit))
+            {
+                tried.Add(F($"x {x:0.0}: no ground on the line"));
                 continue;
-            yield return WarpTo(ground);
-            if (progress.IsAtPeak(c.Center) == past)
-                yield break;
+            }
+            foreach (float dz in SummitSteps)
+            {
+                var probe = new Vector3(x, last.y, last.z + (past ? dz : -dz));
+                bool hit = GroundUnder(probe, out var ground);
+                if (!hit || Mathf.Abs(ground.y - summit.y) > 3f)
+                {
+                    tried.Add(
+                        hit
+                            ? F($"x {x:0.0} z {probe.z:0.0}: {ground.y - summit.y:+0.0;-0.0} m")
+                            : F($"x {x:0.0} z {probe.z:0.0}: no ground")
+                    );
+                    continue;
+                }
+                yield return WarpTo(ground);
+                if (progress.IsAtPeak(c.Center) == past)
+                    yield break;
+                tried.Add(F($"x {x:0.0} z {probe.z:0.0}: settled at z {c.Center.z:0.00}"));
+            }
         }
         Fail(
             F(
-                $"no summit ground {(past ? "past" : "short of")} the last progress point {last} (body at {c.Center}, at the peak {progress.IsAtPeak(c.Center)})"
+                $"no summit ground {(past ? "past" : "short of")} the last progress point {last} (body at {c.Center}, at the peak {progress.IsAtPeak(c.Center)}; tried {string.Join(", ", tried)})"
             )
         );
     }

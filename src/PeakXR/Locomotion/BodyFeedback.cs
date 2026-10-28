@@ -46,6 +46,11 @@ internal static class BodyFeedback
     private static int inSource;
     private static bool inNight;
 
+    /// <summary>Self-test calls inside <see cref="SelfTestExposure"/>, and whether only those are felt
+    /// (<see cref="SelfTestIsolate"/>).</summary>
+    private static int inSelfTest;
+    private static bool selfTestOnly;
+
     /// <summary>Felt strength (default slider) of the heat or cold rumble at full strength.</summary>
     private const float StatusFelt = 0.35f;
 
@@ -463,7 +468,7 @@ internal static class BodyFeedback
             float amount
         )
         {
-            if ((inSource <= 0 && !inNight) || !(amount > 0f))
+            if ((inSource <= 0 && !inNight) || !(amount > 0f) || (selfTestOnly && inSelfTest <= 0))
                 return;
             var c = __instance.character;
             if (c == null || !c.IsLocal)
@@ -477,11 +482,16 @@ internal static class BodyFeedback
         }
     }
 
-    /// <summary>Cold the environment has applied to the local character so far (self-test).</summary>
-    internal static float ColdExposure => coldTotal;
-
     /// <summary>Self-test only: counts the AddStatus calls inside as an environmental source.</summary>
-    internal static void SelfTestExposure(bool on) => inSource += on ? 1 : -1;
+    internal static void SelfTestExposure(bool on)
+    {
+        inSource += on ? 1 : -1;
+        inSelfTest += on ? 1 : -1;
+    }
+
+    /// <summary>Self-test only: while on, the level's own sources (fog, wind chill, night cold) are not felt, so a
+    /// step reads the rumble of its scripted source alone.</summary>
+    internal static void SelfTestIsolate(bool on) => selfTestOnly = on;
 
     /// <summary>
     /// CharacterMovement.SetMovementState (CharacterMovement.cs:231, private): sets <c>isSprinting</c> and clears it

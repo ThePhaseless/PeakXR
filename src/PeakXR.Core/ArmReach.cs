@@ -35,8 +35,7 @@ public static class ArmReach
     public static float Map(float distance, float avatarReach, float playerReach)
     {
         float r = avatarReach * BentReach;
-        // NaN fails every comparison and would pass a clamp: treat it as not learned yet.
-        float p = Math.Clamp(playerReach >= 0f ? playerReach : 0f, r * MinPlayer, r * MaxPlayer);
+        float p = PlayerReach(avatarReach, playerReach);
         // The cubic stays monotone while its start slope (p - k) / (r - k) is at most 3.
         float k = MathF.Min(r * Knee, (3f * r - p) * 0.5f);
         if (distance <= k)
@@ -46,6 +45,27 @@ public static class ArmReach
         float m = (p - k) / (r - k);
         float t = (distance - k) / (p - k);
         return k + (r - k) * t * (m + t * (3f - 2f * m + t * (m - 2f)));
+    }
+
+    /// <summary>The controller distance from the shoulder at which <see cref="Map"/> reaches the bent arm: the
+    /// learned <paramref name="playerReach"/> held within the player bounds.</summary>
+    public static float PlayerReach(float avatarReach, float playerReach)
+    {
+        float r = avatarReach * BentReach;
+        // NaN fails every comparison and would pass a clamp: treat it as not learned yet.
+        return Math.Clamp(playerReach >= 0f ? playerReach : 0f, r * MinPlayer, r * MaxPlayer);
+    }
+
+    /// <summary>
+    /// How far from the shoulder a controller may be before the avatar's hand really cannot follow it (the ghost
+    /// hand's reach): the player's own reach while the map carries the hand (<paramref name="mapWeight"/> 1, an empty
+    /// hand standing), the bare arm while it does not (0, holding or climbing). A resting hand past the bare arm is
+    /// still on the map: the scout's low, set-back shoulders and a rig above x1 put it there (run 17).
+    /// </summary>
+    public static float GhostReach(float avatarReach, float playerReach, float mapWeight)
+    {
+        float w = mapWeight >= 0f ? MathF.Min(mapWeight, 1f) : 0f;
+        return avatarReach + (PlayerReach(avatarReach, playerReach) - avatarReach) * w;
     }
 
     /// <summary>The avatar's hand target for a controller at <paramref name="controller"/>: on the line from
