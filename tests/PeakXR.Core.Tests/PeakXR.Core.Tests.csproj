@@ -22,4 +22,13 @@
   <ItemGroup>
     <ProjectReference Include="../../src/PeakXR.Core/PeakXR.Core.csproj" />
   </ItemGroup>
+
+  <!-- The preloader's file sync is plain IO, tested on a temp folder. BepInEx's NuGet package has no runtime
+       assembly, so the source is compiled here against a stub ManualLogSource (BepInExLogStub.cs). -->
+  <ItemGroup>
+    <Compile
+      Include="../../src/PeakXR.Preloader/RuntimeInstaller.cs"
+      Link="Preloader/RuntimeInstaller.cs"
+    />
+  </ItemGroup>
 </Project>

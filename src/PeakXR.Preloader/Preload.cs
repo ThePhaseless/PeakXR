@@ -9,14 +9,6 @@ using Mono.Cecil;
 
 namespace PeakXR.Preloader;
 
-/// <summary>XR runtime the game should start with. The plugin reads the same names from PEAKXR_RUNTIME.</summary>
-public enum RuntimeMode
-{
-    OpenXR,
-    OpenVR,
-    Disabled,
-}
-
 /// <summary>
 /// BepInEx 5 preloader patcher. It patches no assemblies. <see cref="Initialize"/> runs before Unity
 /// enumerates XR subsystems, which is the only point where the native runtime plugin and its

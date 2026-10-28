@@ -72,6 +72,9 @@ else
 $DESCRIPTION
 
 Work in progress. See $WEBSITE for install notes and launch options.
+
+PeakXR is MIT licensed. The bundled Unity XR assemblies and native plugins (OpenXR, XR Management) are under
+the Unity Companion License and Valve's OpenVR plugin under BSD-3-Clause; see BepInEx/plugins/PeakXR/licenses/.
 EOF
 fi
 if [[ ! -f "$ROOT/assets/icon.png" ]]; then

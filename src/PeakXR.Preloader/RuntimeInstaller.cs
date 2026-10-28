@@ -10,6 +10,14 @@ using BepInEx.Logging;
 
 namespace PeakXR.Preloader;
 
+/// <summary>XR runtime the game should start with. The plugin reads the same names from PEAKXR_RUNTIME.</summary>
+internal enum RuntimeMode
+{
+    OpenXR,
+    OpenVR,
+    Disabled,
+}
+
 /// <summary>
 /// Puts one runtime's native plugin DLLs into &lt;Game&gt;_Data/Plugins/x86_64/ and its
 /// UnitySubsystemsManifest.json into &lt;Game&gt;_Data/UnitySubsystems/&lt;libraryName&gt;/.
@@ -19,7 +27,7 @@ namespace PeakXR.Preloader;
 /// whose current hash matches the recorded one, so files from the game or other mods are never
 /// touched.
 /// </summary>
-public sealed class RuntimeInstaller
+internal sealed class RuntimeInstaller
 {
     public const string StateFileName = "PeakXR.Preloader.state";
     public const string ManifestFileName = "UnitySubsystemsManifest.json";
@@ -57,7 +65,19 @@ public sealed class RuntimeInstaller
         _log.LogInfo($"Game data folder: {_dataDir}");
         _log.LogInfo($"Runtime files: {_runtimeDepsDir}");
         LoadState();
+        try
+        {
+            return ApplyLoaded(mode, openVRFallback);
+        }
+        finally
+        {
+            // Also after a throw: files written before it stay tracked, so a later run can update or remove them.
+            SaveState();
+        }
+    }
 
+    private RuntimeMode ApplyLoaded(RuntimeMode mode, bool openVRFallback)
+    {
         string activeManifest = null;
         string fallbackManifest = null;
         if (mode != RuntimeMode.Disabled)
@@ -90,19 +110,22 @@ public sealed class RuntimeInstaller
             );
         }
 
-        // Disabled, or switched runtime: drop every manifest PeakXR wrote except the active one.
+        // Disabled: remove every file PeakXR wrote (its bytes unchanged). Switched runtime: drop every manifest
+        // except the active ones; the other runtime's DLLs stay, inert without a manifest.
         foreach (var rel in _state.Keys.ToList())
         {
             if (
-                rel.StartsWith(SubsystemsFolder + "/", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(rel, fallbackManifest, StringComparison.OrdinalIgnoreCase)
+                mode == RuntimeMode.Disabled
+                || (
+                    rel.StartsWith(SubsystemsFolder + "/", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(rel, activeManifest, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(rel, fallbackManifest, StringComparison.OrdinalIgnoreCase)
+                )
             )
                 RemoveTracked(rel);
         }
 
         ReportForeignManifests(activeManifest);
-        SaveState();
         return mode;
     }
 
@@ -142,12 +165,20 @@ public sealed class RuntimeInstaller
         }
 
         _log.LogInfo($"Installing {mode} runtime ({libraryName}, {dlls.Length} native DLLs)");
+        var synced = true;
         foreach (var dll in dlls)
-            Sync(dll, PluginsFolder + "/" + Path.GetFileName(dll));
+            synced &= Sync(dll, PluginsFolder + "/" + Path.GetFileName(dll));
+        if (!synced)
+        {
+            // A manifest next to someone else's native plugin would load a mismatched runtime.
+            _log.LogError(
+                $"Not registering the {mode} runtime: a native DLL it needs is a different file PeakXR did not write"
+            );
+            return null;
+        }
 
         var manifestRel = SubsystemsFolder + "/" + libraryName + "/" + ManifestFileName;
-        Sync(manifest, manifestRel);
-        return manifestRel;
+        return Sync(manifest, manifestRel) ? manifestRel : null;
     }
 
     private static string ReadLibraryName(string manifestPath)
@@ -156,8 +187,9 @@ public sealed class RuntimeInstaller
         return match.Success ? match.Groups["name"].Value.Trim() : null;
     }
 
-    /// <summary>Copies <paramref name="src"/> to the data-relative path when missing or outdated.</summary>
-    private void Sync(string src, string rel)
+    /// <summary>Copies <paramref name="src"/> to the data-relative path when missing or outdated. False when a
+    /// different file PeakXR did not write is there (left as is).</summary>
+    private bool Sync(string src, string rel)
     {
         var dst = Full(rel);
         var srcHash = Sha256(src);
@@ -170,7 +202,7 @@ public sealed class RuntimeInstaller
                 // Same bytes as ours (state file lost, second profile): track it so Disabled removes it.
                 _state[rel] = srcHash;
                 _log.LogDebug($"Up to date: {rel}");
-                return;
+                return true;
             }
 
             if (!_state.TryGetValue(rel, out var recorded) || recorded != dstHash)
@@ -181,7 +213,7 @@ public sealed class RuntimeInstaller
                     $"{rel} exists but was not written by PeakXR (or was changed since); leaving it as is. "
                         + "If VR fails to start, remove it or the mod that installed it."
                 );
-                return;
+                return false;
             }
             _log.LogInfo($"Updating {rel}");
         }
@@ -197,6 +229,7 @@ public sealed class RuntimeInstaller
             File.Delete(dst);
         File.Move(tmp, dst);
         _state[rel] = srcHash;
+        return true;
     }
 
     private void RemoveTracked(string rel)

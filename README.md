@@ -6,8 +6,9 @@ It supports PEAK 3.0 and 3.0.1 and still runs on 2.6.b. Work in progress.
 
 PeakXR is MIT licensed and written from scratch. It does not contain code from other PEAK or Unity VR
 mods. The XR runtime files it ships come from Unity's packages (Unity Companion License) and Valve's
-[unity-xr-plugin](https://github.com/ValveSoftware/unity-xr-plugin) (BSD-3-Clause). The build fetches
-them; they are not in this repository.
+[unity-xr-plugin](https://github.com/ValveSoftware/unity-xr-plugin) (BSD-3-Clause), and stay under those
+licenses; the package carries them in `BepInEx/plugins/PeakXR/licenses/`. The build fetches these files;
+they are not in this repository.
 
 ## Build
 
@@ -116,9 +117,23 @@ To play on a flat screen with PeakXR installed, set `Mode = Disabled` in
 
 ### Uninstall
 
-Delete `BepInEx/plugins/PeakXR`, `BepInEx/patchers/PeakXR`, `BepInEx/config/PeakXR.Preloader.cfg` and
-`BepInEx/config/com.thephaseless.peakxr.cfg` from the game folder. To remove BepInEx as well, delete the
-`BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`, and on Linux clear the launch options.
+The preloader copies the XR runtime into the game's data folder, where Unity looks for it, so it is shared by
+every mod-manager profile:
+
+- `PEAK_Data/Plugins/x86_64/`: the native runtime DLLs (`UnityOpenXR.dll`, `openxr_loader.dll`,
+  `XRSDKOpenVR.dll`, `openvr_api.dll`)
+- `PEAK_Data/UnitySubsystems/UnityOpenXR/` and `PEAK_Data/UnitySubsystems/XRSDKOpenVR/`: one
+  `UnitySubsystemsManifest.json` each
+- `PEAK_Data/PeakXR.Preloader.state`: the list of those files with their hashes
+
+To remove them, start the game once with `-peakxr-novr` (or `Mode = Disabled`) before you uninstall: the
+preloader then deletes every file in its list whose bytes are still its own, and the list itself. Or delete
+them by hand.
+
+Then delete `BepInEx/plugins/PeakXR`, `BepInEx/patchers/PeakXR`, `BepInEx/config/PeakXR.Preloader.cfg`,
+`BepInEx/config/com.thephaseless.peakxr.cfg` and, if present, `BepInEx/config/PeakXR-xr-start.txt`,
+`BepInEx/PeakXR-reports` (saved bug reports) and `BepInEx/PeakXR-trace.log`. To remove BepInEx as well,
+delete the `BepInEx` folder, `winhttp.dll` and `doorstop_config.ini`, and on Linux clear the launch options.
 
 ## Settings
 
@@ -127,6 +142,13 @@ Disabled`). The launch options `-peakxr-openxr`, `-peakxr-openvr` and `-peakxr-n
 run. With `Mode = OpenXR` and `OpenVRFallback = true` (the default), the OpenVR plugin is installed too:
 if OpenXR does not start within `[XR] StartTimeoutSeconds`, the game tries OpenVR, and if that fails as
 well it runs flat.
+
+If the VR runtime crashes the game while it starts, twice in a row, the next launch starts flat and says
+so on the title screen. PeakXR notes each start in `BepInEx/config/PeakXR-xr-start.txt` and deletes the file
+once VR runs; delete it yourself to try VR again after fixing SteamVR or the headset.
+
+When SteamVR quits during play, OpenXR leaves the game running flat. Valve's OpenVR plugin quits the game
+instead, as SteamVR expects of its apps.
 
 Every other option is in `BepInEx/config/com.thephaseless.peakxr.cfg`, and in VR also in the VR tab of
 the game's settings: camera under `[Camera]`, rendering under `[Render]`, runtime start-up under `[XR]`,
