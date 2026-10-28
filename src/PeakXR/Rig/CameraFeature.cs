@@ -46,6 +46,21 @@ public sealed class CameraFeature : Feature
     /// overlap and no hold length is dead.</summary>
     internal static float RecenterSeconds => RecenterHoldSeconds?.Value ?? 1f;
 
+    /// <summary>The VR tab's Recenter button: one-handed play's recenter where Menu never reaches the game (a Touch
+    /// controller under SteamVR), and anyone's who prefers it. The recenter blink confirms it; with no rig the click
+    /// is refused out loud.</summary>
+    private static void RecenterNow(UnityEngine.Vector3 at, bool left)
+    {
+        var rig = VRRig.Instance;
+        if (rig == null)
+        {
+            UI.Affordances.Affordance.Deny(left, at, DenyReason.CantUse);
+            return;
+        }
+        Plugin.Log.LogInfo("[rig.camera] recenter from the VR tab");
+        rig.Recenter();
+    }
+
     public override string Id => "rig.camera";
 
     /// <summary>Right after xr.bootstrap, so the rig exists before features that read it subscribe.</summary>
@@ -130,6 +145,13 @@ public sealed class CameraFeature : Feature
                     + "pause.",
                 new AcceptableValueRange<float>(0.5f, 3f)
             )
+        );
+        UI.Settings.VRTab.AddButtonAfter(
+            RecenterHoldSeconds,
+            "PEAKXR_RECENTER_NOW",
+            "Recenter",
+            "Recenter now",
+            RecenterNow
         );
         NearClip = Plugin.Settings.Bind(
             section,

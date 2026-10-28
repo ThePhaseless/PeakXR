@@ -228,9 +228,14 @@ internal static class BodyGestures
                 hand.position,
                 DenyReason.HappenedHere,
                 DenyHint.Wrist(),
-                System.FormattableString.Invariant(
-                    $"Still crouched: stand up, or hold both sticks in for {CameraFeature.RecenterSeconds:0.#} s to recenter"
-                )
+                // One-handed play has one stick: Menu where it reaches the game, else the VR tab's Recenter button.
+                VRInput.OneHanded
+                    ? System.FormattableString.Invariant(
+                        $"Still crouched: stand up, or recenter: hold Menu for {CameraFeature.RecenterSeconds:0.#} s, or Recenter in the VR tab"
+                    )
+                    : System.FormattableString.Invariant(
+                        $"Still crouched: stand up, or hold both sticks in for {CameraFeature.RecenterSeconds:0.#} s to recenter"
+                    )
             );
     }
 

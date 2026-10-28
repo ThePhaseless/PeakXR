@@ -75,6 +75,7 @@ internal static class LocomotionInput
     private static readonly Reservation DropReserve = new();
     private static readonly Reservation TalkReserve = new();
     private static readonly Reservation[] ChordReserve = { new(), new(), new(), new() };
+    private static readonly Reservation[] SlideReserve = { new(), new() };
 
     /// <summary>
     /// One-shot backpack press for the hotbar-key patch. Valid this frame and the next, because CharacterItems may
@@ -111,6 +112,8 @@ internal static class LocomotionInput
         TalkReserve.Clear();
         foreach (var r in ChordReserve)
             r.Clear();
+        foreach (var r in SlideReserve)
+            r.Clear();
         DropReserve.Take(owns, InteractConfig.Instance.DropButton, dominantLeft);
         var talk = VoiceFeature.Settings?.PushToTalkButton;
         TalkReserve.Take(talk != null, talk?.Value, dominantLeft);
@@ -119,6 +122,9 @@ internal static class LocomotionInput
         ChordReserve[2].Take(Diagnostics.DebugGesture.StickTaken(true), true, VRControl.StickClick);
         ChordReserve[3]
             .Take(Diagnostics.DebugGesture.StickTaken(false), false, VRControl.StickClick);
+        // A Vive wand centre click (B/Y) that slid out ends here: reserved on that frame, its release is no ping tap.
+        SlideReserve[0].Take(VRInput.Left.SecondaryCancelled, true, VRControl.Secondary);
+        SlideReserve[1].Take(VRInput.Right.SecondaryCancelled, false, VRControl.Secondary);
     }
 
     /// <summary>One control reserved in <see cref="Mapper"/> by name (<see cref="ButtonName"/>).</summary>
@@ -186,7 +192,11 @@ internal static class LocomotionInput
         Mapper.SetDisabled(VRAction.SpectateNext, !spectating);
         Mapper.SetDisabled(VRAction.SpectatePrevious, !spectating);
         // Real time, like rig.camera's recenter hold, so the menu tap and hold share one clock at any timeScale.
-        Mapper.Update(Controller(VRInput.Left), Controller(VRInput.Right), Time.unscaledDeltaTime);
+        Mapper.Update(
+            Controller(VRInput.Left, true),
+            Controller(VRInput.Right, false),
+            Time.unscaledDeltaTime
+        );
 
         // Vanilla samples these even while input is blocked (CharacterInput.cs:215-219, :269-271): the emote wheel
         // stays open only while Emote is held, and Pause must reach an open menu.
@@ -295,14 +305,16 @@ internal static class LocomotionInput
         BodyGestures.Reset();
     }
 
-    private static ControllerInput Controller(in HandState h) =>
+    /// <summary>One controller as the layout reads it. Its stick click comes through the stick chord's window
+    /// (<c>Diagnostics.DebugGesture.StickClick</c>), so the first stick of a recenter chord never sprints or crouches.</summary>
+    private static ControllerInput Controller(in HandState h, bool left) =>
         new()
         {
             Trigger = h.Trigger,
             Grip = h.Grip,
             Primary = h.Primary,
             Secondary = h.Secondary,
-            StickClick = h.StickClick,
+            StickClick = Diagnostics.DebugGesture.StickClick(left),
             Menu = h.Menu,
             Stick = Num2(h.Stick),
         };
@@ -312,7 +324,10 @@ internal static class LocomotionInput
         // One-handed, the one stick also turns (LookPatches): it walks only with the forward/back part.
         bool one = VRInput.OneHanded;
         ref var hand = ref VRInput.Hand(one ? dominantLeft : !dominantLeft);
-        var raw = Num2(hand.Stick);
+        // A chord holding this stick's click (recenter, bug report) is not a walk: a Vive wand's rim click walks.
+        var raw = Diagnostics.DebugGesture.StickTaken(one ? dominantLeft : !dominantLeft)
+            ? NVector2.Zero
+            : Num2(hand.Stick);
         var stick = Stick.Apply(one ? StickAxes.MoveY(raw) : raw, LocomotionConfig.Deadzone, 0.95f);
         if (LocomotionConfig.HandRelative && hand.Tracked && VRInput.HeadTracked)
             stick = MoveInput.HandRelative(

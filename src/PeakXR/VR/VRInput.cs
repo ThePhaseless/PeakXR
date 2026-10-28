@@ -42,6 +42,10 @@ public struct HandState
     /// <c>BindingTable.OneHandedWand</c> for it).</summary>
     public bool WandPad;
 
+    /// <summary>This frame a Vive wand's centre click (its B/Y) slid out of the centre: B/Y ended without a tap, so
+    /// the layout must not read it as a ping (<c>WandPadLatch</c>).</summary>
+    public bool SecondaryCancelled;
+
     /// <summary>The controller accepts haptic impulses (<c>InputDevice.SendHapticImpulse</c>).</summary>
     public bool Haptics;
 }

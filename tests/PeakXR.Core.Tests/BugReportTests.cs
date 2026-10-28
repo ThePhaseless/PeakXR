@@ -240,6 +240,16 @@ public class BugChordTests
         Hold(c, 2f, true, false, false, true);
         Assert.Equal(1f, c.Progress, 3);
     }
+
+    [Fact]
+    public void Blocked_NeverStarts_SoTheStickChordAloneReports()
+    {
+        var c = new BugChord();
+        for (int i = 0; i < 30; i++)
+            Assert.Equal(BugChordEvent.None, c.Update(true, true, false, true, Dt, blocked: true));
+        Assert.False(c.Active);
+        Assert.False(c.StickTaken(false));
+    }
 }
 
 public class BugReportTextTests
@@ -437,13 +447,87 @@ public class StickChordTests
     public void BothSticks_Active_OneStickNot()
     {
         var c = new StickChord();
-        Reports(c, 0.3f, true, false);
-        Assert.False(c.Active);
-        Assert.False(c.StickTaken(true));
         c.Update(true, true, false, Dt);
         Assert.True(c.Active);
         Assert.True(c.StickTaken(true));
         Assert.True(c.StickTaken(false));
+        Assert.False(c.Click(true));
+        Assert.False(c.Click(false));
+    }
+
+    [Fact]
+    public void SecondStickInsideTheWindow_IsTheChord_NoPressReachesTheLayout()
+    {
+        var c = new StickChord { Window = 0.18f };
+        c.Update(true, false, false, 0.05f);
+        Assert.False(c.Click(true));
+        c.Update(true, false, false, 0.05f);
+        Assert.False(c.Click(true));
+        c.Update(true, true, false, 0.05f);
+        Assert.True(c.Active);
+        // Held on and let go one by one: neither stick ever clicks for the layout.
+        for (int i = 0; i < 20; i++)
+        {
+            c.Update(true, true, false, 0.05f);
+            Assert.False(c.Click(true) || c.Click(false));
+        }
+        c.Update(false, true, false, 0.05f);
+        Assert.False(c.Click(true) || c.Click(false));
+        c.Update(false, false, false, 0.05f);
+        Assert.False(c.Click(true) || c.Click(false));
+    }
+
+    [Fact]
+    public void LoneStickHeld_PassesThroughAfterTheWindow()
+    {
+        var c = new StickChord { Window = 0.18f };
+        c.Update(true, false, false, 0.05f);
+        c.Update(true, false, false, 0.05f);
+        c.Update(true, false, false, 0.05f);
+        Assert.False(c.Click(true));
+        c.Update(true, false, false, 0.05f);
+        Assert.False(c.Click(true));
+        c.Update(true, false, false, 0.05f);
+        Assert.True(c.Click(true));
+        Assert.False(c.Active);
+        // The other stick now is its own press, never the chord.
+        c.Update(true, true, false, 0.05f);
+        Assert.False(c.Active);
+        Assert.True(c.Click(false));
+        Assert.False(c.StickTaken(false));
+        c.Update(false, false, false, 0.05f);
+        Assert.False(c.Click(true) || c.Click(false));
+    }
+
+    [Fact]
+    public void LoneTapInsideTheWindow_IsAOneFrameClick()
+    {
+        var c = new StickChord { Window = 0.18f };
+        c.Update(false, true, false, 0.05f);
+        Assert.False(c.Click(false));
+        c.Update(false, false, false, 0.05f);
+        Assert.True(c.Click(false));
+        c.Update(false, false, false, 0.05f);
+        Assert.False(c.Click(false));
+        Assert.False(c.Active);
+    }
+
+    [Fact]
+    public void NoWindow_PassesAtOnce()
+    {
+        var c = new StickChord { Window = 0f };
+        c.Update(true, false, false, 0.05f);
+        Assert.True(c.Click(true));
+    }
+
+    [Fact]
+    public void Blocked_PassesStraightThrough()
+    {
+        var c = new StickChord();
+        c.Update(true, false, true, 0.05f);
+        Assert.True(c.Click(true));
+        c.Update(true, true, true, 0.05f);
+        Assert.False(c.Active);
     }
 
     [Fact]

@@ -160,6 +160,48 @@ public static class WandPad
     }
 }
 
+/// <summary>
+/// One wand's pad click, judged by where it started (<see cref="WandPad.Map"/> alone reads each frame afresh). On the
+/// move hand a click that starts in the centre is B/Y; if the thumb slides out of the centre before letting go, that
+/// B/Y ends without counting as a tap (<see cref="Cancelled"/>, so it never pings) and the rest of the click walks,
+/// so a rim click for the both-sticks chord that landed off target still works. A click that starts outside the
+/// centre never turns into B/Y on the way across it. Other hands map as <see cref="WandPad.Map"/> does.
+/// </summary>
+public sealed class WandPadLatch
+{
+    private bool down;
+    private bool centre;
+
+    /// <summary>This frame the move hand's centre click slid out: the caller drops its B/Y without a tap.</summary>
+    public bool Cancelled { get; private set; }
+
+    public WandPadState Map(Vector2 pad, bool clicked, bool moveHand, bool oneHanded = false)
+    {
+        Cancelled = false;
+        var s = WandPad.Map(pad, clicked, moveHand, oneHanded);
+        if (!clicked || !moveHand)
+        {
+            down = clicked;
+            centre = false;
+            return s;
+        }
+        if (!down)
+        {
+            down = true;
+            centre = s.Secondary;
+            return s;
+        }
+        if (centre && !s.Secondary)
+        {
+            centre = false;
+            Cancelled = true;
+        }
+        else if (!centre && s.Secondary)
+            return default;
+        return s;
+    }
+}
+
 /// <summary>Finger curl from hand-tracking joint positions: the summed bend between bone segments.</summary>
 public static class JointCurl
 {

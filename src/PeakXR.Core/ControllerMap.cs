@@ -121,11 +121,14 @@ public static class ControllerMap
 
     /// <param name="moveHand">This hand walks (the off hand); only the Vive wand pad uses it.</param>
     /// <param name="oneHanded">Accessibility.OneHanded; only the Vive wand pad uses it (<see cref="WandPad.Map"/>).</param>
+    /// <param name="wand">The hand's click memory for a Vive wand pad (<see cref="WandPadLatch"/>); null maps each
+    /// frame alone.</param>
     public static ControllerButtons Map(
         in ControllerLayout l,
         in ControllerSample s,
         bool moveHand,
-        bool oneHanded = false
+        bool oneHanded = false,
+        WandPadLatch wand = null
     )
     {
         var b = default(ControllerButtons);
@@ -151,11 +154,14 @@ public static class ControllerMap
         if (l.EmulateFaceButtons && l.PadIsStick)
         {
             // Vive wand: the pad is the only stick and it reports a resting thumb, so everything takes a click.
-            var wand = WandPad.Map(s.Stick, s.StickClick, moveHand, oneHanded);
-            b.Stick = wand.Stick;
-            b.Primary = wand.Primary;
-            b.Secondary = wand.Secondary;
-            b.StickClick = wand.StickClick;
+            var pad =
+                wand != null
+                    ? wand.Map(s.Stick, s.StickClick, moveHand, oneHanded)
+                    : WandPad.Map(s.Stick, s.StickClick, moveHand, oneHanded);
+            b.Stick = pad.Stick;
+            b.Primary = pad.Primary;
+            b.Secondary = pad.Secondary;
+            b.StickClick = pad.StickClick;
         }
         else if (l.EmulateFaceButtons)
         {
