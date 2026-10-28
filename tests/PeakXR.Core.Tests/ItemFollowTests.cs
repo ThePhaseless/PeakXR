@@ -229,4 +229,56 @@ public class ItemFollowTests
         Assert.True(w.Y > 0f);
         Assert.InRange(w.Y * 0.02f, 0.05f, 0.5f);
     }
+
+    static bool Finite(Vector3 v) =>
+        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+
+    [Theory]
+    [InlineData(0.5f)]
+    [InlineData(2.5f)]
+    [InlineData(-3f)]
+    public void SpinIsTheSameForEitherSignOfTheTarget(float angle)
+    {
+        // q and -q are one rotation: the spin takes the short way to it either way.
+        var from = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.3f);
+        var target = Quaternion.CreateFromAxisAngle(
+            Vector3.Normalize(new Vector3(1f, 2f, 0.5f)),
+            angle
+        );
+        var a = ItemFollow.Spin(from, target, 0.02f);
+        var b = ItemFollow.Spin(from, Quaternion.Negate(target), 0.02f);
+        var c = ItemFollow.Spin(Quaternion.Negate(from), target, 0.02f);
+        TestUtil.Near(a, b);
+        TestUtil.Near(a, c);
+        // Never the long way: one tick turns no more than the angle between them.
+        Assert.True(
+            a.Length() * 0.02f <= TestUtil.AngleDeg(from, target) * MathF.PI / 180f + 1e-3f
+        );
+    }
+
+    [Fact]
+    public void SpinIsZeroOnTheTarget()
+    {
+        var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 1.2f);
+        Assert.Equal(
+            Vector3.Zero,
+            ItemFollow.Spin(Quaternion.Identity, Quaternion.Identity, 0.02f)
+        );
+        Assert.Equal(Vector3.Zero, ItemFollow.Spin(q, q, 0.02f));
+        Assert.Equal(Vector3.Zero, ItemFollow.Spin(q, Quaternion.Negate(q), 0.02f));
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.02f)]
+    public void SpinAndFollowWithoutATickStayFiniteAndBounded(float dt)
+    {
+        var target = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f);
+        var w = ItemFollow.Spin(Quaternion.Identity, target, dt);
+        Assert.True(Finite(w));
+        Assert.True(w.Y > 0f && w.Length() <= ItemFollow.MaxSpin + 1e-3f);
+        var v = ItemFollow.Velocity(Vector3.Zero, Vector3.UnitX, Vector3.Zero, dt);
+        Assert.True(Finite(v));
+        Assert.True(v.X > 0f && v.Length() <= ItemFollow.MaxSpeed + 1e-3f);
+    }
 }

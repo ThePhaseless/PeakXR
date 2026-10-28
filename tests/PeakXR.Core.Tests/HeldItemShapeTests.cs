@@ -57,4 +57,19 @@ public class HeldItemShapeTests
         Assert.Equal(new Vector3(0.2f, -0.1f, -0.1f), min);
         Assert.Equal(new Vector3(0.4f, 0.1f, 0.1f), max);
     }
+
+    [Fact]
+    public void FarEnd_AlongZ_WhenZIsTheLongestSide()
+    {
+        var min = new Vector3(-0.05f, -0.1f, -0.2f);
+        var max = new Vector3(0.05f, 0.1f, 0.6f);
+        Assert.Equal(
+            new Vector3(0f, 0f, -0.2f),
+            HeldItemShape.FarEnd(min, max, new Vector3(0f, 0f, 0.5f))
+        );
+        Assert.Equal(
+            new Vector3(0f, 0f, 0.6f),
+            HeldItemShape.FarEnd(min, max, new Vector3(0f, 0f, -0.1f))
+        );
+    }
 }
