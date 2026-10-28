@@ -4,6 +4,7 @@ using PeakXR.Framework;
 using PeakXR.Sandbox;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Settings;
+using PeakXR.UI.World;
 using PeakXR.VR;
 using TMPro;
 using UnityEngine;
@@ -133,7 +134,7 @@ internal sealed class GuideStage : MonoBehaviour
             End();
             return;
         }
-        Place((RectTransform)cell.transform);
+        Place((RectTransform)cell.transform, rig.Head.position);
         demo.Tick(Time.unscaledDeltaTime, clock.Alpha, rig.Head);
         if (captionText != null)
             captionText.alpha = clock.Alpha;
@@ -141,7 +142,7 @@ internal sealed class GuideStage : MonoBehaviour
 
     /// <summary>The ghost stands beside the row's outer edge (<see cref="VRTabGrid.RowOuterEdge"/>), a little toward the
     /// viewer, facing the way you face.</summary>
-    private void Place(RectTransform cell)
+    private void Place(RectTransform cell, Vector3 viewer)
     {
         VRTabGrid.RowOuterEdge(cell, corners, out var edge, out var outward);
         var facing = Vector3.ProjectOnPlane(cell.forward, Vector3.up);
@@ -150,7 +151,31 @@ internal sealed class GuideStage : MonoBehaviour
         var eye = edge + outward * 0.3f + Vector3.up * 0.15f - cell.forward * 0.08f;
         demo.Root.SetPositionAndRotation(eye, Quaternion.LookRotation(facing, Vector3.up));
         if (caption != null)
-            caption.transform.SetPositionAndRotation(eye + Vector3.down * 0.6f, cell.rotation);
+        {
+            var at = eye + Vector3.down * 0.6f;
+            caption.transform.SetPositionAndRotation(at, cell.rotation);
+            caption.transform.localScale =
+                Vector3.one * CaptionScale(at, viewer, CaptionMetersPerPixel);
+        }
+    }
+
+    private const float CaptionPixels = 30f;
+    private const float CaptionMetersPerPixel = 0.001f;
+    private const float OfferMetersPerPixel = 0.0008f;
+
+    /// <summary>Canvas scale for <see cref="CaptionPixels"/> text designed at <paramref name="metersPerPixel"/>, seen
+    /// at <paramref name="at"/> from <paramref name="viewer"/>: grown until its em meets
+    /// <see cref="ReadableText.MinDegrees"/>, then by <c>UI.TextScale</c> like every other text the mod places.</summary>
+    private static float CaptionScale(Vector3 at, Vector3 viewer, float metersPerPixel)
+    {
+        var ui = UIWorldFeature.Settings;
+        float textScale = ReadableText.Scale(ui != null ? ui.TextScale.Value : 1f);
+        float grow = ReadableText.Grow(
+            CaptionPixels * metersPerPixel,
+            Vector3.Distance(at, viewer),
+            float.MaxValue
+        );
+        return metersPerPixel * grow * textScale;
     }
 
     private void FillCaption(GuideRow target)
@@ -164,9 +189,9 @@ internal sealed class GuideStage : MonoBehaviour
             caption.transform.SetParent(transform, false);
             WorldSign(caption);
             ((RectTransform)caption.transform).sizeDelta = new Vector2(520f, 90f);
-            caption.transform.localScale = Vector3.one * 0.001f;
+            caption.transform.localScale = Vector3.one * CaptionMetersPerPixel;
             captionText = caption.AddComponent<TextMeshProUGUI>();
-            captionText.fontSize = 30f;
+            captionText.fontSize = CaptionPixels;
             captionText.alignment = TextAlignmentOptions.Center;
             captionText.raycastTarget = false;
             var label = target.Cell != null ? target.Cell.m_text : null;
@@ -288,7 +313,9 @@ internal sealed class GuideStage : MonoBehaviour
                 orbs + right * 0.35f + Vector3.up * 0.08f,
                 rotation
             );
-            offerCaption.transform.localScale = Vector3.one * 0.0008f;
+            offerCaption.transform.localScale =
+                Vector3.one
+                * CaptionScale(offerCaption.transform.position, head.position, OfferMetersPerPixel);
             var text = offerCaption.AddComponent<TextMeshProUGUI>();
             // The title menu's own font (TMP's default LiberationSans is no game text).
             foreach (var t in handler.GetComponentsInChildren<TextMeshProUGUI>(true))
@@ -298,7 +325,7 @@ internal sealed class GuideStage : MonoBehaviour
                     break;
                 }
             text.text = "Practise the VR controls?";
-            text.fontSize = 30f;
+            text.fontSize = CaptionPixels;
             text.alignment = TextAlignmentOptions.Center;
             text.raycastTarget = false;
         }

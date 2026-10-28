@@ -38,6 +38,9 @@ internal sealed class TargetPrompt
     private const float RingDegrees = 3.5f;
     private const int Parts = 6;
 
+    /// <summary>Nearest the no-target prompt above a hand sits to the eye, metres (the refusal labels' floor).</summary>
+    private const float MinHandDistance = 0.45f;
+
     /// <summary>Smallest text, in HUD pixels (1.35 degrees at the floor <see cref="SpatialRuntime.DegreesPerPixel"/>):
     /// the game's action prompts are sized for a monitor and read as specks at a target.</summary>
     private const float MinFontPixels = 30f;
@@ -299,7 +302,7 @@ internal sealed class TargetPrompt
         var eye = rig.Head.position;
         if (target != null && TargetPose(rig, out var p, out var mpp, out _))
         {
-            box.Pose(p, SpatialRuntime.FaceEyeYaw(p, eye, rig.Head.forward), mpp);
+            box.Pose(p, SpatialRuntime.FaceEye(p, eye, rig.Head.up), mpp);
             return;
         }
         if (!anyShown)
@@ -310,9 +313,13 @@ internal sealed class TargetPrompt
             return;
         var at = hand.position + Vector3.up * 0.14f;
         at += (eye - at).normalized * 0.04f;
+        // Never nearer than a comfortable focus, like the refusal labels: a hand raised to the face would cross the eyes.
+        var fromEye = at - eye;
+        if (fromEye.magnitude < MinHandDistance)
+            at = eye + fromEye.normalized * MinHandDistance;
         box.Pose(
             at,
-            SpatialRuntime.FaceEyeYaw(at, eye, rig.Head.forward),
+            SpatialRuntime.FaceEye(at, eye, rig.Head.up),
             SpatialMath.MetersPerPixel(Vector3.Distance(at, eye), SpatialRuntime.DegreesPerPixel)
         );
     }

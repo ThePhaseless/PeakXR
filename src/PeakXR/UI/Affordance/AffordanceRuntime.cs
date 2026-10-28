@@ -24,6 +24,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
 {
     private const int RingPoints = 24;
     private const float LabelPixels = 30f;
+    private const float LabelWidth = 480f;
+    private const float LabelHeight = 100f;
     private const float HoverLabelAfter = 0.4f;
     private const float HoverFade = 0.15f;
     private const float RayWidth = 0.0025f;
@@ -101,6 +103,9 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         public LineRenderer Pointer,
             PointerRim;
         public bool EdgeOn;
+
+        /// <summary>Unit direction on the view from the centre toward the real spot, while the edge copy shows.</summary>
+        public Vector3 EdgeOutward;
 
         /// <summary>Its ring has been drawn at a readable opacity since it started.</summary>
         public bool Drawn = true;
@@ -740,6 +745,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
                 out var outward
             )
             .U();
+        d.EdgeOutward = outward.U();
         PoseCue(e, eye, alpha);
         bool shown = alpha > 0.001f && e.Deny.enabled;
         if (shown)
@@ -810,6 +816,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         float alpha;
         Vector3 anchor;
         bool atHand = false;
+        bool atEdge = false;
         if (labelOwner >= 0)
         {
             var h = hovers[labelOwner];
@@ -823,6 +830,8 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             // A refusal of the hand's own action: ride above the hand. A world target or wall: sit above the spot.
             atHand = hand != null && denied.AtHand;
             anchor = atHand ? hand.position : denied.Position;
+            // The real spot is out of view: the label goes with the edge copy, or it would say nothing in view.
+            atEdge = denied.EdgeOn && denied.Edge != null;
         }
         if (alpha <= 0.001f)
         {
@@ -845,7 +854,21 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         // Toward the eye, off the surface it is about (more for far spots), and never closer than a comfortable focus.
         var toEye = eye - p;
         float d = toEye.magnitude;
-        if (d > 1e-3f)
+        if (atEdge)
+        {
+            // Beside the edge copy on the view-centre side, clear of its ring, so the whole label stays in view.
+            float dpp = SpatialRuntime.DegreesPerPixel;
+            var o = denied.EdgeOutward;
+            float clear = CueEdge.LabelClear(
+                denied.Degrees,
+                Mathf.Min(label.preferredWidth, LabelWidth) * dpp,
+                Mathf.Min(label.preferredHeight, LabelHeight) * dpp,
+                Vector3.Dot(o, rig.Head.right),
+                Vector3.Dot(o, rig.Head.up)
+            );
+            p = CueEdge.LabelSpot(eye.N(), denied.Edge.Position.N(), o.N(), clear).U();
+        }
+        else if (d > 1e-3f)
         {
             p += toEye / d * Mathf.Min(d * 0.5f, atHand ? 0.04f : Mathf.Max(0.06f, d * 0.05f));
             var fromEye = p - eye;
@@ -856,10 +879,7 @@ internal sealed class AffordanceRuntime : MonoBehaviour
             Vector3.Distance(p, eye),
             SpatialRuntime.DegreesPerPixel
         );
-        labelRoot.transform.SetPositionAndRotation(
-            p,
-            SpatialRuntime.FaceEyeYaw(p, eye, rig.Head.forward)
-        );
+        labelRoot.transform.SetPositionAndRotation(p, SpatialRuntime.FaceEye(p, eye, rig.Head.up));
         labelRoot.transform.localScale = new Vector3(mpp, mpp, mpp);
         bool notice = labelOwner < 0 ? denied.Notice : hovers[labelOwner].Notice;
         var tc = notice ? Affordance.HintColor : Affordance.DenyColor;
@@ -1239,11 +1259,11 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         var labelCanvas = labelRoot.GetComponent<Canvas>();
         labelCanvas.renderMode = RenderMode.WorldSpace;
         labelCanvas.sortingOrder = DrawOrder.HandUi;
-        ((RectTransform)labelRoot.transform).sizeDelta = new Vector2(480f, 100f);
+        ((RectTransform)labelRoot.transform).sizeDelta = new Vector2(LabelWidth, LabelHeight);
 
         var textGo = new GameObject("Text", typeof(RectTransform));
         textGo.transform.SetParent(labelRoot.transform, false);
-        ((RectTransform)textGo.transform).sizeDelta = new Vector2(480f, 100f);
+        ((RectTransform)textGo.transform).sizeDelta = new Vector2(LabelWidth, LabelHeight);
         label = textGo.AddComponent<TextMeshProUGUI>();
         label.fontSize = LabelPixels;
         label.alignment = TextAlignmentOptions.Center;
