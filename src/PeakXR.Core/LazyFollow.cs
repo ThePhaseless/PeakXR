@@ -5,8 +5,9 @@ namespace PeakXR.Core;
 /// <summary>
 /// Lazy follow for a world-locked panel (menus, popups, the top-of-view stamina meter): it stays put while the head
 /// looks around it, so a menu never swims under the laser; once the head has been more than <see cref="Threshold"/>
-/// off it for <see cref="Dwell"/> seconds it glides back in front on a critically damped spring, which starts and stops
-/// gently, never overshoots and is capped at <see cref="MaxSpeed"/>. While held (the laser is on a menu or a control
+/// off it for <see cref="Dwell"/> seconds, or at once past <see cref="UrgentMargin"/> more, it glides back in front on
+/// a critically damped spring, which starts and stops gently, never overshoots and is capped at
+/// <see cref="MaxSpeed"/>: back within <see cref="CatchUpBudget"/>. While held (the laser is on a menu or a control
 /// is pressed) it never starts a glide and stops one where it is.
 /// </summary>
 public sealed class LazyFollow
@@ -17,16 +18,24 @@ public sealed class LazyFollow
     /// <summary>Degrees past a wide panel's edge the head may look before it follows (<see cref="ThresholdFor"/>).</summary>
     public const float EdgeMargin = 5f;
 
+    /// <summary>Degrees past <see cref="Threshold"/> where the glide starts at once, with no dwell.</summary>
+    public const float UrgentMargin = 15f;
+
+    /// <summary>Most seconds from a head turn (a step of up to 90 degrees) to the panel stopped back in front.</summary>
+    public const float CatchUpBudget = 0.8f;
+
     public float Threshold = DefaultThreshold;
 
-    /// <summary>Seconds the head must stay past the threshold, so a glance never moves the panel.</summary>
-    public float Dwell = 0.5f;
+    /// <summary>Seconds the head must stay past the threshold (inside <see cref="UrgentMargin"/>), so a glance
+    /// never moves the panel. Tester feedback on 0.5 s (with a 0.35 s spring capped at 120 deg/s, 1.5-1.9 s to
+    /// catch up): "follows the head, but with a terrible delay".</summary>
+    public float Dwell = 0.15f;
 
     /// <summary>Spring time of the glide, seconds: about the time to cover most of the way.</summary>
-    public float SmoothTime = 0.35f;
+    public float SmoothTime = 0.2f;
 
     /// <summary>Fastest the glide turns, degrees per second.</summary>
-    public float MaxSpeed = 120f;
+    public float MaxSpeed = 360f;
 
     /// <summary>Degrees from the head at which a glide ends.</summary>
     public float Settle = 1f;
@@ -95,8 +104,10 @@ public sealed class LazyFollow
         }
         if (!Gliding)
         {
-            away = dy * dy + dp * dp > Threshold * Threshold ? away + dt : 0f;
-            if (away < Dwell)
+            float off = dy * dy + dp * dp;
+            float urgent = Threshold + UrgentMargin;
+            away = off > Threshold * Threshold ? away + dt : 0f;
+            if (away < Dwell && off <= urgent * urgent)
                 return false;
             Gliding = Started = true;
             away = 0f;

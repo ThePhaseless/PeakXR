@@ -146,8 +146,9 @@ internal sealed class UIWorldSettings
                 "MenuFollow",
                 MenuFollowMode.LazyFollow,
                 "How menus and popups stay in view. LazyFollow: a menu stays put while you look around it; once you "
-                    + "look more than MenuFollowAngle away from it for half a second it glides back in front of you "
-                    + "(never while the laser is on it or a trigger is held). Fixed: it stays where it opened."
+                    + "look more than MenuFollowAngle away from it for a moment (at once when you look 15 degrees "
+                    + "further) it glides back in front of you within about 0.7 s (never while the laser is on it or "
+                    + "a trigger is held). Fixed: it stays where it opened."
             ),
             MenuFollowAngle = cfg.Bind(
                 ui,
