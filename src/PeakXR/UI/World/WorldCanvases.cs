@@ -863,19 +863,31 @@ internal static class WorldCanvases
         if (t.Canvas == null)
             return "no text";
         var mpp = MenuMpp(t, cfg);
-        float canvasScale = Mathf.Max(t.Canvas.transform.lossyScale.y, 1e-6f);
         emDegrees.Clear();
         foreach (var text in t.Canvas.GetComponentsInChildren<TMPro.TMP_Text>())
         {
             if (string.IsNullOrWhiteSpace(text.text) || text.color.a < 0.1f)
                 continue;
-            float px = text.fontSize * text.transform.lossyScale.y / canvasScale;
+            float px = text.fontSize * ScaleInCanvas(text.transform, t.Rect);
             emDegrees.Add(ReadableText.Degrees(px * mpp, cfg.MenuDistanceWorld));
         }
         if (emDegrees.Count == 0)
             return "no text";
         emDegrees.Sort();
         return $"text em median {emDegrees[emDegrees.Count / 2]:0.00} deg of {emDegrees.Count}";
+    }
+
+    /// <summary>Vertical scale of <paramref name="node"/> in canvas pixels, as the page settles. A page that just
+    /// opened is still scaling in from zero (ScaleOnEnable.cs:14, <c>localScale = Vector3.zero</c> then a 0.25 s
+    /// tween to one), so its own scale is taken as that end value: lossyScale read at the opening log gave every
+    /// text 0 px ("text em median 0.00 deg").</summary>
+    private static float ScaleInCanvas(Transform node, Transform canvas)
+    {
+        float scale = 1f;
+        for (var p = node; p != null && p != canvas; p = p.parent)
+            if (!p.TryGetComponent<ScaleOnEnable>(out _))
+                scale *= p.localScale.y;
+        return scale;
     }
 
     private static void LogPlacement(
