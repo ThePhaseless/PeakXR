@@ -754,6 +754,15 @@ public partial class AvatarPoseDriver
         boneRot = Quaternion.Slerp(boneRot, r, twoWeight);
     }
 
+    /// <summary>Self-test (vr.14b): the pose the hold last gave the held item (between both hands while two hold it),
+    /// before physics carries it there; false without one.</summary>
+    internal bool HeldTarget(out Vector3 pos, out Quaternion rot)
+    {
+        pos = itemTargetPos;
+        rot = itemTargetRot;
+        return haveItemTarget;
+    }
+
     /// <summary>The held item's one-hand pose in the <paramref name="left"/> controller's frame, so gestures test the
     /// part of the item that touches (a mouthpiece, the food) on the tracked hand rather than the controller.</summary>
     internal bool HeldItemInController(bool left, out Vector3 pos, out Quaternion rot)

@@ -33,6 +33,7 @@ internal sealed class AvatarConfig
     public bool Fingers => fingers?.Value ?? true;
     public bool HeadLook => headLook?.Value ?? true;
     public bool BodyLean => bodyLean?.Value ?? true;
+    public ConfigEntry<bool> BodyLeanEntry => bodyLean;
     public bool RetargetItems => retargetItems?.Value ?? true;
     public bool ReachGhostHand => reachGhostHand?.Value ?? true;
     public bool AimHoldAlignment => aimHoldAlignment?.Value ?? true;

@@ -2795,12 +2795,18 @@ internal sealed partial class SelfTestRunner
         float openingGap = float.MaxValue;
         bool baseCast = false;
         float baseEnd = Now + GameTiming.UseSeconds(item) + 1f;
+        // The base at the mouth puts the hand at the eyes, where the glance toward it and SetHand's turn away from the
+        // head flip frame to frame and swing the base and the mouth about (run 7: 0.14 m at best, hand 5 cm over the
+        // eyes): the head looks ahead and the hand keeps the turn it starts with, so the goal holds still.
+        EndGlance();
+        var baseTurn = Script(left).Rotation;
         while (Now < baseEnd && item != null && c.data.currentItem == item)
         {
             var hand = rig.Hand(left);
             var mouth = WorldMouth();
             var bottom = DrinkBase(item, hand, left);
             ApproachHand(left, MouthGoal(left, bottom));
+            Script(left).Rotation = baseTurn;
             float opening = RealScale.Real(
                 Vector3.Distance(HeldItemPoints.Opening(item, hand, left), mouth)
             );
@@ -2812,6 +2818,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         PullAway(left);
+        LookAtHand(left);
         yield return Wait(0.5f);
         var baseNote =
             $"base at the mouth: nearest {baseGap:0.00} m, opening nearest {openingGap:0.00} m, cast {baseCast}";
