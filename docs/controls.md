@@ -136,7 +136,7 @@ With `Sandbox.Enabled` on, the Sandbox page of the VR tab has an Item room row: 
 
 Each of these has an on/off setting in the `Interaction` section. With a setting off, the grip and trigger work as before.
 
-A held item stays in your character's hand. When your real hand goes further than the character's arm can reach, such as a deep stoop or a long reach, a faint ghost hand shows where your hand really is (`Avatar.ReachGhostHand`, on). Only you see it.
+An empty hand is drawn where your controller is: the character's arm is drawn longer, up to one and a half times, when its shoulder sits too low and far back for its own arm to get there. A held item stays in your character's hand. When your real hand goes further than that, such as a deep stoop, a long reach or a hand holding something past the arm's reach, a faint ghost hand shows where your hand really is (`Avatar.ReachGhostHand`, on). Only you see both.
 
 - Cook (`CookOverFire`): hold food over a lit campfire. It cooks while it stays above the flames and stops when you pull it out. Held near a lit fire, food gives a faint pulse that gets stronger toward the heat. Over the flames a soft buzz takes over at that pulse's strength and grows as it cooks. Food that cannot be used on the fire, or a fire that is not lit, gets the refusal cue.
 - Open a suitcase (`LiftLidToOpen`): grip the top of the case and lift. The game's open timer only runs as far as you have raised the lid, so lift slowly. A respawn chest needs both hands on the lid; one hand alone gets the two-hands cue. Gripping the case low down holds it open the old way, and shows an upward ring at the lid edge to say where to lift.

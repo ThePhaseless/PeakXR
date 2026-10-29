@@ -231,6 +231,7 @@ public static class SelfTestIds
         "vr.44e-item-hand-no-hang",
         "vr.44f-spike-second-slot",
         "vr.45-lean",
+        "vr.45b-head-turn",
         "vr.46-lunge",
         "vr.46b-lunge-too-soon",
         "vr.46c-reach-no-lunge",

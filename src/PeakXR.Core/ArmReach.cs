@@ -68,6 +68,38 @@ public static class ArmReach
         return avatarReach + (PlayerReach(avatarReach, playerReach) - avatarReach) * w;
     }
 
+    /// <summary>Longest the local player's drawn arm (avatar.local's DrawnHands, drawing only) is stretched, as a
+    /// multiple of the arm. The scout's shoulders sit about 0.22 m lower and 0.12 m further back from the eyes than a
+    /// person's, so hands held in front of the face are 0.75-0.8 m from them against a 0.6 m arm (a 1.3x stretch);
+    /// 1.5x covers every reach short of a full overhead stretch.</summary>
+    public const float MaxDrawnStretch = 1.5f;
+
+    /// <summary>How far from the shoulder the drawn hand can follow its controller.</summary>
+    public static float DrawnReach(float avatarReach) => avatarReach * MaxDrawnStretch;
+
+    /// <summary>
+    /// Factor the drawn arm is scaled by about its shoulder so a hand <paramref name="hand"/> from the shoulder is
+    /// drawn where its controller is (<paramref name="controller"/> from the shoulder), out to
+    /// <see cref="DrawnReach"/>: never shorter than the arm, never past <see cref="MaxDrawnStretch"/> (a hand lagging
+    /// near the shoulder is not blown up), and eased in by <paramref name="weight"/> (the arms' tracked weight).
+    /// </summary>
+    public static float DrawnStretch(float hand, float controller, float avatarReach, float weight)
+    {
+        if (!(hand > 1e-4f) || !(controller > 0f) || !(weight > 0f))
+            return 1f;
+        float k = Math.Clamp(
+            MathF.Min(controller, DrawnReach(avatarReach)) / hand,
+            1f,
+            MaxDrawnStretch
+        );
+        return 1f + (k - 1f) * MathF.Min(weight, 1f);
+    }
+
+    /// <summary><see cref="GhostReach"/> while the arm is drawn stretched: the ghost shows only past where the
+    /// drawn hand can follow.</summary>
+    public static float DrawnGhostReach(float avatarReach, float playerReach, float mapWeight) =>
+        MathF.Max(GhostReach(avatarReach, playerReach, mapWeight), DrawnReach(avatarReach));
+
     /// <summary>The avatar's hand target for a controller at <paramref name="controller"/>: on the line from
     /// <paramref name="shoulder"/>, at the mapped distance.</summary>
     public static Vector3 Target(

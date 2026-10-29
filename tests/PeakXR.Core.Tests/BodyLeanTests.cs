@@ -72,6 +72,44 @@ public class BodyLeanTests
         Assert.True(MathF.Abs(moved.Z) < 1e-3f, $"rolled sideways to z {moved.Z:0.000}");
         Assert.True(moved.X > 0.25f);
     }
+
+    // A head turned in the room bends the body back under the view (the turn part of the lean); a player standing
+    // with a turned head has nothing to stand up from (room-scale's standing-tall test).
+
+    [Fact]
+    public void StandLean_IgnoresTheHeadTurnPart()
+    {
+        // The body's eyes 0.17 m ahead of and 0.17 m beside the view after a 90 degree head turn.
+        var turn = new Vector3(-0.17f, 0f, -0.17f);
+        var head = Eye + turn;
+        Assert.True(BodyLean.StandLeanDegrees(Pivot, Eye, head, turn, Forward, Up) < 0.01f);
+        // The swing itself does bend.
+        var bend = BodyLean.Swing(Pivot, Eye, head, Forward, Up);
+        Assert.True(Degrees(bend) > 5f);
+    }
+
+    [Fact]
+    public void StandLean_KeepsARealLean()
+    {
+        var lean = new Vector3(0f, -0.05f, 0.3f);
+        float plain = BodyLean.StandLeanDegrees(Pivot, Eye, Eye + lean, Vector3.Zero, Forward, Up);
+        Assert.True(plain > 10f, $"{plain}");
+        // A turn on top of the lean leaves the lean.
+        var turn = new Vector3(0.17f, 0f, -0.17f);
+        float turned = BodyLean.StandLeanDegrees(Pivot, Eye, Eye + lean + turn, turn, Forward, Up);
+        TestUtil.Near(plain, turned, 1e-3f);
+    }
+
+    [Fact]
+    public void StandLean_KeepsTheDeadband()
+    {
+        // Under the lean's 2 cm deadband nothing is left to stand up from.
+        var head = Eye + new Vector3(0f, 0f, 0.015f);
+        Assert.Equal(0f, BodyLean.StandLeanDegrees(Pivot, Eye, head, Vector3.Zero, Forward, Up));
+    }
+
+    static float Degrees(Quaternion q) =>
+        2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f)) * 180f / MathF.PI;
 }
 
 public class BodyLeanTryTests

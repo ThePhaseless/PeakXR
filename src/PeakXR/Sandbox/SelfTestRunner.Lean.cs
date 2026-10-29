@@ -246,6 +246,103 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
+    /// <summary>Most the avatar's eyes may sit off the view with the head turned 90 degrees (m). The body turns to the
+    /// head's heading (Character.SetRotation) about its mass centre, 0.27 m behind its eyes, while a head turns about
+    /// a neck about 0.1 m behind them: a body left upright puts its eyes 2 x 0.17 x sin 45 = 0.24 m off the view, and
+    /// the torso ahead of it. The lean must bring them back under the view.</summary>
+    const float MaxHeadTurnEye = 0.12f;
+
+    /// <summary>How far the scripted eyes sit ahead of the head's turn axis (m): a person's neck.</summary>
+    const float NeckSwing = 0.1f;
+
+    /// <summary>
+    /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns 90 degrees left and right in the room
+    /// (no snap turn), the eyes swinging on a 0.1 m neck. With each turn held 1.5 s, the avatar's eye renderers must
+    /// be within <see cref="MaxHeadTurnEye"/> of the view (less the view hold's offset), so the body stands under the
+    /// eyes instead of in front of them. Also reports how far the torso centre sits ahead of the view along its
+    /// level forward (negative: behind).
+    /// </summary>
+    IEnumerator HeadTurnStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
+        if (driver == null || rig == null)
+        {
+            Fail("no pose driver or rig");
+            yield break;
+        }
+        yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
+        // The turned body leans back and sideways: room for it first.
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
+        {
+            Fail("no clear 1.3 m to turn in in any heading: " + obstacle);
+            yield break;
+        }
+        rig.RotateYaw(turn);
+        yield return Wait(0.8f);
+        bool recentered = false;
+        Action onRecenter = () => recentered = true;
+        rig.Recentered += onRecenter;
+        rig.Recenter();
+        yield return WaitFor(() => recentered, 3f);
+        rig.Recentered -= onRecenter;
+        yield return Wait(0.8f);
+
+        var home = new Vector3(
+            rig.RoomAnchor.X,
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.RoomAnchor.Y
+        );
+        var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
+        var forward = level * Vector3.forward;
+        bodyRestore = ReleaseHead;
+        var fails = new List<string>();
+        var notes = new List<string>();
+        float yaw = 0f;
+        foreach (float to in new[] { 0f, 90f, -90f, 0f })
+        {
+            float from = yaw;
+            float start = Now;
+            while (Now - start < 0.6f)
+            {
+                yaw = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - start) / 0.6f));
+                var q = Quaternion.Euler(0f, yaw, 0f);
+                ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);
+                yield return null;
+            }
+            yaw = to;
+            var turned = Quaternion.Euler(0f, yaw, 0f);
+            ScriptHead(home + (turned * forward - forward) * NeckSwing, turned * level);
+            yield return Wait(1.5f);
+            var head = rig.Head;
+            if (head == null || !RigDriver.TryEyeRenderers(c, out var eye))
+            {
+                fails.Add("no view or avatar eyes to compare");
+                break;
+            }
+            var off = head.position - RigDriver.ViewHeld - eye;
+            float torso = Vector3.Dot(c.Center - head.position, Flat(head.forward));
+            notes.Add(
+                F(
+                    $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view, torso {torso:0.00} m ahead of it, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"})"
+                )
+            );
+            if (Mathf.Abs(yaw) > 1f && off.magnitude > MaxHeadTurnEye)
+                fails.Add(
+                    F(
+                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view > {MaxHeadTurnEye:0.00} m"
+                    )
+                );
+        }
+        ReleaseHead();
+        var note = string.Join("; ", notes);
+        if (fails.Count > 0)
+            Fail(string.Join("; ", fails) + " | " + note);
+        else
+            stepNote = note;
+    }
+
     void StartTrack(Character c, VRRig rig)
     {
         leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
