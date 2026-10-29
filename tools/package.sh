@@ -16,7 +16,7 @@ DIST="$ROOT/dist"
 STAGE="$DIST/PeakXR"
 CONFIG="${CONFIG:-Release}"
 WEBSITE="https://github.com/ThePhaseless/PeakXR"
-DESCRIPTION="VR for PEAK: play in a headset through OpenXR (SteamVR, Monado, WMR, ...) with OpenVR as a fallback."
+DESCRIPTION="Play PEAK in VR. Climb by grabbing the rock, pick things up with your hands, eat by lifting food to your mouth and climb ropes hand over hand. Friends without the mod can still play with you. Early release, mostly tested on SteamVR."
 
 log() { printf '\033[1;34m[package]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[package] error:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -78,11 +78,11 @@ the Unity Companion License and Valve's OpenVR plugin under BSD-3-Clause; see Be
 EOF
 fi
 if [[ ! -f "$ROOT/assets/icon.png" ]]; then
-    log "assets/icon.png missing; generating a placeholder"
+    log "assets/icon.png missing; generating it"
     if command -v uv >/dev/null; then
-        uv run --no-project --quiet python "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"
+        uv run --quiet "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"
     elif command -v python3 >/dev/null; then
-        python3 "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"
+        python3 "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"  # needs Pillow
     else
         die "no python to generate assets/icon.png; add a 256x256 PNG by hand"
     fi
