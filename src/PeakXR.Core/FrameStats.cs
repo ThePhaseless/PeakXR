@@ -110,11 +110,14 @@ public enum RefreshSource
 /// ALVR: a 72 Hz headset read as 36, 24 and 18 Hz), so a reading outside <see cref="FrameBudget.Sane"/> is no
 /// reading, and a lower sane one that is a whole fraction of the session's rate (120 read as 60 or 40) keeps that
 /// rate. A lower one that is no fraction (120 to 90 Hz) is a real change. Only headset sources are
-/// <see cref="Trusted"/>; the desktop monitor fills in for reports when the headset never gave a rate.
+/// <see cref="Trusted"/>; the desktop monitor fills in for reports only when no headset ever gave a rate.
 /// </summary>
 public sealed class RefreshTracker
 {
     float _session;
+
+    /// <summary>The next sane reading starts a new session rate, even a fraction of the last (another headset).</summary>
+    bool _fresh = true;
 
     public float Hz { get; private set; }
     public RefreshSource Source { get; private set; }
@@ -123,9 +126,13 @@ public sealed class RefreshTracker
     public bool Trusted =>
         Source is RefreshSource.Display or RefreshSource.Device or RefreshSource.LastGood;
 
+    /// <summary>A new or re-shown session. The last headset rate stays as <see cref="RefreshSource.LastGood"/> until a
+    /// sane reading replaces it: a runtime that comes back throttled (vr.260/vr.261: 72 Hz read as 24) would
+    /// otherwise leave only the desktop monitor.</summary>
     public void Reset()
     {
-        _session = Hz = 0f;
+        _fresh = true;
+        Hz = 0f;
         Source = RefreshSource.None;
     }
 
@@ -139,10 +146,17 @@ public sealed class RefreshTracker
         float head = source == RefreshSource.Display ? display : device;
         // A hair off the session rate is the same rate (run 59: 72 Hz jittered every frame).
         if (source != RefreshSource.None && Same(_session, head))
+        {
+            _fresh = false;
             Set(_session, source);
-        else if (source != RefreshSource.None && !(head < _session && Throttled(_session, head)))
+        }
+        else if (
+            source != RefreshSource.None
+            && (_fresh || !(head < _session && Throttled(_session, head)))
+        )
         {
             _session = head;
+            _fresh = false;
             Set(head, source);
         }
         else if (_session > 0f)

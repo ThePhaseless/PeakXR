@@ -96,7 +96,8 @@ internal static class FrameClock
             Hz = hz;
             Trusted = trusted;
             Frames = w.Frames;
-            BudgetMs = FrameBudget.BudgetMs(hz);
+            // The desktop monitor's rate is no budget for the headset (docs/testing.md, vr.231).
+            BudgetMs = trusted ? FrameBudget.BudgetMs(hz) : 0f;
             Interval = w.Interval.Summarize(BudgetMs * FrameBudget.DroppedFactor);
             Gpu = w.Gpu.Summarize(0f);
             CpuMain = w.CpuMain.Summarize(0f);
@@ -109,10 +110,18 @@ internal static class FrameClock
         public string Line(float renderScale)
         {
             string refresh =
-                Hz > 0f
+                BudgetMs > 0f
                     ? FormattableString.Invariant(
                         $"{Hz:0.#} Hz ({Source}), budget {BudgetMs:0.00} ms"
                     )
+                : Hz > 0f
+                    ? FormattableString.Invariant(
+                        $"n/a (no headset rate; desktop {Hz:0.#} Hz is no budget, not judged)"
+                    )
+                : "n/a (no headset rate, not judged)";
+            string over =
+                BudgetMs > 0f
+                    ? FormattableString.Invariant($"{Interval.Over}/{Interval.Count}")
                     : "n/a";
             string gpu = Gpu.Empty
                 ? "n/a"
@@ -128,7 +137,7 @@ internal static class FrameClock
                     ? FormattableString.Invariant($" (last {Interval.Count} of {Frames} frames)")
                     : "";
             return FormattableString.Invariant(
-                $"refresh {refresh}, frame p50/p95/p99{covers} {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {Interval.Over}/{Interval.Count}, GPU p50/p95 {gpu}, CPU main/render p95 {cpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
+                $"refresh {refresh}, frame p50/p95/p99{covers} {Interval.P50:0.00}/{Interval.P95:0.00}/{Interval.P99:0.00} ms, over 1.5x budget {over}, GPU p50/p95 {gpu}, CPU main/render p95 {cpu}, runtime dropped/repeated {runtime}, render scale {renderScale:0.00}, {Seconds:0.0} s"
             );
         }
     }
