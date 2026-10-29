@@ -801,6 +801,10 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.4f);
         float rise = c.Center.y - y0;
         bool stillClimbing = c.data.isClimbing;
+        handOverNote = "not tried (the first pull ended the climb)";
+        handOverFail = false;
+        if (stillClimbing)
+            yield return HandOverHand(!left, hit.normal);
         float released = CueMark();
         yield return GripTo(left, 0f, 0.1f);
         yield return WaitFor(() => !c.data.isClimbing, 2f);
@@ -809,15 +813,78 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
-            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
+            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
         if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
+        else if (handOverFail)
+            Fail("the hand-over-hand pull fell short: " + note);
         else if (c.data.isClimbing)
             Fail("climb did not stop: " + note);
         else if (torn)
             Fail("letting go felt like being torn off: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>What <see cref="HandOverHand"/> saw, for vr.15's note, and whether it is a failure.</summary>
+    string handOverNote = "";
+    bool handOverFail;
+
+    /// <summary>Body rise a 0.25 m hand-over-hand pull must reach: 0.1 m was the most it got with both grips
+    /// averaged and the stick clipped at the game's full-stick wall speed.</summary>
+    const float MinHandOverRise = 0.18f;
+
+    /// <summary>
+    /// vr.15's second pull, hand over hand: while the first hand still grips (lower, after its pull), the other takes
+    /// a hold at eye height beside it and pulls 0.25 m in 0.2 s, past the game's full-stick wall speed. The newest
+    /// grip leads (<c>ArmLocomotion</c>) and the climber catches up after the hand stops (<c>ClimbDebt</c>), so the
+    /// body rises about as far. No steep hold at eye height for that hand is noted, not failed.
+    /// </summary>
+    IEnumerator HandOverHand(bool other, Vector3 wallNormal)
+    {
+        handOverFail = false;
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var inward = -Flat(wallNormal);
+        var right = Vector3.Cross(Vector3.up, inward).normalized;
+        var from = rig.Head.position + Vector3.down * 0.1f + right * (other ? -0.15f : 0.15f);
+        if (
+            !Terrain(from, inward, 0.9f, out var high)
+            || !ClimbRules.GrabAngleOk(Vector3.Angle(high.normal, Vector3.up))
+        )
+        {
+            handOverNote = "not tried (no steep hold at eye height for the other hand)";
+            yield break;
+        }
+        var hold = high.point + high.normal * 0.04f;
+        yield return MoveTo(other, () => hold, 0.5f);
+        if (OverReach(other) is { } far)
+        {
+            handOverNote = "not tried: " + far;
+            yield break;
+        }
+        yield return GripTo(other, 1f, 0.1f);
+        yield return Wait(0.3f);
+        if (!PeakXR.Interact.PhysicalInteraction.GripHolds(other))
+        {
+            handOverFail = true;
+            handOverNote =
+                "the other hand did not take the wall: "
+                + PeakXR.Interact.PhysicalInteraction.LastGripNote;
+            yield return GripTo(other, 0f, 0.1f);
+            yield break;
+        }
+        float y0 = c.Center.y;
+        yield return PullDown(other, 0.25f, 0.2f);
+        // The climber catches up after the hand stops: full stick moves about 1.1 m/s.
+        yield return Wait(0.6f);
+        float rise = c.Center.y - y0;
+        bool climbing = c.data.isClimbing;
+        yield return GripTo(other, 0f, 0.1f);
+        handOverFail = rise < MinHandOverRise || !climbing;
+        handOverNote = F(
+            $"rose {rise:0.00} m for the other hand's 0.25 m pull in 0.2 s (needs {MinHandOverRise:0.00}), climbing after it {climbing}"
+        );
     }
 
     /// <summary>vr.16: the turn stick snaps the rig by <c>Comfort.SnapTurnAngle</c> (smooth turning: just turns), and the eye
