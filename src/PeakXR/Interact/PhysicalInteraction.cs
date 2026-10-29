@@ -94,6 +94,7 @@ internal static class PhysicalInteraction
     private static readonly ButtonEdge DropEdge = new();
     private static readonly MouthGesture Mouth = new();
     private static readonly ArmLocomotion Arms = new();
+    private static readonly ClimbDebt Debt = new();
     private static readonly ItemHoldInfo Hold = new();
     private static readonly Collider[] Overlap = new Collider[32];
     private static readonly NVector3[] CandidatePositions = new NVector3[32];
@@ -116,6 +117,9 @@ internal static class PhysicalInteraction
     private static float pendingTime = -10f;
     private static bool physicalClimb;
     private static Vector2 climbInput;
+
+    /// <summary><c>Time.fixedTime</c> at the last climb frame: how many fixed steps ran on the last stick.</summary>
+    private static float lastFixedTime;
     private static bool dropPending;
     private static bool useBlocked;
     private static int throwFrame = -10;
@@ -1935,6 +1939,8 @@ internal static class PhysicalInteraction
         if (!physicalClimb)
         {
             Arms.Reset();
+            Debt.Reset();
+            lastFixedTime = Time.fixedTime;
             Grace.Reset();
             StaminaBeat.Reset();
             Texture.Reset();
@@ -2006,37 +2012,40 @@ internal static class PhysicalInteraction
 
         bool l = leftGrip && VRInput.Left.Tracked;
         bool r = rightGrip && VRInput.Right.Tracked;
-        var d = Arms.Update(l, VRInput.Left.Position.N(), r, VRInput.Right.Position.N(), dt).U();
-        var world = (rig.Origin != null ? rig.Origin.TransformVector(d) : d) * cfg.ClimbGain;
         var climbing = c.refs.climbing;
         var mod = c.data.climbMod;
-        var target = ClimbInput.FromBodyVelocity(
-            (world / dt).N(),
-            c.data.climbNormal.N(),
-            ClimbInput.WallSpeed(
-                climbing.climbSpeed,
-                climbing.climbSpeedMod
-                    * c.data.staminaMod
-                    * (mod != null ? mod.speedMultiplier : 1f)
-            ),
-            0.1f
-        );
-        var smoothed = ClimbInput.Smooth(
-            new System.Numerics.Vector2(climbInput.x, climbInput.y),
-            target,
-            12f,
-            dt
-        );
-        smoothed = ClimbInput.Settle(smoothed, target);
-        climbInput = new Vector2(smoothed.X, smoothed.Y);
-
-        // Slide-only surface or no stamina: the game slides the climber down (CharacterClimbing.cs:297, :301, :263).
-        // Upward pulls would only burn stamina (CharacterClimbing.cs:132), so they are dropped.
         bool slideOnly = mod != null && mod.onlySlideDown;
         bool outOfStamina = c.data.outOfStaminaFor > 0f;
-        if ((slideOnly || outOfStamina) && climbInput.y > 0f)
-            climbInput.y = 0f;
-        DenyPull(TraversalRefusal.Pull(target.Y, slideOnly, outOfStamina), leftGrip, rightGrip);
+        // The game moves along the wall's up only off a slide-only surface, 0.5 s past a climb jump, with stamina
+        // left (CharacterClimbing.cs:297-301); otherwise a pull up or down is dropped, not banked for later.
+        bool yMoves = !slideOnly && !outOfStamina && c.data.sinceClimbJump > 0.5f;
+        float speed = ClimbInput.WallSpeed(
+            climbing.climbSpeed,
+            climbing.climbSpeedMod * c.data.staminaMod * (mod != null ? mod.speedMultiplier : 1f)
+        );
+        float down = ClimbInput.DownSpeed(climbing.climbSpeed, climbing.climbSpeedMod);
+        // The fixed steps since the last frame ran on the stick set then (FixedUpdate runs before Update): pay for
+        // exactly those, so a drop (0.14 m per step) is counted whole whatever the frame rate.
+        float fixedDt = Time.fixedDeltaTime;
+        float stepped = Mathf.Round((Time.fixedTime - lastFixedTime) / fixedDt) * fixedDt;
+        lastFixedTime = Time.fixedTime;
+        Debt.Pay(new(climbInput.x, climbInput.y), speed, down, yMoves, stepped);
+
+        var d = Arms.Update(l, VRInput.Left.Position.N(), r, VRInput.Right.Position.N(), dt).U();
+        var world = (rig.Origin != null ? rig.Origin.TransformVector(d) : d) * cfg.ClimbGain;
+        var pull = ClimbInput.OnWall(world.N(), c.data.climbNormal.N());
+        // Both hands open (or lost): the regrip grace holds the climb, but nothing is pulling any more.
+        if (l || r)
+            Debt.Add(pull, yMoves);
+        else
+            Debt.Reset();
+        var stick = Debt.Stick(speed, down, fixedDt);
+        climbInput = new Vector2(stick.X, stick.Y);
+        DenyPull(
+            TraversalRefusal.Pull(speed > 0f ? pull.Y / (speed * dt) : 0f, slideOnly, outOfStamina),
+            leftGrip,
+            rightGrip
+        );
 
         if (cfg.StaminaHaptics && (leftGrip || rightGrip))
         {

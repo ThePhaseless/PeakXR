@@ -6,24 +6,23 @@ public class ClimbInputTests
     static readonly Vector3 Normal = new(0, 0, -1);
 
     [Fact]
-    public void MovingUp_IsPositiveY()
+    public void OnWall_UpIsY_RightIsX()
     {
-        var input = ClimbInput.FromBodyVelocity(
-            new Vector3(0, 1, 0),
-            Normal,
-            climbSpeed: 2f,
-            deadzone: 0.05f
-        );
-        TestUtil.Near(0.5f, input.Y);
-        TestUtil.Near(0f, input.X);
+        TestUtil.Near(1f, ClimbInput.OnWall(new Vector3(0, 1, 0), Normal).Y);
+        TestUtil.Near(0f, ClimbInput.OnWall(new Vector3(0, 1, 0), Normal).X);
+        TestUtil.Near(1f, ClimbInput.OnWall(new Vector3(1, 0, 0), Normal).X);
+        TestUtil.Near(0f, ClimbInput.OnWall(new Vector3(1, 0, 0), Normal).Y);
     }
 
     [Fact]
-    public void MovingRight_IsPositiveX()
+    public void OnWall_MotionIntoTheWall_IsIgnored() =>
+        Assert.Equal(Vector2.Zero, ClimbInput.OnWall(new Vector3(0, 0, 3), Normal));
+
+    [Fact]
+    public void OnWall_DegenerateNormal_IsZero()
     {
-        var input = ClimbInput.FromBodyVelocity(new Vector3(1, 0, 0), Normal, 2f, 0.05f);
-        TestUtil.Near(0.5f, input.X);
-        TestUtil.Near(0f, input.Y);
+        Assert.Equal(Vector2.Zero, ClimbInput.OnWall(new Vector3(0, 1, 0), Vector3.Zero));
+        Assert.Equal(Vector2.Zero, ClimbInput.OnWall(new Vector3(1, 0, 0), Vector3.UnitY));
     }
 
     [Fact]
@@ -34,62 +33,9 @@ public class ClimbInputTests
     }
 
     [Fact]
-    public void ArmPull_MovesTheClimberAsFarAsTheHand()
-    {
-        // Vanilla flat wall at z = 0 (CharacterClimbing.cs:286, :412): each fixed step requests
-        // climbPos + up * stick.y * climbSpeed * dt, then climbPos becomes where the line from
-        // climbPos + normal * 0.4 to requested - normal * 1 crosses the wall.
-        const float climbSpeed = 4f,
-            dt = 0.02f;
-        var pull = new Vector3(0, 0.5f, 0);
-        float y = 0f;
-        for (int i = 0; i < 40; i++)
-        {
-            var stick = ClimbInput.FromBodyVelocity(
-                pull,
-                Normal,
-                ClimbInput.WallSpeed(climbSpeed, 1f),
-                0.1f
-            );
-            var from = new Vector3(0, y, 0) + Normal * 0.4f;
-            var to = new Vector3(0, y + stick.Y * climbSpeed * dt, 0) - Normal;
-            float t = from.Z / (from.Z - to.Z);
-            y = from.Y + (to.Y - from.Y) * t;
-        }
-        TestUtil.Near(0.4f, y);
-    }
-
-    [Fact]
-    public void MotionIntoTheWall_IsIgnored()
-    {
-        var input = ClimbInput.FromBodyVelocity(new Vector3(0, 0, 3), Normal, 2f, 0.05f);
-        Assert.Equal(Vector2.Zero, input);
-    }
-
-    [Fact]
-    public void Fast_IsClampedToUnitLength()
-    {
-        var input = ClimbInput.FromBodyVelocity(new Vector3(10, 10, 0), Normal, 2f, 0.05f);
-        TestUtil.Near(1f, input.Length());
-    }
-
-    [Fact]
-    public void Slow_IsInsideDeadzone()
-    {
-        Assert.Equal(
-            Vector2.Zero,
-            ClimbInput.FromBodyVelocity(new Vector3(0, 0.05f, 0), Normal, 2f, 0.1f)
-        );
-    }
-
-    [Fact]
-    public void ZeroSpeed_GivesZero()
-    {
-        Assert.Equal(
-            Vector2.Zero,
-            ClimbInput.FromBodyVelocity(new Vector3(0, 1, 0), Normal, 0f, 0.1f)
-        );
-    }
+    public void DownSpeed_IsThreeTimesTheBareWallSpeed() =>
+        // CharacterClimbing.cs:305: normalized * -3, with neither staminaMod nor the surface multiplier.
+        TestUtil.Near(3f * 4f * 1.5f * 0.4f / 1.4f, ClimbInput.DownSpeed(4f, 1.5f));
 
     [Fact]
     public void Smooth_ConvergesTowardTarget()
@@ -100,34 +46,6 @@ public class ClimbInputTests
             new Vector2(1, 0),
             ClimbInput.Smooth(Vector2.Zero, new Vector2(1, 0), 0f, 0.1f)
         );
-    }
-}
-
-public class ClimbInputSettleTests
-{
-    [Fact]
-    public void SmoothedResidue_BelowDeadzone_IsZero()
-    {
-        var input = ClimbInput.Settle(new Vector2(0.03f, 0.04f), Vector2.Zero);
-        Assert.Equal(Vector2.Zero, input);
-    }
-
-    [Fact]
-    public void Downward_IsDropped_UnlessTheArmsClearlyPullDown()
-    {
-        // The game climbs down at full speed for any negative stick y (CharacterClimbing.cs:303).
-        var residue = ClimbInput.Settle(new Vector2(0f, -0.2f), new Vector2(0f, -0.1f));
-        Assert.Equal(0f, residue.Y);
-        var pull = ClimbInput.Settle(new Vector2(0f, -0.2f), new Vector2(0f, -0.5f));
-        TestUtil.Near(-0.2f, pull.Y);
-    }
-
-    [Fact]
-    public void UpAndSideways_PassThrough()
-    {
-        var input = ClimbInput.Settle(new Vector2(-0.4f, 0.6f), new Vector2(-0.5f, 0.7f));
-        TestUtil.Near(-0.4f, input.X);
-        TestUtil.Near(0.6f, input.Y);
     }
 
     [Theory]
