@@ -42,6 +42,11 @@ It checks the tree is clean and pushed and that `v<version>` is a new tag, runs 
 warnings-as-errors build, the tests and the package, then pushes the tag and creates a GitHub release
 with `PeakXR-<version>.zip` attached.
 
+Publishing the release starts the Thunderstore workflow (`.github/workflows/thunderstore.yml`), which uploads
+that same zip with Thunderstore's CLI. It needs the `THUNDERSTORE_TOKEN` secret, a service account token of
+the ThePhaseless team. Pre-releases are skipped. To upload an existing release, run the workflow by hand
+with its tag.
+
 ## Install
 
 You need:

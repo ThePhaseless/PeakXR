@@ -1,0 +1,54 @@
+name: Thunderstore
+
+# Uploads the zip that `mise run release` attached to a GitHub release. Nothing is built here: the plugin needs the
+# game's own assemblies, so releases are built locally (tools/release.sh) and this job only publishes their asset.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, e.g. v0.1.1
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: thunderstore
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    # Pre-releases stay on GitHub; a manual run publishes the tag it is given.
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    steps:
+      - name: Check the tag
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $TAG"; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: jdx/mise-action@v5
+      - name: Download the release zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$TAG" --pattern "PeakXR-${TAG#v}.zip" --dir dist
+          version="$(grep -m1 -oP '(?<=versionNumber = ")[^"]+' thunderstore.toml)"
+          [[ "$version" == "${TAG#v}" ]] || { echo "thunderstore.toml says $version, tag is $TAG"; exit 1; }
+      - name: Publish
+        env:
+          THUNDERSTORE_TOKEN: ${{ secrets.THUNDERSTORE_TOKEN }}
+        run: |
+          [[ -n "$THUNDERSTORE_TOKEN" ]] || { echo "THUNDERSTORE_TOKEN secret is not set"; exit 1; }
+          mise exec -- dotnet tool install --tool-path .tcli tcli --version 0.2.4
+          mise exec -- .tcli/tcli publish --file "dist/PeakXR-${TAG#v}.zip" --token "$THUNDERSTORE_TOKEN"
