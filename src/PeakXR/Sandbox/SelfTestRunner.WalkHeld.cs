@@ -47,9 +47,11 @@ internal sealed partial class SelfTestRunner
             if (wall != null)
                 Object.Destroy(wall);
         };
-        // Low beside the body, as an item is carried while walking: the wall stops the chest before it meets the hand.
+        // At the hip beside the body, as an item is carried while walking, so the face meets the wall first. Held items
+        // collide with Map (Item.cs:726), and a controller 0.15 m ahead of the eyes put the 0.42 m apple on the wall
+        // while the walk carried the body and its controller on: the hand sat 0.26 m off it and the weld let go (run 7).
         HeadFrame(out var head, out var ahead, out var right);
-        SetHand(false, head + ahead * 0.15f + right * 0.2f + Vector3.down * 0.45f);
+        SetHand(false, head - ahead * 0.2f + right * 0.3f + Vector3.down * 0.75f);
         yield return WaitFor(() => c.data.currentItem != null, 3f);
         if (c.data.currentItem == null)
         {
@@ -62,6 +64,8 @@ internal sealed partial class SelfTestRunner
         float worstHand = 0f;
         float worstItem = 0f;
         var hand = c.refs.ragdoll.partDict[BodypartType.Hand_R].Rig;
+        var wallCollider = wall.GetComponent<Collider>();
+        float wallGap = float.PositiveInfinity;
         var from = c.Center;
         float start = Now;
         Script(move).Stick = new Vector2(0f, 1f);
@@ -73,11 +77,19 @@ internal sealed partial class SelfTestRunner
             if (driver.HandTarget(false, out var target))
                 worstHand = Mathf.Max(worstHand, Vector3.Distance(hand.position, target));
             worstItem = Mathf.Max(worstItem, driver.HeldItemGap);
+            if (c.data.currentItem != null)
+            {
+                var middle = c.data.currentItem.Center();
+                wallGap = Mathf.Min(
+                    wallGap,
+                    Vector3.Distance(wallCollider.ClosestPoint(middle), middle)
+                );
+            }
             yield return null;
         }
         Script(move).Stick = Vector2.zero;
         var note = F(
-            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, weld released {released}"
+            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, apple centre {wallGap:0.00} m from the wall, weld released {released}"
         );
         if (c.data.currentItem == null)
         {
