@@ -186,6 +186,11 @@ sealed class PeakXRSessionFeature : OpenXRFeature
 
     protected override void OnSessionStateChange(int oldState, int newState)
     {
+        // Every transition, so a log taken after a headset-off shows what the runtime did (Player.log is overwritten
+        // by the next launch; LogOutput.log and the bug report's ring keep this).
+        Plugin.Log.LogInfo(
+            $"[xr.bootstrap] OpenXR session {Core.XRFocus.Name(oldState)} -> {Core.XRFocus.Name(newState)}"
+        );
         XRSessionState.OpenXRState = newState;
         if (newState is Exiting or LossPending)
             XRSessionState.ExitRequested = true;

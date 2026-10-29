@@ -376,7 +376,29 @@ sealed class XRBootstrapDriver : MonoBehaviour
         }
 
         if (VRSession.Active)
+        {
             SetFocus(ComputeFocus());
+            TrackPresence();
+        }
+    }
+
+    /// <summary>The headset's wear sensor (OpenXR XR_EXT_user_presence, which SteamVR offers), null where the runtime
+    /// reports none. Logged on change: a runtime may report a headset taken off only here, not as a session state.</summary>
+    internal static bool? UserPresent { get; private set; }
+
+    static void TrackPresence()
+    {
+        bool? present = InputDevices
+            .GetDeviceAtXRNode(XRNode.Head)
+            .TryGetFeatureValue(CommonUsages.userPresence, out bool worn)
+            ? worn
+            : null;
+        if (present == UserPresent)
+            return;
+        UserPresent = present;
+        Plugin.Log.LogInfo(
+            $"{Tag} Headset {(present == null ? "wear sensor not reported" : present.Value ? "worn" : "taken off")} ({FocusSource})"
+        );
     }
 
     static bool ComputeFocus()
