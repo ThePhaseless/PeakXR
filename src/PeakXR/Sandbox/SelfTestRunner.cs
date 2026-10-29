@@ -487,7 +487,12 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 continue;
             text.ForceMeshUpdate();
             if (text.isTextTruncated)
-                cut.Add($"{page} \"{text.text}\"");
+                // Which side cut it: the caption's own width, its text rect, or the button (the control area).
+                cut.Add(
+                    F(
+                        $"{page} \"{text.text}\" (needs {text.preferredWidth:0} px, text {text.rectTransform.rect.width:0}, button {((RectTransform)button.transform).rect.width:0})"
+                    )
+                );
         }
     }
 

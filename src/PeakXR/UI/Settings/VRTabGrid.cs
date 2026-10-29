@@ -23,6 +23,10 @@ internal static class VRTabGrid
 {
     /// <summary>A narrowed row gives its control at most this share of the column.</summary>
     private const float ControlShare = 0.5f;
+
+    /// <summary>An action button's share: its caption cannot wrap or shrink (the text floor), the label beside it
+    /// wraps. Half a 502 px column cut "SAVE BUG REPORT" (VR run 7); 0.65 holds about 19 capitals.</summary>
+    private const float ActionShare = 0.65f;
     private const float LabelGap = 16f;
     private const float RailGap = 24f;
     private const float ChipPad = 20f;
@@ -356,8 +360,8 @@ internal static class VRTabGrid
     }
 
     /// <summary>
-    /// A row narrower than the game drew it for: the control keeps at most half the column, widened for an action
-    /// button's caption, the label takes the rest and wraps. Only rects anchored to one edge are touched.
+    /// A row narrower than the game drew it for: the control keeps at most half the column (an action button, widened
+    /// for its caption, <see cref="ActionShare"/>), the label takes the rest and wraps. Only rects anchored to one edge are touched.
     /// </summary>
     private static void Narrow(SettingsUICell cell, float width)
     {
@@ -367,11 +371,12 @@ internal static class VRTabGrid
         if (input == null || label == null || !OneEdge(input) || !OneEdge(label))
             return;
         var info = input.GetComponentInChildren<InfoCell>(true);
+        float wanted = info != null ? info.ButtonWidth : 0f;
         float control = SettingsRows.ControlWidth(
             input.sizeDelta.x,
-            info != null ? info.ButtonWidth : 0f,
+            wanted,
             width,
-            ControlShare
+            wanted > 0f ? ActionShare : ControlShare
         );
         float room = width - control - LabelGap;
         if (Mathf.Approximately(control, input.sizeDelta.x) && label.sizeDelta.x <= room)
