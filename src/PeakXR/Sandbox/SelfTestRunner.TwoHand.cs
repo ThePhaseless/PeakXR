@@ -80,6 +80,8 @@ internal sealed partial class SelfTestRunner
         }
         bool free = !left;
         var rest = Script(free).Position;
+        // The join is a fresh press: the free hand held the item on the last pass and its grip is still closed.
+        yield return GripTo(free, 0f, 0.05f);
         yield return GripTo(left, 1f, 0.1f);
         yield return HoldNaturally(left);
         yield return MoveTo(free, () => info.SecondGrip(left, out var g) ? g : held.Center(), 0.6f);
@@ -91,16 +93,16 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return Wait(0.6f);
-        Measure(out float mid, out float e1, out float e2, out float facing);
+        Measure(out float mid, out float e1, out float e2, out float facing, out float lag);
         // Spacing mismatch: the free hand 0.12 m farther out along the hands' axis.
         var b1 = Bone(left);
         var b2 = Bone(free);
         var away = rig.Origin.InverseTransformVector((b2 - b1).normalized * 0.12f);
         yield return MoveTrack(free, Script(free).Position + away, 0.3f);
         yield return Wait(0.6f);
-        Measure(out float mid2, out float f1, out float f2, out _);
+        Measure(out float mid2, out float f1, out float f2, out _, out _);
         string line = F(
-            $"{held.name} {hand}: grips' middle {mid:0.000} m off the hands', gaps {e1:0.000}/{e2:0.000} m; 0.12 m wider: middle {mid2:0.000} m, gaps {f1:0.000}/{f2:0.000} m; front to the eyes {(info.HasFront ? facing.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "n/a")}"
+            $"{held.name} {hand}: grips' middle {mid:0.000} m off the hands', gaps {e1:0.000}/{e2:0.000} m; 0.12 m wider: middle {mid2:0.000} m, gaps {f1:0.000}/{f2:0.000} m; front to the eyes {(info.HasFront ? facing.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "n/a")}; item {lag:0.000} m off its hold"
         );
         // Letting go: the main grip against its hand per frame.
         yield return GripTo(free, 0f, 0.05f);
@@ -140,13 +142,31 @@ internal sealed partial class SelfTestRunner
                 ? held.transform.TransformPoint(info.HoldPivot(left)) - Bone(left)
                 : default;
 
-        void Measure(out float midOff, out float gap1, out float gap2, out float front)
+        // The grips are judged where the hold puts the item: a main arm short of its controller carries the welded
+        // item only as far as it reaches, the ghost hand showing the rest (run 7: BingBong's main arm 0.12-0.13 m
+        // short at rest and in the natural hold, both grips 0.08 m off), which is the arm's reach, not the two-hand
+        // pose. How far the item lags its hold is reported.
+        void Measure(
+            out float midOff,
+            out float gap1,
+            out float gap2,
+            out float front,
+            out float holdLag
+        )
         {
-            midOff = gap1 = gap2 = float.PositiveInfinity;
+            midOff = gap1 = gap2 = holdLag = float.PositiveInfinity;
             front = -1f;
-            if (held == null || !info.SecondGrip(left, out var g2))
+            if (
+                held == null
+                || !info.SecondGrip(left, out var g2)
+                || !driver.HeldTarget(out var tp, out var tr)
+            )
                 return;
             var g1 = held.transform.TransformPoint(info.HoldPivot(left));
+            var toHold = Quaternion.Inverse(held.transform.rotation);
+            g1 = tp + tr * (toHold * (g1 - held.transform.position));
+            g2 = tp + tr * (toHold * (g2 - held.transform.position));
+            holdLag = Vector3.Distance(held.transform.position, tp);
             var h1 = Bone(left);
             var h2 = Bone(free);
             midOff = Vector3.Distance((g1 + g2) * 0.5f, (h1 + h2) * 0.5f);
