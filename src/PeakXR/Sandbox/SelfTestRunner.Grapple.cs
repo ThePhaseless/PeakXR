@@ -20,8 +20,9 @@ internal sealed partial class SelfTestRunner
     /// vr.251 (tester, v0.1.1: "the grappling hook works in third person, and you can't grab on right away"): the
     /// rescue hook fired at the test wall 9 m ahead pulls the body to it (RescueHook.RPCA_RescueWall, RescueHook.cs:398,
     /// with its own <c>Fall</c> :407). The view stays on the body through the pull and its recovery (no tumble or
-    /// launch chase view, <see cref="OwnGrapple"/>), and the free hand closed on the wall once it is in reach starts a
-    /// climb, waiting out the game's ragdoll recovery (CharacterClimbing.cs:146) instead of losing the grip.
+    /// launch chase view, <see cref="OwnGrapple"/>). The move stick is held forward from the shot (the pull alone stops
+    /// short of any climb reach), and the free hand closed on the wall once it is in reach starts a climb, waiting out
+    /// the game's ragdoll recovery (CharacterClimbing.cs:146) instead of losing the grip.
     /// <c>Interaction.RequireTwoHands</c> is off for the step so the free hand is free for the wall.
     /// </summary>
     IEnumerator HookPullStep()
@@ -99,6 +100,13 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float fired = Now;
+        // The game lets go of a wall pull 2 m from the hook point (RescueHook.cs:201, the prefab's stopPullDistance 2)
+        // and the body coasts on: from 9 m the eye stopped 1.41 m from the face (run 4), past the game's own climb reach
+        // from the camera (1.25 m thickened by 0.1 m, CharacterClimbing.cs:534-561), so a flat player has to walk in
+        // too. The move stick is held toward the wall from the shot, as such a player holds forward, until in reach.
+        bool move = OffLeft;
+        OnRestore(() => Script(move).Stick = Vector2.zero);
+        Script(move).Stick = new Vector2(0f, 1f);
 
         // Watch the pull and its recovery; once the wall is in the game's reach from the eye, close the free hand on it.
         bool free = !left;
@@ -109,6 +117,8 @@ internal sealed partial class SelfTestRunner
         float reachedAt = -1f;
         float climbedAt = -1f;
         float nearest = float.MaxValue;
+        // The eye's distance to the face when the pull and its fall stopped covering the body (OwnGrapple).
+        float pulledTo = -1f;
         var rig = VR.VRRig.Instance;
         for (float end = fired + 4f; Now < end && climbedAt < 0f; )
         {
@@ -132,9 +142,12 @@ internal sealed partial class SelfTestRunner
             )
             {
                 nearest = Mathf.Min(nearest, face.distance);
+                if (pulledTo < 0f && !OwnGrapple.Covers(c))
+                    pulledTo = face.distance;
                 if (reachedAt < 0f && face.distance <= 1.1f)
                 {
                     reachedAt = Now;
+                    Script(move).Stick = Vector2.zero;
                     SetHand(
                         free,
                         rig.Origin.InverseTransformPoint(face.point + face.normal * 0.05f)
@@ -148,13 +161,14 @@ internal sealed partial class SelfTestRunner
         }
 
         var note = F(
-            $"pull from 9 m: view off the body {detachedFrames} frames (launch chase {eventDetachFrames}), lowest ragdoll control {minControl:0.00}, longest fall {maxFall:0.00} s, nearest wall {nearest:0.00} m, in reach {(reachedAt < 0f ? -1f : reachedAt - fired):0.00} s after the shot, climbing {(climbedAt < 0f ? -1f : climbedAt - reachedAt):0.00} s after the grip; {Interact.PhysicalInteraction.LastGripNote}"
+            $"pull from 9 m: view off the body {detachedFrames} frames (launch chase {eventDetachFrames}), lowest ragdoll control {minControl:0.00}, longest fall {maxFall:0.00} s, eye {pulledTo:0.00} m from the wall when the pull ended, nearest wall {nearest:0.00} m, in reach {(reachedAt < 0f ? -1f : reachedAt - fired):0.00} s after the shot, climbing {(climbedAt < 0f ? -1f : climbedAt - reachedAt):0.00} s after the grip; {Interact.PhysicalInteraction.LastGripNote}"
         );
         Script(free).Grip = 0f;
+        Script(move).Stick = Vector2.zero;
         if (detachedFrames > 0)
             Fail("the view left the body during the own hook pull: " + note);
         else if (reachedAt < 0f)
-            Fail("the pull never brought the wall within reach: " + note);
+            Fail("the pull and the walk in never brought the wall within reach: " + note);
         else if (climbedAt < 0f)
             Fail("the grip at the wall after the pull did not climb: " + note);
         else
