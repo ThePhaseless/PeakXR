@@ -8,8 +8,8 @@ using UnityEngine;
 namespace PeakXR.Sandbox;
 
 /// <summary>
-/// Edge logger for live-input tests (<c>-peakxr-selftest</c> only): another session drives virtual controllers
-/// through SteamVR and these <c>[input]</c> lines prove what the real path (<see cref="XRInputSampler"/> ->
+/// Edge logger for live-input tests (<c>-peakxr-selftest</c> only): whoever drives the controllers, a player or a
+/// SteamVR driver, reads these <c>[input]</c> lines to see what the real path (<see cref="XRInputSampler"/> ->
 /// <see cref="VRInput"/> -> the bindings) received. Logs changes only and keeps all state in value fields, so a
 /// frame with no change allocates nothing.
 /// </summary>
