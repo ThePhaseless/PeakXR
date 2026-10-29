@@ -80,6 +80,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         Application.logMessageReceived += OnLog;
         PatchGuard.Caught += OnGuarded;
         BepInEx.Logging.Logger.Listeners.Add(bootstrapTail);
+        XRInput.XRInputSampler.AfterSample += AimScriptedHands;
     }
 
     void OnDestroy()
@@ -94,6 +95,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         Application.logMessageReceived -= OnLog;
         PatchGuard.Caught -= OnGuarded;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
+        XRInput.XRInputSampler.AfterSample -= AimScriptedHands;
     }
 
     void Start()

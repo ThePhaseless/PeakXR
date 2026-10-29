@@ -19,6 +19,13 @@ internal sealed class ControllerReader
     private const float ThumbFullCurl = 120f;
     private const float FingerFullCurl = 240f;
 
+    private static readonly Quaternion AimFromGrip = new(
+        GripFrame.AimFromGrip.X,
+        GripFrame.AimFromGrip.Y,
+        GripFrame.AimFromGrip.Z,
+        GripFrame.AimFromGrip.W
+    );
+
     private readonly bool left;
     private readonly InputDeviceCharacteristics side;
     private readonly List<InputFeatureUsage> scratch = new();
@@ -61,8 +68,10 @@ internal sealed class ControllerReader
         pad;
     private XRInputSampler.Usage<Vector3> position,
         velocity,
-        angularVelocity;
-    private XRInputSampler.Usage<Quaternion> rotation;
+        angularVelocity,
+        aimPosition;
+    private XRInputSampler.Usage<Quaternion> rotation,
+        aimRotation;
     private XRInputSampler.Usage<UnityEngine.XR.Hand> handData;
 
     /// <summary>The controller's device name (it carries the interaction profile), for bug reports.</summary>
@@ -132,6 +141,8 @@ internal sealed class ControllerReader
         velocity = XRInputSampler.Usage<Vector3>.Find(n, "DeviceVelocity");
         angularVelocity = XRInputSampler.Usage<Vector3>.Find(n, "DeviceAngularVelocity");
         isTracked = XRInputSampler.Usage<bool>.Find(n, "IsTracked");
+        aimPosition = XRInputSampler.Usage<Vector3>.Find(n, "PointerPosition");
+        aimRotation = XRInputSampler.Usage<Quaternion>.Find(n, "PointerRotation");
 
         pad = XRInputSampler.Usage<Vector2>.Find(n, "Secondary2DAxis");
         padClick = XRInputSampler.Usage<bool>.Find(n, "Secondary2DAxisClick");
@@ -182,6 +193,22 @@ internal sealed class ControllerReader
         {
             s.Position += s.Rotation * gp;
             s.Rotation *= gr;
+        }
+        // The runtime's aim (OpenXR has one); else out of the controller's front, never up the handle.
+        if (
+            aimPosition.Has
+            && aimRotation.Has
+            && device.TryGetFeatureValue(aimPosition.Value, out Vector3 ap)
+            && device.TryGetFeatureValue(aimRotation.Value, out Quaternion ar)
+        )
+        {
+            s.AimPosition = ap;
+            s.AimRotation = ar;
+        }
+        else
+        {
+            s.AimPosition = s.Position;
+            s.AimRotation = s.Rotation * AimFromGrip;
         }
         if (velocity.Has && device.TryGetFeatureValue(velocity.Value, out Vector3 v))
             s.Velocity = v;

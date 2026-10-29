@@ -17,6 +17,12 @@ public struct HandState
     public Vector3 Velocity;
     public Vector3 AngularVelocity;
 
+    /// <summary>The pointing ray (+Z), as a runtime reports it beside the grip: OpenXR's aim pose, or the grip turned
+    /// by <c>GripFrame.AimFromGrip</c> where the runtime has none. Set with every tracked pose, so a scripted hand
+    /// needs one too (<c>new HandState</c> leaves an all-zero rotation).</summary>
+    public Vector3 AimPosition;
+    public Quaternion AimRotation;
+
     public float Trigger;
     public float Grip;
     public Vector2 Stick;

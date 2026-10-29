@@ -32,6 +32,11 @@ internal static class XRInputSampler
     /// (<c>Interact.GripToggle</c>) and the self-test input edge log.</summary>
     internal static event Action AfterSample;
 
+    /// <summary>The HMD pose read this frame, before any scripted head: the rig's late re-read adds only the motion
+    /// since (<c>RigDriver.UpdateHead</c>). Fresh whenever the sampler sets <see cref="VRInput.HeadTracked"/>.</summary>
+    internal static Vector3 SampledHeadPosition;
+    internal static Quaternion SampledHeadRotation = Quaternion.identity;
+
     public static void Install()
     {
         InputDevices.deviceConnected += MarkDirty;
@@ -90,6 +95,8 @@ internal static class XRInputSampler
             }
             float dt = Time.unscaledDeltaTime;
             Head.Read();
+            SampledHeadPosition = VRInput.HeadPosition;
+            SampledHeadRotation = VRInput.HeadRotation;
             LeftReader.Read(ref VRInput.Left, dt);
             RightReader.Read(ref VRInput.Right, dt);
             // One-handed: the other controller may still be on (on a desk, in a lap); nothing reads it.
@@ -97,6 +104,7 @@ internal static class XRInputSampler
                 VRInput.Hand(!VRInput.LeftHanded) = new HandState
                 {
                     Rotation = Quaternion.identity,
+                    AimRotation = Quaternion.identity,
                 };
             // The one controller's own layout: a wand has no A or B.
             BindingTable.Active =
