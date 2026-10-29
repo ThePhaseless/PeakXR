@@ -31,6 +31,14 @@ internal static class SpikeCue
     /// own when the spike patch stops running (item changed, no spikes left, not local).</summary>
     public static bool OutOfRange => Time.frameCount - outOfRangeFrame <= 1;
 
+    private static ClimbingSpikeComponent nextSpike;
+    private static int nextSpikeFrame = -10;
+
+    /// <summary>The local player's piton the game places next (its first spike slot), for the aim line of a pocketed
+    /// one; null once the spike patch stops running for the local player.</summary>
+    public static ClimbingSpikeComponent NextSpike =>
+        Time.frameCount - nextSpikeFrame <= 1 ? nextSpike : null;
+
     public static void After(
         Character c,
         (float Tick, ItemSlot Slot) before,
@@ -54,6 +62,8 @@ internal static class SpikeCue
             || !VRSession.Active
         )
             return;
+        nextSpike = spike;
+        nextSpikeFrame = Time.frameCount;
         var d = c.data;
         bool climbing = d.isClimbingAnything;
         var held = d.currentItem;
@@ -107,8 +117,10 @@ internal static class SpikeCue
             || (input.useSecondaryWasPressed && (heldSpike || climbing));
         ref var hand = ref VRInput.Hand(left);
         // Trying to place: a finger on a held spike's trigger, or a real pull for a pocketed one (a resting finger
-        // on an empty hand's trigger means nothing).
-        bool trying = heldSpike ? hand.TriggerTouch || hand.Trigger > 0.05f : hand.Trigger > 0.5f;
+        // on an empty hand's trigger means nothing). A fist on the wall squeezing it is no try: that trigger is muted.
+        bool trying =
+            !PhysicalInteraction.UseMuted(left)
+            && (heldSpike ? hand.TriggerTouch || hand.Trigger > 0.05f : hand.Trigger > 0.5f);
         if (!attempt && !trying)
         {
             within = true;

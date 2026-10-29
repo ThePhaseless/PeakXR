@@ -114,6 +114,10 @@ public struct GripContext
     /// hand reaching for a hold never picks up an item lying on the ledge instead.</summary>
     public bool BodyClimbing;
 
+    /// <summary>The body is on a wall (the game's wall climb, not a rope, vine or handle): a grip that catches
+    /// nothing presses nothing.</summary>
+    public bool OnWall;
+
     /// <summary>The hold probe found rock the game would let this hand grab, not just something in the grip
     /// sphere. A hand that holds an item climbs only on such a hold.</summary>
     public bool HoldConfirmed;
@@ -252,7 +256,9 @@ public static class GripIntent
             return GripPressAction.GrabItem;
         if (c.ThisHandHolds)
             return GripPressAction.Regrip;
-        return GripPressAction.Interact;
+        // A climber's hand that missed the next hold is no interact button: pressed on whatever the head or a
+        // pointing hand aimed at, it picked up items in view instead of catching the wall. It gets the hold's refusal.
+        return c.PhysicalClimb && c.OnWall ? GripPressAction.None : GripPressAction.Interact;
     }
 
     /// <summary>

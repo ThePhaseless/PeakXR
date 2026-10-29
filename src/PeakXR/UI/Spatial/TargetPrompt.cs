@@ -307,8 +307,8 @@ internal sealed class TargetPrompt
         }
         if (!anyShown)
             return;
-        // No target: above the hand that acts (the pointing hand, else the dominant one).
-        var hand = rig.Hand(ActingLeft());
+        // No target: above the hand that acts (the piton's setting hand, else the pointing hand, else the dominant one).
+        var hand = rig.Hand(ActingLeft(pitonShown));
         if (hand == null)
             return;
         var at = hand.position + Vector3.up * 0.14f;
@@ -399,9 +399,14 @@ internal sealed class TargetPrompt
         return true;
     }
 
-    /// <summary>The hand a prompt without a target belongs to: the pointing hand, else the dominant one.</summary>
-    private static bool ActingLeft()
+    /// <summary>The hand a prompt without a target belongs to. The piton prompt (SETPITON) goes to the hand whose
+    /// trigger sets the piton and aims it: the secondary use, which is the free hand while the other one climbs
+    /// (interact.aim casts from it). Any other prompt goes to the pointing hand, else the dominant one.</summary>
+    private static bool ActingLeft(bool piton)
     {
+        var c = Character.localCharacter;
+        if (piton && c != null)
+            return PhysicalInteraction.UseHandLeft(c, secondary: true);
         var aim = PhysicalInteraction.AimHand;
         return aim >= 0 ? aim == 0 : VRInput.LeftHanded;
     }
@@ -430,7 +435,7 @@ internal sealed class TargetPrompt
         bool lunge = vr && shown[4];
         var struggle = vr && shown[5] ? PromptVerb.Struggle : PromptVerb.None;
 
-        bool acting = ActingLeft();
+        bool acting = ActingLeft(piton);
         if (piton && !pitonShown)
             Affordance.Contact(acting);
         if (lunge && !lungeShown)
