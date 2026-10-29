@@ -194,10 +194,29 @@ public static class ItemShelf
         return null;
     }
 
-    /// <summary>The item room area: <paramref name="igniteRadius"/> &gt; 0 (dynamite's <c>lightFuseRadius</c>) goes
-    /// off by itself, any <paramref name="harm"/> is dangerous, the rest helpful.</summary>
-    public static ItemZone ZoneOf(string harm, float igniteRadius) =>
-        igniteRadius > 0f ? ItemZone.Volatile
+    /// <summary>Components that act on whoever is near while the item just lies there, with what they do: a beehive
+    /// releases its swarm at Start (Beehive.cs:26-55), a banana peel slips a player moving within 1 m
+    /// (BananaPeel.cs:17-27). Dynamite's proximity wick comes as its ignite radius instead.</summary>
+    static readonly KeyValuePair<string, string>[] GoesOffComponents =
+    {
+        new("Beehive", "releases a bee swarm"),
+        new("BananaPeel", "slips you within 1 m"),
+    };
+
+    /// <summary>What the item does on its own, unused, or null when it waits to be used.</summary>
+    public static string GoesOff(ICollection<string> components)
+    {
+        foreach (var pair in GoesOffComponents)
+            if (components.Contains(pair.Key))
+                return pair.Value;
+        return null;
+    }
+
+    /// <summary>The item room area: <paramref name="igniteRadius"/> &gt; 0 (dynamite's <c>lightFuseRadius</c>) or
+    /// anything it does on its own (<see cref="GoesOff"/>) goes off by itself, any <paramref name="harm"/> is
+    /// dangerous, the rest helpful.</summary>
+    public static ItemZone ZoneOf(string harm, float igniteRadius, string goesOff = null) =>
+        igniteRadius > 0f || goesOff != null ? ItemZone.Volatile
         : harm != null ? ItemZone.Dangerous
         : ItemZone.Helpful;
 

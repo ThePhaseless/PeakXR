@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using HarmonyLib;
 using PeakXR.Framework;
 using PeakXR.UI.Settings;
 
@@ -24,6 +26,7 @@ public sealed class ItemRoomFeature : Feature
             throw new InvalidOperationException("the sandbox feature is not active");
         // The guards block only while armed, in a sandbox run, or while the room is open (SelfTestProgressGuard.Room).
         SelfTestProgressGuard.PatchOnce();
+        Patch(typeof(ItemOptimizerNullItemPatch));
         // Optional: without it the room still opens, with the airport's statuses switched off as usual.
         try
         {
@@ -54,4 +57,21 @@ public sealed class ItemRoomFeature : Feature
             ItemRoom.Toggle
         );
     }
+}
+
+/// <summary>
+/// An item prefab whose <c>ItemOptimizer.item</c> is unset disables the optimizer in <c>OnEnable</c>
+/// (decomp Assembly-CSharp/Peak/ItemOptimizer.cs:9-14), which runs <c>OnDisable</c> (:21-24), and that calls
+/// <c>ItemOptimizationManager.DeregisterItem(null)</c>: <c>Dictionary.Remove(null)</c> throws
+/// (Peak/ItemOptimizationManager.cs:46-49). Spawning every item in the room (VR run of 3a1b2f9) hit it. An optimizer
+/// with no item never registered, so there is nothing to deregister: skipped only then.
+/// </summary>
+[HarmonyPatch]
+static class ItemOptimizerNullItemPatch
+{
+    static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(Peak.ItemOptimizer), "OnDisable", Type.EmptyTypes);
+
+    // Only a field never set: an item destroyed after it registered must still be removed from the manager.
+    static bool Prefix(Peak.ItemOptimizer __instance) => !ReferenceEquals(__instance.item, null);
 }

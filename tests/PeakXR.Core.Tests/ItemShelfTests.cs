@@ -149,6 +149,24 @@ public class ItemShelfTests
         Assert.Equal(ItemZone.Dangerous, ItemShelf.ZoneOf("kills", 0f));
         // Goes off on its own (dynamite lights when you come near the spot it spawned on): kept apart.
         Assert.Equal(ItemZone.Volatile, ItemShelf.ZoneOf("explodes", 4f));
+        Assert.Equal(ItemZone.Volatile, ItemShelf.ZoneOf(null, 0f, "releases a bee swarm"));
+    }
+
+    [Theory]
+    [InlineData("Beehive")]
+    [InlineData("BananaPeel")]
+    public void ItemsThatActWithoutBeingUsedGoOffByThemselves(string component)
+    {
+        // VR run of 3a1b2f9: a beehive on its table let out a swarm that chased and poisoned the player.
+        var reason = ItemShelf.GoesOff(new HashSet<string> { "Item", component });
+        Assert.NotNull(reason);
+        Assert.Equal(ItemZone.Volatile, ItemShelf.ZoneOf(null, 0f, reason));
+    }
+
+    [Fact]
+    public void ItemsThatOnlyActWhenUsedDoNotGoOff()
+    {
+        Assert.Null(ItemShelf.GoesOff(new HashSet<string> { "Item", "Action_Die", "WarpOnThrow" }));
     }
 
     [Fact]
