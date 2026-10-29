@@ -1896,6 +1896,25 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary><c>XRInputSampler.AfterSample</c> while the runner lives: under any override both hands aim along their
+    /// fingers (<see cref="HandLook"/>), the aim pose a runtime would report with the grip. After the override, so
+    /// overrides that edit a pose in place or write a fresh <see cref="HandState"/> (all-zero aim) are covered too.</summary>
+    static void AimScriptedHands()
+    {
+        if (VRInput.TestOverride == null)
+            return;
+        AimAlongFingers(ref VRInput.Left);
+        AimAlongFingers(ref VRInput.Right);
+    }
+
+    static void AimAlongFingers(ref HandState s)
+    {
+        s.AimPosition = s.Position;
+        s.AimRotation = s.Rotation * GripFromHand;
+    }
+
+    static readonly Quaternion GripFromHand = Core.GripFrame.FromHand.U();
+
     static void Emit(ref HandState target, ref HandState script, ref Vector3 last, float dt)
     {
         script.Velocity = dt > 0f ? (script.Position - last) / dt : Vector3.zero;
@@ -1961,7 +1980,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>A scripted grip rotation for a hand whose fingers point along <paramref name="fingers"/> with the thumb
     /// side toward <paramref name="thumb"/> (GripFrame: the grip's own +Z runs along the handle, its -Y along the
     /// fingers). Every scripted rotation is written this way, and a scripted hand aims along its fingers
-    /// (RigDriver.UpdateHand), so a pose that points the hand at a target also aims at it.</summary>
+    /// (<see cref="AimScriptedHands"/>), so a pose that points the hand at a target also aims at it.</summary>
     static Quaternion HandLook(Vector3 fingers, Vector3 thumb) =>
         Quaternion.LookRotation(fingers, thumb) * HandToGrip;
 

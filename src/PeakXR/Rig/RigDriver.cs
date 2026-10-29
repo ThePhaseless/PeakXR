@@ -3,6 +3,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.VR;
 using PeakXR.XR;
+using PeakXR.XRInput;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.XR;
@@ -590,26 +591,19 @@ internal sealed class RigDriver : MonoBehaviour
 
     private void UpdateHead()
     {
-        // A scripted self-test head (vr.45 leans, vr.40 crouches) must move the view and the avatar's lean like a
-        // real one; run 26 read the static HMD here, so the avatar never saw the lean the hands and room-scale did.
-        if (
-            VRInput.HeadTracked
-            && VRInput.TestOverride == null
-            && devices.TryGetHead(out var p, out var r)
-        )
+        headTracked = VRInput.HeadTracked;
+        if (!headTracked)
+            return;
+        // VRInput is the head (a self-test may script it: vr.45 leans, vr.40 crouches); the late read adds only the
+        // HMD's motion since the sampler, so unscripted this is the late pose itself.
+        var p = VRInput.HeadPosition;
+        var r = VRInput.HeadRotation;
+        if (devices.TryGetHead(out var late, out var lateRotation))
         {
-            headTracked = true;
-            rig.Head.SetLocalPositionAndRotation(p, r);
+            p += late - XRInputSampler.SampledHeadPosition;
+            r *= Quaternion.Inverse(XRInputSampler.SampledHeadRotation) * lateRotation;
         }
-        else if (VRInput.HeadTracked)
-        {
-            headTracked = true;
-            rig.Head.SetLocalPositionAndRotation(VRInput.HeadPosition, VRInput.HeadRotation);
-        }
-        else
-        {
-            headTracked = false;
-        }
+        rig.Head.SetLocalPositionAndRotation(p, r);
     }
 
     private void UpdateHands()
@@ -623,30 +617,12 @@ internal sealed class RigDriver : MonoBehaviour
         ref var h = ref VRInput.Hand(left);
         // The one place tracked hands become the rig's: grabs, gestures, the avatar arm and the net pose all read
         // these transforms, so the seated reach gain lands everywhere once. The aim moves with the grip.
-        var drop = Vector3.zero;
-        if (h.Tracked)
-        {
-            drop.y = SeatedReachY(h.Position.y) - h.Position.y;
-            grip.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
-        }
-        // Without an aim pose of its own, a hand aims from its grip: a runtime (the OpenVR plugin) out of the
-        // controller's front (GripFrame.AimFromGrip), a scripted self-test hand along its fingers (GripFrame.FromHand,
-        // SelfTestRunner.HandLook), never up the handle.
-        if (
-            VRInput.TestOverride == null
-            && h.Tracked
-            && devices.TryGetAim(left, out var p, out var r)
-        )
-            aim.SetLocalPositionAndRotation(p + drop, r);
-        else if (h.Tracked)
-            aim.SetLocalPositionAndRotation(
-                h.Position + drop,
-                h.Rotation * (VRInput.TestOverride == null ? AimFromGrip : AimFromHand)
-            );
+        if (!h.Tracked)
+            return;
+        var drop = new Vector3(0f, SeatedReachY(h.Position.y) - h.Position.y, 0f);
+        grip.SetLocalPositionAndRotation(h.Position + drop, h.Rotation);
+        aim.SetLocalPositionAndRotation(h.AimPosition + drop, h.AimRotation);
     }
-
-    private static readonly Quaternion AimFromGrip = GripFrame.AimFromGrip.U();
-    private static readonly Quaternion AimFromHand = GripFrame.FromHand.U();
 
     /// <summary>Tracking-space hand Y after the seated reach gain (identity standing, at gain 1 or outside VR).</summary>
     private float SeatedReachY(float y)
