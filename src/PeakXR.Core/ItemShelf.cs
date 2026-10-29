@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 namespace PeakXR.Core;
 
@@ -361,14 +362,26 @@ public readonly struct RoomRect
 /// <summary>The item room's measures, in meters.</summary>
 public sealed class ShelfSpec
 {
-    /// <summary>Between items in a row.</summary>
-    public float Spacing = 0.55f;
+    /// <summary>Clear floor between two items' footprints on a table, across and between rows.</summary>
+    public float ItemGap = 0.15f;
 
-    /// <summary>Between a table's front and back row.</summary>
-    public float RowGap = 0.6f;
+    /// <summary>Table top left clear around its items, on every side.</summary>
+    public float EdgePad = 0.08f;
 
-    /// <summary>Plank beyond the outer rows, front and back.</summary>
-    public float EdgePad = 0.225f;
+    /// <summary>A table's smallest top, both ways: one small item still stands on a table, not a plank.</summary>
+    public float MinTable = 0.6f;
+
+    /// <summary>The footprint an item counts as at least, both ways (an item without a drawn mesh counts as this).</summary>
+    public float MinItem = 0.1f;
+
+    /// <summary>Deepest table, reached into from the walkways on both sides; an item deeper than this gets a table of
+    /// its own depth. Each area tries depths from <see cref="MinTable"/> up to this, <see cref="DepthStep"/> apart, and
+    /// keeps the one that leaves it shallowest.</summary>
+    public float TableDepth = 1.4f;
+    public float DepthStep = 0.2f;
+
+    /// <summary>An item's near side at most this far in from a table edge: a lean over the table reaches it.</summary>
+    public float Reach = 0.7f;
 
     /// <summary>Walking room between rows of tables, and past the end of each row.</summary>
     public float Aisle = 1.6f;
@@ -397,15 +410,9 @@ public sealed class ShelfSpec
     /// <summary>Half the cooking fire's footprint.</summary>
     public float FireHalf = 0.6f;
 
-    public int MinPerRow = 4;
-    public int MaxPerRow = 12;
-
-    /// <summary>Rows a table may hold. Two face a walkway each; more put inner rows a reach in from an edge.</summary>
-    public int MaxRows = 2;
-
     public ShelfSpec Copy() => (ShelfSpec)MemberwiseClone();
 
-    /// <summary>This spec squeezed one step toward the VR minimums (<see cref="ShelfLayout.Plan"/>), step 1 to 3;
+    /// <summary>This spec squeezed one step toward the VR minimums (<see cref="ShelfLayout.Plan"/>), step 1 to 4;
     /// never looser than it was.</summary>
     public ShelfSpec Tighter(int step)
     {
@@ -416,36 +423,49 @@ public sealed class ShelfSpec
         s.FrontWalk = Math.Min(FrontWalk, 1.5f);
         if (step >= 2)
         {
-            // Four rows, the inner ones 0.55 m in from an edge: within reach of either walkway.
-            s.MaxRows = Math.Max(MaxRows, 4);
-            s.RowGap = Math.Min(RowGap, 0.4f);
-            s.EdgePad = Math.Min(EdgePad, 0.15f);
+            // Deeper tables, the middle still within reach of either walkway; items still a hand's width apart.
+            s.TableDepth = Math.Max(TableDepth, 1.8f);
+            s.ItemGap = Math.Min(ItemGap, 0.1f);
+            s.EdgePad = Math.Min(EdgePad, 0.06f);
             s.TableGap = Math.Min(TableGap, 0.3f);
-            s.Spacing = Math.Min(Spacing, 0.45f);
-            s.MaxPerRow = Math.Max(MaxPerRow, 16);
         }
         if (step >= 3)
             s.ZoneGap = Math.Min(ZoneGap, 1.2f);
+        if (step >= 4)
+        {
+            // The last squeeze, for the game's real item sizes in the airport's fixed place: walkways at the minimum
+            // everywhere, tables as deep as a reach from both sides, walls a step off.
+            s.ZoneGap = Math.Min(ZoneGap, s.Aisle);
+            s.FrontWalk = Math.Min(FrontWalk, 1f);
+            s.Margin = Math.Min(Margin, 0.2f);
+            s.TableDepth = Math.Max(TableDepth, 2.4f);
+        }
         return s;
     }
 }
 
-/// <summary>One item's spot: <see cref="X"/> across the room, <see cref="Z"/> away from the player, in meters.</summary>
+/// <summary>Item <see cref="Item"/>'s spot (its index in the footprints given to <see cref="ShelfLayout.Plan"/>): the
+/// middle of its footprint, <see cref="X"/> across the room and <see cref="Z"/> away from the player, in meters.
+/// <see cref="Turned"/>: it lies a quarter turn round (about up), so its footprint's long side runs across the row.</summary>
 public readonly struct ShelfSlot
 {
     public readonly int Group;
+    public readonly int Item;
+    public readonly bool Turned;
     public readonly float X;
     public readonly float Z;
 
-    public ShelfSlot(int group, float x, float z)
+    public ShelfSlot(int group, int item, bool turned, float x, float z)
     {
         Group = group;
+        Item = item;
+        Turned = turned;
         X = x;
         Z = z;
     }
 }
 
-/// <summary>A table of one bucket (<see cref="ShelfLayout.Bucket"/>): its front row at <see cref="Z"/>, centred on
+/// <summary>A table of one bucket (<see cref="ShelfLayout.Bucket"/>): its front edge at <see cref="Z"/>, centred on
 /// <see cref="X"/>, <see cref="Rows"/> deep, holding slots <see cref="First"/> to <see cref="First"/> +
 /// <see cref="Count"/> - 1 on <see cref="Footprint"/>.</summary>
 public readonly struct ShelfTable
@@ -455,7 +475,6 @@ public readonly struct ShelfTable
     public readonly float X;
     public readonly float Z;
     public readonly int Rows;
-    public readonly float HalfWidth;
     public readonly int First;
     public readonly int Count;
     public readonly RoomRect Footprint;
@@ -465,7 +484,6 @@ public readonly struct ShelfTable
         float x,
         float z,
         int rows,
-        float halfWidth,
         int first,
         int count,
         RoomRect footprint
@@ -476,7 +494,6 @@ public readonly struct ShelfTable
         X = x;
         Z = z;
         Rows = rows;
-        HalfWidth = halfWidth;
         First = first;
         Count = count;
         Footprint = footprint;
@@ -500,7 +517,6 @@ public sealed class ShelfPlan
     public RoomRect Fire;
     public bool HasWall;
     public RoomRect Wall;
-    public int PerRow;
 
     /// <summary>The measures it was laid out with: the given ones, or tightened to fit (<see cref="ShelfSpec.Tighter"/>).</summary>
     public ShelfSpec Spec;
@@ -515,8 +531,11 @@ public sealed class ShelfPlan
 /// <summary>
 /// Lays the item room out in the middle of the measured floor: a band of tables per <see cref="ItemZone"/>, helpful
 /// nearest the player, dangerous behind it, what goes off by itself farthest. A band puts its tables side by side in
-/// rows across the room, a walkway between rows and past alternate ends, so one path passes every table; a table is at
-/// most <see cref="ShelfSpec.MaxRows"/> deep so every item is in reach of a walkway; buckets never share a table. The cooking fire heads the helpful band, the test wall stands past the last band against the left side.
+/// rows across the room, a walkway between rows and past alternate ends, so one path passes every table. Every table
+/// in a band is filled to the band's depth (at most <see cref="ShelfSpec.TableDepth"/>, so every item is in reach of a
+/// walkway) and is as narrow as its items allow at that depth: each item gets its own footprint and a gap, deepest
+/// first, so rows of tables come out even and little floor is lost. Buckets never share a table. The cooking fire
+/// heads the helpful band, the test wall stands past the last band against the left side.
 /// </summary>
 public static class ShelfLayout
 {
@@ -530,19 +549,68 @@ public static class ShelfLayout
 
     public static ShelfGroup GroupOf(int bucket) => (ShelfGroup)(bucket % (int)ShelfGroup.Count);
 
-    /// <summary>The best plan for <paramref name="counts"/> (items per bucket) in <paramref name="room"/>, giving up
-    /// comfort before content: <paramref name="spec"/> as it is, then walkways and wall margins down to the VR
-    /// minimums, then fuller tables (up to four rows), then closer bands, all with the test wall and the full volatile
-    /// clearance; only then without the wall, then without the clearance. Within a step, the table width that leaves
-    /// the most room. Nothing fits: the plan that overflows least, with <see cref="ShelfPlan.Fits"/> false.</summary>
-    public static ShelfPlan Plan(IReadOnlyList<int> counts, RoomRect room, ShelfSpec spec)
+    /// <summary>The best plan for <paramref name="counts"/> (items per bucket) of the footprints
+    /// <paramref name="sizes"/> (X across, Y along; one per item in bucket order, which each slot's
+    /// <see cref="ShelfSlot.Item"/> indexes) in <paramref name="room"/>, giving up comfort before content:
+    /// <paramref name="spec"/> as it is, then walkways and wall margins down to the VR minimums, then deeper tables and
+    /// smaller gaps, then closer bands, all with the test wall and the full volatile clearance; only then without the
+    /// wall, then without the clearance. Nothing fits: the plan that overflows least, with <see cref="ShelfPlan.Fits"/>
+    /// false.</summary>
+    public static ShelfPlan Plan(
+        IReadOnlyList<int> counts,
+        IReadOnlyList<Vector2> sizes,
+        RoomRect room,
+        ShelfSpec spec
+    )
     {
+        int total = 0;
+        foreach (var c in counts)
+            total += Math.Max(0, c);
+        if (sizes.Count != total)
+            throw new ArgumentException(
+                $"{sizes.Count} footprints for {total} items",
+                nameof(sizes)
+            );
+        // A footprint the item's meshes could not give counts as the smallest item.
+        // Every item laid with its long side across the row: a 2.5 m launcher pointing into the table made its row,
+        // and its table, 2.5 m deep.
+        var given = new Vector2[total];
+        var turned = new bool[total];
+        var order = new int[total];
+        for (int i = 0; i < total; i++)
+        {
+            float across = Least(sizes[i].X, spec.MinItem);
+            float along = Least(sizes[i].Y, spec.MinItem);
+            turned[i] = along > across;
+            given[i] = turned[i] ? new Vector2(along, across) : new Vector2(across, along);
+            order[i] = i;
+        }
+        // Each kind deepest first, so a row's items are about as deep as each other (a row is as deep as its deepest).
+        var deepest = Comparer<int>.Create(
+            (a, b) =>
+                given[a].Y != given[b].Y ? given[b].Y.CompareTo(given[a].Y)
+                : given[a].X != given[b].X ? given[b].X.CompareTo(given[a].X)
+                : a.CompareTo(b)
+        );
+        for (int b = 0, at = 0; b < counts.Count; b++)
+        {
+            int count = Math.Max(0, counts[b]);
+            Array.Sort(order, at, count, deepest);
+            at += count;
+        }
+        var feet = new Vector2[total];
+        for (int k = 0; k < total; k++)
+            feet[k] = given[order[k]];
+
         ShelfPlan fallback = null;
-        var tightest = spec.Tighter(3);
-        for (int step = 0; step <= 3; step++)
+        var tightest = spec.Tighter(4);
+        for (int step = 0; step <= 4; step++)
         {
             var pick = Best(
                 counts,
+                feet,
+                order,
+                turned,
                 room,
                 step == 0 ? spec : spec.Tighter(step),
                 true,
@@ -552,14 +620,20 @@ public static class ShelfLayout
             if (pick != null)
                 return pick;
         }
-        return Best(counts, room, tightest, false, true, ref fallback)
-            ?? Best(counts, room, tightest, true, false, ref fallback)
-            ?? Best(counts, room, tightest, false, false, ref fallback)
+        return Best(counts, feet, order, turned, room, tightest, false, true, ref fallback)
+            ?? Best(counts, feet, order, turned, room, tightest, true, false, ref fallback)
+            ?? Best(counts, feet, order, turned, room, tightest, false, false, ref fallback)
             ?? fallback;
     }
 
+    static float Least(float size, float least) =>
+        float.IsFinite(size) ? Math.Max(least, size) : least;
+
     static ShelfPlan Best(
         IReadOnlyList<int> counts,
+        Vector2[] feet,
+        int[] order,
+        bool[] turned,
         RoomRect room,
         ShelfSpec spec,
         bool wall,
@@ -570,23 +644,16 @@ public static class ShelfLayout
         float clearance = fullClearance
             ? Math.Max(spec.ZoneGap, spec.VolatileClearance)
             : spec.ZoneGap;
-        ShelfPlan pick = null;
-        for (int p = spec.MinPerRow; p <= spec.MaxPerRow; p++)
-        {
-            var plan = Pack(counts, p, room, spec, wall, clearance);
-            if (plan.Fits && (pick == null || plan.Over < pick.Over))
-                pick = plan;
-            if (fallback == null || plan.Over < fallback.Over)
-                fallback = plan;
-        }
-        return pick;
+        var plan = Pack(counts, feet, order, turned, room, spec, wall, clearance);
+        if (fallback == null || plan.Over < fallback.Over)
+            fallback = plan;
+        return plan.Fits ? plan : null;
     }
 
     sealed class Strip
     {
         public int Zone;
-        public int First;
-        public int End;
+        public readonly List<Piece> Pieces = new();
         public float Width;
         public float Depth;
     }
@@ -594,117 +661,187 @@ public static class ShelfLayout
     sealed class Piece
     {
         public int Bucket = -1;
+        public int First;
         public int Take;
         public int Rows;
         public float Width;
         public float Depth;
+
+        /// <summary>The row length it was filled to, and its rows front to back with the gaps between them.</summary>
+        public float Length;
+        public float Rowed;
         public float X;
         public float Z;
     }
 
+    /// <summary>One band's strips with every table filled to <paramref name="depth"/>: its pieces side by side across
+    /// the room a table gap apart (a walkway beside the fire), the fire first in the helpful band, then the tables in
+    /// bucket order, a bucket going on in the next strip when the rest of this one does not hold it. Returns how deep
+    /// the band is, its strips and the walkways between them.</summary>
+    static float Band(
+        IReadOnlyList<int> counts,
+        Vector2[] feet,
+        int zone,
+        int lastZone,
+        int at,
+        float depth,
+        float stripMax,
+        ShelfSpec spec,
+        Piece fire,
+        List<Strip> strips,
+        List<Piece> pieces
+    )
+    {
+        var strip = new Strip { Zone = zone };
+        void Put(Piece piece, float gap)
+        {
+            piece.X = strip.Pieces.Count == 0 ? 0f : strip.Width + gap;
+            strip.Width = piece.X + piece.Width;
+            strip.Depth = Math.Max(strip.Depth, piece.Depth);
+            strip.Pieces.Add(piece);
+        }
+        if (fire != null)
+            Put(fire, 0f);
+        for (int b = 0; b < counts.Count; b++)
+        {
+            int count = Math.Max(0, counts[b]);
+            int z = (int)ZoneOf(b);
+            if (z < zone || z > lastZone)
+                continue;
+            for (int k = at, end = at + count; k < end; )
+            {
+                bool fresh = strip.Pieces.Count == 0;
+                if (fresh)
+                    strip.Zone = z;
+                float gap =
+                    fresh ? 0f
+                    : strip.Pieces[^1] == fire ? spec.Aisle
+                    : (int)ZoneOf(strip.Pieces[^1].Bucket) != z ? spec.ZoneGap
+                    : spec.TableGap;
+                var piece = Table(feet, k, end, depth, stripMax - strip.Width - gap, fresh, spec);
+                // The rest of this strip holds none of them: on in a fresh strip, which always takes one.
+                if (piece.Take == 0)
+                {
+                    strips.Add(strip);
+                    strip = new Strip { Zone = zone };
+                    continue;
+                }
+                piece.Bucket = b;
+                Put(piece, gap);
+                pieces.Add(piece);
+                k += piece.Take;
+            }
+            at += count;
+        }
+        if (strip.Pieces.Count > 0)
+            strips.Add(strip);
+        float deep = 0f;
+        for (int i = 0; i < strips.Count; i++)
+            deep += strips[i].Depth + (i > 0 ? spec.Aisle : 0f);
+        return deep;
+    }
+
     static ShelfPlan Pack(
         IReadOnlyList<int> counts,
-        int perRow,
+        Vector2[] feet,
+        int[] order,
+        bool[] turned,
         RoomRect room,
         ShelfSpec spec,
         bool wall,
         float clearance
     )
     {
-        perRow = Math.Max(1, perRow);
         float availW = room.Width - 2f * spec.Margin;
         float nearZ = room.MinZ + spec.FrontWalk;
         float availD = room.MaxZ - spec.Margin - nearZ;
-        int zones = (int)ItemZone.Count;
-
-        // Pieces per zone: the fire first in the helpful band, then the tables in bucket order.
-        var bands = new List<Piece>[zones];
-        for (int z = 0; z < zones; z++)
-            bands[z] = new List<Piece>();
-        var fire = new Piece { Width = 2f * spec.FireHalf, Depth = 2f * spec.FireHalf };
-        bands[(int)ItemZone.Helpful].Add(fire);
-        int total = 0;
-        for (int b = 0; b < counts.Count; b++)
-        {
-            int count = Math.Max(0, counts[b]);
-            total += count;
-            int maxRows = Math.Max(1, spec.MaxRows);
-            for (int done = 0; done < count; )
-            {
-                int take = Math.Min(maxRows * perRow, count - done);
-                int rows = (take + perRow - 1) / perRow;
-                bands[(int)ZoneOf(b)]
-                    .Add(
-                        new Piece
-                        {
-                            Bucket = b,
-                            Take = take,
-                            Rows = rows,
-                            Width = Math.Min(take, perRow) * spec.Spacing,
-                            Depth = (rows - 1) * spec.RowGap + 2f * spec.EdgePad,
-                        }
-                    );
-                done += take;
-            }
-        }
-
-        // Each band: its pieces side by side in strips across the room, a table gap apart (a walkway beside the
-        // fire); strips a walkway apart, each leaving a walkway at alternate ends so the aisles join into one path.
         float stripMax = availW - spec.Aisle;
+        int zones = (int)ItemZone.Count;
+        int total = 0;
+        foreach (var c in counts)
+            total += Math.Max(0, c);
+
+        // Each band on its own, so each takes the table depth that keeps it shallowest: a band's last strip is often
+        // part full. What goes off by itself closes the dangerous band's rows, a zone gap on, when it needs no more
+        // clearance than that (its wick moved out of reach): its own band was a strip for one item.
         var strips = new List<Strip>();
-        for (int zone = 0; zone < zones; zone++)
+        var pieces = new List<Piece>();
+        Piece fire = null;
+        float step = Math.Max(0.05f, spec.DepthStep);
+        bool shared = clearance <= spec.ZoneGap + 1e-3f;
+        for (int zone = 0, at = 0; zone < zones; zone++)
         {
-            var band = bands[zone];
-            if (band.Count == 0 || (band.Count == 1 && band[0] == fire && total == 0))
-                continue;
-            for (int k = 0; k < band.Count; )
+            int lastZone =
+                shared && zone == (int)ItemZone.Dangerous ? (int)ItemZone.Volatile : zone;
+            int inZone = 0;
+            for (int b = 0; b < counts.Count; b++)
+                if ((int)ZoneOf(b) >= zone && (int)ZoneOf(b) <= lastZone)
+                    inZone += Math.Max(0, counts[b]);
+            bool hasFire = zone == (int)ItemZone.Helpful && total > 0;
+            List<Strip> bestStrips = null;
+            List<Piece> bestPieces = null;
+            Piece bestFire = null;
+            float bestDeep = float.MaxValue;
+            for (float depth = spec.MinTable; ; depth += step)
             {
-                var strip = new Strip
+                var bandStrips = new List<Strip>();
+                var bandPieces = new List<Piece>();
+                var bandFire = hasFire
+                    ? new Piece { Width = 2f * spec.FireHalf, Depth = 2f * spec.FireHalf }
+                    : null;
+                float deep = Band(
+                    counts,
+                    feet,
+                    zone,
+                    lastZone,
+                    at,
+                    depth,
+                    stripMax,
+                    spec,
+                    bandFire,
+                    bandStrips,
+                    bandPieces
+                );
+                if (bestStrips == null || deep < bestDeep - 1e-4f)
                 {
-                    Zone = zone,
-                    First = k,
-                    End = k + 1,
-                };
-                band[k].X = 0f;
-                strip.Width = band[k].Width;
-                strip.Depth = band[k].Depth;
-                for (; strip.End < band.Count; strip.End++)
-                {
-                    var next = band[strip.End];
-                    float gap = band[strip.End - 1] == fire ? spec.Aisle : spec.TableGap;
-                    if (strip.Width + gap + next.Width > stripMax + 1e-3f)
-                        break;
-                    next.X = strip.Width + gap;
-                    strip.Width += gap + next.Width;
-                    strip.Depth = Math.Max(strip.Depth, next.Depth);
+                    bestStrips = bandStrips;
+                    bestPieces = bandPieces;
+                    bestFire = bandFire;
+                    bestDeep = deep;
                 }
-                strips.Add(strip);
-                k = strip.End;
+                if (inZone == 0 || !(depth + step <= spec.TableDepth + 1e-3f))
+                    break;
             }
+            strips.AddRange(bestStrips);
+            pieces.AddRange(bestPieces);
+            fire ??= bestFire;
+            at += inZone;
+            zone = lastZone;
         }
+        fire ??= new Piece { Width = 2f * spec.FireHalf, Depth = 2f * spec.FireHalf };
+
         float widest = 0f;
-        foreach (var strip in strips)
-            widest = Math.Max(widest, strip.Width);
+        foreach (var s in strips)
+            widest = Math.Max(widest, s.Width);
         if (strips.Count > 0)
             widest += spec.Aisle;
         float blockLeft = room.CenterX - widest * 0.5f;
         float z0 = 0f;
         for (int i = 0; i < strips.Count; i++)
         {
-            var strip = strips[i];
+            var s = strips[i];
             if (i > 0)
                 z0 +=
-                    strip.Zone == strips[i - 1].Zone ? spec.Aisle
-                    : strip.Zone == (int)ItemZone.Volatile ? clearance
+                    s.Zone == strips[i - 1].Zone ? spec.Aisle
+                    : s.Zone == (int)ItemZone.Volatile ? clearance
                     : spec.ZoneGap;
-            float left = i % 2 == 0 ? blockLeft : blockLeft + widest - strip.Width;
-            var band = bands[strip.Zone];
-            for (int k = strip.First; k < strip.End; k++)
+            float left = i % 2 == 0 ? blockLeft : blockLeft + widest - s.Width;
+            foreach (var piece in s.Pieces)
             {
-                band[k].X = left + band[k].X + band[k].Width * 0.5f;
-                band[k].Z = z0;
+                piece.X = left + piece.X + piece.Width * 0.5f;
+                piece.Z = z0;
             }
-            z0 += strip.Depth;
+            z0 += s.Depth;
         }
         float used = z0 + (wall ? spec.WallRoom + spec.WallDepth : 0f);
         // Centred in what the room offers past the walkway.
@@ -717,51 +854,61 @@ public static class ShelfLayout
         int index = 0;
         float minX = float.MaxValue,
             maxX = float.MinValue;
-        for (int b = 0; b < counts.Count; b++)
-            foreach (var piece in bands[(int)ZoneOf(b)])
+        foreach (var piece in pieces)
+        {
+            int b = piece.Bucket;
+            float front = shift + piece.Z;
+            var rect = new RoomRect(
+                piece.X - piece.Width * 0.5f,
+                piece.X + piece.Width * 0.5f,
+                front,
+                front + piece.Depth
+            );
+            tables.Add(new ShelfTable(b, piece.X, front, piece.Rows, index, piece.Take, rect));
+            // Rows centred on the top front to back, each row centred across it.
+            float z = front + (piece.Depth - piece.Rowed) * 0.5f;
+            for (int k = piece.First, end = piece.First + piece.Take; k < end; )
             {
-                if (piece.Bucket != b)
-                    continue;
-                float front = shift + piece.Z;
-                var rect = new RoomRect(
-                    piece.X - piece.Width * 0.5f,
-                    piece.X + piece.Width * 0.5f,
-                    front,
-                    front + piece.Depth
+                int next = NextRow(
+                    feet,
+                    k,
+                    end,
+                    piece.Length,
+                    spec.ItemGap,
+                    out float w,
+                    out float d
                 );
-                int widestRow = Math.Min(piece.Take, perRow);
-                tables.Add(
-                    new ShelfTable(
-                        b,
-                        piece.X,
-                        front + spec.EdgePad,
-                        piece.Rows,
-                        (widestRow - 1) * spec.Spacing * 0.5f,
-                        index,
-                        piece.Take,
-                        rect
-                    )
-                );
-                for (int k = 0; k < piece.Take; k++)
+                float x = piece.X - w * 0.5f;
+                for (; k < next; k++)
                 {
-                    int row = k / perRow;
-                    int inRow = Math.Min(perRow, piece.Take - row * perRow);
-                    float x = piece.X + (k % perRow - (inRow - 1) * 0.5f) * spec.Spacing;
-                    slots[index++] = new ShelfSlot(b, x, front + spec.EdgePad + row * spec.RowGap);
+                    slots[index++] = new ShelfSlot(
+                        b,
+                        order[k],
+                        turned[order[k]],
+                        x + feet[k].X * 0.5f,
+                        // Against the edge of its row on the side it is reached from.
+                        z - front
+                        <= spec.Reach
+                            ? z + feet[k].Y * 0.5f
+                            : z + d - feet[k].Y * 0.5f
+                    );
+                    x += feet[k].X + spec.ItemGap;
                 }
-                int zone = (int)ZoneOf(b);
-                zoneRects[zone] = span[zone]
-                    ? new RoomRect(
-                        Math.Min(zoneRects[zone].MinX, rect.MinX),
-                        Math.Max(zoneRects[zone].MaxX, rect.MaxX),
-                        Math.Min(zoneRects[zone].MinZ, rect.MinZ),
-                        Math.Max(zoneRects[zone].MaxZ, rect.MaxZ)
-                    )
-                    : rect;
-                span[zone] = true;
-                minX = Math.Min(minX, rect.MinX);
-                maxX = Math.Max(maxX, rect.MaxX);
+                z += d + spec.ItemGap;
             }
+            int zone = (int)ZoneOf(b);
+            zoneRects[zone] = span[zone]
+                ? new RoomRect(
+                    Math.Min(zoneRects[zone].MinX, rect.MinX),
+                    Math.Max(zoneRects[zone].MaxX, rect.MaxX),
+                    Math.Min(zoneRects[zone].MinZ, rect.MinZ),
+                    Math.Max(zoneRects[zone].MaxZ, rect.MaxZ)
+                )
+                : rect;
+            span[zone] = true;
+            minX = Math.Min(minX, rect.MinX);
+            maxX = Math.Max(maxX, rect.MaxX);
+        }
 
         var fireRect = new RoomRect(
             fire.X - spec.FireHalf,
@@ -811,11 +958,113 @@ public static class ShelfLayout
             Fire = fireRect,
             HasWall = wall,
             Wall = wallRect,
-            PerRow = perRow,
             Spec = spec,
             Fits = fits,
             Over = over,
         };
+    }
+
+    /// <summary>A table of items <paramref name="from"/> on (before <paramref name="end"/>) at most
+    /// <paramref name="depth"/> deep and <paramref name="width"/> wide: the narrowest that holds them all, else as many
+    /// as that width holds (none when not even the first fits; at least one row always, however deep).</summary>
+    static Piece Table(
+        Vector2[] feet,
+        int from,
+        int end,
+        float depth,
+        float width,
+        bool fresh,
+        ShelfSpec spec
+    )
+    {
+        float inner = width - 2f * spec.EdgePad;
+        var piece = new Piece { First = from };
+        // A part-filled strip takes the next item only when it fits; a fresh one takes it whatever its width.
+        if (!fresh && !(width >= spec.MinTable - 1e-4f && inner >= feet[from].X - 1e-4f))
+            return piece;
+        float lo = feet[from].X;
+        float hi = Math.Max(lo, inner);
+        int all = end - from;
+        if (Fill(feet, from, end, hi, depth, spec, piece) == all)
+        {
+            // The narrowest row length that still holds all of them (fewer, longer rows hold more).
+            for (int i = 0; i < 12 && hi - lo > 0.01f; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (Fill(feet, from, end, mid, depth, spec, piece) == all)
+                    hi = mid;
+                else
+                    lo = mid;
+            }
+        }
+        Fill(feet, from, end, hi, depth, spec, piece);
+        piece.Width = Math.Max(spec.MinTable, piece.Width + 2f * spec.EdgePad);
+        piece.Depth = Math.Max(spec.MinTable, piece.Rowed + 2f * spec.EdgePad);
+        return piece;
+    }
+
+    /// <summary>Fills <paramref name="piece"/> with rows of <paramref name="length"/> from item
+    /// <paramref name="from"/> while they stay within <paramref name="depth"/> (the first row always): its take, rows,
+    /// widest row (in <see cref="Piece.Width"/>, before the pads) and rowed depth. Returns the take.</summary>
+    static int Fill(
+        Vector2[] feet,
+        int from,
+        int end,
+        float length,
+        float depth,
+        ShelfSpec spec,
+        Piece piece
+    )
+    {
+        piece.Length = length;
+        piece.Rows = 0;
+        piece.Rowed = 0f;
+        piece.Width = 0f;
+        // The far side of the first row starting past a reach from the front: the back edge must stay within a reach
+        // of it, so that row (and every one behind it) is reached from the back walkway.
+        float deepEnd = float.NaN;
+        int k = from;
+        while (k < end)
+        {
+            int next = NextRow(feet, k, end, length, spec.ItemGap, out float w, out float d);
+            float start = spec.EdgePad + piece.Rowed + (piece.Rows > 0 ? spec.ItemGap : 0f);
+            float rowed = start + d - spec.EdgePad;
+            float back = rowed + 2f * spec.EdgePad;
+            float firstDeep = float.IsNaN(deepEnd) && start > spec.Reach ? start + d : deepEnd;
+            if (piece.Rows > 0 && (back > depth + 1e-4f || back - firstDeep > spec.Reach + 1e-4f))
+                break;
+            deepEnd = firstDeep;
+            piece.Rowed = rowed;
+            piece.Width = Math.Max(piece.Width, w);
+            piece.Rows++;
+            k = next;
+        }
+        piece.Take = k - from;
+        return piece.Take;
+    }
+
+    /// <summary>The row starting at item <paramref name="from"/>: items side by side a gap apart until the next
+    /// would pass <paramref name="length"/> (always at least one), before <paramref name="end"/>. Returns where the
+    /// next row starts, with this row's <paramref name="width"/> and its deepest item's <paramref name="depth"/>.</summary>
+    static int NextRow(
+        Vector2[] feet,
+        int from,
+        int end,
+        float length,
+        float gap,
+        out float width,
+        out float depth
+    )
+    {
+        width = feet[from].X;
+        depth = feet[from].Y;
+        int k = from + 1;
+        for (; k < end && width + gap + feet[k].X <= length + 1e-4f; k++)
+        {
+            width += gap + feet[k].X;
+            depth = Math.Max(depth, feet[k].Y);
+        }
+        return k;
     }
 
     static bool Finite(RoomRect r) =>

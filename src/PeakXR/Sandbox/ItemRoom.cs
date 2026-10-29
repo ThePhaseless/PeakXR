@@ -19,10 +19,10 @@ namespace PeakXR.Sandbox;
 /// <summary>
 /// The item room (feature <c>sandbox.room</c>): every item of the game's <c>ItemDatabase</c> on waist-high tables in the
 /// middle of the most open floor around the player in the solo airport (<see cref="ShelfLayout"/>), helpful items
-/// nearest, dangerous ones behind them, and what goes off by itself (dynamite) farthest out, each by kind
+/// nearest, dangerous ones behind them, and what goes off by itself (dynamite) a gap past them, each by kind
 /// (<see cref="ItemShelf"/>). Beside them stands what the items need: a lit cooking fire heading the helpful tables, the
-/// sandbox test wall with a target past the last tables, and an eye chart on the far wall for the binoculars; the
-/// airport's hard floor breaks what breaks. A touch orb at each table restocks it, two at the aisle's start restock
+/// sandbox test wall with a target past the last tables (when the floor has room for it), and an eye chart on a board at the far end for the binoculars; the
+/// airport's hard floor breaks what breaks. A touch orb on a post at each kind's first table restocks it, three at the aisle's start light the fire, restock
 /// everything (chevron) or leave to the title (cross), so the headset alone runs it. Offline only; the progress and
 /// save guard (<see cref="SelfTestProgressGuard.Room"/>) holds while it is open. Statuses work in it (the airport
 /// otherwise drops them, CharacterAfflictions.cs:741) and a keep-alive clears them before they knock you out.
@@ -32,14 +32,21 @@ internal sealed class ItemRoom : MonoBehaviour
     private const float LoadTimeout = 120f;
     private const float ArrivalSettle = 2f;
     private const float LeaveTimeout = 60f;
-    private const float TableHeight = 0.95f;
+
+    /// <summary>Table top surface above the floor: waist high.</summary>
+    private const float TableHeight = 0.88f;
+
+    /// <summary>An item's lowest drawn point this far over the top: resting on it, not sunk in or hovering.</summary>
+    private const float Rest = 0.004f;
     private const float MaxReach = 40f;
     private const int Headings = 16;
 
     /// <summary>A plan this much bigger than the best open floor is built anyway (a few tables touch walls); a bigger
     /// one would stand in them, so the room does not open.</summary>
     private const float MaxOverflow = 1.25f;
-    private const float StartOrbHeight = 1.25f;
+
+    /// <summary>Every orb's centre above the floor: hand high, on its own post.</summary>
+    private const float OrbHeight = 1.1f;
 
     /// <summary>The fixed airport place was found blocked this session (logged once).</summary>
     private static bool fixedWarned;
@@ -54,9 +61,11 @@ internal sealed class ItemRoom : MonoBehaviour
     private float boxedUntil;
     private bool boxedSaid;
     private int[] counts;
+    private System.Numerics.Vector2[] sizes;
 
-    /// <summary>About 12 x 12 m: open floor this big holds every item of the game (ShelfLayoutTests).</summary>
-    private const float HallArea = 140f;
+    /// <summary>About 15 x 15 m: open floor this big holds every item of the game at its real size, a hand apart
+    /// (ShelfLayoutTests).</summary>
+    private const float HallArea = 220f;
 
     // An item's first spawn this session (asset load, collider cooking, first draw) cost up to ~30 ms on the iGPU
     // (VR run of 3a1b2f9: a 126.8 ms frame on a 15-item table, four a frame); later spawns are cheap. So at most two a
@@ -132,6 +141,7 @@ internal sealed class ItemRoom : MonoBehaviour
     private readonly List<Object> owned = new();
     private readonly Material[] groupMaterials = new Material[ShelfLayout.Buckets];
     private Material legMaterial;
+    private Material chartMaterial;
     private readonly List<Dynamite> wicks = new();
 
     /// <summary>Per item lying on its table, what was switched off until it is picked up (<see cref="Quiet"/>).</summary>
@@ -162,6 +172,16 @@ internal sealed class ItemRoom : MonoBehaviour
     private RoomRect room;
     private float igniteRadius;
     private Item[] slotItems;
+
+    /// <summary>Each item's drawn box in its own frame (pivot at the origin, unrotated): its pivot is not its
+    /// bottom, so its spot and footprint come from this.</summary>
+    private Bounds[] slotBounds;
+
+    /// <summary>Items the drawn-box data does not have: their box is their parts' boxes, measured again once spawned
+    /// (<see cref="Settle"/>).</summary>
+    private bool[] measured;
+
+    /// <summary>Where each item's drawn box rests: the middle of its footprint, <see cref="Rest"/> over its table.</summary>
     private Vector3[] slotAt;
     private GameObject[] slotSpawned;
     private bool[] tableLoaded;
@@ -474,6 +494,30 @@ internal sealed class ItemRoom : MonoBehaviour
             for (int b = 0, i = 0; b < buckets.Length; b++)
                 foreach (var item in buckets[b])
                     slotItems[i++] = item;
+            slotBounds = new Bounds[n];
+            measured = new bool[n];
+            sizes = new System.Numerics.Vector2[n];
+            for (int i = 0; i < n; i++)
+            {
+                var t = slotItems[i].transform;
+                Bounds b;
+                if (ItemDrawnBox.TryGet(slotItems[i].name, out var lo, out var hi))
+                    b = new Bounds(
+                        new Vector3(lo.X + hi.X, lo.Y + hi.Y, lo.Z + hi.Z) * 0.5f,
+                        new Vector3(hi.X - lo.X, hi.Y - lo.Y, hi.Z - lo.Z)
+                    );
+                else
+                {
+                    // An item the data does not have (a game update): its parts' boxes, measured again once spawned.
+                    measured[i] = true;
+                    if (
+                        !Drawn(t, Matrix4x4.TRS(t.position, t.rotation, Vector3.one).inverse, out b)
+                    )
+                        b = new Bounds(Vector3.zero, Vector3.zero);
+                }
+                slotBounds[i] = b;
+                sizes[i] = new System.Numerics.Vector2(b.size.x, b.size.z);
+            }
         }
         int total = slotItems.Length;
         plan = null;
@@ -523,7 +567,7 @@ internal sealed class ItemRoom : MonoBehaviour
         void Consider(Vector3 from, Vector3 dir)
         {
             var rect = Measure(from, dir);
-            var candidate = ShelfLayout.Plan(counts, rect, spec);
+            var candidate = ShelfLayout.Plan(counts, sizes, rect, spec);
             if (
                 plan == null
                 || (candidate.Fits && !plan.Fits)
@@ -556,10 +600,10 @@ internal sealed class ItemRoom : MonoBehaviour
                 return "Item room: walled in here, with no open floor in sight. Step out and press Enter again.";
             // Only send the player on where it can work: a hall-sized floor holds every item (ShelfLayout tests).
             bool hall =
-                room.Width >= 10f && room.Depth >= 10f && room.Width * room.Depth >= HallArea;
+                room.Width >= 13f && room.Depth >= 13f && room.Width * room.Depth >= HallArea;
             return !hall
                 ? $"Item room: the most open floor within {MaxReach:0} m is only {room.Width:0} x {room.Depth:0} m. "
-                    + "It needs about 12 x 12 m: go to a big open hall and press Enter again."
+                    + "It needs about 15 x 15 m: go to a big open hall and press Enter again."
                 : $"Item room: {total} items do not fit even {room.Width:0} x {room.Depth:0} m of open floor. "
                     + "Nothing to do here; the log has the details.";
         }
@@ -575,6 +619,7 @@ internal sealed class ItemRoom : MonoBehaviour
         Tables(At, counts);
         var start = At(plan.StartX, 1f);
         start = Floor(start, start.y);
+        Entrance = start;
         StartOrbs(start);
         Props(origin, At, forward);
         var unlit = RoomProps.Unlit(root);
@@ -594,7 +639,7 @@ internal sealed class ItemRoom : MonoBehaviour
         float away = Flat(origin - feet).magnitude;
         if (plan.Fits)
             Plugin.Log.LogInfo(
-                $"[sandbox.room] {total} items on {plan.Tables.Length} tables, {plan.PerRow} a row, block "
+                $"[sandbox.room] {total} items on {plan.Tables.Length} tables, block "
                     + $"{plan.Block} in {(fixedPlace ? "the fixed airport place" : "measured room")} {room} "
                     + $"along {forward}, {away:0.0} m from you, wall "
                     + $"{(plan.HasWall ? "placed" : "left out")}"
@@ -876,7 +921,7 @@ internal sealed class ItemRoom : MonoBehaviour
         );
         if (!inAirport)
             return false;
-        var candidate = ShelfLayout.Plan(counts, AirportRoom.Bounds, spec);
+        var candidate = ShelfLayout.Plan(counts, sizes, AirportRoom.Bounds, spec);
         int blocked = 0;
         string first = null;
         var origin = at;
@@ -915,8 +960,11 @@ internal sealed class ItemRoom : MonoBehaviour
         return false;
     }
 
-    /// <summary>A lit table in its group colour (<see cref="RoomProps.Table"/>) under each table's item spots, at each bucket's first table a restock
-    /// orb and its label, and a sign over each zone. A table that still meets level geometry is logged.</summary>
+    /// <summary>A lit table in its group colour (<see cref="RoomProps.Table"/>) under each table's items, sized by
+    /// the plan to its items' footprints; at each bucket's first table a restock orb on a post at its front left
+    /// corner, labelled; a sign over each zone. A table that still meets level geometry is logged. Each item's spot is
+    /// where its drawn box rests: the middle of its footprint, <see cref="Rest"/> over the top. The items' pivots
+    /// used to sit 6.5 cm over the old top: anything reaching further below its pivot sank into the table.</summary>
     private void Tables(System.Func<float, float, Vector3> at, int[] counts)
     {
         int lastGroup = -1;
@@ -924,48 +972,44 @@ internal sealed class ItemRoom : MonoBehaviour
         tableLoaded = new bool[plan.Tables.Length];
         tableCenter = new Vector3[plan.Tables.Length];
         tableRadius = new float[plan.Tables.Length];
+        TableRoots = new Transform[plan.Tables.Length];
         foreach (var t in plan.Tables)
         {
             var f = t.Footprint;
             var floor = Floor(at(f.CenterX, f.CenterZ), at(0f, 0f).y);
             tableCenter[table] = floor;
-            tableRadius[table++] = 0.5f * Mathf.Sqrt(f.Width * f.Width + f.Depth * f.Depth);
+            tableRadius[table] = 0.5f * Mathf.Sqrt(f.Width * f.Width + f.Depth * f.Depth);
             for (int k = t.First; k < t.First + t.Count; k++)
             {
                 var s = plan.Slots[k];
                 var spot = at(s.X, s.Z);
-                slotAt[k] = new Vector3(spot.x, floor.y + TableHeight, spot.z);
+                slotAt[k] = new Vector3(spot.x, floor.y + TableHeight + Rest, spot.z);
             }
             var blocker = Blocker(f, floor, facing);
             if (blocker != null)
                 Plugin.Log.LogWarning(
                     $"[sandbox.room] {ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} table ({f}) meets {blocker.name}"
                 );
-            // Top surface 6.5 cm under the items' spots, where the old plank's was.
-            if (legMaterial == null)
-                legMaterial = Own(RoomProps.Lit(new Color(0.18f, 0.18f, 0.2f)));
-            RoomProps.Table(
+            TableRoots[table++] = RoomProps.Table(
                 root,
                 floor,
                 facing,
                 f.Width,
                 f.Depth,
-                TableHeight - 0.065f,
+                TableHeight,
                 GroupMaterial(t.Group),
-                legMaterial
+                LegMaterial
             );
             if (t.Group == lastGroup)
                 continue;
             lastGroup = t.Group;
-            var beside = at(f.MinX - 0.25f, f.MinZ + 0.2f);
-            var orbAt = new Vector3(beside.x, floor.y + TableHeight + 0.15f, beside.z);
-            AddOrb(t.Group, cross: false, orbAt);
-            // The orb says what it is for: unexplained, it read as a stray white block by the table (tester, v0.1.1).
-            Label(
+            // In the walkway at the table's front left corner, on a post: a button standing by its table.
+            AddOrb(
+                t.Group,
+                cross: false,
+                Floor(at(f.MinX + 0.15f, f.MinZ - 0.2f), floor.y),
                 $"{ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} ({counts[t.Group]})\n<size=55%>rest a hand in the orb: restock</size>",
-                orbAt + Vector3.up * 0.22f,
-                facing,
-                64f,
+                48f,
                 ZoneColor[(int)t.Zone]
             );
         }
@@ -984,27 +1028,30 @@ internal sealed class ItemRoom : MonoBehaviour
         }
     }
 
-    /// <summary>In front of the player, chest high: restock everything (chevron) and leave (cross).</summary>
-    /// <summary>In a row 1 m ahead of where you start, chest high above the floor there (1.25 m), 0.44 m apart: Light
-    /// fire, Restock all, Leave. A hand within 9 cm of an orb's centre fills it (<see cref="TouchOrb"/>): 0.6 s fires
-    /// a chevron, 1 s the cross. Their spots are logged for testers.</summary>
+    /// <summary>On posts in a row 1 m ahead of where you start, 0.44 m apart: Light fire, Restock all, Leave. A hand
+    /// within 9 cm of an orb's centre fills it (<see cref="TouchOrb"/>): 0.6 s fires a chevron, 1 s the cross. Every
+    /// orb's spot is logged for testers.</summary>
     private void StartOrbs(Vector3 floorAt)
     {
         var right = facing * Vector3.right;
-        var at = floorAt + Vector3.up * StartOrbHeight;
-        AddOrb(RestockAll, cross: false, at - right * 0.22f);
-        AddOrb(LeaveRoom, cross: true, at + right * 0.22f);
-        Label("Restock all", at - right * 0.22f + Vector3.up * 0.12f, facing, 40f, Color.white);
-        Label("Leave", at + right * 0.22f + Vector3.up * 0.12f, facing, 40f, Color.white);
+        AddOrb(RestockAll, cross: false, floorAt - right * 0.22f, "Restock all", 40f, Color.white);
+        AddOrb(LeaveRoom, cross: true, floorAt + right * 0.22f, "Leave", 40f, Color.white);
         // Beside the other two, where you start: at the fire's own spot it was out of sight (VR run of 3a1b2f9).
         if (firePrefab != null)
-        {
-            AddOrb(LightFire, cross: false, at - right * 0.66f);
-            Label("Light fire", at - right * 0.66f + Vector3.up * 0.12f, facing, 40f, Color.white);
-        }
+            AddOrb(
+                LightFire,
+                cross: false,
+                floorAt - right * 0.66f,
+                "Light fire",
+                40f,
+                Color.white
+            );
+        var spots = new StringBuilder();
+        foreach (var mark in Marks)
+            spots.Append(mark.Label.text).Append(' ').Append(mark.Orb.Position).Append("; ");
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[sandbox.room] start orbs {StartOrbHeight} m above the floor: Light fire {at - right * 0.66f}, Restock all {at - right * 0.22f}, Leave {at + right * 0.22f}; rest a hand in one (within 9 cm) for 0.6 s, Leave 1 s"
+                $"[sandbox.room] orbs {OrbHeight} m above the floor: {spots}rest a hand in one (within 9 cm) for 0.6 s, Leave 1 s"
             )
         );
     }
@@ -1034,22 +1081,65 @@ internal sealed class ItemRoom : MonoBehaviour
                     UIMaterials.Create(new Color(0.95f, 0.85f, 0.3f, 1f), false, 3000)
                 );
                 var targetY = Floor(face, feet.y).y + 2f;
+                // On the wall itself: they go with it if anything moves or removes the wall.
                 for (int i = 1; i <= 3; i++)
-                    Ring(new Vector3(face.x, targetY, face.z), -forward, 0.22f * i, targetMat);
+                    Ring(
+                        wall.transform,
+                        new Vector3(face.x, targetY, face.z),
+                        -forward,
+                        0.22f * i,
+                        targetMat
+                    );
             }
         }
         else
             Plugin.Log.LogInfo("[sandbox.room] no room for the test wall here");
 
-        // An eye chart on the far wall, across from the test wall: only the top lines read without the binoculars.
-        Label(
-            "<size=60>E</size>\n<size=30>F P</size>\n<size=15>T O Z</size>\n<size=8>L P E D</size>\n"
-                + "<size=4>P E C F D</size>\n<size=2>E D F C Z P</size>",
-            at(Mathf.Max(room.CenterX, room.MaxX - 1.5f), room.MaxZ - 0.3f) + Vector3.up * 1.9f,
+        // An eye chart on a white board on two posts at the far end, across from the test wall, named over it: only
+        // the top lines read without the binoculars. Drawn as bare text in the open hall, its big E read as a stray
+        // floating letter (tester), and its bottom-aligned box put the small lines under the floor.
+        var chartAt = Floor(
+            at(Mathf.Max(room.CenterX, room.MaxX - 1.5f), room.MaxZ - 0.3f),
+            feet.y
+        );
+        var chart = new GameObject("PeakXR_ItemRoomEyeChart").transform;
+        chart.SetParent(root, false);
+        chart.SetPositionAndRotation(chartAt, facing);
+        if (chartMaterial == null)
+            chartMaterial = Own(RoomProps.Lit(new Color(0.92f, 0.92f, 0.9f)));
+        RoomProps.Box(
+            chart,
+            "PeakXR_ItemRoomEyeChartBoard",
+            new Vector3(0f, 1.6f, 0f),
+            new Vector3(0.75f, 1f, 0.03f),
+            chartMaterial
+        );
+        for (int side = -1; side <= 1; side += 2)
+            RoomProps.Box(
+                chart,
+                "PeakXR_ItemRoomEyeChartPost",
+                new Vector3(side * 0.3f, 0.55f, 0.04f),
+                new Vector3(0.05f, 1.1f, 0.05f),
+                LegMaterial
+            );
+        // 1 mm a unit: the E is 20 cm tall, the last line 1.6 cm.
+        var lines = Label(
+            "<size=200>E</size>\n<size=110>F P</size>\n<size=70>T O Z</size>\n<size=45>L P E D</size>\n"
+                + "<size=28>P E C F D</size>\n<size=16>E D F C Z P</size>",
+            chartAt + Vector3.up * 1.15f - forward * 0.02f,
             facing,
-            60f,
-            Color.white,
-            0.01f
+            100f,
+            new Color(0.08f, 0.08f, 0.08f),
+            0.001f
+        );
+        ((RectTransform)lines.transform).sizeDelta = new Vector2(700f, 900f);
+        lines.alignment = TextAlignmentOptions.Top;
+        Label(
+            "EYE CHART\n<size=55%>read the small lines through the binoculars</size>",
+            chartAt + Vector3.up * 2.15f - forward * 0.02f,
+            facing,
+            48f,
+            Color.white
         );
     }
 
@@ -1113,7 +1203,8 @@ internal sealed class ItemRoom : MonoBehaviour
         for (int t = 0; t < tableLoaded.Length; t++)
         {
             float d = Flat(p - tableCenter[t]).magnitude - tableRadius[t];
-            bool want = ShelfLoad.Wanted(tableLoaded[t], d, LoadRadius, UnloadRadius);
+            bool want =
+                KeepAllLoaded || ShelfLoad.Wanted(tableLoaded[t], d, LoadRadius, UnloadRadius);
             if (want == tableLoaded[t])
                 continue;
             tableLoaded[t] = want;
@@ -1218,10 +1309,13 @@ internal sealed class ItemRoom : MonoBehaviour
                 long before = System.Diagnostics.Stopwatch.GetTimestamp();
                 try
                 {
+                    int what = plan.Slots[i].Item;
+                    var drawn = slotBounds[what];
+                    var turn = Turn(i);
                     var go = PhotonNetwork.InstantiateItemRoom(
-                        slotItems[i].gameObject.name,
-                        slotAt[i],
-                        facing
+                        slotItems[what].gameObject.name,
+                        slotAt[i] - turn * new Vector3(drawn.center.x, drawn.min.y, drawn.center.z),
+                        turn
                     );
                     if (go != null && go.TryGetComponent<Item>(out var item) && item.rig != null)
                         item.rig.isKinematic = true;
@@ -1240,7 +1334,11 @@ internal sealed class ItemRoom : MonoBehaviour
                     if (hive != null)
                         hive.spawnBees = false;
                     if (go != null)
+                    {
                         Quiet(go);
+                        if (measured[plan.Slots[i].Item])
+                            Settle(go, slotAt[i]);
+                    }
                     slotSpawned[i] = go;
                     if (go != null)
                         placed++;
@@ -1251,7 +1349,7 @@ internal sealed class ItemRoom : MonoBehaviour
                 {
                     failed++;
                     Plugin.Log.LogWarning(
-                        $"[sandbox.room] {slotItems[i].name} did not spawn: {e.Message}"
+                        $"[sandbox.room] {slotItems[plan.Slots[i].Item].name} did not spawn: {e.Message}"
                     );
                 }
                 long now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -1275,7 +1373,7 @@ internal sealed class ItemRoom : MonoBehaviour
         Plugin.Log.LogDebug(
             $"[sandbox.room] {placed} items placed, {failed} failed; slowest "
                 + $"{slowestTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:0.0} ms"
-                + (slowest >= 0 ? $" ({slotItems[slowest].name})" : "")
+                + (slowest >= 0 ? $" ({slotItems[plan.Slots[slowest].Item].name})" : "")
                 + $"; held off on the tables so far: {quietLights} lights, {quietParticles} particle systems"
         );
         if (failed > 0)
@@ -1371,11 +1469,37 @@ internal sealed class ItemRoom : MonoBehaviour
 
     // ---- orbs, labels, rings ----
 
-    private void AddOrb(int action, bool cross, Vector3 at)
+    /// <summary>An orb <see cref="OrbHeight"/> over <paramref name="floor"/> on a post, named just over it, so it
+    /// reads as a button where it stands. Floating at assorted heights with each label drawn under it, testers took
+    /// the orbs for stray circles.</summary>
+    private void AddOrb(
+        int action,
+        bool cross,
+        Vector3 floor,
+        string label,
+        float size,
+        Color color
+    )
     {
         var orb = new TouchOrb("PeakXR_ItemRoomOrb", cross, seconds: cross ? 1f : 0.6f);
+        var at = floor + Vector3.up * OrbHeight;
         orb.Place(at, facing);
         orbs.Add(new KeyValuePair<TouchOrb, int>(orb, action));
+        float post = OrbHeight - TouchOrb.Radius;
+        var stand = RoomProps.Box(
+            root,
+            "PeakXR_ItemRoomOrbPost",
+            floor + Vector3.up * (post * 0.5f),
+            new Vector3(0.04f, post, 0.04f),
+            LegMaterial
+        );
+        Marks.Add(
+            (
+                orb,
+                stand,
+                Label(label, at + Vector3.up * (TouchOrb.Radius + 0.03f), facing, size, color)
+            )
+        );
     }
 
     private void TickOrbs(float dt)
@@ -1412,7 +1536,8 @@ internal sealed class ItemRoom : MonoBehaviour
         }
     }
 
-    private void Label(
+    /// <summary>World text whose bottom line sits on <paramref name="at"/>.</summary>
+    private TextMeshProUGUI Label(
         string text,
         Vector3 at,
         Quaternion rotation,
@@ -1424,7 +1549,10 @@ internal sealed class ItemRoom : MonoBehaviour
         var go = new GameObject("PeakXR_ItemRoomLabel", typeof(RectTransform));
         go.transform.SetParent(root, false);
         go.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
-        ((RectTransform)go.transform).sizeDelta = new Vector2(900f, 400f);
+        var rect = (RectTransform)go.transform;
+        rect.sizeDelta = new Vector2(900f, 400f);
+        // Bottom-aligned text in a box centred on its spot hung 0.4 m under it: every orb's label sat below its orb.
+        rect.pivot = new Vector2(0.5f, 0f);
         go.transform.SetPositionAndRotation(at, rotation);
         go.transform.localScale = Vector3.one * scale;
         var label = go.AddComponent<TextMeshProUGUI>();
@@ -1440,12 +1568,19 @@ internal sealed class ItemRoom : MonoBehaviour
                 : null;
         if (font != null)
             label.font = font.font;
+        return label;
     }
 
-    private void Ring(Vector3 center, Vector3 normal, float radius, Material material)
+    private static void Ring(
+        Transform parent,
+        Vector3 center,
+        Vector3 normal,
+        float radius,
+        Material material
+    )
     {
         var go = new GameObject("PeakXR_ItemRoomTarget");
-        go.transform.SetParent(root, false);
+        go.transform.SetParent(parent, false);
         var line = go.AddComponent<LineRenderer>();
         line.useWorldSpace = true;
         line.positionCount = 32;
@@ -1475,9 +1610,155 @@ internal sealed class ItemRoom : MonoBehaviour
         return m;
     }
 
+    /// <summary>Legs and posts: a mid warm grey, readable on the hall's floor in the tops' shadow. Near-black (0.18)
+    /// legs did not read at all.</summary>
+    private Material LegMaterial =>
+        legMaterial != null
+            ? legMaterial
+            : legMaterial = Own(RoomProps.Lit(new Color(0.42f, 0.36f, 0.3f)));
+
     private Material Own(Material m)
     {
         owned.Add(m);
         return m;
     }
+
+    private static readonly List<Renderer> drawnScratch = new();
+
+    /// <summary>The box around every mesh drawn under <paramref name="root"/> (enabled mesh and skinned renderers
+    /// on active objects; particles, lines and trails left out), in the frame <paramref name="toFrame"/> maps the
+    /// world into. False when nothing under it draws a mesh.</summary>
+    internal static bool Drawn(Transform root, Matrix4x4 toFrame, out Bounds bounds)
+    {
+        bounds = default;
+        bool any = false;
+        root.GetComponentsInChildren(true, drawnScratch);
+        foreach (var r in drawnScratch)
+        {
+            if (!r.enabled || !ActiveUnder(r.transform, root))
+                continue;
+            var mesh =
+                r is SkinnedMeshRenderer skinned ? skinned.sharedMesh
+                : r is MeshRenderer && r.TryGetComponent<MeshFilter>(out var filter)
+                    ? filter.sharedMesh
+                : null;
+            if (mesh == null)
+                continue;
+            var m = toFrame * r.localToWorldMatrix;
+            var b = mesh.bounds;
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = m.MultiplyPoint3x4(
+                    b.center
+                        + Vector3.Scale(
+                            b.extents,
+                            new Vector3(
+                                (i & 1) == 0 ? -1f : 1f,
+                                (i & 2) == 0 ? -1f : 1f,
+                                (i & 4) == 0 ? -1f : 1f
+                            )
+                        )
+                );
+                if (any)
+                    bounds.Encapsulate(corner);
+                else
+                    bounds = new Bounds(corner, Vector3.zero);
+                any = true;
+            }
+        }
+        drawnScratch.Clear();
+        return any;
+    }
+
+    /// <summary>Active up to <paramref name="root"/>: a prefab asset's own objects are never active in a scene.</summary>
+    private static bool ActiveUnder(Transform t, Transform root)
+    {
+        for (; t != null; t = t.parent)
+        {
+            if (!t.gameObject.activeSelf)
+                return false;
+            if (t == root)
+                break;
+        }
+        return true;
+    }
+
+    /// <summary>How slot <paramref name="slot"/>'s item lies: facing the room, or a quarter turn round when the plan
+    /// laid its long side across the row (<see cref="ShelfSlot.Turned"/>).</summary>
+    private Quaternion Turn(int slot) =>
+        plan.Slots[slot].Turned ? facing * Quaternion.Euler(0f, 90f, 0f) : facing;
+
+    /// <summary>Slot <paramref name="slot"/>'s item as it lies now, in the room's frame (rotated to it, world origin):
+    /// its drawn-box data carried by its pose, or for an item the data lacks its parts' boxes. False when nothing is
+    /// there.</summary>
+    internal bool BoxOf(int slot, out Bounds box)
+    {
+        box = default;
+        var go = slotSpawned[slot];
+        if (go == null)
+            return false;
+        var frame = Matrix4x4.Rotate(Quaternion.Inverse(facing));
+        int what = plan.Slots[slot].Item;
+        if (measured[what])
+            return Drawn(go.transform, frame, out box);
+        var t = go.transform;
+        var m = frame * Matrix4x4.TRS(t.position, t.rotation, Vector3.one);
+        var b = slotBounds[what];
+        for (int i = 0; i < 8; i++)
+        {
+            var corner = m.MultiplyPoint3x4(
+                b.center
+                    + Vector3.Scale(
+                        b.extents,
+                        new Vector3(
+                            (i & 1) == 0 ? -1f : 1f,
+                            (i & 2) == 0 ? -1f : 1f,
+                            (i & 4) == 0 ? -1f : 1f
+                        )
+                    )
+            );
+            if (i == 0)
+                box = new Bounds(corner, Vector3.zero);
+            else
+                box.Encapsulate(corner);
+        }
+        return true;
+    }
+
+    /// <summary>Moves a just spawned item so its drawn footprint is centred on <paramref name="spot"/> and its
+    /// lowest drawn point lies on it, measured on the item as spawned (its own Awake may change what it draws).</summary>
+    private void Settle(GameObject go, Vector3 spot)
+    {
+        if (!Drawn(go.transform, Matrix4x4.TRS(spot, facing, Vector3.one).inverse, out var b))
+            return;
+        go.transform.position += facing * new Vector3(-b.center.x, -b.min.y, -b.center.z);
+        if (go.TryGetComponent<Rigidbody>(out var body))
+            body.position = go.transform.position;
+    }
+
+    // ---- read by the self-test (01c-item-room-layout) ----
+
+    internal ShelfPlan Layout => plan;
+
+    /// <summary>Each plan table's object: its top and legs are its children.</summary>
+    internal Transform[] TableRoots { get; private set; }
+
+    internal IReadOnlyList<GameObject> Placed => slotSpawned;
+
+    /// <summary>Still building or placing items.</summary>
+    internal bool Placing => phase != Phase.Open || plan == null || spawning;
+
+    internal Quaternion Facing => facing;
+
+    /// <summary>Where the start orbs stand: the room's entrance.</summary>
+    internal Vector3 Entrance { get; private set; }
+
+    /// <summary>Table <paramref name="table"/>'s top surface height (world y).</summary>
+    internal float TopOf(int table) => tableCenter[table].y + TableHeight;
+
+    /// <summary>Every orb with its post and its label.</summary>
+    internal readonly List<(TouchOrb Orb, MeshRenderer Post, TextMeshProUGUI Label)> Marks = new();
+
+    /// <summary>Every table's items stay out wherever you stand, so all can be checked at once.</summary>
+    internal bool KeepAllLoaded;
 }

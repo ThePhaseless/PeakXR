@@ -36,10 +36,19 @@ internal static class RoomProps
     public static Material Wall =>
         wallMaterial != null ? wallMaterial : wallMaterial = Lit(new Color(0.55f, 0.55f, 0.53f));
 
-    /// <summary>A table under <paramref name="parent"/>: a 4 cm top whose surface is <paramref name="height"/> above
-    /// <paramref name="floor"/>, on four 5 cm legs. No colliders: items lie kinematic on their spots. Only the top
-    /// casts a shadow; the legs' would cost a shadow draw each for nothing a player sees.</summary>
-    public static void Table(
+    /// <summary>Top thickness of every room table: a sturdy slab. A 4 cm top on a 0.30 m deep one-row table read
+    /// as a plank (tester, v0.1.1).</summary>
+    public const float TopThick = 0.07f;
+
+    /// <summary>Leg width: thick enough to read from across the room.</summary>
+    public const float LegWidth = 0.07f;
+
+    /// <summary>A table at <paramref name="floor"/>, under <paramref name="parent"/>: a <see cref="TopThick"/> top
+    /// whose surface is <paramref name="height"/> above the floor, on a leg at each corner and pairs between them at
+    /// most 1.5 m apart. Top and legs are children of an unscaled table object, placed in its frame, so no leg takes a
+    /// top's scale. No colliders: items lie kinematic on their spots. Legs cast shadows: 5 cm dark legs without one,
+    /// inset under the top's own shadow, did not read at all (tester: "the tables have no legs").</summary>
+    public static Transform Table(
         Transform parent,
         Vector3 floor,
         Quaternion rotation,
@@ -50,41 +59,38 @@ internal static class RoomProps
         Material legs
     )
     {
-        const float Thick = 0.04f;
-        const float Leg = 0.05f;
-        const float Inset = 0.08f;
+        var table = new GameObject("PeakXR_ItemRoomTable").transform;
+        table.SetParent(parent, false);
+        table.SetPositionAndRotation(floor, rotation);
         Box(
-            parent,
-            "PeakXR_ItemRoomTable",
-            floor + Vector3.up * (height - Thick * 0.5f),
-            rotation,
-            new Vector3(width, Thick, depth),
+            table,
+            "PeakXR_ItemRoomTableTop",
+            Vector3.up * (height - TopThick * 0.5f),
+            new Vector3(width, TopThick, depth),
             top
-        ).shadowCastingMode = ShadowCastingMode.On;
-        float legHeight = height - Thick;
-        float x = Mathf.Max(0f, width * 0.5f - Inset);
-        float z = Mathf.Max(0f, depth * 0.5f - Inset);
-        for (int i = 0; i < 4; i++)
-        {
-            var offset =
-                rotation
-                * new Vector3((i & 1) == 0 ? -x : x, legHeight * 0.5f, (i & 2) == 0 ? -z : z);
+        );
+        float legHeight = height - TopThick;
+        float x = Mathf.Max(0f, width * 0.5f - LegWidth);
+        float z = Mathf.Max(0f, depth * 0.5f - LegWidth);
+        int across = Mathf.Max(2, Mathf.CeilToInt(2f * x / 1.5f) + 1);
+        for (int i = 0; i < across; i++)
+        for (int side = -1; side <= 1; side += 2)
             Box(
-                parent,
+                table,
                 "PeakXR_ItemRoomTableLeg",
-                floor + offset,
-                rotation,
-                new Vector3(Leg, legHeight, Leg),
+                new Vector3(Mathf.Lerp(-x, x, i / (across - 1f)), legHeight * 0.5f, side * z),
+                new Vector3(LegWidth, legHeight, LegWidth),
                 legs
-            ).shadowCastingMode = ShadowCastingMode.Off;
-        }
+            );
+        return table;
     }
 
-    private static MeshRenderer Box(
+    /// <summary>A lit box named <paramref name="name"/> under <paramref name="parent"/>, centred at
+    /// <paramref name="at"/> in its frame; it casts and takes shadows like the level.</summary>
+    public static MeshRenderer Box(
         Transform parent,
         string name,
         Vector3 at,
-        Quaternion rotation,
         Vector3 size,
         Material material
     )
@@ -93,10 +99,11 @@ internal static class RoomProps
         box.name = name;
         Object.Destroy(box.GetComponent<Collider>());
         box.transform.SetParent(parent, false);
-        box.transform.SetPositionAndRotation(at, rotation);
+        box.transform.localPosition = at;
         box.transform.localScale = size;
         var renderer = box.GetComponent<MeshRenderer>();
         renderer.sharedMaterial = material;
+        renderer.shadowCastingMode = ShadowCastingMode.On;
         return renderer;
     }
 

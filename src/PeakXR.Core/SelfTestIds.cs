@@ -34,6 +34,7 @@ public static class SelfTestIds
         "00-title",
         "01-airport",
         "01b-item-room-props",
+        "01c-item-room-layout",
         "02-settings-vr",
         "04-beach",
         "04b-bug-report",
