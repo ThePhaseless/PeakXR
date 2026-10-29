@@ -85,10 +85,17 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
                 LocalHold.ItemInLeftHand,
                 PhysicalInteraction.AimHand,
                 GripHand(),
-                VRInput.LeftHanded
+                VRInput.LeftHanded,
+                !Interact.Tools.HandPiton.Placing ? -1
+                    : Interact.Tools.HandPiton.PlacingLeft ? 0
+                    : 1
             );
         }
         ringSource = source;
+        RingHand =
+            ringOnHand && source != ProgressSource.None ? (ringLeft ? 0 : 1)
+            : source != ProgressSource.None ? 2
+            : -1;
         Haptics(pulses.Update(source != ProgressSource.None, progress), cfg.RingHaptics.Value);
 
         if (ready)
@@ -238,6 +245,10 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
     public static int StepTicks { get; private set; }
 
     public static int StepsYielded { get; private set; }
+
+    /// <summary>Where the game's hold ring shows this frame, for the self-test: -1 nowhere, 0 over the left hand,
+    /// 1 over the right, 2 on the HUD (<c>HandWidgets.Ring</c> not on a hand).</summary>
+    public static int RingHand { get; private set; } = -1;
 
     /// <summary>One HUD widget re-parented into a box that is posed in the world each frame.</summary>
     private sealed class MovedWidget

@@ -156,20 +156,38 @@ internal sealed partial class SelfTestRunner
         Script(free).TriggerTouch = true;
         Script(free).Trigger = 1f;
         float freeCast = 0f;
+        // No cue may promise that hand a piton either: no hold ring anywhere, no aim line (HandReticle.OtherCue: the
+        // aimed tool's line, laser, throw arc, ping preview), no hand-piton hold.
+        int ringFrames = 0;
+        int lineFrames = 0;
+        int placingFrames = 0;
         for (float until = Now + useTime + 0.5f; Now < until; )
         {
             AimHand(rig, free, target);
             freeCast = Mathf.Max(freeCast, c.refs.items.climbingSpikeCastProgress);
+            if (UI.HandWidgets.HandWidgetsRuntime.RingHand >= 0)
+                ringFrames++;
+            if (UI.World.HandReticle.OtherCue)
+                lineFrames++;
+            if (Interact.Tools.HandPiton.Placing)
+                placingFrames++;
             yield return null;
         }
         Script(free).Trigger = 0f;
         Script(free).TriggerTouch = false;
         bool freePlaced = NewHandle(handles) != null;
-        if (freeCast > 0f || freePlaced || c.data.climbingSpikeCount != spikes)
+        if (
+            freeCast > 0f
+            || freePlaced
+            || c.data.climbingSpikeCount != spikes
+            || ringFrames > 0
+            || lineFrames > 0
+            || placingFrames > 0
+        )
         {
             Fail(
                 F(
-                    $"the free hand's trigger still sets a piton while climbing: cast up to {freeCast:0.00}, placed {freePlaced}, pitons {spikes} then {c.data.climbingSpikeCount}"
+                    $"the free hand's trigger still sets or cues a piton while climbing: cast up to {freeCast:0.00}, placed {freePlaced}, pitons {spikes} then {c.data.climbingSpikeCount}, frames with a hold ring {ringFrames}, an aim line {lineFrames}, a hand piton {placingFrames}"
                 )
             );
             yield return LetGoAll(c);
@@ -187,6 +205,10 @@ internal sealed partial class SelfTestRunner
         bool placing = false;
         float cast = 0f;
         ClimbHandle placed = null;
+        // The cast's hold ring goes over the climbing hand: it went to whichever hand last held an item, the free one.
+        int ringOn = 0;
+        int ringOff = 0;
+        int climbingRing = climbing ? 0 : 1;
         for (
             float until = Now + UseTrigger.HoldSeconds + useTime + 1.5f;
             Now < until && placed == null;
@@ -197,6 +219,11 @@ internal sealed partial class SelfTestRunner
             placing |= Interact.Tools.HandPiton.Placing;
             cast = Mathf.Max(cast, c.refs.items.climbingSpikeCastProgress);
             placed = NewHandle(handles);
+            int ring = UI.HandWidgets.HandWidgetsRuntime.RingHand;
+            if (ring == climbingRing)
+                ringOn++;
+            else if (ring is 0 or 1)
+                ringOff++;
         }
         Script(climbing).Trigger = 0f;
         Script(climbing).TriggerTouch = false;
@@ -210,10 +237,12 @@ internal sealed partial class SelfTestRunner
                     grip
                 );
         var note = F(
-            $"{(climbing ? "left" : "right")} hand on the wall: placing {placing}, cast up to {cast:0.00}, piton {(placed != null ? $"{off:0.00} m from the hand's wall point" : "not placed")}, pitons {spikes} then {c.data.climbingSpikeCount}, still climbing {c.data.isClimbing}"
+            $"{(climbing ? "left" : "right")} hand on the wall: placing {placing}, cast up to {cast:0.00}, piton {(placed != null ? $"{off:0.00} m from the hand's wall point" : "not placed")}, pitons {spikes} then {c.data.climbingSpikeCount}, still climbing {c.data.isClimbing}, hold ring over that hand {ringOn} frames, over the free hand {ringOff}"
         );
         if (placed == null)
             Fail("holding the climbing hand's trigger set no piton: " + note);
+        else if (ringOff > 0)
+            Fail("the piton's hold ring showed over the free hand: " + note);
         else if (off > 0.15f)
             Fail("the piton went in away from the climbing hand: " + note);
         else if (c.data.climbingSpikeCount != spikes - 1)
