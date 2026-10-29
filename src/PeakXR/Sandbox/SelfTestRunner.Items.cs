@@ -2187,12 +2187,17 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Turns the held item's aim (in VR the ray interact.aim gives the game camera, <see cref="HeldRay"/>; the
     /// look in flat play) through <paramref name="yaws"/> by <paramref name="pitches"/> until <paramref name="ok"/>
-    /// holds 0.15 s after the turn. Sets <see cref="aimFound"/>.</summary>
+    /// holds once the item has settled on the turn. Sets <see cref="aimFound"/>.</summary>
     IEnumerator AimHeld(Character c, bool left, float[] pitches, float[] yaws, Func<bool> ok)
     {
         aimFound = false;
         var rig = VRRig.Instance;
         bool vr = VRSession.Active && rig != null;
+        // The equip's attach welds the item to both hands until it settles, then the holding hand's own weld replaces
+        // it (CharacterItems.cs:600-651, AvatarPoseDriver.ReconcileWeld at 0.5 s): an aim found before that moved
+        // when the weld changed (run 3: vr.251's press landed on the swap and was refused, so the hook never cast).
+        if (vr)
+            yield return WaitFor(() => c.data.sinceItemAttach > 0.6f, 1f);
         HeadFrame(out _, out var forward, out _);
         float lookYaw = c.data.lookValues.x;
         foreach (float yaw in yaws)
@@ -2213,27 +2218,64 @@ internal sealed partial class SelfTestRunner
                 if (ok())
                 {
                     aimFound = true;
+                    if (vr)
+                        CheckBarrelOnAim(rig, left, "aim found");
                     yield break;
                 }
             }
         }
     }
 
-    /// <summary>Holds the held item's own ray (<see cref="HeldRay"/>) along the tracking-space <paramref name="dir"/>
-    /// for 0.15 s, its roll from <paramref name="thumb"/>, re-aimed every frame as the item settles. Not the fingers: a
-    /// launcher fires along its barrel and a piton along its blade (HandAim.TryBarrel), which the hold turns tens of
-    /// degrees off them (run 1: vr.44d's piton blade 43 deg off the aim pose; vr.251's hook, its fingers at the wall
-    /// 9 m ahead, never met it).</summary>
+    /// <summary>Holds the held item's own ray (<see cref="HeldRay"/>) along the tracking-space <paramref name="dir"/>,
+    /// its roll from <paramref name="thumb"/>, re-aimed every frame: at least 0.15 s and until that ray is within
+    /// 2 deg of it (the physics item trails its hand), at most 0.6 s. Not the fingers: with
+    /// <c>Interaction.AimHoldAlignment</c> off a launcher's barrel and a piton's blade (HandAim.TryBarrel) sit tens of
+    /// degrees off them (run 1: vr.44d's piton blade 43 deg off the aim pose).</summary>
     IEnumerator AimHeldAlong(VRRig rig, bool left, Vector3 dir, Vector3 thumb)
     {
         var along = rig.Origin.TransformDirection(dir);
         var up = rig.Origin.TransformDirection(thumb);
-        for (float until = Now + 0.15f; Now < until; )
+        float from = Now;
+        while (true)
         {
-            if (HeldRay(rig, left, out var start, out _))
+            bool held = HeldRay(rig, left, out var start, out var ray);
+            if (held)
                 AimHeldAt(rig, left, start + along * 10f, up);
+            float t = Now - from;
+            if (t >= 0.6f || (t >= 0.15f && held && Vector3.Angle(ray, along) < 2f))
+                yield break;
             yield return null;
         }
+    }
+
+    /// <summary>How far a held barrel may sit off its hand's aim pose with <c>Interaction.AimHoldAlignment</c> on,
+    /// degrees: the physics item trails its controller-held pose a little.</summary>
+    const float BarrelOnAimDegrees = 5f;
+
+    /// <summary>With <c>Interaction.AimHoldAlignment</c> on, the hold lays a held launcher's barrel or a piton's blade
+    /// (the item's +Z, HandAim.TryBarrel) along the holding hand's aim pose, so a shot goes where the controller
+    /// points on any runtime: fails the step past <see cref="BarrelOnAimDegrees"/>. Logs the angle and how far the
+    /// grip leaves the fist. Nothing for an item without a barrel.</summary>
+    void CheckBarrelOnAim(VRRig rig, bool left, string when)
+    {
+        var item = HeldItem();
+        var aim = rig.Aim(left);
+        var driver = AvatarPoseDriver.Of(Character.localCharacter);
+        if (
+            item == null
+            || aim == null
+            || driver == null
+            || !driver.BarrelInController(left, out _, out float tilt)
+        )
+            return;
+        bool on = AvatarConfig.Instance.AimHoldAlignment;
+        float off = Vector3.Angle(item.transform.forward, aim.forward);
+        string line = F(
+            $"{when}: {item.name} barrel {off:0.0} deg off the {(left ? "left" : "right")} aim pose (Interaction.AimHoldAlignment {on}), grip {tilt:0} deg out of the fist"
+        );
+        Plugin.Log.LogInfo("[selftest] " + line);
+        if (on && off > BarrelOnAimDegrees)
+            Fail(line);
     }
 
     /// <summary>The held item's aim meets no terrain within 60 m (farther than any launcher or build reaches).</summary>

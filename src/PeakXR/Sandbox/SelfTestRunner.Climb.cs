@@ -1825,6 +1825,8 @@ internal sealed partial class SelfTestRunner
         yield return GiveAndHold(spike.GetComponent<Item>());
         if (!stepOk)
             yield break;
+        // Aimed only on the holding hand's own weld, as AimHeld does: the equip's two-hand weld gives way at 0.5 s.
+        yield return WaitFor(() => c.data.sinceItemAttach > 0.6f, 1f);
         float castTime = spike.GetComponent<Item>().usingTimePrimary;
         bool holdLeft = LocalHold.ItemInLeftHand;
         bool free = !holdLeft;
@@ -1873,6 +1875,7 @@ internal sealed partial class SelfTestRunner
                 AimHeldAt(rig, holdLeft, face);
                 yield return null;
             }
+            CheckBarrelOnAim(rig, holdLeft, F($"vr.44d press {attempt + 1}"));
             Script(holdLeft).Trigger = 1f;
             yield return null;
             yield return null;
@@ -2078,7 +2081,11 @@ internal sealed partial class SelfTestRunner
     /// blade starts 0.3 m from the controller, so the start moves as the hand turns: call it every frame to settle.</summary>
     void AimHeldAt(VRRig rig, bool left, Vector3 world) => AimHeldAt(rig, left, world, Vector3.up);
 
-    /// <summary>As above, the aim's roll from <paramref name="up"/> (straight up needs one that is not up).</summary>
+    /// <summary>As above, the aim's roll from <paramref name="up"/> (straight up needs one that is not up). A barrel
+    /// item turns by where its hold puts the barrel in the hand (<see cref="AvatarPoseDriver.BarrelInController"/>),
+    /// not by the physics item: that lags the hand a frame or more, and turning by the lagging offset swung the barrel
+    /// back and forth without settling (run 3: vr.44d's blade 38 deg off the face point it was aimed at; vr.251 and
+    /// vr.168 pressed on a barrel that had swung off the wall since the aim check passed).</summary>
     void AimHeldAt(VRRig rig, bool left, Vector3 world, Vector3 up)
     {
         var hand = rig.Hand(left);
@@ -2087,7 +2094,11 @@ internal sealed partial class SelfTestRunner
             AimHand(rig, left, world);
             return;
         }
-        var offset = Quaternion.Inverse(hand.rotation) * rotation;
+        var driver = AvatarPoseDriver.Of(Character.localCharacter);
+        var offset =
+            driver != null && driver.BarrelInController(left, out var held, out _)
+                ? held
+                : Quaternion.Inverse(hand.rotation) * rotation;
         var want = Quaternion.LookRotation(world - origin, up) * Quaternion.Inverse(offset);
         Script(left).Rotation = Quaternion.Inverse(rig.Origin.rotation) * want;
     }
