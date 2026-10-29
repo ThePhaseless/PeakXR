@@ -144,6 +144,26 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void Airborne_GripShortOfTheWall_PressesNothing()
+    {
+        // vr.251 (run 5): pulled up a wall by the rescue hook, the free hand closed just short of the face (probe
+        // Approach) and fell back to interact, which never catches; the grip must stay a catch the body flies into.
+        var c = Empty();
+        c.BodyClimbing = true;
+        c.Airborne = true;
+        Assert.Equal(GripPressAction.None, GripIntent.OnPress(c));
+        // Still the interact button with climbing off, and a pointed aim at a taker still interacts.
+        Assert.Equal(
+            GripPressAction.Interact,
+            GripIntent.OnPress(new GripContext { BodyClimbing = true, Airborne = true })
+        );
+        c.HoldingItem = true;
+        c.Pointing = true;
+        c.Aimed = AimedTarget.ItemTaker;
+        Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
+    }
+
+    [Fact]
     public void TogglesOff_FallBackToInteract()
     {
         var c = new GripContext { NearClimbable = true, Candidate = GrabCandidate.Item };

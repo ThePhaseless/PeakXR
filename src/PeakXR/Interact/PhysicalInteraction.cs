@@ -81,6 +81,10 @@ internal static class PhysicalInteraction
         /// <summary>Until when a climb grip that met the game's regrab cooldown retries while it stays closed.</summary>
         public float ClimbRetryUntil = -10f;
 
+        /// <summary>The grip closed in the air on no hold yet: it retries past <see cref="ClimbRetryUntil"/> for as
+        /// long as it stays closed and the body flies (<see cref="RetryClimb"/>).</summary>
+        public bool Catching;
+
         public Hand(bool left) => Left = left;
     }
 
@@ -629,6 +633,14 @@ internal static class PhysicalInteraction
         return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
 
+    /// <summary>The body flies or falls free: not grounded, and not on a wall, rope, vine or handle.</summary>
+    private static bool Airborne(Character c) =>
+        !c.data.isGrounded
+        && !c.data.isClimbing
+        && !c.data.isRopeClimbing
+        && !c.data.isVineClimbing
+        && c.data.currentClimbHandle == null;
+
     private static bool Holding(Character c, out Item item)
     {
         item = c.data.currentItem;
@@ -665,6 +677,7 @@ internal static class PhysicalInteraction
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
             OnWall = c.data.isClimbing,
+            Airborne = Airborne(c),
         };
         ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
         ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
@@ -721,6 +734,11 @@ internal static class PhysicalInteraction
             $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe {probeVerdict}, hit {probeHit}, {probeAngle:0} deg, allowance {probeAllowance:0.00} m), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}, second grip {(ctx.AtSecondGripTight ? "tight" : ctx.AtSecondGrip ? "loose" : "no")}, candidate aimed {ctx.CandidateIsAimed}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
         );
         Diagnostics.DebugLog.GripNote(hand.Left, LastGripNote);
+        // A grip closed in the air on no hold yet keeps catching while it stays closed (RetryClimb), as the flat game's
+        // held climb button catches the first wall in reach (CharacterClimbing.cs:567).
+        hand.Catching = action == GripPressAction.None && ctx.Airborne && cfg.PhysicalClimb;
+        if (hand.Catching)
+            hand.ClimbRetryUntil = now;
         switch (action)
         {
             case GripPressAction.Extension:
@@ -767,12 +785,18 @@ internal static class PhysicalInteraction
                 float fall = c.data.isClimbing ? 0f : recentFall;
                 LastCatchFall = fall;
                 float recover = RecoverWait(c);
-                if (recover > 0f)
+                // In the air under the game's climb hold (the hook pull's own fall timer included, RescueHook.cs:407)
+                // the climb would be dropped as it starts: the grip catches once the body can hold.
+                bool tumbling =
+                    ctx.Airborne
+                    && c.data.currentRagdollControll < TraversalRefusal.ClimbHoldControl;
+                if (recover > 0f || tumbling)
                 {
                     // Still tumbling out of a fall (a rescue-hook pull ends at control 0): the game would let go of
                     // the climb on its next step (CharacterClimbing.cs:146), so the closed grip catches once it holds.
                     action = GripPressAction.None;
                     hand.ClimbRetryUntil = now + recover + RegrabWait;
+                    hand.Catching = ctx.Airborne;
                 }
                 else if (StartClimb(c, rig, pos, cfg))
                     CatchPulse(hand.Left, kind, fall, cfg);
@@ -821,23 +845,37 @@ internal static class PhysicalInteraction
                 probePoint,
                 probeAngle > 90f ? DenyReason.Overhang : DenyReason.TooFlat
             );
-        // On rock past the game's reach from the camera: "too far", with where that reach ends.
-        else if (probeVerdict == HoldVerdict.OutOfReach && unclaimed)
+        // On rock past the game's reach from the camera, or closed short of a climbable wall (rock just past the grab
+        // reach would otherwise get no cue at all, VR run 64): "too far". Not yet for a grip that keeps catching in
+        // the air: the body may still carry the hand into reach, and one that never gets there hears it on landing.
+        else if (
+            unclaimed
+            && !hand.Catching
+            && (
+                probeVerdict == HoldVerdict.OutOfReach
+                || (
+                    probeVerdict == HoldVerdict.Approach
+                    && ReachAttempt(hand, c, rig, ctx, holding && thisHolds, pos, now)
+                )
+            )
+        )
+            DenyReach(hand.Left, rig, pos, cfg);
+    }
+
+    /// <summary>The probe's rock is past the reach: past the game's reach from the camera, "too far" with where that
+    /// reach ends; just past the grab reach (<see cref="HoldVerdict.Approach"/>), "too far" with the hand's reach.</summary>
+    private static void DenyReach(bool left, VRRig rig, Vector3 pos, InteractConfig cfg)
+    {
+        if (probeVerdict == HoldVerdict.OutOfReach)
             Affordance.Deny(
-                hand.Left,
+                left,
                 probePoint,
                 DenyReason.OutOfReach,
                 DenyHint.Range(Eye(rig), probePoint, GameClimbRay)
             );
-        // Closed short of a climbable wall: rock just past the grab reach would otherwise get no cue at all (VR run
-        // 64). The faint ring showed it while the hand came in; the grip says "too far" and where the reach ends.
-        else if (
-            probeVerdict == HoldVerdict.Approach
-            && unclaimed
-            && ReachAttempt(hand, c, rig, ctx, holding && thisHolds, pos, now)
-        )
+        else if (probeVerdict == HoldVerdict.Approach)
             Affordance.Deny(
-                hand.Left,
+                left,
                 probePoint,
                 DenyReason.OutOfReach,
                 DenyHint.Range(pos, probePoint, cfg.ClimbRadius + probeAllowance)
@@ -1688,36 +1726,54 @@ internal static class PhysicalInteraction
 
     /// <summary>
     /// A climb grip that met the regrab cooldown climbs once the cooldown is over, if it is still closed on a hold
-    /// (probed again where the hand is now). Otherwise it gets the usual refusal.
+    /// (probed again where the hand is now). Otherwise it gets the usual refusal. A grip closed in the air
+    /// (<see cref="Hand.Catching"/>) probes every frame while it stays closed and the body flies, and climbs on the
+    /// first hold once the body can hold a climb.
     /// </summary>
     private static void RetryClimb(Hand hand, Character c, VRRig rig, InteractConfig cfg, float now)
     {
         if (hand.ClimbRetryUntil < 0f)
             return;
-        if (!hand.Grip.Held || hand.Action != GripPressAction.None || now > hand.ClimbRetryUntil)
+        bool catching = hand.Catching && Airborne(c);
+        var t = rig.Hand(hand.Left);
+        if (
+            !hand.Grip.Held
+            || hand.Action != GripPressAction.None
+            || t == null
+            || (now > hand.ClimbRetryUntil && !catching)
+        )
         {
+            bool waited = hand.Grip.Held && hand.Action == GripPressAction.None && t != null;
             // Out of time while still tumbling (a new fall): the grip that was waiting says so.
-            if (
-                hand.Grip.Held
-                && hand.Action == GripPressAction.None
-                && c.data.currentRagdollControll < TraversalRefusal.ClimbHoldControl
-            )
+            if (waited && c.data.currentRagdollControll < TraversalRefusal.ClimbHoldControl)
                 Affordance.DenyAtHand(hand.Left, DenyReason.TooSoon);
+            // Landed still closed short of the rock it reached for: the "too far" its press held back.
+            else if (waited && hand.Catching && c.data.isGrounded)
+            {
+                UseProbe(ProbeHold(c, rig, t.position, t, cfg, c.data.currentItem));
+                DenyReach(hand.Left, rig, t.position, cfg);
+            }
             hand.ClimbRetryUntil = -10f;
+            hand.Catching = false;
             return;
         }
         if (!c.data.isClimbing && !c.refs.climbing.CanClimb())
             return;
-        if (RecoverWait(c) > 0f)
-            return;
-        hand.ClimbRetryUntil = -10f;
-        var t = rig.Hand(hand.Left);
-        if (t == null)
+        if (
+            RecoverWait(c) > 0f
+            || (catching && c.data.currentRagdollControll < TraversalRefusal.ClimbHoldControl)
+        )
             return;
         var hold = ProbeHold(c, rig, t.position, t, cfg, c.data.currentItem);
         UseProbe(hold);
         if (hold.Verdict != HoldVerdict.Grab)
+        {
+            if (!catching)
+                hand.ClimbRetryUntil = -10f;
             return;
+        }
+        hand.ClimbRetryUntil = -10f;
+        hand.Catching = false;
         if (StartClimb(c, rig, t.position, cfg))
         {
             hand.Action = GripPressAction.Climb;

@@ -108,8 +108,13 @@ internal sealed partial class SelfTestRunner
         OnRestore(() => Script(move).Stick = Vector2.zero);
         Script(move).Stick = new Vector2(0f, 1f);
 
-        // Watch the pull and its recovery; once the wall is in the game's reach from the eye, close the free hand on it.
+        // Watch the pull and its recovery; once the wall is in the game's reach from the eye, close the free hand and
+        // reach it to the wall. The grip closes a frame before the hand gets there (the press reads the rig hand,
+        // which RigDriver moves in LateUpdate), as a player squeezes on the way in; run 5 did this by accident and its
+        // grip fell back to interact. From then on the hand stays on the face where the eye meets it, as a player keeps
+        // a hand on the wall while the body drifts in: a hand fixed in tracking space went 0.5 m into the rock.
         bool free = !left;
+        string pressNote = null;
         int detachedFrames = 0;
         int eventDetachFrames = 0;
         float minControl = 1f;
@@ -148,11 +153,15 @@ internal sealed partial class SelfTestRunner
                 {
                     reachedAt = Now;
                     Script(move).Stick = Vector2.zero;
+                    Script(free).Grip = 1f;
+                }
+                else if (reachedAt >= 0f)
+                {
+                    pressNote ??= Interact.PhysicalInteraction.LastGripNote;
                     SetHand(
                         free,
                         rig.Origin.InverseTransformPoint(face.point + face.normal * 0.05f)
                     );
-                    Script(free).Grip = 1f;
                 }
             }
             if (c.data.isClimbing)
@@ -161,7 +170,7 @@ internal sealed partial class SelfTestRunner
         }
 
         var note = F(
-            $"pull from 9 m: view off the body {detachedFrames} frames (launch chase {eventDetachFrames}), lowest ragdoll control {minControl:0.00}, longest fall {maxFall:0.00} s, eye {pulledTo:0.00} m from the wall when the pull ended, nearest wall {nearest:0.00} m, in reach {(reachedAt < 0f ? -1f : reachedAt - fired):0.00} s after the shot, climbing {(climbedAt < 0f ? -1f : climbedAt - reachedAt):0.00} s after the grip; {Interact.PhysicalInteraction.LastGripNote}"
+            $"pull from 9 m: view off the body {detachedFrames} frames (launch chase {eventDetachFrames}), lowest ragdoll control {minControl:0.00}, longest fall {maxFall:0.00} s, eye {pulledTo:0.00} m from the wall when the pull ended, nearest wall {nearest:0.00} m, in reach {(reachedAt < 0f ? -1f : reachedAt - fired):0.00} s after the shot, climbing {(climbedAt < 0f ? -1f : climbedAt - reachedAt):0.00} s after the grip; {pressNote ?? Interact.PhysicalInteraction.LastGripNote}"
         );
         Script(free).Grip = 0f;
         Script(move).Stick = Vector2.zero;
