@@ -97,4 +97,26 @@ public class WristHudPlacementTests
         // Faces out of the back of the hand: its forward points into the wrist.
         Near(GripFrame.Palm(left), UnityQuat.Rotate(q, System.Numerics.Vector3.UnitZ));
     }
+
+    [Theory]
+    // The game's stamina frame grows from its left pivot as afflictions overflow (614 -> 661 px): back to 614.
+    [InlineData(0f, 661f, 0f, 47f, 0f, 614f)]
+    // A centred pivot gives back half on each side.
+    [InlineData(-330.5f, 330.5f, 0.5f, 47f, -307f, 307f)]
+    // Not grown (or narrower than at rest): as drawn.
+    [InlineData(0f, 614f, 0f, 0f, 0f, 614f)]
+    [InlineData(0f, 600f, 0f, -14f, 0f, 600f)]
+    public void FrameAtRest_TakesTheOverflowGrowthBackAroundThePivot(
+        float min,
+        float max,
+        float pivot,
+        float grown,
+        float restMin,
+        float restMax
+    )
+    {
+        var (lo, hi) = WristHud.FrameAtRest(min, max, pivot, grown);
+        Assert.Equal(restMin, lo, 3);
+        Assert.Equal(restMax, hi, 3);
+    }
 }

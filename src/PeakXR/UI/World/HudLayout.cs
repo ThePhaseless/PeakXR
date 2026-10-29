@@ -317,7 +317,7 @@ internal sealed class HudSplit
             }
             // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
             MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
-            wristPanel.Measure(box, Frame());
+            wristPanel.Measure(box, Frame(), FrameRestWidth());
             // Hand UI: the forearm and hand it rides on never cover it.
             OnTop.Sort(box);
             OnTop.Set(box, true);
@@ -330,7 +330,7 @@ internal sealed class HudSplit
             if (view == StaminaView.Both)
                 foreach (var group in barGroups)
                     mirror.Add(group, box);
-            topPanel.Measure(box, TopFrame());
+            topPanel.Measure(box, TopFrame(), FrameRestWidth());
             // Over the view like the hand UI: rock at the brim never cuts it.
             OnTop.Sort(box);
             OnTop.Set(box, true);
@@ -349,6 +349,13 @@ internal sealed class HudSplit
     /// <summary>The stamina bar's frame (A/StaminaBar.cs:135), which sets the wrist and top layouts.</summary>
     private RectTransform Frame() =>
         gui != null && gui.bar != null ? gui.bar.staminaBarOutline : null;
+
+    /// <summary>The frame's width with no affliction overflow: 14 px round the full bar (A/StaminaBar.cs:135). The
+    /// top copy mirrors the frame's sizeDelta, so the same width holds for it.</summary>
+    private float FrameRestWidth() =>
+        gui != null && gui.bar != null && gui.bar.fullBar != null
+            ? 14f + gui.bar.fullBar.sizeDelta.x
+            : 0f;
 
     private RectTransform TopFrame() => mirror.Empty ? Frame() : mirror.CopyOf(Frame());
 
@@ -454,7 +461,7 @@ internal sealed class HudSplit
         var box = wristBox.Rect;
         if (wristPanel.Stale(box))
         {
-            wristPanel.Measure(box, Frame());
+            wristPanel.Measure(box, Frame(), FrameRestWidth());
             // A part the game showed for the first time may carry a graphic not yet drawn on top.
             OnTop.Set(box, true);
         }
@@ -508,7 +515,7 @@ internal sealed class HudSplit
         mirror.Sync();
         if (topPanel.Stale(box))
         {
-            topPanel.Measure(box, TopFrame());
+            topPanel.Measure(box, TopFrame(), FrameRestWidth());
             OnTop.Set(box, true);
         }
         else
