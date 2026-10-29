@@ -233,6 +233,7 @@ public static partial class SandboxActions
         testWall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         testWall.name = "PeakXR_SandboxWall";
         testWall.layer = LayerMask.NameToLayer("Map");
+        testWall.GetComponent<MeshRenderer>().sharedMaterial = RoomProps.Wall;
         // Sunk 0.5 m so a slope leaves no gap under it.
         testWall.transform.SetPositionAndRotation(
             new Vector3(at.x, ground + 3f, at.z),

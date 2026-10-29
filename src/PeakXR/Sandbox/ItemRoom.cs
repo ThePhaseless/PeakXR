@@ -131,6 +131,7 @@ internal sealed class ItemRoom : MonoBehaviour
 
     private readonly List<Object> owned = new();
     private readonly Material[] groupMaterials = new Material[ShelfLayout.Buckets];
+    private Material legMaterial;
     private readonly List<Dynamite> wicks = new();
 
     /// <summary>Per item lying on its table, what was switched off until it is picked up (<see cref="Quiet"/>).</summary>
@@ -576,6 +577,9 @@ internal sealed class ItemRoom : MonoBehaviour
         start = Floor(start, start.y);
         StartOrbs(start);
         Props(origin, At, forward);
+        var unlit = RoomProps.Unlit(root);
+        if (unlit != null)
+            Plugin.Log.LogWarning($"[sandbox.room] a table is not drawn lit: {unlit}");
         // Warm-up while you stand at the start: every table once, nearest first, a spawn or two a frame. Each item's
         // costly first spawn happens here, spread out; far tables go again on the next load tick (ShelfLoad), and
         // coming back to them later is cheap (VR run of 3a1b2f9: the second pass held 72 fps).
@@ -911,7 +915,7 @@ internal sealed class ItemRoom : MonoBehaviour
         return false;
     }
 
-    /// <summary>A coloured plank under each table with its items' spots on it, at each bucket's first table a restock
+    /// <summary>A lit table in its group colour (<see cref="RoomProps.Table"/>) under each table's item spots, at each bucket's first table a restock
     /// orb and its label, and a sign over each zone. A table that still meets level geometry is logged.</summary>
     private void Tables(System.Func<float, float, Vector3> at, int[] counts)
     {
@@ -937,24 +941,28 @@ internal sealed class ItemRoom : MonoBehaviour
                 Plugin.Log.LogWarning(
                     $"[sandbox.room] {ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} table ({f}) meets {blocker.name}"
                 );
-            var plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            plank.name = "PeakXR_ItemRoomTable";
-            Destroy(plank.GetComponent<Collider>());
-            plank.transform.SetParent(root, false);
-            plank.transform.SetPositionAndRotation(
-                floor + Vector3.up * (TableHeight - 0.08f),
-                facing
+            // Top surface 6.5 cm under the items' spots, where the old plank's was.
+            if (legMaterial == null)
+                legMaterial = Own(RoomProps.Lit(new Color(0.18f, 0.18f, 0.2f)));
+            RoomProps.Table(
+                root,
+                floor,
+                facing,
+                f.Width,
+                f.Depth,
+                TableHeight - 0.065f,
+                GroupMaterial(t.Group),
+                legMaterial
             );
-            plank.transform.localScale = new Vector3(f.Width, 0.03f, f.Depth);
-            plank.GetComponent<Renderer>().sharedMaterial = GroupMaterial(t.Group);
             if (t.Group == lastGroup)
                 continue;
             lastGroup = t.Group;
             var beside = at(f.MinX - 0.25f, f.MinZ + 0.2f);
             var orbAt = new Vector3(beside.x, floor.y + TableHeight + 0.15f, beside.z);
             AddOrb(t.Group, cross: false, orbAt);
+            // The orb says what it is for: unexplained, it read as a stray white block by the table (tester, v0.1.1).
             Label(
-                $"{ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} ({counts[t.Group]})",
+                $"{ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} ({counts[t.Group]})\n<size=55%>rest a hand in the orb: restock</size>",
                 orbAt + Vector3.up * 0.22f,
                 facing,
                 64f,
@@ -1462,7 +1470,7 @@ internal sealed class ItemRoom : MonoBehaviour
             var color = Palette[(int)ShelfLayout.GroupOf(group) % Palette.Length];
             if (ShelfLayout.ZoneOf(group) != ItemZone.Helpful)
                 color = Color.Lerp(color, Color.black, 0.5f);
-            groupMaterials[group] = m = Own(UIMaterials.Create(color, false, 2450));
+            groupMaterials[group] = m = Own(RoomProps.Lit(color));
         }
         return m;
     }

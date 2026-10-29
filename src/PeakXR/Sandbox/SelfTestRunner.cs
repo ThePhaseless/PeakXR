@@ -172,6 +172,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         }
         SandboxActions.SetGodMode(true);
         yield return VRStep("vr.03-canvases", 20f, CanvasCheck());
+        yield return Run("01b-item-room-props", 15f, RoomPropsCheck());
+        EndRoomProps();
 
         if (!hold)
         {
