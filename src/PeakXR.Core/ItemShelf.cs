@@ -249,6 +249,28 @@ public static class ItemShelf
         return ShelfGroup.Other;
     }
 
+    /// <summary>Which of <paramref name="names"/> to place: one per <paramref name="keys"/> entry (the game's display
+    /// name with the zone), the shortest prefab name of each, the first on a tie. The database lists every chess colour
+    /// and guidebook page as its own prefab.</summary>
+    public static bool[] Distinct(IReadOnlyList<string> names, IReadOnlyList<string> keys)
+    {
+        var keep = new bool[names.Count];
+        var best = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < names.Count; i++)
+        {
+            string key = keys[i] ?? names[i] ?? "";
+            if (best.TryGetValue(key, out int b))
+            {
+                if ((names[b] ?? "").Length <= (names[i] ?? "").Length)
+                    continue;
+                keep[b] = false;
+            }
+            best[key] = i;
+            keep[i] = true;
+        }
+        return keep;
+    }
+
     /// <summary>The table's label.</summary>
     public static string Title(ShelfGroup group) =>
         group switch
@@ -675,4 +697,12 @@ public static class ShelfLayout
             Over = over,
         };
     }
+}
+
+/// <summary>Whether a table's items should be out: spawned within the load radius of the player, removed past the
+/// unload radius, unchanged between, so walking along the edge does not spawn and remove them in turn.</summary>
+public static class ShelfLoad
+{
+    public static bool Wanted(bool loaded, float distance, float load, float unload) =>
+        loaded ? distance <= unload : distance <= load;
 }

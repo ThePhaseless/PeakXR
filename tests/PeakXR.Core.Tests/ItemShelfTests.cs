@@ -149,6 +149,47 @@ public class ItemShelfTests
         // Goes off on its own (dynamite lights when you come near the spot it spawned on): kept apart.
         Assert.Equal(ItemZone.Volatile, ItemShelf.ZoneOf("explodes", 4f));
     }
+
+    [Fact]
+    public void OneOfEachItemKeepingTheShortestName()
+    {
+        // The database holds every chess colour and guidebook page as its own prefab under one display name.
+        var names = new[]
+        {
+            "C_King B",
+            "C_King",
+            "C_King W",
+            "Apple Berry Red",
+            "GuidebookPage_1",
+            "GuidebookPage",
+        };
+        var keys = new[] { "King", "King", "King", "Red Crispberry", "Page", "Page" };
+
+        var keep = ItemShelf.Distinct(names, keys);
+
+        Assert.Equal(new[] { false, true, false, true, false, true }, keep);
+    }
+
+    [Fact]
+    public void DistinctKeysStayApart()
+    {
+        // Same display name, different effect (the poison mushroom looks like the safe one): separate keys, both kept.
+        var keep = ItemShelf.Distinct(
+            new[] { "Mushroom Normie", "Mushroom Normie Poison" },
+            new[] { "Button Shroom|Helpful", "Button Shroom|Dangerous" }
+        );
+        Assert.Equal(new[] { true, true }, keep);
+    }
+
+    [Theory]
+    // Unloaded: loads once you come within the load radius.
+    [InlineData(false, 7f, false)]
+    [InlineData(false, 5f, true)]
+    // Loaded: stays until you are past the unload radius, so walking the edge does not churn spawns.
+    [InlineData(true, 7f, true)]
+    [InlineData(true, 11f, false)]
+    public void TablesLoadNearAndUnloadFar(bool loaded, float distance, bool expected) =>
+        Assert.Equal(expected, ShelfLoad.Wanted(loaded, distance, 6f, 10f));
 }
 
 public class ShelfLayoutTests
