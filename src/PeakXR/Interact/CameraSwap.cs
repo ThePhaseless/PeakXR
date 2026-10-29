@@ -38,8 +38,10 @@ internal readonly struct CameraSwap
 
     public bool Active => main != null;
 
-    // Debug mode's aim log, at most 4 lines a second.
+    // Debug mode's aim log: only when the aim moved 10 cm or turned 10 degrees since the last line, at most 4 a second.
     private static float nextAimLog;
+    private static Vector3 lastAimFrom;
+    private static Vector3 lastAimAlong;
 
     public static CameraSwap Begin(Vector3 position, Quaternion rotation)
     {
@@ -50,10 +52,19 @@ internal readonly struct CameraSwap
         var cam = Camera.main;
         var otherT = cam != null && cam.transform != mainT ? cam.transform : null;
         var swap = new CameraSwap(mainT, otherT);
-        if (Diagnostics.DebugLog.Verbose && Time.unscaledTime >= nextAimLog)
+        var f = rotation * Vector3.forward;
+        if (
+            Diagnostics.DebugLog.Verbose
+            && Time.unscaledTime >= nextAimLog
+            && (
+                (position - lastAimFrom).sqrMagnitude > 0.01f
+                || Vector3.Dot(f, lastAimAlong) < 0.985f
+            )
+        )
         {
             nextAimLog = Time.unscaledTime + 0.25f;
-            var f = rotation * Vector3.forward;
+            lastAimFrom = position;
+            lastAimAlong = f;
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
                     $"[interact.aim] game call aimed from ({position.x:0.00}, {position.y:0.00}, {position.z:0.00}) along ({f.x:0.00}, {f.y:0.00}, {f.z:0.00}), {Vector3.Distance(mainT.position, position):0.00} m from the eye"
