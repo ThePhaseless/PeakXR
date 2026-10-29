@@ -233,6 +233,18 @@ public class ShelfLayoutTests
         return System.MathF.Sqrt(dx * dx + dz * dz);
     }
 
+    /// <summary>Tables side by side in a row (one front line) a table gap apart; rows a walkway apart.</summary>
+    static void AssertApart(ShelfPlan plan, int i, int j)
+    {
+        var a = plan.Tables[i].Footprint;
+        var b = plan.Tables[j].Footprint;
+        bool row = Math.Abs(a.MinZ - b.MinZ) < 1e-3f;
+        Assert.True(
+            Gap(a, b) >= (row ? plan.Spec.TableGap : plan.Spec.Aisle) - 1e-3f,
+            $"tables {i} ({a}) and {j} ({b}) too close"
+        );
+    }
+
     static void AssertInside(RoomRect room, RoomRect r, float margin)
     {
         Assert.True(r.MinX >= room.MinX + margin - 1e-3f, $"{r} past the left wall");
@@ -255,10 +267,7 @@ public class ShelfLayoutTests
         {
             AssertInside(Hall, plan.Tables[i].Footprint, Spec.Margin);
             for (int j = i + 1; j < plan.Tables.Length; j++)
-                Assert.True(
-                    Gap(plan.Tables[i].Footprint, plan.Tables[j].Footprint) >= Spec.Aisle - 1e-3f,
-                    $"tables {i} and {j} leave no walkway"
-                );
+                AssertApart(plan, i, j);
         }
     }
 
@@ -355,6 +364,126 @@ public class ShelfLayoutTests
     {
         var closet = new RoomRect(-2f, 2f, 0f, 4f);
         Assert.False(ShelfLayout.Plan(Typical, closet, Spec).Fits);
+    }
+
+    // The game's one-of-each count in 0e8ad7e: 139 kinds, 21 dangerous, the dynamite.
+    static readonly int[] Game = Counts(
+        (ItemZone.Helpful, ShelfGroup.Fire, 7),
+        (ItemZone.Helpful, ShelfGroup.Food, 45),
+        (ItemZone.Helpful, ShelfGroup.Medicine, 12),
+        (ItemZone.Helpful, ShelfGroup.Climbing, 12),
+        (ItemZone.Helpful, ShelfGroup.Throwing, 8),
+        (ItemZone.Helpful, ShelfGroup.Movement, 10),
+        (ItemZone.Helpful, ShelfGroup.Tools, 12),
+        (ItemZone.Helpful, ShelfGroup.Mystic, 6),
+        (ItemZone.Helpful, ShelfGroup.Containers, 2),
+        (ItemZone.Helpful, ShelfGroup.Other, 3),
+        (ItemZone.Dangerous, ShelfGroup.Food, 15),
+        (ItemZone.Dangerous, ShelfGroup.Throwing, 1),
+        (ItemZone.Dangerous, ShelfGroup.Movement, 1),
+        (ItemZone.Dangerous, ShelfGroup.Mystic, 4),
+        (ItemZone.Volatile, ShelfGroup.Throwing, 1)
+    );
+
+    /// <summary>Everything placed, inside the room clear of its walls, and every table, the fire and the wall a
+    /// walkway apart, by the measures the plan was laid out with.</summary>
+    static void AssertSound(int[] counts, RoomRect room, ShelfPlan plan)
+    {
+        Assert.True(plan.Fits, $"does not fit {room}: {plan.Over:0.00}x");
+        var used = plan.Spec;
+        Assert.True(
+            used.Aisle >= 1f - 1e-3f && used.Margin >= 0.4f - 1e-3f,
+            "below the VR minimums"
+        );
+        Assert.Equal(counts.Sum(), plan.Slots.Length);
+        AssertInside(room, plan.Fire, used.Margin);
+        if (plan.HasWall)
+            AssertInside(room, plan.Wall, used.Margin);
+        for (int i = 0; i < plan.Tables.Length; i++)
+        {
+            var t = plan.Tables[i].Footprint;
+            AssertInside(room, t, used.Margin);
+            Assert.True(Gap(t, plan.Fire) >= used.Aisle - 1e-3f, $"table {i} at the fire");
+            if (plan.HasWall)
+                Assert.True(Gap(t, plan.Wall) >= used.Aisle - 1e-3f, $"table {i} at the wall");
+            for (int j = i + 1; j < plan.Tables.Length; j++)
+                AssertApart(plan, i, j);
+        }
+    }
+
+    public static TheoryData<float, float, float, float> OpenFloors() =>
+        new()
+        {
+            // Measured in the solo airport (0e8ad7e): from the spawn elevator, then from the open hall.
+            { -6.8f, 7.2f, 0f, 20.5f },
+            { -4.7f, 9.3f, 0f, 18.1f },
+            // A hall of about 12 x 12 m holds everything, in any proportion near that. 8 x 10 m cannot: 139 items
+            // need about 25 m2 of table, a walkway only reaches 0.6 m into a table, and 15 kinds in three areas never
+            // share one, so the rows alone need more depth than 8 m of floor past the start walkway leaves.
+            { -6f, 6f, 0f, 12f },
+            { -5f, 5f, 0f, 14f },
+            { -7f, 7f, 0f, 11f },
+        };
+
+    [Theory]
+    [MemberData(nameof(OpenFloors))]
+    public void EveryItemFitsOnAnyOpenFloorOfAboutTwelveByTwelveMetres(
+        float minX,
+        float maxX,
+        float minZ,
+        float maxZ
+    )
+    {
+        var room = new RoomRect(minX, maxX, minZ, maxZ);
+        AssertSound(Game, room, ShelfLayout.Plan(Game, room, Spec));
+    }
+
+    [Fact]
+    public void TheMeasuredHallKeepsTheTestWall()
+    {
+        var plan = ShelfLayout.Plan(Game, new RoomRect(-4.7f, 9.3f, 0f, 18.1f), Spec);
+        Assert.True(plan.HasWall);
+    }
+
+    [Fact]
+    public void ARoomyHallKeepsTheFullMeasures()
+    {
+        var plan = ShelfLayout.Plan(Game, Hall, Spec);
+        Assert.True(plan.Fits);
+        Assert.Equal(Spec.Aisle, plan.Spec.Aisle);
+        Assert.Equal(Spec.Margin, plan.Spec.Margin);
+    }
+
+    [Fact]
+    public void ACrampedRoomTightensBeforeDroppingTheWall()
+    {
+        var plan = ShelfLayout.Plan(Game, new RoomRect(-6.8f, 7.2f, 0f, 20.5f), Spec);
+        Assert.True(plan.Fits);
+        Assert.True(plan.HasWall);
+        Assert.True(plan.Spec.Aisle < Spec.Aisle);
+    }
+
+    [Fact]
+    public void ASmallerRoomStillRefusesCleanly()
+    {
+        var room = new RoomRect(-3f, 3f, 0f, 7f);
+        var plan = ShelfLayout.Plan(Game, room, Spec);
+        Assert.False(plan.Fits);
+        Assert.Equal(Game.Sum(), plan.Slots.Length);
+        Assert.True(plan.Over > 1f);
+    }
+
+    [Fact]
+    public void TablesNeverGoPastFourRowsSoEveryItemIsInReachOfAWalkway()
+    {
+        var plan = ShelfLayout.Plan(Game, new RoomRect(-6f, 6f, 0f, 12f), Spec);
+        Assert.Equal(4, plan.Spec.MaxRows);
+        foreach (var t in plan.Tables)
+        {
+            Assert.InRange(t.Rows, 1, 4);
+            // The innermost row is at most 0.6 m in from the nearer table edge.
+            Assert.True((t.Rows - 1) / 2 * plan.Spec.RowGap + plan.Spec.EdgePad <= 0.6f + 1e-3f);
+        }
     }
 
     [Fact]

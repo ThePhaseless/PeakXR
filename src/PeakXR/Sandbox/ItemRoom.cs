@@ -39,6 +39,9 @@ internal sealed class ItemRoom : MonoBehaviour
     /// <summary>A plan this much bigger than the best open floor is built anyway (a few tables touch walls); a bigger
     /// one would stand in them, so the room does not open.</summary>
     private const float MaxOverflow = 1.25f;
+
+    /// <summary>About 12 x 12 m: open floor this big holds every item of the game (ShelfLayoutTests).</summary>
+    private const float HallArea = 140f;
     private const int SpawnPerFrame = 4;
     private const float KeepAliveEvery = 0.5f;
     private const float KeepAliveSum = 0.85f;
@@ -278,6 +281,7 @@ internal sealed class ItemRoom : MonoBehaviour
             : null;
         var at = head != null ? head.position + head.forward * 0.6f : Vector3.zero;
         Refuse(at, VRInput.LeftHanded, DenyReason.NotHere, why);
+        RoomNotice.Show(why);
     }
 
     private void OnDestroy()
@@ -437,8 +441,9 @@ internal sealed class ItemRoom : MonoBehaviour
         if (look.sqrMagnitude < 1e-4f)
             look = Vector3.forward;
         look.Normalize();
-        // Dynamite lights within its radius of where it lies: kept that far from you and everything else as well.
-        var spec = new ShelfSpec { VolatileClearance = igniteRadius + 1f };
+        // Dynamite lights within its radius of where it lies, unless its wick is moved away (WickRef): only then is it
+        // kept that far from you and everything else as well.
+        var spec = new ShelfSpec { VolatileClearance = WickRef == null ? igniteRadius + 1f : 0f };
         var origin = feet;
         var forward = look;
         for (int i = 0; i < Headings; i++)
@@ -479,7 +484,14 @@ internal sealed class ItemRoom : MonoBehaviour
                 $"[sandbox.room] no open floor within {MaxReach:0} m holds the tables: best {room} "
                     + $"({plan.Over:0.0}x too small); not opened"
             );
-            return "Item room: not enough open floor here. Step out into the airport hall and press Enter again.";
+            // Only send the player on where it can work: a hall-sized floor holds every item (ShelfLayout tests).
+            bool hall =
+                room.Width >= 10f && room.Depth >= 10f && room.Width * room.Depth >= HallArea;
+            return !hall
+                ? $"Item room: the most open floor within {MaxReach:0} m is only {room.Width:0} x {room.Depth:0} m. "
+                    + "It needs about 12 x 12 m: go to a big open hall and press Enter again."
+                : $"Item room: {total} items do not fit even {room.Width:0} x {room.Depth:0} m of open floor. "
+                    + "Nothing to do here; the log has the details.";
         }
 
         var right = Vector3.Cross(Vector3.up, forward);
@@ -518,16 +530,20 @@ internal sealed class ItemRoom : MonoBehaviour
         // Built out in the hall: the bell rings from there and its spot is marked.
         CueAudio.Play(CueSound.Notice, away > 1f ? start : head + forward * 0.6f, 1f);
         if (away > 1f || !plan.Fits)
+        {
+            var note = plan.Fits
+                ? $"Item room set up {away:0} m away: follow the bell to the marked spot"
+                : "Item room: not quite enough open floor here, some tables touch walls";
             Affordance.Inform(
                 VRInput.LeftHanded,
                 head + forward * 0.6f,
                 DenyReason.HappenedHere,
                 DenyHint.At(start),
-                plan.Fits
-                    ? $"Item room set up {away:0} m that way"
-                    : "Not enough open floor here: some tables touch walls",
+                note,
                 forceText: true
             );
+            RoomNotice.Show(note);
+        }
         return null;
     }
 
