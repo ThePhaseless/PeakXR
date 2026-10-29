@@ -208,6 +208,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
             yield return VRStep("vr.231-frame-budget", 15f, FrameBudgetCheck());
+            yield return VRStep("vr.277-shared-eye-culling", 5f, SharedCullingCheck());
+            yield return VRStep("vr.278-eye-dither", 5f, EyeDitherCheck());
+            yield return VRStep("vr.279-perf-line", 65f, PerfProbeCheck());
             yield return Run("04b-bug-report", 30f, BugReportCheck());
             yield return VRStep("vr.08-arm-reach", 15f, ArmReachCheck());
             yield return VRStep("vr.08b-hand-scale", 15f, HandScaleCheck());

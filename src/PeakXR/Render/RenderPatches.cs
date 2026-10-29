@@ -3,7 +3,9 @@ using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
 using PeakXR.VR;
+using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace PeakXR.Render;
 
@@ -110,6 +112,66 @@ internal static class RenderPatches
             GameMember.Method(typeof(DisableIfPhotosensitive), "Start");
 
         private static bool Prefix() => !(VRSession.Active && RenderDriver.PhotosensitiveForced);
+    }
+
+    /// <summary>
+    /// PostProcessUtils.ConfigureDithering (URP PostProcessUtils.cs:28) steps its blue-noise texture index on every call
+    /// (:35), and MultiPass records the post passes once per eye (PostProcessPassRenderGraph.cs:1828 final pass, :2234
+    /// uber pass, both keeping the index in the pass object), so each eye dithered with a different noise texture. In VR
+    /// the index follows the frame instead, so both eyes pick the same texture; the offsets already follow the frame
+    /// (Random.InitState(Time.frameCount), :40). The postfix records each frame's picks for self-test vr.278.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class DitherSameInBothEyes
+    {
+        /// <summary>The frame last seen, its first texture index, calls in it and calls that picked another index.</summary>
+        internal static int Frame = -1;
+        internal static int First;
+        internal static int Calls;
+        internal static int Mismatches;
+
+        /// <summary>Frames with two or more picks (both eyes), and those whose picks all matched.</summary>
+        internal static int StereoFrames;
+        internal static int MatchedFrames;
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(PostProcessUtils),
+                nameof(PostProcessUtils.ConfigureDithering),
+                [typeof(PostProcessData), typeof(int), typeof(int), typeof(int), typeof(Material)]
+            );
+
+        private static void Prefix(PostProcessData data, ref int index)
+        {
+            if (!VRSession.Active || data == null || data.textures == null)
+                return;
+            var noise = data.textures.blueNoise16LTex;
+            // ConfigureDithering adds one before it picks: this lands on frameCount % length.
+            if (noise != null && noise.Length > 0)
+                index = Time.frameCount % noise.Length - 1;
+        }
+
+        private static void Postfix(int __result)
+        {
+            if (!VRSession.Active)
+                return;
+            if (Time.frameCount != Frame)
+            {
+                if (Calls >= 2)
+                {
+                    StereoFrames++;
+                    if (Mismatches == 0)
+                        MatchedFrames++;
+                }
+                Frame = Time.frameCount;
+                First = __result;
+                Calls = 0;
+                Mismatches = 0;
+            }
+            Calls++;
+            if (__result != First)
+                Mismatches++;
+        }
     }
 
     /// <summary>

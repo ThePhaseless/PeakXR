@@ -18,9 +18,12 @@ public enum VRAntialiasing
 /// and the fixed vignette are switched off in every Volume (found by component type), head bob is removed and
 /// photosensitive mode (half shake, dimmer flashes) is on. Quality and pacing: linear upscaling instead of STP
 /// (temporal, needs TAA), no TAA, MSAA and render scale from our settings, a dynamic
-/// <c>XRSettings.renderViewportScale</c> on OpenVR and an adaptive render scale on OpenXR, frame-time logging, and the game's FPS cap and VSync are ignored (the runtime paces
+/// <c>XRSettings.renderViewportScale</c> on OpenVR and an adaptive render scale on OpenXR, frame-time logging and a
+/// per-second perf line (<see cref="PerfProbe"/>), and the game's FPS cap and VSync are ignored (the runtime paces
 /// frames). Screen-space passes are kept: MultiPass renders each eye as an ordinary camera pass with that
 /// eye's matrices, so HBAO, edge detection, the fog pass and the full-screen passes see a normal mono view.
+/// What MultiPass would still do per eye is made the same for both: culling, and with it the shadow cascades
+/// (<see cref="EyeCulling"/>), and the post dither noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
 /// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
 /// </summary>
 public sealed class RenderFixesFeature : Feature
@@ -40,6 +43,8 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<float> ShadowDistance;
     internal static ConfigEntry<bool> ComfortSettings;
     internal static ConfigEntry<bool> LensFlare;
+    internal static ConfigEntry<bool> SharedEyeCulling;
+    internal static ConfigEntry<float> PerfLogSeconds;
 
     public override string Id => "render.fixes";
 
@@ -197,7 +202,31 @@ public sealed class RenderFixesFeature : Feature
             )
         );
 
+        SharedEyeCulling = Plugin.Settings.Bind(
+            section,
+            "SharedEyeCulling",
+            true,
+            new ConfigDescription(
+                "Cull both eyes with one frustum that holds them both, so shadows, level of detail and lights are the "
+                    + "same in each eye. The eyes are drawn in two passes (MultiPass), and culled one by one each eye fits "
+                    + "the sun's shadow cascades to itself, so shadow edges and detail differ between the eyes. Turn off "
+                    + "only to compare."
+            )
+        );
+        PerfLogSeconds = Plugin.Settings.Bind(
+            section,
+            "PerfLogSeconds",
+            1f,
+            new ConfigDescription(
+                "In VR, write a line this often (seconds) that shows where each frame's time goes: frame rate, main "
+                    + "thread work and waits, render thread, GPU and compositor times, draw calls, frame cap and VSync. "
+                    + "Send it with a performance report. 0 turns it off.",
+                new AcceptableValueRange<float>(0f, 60f)
+            )
+        );
+
         RenderPatches.Resolve();
+        EyeCulling.Resolve();
         Patch(typeof(RenderPatches.RenderScaleApply));
         Patch(typeof(RenderPatches.FpsCapApply));
         Patch(typeof(RenderPatches.VSyncApply));
@@ -206,6 +235,7 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.LimitFrameRateStart));
         Patch(typeof(RenderPatches.PostHandlerLateUpdate));
         Patch(typeof(RenderPatches.DisableIfPhotosensitiveStart));
+        Patch(typeof(RenderPatches.DitherSameInBothEyes));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);

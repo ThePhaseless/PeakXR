@@ -102,6 +102,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ComfortSettings.SettingChanged += OnComfortSettingsChanged;
         RenderFixesFeature.LensFlare.SettingChanged += OnLensFlareChanged;
+        RenderFixesFeature.SharedEyeCulling.SettingChanged += OnSharedEyeCullingChanged;
         if (VRSession.Active)
             Apply();
     }
@@ -118,6 +119,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ComfortSettings.SettingChanged -= OnComfortSettingsChanged;
         RenderFixesFeature.LensFlare.SettingChanged -= OnLensFlareChanged;
+        RenderFixesFeature.SharedEyeCulling.SettingChanged -= OnSharedEyeCullingChanged;
         Revert();
     }
 
@@ -156,6 +158,7 @@ internal sealed class RenderDriver : MonoBehaviour
         ApplyQuality();
         AddEyeMatrices();
         ApplyScene();
+        PerfProbe.Install();
 
         scaler.SetScale(1f);
         XRSettings.renderViewportScale = 1f;
@@ -190,6 +193,7 @@ internal sealed class RenderDriver : MonoBehaviour
         RestoreLensFlares();
         RestoreFeatures();
         RemoveEyeMatrices();
+        EyeCulling.Uninstall();
         RestoreSettings();
         UnbindCamera();
         EndBlink();
@@ -268,6 +272,13 @@ internal sealed class RenderDriver : MonoBehaviour
             RestoreSettings();
     }
 
+    /// <summary>The settings tab turns shared eye culling off at once; on, it comes back on the next frame (Update).</summary>
+    private void OnSharedEyeCullingChanged(object sender, System.EventArgs e)
+    {
+        if (!RenderFixesFeature.SharedEyeCulling.Value)
+            EyeCulling.Uninstall();
+    }
+
     /// <summary>Debounced: a slider drag in the settings tab fires every tick, and each render scale change
     /// reallocates the eye textures, so the value is applied once it has been still for a moment.</summary>
     private void OnQualityChanged(object sender, System.EventArgs e) =>
@@ -324,8 +335,9 @@ internal sealed class RenderDriver : MonoBehaviour
                 continue;
             foreach (var feature in data.rendererFeatures)
             {
-                // SCPE EdgeDetection reconstructs normals from per-eye depth; it is correct in MultiPass and
-                // only switched off on request (cost). Matched by name: sc.posteffects is not referenced.
+                // SCPE EdgeDetection reconstructs normals from per-eye depth and EyeMatrixFeature's per-eye projection;
+                // it is correct in MultiPass and only switched off on request (cost). Matched by name: sc.posteffects is
+                // not referenced.
                 if (feature == null || !feature.GetType().Name.Contains("EdgeDetection"))
                     continue;
                 toggledFeatures.Add(feature);
@@ -524,6 +536,9 @@ internal sealed class RenderDriver : MonoBehaviour
         }
         if (!applied || !VRSession.Active)
             return;
+        // Here, not in Apply: rig.camera's StereoWidth sets its layout override on VRSession.Started too, and the shared
+        // culling must chain after it to see the widened eyes.
+        EyeCulling.Install();
         // Paced frames say nothing about the GPU: they would read as hot and step the quality down.
         if (PaceWhileHidden())
             return;
