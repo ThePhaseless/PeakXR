@@ -173,12 +173,7 @@ internal static class BodyGestures
             UpdateLift(c, rig, dt);
         }
 
-        bool walking =
-            active
-            && stickForward > 0.3f
-            && d.isGrounded
-            && !d.isClimbingAnything
-            && !LocalHold.TwoHand;
+        bool walking = active && stickForward > 0.3f && !d.isClimbingAnything && !LocalHold.TwoHand;
         var side = VRInput.HeadRotation * Vector3.right;
         side.y = 0f;
         bool swing =
@@ -190,6 +185,8 @@ internal static class BodyGestures
                 (VRInput.Right.Position - VRInput.HeadPosition).N(),
                 side.normalized.N(),
                 walking,
+                // A sprint jump, or a stride that leaves the ground for a frame, keeps the sprint (Core ArmSwing).
+                !d.isGrounded,
                 dt
             );
         if (!SwingOn)

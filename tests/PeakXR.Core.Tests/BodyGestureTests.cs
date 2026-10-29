@@ -88,8 +88,13 @@ public class ArmSwingTests
     // Head right in tracking space: the head faces +Z.
     static readonly Vector3 Side = Vector3.UnitX;
 
-    static bool Step(ArmSwing s, Vector3 left, Vector3 right, bool moving = true) =>
-        s.Update(true, left, true, right, Side, moving, Dt);
+    static bool Step(
+        ArmSwing s,
+        Vector3 left,
+        Vector3 right,
+        bool moving = true,
+        bool airborne = false
+    ) => s.Update(true, left, true, right, Side, moving, airborne, Dt);
 
     /// <summary>Hands swing along <paramref name="axis"/> with the given amplitude and frequency, for seconds;
     /// <paramref name="y"/> is the hands' height relative to the head.</summary>
@@ -156,12 +161,46 @@ public class ArmSwingTests
     }
 
     [Fact]
+    public void AJumpMidSprint_KeepsTheSprintUntilLanding()
+    {
+        // Vanilla keeps a held sprint in the air (CharacterMovement.cs:275), so a sprint jump carries the sprint's
+        // speed. Hands go still or brace during the jump: the swing holds until the feet are down again.
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.True(Swing(s, 1.5f, 0.25f, 1.6f, true, ref t));
+        var still = new Vector3(0f, -0.5f, 0f);
+        bool on = true;
+        for (int i = 0; i < 90; i++)
+            on &= Step(s, still, still, airborne: true);
+        Assert.True(on);
+        Assert.True(Swing(s, 0.3f, 0.25f, 1.6f, true, ref t));
+    }
+
+    [Fact]
+    public void LeavingTheGroundWithoutASprint_DoesNotSprint()
+    {
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.False(Swing(s, 0.5f, 0.25f, 1.6f, true, ref t, moving: false));
+        Assert.False(Step(s, Vector3.Zero, Vector3.Zero, airborne: true));
+    }
+
+    [Fact]
+    public void StickReleasedInTheAir_EndsTheSprint()
+    {
+        var s = new ArmSwing();
+        float t = 0f;
+        Assert.True(Swing(s, 1.5f, 0.25f, 1.6f, true, ref t));
+        Assert.False(Step(s, Vector3.Zero, Vector3.Zero, moving: false, airborne: true));
+    }
+
+    [Fact]
     public void LostTracking_EndsSprint()
     {
         var s = new ArmSwing();
         float t = 0f;
         Assert.True(Swing(s, 1.5f, 0.25f, 1.6f, true, ref t));
-        Assert.False(s.Update(false, Vector3.Zero, true, Vector3.Zero, Side, true, Dt));
+        Assert.False(s.Update(false, Vector3.Zero, true, Vector3.Zero, Side, true, false, Dt));
     }
 
     [Fact]
