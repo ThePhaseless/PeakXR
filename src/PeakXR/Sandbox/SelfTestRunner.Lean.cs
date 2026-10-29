@@ -255,25 +255,28 @@ internal sealed partial class SelfTestRunner
 
     const float MaxTurnLeanAngle = 45f;
 
-    /// <summary>Most the avatar's eyes may end further off the view than an upright body turned with the head leaves
-    /// them (m): ragdoll sway and the drop of the bent eyes.</summary>
+    /// <summary>Most the avatar's eyes may end further off the view than the same body turned upright leaves them
+    /// (m): ragdoll sway and the drop of the bent eyes.</summary>
     const float HeadTurnSlack = 0.03f;
 
     /// <summary>
     /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns 90 degrees left and right in the room
-    /// (no snap turn), the eyes swinging on a 0.1 m neck. The game turns the body to the head's heading about its mass
-    /// centre (Character.SetRotation, Character.cs:1539-1542), its eyes <c>e</c> ahead of it (0.20-0.27 m), so an
-    /// upright body leaves them <c>2 (e - neck) sin(yaw / 2)</c> off the view (0.19 m at 90 degrees for e = 0.236 m),
-    /// and the lean bends it back toward the view. A lean keeps the mass centre over the feet (BodyLean.LegShift and
-    /// the body hold; vr.45 fails a body that moves 0.03 m), so the hips go back as it bends and the ragdoll's upper
-    /// body follows only part of the head: in the 7f8e6ec run vr.45's ragdoll shoulders moved 0.082 m of a 0.30 m
-    /// lean forward and 0.036 m of 0.25 m sideways, leaving the eyes about 0.18 m off the view. So it cannot bring
-    /// the eyes under a turned view (the old 0.12 m bound failed at 0.107-0.178 m), and this judges the lean, not that
-    /// geometry. With each turn held 1.5 s it fails when the lean moves the animated eyes less than
-    /// <see cref="MinTurnLeanShift"/> or more than <see cref="MaxTurnLeanAngle"/> off the way to the view (a lean from
-    /// the rig's heading bends with the neck's swing, away from it), or the eyes (less the view hold's offset) end more
-    /// than <see cref="HeadTurnSlack"/> further off than an upright turned body. Reports the torso centre along the
-    /// view's level forward against standing straight, where it sits 0.33-0.36 m behind the eyes.
+    /// (no snap turn), the eyes swinging on a 0.1 m neck. The game turns the body to the head's heading
+    /// (Character.SetRotation, Character.cs:1539-1542), which swings its eyes off the view, and the lean bends it back
+    /// toward the view. A lean keeps the mass centre over the feet (BodyLean.LegShift and the body hold; vr.45 fails a
+    /// body that moves 0.03 m), so the hips go back as it bends and the ragdoll's upper body follows only part of the
+    /// head: in the 7f8e6ec run vr.45's ragdoll shoulders moved 0.082 m of a 0.30 m lean forward and 0.036 m of 0.25 m
+    /// sideways. So it cannot bring the eyes under a turned view (the old 0.12 m bound failed at 0.107-0.178 m), and
+    /// this judges the lean, not that geometry. How far the turn swings the eyes depends on the idle pose the game
+    /// draws for each spawn (CharacterCustomization.cs:107-110, 565-570): eyes 0.19 m ahead of the mass centre in the
+    /// run of 9117575, 0.11 m in run 7, where a predicted upright swing of <c>2 (e - neck) sin(yaw / 2)</c> came to
+    /// 0.012 m while the eyes, leaned 0.071 m toward the view, still sat 0.048 m off. So the upright swing is measured:
+    /// each turn is held 1.5 s with the lean, then 1.5 s with <c>Avatar.BodyLean</c> off. It fails when the lean
+    /// moves the animated eyes less than <see cref="MinTurnLeanShift"/> or more than <see cref="MaxTurnLeanAngle"/> off
+    /// the way to the view (a lean from the rig's heading bends with the neck's swing, away from it), or the leaned
+    /// eyes (less the view hold's offset) end more than <see cref="HeadTurnSlack"/> further off than the upright ones.
+    /// Reports the torso centre along the view's level forward against standing straight, where it sits 0.33-0.36 m
+    /// behind the eyes. SKIP: <c>Avatar.BodyLean</c> off.
     /// </summary>
     IEnumerator HeadTurnStep()
     {
@@ -283,6 +286,12 @@ internal sealed partial class SelfTestRunner
         if (driver == null || rig == null)
         {
             Fail("no pose driver or rig");
+            yield break;
+        }
+        var lean = AvatarConfig.Instance.BodyLeanEntry;
+        if (lean == null || !lean.Value)
+        {
+            stepSkip = "Avatar.BodyLean is off";
             yield break;
         }
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
@@ -309,12 +318,15 @@ internal sealed partial class SelfTestRunner
         );
         var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
         var forward = level * Vector3.forward;
-        bodyRestore = ReleaseHead;
+        bodyRestore = () =>
+        {
+            lean.Value = true;
+            ReleaseHead();
+        };
         var fails = new List<string>();
         var notes = new List<string>();
         float yaw = 0f;
         bool straight = false;
-        float eyeAhead = 0f;
         float torsoStraight = 0f;
         foreach (float to in new[] { 0f, 90f, -90f, 0f })
         {
@@ -343,22 +355,30 @@ internal sealed partial class SelfTestRunner
             if (!straight)
             {
                 straight = true;
-                eyeAhead = Vector3.Dot(eye - RigDriver.ViewRoot(c), look);
                 torsoStraight = torso;
             }
-            float upright =
-                2f
-                * Mathf.Max(0f, eyeAhead - NeckSwing * rig.Scale)
-                * Mathf.Sin(Mathf.Abs(yaw) * 0.5f * Mathf.Deg2Rad);
             var shift = Vector3.ProjectOnPlane(driver.EyeLeanShift, Vector3.up);
             float angle = Vector3.Angle(shift, Vector3.ProjectOnPlane(off, Vector3.up));
-            notes.Add(
-                F(
-                    $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view (upright {upright:0.000} m), torso {torso:0.00} m along the look ({torso - torsoStraight:+0.00;-0.00} from straight), lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}) moving the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view"
-                )
+            var line = F(
+                $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view, torso {torso:0.00} m along the look ({torso - torsoStraight:+0.00;-0.00} from straight), lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}) moving the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view"
             );
             if (Mathf.Abs(yaw) <= 1f)
+            {
+                notes.Add(line);
                 continue;
+            }
+            // The same turned body upright: the lean faded out (0.3 s) and the ragdoll settled.
+            lean.Value = false;
+            yield return Wait(1.5f);
+            bool plainSeen = RigDriver.TryEyeRenderers(c, out var plain);
+            lean.Value = true;
+            if (!plainSeen)
+            {
+                fails.Add("no avatar eyes for the upright turn");
+                break;
+            }
+            float upright = (head.position - RigDriver.ViewHeld - plain).magnitude;
+            notes.Add(line + F($", upright {upright:0.000} m off"));
             if (shift.magnitude < MinTurnLeanShift || angle > MaxTurnLeanAngle)
                 fails.Add(
                     F(
@@ -368,7 +388,7 @@ internal sealed partial class SelfTestRunner
             if (off.magnitude > upright + HeadTurnSlack)
                 fails.Add(
                     F(
-                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view, past an upright turned body's {upright:0.000} m + {HeadTurnSlack:0.00} m"
+                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view, past the same body upright's {upright:0.000} m + {HeadTurnSlack:0.00} m"
                     )
                 );
         }
