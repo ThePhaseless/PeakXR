@@ -75,7 +75,8 @@ internal static class HandAim
     /// (tester: the rope cannon "doesn't go where I aim"). A piton is aimed the same way along its blade, which runs
     /// along its +Z (tester: the piton "goes in not where I aim"; see <see cref="PointAlongZ"/>). The ray starts on
     /// that line level with the item pivot, near the hand, so a muzzle poking into a wall still finds it, and where
-    /// that line is drawn (<see cref="HeldItemScale"/>).
+    /// that line is drawn (<see cref="HeldItemScale"/>). The hold lays that line along the aim pose
+    /// (<c>Interaction.AimHoldAlignment</c>, AvatarPoseDriver.ItemInController), so barrel and controller agree.
     /// </summary>
     private static bool TryBarrel(ref Vector3 origin, ref Quaternion rotation)
     {

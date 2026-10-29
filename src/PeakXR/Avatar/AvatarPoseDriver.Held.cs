@@ -1,4 +1,5 @@
 using PeakXR.Core;
+using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Avatar;
@@ -827,6 +828,54 @@ public partial class AvatarPoseDriver
             pos = tp.U();
             rot = tr.U();
         }
+        lastAimTilt = 0f;
+        if (hold.Barrel && AvatarConfig.Instance.AimHoldAlignment)
+        {
+            // Its barrel or blade along the hand's aim, turned about the fist (Core GripMath.AlongAim): the game's
+            // Hand_R puts it 54-109 degrees off a real controller's aim pose (offline, from the prefabs), and shots go
+            // along it (HandAim.TryBarrel), not where the controller points. The grip leaves the fist by what that
+            // takes (launchers and piton 26-67 degrees, the blowgun about 100).
+            var p = pos.N();
+            var r = rot.N();
+            var turn = GripMath.AlongAim(AimInGrip(rig.IsLeft).N(), ref p, ref r).U();
+            pos = p.U();
+            rot = r.U();
+            lastAimTilt = Vector3.Angle(turn * Vector3.forward, Vector3.forward);
+        }
+        return true;
+    }
+
+    /// <summary>A modded peer's pose stream carries grips only: its VR players' aim is taken as the grip turned by
+    /// GripFrame.AimFromGrip, within about 15 degrees of a real controller's (40-60 degrees off the grip's +Z).</summary>
+    private static readonly Vector3 PeerAimInGrip = GripFrame.AimFromGrip.U() * Vector3.forward;
+
+    /// <summary>Degrees the last <see cref="ItemInController"/> turned the grip out of the fist (its +Z, the fist's
+    /// tube) to lay the barrel along the aim; 0 when it did not.</summary>
+    private float lastAimTilt;
+
+    /// <summary>The <paramref name="left"/> hand's aim direction in its grip frame: the local player's tracked aim
+    /// pose against its grip (VRRig), a peer's from <see cref="PeerAimInGrip"/>.</summary>
+    private Vector3 AimInGrip(bool left)
+    {
+        var rig = VRRig.Instance;
+        if (!Owner.IsLocal || !VRSession.Active || rig == null)
+            return PeerAimInGrip;
+        var grip = rig.Hand(left);
+        var aim = rig.Aim(left);
+        return grip != null && aim != null
+            ? Quaternion.Inverse(grip.localRotation) * (aim.localRotation * Vector3.forward)
+            : PeerAimInGrip;
+    }
+
+    /// <summary>Self-test: the held barrel item's one-hand rotation in the <paramref name="left"/> controller's frame
+    /// (its barrel or blade along +Z) and how far that hold turns its grip out of the fist, degrees (0 with
+    /// <c>Interaction.AimHoldAlignment</c> off). False when the held item has no barrel.</summary>
+    internal bool BarrelInController(bool left, out Quaternion rot, out float tilt)
+    {
+        tilt = 0f;
+        if (!HeldItemInController(left, out _, out rot) || !hold.Barrel)
+            return false;
+        tilt = lastAimTilt;
         return true;
     }
 }
