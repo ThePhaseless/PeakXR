@@ -7,35 +7,31 @@ using UnityEngine;
 namespace PeakXR.UI.Spatial;
 
 /// <summary>
-/// U3: big announcements as world-locked signs ahead of you. <c>SetHeroTitle</c> (A/GUIManager.cs:484) shows
-/// <c>heroObject</c> (:144) with the title render texture in <c>heroImage</c> (:152);
+/// U3: big announcements as a card in front of the head, like a menu's, drawn over everything. <c>SetHeroTitle</c>
+/// (A/GUIManager.cs:484) shows <c>heroObject</c> (:144) with the title render texture in <c>heroImage</c> (:152);
 /// <c>TheFogRises/TheLavaRises/TheGloomRises/TheGhostsRise</c> (:1195-1232) show <c>fogRises</c>... (:58-64) for 4 s;
 /// the ascent title (<c>AscentUI</c>, A/AscentUI.cs:5) and the endgame countdown, win and lose cards
-/// (<c>GUIManager.endgame</c>, :69; <c>EndgameCounter</c>, A/EndgameCounter.cs:7-11) get signs too. A sign is placed
-/// when the game shows it, along your head yaw and above the horizon (out of the lower view while climbing), and is
-/// placed again, fading in, once it has been out of view for a moment (<see cref="SignDwell"/>) or you moved far
-/// from it, so a glance never makes it pop. A cliff in the way brings it in to just before the
-/// rock, at the same angular size (<see cref="PanelMath.FitBeforeWall"/>, the rule every world panel shares), so
-/// the sign, drawn on top, never shows through nearer rock at a depth the two eyes disagree with. The game's own
-/// typing and fades still play.
+/// (<c>GUIManager.endgame</c>, :69; <c>EndgameCounter</c>, A/EndgameCounter.cs:7-11) get cards too. Each card is
+/// head-locked a few degrees above the gaze along the head's own up and faces the eye
+/// (<see cref="PanelMath.RaisedView"/>): placed from the head alone, never from the play space, and posed again right
+/// before rendering so it never lags the view. It shows exactly while the game shows the part, so it times out with
+/// the game's own typing and fades. Its parts sit in a <see cref="SpatialBox"/>, drawn without the depth test after
+/// the world and every menu; nothing in the HUD canvas takes the laser, so it never blocks input. Rock nearer than
+/// <see cref="Distance"/> pulls it in at the same angular size (<see cref="PanelMath.FitBeforeWall"/>), so the two
+/// eyes agree on its depth.
 /// </summary>
 internal sealed class WorldBanners
 {
-    internal const float Distance = 30f;
+    /// <summary>Real metres from the eye to a card, a little nearer than a menu (1.8 m), so it reads over one.</summary>
+    internal const float Distance = 1.5f;
 
-    /// <summary>Re-place a shown sign once you are this far from where it was placed, in metres.</summary>
-    private const float ReplaceMeters = 20f;
+    /// <summary>Seconds between a shown card's wall tests.</summary>
+    private const float WallInterval = 0.1f;
 
-    /// <summary>Seconds a re-placed sign takes to fade in where you now look.</summary>
-    private const float FadeInSeconds = 0.3f;
-
-    /// <summary>The eye the hero sign was last placed from (self-test ui.03 repeats the placement from there).</summary>
-    internal static Vector3 HeroPlacedFrom;
-
-    private readonly Sign hero = new("PeakXR_HeroSign", elevationDegrees: 8f);
-    private readonly Sign banner = new("PeakXR_BannerSign", elevationDegrees: 3f);
-    private readonly Sign ascent = new("PeakXR_AscentSign", elevationDegrees: 13f);
-    private readonly Sign endgame = new("PeakXR_EndgameSign", elevationDegrees: 5f);
+    private readonly Card hero = new("PeakXR_HeroSign", elevationDegrees: 8f);
+    private readonly Card banner = new("PeakXR_BannerSign", elevationDegrees: 3f);
+    private readonly Card ascent = new("PeakXR_AscentSign", elevationDegrees: 13f);
+    private readonly Card endgame = new("PeakXR_EndgameSign", elevationDegrees: 5f);
     private readonly GameObject[] banners = new GameObject[4];
     private AscentUI ascentUI;
 
@@ -98,7 +94,6 @@ internal sealed class WorldBanners
 
         var head = rig.Head;
         hero.Tick(gui.heroObject != null && gui.heroObject.activeSelf, head);
-        HeroPlacedFrom = hero.PlacedFrom;
         bool any = false;
         foreach (var b in banners)
             any |= b != null && b.activeSelf;
@@ -116,92 +111,77 @@ internal sealed class WorldBanners
         );
     }
 
+    /// <summary>Re-poses the shown cards on the head's final pose for the frame (<see cref="LatePose"/>).</summary>
+    public void Pose(VRRig rig)
+    {
+        var head = rig.Head;
+        hero.Pose(head, false);
+        banner.Pose(head, false);
+        ascent.Pose(head, false);
+        endgame.Pose(head, false);
+    }
+
     private static bool Shown(GameObject go) => go != null && go.activeInHierarchy;
 
-    private sealed class Sign
+    private sealed class Card
     {
         public readonly SpatialBox Box;
         private readonly float elevationDegrees;
-        private readonly SignDwell dwell = new();
-        private float alpha = 1f;
-        private bool wasShown;
-        private Vector3 position,
-            placedFrom;
-        private Quaternion rotation = Quaternion.identity;
-        private float metersPerPixel;
+        private bool shown;
+        private float scale = 1f;
+        private float wallAt;
 
-        public Sign(string name, float elevationDegrees)
+        public Card(string name, float elevationDegrees)
         {
             Box = new SpatialBox(name);
             this.elevationDegrees = elevationDegrees;
         }
 
-        public void Start()
-        {
-            Box.SetVisible(true);
-            wasShown = false;
-        }
+        public void Start() => Box.SetVisible(true);
 
-        /// <summary>Places the sign when the game shows it, then holds it there in the world.</summary>
+        /// <summary>Follows the game's show and hide; a shown card is posed and its walls tested.</summary>
         public void Tick(bool shown, Transform head)
         {
-            if (!Box.Holding)
+            if (shown && !this.shown)
+                wallAt = 0f;
+            this.shown = shown;
+            Pose(head, Time.unscaledTime >= wallAt);
+        }
+
+        /// <summary>In front of the head, raised along its up, facing the eye. Allocation-free.</summary>
+        public void Pose(Transform head, bool testWalls)
+        {
+            if (!shown || !Box.Holding || head == null)
                 return;
-            var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            float dt = Time.unscaledDeltaTime;
-            if (shown && !wasShown)
-            {
-                // The game's own typing and fades play on a first show.
-                Place(head.position, yaw, head.forward);
-                alpha = 1f;
-            }
-            else if (
-                shown && dwell.Update(OffDegrees(head.position, yaw), MovedFar(head.position), dt)
-            )
-            {
-                Place(head.position, yaw, head.forward);
-                alpha = 0f;
-            }
-            wasShown = shown;
-            alpha = Mathf.MoveTowards(alpha, 1f, dt / FadeInSeconds);
-            Box.SetAlpha(alpha);
-            // The HUD canvas it lives under follows the body, so the pose is set again every frame.
-            Box.Pose(position, rotation, metersPerPixel);
-        }
-
-        private float OffDegrees(Vector3 eye, float yaw)
-        {
-            var to = position - eye;
-            return Mathf.Abs(Mathf.DeltaAngle(yaw, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg));
-        }
-
-        private bool MovedFar(Vector3 eye) =>
-            (eye - placedFrom).sqrMagnitude > ReplaceMeters * ReplaceMeters;
-
-        /// <summary>The eye the sign was placed from (ui.03 repeats the placement test from there).</summary>
-        public Vector3 PlacedFrom => placedFrom;
-
-        private void Place(Vector3 eye, float yaw, Vector3 forward)
-        {
-            var far = SpatialMath
-                .Banner(eye.ToNumerics(), yaw, Distance, elevationDegrees)
-                .ToUnity();
-            var mpp = SpatialMath.MetersPerPixel(Distance, SpatialRuntime.DegreesPerPixel);
-            var offset = far - eye;
-            var d = ClearDistance(
-                eye,
-                offset,
-                SpatialRuntime.FaceEyeYaw(far, eye, forward),
-                0.5f * mpp * PixelSize()
+            var (dir, up) = PanelMath.RaisedView(
+                head.forward.ToNumerics(),
+                head.up.ToNumerics(),
+                elevationDegrees
             );
-            position = eye + offset * (d / offset.magnitude);
-            placedFrom = eye;
-            dwell.Reset();
-            rotation = SpatialRuntime.FaceEyeYaw(position, eye, forward);
-            metersPerPixel = SpatialMath.MetersPerPixel(d, SpatialRuntime.DegreesPerPixel);
+            var forward = dir.ToUnity();
+            var rotation = Quaternion.LookRotation(forward, up.ToUnity());
+            var wanted = Rig.RealScale.World(Distance);
+            if (testWalls)
+            {
+                wallAt = Time.unscaledTime + WallInterval;
+                var mpp = SpatialMath.MetersPerPixel(wanted, SpatialRuntime.DegreesPerPixel);
+                scale =
+                    ClearDistance(
+                        head.position,
+                        forward * wanted,
+                        rotation,
+                        0.5f * mpp * PixelSize()
+                    ) / wanted;
+            }
+            var distance = wanted * scale;
+            Box.Pose(
+                head.position + forward * distance,
+                rotation,
+                SpatialMath.MetersPerPixel(distance, SpatialRuntime.DegreesPerPixel)
+            );
         }
 
-        /// <summary>The sign's size in box pixels: its largest moved part. Placement only.</summary>
+        /// <summary>The card's size in box pixels: its largest moved part. Wall tests only.</summary>
         private Vector2 PixelSize()
         {
             var size = Vector2.zero;
@@ -215,8 +195,8 @@ internal sealed class WorldBanners
         }
     }
 
-    /// <summary>Distance for a sign wanted at <see cref="Distance"/> along <paramref name="offset"/>, half extents
-    /// <paramref name="half"/> metres there: just before the nearest rock in front of any part of it. Placement
+    /// <summary>Distance for a card wanted at the length of <paramref name="offset"/>, half extents
+    /// <paramref name="half"/> metres there: just before the nearest rock in front of any part of it. Wall tests
     /// only.</summary>
     internal static float ClearDistance(
         Vector3 eye,

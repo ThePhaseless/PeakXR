@@ -178,11 +178,6 @@ public static class SpatialMath
     private static float Between(Vector3 a, Vector3 b) =>
         MathF.Acos(Math.Clamp(Vector3.Dot(a, b), -1f, 1f));
 
-    /// <summary>A distant sign <paramref name="distance"/> metres along <paramref name="yawDeg"/>, raised
-    /// <paramref name="elevationDeg"/> above eye level.</summary>
-    public static Vector3 Banner(Vector3 eye, float yawDeg, float distance, float elevationDeg) =>
-        eye + PanelMath.InFront(yawDeg, distance, -elevationDeg);
-
     /// <summary>
     /// Offset of slot <paramref name="index"/> of <paramref name="count"/> on an arc of <paramref name="radius"/>
     /// centred on <paramref name="yawDeg"/> (the direction toward the viewer). Slots run left to right as the

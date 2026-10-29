@@ -7,7 +7,7 @@ namespace PeakXR.UI.Spatial;
 /// <summary>
 /// ui.spatial: HUD parts that mean something about a place in the world go to that place in VR. The interact prompt
 /// floats at the target, item prompts sit beside the controller buttons, the biome title and "fog rises" banners are
-/// distant signs, the rope length and item fuel ride on the held item, and while spectating the friend's name,
+/// head-locked cards over everything, the rope length and item fuel ride on the held item, and while spectating the friend's name,
 /// status bar and items surround them. Nothing is patched: the game keeps driving its own widgets, which are only
 /// carried out of the HUD panel (<see cref="SpatialBox"/>) and put back when VR or a setting stops.
 /// </summary>
@@ -75,8 +75,8 @@ internal sealed class SpatialSettings
                 ui,
                 "WorldBanners",
                 true,
-                "The biome title and the 'fog rises' style banners appear as large signs in the distance ahead of "
-                    + "you. Off: they show on the HUD."
+                "The biome title and the 'fog rises' style banners appear as a card in front of your view, drawn "
+                    + "over everything until the game hides them. Off: they show on the HUD."
             ),
             HeldItemGauges = cfg.Bind(
                 ui,

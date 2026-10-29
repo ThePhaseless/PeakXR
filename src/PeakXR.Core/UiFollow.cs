@@ -107,6 +107,31 @@ public static class PanelMath
         return MathF.Atan2(x, z) * UnityQuat.Rad2Deg;
     }
 
+    /// <summary>
+    /// A head-placed card <paramref name="raiseDeg"/> degrees above the gaze, toward the head's own up (so it rides a
+    /// tilted head too): the unit direction from the eye to it and the card's up, perpendicular to that direction.
+    /// A card turned to look along the direction with that up faces the eye squarely and reads upright in view at any
+    /// pitch, yaw or roll. An up along the gaze falls back to world up.
+    /// </summary>
+    public static (Vector3 Direction, Vector3 Up) RaisedView(
+        Vector3 gaze,
+        Vector3 headUp,
+        float raiseDeg
+    )
+    {
+        var g = Vector3.Normalize(gaze);
+        var u = headUp - Vector3.Dot(headUp, g) * g;
+        if (u.LengthSquared() < 1e-6f)
+            u = Vector3.UnitY - g.Y * g;
+        if (u.LengthSquared() < 1e-6f)
+            u = Vector3.UnitZ - g.Z * g;
+        u = Vector3.Normalize(u);
+        float r = raiseDeg * UnityQuat.Deg2Rad;
+        float c = MathF.Cos(r),
+            s = MathF.Sin(r);
+        return (g * c + u * s, u * c - g * s);
+    }
+
     /// <summary>Offset from the eyes to a panel <paramref name="distance"/> metres away along
     /// <paramref name="yaw"/>, dropped <paramref name="tiltDeg"/> degrees below eye level.</summary>
     public static Vector3 InFront(float yaw, float distance, float tiltDeg)
@@ -276,26 +301,44 @@ public sealed class WallOnTopHold
 }
 
 /// <summary>
-/// When a world-locked sign (<c>WorldBanners</c>) moves back in front of the player. Re-placing it at every glance
-/// popped it about the view; now it stays put until it has been out of view (<see cref="AwayDegrees"/>) for
-/// <see cref="AwaySeconds"/>, or the player moved far from where it was placed.
+/// The eye point a world-locked menu is placed from, kept with the head when the view itself is carried away (a
+/// spectate or cutscene view moving, the body sliding while a menu is open): past <see cref="DeadZone"/> it glides to
+/// the head until within <see cref="Settle"/>, inside <see cref="LazyFollow.CatchUpBudget"/> for a few metres, so a
+/// menu never ends up beside or behind the player. Leaning in to read stays inside the dead zone and keeps the panel
+/// still. While held (the laser on the panel) it never moves.
 /// </summary>
-public sealed class SignDwell
+public sealed class EyeFollow
 {
-    /// <summary>Off the heading by more than this, the sign is past the edge of a 90-100 degree headset view (half
-    /// of it); the dwell keeps a glance from moving it.</summary>
-    public const float AwayDegrees = 45f;
-    public const float AwaySeconds = 1f;
+    /// <summary>Metres the head may move from the eye point before it follows: past a lean, short of a step.</summary>
+    public float DeadZone = 0.5f;
 
-    private float away;
+    /// <summary>Metres from the head at which a glide ends.</summary>
+    public float Settle = 0.02f;
 
-    /// <summary>Starts over (the sign was just placed).</summary>
-    public void Reset() => away = 0f;
+    /// <summary>Exponential catch-up rate, per second: 3 m closes in about 0.6 s.</summary>
+    public float Rate = 8f;
 
-    /// <returns>True when the sign should be placed again now.</returns>
-    public bool Update(float offDegrees, bool movedFar, float dt)
+    public bool Gliding { get; private set; }
+
+    /// <returns>The eye point after this frame.</returns>
+    public Vector3 Update(Vector3 eye, Vector3 head, bool hold, float dt)
     {
-        away = offDegrees > AwayDegrees ? away + dt : 0f;
-        return movedFar || away >= AwaySeconds;
+        if (hold || dt <= 0f)
+        {
+            if (hold)
+                Gliding = false;
+            return eye;
+        }
+        float gap = Vector3.Distance(eye, head);
+        if (!Gliding && gap <= DeadZone)
+            return eye;
+        Gliding = true;
+        eye = Vector3.Lerp(eye, head, ExpSmooth.Factor(Rate, dt));
+        if (Vector3.Distance(eye, head) <= Settle)
+        {
+            Gliding = false;
+            return head;
+        }
+        return eye;
     }
 }

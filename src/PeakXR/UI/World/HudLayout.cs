@@ -502,9 +502,10 @@ internal sealed class HudSplit
     }
 
     /// <summary>
-    /// Poses the top-of-view stamina meter: high in the view, never in its centre, level with the horizon, lazily
-    /// following the head (<see cref="LazyFollow"/>), pulled in front of rock at the same angular size and drawn on
-    /// top. Called once per frame after the canvases are placed.
+    /// Poses the top-of-view stamina meter: high in the view, never in its centre, lazily following the head's yaw and
+    /// pitch (<see cref="LazyFollow"/>) and at once its roll, facing the eye squarely every frame
+    /// (<see cref="PanelMath.RaisedView"/>), pulled in front of rock at the same angular size and drawn on top. Called
+    /// once per frame after the canvases are placed.
     /// </summary>
     public void PoseTop(Transform head, UIWorldSettings cfg, float dt)
     {
@@ -538,10 +539,14 @@ internal sealed class HudSplit
             topFollow.Update(yaw, pitch, false, dt);
 
         var wanted = Rig.RealScale.World(TopDistance);
-        var offset = PanelMath
-            .InFront(topFollow.Yaw, wanted, -(topFollow.Pitch + TopRaise))
-            .ToUnity();
-        var rotation = Quaternion.LookRotation(offset, Vector3.up);
+        // Raised along the head's own up and turned to it, so it faces the eye squarely at any pitch, yaw or roll.
+        var (dir, up) = PanelMath.RaisedView(
+            PanelMath.InFront(topFollow.Yaw, 1f, -topFollow.Pitch),
+            head.up.ToNumerics(),
+            TopRaise
+        );
+        var offset = dir.ToUnity() * wanted;
+        var rotation = Quaternion.LookRotation(offset, up.ToUnity());
         var width = Rig.RealScale.World(TopWidth) * ReadableText.Scale(cfg.TextScale.Value);
         var now = Time.unscaledTime;
         if (now >= topWallAt)

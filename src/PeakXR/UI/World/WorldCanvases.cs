@@ -111,6 +111,9 @@ internal sealed class TrackedCanvas
     /// <summary>Menus: lazy follow of the panel's heading (<c>UI.MenuFollow</c>).</summary>
     public readonly LazyFollow Follow = new();
 
+    /// <summary>Menus: keeps <see cref="Eye"/> with the head when the view is carried away (<see cref="EyeFollow"/>).</summary>
+    public readonly EyeFollow EyeFollow = new();
+
     /// <summary>Menus: distance from the eye while following, eased and held against a wall's edge
     /// (<see cref="FollowDistance"/>); synced with <see cref="Scale"/> whenever a wall test places the panel.</summary>
     public readonly FollowDistance Distance = new();
@@ -666,7 +669,8 @@ internal static class WorldCanvases
     /// <summary>
     /// <c>UI.MenuFollow</c> LazyFollow: the menu stays put while the head looks around it; once the head has been
     /// past <c>UI.MenuFollowAngle</c> (or a wide menu's edge) for a moment it glides back in front along its sight
-    /// lines (<see cref="LazyFollow"/>), its eye point easing to the head's, tested against walls as it goes. Its
+    /// lines (<see cref="LazyFollow"/>), its eye point easing to the head's, tested against walls as it goes; a view
+    /// carried more than half a metre from where it was placed takes the eye point along (<see cref="EyeFollow"/>). Its
     /// distance eases and holds at a wall's edge (<see cref="FollowDistance"/>). When the glide starts, or ends with a
     /// wall at the face, it heads for open space the way a menu opens (<see cref="OpenTurn"/>) instead of being pulled
     /// in to the 0.6 m minimum. Never while the laser is on a panel or a trigger is held
@@ -684,16 +688,23 @@ internal static class WorldCanvases
         bool glided = t.Follow.Update(yaw, 0f, hold, dt);
         if (t.Follow.Started)
             t.Follow.Offset = OpenTurn(t, head.position, yaw, cfg);
+        // A view carried off (spectating, a sliding body) takes the eye point along: never left behind the player.
+        var carried = t
+            .EyeFollow.Update(t.Eye.ToNumerics(), head.position.ToNumerics(), hold, dt)
+            .ToUnity();
+        bool moved = carried != t.Eye;
         bool settled = false;
-        if (glided)
+        if (glided || moved)
         {
             t.Yaw = t.Follow.Yaw;
-            t.Eye = Vector3.Lerp(
-                t.Eye,
-                head.position,
-                ExpSmooth.Factor(1f / t.Follow.SmoothTime, dt)
-            );
-            settled = !t.Follow.Gliding;
+            t.Eye = glided
+                ? Vector3.Lerp(
+                    carried,
+                    head.position,
+                    ExpSmooth.Factor(1f / t.Follow.SmoothTime, dt)
+                )
+                : carried;
+            settled = !t.Follow.Gliding && !t.EyeFollow.Gliding;
             var now = Time.unscaledTime;
             if (settled || now >= t.FollowWallAt)
             {

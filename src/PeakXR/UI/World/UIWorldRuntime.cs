@@ -142,6 +142,8 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         if (rig == null || rig.Head == null)
             return;
         split.PoseReticle(rig.Head, hud, UIWorldFeature.Settings);
+        // The top meter faces the eye on the head's final pose for the frame (no follow step: dt 0).
+        split.PoseTop(rig.Head, UIWorldFeature.Settings, 0f);
         StatusOverlays.Repose(rig);
     }
 
