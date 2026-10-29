@@ -22,8 +22,8 @@ using Object = UnityEngine.Object;
 namespace PeakXR.Sandbox;
 
 /// <summary>
-/// Steps owned by WP5 (world objects and run flow): the campfire friends-far refusal, the respawn chest's two-hand
-/// lid, lid progress, cook refusals, the Book of Bones over a skeleton, a flame on a lit fuse, the full altar and
+/// Steps owned by WP5 (world objects and run flow): the campfire friends-far refusal, the revival statue touch, lid
+/// progress, cook refusals, the Book of Bones over a skeleton, a flame on a lit fuse, the full altar and
 /// the effigy with nobody down. Prop steps warp to the prop and back (<see cref="WarpBack"/>); a prop the loaded map
 /// lacks skips the step with the reason.
 /// </summary>
@@ -34,7 +34,7 @@ internal sealed partial class SelfTestRunner
         yield return SettleIn();
         yield return HandStep("vr.80-campfire-far", 30f, CampfireFarStep());
         yield return WarpBack();
-        yield return HandStep("vr.81-chest-two-hands", 75f, ChestTwoHandsStep());
+        yield return HandStep("vr.275-revive-statue", 60f, StatueStep());
         yield return WarpBack();
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
@@ -194,152 +194,126 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.81: one hand on a closed respawn chest's lid holds the timer at 0 and after 0.6 s gets NeedsTwoHands
-    /// (chest red); both hands lifting run the timer (<c>Interaction.constantInteractableProgress</c>).
+    /// vr.275: an open palm laid on the nearest closed revival statue (<c>RespawnChest</c>, RespawnChest.cs:6) runs
+    /// the game's interact cast with the progress ramp on that hand; taken off, the cast cancels; laid back on, it
+    /// finishes and the statue is spent (with nobody down it gives items, RespawnChest.cs:56-60). A palm laid on the
+    /// spent statue then gets UsedUp at the hand, the statue red.
     /// </summary>
-    IEnumerator ChestTwoHandsStep()
+    IEnumerator StatueStep()
     {
         var c = Character.localCharacter;
-        var chest = Nearest<RespawnChest>(c.Center, r => !r.IsOpen);
-        if (chest == null)
+        var statue = Nearest<RespawnChest>(c.Center, r => !r.IsOpen);
+        if (statue == null || !Setting("Interaction", "TouchStatue", true))
         {
-            stepSkip = "no closed respawn chest in the active segment";
+            stepSkip =
+                statue == null
+                    ? "no closed revival statue in the active segment"
+                    : "Interaction.TouchStatue is off";
             yield break;
         }
-        if (!Setting("Interaction", "LiftLidToOpen", true))
+        var cols = statue.GetComponentsInChildren<Collider>();
+        var bounds = new Bounds(statue.Center(), Vector3.zero);
+        foreach (var col in cols)
         {
-            stepSkip = "Interaction.LiftLidToOpen is off";
-            yield break;
+            if (col.enabled && !col.isTrigger)
+                bounds.Encapsulate(col.bounds);
         }
-        yield return WarpFacing(chest.Center(), 0.8f);
-        HeadFrame(out _, out _, out var right);
-        var top = LidPoint(chest);
-        bool left = VRInput.LeftHanded;
-        yield return MoveTo(left, () => top + (left ? -right : right) * 0.15f, 0.5f);
-        Affordance.ResetGate();
-        LookAtHand(left);
-        float mark = CueMark();
-        yield return GripTo(left, 1f, 0.1f);
-        yield return ExpectCue(left, DenyReason.NeedsTwoHands, mark, tint: true, within: 2f);
-        var cue = cueNote;
-        var interaction = Interaction.instance;
-        // Read through a further second of the one-hand hold, not only at the cue: the timer must stay held after it.
-        float alone = 0f;
-        for (float end1 = Now + 1f; stepOk && Now < end1; )
-        {
-            if (interaction != null)
-                alone = Mathf.Max(alone, interaction.constantInteractableProgress);
-            yield return null;
-        }
-        if (!stepOk)
-            yield break;
-        if (alone > 0.05f)
-        {
-            Fail($"one hand ran the chest timer to {alone:0.00}");
-            yield break;
-        }
-        yield return MoveTo(!left, () => top + (left ? right : -right) * 0.15f, 0.5f);
-        yield return GripTo(!left, 1f, 0.1f);
-        yield return Wait(0.3f);
-        var l = Script(true).Position;
-        var r = Script(false).Position;
-        float progress = 0f;
-        float end = Now + 3f;
-        for (float lifted = 0f; Now < end && progress < 0.1f && !chest.IsOpen; )
-        {
-            lifted = Mathf.Min(LidGesture.LiftHeight, lifted + 0.15f * Time.unscaledDeltaTime);
-            SetHand(true, l + Vector3.up * lifted);
-            SetHand(false, r + Vector3.up * lifted);
-            if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, chest))
-                progress = Mathf.Max(progress, interaction.constantInteractableProgress);
-            yield return null;
-        }
-        yield return GripTo(true, 0f, 0.1f);
-        yield return GripTo(false, 0f, 0.1f);
-        if (progress <= 0f && !chest.IsOpen)
-        {
-            Fail($"two hands lifting did not run the timer; one hand: {cue}");
-            yield break;
-        }
-        var lifted2 = $"two hands progress {progress:0.00}";
-        if (chest.IsOpen)
-        {
-            stepNote =
-                $"{chest.name}: one hand {cue}; {lifted2}; opened, so no pointed or grab-off phase";
-            yield break;
-        }
-        // A hold no hand is on: a pointed grip from out of reach (the hand-aimed interact) is held at 0 like one
-        // hand, and refused at the chest (LidGesture, LidCap.RefusesUntracked) instead of doing nothing.
-        yield return Wait(0.6f);
-        bool point = !VRInput.LeftHanded;
-        HeadFrame(out var head, out var forward, out var side);
-        Script(point).Position =
-            head + forward * 0.4f + (point ? -side : side) * 0.15f + Vector3.down * 0.25f;
-        var lid = top;
-        Script(point).Rotation = HandLook(
-            rig()
-                .Origin.InverseTransformDirection(
-                    lid - rig().Origin.TransformPoint(Script(point).Position)
-                ),
-            Vector3.up
+        yield return WarpFacing(
+            bounds.center,
+            Mathf.Max(bounds.extents.x, bounds.extents.z) + 0.45f
         );
-        Script(point).TriggerTouch = false;
-        Script(point).StickTouch = true;
-        LookAtPoint(lid);
-        yield return Wait(0.4f);
-        Affordance.ResetGate();
-        float pointMark = CueMark();
-        yield return GripTo(point, 1f, 0.1f);
-        yield return ExpectCue(point, DenyReason.NeedsTwoHands, pointMark, tint: true, within: 2f);
-        var pointed = cueNote;
-        float pointedProgress = interaction != null ? interaction.constantInteractableProgress : 0f;
-        yield return GripTo(point, 0f, 0.1f);
-        Script(point).TriggerTouch = true;
-        Script(point).StickTouch = false;
+        bool left = VRInput.LeftHanded;
+        var interaction = Interaction.instance;
+        float mark = CueMark();
+        yield return LayPalm(left, cols);
+        float progress = 0f;
+        // RespawnStatue looks the statue up once a second: up to that, the dwell, then the cast.
+        for (float end = Now + 3f; Now < end && progress < 0.2f; )
+        {
+            if (interaction != null && ReferenceEquals(interaction.currentHeldInteractible, statue))
+                progress = interaction.constantInteractableProgress;
+            yield return null;
+        }
+        if (progress <= 0f)
+        {
+            Fail(
+                $"a palm on {statue.name} did not start its cast; touched {RespawnStatue.Touched != null}"
+            );
+            yield break;
+        }
+        yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
         if (!stepOk)
             yield break;
-        if (pointedProgress > 0.05f)
+        var ramp = cueNote;
+        LiftPalm(left);
+        yield return Wait(0.3f);
+        bool held =
+            interaction != null
+            && ReferenceEquals(interaction.currentHeldInteractible, statue)
+            && interaction.constantInteractableProgress >= progress;
+        if (held)
         {
-            Fail($"a pointed grip ran the chest timer to {pointedProgress:0.00}");
+            Fail($"the cast went on after the hand came off at {progress:0.00}");
             yield break;
         }
-        // Grabbing by hand off (Interaction.GrabToPickUp): nothing can lift a lid, so the plain vanilla hold opens
-        // the chest (LidCap.TryFraction).
-        if (!Plugin.Settings.TryGetEntry<bool>("Interaction", "GrabToPickUp", out var grab))
+        yield return LayPalm(left, cols);
+        yield return WaitFor(
+            () => statue.IsSpent,
+            GameTiming.Budget(GameTiming.InteractSeconds(statue, c), 2f)
+        );
+        LiftPalm(left);
+        if (!statue.IsSpent)
         {
-            stepNote =
-                $"{chest.name}: one hand {cue}; {lifted2}; pointed {pointed}; no GrabToPickUp setting";
+            Fail($"a palm held on {statue.name} did not finish its cast; ramp {ramp}");
             yield break;
         }
-        bool was = grab.Value;
-        try
-        {
-            grab.Value = false;
-            yield return Wait(0.3f);
-            yield return MoveTo(point, () => top, 0.4f);
-            yield return GripTo(point, 1f, 0.1f);
-            float openBy =
-                Now
-                + GameTiming.Budget(
-                    GameTiming.InteractSeconds(chest, Character.localCharacter),
-                    2f
-                );
-            yield return WaitFor(() => chest.IsOpen, openBy - Now);
-            yield return GripTo(point, 0f, 0.1f);
-        }
-        finally
-        {
-            grab.Value = was;
-        }
-        if (!chest.IsOpen)
-            Fail(
-                $"with grabbing by hand off the vanilla hold did not open {chest.name}; pointed: {pointed}"
-            );
-        else
+        yield return Wait(0.5f);
+        Affordance.ResetGate();
+        float spentMark = CueMark();
+        yield return LayPalm(left, cols);
+        yield return ExpectCue(left, DenyReason.UsedUp, spentMark, tint: true, within: 2f);
+        LiftPalm(left);
+        if (stepOk)
             stepNote =
-                $"{chest.name}: one hand {cue}; {lifted2}; pointed {pointed}; grab off: opened by the vanilla hold";
+                $"{statue.name}: cast to {progress:0.00}, cancelled off the hand, finished on it; ramp {ramp}; spent: {cueNote}";
+    }
 
-        static VRRig rig() => VRRig.Instance;
+    /// <summary>One scripted hand open, palm flat on the nearest of <paramref name="cols"/> at chest height on its
+    /// side of the head.</summary>
+    IEnumerator LayPalm(bool left, Collider[] cols)
+    {
+        var rig = VRRig.Instance;
+        HeadFrame(out var head, out _, out var right);
+        var probe = head + Vector3.down * 0.35f + (left ? -right : right) * 0.15f;
+        var surface = probe + Vector3.up * 100f;
+        foreach (var col in cols)
+        {
+            if (col == null || !col.enabled || col.isTrigger)
+                continue;
+            var q = PhysicalInteraction.SurfacePoint(col, probe);
+            if ((q - probe).sqrMagnitude < (surface - probe).sqrMagnitude)
+                surface = q;
+        }
+        var into = surface - probe;
+        into = into.sqrMagnitude > 1e-4f ? into.normalized : Flat(surface - head);
+        // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
+        var x = left ? into : -into;
+        var up = Mathf.Abs(Vector3.Dot(into, Vector3.up)) > 0.9f ? Vector3.forward : Vector3.up;
+        Script(left).Grip = 0f;
+        Script(left).Rotation =
+            Quaternion.Inverse(rig.Origin.rotation) * HandLook(Vector3.Cross(x, up), up);
+        yield return MoveTo(left, () => surface - into * 0.02f, 0.4f);
+    }
+
+    /// <summary>The scripted hand back down by the body, off whatever it lay on.</summary>
+    void LiftPalm(bool left)
+    {
+        var rig = VRRig.Instance;
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(
+            left,
+            rig.Origin.InverseTransformPoint(head - forward * 0.1f + Vector3.down * 0.4f)
+        );
     }
 
     /// <summary>vr.82: lifting a suitcase lid (vr.24's motion, on the next closed case) is felt as the progress

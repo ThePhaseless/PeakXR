@@ -50,6 +50,7 @@ internal static class ItemGestures
             NearHips = null;
             FireGestures.Reset();
             LidGesture.Reset();
+            RespawnStatue.Reset();
             HeldGestures.Reset();
             ParasolRunner.Instance.Reset();
             return;
@@ -67,6 +68,7 @@ internal static class ItemGestures
         float dt = Time.deltaTime;
         FireGestures.Tick(c, rig, cfg, dt);
         LidGesture.Tick(cfg);
+        RespawnStatue.Tick(c, rig, cfg);
         HeldGestures.Tick(rig, cfg, dt);
         ParasolRunner.Instance.Tick(input, cfg, dt);
         CookWarning();

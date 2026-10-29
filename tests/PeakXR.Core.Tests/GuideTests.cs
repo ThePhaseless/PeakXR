@@ -241,7 +241,7 @@ public class GuideTests
             { GuideTopic.EdgeRing, CueSound.Refused },
             { GuideTopic.FirstLabel, CueSound.Refused },
             { GuideTopic.RopePump, CueSound.WouldWork },
-            { GuideTopic.Chest, CueSound.Refused },
+            { GuideTopic.Chest, CueSound.WouldWork },
             { GuideTopic.GroundPickup, CueSound.WouldWork },
             { GuideTopic.HelpUp, CueSound.WouldWork },
             { GuideTopic.Carry, CueSound.WouldWork },
@@ -271,11 +271,13 @@ public class GuideTests
     }
 
     [Fact]
-    public void ChestDemo_OneHandRefused_ThenBothHandsGrip()
+    public void StatueDemo_OneOpenHandRestsOnIt()
     {
-        var chest = GuideTable.Get(GuideTopic.Chest);
-        Assert.Contains(chest.Left.Keys, k => k.Grip > 0.5f);
-        Assert.Contains(chest.Right.Keys, k => k.Grip > 0.5f);
+        var statue = GuideTable.Get(GuideTopic.Chest);
+        Assert.DoesNotContain(statue.Left.Keys, k => k.Grip > 0.5f);
+        Assert.DoesNotContain(statue.Right.Keys, k => k.Grip > 0.5f);
+        Assert.Single(statue.Left.Keys);
+        Assert.DoesNotContain(statue.Sounds, s => s.Sound == CueSound.Refused);
     }
 
     [Fact]

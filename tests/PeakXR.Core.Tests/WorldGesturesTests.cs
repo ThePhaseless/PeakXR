@@ -1,44 +1,5 @@
 namespace PeakXR.Core.Tests;
 
-public class TwoHandGateTests
-{
-    [Fact]
-    public void OneHandRefusesOnceAfterDelay()
-    {
-        var g = new TwoHandGate { Delay = 0.6f };
-        Assert.False(g.Update(1, 0.5f));
-        Assert.True(g.Update(1, 0.2f));
-        Assert.False(g.Update(1, 1f));
-    }
-
-    [Fact]
-    public void BothHandsNeverRefuse()
-    {
-        var g = new TwoHandGate { Delay = 0.6f };
-        for (int i = 0; i < 10; i++)
-            Assert.False(g.Update(2, 0.2f));
-    }
-
-    [Fact]
-    public void LettingGoRearms()
-    {
-        var g = new TwoHandGate { Delay = 0.6f };
-        Assert.True(g.Update(1, 0.7f));
-        Assert.False(g.Update(0, 0.1f));
-        Assert.False(g.Update(1, 0.3f));
-        Assert.True(g.Update(1, 0.4f));
-    }
-
-    [Fact]
-    public void SecondHandArrivingResetsTheTimer()
-    {
-        var g = new TwoHandGate { Delay = 0.6f };
-        Assert.False(g.Update(1, 0.5f));
-        Assert.False(g.Update(2, 0.1f));
-        Assert.False(g.Update(1, 0.5f));
-    }
-}
-
 public class FriendBearingTests
 {
     [Fact]
@@ -181,25 +142,4 @@ public class AltarSocketReachTests
         Assert.True(
             AltarSocket.Reach(new Vector3(0.8f, 1.9f, 0), new Vector3(0, 2.7f, 0), Head) > 0.3f
         );
-}
-
-public class LidCapTests
-{
-    [Fact]
-    public void TrackedLidUsesItsLift()
-    {
-        Assert.True(LidCap.TryFraction(true, 0.4f, true, true, out var f));
-        Assert.Equal(0.4f, f);
-    }
-
-    [Fact]
-    public void TwoHandLidWithoutBothHandsTrackedHoldsAtZero()
-    {
-        Assert.True(LidCap.TryFraction(false, 0.7f, true, true, out var f));
-        Assert.Equal(0f, f);
-    }
-
-    [Fact]
-    public void OrdinaryCaseNotOnTheLidKeepsTheVanillaHold() =>
-        Assert.False(LidCap.TryFraction(false, 0.7f, false, true, out _));
 }

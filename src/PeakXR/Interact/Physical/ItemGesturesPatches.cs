@@ -54,15 +54,19 @@ internal static class ItemGesturesPatches
 
     /// <summary>Interaction.DoInteraction (Interaction.cs:99, private): adds the frame time to
     /// currentInteractableHeldTime and finishes the cast at currentConstantInteractableTime (Interaction.cs:136-139).
-    /// The prefix caps a lifted lid's held time first.</summary>
+    /// The prefix caps a lifted lid's held time first, and holds a revival statue's at 0 while the gripping hand is off
+    /// it.</summary>
     [HarmonyPatch]
     internal static class DoInteraction
     {
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(Interaction), "DoInteraction");
 
-        private static void Prefix(Interaction __instance) =>
+        private static void Prefix(Interaction __instance)
+        {
             LidGesture.BeforeInteraction(__instance);
+            RespawnStatue.BeforeInteraction(__instance);
+        }
     }
 
     /// <summary>Item.CancelUsePrimary (Item.cs:918) and Item.CancelUseSecondary (Item.cs:1063): every way a use stops

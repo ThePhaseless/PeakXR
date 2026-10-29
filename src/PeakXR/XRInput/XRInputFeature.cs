@@ -40,7 +40,7 @@ public sealed class XRInputFeature : Feature
             new ConfigDescription(
                 "Play with one controller, the Left or Right one: its stick walks forward and back and turns, A jumps, "
                     + "the stick click sprints (hold it to crouch), B pauses (hold it for the emote wheel), and every "
-                    + "two-hand action (respawn chest lid, two-hand items, cheer, shove, soul pillar, carrying a "
+                    + "two-hand action (two-hand items, cheer, shove, soul pillar, carrying a "
                     + "friend, taking the pack off) works with that hand alone. The other controller is ignored.",
                 new AcceptableValueList<string>("Off", "Left", "Right")
             )
