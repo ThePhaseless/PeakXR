@@ -43,6 +43,9 @@ internal sealed class TitleStage : ICanvasPlacement
     {
         this.cfg = cfg;
         VRSession.Stopped += depth.Restore;
+        // A restarted session may track from a new origin (device-relative fallback, a restarted runtime): re-stand
+        // the player over the stage from the new head pose, as a recenter does.
+        VRSession.Started += Unlatch;
         Instance = this;
     }
 
