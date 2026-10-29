@@ -212,6 +212,8 @@ public static class SelfTestIds
         "vr.247-own-head-mirror",
         "vr.250-binocular-near-eye",
         "vr.249-button-throw-aim",
+        "vr.251-hook-pull-first-person",
+        "vr.252-flare-cap-pull",
         "vr.25-cook-over-fire",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",

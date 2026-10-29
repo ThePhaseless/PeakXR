@@ -367,14 +367,17 @@ internal sealed class ComfortEventsRuntime : MonoBehaviour
 
         // A launched body often tumbles too (cannon, mushroom); the chase view stays through it. Climbing ends
         // a flight; spectating hands the view to rig.camera. A warp halts the body's velocity (HaltBodyVelocity,
-        // A/Character.cs:1908-1960, warping set :1868-1963), which must not read as a launch.
+        // A/Character.cs:1908-1960, warping set :1868-1963), which must not read as a launch. The own rescue-hook
+        // pull's lift (RescueHook.cs:174-194) is an aimed move, not a launch: the chase view kept the hands off the
+        // wall it pulls to until the body landed (the body-speed vignette still rings it).
         bool over =
             d.dead
             || d.fullyPassedOut
             || d.isClimbing
             || d.isRopeClimbing
             || d.isVineClimbing
-            || c.warping;
+            || c.warping
+            || Interact.Aim.OwnGrapple.Covers(c);
         // A tumbling body rarely reports grounded: lying still counts as landed.
         bool landed = d.isGrounded || (d.fallSeconds > 0f && v.sqrMagnitude < 1.5f * 1.5f);
         if (over)

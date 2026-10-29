@@ -74,6 +74,18 @@ public static class TraversalRefusal
     /// </summary>
     public const float GameWallReach = 1.35f;
 
+    /// <summary>Ragdoll control under which the game lets go of a climb on its next physics step
+    /// (CharacterClimbing.cs:146).</summary>
+    public const float ClimbHoldControl = 0.25f;
+
+    /// <summary>
+    /// Seconds until a body recovering from a tumble can hold a climb: control climbs at 0.5/s below 0.5
+    /// (Character.cs:1100) to <see cref="ClimbHoldControl"/>. A grip there waits this out instead of starting a climb
+    /// the game drops at once (after a rescue-hook pull, :362-395 of RescueHook.cs, control starts at 0).
+    /// </summary>
+    public static float ClimbHoldWait(float ragdollControl) =>
+        ragdollControl >= ClimbHoldControl ? 0f : (ClimbHoldControl - ragdollControl) / 0.5f;
+
     /// <summary>How far past the grab reach (metres) a hand still sees rock it falls short of (<see cref="ClimbReach"/>).</summary>
     public const float ReachProbe = 0.4f;
 

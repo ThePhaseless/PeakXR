@@ -1016,12 +1016,17 @@ internal sealed class RigDriver : MonoBehaviour
         bool scripted = camOverride != null && camOverride is not CameraOverride_Binoculars;
         bool spectating = c != null && (c.data.fullyPassedOut || c.data.dead);
         bool rocketing = boundMovement != null && CameraPatches.IsRocketing(boundMovement);
+        // The own rescue-hook pull drops the body into a fall (RescueHook.cs:407): the player's own aimed move, so the
+        // view stays on the body and the hands at the wall it pulls them to.
         bool ragdoll =
             c != null
             && (
                 c.data.passedOut
-                || c.data.fallSeconds > 0f
-                || c.data.currentRagdollControll < RagdollControlThreshold
+                || !Interact.Aim.OwnGrapple.Covers(c)
+                    && (
+                        c.data.fallSeconds > 0f
+                        || c.data.currentRagdollControll < RagdollControlThreshold
+                    )
             );
         var state = CameraPolicy.State(cutscene, scripted, spectating, rocketing, ragdoll);
         var kind = CameraPolicy.View(

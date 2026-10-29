@@ -8,10 +8,12 @@ internal sealed class LightsConfig
     public static LightsConfig Instance { get; private set; } = new();
 
     private ConfigEntry<bool> strikeToLight,
+        pullToLight,
         heldLightShadows;
     private ConfigEntry<float> strikeSpeed;
 
     public bool StrikeToLight => strikeToLight?.Value ?? true;
+    public bool PullToLight => pullToLight?.Value ?? true;
     public float StrikeSpeed => strikeSpeed?.Value ?? 1.5f;
     public bool HeldLightShadows => heldLightShadows?.Value ?? false;
 
@@ -26,6 +28,14 @@ internal sealed class LightsConfig
                 true,
                 "Swipe your free hand quickly over a held flare to strike it, or over a held candle's wick to light "
                     + "or snuff it. The trigger of the holding hand still works."
+            ),
+            pullToLight = file.Bind(
+                s,
+                "PullToLight",
+                true,
+                "Light a held flare like a real one: close your free hand on either end of it and pull that end "
+                    + "away along the flare (10 cm within a second), as if pulling off its cap or cord. The trigger "
+                    + "of the holding hand still works."
             ),
             strikeSpeed = file.Bind(
                 s,

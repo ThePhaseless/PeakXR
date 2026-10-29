@@ -737,7 +737,15 @@ internal static class PhysicalInteraction
                 // The fall this grab stops, read before the climb start resets the body's motion.
                 float fall = c.data.isClimbing ? 0f : recentFall;
                 LastCatchFall = fall;
-                if (StartClimb(c, rig, pos, cfg))
+                float recover = RecoverWait(c);
+                if (recover > 0f)
+                {
+                    // Still tumbling out of a fall (a rescue-hook pull ends at control 0): the game would let go of
+                    // the climb on its next step (CharacterClimbing.cs:146), so the closed grip catches once it holds.
+                    action = GripPressAction.None;
+                    hand.ClimbRetryUntil = now + recover + RegrabWait;
+                }
+                else if (StartClimb(c, rig, pos, cfg))
                     CatchPulse(hand.Left, kind, fall, cfg);
                 else
                 {
@@ -1635,6 +1643,20 @@ internal static class PhysicalInteraction
     private static bool RegrabCooldown(Character c) =>
         c.data.sinceClimb < 0.2f && !c.data.isRopeClimbing && !c.data.isVineClimbing;
 
+    /// <summary>Longest a closed climb grip waits for the body to recover from a tumble: control from 0 to the
+    /// game's climb hold takes 0.5 s (<see cref="TraversalRefusal.ClimbHoldWait"/>).</summary>
+    private const float MaxRecoverWait = 1f;
+
+    /// <summary>Seconds a climb grip waits for ragdoll control to reach the game's climb hold, or 0 to climb now. Not
+    /// while the fall timer runs (control stays 0, Character.cs:492-495) or already climbing.</summary>
+    private static float RecoverWait(Character c)
+    {
+        if (c.data.isClimbing || c.data.fallSeconds > 0f || c.data.passedOut)
+            return 0f;
+        float wait = TraversalRefusal.ClimbHoldWait(c.data.currentRagdollControll);
+        return wait <= MaxRecoverWait ? wait : 0f;
+    }
+
     /// <summary>
     /// A climb grip that met the regrab cooldown climbs once the cooldown is over, if it is still closed on a hold
     /// (probed again where the hand is now). Otherwise it gets the usual refusal.
@@ -1645,10 +1667,19 @@ internal static class PhysicalInteraction
             return;
         if (!hand.Grip.Held || hand.Action != GripPressAction.None || now > hand.ClimbRetryUntil)
         {
+            // Out of time while still tumbling (a new fall): the grip that was waiting says so.
+            if (
+                hand.Grip.Held
+                && hand.Action == GripPressAction.None
+                && c.data.currentRagdollControll < TraversalRefusal.ClimbHoldControl
+            )
+                Affordance.DenyAtHand(hand.Left, DenyReason.TooSoon);
             hand.ClimbRetryUntil = -10f;
             return;
         }
         if (!c.data.isClimbing && !c.refs.climbing.CanClimb())
+            return;
+        if (RecoverWait(c) > 0f)
             return;
         hand.ClimbRetryUntil = -10f;
         var t = rig.Hand(hand.Left);

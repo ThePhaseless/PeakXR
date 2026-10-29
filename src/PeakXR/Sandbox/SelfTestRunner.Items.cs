@@ -35,6 +35,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.24-lift-lid", 40f, LiftLidStep());
         yield return WarpBack();
         // Light first: it needs the campfire unlit. Cooking then uses the fire it lit (or lights it when vr.26 failed).
+        yield return ItemStep("vr.252-flare-cap-pull", "Flare", 25f, FlareCapPullStep);
         yield return ItemStep("vr.26-light-with-flame", "Torch", 40f, LightStep);
         yield return WarpBack();
         // The game has no way to put a campfire out again short of Extinguish_Rpc, which leaves it spent; and
