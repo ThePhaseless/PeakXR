@@ -45,7 +45,14 @@ internal sealed class ReachGhost : MonoBehaviour
         public readonly Transform[] Fingers = new Transform[FingerCurls.Count];
         public readonly Transform[] Tips = new Transform[FingerCurls.Count];
         public float ShownAlpha = -1f;
+
+        /// <summary>Gap of the last log line, metres; negative before the first.</summary>
+        public float LoggedGap = -1f;
     }
+
+    // A logged ghost logs again only once its gap has moved this far (a hand parked at the eye flickered the fade at
+    // its threshold and logged the same 0.05 m 26 times).
+    private const float LogStep = 0.05f;
 
     private static ReachGhost instance;
     private readonly Hand left = new();
@@ -90,10 +97,10 @@ internal sealed class ReachGhost : MonoBehaviour
             && controller != null
             && VRInput.Hand(isLeft).Tracked
             && driver.ReachGap(isLeft, out gap, out shoulder, out bone, out arm);
-        bool was = h.Fade.Visible;
         float alpha = on ? h.Fade.Update(gap, dt) : h.Fade.Update(0f, dt);
-        if (on && h.Fade.Visible && !was)
+        if (on && h.Fade.Visible && (h.LoggedGap < 0f || Mathf.Abs(gap - h.LoggedGap) >= LogStep))
         {
+            h.LoggedGap = gap;
             // Rare edge: why it showed.
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(

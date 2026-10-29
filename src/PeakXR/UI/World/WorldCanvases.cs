@@ -226,6 +226,33 @@ internal static class WorldCanvases
                 t.Rescan = true;
                 t.RescanFrame = Time.frameCount + 1;
             }
+        MarkOnTop(inside);
+    }
+
+    /// <summary>New content built into a menu held in front of a wall draws on top at once, like the rest of it. The
+    /// VR tab's rail, built after the last mark, stayed depth tested behind the elevator wall (live run 3a1b2f9).</summary>
+    public static void MarkOnTop(Component inside)
+    {
+        var canvas = inside != null ? inside.GetComponentInParent<Canvas>() : null;
+        if (canvas == null)
+            return;
+        var id = canvas.rootCanvas.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id && t.WallOnTop)
+                OnTop.SetWall(t.Rect, true);
+    }
+
+    /// <summary>Self-test: the converted menu holding <paramref name="inside"/> is drawn on top (a wall holds it).</summary>
+    public static bool WallOnTopOf(Component inside)
+    {
+        var canvas = inside != null ? inside.GetComponentInParent<Canvas>() : null;
+        if (canvas == null)
+            return false;
+        var id = canvas.rootCanvas.GetInstanceID();
+        foreach (var t in tracked)
+            if (t.Id == id)
+                return t.WallOnTop;
+        return false;
     }
 
     public static void Scan(bool includeInactive)
@@ -733,7 +760,11 @@ internal static class WorldCanvases
         var depth = PanelDepth(t, t.Eye, t.Yaw, cfg);
         var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth, PanelMath.NearestMenuDistance);
         if (turned == null)
+        {
             clear = Mathf.Min(clear, t.Scale * wanted);
+            // Held nearer than the fit (an earlier, tighter test): on top only if it still stands past the wall.
+            onTop = clear > depth - PanelMath.WallGap;
+        }
         var scale = clear / wanted;
         bool moved = turned != null || (t.Scale - scale) * wanted >= 0.005f;
         t.Moved = turned == null && (t.Moved || moved);
@@ -751,6 +782,8 @@ internal static class WorldCanvases
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
             t.Distance.Snap(clear, onTop);
         }
+        else
+            t.Distance.SetOnTop(onTop);
         // Re-marked on every test: a new page brings graphics the last mark never saw.
         DrawOnTop(t, onTop, remark: true);
         if (turned != null || (!t.Retest && t.Moved))

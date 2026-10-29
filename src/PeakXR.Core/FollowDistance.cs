@@ -46,6 +46,13 @@ public sealed class FollowDistance
         outFor = clearFor = 0f;
     }
 
+    /// <summary>A wall test outside the follow (a page change) decided the on-top state; the next glide starts from it.</summary>
+    public void SetOnTop(bool onTop)
+    {
+        OnTop = onTop;
+        clearFor = 0f;
+    }
+
     /// <summary>
     /// One wall test at the panel's heading: <paramref name="wallDepth"/> as fed to
     /// <see cref="PanelMath.FitBeforeWall"/>, <paramref name="dt"/> seconds since the last one.

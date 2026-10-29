@@ -631,6 +631,10 @@ internal sealed partial class SelfTestRunner
         var eye = head.position;
         var fails = new List<string>();
         var notes = new List<string>();
+        // A menu held in front of a wall draws all of itself on top; the rail, built after the last mark, was left
+        // depth tested behind the elevator wall and never seen (live run 3a1b2f9).
+        if (WorldCanvases.WallOnTopOf(menu) && !(OnTop.AllOnTop(column) && OnTop.AllOnTop(rail)))
+            fails.Add("the menu is drawn on top of a wall but its VR column or rail is not");
 
         viewport.GetWorldCorners(edgeCorners);
         float wide = Vector3.Angle(

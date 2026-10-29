@@ -131,6 +131,18 @@ public class FollowDistanceTests
     }
 
     [Fact]
+    public void SetOnTop_TakesAPageTestsVerdictWithoutMoving()
+    {
+        var d = At(0.6f);
+        d.SetOnTop(true);
+        Assert.True(d.OnTop);
+        Assert.False(d.Easing);
+        // Clear way, but only for less than the clear time: still on top.
+        d.Test(Wanted, 0.8f, FollowDistance.OutSeconds * 0.5f, settled: false);
+        Assert.True(d.OnTop);
+    }
+
+    [Fact]
     public void HasRoom_MatchesTheOpeningRule()
     {
         Assert.True(PanelMath.HasRoom(Open));

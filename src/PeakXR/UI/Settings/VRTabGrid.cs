@@ -236,6 +236,7 @@ internal static class VRTabGrid
         lastFallback = null;
         Shown = true;
         Pages = 1;
+        World.WorldCanvases.MarkOnTop(content);
         Plugin.Log.LogInfo(
             $"[ui.settings] VR tab: '{group.Title}', {group.Rows.Count} rows in a {VRTabColumn.ColumnDegrees:0} deg "
                 + $"column ({rowWidth:0} px at x{columnScale:0.00}), rail of {groups.Count} at x{railScale:0.00} "
