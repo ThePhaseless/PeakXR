@@ -4,9 +4,9 @@ using UnityEngine;
 namespace PeakXR.Avatar;
 
 /// <summary>
-/// Held-item side of the driver: the item's frame from the tracked hand, the single-hand weld, the free carry that
-/// follows the controller when the ragdoll arm cannot, and the item passing through its holder's body. Local
-/// physics only on every client; nothing here is sent.
+/// Held-item side of the driver: the item's frame from the tracked hand (between both hands while two hold it), the
+/// single-hand weld, the free carry that follows the controller when the ragdoll arm cannot, and the item passing
+/// through its holder's body. Local physics only on every client; nothing here is sent.
 /// </summary>
 public partial class AvatarPoseDriver
 {
@@ -184,8 +184,10 @@ public partial class AvatarPoseDriver
             left ? Pose.LeftHandPosition : Pose.RightHandPosition,
             left ? Pose.LeftHandRotation : Pose.RightHandRotation,
             out var ctrlBone,
-            out _
+            out var ctrlBoneRot
         );
+        // Both hands on it: the arm reaches for the hand's grip on the item between them.
+        TwoHandGrip(left, ref ctrlBone, ref ctrlBoneRot);
         float toItem = HandBoneOnItem(item, left, out var itemBone, out _)
             ? Vector3.Distance(hand, itemBone)
             : float.PositiveInfinity;
@@ -423,13 +425,17 @@ public partial class AvatarPoseDriver
         if (item != null && same && left != handoffLeft && fresh)
         {
             var inv = Quaternion.Inverse(left ? pose.LeftHandRotation : pose.RightHandRotation);
+            // From both hands' pose when they held it, else where the item is.
+            bool fromTwo = twoHandOn && haveItemTarget;
+            twoHandOn = false;
+            twoWeight = 0f;
             handoffPos =
                 inv
                 * (
-                    item.transform.position
+                    (fromTwo ? itemTargetPos : item.transform.position)
                     - (left ? pose.LeftHandPosition : pose.RightHandPosition)
                 );
-            handoffRot = inv * item.transform.rotation;
+            handoffRot = inv * (fromTwo ? itemTargetRot : item.transform.rotation);
             handoffAt = Time.time;
             if (itemJoint != null)
             {
@@ -439,9 +445,12 @@ public partial class AvatarPoseDriver
         }
         else if (!same)
         {
-            // Another item: no ease or weld left over from the last one.
+            // Another item: no ease, weld or two-hand hold left over from the last one.
             handoffAt = -10f;
             handoffReweld = false;
+            twoHandOn = false;
+            twoWeight = 0f;
+            haveItemTarget = false;
         }
         handoffItem = item;
         if (fresh || !same)
@@ -520,57 +529,209 @@ public partial class AvatarPoseDriver
             pos = ctrlPos + aimed * Quaternion.Inverse(rot) * (pos - ctrlPos);
             rot = aimed;
         }
-        else if (pose.TwoHandHold && (left ? pose.HasRightHand : pose.HasLeftHand))
-        {
-            // Pivot the item about the holding hand so the grip-to-grip axis points at the supporting hand.
-            rig.BoneFromController(ctrlPos, ctrlRot, out var anchor, out _);
-            var anchorLocal = Quaternion.Inverse(rot) * (anchor - pos);
-            var axis = SupportAxis(item, anchorLocal);
-            var support = left ? pose.RightHandPosition : pose.LeftHandPosition;
-            var aligned = GripMath.AlignAxis(rot.N(), axis.N(), (support - anchor).N()).U();
-            pos = anchor - aligned * anchorLocal;
-            rot = aligned;
-        }
+        else
+            TwoHand(item, pose, left, rig, ctrlPos, ctrlRot, ref pos, ref rot);
+        haveItemTarget = true;
+        itemTargetPos = pos;
+        itemTargetRot = rot;
         return true;
     }
 
-    /// <summary>Item axis from the holding hand to the farther vanilla grip, else the item's forward.</summary>
-    private Vector3 SupportAxis(Item item, Vector3 anchorLocal)
-    {
-        var axis = Vector3.forward;
-        float best = 0.1f;
-        // The grips as this hold has them: where the left hold puts them for a left-primary hold
-        // (ItemHoldInfo.HoldLocal).
-        bool left = Pose.ItemInLeftHand;
-        Consider(hold, hold.GripLeft, false, item.transform, anchorLocal, left, ref axis, ref best);
-        Consider(hold, hold.GripRight, true, item.transform, anchorLocal, left, ref axis, ref best);
-        return axis;
+    // The two-hand hold (Core TwoHandPose), set at the join from the one-hand pose and kept while both hands grip.
+    private bool twoHandOn;
+    private float twoHandAt = -10f;
+    private float twoWeight;
 
-        static void Consider(
-            ItemHoldInfo hold,
-            Transform grip,
-            bool primaryGrip,
-            Transform itemTransform,
-            Vector3 anchorLocal,
-            bool primaryLeft,
-            ref Vector3 axis,
-            ref float best
-        )
+    /// <summary>The second hand's grip in the item frame, as drawn (HeldItemScale about the main grip).</summary>
+    private Vector3 twoGrip2;
+    private Vector3 twoUpLocal;
+    private Vector3 twoUp1;
+    private Vector3 twoUp2;
+    private Vector3 twoAxis;
+    private Vector3 twoUp;
+
+    /// <summary>The second hand bone's rotation in the item frame at the join.</summary>
+    private Quaternion twoHand2Rot = Quaternion.identity;
+
+    /// <summary>The last item pose <see cref="TryGetItemWorldPose"/> gave: where a release eases from.</summary>
+    private bool haveItemTarget;
+    private Vector3 itemTargetPos;
+    private Quaternion itemTargetRot = Quaternion.identity;
+
+    /// <summary>
+    /// Both hands on the item (not a launcher, which lies along the two-hand axis instead): the item sits between
+    /// them (Core <see cref="TwoHandPose"/>), its grips' middle on the hands' middle, its grip axis along theirs and its
+    /// roll from both hands, eased in from the one-hand pose. The second hand's grip is the item's <c>Hand_L</c> (as
+    /// this hold has it) when it closed near there, else where it closed on the body. The second hand letting go eases
+    /// the item back onto the main hand's grip. Local physics only, as the one-hand pose.
+    /// </summary>
+    private void TwoHand(
+        Item item,
+        AvatarPose pose,
+        bool left,
+        HandRig rig,
+        Vector3 ctrlPos,
+        Quaternion ctrlRot,
+        ref Vector3 pos,
+        ref Quaternion rot
+    )
+    {
+        if (!pose.TwoHandHold || hold.Aimed || (left ? !pose.HasRightHand : !pose.HasLeftHand))
         {
-            if (grip == null)
+            twoWeight = 0f;
+            if (!twoHandOn)
                 return;
-            var local =
-                hold.HoldLocal(
-                    itemTransform.InverseTransformPoint(grip.position),
-                    primaryLeft,
-                    primaryGrip
-                ) - anchorLocal;
-            if (local.magnitude > best)
-            {
-                best = local.magnitude;
-                axis = local;
-            }
+            twoHandOn = false;
+            if (!haveItemTarget)
+                return;
+            // The second hand let go: from where both hands had it onto the main hand's grip, no jump.
+            var inv = Quaternion.Inverse(ctrlRot);
+            handoffPos = inv * (itemTargetPos - ctrlPos);
+            handoffRot = inv * itemTargetRot;
+            handoffAt = Time.time;
+            pos = itemTargetPos;
+            rot = itemTargetRot;
+            return;
         }
+        var other = left ? rightRig : leftRig;
+        var otherRot = left ? pose.RightHandRotation : pose.LeftHandRotation;
+        rig.BoneFromController(ctrlPos, ctrlRot, out var b1, out _);
+        other.BoneFromController(
+            left ? pose.RightHandPosition : pose.LeftHandPosition,
+            otherRot,
+            out var b2,
+            out var b2Rot
+        );
+        var grip1 = hold.HoldPivot(left);
+        if (
+            !twoHandOn
+            && !JoinTwoHand(item, left, grip1, b1, b2, b2Rot, ctrlRot, otherRot, pos, rot)
+        )
+            return;
+        var axis = twoAxis.N();
+        var up = twoUp.N();
+        TwoHandPose.Solve(
+            b1.N(),
+            b2.N(),
+            (ctrlRot * twoUp1).N(),
+            (otherRot * twoUp2).N(),
+            grip1.N(),
+            twoGrip2.N(),
+            twoUpLocal.N(),
+            ref axis,
+            ref up,
+            out var tp,
+            out var tr
+        );
+        twoAxis = axis.U();
+        twoUp = up.U();
+        twoWeight = TwoHandPose.Weight(Time.time - twoHandAt);
+        TwoHandPose.Blend(pos.N(), rot.N(), tp, tr, twoWeight, out var bp, out var br);
+        pos = bp.U();
+        rot = br.U();
+    }
+
+    /// <summary>The second hand has just closed on the item held one-handed at <paramref name="pos"/>/
+    /// <paramref name="rot"/>: where it holds it, the up each hand carries (an item's front stays where the one-hand
+    /// hold showed it, toward the eyes) and the hand's turn on the item. False when it closed on the main grip itself,
+    /// which gives no axis: the hold stays one-handed.</summary>
+    private bool JoinTwoHand(
+        Item item,
+        bool left,
+        Vector3 grip1,
+        Vector3 b1,
+        Vector3 b2,
+        Quaternion b2Rot,
+        Quaternion ctrlRot,
+        Quaternion otherRot,
+        Vector3 pos,
+        Quaternion rot
+    )
+    {
+        var handLocal = Quaternion.Inverse(rot) * (b2 - pos);
+        bool hasGrip = hold.GripLeft != null;
+        var gripL = hasGrip
+            ? grip1
+                + (hold.HoldLocal(hold.GripLeft.localPosition, left, primaryGrip: false) - grip1)
+                    * HeldItemScale.Factor(item)
+            : Vector3.zero;
+        twoGrip2 = TwoHandPose
+            .SecondGrip(handLocal.N(), hasGrip, gripL.N(), TwoHandPose.SecondGripReach)
+            .U();
+        var a = twoGrip2 - grip1;
+        if (a.magnitude < TwoHandPose.MinSpacing)
+            return false;
+        twoUpLocal = TwoHandPose
+            .UpLocal(a.normalized.N(), (hold.HasFront ? hold.Front : Vector3.up).N())
+            .U();
+        var span = b2 - b1;
+        twoAxis = span.magnitude >= TwoHandPose.MinSpacing ? span.normalized : (rot * a).normalized;
+        TwoHandPose.Capture(
+            rot.N(),
+            twoUpLocal.N(),
+            twoAxis.N(),
+            ctrlRot.N(),
+            otherRot.N(),
+            out var v1,
+            out var v2,
+            out var up0
+        );
+        twoUp1 = v1.U();
+        twoUp2 = v2.U();
+        twoUp = up0.U();
+        // The second hand keeps the turn it closed with, on the item where the two hands will hold it.
+        var axis = twoAxis.N();
+        var up = twoUp.N();
+        TwoHandPose.Solve(
+            b1.N(),
+            b2.N(),
+            (ctrlRot * twoUp1).N(),
+            (otherRot * twoUp2).N(),
+            grip1.N(),
+            twoGrip2.N(),
+            twoUpLocal.N(),
+            ref axis,
+            ref up,
+            out _,
+            out var r0
+        );
+        twoHand2Rot = Quaternion.Inverse(r0.U()) * b2Rot;
+        twoHandOn = true;
+        twoHandAt = Time.time;
+        return true;
+    }
+
+    /// <summary>
+    /// Where a two-hand hold puts the <paramref name="left"/> hand bone (physics space): on its grip of the item
+    /// between the hands, the main hand where its one-hand grip is, the second hand on <see cref="twoGrip2"/>; eased in
+    /// with the hold. Left alone otherwise, so the arm IK, the weld gate and the drawn hands all meet the item.
+    /// </summary>
+    internal void TwoHandGrip(bool left, ref Vector3 bone, ref Quaternion boneRot)
+    {
+        if (
+            !twoHandOn
+            || twoWeight <= 0f
+            || !TryGetItemWorldPose(out var itemPos, out var itemRot)
+            || !twoHandOn
+        )
+            return;
+        Vector3 p;
+        Quaternion r;
+        if (left == Pose.ItemInLeftHand)
+        {
+            var rig = left ? leftRig : rightRig;
+            if (!ItemInController(rig, out var xPos, out var xRot))
+                return;
+            var ctrlRot = itemRot * Quaternion.Inverse(xRot);
+            rig.BoneFromController(itemPos - ctrlRot * xPos, ctrlRot, out p, out r);
+        }
+        else
+        {
+            p = itemPos + itemRot * twoGrip2;
+            r = itemRot * twoHand2Rot;
+        }
+        bone = Vector3.Lerp(bone, p, twoWeight);
+        boneRot = Quaternion.Slerp(boneRot, r, twoWeight);
     }
 
     /// <summary>The held item's one-hand pose in the <paramref name="left"/> controller's frame, so gestures test the

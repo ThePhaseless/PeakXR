@@ -258,6 +258,7 @@ internal static class PhysicalInteraction
         RetryClimb(RightHand, c, rig, cfg, now);
         UpdateHover(LeftHand, c, rig, cfg, now);
         UpdateHover(RightHand, c, rig, cfg, now);
+        SecondGripCue(c, rig);
         ClimbStow.Tick(c, rig, cfg);
         UpdateAim(cfg);
         UpdateClimb(c, rig, cfg, dt, now);
@@ -627,15 +628,7 @@ internal static class PhysicalInteraction
             // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
             // a join here would pre-empt (extensions are never asked once the press is SecondHand). Only while the
             // runner can claim it (ParasolRunner.ClaimPress: grounded, not climbing): mid-glide the hand joins.
-            HeldBothHandsInGame =
-                holding
-                && !item.rightHandOnly
-                && !(
-                    Physical.ItemGestures.Parasol != null
-                    && Physical.ItemGesturesConfig.Instance.ParasolRunner
-                    && c.data.isGrounded
-                    && !c.data.isClimbing
-                ),
+            HeldBothHandsInGame = holding && BothHandsInGame(c, item),
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
@@ -1233,6 +1226,61 @@ internal static class PhysicalInteraction
         Plugin.Log.LogInfo(
             $"[interact] {item.name} handed to the {(to.Left ? "left" : "right")} hand, now its primary"
         );
+    }
+
+    /// <summary>
+    /// Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the parasol
+    /// too; with its runner on, the free hand on a held parasol is the runner's grip extension, which a join would
+    /// pre-empt (extensions are never asked once the press is SecondHand). Only while the runner can claim it
+    /// (ParasolRunner.ClaimPress: grounded, not climbing): mid-glide the hand joins.
+    /// </summary>
+    private static bool BothHandsInGame(Character c, Item item) =>
+        !item.rightHandOnly
+        && !(
+            Physical.ItemGestures.Parasol != null
+            && Physical.ItemGesturesConfig.Instance.ParasolRunner
+            && c.data.isGrounded
+            && !c.data.isClimbing
+        );
+
+    /// <summary>
+    /// The free hand near a held item it can join: the teal "would work here" double ring at the item's second grip,
+    /// a chevron from the hand toward it (UI.ActionHints), silent, and gone once that hand grips or moves away
+    /// (Core <see cref="TwoHandPose.ShowSecondGrip"/>). Items without a <c>Hand_L</c> grip show nothing: the hand
+    /// joins them anywhere on the body.
+    /// </summary>
+    private static void SecondGripCue(Character c, VRRig rig)
+    {
+        if (VRInput.OneHanded || !Affordance.Hints || !Holding(c, out var item))
+            return;
+        var free = LocalHold.ItemInLeftHand ? RightHand : LeftHand;
+        var t = rig.Hand(free.Left);
+        if (t == null || !Hold.SecondGrip(LocalHold.ItemInLeftHand, out var grip))
+            return;
+        bool handFree =
+            VRInput.Hand(free.Left).Tracked
+            && !free.Grip.Held
+            && free.Action == GripPressAction.None;
+        bool takes = ItemHoldTable.AcceptsSecondHand(
+            Hold.Profile.Handedness,
+            BothHandsInGame(c, item)
+        );
+        if (
+            TwoHandPose.ShowSecondGrip(
+                takes,
+                handFree,
+                LocalHold.TwoHand,
+                Vector3.Distance(t.position, grip)
+            )
+        )
+            AffordanceRuntime.Hover(
+                free.Left,
+                t.position,
+                DenyReason.NeedsTwoHands,
+                DenyHint.At(grip),
+                notice: true,
+                silent: true
+            );
     }
 
     /// <summary>A two-handed item counts as held in both hands: the free hand joined it, or one-handed play has no
