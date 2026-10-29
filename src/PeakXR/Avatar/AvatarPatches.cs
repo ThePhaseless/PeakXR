@@ -4,7 +4,6 @@ using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace PeakXR.Avatar;
 
@@ -307,10 +306,12 @@ internal static class AvatarPatches
                 System.StringComparison.Ordinal
             );
             bool all = string.Equals(mode, AvatarConfig.ShowAll, System.StringComparison.Ordinal);
-            // The ghost hides only red-painted vertices within 1 m of the camera measured flat (BodyGhost), so the
-            // eyes, face and hat brims stayed drawn whenever the head was not exactly round the eye (looking down,
-            // a lean): the head, face and hats cast their shadow only while the view is in the head.
-            ShadowOnlyHead(__instance, !show && VRSession.Active && !vanilla && !all);
+            // The ghost hides only red-painted vertices within 1 m of the camera measured flat (BodyGhost), and the
+            // face cards' shader has no ghost at all (GD/Face Cards), so the eyes, face and hat brims stayed drawn
+            // whenever the head was not exactly round the eye (looking down, a lean): the eyes skip the head, face
+            // and hats while the view is in the head (OwnHead). Anything else gives back what OwnHead hid, and only
+            // that, so flat play keeps the game's own head.
+            OwnHead.Set(__instance, !show && VRSession.Active && !vanilla && !all);
             if (show || !VRSession.Active || vanilla)
                 return;
 
@@ -324,7 +325,7 @@ internal static class AvatarPatches
             // The visible body casts its own shadow now; the shadow-only copy would double it.
             if (__instance.shadowCaster != null)
                 __instance.shadowCaster.SetActive(false);
-            // The hats cast their own shadow as well (ShadowOnlyHead), so their shadow-only copy would double it too.
+            // The hats cast their own shadow as well (OwnHead), so their shadow-only copy would double it too.
             if (__instance.shadowCasterHat != null)
                 __instance.shadowCasterHat.SetActive(false);
 
@@ -335,36 +336,6 @@ internal static class AvatarPatches
                 __instance.SetShowing(r, 0f);
             foreach (var hat in __instance.refs.playerHats)
                 __instance.SetShowing(hat, 0f);
-        }
-
-        /// <summary>Head, face and hat renderers (HideTheBody.cs:10, :14, CustomizationRefs.playerHats) drawn only
-        /// into shadow maps for the eye camera, or back to drawn; every other game camera draws them
-        /// (<see cref="OwnHead"/>). Only renderers in the mode we set are switched back, so a renderer the
-        /// game keeps shadowless stays so. Runs on a toggle, never per frame.</summary>
-        private static void ShadowOnlyHead(HideTheBody hide, bool shadowOnly)
-        {
-            if (!shadowOnly)
-                OwnHead.Clear();
-            Shadow(hide.headRend, shadowOnly);
-            if (hide.face != null)
-                foreach (var r in hide.face.GetComponentsInChildren<Renderer>(true))
-                    Shadow(r, shadowOnly);
-            if (hide.refs != null && hide.refs.playerHats != null)
-                foreach (var hat in hide.refs.playerHats)
-                    Shadow(hat, shadowOnly);
-        }
-
-        private static void Shadow(Renderer r, bool shadowOnly)
-        {
-            if (r == null)
-                return;
-            var from = shadowOnly ? ShadowCastingMode.On : ShadowCastingMode.ShadowsOnly;
-            if (r.shadowCastingMode != from)
-                return;
-            r.shadowCastingMode = shadowOnly ? ShadowCastingMode.ShadowsOnly : ShadowCastingMode.On;
-            // Only the eyes skip it: mirrors and other game cameras draw it again (OwnHead).
-            if (shadowOnly)
-                OwnHead.Track(r);
         }
     }
 

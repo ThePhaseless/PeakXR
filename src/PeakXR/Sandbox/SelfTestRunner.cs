@@ -219,6 +219,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Finish();
                 yield break;
             }
+            // Flat too (-peakxr-novr): the own head stays the game's.
+            yield return Run("vr.274-own-head-hidden", 45f, OwnHeadHiddenStep());
             // Live (chosen by name) it waits up to 120 s for the headset off and 600 s for it back on.
             yield return VRStep("vr.260-headset-off", 760f, HeadsetOffCheck());
             yield return VRStep("vr.262-wear-sensor-off", 20f, WearSensorCheck());
