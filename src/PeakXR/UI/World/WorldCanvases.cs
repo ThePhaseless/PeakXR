@@ -262,8 +262,13 @@ internal static class WorldCanvases
             case RenderMode.ScreenSpaceOverlay:
                 return true;
             case RenderMode.ScreenSpaceCamera:
-                // Canvases drawn into a render texture (hero card, photobooth, guidebook) are already 3D.
-                return root.worldCamera == null || root.worldCamera.targetTexture == null;
+                // Canvases drawn into a render texture (hero card, photobooth, guidebook) are already 3D. A canvas
+                // whose own camera is off draws only on that camera's manual Render(): the guidebook pages'
+                // Book/Camera (disabled in the prefab, rendered at Guidebook.cs:243) loses its shared target when a
+                // page's OnDisable destroys it (Guidebook.cs:122) before OpenSinglePage copied it (Guidebook.cs:97),
+                // and every page would otherwise float in the view at once.
+                var cam = root.worldCamera;
+                return cam == null || (cam.enabled && cam.targetTexture == null);
             default:
                 return false;
         }

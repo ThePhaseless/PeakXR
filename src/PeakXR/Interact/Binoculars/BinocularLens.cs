@@ -100,7 +100,13 @@ internal sealed class BinocularLens : MonoBehaviour
     /// <summary>Binoculars were raised in VR: hand the view to the lens and keep vanilla off the headset.</summary>
     public static void Begin(Action_ShowBinocularOverlay binoculars)
     {
-        Suppress(binoculars);
+        // A prop never touches the overlay feature or the camera (Action_ShowBinocularOverlay.cs:26), and its
+        // feature manager may never have started.
+        if (!binoculars.isProp)
+            Suppress(binoculars);
+        Plugin.Log.LogInfo(
+            $"[interact.binoculars] lens on: {binoculars.name}, prop {binoculars.isProp}, twist zoom {binoculars.cameraOverride is CameraOverride_Binoculars}"
+        );
         if (instance == null)
         {
             var host = new GameObject("PeakXR.Binoculars")
@@ -127,7 +133,7 @@ internal sealed class BinocularLens : MonoBehaviour
         if (c == null || c.data.currentItem == null)
             return;
         var binoculars = c.data.currentItem.GetComponentInChildren<Action_ShowBinocularOverlay>();
-        if (binoculars != null && binoculars.binocularsActive && !binoculars.isProp)
+        if (binoculars != null && binoculars.binocularsActive)
             Begin(binoculars);
     }
 
@@ -140,6 +146,7 @@ internal sealed class BinocularLens : MonoBehaviour
         instance.Stop();
         if (
             binoculars == null
+            || binoculars.isProp
             || !binoculars.binocularsActive
             || !HandAim.IsLocalHeld(ItemOf(binoculars))
         )
