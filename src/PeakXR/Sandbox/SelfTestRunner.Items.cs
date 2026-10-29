@@ -55,7 +55,8 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.167-secondary-deny", 20f, SecondaryDenyStep());
         yield return ItemStep("vr.168-shoot-hand", "RopeShooter", 30f, ShootHandStep);
         yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
-        // vr.169 raises the binoculars in Hold mode; a failed or timed-out step leaves it forced.
+        yield return ItemStep("vr.248-binocular-near-eye", "Binoculars", 20f, NearEyeLensStep);
+        // vr.169 and vr.248 raise the binoculars in Hold mode; a failed or timed-out step leaves it forced.
         BinocularsConfig.ForceHold = false;
         // A bandage's trigger cast (4 s): food no longer casts on the trigger.
         yield return ItemStep("vr.170-throw-mid-cast", "Bandage", 25f, ThrowMidCastStep);
@@ -3327,6 +3328,61 @@ internal sealed partial class SelfTestRunner
             $"{prefab.name}: zoom {fovBefore:0.0} -> {fovAt:0.0} deg (range {zoom.minFov:0.0}-{zoom.maxFov:0.0}); {BinocularGiveNre}";
         if (fovAt < zoom.maxFov - 0.01f)
             Fail("the end stop came before the widest zoom: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>vr.248: binoculars raised (Hold mode, the trigger held) and their eye end brought to the eyes: the
+    /// zoomed image shows in front of the eyes and is drawn over everything nearer (<c>BinocularLens.NearEyeOnTop</c>).
+    /// v0.1.1 drew it with URP's Unlit shader, which has no depth test switch, so the binoculars' own model hid the
+    /// image just when they were raised to the face (tester: "the binoculars don't work").</summary>
+    IEnumerator NearEyeLensStep(Item prefab)
+    {
+        yield return GiveAndHold(prefab);
+        if (!stepOk)
+            yield break;
+        var item = HeldItem();
+        bool left = LocalHold.ItemInLeftHand;
+        var binoculars = item.GetComponentInChildren<Action_ShowBinocularOverlay>();
+        if (binoculars == null)
+        {
+            Fail(item.name + " has no Action_ShowBinocularOverlay");
+            yield break;
+        }
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out _);
+        SetHand(left, head + forward * 0.25f + Vector3.down * 0.05f);
+        BinocularsConfig.ForceHold = true;
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        yield return WaitFor(
+            () => binoculars.binocularsActive,
+            GameTiming.Budget(GameTiming.UseSeconds(item), 1f)
+        );
+        // Steer the hand until the eye end sits 5 cm in front of the eyes; the held item follows the hand with a lag.
+        var rig = VRRig.Instance;
+        float distance = float.PositiveInfinity;
+        for (int i = 0; i < 8 && binoculars.binocularsActive; i++)
+        {
+            if (BinocularLens.EyeEndWorld is not { } eyeEnd)
+                break;
+            var goal = rig.Head.position + rig.Head.forward * 0.05f;
+            distance = Vector3.Distance(rig.Head.position, eyeEnd);
+            Script(left).Position +=
+                rig.Origin.InverseTransformPoint(goal) - rig.Origin.InverseTransformPoint(eyeEnd);
+            yield return Wait(0.2f);
+        }
+        yield return WaitFor(() => BinocularLens.NearEyeOnTop, 1f);
+        bool onTop = BinocularLens.NearEyeOnTop;
+        string placement = BinocularLens.PlacementName;
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        yield return Wait(0.3f);
+        BinocularsConfig.ForceHold = false;
+        var note =
+            $"{prefab.name}: raised {binoculars.binocularsActive || onTop}, lens {placement}, eye end {distance:0.00} m from the eyes (near-eye under {BinocularsConfig.EyeDistance:0.00} m); {BinocularGiveNre}";
+        if (!onTop)
+            Fail("the zoomed image is not drawn on top in front of the eyes: " + note);
         else
             Note(note);
     }

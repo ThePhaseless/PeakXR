@@ -231,6 +231,86 @@ internal sealed partial class SelfTestRunner
             Destroy(probe);
     }
 
+    /// <summary>
+    /// vr.249: a button throw (the drop button held to charge, CharacterItems.cs:299-306) with the holding hand aimed
+    /// 50 degrees right of the look. While it charges, where the game shows its throw reticle (GUIManager.cs:690),
+    /// the aim cue draws an arc (<see cref="ThrowAimCue"/>) that leaves along the hand; the thrown item flies along
+    /// the hand's aim, not the head's look (CharacterItems.cs:414; tester: "the throw goes where your head looks").
+    /// </summary>
+    IEnumerator ButtonThrowAimStep()
+    {
+        Item item = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it != null && it.name == ThrowItemName)
+                item = it;
+        }
+        if (item == null)
+        {
+            Fail($"no '{ThrowItemName}' item to throw");
+            yield break;
+        }
+        yield return GiveAndHold(item);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        ushort heldId = HeldItem().itemID;
+        bool left = LocalHold.ItemInLeftHand;
+        yield return GripTo(left, 1f, 0.1f);
+        HeadFrame(out var head, out var forward, out var right);
+        SetHand(
+            left,
+            head + forward * 0.3f + Vector3.down * 0.2f + right * (left ? -0.15f : 0.15f)
+        );
+        yield return null;
+        var look = ThrowAimCue.LookDirection(c);
+        var target =
+            rig.Head.position
+            + Quaternion.AngleAxis(50f, Vector3.up) * Flat(look) * 10f
+            + Vector3.up * 2f;
+        AimHand(rig, left, target);
+        yield return Wait(0.3f);
+        SnapshotItems();
+        bool dropHand = VRInput.LeftHanded;
+        Script(dropHand).Secondary = true;
+        int dots = 0;
+        var aim = Vector3.zero;
+        var cueLaunch = Vector3.zero;
+        float end = Now + 2.5f;
+        while (Now < end && c.refs.items.throwChargeLevel < 0.6f)
+        {
+            AimHand(rig, left, target);
+            if (ThrowAimCue.Dots > dots)
+            {
+                dots = ThrowAimCue.Dots;
+                cueLaunch = ThrowAimCue.Launch;
+            }
+            ThrowAimCue.TryAim(out aim);
+            yield return null;
+        }
+        float charge = c.refs.items.throwChargeLevel;
+        Script(dropHand).Secondary = false;
+        Item thrown = null;
+        end = Now + 1.5f;
+        while (Now < end && (thrown = NewItem(heldId)) == null)
+            yield return null;
+        var launch =
+            thrown != null && thrown.rig != null ? thrown.rig.linearVelocity : Vector3.zero;
+        float offAim = Vector3.Angle(Flat(launch), Flat(aim));
+        float offLook = Vector3.Angle(Flat(launch), Flat(look));
+        var note =
+            $"charge {charge:0.00}, cue dots {dots} (launch {Vector3.Angle(Flat(cueLaunch), Flat(aim)):0} deg off the hand), thrown {thrown != null}, flight {offAim:0} deg off the hand aim and {offLook:0} deg off the look";
+        if (dots == 0)
+            Fail("no throw aim cue while the throw charged: " + note);
+        else if (thrown == null)
+            Fail("the button throw threw nothing: " + note);
+        else if (offAim > 15f || offAim >= offLook)
+            Fail("the button throw did not follow the hand: " + note);
+        else
+            Note(note);
+    }
+
     static readonly byte[] PocketSlots = { 0, 1, 2, 250 };
 
     /// <summary>Hotbar slots and the overflow slot (<c>Player.GetItemSlot</c>, Player.cs:250-263) holding

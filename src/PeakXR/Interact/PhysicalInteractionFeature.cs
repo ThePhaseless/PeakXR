@@ -51,5 +51,6 @@ public sealed class PhysicalInteractionFeature : Feature
         GripHooks.Register(Climb.ClimbHands.Extension);
         GripHooks.Register(Climb.TraversalGrips.Instance);
         GripToggle.Install();
+        ThrowAimCue.Create();
     }
 }

@@ -263,6 +263,8 @@ internal static class InteractPatches
                     && __instance.throwChargeLevel < sticky.throwChargeRequirement
                 )
                     Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.StuckToHand);
+                else if (VRSession.Active)
+                    AimButtonThrow(c, __instance);
                 return;
             }
             PhysicalInteraction.ConsumeThrow();
@@ -291,9 +293,7 @@ internal static class InteractPatches
                 mult,
                 sticky != null ? sticky.throwChargeRequirement : 0f
             );
-            // The master's look direction: HelperFunctions.LookToDirection(lookValues, forward) (HelperFunctions.cs:183-195).
-            var look = c.data.lookValues;
-            var lookDir = Quaternion.Euler(-look.y, look.x, 0f) * Vector3.forward;
+            var lookDir = ThrowAimCue.LookDirection(c);
             item.rig.linearVelocity =
                 velocity
                 - lookDir
@@ -304,6 +304,41 @@ internal static class InteractPatches
                         mult
                     );
             __instance.throwChargeLevel = charge;
+        }
+
+        /// <summary>A button throw (the drop button held to charge, CharacterItems.cs:299-306) flies along the
+        /// holding hand's aim, as <see cref="ThrowAimCue"/> draws it, not along the head's look (:414): the held item's
+        /// velocity, read into the RPC at :267, takes the swap (<see cref="HandThrow.Aimed"/>). A backpack is sent
+        /// still (:268-272), so it keeps the look.</summary>
+        private static void AimButtonThrow(Character c, CharacterItems items)
+        {
+            var item = c.data.currentItem;
+            float charge = items.throwChargeLevel;
+            if (
+                charge <= 0f
+                || item == null
+                || item.rig == null
+                || item is Backpack
+                || !ThrowAimCue.TryAim(out var aim)
+            )
+                return;
+            float lookSpeed = HandThrow.LookSpeed(
+                charge,
+                items.minThrowForce,
+                items.maxThrowForce,
+                item.throwForceMultiplier
+            );
+            item.rig.linearVelocity = HandThrow
+                .Aimed(
+                    item.rig.linearVelocity.N(),
+                    aim.N(),
+                    ThrowAimCue.LookDirection(c).N(),
+                    lookSpeed
+                )
+                .U();
+            Plugin.Log.LogInfo(
+                $"[interact] button throw along the hand: charge {charge:0.00}, {Vector3.Angle(aim, ThrowAimCue.LookDirection(c)):0} deg off the look"
+            );
         }
     }
 

@@ -50,9 +50,17 @@ internal sealed class BinocularLens : MonoBehaviour
     // Wrist-twist steps across the binoculars' whole zoom range.
     private const float TwistZoomSteps = 8f;
 
-    private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
+    // UI/Default reads its depth test from this; URP's Unlit has no depth test property at all.
+    private static readonly int ZTestId = Shader.PropertyToID("unity_GUIZTestMode");
     private static readonly Action<ScriptableRenderContext, Camera> BeginRender = OnBeginCamera;
     private static readonly Action<ScriptableRenderContext, Camera> EndRender = OnEndCamera;
+
+    /// <summary>No alpha channel: the alpha-blended UI shader then reads the image as opaque, whatever alpha the
+    /// game's shaders leave in it.</summary>
+    private static RenderTextureFormat LensFormat =>
+        SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RGB111110Float)
+            ? RenderTextureFormat.RGB111110Float
+            : RenderTextureFormat.Default;
 
     private static BinocularLens instance;
     private static bool shaderWarned;
@@ -256,7 +264,7 @@ internal sealed class BinocularLens : MonoBehaviour
         if (eyepiece && eyepieceTexture == null)
         {
             int size = LensCadence.EyepieceSize(texture.width);
-            eyepieceTexture = new RenderTexture(size, size, 24)
+            eyepieceTexture = new RenderTexture(size, size, 24, LensFormat)
             {
                 name = "PeakXR.BinocularLens.Eyepiece",
             };
@@ -464,16 +472,30 @@ internal sealed class BinocularLens : MonoBehaviour
     }
 
     /// <summary>Near-eye and panel views draw over the world (the binoculars' own model sits between the eyes
-    /// and the image); the eyepiece lens depth-tests normally.</summary>
+    /// and the image) and over the hands, under the comfort overlays; the eyepiece lens depth-tests normally.</summary>
     private void SetOnTop(bool onTop)
     {
-        if (material.HasProperty(ZTestId))
-            material.SetFloat(
-                ZTestId,
-                onTop ? (float)CompareFunction.Always : (float)CompareFunction.LessEqual
-            );
-        material.renderQueue = onTop ? (int)RenderQueue.Overlay : -1;
+        material.SetInt(ZTestId, (int)(onTop ? CompareFunction.Always : CompareFunction.LessEqual));
+        quadRenderer.sortingOrder = onTop ? DrawOrder.HandUi : 0;
     }
+
+    /// <summary>The lens image shows in front of the eyes, drawn over everything nearer (self-test vr.248).</summary>
+    internal static bool NearEyeOnTop =>
+        instance != null
+        && instance.placement == Placement.NearEye
+        && instance.quadRenderer != null
+        && instance.quadRenderer.enabled
+        && instance.material.GetInt(ZTestId) == (int)CompareFunction.Always;
+
+    /// <summary>Where the lens image shows now, for the self-test note.</summary>
+    internal static string PlacementName =>
+        instance != null ? instance.placement.ToString() : "no lens";
+
+    /// <summary>Where the raised binoculars' eye end is in the world, or null when no lens runs (self-test).</summary>
+    internal static Vector3? EyeEndWorld =>
+        instance != null && instance.item != null
+            ? instance.item.transform.TransformPoint(instance.eyeLocal)
+            : null;
 
     /// <summary>Centre of the model's rear face (lowest +Z of its meshes) in the item's frame; the pivot when it
     /// has no mesh. Runs once per raise.</summary>
@@ -511,21 +533,24 @@ internal sealed class BinocularLens : MonoBehaviour
             return true;
         Release();
 
-        var shader = Shader.Find("Universal Render Pipeline/Unlit");
+        // Built-in UI shaders every player build ships and whose depth test can be switched off: URP's Unlit has no
+        // depth test property, so the near-eye image sat behind the binoculars' own model (tester: "binoculars don't
+        // work"), and a build may not include it at all.
+        var shader = Shader.Find("UI/Default");
         if (shader == null)
-            shader = Shader.Find("Unlit/Texture");
+            shader = Shader.Find("Sprites/Default");
         if (shader == null)
         {
             if (!shaderWarned)
                 Plugin.Log.LogWarning(
-                    "[interact.binoculars] no unlit shader found; zoom view unavailable"
+                    "[interact.binoculars] no UI shader found; zoom view unavailable"
                 );
             shaderWarned = true;
             return false;
         }
 
         int size = BinocularsConfig.LensResolution;
-        texture = new RenderTexture(size, size, 24) { name = "PeakXR.BinocularLens" };
+        texture = new RenderTexture(size, size, 24, LensFormat) { name = "PeakXR.BinocularLens" };
         texture.Create();
 
         Camera main = null;
@@ -566,7 +591,12 @@ internal sealed class BinocularLens : MonoBehaviour
             data.volumeLayerMask = mainData.volumeLayerMask;
         }
 
-        material = new Material(shader) { name = "PeakXR.BinocularLens", mainTexture = texture };
+        material = new Material(shader)
+        {
+            name = "PeakXR.BinocularLens",
+            mainTexture = texture,
+            renderQueue = (int)RenderQueue.Transparent,
+        };
 
         quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "PeakXR.BinocularLens.Quad";
