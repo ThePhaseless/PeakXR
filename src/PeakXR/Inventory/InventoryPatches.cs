@@ -27,6 +27,7 @@ internal static class InventoryPatches
                 if (c == null || c.input != __instance || !VRSession.Active)
                     return;
                 BodyInventory.Instance.Tick(c, __instance, Time.deltaTime);
+                PackStash.Instance.Tick(c);
                 SlotGhosts.Ensure();
                 HotbarHider.Sync(SlotGhosts.Showing);
             }

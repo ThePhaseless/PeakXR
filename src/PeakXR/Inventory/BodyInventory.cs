@@ -496,16 +496,12 @@ internal sealed class BodyInventory : IGripExtension
     private static int FreePocket(Character c)
     {
         var visuals = c.refs.backpackHandler.activeBackpackVisuals;
-        var data = BackpackReference.GetFromEquippedBackpack(c).GetData();
-        if (visuals == null || data == null)
-            return -1;
-        int count = Math.Min(visuals.slotCount, data.itemSlots.Length);
-        for (int i = 0; i < count; i++)
-        {
-            if (data.itemSlots[i] != null && data.itemSlots[i].IsEmpty())
-                return i;
-        }
-        return -1;
+        return visuals == null
+            ? -1
+            : PackStash.FreePocket(
+                BackpackReference.GetFromEquippedBackpack(c).GetData(),
+                visuals.slotCount
+            );
     }
 
     /// <summary>Hovers wheel pockets by hand movement while any backpack wheel is open and a grip is held.</summary>

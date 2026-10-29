@@ -12,7 +12,8 @@ internal sealed class InventoryConfig
         holsterOnRelease,
         backpackOverShoulder,
         ghosts,
-        wheelByHand;
+        wheelByHand,
+        stashIntoPacks;
     private ConfigEntry<string> layout;
     private ConfigEntry<float> radius,
         height;
@@ -22,6 +23,7 @@ internal sealed class InventoryConfig
     public bool BackpackOverShoulder => backpackOverShoulder?.Value ?? true;
     public bool Ghosts => ghosts?.Value ?? true;
     public bool WheelByHand => wheelByHand?.Value ?? true;
+    public bool StashIntoPacks => stashIntoPacks?.Value ?? true;
     public string Layout => layout?.Value ?? BodySlotLayout.Belt;
     public float Radius => radius?.Value ?? 0.12f;
     public float Height => height?.Value ?? 0f;
@@ -90,6 +92,14 @@ internal sealed class InventoryConfig
                 "WheelByHand",
                 true,
                 "While a backpack wheel is open and a grip is held, moving that hand selects the pocket in that direction."
+            ),
+            stashIntoPacks = file.Bind(
+                s,
+                "StashIntoPacks",
+                true,
+                "Bring the held item into a backpack on the ground or on a friend's back and open the grip: it goes "
+                    + "into the first free pocket. A pin over the pack shows it would go in; a red ring says why not "
+                    + "(full, or an item packs refuse), and the item stays in your hand."
             ),
             ghosts = file.Bind(
                 s,
