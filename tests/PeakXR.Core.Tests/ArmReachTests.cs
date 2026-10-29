@@ -232,4 +232,56 @@ public class ArmReachTests
         Hold(l, 0.6f, 0.5f);
         TestUtil.Near(0.6f, l.Reach);
     }
+
+    // The drawn arm (DrawnHands) stretches about its shoulder so the drawn hand meets the controller in normal reach.
+    // Run log 2026-10-28: a held hand's controller 0.70 m from the scout's shoulder, its arm 0.60 m (ghost 0.13 m).
+
+    [Fact]
+    public void DrawnStretch_NoneWhileTheHandIsOnTheController()
+    {
+        Assert.Equal(1f, ArmReach.DrawnStretch(0.4f, 0.4f, Avatar, 1f));
+        // A controller nearer the shoulder than the hand never shrinks the arm.
+        Assert.Equal(1f, ArmReach.DrawnStretch(0.5f, 0.3f, Avatar, 1f));
+    }
+
+    [Fact]
+    public void DrawnStretch_PutsTheDrawnHandOnTheController()
+    {
+        // The reach map holds the hand at the bent reach while the controller is 0.77 m out (hands at eye level).
+        float k = ArmReach.DrawnStretch(Bent, 0.77f, Avatar, 1f);
+        TestUtil.Near(0.77f, Bent * k, 1e-4f);
+        // The held hand's arm locked straight at 0.60 m, its controller at 0.70 m.
+        TestUtil.Near(0.70f, 0.60f * ArmReach.DrawnStretch(0.60f, 0.70f, Avatar, 1f), 1e-4f);
+    }
+
+    [Fact]
+    public void DrawnStretch_StopsAtTheDrawnReach()
+    {
+        float reach = ArmReach.DrawnReach(Avatar);
+        TestUtil.Near(Avatar * ArmReach.MaxDrawnStretch, reach);
+        TestUtil.Near(reach, Avatar * ArmReach.DrawnStretch(Avatar, 1.4f, Avatar, 1f), 1e-4f);
+        // A hand that lags close to the shoulder is not blown up past the stretch limit.
+        Assert.Equal(ArmReach.MaxDrawnStretch, ArmReach.DrawnStretch(0.1f, 0.8f, Avatar, 1f));
+    }
+
+    [Fact]
+    public void DrawnStretch_FadesWithTheArmWeight_AndIgnoresBadInput()
+    {
+        TestUtil.Near(1f, ArmReach.DrawnStretch(0.5f, 0.7f, Avatar, 0f));
+        TestUtil.Near(1.2f, ArmReach.DrawnStretch(0.5f, 0.7f, Avatar, 0.5f), 1e-4f);
+        Assert.Equal(1f, ArmReach.DrawnStretch(0f, 0.7f, Avatar, 1f));
+        Assert.Equal(1f, ArmReach.DrawnStretch(float.NaN, 0.7f, Avatar, 1f));
+        Assert.Equal(1f, ArmReach.DrawnStretch(0.5f, float.NaN, Avatar, 1f));
+    }
+
+    [Fact]
+    public void GhostReach_NeverInsideTheDrawnReach()
+    {
+        // The ghost shows only where the drawn hand cannot follow, mapped or held.
+        float drawn = ArmReach.DrawnReach(Avatar);
+        TestUtil.Near(drawn, ArmReach.DrawnGhostReach(Avatar, 0.72f, 0f));
+        TestUtil.Near(drawn, ArmReach.DrawnGhostReach(Avatar, 0.72f, 1f));
+        // A learned reach past the drawn one keeps the old, later ghost.
+        TestUtil.Near(1.0f, ArmReach.DrawnGhostReach(Avatar, 1.0f, 1f));
+    }
 }

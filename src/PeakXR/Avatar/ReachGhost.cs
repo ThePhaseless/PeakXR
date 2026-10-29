@@ -9,7 +9,8 @@ namespace PeakXR.Avatar;
 /// A faint ghost hand at each controller the local character's arm cannot reach (a deep stoop, a reach past the
 /// arm): the held item stays on the character's hand, and the ghost shows where the real hand is. It fades in once
 /// the hand is 5 cm past its reach for 0.15 s (the arm, or the player's own reach while the reach map carries an empty
-/// hand, <see cref="ArmReach.GhostReach"/>) and is full by 15 cm (<see cref="GhostFade"/>; geometry, so a fast swing's lag
+/// hand, <see cref="ArmReach.GhostReach"/>; an empty hand's drawn arm stretches to its controller first, so its ghost
+/// waits for <see cref="ArmReach.DrawnReach"/>) and is full by 15 cm (<see cref="GhostFade"/>; geometry, so a fast swing's lag
 /// never shows it), and its fingers follow the hand's curls. Local
 /// only: a renderer on the rig side, never sent. Built once; LateUpdate allocates nothing and poses only what shows.
 /// </summary>

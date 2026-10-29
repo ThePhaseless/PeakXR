@@ -1214,7 +1214,12 @@ internal sealed class RigDriver : MonoBehaviour
         }
         if (shownKind == ViewKind.FirstPerson)
         {
-            LeanEye = BodyEye(c, yaw);
+            // At the body's own heading, not the rig's: the game turns the body to the head's heading every frame
+            // (Character.SetRotation, Character.cs:1539-1542), and its eyes sit 0.27 m ahead of its mass centre, so a
+            // head turned 90 degrees without a snap turn left the view 0.24 m beside and behind the body's eyes and
+            // a turn round 0.34 m behind them, the torso in front of the view. With the calibrated eyes where the
+            // body has them, the lean bends the body back under the view instead of keeping it upright there.
+            LeanEye = BodyEye(c, BodyHeading(c, yaw));
             ViewOffset =
                 anchor
                 - goal
@@ -1582,6 +1587,14 @@ internal sealed class RigDriver : MonoBehaviour
             return torso;
         var mass = RigMath.EyeAnchor(ViewRoot(c).N(), yaw, massEyes.Offset).U();
         return rootBlend >= 1f ? mass : Vector3.Lerp(torso, mass, rootBlend);
+    }
+
+    /// <summary>The heading the body faces (its flat look, Character.cs:1350, the frame the eyes are measured in,
+    /// <see cref="UpdateEyeOffset"/>), or <paramref name="fallback"/> without one.</summary>
+    private static float BodyHeading(Character c, float fallback)
+    {
+        var f = c.data.lookDirection_Flat;
+        return f.sqrMagnitude > 1e-4f ? Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg : fallback;
     }
 
     private static Character rootCharacter;

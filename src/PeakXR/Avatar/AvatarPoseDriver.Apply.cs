@@ -827,12 +827,13 @@ public partial class AvatarPoseDriver
         if (!PhysicsShoulder(left, out shoulder, out arm))
             return false;
         // An empty standing hand is mapped onto the arm out to the player's own reach (Reach): only past that is it
-        // out of reach. The bare arm alone showed the ghost at rest under a rig above x1 (vr.173, run 17).
-        arm = ArmReach.GhostReach(
-            arm,
-            Mathf.Max(reachL.Reach, reachR.Reach),
-            left ? reachWeightL : reachWeightR
-        );
+        // out of reach. The bare arm alone showed the ghost at rest under a rig above x1 (vr.173, run 17). An arm
+        // drawn stretched to its controller (DrawnHands) is out of reach only past the drawn reach.
+        float player = Mathf.Max(reachL.Reach, reachR.Reach);
+        float mapWeight = left ? reachWeightL : reachWeightR;
+        arm = DrawnHands.Stretches(Owner, left)
+            ? ArmReach.DrawnGhostReach(arm, player, mapWeight)
+            : ArmReach.GhostReach(arm, player, mapWeight);
         gap = GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm);
         return true;
     }

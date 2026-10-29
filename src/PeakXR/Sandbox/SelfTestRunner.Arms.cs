@@ -182,6 +182,11 @@ internal sealed partial class SelfTestRunner
         );
         JudgeArm(c, "L", true, left, idle, fails, notes);
         JudgeArm(c, "R", false, right, idle, fails, notes);
+        if (idle)
+        {
+            JudgeDrawnHand(c, driver, "idle L", true, fails, notes);
+            JudgeDrawnHand(c, driver, "idle R", false, fails, notes);
+        }
         yield return JudgeReaches(c, driver, fails, notes);
         yield return JudgeWristRolls(c, driver, fails, notes);
         Conclude(fails, notes);
@@ -429,6 +434,8 @@ internal sealed partial class SelfTestRunner
                 var label = F($"reach out {at.x:0.00} up {at.y:0.00} forward {at.z:0.00}");
                 JudgeReach(c, label + " L", left, fails, notes);
                 JudgeReach(c, label + " R", right, fails, notes);
+                JudgeDrawnHand(c, driver, label + " L", true, fails, notes);
+                JudgeDrawnHand(c, driver, label + " R", false, fails, notes);
                 notes.Add(label + ": " + ArmContacts(c));
             }
         }
@@ -436,6 +443,75 @@ internal sealed partial class SelfTestRunner
         {
             VRInput.TestOverride = IdleHands;
         }
+    }
+
+    /// <summary>Most an empty hand's drawn grip may sit off its controller inside the drawn reach. The ragdoll hand
+    /// stops short of vr.08's sideways reach (the controller about 0.84 m from the scout's shoulder, the reach map's
+    /// hand at most 0.59 m), which the drawn arm's stretch must close (<see cref="DrawnHands"/>); what is left is the
+    /// ragdoll hand's own aim and lag.</summary>
+    const float MaxDrawnHandGap = 0.05f;
+
+    /// <summary>
+    /// An empty hand with its controller inside the drawn reach (<see cref="ArmReach.DrawnReach"/>) is drawn on its
+    /// controller: the grip of the drawn hand proxy against the controller. Past the drawn reach it is only reported
+    /// (the ghost hand takes over there).
+    /// </summary>
+    static void JudgeDrawnHand(
+        Character c,
+        AvatarPoseDriver driver,
+        string name,
+        bool left,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        var parts = c.refs.ragdoll.partDict;
+        var pose = driver.Pose;
+        var rig = driver.HandRigOf(left);
+        if (
+            !VRSession.Active
+            || c.data.currentItem != null
+            || rig == null
+            || !(left ? pose.HasLeftHand : pose.HasRightHand)
+            || !parts.TryGetValue(left ? BodypartType.Arm_L : BodypartType.Arm_R, out var upper)
+            || !parts.TryGetValue(left ? BodypartType.Elbow_L : BodypartType.Elbow_R, out var fore)
+            || !parts.TryGetValue(left ? BodypartType.Hand_L : BodypartType.Hand_R, out var hand)
+        )
+            return;
+        if (!DrawnHands.Drawn)
+        {
+            fails.Add(name + ": hands not drawn in VR");
+            return;
+        }
+        var controller = left ? pose.LeftHandPosition : pose.RightHandPosition;
+        var shoulder = upper.transform.position;
+        var elbow = fore.transform.position;
+        float arm =
+            Vector3.Distance(shoulder, elbow) + Vector3.Distance(elbow, hand.transform.position);
+        float reach = ArmReach.DrawnReach(arm);
+        float distance = Vector3.Distance(shoulder, controller);
+        rig.ControllerToBone(out var lp, out var lr);
+        var toBone = Quaternion.Inverse(lr) * lp;
+        var proxy = DrawnHands.DrawnBone(hand.transform);
+        float gap = Vector3.Distance(
+            proxy.position - proxy.rotation * toBone * DrawnHands.Factor,
+            controller
+        );
+        float ragdoll = Vector3.Distance(
+            hand.transform.position - hand.transform.rotation * toBone,
+            controller
+        );
+        notes.Add(
+            F(
+                $"{name}: drawn hand {gap:0.000} m off its controller (ragdoll hand {ragdoll:0.000} m), controller {distance:0.00} m from the shoulder, drawn reach {reach:0.00} m"
+            )
+        );
+        if (distance < reach - 0.03f && gap > MaxDrawnHandGap)
+            fails.Add(
+                F(
+                    $"{name}: drawn hand {gap:0.000} m off its controller inside the drawn reach > {MaxDrawnHandGap:0.00} m"
+                )
+            );
     }
 
     static void JudgeReach(
