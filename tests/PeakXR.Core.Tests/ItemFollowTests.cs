@@ -178,13 +178,61 @@ public class ItemFollowTests
         // Arm caught up, but the free item is stuck elsewhere: stays free (a rejoin would snap the hand onto it).
         for (int i = 0; i < 10; i++)
             Assert.True(g.Update(0.02f, 0.3f, 0.02f));
-        // Between rejoin and release: stays free.
+        // Between rejoin and release, only just arrived: stays free for now.
         for (int i = 0; i < 10; i++)
             Assert.True(g.Update(0.1f, 0.02f, 0.02f));
         bool released = true;
         for (int i = 0; i < 10; i++)
             released = g.Update(0.02f, 0.02f, 0.02f);
         Assert.False(released);
+    }
+
+    /// <summary>Lets the weld go: the arm stuck 0.5 m off for over a second.</summary>
+    private static WeldGate ReleasedGate()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            g.Update(0.5f, 0.5f, 0.02f);
+        Assert.True(g.Released);
+        return g;
+    }
+
+    [Fact]
+    public void AnArmOutOfReachThatStopsShortRejoinsOnceItSettles()
+    {
+        // Live run of 0e8ad7e: the controller held 0.75 m from the shoulder (the arm 0.15 m short), the weld let go
+        // against a wall, and the free hand settled 0.3 m off its controller with the passport there: 0.15 m past the
+        // shortfall, between rejoin and release. A welded hand there kept its weld, yet the free one stayed free 22 s.
+        var g = ReleasedGate();
+        bool released = true;
+        for (int i = 0; i < 25 && released; i++)
+            released = g.Update(0.3f, 0.3f, 0.02f, shortfall: 0.15f);
+        Assert.False(released);
+    }
+
+    [Fact]
+    public void AHandStillClosingInRejoinsOnceItArrives()
+    {
+        // Coming back at 0.1 m/s: not settled while it closes in; rejoins once within Rejoin.
+        var g = ReleasedGate();
+        float lag = 0.19f;
+        while (lag >= 0.1f)
+        {
+            Assert.True(g.Update(lag, lag, 0.02f));
+            lag -= 0.002f;
+        }
+        bool released = true;
+        for (int i = 0; i < 10; i++)
+            released = g.Update(lag, lag, 0.02f);
+        Assert.False(released);
+    }
+
+    [Fact]
+    public void AnArmSettledPastTheReleaseStaysFree()
+    {
+        var g = ReleasedGate();
+        for (int i = 0; i < 100; i++)
+            Assert.True(g.Update(0.25f, 0.25f, 0.02f));
     }
 
     [Theory]

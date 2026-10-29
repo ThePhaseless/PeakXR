@@ -10,7 +10,8 @@ namespace PeakXR.Core;
 /// the ragdoll hand itself stays more than <see cref="Release"/> from its controller for <see cref="ReleaseHold"/>
 /// (long enough for a physical crouch to lower the shoulder, vr61 vr.230; an item's grip offset never counts, vr53).
 /// It rejoins once the hand is within <see cref="Rejoin"/> of its controller and the free item is within
-/// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), and a fresh weld stays for
+/// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), or once the hand has stopped
+/// closing in short of <see cref="Release"/> (an arm out of reach, which a weld would keep), and a fresh weld stays for
 /// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back.
 /// </summary>
 public sealed class WeldGate
@@ -37,8 +38,18 @@ public sealed class WeldGate
     /// <summary>A fresh weld holds at least this long, seconds.</summary>
     public float Settle = 0.5f;
 
+    /// <summary>How long a free hand short of <see cref="Release"/> must stop closing in before the item rejoins it,
+    /// seconds: an arm that cannot reach its controller settled 0.15 m past its shortfall and never got within
+    /// <see cref="Rejoin"/>, so its item stayed free 22 s (live run of 0e8ad7e).</summary>
+    public float SettledHold = 0.3f;
+
+    /// <summary>Closing in by less than this (m) over <see cref="SettledHold"/> counts as settled.</summary>
+    public float SettledStep = 0.01f;
+
     private float timer;
     private float settle;
+    private float still;
+    private float best = float.PositiveInfinity;
 
     public bool Released { get; private set; }
 
@@ -58,22 +69,41 @@ public sealed class WeldGate
     {
         if (settle > 0f)
             settle -= dt;
-        float lag = handToController - MathF.Max(shortfall, 0f);
-        bool toward = Released
-            ? lag < Rejoin && handToItem < Release
-            : settle <= 0f && lag > Release;
+        float reach = MathF.Max(shortfall, 0f);
+        float lag = handToController - reach;
+        // The item is judged past the shortfall too: free, it sits on the controller the arm cannot reach.
+        float itemLag = handToItem - reach;
+        bool toward = Released ? lag < Rejoin && itemLag < Release : settle <= 0f && lag > Release;
         timer = toward ? timer + dt : 0f;
+        if (Released && lag < Release && itemLag < Release)
+        {
+            if (lag < best - SettledStep)
+            {
+                best = lag;
+                still = 0f;
+            }
+            else
+                still += dt;
+        }
+        else
+        {
+            best = float.PositiveInfinity;
+            still = 0f;
+        }
         if (
             timer
-            >= (
-                Released ? RejoinHold
-                : blocked ? BlockedHold
-                : ReleaseHold
-            )
+                >= (
+                    Released ? RejoinHold
+                    : blocked ? BlockedHold
+                    : ReleaseHold
+                )
+            || still >= SettledHold
         )
         {
             Released = !Released;
             timer = 0f;
+            still = 0f;
+            best = float.PositiveInfinity;
             if (!Released)
                 settle = Settle;
         }
@@ -85,6 +115,8 @@ public sealed class WeldGate
         Released = false;
         timer = 0f;
         settle = 0f;
+        still = 0f;
+        best = float.PositiveInfinity;
     }
 
     /// <summary>How far a straight arm of <paramref name="armLength"/> from <paramref name="shoulder"/> falls short of

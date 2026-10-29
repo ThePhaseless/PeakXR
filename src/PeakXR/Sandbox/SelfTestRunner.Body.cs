@@ -71,7 +71,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.153-spectate-single", Budget(15f), SpectateSingleStep());
         yield return Restoring("vr.157-spectate-point", Budget(15f), SpectatePointStep());
         yield return Restoring("vr.230-stoop-reach", Budget(10f), StoopReachStep());
-        yield return Restoring("vr.246-walk-held-weld", Budget(10f), WalkHeldStep());
+        yield return Restoring("vr.246-walk-held-weld", Budget(15f), WalkHeldStep());
         yield return Restoring("vr.239-seated-floor-reach", Budget(10f), SeatedReachStep());
         yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());

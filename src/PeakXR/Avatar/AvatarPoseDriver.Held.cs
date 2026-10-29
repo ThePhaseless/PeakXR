@@ -217,7 +217,7 @@ public partial class AvatarPoseDriver
             // Rare edges, kept in the log: why a held item left or rejoined the hand.
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller, {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}"
+                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}"
                 )
             );
         }
@@ -276,7 +276,8 @@ public partial class AvatarPoseDriver
                 .U();
             body.angularVelocity = ItemFollow.Spin(body.rotation.N(), targetRot.N(), dt).U();
         }
-        // Diagnostics only while the lean trace runs (rig.camera's trace window).
+        // Diagnostics only while the lean trace runs (rig.camera's trace window), and only when something changed: a
+        // free item that sits still logged the same line 84 times.
         if (Rig.RigDriver.LeanTraceDue(ref freeLogAt))
         {
             // Whether a free item that lags sits against the world: its target inside terrain or props.
@@ -286,11 +287,23 @@ public partial class AvatarPoseDriver
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
             );
-            Plugin.Log.LogInfo(
-                System.FormattableString.Invariant(
-                    $"[avatar.local] {item.name} free of the hand: {HeldItemGap:0.00} m from its place, speed {body.linearVelocity.magnitude:0.0} m/s, target in geometry {blocked}"
-                )
-            );
+            float lag = toController - shortfall;
+            if (
+                !wasFree
+                || blocked != freeLoggedBlocked
+                || Mathf.Abs(HeldItemGap - freeLoggedGap) >= FreeLogStep
+                || Mathf.Abs(lag - freeLoggedLag) >= FreeLogStep
+            )
+            {
+                freeLoggedBlocked = blocked;
+                freeLoggedGap = HeldItemGap;
+                freeLoggedLag = lag;
+                Plugin.Log.LogInfo(
+                    System.FormattableString.Invariant(
+                        $"[avatar.local] {item.name} free of the hand: {HeldItemGap:0.00} m from its place, speed {body.linearVelocity.magnitude:0.0} m/s, target in geometry {blocked}, hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short)"
+                    )
+                );
+            }
         }
         return true;
     }
@@ -298,6 +311,12 @@ public partial class AvatarPoseDriver
     /// <summary>The equip has re-enabled the item's colliders (CharacterItems.cs:612-631, sinceItemAttach reset at
     /// :617): ignore pairs set while they are disabled are dropped by the physics engine.</summary>
     private bool EquipSettled => Owner.data.sinceItemAttach > AttachSettle;
+
+    /// <summary>A free item's trace line repeats only once its gap or the hand's lag moved this far (m).</summary>
+    private const float FreeLogStep = 0.05f;
+    private float freeLoggedGap;
+    private float freeLoggedLag;
+    private bool freeLoggedBlocked;
 
     /// <summary>
     /// A held item, welded or free, passes through its holder's own body, as a real hand carries a torch past its own
