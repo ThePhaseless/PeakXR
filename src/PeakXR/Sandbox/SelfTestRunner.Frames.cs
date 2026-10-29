@@ -48,8 +48,8 @@ internal sealed partial class SelfTestRunner
             );
 
     /// <summary>vr.231: standing still in the level, the p95 frame interval over <see cref="FrameBudgetSeconds"/> against
-    /// the display's budget times <see cref="FrameBudget.SelfTestMargin"/>. Report-only (PASS with the numbers) unless
-    /// <c>-peakxr-perf-strict</c>; SKIP without a sane refresh rate.</summary>
+    /// the display's budget times <see cref="FrameBudget.SelfTestMargin"/>. Over budget fails, or only reports (PASS with
+    /// the numbers) with <c>-peakxr-perf-lenient</c>; SKIP without a sane refresh rate.</summary>
     IEnumerator FrameBudgetCheck()
     {
         // Let the previous step's spawns and screenshot settle before measuring.
@@ -64,10 +64,10 @@ internal sealed partial class SelfTestRunner
             case FrameVerdict.Skip:
                 stepSkip = "no timing: " + note;
                 break;
-            // Report-only unless -peakxr-perf-strict: the test rig (an iGPU behind ALVR) is slow by itself.
-            case FrameVerdict.Fail when !PerfStrict:
+            // A machine too slow for the headset by itself launches with -peakxr-perf-lenient to keep the numbers.
+            case FrameVerdict.Fail when PerfLenient:
                 stepNote = FormattableString.Invariant(
-                    $"over budget, report only (fails with {PerfStrictFlag}): p95 {r.Interval.P95:0.00} ms vs {r.BudgetMs:0.00} ms; {note}; {AdaptiveNote()}"
+                    $"over budget, report only ({PerfLenientFlag}): p95 {r.Interval.P95:0.00} ms vs {r.BudgetMs:0.00} ms; {note}; {AdaptiveNote()}"
                 );
                 break;
             case FrameVerdict.Fail:
@@ -84,9 +84,10 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    const string PerfStrictFlag = "-peakxr-perf-strict";
+    const string PerfLenientFlag = "-peakxr-perf-lenient";
 
-    static bool PerfStrict => Array.IndexOf(Environment.GetCommandLineArgs(), PerfStrictFlag) >= 0;
+    static bool PerfLenient =>
+        Array.IndexOf(Environment.GetCommandLineArgs(), PerfLenientFlag) >= 0;
 
     static string AdaptiveNote() =>
         FormattableString.Invariant(
