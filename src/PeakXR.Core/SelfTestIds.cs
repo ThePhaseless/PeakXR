@@ -211,6 +211,7 @@ public static class SelfTestIds
         "vr.25-cook-over-fire",
         "vr.257-arm-swing-jump",
         "vr.258-stick-lunge",
+        "vr.259-god-off-clamp",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",
         "vr.27-warm-hands",
