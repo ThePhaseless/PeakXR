@@ -202,6 +202,10 @@ internal static class FrameClock
         Adapt.Reset();
     }
 
+    /// <summary>The last frame's app GPU time and render-thread time (ms, 0 when not reported), for the perf line.</summary>
+    public static float LastGpuMs;
+    public static float LastRenderThreadMs;
+
     /// <summary>Once per frame while VR renders.</summary>
     public static void Tick()
     {
@@ -222,6 +226,8 @@ internal static class FrameClock
             }
         }
         var sample = new Sample(interval, GpuMs(d, ftmGpu), cpuMain, cpuRender);
+        LastGpuMs = sample.Gpu;
+        LastRenderThreadMs = cpuRender;
         bool counts = false;
         int dropped = 0;
         int repeated = 0;
