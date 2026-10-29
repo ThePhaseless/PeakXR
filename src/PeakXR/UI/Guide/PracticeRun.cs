@@ -106,7 +106,8 @@ internal sealed class PracticeRun : MonoBehaviour
             PhotonNetwork.OfflineMode,
             GuideScene.Title,
             GuideScene.Airport && Character.localCharacter != null,
-            LoadingScreenHandler.loading || NetworkingUtilities.EnteringRoom
+            LoadingScreenHandler.loading,
+            NetworkingUtilities.EnteringRoom
         );
 
     /// <summary>Starts the practice; false when it cannot (the caller plays the refusal cue).</summary>

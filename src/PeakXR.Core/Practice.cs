@@ -271,18 +271,21 @@ public enum PracticeEntry : byte
 /// <summary>Where the practice may run. It never runs in an online room, and never in a solo run, which leaving would end.</summary>
 public static class PracticeStart
 {
+    /// <summary><paramref name="enteringRoom"/> (<c>NetworkingUtilities.EnteringRoom</c>) counts only at the title:
+    /// Play Solo sets it and only the title clears it again, so in the solo airport it is always stale.</summary>
     public static PracticeEntry Decide(
         bool inRoom,
         bool offline,
         bool atTitle,
         bool inAirport,
-        bool loading
+        bool loading,
+        bool enteringRoom
     )
     {
         if (loading || (inRoom && !offline))
             return PracticeEntry.Refused;
         if (atTitle)
-            return PracticeEntry.FromTitle;
+            return enteringRoom ? PracticeEntry.Refused : PracticeEntry.FromTitle;
         return inAirport && inRoom ? PracticeEntry.InPlace : PracticeEntry.Refused;
     }
 

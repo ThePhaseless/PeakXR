@@ -104,22 +104,31 @@ public class PracticeTests
     }
 
     [Theory]
-    // inRoom, offline, atTitle, inAirport, loading
-    [InlineData(false, false, true, false, false, PracticeEntry.FromTitle)]
-    [InlineData(false, true, true, false, false, PracticeEntry.FromTitle)]
-    [InlineData(true, true, false, true, false, PracticeEntry.InPlace)]
-    [InlineData(true, false, false, true, false, PracticeEntry.Refused)] // online lobby
-    [InlineData(true, false, true, false, false, PracticeEntry.Refused)] // online, whatever the scene
-    [InlineData(true, true, false, false, false, PracticeEntry.Refused)] // offline run in a level
-    [InlineData(false, false, true, false, true, PracticeEntry.Refused)] // still loading
+    // inRoom, offline, atTitle, inAirport, loading, enteringRoom
+    [InlineData(false, false, true, false, false, false, PracticeEntry.FromTitle)]
+    [InlineData(false, true, true, false, false, false, PracticeEntry.FromTitle)]
+    [InlineData(true, true, false, true, false, false, PracticeEntry.InPlace)]
+    // Play Solo (and the title's PLAY OFFLINE path into it) sets EnteringRoom and nothing clears it until the title
+    // shows again (MainMenu.cs:135, MainMenuMainPage.cs:55): in the airport it is stale, not a join in progress.
+    [InlineData(true, true, false, true, false, true, PracticeEntry.InPlace)]
+    [InlineData(false, true, true, false, false, true, PracticeEntry.Refused)] // title: a join is on its way
+    [InlineData(true, false, false, true, false, false, PracticeEntry.Refused)] // online lobby
+    [InlineData(true, false, true, false, false, false, PracticeEntry.Refused)] // online, whatever the scene
+    [InlineData(true, true, false, false, false, false, PracticeEntry.Refused)] // offline run in a level
+    [InlineData(false, false, true, false, true, false, PracticeEntry.Refused)] // still loading
     public void Start_OnlyOffline_FromTheTitleOrTheSoloAirport(
         bool inRoom,
         bool offline,
         bool atTitle,
         bool inAirport,
         bool loading,
+        bool enteringRoom,
         PracticeEntry expected
-    ) => Assert.Equal(expected, PracticeStart.Decide(inRoom, offline, atTitle, inAirport, loading));
+    ) =>
+        Assert.Equal(
+            expected,
+            PracticeStart.Decide(inRoom, offline, atTitle, inAirport, loading, enteringRoom)
+        );
 
     [Theory]
     [InlineData(true, false, false, true, true)]
