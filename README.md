@@ -10,6 +10,9 @@ mods. The XR runtime files it ships come from Unity's packages (Unity Companion 
 licenses; the package carries them in `BepInEx/plugins/PeakXR/licenses/`. The build fetches these files;
 they are not in this repository.
 
+Most of the code was written with an AI coding assistant (Anthropic's Claude, through Claude Code), then
+reviewed and tested in VR by the author.
+
 ## Build
 
 Needs [mise](https://mise.jdx.dev). `PEAK_DIR` in `mise.toml` points at the default Steam library;

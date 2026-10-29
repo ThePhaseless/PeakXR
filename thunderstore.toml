@@ -30,4 +30,5 @@ repository = "https://thunderstore.io"
 communities = ["peak"]
 
 [publish.categories]
-peak = ["mods", "client"]
+# ai-generated: required by Thunderstore's global rules for AI-written code (wiki.thunderstore.io/moderation/global-rules).
+peak = ["mods", "client", "ai-generated"]

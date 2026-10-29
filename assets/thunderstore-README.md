@@ -72,6 +72,10 @@ Save a bug report in the game right after the problem: hold both stick clicks fo
 
 More in [docs/debugging.md](https://github.com/ThePhaseless/PeakXR/blob/master/docs/debugging.md).
 
+## AI disclosure
+
+Most of PeakXR's code was written with an AI coding assistant (Anthropic's Claude, through Claude Code), then reviewed and tested in VR by me.
+
 ## License
 
 MIT. PeakXR is written from scratch and contains no code from other PEAK or Unity VR mods. The XR runtime files come from Unity's packages (Unity Companion License) and Valve's unity-xr-plugin (BSD-3-Clause).

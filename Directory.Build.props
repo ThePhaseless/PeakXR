@@ -42,6 +42,15 @@
     <PackageReference Include="BUTR.Harmony.Analyzer" Version="1.0.1.50" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- AI disclosure that Thunderstore asks for in shipped assemblies (wiki.thunderstore.io/llms-and-ai-generated-files). -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR' Or '$(MSBuildProjectName)' == 'PeakXR.Core' Or '$(MSBuildProjectName)' == 'PeakXR.Preloader'">
+    <AssemblyMetadata
+      Include="AI_Assisted_Creation"
+      Value="This assembly was partially or fully created with the assistance of Generative AI"
+    />
+    <AssemblyMetadata Include="AI_Model_Vendor" Value="Anthropic" />
+  </ItemGroup>
+
   <!-- Language polyfills for netstandard2.x (IsExternalInit, CallerArgumentExpression, ...), as internal source. -->
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR' Or '$(MSBuildProjectName)' == 'PeakXR.Core' Or '$(MSBuildProjectName)' == 'PeakXR.Preloader'">
     <PackageReference Include="PolySharp" Version="1.16.0" PrivateAssets="all" />
