@@ -26,6 +26,8 @@ public sealed class AvatarFeature : Feature
         Patch(typeof(AvatarPatches.AttachItem));
         Patch(typeof(AvatarPatches.UnAttachItem));
         Patch(typeof(AvatarPatches.HoldItem));
+        Patch(typeof(AvatarPatches.ItemWalkForce));
+        Patch(typeof(AvatarPatches.ItemDrag));
         Patch(typeof(AvatarPatches.HideBody));
         Patch(typeof(AvatarPatches.LevelLook));
         Patch(typeof(AvatarPatches.ShowBodyWhenDetached));

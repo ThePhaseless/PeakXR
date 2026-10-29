@@ -281,4 +281,34 @@ public class ItemFollowTests
         Assert.True(Finite(v));
         Assert.True(v.X > 0f && v.Length() <= ItemFollow.MaxSpeed + 1e-3f);
     }
+
+    // Vanilla drags the held item like a body part (CharacterItems.AddDrag, velocity x0.85 a tick) and pushes it with
+    // the walk's own force (CharacterItems.AddMovementForce). Carried by a tracked hand it only damps its motion
+    // against the body: a walk carries it, a body stopped by a wall never pushes it into the hand.
+
+    [Fact]
+    public void BodyDragLeavesAnItemRidingAWalkingBodyAtItsSpeed()
+    {
+        var walk = new Vector3(0f, 0f, 2.6f);
+        var v = walk;
+        for (int i = 0; i < 180; i++)
+            v = ItemFollow.BodyDrag(v, walk, 0.85f);
+        Assert.Equal(walk, v);
+    }
+
+    [Fact]
+    public void BodyDragDampsOnlyTheMotionAgainstTheBody()
+    {
+        var body = new Vector3(2f, 0f, 0f);
+        var v = ItemFollow.BodyDrag(new Vector3(3f, 0f, 1f), body, 0.85f);
+        Assert.Equal(2.85f, v.X, 4);
+        Assert.Equal(0.85f, v.Z, 4);
+    }
+
+    [Fact]
+    public void BodyDragOfAStillBodyIsVanillasDrag()
+    {
+        var v = ItemFollow.BodyDrag(new Vector3(1f, -2f, 0.5f), Vector3.Zero, 0.85f);
+        Assert.Equal(new Vector3(0.85f, -1.7f, 0.425f), v);
+    }
 }

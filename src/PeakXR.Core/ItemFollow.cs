@@ -134,6 +134,15 @@ public static class ItemFollow
         return axis * MathF.Min(angle * Gain(dt), MaxSpin);
     }
 
+    /// <summary>
+    /// A hand-carried item's per-tick drag, applied to its motion against the body (<paramref name="bodyVelocity"/>)
+    /// only. Vanilla drags the held item like a free body (velocity times <paramref name="drag"/>) and balances that
+    /// with the walk's own push on it; the two cancel only while the body walks unhindered. Against a wall, a slope
+    /// or the walk's ramp the push alone (5 kg at about 27 m/s^2) shoved the welded hand 0.3 m off its controller.
+    /// </summary>
+    public static Vector3 BodyDrag(Vector3 velocity, Vector3 bodyVelocity, float drag) =>
+        bodyVelocity + (velocity - bodyVelocity) * drag;
+
     /// <summary>Never more than the whole gap in one tick.</summary>
     private static float Gain(float dt) => dt > 0f ? MathF.Min(1f / Tau, 1f / dt) : 1f / Tau;
 }
