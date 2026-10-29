@@ -106,4 +106,15 @@ public class SettingsPageTests
     [InlineData(10f, 100f, 150f, 0f, 0f)]
     public void ButtonLeftAnchor(float text, float inset, float min, float area, float expected) =>
         Assert.Equal(expected, SettingsRows.ButtonLeftAnchor(text, inset, min, area), 4);
+
+    [Theory]
+    // A dropdown row keeps the game's control width, capped at its share of a narrow row.
+    [InlineData(150f, 0f, 400f, 0.5f, 150f)]
+    [InlineData(300f, 0f, 400f, 0.5f, 200f)]
+    // An action button wider than the game's control grows the control so its caption fits ("ENTE~" before).
+    [InlineData(150f, 190f, 400f, 0.5f, 190f)]
+    // Never past the share: a caption longer than that still ends in an ellipsis.
+    [InlineData(150f, 260f, 400f, 0.5f, 200f)]
+    public void ControlWidth(float game, float wanted, float row, float share, float expected) =>
+        Assert.Equal(expected, SettingsRows.ControlWidth(game, wanted, row, share), 4);
 }

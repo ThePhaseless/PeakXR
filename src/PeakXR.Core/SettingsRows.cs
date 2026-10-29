@@ -140,6 +140,14 @@ public static class SettingsRows
         return 1f - width / area;
     }
 
+    /// <summary>
+    /// Control width of a row narrowed to <paramref name="row"/> px: the game's <paramref name="game"/> width, widened
+    /// to what the control <paramref name="wanted"/> (an action button's caption), at most <paramref name="share"/>
+    /// of the row so the label keeps the rest.
+    /// </summary>
+    public static float ControlWidth(float game, float wanted, float row, float share) =>
+        Math.Min(Math.Max(game, wanted), row * share);
+
     /// <summary>Slider label: whole numbers for integers and wide ranges, more decimals for narrow ones.</summary>
     public static string Format(float value, bool integral, float min, float max)
     {

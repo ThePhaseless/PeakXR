@@ -352,8 +352,8 @@ internal static class VRTabGrid
     }
 
     /// <summary>
-    /// A row narrower than the game drew it for: the control keeps at most half the column, the label takes the rest
-    /// and wraps. Only rects anchored to one edge are touched.
+    /// A row narrower than the game drew it for: the control keeps at most half the column, widened for an action
+    /// button's caption, the label takes the rest and wraps. Only rects anchored to one edge are touched.
     /// </summary>
     private static void Narrow(SettingsUICell cell, float width)
     {
@@ -362,15 +362,23 @@ internal static class VRTabGrid
         var label = text != null ? text.rectTransform : null;
         if (input == null || label == null || !OneEdge(input) || !OneEdge(label))
             return;
-        float control = Mathf.Min(input.sizeDelta.x, width * ControlShare);
+        var info = input.GetComponentInChildren<InfoCell>(true);
+        float control = SettingsRows.ControlWidth(
+            input.sizeDelta.x,
+            info != null ? info.ButtonWidth : 0f,
+            width,
+            ControlShare
+        );
         float room = width - control - LabelGap;
-        if (control >= input.sizeDelta.x && label.sizeDelta.x <= room)
+        if (Mathf.Approximately(control, input.sizeDelta.x) && label.sizeDelta.x <= room)
             return;
         SetWidth(input, control, keepLeft: false);
         SetWidth(label, room, keepLeft: true);
         text.textWrappingMode = TextWrappingModes.Normal;
         // Never shrinks: the column's scale holds the text at the size floor; a label too long ends in an ellipsis.
         text.overflowMode = TextOverflowModes.Ellipsis;
+        if (info != null)
+            info.FitButton();
     }
 
     private static bool OneEdge(RectTransform rt) =>

@@ -37,6 +37,13 @@ internal sealed class InfoCell : SettingInputUICell
 
     private static GameObject template;
 
+    private RectTransform buttonRect;
+    private float buttonWidth;
+
+    /// <summary>Width the action button wants (caption plus padding, at least the game's Back button); 0 without one.
+    /// The VR column reads it to widen a narrowed control area (<see cref="SettingsRows.ControlWidth"/>).</summary>
+    public float ButtonWidth => buttonRect != null ? buttonWidth : 0f;
+
     /// <summary>Inactive prefab the game's SettingsUICell instantiates for these rows.</summary>
     public static GameObject Template
     {
@@ -197,16 +204,9 @@ internal sealed class InfoCell : SettingInputUICell
 
         var rt = (RectTransform)button.transform;
         float height = rt.rect.height;
-        float width = rt.rect.width;
-        rt.anchorMin = new Vector2(
-            SettingsRows.ButtonLeftAnchor(
-                textWidth,
-                inset,
-                width,
-                ((RectTransform)transform).rect.width
-            ),
-            0.5f
-        );
+        buttonRect = rt;
+        buttonWidth = Mathf.Max(textWidth + inset, rt.rect.width);
+        FitButton();
         rt.anchorMax = new Vector2(1f, 0.5f);
         rt.pivot = new Vector2(1f, 0.5f);
         rt.sizeDelta = new Vector2(0f, height);
@@ -215,6 +215,19 @@ internal sealed class InfoCell : SettingInputUICell
         rt.localRotation = Quaternion.identity;
         button.gameObject.SetActive(true);
         return true;
+    }
+
+    /// <summary>Sizes the action button for the control area as it is now. Again after the VR column narrows the row:
+    /// an anchor measured against the game's wide area shrank with it and cut the caption ("ENTE~").</summary>
+    public void FitButton()
+    {
+        if (buttonRect == null)
+            return;
+        float area = ((RectTransform)transform).rect.width;
+        buttonRect.anchorMin = new Vector2(
+            SettingsRows.ButtonLeftAnchor(buttonWidth, 0f, 0f, area),
+            0.5f
+        );
     }
 
     /// <summary>The Back button of the settings page this row is on (title or pause).</summary>

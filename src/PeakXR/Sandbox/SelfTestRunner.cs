@@ -372,6 +372,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     IEnumerator VRTabPages(SharedSettingsMenu settings)
     {
         var outside = new List<string>();
+        var cut = new List<string>();
         string longest = null;
         int most = 0;
         var groups = VRTab.BuildGroups();
@@ -387,6 +388,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             int n = RowsOutside(settings);
             if (n > 0)
                 outside.Add($"{group.Title} {n}");
+            CutCaptions(settings, group.Title, cut);
             if (group.Rows.Count > most)
             {
                 most = group.Rows.Count;
@@ -448,8 +450,31 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             $"{groups.Count} rail entries, longest {longest} ({most} rows), preview row {hovered?.Definition.Key ?? "none"}";
         if (outside.Count > 0)
             Fail($"rows outside the settings window: {string.Join(", ", outside)}; {note}");
+        else if (cut.Count > 0)
+            Fail($"action button captions cut short: {string.Join(", ", cut)}; {note}");
         else
             stepNote = note;
+    }
+
+    /// <summary>Action buttons of the page on show (<c>InfoCell</c> clones, "PeakXR_Action") whose caption ends in an
+    /// ellipsis: the Sandbox page's Item room button read "ENTE~" in the headset.</summary>
+    static void CutCaptions(SharedSettingsMenu settings, string page, List<string> cut)
+    {
+        foreach (
+            var button in settings.m_settingsContentParent.GetComponentsInChildren<UnityEngine.UI.Button>(
+                false
+            )
+        )
+        {
+            if (button.name != "PeakXR_Action")
+                continue;
+            var text = button.GetComponentInChildren<TMPro.TMP_Text>(false);
+            if (text == null)
+                continue;
+            text.ForceMeshUpdate();
+            if (text.isTextTruncated)
+                cut.Add($"{page} \"{text.text}\"");
+        }
     }
 
     /// <summary>Spawned rows of <paramref name="settings"/> a player cannot see whole. A row of the game's list must
