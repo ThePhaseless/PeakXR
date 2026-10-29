@@ -12,7 +12,8 @@ namespace PeakXR.Diagnostics;
 /// last refusals, markers and grip decisions. Every write stores a reference or a few value fields in a preallocated
 /// <see cref="Ring{T}"/> (the logged string already exists), so normal play pays almost nothing. Attached from
 /// <c>Plugin.Awake</c>, before any feature logs. Under <c>Debug.Mode</c> it also writes <c>PeakXR-trace.log</c> the way
-/// the self-test does, one flushed line at a time, and keeps Debug-level lines.
+/// the self-test does, one flushed line at a time, and keeps Debug-level lines. Uncaught exceptions from PeakXR code
+/// are copied to the BepInEx log (<see cref="ExceptionDigest"/>), since on some setups only Player.log has them.
 /// </summary>
 internal static class DebugLog
 {
@@ -24,6 +25,9 @@ internal static class DebugLog
     private static readonly object Gate = new();
     private static readonly Ring<LogEntry> Lines = new(LogLines);
     private static readonly Ring<LogEntry> Errors = new(UnityErrors);
+
+    /// <summary>Uncaught exceptions with PeakXR frames copied to the BepInEx log, under <see cref="Gate"/>.</summary>
+    private static readonly ExceptionDigest Digest = new();
     public static readonly Ring<RefusalEntry> Refusals = new(RefusalCount);
     public static readonly Ring<MarkerEntry> Markers = new(MarkerCount);
 
@@ -173,8 +177,18 @@ internal static class DebugLog
             Data = condition,
             Stack = stackTrace,
         };
+        int seen = 0;
         lock (Gate)
+        {
             Errors.Add(e);
+            if (type == LogType.Exception && ExceptionDigest.IsOurs(stackTrace))
+                seen = Digest.Record(stackTrace);
+        }
+        // Outside the lock: our own listener takes it again. BepInEx may not reach Player.log's exceptions at all.
+        if (seen == 1)
+            Plugin.Log.LogError($"[debug] uncaught exception: {condition}\n{stackTrace}");
+        else if (seen > 1)
+            Plugin.Log.LogError($"[debug] uncaught exception seen {seen} times: {condition}");
     }
 
     private static string LevelName(LogLevel level) =>
