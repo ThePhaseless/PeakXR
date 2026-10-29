@@ -6,17 +6,17 @@ using UnityEngine;
 
 namespace PeakXR.Sandbox;
 
-/// <summary>Scripted-hand step for the rescue hook's own pull to a wall (vr.248).</summary>
+/// <summary>Scripted-hand step for the rescue hook's own pull to a wall (vr.251).</summary>
 internal sealed partial class SelfTestRunner
 {
-    /// <summary>Hand pitches (degrees below level) tried to aim the hook at the test wall.</summary>
+    /// <summary>Barrel pitches (degrees below level) tried to aim the hook at the test wall.</summary>
     static readonly float[] HookPitches = { 0f, -5f, 5f, -10f };
 
-    /// <summary>Hand yaws (degrees) tried around the heading toward the test wall.</summary>
+    /// <summary>Barrel yaws (degrees) tried around the heading toward the test wall.</summary>
     static readonly float[] HookYaws = { 0f, -8f, 8f };
 
     /// <summary>
-    /// vr.248 (tester, v0.1.1: "the grappling hook works in third person, and you can't grab on right away"): the
+    /// vr.251 (tester, v0.1.1: "the grappling hook works in third person, and you can't grab on right away"): the
     /// rescue hook fired at the test wall 9 m ahead pulls the body to it (RescueHook.RPCA_RescueWall, RescueHook.cs:398,
     /// with its own <c>Fall</c> :407). The view stays on the body through the pull and its recovery (no tumble or
     /// launch chase view, <see cref="OwnGrapple"/>), and the free hand closed on the wall once it is in reach starts a
@@ -68,7 +68,18 @@ internal sealed partial class SelfTestRunner
         );
         if (!aimFound)
         {
-            Fail("no hand aim put the hook's ray on the test wall 9 m ahead");
+            // Where the last try's barrel ray went, and how far the hold turns it off the hand's aim.
+            var aim = VR.VRRig.Instance.Aim(left);
+            string last = SpoolRay(true, out var from, out var along)
+                ? F(
+                    $"barrel from {from} along {along}, {(aim != null ? Vector3.Angle(aim.forward, along) : -1f):0} deg off the hand aim, meets {(Physics.Raycast(from, along, out var met, 30f, HelperFunctions.terrainMapMask) ? F($"{met.collider.name} at {met.distance:0.00} m") : "nothing within 30 m")}"
+                )
+                : "no held aim";
+            Fail(
+                F(
+                    $"no aim put the hook's barrel ray on the test wall 9 m ahead ({wallCollider.bounds.center}): {last}, usable {held.CanUsePrimary()}"
+                )
+            );
             yield break;
         }
 
