@@ -338,10 +338,13 @@ internal static class AvatarPatches
         }
 
         /// <summary>Head, face and hat renderers (HideTheBody.cs:10, :14, CustomizationRefs.playerHats) drawn only
-        /// into shadow maps, or back to drawn. Only renderers in the mode we set are switched back, so a renderer the
+        /// into shadow maps for the eye camera, or back to drawn; every other game camera draws them
+        /// (<see cref="OwnHead"/>). Only renderers in the mode we set are switched back, so a renderer the
         /// game keeps shadowless stays so. Runs on a toggle, never per frame.</summary>
         private static void ShadowOnlyHead(HideTheBody hide, bool shadowOnly)
         {
+            if (!shadowOnly)
+                OwnHead.Clear();
             Shadow(hide.headRend, shadowOnly);
             if (hide.face != null)
                 foreach (var r in hide.face.GetComponentsInChildren<Renderer>(true))
@@ -356,10 +359,12 @@ internal static class AvatarPatches
             if (r == null)
                 return;
             var from = shadowOnly ? ShadowCastingMode.On : ShadowCastingMode.ShadowsOnly;
-            if (r.shadowCastingMode == from)
-                r.shadowCastingMode = shadowOnly
-                    ? ShadowCastingMode.ShadowsOnly
-                    : ShadowCastingMode.On;
+            if (r.shadowCastingMode != from)
+                return;
+            r.shadowCastingMode = shadowOnly ? ShadowCastingMode.ShadowsOnly : ShadowCastingMode.On;
+            // Only the eyes skip it: mirrors and other game cameras draw it again (OwnHead).
+            if (shadowOnly)
+                OwnHead.Track(r);
         }
     }
 

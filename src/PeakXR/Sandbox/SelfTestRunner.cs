@@ -205,6 +205,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.08b-hand-scale", 15f, HandScaleCheck());
             yield return VRStep("vr.09-belt-view", 10f, BeltViewCheck());
             yield return VRStep("vr.33-ragdoll-arms", 20f, RagdollArmsCheck());
+            yield return VRStep("vr.247-own-head-mirror", 10f, OwnHeadCheck());
             if (hold)
             {
                 Finish();
