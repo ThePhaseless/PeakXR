@@ -246,21 +246,34 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>Most the avatar's eyes may sit off the view with the head turned 90 degrees (m). The body turns to the
-    /// head's heading (Character.SetRotation) about its mass centre, 0.27 m behind its eyes, while a head turns about
-    /// a neck about 0.1 m behind them: a body left upright puts its eyes 2 x 0.17 x sin 45 = 0.24 m off the view, and
-    /// the torso ahead of it. The lean must bring them back under the view.</summary>
-    const float MaxHeadTurnEye = 0.12f;
-
     /// <summary>How far the scripted eyes sit ahead of the head's turn axis (m): a person's neck.</summary>
     const float NeckSwing = 0.1f;
 
+    /// <summary>Least the lean must move the animated eyes (m, level) for a head turned 90 degrees, and the widest
+    /// angle (degrees) that move may make with the way from the eyes to the view. It asks for about 0.17 m.</summary>
+    const float MinTurnLeanShift = 0.05f;
+
+    const float MaxTurnLeanAngle = 45f;
+
+    /// <summary>Most the avatar's eyes may end further off the view than an upright body turned with the head leaves
+    /// them (m): ragdoll sway and the drop of the bent eyes.</summary>
+    const float HeadTurnSlack = 0.03f;
+
     /// <summary>
     /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns 90 degrees left and right in the room
-    /// (no snap turn), the eyes swinging on a 0.1 m neck. With each turn held 1.5 s, the avatar's eye renderers must
-    /// be within <see cref="MaxHeadTurnEye"/> of the view (less the view hold's offset), so the body stands under the
-    /// eyes instead of in front of them. Also reports how far the torso centre sits ahead of the view along its
-    /// level forward (negative: behind).
+    /// (no snap turn), the eyes swinging on a 0.1 m neck. The game turns the body to the head's heading about its mass
+    /// centre (Character.SetRotation, Character.cs:1539-1542), its eyes <c>e</c> ahead of it (0.20-0.27 m), so an
+    /// upright body leaves them <c>2 (e - neck) sin(yaw / 2)</c> off the view (0.19 m at 90 degrees for e = 0.236 m),
+    /// and the lean bends it back toward the view. A lean keeps the mass centre over the feet (BodyLean.LegShift and
+    /// the body hold; vr.45 fails a body that moves 0.03 m), so the hips go back as it bends and the ragdoll's upper
+    /// body follows only part of the head: in the 7f8e6ec run vr.45's ragdoll shoulders moved 0.082 m of a 0.30 m
+    /// lean forward and 0.036 m of 0.25 m sideways, leaving the eyes about 0.18 m off the view. So it cannot bring
+    /// the eyes under a turned view (the old 0.12 m bound failed at 0.107-0.178 m), and this judges the lean, not that
+    /// geometry. With each turn held 1.5 s it fails when the lean moves the animated eyes less than
+    /// <see cref="MinTurnLeanShift"/> or more than <see cref="MaxTurnLeanAngle"/> off the way to the view (a lean from
+    /// the rig's heading bends with the neck's swing, away from it), or the eyes (less the view hold's offset) end more
+    /// than <see cref="HeadTurnSlack"/> further off than an upright turned body. Reports the torso centre along the
+    /// view's level forward against standing straight, where it sits 0.33-0.36 m behind the eyes.
     /// </summary>
     IEnumerator HeadTurnStep()
     {
@@ -300,6 +313,9 @@ internal sealed partial class SelfTestRunner
         var fails = new List<string>();
         var notes = new List<string>();
         float yaw = 0f;
+        bool straight = false;
+        float eyeAhead = 0f;
+        float torsoStraight = 0f;
         foreach (float to in new[] { 0f, 90f, -90f, 0f })
         {
             float from = yaw;
@@ -321,17 +337,38 @@ internal sealed partial class SelfTestRunner
                 fails.Add("no view or avatar eyes to compare");
                 break;
             }
+            var look = Flat(head.forward);
             var off = head.position - RigDriver.ViewHeld - eye;
-            float torso = Vector3.Dot(c.Center - head.position, Flat(head.forward));
+            float torso = Vector3.Dot(c.Center - head.position, look);
+            if (!straight)
+            {
+                straight = true;
+                eyeAhead = Vector3.Dot(eye - RigDriver.ViewRoot(c), look);
+                torsoStraight = torso;
+            }
+            float upright =
+                2f
+                * Mathf.Max(0f, eyeAhead - NeckSwing * rig.Scale)
+                * Mathf.Sin(Mathf.Abs(yaw) * 0.5f * Mathf.Deg2Rad);
+            var shift = Vector3.ProjectOnPlane(driver.EyeLeanShift, Vector3.up);
+            float angle = Vector3.Angle(shift, Vector3.ProjectOnPlane(off, Vector3.up));
             notes.Add(
                 F(
-                    $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view, torso {torso:0.00} m ahead of it, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"})"
+                    $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view (upright {upright:0.000} m), torso {torso:0.00} m along the look ({torso - torsoStraight:+0.00;-0.00} from straight), lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}) moving the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view"
                 )
             );
-            if (Mathf.Abs(yaw) > 1f && off.magnitude > MaxHeadTurnEye)
+            if (Mathf.Abs(yaw) <= 1f)
+                continue;
+            if (shift.magnitude < MinTurnLeanShift || angle > MaxTurnLeanAngle)
                 fails.Add(
                     F(
-                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view > {MaxHeadTurnEye:0.00} m"
+                        $"head turned {yaw:+0;-0} deg: the lean moved the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view (needs {MinTurnLeanShift:0.00} m within {MaxTurnLeanAngle:0} deg)"
+                    )
+                );
+            if (off.magnitude > upright + HeadTurnSlack)
+                fails.Add(
+                    F(
+                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view, past an upright turned body's {upright:0.000} m + {HeadTurnSlack:0.00} m"
                     )
                 );
         }
