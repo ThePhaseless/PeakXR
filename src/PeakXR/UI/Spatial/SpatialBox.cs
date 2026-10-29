@@ -192,16 +192,17 @@ internal sealed class SpatialBox
         for (int i = swapped.Count - 1; i >= 0; i--)
         {
             var s = swapped[i];
-            // Only undo our own swap: a font change meanwhile (language switch) set a material we must keep.
-            if (s.Graphic == null || s.Copy == null)
+            // Only undo our own swap: a font change meanwhile (language switch) set a material we must keep. At quit
+            // the original may already be destroyed; the dying graphic keeps the copy.
+            if (s.Graphic == null || s.Copy == null || s.Original == null)
                 continue;
             if (s.Graphic is TMP_Text text)
             {
                 if (text.fontSharedMaterial == s.Copy)
                     text.fontSharedMaterial = s.Original;
             }
-            else if (s.Graphic.material == s.Copy)
-                s.Graphic.material = s.Original;
+            else if (SharedMaterial(s.Graphic) == s.Copy)
+                SetSharedMaterial(s.Graphic, s.Original);
         }
         swapped.Clear();
         foreach (var f in faded)
@@ -463,11 +464,11 @@ internal sealed class SpatialBox
             }
             else
             {
-                original = g.material;
+                original = SharedMaterial(g);
                 if (original == null || IsCopy(original))
                     continue;
                 copy = OnTop(original, light: false, halo: false);
-                g.material = copy;
+                SetSharedMaterial(g, copy);
             }
             swapped.Add(
                 new Swapped
@@ -479,6 +480,21 @@ internal sealed class SpatialBox
             );
         }
         graphics.Clear();
+    }
+
+    /// <summary>The material the graphic draws with, without instancing it. A TMP sub-mesh (fallback-font glyphs)
+    /// makes a new instance on every <c>material</c> read (a leak, and at quit a throw from <c>new Material(null)</c>
+    /// once its font material is gone), so it goes through <c>sharedMaterial</c>; a plain uGUI graphic's getter only
+    /// returns its field or the default material.</summary>
+    private static Material SharedMaterial(Graphic g) =>
+        g is TMP_SubMeshUI sub ? sub.sharedMaterial : g.material;
+
+    private static void SetSharedMaterial(Graphic g, Material m)
+    {
+        if (g is TMP_SubMeshUI sub)
+            sub.sharedMaterial = m;
+        else
+            g.material = m;
     }
 
     /// <summary>Already drawn on top (a part nested in another moved part).</summary>

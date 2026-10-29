@@ -96,6 +96,7 @@ internal sealed class RenderDriver : MonoBehaviour
         VRSession.Stopped += Revert;
         SceneManager.sceneLoaded += OnSceneLoaded;
         RenderFixesFeature.RenderScale.SettingChanged += OnQualityChanged;
+        RenderFixesFeature.RenderScale.SettingChanged += OnRenderScaleChanged;
         RenderFixesFeature.Msaa.SettingChanged += OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged += OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged += OnQualityChanged;
@@ -111,6 +112,7 @@ internal sealed class RenderDriver : MonoBehaviour
         VRSession.Stopped -= Revert;
         SceneManager.sceneLoaded -= OnSceneLoaded;
         RenderFixesFeature.RenderScale.SettingChanged -= OnQualityChanged;
+        RenderFixesFeature.RenderScale.SettingChanged -= OnRenderScaleChanged;
         RenderFixesFeature.Msaa.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.EdgeDetection.SettingChanged -= OnQualityChanged;
         RenderFixesFeature.ShadowDistance.SettingChanged -= OnQualityChanged;
@@ -142,8 +144,11 @@ internal sealed class RenderDriver : MonoBehaviour
         {
             Plugin.Log.LogWarning($"{Tag} No URP asset active; render scale and MSAA left alone");
         }
-        adaptive.Reset();
-        appliedAdaptive = 1f;
+        // A VR restart keeps the scale adaptive quality settled on (run3: back at 1.00, then two hot windows and a
+        // fade to step down again); only a RenderScale change (OnRenderScaleChanged) starts it over.
+        adaptive.Min = RenderFixesFeature.AdaptiveQualityMin.Value;
+        adaptive.Reset(AdaptiveOn ? appliedAdaptive : 1f);
+        appliedAdaptive = adaptive.Scale;
         wantedSince = -1f;
         pacing = PacingVerdict.OnRate;
         pacingWindows = 0;
@@ -267,6 +272,20 @@ internal sealed class RenderDriver : MonoBehaviour
     /// reallocates the eye textures, so the value is applied once it has been still for a moment.</summary>
     private void OnQualityChanged(object sender, System.EventArgs e) =>
         qualityDueAt = Time.unscaledTime + QualityDelay;
+
+    /// <summary>The player picked a new base scale: the adaptive multiplier found for the old one starts over at full,
+    /// applied with the new value by the debounced <see cref="ApplyQuality"/>.</summary>
+    private void OnRenderScaleChanged(object sender, System.EventArgs e)
+    {
+        adaptive.Reset();
+        appliedAdaptive = 1f;
+    }
+
+    /// <summary>Adaptive quality drives the URP render scale: OpenXR only (OpenVR scales the viewport).</summary>
+    private bool AdaptiveOn =>
+        RenderFixesFeature.AdaptiveQuality.Value
+        && VRSession.Running == VRRuntime.OpenXR
+        && urp != null;
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
@@ -585,10 +604,7 @@ internal sealed class RenderDriver : MonoBehaviour
     /// </summary>
     private void UpdateAdaptiveQuality()
     {
-        bool on =
-            RenderFixesFeature.AdaptiveQuality.Value
-            && VRSession.Running == VRRuntime.OpenXR
-            && urp != null;
+        bool on = AdaptiveOn;
         if (!on)
             adaptive.Reset();
         if (FrameClock.Adapt.Seconds >= AdaptWindowSeconds)
