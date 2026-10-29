@@ -338,12 +338,44 @@ public class RefreshTrackerTests
     }
 
     [Fact]
-    public void Reset_ForgetsTheSession()
+    public void AfterReset_AThrottledReading_KeepsTheLastHeadsetRate_NotTheMonitor()
     {
+        // Self-test vr.260/vr.261 over ALVR: hiding or restarting the session reset the tracker, the runtime then
+        // read 24 Hz (72 / 3, under the 60 Hz floor) and the 240 Hz desktop monitor set a 4.17 ms budget.
         var t = new RefreshTracker();
-        t.Update(90f, 0f, 60f);
+        t.Update(72f, 0f, 240f);
         t.Reset();
-        Assert.Equal(0f, t.Update(30f, 0f, 0f));
+        foreach (float hz in new[] { 24f, 0f, 36f })
+        {
+            Assert.Equal(72f, t.Update(hz, hz, 240f));
+            Assert.Equal(RefreshSource.LastGood, t.Source);
+            Assert.True(t.Trusted);
+        }
+    }
+
+    [Fact]
+    public void AfterReset_ASaneReading_IsTakenFresh()
+    {
+        // A new session may be another headset: a sane rate is taken even when it is a fraction of the old one.
+        var t = new RefreshTracker();
+        t.Update(144f, 0f, 240f);
+        t.Reset();
+        Assert.Equal(72f, t.Update(72f, 0f, 240f));
+        Assert.Equal(RefreshSource.Display, t.Source);
+        Assert.Equal(72f, t.Update(36f, 0f, 240f));
+        Assert.Equal(RefreshSource.LastGood, t.Source);
+    }
+
+    [Fact]
+    public void AfterReset_TheSameRateAgain_EndsTheFreshStart()
+    {
+        // 120 Hz again after the reset, then throttled to 60: the throttle keeps 120.
+        var t = new RefreshTracker();
+        t.Update(120f, 0f, 240f);
+        t.Reset();
+        t.Update(120f, 0f, 240f);
+        Assert.Equal(120f, t.Update(60f, 0f, 240f));
+        Assert.Equal(RefreshSource.LastGood, t.Source);
     }
 
     [Theory]
