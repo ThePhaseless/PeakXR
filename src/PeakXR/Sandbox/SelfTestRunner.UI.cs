@@ -32,7 +32,7 @@ internal sealed partial class SelfTestRunner
         yield return WithOn("ui.02-button-labels", 20f, ButtonLabelStep(), s.ButtonLabels);
         yield return WithOn("ui.03-world-banner", 25f, BannerStep(), s.WorldBanners);
         yield return WithOn("ui.04-rope-gauge", 28f, RopeGaugeStep(), s.HeldItemGauges);
-        yield return HandStep("ui.05-wrist-hud", 15f, WristHudStep());
+        yield return Restoring("ui.05-wrist-hud", 15f, WristHudStep());
         yield return Restoring("ui.06-top-stamina", 15f, TopStaminaStep());
     }
 
@@ -217,6 +217,17 @@ internal sealed partial class SelfTestRunner
             Fail("game refused Cold: " + BodyState(Character.localCharacter));
             yield break;
         }
+        // Stamina past the bar, as infinite stamina (god mode, a sugar rush) leaves it: the setter then refuses the
+        // clamp (CharacterData.cs:449) and the fill's rect runs past the frame (A/StaminaBar.cs:112), hidden by the
+        // bar's mask. The plate drew three bar lengths long around it (user screenshot, build 7f8e6ec); AddStatus
+        // lifted god mode, so the step never saw it.
+        c.infiniteStam = true;
+        c.data.currentStamina = 2.5f;
+        bodyRestore += () =>
+        {
+            c.infiniteStam = false;
+            c.ClampStamina();
+        };
         yield return MoveTo(
             left,
             // The display sits 12 cm down the forearm from the grip: the hand a little above eye level puts it in
@@ -321,7 +332,7 @@ internal sealed partial class SelfTestRunner
         yield return ShotAt("ui-05-wrist-hud", wrist);
         SandboxActions.ClearStatus(CharacterAfflictions.STATUSTYPE.Cold);
         stepNote = F(
-            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}; bar frame {frameHi - frameLo:0} px{barNote}, plate on it {plateOnBar}; frame {frameMeters * 100f:0.0} cm ({degrees:0.0} deg, UI.WristWidth wants {wanted * 100f:0.0} cm, {wantedDegrees:0.0} deg), centre {centreOff * 1000f:0} mm off the wrist anchor"
+            $"wrist HUD {width * 100f:0.0} cm ({degrees:0} deg) at {toWrist.magnitude:0.00} m, {off:0} deg off the view, {facing:0} deg off facing the eye (turn {UI.World.HudSplit.WristFacing:0.00}), watch face {restFacing:0} deg off the eye, bar {across:0} deg to the forearm, on top {onTop}, stamina {c.data.currentStamina:0.00}, Cold {cold:0.00}, Cold slots {afflictions}{where}; plate {plateSize.x:0}x{plateSize.y:0} px around drawn {drawnMax.x - drawnMin.x:0}x{drawnMax.y - drawnMin.y:0} (groups reserve {groups.x:0}x{groups.y:0}), fits {plateFits}; bar frame {frameHi - frameLo:0} px{barNote}, plate on it {plateOnBar}; frame {frameMeters * 100f:0.0} cm ({degrees:0.0} deg, UI.WristWidth wants {wanted * 100f:0.0} cm, {wantedDegrees:0.0} deg), centre {centreOff * 1000f:0} mm off the wrist anchor"
         );
         if (!UI.World.HudSplit.WristValid)
             Fail("wrist HUD not posed");
@@ -434,7 +445,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Box-space bounds of every graphic under the wrist box that reaches the screen (active, enabled, visible
-    /// alpha after canvas groups, not a stencil-only mask, not empty), the plate aside. The ui.05 oracle, apart from HudSplit's own fit.</summary>
+    /// alpha after canvas groups, not a stencil-only mask, cut to the masks above it, not empty), the plate aside. The
+    /// ui.05 oracle, apart from HudSplit's own fit.</summary>
     static bool MeasureWristDrawn(
         RectTransform root,
         out Vector2 min,
@@ -448,7 +460,6 @@ internal sealed partial class SelfTestRunner
             return false;
         if (plate == null)
             plate = UI.World.HudSplit.WristPlate;
-        var corners = new Vector3[4];
         bool any = false;
         foreach (var g in root.GetComponentsInChildren<UnityEngine.UI.Graphic>(false))
         {
@@ -458,15 +469,13 @@ internal sealed partial class SelfTestRunner
                 || g.color.a < 0.01f
                 || g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() <= 0.01f
                 || UI.World.PointerHitRule.MaskOnly(g)
+                || !UI.World.HudPlate.Visible(root, g, out var a, out var b)
             )
                 continue;
-            g.rectTransform.GetWorldCorners(corners);
-            var a = (Vector2)root.InverseTransformPoint(corners[0]);
-            var b = (Vector2)root.InverseTransformPoint(corners[2]);
-            if (Mathf.Abs(b.x - a.x) < 0.5f || Mathf.Abs(b.y - a.y) < 0.5f)
+            if (b.X - a.X < 0.5f || b.Y - a.Y < 0.5f)
                 continue;
-            min = Vector2.Min(min, Vector2.Min(a, b));
-            max = Vector2.Max(max, Vector2.Max(a, b));
+            min = Vector2.Min(min, new Vector2(a.X, a.Y));
+            max = Vector2.Max(max, new Vector2(b.X, b.Y));
             any = true;
         }
         return any;
