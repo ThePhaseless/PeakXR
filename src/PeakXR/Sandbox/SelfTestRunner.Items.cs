@@ -2254,24 +2254,29 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>With <c>Interaction.AimHoldAlignment</c> on, the hold lays a held launcher's barrel or a piton's blade
     /// (the item's +Z, HandAim.TryBarrel) along the holding hand's aim pose, so a shot goes where the controller
-    /// points on any runtime: fails the step past <see cref="BarrelOnAimDegrees"/>. Logs the angle and how far the
-    /// grip leaves the fist. Nothing for an item without a barrel.</summary>
+    /// points on any runtime: fails the step past <see cref="BarrelOnAimDegrees"/>. Logs the angle, how far the
+    /// grip leaves the fist, and the angle split into the hold's own barrel against the aim and the physics item
+    /// against its hold (a hold that misses the aim, or an item the world or a short arm keeps off it). Nothing for an
+    /// item without a barrel.</summary>
     void CheckBarrelOnAim(VRRig rig, bool left, string when)
     {
         var item = HeldItem();
         var aim = rig.Aim(left);
+        var hand = rig.Hand(left);
         var driver = AvatarPoseDriver.Of(Character.localCharacter);
         if (
             item == null
             || aim == null
+            || hand == null
             || driver == null
-            || !driver.BarrelInController(left, out _, out float tilt)
+            || !driver.BarrelInController(left, out var held, out float tilt)
         )
             return;
         bool on = AvatarConfig.Instance.AimHoldAlignment;
         float off = Vector3.Angle(item.transform.forward, aim.forward);
+        var place = hand.rotation * held;
         string line = F(
-            $"{when}: {item.name} barrel {off:0.0} deg off the {(left ? "left" : "right")} aim pose (Interaction.AimHoldAlignment {on}), grip {tilt:0} deg out of the fist"
+            $"{when}: {item.name} barrel {off:0.0} deg off the {(left ? "left" : "right")} aim pose (Interaction.AimHoldAlignment {on}), grip {tilt:0} deg out of the fist; the hold lays it {Vector3.Angle(place * Vector3.forward, aim.forward):0.0} deg off the aim, the item sits {Quaternion.Angle(item.transform.rotation, place):0.0} deg off its hold"
         );
         Plugin.Log.LogInfo("[selftest] " + line);
         if (on && off > BarrelOnAimDegrees)
