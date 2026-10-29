@@ -81,9 +81,9 @@ internal sealed class HudLayout
 }
 
 /// <summary>
-/// Moves parts of the converted HUD out of the body panel: the reticle to a head-locked spot, in wrist mode the
-/// stamina bar (with its numb mushroom group) and hotbar to the wrist, and with <c>UI.HUD.StaminaView</c> the stamina
-/// bar to a small meter high in the view (or a copy of it there, <see cref="HudMirror"/>). The parts sit in
+/// Moves parts of the converted HUD out of the body panel: the reticle to the aiming hand's target (or a head-locked
+/// spot), in wrist mode the stamina bar (with its numb mushroom group) and hotbar to the wrist, and with
+/// <c>UI.HUD.StaminaView</c> the stamina bar to a small meter high in the view (or a copy of it there, <see cref="HudMirror"/>). The parts sit in
 /// <see cref="HudBox"/> containers under the HUD canvas, so the game keeps driving them; only the containers are
 /// posed each frame. Everything moved is put back when the mode changes or VR stops.
 /// </summary>
@@ -174,6 +174,12 @@ internal sealed class HudSplit
     /// <summary>Size of the moved groups' rects, which set the wrist layout and scale (self-test).</summary>
     public static Vector2 WristGroupsSize => wristPanel.GroupsSize;
 
+    /// <summary>The hand reticle's container (UI.HUD.Reticle Hand, else null), whether it is shown now and where
+    /// (self-test).</summary>
+    public static RectTransform ReticleRoot { get; private set; }
+    public static bool ReticleShown { get; private set; }
+    public static Vector3 ReticlePoint { get; private set; }
+
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
     {
@@ -235,6 +241,10 @@ internal sealed class HudSplit
     {
         WristValid = false;
         TopRoot = null;
+        ReticleRoot = null;
+        ReticleShown = false;
+        if (reticleBox.Rect != null)
+            OnTop.Set(reticleBox.Rect, false);
         reticleBox.Restore();
         if (wristBox.Rect != null)
             OnTop.Set(wristBox.Rect, false);
@@ -268,6 +278,12 @@ internal sealed class HudSplit
             foreach (var field in reticleFields)
                 if (field.GetValue(gui) is GameObject go && go != null)
                     reticleBox.Move(go.transform);
+            // At the hand it marks a spot on rock or ground, which would cut the flat reticle in half.
+            if (reticle == ReticleMode.Hand)
+            {
+                OnTop.Set(reticleBox.Rect, true);
+                ReticleRoot = reticleBox.Rect;
+            }
         }
 
         // The bar itself goes to the top meter, else to the wrist, else stays on the body panel; spectating keeps it
@@ -538,15 +554,37 @@ internal sealed class HudSplit
         TopWidthMeters = width * topScale;
     }
 
-    /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>
+    /// <summary>Poses the head-locked or hand reticle. Called late and again right before rendering. The hand one
+    /// keeps the head one's angular size at any distance and faces the eye; the game still picks and tints its
+    /// variant (GUIManager.UpdateReticle, GUIManager.cs:667-745).</summary>
     public void PoseReticle(Transform head, HudLayout hud, UIWorldSettings cfg)
     {
-        if (!applied || appliedReticle != ReticleMode.Head || reticleBox.Rect == null)
+        if (!applied || reticleBox.Rect == null)
             return;
-        reticleBox.SetScale(hud.MetersPerPixel * ReticleDistance / cfg.HudDistanceWorld);
+        if (appliedReticle == ReticleMode.Head)
+        {
+            reticleBox.SetScale(hud.MetersPerPixel * ReticleDistance / cfg.HudDistanceWorld);
+            reticleBox.Rect.SetPositionAndRotation(
+                head.position + head.forward * ReticleDistance,
+                head.rotation
+            );
+            return;
+        }
+        if (appliedReticle != ReticleMode.Hand)
+            return;
+        var eye = head.position;
+        bool show = HandReticle.TryPoint(out var point) && (point - eye).sqrMagnitude > 0.01f;
+        ReticleShown = show;
+        reticleBox.SetActive(show);
+        if (!show)
+            return;
+        ReticlePoint = point;
+        reticleBox.SetScale(
+            hud.MetersPerPixel * Vector3.Distance(eye, point) / cfg.HudDistanceWorld
+        );
         reticleBox.Rect.SetPositionAndRotation(
-            head.position + head.forward * ReticleDistance,
-            head.rotation
+            point,
+            Quaternion.LookRotation(point - eye, head.up)
         );
     }
 }

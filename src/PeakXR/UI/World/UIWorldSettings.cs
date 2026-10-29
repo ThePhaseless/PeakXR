@@ -49,6 +49,10 @@ public enum WristSide
 
 public enum ReticleMode
 {
+    /// <summary>The game's reticle where the aiming hand's ray meets the world, while no other aim cue shows
+    /// (<see cref="HandReticle"/>).</summary>
+    Hand,
+
     /// <summary>Small dot locked to the view, where the game aims interaction rays.</summary>
     Head,
 
@@ -284,9 +288,10 @@ internal sealed class UIWorldSettings
             Reticle = cfg.Bind(
                 hud,
                 "Reticle",
-                ReticleMode.Hidden,
-                "Where the aiming reticle is shown. In VR you aim with your hand and the prompt shows at the target "
-                    + "(UI > TargetPrompt), so it is hidden by default; Head pins it to your view."
+                ReticleMode.Hand,
+                "Where the aiming reticle is shown. Hand: where your aiming hand points, in the game's shape for what "
+                    + "you can do there (climb, rope, vine, shoot), hidden while a laser, aim line, throw arc or ping "
+                    + "preview shows. Head pins it to your view; Hidden turns it off."
             ),
 
             PointerHand = cfg.Bind(
@@ -322,8 +327,8 @@ internal sealed class UIWorldSettings
 
     /// <summary>
     /// Layout 1 changed three defaults (HUD on the wrist, the off hand's wrist, no head-locked reticle), layout 2 the
-    /// menu width. A config saved before them still holds the old defaults, so move each entry that equals its old
-    /// default, once.
+    /// menu width, layout 3 the reticle (Hidden to Hand: testers missed it). A config saved before them still holds
+    /// the old defaults, so move each entry that equals its old default, once.
     /// </summary>
     private static void Migrate(ConfigFile cfg, UIWorldSettings s, string section)
     {
@@ -349,7 +354,10 @@ internal sealed class UIWorldSettings
         // Layout 2: menus wider (UI.MenuWidth 1.6 to 2.4 m), so settings text is readable.
         if (version.Value < 2 && Mathf.Approximately(s.MenuWidth.Value, 1.6f))
             s.MenuWidth.Value = PanelMath.DefaultMenuWidth;
-        version.Value = 2;
+        // Layout 3: the reticle at the aiming hand (UI.HUD.Reticle Hidden to Hand).
+        if (version.Value < 3 && s.Reticle.Value == ReticleMode.Hidden)
+            s.Reticle.Value = ReticleMode.Hand;
+        version.Value = 3;
     }
 
     private static ConfigDescription Range(string text, float min, float max) =>

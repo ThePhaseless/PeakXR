@@ -1162,4 +1162,131 @@ internal sealed partial class SelfTestRunner
         if (item != null)
             item.transform.position += head.position + head.forward * 1.3f - item.Center();
     }
+
+    /// <summary>
+    /// vr.265: <c>UI.HUD.Reticle</c> Hand (set for the step) puts the game's reticle where the aiming hand points.
+    /// Empty-handed, the use hand aimed at the ground 3 m ahead: the reticle is drawn on that hand's aim ray, on the
+    /// ground, facing the eye, with the variant the game picked at 0.1 to 5 degrees. A RopeShooter held with a finger
+    /// on its trigger draws its aim line, and the reticle stands aside; the finger lifted, it is back on the
+    /// launcher's barrel line (<see cref="HandAim.TryHeld"/>).
+    /// </summary>
+    IEnumerator HandReticleStep()
+    {
+        var cfg = UI.World.UIWorldFeature.Settings;
+        var shooter = FindItem(SandboxActions.Items, "RopeShooter");
+        if (cfg == null || shooter == null)
+        {
+            Fail("no ui.world settings or RopeShooter item");
+            yield break;
+        }
+        var was = cfg.Reticle.Value;
+        try
+        {
+            cfg.Reticle.Value = UI.World.ReticleMode.Hand;
+            var c = Character.localCharacter;
+            var rig = VRRig.Instance;
+            bool left = PhysicalInteraction.UseHandLeft(c, secondary: false);
+            HeadFrame(out var head, out var forward, out var right);
+            SetHand(
+                left,
+                head + forward * 0.3f + Vector3.down * 0.25f + right * (left ? -0.15f : 0.15f)
+            );
+            var ground =
+                rig.Head.position
+                + rig.Origin.TransformDirection(forward) * 3f
+                + Vector3.down * 1.6f;
+            float end = Now + 1f;
+            while (Now < end)
+            {
+                AimHand(rig, left, ground);
+                yield return null;
+            }
+            var fails = new List<string>();
+            var notes = new List<string>();
+            var aim = rig.Aim(left);
+            JudgeHandReticle("empty hand", aim.position, aim.forward, fails, notes);
+            yield return ShotAt("vr-265-hand-reticle", UI.World.HudSplit.ReticlePoint);
+
+            yield return GiveAndHold(shooter);
+            if (!stepOk)
+                yield break;
+            bool hold = LocalHold.ItemInLeftHand;
+            AimHand(rig, hold, ground);
+            Script(hold).TriggerTouch = true;
+            yield return Until(
+                () => Interact.Aim.AimReticle.Showing,
+                1f,
+                "no aim line with a finger on the RopeShooter's trigger"
+            );
+            if (!stepOk)
+                yield break;
+            yield return null;
+            if (UI.World.HudSplit.ReticleShown)
+                fails.Add("the hand reticle stayed on beside the RopeShooter's aim line");
+            Script(hold).TriggerTouch = false;
+            yield return Wait(0.3f);
+            if (HandAim.TryHeld(out var barrel, out var turn))
+                JudgeHandReticle("RopeShooter", barrel, turn * Vector3.forward, fails, notes);
+            else
+                fails.Add("no held aim for the RopeShooter");
+            Conclude(fails, notes);
+        }
+        finally
+        {
+            cfg.Reticle.Value = was;
+        }
+    }
+
+    /// <summary>vr.265's checks of the hand reticle against the ray it should follow.</summary>
+    static void JudgeHandReticle(
+        string what,
+        Vector3 origin,
+        Vector3 dir,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        var root = UI.World.HudSplit.ReticleRoot;
+        if (!UI.World.HudSplit.ReticleShown || root == null || !root.gameObject.activeInHierarchy)
+        {
+            fails.Add($"{what}: no hand reticle shown");
+            return;
+        }
+        var p = UI.World.HudSplit.ReticlePoint;
+        float off = Vector3.Cross(dir.normalized, p - origin).magnitude;
+        bool onGround = Physics.CheckSphere(
+            p,
+            0.05f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+        var eye = VRRig.Instance.Head.position;
+        float facing = Vector3.Angle(root.forward, p - eye);
+        RectTransform variant = null;
+        foreach (RectTransform child in root)
+            if (child.gameObject.activeSelf)
+                variant = child;
+        float deg =
+            variant != null
+                ? 2f
+                    * Mathf.Rad2Deg
+                    * Mathf.Atan(
+                        0.5f * variant.rect.width * root.lossyScale.x / Vector3.Distance(eye, p)
+                    )
+                : 0f;
+        notes.Add(
+            $"{what}: reticle {Vector3.Distance(origin, p):0.00} m out, {off * 100f:0.0} cm off the ray, on ground {onGround}, "
+                + $"{facing:0} deg off facing the eye, variant {(variant != null ? variant.name : "none")} {deg:0.00} deg"
+        );
+        if (off > 0.02f)
+            fails.Add($"{what}: reticle {off * 100f:0.0} cm off the aim ray");
+        else if (!onGround)
+            fails.Add($"{what}: reticle not on the ground the hand aims at");
+        else if (facing > 2f)
+            fails.Add($"{what}: reticle turned {facing:0} deg away from the eye");
+        else if (variant == null)
+            fails.Add($"{what}: the game shows no reticle variant");
+        else if (deg < 0.1f || deg > 5f)
+            fails.Add($"{what}: reticle {deg:0.00} deg wide, outside 0.1 to 5");
+    }
 }

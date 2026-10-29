@@ -113,7 +113,7 @@ UI at the player's own hands, wrists and held items (wheels, wrist display, item
 | Spectating: friend's hotbar | item icons around the friend's belt; 2D hotbar hidden | `ui.spatial`, `inventory.vr` | `UI.SpectateOnPlayer` |
 | Spectating: switch hint (`spectatingInputs`) | up and down arrows on the stick that switches | `ui.spatial` | `UI.SpectateOnPlayer` |
 | Spectating: your own dying or dead bar | your wrist | `ui.world` | `UI.HUD.HudMode` |
-| Reticle | hidden: you aim with your hand and the prompt shows at the target; a charging throw shows its aim arc instead of the throw reticle. `Head` pins it to the view on request | `ui.world` | `UI.HUD.Reticle` |
+| Reticle | `Hand` (default; a saved Hidden moves to it once, layout 3): the game's own reticle, in the shape and tint it picks (spike, rope, vine, ladder, reach, grasp, boost, kick, climb jump, shoot), where the aiming hand's ray meets the world (the held item's aim, else the primary use hand's), drawn on top at the HUD's angular size and facing the eye; hidden while the menu laser, an aim line, a throw arc or the ping preview shows. `Head` pins it to the view, `Hidden` turns it off | `ui.world` | `UI.HUD.Reticle` |
 | Unknown overlay canvases (`CanvasKind.Info`) | body follow panel, logged by name | `ui.world` | |
 | Binocular overlay | the binoculars' lens render texture | `interact.binoculars` | |
 | Screen transitions (`Transitions`) | head-locked VR fade | `ui.world` | |
