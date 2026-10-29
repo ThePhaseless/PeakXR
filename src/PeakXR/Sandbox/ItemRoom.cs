@@ -39,6 +39,18 @@ internal sealed class ItemRoom : MonoBehaviour
     /// <summary>A plan this much bigger than the best open floor is built anyway (a few tables touch walls); a bigger
     /// one would stand in them, so the room does not open.</summary>
     private const float MaxOverflow = 1.25f;
+    private const float StartOrbHeight = 1.25f;
+
+    /// <summary>Best open floor under this many square metres: walled in (closed doors), not a small room.</summary>
+    private const float BoxedArea = 4f;
+
+    /// <summary>Seconds a walled-in start keeps measuring again before it refuses.</summary>
+    private const float BoxedWait = 30f;
+
+    private const string BoxedIn = "walled in";
+    private float boxedUntil;
+    private bool boxedSaid;
+    private int[] counts;
 
     /// <summary>About 12 x 12 m: open floor this big holds every item of the game (ShelfLayoutTests).</summary>
     private const float HallArea = 140f;
@@ -380,6 +392,8 @@ internal sealed class ItemRoom : MonoBehaviour
         if (settled >= ArrivalSettle)
         {
             phase = Phase.Open;
+            if (boxedUntil <= 0f)
+                boxedUntil = Time.unscaledTime + BoxedWait;
             string refusal;
             try
             {
@@ -391,7 +405,19 @@ internal sealed class ItemRoom : MonoBehaviour
                 refusal =
                     "The item room hit an error and closed (details in LogOutput.log). Press Enter to try again.";
             }
-            if (refusal != null)
+            if (ReferenceEquals(refusal, BoxedIn))
+            {
+                if (!boxedSaid)
+                {
+                    boxedSaid = true;
+                    Plugin.Log.LogInfo(
+                        $"[sandbox.room] walled in where you stand (doors closed?): measuring again every second for {BoxedWait:0} s"
+                    );
+                }
+                phase = Phase.Loading;
+                settled = ArrivalSettle - 1f;
+            }
+            else if (refusal != null)
                 Close(refusal);
         }
         else if (Time.unscaledTime > deadline)
@@ -432,15 +458,21 @@ internal sealed class ItemRoom : MonoBehaviour
             statusesOn = c.refs.afflictions;
             InAirportRef(statusesOn) = false;
         }
-        var buckets = Collect();
-        var counts = new int[buckets.Length];
-        int total = 0;
-        for (int b = 0; b < buckets.Length; b++)
-            total += counts[b] = buckets[b].Count;
-        slotItems = new Item[total];
-        for (int b = 0, i = 0; b < buckets.Length; b++)
-            foreach (var item in buckets[b])
-                slotItems[i++] = item;
+        // Once: a boxed-in try (BoxedIn) comes back here a second later.
+        if (slotItems == null)
+        {
+            var buckets = Collect();
+            counts = new int[buckets.Length];
+            int n = 0;
+            for (int b = 0; b < buckets.Length; b++)
+                n += counts[b] = buckets[b].Count;
+            slotItems = new Item[n];
+            for (int b = 0, i = 0; b < buckets.Length; b++)
+                foreach (var item in buckets[b])
+                    slotItems[i++] = item;
+        }
+        int total = slotItems.Length;
+        plan = null;
 
         // Feet on the floor under the player; the room in the heading whose open floor holds the plan best, the
         // view first on a tie.
@@ -494,10 +526,21 @@ internal sealed class ItemRoom : MonoBehaviour
 
         if (!plan.Fits && !(plan.Over <= MaxOverflow))
         {
+            // Walled in on every side and no way out (the spawn elevator before its doors open, VR run of dc78fa3:
+            // 2.7 x 0.6 m, while 1.5 m out at its door the hall was found): try again in a moment.
+            if (room.Width * room.Depth < BoxedArea && Time.unscaledTime < boxedUntil)
+                return BoxedIn;
             Plugin.Log.LogWarning(
                 $"[sandbox.room] no open floor within {MaxReach:0} m holds the tables: best {room} "
-                    + $"({plan.Over:0.0}x too small); not opened"
+                    + (
+                        plan.Over < float.MaxValue
+                            ? $"({plan.Over:0.0}x too small)"
+                            : "(no open floor found)"
+                    )
+                    + "; not opened"
             );
+            if (room.Width * room.Depth < BoxedArea)
+                return "Item room: walled in here, with no open floor in sight. Step out and press Enter again.";
             // Only send the player on where it can work: a hall-sized floor holds every item (ShelfLayout tests).
             bool hall =
                 room.Width >= 10f && room.Depth >= 10f && room.Width * room.Depth >= HallArea;
@@ -518,6 +561,7 @@ internal sealed class ItemRoom : MonoBehaviour
         root = new GameObject("PeakXR_ItemRoomProps").transform;
         Tables(At, counts);
         var start = At(plan.StartX, 1f);
+        start = Floor(start, start.y);
         StartOrbs(start);
         Props(origin, At, forward);
         // Warm-up while you stand at the start: every table once, nearest first, a spawn or two a frame. Each item's
@@ -863,10 +907,13 @@ internal sealed class ItemRoom : MonoBehaviour
     }
 
     /// <summary>In front of the player, chest high: restock everything (chevron) and leave (cross).</summary>
+    /// <summary>In a row 1 m ahead of where you start, chest high above the floor there (1.25 m), 0.44 m apart: Light
+    /// fire, Restock all, Leave. A hand within 9 cm of an orb's centre fills it (<see cref="TouchOrb"/>): 0.6 s fires
+    /// a chevron, 1 s the cross. Their spots are logged for testers.</summary>
     private void StartOrbs(Vector3 floorAt)
     {
         var right = facing * Vector3.right;
-        var at = floorAt + Vector3.up * 1.25f;
+        var at = floorAt + Vector3.up * StartOrbHeight;
         AddOrb(RestockAll, cross: false, at - right * 0.22f);
         AddOrb(LeaveRoom, cross: true, at + right * 0.22f);
         Label("Restock all", at - right * 0.22f + Vector3.up * 0.12f, facing, 40f, Color.white);
@@ -877,6 +924,11 @@ internal sealed class ItemRoom : MonoBehaviour
             AddOrb(LightFire, cross: false, at - right * 0.66f);
             Label("Light fire", at - right * 0.66f + Vector3.up * 0.12f, facing, 40f, Color.white);
         }
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[sandbox.room] start orbs {StartOrbHeight} m above the floor: Light fire {at - right * 0.66f}, Restock all {at - right * 0.22f}, Leave {at + right * 0.22f}; rest a hand in one (within 9 cm) for 0.6 s, Leave 1 s"
+            )
+        );
     }
 
     /// <summary>The fire, the test wall with its target, and the eye chart, where the plan put them.</summary>

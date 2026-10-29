@@ -38,7 +38,8 @@ internal readonly struct CameraSwap
 
     public bool Active => main != null;
 
-    // Debug mode's aim log: only when the aim moved 10 cm or turned 10 degrees since the last line, at most 4 a second.
+    // Debug mode's aim log, at Debug level (the trace file, not LogOutput.log): only when the aim moved 10 cm or
+    // turned 10 degrees since the last line, at most 4 a second.
     private static float nextAimLog;
     private static Vector3 lastAimFrom;
     private static Vector3 lastAimAlong;
@@ -65,7 +66,7 @@ internal readonly struct CameraSwap
             nextAimLog = Time.unscaledTime + 0.25f;
             lastAimFrom = position;
             lastAimAlong = f;
-            Plugin.Log.LogInfo(
+            Plugin.Log.LogDebug(
                 System.FormattableString.Invariant(
                     $"[interact.aim] game call aimed from ({position.x:0.00}, {position.y:0.00}, {position.z:0.00}) along ({f.x:0.00}, {f.y:0.00}, {f.z:0.00}), {Vector3.Distance(mainT.position, position):0.00} m from the eye"
                 )
