@@ -215,6 +215,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Finish();
                 yield break;
             }
+            // Live (chosen by name) it waits up to 120 s for the headset off and 600 s for it back on.
+            yield return VRStep("vr.260-headset-off", 760f, HeadsetOffCheck());
             // Use steps need run-only systems (achievements, item render features), so they run in the level.
             yield return Uses();
             yield return Mobs();

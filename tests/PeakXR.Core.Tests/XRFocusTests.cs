@@ -11,6 +11,17 @@ public class XRFocusTests
     public void OnlyFocusedOrUnknownHasInput(int state, bool focused) =>
         Assert.Equal(focused, XRFocus.Focused(state));
 
+    [Theory]
+    [InlineData(0, true)] // not reported: assume shown, so a missing state callback never blanks the mirror
+    [InlineData(5, true)] // FOCUSED
+    [InlineData(4, true)] // VISIBLE: the dashboard is over the game, which still renders
+    [InlineData(3, false)] // SYNCHRONIZED: frames are paced but shouldRender is false (headset off)
+    [InlineData(6, false)] // STOPPING: the session ends before the next frame
+    [InlineData(1, false)] // IDLE: no session, the eye textures are the runtime's
+    [InlineData(2, false)] // READY: not begun yet
+    public void OnlyVisibleOrFocusedFramesReachTheHeadset(int state, bool shown) =>
+        Assert.Equal(shown, XRFocus.Shown(state));
+
     [Fact]
     public void NamesTheSpecStates()
     {

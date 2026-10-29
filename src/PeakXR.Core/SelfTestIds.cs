@@ -214,6 +214,7 @@ public static class SelfTestIds
         "vr.249-button-throw-aim",
         "vr.251-hook-pull-first-person",
         "vr.252-flare-cap-pull",
+        "vr.260-headset-off",
         "vr.25-cook-over-fire",
         "vr.257-arm-swing-jump",
         "vr.258-stick-lunge",
