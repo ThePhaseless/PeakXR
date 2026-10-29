@@ -492,6 +492,9 @@ public static class BugReportText
         return stale;
     }
 
+    /// <summary>What a player's Photon nickname becomes in reports and logs: their actor number.</summary>
+    public static string PlayerLabel(int actor) => "player " + actor.ToString(C);
+
     /// <summary>
     /// The privacy pass over every text file: each name (player nicknames, the OS user) becomes its label wherever it
     /// stands as a whole word, longest names first so "Ann Lee" wins over "Ann"; the account name in a home folder

@@ -423,6 +423,21 @@ public class BugReportTextTests
     }
 
     [Fact]
+    public void PlayerLabel_IsTheReportsActorLabel()
+    {
+        Assert.Equal("player 1", BugReportText.PlayerLabel(1));
+        // A trace line built with the label reads as the report would have redacted it.
+        var names = new[]
+        {
+            new KeyValuePair<string, string>("Ann Lee", BugReportText.PlayerLabel(1)),
+        };
+        Assert.Equal(
+            $"[avatar.local] {BugReportText.PlayerLabel(1)}: 18 bodyparts",
+            BugReportText.Redact("[avatar.local] Ann Lee: 18 bodyparts", names)
+        );
+    }
+
+    [Fact]
     public void Redact_SkipsEmptyNames()
     {
         var text = BugReportText.Redact("abc", new[] { new KeyValuePair<string, string>("", "x") });

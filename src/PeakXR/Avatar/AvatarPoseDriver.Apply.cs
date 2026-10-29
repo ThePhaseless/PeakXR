@@ -143,6 +143,10 @@ public partial class AvatarPoseDriver
     private Character Owner =>
         Character != null ? Character : (Character = GetComponent<Character>());
 
+    /// <summary>The character for a log line: its GameObject name carries the owner's Steam nickname.</summary>
+    private static string Who(Character c) =>
+        BugReportText.PlayerLabel(c.photonView != null ? c.photonView.OwnerActorNr : 0);
+
     private bool EnsureRig()
     {
         if (rigTried)
@@ -160,7 +164,7 @@ public partial class AvatarPoseDriver
         )
         {
             Plugin.Log.LogWarning(
-                $"[avatar] {c.name}: no hip or hand bodyparts, pose driver disabled for it"
+                $"[avatar] {Who(c)}: no hip or hand bodyparts, pose driver disabled for it"
             );
             return false;
         }
@@ -173,7 +177,7 @@ public partial class AvatarPoseDriver
             spine = torso;
         if (c.IsLocal)
             Plugin.Log.LogInfo(
-                $"[avatar.local] {c.name}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}, physics step {Time.fixedDeltaTime * 1000f:0.0} ms"
+                $"[avatar.local] {Who(c)}: {parts.Count} bodyparts, lean bends {(spine != null ? spine.partType.ToString() : "nothing")}, physics step {Time.fixedDeltaTime * 1000f:0.0} ms"
             );
         SplitForLegShift(c.refs.ragdoll.partList);
         if (c.IsLocal)
@@ -189,7 +193,7 @@ public partial class AvatarPoseDriver
         rightRig = new HandRig(handR.transform, false, FingerNamesRight, smr);
         InitTwist(parts, handL.transform, handR.transform, smr);
         if (!leftRig.HasFingers && !rightRig.HasFingers)
-            Plugin.Log.LogInfo($"[avatar] {c.name}: no finger bones found, finger curls skipped");
+            Plugin.Log.LogInfo($"[avatar] {Who(c)}: no finger bones found, finger curls skipped");
         rigReady = true;
         return true;
     }

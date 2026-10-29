@@ -45,6 +45,13 @@ internal static class DebugLog
     private static bool attached;
     private static StreamWriter trace;
 
+    /// <summary>The bug report's names (<see cref="BugReport.Names"/>) for the trace file's privacy pass, swapped
+    /// whole from the main thread by <see cref="DebugDriver"/>, since log lines arrive on any thread.</summary>
+    public static volatile System.Collections.Generic.KeyValuePair<string, string>[] TraceNames =
+    {
+        new(Environment.UserName, "[user]"),
+    };
+
     /// <summary><c>Debug.Mode</c>: the verbose traces run. Read on hot paths, so a plain field.</summary>
     public static bool Verbose;
 
@@ -201,7 +208,7 @@ internal static class DebugLog
                     try
                     {
                         trace.WriteLine(
-                            $"{new DateTime(e.Wall):HH:mm:ss.fff} [{e.Level}] {eventArgs.Data}"
+                            $"{new DateTime(e.Wall):HH:mm:ss.fff} [{e.Level}] {BugReportText.Redact(eventArgs.Data?.ToString(), TraceNames)}"
                         );
                     }
                     catch (Exception ex) when (ex is IOException or ObjectDisposedException)

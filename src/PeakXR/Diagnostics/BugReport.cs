@@ -471,18 +471,18 @@ internal static class BugReport
 
     /// <summary>Every name the files could carry, with what replaces it: Photon nicknames (Steam names) by actor
     /// number, character names by index, and the OS account.</summary>
-    private static KeyValuePair<string, string>[] Names()
+    internal static KeyValuePair<string, string>[] Names()
     {
         var names = new List<KeyValuePair<string, string>>();
         try
         {
             foreach (var p in PhotonNetwork.PlayerList)
-                names.Add(new(p.NickName, $"player {p.ActorNumber}"));
+                names.Add(new(p.NickName, BugReportText.PlayerLabel(p.ActorNumber)));
             if (PhotonNetwork.LocalPlayer != null)
                 names.Add(
                     new(
                         PhotonNetwork.LocalPlayer.NickName,
-                        $"player {PhotonNetwork.LocalPlayer.ActorNumber}"
+                        BugReportText.PlayerLabel(PhotonNetwork.LocalPlayer.ActorNumber)
                     )
                 );
             for (int i = 0; i < Character.AllCharacters.Count; i++)

@@ -24,7 +24,11 @@ internal sealed class DebugDriver : MonoBehaviour
     /// <summary>Main thread only.</summary>
     public static readonly Ring<PoseSample> Poses = new(SampleCount);
 
+    /// <summary>How often the trace's privacy names are re-read: players join and leave.</summary>
+    private const float TraceNamesSeconds = 2f;
+
     private float nextSample;
+    private float nextTraceNames;
     private Item heldItem;
     private string heldName;
 
@@ -39,6 +43,11 @@ internal sealed class DebugDriver : MonoBehaviour
     private void Update()
     {
         BugReport.Poll();
+        if (DebugLog.Verbose && Time.unscaledTime >= nextTraceNames)
+        {
+            nextTraceNames = Time.unscaledTime + TraceNamesSeconds;
+            DebugLog.TraceNames = BugReport.Names();
+        }
         bool vr = VRSession.Active;
         if (DebugLog.Verbose && vr && Time.unscaledTime >= nextSample)
         {
