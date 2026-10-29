@@ -74,90 +74,252 @@ public class ItemShelfTests
 
     [Fact]
     public void PlainItemsAreKept() => Assert.Null(Skip("Apple", "Action_RestoreHunger"));
+
+    static string Harm(
+        string[] components,
+        StatusChange[] statuses = null,
+        params string[] afflictions
+    ) =>
+        ItemShelf.HarmOf(
+            new HashSet<string>(components),
+            statuses ?? System.Array.Empty<StatusChange>(),
+            new HashSet<string>(afflictions)
+        );
+
+    [Theory]
+    [InlineData("Action_Die")]
+    [InlineData("Action_BecomeSkeleton")]
+    [InlineData("Action_WarpRandomly")]
+    [InlineData("Action_WarpToBiome")]
+    [InlineData("Action_WarpToRandomPlayer")]
+    [InlineData("Dynamite")]
+    [InlineData("KnockOutPlayerOnImpact")]
+    [InlineData("Action_InflictPoison")]
+    [InlineData("CactusBall")]
+    [InlineData("Action_RandomMushroomEffect")]
+    [InlineData("Action_CallScoutmaster")]
+    public void KillWarpPoisonExplodeComponentsAreDangerous(string component) =>
+        Assert.NotNull(Harm(new[] { "Item", component }));
+
+    [Fact]
+    public void AStatusAddedIsHarmAndOneTakenAwayIsHelp()
+    {
+        Assert.Contains(
+            "Poison",
+            Harm(new[] { "Action_ModifyStatus" }, new[] { new StatusChange("Poison", 0.3f) })
+        );
+        Assert.Null(
+            Harm(new[] { "Action_ModifyStatus" }, new[] { new StatusChange("Injury", -0.4f) })
+        );
+    }
+
+    [Theory]
+    [InlineData("PoisonOverTime")]
+    [InlineData("Exhausted")]
+    [InlineData("Chaos")]
+    [InlineData("PreventPoisonHealing")]
+    [InlineData("ZombieBite")]
+    [InlineData("Blind")]
+    public void HarmfulAfflictionsAreDangerous(string affliction) =>
+        Assert.NotNull(Harm(new[] { "Action_ApplyAffliction" }, null, affliction));
+
+    [Theory]
+    [InlineData("FasterBoi")]
+    [InlineData("InfiniteStamina")]
+    [InlineData("ClearAllStatus")]
+    [InlineData("HealAll")]
+    [InlineData("Glowing")]
+    public void HelpfulAfflictionsAreNot(string affliction) =>
+        Assert.Null(Harm(new[] { "Action_ApplyAffliction" }, null, affliction));
+
+    [Fact]
+    public void FoodToolsAndClimbingGearAreHelpful()
+    {
+        Assert.Null(Harm(new[] { "Action_RestoreHunger" }));
+        Assert.Null(Harm(new[] { "Actions_Binoculars" }));
+        Assert.Null(Harm(new[] { "RopeSpool" }));
+        Assert.Null(Harm(new[] { "Backpack" }));
+    }
+
+    [Fact]
+    public void ZoneOfItems()
+    {
+        Assert.Equal(ItemZone.Helpful, ItemShelf.ZoneOf(null, 0f));
+        Assert.Equal(ItemZone.Dangerous, ItemShelf.ZoneOf("kills", 0f));
+        // Goes off on its own (dynamite lights when you come near the spot it spawned on): kept apart.
+        Assert.Equal(ItemZone.Volatile, ItemShelf.ZoneOf("explodes", 4f));
+    }
 }
 
 public class ShelfLayoutTests
 {
-    [Fact]
-    public void SmallGroupIsOneCenteredRow()
-    {
-        var plan = ShelfLayout.Plan(new[] { 3 }, perRow: 8, spacing: 1f, rowGap: 0.5f, aisle: 2f);
+    static readonly ShelfSpec Spec = new();
 
-        Assert.Equal(3, plan.Slots.Length);
-        Assert.Equal(-1f, plan.Slots[0].X, 3);
-        Assert.Equal(0f, plan.Slots[1].X, 3);
-        Assert.Equal(1f, plan.Slots[2].X, 3);
-        Assert.All(plan.Slots, s => Assert.Equal(0f, s.Z, 3));
-        var table = Assert.Single(plan.Tables);
-        Assert.Equal(1, table.Rows);
-        Assert.Equal(0, table.First);
-        Assert.Equal(3, table.Count);
+    static int[] Counts(params (ItemZone zone, ShelfGroup group, int count)[] entries)
+    {
+        var counts = new int[ShelfLayout.Buckets];
+        foreach (var (zone, group, count) in entries)
+            counts[ShelfLayout.Bucket(zone, group)] = count;
+        return counts;
+    }
+
+    // Roughly the game's database: about 120 items, most helpful, a few dangerous, one that goes off by itself.
+    static readonly int[] Typical = Counts(
+        (ItemZone.Helpful, ShelfGroup.Fire, 6),
+        (ItemZone.Helpful, ShelfGroup.Food, 30),
+        (ItemZone.Helpful, ShelfGroup.Medicine, 10),
+        (ItemZone.Helpful, ShelfGroup.Climbing, 10),
+        (ItemZone.Helpful, ShelfGroup.Throwing, 6),
+        (ItemZone.Helpful, ShelfGroup.Movement, 8),
+        (ItemZone.Helpful, ShelfGroup.Tools, 10),
+        (ItemZone.Helpful, ShelfGroup.Mystic, 6),
+        (ItemZone.Helpful, ShelfGroup.Containers, 2),
+        (ItemZone.Dangerous, ShelfGroup.Food, 12),
+        (ItemZone.Dangerous, ShelfGroup.Throwing, 3),
+        (ItemZone.Dangerous, ShelfGroup.Movement, 3),
+        (ItemZone.Dangerous, ShelfGroup.Mystic, 4),
+        (ItemZone.Volatile, ShelfGroup.Throwing, 1)
+    );
+
+    // The player stands at z = 0, x = 0; the hall is 24 m wide and 30 m deep.
+    static readonly RoomRect Hall = new(-12f, 12f, 0f, 30f);
+
+    static float Gap(RoomRect a, RoomRect b)
+    {
+        float dx = System.Math.Max(0f, System.Math.Max(a.MinX - b.MaxX, b.MinX - a.MaxX));
+        float dz = System.Math.Max(0f, System.Math.Max(a.MinZ - b.MaxZ, b.MinZ - a.MaxZ));
+        return System.MathF.Sqrt(dx * dx + dz * dz);
+    }
+
+    static void AssertInside(RoomRect room, RoomRect r, float margin)
+    {
+        Assert.True(r.MinX >= room.MinX + margin - 1e-3f, $"{r} past the left wall");
+        Assert.True(r.MaxX <= room.MaxX - margin + 1e-3f, $"{r} past the right wall");
+        Assert.True(r.MinZ >= room.MinZ - 1e-3f, $"{r} behind the player");
+        Assert.True(r.MaxZ <= room.MaxZ - margin + 1e-3f, $"{r} past the far wall");
     }
 
     [Fact]
-    public void TablesHoldTwoRowsSoEveryItemFacesAnAisle()
+    public void EveryTableStandsInsideTheRoomClearOfWallsAndOfEachOther()
     {
-        // 20 items, 8 a row: a table of 16 (two rows), then one of 4.
-        var plan = ShelfLayout.Plan(
-            new[] { 20 },
-            perRow: 8,
-            spacing: 0.5f,
-            rowGap: 0.6f,
-            aisle: 1.5f
-        );
+        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
 
-        Assert.Equal(2, plan.Tables.Length);
-        Assert.Equal(2, plan.Tables[0].Rows);
-        Assert.Equal(16, plan.Tables[0].Count);
-        Assert.Equal(0f, plan.Slots[7].Z, 3);
-        Assert.Equal(0.6f, plan.Slots[8].Z, 3);
-        // The next table starts an aisle past the back row.
-        Assert.Equal(2.1f, plan.Tables[1].Z, 3);
-        Assert.Equal(2.1f, plan.Slots[16].Z, 3);
-        Assert.Equal(2.1f, plan.Depth, 3);
+        Assert.True(plan.Fits);
+        int items = 0;
+        foreach (var c in Typical)
+            items += c;
+        Assert.Equal(items, plan.Slots.Length);
+        for (int i = 0; i < plan.Tables.Length; i++)
+        {
+            AssertInside(Hall, plan.Tables[i].Footprint, Spec.Margin);
+            for (int j = i + 1; j < plan.Tables.Length; j++)
+                Assert.True(
+                    Gap(plan.Tables[i].Footprint, plan.Tables[j].Footprint) >= Spec.Aisle - 1e-3f,
+                    $"tables {i} and {j} leave no walkway"
+                );
+        }
     }
 
     [Fact]
-    public void EachGroupStartsItsOwnTableAndEmptyGroupsTakeNoSpace()
+    public void ItemsLieOnTheirTables()
     {
-        var plan = ShelfLayout.Plan(
-            new[] { 2, 0, 1 },
-            perRow: 8,
-            spacing: 1f,
-            rowGap: 0.5f,
-            aisle: 2f
-        );
-
-        Assert.Equal(2, plan.Tables.Length);
-        Assert.Equal(0, plan.Tables[0].Group);
-        Assert.Equal(2, plan.Tables[1].Group);
-        Assert.Equal(2f, plan.Tables[1].Z, 3);
-        Assert.Equal(2, plan.Slots[2].Group);
-        Assert.Equal(0f, plan.Slots[2].X, 3);
+        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        foreach (var t in plan.Tables)
+            for (int k = t.First; k < t.First + t.Count; k++)
+            {
+                var s = plan.Slots[k];
+                Assert.Equal(t.Group, s.Group);
+                Assert.InRange(s.X, t.Footprint.MinX, t.Footprint.MaxX);
+                Assert.InRange(s.Z, t.Footprint.MinZ, t.Footprint.MaxZ);
+            }
     }
 
     [Fact]
-    public void HalfWidthCoversTheWidestRow()
+    public void TheTablesStandInTheMiddleOfTheRoom()
     {
-        var plan = ShelfLayout.Plan(new[] { 5 }, perRow: 4, spacing: 1f, rowGap: 0.5f, aisle: 2f);
-
-        Assert.Equal(1.5f, plan.Tables[0].HalfWidth, 3);
+        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        Assert.Equal(Hall.CenterX, plan.Block.CenterX, 2);
+        Assert.True(plan.Block.MinZ >= Hall.MinZ + Spec.FrontWalk - 1e-3f);
     }
 
     [Fact]
-    public void ChoosePerRowTakesTheNarrowestThatFits()
+    public void HelpfulNearestDangerousBehindAndWhatGoesOffByItselfFarthest()
     {
-        var counts = new[] { 30, 30 };
-        int narrow = ShelfLayout.ChoosePerRow(counts, 100f, 6, 16, 0.5f, 0.6f, 1.5f);
-        Assert.Equal(6, narrow);
-
-        // 15 a row puts each group on one two-row table: 2.7 m deep. 14 needs a third table.
-        int fit = ShelfLayout.ChoosePerRow(counts, 3f, 6, 16, 0.5f, 0.6f, 1.5f);
-        Assert.Equal(15, fit);
-        Assert.True(ShelfLayout.Plan(counts, 14, 0.5f, 0.6f, 1.5f).Depth > 3f);
+        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var helpful = plan.Zones[(int)ItemZone.Helpful];
+        var dangerous = plan.Zones[(int)ItemZone.Dangerous];
+        var volatileZone = plan.Zones[(int)ItemZone.Volatile];
+        Assert.True(dangerous.MinZ - helpful.MaxZ >= Spec.ZoneGap - 1e-3f);
+        Assert.True(volatileZone.MinZ - dangerous.MaxZ >= Spec.ZoneGap - 1e-3f);
+        foreach (var t in plan.Tables)
+        {
+            var zone = plan.Zones[(int)t.Zone];
+            Assert.InRange(t.Footprint.MinZ, zone.MinZ - 1e-3f, zone.MaxZ + 1e-3f);
+            Assert.InRange(t.Footprint.MaxZ, zone.MinZ - 1e-3f, zone.MaxZ + 1e-3f);
+        }
     }
 
     [Fact]
-    public void ChoosePerRowFallsBackToTheWidest() =>
-        Assert.Equal(16, ShelfLayout.ChoosePerRow(new[] { 500 }, 1f, 6, 16, 0.5f, 0.6f, 1.5f));
+    public void WhatGoesOffByItselfKeepsItsClearanceFromThePlayerAndTheOtherTables()
+    {
+        var spec = new ShelfSpec { VolatileClearance = 5f };
+        var plan = ShelfLayout.Plan(Typical, Hall, spec);
+
+        Assert.True(plan.Fits);
+        var start = new RoomRect(plan.StartX, plan.StartX, Hall.MinZ, Hall.MinZ);
+        foreach (var v in plan.Tables)
+        {
+            if (v.Zone != ItemZone.Volatile)
+                continue;
+            Assert.True(Gap(v.Footprint, start) >= 5f - 1e-3f);
+            foreach (var t in plan.Tables)
+                if (t.Zone != ItemZone.Volatile)
+                    Assert.True(Gap(v.Footprint, t.Footprint) >= 5f - 1e-3f);
+            Assert.True(Gap(v.Footprint, plan.Fire) >= 5f - 1e-3f);
+            if (plan.HasWall)
+                Assert.True(Gap(v.Footprint, plan.Wall) >= 5f - 1e-3f);
+        }
+    }
+
+    [Fact]
+    public void CookingFireAndTestWallStandInsideTheRoomOffTheTables()
+    {
+        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+
+        Assert.True(plan.HasWall);
+        AssertInside(Hall, plan.Wall, Spec.Margin);
+        AssertInside(Hall, plan.Fire, Spec.Margin);
+        foreach (var t in plan.Tables)
+        {
+            Assert.True(Gap(t.Footprint, plan.Wall) >= Spec.Aisle - 1e-3f);
+            Assert.True(Gap(t.Footprint, plan.Fire) >= Spec.Aisle - 1e-3f);
+        }
+    }
+
+    [Fact]
+    public void ANarrowHallWrapsTheTablesIntoMoreColumnsInsteadOfThroughTheWalls()
+    {
+        // The old layout ran one row of up to 14 items (7.7 m) across, never measuring the side walls.
+        var corridor = new RoomRect(-5f, 5f, 0f, 45f);
+        var plan = ShelfLayout.Plan(Typical, corridor, Spec);
+
+        Assert.True(plan.Fits);
+        foreach (var t in plan.Tables)
+            AssertInside(corridor, t.Footprint, Spec.Margin);
+    }
+
+    [Fact]
+    public void ARoomTooSmallSaysSo()
+    {
+        var closet = new RoomRect(-2f, 2f, 0f, 4f);
+        Assert.False(ShelfLayout.Plan(Typical, closet, Spec).Fits);
+    }
+
+    [Fact]
+    public void BucketsRoundTrip()
+    {
+        int b = ShelfLayout.Bucket(ItemZone.Dangerous, ShelfGroup.Food);
+        Assert.Equal(ItemZone.Dangerous, ShelfLayout.ZoneOf(b));
+        Assert.Equal(ShelfGroup.Food, ShelfLayout.GroupOf(b));
+    }
 }

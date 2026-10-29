@@ -35,6 +35,17 @@ public sealed class ItemRoomFeature : Feature
                 $"[sandbox.room] statuses stay off in the item room: {e.GetBaseException().Message}"
             );
         }
+        // Optional: without it the room's dynamite lights as you come near its table, as in a run.
+        try
+        {
+            ItemRoom.WickRef = GameMember.Field<Dynamite, UnityEngine.Vector3>("dynamitePosition");
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning(
+                $"[sandbox.room] dynamite lights by its table in the item room: {e.GetBaseException().Message}"
+            );
+        }
         VRTab.AddButtonAfter(
             SandboxFeature.EnabledEntry,
             "PEAKXR_ITEM_ROOM",
