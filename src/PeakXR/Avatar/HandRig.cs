@@ -11,9 +11,14 @@ namespace PeakXR.Avatar;
 /// - hand forward = wrist to middle-finger knuckle, hand up = pinky to index knuckle; these map to the grip
 ///   pose's fingers (-Y) and thumb side (+Z) (<see cref="GripFrame"/>: OpenXR's grip runs +Z along the handle, so
 ///   mapping the fingers onto +Z stood every hand up along the handle with its wrist below the fist);
-/// - each finger bends about (finger direction x palm normal), the axis that moves the tip toward the palm.
+/// - every finger joint turns from its own bind rotation about its own bend axis (<see cref="FingerJoints"/>: the
+///   knuckle line for the fingers, opposition then flexion for the thumb), so curl 0 is the bind pose. Writing the
+///   outer joints from identity and bending every joint about one axis per finger, taken in the first joint's frame,
+///   splayed the scout's index and pinky 45 degrees apart at rest and bent them sideways through each other.
 /// Scout rig facts (from the prefab): bones point along +Y, fingers are Thumb/Index/Middle/Pinky with 3 joints,
-/// no ring finger, no Bodypart on fingers (plain skinned bones, free to rotate).
+/// no ring finger, no Bodypart on fingers (plain skinned bones, free to rotate); the index, middle and pinky fan out
+/// of one point in the palm, and every clip that moves them (the idle fist among them) turns them about the knuckle
+/// line.
 /// </summary>
 internal sealed class HandRig
 {
@@ -28,10 +33,13 @@ internal sealed class HandRig
 
     private readonly Transform[] joints = new Transform[FingerCurls.Count * Joints];
     private readonly Quaternion[] initialLocal = new Quaternion[FingerCurls.Count * Joints];
-    private readonly Quaternion[] proximalRest = new Quaternion[FingerCurls.Count];
-    private readonly Vector3[] bendAxis = new Vector3[FingerCurls.Count];
+    private readonly Quaternion[] restLocal = new Quaternion[FingerCurls.Count * Joints];
+    private readonly Vector3[] bendAxis = new Vector3[FingerCurls.Count * Joints];
     private readonly Quaternion handFromController;
     private bool curled;
+
+    /// <summary>The curls last drawn (<see cref="Curl"/>), for the self-test.</summary>
+    public FingerCurls Drawn { get; private set; }
 
     public HandRig(Transform hand, bool isLeft, string[][] fingerNames, SkinnedMeshRenderer skin)
     {
@@ -61,6 +69,7 @@ internal sealed class HandRig
             pinky = Joint(3, 1);
         if (index != null && pinky != null)
             up = space.PointInHand(index) - space.PointInHand(pinky);
+        var knuckles = up;
         up = Vector3.ProjectOnPlane(up, forward);
         if (up.sqrMagnitude < 1e-8f)
             up = Vector3.ProjectOnPlane(Vector3.forward, forward);
@@ -77,24 +86,28 @@ internal sealed class HandRig
         var look = Quaternion.LookRotation(forward, up);
         handFromController = Quaternion.Inverse(look);
 
-        // Palm faces the controller's -X on the right hand and +X on the left.
-        var right = look * Vector3.right;
-        var palm = IsLeft ? right : -right;
+        // Where the fingers point past the knuckles at rest (the middle finger's outer bone).
+        var fingers = forward;
+        int along = Joint(2, 2) != null ? 2 : 1;
+        if (Joint(along, 1) != null && Joint(along, 2) != null)
+            fingers = space.PointInHand(Joint(along, 2)) - space.PointInHand(Joint(along, 1));
+        var frame = FingerJoints.HandFrame(fingers.N(), knuckles.N());
 
         for (int f = 0; f < FingerCurls.Count; f++)
         {
-            var p = Joint(f, 0);
-            var tip = Joint(f, 2);
-            if (tip == null)
-                tip = Joint(f, 1);
-            if (p == null || tip == null)
+            if (Joint(f, 0) == null)
                 continue;
             HasFingers = true;
-            var dir = space.PointInHand(tip) - space.PointInHand(p);
-            var axisInHand = Vector3.Cross(dir, palm).normalized;
-            var proximalInHand = space.RotationInHand(p);
-            proximalRest[f] = space.LocalRotation(p);
-            bendAxis[f] = Quaternion.Inverse(proximalInHand) * axisInHand;
+            for (int j = 0; j < Joints; j++)
+            {
+                var t = Joint(f, j);
+                if (t == null)
+                    continue;
+                restLocal[f * Joints + j] = space.LocalRotation(t);
+                bendAxis[f * Joints + j] = FingerJoints
+                    .LocalAxis(frame, space.RotationInHand(t).N(), f, j, IsLeft)
+                    .U();
+            }
         }
     }
 
@@ -126,27 +139,43 @@ internal sealed class HandRig
         rot = ctrlRot * lr;
     }
 
-    /// <summary>Writes absolute joint rotations: proximal joints bend from their rest pose, the outer joints from
-    /// straight (bones point along +Y, so identity is straight).</summary>
+    /// <summary>Writes absolute joint rotations: each joint turns from its bind rotation about its bend axis, so the
+    /// game's animated finger pose underneath never adds in.</summary>
     public void Curl(in FingerCurls curls)
     {
         if (!HasFingers)
             return;
         for (int f = 0; f < FingerCurls.Count; f++)
         {
-            if (Joint(f, 0) == null)
-                continue;
             float c = curls[f];
             for (int j = 0; j < Joints; j++)
             {
-                var t = Joint(f, j);
-                if (t == null)
-                    continue;
-                var bend = Quaternion.AngleAxis(HandPose.JointAngle(f, j, c), bendAxis[f]);
-                t.localRotation = j == 0 ? proximalRest[f] * bend : bend;
+                int i = f * Joints + j;
+                if (joints[i] != null)
+                    joints[i].localRotation =
+                        restLocal[i]
+                        * Quaternion.AngleAxis(HandPose.JointAngle(f, j, c), bendAxis[i]);
             }
         }
+        Drawn = curls;
         curled = true;
+    }
+
+    /// <summary>A finger joint's turn from rest as it stands now, split about its bend axis
+    /// (<see cref="FingerJoints.Measure"/>); false without that bone.</summary>
+    public bool Measure(int finger, int joint, out float flex, out float off)
+    {
+        int i = finger * Joints + joint;
+        flex = off = 0f;
+        if (joints[i] == null)
+            return false;
+        FingerJoints.Measure(
+            (Quaternion.Inverse(restLocal[i]) * joints[i].localRotation).N(),
+            bendAxis[i].N(),
+            out flex,
+            out off
+        );
+        return true;
     }
 
     /// <summary>Puts the fingers back the way the prefab had them when the pose goes stale.</summary>

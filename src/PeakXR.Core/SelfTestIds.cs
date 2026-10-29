@@ -235,6 +235,8 @@ public static class SelfTestIds
         "vr.270-banner-head-card",
         "vr.271-pause-head",
         "vr.272-top-meter-faces-eye",
+        "vr.281-finger-limits",
+        "vr.282-finger-skeletal",
         "vr.255-climb-grip-no-pickup",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",

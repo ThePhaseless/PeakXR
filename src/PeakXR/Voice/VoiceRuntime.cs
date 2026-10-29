@@ -257,7 +257,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
             gesture.Reset();
             return false;
         }
-        // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
+        // Palm normal: +X of the left grip pose, -X of the right (GripFrame.Palm).
         var palm = left ? t.right : -t.right;
         var c = LocalAvatar.ControllerCurls(left);
         float curl = (c.Index + c.Middle + c.Ring + c.Pinky) * 0.25f;

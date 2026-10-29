@@ -410,7 +410,7 @@ internal static partial class WorldHolds
             return false;
         if (c.data.currentItem != null && (LocalHold.TwoHand || LocalHold.ItemInLeftHand == left))
             return false;
-        // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
+        // Palm normal: +X of the left grip pose, -X of the right (GripFrame.Palm).
         var palm = left ? t.right : -t.right;
         return PalmContact.On(
             palm.N(),
