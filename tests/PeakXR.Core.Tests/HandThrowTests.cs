@@ -73,4 +73,27 @@ public class HandThrowTests
     [Fact]
     public void Launch_IgnoresADegenerateRange() =>
         Assert.Equal(Full, HandThrow.LaunchSpeed(5f, 7f, 7f, Full), 4);
+
+    [Fact]
+    public void Aimed_TheMastersLookForceLandsAlongTheAim()
+    {
+        // A button throw: the master adds look * lookSpeed to what the item carries, so the net force is the aim's.
+        var carried = new System.Numerics.Vector3(0.5f, 0f, 0f);
+        var aim = new System.Numerics.Vector3(0f, 0f, 2f);
+        var look = new System.Numerics.Vector3(0f, 3f, 0f);
+        var sent = HandThrow.Aimed(carried, aim, look, 10f);
+        var net = sent + System.Numerics.Vector3.Normalize(look) * 10f;
+        Assert.Equal(0.5f, net.X, 4);
+        Assert.Equal(0f, net.Y, 4);
+        Assert.Equal(10f, net.Z, 4);
+    }
+
+    [Fact]
+    public void Aimed_NoChargeOrNoAimKeepsTheVelocity()
+    {
+        var carried = new System.Numerics.Vector3(1f, 2f, 3f);
+        var look = System.Numerics.Vector3.UnitZ;
+        Assert.Equal(carried, HandThrow.Aimed(carried, System.Numerics.Vector3.UnitX, look, 0f));
+        Assert.Equal(carried, HandThrow.Aimed(carried, System.Numerics.Vector3.Zero, look, 10f));
+    }
 }

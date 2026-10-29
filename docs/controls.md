@@ -7,7 +7,7 @@ The default layout for a right-handed player. With `Input.DominantHand = Left` t
 | Stick | Move | Left/right: turn. Up/down: next or previous item |
 | Stick click | Tap: sprint | Crouch |
 | A / X (lower button) | Tap: put the item away or take it out again. Hold: take out the backpack | Jump |
-| B / Y (upper button) | Tap: ping. Hold: emote wheel | Drop. Hold to charge a throw |
+| B / Y (upper button) | Tap: ping. Hold: emote wheel | Drop. Hold to charge a throw: it goes where the hand holding the item points, along the dotted arc |
 | Grip | Grab or interact | Grab or interact |
 | Trigger | Use (secondary) | Use (primary) |
 | Menu | Release within 1 s: pause. Hold 1 s: recenter | Same as left |

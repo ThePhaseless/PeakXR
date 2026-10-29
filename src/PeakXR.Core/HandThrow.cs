@@ -56,4 +56,23 @@ public static class HandThrow
             handSpeed + System.MathF.Max(0f, fullLaunch - handSpeed) * t
         );
     }
+
+    /// <summary>
+    /// The velocity to leave on the held item for a button throw that should fly along <paramref name="aim"/>: the
+    /// master adds <paramref name="lookSpeed"/> along <paramref name="look"/> (vanilla's head-aimed force), so that
+    /// force is swapped for the same force along the aim. No aim or no charge keeps <paramref name="velocity"/>.
+    /// </summary>
+    public static System.Numerics.Vector3 Aimed(
+        System.Numerics.Vector3 velocity,
+        System.Numerics.Vector3 aim,
+        System.Numerics.Vector3 look,
+        float lookSpeed
+    )
+    {
+        if (lookSpeed <= 0f || aim.LengthSquared() < 1e-8f || look.LengthSquared() < 1e-8f)
+            return velocity;
+        return velocity
+            + (System.Numerics.Vector3.Normalize(aim) - System.Numerics.Vector3.Normalize(look))
+                * lookSpeed;
+    }
 }
