@@ -8,7 +8,7 @@ schemaVersion = "0.0.1"
 namespace = "ThePhaseless"
 name = "PeakXR"
 # Set by tools/package.sh from <Version> in Directory.Build.props; bump it there.
-versionNumber = "0.1.1"
+versionNumber = "0.2.0"
 description = "Play PEAK in VR. Climb by grabbing the rock, pick things up with your hands, eat by lifting food to your mouth and climb ropes hand over hand. Friends without the mod can still play with you. Early release, mostly tested on SteamVR."
 websiteUrl = "https://github.com/ThePhaseless/PeakXR"
 containsNsfwContent = false
