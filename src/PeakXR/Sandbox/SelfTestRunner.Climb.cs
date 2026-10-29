@@ -30,6 +30,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return Restoring("vr.40-physical-crouch", 15f, CrouchStep());
         yield return Restoring("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
+        yield return Restoring("vr.257-arm-swing-jump", 20f, ArmSwingJumpStep());
         yield return Restoring("vr.45-lean", 60f, LeanStep());
         yield return Restoring("vr.45b-head-turn", 25f, HeadTurnStep());
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
@@ -46,6 +47,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return Restoring("vr.46b-lunge-too-soon", 30f, LungeTooSoonStep());
         yield return Restoring("vr.46c-reach-no-lunge", 30f, ReachNoLungeStep());
+        yield return Restoring("vr.258-stick-lunge", 30f, StickLungeStep());
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
         yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
@@ -457,6 +459,71 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         var note = $"sprinting with still hands {sprintStill}, while swinging {sprintSwing}";
         if (sprintStill || !sprintSwing)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.257: a jump out of an arm-swing sprint stays a sprint jump. The hands swing until take-off and then hang
+    /// still; the sprint holds while airborne, as a held sprint button does in vanilla (CharacterMovement.cs:275,
+    /// air branch), so the jump keeps the sprint's speed and pays the sprint jump's cost (:670-671). Before the fix
+    /// the swing reset the frame the body left the ground.
+    /// </summary>
+    IEnumerator ArmSwingJumpStep()
+    {
+        var c = Character.localCharacter;
+        var setting = BodyGestures.ArmSwingSetting;
+        if (setting == null)
+        {
+            stepSkip = "player.locomotion not installed";
+            yield break;
+        }
+        bool was = setting.Value;
+        bodyRestore = () => setting.Value = was;
+        setting.Value = true;
+        bool moveLeft = !VRInput.LeftHanded;
+        HeadFrame(out var head, out var forward, out var right);
+        var restLeft = Rest(head, forward, -right).Position;
+        var restRight = Rest(head, forward, right).Position;
+        Script(moveLeft).Stick = new Vector2(0f, 1f);
+        float start = Now;
+        bool pressed = false;
+        // Swing until the body is off the ground: 1.5 s to get the sprint going, then the jump press.
+        while (Now - start < 3f && (!pressed || c.data.isGrounded))
+        {
+            float z = 0.25f * Mathf.Sin(2f * Mathf.PI * 1.6f * (Now - start));
+            SetHand(true, restLeft + forward * z);
+            SetHand(false, restRight - forward * z);
+            if (!pressed && Now - start > 1.5f && c.data.isSprinting)
+            {
+                pressed = true;
+                Script(DomLeft).Primary = true;
+            }
+            else if (pressed)
+                Script(DomLeft).Primary = false;
+            yield return null;
+        }
+        Script(DomLeft).Primary = false;
+        SetHand(true, restLeft);
+        SetHand(false, restRight);
+        bool airborne = !c.data.isGrounded;
+        int airFrames = 0;
+        int sprintFrames = 0;
+        float air = Now;
+        while (Now - air < 1.5f && !c.data.isGrounded)
+        {
+            airFrames++;
+            if (c.data.isSprinting)
+                sprintFrames++;
+            yield return null;
+        }
+        Script(moveLeft).Stick = Vector2.zero;
+        setting.Value = was;
+        yield return Wait(0.5f);
+        var note =
+            $"jump pressed {pressed}, airborne {airborne}, sprinting {sprintFrames} of {airFrames} airborne frames";
+        if (!pressed || !airborne || airFrames == 0 || sprintFrames < airFrames)
             Fail(note);
         else
             stepNote = note;
@@ -2144,6 +2211,50 @@ internal sealed partial class SelfTestRunner
             Fail("a brisk reach set off a climb lunge: " + note);
         else
             Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.258: the stick lunge. Climbing on one hand, the move stick pushed up and its click (sprint) held sets off
+    /// the game's climb jump (CharacterClimbing.cs:118-124, <c>RPCA_ClimbJump</c> :238), as sprint and a direction do
+    /// on a pad, in both <c>Locomotion.SprintMode</c>s: the click is held past the stick chord's window, so Hold reads
+    /// it held and Toggle reads its press.
+    /// </summary>
+    IEnumerator StickLungeStep()
+    {
+        var c = Character.localCharacter;
+        if (VRInput.OneHanded)
+        {
+            stepSkip = "one-handed: the one stick also climbs the hold";
+            yield break;
+        }
+        yield return ToWall(headroom: LungeHeadroom);
+        if (!wallReady)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        bool move = !left;
+        yield return GripWall(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return WaitFor(() => c.data.sinceClimbJump > 1.1f, 2f);
+        float jumpBefore = c.data.sinceClimbJump;
+        Script(move).Stick = new Vector2(0f, 1f);
+        yield return null;
+        Script(move).StickClick = true;
+        yield return WaitFor(() => c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f), 0.6f);
+        bool jumped = c.data.sinceClimbJump < Mathf.Min(jumpBefore, 0.5f);
+        Script(move).StickClick = false;
+        Script(move).Stick = Vector2.zero;
+        var note = F(
+            $"stick up with sprint held ({(LocomotionConfig.SprintToggle ? "Toggle" : "Hold")}): climb jump {jumped}"
+        );
+        if (jumped)
+            Note(note);
+        else
+            Fail("no climb jump: " + note);
         yield return LetGoAll(c);
     }
 

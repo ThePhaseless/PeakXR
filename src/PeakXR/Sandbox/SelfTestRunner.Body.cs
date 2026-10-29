@@ -55,6 +55,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.141-forced-look-side", Budget(3f), ForcedLookSideStep());
         yield return Restoring("vr.142-sprint-out", Budget(7f), SprintOutStep());
         yield return Restoring("vr.154-jump-out", Budget(4f), JumpOutStep());
+        yield return Restoring("vr.259-god-off-clamp", Budget(2f), GodOffClampStep());
         yield return Restoring("vr.143-crouch-walk", Budget(12f), CrouchWalkStep());
         yield return Restoring("vr.241-long-crouch-hint", Budget(12f), LongCrouchHintStep());
         yield return HandStep("vr.144-jump", Budget(4f), JumpStep());
@@ -365,6 +366,33 @@ internal sealed partial class SelfTestRunner
         Script(move).StickClick = false;
         if (stepOk)
             stepNote = $"sprint {speed:0.0} m/s, stopped empty: {cueNote}";
+    }
+
+    /// <summary>vr.259: god mode's overfilled bar (infiniteStam lets regen pass the max, CharacterData.cs:447-451) is
+    /// clamped back to the max (Character.cs:1608) the moment god mode goes off, so none of it reaches play without
+    /// it. Run with god mode back on after.</summary>
+    IEnumerator GodOffClampStep()
+    {
+        var c = Character.localCharacter;
+        bodyRestore = () => SandboxActions.SetGodMode(true);
+        if (!SandboxActions.SetGodMode(true))
+        {
+            stepSkip = "sandbox not active";
+            yield break;
+        }
+        yield return null;
+        c.data.currentStamina = c.GetMaxStamina() + 1f;
+        float over = c.data.currentStamina;
+        SandboxActions.SetGodMode(false);
+        float after = c.data.currentStamina;
+        float max = c.GetMaxStamina();
+        var note = F(
+            $"stamina {over:0.00} under god mode, {after:0.00} after it went off (max {max:0.00})"
+        );
+        if (after > max + 0.001f)
+            Fail("overfill kept: " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>vr.154: a jump that spends the last of the stamina (JumpRpc's UseStamina, CharacterMovement.cs:667)

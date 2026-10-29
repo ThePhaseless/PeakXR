@@ -524,6 +524,10 @@ public static partial class SandboxActions
         if (c == null)
             return;
         c.infiniteStam = on;
+        // Under infiniteStam the bar's setter never lowers it, so regen overfills it (CharacterData.cs:447-451):
+        // without the clamp that overflow outlived god mode, extra stamina in the next climb.
+        if (!on)
+            c.ClampStamina();
         SetStatusesLocked?.Invoke(c, on);
     }
 

@@ -103,7 +103,10 @@ public sealed class ArmSwing
     /// <param name="right">Right hand position relative to the head, tracking space.</param>
     /// <param name="side">The head's flat right axis, tracking space (unit length): motion along it is not a
     /// running swing.</param>
-    /// <param name="moving">The player walks forward (stick pushed, on the ground).</param>
+    /// <param name="moving">The player walks forward (stick pushed, not climbing).</param>
+    /// <param name="airborne">The body is off the ground: a sprint already running holds as it is until it lands,
+    /// like a held sprint button in vanilla (CharacterMovement.cs:275), so a sprint jump keeps the sprint's speed
+    /// and cost. Nothing starts in the air.</param>
     public bool Update(
         bool leftTracked,
         Vector3 left,
@@ -111,13 +114,20 @@ public sealed class ArmSwing
         Vector3 right,
         Vector3 side,
         bool moving,
+        bool airborne,
         float dt
     )
     {
-        if (!leftTracked || !rightTracked || !moving || dt <= 0f)
+        if (!leftTracked || !rightTracked || !moving || dt <= 0f || (airborne && !Active))
         {
             Reset();
             return false;
+        }
+        if (airborne)
+        {
+            // Seeded again on landing, so the jump's hand travel is no swing sample.
+            _have = false;
+            return true;
         }
         float sample = 0f;
         if (_have && left.Y < MaxHandHeight && right.Y < MaxHandHeight)
