@@ -1,4 +1,3 @@
-using PeakXR.Avatar;
 using PeakXR.Interact;
 using PeakXR.VR;
 using Zorro.Core;
@@ -6,19 +5,18 @@ using Zorro.Core;
 namespace PeakXR.UI.Spatial;
 
 /// <summary>
-/// What an empty hand would grab glows before the grip, through the game's own highlight: <c>HoverEnter</c> /
+/// What a free hand's grip would grab glows before the grip, through the game's own highlight: <c>HoverEnter</c> /
 /// <c>HoverExit</c> of the target (Item.cs:1145-1163: <c>_Interactable</c> on mainRenderer and addtlRenderers; Luggage,
 /// kiosks, fuses and FakeItem have their own). Vanilla lights only <c>Interaction.currentHovered</c>
 /// (GUIManager.OnInteractChange, GUIManager.cs:1031-1043), the head or pointing ray, so an item at the hand never lit.
-/// The target is <see cref="PhysicalInteraction.GripPreview"/>, the same search as the grip. A target the game itself
+/// The target is <see cref="PhysicalInteraction.GripPreview"/>, the grip's own decision up to its press, so what glows is
+/// what the grip takes (issue #13). A target the game itself
 /// hovers stays the game's to turn off; when the game's hover moves off one of ours (its HoverExit), ours is lit
 /// again. Runs before ui.affordance (31300), so a red refusal tint is applied over the glow and restores it after.
 /// Local presentation only.
 /// </summary>
 internal sealed class GripGlow
 {
-    private const float GripHeld = 0.5f;
-
     private readonly IInteractible[] lit = new IInteractible[2];
     private IInteractible lastHovered;
 
@@ -34,18 +32,8 @@ internal sealed class GripGlow
         var hovered = interaction != null ? interaction.currentHovered : null;
         bool hoverMoved = !ReferenceEquals(hovered, lastHovered);
         lastHovered = hovered;
-        bool holding = c.data.currentItem != null;
         for (int i = 0; i < 2; i++)
-        {
-            bool left = i == 0;
-            ref var hand = ref VRInput.Hand(left);
-            bool free =
-                hand.Tracked
-                && hand.Grip < GripHeld
-                && !(holding && (LocalHold.TwoHand || LocalHold.ItemInLeftHand == left));
-            var next = free ? PhysicalInteraction.GripPreview(left) : null;
-            Set(i, next, hovered, hoverMoved);
-        }
+            Set(i, PhysicalInteraction.GripPreview(i == 0), hovered, hoverMoved);
     }
 
     public void Release()

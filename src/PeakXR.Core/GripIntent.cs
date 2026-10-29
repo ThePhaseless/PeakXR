@@ -242,7 +242,10 @@ public static class GripIntent
 
         if (c.PhysicalGrab)
         {
-            if (c.Candidate == GrabCandidate.Item && !c.HoldingItem)
+            // The item under a free hand, the one its glow shows: picked up, or pocketed while the other hand holds
+            // one (Item.Interact, Item.cs:578-591). Before a climb on the ground too (issue #13: the glowing item of a
+            // free hand by a wall was a climb, which failed without a word).
+            if (c.Candidate == GrabCandidate.Item && !c.ThisHandHolds)
                 return GripPressAction.GrabItem;
             // The hand that holds an item never hangs from a climb handle: the free hand does (vanilla keeps the
             // item while hanging, ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647).
@@ -255,10 +258,6 @@ public static class GripIntent
 
         if (mayClimb)
             return GripPressAction.Climb;
-        // A free hand on a second item: the game pockets it (Item.Interact, Item.cs:578-591), so the hand takes the
-        // item it touched rather than whatever the head aims at.
-        if (c.PhysicalGrab && c.Candidate == GrabCandidate.Item && !c.ThisHandHolds)
-            return GripPressAction.GrabItem;
         if (c.ThisHandHolds)
             return GripPressAction.Regrip;
         // A climber's hand that missed the next hold is no interact button: pressed on whatever the head or a
@@ -296,6 +295,31 @@ public static class GripIntent
         if (throwEnabled && speed >= throwSpeed)
             return GripReleaseAction.Throw;
         return releaseToDrop ? GripReleaseAction.Drop : GripReleaseAction.Keep;
+    }
+
+    /// <summary>Seconds a body counts as standing after the game's ground check lost it: its own jump still goes then
+    /// (<c>sinceGrounded</c> up to 0.2, CharacterMovement.cs:412).</summary>
+    public const float GroundGrace = 0.2f;
+
+    /// <summary>The body stands for a grip's purposes (<see cref="GripContext.BodyClimbing"/>): the game's ground
+    /// check (CharacterMovement.cs:722-760) drops for single physics steps on uneven ground, and a grip on a glowing
+    /// item there went to the wall instead.</summary>
+    public static bool OnFeet(bool grounded, float sinceGrounded) =>
+        grounded || sinceGrounded <= GroundGrace;
+
+    /// <summary>The game ignores a pickup within this long of an equip (<c>Item.Interact</c>, Item.cs:580).</summary>
+    public const float EquipCooldown = 0.25f;
+
+    /// <summary>
+    /// Seconds a grab's interact press waits so the game takes it: the rest of the equip cooldown after a drop, a
+    /// pickup or a draw (<paramref name="lastEquip"/>, <c>CharacterItems.lastEquippedSlotTime</c>). Pressed into the
+    /// cooldown, the pickup was refused and only a retry 0.3 s on took it. A lock longer than the cooldown (an emote's
+    /// <c>LockFromSwitching</c>, which sets the time ahead) is not waited for: the press goes in and its refusal shows.
+    /// </summary>
+    public static float PickupWait(float now, float lastEquip)
+    {
+        float wait = lastEquip + EquipCooldown - now;
+        return wait > 0f && wait <= EquipCooldown ? wait : 0f;
     }
 
     /// <summary>The temporary slot the game fills when the pockets are full (<c>Player.tempFullSlot</c>).</summary>

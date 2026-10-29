@@ -75,6 +75,23 @@ internal static class PhysicalInteraction
         /// item that arrived while the grip was already closed.</summary>
         public bool Armed = true;
 
+        /// <summary>A drop or throw this grip's release could not carry out yet (<see cref="ReleaseQueue"/>), the item
+        /// it lets go of and the hand's speed a queued throw leaves with.</summary>
+        public readonly ReleaseQueue Release = new();
+        public Item ReleaseItem;
+        public Vector3 ReleaseVelocity;
+
+        /// <summary>The unconfirmed pickup has had its one interact-up frame for a press the game would not take.</summary>
+        public bool Gapped;
+
+        /// <summary>What this hand's grip would take now (<see cref="GripPreview"/>, the glow); and the last target that
+        /// glowed, when and at which point, for <see cref="GrabGrace"/>.</summary>
+        public IInteractible Preview;
+        public int PreviewFrame = -10;
+        public IInteractible Shown;
+        public float ShownAt = -10f;
+        public Vector3 ShownPoint;
+
         /// <summary>When this hand last let an item go (released its grip on it, or the item left it).</summary>
         public float ItemLeftAt = -10f;
 
@@ -246,6 +263,9 @@ internal static class PhysicalInteraction
                 hand.Action = GripPressAction.None;
                 hand.Target = null;
                 hand.Use.Reset();
+                hand.Release.Clear();
+                hand.ReleaseItem = null;
+                hand.Preview = hand.Shown = null;
             }
             physicalClimb = false;
             Climb.ClimbHands.Forget();
@@ -267,6 +287,14 @@ internal static class PhysicalInteraction
         TrackFall(c, dt);
         UpdateHand(LeftHand, c, rig, cfg, active, dt, now);
         UpdateHand(RightHand, c, rig, cfg, active, dt, now);
+        // After the grips: a fresh close this frame keeps the item instead.
+        if (active)
+        {
+            RunQueuedRelease(LeftHand, c, cfg, now);
+            RunQueuedRelease(RightHand, c, cfg, now);
+        }
+        UpdatePreview(LeftHand, c, rig, cfg, active, now);
+        UpdatePreview(RightHand, c, rig, cfg, active, now);
         RetryClimb(LeftHand, c, rig, cfg, now);
         RetryClimb(RightHand, c, rig, cfg, now);
         UpdateHover(LeftHand, c, rig, cfg, now);
@@ -329,13 +357,18 @@ internal static class PhysicalInteraction
         dropPending = false;
         if (item != null)
         {
-            LocalHold.ItemInLeftHand = now - pendingTime < 3f ? pendingLeft : VRInput.LeftHanded;
+            LocalHold.ItemInLeftHand =
+                now - pendingTime < PendingSeconds ? pendingLeft : VRInput.LeftHanded;
             var into = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
-            into.Armed = ReleaseArming.OnArrive(
-                into.Grip.Held,
-                into.Action,
-                into.Target is Item wanted && SameInstance(wanted, item)
-            );
+            bool grabbed = into.Target is Item wanted && SameInstance(wanted, item);
+            into.Armed = ReleaseArming.OnArrive(into.Grip.Held, into.Action, grabbed);
+            // A fallback grip whose interact picked this item up (InteractPicking) holds it from now on as a grab: its
+            // release lets go of it, and the other hand's grab no longer takes its interact away (FreeInteract).
+            if (grabbed && into.Grip.Held && into.Action == GripPressAction.Interact)
+            {
+                into.Action = GripPressAction.GrabItem;
+                into.Confirmed = true;
+            }
         }
         pendingTime = -10f;
     }
@@ -647,6 +680,179 @@ internal static class PhysicalInteraction
         return item != null && Hold.Bind(item);
     }
 
+    /// <summary>What a grip of one hand decides, and what it read to decide it (<see cref="Decide"/>).</summary>
+    private struct Decision
+    {
+        public GripPressAction Action;
+        public GripContext Ctx;
+        public IInteractible Target;
+
+        /// <summary>The point of <see cref="Target"/> nearest the hand.</summary>
+        public Vector3 TargetPoint;
+        public IGripExtension Extension;
+        public HoldProbe Hold;
+        public Item Held;
+    }
+
+    /// <summary>
+    /// What a grip of this hand would do now: the one decision behind both its press and its glow
+    /// (<see cref="GripPreview"/>), so a glowing target is what the grip takes (issue #13: the glow lit the hand's
+    /// grab candidate while the press decided a climb). <paramref name="preview"/>: for the glow, which stops when no
+    /// grab target is in reach and asks no grip extension (their claim checks log and allocate; shortcut: a rope,
+    /// vine, friend or belt slot claiming a grip on an item can still glow that item, a per-frame claim check without
+    /// allocations would close it). The press falls back on the target that glowed last when the closing hand has
+    /// just left it (<see cref="GrabGrace"/>).
+    /// </summary>
+    private static Decision Decide(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        InteractConfig cfg,
+        Transform t,
+        bool preview,
+        float now
+    )
+    {
+        var d = default(Decision);
+        var pos = t.position;
+        IInteractible target = null;
+        var candidate = GrabCandidate.None;
+        if (cfg.PhysicalGrab)
+        {
+            candidate = FindCandidate(
+                c,
+                Eye(rig),
+                pos,
+                t.Fingers(),
+                cfg.GrabRadius,
+                out target,
+                out d.TargetPoint
+            );
+            if (
+                target == null
+                && !preview
+                && hand.Shown != null
+                && GrabGrace.Keeps(
+                    now - hand.ShownAt,
+                    Vector3.Distance(pos, hand.ShownPoint),
+                    cfg.GrabRadius
+                )
+                && StillThere(hand.Shown, c)
+            )
+            {
+                target = hand.Shown;
+                d.TargetPoint = hand.ShownPoint;
+                candidate = target is Item ? GrabCandidate.Item : GrabCandidate.Interactible;
+            }
+        }
+        if (preview && target == null)
+            return d;
+        bool holding = Holding(c, out var item);
+        bool thisHolds = holding && LocalHold.ItemInLeftHand == hand.Left;
+        d.Held = holding ? item : null;
+        var ctx = new GripContext
+        {
+            PhysicalGrab = cfg.PhysicalGrab,
+            PhysicalClimb = cfg.PhysicalClimb,
+            Candidate = candidate,
+            HoldingItem = holding,
+            ThisHandHolds = thisHolds,
+            HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
+            // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the
+            // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
+            // a join here would pre-empt (extensions are never asked once the press is SecondHand). Only while the
+            // runner can claim it (ParasolRunner.ClaimPress: grounded, not climbing): mid-glide the hand joins.
+            HeldBothHandsInGame = holding && BothHandsInGame(c, item),
+            NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
+            AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
+            BodyClimbing =
+                c.data.isClimbing || !GripIntent.OnFeet(c.data.isGrounded, c.data.sinceGrounded),
+            OnWall = c.data.isClimbing,
+            Airborne = Airborne(c),
+        };
+        ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
+        ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
+        // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
+        ctx.AtSecondGripTight = holding && !thisHolds && AtSecondGrip(pos, cfg.GrabRadius);
+        if (cfg.PhysicalClimb)
+        {
+            d.Hold = ProbeHold(c, rig, pos, t, cfg, d.Held);
+            // The same verdict drew the chalk ring, so a ringed hold is a grip that climbs. No surface along the reach
+            // but rock right at the hand (beside it): the game's own start check decides.
+            ctx.NearClimbable =
+                d.Hold.Verdict == HoldVerdict.Grab
+                || (!d.Hold.Hit && NearRock(pos, cfg.ClimbRadius, d.Held));
+            ctx.HoldConfirmed = d.Hold.Verdict == HoldVerdict.Grab;
+        }
+        ctx.CandidateIsAimed = target != null && ReferenceEquals(target, aimedTarget);
+        ctx.CandidateIsHandle = target is ClimbHandle;
+        if (target is ClimbHandle near)
+        {
+            // To the handle's surface, not its origin (which can sit at the rock face, VR run 60).
+            ctx.HandleDistance = HandleSurfaceDistance(near, pos);
+            ctx.RockDistance = d.Hold.Hit
+                ? Vector3.Distance(pos, d.Hold.Point)
+                : float.PositiveInfinity;
+        }
+        ctx.OneHanded = VRInput.OneHanded;
+        d.Action = GripIntent.OnPress(ctx);
+        if (!preview && d.Action != GripPressAction.SecondHand)
+        {
+            d.Extension = GripHooks.Claim(
+                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds)
+            );
+            ctx.ExtensionClaim = d.Extension != null;
+            d.Action = GripIntent.OnPress(ctx);
+        }
+        d.Ctx = ctx;
+        d.Target = target;
+        return d;
+    }
+
+    /// <summary>A target that glowed is still there to take: not destroyed, hidden by a pickup or held.</summary>
+    private static bool StillThere(IInteractible target, Character c) =>
+        target is Component comp
+        && comp != null
+        && comp.gameObject.activeInHierarchy
+        && !ReferenceEquals(target, c.data.currentItem)
+        && target.IsInteractible(c);
+
+    /// <summary>
+    /// The glow's target for this hand (<see cref="GripPreview"/>): what its grip would take now, read every frame up
+    /// to the press while the hand is open, free and tracked, from <see cref="Decide"/>. Nothing while input is blocked,
+    /// since a grip then presses nothing.
+    /// </summary>
+    private static void UpdatePreview(
+        Hand hand,
+        Character c,
+        VRRig rig,
+        InteractConfig cfg,
+        bool active,
+        float now
+    )
+    {
+        hand.Preview = null;
+        hand.PreviewFrame = Time.frameCount;
+        var t = rig.Hand(hand.Left);
+        if (
+            !active
+            || t == null
+            || !cfg.PhysicalGrab
+            || !VRInput.Hand(hand.Left).Tracked
+            || hand.Grip.Held
+            || hand.Action != GripPressAction.None
+            // The holding hand's grip is a regrip: nothing to glow.
+            || (c.data.currentItem != null && LocalHold.ItemInLeftHand == hand.Left)
+        )
+            return;
+        var d = Decide(hand, c, rig, cfg, t, preview: true, now);
+        if (d.Action is not (GripPressAction.GrabItem or GripPressAction.GrabInteractible))
+            return;
+        hand.Preview = hand.Shown = d.Target;
+        hand.ShownAt = now;
+        hand.ShownPoint = d.TargetPoint;
+    }
+
     private static void OnGripPress(
         Hand hand,
         Character c,
@@ -658,76 +864,20 @@ internal static class PhysicalInteraction
         var t = rig.Hand(hand.Left);
         var pos = t.position;
         hand.Armed = ReleaseArming.OnPress();
-        bool holding = Holding(c, out var item);
-        bool thisHolds = holding && LocalHold.ItemInLeftHand == hand.Left;
-
-        var ctx = new GripContext
-        {
-            PhysicalGrab = cfg.PhysicalGrab,
-            PhysicalClimb = cfg.PhysicalClimb,
-            HoldingItem = holding,
-            ThisHandHolds = thisHolds,
-            HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
-            // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the
-            // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
-            // a join here would pre-empt (extensions are never asked once the press is SecondHand). Only while the
-            // runner can claim it (ParasolRunner.ClaimPress: grounded, not climbing): mid-glide the hand joins.
-            HeldBothHandsInGame = holding && BothHandsInGame(c, item),
-            NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
-            AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
-            BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
-            OnWall = c.data.isClimbing,
-            Airborne = Airborne(c),
-        };
-        ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
-        ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
-        // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
-        ctx.AtSecondGripTight = holding && !thisHolds && AtSecondGrip(pos, cfg.GrabRadius);
-        var kind = HoldKind.Normal;
-        UseProbe(default);
-        if (cfg.PhysicalClimb)
-        {
-            var hold = ProbeHold(c, rig, pos, t, cfg, holding ? item : null);
-            UseProbe(hold);
-            kind = hold.Kind;
-            // The same verdict drew the chalk ring, so a ringed hold is a grip that climbs. No surface along the reach
-            // but rock right at the hand (beside it): the game's own start check decides.
-            ctx.NearClimbable =
-                hold.Verdict == HoldVerdict.Grab
-                || (!hold.Hit && NearRock(pos, cfg.ClimbRadius, holding ? item : null));
-            ctx.HoldConfirmed = hold.Verdict == HoldVerdict.Grab;
-        }
-        IInteractible target = null;
-        if (cfg.PhysicalGrab)
-            ctx.Candidate = FindCandidate(
-                c,
-                Eye(rig),
-                pos,
-                t.Fingers(),
-                cfg.GrabRadius,
-                out target
-            );
-        ctx.CandidateIsAimed = target != null && ReferenceEquals(target, aimedTarget);
-        ctx.CandidateIsHandle = target is ClimbHandle;
-        if (target is ClimbHandle near)
-        {
-            // To the handle's surface, not its origin (which can sit at the rock face, VR run 60).
-            ctx.HandleDistance = HandleSurfaceDistance(near, pos);
-            ctx.RockDistance = probeHit
-                ? Vector3.Distance(pos, probePoint)
-                : float.PositiveInfinity;
-        }
-        ctx.OneHanded = VRInput.OneHanded;
-
-        var action = GripIntent.OnPress(ctx);
-        IGripExtension extension = null;
-        var hook = new GripHookContext(c, hand.Left, pos, holding ? item : null, thisHolds);
-        if (action != GripPressAction.SecondHand)
-        {
-            extension = GripHooks.Claim(hook);
-            ctx.ExtensionClaim = extension != null;
-            action = GripIntent.OnPress(ctx);
-        }
+        // A fresh close keeps what the hand holds or is about to hold.
+        hand.Release.Clear();
+        hand.ReleaseItem = null;
+        var d = Decide(hand, c, rig, cfg, t, preview: false, now);
+        UseProbe(d.Hold);
+        var ctx = d.Ctx;
+        var action = d.Action;
+        var target = d.Target;
+        var extension = d.Extension;
+        var item = d.Held;
+        bool holding = ctx.HoldingItem;
+        bool thisHolds = ctx.ThisHandHolds;
+        var kind = d.Hold.Kind;
+        var hook = new GripHookContext(c, hand.Left, pos, item, thisHolds);
         // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
         var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
@@ -928,6 +1078,39 @@ internal static class PhysicalInteraction
     }
 
     /// <summary>
+    /// The game's interact, pressed by a free hand's fallback grip while the other hand holds an item, is about to
+    /// pick up <paramref name="item"/>, the one the head or a pointing hand hovers (and the game lights). It goes to the
+    /// pockets as a free hand's grab of it would (<see cref="BeginPickup"/>, kept out of the hand by
+    /// <see cref="InteractPatches.KeepHeldOnPocket"/>), or is refused with its reason. Before, the grip did nothing on
+    /// it, without a cue (issue #13).
+    /// </summary>
+    /// <returns>Whether the game may go on with the pickup.</returns>
+    internal static bool InteractPocketing(Item item)
+    {
+        var c = Character.localCharacter;
+        if (item == null || c == null || c.data.currentItem == null || item is Backpack)
+            return false;
+        foreach (var hand in Hands)
+        {
+            if (hand.Action != GripPressAction.Interact || !hand.Injected || hand.AimedTaker)
+                continue;
+            // Refused already: the game stays ready while nothing is picked, so this comes every frame of the grip.
+            if (ReferenceEquals(hand.Target, item))
+                return false;
+            hand.Target = item;
+            if (!PocketFree(c.player))
+            {
+                Affordance.Deny(hand.Left, item.Center(), DenyReason.PocketsFull, default, item);
+                return false;
+            }
+            BeginPickup(hand, c, item, Time.time, pocketing: true);
+            // Confirmed already: BeginPickup refused it with a cue.
+            return !hand.Confirmed;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// The grip is a real climb attempt (<see cref="TraversalRefusal.ReachAttempt"/>): not pointing, no item in this
     /// hand or let go within 0.5 s, no item use or interact hold running, and the hand reaching toward the wall or
     /// held out at full stretch.
@@ -982,6 +1165,7 @@ internal static class PhysicalInteraction
         hand.Pocketing = pocketing;
         hand.Confirmed = true;
         hand.Retried = false;
+        hand.Gapped = false;
         hand.RetryAt = now + PickupRetry;
         // A worn backpack's slot is the one HasEmptySlot checks for a Backpack (Player.cs:278); the ground one is no pickup.
         if (target is Backpack)
@@ -1176,20 +1360,37 @@ internal static class PhysicalInteraction
     {
         var action = hand.Action;
         var extension = hand.Extension;
-        // A fallback grip whose interact picked up the item now in this hand lets go of it like a grab
-        // (InteractPicking): never a pointed grip's own held item handed to a statue or skeleton.
-        if (
-            action == GripPressAction.Interact
-            && hand.Target is Item picked
-            && c.data.currentItem != null
-            && SameInstance(picked, c.data.currentItem)
-        )
-            action = GripPressAction.GrabItem;
+        var wanted = hand.Target as Item;
         hand.Action = GripPressAction.None;
         hand.Target = null;
         hand.Extension = null;
         if (c.data.currentItem != null && LocalHold.ItemInLeftHand == hand.Left)
             hand.ItemLeftAt = Time.time;
+        // The grip opened before the item it took landed in this hand: a client's pickup waits a round trip for the
+        // master (Item.cs:589-591, CharacterItems.cs:441-457), and this release used to be lost, the item then
+        // arriving in an open hand. It waits for the item instead (ReleaseQueue).
+        if (
+            active
+            && action is (GripPressAction.GrabItem or GripPressAction.Interact)
+            && PickupOnTheWay(hand, wanted)
+        )
+        {
+            var velocity = HandVelocity(hand, rig);
+            QueueRelease(
+                hand,
+                wanted,
+                GripIntent.OnRelease(
+                    true,
+                    wanted.UIData.canDrop,
+                    velocity.magnitude,
+                    cfg.ThrowSpeed,
+                    cfg.PhysicalThrow,
+                    cfg.ReleaseToDrop
+                ),
+                velocity
+            );
+            return;
+        }
 
         switch (action)
         {
@@ -1250,36 +1451,108 @@ internal static class PhysicalInteraction
                     action != GripPressAction.Extension && GripHooks.HeldRelease(hook),
                     hand.Armed
                 );
-                // Item.ItemUIData.canThrow (Item.cs:71; the flat game hides its throw prompt, GUIManager.cs:1183), and
-                // Item.progress (Item.cs:346): mid-cast, CharacterItems.DoDropping (CharacterItems.cs:254-258) keeps it.
-                var refusal = GripIntent.ReleaseRefusal(
-                    result,
-                    item.UIData.canThrow,
-                    item.progress
-                );
-                if (refusal != DenyReason.None)
-                {
-                    result = GripReleaseAction.Keep;
-                    Affordance.DenyAtHand(hand.Left, refusal);
-                }
-                if (result == GripReleaseAction.Throw)
-                {
-                    ThrowHandVelocity = handVelocity * cfg.ThrowScale;
-                    LastThrowHand = handVelocity;
-                    LastThrowBody =
-                        c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
-                    throwFrame = Time.frameCount;
-                    ThrowCount++;
-                    dropPending = true;
-                    releaseDropAt = Time.time;
-                    Haptics.Pulse(hand.Left, 0.5f, 0.05f);
-                }
-                else if (result == GripReleaseAction.Drop)
-                {
-                    dropPending = true;
-                    releaseDropAt = Time.time;
-                }
+                // Mid-cast the game keeps the item (CharacterItems.DoDropping, CharacterItems.cs:254-258). A fist's
+                // trigger squeezed after the pickup landed starts the item's use, and opening the fist ends that cast
+                // on the game's next use read (:209-212), a frame after this release was refused as too soon: it waits
+                // for the cast to end instead (ReleaseQueue), and is refused only if the use keeps running.
+                if (
+                    item.progress > 0f
+                    && GripIntent.ReleaseRefusal(result, item.UIData.canThrow, 0f)
+                        == DenyReason.None
+                )
+                    QueueRelease(hand, item, result, handVelocity);
+                else
+                    ApplyRelease(hand, c, item, result, handVelocity, cfg);
                 break;
+        }
+    }
+
+    /// <summary>Until when the next held item belongs in <see cref="pendingLeft"/>'s hand (<see cref="ExpectItemIn"/>,
+    /// a grab or an interact pickup); reset when it arrives.</summary>
+    private const float PendingSeconds = 3f;
+
+    /// <summary>The pickup this hand's grip asked for has left the world for this hand (<c>Item.Interact</c> hides it
+    /// while the master decides, Item.cs:590; the master destroys it once it accepts, :623) and has not landed yet.
+    /// </summary>
+    private static bool PickupOnTheWay(Hand hand, Item wanted) =>
+        (object)wanted != null
+        && pendingLeft == hand.Left
+        && Time.time - pendingTime < PendingSeconds
+        && (wanted == null || !wanted.gameObject.activeInHierarchy);
+
+    private static void QueueRelease(
+        Hand hand,
+        Item item,
+        GripReleaseAction result,
+        Vector3 handVelocity
+    )
+    {
+        hand.Release.Queue(result, Time.time);
+        if (!hand.Release.Pending)
+            return;
+        hand.ReleaseItem = item;
+        hand.ReleaseVelocity = handVelocity;
+    }
+
+    /// <summary>A release that waited (<see cref="ReleaseQueue"/>) is carried out once its item is in that hand and the
+    /// game takes a drop; a use still running when the wait ends refuses it, too soon, as the game would.</summary>
+    private static void RunQueuedRelease(Hand hand, Character c, InteractConfig cfg, float now)
+    {
+        if (!hand.Release.Pending)
+            return;
+        var item = c.data.currentItem;
+        bool inHand =
+            item != null
+            && LocalHold.ItemInLeftHand == hand.Left
+            && (object)hand.ReleaseItem != null
+            && SameInstance(hand.ReleaseItem, item);
+        var step = hand.Release.Step(inHand, inHand && item.progress > 0f, now, out var action);
+        if (step == ReleaseStep.Run)
+        {
+            Plugin.Log.LogInfo(
+                $"[interact] {(hand.Left ? "left" : "right")} release carried out once {item.name} could go: {action}"
+            );
+            ApplyRelease(hand, c, item, action, hand.ReleaseVelocity, cfg);
+        }
+        else if (step == ReleaseStep.Refused)
+            Affordance.DenyAtHand(hand.Left, DenyReason.TooSoon);
+        if (!hand.Release.Pending)
+            hand.ReleaseItem = null;
+    }
+
+    /// <summary>A release's drop or throw of the held item, or its refusal: <c>Item.ItemUIData.canThrow</c> (Item.cs:71;
+    /// the flat game hides its throw prompt, GUIManager.cs:1183), and <c>Item.progress</c> (Item.cs:346): mid-cast,
+    /// CharacterItems.DoDropping (CharacterItems.cs:254-258) keeps it.</summary>
+    private static void ApplyRelease(
+        Hand hand,
+        Character c,
+        Item item,
+        GripReleaseAction result,
+        Vector3 handVelocity,
+        InteractConfig cfg
+    )
+    {
+        var refusal = GripIntent.ReleaseRefusal(result, item.UIData.canThrow, item.progress);
+        if (refusal != DenyReason.None)
+        {
+            Affordance.DenyAtHand(hand.Left, refusal);
+            return;
+        }
+        if (result == GripReleaseAction.Throw)
+        {
+            ThrowHandVelocity = handVelocity * cfg.ThrowScale;
+            LastThrowHand = handVelocity;
+            LastThrowBody = c.refs.hip != null ? c.refs.hip.Rig.linearVelocity : Vector3.zero;
+            throwFrame = Time.frameCount;
+            ThrowCount++;
+            dropPending = true;
+            releaseDropAt = Time.time;
+            Haptics.Pulse(hand.Left, 0.5f, 0.05f);
+        }
+        else if (result == GripReleaseAction.Drop)
+        {
+            dropPending = true;
+            releaseDropAt = Time.time;
         }
     }
 
@@ -1408,19 +1681,15 @@ internal static class PhysicalInteraction
     private static Vector3 Eye(VRRig rig) =>
         MainCamera.instance != null ? MainCamera.instance.transform.position : rig.Head.position;
 
-    /// <summary>What a grip of the <paramref name="left"/> hand would take right now: the same search as a grip press
-    /// (<see cref="FindCandidate"/>), for the pre-grip glow (ui.spatial GripGlow). Null when nothing, or physical grab
-    /// is off.</summary>
+    /// <summary>What a grip of the <paramref name="left"/> hand would grab right now, by the press's own decision
+    /// (<see cref="Decide"/>, read each frame while the hand is open, free and tracked), for the pre-grip glow (ui.spatial
+    /// GripGlow). Null when the grip would grab nothing, or physical grab is off.</summary>
     internal static IInteractible GripPreview(bool left)
     {
-        var c = Character.localCharacter;
-        var rig = VRRig.Instance;
-        var cfg = InteractConfig.Instance;
-        var t = rig != null ? rig.Hand(left) : null;
-        if (c == null || t == null || rig.Head == null || !cfg.PhysicalGrab)
-            return null;
-        FindCandidate(c, Eye(rig), t.position, t.Fingers(), cfg.GrabRadius, out var target);
-        return target;
+        var hand = left ? LeftHand : RightHand;
+        // Read this frame or the last: a frame the hands did not run (a god cam skips the input sample) shows nothing.
+        var target = Time.frameCount - hand.PreviewFrame <= 1 ? hand.Preview : null;
+        return target is Object o && o != null ? target : null;
     }
 
     private static GrabCandidate FindCandidate(
@@ -1429,10 +1698,12 @@ internal static class PhysicalInteraction
         Vector3 pos,
         Vector3 forward,
         float radius,
-        out IInteractible target
+        out IInteractible target,
+        out Vector3 at
     )
     {
         target = null;
+        at = pos;
         lastReachable = lastHidden = 0;
         int hits = Physics.OverlapSphereNonAlloc(
             pos,
@@ -1503,7 +1774,10 @@ internal static class PhysicalInteraction
             radius
         );
         if (best >= 0)
+        {
             target = Candidates[best];
+            at = CandidatePositions[best].U();
+        }
         for (int i = 0; i < count; i++)
             Candidates[i] = null;
         if (target == null)
@@ -2537,6 +2811,8 @@ internal static class PhysicalInteraction
         GrabTarget = null;
         GripInteractActive = false;
         bool interactDown = false;
+        var interaction = Interaction.instance;
+        bool heldInteraction = interaction != null && interaction.currentHeldInteractible != null;
         foreach (var hand in Hands)
         {
             hand.Injected = false;
@@ -2544,19 +2820,48 @@ internal static class PhysicalInteraction
             {
                 case GripPressAction.GrabItem:
                 case GripPressAction.GrabInteractible:
+                    bool pending = hand.Target is Item && !hand.Confirmed;
                     // Picked up: a grip still closed on it stops holding interact, so a cook or light gesture gets a
                     // fresh press (Interaction.cs:116 only starts a hold after interact was up).
                     // A put-away that dropped the held item (a climb start) has not landed yet: its RPC would stash the
-                    // item this pickup equips (PutAwayGuard). Hold the press, and its retry, until it has.
-                    if (hand.Target is Item && !hand.Confirmed && PutAwayGuard.Pending)
+                    // item this pickup equips (PutAwayGuard). Hold the press, and its retry, until it has. The same
+                    // for the rest of the equip cooldown after a drop, pickup or draw: pressed into it, the pickup was
+                    // ignored (Item.cs:580) and only the retry took it, past 0.3 s.
+                    if (
+                        pending
+                        && (
+                            PutAwayGuard.Pending
+                            || GripIntent.PickupWait(now, c.refs.items.lastEquippedSlotTime) > 0f
+                        )
+                    )
                     {
                         hand.RetryAt = now + PickupRetry;
                         break;
                     }
                     if (hand.Target is Item grabbed && !ConfirmPickup(hand, c, grabbed, now))
                         break;
+                    // The game takes a press only after interact was up (Interaction.cs:109-124): one held from before
+                    // this grab, by either hand, a gesture or the wheel, swallowed it in silence. Interact goes up for
+                    // a frame, once per pickup, so a refused one is not pressed again every frame.
+                    if (
+                        pending
+                        && !hand.Gapped
+                        && InteractEdge.Held
+                        && interaction != null
+                        && !interaction.readyToInteract
+                        && !heldInteraction
+                    )
+                    {
+                        hand.Gapped = true;
+                        interactGap = true;
+                    }
                     interactDown = hand.Injected = true;
-                    GrabTarget ??= hand.Target;
+                    // The pickup still waiting for the game is the interact's target, not the other hand's line or
+                    // lid (left came first and kept it). Never over a running hold interaction, which that would end.
+                    if (pending && !heldInteraction)
+                        GrabTarget = hand.Target;
+                    else
+                        GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
                     if (now < hand.InteractAt)
