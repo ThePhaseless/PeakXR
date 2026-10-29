@@ -130,7 +130,7 @@ In VR the VR tab of the settings (title or pause menu) starts with a VR Guide se
 
 ## Item room
 
-With `Sandbox.Enabled` on, the Sandbox page of the VR tab has an Item room row: Enter or leave. It opens the item room in the solo airport (`docs/testing.md`), every item on waist-high tables by kind: helpful ones nearest you, dangerous ones behind them, dynamite farthest out. Rest a hand in the white chevron orb at a table to restock that table, in the chevron orb in front of where you started to restock everything, or in the cross orb beside it to go back to the title.
+With `Sandbox.Enabled` on, the Sandbox page of the VR tab has an Item room row: Enter or leave. It opens the item room in the solo airport (`docs/testing.md`), every item on waist-high tables by kind: helpful ones nearest you, dangerous ones behind them, dynamite farthest out. Rest a hand in the white chevron orb at a table to restock that table, in the chevron orb in front of where you started to restock everything, in the "Light fire" orb to light the stove, or in the cross orb beside the restock orb to go back to the title.
 
 ## Items and fires by hand
 

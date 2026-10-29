@@ -38,6 +38,13 @@ internal sealed class ItemRoom : MonoBehaviour
     private const float KeepAliveSum = 0.85f;
     private const int RestockAll = -1;
     private const int LeaveRoom = -2;
+    private const int LightFire = -3;
+
+    // A table's items are out only while you are near it (ShelfLoad); the fire only while you stay by it.
+    private const float LoadRadius = 6f;
+    private const float UnloadRadius = 10f;
+    private const float LoadEvery = 0.25f;
+    private const float FireKeep = 8f;
 
     /// <summary>Table colours by <see cref="ShelfGroup"/>: muted, and never the cue system's teal or red. Dangerous
     /// tables wear them darkened.</summary>
@@ -118,6 +125,11 @@ internal sealed class ItemRoom : MonoBehaviour
     private Item[] slotItems;
     private Vector3[] slotAt;
     private GameObject[] slotSpawned;
+    private bool[] tableLoaded;
+    private Vector3[] tableCenter;
+    private float[] tableRadius;
+    private float loadTick;
+    private Vector3 fireAt;
     private Quaternion facing;
 
     // ---- entering and leaving ----
@@ -306,6 +318,7 @@ internal sealed class ItemRoom : MonoBehaviour
                 TickOrbs(dt);
                 KeepAlive(dt);
                 Rearm();
+                TickLoad(dt);
                 break;
             default:
                 if (Time.unscaledTime > deadline)
@@ -431,7 +444,6 @@ internal sealed class ItemRoom : MonoBehaviour
                 "Item room: not enough open floor here, some tables may touch walls. Leave, play solo, walk into the open hall and press Enter there."
             );
         }
-        StartCoroutine(Spawn(AllSlots()));
 
         var head =
             VRRig.Instance != null && VRRig.Instance.Head != null
@@ -452,6 +464,10 @@ internal sealed class ItemRoom : MonoBehaviour
         var names = new HashSet<string>(System.StringComparer.Ordinal);
         var skipped = new StringBuilder();
         var dangerous = new StringBuilder();
+        var placed = new List<Item>();
+        var prefabNames = new List<string>();
+        var keys = new List<string>();
+        var bucketOf = new List<int>();
         int skips = 0;
         foreach (var item in SandboxActions.Items)
         {
@@ -492,10 +508,33 @@ internal sealed class ItemRoom : MonoBehaviour
                     .Append(" (")
                     .Append(zone == ItemZone.Volatile ? $"lights within {ignite:0.#} m" : harm)
                     .Append("); ");
-            buckets[ShelfLayout.Bucket(zone, ItemShelf.GroupOf(item.name, names))].Add(item);
+            placed.Add(item);
+            prefabNames.Add(item.name);
+            // One per display name (Item.UIData.itemName, Item.cs:41) and zone: chess colours and guidebook pages
+            // are separate prefabs of one item; a poison look-alike keeps its own spot.
+            var shown = item.UIData != null ? item.UIData.itemName : null;
+            keys.Add($"{(string.IsNullOrEmpty(shown) ? item.name : shown)}|{zone}");
+            bucketOf.Add(ShelfLayout.Bucket(zone, ItemShelf.GroupOf(item.name, names)));
+        }
+        var keep = ItemShelf.Distinct(prefabNames, keys);
+        var duplicates = new StringBuilder();
+        int kinds = 0;
+        for (int i = 0; i < placed.Count; i++)
+        {
+            if (keep[i])
+            {
+                kinds++;
+                buckets[bucketOf[i]].Add(placed[i]);
+            }
+            else
+                duplicates.Append(prefabNames[i]).Append("; ");
         }
         if (skips > 0)
             Plugin.Log.LogInfo($"[sandbox.room] {skips} items left out: {skipped}");
+        Plugin.Log.LogInfo(
+            $"[sandbox.room] one of each: {kinds} kinds from {placed.Count} items; "
+                + $"duplicates left out: {duplicates}"
+        );
         Plugin.Log.LogInfo($"[sandbox.room] dangerous: {dangerous}");
         return buckets;
     }
@@ -601,10 +640,16 @@ internal sealed class ItemRoom : MonoBehaviour
     {
         int mask = HelperFunctions.terrainMapMask | LayerMask.GetMask("Default");
         int lastGroup = -1;
+        int table = 0;
+        tableLoaded = new bool[plan.Tables.Length];
+        tableCenter = new Vector3[plan.Tables.Length];
+        tableRadius = new float[plan.Tables.Length];
         foreach (var t in plan.Tables)
         {
             var f = t.Footprint;
             var floor = Floor(at(f.CenterX, f.CenterZ), at(0f, 0f).y);
+            tableCenter[table] = floor;
+            tableRadius[table++] = 0.5f * Mathf.Sqrt(f.Width * f.Width + f.Depth * f.Depth);
             for (int k = t.First; k < t.First + t.Count; k++)
             {
                 var s = plan.Slots[k];
@@ -680,7 +725,12 @@ internal sealed class ItemRoom : MonoBehaviour
                 "[sandbox.room] no portable fire in the item database: cook and warm hands in a run"
             );
         else
-            PlaceFire(Floor(at(plan.Fire.CenterX, plan.Fire.CenterZ), feet.y));
+        {
+            // Unlit until asked for: a lit campfire's particles, light and fog switch cost frames all the time.
+            fireAt = Floor(at(plan.Fire.CenterX, plan.Fire.CenterZ), feet.y);
+            AddOrb(LightFire, cross: false, fireAt + Vector3.up * 1.1f);
+            Label("Light fire", fireAt + Vector3.up * 1.3f, facing, 40f, Color.white);
+        }
 
         // The sandbox test wall past the last tables, its face toward them, a target painted on it.
         if (plan.HasWall)
@@ -726,6 +776,21 @@ internal sealed class ItemRoom : MonoBehaviour
         Relight();
     }
 
+    /// <summary>Puts the fire out by removing it, once you have walked away from it.</summary>
+    private void PutOut()
+    {
+        if (fakeMountain >= 0f)
+            Shader.SetGlobalFloat("FakeMountainEnabled", fakeMountain);
+        fakeMountain = -1f;
+        if (fireRoot.TryGetComponent<PhotonView>(out var view) && view.IsMine)
+            PhotonNetwork.Destroy(fireRoot);
+        else
+            Destroy(fireRoot);
+        fireRoot = null;
+        fire = null;
+        Plugin.Log.LogInfo("[sandbox.room] fire put out: you walked away");
+    }
+
     private void Relight()
     {
         if (fire == null || fire.Lit)
@@ -738,16 +803,70 @@ internal sealed class ItemRoom : MonoBehaviour
 
     // ---- items ----
 
-    private List<int> AllSlots()
+    /// <summary>Spawns the tables you come near and removes the untouched items of those you leave
+    /// (<see cref="ShelfLoad"/>), a table per tick; puts the fire out once you are <see cref="FireKeep"/> m away.</summary>
+    private void TickLoad(float dt)
     {
-        var all = new List<int>(slotItems.Length);
-        for (int i = 0; i < slotItems.Length; i++)
-            all.Add(i);
-        return all;
+        loadTick -= dt;
+        if (loadTick > 0f || tableLoaded == null)
+            return;
+        loadTick = LoadEvery;
+        var c = Character.localCharacter;
+        if (c == null)
+            return;
+        var p = c.Center;
+        if (fireRoot != null && Flat(p - fireAt).magnitude > FireKeep)
+            PutOut();
+        if (spawning)
+            return;
+        for (int t = 0; t < tableLoaded.Length; t++)
+        {
+            float d = Flat(p - tableCenter[t]).magnitude - tableRadius[t];
+            bool want = ShelfLoad.Wanted(tableLoaded[t], d, LoadRadius, UnloadRadius);
+            if (want == tableLoaded[t])
+                continue;
+            tableLoaded[t] = want;
+            var table = plan.Tables[t];
+            if (want)
+            {
+                StartCoroutine(Spawn(Missing(table.First, table.First + table.Count)));
+                return;
+            }
+            for (int i = table.First; i < table.First + table.Count; i++)
+                if (!Untouched(slotSpawned[i]) || Despawn(slotSpawned[i]))
+                    slotSpawned[i] = null;
+        }
     }
 
-    /// <summary>Puts a table's items (or all, <see cref="RestockAll"/>) back: the ones lying anywhere in the world are
-    /// removed and fresh ones placed. Held or packed ones stay yours.</summary>
+    private static Vector3 Flat(Vector3 v) => new(v.x, 0f, v.z);
+
+    /// <summary>Slots from <paramref name="from"/> to <paramref name="to"/> - 1 with nothing lying untouched on them;
+    /// an item that left its slot is the player's now and is let go.</summary>
+    private List<int> Missing(int from, int to)
+    {
+        var list = new List<int>(to - from);
+        for (int i = from; i < to; i++)
+        {
+            if (Untouched(slotSpawned[i]))
+                continue;
+            slotSpawned[i] = null;
+            list.Add(i);
+        }
+        return list;
+    }
+
+    /// <summary>Still lying where the room put it: on the ground and kinematic, which picking it up clears
+    /// (<c>Item.SetState</c>, Item.cs:734-760).</summary>
+    private static bool Untouched(GameObject go) =>
+        go != null
+        && go.TryGetComponent<Item>(out var item)
+        && item.itemState == ItemState.Ground
+        && item.rig != null
+        && item.rig.isKinematic;
+
+    /// <summary>Puts a table's items (or all, <see cref="RestockAll"/>) back: items still on their spot stay, ones
+    /// lying anywhere else in the world are removed and fresh ones placed on the tables you are near. Held or packed
+    /// ones stay yours.</summary>
     public bool Restock(int group)
     {
         if (phase != Phase.Open || plan == null)
@@ -758,16 +877,21 @@ internal sealed class ItemRoom : MonoBehaviour
             return false;
         }
         var redo = new List<int>();
-        for (int i = 0; i < slotItems.Length; i++)
+        for (int t = 0; t < plan.Tables.Length; t++)
         {
-            if (group != RestockAll && plan.Slots[i].Group != group)
+            var table = plan.Tables[t];
+            if (group != RestockAll && table.Group != group)
                 continue;
-            Despawn(slotSpawned[i]);
-            slotSpawned[i] = null;
-            redo.Add(i);
+            for (int i = table.First; i < table.First + table.Count; i++)
+            {
+                if (Untouched(slotSpawned[i]))
+                    continue;
+                Despawn(slotSpawned[i]);
+                slotSpawned[i] = null;
+                if (tableLoaded[t])
+                    redo.Add(i);
+            }
         }
-        if (group == RestockAll)
-            Relight();
         StartCoroutine(Spawn(redo));
         return true;
     }
@@ -818,24 +942,28 @@ internal sealed class ItemRoom : MonoBehaviour
                 yield return null;
         }
         spawning = false;
-        SandboxActions.Say(
-            $"Item room: {placed} items placed"
-                + (failed > 0 ? $", {failed} failed (see log)." : ".")
-        );
+        Plugin.Log.LogDebug($"[sandbox.room] {placed} items placed, {failed} failed");
+        if (failed > 0)
+            SandboxActions.Say($"Item room: {failed} items did not spawn (see log).");
     }
 
-    /// <summary>Removes a placed item only while it lies in the world (<c>Item.itemState</c> Ground, Item.cs:286).</summary>
-    private static void Despawn(GameObject go)
+    /// <summary>Removes a placed item only while it lies in the world (<c>Item.itemState</c> Ground, Item.cs:286).
+    /// Never a warp item: its <c>WarpOnThrow.OnDisable</c> stops a trail that may be gone and throws (WarpOnThrow.cs:33-38),
+    /// so it stays where it lies. False when the item stays.</summary>
+    private static bool Despawn(GameObject go)
     {
         if (
             go == null
             || !go.TryGetComponent<Item>(out var item)
             || item.itemState != ItemState.Ground
+            || go.GetComponentInChildren<Peak.WarpOnThrow>(true) != null
         )
-            return;
+            return false;
         var view = item.GetComponent<PhotonView>();
-        if (view != null && (view.IsMine || PhotonNetwork.IsMasterClient))
-            PhotonNetwork.Destroy(go);
+        if (view == null || !(view.IsMine || PhotonNetwork.IsMasterClient))
+            return false;
+        PhotonNetwork.Destroy(go);
+        return true;
     }
 
     /// <summary>The room's dynamite lights when picked up: its wick moves to where it is now, which the holder is
@@ -875,6 +1003,15 @@ internal sealed class ItemRoom : MonoBehaviour
             if (!orb.Tick(rig, dt))
                 continue;
             int action = orbs[i].Value;
+            if (action == LightFire)
+            {
+                if (fireRoot == null)
+                    PlaceFire(fireAt);
+                else
+                    Relight();
+                CueAudio.Play(CueSound.Notice, orb.Position, 1f);
+                continue;
+            }
             if (action == LeaveRoom)
             {
                 CueAudio.Play(CueSound.Notice, orb.Position, 1f);
