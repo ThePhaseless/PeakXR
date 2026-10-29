@@ -80,7 +80,7 @@ public sealed class BootstrapFeature : Feature
             true,
             new ConfigDescription(
                 "Ignore controller and keyboard input for your character while the VR runtime has input "
-                    + "focus (SteamVR dashboard open, headset off)."
+                    + "focus (SteamVR dashboard open, headset off) or the headset's wear sensor reads it taken off."
             )
         );
         LogInputDevices = Plugin.Settings.Bind(
@@ -125,7 +125,7 @@ public sealed class BootstrapFeature : Feature
 }
 
 /// <summary>
-/// Blocks the local character's input while the runtime has focus (dashboard open).
+/// Blocks the local character's input while the runtime has focus (dashboard open) or the headset is off.
 /// Target: <c>Character.CanDoInput()</c> (internal, bool), decomp Assembly-CSharp/Character.cs:1711;
 /// it gates <c>character.input.Sample(...)</c> at CharacterMovement.cs:198.
 /// </summary>
