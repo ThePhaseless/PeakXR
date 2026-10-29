@@ -42,7 +42,12 @@ internal sealed class ItemRoom : MonoBehaviour
 
     /// <summary>About 12 x 12 m: open floor this big holds every item of the game (ShelfLayoutTests).</summary>
     private const float HallArea = 140f;
-    private const int SpawnPerFrame = 4;
+
+    // An item's first spawn this session (asset load, collider cooking, first draw) cost up to ~30 ms on the iGPU
+    // (VR run of 3a1b2f9: a 126.8 ms frame on a 15-item table, four a frame); later spawns are cheap. So at most two a
+    // frame, and none after the frame's spawning has used its budget.
+    private const int SpawnPerFrame = 2;
+    private static readonly long SpawnBudget = System.Diagnostics.Stopwatch.Frequency * 2 / 1000;
     private const float KeepAliveEvery = 0.5f;
     private const float KeepAliveSum = 0.85f;
     private const int RestockAll = -1;
@@ -95,7 +100,7 @@ internal sealed class ItemRoom : MonoBehaviour
     {
         "HELPFUL\n<size=50%>food, healing, tools, climbing gear</size>",
         "DANGEROUS\n<size=50%>hurts, kills, warps, poisons or explodes</size>",
-        "GOES OFF BY ITSELF\n<size=50%>dynamite lights when you pick it up</size>",
+        "GOES OFF BY ITSELF\n<size=50%>quiet on the table: dynamite lights and peels slip once picked up; the hive has no bees</size>",
     };
 
     public static ItemRoom Current { get; private set; }
@@ -110,6 +115,7 @@ internal sealed class ItemRoom : MonoBehaviour
     private readonly List<Object> owned = new();
     private readonly Material[] groupMaterials = new Material[ShelfLayout.Buckets];
     private readonly List<Dynamite> wicks = new();
+    private readonly List<BananaPeel> peels = new();
     private readonly List<StatusChange> statuses = new();
     private readonly HashSet<string> afflictions = new(System.StringComparer.Ordinal);
     private readonly List<KeyValuePair<TouchOrb, int>> orbs = new();
@@ -505,6 +511,17 @@ internal sealed class ItemRoom : MonoBehaviour
         var start = At(plan.StartX, 1f);
         StartOrbs(start);
         Props(origin, At, forward);
+        // Warm-up while you stand at the start: every table once, nearest first, a spawn or two a frame. Each item's
+        // costly first spawn happens here, spread out; far tables go again on the next load tick (ShelfLoad), and
+        // coming back to them later is cheap (VR run of 3a1b2f9: the second pass held 72 fps).
+        var all = new List<int>(total);
+        for (int t = 0; t < plan.Tables.Length; t++)
+        {
+            tableLoaded[t] = true;
+            for (int k = plan.Tables[t].First; k < plan.Tables[t].First + plan.Tables[t].Count; k++)
+                all.Add(k);
+        }
+        StartCoroutine(Spawn(all));
         float away = Flat(origin - feet).magnitude;
         if (plan.Fits)
             Plugin.Log.LogInfo(
@@ -595,13 +612,14 @@ internal sealed class ItemRoom : MonoBehaviour
             var wick = item.GetComponentInChildren<Dynamite>(true);
             float ignite = wick != null ? Mathf.Max(0f, wick.lightFuseRadius) : 0f;
             var harm = ItemShelf.HarmOf(names, statuses, afflictions);
-            var zone = ItemShelf.ZoneOf(harm, ignite);
+            var goesOff = ItemShelf.GoesOff(names);
+            var zone = ItemShelf.ZoneOf(harm, ignite, goesOff);
             if (zone == ItemZone.Volatile)
                 igniteRadius = Mathf.Max(igniteRadius, ignite);
             harms.Add(
                 zone == ItemZone.Helpful ? null
-                : zone == ItemZone.Volatile ? $"lights within {ignite:0.#} m"
-                : harm
+                : ignite > 0f ? $"lights within {ignite:0.#} m"
+                : goesOff ?? harm
             );
             placed.Add(item);
             prefabNames.Add(item.name);
@@ -1004,19 +1022,25 @@ internal sealed class ItemRoom : MonoBehaviour
         StartCoroutine(Spawn(redo));
     }
 
-    /// <summary>A few a frame, held still where they belong (kinematic until picked up: <c>Item.SetState</c> clears it,
-    /// Item.cs:734-760). <c>PhotonNetwork.InstantiateItemRoom</c> is the game's own spawner call (GameUtils.cs:270).</summary>
+    /// <summary>One or two a frame (<see cref="SpawnBudget"/>), held still where they belong (kinematic until picked up:
+    /// <c>Item.SetState</c> clears it, Item.cs:734-760). <c>PhotonNetwork.InstantiateItemRoom</c> is the game's own
+    /// spawner call (GameUtils.cs:270). The slowest spawn is logged, to find what a hitch came from.</summary>
     private IEnumerator Spawn(List<int> slots)
     {
         spawning = true;
         int placed = 0,
-            failed = 0;
+            failed = 0,
+            thisFrame = 0,
+            slowest = -1;
+        long frameStart = System.Diagnostics.Stopwatch.GetTimestamp(),
+            slowestTicks = 0;
         // finally: a spawn that dies mid-way must not leave every later restock "still placing".
         try
         {
             for (int k = 0; k < slots.Count && phase == Phase.Open; k++)
             {
                 int i = slots[k];
+                long before = System.Diagnostics.Stopwatch.GetTimestamp();
                 try
                 {
                     var go = PhotonNetwork.InstantiateItemRoom(
@@ -1036,6 +1060,18 @@ internal sealed class ItemRoom : MonoBehaviour
                         WickRef(dynamite) = NoWick;
                         wicks.Add(dynamite);
                     }
+                    // Before its Start (Beehive.cs:26-55), which would release a swarm that chases and poisons you.
+                    var hive = go != null ? go.GetComponentInChildren<Beehive>(true) : null;
+                    if (hive != null)
+                        hive.spawnBees = false;
+                    // Its Update slips anyone moving within 1 m while it lies anywhere (BananaPeel.cs:17-27): off
+                    // until picked up (Rearm).
+                    var peel = go != null ? go.GetComponentInChildren<BananaPeel>(true) : null;
+                    if (peel != null)
+                    {
+                        peel.enabled = false;
+                        peels.Add(peel);
+                    }
                     slotSpawned[i] = go;
                     if (go != null)
                         placed++;
@@ -1049,15 +1085,29 @@ internal sealed class ItemRoom : MonoBehaviour
                         $"[sandbox.room] {slotItems[i].name} did not spawn: {e.Message}"
                     );
                 }
-                if ((k + 1) % SpawnPerFrame == 0)
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (now - before > slowestTicks)
+                {
+                    slowestTicks = now - before;
+                    slowest = i;
+                }
+                if (++thisFrame >= SpawnPerFrame || now - frameStart > SpawnBudget)
+                {
                     yield return null;
+                    thisFrame = 0;
+                    frameStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                }
             }
         }
         finally
         {
             spawning = false;
         }
-        Plugin.Log.LogDebug($"[sandbox.room] {placed} items placed, {failed} failed");
+        Plugin.Log.LogDebug(
+            $"[sandbox.room] {placed} items placed, {failed} failed; slowest "
+                + $"{slowestTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:0.0} ms"
+                + (slowest >= 0 ? $" ({slotItems[slowest].name})" : "")
+        );
         if (failed > 0)
             SandboxActions.Say($"Item room: {failed} items did not spawn (see log).");
     }
@@ -1082,7 +1132,7 @@ internal sealed class ItemRoom : MonoBehaviour
     }
 
     /// <summary>The room's dynamite lights when picked up: its wick moves to where it is now, which the holder is
-    /// next to, so the game's own fuse runs from there (Dynamite.cs:56-60, :111-117).</summary>
+    /// next to, so the game's own fuse runs from there (Dynamite.cs:56-60, :111-117); a banana peel slips again.</summary>
     private void Rearm()
     {
         for (int i = wicks.Count - 1; i >= 0; i--)
@@ -1094,6 +1144,17 @@ internal sealed class ItemRoom : MonoBehaviour
             {
                 WickRef(dynamite) = dynamite.transform.position;
                 wicks.RemoveAt(i);
+            }
+        }
+        for (int i = peels.Count - 1; i >= 0; i--)
+        {
+            var peel = peels[i];
+            if (peel == null)
+                peels.RemoveAt(i);
+            else if (peel.TryGetComponent<Item>(out var item) && item.itemState != ItemState.Ground)
+            {
+                peel.enabled = true;
+                peels.RemoveAt(i);
             }
         }
     }
