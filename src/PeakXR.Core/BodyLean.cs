@@ -80,6 +80,28 @@ public static class BodyLean
     }
 
     /// <summary>
+    /// Degrees the lean bends for <paramref name="head"/> less <paramref name="turn"/>, the part of the head's offset
+    /// that only a head turned in the room asks for (the body turns about its mass centre, far behind its eyes, and
+    /// the lean bends it back under the view): the lean a player could stand up from. Same deadband as the lean.
+    /// </summary>
+    public static float StandLeanDegrees(
+        Vector3 pivot,
+        Vector3 eye,
+        Vector3 head,
+        Vector3 turn,
+        Vector3 forward,
+        Vector3 up
+    )
+    {
+        var flatTurn = turn - up * Vector3.Dot(turn, up);
+        if (
+            !TrySwing(pivot, eye, eye + Deadband(head - flatTurn - eye, up), forward, up, out var q)
+        )
+            return 0f;
+        return 2f * MathF.Acos(Math.Clamp(MathF.Abs(q.W), 0f, 1f)) * Rad2Deg;
+    }
+
+    /// <summary>
     /// Horizontal shift of the legs' animated pose (relative to the hip) that keeps the mass centre over the
     /// planted feet while the upper body bends. The ragdoll pulls every part toward hip + its animated offset
     /// (Bodypart.cs:193-207) and the feet grip, so a bend alone leaves the leg targets behind the feet: friction

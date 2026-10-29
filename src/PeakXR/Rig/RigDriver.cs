@@ -93,6 +93,11 @@ internal sealed class RigDriver : MonoBehaviour
     /// follow lag); null while the view is elsewhere. avatar.local leans from the head's offset to this point.</summary>
     internal static Vector3? LeanEye;
 
+    /// <summary>The part of the lean's head target that only the body's turn under a turned head asks for (the eyes
+    /// at the rig's heading less <see cref="LeanEye"/>): room-scale leaves it out of the lean a player stands up
+    /// from (<see cref="BodyLean.StandLeanDegrees"/>).</summary>
+    internal static Vector3 TurnLean;
+
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
     internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
 
@@ -465,6 +470,7 @@ internal sealed class RigDriver : MonoBehaviour
         BodyAnchor = null;
         ViewOffset = Vector3.zero;
         LeanEye = null;
+        TurnLean = Vector3.zero;
         if (rig.OriginOverride)
         {
             // The title stage and its menus stand at the game's own size; the scale returns behind the load.
@@ -1220,6 +1226,7 @@ internal sealed class RigDriver : MonoBehaviour
             // a turn round 0.34 m behind them, the torso in front of the view. With the calibrated eyes where the
             // body has them, the lean bends the body back under the view instead of keeping it upright there.
             LeanEye = BodyEye(c, BodyHeading(c, yaw));
+            TurnLean = BodyEye(c, yaw) - LeanEye.Value;
             ViewOffset =
                 anchor
                 - goal

@@ -394,7 +394,8 @@ internal static class LocomotionInput
         var pose = AvatarPoseDriver.Of(c);
         bool standingTall =
             Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.03f
-            && (pose == null || pose.LeanDegrees < 1f);
+            // A head turned in the room bends the body too (avatar.local); that is no lean to stand up from.
+            && (pose == null || pose.StandLeanDegrees < 1f);
         var request = Follow.Update(
             head,
             new NVector2(delta.x, delta.z),

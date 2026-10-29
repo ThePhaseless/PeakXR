@@ -18,8 +18,8 @@ namespace PeakXR.Avatar;
 /// with a 0.6 m arm, so the ragdoll hand stops short of a controller held in front of the face (the reach map holds
 /// it at the bent reach, a held or climbing arm locks straight). The whole drawn arm is scaled about its shoulder
 /// (<see cref="ArmReach.DrawnStretch"/>, up to 1.5x) until its hand meets the controller; past that the ghost hand
-/// shows the rest (<see cref="ReachGhost"/>). A hand holding an item keeps the item's weld and is drawn on its
-/// ragdoll hand.
+/// shows the rest (<see cref="ReachGhost"/>). A hand holding an item or gripping a hold (a wall, rope, vine, handle or
+/// piton) is drawn on its ragdoll hand.
 /// </summary>
 [DefaultExecutionOrder(32000)]
 internal sealed class DrawnHands : MonoBehaviour
@@ -148,8 +148,13 @@ internal sealed class DrawnHands : MonoBehaviour
         && AvatarConfig.Instance.ArmIK
         && !local.Holds(local.driver.Pose, isLeft);
 
+    /// <summary>The hand stays drawn on its ragdoll hand: it holds the item, or its grip holds the world (a wall
+    /// climb, a rope, vine, handle or piton, a carried friend: <see cref="Interact.PhysicalInteraction.GripHolds"/>).
+    /// A climbing controller runs up to 0.5 m ahead of the body while the game pays off the pull (ClimbDebt), and a
+    /// stretched hand would slide off the hold.</summary>
     private bool Holds(AvatarPose pose, bool isLeft) =>
-        character.data.currentItem != null && (pose.TwoHandHold || pose.ItemInLeftHand == isLeft);
+        character.data.currentItem != null && (pose.TwoHandHold || pose.ItemInLeftHand == isLeft)
+        || Interact.PhysicalInteraction.GripHolds(isLeft);
 
     /// <summary>The drawn arm's scale about its shoulder that puts an empty hand on its controller (1: as the
     /// ragdoll has it).</summary>

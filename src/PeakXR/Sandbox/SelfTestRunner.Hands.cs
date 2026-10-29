@@ -795,6 +795,13 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return Wait(0.3f);
+        // The gripping hand stays drawn on the rock: the controller runs ahead of the body during the pull
+        // (ClimbDebt), and a hand stretched to it would slide off the hold.
+        if (Avatar.DrawnHands.Stretches(c, left))
+        {
+            Fail("the gripping hand is drawn stretched to its controller, off the hold");
+            yield break;
+        }
         float y0 = c.Center.y;
         yield return Shot("vr-15-climb");
         yield return PullDown(left, 0.4f, 0.6f);

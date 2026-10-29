@@ -546,6 +546,7 @@ public partial class AvatarPoseDriver
     {
         EyeLeanShift = Vector3.zero;
         LeanDegrees = 0f;
+        StandLeanDegrees = 0f;
         LeanShoulderShift = Vector3.zero;
         ShiftLegs(Vector3.zero);
         UnleanedEye = null;
@@ -609,6 +610,16 @@ public partial class AvatarPoseDriver
         EyeLeanShift = head.transform.TransformPoint(eyeInHead) - eye;
         LeanShoulderShift = ShoulderMid() - shoulders;
         LeanDegrees = Quaternion.Angle(Quaternion.identity, q);
+        StandLeanDegrees =
+            amount
+            * BodyLean.StandLeanDegrees(
+                spine.transform.position.N(),
+                eye.N(),
+                target.N(),
+                (c.IsLocal ? Rig.RigDriver.TurnLean : Vector3.zero).N(),
+                forward.normalized.N(),
+                Vector3.up.N()
+            );
         TraceLean(target - eye, forward);
         return true;
     }
@@ -644,6 +655,10 @@ public partial class AvatarPoseDriver
     /// <summary>Degrees of spine bend applied this tick (weighted), and how far it moved the animated shoulders
     /// (world metres). Read by the self-test, which compares them with what the ragdoll does.</summary>
     internal float LeanDegrees { get; private set; }
+
+    /// <summary><see cref="LeanDegrees"/> without the part a head turned in the room asks for: the lean a player could
+    /// stand up from (room-scale's standing-tall test).</summary>
+    internal float StandLeanDegrees { get; private set; }
 
     internal Vector3 LeanShoulderShift { get; private set; }
 
