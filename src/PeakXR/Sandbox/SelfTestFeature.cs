@@ -300,6 +300,13 @@ static class SelfTestInputPatch
     internal static bool HoldPrimary;
     internal static bool DropOnce;
 
+    /// <summary>Until this <c>Time.realtimeSinceStartup</c>, the move stick is full forward with sprint held (a
+    /// deadline, so a dropped step cannot leave the player running). vr.274.</summary>
+    internal static float SprintUntil;
+
+    /// <summary>One frame of the jump button. vr.274.</summary>
+    internal static bool JumpOnce;
+
     static readonly ButtonEdge primary = new();
 
     static MethodBase TargetMethod() =>
@@ -316,6 +323,19 @@ static class SelfTestInputPatch
         __instance.usePrimaryWasPressed |= primary.Pressed;
         __instance.usePrimaryIsPressed |= primary.Held;
         __instance.usePrimaryWasReleased |= primary.Released;
+
+        // movementInput, sprintIsPressed and jump* (CharacterInput.cs:222-228), after the mod's VR bindings.
+        if (Time.realtimeSinceStartup < SprintUntil)
+        {
+            __instance.movementInput = Vector2.up;
+            __instance.sprintIsPressed = true;
+        }
+        if (JumpOnce)
+        {
+            JumpOnce = false;
+            __instance.jumpWasPressed = true;
+            __instance.jumpIsPressed = true;
+        }
 
         if (DropOnce)
         {

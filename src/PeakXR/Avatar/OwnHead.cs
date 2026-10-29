@@ -6,11 +6,15 @@ using UnityEngine.Rendering;
 namespace PeakXR.Avatar;
 
 /// <summary>
-/// The local VR player's head, face and hats are kept out of the eyes by drawing them shadow-only
-/// (<see cref="AvatarPatches.HideBody"/>). That mode holds for every camera, so mirrors (Mirror.mirrorCamera,
-/// Mirror.cs:7) and the airport photobooth (AirportPhotoboothKiosk.cs:11, :13) showed a headless body. Each game
-/// camera other than the eye camera draws them again for its own render and puts them back when it ends, so only
-/// the eyes skip the head. Render time only: the network and other players never see a change.
+/// Keeps the local VR player's head, face and hats out of the eyes (<see cref="AvatarPatches.HideBody"/>). Each is
+/// hidden by what it draws: one that casts a shadow is drawn shadow-only, so its shadow stays; one that casts none is
+/// not rendered at all. The head mesh is the second kind (HeadMesh, ShadowCastingMode.Off in the Character prefab; its
+/// shadow is the separate HeadMesh Shadow, CustomizationRefs.headShadow), so a shadow-only switch, which took only
+/// renderers that cast, never hid it and left it to the shader's ghost. Every game camera other than the eye camera
+/// draws them all again for its own render (mirrors, Mirror.cs:7, and the airport photobooth,
+/// AirportPhotoboothKiosk.cs:11, :13) and the eye state returns when that render ends. Each renderer gets back exactly
+/// the state it had before it was hidden, and nothing is touched unless the head is hidden, so flat play keeps the
+/// game's own state. Render time only: the network and other players never see a change.
 /// </summary>
 internal static class OwnHead
 {
@@ -18,6 +22,7 @@ internal static class OwnHead
     private const float EyeRadiusSqr = 0.1f * 0.1f;
 
     private static readonly List<Renderer> hidden = new();
+    private static readonly List<ShadowCastingMode> authored = new();
 
     /// <summary>The camera that drew the head in the last game-camera render, for the self-test.</summary>
     internal static Camera LastShownTo { get; private set; }
@@ -33,15 +38,42 @@ internal static class OwnHead
         RenderPipelineManager.endCameraRendering += End;
     }
 
-    /// <summary>Called by <see cref="AvatarPatches.HideBody"/> for each renderer it made shadow-only.</summary>
-    internal static void Track(Renderer r)
+    /// <summary>
+    /// Hides <paramref name="hide"/>'s head (HideTheBody.cs:10), face (:14, inactive parts too, so a third eye or a
+    /// blind card switched on later is covered) and hats (CustomizationRefs.playerHats) from the eyes, or gives every
+    /// renderer it hid back its own state. Runs on a toggle, never per frame.
+    /// </summary>
+    internal static void Set(HideTheBody hide, bool hideHead)
     {
-        if (!hidden.Contains(r))
-            hidden.Add(r);
+        if (!hideHead)
+        {
+            Apply(eye: false);
+            hidden.Clear();
+            authored.Clear();
+            return;
+        }
+        Add(hide.headRend);
+        if (hide.face != null)
+            foreach (var r in hide.face.GetComponentsInChildren<Renderer>(true))
+                Add(r);
+        if (hide.refs != null && hide.refs.playerHats != null)
+            foreach (var r in hide.refs.playerHats)
+                Add(r);
+        Apply(eye: true);
     }
 
-    /// <summary>Called when the head is drawn for every camera again.</summary>
-    internal static void Clear() => hidden.Clear();
+    private static void Add(Renderer r)
+    {
+        // A renderer the game draws shadow-only already shows the eyes nothing.
+        if (r == null || r.shadowCastingMode == ShadowCastingMode.ShadowsOnly || hidden.Contains(r))
+            return;
+        hidden.Add(r);
+        authored.Add(r.shadowCastingMode);
+    }
+
+    /// <summary>Whether <paramref name="r"/> is drawn into a camera's image right now (not its shadow alone).</summary>
+    internal static bool Drawn(Renderer r) =>
+        !r.forceRenderingOff && r.shadowCastingMode != ShadowCastingMode.ShadowsOnly;
 
     /// <summary>Whether <paramref name="cam"/> sees from the player's eyes: the rig's head camera or one mounted
     /// on it.</summary>
@@ -61,7 +93,7 @@ internal static class OwnHead
         if (hidden.Count == 0 || cam == null)
             return;
         bool show = cam.cameraType == CameraType.Game && !IsEye(cam);
-        Set(show ? ShadowCastingMode.On : ShadowCastingMode.ShadowsOnly);
+        Apply(eye: !show);
         if (show)
             LastShownTo = cam;
     }
@@ -69,16 +101,24 @@ internal static class OwnHead
     private static void End(ScriptableRenderContext context, Camera cam)
     {
         if (hidden.Count > 0)
-            Set(ShadowCastingMode.ShadowsOnly);
+            Apply(eye: true);
     }
 
-    private static void Set(ShadowCastingMode mode)
+    /// <summary>The eye camera's state (<paramref name="eye"/>) or each renderer's own.</summary>
+    private static void Apply(bool eye)
     {
         for (int i = 0; i < hidden.Count; i++)
         {
             var r = hidden[i];
-            if (r != null && r.shadowCastingMode != mode)
+            if (r == null)
+                continue;
+            var own = authored[i];
+            bool off = eye && own == ShadowCastingMode.Off;
+            var mode = eye && !off ? ShadowCastingMode.ShadowsOnly : own;
+            if (r.shadowCastingMode != mode)
                 r.shadowCastingMode = mode;
+            if (r.forceRenderingOff != off)
+                r.forceRenderingOff = off;
         }
     }
 }

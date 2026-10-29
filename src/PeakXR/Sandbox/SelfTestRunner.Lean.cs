@@ -246,37 +246,27 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>How far the scripted eyes sit ahead of the head's turn axis (m): a person's neck.</summary>
+    /// <summary>How far the scripted eyes sit ahead of the head's turn axis (m): a person's neck, as
+    /// <see cref="BodyStance.NeckToEyes"/>.</summary>
     const float NeckSwing = 0.1f;
 
-    /// <summary>Least the lean must move the animated eyes (m, level) for a head turned 90 degrees, and the widest
-    /// angle (degrees) that move may make with the way from the eyes to the view. It asks for about 0.17 m.</summary>
-    const float MinTurnLeanShift = 0.05f;
+    /// <summary>Most the avatar's eyes may end off the view (m, level) once the stance walk has settled.</summary>
+    const float MaxStanceEyeOff = 0.05f;
 
-    const float MaxTurnLeanAngle = 45f;
-
-    /// <summary>Most the avatar's eyes may end further off the view than the same body turned upright leaves them
-    /// (m): ragdoll sway and the drop of the bent eyes.</summary>
-    const float HeadTurnSlack = 0.03f;
+    /// <summary>Most the body may bend while it stands under a turned head (degrees): no lean is asked for, and the
+    /// old lean-back peers saw was 16 degrees.</summary>
+    const float MaxStanceLean = 8f;
 
     /// <summary>
-    /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns 90 degrees left and right in the room
-    /// (no snap turn), the eyes swinging on a 0.1 m neck. The game turns the body to the head's heading
-    /// (Character.SetRotation, Character.cs:1539-1542), which swings its eyes off the view, and the lean bends it back
-    /// toward the view. A lean keeps the mass centre over the feet (BodyLean.LegShift and the body hold; vr.45 fails a
-    /// body that moves 0.03 m), so the hips go back as it bends and the ragdoll's upper body follows only part of the
-    /// head: in the 7f8e6ec run vr.45's ragdoll shoulders moved 0.082 m of a 0.30 m lean forward and 0.036 m of 0.25 m
-    /// sideways. So it cannot bring the eyes under a turned view (the old 0.12 m bound failed at 0.107-0.178 m), and
-    /// this judges the lean, not that geometry. How far the turn swings the eyes depends on the idle pose the game
-    /// draws for each spawn (CharacterCustomization.cs:107-110, 565-570): eyes 0.19 m ahead of the mass centre in the
-    /// run of 9117575, 0.11 m in run 7, where a predicted upright swing of <c>2 (e - neck) sin(yaw / 2)</c> came to
-    /// 0.012 m while the eyes, leaned 0.071 m toward the view, still sat 0.048 m off. So the upright swing is measured:
-    /// each turn is held 1.5 s with the lean, then 1.5 s with <c>Avatar.BodyLean</c> off. It fails when the lean
-    /// moves the animated eyes less than <see cref="MinTurnLeanShift"/> or more than <see cref="MaxTurnLeanAngle"/> off
-    /// the way to the view (a lean from the rig's heading bends with the neck's swing, away from it), or the leaned
-    /// eyes (less the view hold's offset) end more than <see cref="HeadTurnSlack"/> further off than the upright ones.
-    /// Reports the torso centre along the view's level forward against standing straight, where it sits 0.33-0.36 m
-    /// behind the eyes. SKIP: <c>Avatar.BodyLean</c> off.
+    /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns in the room (no snap turn) to 90, 180
+    /// and 270 degrees and back to 0, the eyes swinging on a <see cref="NeckSwing"/> neck. The game turns the body to
+    /// the head's heading about its mass centre (Character.SetRotation, Character.cs:1539-1542), its eyes about 0.24 m
+    /// ahead of it, so an unmoved body left them up to 0.27 m off the view; the stance walk
+    /// (<see cref="BodyStance"/>, player.locomotion) steps the body under the head with the game's move input. After
+    /// each turn has settled (the walk done, at most 3 s) it fails when the avatar's eyes (less the view hold's offset)
+    /// are more than <see cref="MaxStanceEyeOff"/> off the view or the body bends more than
+    /// <see cref="MaxStanceLean"/>; over the whole step it fails when the view (the rig origin, which only the head may
+    /// move) moves more than <see cref="MaxLeanDrift"/>.
     /// </summary>
     IEnumerator HeadTurnStep()
     {
@@ -288,14 +278,8 @@ internal sealed partial class SelfTestRunner
             Fail("no pose driver or rig");
             yield break;
         }
-        var lean = AvatarConfig.Instance.BodyLeanEntry;
-        if (lean == null || !lean.Value)
-        {
-            stepSkip = "Avatar.BodyLean is off";
-            yield break;
-        }
         yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
-        // The turned body leans back and sideways: room for it first.
+        // The turned body steps round its head: room for it first.
         if (!ClearHeading(c, rig, out float turn, out string obstacle))
         {
             Fail("no clear 1.3 m to turn in in any heading: " + obstacle);
@@ -303,13 +287,7 @@ internal sealed partial class SelfTestRunner
         }
         rig.RotateYaw(turn);
         yield return Wait(0.8f);
-        bool recentered = false;
-        Action onRecenter = () => recentered = true;
-        rig.Recentered += onRecenter;
-        rig.Recenter();
-        yield return WaitFor(() => recentered, 3f);
-        rig.Recentered -= onRecenter;
-        yield return Wait(0.8f);
+        yield return RecenterHead(rig);
 
         var home = new Vector3(
             rig.RoomAnchor.X,
@@ -318,86 +296,206 @@ internal sealed partial class SelfTestRunner
         );
         var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
         var forward = level * Vector3.forward;
-        bodyRestore = () =>
-        {
-            lean.Value = true;
-            ReleaseHead();
-        };
+        bodyRestore = ReleaseHead;
         var fails = new List<string>();
         var notes = new List<string>();
+        var start = RigDriver.ViewRoot(c);
+        var origin = new Bounds(rig.Origin.position, Vector3.zero);
         float yaw = 0f;
-        bool straight = false;
-        float torsoStraight = 0f;
-        foreach (float to in new[] { 0f, 90f, -90f, 0f })
+        foreach (float to in new[] { 90f, 180f, 270f, 360f })
         {
             float from = yaw;
-            float start = Now;
-            while (Now - start < 0.6f)
+            float t0 = Now;
+            while (Now - t0 < 0.6f)
             {
-                yaw = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - start) / 0.6f));
+                yaw = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - t0) / 0.6f));
                 var q = Quaternion.Euler(0f, yaw, 0f);
                 ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);
                 yield return null;
+                origin.Encapsulate(rig.Origin.position);
             }
             yaw = to;
             var turned = Quaternion.Euler(0f, yaw, 0f);
             ScriptHead(home + (turned * forward - forward) * NeckSwing, turned * level);
-            yield return Wait(1.5f);
+            yield return Settle(rig, origin, b => origin = b);
             var head = rig.Head;
             if (head == null || !RigDriver.TryEyeRenderers(c, out var eye))
             {
                 fails.Add("no view or avatar eyes to compare");
                 break;
             }
-            var look = Flat(head.forward);
-            var off = head.position - RigDriver.ViewHeld - eye;
-            float torso = Vector3.Dot(c.Center - head.position, look);
-            if (!straight)
-            {
-                straight = true;
-                torsoStraight = torso;
-            }
-            var shift = Vector3.ProjectOnPlane(driver.EyeLeanShift, Vector3.up);
-            float angle = Vector3.Angle(shift, Vector3.ProjectOnPlane(off, Vector3.up));
-            var line = F(
-                $"head {yaw:+0;-0;0} deg: eyes {off.magnitude:0.000} m off the view, torso {torso:0.00} m along the look ({torso - torsoStraight:+0.00;-0.00} from straight), lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}) moving the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view"
+            var off = Vector3.ProjectOnPlane(head.position - RigDriver.ViewHeld - eye, Vector3.up);
+            var walked = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c) - start, Vector3.up);
+            string at = F($"head {Mathf.DeltaAngle(0f, yaw):+0;-0;0} deg");
+            notes.Add(
+                F(
+                    $"{at}: eyes {off.magnitude:0.000} m off the view, body walked {walked.magnitude:0.000} m, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}), debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                )
             );
-            if (Mathf.Abs(yaw) <= 1f)
-            {
-                notes.Add(line);
-                continue;
-            }
-            // The same turned body upright: the lean faded out (0.3 s) and the ragdoll settled.
-            lean.Value = false;
-            yield return Wait(1.5f);
-            bool plainSeen = RigDriver.TryEyeRenderers(c, out var plain);
-            lean.Value = true;
-            if (!plainSeen)
-            {
-                fails.Add("no avatar eyes for the upright turn");
-                break;
-            }
-            float upright = (head.position - RigDriver.ViewHeld - plain).magnitude;
-            notes.Add(line + F($", upright {upright:0.000} m off"));
-            if (shift.magnitude < MinTurnLeanShift || angle > MaxTurnLeanAngle)
+            if (off.magnitude > MaxStanceEyeOff)
                 fails.Add(
                     F(
-                        $"head turned {yaw:+0;-0} deg: the lean moved the eyes {shift.magnitude:0.000} m at {angle:0} deg to the view (needs {MinTurnLeanShift:0.00} m within {MaxTurnLeanAngle:0} deg)"
+                        $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view, want {MaxStanceEyeOff:0.00} m"
                     )
                 );
-            if (off.magnitude > upright + HeadTurnSlack)
+            if (driver.LeanDegrees > MaxStanceLean)
                 fails.Add(
-                    F(
-                        $"head turned {yaw:+0;-0} deg: the avatar's eyes {off.magnitude:0.000} m off the view, past the same body upright's {upright:0.000} m + {HeadTurnSlack:0.00} m"
-                    )
+                    F($"{at}: the body bends {driver.LeanDegrees:0.0} deg under a turned head")
                 );
         }
         ReleaseHead();
+        float drift = origin.size.magnitude;
+        notes.Add(F($"view moved {drift:0.000} m"));
+        if (drift > MaxLeanDrift)
+            fails.Add(
+                F(
+                    $"the view moved {drift:0.000} m while only the head turned, want {MaxLeanDrift:0.00} m"
+                )
+            );
         var note = string.Join("; ", notes);
         if (fails.Count > 0)
             Fail(string.Join("; ", fails) + " | " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>
+    /// <c>vr.273-look-down-step-back</c>: the scripted head on the calibrated spot looks 60 degrees down and holds it.
+    /// Below 35 degrees the body stands back away from the look (<see cref="BodyStance.StepBack"/>, 0.28 m at 60), so
+    /// the player sees the ground before its feet. Once settled (the walk done, at most 3 s) the avatar's eyes must be
+    /// at least <see cref="MinStepBack"/> behind the view along the look and the mass centre at least that far back
+    /// from where it stood; looking level again, the eyes must be back under the view (<see cref="MaxStanceEyeOff"/>).
+    /// Over the whole step the view (rig origin) may not move more than <see cref="MaxLeanDrift"/>.
+    /// </summary>
+    IEnumerator LookDownStep()
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
+        if (driver == null || rig == null)
+        {
+            Fail("no pose driver or rig");
+            yield break;
+        }
+        yield return WaitFor(() => driver.ArmWeight >= 1f, ArmTrackedWait);
+        // The body steps back: room behind it.
+        if (!ClearHeading(c, rig, out float turn, out string obstacle))
+        {
+            Fail("no clear 1.3 m to step in in any heading: " + obstacle);
+            yield break;
+        }
+        rig.RotateYaw(turn + 180f);
+        yield return Wait(0.8f);
+        yield return RecenterHead(rig);
+
+        var home = new Vector3(
+            rig.RoomAnchor.X,
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.RoomAnchor.Y
+        );
+        var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
+        bodyRestore = ReleaseHead;
+        var fails = new List<string>();
+        var notes = new List<string>();
+        var start = RigDriver.ViewRoot(c);
+        var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        foreach (float pitch in new[] { 60f, 0f })
+        {
+            var from = VRInput.HeadRotation;
+            var to = level * Quaternion.Euler(pitch, 0f, 0f);
+            float t0 = Now;
+            while (Now - t0 < 0.6f)
+            {
+                ScriptHead(
+                    home,
+                    Quaternion.Slerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - t0) / 0.6f))
+                );
+                yield return null;
+                origin.Encapsulate(rig.Origin.position);
+            }
+            ScriptHead(home, to);
+            yield return Settle(rig, origin, b => origin = b);
+            if (rig.Head == null || !RigDriver.TryEyeRenderers(c, out var eye))
+            {
+                fails.Add("no view or avatar eyes to compare");
+                break;
+            }
+            var look = Flat(rig.Head.rotation * Vector3.forward);
+            if (look.sqrMagnitude < 1e-4f)
+                look = Flat(rig.Head.rotation * Vector3.up);
+            look.Normalize();
+            var off = Vector3.ProjectOnPlane(
+                rig.Head.position - RigDriver.ViewHeld - eye,
+                Vector3.up
+            );
+            float behind = Vector3.Dot(off, look);
+            float back = Vector3.Dot(start - RigDriver.ViewRoot(c), look);
+            string at = F($"look {-pitch:0} deg");
+            notes.Add(
+                F(
+                    $"{at}: eyes {behind:0.000} m behind the view ({off.magnitude:0.000} m off), mass centre {back:0.000} m back, lean {driver.LeanDegrees:0.0} deg, debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                )
+            );
+            if (pitch > 0f && (behind < MinStepBack || back < MinStepBack))
+                fails.Add(
+                    F(
+                        $"{at}: the body stood {back:0.000} m back, its eyes {behind:0.000} m behind the view, want {MinStepBack:0.00} m"
+                    )
+                );
+            if (pitch <= 0f && off.magnitude > MaxStanceEyeOff)
+                fails.Add(
+                    F(
+                        $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view looking level again, want {MaxStanceEyeOff:0.00} m"
+                    )
+                );
+        }
+        ReleaseHead();
+        float drift = origin.size.magnitude;
+        notes.Add(F($"view moved {drift:0.000} m"));
+        if (drift > MaxLeanDrift)
+            fails.Add(
+                F(
+                    $"the view moved {drift:0.000} m while only the head pitched, want {MaxLeanDrift:0.00} m"
+                )
+            );
+        var note = string.Join("; ", notes);
+        if (fails.Count > 0)
+            Fail(string.Join("; ", fails) + " | " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>Least step back (m) vr.273 wants at a 60 degree look down.</summary>
+    const float MinStepBack = 0.2f;
+
+    /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot.</summary>
+    static IEnumerator RecenterHead(VRRig rig)
+    {
+        bool recentered = false;
+        Action onRecenter = () => recentered = true;
+        rig.Recentered += onRecenter;
+        rig.Recenter();
+        yield return WaitFor(() => recentered, 3f);
+        rig.Recentered -= onRecenter;
+        yield return Wait(0.8f);
+    }
+
+    /// <summary>Waits for the stance walk to start and settle (at most 3 s), tracking the rig origin meanwhile.</summary>
+    static IEnumerator Settle(VRRig rig, Bounds origin, Action<Bounds> done)
+    {
+        float t0 = Now;
+        while (Now - t0 < 0.5f || (RigDriver.StanceWalking && Now - t0 < 3f))
+        {
+            yield return null;
+            origin.Encapsulate(rig.Origin.position);
+        }
+        float t1 = Now;
+        while (Now - t1 < 0.3f)
+        {
+            yield return null;
+            origin.Encapsulate(rig.Origin.position);
+        }
+        done(origin);
     }
 
     void StartTrack(Character c, VRRig rig)

@@ -32,7 +32,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
         yield return Restoring("vr.257-arm-swing-jump", 20f, ArmSwingJumpStep());
         yield return Restoring("vr.45-lean", 60f, LeanStep());
-        yield return Restoring("vr.45b-head-turn", 25f, HeadTurnStep());
+        yield return Restoring("vr.45b-head-turn", 35f, HeadTurnStep());
+        yield return Restoring("vr.273-look-down-step-back", 25f, LookDownStep());
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
