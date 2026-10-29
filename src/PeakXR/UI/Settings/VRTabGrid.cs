@@ -251,7 +251,10 @@ internal static class VRTabGrid
         var viewport = NewRect(name + "View", panel);
         Stretch(viewport);
         // Invisible, but it takes the laser between items, so a drag or the stick scrolls there too.
-        viewport.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+        var hit = viewport.gameObject.AddComponent<Image>();
+        hit.color = new Color(0f, 0f, 0f, 0f);
+        // A column-sized quad drawn at alpha 0 would cost fill in both eyes: hit-tested by rect, drawn as nothing.
+        World.HiddenMesh.Add(hit);
         viewport.gameObject.AddComponent<World.PanelPart>();
         viewport.gameObject.AddComponent<RectMask2D>();
         var content = NewRect(name, viewport);

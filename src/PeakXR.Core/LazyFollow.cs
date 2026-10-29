@@ -43,24 +43,45 @@ public sealed class LazyFollow
 
     public bool Gliding { get; private set; }
 
+    /// <summary>A glide began this frame: the moment to choose <see cref="Offset"/> for where it is going.</summary>
+    public bool Started { get; private set; }
+
+    /// <summary>Degrees the panel sits off the head's heading (a menu turned toward open space, away from a wall at
+    /// the face). The glide goes to the head's yaw plus this, and looking away is measured from there too, so facing
+    /// that wall is not a look away.</summary>
+    public float Offset { get; set; }
+
     /// <summary>The threshold for a panel <paramref name="halfSpanDegrees"/> wide on each side of its centre: a wide
     /// panel (the 58 degree title screen) is read at its edges, which must not move it.</summary>
     public static float ThresholdFor(float threshold, float halfSpanDegrees) =>
         MathF.Max(threshold, halfSpanDegrees + EdgeMargin);
 
-    /// <summary>Places the panel at once (it opened), with no glide or dwell carried over.</summary>
-    public void Snap(float yaw, float pitch = 0f)
+    /// <summary>Places the panel at once (it opened), with no glide or dwell carried over. <paramref name="offset"/>
+    /// is how far it was turned off the head's heading.</summary>
+    public void Snap(float yaw, float pitch = 0f, float offset = 0f)
     {
         Yaw = LookMath.WrapDegrees(yaw);
         Pitch = pitch;
-        Gliding = false;
+        Offset = offset;
+        Gliding = Started = false;
         away = yawSpeed = pitchSpeed = 0f;
     }
 
-    /// <summary>One frame toward the head's <paramref name="yaw"/> and <paramref name="pitch"/>.</summary>
+    /// <summary>Glides at once, without the dwell, to <paramref name="offset"/> off the head's heading (a glide ended
+    /// at a wall, and open space is a turn away).</summary>
+    public void Turn(float offset)
+    {
+        Offset = offset;
+        Gliding = true;
+        away = 0f;
+    }
+
+    /// <summary>One frame toward the head's <paramref name="yaw"/> (plus <see cref="Offset"/>) and <paramref name="pitch"/>.</summary>
     /// <returns>True when the panel moved this frame.</returns>
     public bool Update(float yaw, float pitch, bool hold, float dt)
     {
+        Started = false;
+        yaw += Offset;
         float dy = LookMath.WrapDegrees(yaw - Yaw);
         float dp = pitch - Pitch;
         if (hold || dt <= 0f)
@@ -77,7 +98,7 @@ public sealed class LazyFollow
             away = dy * dy + dp * dp > Threshold * Threshold ? away + dt : 0f;
             if (away < Dwell)
                 return false;
-            Gliding = true;
+            Gliding = Started = true;
             away = 0f;
         }
         Yaw = LookMath.WrapDegrees(Yaw + Damp(dy, ref yawSpeed, dt));

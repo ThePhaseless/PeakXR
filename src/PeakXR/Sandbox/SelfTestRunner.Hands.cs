@@ -1389,7 +1389,8 @@ internal sealed partial class SelfTestRunner
         return null;
     }
 
-    /// <summary>vr.19: each hand in turn, alone, aims at the pause menu's Resume button
+    /// <summary>vr.19: each hand in turn, alone, aims at the pause menu's Resume button (a click the laser drops
+    /// fails it, <see cref="UI.World.LaserPointer.DroppedClicks"/>)
     /// (<c>PauseMenuMainPage.resumeButton</c>, PauseMenuMainPage.cs:56) while the other points at the floor, and pulls
     /// its trigger. A hand that drives the laser (<c>UI.Pointer.PointerHand</c>; LastUsed: one pull moves the laser there and
     /// clicks, <see cref="PointerHands"/>) closes the menu (<c>GUIManager.InPauseMenu</c>, GUIManager.cs:304) with the
@@ -1460,10 +1461,18 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         if (shot)
             yield return Shot("vr-19-laser");
+        int dropped = PeakXR.UI.World.LaserPointer.DroppedClicks;
         Script(left).Trigger = 1f;
         yield return Wait(0.15f);
         Script(left).Trigger = 0f;
         float away = Vector3.Distance(rig.Head.position, target);
+        // A menu that moved under the press (lazy follow, a wall test) loses the click: caught here even when a
+        // later retry would pass.
+        if (PeakXR.UI.World.LaserPointer.DroppedClicks != dropped)
+        {
+            Fail($"the {side} laser click on Resume was dropped (button {away:0.00} m away)");
+            yield break;
+        }
         if (!drives)
         {
             yield return Wait(1f);
