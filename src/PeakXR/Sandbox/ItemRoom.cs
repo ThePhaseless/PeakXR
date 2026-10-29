@@ -41,6 +41,9 @@ internal sealed class ItemRoom : MonoBehaviour
     private const float MaxOverflow = 1.25f;
     private const float StartOrbHeight = 1.25f;
 
+    /// <summary>The fixed airport place was found blocked this session (logged once).</summary>
+    private static bool fixedWarned;
+
     /// <summary>Best open floor under this many square metres: walled in (closed doors), not a small room.</summary>
     private const float BoxedArea = 4f;
 
@@ -492,7 +495,16 @@ internal sealed class ItemRoom : MonoBehaviour
         var spec = new ShelfSpec { VolatileClearance = WickRef == null ? igniteRadius + 1f : 0f };
         var origin = feet;
         var forward = look;
-        for (int i = 0; i < Headings; i++)
+        // The solo airport: always its fixed place (AirportRoom), wherever you pressed Enter, unless level geometry
+        // now stands in it. Elsewhere, or then, the open floor measured around you.
+        bool fixedPlace = FixedPlace(spec, out var fixedOrigin);
+        if (fixedPlace)
+        {
+            room = AirportRoom.Bounds;
+            origin = fixedOrigin;
+            forward = Vector3.forward;
+        }
+        for (int i = 0; i < Headings && !fixedPlace; i++)
             Consider(feet, Quaternion.Euler(0f, i * 360f / Headings, 0f) * look);
         // Too tight where you stand (the spawn elevator opens onto the airport hall): spots out along each open
         // heading, nearest first, the room continuing that way.
@@ -579,7 +591,8 @@ internal sealed class ItemRoom : MonoBehaviour
         if (plan.Fits)
             Plugin.Log.LogInfo(
                 $"[sandbox.room] {total} items on {plan.Tables.Length} tables, {plan.PerRow} a row, block "
-                    + $"{plan.Block} in room {room} along {forward}, {away:0.0} m from you, wall "
+                    + $"{plan.Block} in {(fixedPlace ? "the fixed airport place" : "measured room")} {room} "
+                    + $"along {forward}, {away:0.0} m from you, wall "
                     + $"{(plan.HasWall ? "placed" : "left out")}"
             );
         else
@@ -834,11 +847,74 @@ internal sealed class ItemRoom : MonoBehaviour
         return hit.transform != null ? hit.point : new Vector3(p.x, fallbackY, p.z);
     }
 
+    /// <summary>Level geometry in the waist-high box over footprint <paramref name="f"/> standing on
+    /// <paramref name="floor"/>, or null.</summary>
+    private static Collider Blocker(RoomRect f, Vector3 floor, Quaternion rotation)
+    {
+        var hits = Physics.OverlapBox(
+            floor + Vector3.up * (TableHeight * 0.5f + 0.1f),
+            new Vector3(f.Width * 0.5f, TableHeight * 0.5f, f.Depth * 0.5f),
+            rotation,
+            HelperFunctions.terrainMapMask | LayerMask.GetMask("Default"),
+            QueryTriggerInteraction.Ignore
+        );
+        return hits.Length > 0 ? hits[0] : null;
+    }
+
+    /// <summary>Lays the room out in its fixed airport place (<see cref="AirportRoom"/>) and checks every table, the
+    /// fire and the test wall against level geometry first. True with <see cref="plan"/> set when it is used; a
+    /// blocked place (a game update moved the lobby) is logged once a session and the measured layout takes over.</summary>
+    private bool FixedPlace(ShelfSpec spec, out Vector3 at)
+    {
+        at = Floor(
+            new Vector3(AirportRoom.OriginX, AirportRoom.FloorY, AirportRoom.OriginZ),
+            AirportRoom.FloorY
+        );
+        if (!inAirport)
+            return false;
+        var candidate = ShelfLayout.Plan(counts, AirportRoom.Bounds, spec);
+        int blocked = 0;
+        string first = null;
+        var origin = at;
+        void Check(RoomRect f)
+        {
+            var c = Blocker(
+                f,
+                Floor(origin + new Vector3(f.CenterX, 0f, f.CenterZ), origin.y),
+                Quaternion.identity
+            );
+            if (c == null)
+                return;
+            blocked++;
+            first ??= $"{c.name} at {f}";
+        }
+        if (candidate.Fits)
+        {
+            foreach (var t in candidate.Tables)
+                Check(t.Footprint);
+            Check(candidate.Fire);
+            if (candidate.HasWall)
+                Check(candidate.Wall);
+        }
+        if (AirportRoom.Choose(inAirport, candidate.Fits, blocked) == RoomPlace.Fixed)
+        {
+            plan = candidate;
+            return true;
+        }
+        if (!fixedWarned)
+        {
+            fixedWarned = true;
+            Plugin.Log.LogWarning(
+                $"[sandbox.room] the fixed airport place {(candidate.Fits ? $"is blocked ({blocked}, first {first})" : "does not hold the tables")}: a game update may have moved the lobby; measuring the open floor instead"
+            );
+        }
+        return false;
+    }
+
     /// <summary>A coloured plank under each table with its items' spots on it, at each bucket's first table a restock
     /// orb and its label, and a sign over each zone. A table that still meets level geometry is logged.</summary>
     private void Tables(System.Func<float, float, Vector3> at, int[] counts)
     {
-        int mask = HelperFunctions.terrainMapMask | LayerMask.GetMask("Default");
         int lastGroup = -1;
         int table = 0;
         tableLoaded = new bool[plan.Tables.Length];
@@ -856,16 +932,10 @@ internal sealed class ItemRoom : MonoBehaviour
                 var spot = at(s.X, s.Z);
                 slotAt[k] = new Vector3(spot.x, floor.y + TableHeight, spot.z);
             }
-            var hits = Physics.OverlapBox(
-                floor + Vector3.up * (TableHeight * 0.5f + 0.1f),
-                new Vector3(f.Width * 0.5f, TableHeight * 0.5f, f.Depth * 0.5f),
-                facing,
-                mask,
-                QueryTriggerInteraction.Ignore
-            );
-            if (hits.Length > 0)
+            var blocker = Blocker(f, floor, facing);
+            if (blocker != null)
                 Plugin.Log.LogWarning(
-                    $"[sandbox.room] {ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} table ({f}) meets {hits[0].name}"
+                    $"[sandbox.room] {ItemShelf.Title(ShelfLayout.GroupOf(t.Group))} table ({f}) meets {blocker.name}"
                 );
             var plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
             plank.name = "PeakXR_ItemRoomTable";

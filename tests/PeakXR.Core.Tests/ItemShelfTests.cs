@@ -385,7 +385,7 @@ public class ShelfLayoutTests
     }
 
     // The game's one-of-each count in 0e8ad7e: 139 kinds, 21 dangerous, the dynamite.
-    static readonly int[] Game = Counts(
+    internal static readonly int[] Game = Counts(
         (ItemZone.Helpful, ShelfGroup.Fire, 7),
         (ItemZone.Helpful, ShelfGroup.Food, 45),
         (ItemZone.Helpful, ShelfGroup.Medicine, 12),
@@ -405,7 +405,7 @@ public class ShelfLayoutTests
 
     /// <summary>Everything placed, inside the room clear of its walls, and every table, the fire and the wall a
     /// walkway apart, by the measures the plan was laid out with.</summary>
-    static void AssertSound(int[] counts, RoomRect room, ShelfPlan plan)
+    internal static void AssertSound(int[] counts, RoomRect room, ShelfPlan plan)
     {
         Assert.True(plan.Fits, $"does not fit {room}: {plan.Over:0.00}x");
         var used = plan.Spec;
@@ -565,5 +565,32 @@ public class ShelfLayoutTests
         int b = ShelfLayout.Bucket(ItemZone.Dangerous, ShelfGroup.Food);
         Assert.Equal(ItemZone.Dangerous, ShelfLayout.ZoneOf(b));
         Assert.Equal(ShelfGroup.Food, ShelfLayout.GroupOf(b));
+    }
+}
+
+public class AirportRoomTests
+{
+    [Fact]
+    public void TheFixedAirportPlaceHoldsEveryItemWithEveryGapKept()
+    {
+        var plan = ShelfLayout.Plan(ShelfLayoutTests.Game, AirportRoom.Bounds, new ShelfSpec());
+        ShelfLayoutTests.AssertSound(ShelfLayoutTests.Game, AirportRoom.Bounds, plan);
+        Assert.True(plan.HasWall);
+    }
+
+    [Fact]
+    public void TheFixedPlaceIsUsedOnlyInTheAirportWhenItFitsAndNothingStandsInIt()
+    {
+        Assert.Equal(RoomPlace.Fixed, AirportRoom.Choose(airport: true, fits: true, blocked: 0));
+        // A game update moved the lobby: something now stands where a table would.
+        Assert.Equal(RoomPlace.Measured, AirportRoom.Choose(airport: true, fits: true, blocked: 1));
+        Assert.Equal(
+            RoomPlace.Measured,
+            AirportRoom.Choose(airport: true, fits: false, blocked: 0)
+        );
+        Assert.Equal(
+            RoomPlace.Measured,
+            AirportRoom.Choose(airport: false, fits: true, blocked: 0)
+        );
     }
 }

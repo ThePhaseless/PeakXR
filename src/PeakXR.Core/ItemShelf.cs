@@ -832,3 +832,40 @@ public static class ShelfLoad
     public static bool Wanted(bool loaded, float distance, float load, float unload) =>
         loaded ? distance <= unload : distance <= load;
 }
+
+/// <summary>Where the item room stands: its fixed place in the solo airport, or the open floor measured around you.</summary>
+public enum RoomPlace : byte
+{
+    Fixed,
+    Measured,
+}
+
+/// <summary>
+/// The item room's fixed place in the solo airport hall, so it stands in the same known-good spot every time instead
+/// of wherever the player happens to measure from. The frame faces world +z, the hall's long axis (the elevator doors
+/// and every queue fence run along world x and z); X runs to world +x.
+/// <para>Origin: world x -10.0, z 56.75, the start line 3.85 m out from the spawn elevators' doors (Elevator (1-3)/Door,
+/// z 52.90) and just past the queue fence posts in front of them (frame x -2.4, 3.4, 9.0, up to world z 57.6). Floor
+/// y 0.51: Map/BL_Airport/Main Meshes and the elevator floors (0.55).</para>
+/// <para>Bounds: the largest rectangle clear of every active Default/Map/Terrain collider between 0.15 m and 2.2 m above
+/// that floor, with every obstacle grown by 0.5 m, from a 0.25 m occupancy map of the Airport scene (level3, game build
+/// of 2026-10, UnityPy): frame x -4.0..9.0, z 1.5..16.75 (world x -14..-1, z 58.25..73.5). Left of it the seating
+/// rows (world x &lt; -14.5), right the railings (world x &gt; -0.4), ahead the kiosk row and the climbing-wall mats
+/// (world z &gt; 74). Below z 1.5 only the start walkway, where no table stands (<see cref="ShelfSpec.FrontWalk"/>).
+/// It agrees with the open floor measured in game (VR run of dc78fa3: hall 8.3 x 20.6 m along a heading 15 degrees
+/// off +z, 4 m out from the doors).</para>
+/// </summary>
+public static class AirportRoom
+{
+    public const float OriginX = -10f;
+    public const float OriginZ = 56.75f;
+    public const float FloorY = 0.51f;
+
+    public static readonly RoomRect Bounds = new(-4f, 9f, 0f, 16.75f);
+
+    /// <summary>The fixed place in the airport when its plan fits and the level check found nothing in the way
+    /// (<paramref name="blocked"/> tables, the fire or the wall meeting level geometry): a game update may have moved
+    /// the lobby, and then the measured layout takes over.</summary>
+    public static RoomPlace Choose(bool airport, bool fits, int blocked) =>
+        airport && fits && blocked == 0 ? RoomPlace.Fixed : RoomPlace.Measured;
+}
