@@ -75,6 +75,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         if (ready != Ready)
         {
             Ready = ready;
+            InputGlyphPatch.Refresh();
             if (ready)
             {
                 WorldCanvases.ConvertAll();

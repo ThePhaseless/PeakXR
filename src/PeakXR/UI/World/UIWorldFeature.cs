@@ -36,6 +36,7 @@ public sealed class UIWorldFeature : Feature
         Patch(typeof(MenuWindowOpenPatch));
         Patch(typeof(EventCameraPatch));
         Patch(typeof(CameraQuadPatch));
+        Patch(typeof(InputGlyphPatch));
         Patch(typeof(PlayerNamePatch));
 
         UIWorldRuntime.Create();

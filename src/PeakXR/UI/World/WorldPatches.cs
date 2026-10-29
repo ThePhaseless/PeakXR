@@ -113,3 +113,63 @@ internal static class PlayerNamePatch
         tag.localScale = new Vector3(s, s, s);
     }
 }
+
+/// <summary>In VR no keyboard key glyph shows: the game keeps its KeyboardMouse scheme under VR
+/// (ZC/InputHandler.cs:36, default InputScheme.cs:5), so every <c>InputIcon</c> draws a keycap sprite, and only the HUD
+/// parts ui.spatial moves hid theirs (SpatialBox). The dying bar's give-up "E", the hotbar's 1-4 and the guidebook's
+/// [INTERACT] tags still drew. A/InputIcon.cs:54 <c>OnDeviceChange</c> (on enable and every scheme change, sets the
+/// glyph through SetText :103), A/InLineInputPrompts.cs:45 <c>UpdateText</c> (writes sprite tags into the text, :67).</summary>
+[HarmonyPatch]
+internal static class InputGlyphPatch
+{
+    private static MethodInfo iconChange;
+    private static MethodInfo inlineText;
+
+    private static System.Collections.Generic.IEnumerable<MethodBase> TargetMethods()
+    {
+        yield return iconChange = GameMember.Method(typeof(InputIcon), "OnDeviceChange");
+        yield return inlineText = GameMember.Method(typeof(InLineInputPrompts), "UpdateText");
+    }
+
+    private static void Postfix(MonoBehaviour __instance)
+    {
+        if (!UIWorldRuntime.Ready || !__instance.TryGetComponent(out TMPro.TMP_Text text))
+            return;
+        if (__instance is InputIcon)
+        {
+            text.enabled = false;
+            return;
+        }
+        var s = text.text;
+        if (s == null)
+            return;
+        int at;
+        bool cut = false;
+        while ((at = s.IndexOf("<sprite", System.StringComparison.Ordinal)) >= 0)
+        {
+            int end = s.IndexOf('>', at);
+            s = end < 0 ? s.Remove(at) : s.Remove(at, end - at + 1);
+            cut = true;
+        }
+        if (cut)
+            text.text = s;
+    }
+
+    /// <summary>Runs every active glyph's own update again when the VR UI starts or stops: hidden for the headset,
+    /// the game's own keycaps back for the monitor.</summary>
+    internal static void Refresh()
+    {
+        if (iconChange == null || inlineText == null)
+            return;
+        var scheme = new object[]
+        {
+            Zorro.ControllerSupport.InputHandler.GetCurrentUsedInputScheme(),
+        };
+        foreach (var icon in Object.FindObjectsByType<InputIcon>(FindObjectsSortMode.None))
+            iconChange.Invoke(icon, scheme);
+        foreach (
+            var inline in Object.FindObjectsByType<InLineInputPrompts>(FindObjectsSortMode.None)
+        )
+            inlineText.Invoke(inline, scheme);
+    }
+}
