@@ -53,6 +53,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.238-grip-toggle-item", 25f, GripToggleItemStep());
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
         yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
+        yield return Restoring("vr.248-hook-pull-first-person", 45f, HookPullStep());
+        yield return WarpBack();
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());

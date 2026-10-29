@@ -32,6 +32,8 @@ public sealed class AimFeature : Feature
         Patch(typeof(AimPatches.VinePathTry));
         Patch(typeof(AimPatches.RescueHookRay));
         Patch(typeof(AimPatches.RescueHookFire));
+        Patch(typeof(OwnGrapple.RescueWall));
+        Patch(typeof(OwnGrapple.LetGo));
         Patch(typeof(AimPatches.ConstructableUpdate));
         Patch(typeof(AimPatches.DartFire));
         Patch(typeof(AimPatches.SpawnSomethingAim));
