@@ -43,6 +43,9 @@ internal sealed class TouchOrb
 
     public Vector3 Position => orb != null ? orb.position : Vector3.zero;
 
+    /// <summary>The orb object; its glyph lines are its children.</summary>
+    public Transform Root => orb;
+
     public void Place(Vector3 position, Quaternion rotation) =>
         orb.SetPositionAndRotation(position, rotation);
 

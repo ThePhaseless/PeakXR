@@ -174,6 +174,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return VRStep("vr.03-canvases", 20f, CanvasCheck());
         yield return Run("01b-item-room-props", 15f, RoomPropsCheck());
         EndRoomProps();
+        yield return Run("01c-item-room-layout", 120f, RoomLayoutCheck());
+        yield return EndRoomLayout();
 
         if (!hold)
         {

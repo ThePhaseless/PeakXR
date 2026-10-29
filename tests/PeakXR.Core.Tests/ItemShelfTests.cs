@@ -241,6 +241,170 @@ public class ShelfLayoutTests
         (ItemZone.Volatile, ShelfGroup.Throwing, 1)
     );
 
+    // Footprints (across, along) like the game's items: berries to backpacks and long tools, in a fixed cycle.
+    static readonly Vector2[] Shapes =
+    {
+        new(0.12f, 0.12f),
+        new(0.25f, 0.15f),
+        new(0.2f, 0.2f),
+        new(0.35f, 0.3f),
+        new(0.15f, 0.45f),
+        new(0.5f, 0.35f),
+        new(0.1f, 0.1f),
+        new(0.3f, 0.2f),
+    };
+
+    internal static Vector2[] Sizes(int[] counts)
+    {
+        var sizes = new Vector2[counts.Sum()];
+        for (int i = 0; i < sizes.Length; i++)
+            sizes[i] = Shapes[i % Shapes.Length];
+        return sizes;
+    }
+
+    internal static ShelfPlan Plan(int[] counts, RoomRect room, ShelfSpec spec) =>
+        ShelfLayout.Plan(counts, Sizes(counts), room, spec);
+
+    /// <summary>The floor slot <paramref name="k"/>'s item covers where the plan put it.</summary>
+    internal static RoomRect Spot(ShelfPlan plan, IReadOnlyList<Vector2> sizes, int k)
+    {
+        var s = plan.Slots[k];
+        var size = s.Turned ? new Vector2(sizes[s.Item].Y, sizes[s.Item].X) : sizes[s.Item];
+        return new(
+            s.X - size.X * 0.5f,
+            s.X + size.X * 0.5f,
+            s.Z - size.Y * 0.5f,
+            s.Z + size.Y * 0.5f
+        );
+    }
+
+    [Fact]
+    public void ALongItemLiesAcrossItsRowNotIntoTheTable()
+    {
+        // A launcher 2.46 m long pointing away from the walkway made its row (and its table) 2.46 m deep.
+        var counts = Counts((ItemZone.Helpful, ShelfGroup.Throwing, 2));
+        var sizes = new[] { new Vector2(0.49f, 2.46f), new Vector2(0.4f, 0.3f) };
+        var plan = ShelfLayout.Plan(counts, sizes, Hall, Spec);
+
+        var launcher = plan.Slots.Single(s => s.Item == 0);
+        Assert.True(launcher.Turned);
+        Assert.False(plan.Slots.Single(s => s.Item == 1).Turned);
+        Assert.True(plan.Tables[0].Footprint.Depth < 1f, $"{plan.Tables[0].Footprint}");
+        AssertDisplayed(plan, sizes, Spec.ItemGap);
+    }
+
+    [Fact]
+    public void EveryItemHasExactlyOneSpotOnATableOfItsKind()
+    {
+        var plan = Plan(Game, Hall, Spec);
+        var bucket = Game.SelectMany((count, b) => Enumerable.Repeat(b, count)).ToArray();
+        var seen = new bool[bucket.Length];
+        foreach (var s in plan.Slots)
+        {
+            Assert.False(seen[s.Item], $"item {s.Item} placed twice");
+            seen[s.Item] = true;
+            Assert.Equal(bucket[s.Item], s.Group);
+        }
+        Assert.All(seen, Assert.True);
+    }
+
+    /// <summary>Every two items on a table at least <paramref name="gap"/> apart, footprint to footprint, and each
+    /// item an edge margin in from every side of its table.</summary>
+    internal static void AssertDisplayed(ShelfPlan plan, IReadOnlyList<Vector2> sizes, float gap)
+    {
+        foreach (var t in plan.Tables)
+            for (int i = t.First; i < t.First + t.Count; i++)
+            {
+                var a = Spot(plan, sizes, i);
+                var f = t.Footprint;
+                float edge = plan.Spec.EdgePad - 1e-3f;
+                Assert.True(
+                    a.MinX - f.MinX >= edge
+                        && f.MaxX - a.MaxX >= edge
+                        && a.MinZ - f.MinZ >= edge
+                        && f.MaxZ - a.MaxZ >= edge,
+                    $"item {i} ({a}) off the edge of its table ({f})"
+                );
+                for (int j = i + 1; j < t.First + t.Count; j++)
+                    Assert.True(
+                        Gap(a, Spot(plan, sizes, j)) >= gap - 1e-3f,
+                        $"items {i} ({a}) and {j} ({Spot(plan, sizes, j)}) closer than {gap}"
+                    );
+            }
+    }
+
+    [Fact]
+    public void ItemsOnATableStandTheirOwnFootprintPlusTheGapApartWellOnTheTable()
+    {
+        var sizes = Sizes(Game);
+        var plan = ShelfLayout.Plan(Game, sizes, Hall, Spec);
+
+        Assert.True(plan.Fits);
+        AssertDisplayed(plan, sizes, Spec.ItemGap);
+    }
+
+    [Fact]
+    public void EvenTheTightestLayoutKeepsTenCentimetresBetweenItems()
+    {
+        var sizes = Sizes(Game);
+        var plan = ShelfLayout.Plan(Game, sizes, new RoomRect(-6f, 6f, 0f, 12f), Spec);
+
+        Assert.True(plan.Fits);
+        Assert.True(plan.Spec.ItemGap >= 0.1f - 1e-3f);
+        AssertDisplayed(plan, sizes, 0.1f);
+    }
+
+    [Fact]
+    public void ABigItemGetsTheRoomItNeeds()
+    {
+        // Four backpack-sized items: the old fixed 0.55 m pitch let them touch.
+        var counts = Counts((ItemZone.Helpful, ShelfGroup.Containers, 4));
+        var sizes = Enumerable.Repeat(new Vector2(0.6f, 0.5f), 4).ToArray();
+        var plan = ShelfLayout.Plan(counts, sizes, Hall, Spec);
+
+        AssertDisplayed(plan, sizes, Spec.ItemGap);
+    }
+
+    [Fact]
+    public void TablesAreNoSmallerThanASturdyMinimum()
+    {
+        var plan = Plan(Game, Hall, Spec);
+        foreach (var t in plan.Tables)
+        {
+            Assert.True(t.Footprint.Width >= Spec.MinTable - 1e-3f, $"{t.Footprint} too narrow");
+            Assert.True(t.Footprint.Depth >= Spec.MinTable - 1e-3f, $"{t.Footprint} too shallow");
+        }
+    }
+
+    [Fact]
+    public void ABadFootprintCountsAsTheSmallestItem()
+    {
+        var counts = Counts((ItemZone.Helpful, ShelfGroup.Food, 4));
+        var sizes = new[]
+        {
+            new Vector2(float.NaN, 0.2f),
+            new Vector2(-1f, 0f),
+            new Vector2(float.PositiveInfinity, 0.2f),
+            new Vector2(0.2f, 0.2f),
+        };
+        var plan = ShelfLayout.Plan(counts, sizes, Hall, Spec);
+
+        Assert.True(plan.Fits);
+        var smallest = new Vector2(Spec.MinItem, Spec.MinItem);
+        AssertDisplayed(
+            plan,
+            new[] { smallest, smallest, new(Spec.MinItem, 0.2f), sizes[3] },
+            Spec.ItemGap
+        );
+        Assert.All(plan.Slots, s => Assert.True(float.IsFinite(s.X) && float.IsFinite(s.Z)));
+    }
+
+    [Fact]
+    public void FootprintsMustMatchTheItems() =>
+        Assert.Throws<System.ArgumentException>(() =>
+            ShelfLayout.Plan(Typical, new Vector2[3], Hall, Spec)
+        );
+
     // The player stands at z = 0, x = 0; the hall is 24 m wide and 30 m deep.
     static readonly RoomRect Hall = new(-12f, 12f, 0f, 30f);
 
@@ -274,7 +438,7 @@ public class ShelfLayoutTests
     [Fact]
     public void EveryTableStandsInsideTheRoomClearOfWallsAndOfEachOther()
     {
-        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var plan = Plan(Typical, Hall, Spec);
 
         Assert.True(plan.Fits);
         int items = 0;
@@ -292,7 +456,7 @@ public class ShelfLayoutTests
     [Fact]
     public void ItemsLieOnTheirTables()
     {
-        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var plan = Plan(Typical, Hall, Spec);
         foreach (var t in plan.Tables)
             for (int k = t.First; k < t.First + t.Count; k++)
             {
@@ -306,25 +470,31 @@ public class ShelfLayoutTests
     [Fact]
     public void TheTablesStandInTheMiddleOfTheRoom()
     {
-        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var plan = Plan(Typical, Hall, Spec);
         Assert.Equal(Hall.CenterX, plan.Block.CenterX, 2);
         Assert.True(plan.Block.MinZ >= Hall.MinZ + Spec.FrontWalk - 1e-3f);
     }
 
     [Fact]
-    public void HelpfulNearestDangerousBehindAndWhatGoesOffByItselfFarthest()
+    public void HelpfulNearestDangerousBehindAndWhatGoesOffByItselfApart()
     {
-        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var plan = Plan(Typical, Hall, Spec);
         var helpful = plan.Zones[(int)ItemZone.Helpful];
         var dangerous = plan.Zones[(int)ItemZone.Dangerous];
         var volatileZone = plan.Zones[(int)ItemZone.Volatile];
         Assert.True(dangerous.MinZ - helpful.MaxZ >= Spec.ZoneGap - 1e-3f);
-        Assert.True(volatileZone.MinZ - dangerous.MaxZ >= Spec.ZoneGap - 1e-3f);
+        // Its wick moved out of reach, it needs no more than a zone gap: it may close the dangerous row, never nearer.
+        Assert.True(volatileZone.MinZ >= dangerous.MinZ - 1e-3f);
         foreach (var t in plan.Tables)
         {
             var zone = plan.Zones[(int)t.Zone];
             Assert.InRange(t.Footprint.MinZ, zone.MinZ - 1e-3f, zone.MaxZ + 1e-3f);
             Assert.InRange(t.Footprint.MaxZ, zone.MinZ - 1e-3f, zone.MaxZ + 1e-3f);
+            if (t.Zone != ItemZone.Volatile)
+                Assert.True(
+                    Gap(t.Footprint, volatileZone) >= Spec.ZoneGap - 1e-3f,
+                    $"{t.Footprint} at {volatileZone}"
+                );
         }
     }
 
@@ -332,7 +502,7 @@ public class ShelfLayoutTests
     public void WhatGoesOffByItselfKeepsItsClearanceFromThePlayerAndTheOtherTables()
     {
         var spec = new ShelfSpec { VolatileClearance = 5f };
-        var plan = ShelfLayout.Plan(Typical, Hall, spec);
+        var plan = Plan(Typical, Hall, spec);
 
         Assert.True(plan.Fits);
         var start = new RoomRect(plan.StartX, plan.StartX, Hall.MinZ, Hall.MinZ);
@@ -353,7 +523,7 @@ public class ShelfLayoutTests
     [Fact]
     public void CookingFireAndTestWallStandInsideTheRoomOffTheTables()
     {
-        var plan = ShelfLayout.Plan(Typical, Hall, Spec);
+        var plan = Plan(Typical, Hall, Spec);
 
         Assert.True(plan.HasWall);
         AssertInside(Hall, plan.Wall, Spec.Margin);
@@ -370,7 +540,7 @@ public class ShelfLayoutTests
     {
         // The old layout ran one row of up to 14 items (7.7 m) across, never measuring the side walls.
         var corridor = new RoomRect(-5f, 5f, 0f, 45f);
-        var plan = ShelfLayout.Plan(Typical, corridor, Spec);
+        var plan = Plan(Typical, corridor, Spec);
 
         Assert.True(plan.Fits);
         foreach (var t in plan.Tables)
@@ -381,7 +551,7 @@ public class ShelfLayoutTests
     public void ARoomTooSmallSaysSo()
     {
         var closet = new RoomRect(-2f, 2f, 0f, 4f);
-        Assert.False(ShelfLayout.Plan(Typical, closet, Spec).Fits);
+        Assert.False(Plan(Typical, closet, Spec).Fits);
     }
 
     // The game's one-of-each count in 0e8ad7e: 139 kinds, 21 dangerous, the dynamite.
@@ -410,7 +580,7 @@ public class ShelfLayoutTests
         Assert.True(plan.Fits, $"does not fit {room}: {plan.Over:0.00}x");
         var used = plan.Spec;
         Assert.True(
-            used.Aisle >= 1f - 1e-3f && used.Margin >= 0.4f - 1e-3f,
+            used.Aisle >= 1f - 1e-3f && used.Margin >= 0.2f - 1e-3f && used.ItemGap >= 0.1f - 1e-3f,
             "below the VR minimums"
         );
         Assert.Equal(counts.Sum(), plan.Slots.Length);
@@ -435,17 +605,16 @@ public class ShelfLayoutTests
             // Measured in the solo airport (0e8ad7e): from the spawn elevator, then from the open hall.
             { -6.8f, 7.2f, 0f, 20.5f },
             { -4.7f, 9.3f, 0f, 18.1f },
-            // A hall of about 12 x 12 m holds everything, in any proportion near that. 8 x 10 m cannot: 139 items
-            // need about 25 m2 of table, a walkway only reaches 0.6 m into a table, and 15 kinds in three areas never
-            // share one, so the rows alone need more depth than 8 m of floor past the start walkway leaves.
-            { -6f, 6f, 0f, 12f },
-            { -5f, 5f, 0f, 14f },
-            { -7f, 7f, 0f, 11f },
+            // A hall of about 15 x 15 m holds everything at game size: 139 kinds, a median half a metre across, need
+            // about 66 m2 of table top with 10 cm between them, and walkways a metre wide between rows of tables.
+            { -7.5f, 7.5f, 0f, 15f },
+            { -8f, 8f, 0f, 16f },
+            { -6.5f, 6.5f, 0f, 16.75f },
         };
 
     [Theory]
     [MemberData(nameof(OpenFloors))]
-    public void EveryItemFitsOnAnyOpenFloorOfAboutTwelveByTwelveMetres(
+    public void EveryItemFitsOnAnyOpenFloorOfAboutFifteenByFifteenMetres(
         float minX,
         float maxX,
         float minZ,
@@ -453,20 +622,36 @@ public class ShelfLayoutTests
     )
     {
         var room = new RoomRect(minX, maxX, minZ, maxZ);
-        AssertSound(Game, room, ShelfLayout.Plan(Game, room, Spec));
+        var feet = AirportRoomTests.GameFeet();
+        var plan = ShelfLayout.Plan(Game, feet, room, Spec);
+        AssertSound(Game, room, plan);
+        AssertDisplayed(plan, feet, 0.1f);
     }
+
+    [Fact]
+    public void AnOpenFloorOfTwelveByTwelveMetresIsTooSmallAtGameSize() =>
+        Assert.False(
+            ShelfLayout
+                .Plan(Game, AirportRoomTests.GameFeet(), new RoomRect(-6f, 6f, 0f, 12f), Spec)
+                .Fits
+        );
 
     [Fact]
     public void TheMeasuredHallKeepsTheTestWall()
     {
-        var plan = ShelfLayout.Plan(Game, new RoomRect(-4.7f, 9.3f, 0f, 18.1f), Spec);
+        var plan = ShelfLayout.Plan(
+            Game,
+            AirportRoomTests.GameFeet(),
+            new RoomRect(-4.7f, 9.3f, 0f, 18.1f),
+            Spec
+        );
         Assert.True(plan.HasWall);
     }
 
     [Fact]
     public void ARoomyHallKeepsTheFullMeasures()
     {
-        var plan = ShelfLayout.Plan(Game, Hall, Spec);
+        var plan = ShelfLayout.Plan(Game, AirportRoomTests.GameFeet(), Hall, Spec);
         Assert.True(plan.Fits);
         Assert.Equal(Spec.Aisle, plan.Spec.Aisle);
         Assert.Equal(Spec.Margin, plan.Spec.Margin);
@@ -475,7 +660,12 @@ public class ShelfLayoutTests
     [Fact]
     public void ACrampedRoomTightensBeforeDroppingTheWall()
     {
-        var plan = ShelfLayout.Plan(Game, new RoomRect(-6.8f, 7.2f, 0f, 20.5f), Spec);
+        var plan = ShelfLayout.Plan(
+            Game,
+            AirportRoomTests.GameFeet(),
+            new RoomRect(-6.8f, 7.2f, 0f, 20.5f),
+            Spec
+        );
         Assert.True(plan.Fits);
         Assert.True(plan.HasWall);
         Assert.True(plan.Spec.Aisle < Spec.Aisle);
@@ -485,22 +675,31 @@ public class ShelfLayoutTests
     public void ASmallerRoomStillRefusesCleanly()
     {
         var room = new RoomRect(-3f, 3f, 0f, 7f);
-        var plan = ShelfLayout.Plan(Game, room, Spec);
+        var plan = Plan(Game, room, Spec);
         Assert.False(plan.Fits);
         Assert.Equal(Game.Sum(), plan.Slots.Length);
         Assert.True(plan.Over > 1f);
     }
 
     [Fact]
-    public void TablesNeverGoPastFourRowsSoEveryItemIsInReachOfAWalkway()
+    public void TablesAreNeverSoDeepThatAnItemIsOutOfReachOfAWalkway()
     {
-        var plan = ShelfLayout.Plan(Game, new RoomRect(-6f, 6f, 0f, 12f), Spec);
-        Assert.Equal(4, plan.Spec.MaxRows);
+        // The tightest layout, the game's real items in the airport's fixed place.
+        var sizes = AirportRoomTests.GameFeet();
+        var plan = ShelfLayout.Plan(Game, sizes, AirportRoom.Bounds, Spec);
+        Assert.Equal(2.4f, plan.Spec.TableDepth);
         foreach (var t in plan.Tables)
         {
-            Assert.InRange(t.Rows, 1, 4);
-            // The innermost row is at most 0.6 m in from the nearer table edge.
-            Assert.True((t.Rows - 1) / 2 * plan.Spec.RowGap + plan.Spec.EdgePad <= 0.6f + 1e-3f);
+            // Every item's near side at most 0.7 m in from the nearer table edge: a lean over the table reaches it.
+            for (int k = t.First; k < t.First + t.Count; k++)
+            {
+                var s = Spot(plan, sizes, k);
+                float inFromEdge = System.Math.Min(
+                    s.MinZ - t.Footprint.MinZ,
+                    t.Footprint.MaxZ - s.MaxZ
+                );
+                Assert.True(inFromEdge <= 0.7f + 1e-3f, $"item {k} {inFromEdge:0.00} m in");
+            }
         }
     }
 
@@ -509,7 +708,7 @@ public class ShelfLayoutTests
     {
         // Measured in game (e7b3cd9): the start orbs' clamp threw "-0.2078318 cannot be greater than -0.2447219".
         var elevator = new RoomRect(-0.2078318f - Spec.Margin, -0.2447219f + Spec.Margin, 0f, 3f);
-        var plan = ShelfLayout.Plan(Typical, elevator, Spec);
+        var plan = Plan(Typical, elevator, Spec);
 
         Assert.False(plan.Fits);
         Assert.InRange(plan.StartX, elevator.MinX, elevator.MaxX);
@@ -540,7 +739,7 @@ public class ShelfLayoutTests
         float maxZ
     )
     {
-        var plan = ShelfLayout.Plan(Typical, new RoomRect(minX, maxX, minZ, maxZ), Spec);
+        var plan = Plan(Typical, new RoomRect(minX, maxX, minZ, maxZ), Spec);
 
         Assert.False(plan.Fits);
         Assert.Equal(Typical.Sum(), plan.Slots.Length);
@@ -550,11 +749,7 @@ public class ShelfLayoutTests
     [Fact]
     public void NoItemsInAClosetDoesNotThrow()
     {
-        var plan = ShelfLayout.Plan(
-            new int[ShelfLayout.Buckets],
-            new RoomRect(1f, -1f, 0f, 0f),
-            Spec
-        );
+        var plan = Plan(new int[ShelfLayout.Buckets], new RoomRect(1f, -1f, 0f, 0f), Spec);
         Assert.False(plan.Fits);
         Assert.Empty(plan.Slots);
     }
@@ -570,12 +765,95 @@ public class ShelfLayoutTests
 
 public class AirportRoomTests
 {
-    [Fact]
-    public void TheFixedAirportPlaceHoldsEveryItemWithEveryGapKept()
+    // Prefabs the room leaves out of the database's 194 (props, and one prefab per display name), leaving the game's
+    // 139 kinds: display names read with UnityPy from the ItemDatabase (game build of 2026-10).
+    static readonly HashSet<string> NotShown = new(System.StringComparer.Ordinal)
     {
-        var plan = ShelfLayout.Plan(ShelfLayoutTests.Game, AirportRoom.Bounds, new ShelfSpec());
+        "Berrynana Peel Blue Variant",
+        "Berrynana Peel Brown Variant",
+        "Berrynana Peel Pink Variant",
+        "BingBong_Prop Variant",
+        "Binoculars_Prop",
+        "Bugle_Prop Variant",
+        "C_Bishop W",
+        "C_Bishop_f",
+        "C_Bishop_f Variant",
+        "C_Bishop_m",
+        "C_Bishop_m Variant",
+        "C_King Variant",
+        "C_King W",
+        "C_Knight",
+        "C_Knight Variant",
+        "C_Knight W",
+        "C_Pawn W",
+        "C_Pawn_f",
+        "C_Pawn_f Variant",
+        "C_Pawn_m",
+        "C_Pawn_m Variant",
+        "C_Queen",
+        "C_Queen Variant",
+        "C_Queen W",
+        "C_Rook W",
+        "C_Rook_f",
+        "C_Rook_f Variant",
+        "C_Rook_m",
+        "C_Rook_m Variant",
+        "Cheat Compass 1",
+        "EggRaven",
+        "Glizzy_CattailVariant",
+        "GuidebookPage_0_Intro",
+        "GuidebookPage_10_Sleepy",
+        "GuidebookPage_11_Awake",
+        "GuidebookPage_12_Crashout",
+        "GuidebookPage_13_FirstTeams",
+        "GuidebookPage_1_Mushrooms",
+        "GuidebookPage_2_Campfire",
+        "GuidebookPage_3_Revival",
+        "GuidebookPage_4_Poison",
+        "GuidebookPage_5_Zombies",
+        "GuidebookPage_6_BodyHeat",
+        "GuidebookPage_7_BurningSun",
+        "GuidebookPage_8_Magma",
+        "GuidebookPage_9_Gloom",
+        "Kingberry Green",
+        "Lollipop_Prop",
+        "Mandrake_Hidden",
+        "Mushroom Cluster Poison",
+        "Mushroom Lace Poison",
+        "Mushroom Normie Poison",
+        "Parasol_Roots Variant",
+        "RescueHook_Infinite",
+        "ScoutCookies_Vanilla",
+    };
+
+    /// <summary>The game's 139 kinds' real footprints (<see cref="ItemDrawnBox"/>), dealt into the buckets of
+    /// <see cref="ShelfLayoutTests.Game"/> in name order: game-sized items, a median half a metre across.</summary>
+    internal static Vector2[] GameFeet()
+    {
+        var feet = ItemDrawnBoxTests
+            .Rows()
+            .Where(r => !NotShown.Contains(r.Name))
+            .Select(r => new Vector2(r.Hi.X - r.Lo.X, r.Hi.Z - r.Lo.Z))
+            .ToArray();
+        Assert.Equal(ShelfLayoutTests.Game.Sum(), feet.Length);
+        return feet;
+    }
+
+    [Fact]
+    public void TheFixedAirportPlaceHoldsTheGamesRealItemsWithEveryGapKept()
+    {
+        var feet = GameFeet();
+        var plan = ShelfLayout.Plan(
+            ShelfLayoutTests.Game,
+            feet,
+            AirportRoom.Bounds,
+            new ShelfSpec()
+        );
+
         ShelfLayoutTests.AssertSound(ShelfLayoutTests.Game, AirportRoom.Bounds, plan);
-        Assert.True(plan.HasWall);
+        ShelfLayoutTests.AssertDisplayed(plan, feet, 0.1f);
+        // Every item a hand's width apart takes the floor the test wall stood on: it is left out here.
+        Assert.False(plan.HasWall);
     }
 
     [Fact]
