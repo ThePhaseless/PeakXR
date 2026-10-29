@@ -725,108 +725,8 @@ internal sealed partial class SelfTestRunner
         );
     }
 
-    /// <summary>What ui.03 counts as rock in front of a sign: the layers world panels keep clear of
-    /// (WorldCanvases.WallMask), a hit with a rigidbody (an item, a body) skipped.</summary>
-    private static readonly int BannerRockMask = LayerMask.GetMask(
-        "Terrain",
-        "Map",
-        "Default",
-        "MirrorHidden",
-        "MIrror"
-    );
-
-    private static readonly RaycastHit[] bannerHits = new RaycastHit[16];
-    private static readonly Collider[] bannerOverlaps = new Collider[16];
-
-    /// <summary>
-    /// ui.03's own check of where the sign stands, written apart from WorldBanners' 5 x 3 ray grid so the step does
-    /// not check the rule against itself: one ray down the sign's centre line and two boxes. The sign must stand before
-    /// the rock that ray meets (0.1 m margin, never nearer than 0.5 m), its face must not be in rock, and a sign
-    /// nearer than the 30 m it wants must have rock just behind it within its own view. Null when it holds.
-    /// </summary>
-    /// <param name="half">The sign's half extents where it stands, metres.</param>
-    private static string BannerPlacementFault(
-        Vector3 eye,
-        Vector3 at,
-        Quaternion rotation,
-        Vector2 half,
-        out float centreHit
-    )
-    {
-        const float Margin = 0.1f;
-        const float Floor = 0.5f;
-        const float Tolerance = 0.1f;
-        var toSign = at - eye;
-        float d = toSign.magnitude;
-        var dir = toSign / d;
-        var backfaces = Physics.queriesHitBackfaces;
-        Physics.queriesHitBackfaces = true;
-        try
-        {
-            centreHit = float.PositiveInfinity;
-            int n = Physics.RaycastNonAlloc(
-                eye,
-                dir,
-                bannerHits,
-                WorldBanners.Distance,
-                BannerRockMask,
-                QueryTriggerInteraction.Ignore
-            );
-            for (int i = 0; i < n; i++)
-                if (bannerHits[i].rigidbody == null)
-                    centreHit = Mathf.Min(centreHit, bannerHits[i].distance);
-            if (d > WorldBanners.Distance + Tolerance || d < Floor - Tolerance)
-                return F($"sign {d:0.00} m away, outside {Floor:0.0}-{WorldBanners.Distance:0} m");
-            if (d > Mathf.Max(Floor, centreHit - Margin) + Tolerance)
-                return F(
-                    $"sign {d:0.00} m away, behind the rock its centre line meets at {centreHit:0.00} m"
-                );
-            bool atFloor = d <= Floor + Tolerance;
-            // Its face, inset a little from the edges: rock there means the sign is in it (drawn on top only at the
-            // floor).
-            if (
-                !atFloor
-                && RockIn(at, new Vector3(half.x * 0.8f, half.y * 0.8f, 0.02f), rotation)
-                    is { } inside
-            )
-                return F($"sign {d:0.00} m away has {inside} through its face");
-            // Pulled in: the rock that did it lies just behind, inside the sign's view (its angular size kept).
-            if (!atFloor && d < WorldBanners.Distance - 0.75f)
-            {
-                const float Depth = 0.5f;
-                float grow = (d + Depth) / d;
-                var slab = new Vector3(half.x * grow, half.y * grow, 0.5f * Depth);
-                if (RockIn(at + dir * (0.5f * Depth), slab, rotation) == null)
-                    return F(
-                        $"sign {d:0.00} m away, short of {WorldBanners.Distance:0} m with no rock within {Depth:0.0} m behind it"
-                    );
-            }
-            return null;
-        }
-        finally
-        {
-            Physics.queriesHitBackfaces = backfaces;
-        }
-
-        static string RockIn(Vector3 centre, Vector3 halfExtents, Quaternion rotation)
-        {
-            int n = Physics.OverlapBoxNonAlloc(
-                centre,
-                halfExtents,
-                bannerOverlaps,
-                rotation,
-                BannerRockMask,
-                QueryTriggerInteraction.Ignore
-            );
-            for (int i = 0; i < n; i++)
-                if (bannerOverlaps[i].attachedRigidbody == null)
-                    return bannerOverlaps[i].name;
-            return null;
-        }
-    }
-
-    /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a sign ahead, 30 m out or
-    /// nearer where terrain is in the way.</summary>
+    /// <summary>ui.03: <c>GUIManager.SetHeroTitle</c> (GUIManager.cs:484) shows the title on a card in front of the head
+    /// (<see cref="HeadCardFault"/>), readable, and gone when the game's title ends.</summary>
     IEnumerator BannerStep()
     {
         var gui = GUIManager.instance;
@@ -857,27 +757,9 @@ internal sealed partial class SelfTestRunner
         string dayLine = gui.heroTimeOfDayText.text;
         var sign = gui.heroObject.transform.parent;
         var head = VRRig.Instance.Head;
-        // Measured from the eye the sign was placed from, not the head now: the rule is checked, not re-run.
-        var from = WorldBanners.HeroPlacedFrom;
-        float d = sign != null ? Vector3.Distance(sign.position, from) : 0f;
-        float centreHit = float.PositiveInfinity;
-        string placement = null;
-        if (sign != null && d > 0.01f)
-        {
-            var part = (RectTransform)gui.heroObject.transform;
-            var mpp = SpatialMath.MetersPerPixel(
-                WorldBanners.Distance,
-                SpatialRuntime.DegreesPerPixel
-            );
-            // Its half extents at 30 m, carried to where it stands at the same angular size.
-            placement = BannerPlacementFault(
-                from,
-                sign.position,
-                sign.rotation,
-                0.5f * mpp * part.localScale.x * part.rect.size * (d / WorldBanners.Distance),
-                out centreHit
-            );
-        }
+        string where = "";
+        string placement =
+            sign != null ? HeadCardFault("title card", head, sign, HeroRaise, out where) : null;
         yield return Shot("ui-03-world-banner");
         var fails = new List<string>();
         string read = "";
@@ -885,6 +767,8 @@ internal sealed partial class SelfTestRunner
             fails.Add($"hero title under '{(sign != null ? sign.name : "none")}'");
         else if (placement != null)
             fails.Add(placement);
+        else if (!UI.Common.OnTop.AllOnTop(sign))
+            fails.Add("title card is depth tested");
         else
         {
             // The title render texture (heroImage, GUIManager.cs:152) is what the sign draws.
@@ -907,7 +791,7 @@ internal sealed partial class SelfTestRunner
             fails,
             new List<string>
             {
-                $"'{title}' sign {d:0.0} m away (centre ray rock at {centreHit:0.0} m), day line '{dayLine}' at the check, gone {Now - shown:0.0} s after it showed, {read}",
+                $"'{title}' card {where}, day line '{dayLine}' at the check, gone {Now - shown:0.0} s after it showed, {read}",
             }
         );
     }

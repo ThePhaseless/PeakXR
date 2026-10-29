@@ -10,7 +10,7 @@ namespace PeakXR.UI.Spatial;
 
 /// <summary>
 /// A small container under the converted HUD canvas that carries game HUD parts to a spot in the world (a target,
-/// a controller button, a distant sign, another player). The parts stay inside the game's canvas, so the game keeps
+/// a controller button, a card in front of the head, another player). The parts stay inside the game's canvas, so the game keeps
 /// writing their text (localised, runtime swaps included) and toggling them; only the container is posed. Moving a
 /// part also hides its keyboard or gamepad glyphs (<c>InputIcon</c>, wrong in VR), outlines its text (nothing sits
 /// behind it out there) and makes it draw over the world, after smoke and other transparent effects too, so it never

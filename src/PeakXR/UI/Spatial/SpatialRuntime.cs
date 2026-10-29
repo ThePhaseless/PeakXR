@@ -176,6 +176,8 @@ internal sealed class SpatialRuntime : MonoBehaviour
             spectate.Pose(rig);
         if (wantWrist)
             wristExtras.Pose(rig);
+        if (wantBanners)
+            banners.Pose(rig);
     }
 
     private void ReleaseAll()

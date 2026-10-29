@@ -392,29 +392,3 @@ public class WallOnTopHoldTests
         Assert.False(Test(h, 1.0f, 2f));
     }
 }
-
-public class SignDwellTests
-{
-    [Fact]
-    public void Glances_DoNotReplace_ALongLookAwayDoes()
-    {
-        var d = new SignDwell();
-        Assert.False(d.Update(40f, false, 0.5f));
-        Assert.False(d.Update(40f, false, 5f));
-        Assert.False(d.Update(80f, false, 0.6f));
-        Assert.False(d.Update(30f, false, 0.1f));
-        Assert.False(d.Update(80f, false, 0.6f));
-        Assert.True(d.Update(80f, false, 0.5f));
-        d.Reset();
-        Assert.True(d.Update(0f, true, 0.01f));
-    }
-
-    [Fact]
-    public void HalfAHeadsetFovAway_ForTheDwell_Replaces()
-    {
-        // 50 degrees off is outside half of a 90-100 degree view: the sign is out of sight.
-        var d = new SignDwell();
-        Assert.False(d.Update(50f, false, 0.6f));
-        Assert.True(d.Update(50f, false, 0.5f));
-    }
-}

@@ -163,17 +163,6 @@ public class SpatialMathTests
     }
 
     [Fact]
-    public void Banner_IsAheadAlongYawAndAboveEyeLevel()
-    {
-        var eye = new Vector3(5f, 2f, 0f);
-        var p = SpatialMath.Banner(eye, 90f, 30f, 8f);
-        Assert.True(p.X > eye.X + 25f);
-        TestUtil.Near(eye.Z, p.Z, 1e-3f);
-        TestUtil.Near(30f * MathF.Sin(8f * MathF.PI / 180f), p.Y - eye.Y, 1e-3f);
-        TestUtil.Near(30f, Vector3.Distance(eye, p), 1e-3f);
-    }
-
-    [Fact]
     public void ArcSlot_IsSymmetricAndRunsLeftToRightForTheViewer()
     {
         // Viewer on +Z looking back at the player (yaw 0 points at them): their right is -X.

@@ -8,9 +8,12 @@ namespace PeakXR.UI.RunFlow;
 
 /// <summary>
 /// Canvas_End (EndScreen: scout report, timeline, unlock popups, WaitingForPlayersUI; R2 §2.1) as a
-/// wide world-locked panel. It is placed once in front of the player when the end screen opens and
-/// only re-placed if they end up more than 4 m away, so the dense animated report never swims with
-/// the head. The game's own menu width is too narrow for the timeline. Rock nearer than
+/// wide world-locked panel, placed from the head alone, never from the play space: in front of the head's heading
+/// when the end screen opens (a defeat opens it while the view is a spectate shot, Character.cs:937), then following
+/// the head the way menus do (<c>UI.MenuFollow</c>): it glides back in front once the head looks well away, and a view
+/// carried off (the spectate shot moving, the rig turned at a cut) takes its eye point along
+/// (<see cref="EyeFollow"/>), so it never ends up beside or behind the player. It is placed again at once past 4 m.
+/// The game's own menu width is too narrow for the timeline. Rock nearer than
 /// <c>EndScreenDistance</c> pulls it in at the same angular size, drawn on top at the comfort floor
 /// (<see cref="PanelMath.FitBeforeWall"/>).
 /// </summary>
@@ -27,6 +30,11 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
     private float scale = 1f;
     private Vector3 eye;
     private readonly LazyFollow follow = new();
+    private readonly EyeFollow eyeFollow = new();
+
+    /// <summary>Self-test vr.269: placed as if the end screen were open, without running the game's end
+    /// sequence.</summary>
+    internal static bool SelfTestOpen;
 
     public EndScreenPlacement(RunFlowSettings cfg) => this.cfg = cfg;
 
@@ -49,7 +57,7 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
             return PlacementResult.Default;
 
         var gui = GUIManager.instance;
-        var open = gui != null && gui.endScreen != null && gui.endScreen.isOpen;
+        var open = SelfTestOpen || gui != null && gui.endScreen != null && gui.endScreen.isOpen;
         var far = (panelPosition - head.position).sqrMagnitude > ReplaceDistance * ReplaceDistance;
         var headYaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
         if (open && (!wasOpen || far))
@@ -73,14 +81,21 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
                 * Mathf.Rad2Deg;
             follow.Threshold = LazyFollow.ThresholdFor(ui.MenuFollowAngle.Value, halfSpan);
             var dt = Time.unscaledDeltaTime;
-            if (follow.Update(headYaw, 0f, LaserPointer.Engaged, dt))
+            bool hold = LaserPointer.Engaged;
+            bool turned = follow.Update(headYaw, 0f, hold, dt);
+            var carried = eyeFollow
+                .Update(eye.ToNumerics(), head.position.ToNumerics(), hold, dt)
+                .ToUnity();
+            if (turned || carried != eye)
             {
-                eye = Vector3.Lerp(
-                    eye,
-                    head.position,
-                    ExpSmooth.Factor(1f / follow.SmoothTime, dt)
-                );
-                if (follow.Gliding)
+                eye = turned
+                    ? Vector3.Lerp(
+                        carried,
+                        head.position,
+                        ExpSmooth.Factor(1f / follow.SmoothTime, dt)
+                    )
+                    : carried;
+                if (follow.Gliding || eyeFollow.Gliding)
                     Pose(cfg.EndScreenDistance.Value * scale);
                 else
                     Seat(canvas);
