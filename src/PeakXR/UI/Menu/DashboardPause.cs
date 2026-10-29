@@ -12,7 +12,13 @@ namespace PeakXR.UI.Menu;
 /// </summary>
 internal sealed class DashboardPause
 {
-    private bool hadFocus = true;
+    /// <summary>Focus at the last tick. False until the first tick of a session, which only reads it: the runtime
+    /// restarting comes up unfocused (READY, SYNCHRONIZED), and a tick from before the stop must not read that as the
+    /// player opening the dashboard.</summary>
+    private bool hadFocus;
+
+    /// <summary>VR (re)started: the next tick reads focus without acting on it.</summary>
+    public void Reset() => hadFocus = false;
 
     public void Tick(bool enabled)
     {

@@ -167,6 +167,7 @@ internal sealed class RenderDriver : MonoBehaviour
         if (!applied)
             return;
         applied = false;
+        IdlePacing = false;
 
         Application.targetFrameRate = savedTargetFrameRate;
         QualitySettings.vSyncCount = savedVSync;
@@ -504,11 +505,55 @@ internal sealed class RenderDriver : MonoBehaviour
         }
         if (!applied || !VRSession.Active)
             return;
+        // Paced frames say nothing about the GPU: they would read as hot and step the quality down.
+        if (PaceWhileHidden())
+            return;
         BindCamera();
         UpdateDynamicResolution();
         FrameClock.Tick();
         LogFrameTiming();
         UpdateAdaptiveQuality();
+    }
+
+    /// <summary>The game paces itself at <see cref="XRFocus.IdleHz"/>: the headset shows none of its frames (self-test).</summary>
+    internal static bool IdlePacing { get; private set; }
+
+    private long paceStamp;
+
+    /// <summary>
+    /// Headset off (OpenXR SYNCHRONIZED, STOPPING, IDLE; <see cref="XRFocus.Shown"/>): the runtime stops pacing frames
+    /// once the session ends, and with the FPS cap and VSync off for VR (<see cref="Apply"/>) the game then runs as fast
+    /// as the GPU allows, behind a black mirror. Unity's own cap cannot help: "XR platforms ignore both
+    /// QualitySettings.vSyncCount and Application.targetFrameRate. Instead, the XR SDK controls the frame rate"
+    /// (https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/application/targetframerate), so the
+    /// frame sleeps out the rest of an idle-rate frame itself. Nothing is changed, so nothing waits to be restored.
+    /// </summary>
+    /// <returns>True while pacing: the frame-timing windows skip these frames.</returns>
+    private bool PaceWhileHidden()
+    {
+        bool hidden =
+            VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState);
+        if (hidden != IdlePacing)
+        {
+            IdlePacing = hidden;
+            paceStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            FrameClock.ResetAll();
+            Plugin.Log.LogInfo(
+                hidden
+                    ? $"{Tag} headset shows no frames (OpenXR {XRFocus.Name(XRSessionState.OpenXRState)}): pacing at {XRFocus.IdleHz} fps"
+                    : $"{Tag} headset shows frames again: the runtime paces"
+            );
+        }
+        if (!hidden)
+            return false;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        int ms = XRFocus.IdleSleepMs(
+            (now - paceStamp) / (double)System.Diagnostics.Stopwatch.Frequency
+        );
+        if (ms > 0)
+            System.Threading.Thread.Sleep(ms);
+        paceStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        return true;
     }
 
     private static void LogFrameTiming()

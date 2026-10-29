@@ -16,6 +16,24 @@ public static class XRFocus
     /// the runtime again.</summary>
     public static bool Shown(int state) => state is 0 or 4 or 5;
 
+    /// <summary>
+    /// The wear sensor says the headset came off: true from a worn to not-worn reading until it reads worn again (or
+    /// stops reporting). Only a sensor that has read worn can pause, so a driver stuck at "not worn" never freezes play.
+    /// </summary>
+    /// <param name="paused">The last result.</param>
+    /// <param name="was">The previous reading (null: not reported).</param>
+    /// <param name="now">This reading.</param>
+    public static bool TakenOff(bool paused, bool? was, bool? now) =>
+        now == false && (paused || was == true);
+
+    /// <summary>Frame rate the game paces itself to while the headset shows none of its frames (<see cref="Shown"/>
+    /// false): the runtime stops pacing then and the desktop mirror is black, so a low rate only saves the GPU.</summary>
+    public const int IdleHz = 30;
+
+    /// <summary>Milliseconds to sleep so a frame that took <paramref name="elapsedSeconds"/> lasts 1/<see cref="IdleHz"/> s.</summary>
+    public static int IdleSleepMs(double elapsedSeconds) =>
+        (int)((1.0 / IdleHz - System.Math.Clamp(elapsedSeconds, 0.0, 1.0 / IdleHz)) * 1000.0);
+
     public static string Name(int state) =>
         state switch
         {

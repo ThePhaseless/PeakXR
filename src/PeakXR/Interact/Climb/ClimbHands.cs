@@ -183,6 +183,19 @@ internal static class ClimbHands
         }
     }
 
+    /// <summary>
+    /// VR stopped or the rig is gone: drop the hands' hold on the line or handle without touching the game's, which
+    /// keeps the player on it for flat play. Kept, a VR restart found the old anchors and regrip clock against grips
+    /// that opened meanwhile and let go of the rope; forgotten, the restart adopts the hands as a fresh grab does.
+    /// </summary>
+    internal static void Forget()
+    {
+        if (mode != Mode.None)
+            Enter(null, null, Mode.None, null);
+        LeftHand.Grip.Reset();
+        RightHand.Grip.Reset();
+    }
+
     private static void Step(Character c, VRRig rig, InteractConfig cfg, bool active, float dt)
     {
         UpdateGrip(LeftHand, VRInput.Left, dt);

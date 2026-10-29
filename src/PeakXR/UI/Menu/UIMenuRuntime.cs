@@ -66,8 +66,12 @@ internal sealed class UIMenuRuntime : MonoBehaviour
         VRSession.Stopped -= OnVRStopped;
     }
 
-    /// <summary>VR may come up while the boot splash is already playing.</summary>
-    private void OnVRStarted() => EnterSplash();
+    /// <summary>VR may come up while the boot splash is already playing; a restart is not a dashboard opening.</summary>
+    private void OnVRStarted()
+    {
+        dashboardPause.Reset();
+        EnterSplash();
+    }
 
     /// <summary>Drop every hold so a later VR restart does not come back to a black or loading headset.</summary>
     private void OnVRStopped()

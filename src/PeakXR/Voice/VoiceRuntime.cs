@@ -44,6 +44,9 @@ internal sealed class VoiceRuntime : MonoBehaviour
     /// <summary>Lets the self-test see the Voice Activation notice again.</summary>
     public static void ResetNotice() => toldVoiceActivation = false;
 
+    /// <summary>The headset mic switch, for the self-test.</summary>
+    internal static HeadsetMic Mic => instance != null ? instance.headsetMic : null;
+
     public static void Create()
     {
         var go = new GameObject("PeakXR_Voice");
@@ -86,6 +89,8 @@ internal sealed class VoiceRuntime : MonoBehaviour
         var rig = VRRig.Instance;
         if (!VRSession.Active || rig == null)
         {
+            if (!VRSession.Active)
+                headsetMic.Restore();
             ClearGesture();
             icon.Hide();
             indicators.HideAll();

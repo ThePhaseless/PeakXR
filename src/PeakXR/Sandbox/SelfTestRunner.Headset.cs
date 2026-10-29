@@ -1,5 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
+using PeakXR.Core;
+using PeakXR.Interact.Climb;
+using PeakXR.Render;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using PeakXR.XR;
@@ -75,9 +78,10 @@ internal sealed partial class SelfTestRunner
                 Plugin.Log.LogInfo(
                     $"[selftest] {HeadsetOffId}: headset off seen ({XRBootstrapDriver.FocusSource}, wear sensor {Worn()}); put it back on"
                 );
-                // Off for as long as the driver keeps it off; judged once focus is gone (a runtime may report only
-                // the wear sensor, which leaves focus and input as they were).
+                // Off for as long as the driver keeps it off; judged once focus is gone (a runtime that reports only
+                // the wear sensor loses it once the sensor has read worn, XRBootstrapDriver.TakenOff).
                 yield return JudgeOff(fails, notes, Watch);
+                yield return JudgePacing(fails, notes);
                 end = Now + 600f;
                 while (Off() && Now < end)
                 {
@@ -99,6 +103,7 @@ internal sealed partial class SelfTestRunner
                     yield return Wait(0.3f);
                 }
                 yield return JudgeOff(fails, notes, Watch);
+                yield return JudgePacing(fails, notes);
                 foreach (int state in HeadsetOnStates)
                 {
                     Play(state);
@@ -108,6 +113,7 @@ internal sealed partial class SelfTestRunner
             }
             Watch();
             yield return JudgeBack(fails, notes, Watch);
+            yield return JudgePacing(fails, notes);
         }
         finally
         {
@@ -236,5 +242,180 @@ internal sealed partial class SelfTestRunner
         notes.Add(
             $"back: fade {FadeView.Alpha:0.00}, {passes} render pass(es), wear sensor {Worn()}"
         );
+    }
+
+    /// <summary>The game paces itself (<see cref="RenderDriver.IdlePacing"/>, at most <see cref="XRFocus.IdleHz"/> fps
+    /// over 0.5 s) exactly while the OpenXR session shows none of its frames, and leaves pacing to the runtime
+    /// otherwise.</summary>
+    static IEnumerator JudgePacing(List<string> fails, List<string> notes)
+    {
+        bool hidden =
+            VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState);
+        yield return null;
+        int frames = 0;
+        float start = Now;
+        while (Now - start < 0.5f)
+        {
+            frames++;
+            yield return null;
+        }
+        float fps = frames / (Now - start);
+        if (RenderDriver.IdlePacing != hidden)
+            fails.Add(
+                $"idle pacing {(RenderDriver.IdlePacing ? "on" : "off")} while the headset {(hidden ? "shows nothing" : "shows frames")} ({XRBootstrapDriver.FocusSource})"
+            );
+        else if (hidden && fps > XRFocus.IdleHz * 1.25f)
+            fails.Add(
+                $"{fps:0} fps while the headset shows nothing, past the {XRFocus.IdleHz} fps idle pace"
+            );
+        notes.Add($"{(hidden ? "hidden" : "shown")}: {fps:0} fps");
+    }
+
+    /// <summary>
+    /// vr.261: VR stops while the player hangs from a rope, the hands open while flat, and VR comes back the way
+    /// XRBootstrapDriver.Update brings a restarted runtime back (session IDLE and stopped, then READY to FOCUSED). The
+    /// player is still on the rope after twice the regrip grace (ClimbHands forgets its anchors while VR is off, so the
+    /// open hands are not a let-go), no pause menu opened (a restart is not the dashboard: DashboardPause.Reset), and
+    /// a headset mic the session switched to was put back while flat (HeadsetMic.Restore).
+    /// </summary>
+    IEnumerator VRRestartHangStep()
+    {
+        var c = Character.localCharacter;
+        if (!ClimbHands.RopeHands)
+        {
+            stepSkip = "Interaction.RopeHandOverHand off";
+            yield break;
+        }
+        yield return HangRope();
+        if (testRope == null)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        yield return GrabRope(left);
+        if (!stepOk)
+        {
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return Wait(0.8f);
+        int savedState = XRSessionState.OpenXRState;
+        bool savedLost = XRSessionState.OpenVRFocusLost;
+        OnRestore(() =>
+        {
+            XRSessionState.OpenXRState = savedState;
+            XRSessionState.OpenVRFocusLost = savedLost;
+            VRSession.SetActive(true);
+        });
+        string chosen = PeakXR.Voice.VoiceRuntime.Mic?.Chosen;
+
+        // Stop: the session ends (IDLE) and the display stops; focus stays as it was, as the driver leaves it.
+        Play(1);
+        VRSession.SetActive(false);
+        Script(left).Grip = 0f;
+        yield return Wait(1f);
+        bool flatHeld = c.data.isRopeClimbing;
+        var mic =
+            SettingsHandler.Instance != null
+                ? SettingsHandler.Instance.GetSetting<MicrophoneSetting>()
+                : null;
+        string micFlat = mic != null ? mic.Value.id : null;
+
+        // Back: as the driver does in one Update, VR on with the session's focus (READY: none) before the UI ticks.
+        bool paused = false;
+        Play(2);
+        VRSession.SetActive(true);
+        VRSession.HasFocus = false;
+        foreach (int state in HeadsetOnStates)
+        {
+            Play(state);
+            for (float end = Now + 0.3f; Now < end; )
+            {
+                paused |= GUIManager.InPauseMenu;
+                yield return null;
+            }
+        }
+        float grace = Interact.InteractConfig.Instance.ClimbRegripGrace;
+        for (float end = Now + grace * 2f + 0.5f; Now < end && c.data.isRopeClimbing; )
+        {
+            paused |= GUIManager.InPauseMenu;
+            yield return null;
+        }
+        bool kept = c.data.isRopeClimbing;
+        var note =
+            $"on the rope while flat {flatHeld}, after the restart with open hands {kept}, pause menu {(paused ? "opened" : "not opened")}, "
+            + (
+                chosen == null
+                    ? "no headset mic switch to undo"
+                    : $"mic while flat '{micFlat}' (headset '{chosen}')"
+            );
+        if (!flatHeld)
+            Fail("the player left the rope while VR was off: " + note);
+        else if (!kept)
+            Fail("the restart dropped the player off the rope: " + note);
+        else if (paused)
+            Fail("the restart opened the pause menu: " + note);
+        else if (chosen != null && micFlat == chosen)
+            Fail("the headset mic stayed selected while flat: " + note);
+        else
+            stepNote = note;
+        ClosePause();
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.262: a runtime that reports the headset taken off only through the wear sensor (XRBootstrapDriver.TakenOff,
+    /// through <see cref="XRBootstrapDriver.SelfTestPresence"/>). A sensor that reads "not worn" without ever having
+    /// read worn changes nothing (a stuck driver must not freeze play); worn, then not worn, pauses input under the
+    /// focus fade (<see cref="JudgeOff"/>); worn again brings everything back (<see cref="JudgeBack"/>).
+    /// </summary>
+    IEnumerator WearSensorCheck()
+    {
+        yield return WaitFor(() => VRSession.HasFocus && FadeView.Alpha < 0.01f, 10f);
+        if (!VRSession.HasFocus)
+        {
+            stepSkip = $"no runtime focus to start from ({XRBootstrapDriver.FocusSource})";
+            yield break;
+        }
+        var fails = new List<string>();
+        var notes = new List<string>();
+        var seen = new List<string>();
+        void Watch()
+        {
+            string now = $"{XRBootstrapDriver.FocusSource}, wear sensor {Worn()}";
+            if (seen.Count == 0 || seen[seen.Count - 1] != now)
+                seen.Add(now);
+        }
+        bool? reading = null;
+        XRBootstrapDriver.SelfTestPresence = () => reading;
+        try
+        {
+            yield return Wait(0.2f);
+            reading = false;
+            yield return Wait(0.5f);
+            if (!VRSession.HasFocus || XRBootstrapDriver.TakenOff)
+                fails.Add("a sensor that never read worn paused play on \"not worn\"");
+            reading = true;
+            yield return Wait(0.3f);
+            reading = false;
+            yield return JudgeOff(fails, notes, Watch);
+            if (VRSession.HasFocus)
+                fails.Add("worn then not worn kept focus: input not paused");
+            reading = true;
+            yield return JudgeBack(fails, notes, Watch);
+        }
+        finally
+        {
+            // Back to "not reported" before the real sensor: its own reading must not count as a transition.
+            reading = null;
+            ClosePause();
+        }
+        yield return null;
+        yield return null;
+        XRBootstrapDriver.SelfTestPresence = null;
+        notes.Insert(0, string.Join(" > ", seen));
+        var all = string.Join("; ", notes);
+        if (fails.Count > 0)
+            Fail(string.Join("; ", fails) + " | " + all);
+        else
+            stepNote = all;
     }
 }

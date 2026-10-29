@@ -358,6 +358,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
                 $"{Tag} XR display stopped ({(XRSessionState.ExitRequested ? "runtime exit" : "unknown reason")}); continuing flat"
             );
             SetFocus(true);
+            // A restarted session reads the sensor afresh: only a worn reading of its own can pause it.
+            UserPresent = null;
+            TakenOff = false;
             VRSession.SetActive(false);
         }
         else if (!running)
@@ -377,8 +380,8 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
         if (VRSession.Active)
         {
-            SetFocus(ComputeFocus());
             TrackPresence();
+            SetFocus(ComputeFocus() && !TakenOff);
         }
     }
 
@@ -386,15 +389,26 @@ sealed class XRBootstrapDriver : MonoBehaviour
     /// reports none. Logged on change: a runtime may report a headset taken off only here, not as a session state.</summary>
     internal static bool? UserPresent { get; private set; }
 
+    /// <summary>The wear sensor went from worn to not worn and has not read worn since (<see cref="XRFocus.TakenOff"/>):
+    /// focus is lost as for a session that stops showing the game, so <c>XR.PauseInputOnFocusLoss</c> holds for a
+    /// runtime that reports a headset taken off only here.</summary>
+    internal static bool TakenOff { get; private set; }
+
+    /// <summary>Self-test (vr.262): a wear sensor reading in place of the headset's.</summary>
+    internal static Func<bool?> SelfTestPresence;
+
     static void TrackPresence()
     {
-        bool? present = InputDevices
-            .GetDeviceAtXRNode(XRNode.Head)
-            .TryGetFeatureValue(CommonUsages.userPresence, out bool worn)
-            ? worn
+        bool? present =
+            SelfTestPresence != null ? SelfTestPresence()
+            : InputDevices
+                .GetDeviceAtXRNode(XRNode.Head)
+                .TryGetFeatureValue(CommonUsages.userPresence, out bool worn)
+                ? worn
             : null;
         if (present == UserPresent)
             return;
+        TakenOff = XRFocus.TakenOff(TakenOff, UserPresent, present);
         UserPresent = present;
         Plugin.Log.LogInfo(
             $"{Tag} Headset {(present == null ? "wear sensor not reported" : present.Value ? "worn" : "taken off")} ({FocusSource})"
@@ -413,10 +427,14 @@ sealed class XRBootstrapDriver : MonoBehaviour
 
     /// <summary>Why focus is what it is, for the log and the self-test: the OpenXR session state, or OpenVR's flag.</summary>
     internal static string FocusSource =>
-        VRSession.Running == VRRuntime.OpenXR ? "OpenXR " + XRFocus.Name(XRSessionState.OpenXRState)
-        : VRSession.Running == VRRuntime.OpenVR
-            ? (XRSessionState.OpenVRFocusLost ? "OpenVR: dashboard or another app" : "OpenVR")
-        : "no runtime";
+        (TakenOff ? "wear sensor off, " : "")
+        + (
+            VRSession.Running == VRRuntime.OpenXR
+                ? "OpenXR " + XRFocus.Name(XRSessionState.OpenXRState)
+            : VRSession.Running == VRRuntime.OpenVR
+                ? (XRSessionState.OpenVRFocusLost ? "OpenVR: dashboard or another app" : "OpenVR")
+            : "no runtime"
+        );
 
     void SetFocus(bool focus)
     {
