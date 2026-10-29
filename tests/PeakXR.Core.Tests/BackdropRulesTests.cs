@@ -254,4 +254,14 @@ public class BackdropRulesTests
         Assert.Equal(BackdropRole.Content, BackdropRules.Classify(t, out var rule));
         Assert.Equal(BackdropRules.RuleSmall, rule);
     }
+
+    // The pause menu's quit confirm (ConfirmPage/Background (1)/BG, black at 0.96) hides the ribbons on a monitor;
+    // PlayerReport's Overlay is 0.78.
+    [Theory]
+    [InlineData(0.96f, true)]
+    [InlineData(0.78f, true)]
+    [InlineData(0.5f, false)]
+    [InlineData(0f, false)]
+    public void AnOpaqueDimmer_CoversWhatIsDrawnBeforeIt(float alpha, bool covers) =>
+        Assert.Equal(covers, BackdropRules.Covers(alpha));
 }

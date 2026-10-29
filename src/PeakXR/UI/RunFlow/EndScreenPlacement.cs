@@ -25,6 +25,8 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
     private Vector3 panelPosition;
     private Quaternion panelRotation = Quaternion.identity;
     private float scale = 1f;
+    private Vector3 eye;
+    private readonly LazyFollow follow = new();
 
     public EndScreenPlacement(RunFlowSettings cfg) => this.cfg = cfg;
 
@@ -49,23 +51,40 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
         var gui = GUIManager.instance;
         var open = gui != null && gui.endScreen != null && gui.endScreen.isOpen;
         var far = (panelPosition - head.position).sqrMagnitude > ReplaceDistance * ReplaceDistance;
+        var headYaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
         if (open && (!wasOpen || far))
         {
-            var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            var wanted = cfg.EndScreenDistance.Value;
-            var offset = PanelMath.InFront(yaw, wanted, Tilt).ToUnity();
-            panelRotation = Quaternion.LookRotation(offset, Vector3.up);
-            var size = ((RectTransform)canvas.transform).rect.size;
-            var half =
-                0.5f
-                * cfg.EndScreenWidth.Value
-                * new Vector2(1f, size.x >= 1f ? size.y / size.x : 9f / 16f);
-            var depth = WorldCanvases.WallDepth(head.position, offset, panelRotation, half);
-            var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth);
-            scale = clear / wanted;
-            panelPosition = head.position + offset * scale;
+            eye = head.position;
+            follow.Snap(headYaw);
+            Seat(canvas);
             placedFor = canvas;
-            OnTop.SetWall(canvas.transform, onTop);
+        }
+        // UI.MenuFollow LazyFollow: glides back in front once you look past its edge; walls are tested where it stops.
+        var ui = UIWorldFeature.Settings;
+        if (
+            open
+            && placedFor == canvas
+            && ui != null
+            && ui.MenuFollow.Value == MenuFollowMode.LazyFollow
+        )
+        {
+            float halfSpan =
+                Mathf.Atan(0.5f * cfg.EndScreenWidth.Value / cfg.EndScreenDistance.Value)
+                * Mathf.Rad2Deg;
+            follow.Threshold = LazyFollow.ThresholdFor(ui.MenuFollowAngle.Value, halfSpan);
+            var dt = Time.unscaledDeltaTime;
+            if (follow.Update(headYaw, 0f, LaserPointer.Engaged, dt))
+            {
+                eye = Vector3.Lerp(
+                    eye,
+                    head.position,
+                    ExpSmooth.Factor(1f / follow.SmoothTime, dt)
+                );
+                if (follow.Gliding)
+                    Pose(cfg.EndScreenDistance.Value * scale);
+                else
+                    Seat(canvas);
+            }
         }
         wasOpen = open;
         // Closed: keep the last pose of this canvas (a new scene's canvas starts unplaced); ui.world
@@ -77,5 +96,35 @@ internal sealed class EndScreenPlacement : ICanvasPlacement
         rotation = panelRotation;
         widthMeters = cfg.EndScreenWidth.Value * scale;
         return PlacementResult.Placed;
+    }
+
+    /// <summary>Places the panel along the followed heading from <see cref="eye"/>, pulled in front of rock at the same
+    /// angular size.</summary>
+    private void Seat(Canvas canvas)
+    {
+        var wanted = cfg.EndScreenDistance.Value;
+        var offset = PanelMath.InFront(follow.Yaw, wanted, Tilt).ToUnity();
+        var size = ((RectTransform)canvas.transform).rect.size;
+        var half =
+            0.5f
+            * cfg.EndScreenWidth.Value
+            * new Vector2(1f, size.x >= 1f ? size.y / size.x : 9f / 16f);
+        var depth = WorldCanvases.WallDepth(
+            eye,
+            offset,
+            Quaternion.LookRotation(offset, Vector3.up),
+            half
+        );
+        var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth);
+        scale = clear / wanted;
+        Pose(clear);
+        OnTop.SetWall(canvas.transform, onTop);
+    }
+
+    private void Pose(float distance)
+    {
+        var offset = PanelMath.InFront(follow.Yaw, distance, Tilt).ToUnity();
+        panelRotation = Quaternion.LookRotation(offset, Vector3.up);
+        panelPosition = eye + offset;
     }
 }

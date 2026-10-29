@@ -14,6 +14,29 @@ public enum HudMode
     Wrist,
 }
 
+/// <summary>How menus and popups stay in view (<c>UI.MenuFollow</c>).</summary>
+public enum MenuFollowMode
+{
+    /// <summary>Placed in front of you when it opens and left there.</summary>
+    Fixed,
+
+    /// <summary>Stays put while you look around it; after you look well away for a moment it glides back in front.</summary>
+    LazyFollow,
+}
+
+/// <summary>Where the stamina bar reads (<c>UI.HUD.StaminaView</c>).</summary>
+public enum StaminaView
+{
+    /// <summary>On the wrist (body panel in <see cref="HudMode.Body"/>).</summary>
+    Wrist,
+
+    /// <summary>A small meter high in your view that follows your head lazily.</summary>
+    TopOfView,
+
+    /// <summary>On the wrist and at the top of the view.</summary>
+    Both,
+}
+
 public enum WristSide
 {
     Left,
@@ -62,6 +85,9 @@ internal sealed class UIWorldSettings
         FadeSeconds,
         NameTagScale,
         TextScale;
+    public ConfigEntry<MenuFollowMode> MenuFollow;
+    public ConfigEntry<float> MenuFollowAngle;
+    public ConfigEntry<StaminaView> StaminaView;
     public ConfigEntry<bool> MenuPanels,
         MenuBackplate,
         MenuBackplateAdaptive;
@@ -114,6 +140,25 @@ internal sealed class UIWorldSettings
                 "MenuTilt",
                 8f,
                 Range("Degrees below eye level where menus appear.", 0f, 30f)
+            ),
+            MenuFollow = cfg.Bind(
+                ui,
+                "MenuFollow",
+                MenuFollowMode.LazyFollow,
+                "How menus and popups stay in view. LazyFollow: a menu stays put while you look around it; once you "
+                    + "look more than MenuFollowAngle away from it for half a second it glides back in front of you "
+                    + "(never while the laser is on it or a trigger is held). Fixed: it stays where it opened."
+            ),
+            MenuFollowAngle = cfg.Bind(
+                ui,
+                "MenuFollowAngle",
+                LazyFollow.DefaultThreshold,
+                Range(
+                    "Degrees you can look away from a menu's centre before it follows (LazyFollow). A menu wider "
+                        + "than that follows only once you look past its edge.",
+                    15f,
+                    60f
+                )
             ),
             MenuPanels = cfg.Bind(
                 ui,
@@ -209,6 +254,13 @@ internal sealed class UIWorldSettings
                 "HudFollowAngle",
                 35f,
                 Range("Degrees you can turn your head before the HUD re-centres.", 10f, 90f)
+            ),
+            StaminaView = cfg.Bind(
+                hud,
+                "StaminaView",
+                World.StaminaView.Wrist,
+                "Where the stamina bar reads. Wrist: on your wrist (the body panel in HudMode Body). TopOfView: a "
+                    + "small meter high in your view that follows your head lazily. Both: on the wrist and at the top."
             ),
             WristHand = cfg.Bind(
                 hud,

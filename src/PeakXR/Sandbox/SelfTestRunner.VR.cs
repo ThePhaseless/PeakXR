@@ -507,6 +507,88 @@ internal sealed partial class SelfTestRunner
             stepNote = string.Join("; ", notes);
     }
 
+    /// <summary>
+    /// vr.224: the pause menu's "Leave the expedition?" confirm (PauseMenuMainPage.cs:169) is blacked out over the
+    /// ribbons on a monitor by ConfirmPage's BG; in VR, where that dimmer is hidden, the ribbons are hidden instead
+    /// (<see cref="BackdropStrip.UpdateCover"/>), the plate fits the popup alone, and the ribbons come back on cancel.
+    /// A manual run saw X/OK drawn over BACK/ACCOLADES with one plate round both.
+    /// </summary>
+    IEnumerator QuitConfirmCheck()
+    {
+        var gui = GUIManager.instance;
+        var c = Character.localCharacter;
+        if (gui == null || c == null)
+        {
+            Fail("no GUIManager or character");
+            yield break;
+        }
+        c.input.pauseWasPressed = true;
+        gui.UpdatePaused();
+        yield return Until(
+            () => GUIManager.InPauseMenu && FindAnyObjectByType<PauseMenuMainPage>() != null,
+            5f,
+            "pause menu did not open"
+        );
+        if (!stepOk)
+            yield break;
+        var page = FindAnyObjectByType<PauseMenuMainPage>();
+        var root = RootCanvasOf(page);
+        // The analyzer cannot see the game assembly's private members; both exist (PauseMenuMainPage.cs:169, :201).
+#pragma warning disable BHA0003
+        HarmonyLib
+            .AccessTools.Method(typeof(PauseMenuMainPage), "OpenQuitConfirmWindow")
+            .Invoke(page, null);
+#pragma warning restore BHA0003
+        // Past the cover's refit delay and one slow re-measure.
+        yield return Wait(1f);
+        var notes = new List<string>();
+        int ribbons = ShownButtons(page, outsideConfirm: true);
+        int popup = ShownButtons(page, outsideConfirm: false);
+        string bad = JudgePlate(root, "quit confirm", notes);
+        bool narrow =
+            WorldCanvases.TryBackplate(root, out _, out var lo, out var hi, out _, out _, out _)
+            && hi.x - lo.x < 800f;
+        yield return ShotAt("vr-224-quit-confirm", CentreOf(root.transform));
+        // The analyzer cannot see the game assembly's private members; both exist (PauseMenuMainPage.cs:169, :201).
+#pragma warning disable BHA0003
+        HarmonyLib
+            .AccessTools.Method(typeof(PauseMenuMainPage), "ConfirmCancel")
+            .Invoke(page, null);
+#pragma warning restore BHA0003
+        yield return Wait(0.5f);
+        int back = ShownButtons(page, outsideConfirm: true);
+        stepNote =
+            $"confirm open: {ribbons} ribbon(s) shown, {popup} popup button(s) shown, plate content {hi.x - lo.x:0} px wide; "
+            + $"after cancel {back} ribbon(s) shown; "
+            + string.Join("; ", notes);
+        if (popup == 0)
+            Fail("the confirm's X/OK are not shown");
+        else if (ribbons > 0)
+            Fail($"{ribbons} pause ribbon(s) still drawn under the open confirm");
+        else if (bad != null)
+            Fail(bad);
+        else if (!narrow)
+            Fail("the plate still spans the pause ribbons, not the confirm alone");
+        else if (back == 0)
+            Fail("the pause ribbons did not come back after cancel");
+    }
+
+    /// <summary>Buttons of the pause main page drawn now (inherited alpha after canvas groups), outside its quit
+    /// confirm or inside it.</summary>
+    static int ShownButtons(PauseMenuMainPage page, bool outsideConfirm)
+    {
+        var confirm = page.confirmWindow.transform;
+        int shown = 0;
+        foreach (var b in page.GetComponentsInChildren<Button>(false))
+        {
+            if (b.transform.IsChildOf(confirm) == outsideConfirm || b.targetGraphic == null)
+                continue;
+            if (b.targetGraphic.canvasRenderer.GetInheritedAlpha() > 0.01f)
+                shown++;
+        }
+        return shown;
+    }
+
     /// <summary>vr.223: the VR tab is laid out for a headset. On its longest category: the row column spans at most
     /// <see cref="VRTabColumn.MaxColumnDegrees"/> from the eye; the rail is a panel of its own (not inside the column,
     /// turned <see cref="VRTabColumn.RailDegrees"/> toward the eye, with its own plate); every text on show meets

@@ -81,19 +81,48 @@ internal sealed class HudLayout
 }
 
 /// <summary>
-/// Moves parts of the converted HUD out of the body panel: the reticle to a head-locked spot and, in
-/// wrist mode, the stamina bar (with its numb mushroom group) and hotbar to the wrist. The parts sit in
-/// <see cref="HudBox"/> containers under the HUD canvas, so the game keeps driving them; only the
-/// containers are posed each frame. Everything moved is put back when the mode changes or VR stops.
+/// Moves parts of the converted HUD out of the body panel: the reticle to a head-locked spot, in wrist mode the
+/// stamina bar (with its numb mushroom group) and hotbar to the wrist, and with <c>UI.HUD.StaminaView</c> the stamina
+/// bar to a small meter high in the view (or a copy of it there, <see cref="HudMirror"/>). The parts sit in
+/// <see cref="HudBox"/> containers under the HUD canvas, so the game keeps driving them; only the containers are
+/// posed each frame. Everything moved is put back when the mode changes or VR stops.
 /// </summary>
 internal sealed class HudSplit
 {
     private const float ReticleDistance = 2f;
 
+    /// <summary>Top-of-view meter: real metres from the eyes, its width there (about 11 degrees: small), degrees
+    /// above the gaze, and the pitch past which it stops following a look up or down.</summary>
+    private const float TopDistance = 1f;
+    private const float TopWidth = 0.2f;
+    private const float TopRaise = 22f;
+    private const float TopMaxPitch = 50f;
+
+    /// <summary>Seconds between the top meter's wall tests (like the body HUD's).</summary>
+    private const float TopWallInterval = 0.1f;
+
     private static FieldInfo[] reticleFields = System.Array.Empty<FieldInfo>();
 
     private readonly HudBox reticleBox = new("PeakXR_Reticle");
     private readonly HudBox wristBox = new("PeakXR_Wrist");
+    private readonly HudBox topBox = new("PeakXR_TopStamina");
+    private static readonly HudPlate wristPanel = new();
+    private readonly HudPlate topPanel = new();
+    private readonly HudMirror mirror = new();
+    private readonly List<Transform> barGroups = new();
+
+    /// <summary>The top meter follows the head lazily in yaw and pitch with a small dead zone: a soft head lock that
+    /// never swims with small motions.</summary>
+    private readonly LazyFollow topFollow = new()
+    {
+        Threshold = 12f,
+        Dwell = 0.25f,
+        SmoothTime = 0.3f,
+    };
+    private bool topPlaced;
+    private float topScale = 1f;
+    private float topWallAt;
+
     private GUIManager gui;
     private bool inventoryActive;
     private RectTransform hudRoot;
@@ -102,10 +131,7 @@ internal sealed class HudSplit
         appliedPlate,
         appliedBodyHotbar;
     private ReticleMode appliedReticle;
-    private Vector2 wristCenter;
-
-    // Until something is measured: about the width of the stamina bar, never 1 px (a screen-sized wrist).
-    private float wristSpan = 400f;
+    private StaminaView appliedView;
 
     /// <summary>0..1 bump that briefly grows the wrist HUD (ui.spatial status alerts).</summary>
     public static float WristPulse;
@@ -125,40 +151,28 @@ internal sealed class HudSplit
 
     /// <summary>The wrist container while the HUD is split onto the wrist (self-test).</summary>
     public static RectTransform WristRoot { get; private set; }
-    private int measuredMask;
 
-    /// <summary>Dark plate behind the wrist parts (first child of the wrist box): the stamina bar is translucent, and
-    /// over the forearm's patterned sleeve it read as sunk into the arm.</summary>
-    private UnityEngine.UI.Image wristPlate;
+    /// <summary>The top-of-view stamina meter while shown, its plate and its width in metres (self-test).</summary>
+    public static RectTransform TopRoot { get; private set; }
+    public static UnityEngine.UI.Graphic TopPlate { get; private set; }
+    public static float TopWidthMeters;
 
-    /// <summary>Plate margin round the wrist parts, in HUD pixels, and its opacity.</summary>
-    internal const float WristPlatePad = 14f;
-    private const float WristPlateOpacity = 0.85f;
-
-    /// <summary>Every graphic under the wrist box, shown or not, refilled when a group shows or hides: the plate
-    /// hugs the ones drawn now. The groups' own rects reserve room for parts that are mostly hidden (extra stamina,
-    /// affliction segments, the morale text, the numb mushrooms at alpha 0), which left the plate far wider and
-    /// taller than the bar. Stencil-only masks are left out (<see cref="PointerHitRule.MaskOnly"/>).</summary>
-    private readonly List<UnityEngine.UI.Graphic> wristGraphics = new();
-    private int plateSignature;
-
-    /// <summary>Children of the wrist box when <see cref="wristGraphics"/> was filled: a part added later refills it.</summary>
-    private int measuredChildren;
-    private static readonly Vector3[] corners = new Vector3[4];
+    /// <summary>Plate margin round the wrist parts, in HUD pixels.</summary>
+    internal const float WristPlatePad = HudPlate.Pad;
 
     /// <summary>Drawn wrist content the plate was last fitted to, box pixels (self-test).</summary>
-    public static Vector2 WristPlateContentMin,
-        WristPlateContentMax;
+    public static Vector2 WristPlateContentMin => wristPanel.ContentMin;
+    public static Vector2 WristPlateContentMax => wristPanel.ContentMax;
 
     /// <summary>The wrist plate's centre and size, box pixels (self-test).</summary>
-    public static Vector2 WristPlateCenter,
-        WristPlateSize;
+    public static Vector2 WristPlateCenter => wristPanel.PlateCenter;
+    public static Vector2 WristPlateSize => wristPanel.PlateSize;
 
     /// <summary>The wrist plate, for the self-test's own measurement (null without a wrist display).</summary>
-    public static UnityEngine.UI.Graphic WristPlate { get; private set; }
+    public static UnityEngine.UI.Graphic WristPlate => wristPanel.Plate;
 
     /// <summary>Size of the moved groups' rects, which set the wrist layout and scale (self-test).</summary>
-    public static Vector2 WristGroupsSize;
+    public static Vector2 WristGroupsSize => wristPanel.GroupsSize;
 
     /// <summary>Every public GameObject field on GUIManager named reticle* (A/GUIManager.cs:208-236).</summary>
     public static void Resolve()
@@ -178,9 +192,11 @@ internal sealed class HudSplit
         var current = GUIManager.instance;
         if (current != gui)
         {
-            // The old HUD died with its scene, and the moved parts with it.
+            // The old HUD died with its scene, and the moved parts and copies with it.
             reticleBox.Forget();
             wristBox.Forget();
+            topBox.Forget();
+            mirror.Clear();
             applied = false;
             gui = current;
             // Feature states settle at startup; read here, not per frame (FeatureManager.Get walks a list).
@@ -191,6 +207,7 @@ internal sealed class HudSplit
 
         var reticle = cfg.Reticle.Value;
         var wrist = cfg.Hud.Value == HudMode.Wrist && rig.Hand(cfg.WristLeft) != null;
+        var view = cfg.StaminaView.Value;
         // While spectating the status bar rides on the friend's nameplate (ui.spatial), and with the body hotbar
         // (inventory.vr) the 2D hotbar stays hidden on the panel instead of filling the wrist.
         var plate = SpectateView.ClaimsStatus;
@@ -206,26 +223,38 @@ internal sealed class HudSplit
             && wrist == appliedWrist
             && plate == appliedPlate
             && bodyHotbar == appliedBodyHotbar
+            && view == appliedView
         )
             return;
 
         Restore();
-        Apply(reticle, wrist, plate, bodyHotbar);
+        Apply(reticle, wrist, plate, bodyHotbar, view);
     }
 
     public void Restore()
     {
         WristValid = false;
+        TopRoot = null;
         reticleBox.Restore();
         if (wristBox.Rect != null)
             OnTop.Set(wristBox.Rect, false);
         wristBox.Restore();
+        mirror.Clear();
+        if (topBox.Rect != null)
+            OnTop.Set(topBox.Rect, false);
+        topBox.Restore();
         if (gui != null && gui.heroBG != null)
             gui.heroBG.enabled = true;
         applied = false;
     }
 
-    private void Apply(ReticleMode reticle, bool wrist, bool plate, bool bodyHotbar)
+    private void Apply(
+        ReticleMode reticle,
+        bool wrist,
+        bool plate,
+        bool bodyHotbar,
+        StaminaView view
+    )
     {
         hudRoot = (RectTransform)gui.hudCanvas.transform;
         // The biome title dims the whole screen (A/GUIManager.cs:511-512); on a floating panel that is
@@ -241,19 +270,26 @@ internal sealed class HudSplit
                     reticleBox.Move(go.transform);
         }
 
+        // The bar itself goes to the top meter, else to the wrist, else stays on the body panel; spectating keeps it
+        // for the friend's nameplate.
+        bool top = !plate && view != StaminaView.Wrist;
+        if (wrist)
+            wristPanel.Ensure(wristBox.Ensure(hudRoot));
+        if (top)
+            topPanel.Ensure(topBox.Ensure(hudRoot));
+        var barBox =
+            plate ? null
+            : view == StaminaView.TopOfView ? topBox
+            : wrist ? wristBox
+            : null;
+        CollectBarGroups();
+        if (barBox != null)
+            foreach (var group in barGroups)
+                barBox.Move(group);
+
         if (wrist)
         {
-            var box = wristBox.Ensure(hudRoot);
-            EnsureWristPlate(box);
-            if (!plate)
-            {
-                MoveGroup(gui.bar != null ? gui.bar.transform : null);
-                MoveAfflictions(gui.bar);
-                // Numb swaps the stamina bar for a mushroom group (A/GUIManager.cs:1249); it belongs with the bar.
-                MoveGroup(
-                    gui.mushroomsCanvasGroup != null ? gui.mushroomsCanvasGroup.transform : null
-                );
-            }
+            var box = wristBox.Rect;
             if (!bodyHotbar)
             {
                 MoveGroup(
@@ -265,10 +301,25 @@ internal sealed class HudSplit
             }
             // The dying bar (A/GUIManager.cs:578) belongs with the wrist bar, not on the body panel.
             MoveGroup(gui.dyingBarObject != null ? gui.dyingBarObject.transform : null);
-            MeasureWrist(box);
+            wristPanel.Measure(box, Frame());
             // Hand UI: the forearm and hand it rides on never cover it.
             OnTop.Sort(box);
             OnTop.Set(box, true);
+        }
+
+        if (top)
+        {
+            var box = topBox.Rect;
+            // Both: the bar stays where it was put above and a copy reads at the top.
+            if (view == StaminaView.Both)
+                foreach (var group in barGroups)
+                    mirror.Add(group, box);
+            topPanel.Measure(box, TopFrame());
+            // Over the view like the hand UI: rock at the brim never cuts it.
+            OnTop.Sort(box);
+            OnTop.Set(box, true);
+            TopPlate = topPanel.Plate;
+            topPlaced = false;
         }
 
         applied = true;
@@ -276,182 +327,42 @@ internal sealed class HudSplit
         appliedWrist = wrist;
         appliedPlate = plate;
         appliedBodyHotbar = bodyHotbar;
+        appliedView = view;
     }
 
-    /// <summary>Measures the moved groups that are shown: the box itself is HUD-sized and would make the span the
-    /// whole HUD. Runs on apply and when a group shows or hides (the dying bar), not every frame.</summary>
-    private void MeasureWrist(RectTransform box)
-    {
-        measuredMask = ShownMask(box);
-        bool any = false;
-        var bounds = default(Bounds);
-        var plate = wristPlate != null ? wristPlate.transform : null;
-        for (int i = 0; i < box.childCount; i++)
-        {
-            var child = box.GetChild(i);
-            if (!child.gameObject.activeSelf || child == plate)
-                continue;
-            var b = RectTransformUtility.CalculateRelativeRectTransformBounds(box, child);
-            if (any)
-                bounds.Encapsulate(b);
-            else
-                bounds = b;
-            any = true;
-        }
-        if (any)
-            WristGroupsSize = bounds.size;
-        // Layout and scale follow the stamina bar's frame (A/StaminaBar.cs:135), the bar the player reads, so
-        // UI.WristWidth is its width and WristPosition its centre, and nothing jumps when a part shows. The groups'
-        // rects also hold the frame's 1214 px stencil mask (Bar/OutlineMask): the bar came out half as wide, off-centre.
-        // shortcut: a frame grown past 614 px by overflowing afflictions (statusSum > 1) when this runs shrinks the
-        // bar until the next measure; measure at statusSum 1 if that shows up in play.
-        var frame = gui != null && gui.bar != null ? gui.bar.staminaBarOutline : null;
-        if (frame != null && frame.gameObject.activeInHierarchy && frame.IsChildOf(box))
-        {
-            frame.GetWorldCorners(corners);
-            Vector2 a = box.InverseTransformPoint(corners[0]);
-            Vector2 b = box.InverseTransformPoint(corners[2]);
-            wristCenter = (a + b) * 0.5f;
-            wristSpan = Mathf.Max(1f, Mathf.Abs(b.x - a.x));
-        }
-        else if (any)
-        {
-            // No bar on the wrist (spectating moves it to the friend's nameplate): the hotbar groups set the layout.
-            wristCenter = bounds.center;
-            wristSpan = Mathf.Max(1f, bounds.size.x);
-        }
-        box.GetComponentsInChildren(true, wristGraphics);
-        // The bar's OutlineMask (Image + Mask, showMaskGraphic off) spans 1214 px round the 614 px frame it clips and
-        // drew the plate twice the bar's length. The game never toggles these masks, so they are dropped here, once.
-        wristGraphics.RemoveAll(PointerHitRule.MaskOnly);
-        measuredChildren = box.childCount;
-        plateSignature = 0;
-        FitWristPlate(box);
-    }
+    /// <summary>The stamina bar's frame (A/StaminaBar.cs:135), which sets the wrist and top layouts.</summary>
+    private RectTransform Frame() =>
+        gui != null && gui.bar != null ? gui.bar.staminaBarOutline : null;
 
-    /// <summary>Fits <see cref="wristPlate"/> to the graphics drawn now. Each frame folds their visibility, size and
-    /// local position into a signature (no allocation, no world corners), in <see cref="MenuBackplate.FoldPixels"/>
-    /// steps: the stamina fill's per-frame lerp (A/StaminaBar.cs:126) re-measures once per step, not every frame.
-    /// shortcut: a parent moving with no graphic under it changing is missed until the next change; fold parent
-    /// positions in if a part ever slides that way.</summary>
-    private void FitWristPlate(RectTransform box)
+    private RectTransform TopFrame() => mirror.Empty ? Frame() : mirror.CopyOf(Frame());
+
+    /// <summary>The HUD groups of the stamina bar: its own, its affliction segments' and the numb mushrooms' (Numb
+    /// swaps the bar for them, A/GUIManager.cs:1249). The bar finds its segments anywhere under its parent
+    /// (A/StaminaBar.cs:85), not only under itself, so moving only the bar's group left them on the body panel,
+    /// where the wrist never showed the Cold segment (VR run 25).</summary>
+    private void CollectBarGroups()
     {
-        if (wristPlate == null)
+        barGroups.Clear();
+        var bar = gui.bar;
+        if (bar == null)
             return;
-        int signature = MenuBackplate.FoldStart;
-        for (int i = 0; i < wristGraphics.Count; i++)
-        {
-            var g = wristGraphics[i];
-            bool drawn = Drawn(g);
-            var r = drawn ? g.rectTransform.rect : default;
-            var at = drawn ? g.rectTransform.localPosition : default;
-            signature = MenuBackplate.Fold(
-                signature,
-                drawn,
-                at.x + r.x,
-                at.y + r.y,
-                r.width,
-                r.height
-            );
-        }
-        if (signature == plateSignature)
+        AddGroup(GroupOf(bar.transform, hudRoot));
+        if (bar.afflictions != null)
+            foreach (var a in bar.afflictions)
+                if (a != null)
+                    AddGroup(AfflictionGroup(a, bar, hudRoot));
+        if (gui.mushroomsCanvasGroup != null)
+            AddGroup(GroupOf(gui.mushroomsCanvasGroup.transform, hudRoot));
+    }
+
+    private void AddGroup(Transform group)
+    {
+        if (group == null)
             return;
-        plateSignature = signature;
-
-        var min = new Vector2(float.MaxValue, float.MaxValue);
-        var max = new Vector2(float.MinValue, float.MinValue);
-        for (int i = 0; i < wristGraphics.Count; i++)
-        {
-            var g = wristGraphics[i];
-            if (!Drawn(g))
-                continue;
-            g.rectTransform.GetWorldCorners(corners);
-            Vector2 a = box.InverseTransformPoint(corners[0]);
-            Vector2 b = box.InverseTransformPoint(corners[2]);
-            min = Vector2.Min(min, Vector2.Min(a, b));
-            max = Vector2.Max(max, Vector2.Max(a, b));
-        }
-        bool any = MenuBackplate.Fit(min.N(), max.N(), WristPlatePad, out var center, out var size);
-        if (any)
-        {
-            var rt = wristPlate.rectTransform;
-            rt.anchoredPosition = WristPlateCenter = new Vector2(center.X, center.Y);
-            rt.sizeDelta = WristPlateSize = new Vector2(size.X, size.Y);
-            WristPlateContentMin = min;
-            WristPlateContentMax = max;
-        }
-        if (wristPlate.gameObject.activeSelf != any)
-            wristPlate.gameObject.SetActive(any);
-    }
-
-    /// <summary>A graphic of the wrist parts that reaches the screen: shown, enabled, not faded out by its colour or a
-    /// canvas group, and not empty. Our plate never counts.</summary>
-    private bool Drawn(UnityEngine.UI.Graphic g) =>
-        g != null
-        && g != wristPlate
-        && g.isActiveAndEnabled
-        && g.color.a >= 0.01f
-        && g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() > 0.01f
-        && g.rectTransform.rect.width > 0.5f
-        && g.rectTransform.rect.height > 0.5f;
-
-    /// <summary>Puts <see cref="wristPlate"/> first in <paramref name="box"/> (a new box after a scene change gets a
-    /// new plate); <see cref="MeasureWrist"/> fits it. Drawn on top with the box, under the parts.</summary>
-    private void EnsureWristPlate(RectTransform box)
-    {
-        if (wristPlate == null || wristPlate.transform.parent != box)
-        {
-            var go = new GameObject(
-                "PeakXR_WristPlate",
-                typeof(RectTransform),
-                typeof(CanvasRenderer),
-                typeof(UnityEngine.UI.Image),
-                typeof(PanelPart)
-            );
-            go.layer = box.gameObject.layer;
-            var rt = (RectTransform)go.transform;
-            rt.SetParent(box, false);
-            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-            wristPlate = go.GetComponent<UnityEngine.UI.Image>();
-            wristPlate.sprite = BackplateView.PlateSprite();
-            wristPlate.type = UnityEngine.UI.Image.Type.Sliced;
-            wristPlate.raycastTarget = false;
-            var c = MenuBackplate.Color;
-            wristPlate.color = new Color(c.X, c.Y, c.Z, WristPlateOpacity);
-            WristPlate = wristPlate;
-        }
-        wristPlate.transform.SetAsFirstSibling();
-    }
-
-    private int ShownMask(RectTransform box)
-    {
-        int mask = 0;
-        int n = Mathf.Min(box.childCount, 31);
-        var plate = wristPlate != null ? wristPlate.transform : null;
-        for (int i = 0; i < n; i++)
-        {
-            var child = box.GetChild(i);
-            if (child != plate && child.gameObject.activeSelf)
-                mask |= 1 << i;
-        }
-        return mask;
-    }
-
-    /// <summary>The stamina bar finds its affliction segments anywhere under its parent (A/StaminaBar.cs:85), not
-    /// only under itself, so moving the bar's group can leave them on the body panel, where the wrist never showed
-    /// the Cold segment (VR run 25). Moves their own group too, after the bar's.</summary>
-    private void MoveAfflictions(StaminaBar bar)
-    {
-        if (bar == null || bar.afflictions == null || wristBox.Rect == null)
-            return;
-        foreach (var a in bar.afflictions)
-        {
-            if (a == null || a.transform.IsChildOf(wristBox.Rect))
-                continue;
-            var group = AfflictionGroup(a, bar, hudRoot);
-            if (group != null)
-                wristBox.Move(group);
-        }
+        foreach (var g in barGroups)
+            if (group.IsChildOf(g))
+                return;
+        barGroups.Add(group);
     }
 
     /// <summary>The HUD group to move so affliction segment <paramref name="a"/> follows <paramref name="bar"/>:
@@ -469,8 +380,7 @@ internal sealed class HudSplit
         );
     }
 
-    /// <summary>Moves the HUD group holding <paramref name="target"/>: its ancestor directly under the HUD
-    /// root, or a smaller one when that ancestor is a full-screen container.</summary>
+    /// <summary>Moves the HUD group holding <paramref name="target"/> to the wrist (see <see cref="GroupOf"/>).</summary>
     private void MoveGroup(Transform target)
     {
         var group = GroupOf(target, hudRoot);
@@ -525,17 +435,15 @@ internal sealed class HudSplit
         var hand = rig.Hand(cfg.WristLeft);
         if (hand == null)
             return;
-        if (
-            ShownMask(wristBox.Rect) != measuredMask
-            || wristBox.Rect.childCount != measuredChildren
-        )
+        var box = wristBox.Rect;
+        if (wristPanel.Stale(box))
         {
-            MeasureWrist(wristBox.Rect);
+            wristPanel.Measure(box, Frame());
             // A part the game showed for the first time may carry a graphic not yet drawn on top.
-            OnTop.Set(wristBox.Rect, true);
+            OnTop.Set(box, true);
         }
         else
-            FitWristPlate(wristBox.Rect);
+            wristPanel.Fit(box);
 
         // Like a watch face: on the back of the wrist, the side that faces the eye when the wrist is raised to read
         // it, the bar across the wrist and text up toward the fingers (WristHud.Rest, mirrored per hand). Raised off
@@ -562,12 +470,72 @@ internal sealed class HudSplit
             rotation = Quaternion.Slerp(rotation, face, WristFacing);
             width = WristHud.Width(baseWidth, distance, WristPulse);
         }
-        wristBox.Pose(anchor, rotation, wristCenter, width / wristSpan);
+        wristBox.Pose(anchor, rotation, wristPanel.Center, width / wristPanel.Span);
         WristValid = true;
         WristWidthMeters = width;
-        WristRoot = wristBox.Rect;
+        WristRoot = box;
         WristPosition = anchor;
         WristRotation = rotation;
+    }
+
+    /// <summary>
+    /// Poses the top-of-view stamina meter: high in the view, never in its centre, level with the horizon, lazily
+    /// following the head (<see cref="LazyFollow"/>), pulled in front of rock at the same angular size and drawn on
+    /// top. Called once per frame after the canvases are placed.
+    /// </summary>
+    public void PoseTop(Transform head, UIWorldSettings cfg, float dt)
+    {
+        TopRoot = null;
+        var box = topBox.Rect;
+        if (!applied || box == null || !box.gameObject.activeSelf || head == null)
+            return;
+        mirror.Sync();
+        if (topPanel.Stale(box))
+        {
+            topPanel.Measure(box, TopFrame());
+            OnTop.Set(box, true);
+        }
+        else
+            topPanel.Fit(box);
+
+        var forward = head.forward;
+        float yaw = PanelMath.YawOf(forward.ToNumerics(), head.up.ToNumerics());
+        float pitch = Mathf.Clamp(
+            Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg,
+            -TopMaxPitch,
+            TopMaxPitch
+        );
+        if (!topPlaced)
+        {
+            topFollow.Snap(yaw, pitch);
+            topPlaced = true;
+            topWallAt = 0f;
+        }
+        else
+            topFollow.Update(yaw, pitch, false, dt);
+
+        var wanted = Rig.RealScale.World(TopDistance);
+        var offset = PanelMath
+            .InFront(topFollow.Yaw, wanted, -(topFollow.Pitch + TopRaise))
+            .ToUnity();
+        var rotation = Quaternion.LookRotation(offset, Vector3.up);
+        var width = Rig.RealScale.World(TopWidth) * ReadableText.Scale(cfg.TextScale.Value);
+        var now = Time.unscaledTime;
+        if (now >= topWallAt)
+        {
+            topWallAt = now + TopWallInterval;
+            var half = new Vector2(0.5f * width, 0.1f * width);
+            var depth = WorldCanvases.WallDepth(head.position, offset, rotation, half);
+            topScale = PanelMath.FitBeforeWall(wanted, depth).Distance / wanted;
+        }
+        topBox.Pose(
+            head.position + offset * topScale,
+            rotation,
+            topPanel.Center,
+            width * topScale / topPanel.Span
+        );
+        TopRoot = box;
+        TopWidthMeters = width * topScale;
     }
 
     /// <summary>Poses the head-locked reticle. Called late and again right before rendering.</summary>

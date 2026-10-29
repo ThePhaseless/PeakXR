@@ -127,6 +127,7 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         backdrop.Tick(rig, cfg, dt);
         split.Sync(cfg, rig);
         split.PoseWrist(rig, cfg);
+        split.PoseTop(rig.Head, cfg, dt);
         split.PoseReticle(rig.Head, hud, cfg);
         pointer.Process(interactive || LaserPointer.ForceShow, cfg, rig, dt);
         MirrorTransitions();

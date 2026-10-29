@@ -8,6 +8,10 @@ using UnityEngine.UI;
 
 namespace PeakXR.UI.World;
 
+/// <summary>A part of a menu hidden under an opaque popup dimmer (<see cref="BackdropStrip.UpdateCover"/>): its canvas
+/// group, whether the mod added it, and the alpha it had.</summary>
+internal readonly record struct CoveredPart(CanvasGroup Group, bool Added, float Alpha);
+
 /// <summary>One graphic hidden as a backdrop, with what it takes to show it again.</summary>
 internal struct HiddenBackdrop
 {
@@ -129,10 +133,81 @@ internal static class BackdropStrip
         }
     }
 
+    /// <summary>
+    /// A hidden dimmer that blacks out what is drawn before it on a monitor hides that in VR too: the quit confirm
+    /// (PauseMenuMainPage.cs:169 opens ConfirmPage, whose Background (1)/BG is black at 0.96, over the ribbons) drew
+    /// its X and OK over BACK and ACCOLADES, which still looked live while the invisible BG took their clicks. Each
+    /// earlier sibling along the dimmer's parents gets a canvas group at alpha 0; raycasts are untouched, so clicks
+    /// go where they went on a monitor. Per frame for a menu, allocation-free until the cover changes.
+    /// </summary>
+    /// <returns>True when what is covered changed (the plate needs a refit).</returns>
+    public static bool UpdateCover(TrackedCanvas t)
+    {
+        Graphic cover = null;
+        if (t.IsOpen)
+            foreach (var h in t.Hidden)
+            {
+                var g = h.Graphic;
+                // The last one wins: a popup's dimmer is scanned after the page it opens on.
+                if (
+                    !h.Panel
+                    && h.Alpha >= 0f
+                    && g != null
+                    && g.isActiveAndEnabled
+                    && BackdropRules.Covers(g.color.a * g.canvasRenderer.GetInheritedAlpha())
+                )
+                    cover = g;
+            }
+        if (cover == t.Cover)
+            return false;
+        Uncover(t);
+        if (cover == null)
+            return true;
+        t.Cover = cover;
+        var plate = t.Plate != null ? t.Plate.transform : null;
+        for (var node = cover.transform; node != t.Rect && node.parent != null; node = node.parent)
+        {
+            var parent = node.parent;
+            int index = node.GetSiblingIndex();
+            for (int i = 0; i < index; i++)
+            {
+                var earlier = parent.GetChild(i);
+                if (earlier == plate || !earlier.gameObject.activeSelf)
+                    continue;
+                bool added = !earlier.TryGetComponent<CanvasGroup>(out var group);
+                if (added)
+                    group = earlier.gameObject.AddComponent<CanvasGroup>();
+                t.Covered.Add(new CoveredPart(group, added, group.alpha));
+                group.alpha = 0f;
+            }
+        }
+        Plugin.Log.LogInfo(
+            $"[ui.world] canvas '{t.Canvas.name}': '{cover.name}' covers {t.Covered.Count} part(s) drawn before it"
+        );
+        return true;
+    }
+
+    /// <summary>Shows what <see cref="UpdateCover"/> hid.</summary>
+    private static void Uncover(TrackedCanvas t)
+    {
+        foreach (var c in t.Covered)
+        {
+            if (c.Group == null)
+                continue;
+            c.Group.alpha = c.Added ? 1f : c.Alpha;
+            if (c.Added)
+                Object.Destroy(c.Group);
+        }
+        t.Covered.Clear();
+        t.Cover = null;
+    }
+
     /// <summary>Shows hidden graphics again (all, or only panels) and puts the text materials back. A value
     /// another system changed since (its own hide or show) is left as that system set it.</summary>
     public static void Restore(TrackedCanvas t, bool panelsOnly)
     {
+        if (!panelsOnly)
+            Uncover(t);
         for (int i = t.Hidden.Count - 1; i >= 0; i--)
         {
             var h = t.Hidden[i];

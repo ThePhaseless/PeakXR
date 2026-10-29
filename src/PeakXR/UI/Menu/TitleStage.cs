@@ -35,6 +35,10 @@ internal sealed class TitleStage : ICanvasPlacement
     private float eyeHeight = StandingEyeHeight;
     private readonly TitleMenuDepth depth = new();
 
+    /// <summary>The screen's heading under <c>UI.MenuFollow</c> LazyFollow: it turns about the fixed eye once you
+    /// look past its edge (it spans about 29 degrees each side), back toward the stage when you look there.</summary>
+    private readonly LazyFollow follow = new();
+
     public TitleStage(UIMenuSettings cfg)
     {
         this.cfg = cfg;
@@ -87,6 +91,7 @@ internal sealed class TitleStage : ICanvasPlacement
             ? new Vector3(eye.x, ground, eye.z)
             : eye - Vector3.up * StandingEyeHeight;
         active = true;
+        follow.Snap(yaw);
 
         var offDoc = Vector3.Distance(eye, ResearchPosition);
         Plugin.Log.LogInfo(
@@ -157,11 +162,33 @@ internal sealed class TitleStage : ICanvasPlacement
         var distance = cfg.TitleMenuDistance.Value;
         var reach = cfg.TitleReach.Value;
         depth.Tick(canvas, eye, reach, oneScreen: reach >= distance);
-        rotation = Quaternion.Euler(0f, yaw, 0f);
+        rotation = Quaternion.Euler(0f, ScreenYaw(), 0f);
         var offset = PanelMath.InFront(0f, distance, MenuTilt).ToUnity();
         position = eye + rotation * offset;
         rotation = Quaternion.LookRotation(rotation * offset, Vector3.up);
         widthMeters = distance * ScreenWidth;
         return PlacementResult.Placed;
+    }
+
+    /// <summary>The stage's heading, or with <c>UI.MenuFollow</c> LazyFollow where the screen has glided to.</summary>
+    private float ScreenYaw()
+    {
+        var rig = VRRig.Instance;
+        var head = rig != null ? rig.Head : null;
+        var ui = UIWorldFeature.Settings;
+        if (head == null || ui == null || ui.MenuFollow.Value != MenuFollowMode.LazyFollow)
+        {
+            follow.Snap(yaw);
+            return yaw;
+        }
+        float halfSpan = Mathf.Atan(0.5f * ScreenWidth) * Mathf.Rad2Deg;
+        follow.Threshold = LazyFollow.ThresholdFor(ui.MenuFollowAngle.Value, halfSpan);
+        follow.Update(
+            PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics()),
+            0f,
+            LaserPointer.Engaged,
+            Time.unscaledDeltaTime
+        );
+        return follow.Yaw;
     }
 }
