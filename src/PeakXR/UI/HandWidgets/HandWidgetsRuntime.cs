@@ -115,6 +115,10 @@ internal sealed class HandWidgetsRuntime : MonoBehaviour
     {
         static bool Presses(GripPressAction a) =>
             a is GripPressAction.GrabInteractible or GripPressAction.Interact;
+        // A hand laid on what it runs (the revival statue) holds interact without a grip.
+        int touch = Interact.Physical.GestureRequests.InteractHand;
+        if (touch >= 0)
+            return touch;
         if (Presses(PhysicalInteraction.HandAction(true)))
             return 0;
         return Presses(PhysicalInteraction.HandAction(false)) ? 1 : -1;

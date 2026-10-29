@@ -57,7 +57,7 @@ public enum GuideTopic : byte
     /// <summary>Rope swing: lean along the swing to pump it.</summary>
     RopePump,
 
-    /// <summary>Respawn chest: one hand on the lid is refused, both hands lift it.</summary>
+    /// <summary>Revival statue (the game's RespawnChest): an open hand laid on it runs the interact cast.</summary>
     Chest,
 
     /// <summary>Stoop to pick an item up from the ground.</summary>
@@ -1440,51 +1440,28 @@ public static class GuideTable
             )
         );
 
-        var lid = V(0f, -1.1f, 0.5f);
-        var lidL = V(-0.12f, -0.8f, 0.38f);
-        var lidR = V(0.12f, -0.8f, 0.38f);
-        var lift = V(0f, 0.25f, 0f);
+        var statueFace = V(0.1f, -0.75f, 0.42f);
         add(
             new GuideDemo(
                 GuideTopic.Chest,
-                "Respawn chest",
-                "One hand can't lift it: grip the lid with both.",
+                "Revival statue",
+                "Lay a hand on it and keep it there.",
                 3.6f,
-                T(
-                    K(0f, Vector3.Zero),
-                    K(0.5f, V(0f, -0.3f, 0f)),
-                    K(3f, V(0f, -0.3f, 0f)),
-                    K(3.6f, Vector3.Zero)
-                ),
-                T(
-                    K(0f, RestL),
-                    K(1.2f, RestL),
-                    K(1.7f, lidL),
-                    K(1.8f, lidL, grip: 1f),
-                    K(2.6f, lidL + lift, grip: 1f),
-                    K(2.8f, lidL + lift),
-                    K(3.6f, RestL)
-                ),
+                T(K(0f, Vector3.Zero)),
+                restLeft,
                 T(
                     K(0f, RestR),
-                    K(0.8f, lidR),
-                    K(0.9f, lidR, grip: 1f),
-                    K(1.8f, lidR, grip: 1f),
-                    K(2.6f, lidR + lift, grip: 1f),
-                    K(2.8f, lidR + lift),
+                    K(0.8f, statueFace),
+                    K(2.8f, statueFace),
+                    K(3.4f, RestR),
                     K(3.6f, RestR)
                 ),
                 new[]
                 {
-                    P(GuideShape.Box, 0.4f, V(0f, -1.3f, 0.5f)),
-                    new GuideProp(
-                        GuideShape.Rod,
-                        0.4f,
-                        T(K(0f, lid), K(1.8f, lid), K(2.6f, lid + lift), K(3.2f, lid))
-                    ),
-                    P(GuideShape.Refused, 0.12f, lid, 0.9f, 1.6f),
+                    P(GuideShape.Box, 0.5f, V(0f, -0.9f, 0.7f)),
+                    P(GuideShape.Target, 0.12f, statueFace, 0.8f, 2.8f),
                 },
-                new[] { S(0.9f, CueSound.Refused, lid), S(2.6f, CueSound.WouldWork, lid) }
+                new[] { S(2.8f, CueSound.WouldWork, statueFace) }
             )
         );
 

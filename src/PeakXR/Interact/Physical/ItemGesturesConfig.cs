@@ -10,6 +10,7 @@ internal sealed class ItemGesturesConfig
 
     private ConfigEntry<bool> cookOverFire,
         liftLid,
+        touchStatue,
         bugleAtMouth,
         lightWithFlame,
         pressToBody,
@@ -21,6 +22,7 @@ internal sealed class ItemGesturesConfig
 
     public bool CookOverFire => cookOverFire?.Value ?? true;
     public bool LiftLid => liftLid?.Value ?? true;
+    public bool TouchStatue => touchStatue?.Value ?? true;
     public bool BugleAtMouth => bugleAtMouth?.Value ?? true;
     public bool LightWithFlame => lightWithFlame?.Value ?? true;
     public bool PressToBody => pressToBody?.Value ?? true;
@@ -47,7 +49,14 @@ internal sealed class ItemGesturesConfig
                 "LiftLidToOpen",
                 true,
                 "Grip the top of a suitcase and lift to open it; the game's open timer only runs as far as the lid is "
-                    + "raised. Respawn chests take both hands. Gripping low on the case holds it open as before."
+                    + "raised. Gripping low on the case holds it open as before."
+            ),
+            touchStatue = file.Bind(
+                s,
+                "TouchStatue",
+                true,
+                "Lay a hand on a revival statue and keep it there to use it (revive scouts, or take its items when "
+                    + "nobody is down); taking the hand away stops. Gripping it still works."
             ),
             bugleAtMouth = file.Bind(
                 s,

@@ -2,35 +2,6 @@ using System.Numerics;
 
 namespace PeakXR.Core;
 
-/// <summary>
-/// A lid that needs both hands (the respawn chest): a hand alone on it for <see cref="Delay"/> seconds is a refusal,
-/// reported once until the hands change, so a player who grabbed with one hand learns why nothing lifts instead of
-/// pulling on a lid that silently stays shut. Call <see cref="Update"/> once per frame.
-/// </summary>
-public sealed class TwoHandGate
-{
-    public float Delay = 0.6f;
-
-    private float alone;
-    private bool fired;
-
-    /// <summary>True on the one frame a single hand has been on the lid for <see cref="Delay"/> seconds.</summary>
-    public bool Update(int handsOn, float dt)
-    {
-        if (handsOn != 1)
-        {
-            alone = 0f;
-            fired = false;
-            return false;
-        }
-        alone += dt;
-        if (fired || alone < Delay)
-            return false;
-        fired = true;
-        return true;
-    }
-}
-
 /// <summary>Where to point a player toward a friend they cannot see: a spot a short way from the hand, level with
 /// it, in the friend's compass direction, so the ring reads as an arrow at the hand rather than a mark through a
 /// cliff.</summary>
@@ -164,35 +135,27 @@ public static class AltarSocket
 }
 
 /// <summary>
-/// How far the game's open timer of a held case may run (<see cref="LidLift.CapHeldTime"/>'s fraction), decided
-/// before the game adds the frame's time. A lid the hands are lifting: its lift. A two-hand lid (the respawn chest)
-/// without that: 0, whatever started the hold and whatever frame the hand tracking is on, so one hand never runs
-/// it. Any other case: false, the plain vanilla hold.
+/// The revival statue (<c>RespawnChest</c>, RespawnChest.cs:6) is touched, not lifted: a free hand laid on it runs the
+/// game's own interact cast, and a grip that took it holds that cast at 0 once the hand is off, so pulling away
+/// cancels. A pointed or head-aimed hold stays vanilla.
 /// </summary>
-public static class LidCap
+public static class StatueTouch
 {
-    /// <param name="physicalGrab">Grabbing by hand is on (<c>Interaction.PhysicalGrab</c>). Off, nothing can lift a
-    /// lid, so a two-hand lid keeps the plain vanilla hold.</param>
-    public static bool TryFraction(
-        bool lidTracked,
-        float lift,
-        bool twoHands,
-        bool physicalGrab,
-        out float fraction
-    )
-    {
-        fraction = lidTracked ? lift : 0f;
-        return lidTracked || (twoHands && physicalGrab);
-    }
+    /// <summary>Palm to statue surface.</summary>
+    public const float Reach = 0.06f;
 
-    /// <summary>
-    /// A two-hand lid held at 0 by a hold no hand is on (a pointed or head-aimed grip, a grip out of reach): it must
-    /// be refused at the case, since the one-hand gate only sees hands on it. A hand on the case is that gate's.
-    /// </summary>
-    public static bool RefusesUntracked(
-        bool lidTracked,
-        bool twoHands,
-        bool physicalGrab,
-        bool handOnCase
-    ) => !lidTracked && twoHands && physicalGrab && !handOnCase;
+    /// <summary>What the touch says before the cast: a spent statue (<c>IsSpent</c>, RespawnChest.cs:12; the game
+    /// takes no interact on it, :94-101) is UsedUp; someone down in a run without revives (<c>Ascents.canReviveDead</c>,
+    /// RespawnChest.cs:51) is the NoRevive notice, since the cast then gives items. Nobody down: no cue, it gives
+    /// items as in the flat game (RespawnChest.cs:56-60).</summary>
+    public static DenyReason Reason(bool spent, bool someoneDown, bool revivesAllowed) =>
+        spent ? DenyReason.UsedUp
+        : someoneDown && !revivesAllowed ? DenyReason.NoRevive
+        : DenyReason.None;
+
+    /// <summary>A hand free of items, palm toward the statue within <see cref="Reach"/> of its surface.</summary>
+    public static bool HandOn(Vector3 palmNormal, Vector3 hand, Vector3 surface, bool handFree) =>
+        handFree && PalmContact.On(palmNormal, hand, surface, Reach);
+
+    public static bool HoldsAtZero(bool touching, bool gripOnStatue) => gripOnStatue && !touching;
 }

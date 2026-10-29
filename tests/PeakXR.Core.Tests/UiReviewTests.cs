@@ -51,6 +51,7 @@ public class UiReviewTests
     [InlineData("Interaction", "CookOverFire", "Items")]
     [InlineData("Interaction", "HandIntoPortal", "Items")]
     [InlineData("Interaction", "TriggerEats", "Items")]
+    [InlineData("Interaction", "TouchStatue", "Items")]
     [InlineData("Interaction", "GrabToClimb", "Interaction")]
     [InlineData("Comfort", "Vignette", "Comfort")]
     public void DisplaySection_GathersVibrationAndItemGestures(

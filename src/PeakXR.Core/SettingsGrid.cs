@@ -39,6 +39,7 @@ public static class SettingsGrid
     {
         "CookOverFire",
         "LiftLidToOpen",
+        "TouchStatue",
         "BugleAtMouth",
         "LightWithFlame",
         "PressToBody",
