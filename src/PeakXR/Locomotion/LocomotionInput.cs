@@ -56,12 +56,18 @@ internal static class LocomotionInput
         var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
         lastBody = anchor;
         Follow.Anchor = rig.RoomAnchor;
-        Follow.Absorb(
-            new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z),
-            new NVector2(delta.x, delta.z)
-        );
+        Follow.Absorb(LeanHead(), new NVector2(delta.x, delta.z));
         rig.RoomAnchor = Follow.Anchor;
     }
+
+    private static readonly StanceWalk Stance = new();
+
+    /// <summary>The tracked head (x, z) less its eyes' swing round the neck (<see cref="BodyStance.NeckSwing"/>): a
+    /// head turned in the room is the stance walk's (<see cref="RigDriver.StanceDebt"/>), so the follow, like the
+    /// lean, sees only a real lean or step.</summary>
+    private static NVector2 LeanHead() =>
+        new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z)
+        - BodyStance.NeckSwing(LookMath.ToLookValues(VRInput.HeadRotation.N()).X);
 
     private static bool warnedFar;
     private static bool pointTriggerLeft;
@@ -359,6 +365,8 @@ internal static class LocomotionInput
         {
             hadBody = false;
             RigDriver.LeanNeutral = NVector2.Zero;
+            Stance.Reset();
+            RigDriver.StanceWalking = false;
             return NVector2.Zero;
         }
 
@@ -385,7 +393,7 @@ internal static class LocomotionInput
             // it fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
             && !PhysicalInteraction.Mantling
             && data.carrier == null;
-        var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
+        var head = LeanHead();
         Follow.LeanRadius = LocomotionConfig.LeanRadius;
         Follow.Anchor = rig.RoomAnchor;
         // No lean left to stand up from (RoomScaleFollow.Update): the head within 3 cm of the calibrated standing
@@ -394,8 +402,7 @@ internal static class LocomotionInput
         var pose = AvatarPoseDriver.Of(c);
         bool standingTall =
             Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.03f
-            // A head turned in the room bends the body too (avatar.local); that is no lean to stand up from.
-            && (pose == null || pose.StandLeanDegrees < 1f);
+            && (pose == null || pose.LeanDegrees < 1f);
         var request = Follow.Update(
             head,
             new NVector2(delta.x, delta.z),
@@ -413,6 +420,13 @@ internal static class LocomotionInput
         rig.RoomAnchor = Follow.Anchor;
         RigDriver.LeanNeutral = LocomotionConfig.RoomScale ? Follow.Neutral : NVector2.Zero;
         RigDriver.FollowWalking = LocomotionConfig.RoomScale && canFollow && Follow.Walking;
+        // The stance walk (a head turned in the room, looking down) waits out a follow: each walk's travel is its own.
+        var debt = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
+        request = MoveInput.Combine(
+            request,
+            Stance.Update(new NVector2(debt.x, debt.z), canFollow && !Follow.Walking, dt)
+        );
+        RigDriver.StanceWalking = Stance.Walking;
         if (Fade.Target > 0f)
             VRFade.Set(FadeOwner, Fade.Target);
         else

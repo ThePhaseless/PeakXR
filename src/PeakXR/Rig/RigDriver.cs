@@ -94,10 +94,15 @@ internal sealed class RigDriver : MonoBehaviour
     /// follow lag); null while the view is elsewhere. avatar.local leans from the head's offset to this point.</summary>
     internal static Vector3? LeanEye;
 
-    /// <summary>The part of the lean's head target that only the body's turn under a turned head asks for (the eyes
-    /// at the rig's heading less <see cref="LeanEye"/>): room-scale leaves it out of the lean a player stands up
-    /// from (<see cref="BodyLean.StandLeanDegrees"/>).</summary>
-    internal static Vector3 TurnLean;
+    /// <summary>The level walk (world) that would put the local body where it belongs under the view
+    /// (<see cref="BodyStance.Debt"/>): its eyes under the real eyes after a head turned in the room, and stood back
+    /// while looking down. player.locomotion walks it off; the lean never bends for it. Zero while the view is
+    /// elsewhere.</summary>
+    internal static Vector3 StanceDebt;
+
+    /// <summary>player.locomotion is walking the body off <see cref="StanceDebt"/> or settling from that walk: the
+    /// body's travel goes into the view's stance shift, so the view stays with the head.</summary>
+    internal static bool StanceWalking;
 
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
     internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
@@ -306,6 +311,17 @@ internal sealed class RigDriver : MonoBehaviour
     private float turnHoldUntil;
     private Vector3 lastBodyEye;
 
+    /// <summary>The body's stance walk kept out of the view (<see cref="UpdateStance"/>), world, level.</summary>
+    private Vector3 stanceShift;
+
+    /// <summary>This frame's <see cref="StanceDebt"/> plus its step back: the head offset the lean leaves out.</summary>
+    private Vector3 stanceLean;
+    private Vector3 lastStanceRoot;
+    private bool haveStanceRoot;
+
+    /// <summary>A mass-centre step (m) bigger than a walk's frame is a warp or a knock, not the stance walk.</summary>
+    private const float MaxStanceStep = 0.15f;
+
     /// <summary>Self-test (vr.16): log the turn per frame while set.</summary>
     internal static float TraceTurnsUntil;
 
@@ -471,7 +487,7 @@ internal sealed class RigDriver : MonoBehaviour
         BodyAnchor = null;
         ViewOffset = Vector3.zero;
         LeanEye = null;
-        TurnLean = Vector3.zero;
+        StanceDebt = Vector3.zero;
         if (rig.OriginOverride)
         {
             // The title stage and its menus stand at the game's own size; the scale returns behind the load.
@@ -524,7 +540,7 @@ internal sealed class RigDriver : MonoBehaviour
         var eyes = EyeOffsetNow;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} neutral ({LeanNeutral.X:0.000},{LeanNeutral.Y:0.000}) eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) head-eye {Vector3.Distance(rig.Head.position, BodyEye(c, rig.Origin.eulerAngles.y)):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} neutral ({LeanNeutral.X:0.000},{LeanNeutral.Y:0.000}) eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) stance shift f{Vector3.Dot(stanceShift, f):0.000} r{Vector3.Dot(stanceShift, r):0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {StanceWalking} head-eye {Vector3.Distance(rig.Head.position, BodyEye(c, rig.Origin.eulerAngles.y)):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000}"
             )
         );
     }
@@ -1111,6 +1127,7 @@ internal sealed class RigDriver : MonoBehaviour
 
         float yaw = rig.Origin.eulerAngles.y;
         UpdateTurnShift(c, yaw, dt);
+        UpdateStance(c, yaw);
         if (!TryGoal(c, yaw, out var goal, out float rate, out float maxLag))
         {
             spectateFloor.Hide();
@@ -1129,7 +1146,7 @@ internal sealed class RigDriver : MonoBehaviour
         float verticalRate = RigMath.ViewVerticalRate(
             rate,
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything,
-            FollowWalking
+            FollowWalking || StanceWalking
         );
         // The standing body's idle sway stays out of the view (ViewHold); goal keeps the body's own point, so
         // ViewOffset carries the held offset like follow lag and the lean never reads it as head motion.
@@ -1159,7 +1176,10 @@ internal sealed class RigDriver : MonoBehaviour
                 heldSinceWalk = 0f;
             viewGoal =
                 (
-                    Time.unscaledTime < turnHoldUntil ? viewHold.Carry(body)
+                    // The stance walk keeps the eye still through its shift, as a turn does: carry, never release.
+                    Time.unscaledTime < turnHoldUntil
+                    || StanceWalking
+                        ? viewHold.Carry(body)
                     : ViewHoldGate.CarriesThrough(viewHoldWhy) ? viewHold.Lean(body, bleedLean)
                     : viewHold.Update(body, viewHoldWhy == null, dt)
                 ).U() + extra;
@@ -1202,16 +1222,15 @@ internal sealed class RigDriver : MonoBehaviour
         if (shownKind == ViewKind.FirstPerson)
         {
             // At the body's own heading, not the rig's: the game turns the body to the head's heading every frame
-            // (Character.SetRotation, Character.cs:1539-1542), and its eyes sit 0.27 m ahead of its mass centre, so a
-            // head turned 90 degrees without a snap turn left the view 0.24 m beside and behind the body's eyes and
-            // a turn round 0.34 m behind them, the torso in front of the view. With the calibrated eyes where the
-            // body has them, the lean bends the body back under the view instead of keeping it upright there.
+            // (Character.SetRotation, Character.cs:1539-1542), about its mass centre with the eyes 0.24 m ahead. A
+            // head turned in the room is the stance walk's (stanceLean), so the lean bends only for a real lean and
+            // peers see an upright scout that steps under its head, not one leaning back.
             LeanEye = BodyEye(c, BodyHeading(c, yaw));
-            TurnLean = BodyEye(c, yaw) - LeanEye.Value;
             ViewOffset =
                 anchor
                 - goal
                 + turnShift
+                + stanceLean
                 + Vector3.up * rig.CrouchLift
                 + rig.Origin.TransformVector(new Vector3(LeanNeutral.X, 0f, LeanNeutral.Y));
         }
@@ -1287,14 +1306,15 @@ internal sealed class RigDriver : MonoBehaviour
             return;
         }
         var bodyEye = BodyEye(c, yaw);
-        float move = c.input.movementInput.magnitude;
+        // The stance walk's input is no motion of the player's to mask a glide, and its travel is the stance shift's.
+        float move = StanceWalking ? 0f : c.input.movementInput.magnitude;
         if (Mathf.Abs(Mathf.DeltaAngle(turnYaw, yaw)) > 0.01f)
         {
             turnShift = RigMath.TurnShift(turnShift.N(), turnYaw, yaw, EyeOffsetNow.X).U();
             turnYaw = yaw;
             turnHoldUntil = Time.unscaledTime + TurnHoldSeconds;
         }
-        else if (Time.unscaledTime < turnHoldUntil && move <= 0.1f)
+        else if (Time.unscaledTime < turnHoldUntil && move <= 0.1f && !StanceWalking)
         {
             // SetRotation turns the animated rig at once (Character.cs:1542); the ragdoll torso the eye hangs on
             // follows over several frames and swings sideways. Hold the eye through that swing too.
@@ -1308,6 +1328,56 @@ internal sealed class RigDriver : MonoBehaviour
         }
         turnShift = Vector3.ClampMagnitude(turnShift, MaxTurnShift);
         lastBodyEye = bodyEye;
+    }
+
+    /// <summary>
+    /// The stance walk (<see cref="BodyStance"/>): a head turned in the room, or looking down, owes the body a walk
+    /// (<see cref="StanceDebt"/>), which player.locomotion makes with vanilla move input. While it walks, the mass
+    /// centre's level travel goes into <see cref="stanceShift"/>, which the eye anchor carries, so the view stays with
+    /// the head and the body steps under it. Behind black the view takes the body's place instead (the debt goes into
+    /// the shift); a view placed again starts without a shift.
+    /// </summary>
+    private void UpdateStance(Character c, float yaw)
+    {
+        stanceLean = Vector3.zero;
+        if (snap || shownKind != ViewKind.FirstPerson || c == null)
+        {
+            stanceShift = Vector3.zero;
+            haveStanceRoot = false;
+            return;
+        }
+        var root = ViewRoot(c);
+        var travel = haveStanceRoot ? root - lastStanceRoot : Vector3.zero;
+        travel.y = 0f;
+        lastStanceRoot = root;
+        haveStanceRoot = true;
+        if (StanceWalking && travel.sqrMagnitude <= MaxStanceStep * MaxStanceStep)
+            stanceShift -= travel;
+        // On a wall, rope or vine, or carried, the body faces its hold, not the look (Character.SetRotation,
+        // Character.cs:1526-1543): nothing to step under. The shift stays, so the view does not move.
+        if (c.data.isClimbingAnything || c.data.carrier != null)
+            return;
+        float bodyYaw = BodyHeading(c, yaw);
+        var bodyForward = Quaternion.Euler(0f, bodyYaw, 0f) * Vector3.forward;
+        float back = BodyStance.StepBack(c.data.lookValues.y);
+        var debt = BodyStance
+            .Debt(
+                BodyEye(c, yaw).N(),
+                BodyEye(c, bodyYaw).N(),
+                stanceShift.N(),
+                (Quaternion.Euler(0f, yaw, 0f) * Vector3.forward).N(),
+                bodyForward.N(),
+                BodyStance.NeckToEyes * rig.Scale,
+                back
+            )
+            .U();
+        if (VRFade.Target >= 0.99f)
+        {
+            stanceShift -= debt;
+            debt = Vector3.zero;
+        }
+        StanceDebt = debt;
+        stanceLean = debt + bodyForward * back;
     }
 
     /// <summary>Self-test (vr.16): one line per frame of eye, rig and body yaw, torso and turn shift.</summary>
@@ -1433,7 +1503,7 @@ internal sealed class RigDriver : MonoBehaviour
             case ViewKind.FirstPerson:
                 if (c == null)
                     return false;
-                goal = BodyEye(c, yaw) + turnShift + Vector3.up * rig.CrouchLift;
+                goal = BodyEye(c, yaw) + turnShift + stanceShift + Vector3.up * rig.CrouchLift;
                 return true;
             case ViewKind.FollowFirstPerson:
                 if (target == null)
