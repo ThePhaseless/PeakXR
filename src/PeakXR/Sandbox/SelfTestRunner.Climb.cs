@@ -90,6 +90,8 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return Restoring("vr.58b-breakable-anchor", 45f, BreakableAnchorStep());
         yield return WarpBack();
+        yield return Restoring("vr.261-vr-restart-mid-hang", 45f, VRRestartHangStep());
+        yield return WarpBack();
     }
 
     /// <summary>
