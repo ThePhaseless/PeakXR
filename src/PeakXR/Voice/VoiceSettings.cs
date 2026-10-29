@@ -45,7 +45,7 @@ internal sealed class VoiceSettings
                 section,
                 "PreferHeadsetMic",
                 true,
-                "In VR, switch the game's microphone to the headset mic once, when the game is still on its default device. A device you picked yourself is never changed."
+                "In VR, switch the game's microphone to the headset mic when the game is still on its default device. Your saved choice stays as it was, and flat play goes back to it. A device you picked yourself is never changed."
             ),
             SpeakingIcons = cfg.Bind(
                 section,
