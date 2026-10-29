@@ -4,12 +4,14 @@ using UnityEngine;
 
 namespace PeakXR.Sandbox;
 
-/// <summary>vr.246: a held item stays welded while the stick walks the body into a wall.</summary>
+/// <summary>vr.246: a held item stays welded while the stick walks the body into a wall, and rejoins its hand after
+/// a reach into the wall let it go.</summary>
 internal sealed partial class SelfTestRunner
 {
     /// <summary>
     /// vr.246: an apple carried low in the right hand, the move stick forward for 3 s toward a wall 1.2 m ahead, then
-    /// released: the apple never leaves its hand weld. The game pushes the held item with the walk on its own
+    /// released: the apple never leaves its hand weld. Then the controller held out past the arm's reach walks into the
+    /// wall for 2 s; with the wall removed and the stick let go, the apple is back in its weld within 1.5 s. The game pushes the held item with the walk on its own
     /// (CharacterItems.AddMovementForce); with the body stopped by a wall that push held the welded hand 0.3 m off its
     /// controller and the weld let go on every walk (vr run of e7b3cd9, the airport's spawn corner).
     /// </summary>
@@ -42,7 +44,8 @@ internal sealed partial class SelfTestRunner
         bodyRestore = () =>
         {
             Script(move).Stick = Vector2.zero;
-            Object.Destroy(wall);
+            if (wall != null)
+                Object.Destroy(wall);
         };
         // Low beside the body, as an item is carried while walking: the wall stops the chest before it meets the hand.
         HeadFrame(out var head, out var ahead, out var right);
@@ -77,9 +80,39 @@ internal sealed partial class SelfTestRunner
             $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, weld released {released}"
         );
         if (c.data.currentItem == null)
+        {
             Fail("the apple left the hand: " + note);
-        else if (released)
+            yield break;
+        }
+        if (released)
+        {
             Fail("the apple left its hand weld during the walk: " + note);
+            yield break;
+        }
+        // Then held out to read, past the arm's reach (vr.245's natural hold), and walked into the wall again: the
+        // hand meets the wall and the weld may let go. With the wall gone and the stick let go it must rejoin, the
+        // arm still short of its controller (live run of 0e8ad7e: free 22 s).
+        SetHand(false, head + ahead * 0.45f + right * 0.15f + Vector3.down * 0.15f);
+        yield return Wait(0.5f);
+        bool releasedAtWall = false;
+        start = Now;
+        Script(move).Stick = new Vector2(0f, 1f);
+        while (Now - start < 2f)
+        {
+            releasedAtWall |= driver.HeldReleased;
+            yield return null;
+        }
+        Script(move).Stick = Vector2.zero;
+        Object.Destroy(wall);
+        start = Now;
+        yield return WaitFor(() => !driver.HeldReleased, 1.5f);
+        note += F(
+            $"; held out to read and walked into the wall: released {releasedAtWall}, back in the weld {(driver.HeldReleased ? "never" : $"{Now - start:0.00} s after the stop")}"
+        );
+        if (c.data.currentItem == null)
+            Fail("the apple left the hand: " + note);
+        else if (driver.HeldReleased)
+            Fail("the apple did not rejoin its hand after the wall: " + note);
         else
             stepNote = note;
     }
