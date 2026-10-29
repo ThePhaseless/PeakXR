@@ -14,6 +14,14 @@ public static class ReadableText
     /// legibility floor for headset text.</summary>
     public const float MinDegrees = 1.3f;
 
+    /// <summary>Smallest em height in degrees of a game menu's regular text (settings rows, buttons), the low end of
+    /// published VR reading sizes: in distance-independent mm (1 dmm = 1 mm at 1 m, 17.5 dmm a degree) Google's
+    /// Daydream guidelines size titles at 32 dmm and Dingler et al. 2018 found 41 +- 14 dmm preferred, both as cited
+    /// by Kojic et al., QoMEX 2020 (arXiv:2004.01545), whose readers chose body text a little under Google's; Microsoft's HoloLens study puts comfortable reading at 0.6-0.75 degrees on a much sharper
+    /// display (learn.microsoft.com/windows/mixed-reality/design/typography). A whole menu cannot reach
+    /// <see cref="MinDegrees"/>: PEAK's 1773 px settings page would span 85 degrees.</summary>
+    public const float MinMenuDegrees = 1f;
+
     /// <summary>Largest <c>UI.TextScale</c>.</summary>
     public const float MaxTextScale = 2f;
 

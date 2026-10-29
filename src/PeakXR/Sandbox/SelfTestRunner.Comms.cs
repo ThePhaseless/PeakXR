@@ -33,6 +33,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.115-gesture-emote", 20f, GestureEmoteStep());
         yield return HandStep("vr.117-pause-refused", 20f, PauseRefusedStep());
         yield return HandStep("vr.185-menu-recenter", 20f, MenuRecenterStep());
+        yield return HandStep("vr.248-menu-follow-text", 25f, MenuFollowTextStep());
         yield return HandStep("vr.186-cheer", 20f, CheerStep());
         yield return PromptGlyphSteps();
         // ---- WP6 gap round: ping

@@ -200,7 +200,17 @@ public static class PanelMath
     /// reading size, so small menus grow to it and no further.</summary>
     public const float MaxMenuDegreesPerPixel = 0.07f;
 
-    /// <summary>Tallest menu content as a fraction of the menu width: 1.2 m at the 1.6 m default, about 37
+    /// <summary><c>UI.MenuDistance</c> default, metres.</summary>
+    public const float DefaultMenuDistance = 1.8f;
+
+    /// <summary><c>UI.MenuWidth</c> default, metres: 67 degrees at <see cref="DefaultMenuDistance"/>, so the
+    /// regular 24 px row text of PEAK's widest page (settings, 1773 px of content) is
+    /// <see cref="ReadableText.MinMenuDegrees"/> tall, while the page stays under the 70 degree span where a plate is
+    /// dropped (<see cref="MenuBackplate.MaxSpanDegrees"/>) and inside a 95-110 degree headset view with room to
+    /// spare. 1.6 m (48 degrees) drew that text at 0.69 degrees: a tester found the menu too small to read.</summary>
+    public const float DefaultMenuWidth = 2.4f;
+
+    /// <summary>Tallest menu content as a fraction of the menu width: 1.8 m at the 2.4 m default, about 53
     /// degrees at 1.8 m, so a tall menu is read with the eyes and a small nod.</summary>
     public const float MenuHeightRatio = 0.75f;
 

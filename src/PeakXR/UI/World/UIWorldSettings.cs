@@ -1,6 +1,7 @@
 using BepInEx.Configuration;
 using PeakXR.Core;
 using PeakXR.VR;
+using UnityEngine;
 using MenuBackplateMath = PeakXR.Core.MenuBackplate;
 
 namespace PeakXR.UI.World;
@@ -121,16 +122,17 @@ internal sealed class UIWorldSettings
             MenuDistance = cfg.Bind(
                 ui,
                 "MenuDistance",
-                1.8f,
+                PanelMath.DefaultMenuDistance,
                 Range("Distance of menu panels from your head, in metres.", 1f, 3f)
             ),
             MenuWidth = cfg.Bind(
                 ui,
                 "MenuWidth",
-                1.6f,
+                PanelMath.DefaultMenuWidth,
                 Range(
-                    "Width of a full-screen menu panel, in metres. Smaller menus (pause) grow until their text is "
-                        + "comfortable to read.",
+                    "Width of the widest menu (settings), in metres: menus grow with it, text and all. 2.4 spans "
+                        + "about 67 degrees at 1.8 m, so settings text is about 1 degree tall. Smaller menus (pause) "
+                        + "grow until their text is comfortable to read.",
                     0.8f,
                     3f
                 )
@@ -319,8 +321,9 @@ internal sealed class UIWorldSettings
     }
 
     /// <summary>
-    /// Layout 1 changed three defaults (HUD on the wrist, the off hand's wrist, no head-locked reticle). A config
-    /// saved before it still holds the old defaults, so move each entry that equals its old default, once.
+    /// Layout 1 changed three defaults (HUD on the wrist, the off hand's wrist, no head-locked reticle), layout 2 the
+    /// menu width. A config saved before them still holds the old defaults, so move each entry that equals its old
+    /// default, once.
     /// </summary>
     private static void Migrate(ConfigFile cfg, UIWorldSettings s, string section)
     {
@@ -334,15 +337,19 @@ internal sealed class UIWorldSettings
                 UI.Settings.VRTab.HiddenTag
             )
         );
-        if (version.Value >= 1)
-            return;
-        if (s.Hud.Value == HudMode.Body)
-            s.Hud.Value = HudMode.Wrist;
-        if (s.WristHand.Value == WristSide.Left)
-            s.WristHand.Value = WristSide.OffHand;
-        if (s.Reticle.Value == ReticleMode.Head)
-            s.Reticle.Value = ReticleMode.Hidden;
-        version.Value = 1;
+        if (version.Value < 1)
+        {
+            if (s.Hud.Value == HudMode.Body)
+                s.Hud.Value = HudMode.Wrist;
+            if (s.WristHand.Value == WristSide.Left)
+                s.WristHand.Value = WristSide.OffHand;
+            if (s.Reticle.Value == ReticleMode.Head)
+                s.Reticle.Value = ReticleMode.Hidden;
+        }
+        // Layout 2: menus wider (UI.MenuWidth 1.6 to 2.4 m), so settings text is readable.
+        if (version.Value < 2 && Mathf.Approximately(s.MenuWidth.Value, 1.6f))
+            s.MenuWidth.Value = PanelMath.DefaultMenuWidth;
+        version.Value = 2;
     }
 
     private static ConfigDescription Range(string text, float min, float max) =>

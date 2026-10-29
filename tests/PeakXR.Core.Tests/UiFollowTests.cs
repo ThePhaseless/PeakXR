@@ -320,6 +320,24 @@ public class PanelMathTests
         TestUtil.Near(1.4f, 2f * MathF.Atan(10f * s / 1.8f) * 57.29578f, 0.01f);
     }
 
+    [Theory]
+    // PEAK's widest pages (scene data): the shared settings page 1773x920 px with 24-28 px row text, the controls
+    // page 1615x1000 with 30 px action names, the boarding pass 1300x500 with 22 px headers.
+    [InlineData(1773f, 920f, 24f)]
+    [InlineData(1615f, 1000f, 30f)]
+    [InlineData(1300f, 500f, 22f)]
+    public void MenuScale_DefaultsKeepRegularTextReadableInAComfortableSpan(
+        float width,
+        float height,
+        float textPixels
+    )
+    {
+        float d = PanelMath.DefaultMenuDistance;
+        float s = PanelMath.MenuMetersPerPixel(width, height, PanelMath.DefaultMenuWidth, d);
+        Assert.InRange(ReadableText.Degrees(textPixels * s, d), ReadableText.MinMenuDegrees, 3f);
+        Assert.InRange(ReadableText.Degrees(width * s, d), 0f, MenuBackplate.MaxSpanDegrees);
+    }
+
     [Fact]
     public void MenuScale_TallContentFitsHeight()
     {
