@@ -48,7 +48,6 @@ internal static class SpikeCue
         in RaycastHit preview
     )
     {
-        outOfRangeFrame = -10;
         // Placing empties the slot and refills it with the next piton (CharacterItems.cs:1086-1094): only the same slot
         // object, still set, means nothing was placed.
         bool slotKept = spikeSlot != null && ReferenceEquals(spikeSlot, before.Slot);
@@ -62,6 +61,9 @@ internal static class SpikeCue
             || !VRSession.Active
         )
             return;
+        // Cleared only for the local player: the patch runs for every character, and a remote one's pass cleared the
+        // local aim line's red between this frame's local pass and the line's read.
+        outOfRangeFrame = -10;
         nextSpike = spike;
         nextSpikeFrame = Time.frameCount;
         var d = c.data;
