@@ -11,12 +11,14 @@ namespace PeakXR.Interact.Tools;
 /// starts a cast on terrain within <c>climbingSpikeStartDistance</c> (climbing) or <c>...Grounded</c>, and
 /// <c>WithinClimbingSpikePreviewRange</c> (:971-979) cancels it once the aim moves past the preview disable
 /// distance. Both aim from the hand in VR (interact.aim), so the hand suggests a reach the game does not have.
-/// While a finger rests on the aiming trigger and the wall is past range, the wall gets a red ring and the end of the
-/// real range a teal one ("Move 0.6 m closer"); a press there, or a cast lost by moving away, is denied with the same
-/// cue. Runs in the <c>UpdateClimbingSpikeUse</c> patch, where the camera is still at the aiming hand.
+/// While a finger rests on a held spike's trigger and the wall is past range, the wall gets a red ring and the end of
+/// the real range a teal one ("Move 0.6 m closer"); a press there, or a cast lost by moving away, is denied with the
+/// same cue. Runs in the <c>UpdateClimbingSpikeUse</c> patch, where the camera is still at the aiming hand.
 /// A held spike that is not the first one in the slots never places by itself (vanilla <c>climbingSpikeSelected</c>,
 /// CharacterItems.cs:102-112, picks the first spike slot, :935-946): aimed at a wall in range, it gets a CantUse
-/// cue whose ring marks the belt slot of the spike that places. The slot rule itself stays vanilla.
+/// cue whose ring marks the belt slot of the spike that places. The slot rule itself stays vanilla. A pocketed spike
+/// goes in only at a climbing hand that holds its trigger (<see cref="HandPiton"/>), which has its own cues; a cast of
+/// it lost by moving away is denied here too.
 /// </summary>
 internal static class SpikeCue
 {
@@ -30,14 +32,6 @@ internal static class SpikeCue
     /// <summary>The aimed wall is out of range this frame or the last (for the aim line's colour). Goes stale on its
     /// own when the spike patch stops running (item changed, no spikes left, not local).</summary>
     public static bool OutOfRange => Time.frameCount - outOfRangeFrame <= 1;
-
-    private static ClimbingSpikeComponent nextSpike;
-    private static int nextSpikeFrame = -10;
-
-    /// <summary>The local player's piton the game places next (its first spike slot), for the aim line of a pocketed
-    /// one; null once the spike patch stops running for the local player.</summary>
-    public static ClimbingSpikeComponent NextSpike =>
-        Time.frameCount - nextSpikeFrame <= 1 ? nextSpike : null;
 
     public static void After(
         Character c,
@@ -64,16 +58,15 @@ internal static class SpikeCue
         // Cleared only for the local player: the patch runs for every character, and a remote one's pass cleared the
         // local aim line's red between this frame's local pass and the line's read.
         outOfRangeFrame = -10;
-        nextSpike = spike;
-        nextSpikeFrame = Time.frameCount;
         var d = c.data;
         bool climbing = d.isClimbingAnything;
         var held = d.currentItem;
         bool heldSpike = held != null && held.TryGetComponent<ClimbingSpikeComponent>(out _);
-        // The hand interact.aim aims from (AimPatches.ClimbingSpike): the holding hand, else the secondary-use hand.
-        bool left = heldSpike
-            ? LocalHold.ItemInLeftHand
-            : PhysicalInteraction.UseHandLeft(c, secondary: true);
+        // The hand the cast aims from (AimPatches.ClimbingSpike): the holding hand, else the climbing hand that holds
+        // its trigger for a piton; nothing else sets one.
+        if (!heldSpike && !HandPiton.Placing)
+            return;
+        bool left = heldSpike ? LocalHold.ItemInLeftHand : HandPiton.PlacingLeft;
         var origin = cam.transform.position;
         var dir = cam.transform.forward;
 
@@ -108,21 +101,23 @@ internal static class SpikeCue
                 );
             return;
         }
+        if (!heldSpike)
+        {
+            HandPiton.After(c, tickAfter);
+            return;
+        }
         if (tickAfter > 0f)
         {
             within = true;
             return;
         }
 
-        bool attempt =
-            (input.usePrimaryWasPressed && !climbing && heldSpike)
-            || (input.useSecondaryWasPressed && (heldSpike || climbing));
+        bool attempt = (input.usePrimaryWasPressed && !climbing) || input.useSecondaryWasPressed;
         ref var hand = ref VRInput.Hand(left);
-        // Trying to place: a finger on a held spike's trigger, or a real pull for a pocketed one (a resting finger
-        // on an empty hand's trigger means nothing). A fist on the wall squeezing it is no try: that trigger is muted.
+        // Trying to place: a finger on the held spike's trigger. A fist on the wall squeezing it is no try: that
+        // trigger is muted.
         bool trying =
-            !PhysicalInteraction.UseMuted(left)
-            && (heldSpike ? hand.TriggerTouch || hand.Trigger > 0.05f : hand.Trigger > 0.5f);
+            !PhysicalInteraction.UseMuted(left) && (hand.TriggerTouch || hand.Trigger > 0.05f);
         if (!attempt && !trying)
         {
             within = true;
@@ -145,8 +140,7 @@ internal static class SpikeCue
         // the game places from.
         var selected = c.refs.items.currentSelectedSlot;
         if (
-            heldSpike
-            && !climbing
+            !climbing
             && hit
             && wall.distance <= range
             && spikeSlot != null

@@ -111,11 +111,14 @@ internal static class ItemGestures
             return;
         var input = c.input;
         bool left = LocalHold.ItemInLeftHand;
-        // While climbing, the off-hand trigger sets a pocketed piton (CharacterItems.cs:1019), not the held item.
+        // While climbing, the off-hand trigger sets a pocketed piton (CharacterItems.cs:1019), not the held item,
+        // unless a hand on the wall sets it (Tools.HandPiton).
         if (
             input.useSecondaryWasPressed
             && !item.isUsingPrimary
-            && !(c.data.isClimbingAnything && c.data.climbingSpikeCount > 0)
+            && !(
+                c.data.isClimbingAnything && c.data.climbingSpikeCount > 0 && !Tools.HandPiton.On(c)
+            )
             && !item.CanUseSecondary()
         )
             UseDenial.DenySecondary(item, !left);

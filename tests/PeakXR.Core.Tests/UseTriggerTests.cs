@@ -35,7 +35,7 @@ public class UseTriggerTests
         var t = new UseTrigger();
         t.Update(true, false, true, Dt);
         Assert.True(t.Down);
-        Assert.False(t.Refused);
+        Assert.False(t.ClimbPress);
     }
 
     [Fact]
@@ -81,24 +81,110 @@ public class UseTriggerTests
     }
 
     [Fact]
-    public void PressWithTheGrip_NotRefused()
+    public void PressWithTheGrip_NoClimbPress()
     {
         var t = new UseTrigger();
         t.Update(false, true, false, Dt);
         t.Update(true, true, false, Dt);
-        Assert.False(t.Refused);
+        Assert.False(t.ClimbPress);
     }
 
     [Fact]
-    public void PressAfterTheHandSettledOnTheWall_Refused()
+    public void PressAfterTheHandSettledOnTheWall_IsAClimbPress()
+    {
+        var t = Settled();
+        t.Update(true, true, false, Dt);
+        Assert.True(t.ClimbPress);
+        Assert.False(t.Down);
+        t.Update(true, true, false, Dt);
+        Assert.False(t.ClimbPress);
+    }
+
+    [Fact]
+    public void ClimbPressHeld_SetsAPitonAfterTheHold()
+    {
+        // While climbing, a hand on the wall that pulls its trigger and keeps it down sets a piton at that hand.
+        var t = Settled();
+        t.Update(true, true, false, Dt);
+        Assert.True(t.ClimbHold);
+        Assert.False(t.Piton);
+        float held = 0f;
+        while (held < UseTrigger.HoldSeconds - Dt)
+        {
+            t.Update(true, true, false, Dt);
+            held += Dt;
+            Assert.False(t.Piton);
+        }
+        t.Update(true, true, false, Dt);
+        t.Update(true, true, false, Dt);
+        Assert.True(t.Piton);
+        Assert.False(t.Down);
+    }
+
+    [Fact]
+    public void ClimbPressReleasedEarly_NoPiton()
+    {
+        var t = Settled();
+        t.Update(true, true, false, Dt);
+        t.Update(true, true, false, Dt);
+        t.Update(false, true, false, Dt);
+        Assert.False(t.ClimbHold);
+        for (float s = 0f; s < UseTrigger.HoldSeconds * 2f; s += Dt)
+        {
+            t.Update(false, true, false, Dt);
+            Assert.False(t.Piton);
+        }
+    }
+
+    [Fact]
+    public void TriggerSqueezedWithTheGrip_NeverSetsAPiton()
+    {
+        // The fist closing on rock squeezes trigger and grip together: no piton however long it stays closed.
+        var t = new UseTrigger();
+        t.Update(true, true, false, Dt);
+        for (float s = 0f; s < 3f; s += Dt)
+        {
+            t.Update(true, true, false, Dt);
+            Assert.False(t.ClimbHold);
+            Assert.False(t.Piton);
+        }
+    }
+
+    [Fact]
+    public void TriggerHeldIntoTheClimb_NeverSetsAPiton()
+    {
+        var t = new UseTrigger();
+        t.Update(true, false, false, Dt);
+        for (float s = 0f; s < 3f; s += Dt)
+        {
+            t.Update(true, true, false, Dt);
+            Assert.False(t.Piton);
+        }
+    }
+
+    [Fact]
+    public void HandLeavesTheClimber_EndsThePitonHold()
+    {
+        var t = Settled();
+        t.Update(true, true, false, Dt);
+        for (float s = 0f; s < UseTrigger.HoldSeconds + 0.1f; s += Dt)
+            t.Update(true, true, false, Dt);
+        Assert.True(t.Piton);
+        t.Update(true, false, false, Dt);
+        Assert.False(t.ClimbHold);
+        Assert.False(t.Piton);
+        // Back on the wall with the trigger still down: no fresh hold out of it.
+        for (float s = 0f; s < 1f; s += Dt)
+            t.Update(true, true, false, Dt);
+        Assert.False(t.Piton);
+    }
+
+    /// <summary>A trigger whose hand has held the wall past <see cref="UseTrigger.SettleSeconds"/>.</summary>
+    private static UseTrigger Settled()
     {
         var t = new UseTrigger();
         for (float s = 0f; s < UseTrigger.SettleSeconds + Dt; s += Dt)
             t.Update(false, true, false, Dt);
-        t.Update(true, true, false, Dt);
-        Assert.True(t.Refused);
-        Assert.False(t.Down);
-        t.Update(true, true, false, Dt);
-        Assert.False(t.Refused);
+        return t;
     }
 }

@@ -2539,18 +2539,26 @@ internal static class PhysicalInteraction
             secondaryChord = one && VRInput.Hand(primaryHand.Left).StickClick;
         bool chord = one && secondaryChord;
         // A hand on the wall, rope, vine or handle squeezes its trigger with the grip: no use, so a climbing fist never
-        // sets a piton or runs the held item (UseTrigger). A deliberate press there says the other hand does it.
-        bool spikeUse = c.data.isClimbingAnything && c.data.climbingSpikeCount > 0;
+        // sets a piton or runs the held item (UseTrigger). A deliberate press held on a wall grip sets a piton at that
+        // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item.
         foreach (var hand in Hands)
         {
             hand.Use.Update(hand.Trigger.Held, Climbs(hand), hand == primaryHand, dt);
-            if (hand.Use.Refused && cfg.TriggerUse && (holding || spikeUse))
+            if (hand.Use.ClimbPress && cfg.TriggerUse && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,
                     DenyReason.UseOtherHand,
                     DenyHint.On(rig.Hand(!hand.Left))
                 );
         }
+        Tools.HandPiton.Update(
+            c,
+            rig,
+            LeftHand.Use,
+            LeftHand.Action == GripPressAction.Climb,
+            RightHand.Use,
+            RightHand.Action == GripPressAction.Climb
+        );
         // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
         bool primaryDown =
             cfg.TriggerUse
