@@ -34,14 +34,56 @@ public class GripIntentTests
     }
 
     [Fact]
-    public void HoldingItem_OtherHandNearDifferentItemAndWall_Climbs()
+    public void HoldingItem_FreeHandOnAnItemByAWall_PocketsIt()
+    {
+        // Issue #13: the free hand's item glowed and the grip climbed instead; on the ground the item under the hand
+        // wins, as it does for empty hands (ItemBeatsWall).
+        var c = Empty();
+        c.HoldingItem = true;
+        c.Candidate = GrabCandidate.Item;
+        c.NearClimbable = true;
+        Assert.Equal(GripPressAction.GrabItem, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void HoldingItem_FreeHandOnAnItemByAWall_OnTheWall_Climbs()
     {
         var c = Empty();
         c.HoldingItem = true;
         c.Candidate = GrabCandidate.Item;
         c.NearClimbable = true;
+        c.BodyClimbing = true;
+        c.OnWall = true;
         Assert.Equal(GripPressAction.Climb, GripIntent.OnPress(c));
     }
+
+    [Theory]
+    [InlineData(true, 0f, true)]
+    // The game's ground check drops for a physics step; it still lets a body jump 0.2 s after (CharacterMovement.cs:412).
+    [InlineData(false, 0.1f, true)]
+    [InlineData(false, 0.2f, true)]
+    [InlineData(false, 0.25f, false)]
+    public void OnFeet_KeepsTheGamesGroundGrace(bool grounded, float sinceGrounded, bool onFeet) =>
+        Assert.Equal(onFeet, GripIntent.OnFeet(grounded, sinceGrounded));
+
+    [Fact]
+    public void PickupWait_WaitsOutTheEquipCooldown()
+    {
+        // Item.Interact ignores a pickup within 0.25 s of an equip (Item.cs:580): the press waits for its end.
+        TestUtil.Near(0.15f, GripIntent.PickupWait(now: 10.1f, lastEquip: 10f));
+        Assert.Equal(0f, GripIntent.PickupWait(now: 10.3f, lastEquip: 10f));
+        // A long switch lock (an emote's LockFromSwitching(3), CharacterAnimations.cs:422) is not waited out: the
+        // press goes in and the game's refusal shows.
+        Assert.Equal(0f, GripIntent.PickupWait(now: 10f, lastEquip: 12f));
+    }
+
+    [Theory]
+    [InlineData(0.05f, 0.14f, true)]
+    // Out of the window or past the slack: the fresh search decides.
+    [InlineData(GrabGrace.Seconds + 0.01f, 0.1f, false)]
+    [InlineData(0.05f, 0.12f + GrabGrace.Slack + 0.01f, false)]
+    public void GrabGrace_KeepsTheLastHighlight(float since, float distance, bool keeps) =>
+        Assert.Equal(keeps, GrabGrace.Keeps(since, distance, 0.12f));
 
     [Fact]
     public void OtherHandOnHeldItem_BecomesSecondHand()

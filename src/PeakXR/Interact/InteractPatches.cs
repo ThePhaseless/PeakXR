@@ -185,12 +185,18 @@ internal static class InteractPatches
             }
             if (interactableResult == null && c.input.interactWasPressed)
                 State.ReportTooFar(__instance, c, __state);
-            // One held item at a time: the free hand's grip does not pick up a second item.
+            // One held item at a time: the free hand's fallback grip pockets a second item, as its grab would, the frame
+            // DoInteraction acts on it (Interaction.cs:108-125), or nothing (a refusal cue when pockets are full).
             if (
                 PhysicalInteraction.GripInteractActive
                 && c.data.currentItem != null
                 && interactableResult is Item other
                 && other != c.data.currentItem
+                && !(
+                    c.input.interactIsPressed
+                    && __instance.readyToInteract
+                    && PhysicalInteraction.InteractPocketing(other)
+                )
             )
                 interactableResult = null;
             State.KeepPointedHold(__instance, c, ref interactableResult, __state);

@@ -3,6 +3,22 @@ using System.Numerics;
 
 namespace PeakXR.Core;
 
+/// <summary>
+/// The grip takes what its hand's glow showed: the glow is read up to the frame before the press, and a hand moves as
+/// it closes (issue #13: a highlighted item ignored a grip that closed just past it). A glow this recent, on a target
+/// still this near, stands in for a fresh search that found nothing.
+/// </summary>
+public static class GrabGrace
+{
+    public const float Seconds = 0.2f;
+
+    /// <summary>Metres past the grab radius the closing hand may have moved off the glowing target.</summary>
+    public const float Slack = 0.05f;
+
+    public static bool Keeps(float sinceShown, float distance, float grabRadius) =>
+        sinceShown <= Seconds && distance <= grabRadius + Slack;
+}
+
 /// <summary>Picks the best grab candidate for a hand. No allocations.</summary>
 public static class GrabSelector
 {
