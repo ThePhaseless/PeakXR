@@ -110,8 +110,12 @@ public static class SandboxCommands
     [ConsoleCommand]
     public static void Restock()
     {
-        if (ItemRoom.Current == null || !ItemRoom.Current.Restock(-1))
-            SandboxActions.Say("No open item room to restock.");
+        var why =
+            ItemRoom.Current != null
+                ? ItemRoom.Current.Restock(-1)
+                : "No open item room to restock.";
+        if (why != null)
+            SandboxActions.Say(why);
     }
 
     /// <summary>Add the commands above to the live console list. False until the console has initialised.</summary>

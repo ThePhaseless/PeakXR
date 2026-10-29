@@ -661,11 +661,15 @@ public static class ShelfLayout
             last + spec.WallRoom,
             last + spec.WallRoom + spec.WallDepth
         );
-        float startX = Math.Clamp(0f, room.MinX + spec.Margin, room.MaxX - spec.Margin);
+        // Not Math.Clamp: it throws when the floor is narrower than two margins (the spawn elevator).
+        float startX = Math.Min(Math.Max(0f, room.MinX + spec.Margin), room.MaxX - spec.Margin);
+        if (!(startX >= room.MinX && startX <= room.MaxX))
+            startX = room.CenterX;
         var start = new RoomRect(startX, startX, room.MinZ, room.MinZ);
 
         bool fits =
-            widest <= availW + 1e-3f
+            Finite(room)
+            && widest <= availW + 1e-3f
             && used <= availD + 1e-3f
             && (!wall || spec.WallWidth <= availW + 1e-3f);
         if (span[(int)ItemZone.Volatile])
@@ -697,6 +701,12 @@ public static class ShelfLayout
             Over = over,
         };
     }
+
+    static bool Finite(RoomRect r) =>
+        float.IsFinite(r.MinX)
+        && float.IsFinite(r.MaxX)
+        && float.IsFinite(r.MinZ)
+        && float.IsFinite(r.MaxZ);
 }
 
 /// <summary>Whether a table's items should be out: spawned within the load radius of the player, removed past the

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PeakXR.Core.Tests;
 
@@ -354,6 +355,61 @@ public class ShelfLayoutTests
     {
         var closet = new RoomRect(-2f, 2f, 0f, 4f);
         Assert.False(ShelfLayout.Plan(Typical, closet, Spec).Fits);
+    }
+
+    [Fact]
+    public void TheSpawnElevatorNarrowerThanTwoMarginsSaysItDoesNotFitWithoutThrowing()
+    {
+        // Measured in game (e7b3cd9): the start orbs' clamp threw "-0.2078318 cannot be greater than -0.2447219".
+        var elevator = new RoomRect(-0.2078318f - Spec.Margin, -0.2447219f + Spec.Margin, 0f, 3f);
+        var plan = ShelfLayout.Plan(Typical, elevator, Spec);
+
+        Assert.False(plan.Fits);
+        Assert.InRange(plan.StartX, elevator.MinX, elevator.MaxX);
+    }
+
+    public static TheoryData<float, float, float, float> BadRooms() =>
+        new()
+        {
+            { 0f, 0f, 0f, 0f },
+            { -0.5f, 0.5f, 0f, 0.5f },
+            { 5f, -5f, 0f, 30f },
+            { -12f, 12f, 30f, 0f },
+            { 5f, -5f, 30f, 0f },
+            { float.NaN, 12f, 0f, 30f },
+            { -12f, 12f, 0f, float.NaN },
+            { float.NaN, float.NaN, float.NaN, float.NaN },
+            { float.NegativeInfinity, float.PositiveInfinity, 0f, 30f },
+            { -12f, 12f, 0f, float.PositiveInfinity },
+            { float.PositiveInfinity, float.NegativeInfinity, 0f, 30f },
+        };
+
+    [Theory]
+    [MemberData(nameof(BadRooms))]
+    public void AnyDegenerateInvertedOrNonFiniteRoomGivesTheDoesNotFitPlan(
+        float minX,
+        float maxX,
+        float minZ,
+        float maxZ
+    )
+    {
+        var plan = ShelfLayout.Plan(Typical, new RoomRect(minX, maxX, minZ, maxZ), Spec);
+
+        Assert.False(plan.Fits);
+        Assert.Equal(Typical.Sum(), plan.Slots.Length);
+        Assert.NotEmpty(plan.Tables);
+    }
+
+    [Fact]
+    public void NoItemsInAClosetDoesNotThrow()
+    {
+        var plan = ShelfLayout.Plan(
+            new int[ShelfLayout.Buckets],
+            new RoomRect(1f, -1f, 0f, 0f),
+            Spec
+        );
+        Assert.False(plan.Fits);
+        Assert.Empty(plan.Slots);
     }
 
     [Fact]

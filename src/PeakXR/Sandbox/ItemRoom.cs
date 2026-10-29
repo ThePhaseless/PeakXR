@@ -4,6 +4,7 @@ using System.Text;
 using HarmonyLib;
 using Peak.Network;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.UI.Affordances;
 using PeakXR.UI.Common;
 using PeakXR.UI.Guide;
@@ -33,6 +34,11 @@ internal sealed class ItemRoom : MonoBehaviour
     private const float LeaveTimeout = 60f;
     private const float TableHeight = 0.95f;
     private const float MaxReach = 40f;
+    private const int Headings = 16;
+
+    /// <summary>A plan this much bigger than the best open floor is built anyway (a few tables touch walls); a bigger
+    /// one would stand in them, so the room does not open.</summary>
+    private const float MaxOverflow = 1.25f;
     private const int SpawnPerFrame = 4;
     private const float KeepAliveEvery = 0.5f;
     private const float KeepAliveSum = 0.85f;
@@ -206,7 +212,7 @@ internal sealed class ItemRoom : MonoBehaviour
     private static void Refuse(Vector3 at, bool left, DenyReason reason, string why)
     {
         SandboxActions.Say(why);
-        if (!Affordance.Deny(left, at, reason))
+        if (!Affordance.DenyWithText(left, at, reason, why))
         {
             CueAudio.Play(CueSound.Refused, at, 1f);
             UIHaptics.Tick(left, 0.4f, 0.06f);
@@ -259,12 +265,29 @@ internal sealed class ItemRoom : MonoBehaviour
             Destroy(gameObject);
     }
 
+    /// <summary>The room did not open: everything it placed goes (<see cref="OnDestroy"/>), Enter opens a fresh one at
+    /// once, and the player gets the refusal with <paramref name="why"/> in front of them.</summary>
+    private void Close(string why)
+    {
+        Current = null;
+        Destroy(gameObject);
+        var c = Character.localCharacter;
+        var head =
+            VRRig.Instance != null && VRRig.Instance.Head != null ? VRRig.Instance.Head
+            : c != null ? c.transform
+            : null;
+        var at = head != null ? head.position + head.forward * 0.6f : Vector3.zero;
+        Refuse(at, VRInput.LeftHanded, DenyReason.NotHere, why);
+    }
+
     private void OnDestroy()
     {
         SceneManager.activeSceneChanged -= OnScene;
         if (Current == this)
             Current = null;
-        SelfTestProgressGuard.Room = false;
+        // A room opened after this one failed (Close) keeps its guard.
+        if (Current == null)
+            SelfTestProgressGuard.Room = false;
         if (statusesOn != null)
             InAirportRef(statusesOn) = true;
         foreach (var pair in orbs)
@@ -339,7 +362,19 @@ internal sealed class ItemRoom : MonoBehaviour
         if (settled >= ArrivalSettle)
         {
             phase = Phase.Open;
-            Build(Character.localCharacter);
+            string refusal;
+            try
+            {
+                refusal = Build(Character.localCharacter);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<ItemRoomFeature>(e);
+                refusal =
+                    "The item room hit an error and closed (details in LogOutput.log). Press Enter to try again.";
+            }
+            if (refusal != null)
+                Close(refusal);
         }
         else if (Time.unscaledTime > deadline)
         {
@@ -370,7 +405,9 @@ internal sealed class ItemRoom : MonoBehaviour
 
     // ---- building ----
 
-    private void Build(Character c)
+    /// <summary>Lays the room out and places its tables; null when it stands, else why it did not open (nothing is
+    /// placed then).</summary>
+    private string Build(Character c)
     {
         if (InAirportRef != null && c.refs != null && c.refs.afflictions != null)
         {
@@ -402,11 +439,26 @@ internal sealed class ItemRoom : MonoBehaviour
         look.Normalize();
         // Dynamite lights within its radius of where it lies: kept that far from you and everything else as well.
         var spec = new ShelfSpec { VolatileClearance = igniteRadius + 1f };
+        var origin = feet;
         var forward = look;
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < Headings; i++)
+            Consider(feet, Quaternion.Euler(0f, i * 360f / Headings, 0f) * look);
+        // Too tight where you stand (the spawn elevator opens onto the airport hall): spots out along each open
+        // heading, nearest first, the room continuing that way.
+        for (float d = 2f; d <= MaxReach && !plan.Fits; d *= 2f)
+        for (int i = 0; i < Headings && !plan.Fits; i++)
         {
-            var dir = Quaternion.Euler(0f, i * 22.5f, 0f) * look;
-            var rect = Measure(feet, dir);
+            var dir = Quaternion.Euler(0f, i * 360f / Headings, 0f) * look;
+            if (Open(feet, dir, Vector3.Cross(Vector3.up, dir), 0.3f, 0.3f) < d + 1f)
+                continue;
+            var spot = Floor(feet + dir * d, float.NaN);
+            if (Mathf.Abs(spot.y - feet.y) < 1f)
+                Consider(spot, dir);
+        }
+
+        void Consider(Vector3 from, Vector3 dir)
+        {
+            var rect = Measure(from, dir);
             var candidate = ShelfLayout.Plan(counts, rect, spec);
             if (
                 plan == null
@@ -416,23 +468,37 @@ internal sealed class ItemRoom : MonoBehaviour
             {
                 plan = candidate;
                 room = rect;
+                origin = from;
                 forward = dir;
             }
         }
+
+        if (!plan.Fits && !(plan.Over <= MaxOverflow))
+        {
+            Plugin.Log.LogWarning(
+                $"[sandbox.room] no open floor within {MaxReach:0} m holds the tables: best {room} "
+                    + $"({plan.Over:0.0}x too small); not opened"
+            );
+            return "Item room: not enough open floor here. Step out into the airport hall and press Enter again.";
+        }
+
         var right = Vector3.Cross(Vector3.up, forward);
         facing = Quaternion.LookRotation(forward);
-        Vector3 At(float x, float z) => feet + right * x + forward * z;
+        Vector3 At(float x, float z) => origin + right * x + forward * z;
 
         slotAt = new Vector3[total];
         slotSpawned = new GameObject[total];
         root = new GameObject("PeakXR_ItemRoomProps").transform;
         Tables(At, counts);
-        StartOrbs(At(plan.StartX, 1f));
-        Props(feet, At, forward);
+        var start = At(plan.StartX, 1f);
+        StartOrbs(start);
+        Props(origin, At, forward);
+        float away = Flat(origin - feet).magnitude;
         if (plan.Fits)
             Plugin.Log.LogInfo(
                 $"[sandbox.room] {total} items on {plan.Tables.Length} tables, {plan.PerRow} a row, block "
-                    + $"{plan.Block} in room {room} along {forward}, wall {(plan.HasWall ? "placed" : "left out")}"
+                    + $"{plan.Block} in room {room} along {forward}, {away:0.0} m from you, wall "
+                    + $"{(plan.HasWall ? "placed" : "left out")}"
             );
         else
         {
@@ -441,7 +507,7 @@ internal sealed class ItemRoom : MonoBehaviour
                     + "some may stand in the walls"
             );
             SandboxActions.Say(
-                "Item room: not enough open floor here, some tables may touch walls. Leave, play solo, walk into the open hall and press Enter there."
+                "Item room: the open floor here is a little small, so some tables may touch walls."
             );
         }
 
@@ -449,7 +515,20 @@ internal sealed class ItemRoom : MonoBehaviour
             VRRig.Instance != null && VRRig.Instance.Head != null
                 ? VRRig.Instance.Head.position
                 : center;
-        CueAudio.Play(CueSound.Notice, head + forward * 0.6f, 1f);
+        // Built out in the hall: the bell rings from there and its spot is marked.
+        CueAudio.Play(CueSound.Notice, away > 1f ? start : head + forward * 0.6f, 1f);
+        if (away > 1f || !plan.Fits)
+            Affordance.Inform(
+                VRInput.LeftHanded,
+                head + forward * 0.6f,
+                DenyReason.HappenedHere,
+                DenyHint.At(start),
+                plan.Fits
+                    ? $"Item room set up {away:0} m that way"
+                    : "Not enough open floor here: some tables touch walls",
+                forceText: true
+            );
+        return null;
     }
 
     /// <summary>Every database item by bucket (zone and table, <see cref="ShelfLayout.Bucket"/>); those that cannot
@@ -465,6 +544,7 @@ internal sealed class ItemRoom : MonoBehaviour
         var skipped = new StringBuilder();
         var dangerous = new StringBuilder();
         var placed = new List<Item>();
+        var harms = new List<string>();
         var prefabNames = new List<string>();
         var keys = new List<string>();
         var bucketOf = new List<int>();
@@ -502,12 +582,11 @@ internal sealed class ItemRoom : MonoBehaviour
             var zone = ItemShelf.ZoneOf(harm, ignite);
             if (zone == ItemZone.Volatile)
                 igniteRadius = Mathf.Max(igniteRadius, ignite);
-            if (zone != ItemZone.Helpful)
-                dangerous
-                    .Append(item.name)
-                    .Append(" (")
-                    .Append(zone == ItemZone.Volatile ? $"lights within {ignite:0.#} m" : harm)
-                    .Append("); ");
+            harms.Add(
+                zone == ItemZone.Helpful ? null
+                : zone == ItemZone.Volatile ? $"lights within {ignite:0.#} m"
+                : harm
+            );
             placed.Add(item);
             prefabNames.Add(item.name);
             // One per display name (Item.UIData.itemName, Item.cs:41) and zone: chess colours and guidebook pages
@@ -525,6 +604,9 @@ internal sealed class ItemRoom : MonoBehaviour
             {
                 kinds++;
                 buckets[bucketOf[i]].Add(placed[i]);
+                // Only what is on the tables: a left-out duplicate is never listed as dangerous as well.
+                if (harms[i] != null)
+                    dangerous.Append(prefabNames[i]).Append(" (").Append(harms[i]).Append("); ");
             }
             else
                 duplicates.Append(prefabNames[i]).Append("; ");
@@ -866,16 +948,27 @@ internal sealed class ItemRoom : MonoBehaviour
 
     /// <summary>Puts a table's items (or all, <see cref="RestockAll"/>) back: items still on their spot stay, ones
     /// lying anywhere else in the world are removed and fresh ones placed on the tables you are near. Held or packed
-    /// ones stay yours.</summary>
-    public bool Restock(int group)
+    /// ones stay yours. Null when it started, else why not; an error is caught here, at the room's boundary.</summary>
+    public string Restock(int group)
     {
         if (phase != Phase.Open || plan == null)
-            return false;
+            return "The item room is not open.";
         if (spawning)
+            return "Still placing items.";
+        try
         {
-            SandboxActions.Say("Still placing items.");
-            return false;
+            RestockTables(group);
+            return null;
         }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<ItemRoomFeature>(e);
+            return "Restock hit an error (details in LogOutput.log).";
+        }
+    }
+
+    private void RestockTables(int group)
+    {
         var redo = new List<int>();
         for (int t = 0; t < plan.Tables.Length; t++)
         {
@@ -893,7 +986,6 @@ internal sealed class ItemRoom : MonoBehaviour
             }
         }
         StartCoroutine(Spawn(redo));
-        return true;
     }
 
     /// <summary>A few a frame, held still where they belong (kinematic until picked up: <c>Item.SetState</c> clears it,
@@ -903,45 +995,52 @@ internal sealed class ItemRoom : MonoBehaviour
         spawning = true;
         int placed = 0,
             failed = 0;
-        for (int k = 0; k < slots.Count && phase == Phase.Open; k++)
+        // finally: a spawn that dies mid-way must not leave every later restock "still placing".
+        try
         {
-            int i = slots[k];
-            try
+            for (int k = 0; k < slots.Count && phase == Phase.Open; k++)
             {
-                var go = PhotonNetwork.InstantiateItemRoom(
-                    slotItems[i].gameObject.name,
-                    slotAt[i],
-                    facing
-                );
-                if (go != null && go.TryGetComponent<Item>(out var item) && item.rig != null)
-                    item.rig.isKinematic = true;
-                // Before its first Update: Awake took this spot as the wick (Dynamite.cs:44).
-                var dynamite =
-                    go != null && WickRef != null
-                        ? go.GetComponentInChildren<Dynamite>(true)
-                        : null;
-                if (dynamite != null)
+                int i = slots[k];
+                try
                 {
-                    WickRef(dynamite) = NoWick;
-                    wicks.Add(dynamite);
+                    var go = PhotonNetwork.InstantiateItemRoom(
+                        slotItems[i].gameObject.name,
+                        slotAt[i],
+                        facing
+                    );
+                    if (go != null && go.TryGetComponent<Item>(out var item) && item.rig != null)
+                        item.rig.isKinematic = true;
+                    // Before its first Update: Awake took this spot as the wick (Dynamite.cs:44).
+                    var dynamite =
+                        go != null && WickRef != null
+                            ? go.GetComponentInChildren<Dynamite>(true)
+                            : null;
+                    if (dynamite != null)
+                    {
+                        WickRef(dynamite) = NoWick;
+                        wicks.Add(dynamite);
+                    }
+                    slotSpawned[i] = go;
+                    if (go != null)
+                        placed++;
+                    else
+                        failed++;
                 }
-                slotSpawned[i] = go;
-                if (go != null)
-                    placed++;
-                else
+                catch (System.Exception e)
+                {
                     failed++;
+                    Plugin.Log.LogWarning(
+                        $"[sandbox.room] {slotItems[i].name} did not spawn: {e.Message}"
+                    );
+                }
+                if ((k + 1) % SpawnPerFrame == 0)
+                    yield return null;
             }
-            catch (System.Exception e)
-            {
-                failed++;
-                Plugin.Log.LogWarning(
-                    $"[sandbox.room] {slotItems[i].name} did not spawn: {e.Message}"
-                );
-            }
-            if ((k + 1) % SpawnPerFrame == 0)
-                yield return null;
         }
-        spawning = false;
+        finally
+        {
+            spawning = false;
+        }
         Plugin.Log.LogDebug($"[sandbox.room] {placed} items placed, {failed} failed");
         if (failed > 0)
             SandboxActions.Say($"Item room: {failed} items did not spawn (see log).");
@@ -1018,10 +1117,11 @@ internal sealed class ItemRoom : MonoBehaviour
                 Leave();
                 return;
             }
-            if (Restock(action))
+            var why = Restock(action);
+            if (why == null)
                 CueAudio.Play(CueSound.Notice, orb.Position, 1f);
             else
-                Refuse(orb.Position, VRInput.LeftHanded, DenyReason.NotNow, "Still placing items.");
+                Refuse(orb.Position, VRInput.LeftHanded, DenyReason.NotNow, why);
         }
     }
 

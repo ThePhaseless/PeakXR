@@ -160,13 +160,20 @@ internal static class Affordance
     /// would-work spot (<paramref name="hint"/>) to where that context points. Returning None silences it.</summary>
     internal delegate DenyReason ReasonContextFn(bool left, DenyReason reason, ref DenyHint hint);
 
+    /// <summary>As <see cref="Deny(bool, Vector3, DenyReason)"/>, with <paramref name="text"/> shown in place of the
+    /// reason's short label even with <c>UI.ActionHintText</c> off: a refusal whose why does not fit 20 characters
+    /// (the item room has no room here).</summary>
+    public static bool DenyWithText(bool left, Vector3 worldPos, DenyReason reason, string text) =>
+        DenyCore(left, worldPos, reason, default, false, null, text);
+
     private static bool DenyCore(
         bool left,
         Vector3 worldPos,
         DenyReason reason,
         DenyHint hint,
         bool atHand,
-        Component tint
+        Component tint,
+        string text = null
     )
     {
         if (!Enabled)
@@ -194,7 +201,15 @@ internal static class Affordance
         Plugin.Log.LogDebug(
             $"[ui.affordance] denied {reason} ({(left ? "left" : "right")} hand) at {worldPos}"
         );
-        AffordanceRuntime.Show(left, worldPos, reason, hint, atHand: atHand);
+        AffordanceRuntime.Show(
+            left,
+            worldPos,
+            reason,
+            hint,
+            text: text,
+            atHand: atHand,
+            forceText: text != null
+        );
         if (tint != null)
         {
             DenyTint.Target(tint);
