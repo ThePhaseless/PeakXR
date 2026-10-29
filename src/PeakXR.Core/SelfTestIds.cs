@@ -209,6 +209,7 @@ public static class SelfTestIds
         "vr.246-walk-held-weld",
         "vr.247-own-head-mirror",
         "vr.248-hook-pull-first-person",
+        "vr.249-flare-cap-pull",
         "vr.25-cook-over-fire",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",

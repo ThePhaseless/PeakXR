@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 
@@ -39,6 +40,15 @@ internal static class HandLights
         Radius = StrikeRadius,
         RearmRadius = StrikeRearm,
     };
+
+    /// <summary>The free hand closing within this of a flare end takes hold of its cap.</summary>
+    private const float CapRadius = 0.1f;
+
+    private static readonly CapPull Cap = new();
+    private static readonly AnalogButton FreeGrip = new(0.6f, 0.4f);
+
+    /// <summary>The gripped end's outward direction in the flare's own frame, so it turns with the flare.</summary>
+    private static Vector3 capOut;
     private static readonly List<Light> Found = new(8);
     private static readonly List<Light> Tuned = new(8);
     private static readonly List<LightShadows> SavedShadows = new(8);
@@ -79,6 +89,7 @@ internal static class HandLights
         wasLit = lit;
 
         UpdateStrike(cfg, lit);
+        UpdateCapPull(cfg, lit);
         if (Press.Active)
         {
             bool done = held.lastFinishedCast >= pressStart;
@@ -91,6 +102,7 @@ internal static class HandLights
         RestoreLights();
         Press.Reset();
         Strike.Reset();
+        Cap.Reset();
         held = item;
         kind = HeldLightKind.None;
         wick = null;
@@ -155,6 +167,65 @@ internal static class HandLights
         pressStart = Time.time;
         Press.Begin(Mathf.Max(0f, held.usingTimePrimary) + 0.5f);
         Haptics.Pulse(freeLeft, 0.5f, 0.04f);
+    }
+
+    /// <summary>
+    /// A held unlit flare lit like a real one (<see cref="CapPull"/>): the free hand closes on either end and pulls it
+    /// away along the flare. Lights through the same primary-use press as the trigger (Action_Flare.cs:5-8), so peers
+    /// see the vanilla lighting. A pull that starts but falls short says the flare is still unlit.
+    /// </summary>
+    private static void UpdateCapPull(LightsConfig cfg, bool lit)
+    {
+        bool freeLeft = !LocalHold.ItemInLeftHand;
+        ref var hand = ref VRInput.Hand(freeLeft);
+        FreeGrip.Update(hand.Tracked ? hand.Grip : 0f, Time.deltaTime);
+        var rig = VRRig.Instance;
+        var free = rig != null ? rig.Hand(freeLeft) : null;
+        var holding = rig != null ? rig.Hand(!freeLeft) : null;
+        if (
+            kind != HeldLightKind.Flare
+            || lit
+            || !cfg.PullToLight
+            || Press.Active
+            || !hand.Tracked
+            || free == null
+            || holding == null
+        )
+        {
+            Cap.Reset();
+            return;
+        }
+
+        bool atEnd = false;
+        if (FreeGrip.Pressed)
+        {
+            var tip = HeldItemPoints.Tip(held);
+            var bottom = HeldItemPoints.Base(held);
+            float toTip = Vector3.Distance(free.position, tip);
+            float toBase = Vector3.Distance(free.position, bottom);
+            atEnd = Mathf.Min(toTip, toBase) <= CapRadius && tip != bottom;
+            if (atEnd)
+            {
+                var outward = toTip <= toBase ? tip - bottom : bottom - tip;
+                capOut = held.transform.InverseTransformDirection(outward.normalized);
+            }
+        }
+        var along = held.transform.TransformDirection(capOut);
+        float apart = Vector3.Dot(free.position - holding.position, along);
+        switch (Cap.Update(FreeGrip.Held, atEnd, apart, Time.deltaTime))
+        {
+            case CapPullEvent.Gripped:
+                Haptics.Pulse(freeLeft, 0.25f, 0.03f);
+                break;
+            case CapPullEvent.Lit:
+                pressStart = Time.time;
+                Press.Begin(Mathf.Max(0f, held.usingTimePrimary) + 0.5f);
+                Haptics.Pulse(freeLeft, 0.6f, 0.06f);
+                break;
+            case CapPullEvent.TooShort:
+                Affordance.DenyAtHand(freeLeft, DenyReason.NotLit, default, held);
+                break;
+        }
     }
 
     private static void Apply(CharacterInput input, PressFrame f)

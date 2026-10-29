@@ -82,6 +82,20 @@ internal static class HeldItemPoints
         return HeldItemScale.ToVisual(item, item.transform.TransformPoint(local));
     }
 
+    /// <summary>The other end of <see cref="Tip"/>: the end of the longest side at the grip (a flare's base, where a
+    /// hand flare's cap and pull cord sit). Its centre when it has no shape.</summary>
+    public static Vector3 Base(Item item)
+    {
+        if (!info.Bind(item) || info.BoundsMax == info.BoundsMin)
+            return item.Center();
+        var min = info.BoundsMin.N();
+        var max = info.BoundsMax.N();
+        var local = HeldItemShape
+            .FarEnd(min, max, HeldItemShape.FarEnd(min, max, info.GripLocal.N()))
+            .U();
+        return HeldItemScale.ToVisual(item, item.transform.TransformPoint(local));
+    }
+
     /// <summary>The held item's frame (game size) on the tracked hand.</summary>
     private static bool Frame(
         Item item,
