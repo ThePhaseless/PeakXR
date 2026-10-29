@@ -60,6 +60,9 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.51-air-grip", 30f, AirGripStep());
         yield return Restoring("vr.51b-falling-catch", 30f, FallingCatchStep());
         yield return Restoring("vr.52-climb-empty", 40f, ClimbEmptyStep());
+        yield return Restoring("vr.253-climb-fist-no-piton", 40f, ClimbFistNoPitonStep());
+        yield return Restoring("vr.254-climb-free-hand-piton", 40f, ClimbFreeHandPitonStep());
+        yield return Restoring("vr.255-climb-grip-no-pickup", 35f, ClimbGripNoPickupStep());
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
         yield return Restoring("vr.237-grip-toggle-climb", 40f, GripToggleClimbStep());
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
@@ -1790,13 +1793,13 @@ internal sealed partial class SelfTestRunner
         {
             Script(holdLeft).Trigger = 0f;
             yield return Wait(0.2f);
-            // The second try aims straight at the face from the aim pose itself.
-            if (attempt == 1 && rig.Aim(holdLeft) is { } aimPose)
-                face = FacePoint(aimPose.position);
-            // Aim the spike hand's aim pose (not the grip): interact.aim casts the spike from it (run 58).
+            // The second try aims straight at the face from the spike's own aim line.
+            if (attempt == 1 && HeldRay(rig, holdLeft, out var from, out _))
+                face = FacePoint(from);
+            // Aim the spike's blade, not the grip or the controller: interact.aim casts the spike along it (TryBarrel).
             for (float until = Now + 0.3f; Now < until; )
             {
-                AimHand(rig, holdLeft, face);
+                AimHeldAt(rig, holdLeft, face);
                 yield return null;
             }
             Script(holdLeft).Trigger = 1f;
@@ -1828,6 +1831,8 @@ internal sealed partial class SelfTestRunner
             yield return LetGoAll(c);
             yield break;
         }
+        // The aim line should leave the drawn piton's blade and end on the ghost (tester: "not where I aim").
+        yield return Shot("vr-44d-piton-blade");
         int needed = tools.HammerStrikes;
         for (int i = 0; i < needed && Interact.Tools.SpikeHammer.Casting; i++)
         {
@@ -1937,23 +1942,22 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.2f);
         var face = wallFace.point;
         if (
-            rig.Aim(left) is { } from
-            && wallCollider.Raycast(new Ray(from.position, toWall), out var onFace, 3f)
+            HeldRay(rig, left, out var from, out _)
+            && wallCollider.Raycast(new Ray(from, toWall), out var onFace, 3f)
         )
             face = onFace.point;
         for (float until = Now + 0.3f; Now < until; )
         {
-            AimHand(rig, left, face);
+            AimHeldAt(rig, left, face);
             yield return null;
         }
         // The precondition: in range, so only the slot rule can refuse it.
-        var aim = rig.Aim(left);
         float range = spike.climbingSpikeStartDistanceGrounded;
         if (
-            aim == null
+            !HeldRay(rig, left, out var spikeFrom, out var spikeDir)
             || !Physics.Raycast(
-                aim.position,
-                aim.forward,
+                spikeFrom,
+                spikeDir,
                 out var hit,
                 range,
                 HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
@@ -1984,10 +1988,40 @@ internal sealed partial class SelfTestRunner
         yield return LetGoAll(c);
     }
 
+    /// <summary>The ray interact.aim casts the held item's use along (<see cref="Interact.HandAim.TryHeld"/>: a
+    /// piton's blade, a launcher's barrel, else the holding hand's aim pose); the hand's aim pose with nothing held.</summary>
+    static bool HeldRay(VRRig rig, bool left, out Vector3 origin, out Vector3 dir)
+    {
+        if (Interact.HandAim.TryHeld(out origin, out var rotation))
+        {
+            dir = rotation * Vector3.forward;
+            return true;
+        }
+        var aim = rig.Aim(left);
+        origin = aim != null ? aim.position : default;
+        dir = aim != null ? aim.forward : Vector3.forward;
+        return aim != null;
+    }
+
+    /// <summary>Turns the holding hand so the held item's aim (<see cref="HeldRay"/>) looks at a world point. A piton's
+    /// blade starts 0.3 m from the controller, so the start moves as the hand turns: call it every frame to settle.</summary>
+    void AimHeldAt(VRRig rig, bool left, Vector3 world)
+    {
+        var hand = rig.Hand(left);
+        if (hand == null || !Interact.HandAim.TryHeld(out var origin, out var rotation))
+        {
+            AimHand(rig, left, world);
+            return;
+        }
+        var offset = Quaternion.Inverse(hand.rotation) * rotation;
+        var want = Quaternion.LookRotation(world - origin, Vector3.up) * Quaternion.Inverse(offset);
+        Script(left).Rotation = Quaternion.Inverse(rig.Origin.rotation) * want;
+    }
+
     /// <summary>What decides a spike cast at a press (CharacterItems.UpdateClimbingSpikeUse, CharacterItems.cs:981-1027):
     /// the use input, the spike slots against the selected slot, climbing, the aim line's terrain hit against the
-    /// start distance (RaycastClimbingSpikeStart, :1072-1076, from the hand under interact.aim), whether the aim pose
-    /// sits inside terrain, and how far the ragdoll hand trails its controller.</summary>
+    /// start distance (RaycastClimbingSpikeStart, :1072-1076, along the held spike's blade under interact.aim), whether
+    /// the aim starts inside terrain, and how far the ragdoll hand trails its controller.</summary>
     static string SpikePressState(
         Character c,
         VRRig rig,
@@ -2008,13 +2042,12 @@ internal sealed partial class SelfTestRunner
                 spikeSlots.Append(spikeSlots.Length > 0 ? "," : "").Append(i);
         }
         var selected = c.refs.items.currentSelectedSlot;
-        var aim = rig.Aim(left);
-        string ray = "no aim pose";
-        if (aim != null)
+        string ray = "no aim";
+        if (HeldRay(rig, left, out var from, out var dir))
         {
             ray = Physics.Raycast(
-                aim.position,
-                aim.forward,
+                from,
+                dir,
                 out var hit,
                 10f,
                 HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
@@ -2023,12 +2056,15 @@ internal sealed partial class SelfTestRunner
                     $"meets {hit.collider.name} at {hit.distance:0.00} m (start reach {spike.climbingSpikeStartDistanceGrounded:0.00} m) at {hit.point}"
                 )
                 : "meets no terrain within 10 m";
-            ray += F(
-                $", aim pose {aim.position}, {Vector3.Angle(aim.forward, aimedAt - aim.position):0} deg off {aimedAt}"
-            );
+            ray += F($", from {from}, {Vector3.Angle(dir, aimedAt - from):0} deg off {aimedAt}");
+            // How far the spike's blade line is from the controller's aim pose: what the old controller aim missed by.
+            if (rig.Aim(left) is { } pose)
+                ray += F(
+                    $", blade {Vector3.Angle(dir, pose.forward):0} deg and {Vector3.Distance(from, pose.position):0.00} m off the aim pose"
+                );
             if (
                 Physics.CheckSphere(
-                    aim.position,
+                    from,
                     0.01f,
                     HelperFunctions.terrainMapMask,
                     QueryTriggerInteraction.Ignore

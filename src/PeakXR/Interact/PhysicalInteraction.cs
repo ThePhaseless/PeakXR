@@ -37,6 +37,9 @@ internal static class PhysicalInteraction
         public readonly bool Left;
         public readonly AnalogButton Grip = new(0.6f, 0.4f);
         public readonly AnalogButton Trigger = new(0.6f, 0.4f);
+
+        /// <summary>The trigger as this hand's use button: muted while the hand holds the climber.</summary>
+        public readonly UseTrigger Use = new();
         public readonly ThrowEstimator Throw = new();
 
         /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
@@ -238,6 +241,7 @@ internal static class PhysicalInteraction
             {
                 hand.Action = GripPressAction.None;
                 hand.Target = null;
+                hand.Use.Reset();
             }
             physicalClimb = false;
             climbInput = Vector2.zero;
@@ -589,16 +593,39 @@ internal static class PhysicalInteraction
 
     /// <summary>
     /// The hand whose trigger drives the primary (or <paramref name="secondary"/>) use: the holding hand is primary,
-    /// the dominant hand when empty-handed (one-handed: the one controller), the other hand secondary. One-handed, the
+    /// the dominant hand when empty-handed (one-handed: the one controller), the other hand secondary; empty-handed
+    /// with one hand on the climb, the free hand is secondary (<see cref="UseHands"/>). One-handed, the
     /// same hand does both (secondary is its trigger with the stick clicked in). The one rule for every reader of a
     /// use's hand.
     /// </summary>
     internal static bool UseHandLeft(Character c, bool secondary)
     {
         bool one = VRInput.OneHanded;
-        bool primaryLeft =
-            c != null && Holding(c, out _) ? LocalHold.ItemInLeftHand : VRInput.LeftHanded;
+        bool primaryLeft = UseHands.PrimaryLeft(
+            c != null && Holding(c, out _),
+            LocalHold.ItemInLeftHand,
+            VRInput.LeftHanded,
+            Climbs(LeftHand),
+            Climbs(RightHand)
+        );
         return secondary && !one ? !primaryLeft : primaryLeft;
+    }
+
+    /// <summary>
+    /// This hand's grip holds the climber: a wall climb, or the current rope, vine or handle. Its trigger is no use
+    /// button (<see cref="UseTrigger"/>). One-handed play keeps the one trigger live, as the flat game uses items while
+    /// hanging (its secondary needs the stick chord, so a fist never sets a piton).
+    /// </summary>
+    private static bool Climbs(Hand hand) =>
+        !VRInput.OneHanded
+        && (hand.Action == GripPressAction.Climb || Climb.ClimbHands.HandAnchored(hand.Left));
+
+    /// <summary>This hand's trigger is no use now: the hand holds the climber, or its trigger was squeezed into a hold
+    /// and has not opened since. For cues that would otherwise read it as an aim or an attempt.</summary>
+    internal static bool UseMuted(bool left)
+    {
+        var hand = left ? LeftHand : RightHand;
+        return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
 
     private static bool Holding(Character c, out Item item)
@@ -636,6 +663,7 @@ internal static class PhysicalInteraction
             NearHeldItem = holding && !thisHolds && NearItem(item, pos, HeldSurfaceReach),
             AtSecondGrip = holding && !thisHolds && AtSecondGrip(pos),
             BodyClimbing = c.data.isClimbing || !c.data.isGrounded,
+            OnWall = c.data.isClimbing,
         };
         ctx.Pointing = GripIntent.IsPointing(LocalAvatar.ControllerCurls(hand.Left));
         ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
@@ -2478,15 +2506,27 @@ internal static class PhysicalInteraction
         if (primaryHand.Trigger.Pressed)
             secondaryChord = one && VRInput.Hand(primaryHand.Left).StickClick;
         bool chord = one && secondaryChord;
+        // A hand on the wall, rope, vine or handle squeezes its trigger with the grip: no use, so a climbing fist never
+        // sets a piton or runs the held item (UseTrigger). A deliberate press there says the other hand does it.
+        bool spikeUse = c.data.isClimbingAnything && c.data.climbingSpikeCount > 0;
+        foreach (var hand in Hands)
+        {
+            hand.Use.Update(hand.Trigger.Held, Climbs(hand), hand == primaryHand, dt);
+            if (hand.Use.Refused && cfg.TriggerUse && (holding || spikeUse))
+                Affordance.DenyAtHand(
+                    hand.Left,
+                    DenyReason.UseOtherHand,
+                    DenyHint.On(rig.Hand(!hand.Left))
+                );
+        }
         // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
         bool primaryDown =
             cfg.TriggerUse
-            && primaryHand.Trigger.Held
+            && primaryHand.Use.Down
             && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
         bool secondaryDown =
-            cfg.TriggerUse
-            && (one ? chord && primaryHand.Trigger.Held : Other(primaryHand).Trigger.Held);
+            cfg.TriggerUse && (one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down);
 
         bool atMouth = false;
         var mouthHand = rig.Hand(primaryHand.Left);

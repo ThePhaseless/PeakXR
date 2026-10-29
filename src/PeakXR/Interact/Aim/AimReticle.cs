@@ -9,7 +9,7 @@ namespace PeakXR.Interact.Aim;
 
 /// <summary>
 /// Thin line from the holding hand to where an aimed tool would hit, shown while a finger rests on that hand's
-/// trigger. The flat game shows its aim with a screen-centre crosshair, which means nothing once the tool aims from
+/// trigger; while climbing with a piton in the pockets, from the hand whose trigger sets it. The flat game shows its aim with a screen-centre crosshair, which means nothing once the tool aims from
 /// the hand. Lives on its own DontDestroyOnLoad object; the line is built on the first VR frame.
 /// </summary>
 internal sealed class AimReticle : MonoBehaviour
@@ -39,6 +39,9 @@ internal sealed class AimReticle : MonoBehaviour
     private float range;
     private float rangeDown;
     private ClimbingSpikeComponent spike;
+
+    /// <summary>The line is a pocketed piton's, set while climbing (<see cref="PocketAim"/>).</summary>
+    private bool pocket;
     private Material material;
     private bool red;
     private bool spool;
@@ -71,7 +74,7 @@ internal sealed class AimReticle : MonoBehaviour
         bool outOfRange;
         var reason = DenyReason.None;
         DenyHint hint = default;
-        if (spike != null)
+        if (spike != null || pocket)
             outOfRange = Tools.SpikeCue.OutOfRange;
         else if (spool)
         {
@@ -97,7 +100,7 @@ internal sealed class AimReticle : MonoBehaviour
             if (outOfRange)
                 reason = UseDenial.Why(c, cachedItem, out hint);
         }
-        if (outOfRange && spike == null)
+        if (outOfRange && spike == null && !pocket)
             UI.Affordances.Affordance.Hover(LocalHold.ItemInLeftHand, end, reason, hint);
         if (outOfRange != red)
         {
@@ -122,10 +125,11 @@ internal sealed class AimReticle : MonoBehaviour
         if (c == null)
             return false;
         var item = c.data.currentItem;
+        pocket = false;
         if (item == null)
         {
             cachedItem = null;
-            return false;
+            return pocket = PocketAim(c, out start, out end);
         }
         if (!ReferenceEquals(item, cachedItem))
         {
@@ -148,6 +152,40 @@ internal sealed class AimReticle : MonoBehaviour
                     ? spike.climbingSpikeStartDistance
                     : spike.climbingSpikeStartDistanceGrounded
             );
+        end = Physics.Raycast(
+            start,
+            dir,
+            out var hit,
+            max,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? hit.point
+            : start + dir * max;
+        return true;
+    }
+
+    /// <summary>
+    /// A pocketed piton while climbing, set with the secondary use (CharacterItems.cs:1019-1025): the line from the hand
+    /// whose trigger sets it and that interact.aim casts it from (<see cref="PhysicalInteraction.UseHandLeft"/>), to
+    /// the climbing start reach (:1074). Not from a hand that holds the climber: its trigger is no use.
+    /// </summary>
+    private static bool PocketAim(Character c, out Vector3 start, out Vector3 end)
+    {
+        start = end = default;
+        var next = Tools.SpikeCue.NextSpike;
+        if (next == null || !c.data.isClimbingAnything)
+            return false;
+        bool left = PhysicalInteraction.UseHandLeft(c, secondary: true);
+        ref var hand = ref VRInput.Hand(left);
+        if (
+            (!hand.TriggerTouch && hand.Trigger <= TriggerAimThreshold)
+            || PhysicalInteraction.UseMuted(left)
+            || !HandAim.TryHand(left, out start, out var rotation)
+        )
+            return false;
+        var dir = rotation * Vector3.forward;
+        float max = Usable(next.climbingSpikeStartDistance);
         end = Physics.Raycast(
             start,
             dir,

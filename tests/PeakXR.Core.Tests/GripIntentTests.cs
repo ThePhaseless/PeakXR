@@ -111,6 +111,39 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void OnWall_GripOnNothing_PressesNothing()
+    {
+        // A climber's hand that misses the next hold is no interact button: it picked up whatever the head or a
+        // pointing hand aimed at (tester: "with the grips, items sometimes get picked up").
+        var c = Empty();
+        c.BodyClimbing = true;
+        c.OnWall = true;
+        Assert.Equal(GripPressAction.None, GripIntent.OnPress(c));
+        c.Pointing = true;
+        c.Aimed = AimedTarget.Other;
+        Assert.Equal(GripPressAction.None, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void OnWall_PointedAtTaker_StillInteracts()
+    {
+        var c = Empty();
+        c.BodyClimbing = true;
+        c.OnWall = true;
+        c.HoldingItem = true;
+        c.Pointing = true;
+        c.Aimed = AimedTarget.ItemTaker;
+        Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void OnWall_ClimbOff_GripStaysTheInteractButton()
+    {
+        var c = new GripContext { OnWall = true, BodyClimbing = true };
+        Assert.Equal(GripPressAction.Interact, GripIntent.OnPress(c));
+    }
+
+    [Fact]
     public void TogglesOff_FallBackToInteract()
     {
         var c = new GripContext { NearClimbable = true, Candidate = GrabCandidate.Item };
