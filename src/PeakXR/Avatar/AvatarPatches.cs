@@ -1,5 +1,6 @@
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
 using UnityEngine;
@@ -185,6 +186,73 @@ internal static class AvatarPatches
             {
                 var d = AvatarPoseDriver.Of(itemsCharacter(__instance));
                 return d == null || !d.FollowHeld(item);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+                return true;
+            }
+        }
+    }
+
+    /// <summary>The held item rides a tracked hand this tick (welded or carried free by <see cref="AvatarPoseDriver.FollowHeld"/>):
+    /// set by the ragdoll's pass (CharacterRagdoll.cs:155-176, execution order -99) before CharacterMovement's.</summary>
+    private static bool HandCarried(CharacterItems items, out Character c)
+    {
+        c = itemsCharacter(items);
+        return Driver(c) is { ItemFrameOverridden: true } && c.data.currentItem != null;
+    }
+
+    /// <summary>CharacterItems.AddMovementForce (CharacterItems.cs:835, internal), from CharacterMovement.FixedUpdate
+    /// (CharacterMovement.cs:311): the walk pushes the held item on its own, 5 kg at about 27 m/s^2. Welded, that push
+    /// lands on the hand whenever the body cannot keep pace (a wall, the walk's ramp): it held the hand 0.3 m off its
+    /// controller and let the weld go each time the player walked into a wall (vr run of e7b3cd9). A hand-carried item
+    /// moves with the hand instead; local physics only, held items are not synced (ItemPhysicsSyncer.cs:55).</summary>
+    [HarmonyPatch]
+    internal static class ItemWalkForce
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "AddMovementForce");
+
+        private static bool Prefix(CharacterItems __instance)
+        {
+            try
+            {
+                return !HandCarried(__instance, out _);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+                return true;
+            }
+        }
+    }
+
+    /// <summary>CharacterItems.AddDrag (CharacterItems.cs:840, internal), from CharacterMovement.cs:312 and :354:
+    /// without the walk's push a hand-carried item's own drag would hold it back on the hand at walking speed, so it
+    /// damps only the item's motion against the body (<see cref="ItemFollow.BodyDrag"/>).</summary>
+    [HarmonyPatch]
+    internal static class ItemDrag
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterItems), "AddDrag");
+
+        private static bool Prefix(CharacterItems __instance, float drag, float factor)
+        {
+            try
+            {
+                if (!HandCarried(__instance, out var c) || c.refs.hip == null)
+                    return true;
+                float d = factor != 1f ? Mathf.Lerp(1f, drag, factor) : drag;
+                var item = c.data.currentItem.rig;
+                var hip = c.refs.hip.Rig;
+                item.linearVelocity = ItemFollow
+                    .BodyDrag(item.linearVelocity.N(), hip.linearVelocity.N(), d)
+                    .U();
+                item.angularVelocity = ItemFollow
+                    .BodyDrag(item.angularVelocity.N(), hip.angularVelocity.N(), d)
+                    .U();
+                return false;
             }
             catch (System.Exception e)
             {
