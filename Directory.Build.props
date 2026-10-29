@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- The one mod version: plugin, preloader, Thunderstore manifest (tools/package.sh) and the vX.Y.Z release tag. -->
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <!-- Pinned, not "latest": a future SDK must not silently move the language level (see docs/research/stack.md). -->
     <LangVersion>14.0</LangVersion>
     <!-- Every CA rule at warning; .editorconfig turns off, with a reason, the ones that fight Unity/Harmony/BepInEx. -->
