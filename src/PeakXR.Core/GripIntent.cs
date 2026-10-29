@@ -118,6 +118,11 @@ public struct GripContext
     /// nothing presses nothing.</summary>
     public bool OnWall;
 
+    /// <summary>The body flies or falls free: not grounded, and not on a wall, rope, vine or handle. A grip that
+    /// catches nothing yet is a catch the body may still fly into (a rescue-hook pull, a fall past a face), as the
+    /// flat game's held climb button catches the first wall in reach (CharacterClimbing.cs:567).</summary>
+    public bool Airborne;
+
     /// <summary>The hold probe found rock the game would let this hand grab, not just something in the grip
     /// sphere. A hand that holds an item climbs only on such a hold.</summary>
     public bool HoldConfirmed;
@@ -258,7 +263,11 @@ public static class GripIntent
             return GripPressAction.Regrip;
         // A climber's hand that missed the next hold is no interact button: pressed on whatever the head or a
         // pointing hand aimed at, it picked up items in view instead of catching the wall. It gets the hold's refusal.
-        return c.PhysicalClimb && c.OnWall ? GripPressAction.None : GripPressAction.Interact;
+        // In the air it is a catch the body may still fly into (vr.251: closed just short of the wall a hook pull
+        // carried it to, it pressed interact and never caught).
+        return c.PhysicalClimb && (c.OnWall || c.Airborne)
+            ? GripPressAction.None
+            : GripPressAction.Interact;
     }
 
     /// <summary>

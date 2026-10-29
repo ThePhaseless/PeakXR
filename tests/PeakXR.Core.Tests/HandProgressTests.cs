@@ -20,6 +20,32 @@ public class HandProgressTests
     ) => Assert.Equal(expectedLeft, ProgressHand.PickLeft(source, hasItem, itemInLeft, aimHand));
 
     [Theory]
+    // A pocketed piton set by the climbing hand (Tools.HandPiton): its ring is that hand's, whatever hand last held an
+    // item (vr.268: the ring sat over the free hand, which had no piton to set).
+    [InlineData(false, true, 1, false)]
+    [InlineData(false, false, 0, true)]
+    // A held spike's cast stays with the holding hand.
+    [InlineData(true, true, 1, true)]
+    // No hand piton running (the game's own cast): as before.
+    [InlineData(false, true, -1, true)]
+    public void PickLeft_HandPiton_RingOnThePlacingHand(
+        bool hasItem,
+        bool itemInLeft,
+        int pitonHand,
+        bool expectedLeft
+    ) =>
+        Assert.Equal(
+            expectedLeft,
+            ProgressHand.PickLeft(
+                ProgressSource.ClimbingSpike,
+                hasItem,
+                itemInLeft,
+                -1,
+                pitonHand: pitonHand
+            )
+        );
+
+    [Theory]
     // A plain grip hold (no ray) with the left hand: the ring goes to the left hand, not the right.
     [InlineData(false, false, 0, false, true)]
     [InlineData(false, false, 1, true, false)]

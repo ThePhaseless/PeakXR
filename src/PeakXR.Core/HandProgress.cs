@@ -29,15 +29,20 @@ public static class ProgressHand
     /// <param name="aimHand">Hand whose ray drives interaction: -1 none, 0 left, 1 right.</param>
     /// <param name="gripHand">Hand whose grip presses interact: -1 none, 0 left, 1 right.</param>
     /// <param name="leftHanded">The dominant hand is the left (or the one controller, one-handed).</param>
+    /// <param name="pitonHand">The climbing hand setting a pocketed piton (Tools.HandPiton): -1 none, 0 left,
+    /// 1 right. With no item in hand, a piton cast's ring is that hand's.</param>
     public static bool PickLeft(
         ProgressSource source,
         bool hasItem,
         bool itemInLeft,
         int aimHand,
         int gripHand = -1,
-        bool leftHanded = false
+        bool leftHanded = false,
+        int pitonHand = -1
     )
     {
+        if (source == ProgressSource.ClimbingSpike && !hasItem && pitonHand >= 0)
+            return pitonHand == 0;
         if (source is ProgressSource.Item or ProgressSource.ClimbingSpike)
             return itemInLeft;
         if (aimHand >= 0)
