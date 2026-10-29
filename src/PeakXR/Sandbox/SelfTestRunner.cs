@@ -183,6 +183,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             ClosePause();
             yield return VRStep("vr.222-menu-backplate", 30f, BackplateCheck());
             ClosePause();
+            yield return VRStep("vr.266-menu-plate-masks", 30f, PlateMaskCheck());
+            ClosePause();
             yield return VRStep("vr.224-quit-confirm", 20f, QuitConfirmCheck());
             ClosePause();
             yield return VRStep("vr.223-vr-tab-layout", 30f, VRTabLayoutCheck());

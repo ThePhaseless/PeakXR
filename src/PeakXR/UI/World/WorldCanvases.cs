@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.UI.Common;
 using UnityEngine;
@@ -135,7 +136,6 @@ internal static class WorldCanvases
     private static readonly HashSet<int> convertedRoots = new();
     private static readonly List<Graphic> graphics = new();
     private static readonly List<ScrollRect> scrolls = new();
-    private static readonly Vector3[] corners = new Vector3[4];
     private static bool converting;
     private static int forcedFrame = -1;
 
@@ -1168,7 +1168,9 @@ internal static class WorldCanvases
             }
     }
 
-    /// <summary>A graphic's rect in canvas pixels, clipped to the canvas. False when nothing is left.</summary>
+    /// <summary>A graphic's rect in canvas pixels, cut to every Mask and RectMask2D above it (the HUD plate's rule,
+    /// <see cref="HudPlate.Visible"/>) and to the canvas. Rows scrolled out of a list's viewport draw nothing, yet
+    /// counted whole they grew the plate and moved the panel. False when nothing is left.</summary>
     internal static bool Clip(
         TrackedCanvas t,
         Graphic g,
@@ -1177,12 +1179,11 @@ internal static class WorldCanvases
         out Vector2 hi
     )
     {
-        g.rectTransform.GetWorldCorners(corners);
-        Vector2 a = t.Rect.InverseTransformPoint(corners[0]);
-        Vector2 b = t.Rect.InverseTransformPoint(corners[2]);
-        lo = Vector2.Max(Vector2.Min(a, b), bounds.min);
-        hi = Vector2.Min(Vector2.Max(a, b), bounds.max);
-        return hi.x > lo.x && hi.y > lo.y;
+        bool shown = HudPlate.Visible(t.Rect, g, out var min, out var max);
+        shown = shown && MenuBackplate.ClipTo(ref min, ref max, bounds.min.N(), bounds.max.N());
+        lo = new Vector2(min.X, min.Y);
+        hi = new Vector2(max.X, max.Y);
+        return shown;
     }
 
     /// <summary>Full-canvas graphics (dimmers, vignettes) span most of the canvas both ways.</summary>

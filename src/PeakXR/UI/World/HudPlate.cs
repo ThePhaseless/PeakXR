@@ -185,7 +185,10 @@ internal sealed class HudPlate
     /// <summary>Box-space bounds of what <paramref name="g"/> can draw: its rect cut to every Mask and RectMask2D above
     /// it. While stamina is infinite (god mode, a sugar rush) it keeps climbing past 1 (CharacterData.cs:449 refuses
     /// the clamp), the fill's rect with it (A/StaminaBar.cs:112,126), and the plate ran several bar lengths past the
-    /// frame though the bar's back (MaxStamina/Back, a Mask) shows none of it. False when nothing is left.</summary>
+    /// frame though the bar's back (MaxStamina/Back, a Mask) shows none of it. Menu measuring uses the same rule
+    /// (<see cref="WorldCanvases.Clip"/>): rows scrolled out of a list's viewport draw nothing. As in UGUI's
+    /// MaskUtilities, masks above a canvas that sorts on its own (an open dropdown list) do not cut it. False when
+    /// nothing is left.</summary>
     internal static bool Visible(
         RectTransform box,
         Graphic g,
@@ -196,11 +199,18 @@ internal sealed class HudPlate
         BoxRect(box, g.rectTransform, out min, out max);
         for (var p = g.rectTransform.parent; p != null && p != box; p = p.parent)
         {
-            if (p is not RectTransform clip || !Clips(clip))
-                continue;
-            BoxRect(box, clip, out var lo, out var hi);
-            if (!MenuBackplate.ClipTo(ref min, ref max, lo, hi))
-                return false;
+            if (p is RectTransform clip && Clips(clip))
+            {
+                BoxRect(box, clip, out var lo, out var hi);
+                if (!MenuBackplate.ClipTo(ref min, ref max, lo, hi))
+                    return false;
+            }
+            if (
+                p.TryGetComponent<Canvas>(out var own)
+                && own.isActiveAndEnabled
+                && own.overrideSorting
+            )
+                break;
         }
         return true;
     }

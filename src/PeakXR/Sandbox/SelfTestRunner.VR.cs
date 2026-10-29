@@ -841,36 +841,10 @@ internal sealed partial class SelfTestRunner
     {
         var menu = root.GetComponentInChildren<SharedSettingsMenu>();
         var tabs = menu != null ? UISettingsFeature.TabsRef(menu) : null;
-        var all =
-            GameHandler.Instance != null
-                ? GameHandler.Instance.SettingsHandler.GetSettingsThatImplements<IExposedSetting>()
-                : null;
-        if (tabs == null || all == null)
+        if (tabs == null || !LongestGameTab(tabs, out var longest, out var vr, out int most))
         {
             Fail("vr.04 game tab: no settings tabs or settings");
             yield break;
-        }
-        SettingsTABSButton longest = null;
-        SettingsTABSButton vr = null;
-        int most = 0;
-        foreach (var b in tabs.buttons)
-        {
-            if (b == null)
-                continue;
-            if (b.category == VRTab.Category)
-            {
-                vr = b;
-                continue;
-            }
-            int n = 0;
-            foreach (var s in all)
-                if (s.GetCategory() == b.category.ToString())
-                    n++;
-            if (n > most)
-            {
-                most = n;
-                longest = b;
-            }
         }
         if (longest == null)
             yield break;
@@ -879,18 +853,7 @@ internal sealed partial class SelfTestRunner
         // The game's own tabs keep their single column in VR; they are short enough to fit the window.
         int outside = RowsOutside(menu);
         int strips = RowStripReport.Count(root, $"game tab {longest.category}");
-        var list =
-            menu.m_settingsContentParent != null
-                ? menu.m_settingsContentParent.GetComponentInParent<ScrollRect>()
-                : null;
-        var viewport =
-            list == null ? null
-            : list.viewport != null ? list.viewport
-            : (RectTransform)list.transform;
-        bool scrolls =
-            list != null
-            && list.content != null
-            && list.content.rect.height > viewport.rect.height + 1f;
+        bool scrolls = SettingsList(menu, out var list, out _);
         if (scrolls)
         {
             list.verticalNormalizedPosition = 0f;
@@ -911,6 +874,186 @@ internal sealed partial class SelfTestRunner
             Fail("row strips drawn after a tab change" + note);
         else
             stepNote += note;
+    }
+
+    /// <summary>The game's settings tab with the most settings, and the VR tab. False with no settings.</summary>
+    static bool LongestGameTab(
+        SettingsTABS tabs,
+        out SettingsTABSButton longest,
+        out SettingsTABSButton vr,
+        out int most
+    )
+    {
+        longest = vr = null;
+        most = 0;
+        var all =
+            GameHandler.Instance != null
+                ? GameHandler.Instance.SettingsHandler.GetSettingsThatImplements<IExposedSetting>()
+                : null;
+        if (all == null)
+            return false;
+        foreach (var b in tabs.buttons)
+        {
+            if (b == null)
+                continue;
+            if (b.category == VRTab.Category)
+            {
+                vr = b;
+                continue;
+            }
+            int n = 0;
+            foreach (var s in all)
+                if (s.GetCategory() == b.category.ToString())
+                    n++;
+            if (n > most)
+            {
+                most = n;
+                longest = b;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>The settings page's scroll list and its viewport; true when its rows run past the viewport.</summary>
+    static bool SettingsList(
+        SharedSettingsMenu menu,
+        out ScrollRect list,
+        out RectTransform viewport
+    )
+    {
+        list =
+            menu.m_settingsContentParent != null
+                ? menu.m_settingsContentParent.GetComponentInParent<ScrollRect>()
+                : null;
+        viewport =
+            list == null ? null
+            : list.viewport != null ? list.viewport
+            : (RectTransform)list.transform;
+        return list != null
+            && list.content != null
+            && list.content.rect.height > viewport.rect.height + 1f;
+    }
+
+    /// <summary>
+    /// vr.266: a menu's plate and placement count only what its scroll list shows. The longest game tab's list is
+    /// scrolled to its top, then its end. Rows out of the viewport sit under its Mask or RectMask2D and draw nothing,
+    /// so the plate's content bounds stay put within 4 px (WorldCanvases.Clip cuts each graphic to the masks above
+    /// it, the rule HudPlate.Visible uses). Counted whole, those rows grew the plate toward whichever end they hung
+    /// off and shifted the panel.
+    /// </summary>
+    IEnumerator PlateMaskCheck()
+    {
+        if (!UIWorldFeature.Settings.MenuBackplate.Value)
+        {
+            stepSkip = "UI.MenuBackplate is off";
+            yield break;
+        }
+        yield return OpenVRTab();
+        if (!stepOk)
+            yield break;
+        var root = RootCanvasOf(FindAnyObjectByType<PauseMenuHandler>());
+        var menu = root != null ? root.GetComponentInChildren<SharedSettingsMenu>() : null;
+        var tabs = menu != null ? UISettingsFeature.TabsRef(menu) : null;
+        if (
+            tabs == null
+            || !LongestGameTab(tabs, out var longest, out _, out int most)
+            || longest == null
+        )
+        {
+            Fail("no settings menu or game tab");
+            yield break;
+        }
+        tabs.Select(longest);
+        yield return Wait(0.8f);
+        if (!SettingsList(menu, out var list, out var viewport))
+        {
+            stepSkip =
+                $"the {longest.category} tab ({most} rows) fits its list, nothing scrolls out of view";
+            yield break;
+        }
+        if (!viewport.TryGetComponent<Mask>(out _) && !viewport.TryGetComponent<RectMask2D>(out _))
+        {
+            stepSkip =
+                $"the {longest.category} list's viewport has no Mask or RectMask2D: its rows draw outside it";
+            yield break;
+        }
+        // Past the scroll rescan and one slow re-measure (0.5 s) each.
+        list.verticalNormalizedPosition = 1f;
+        yield return Wait(1f);
+        bool atTop = WorldCanvases.TryBackplate(
+            root,
+            out _,
+            out var lo1,
+            out var hi1,
+            out _,
+            out _,
+            out _
+        );
+        int hiddenTop = OutOfView(list, viewport, root);
+        list.verticalNormalizedPosition = 0f;
+        yield return Wait(1f);
+        bool atEnd = WorldCanvases.TryBackplate(
+            root,
+            out _,
+            out var lo2,
+            out var hi2,
+            out _,
+            out _,
+            out _
+        );
+        int hiddenEnd = OutOfView(list, viewport, root);
+        yield return ShotAt("vr-266-menu-plate-masks", CentreOf(root.transform));
+        var d1 = lo1 - lo2;
+        var d2 = hi1 - hi2;
+        float drift = Mathf.Max(
+            Mathf.Max(Mathf.Abs(d1.x), Mathf.Abs(d1.y)),
+            Mathf.Max(Mathf.Abs(d2.x), Mathf.Abs(d2.y))
+        );
+        var note =
+            $"{longest.category} tab: plate content {lo1}..{hi1} at the top ({hiddenTop} graphics out of view on the "
+            + $"canvas), {lo2}..{hi2} at the end ({hiddenEnd}), {drift:0} px apart";
+        if (!atTop || !atEnd)
+            Fail("no menu backplate shown; " + note);
+        else if (hiddenTop + hiddenEnd == 0)
+            stepSkip =
+                "no row hung out of the list's view on the canvas, so masks change nothing; "
+                + note;
+        else if (drift > 4f)
+            Fail(
+                "the plate moved with the scroll: rows out of the list's view were counted; " + note
+            );
+        else
+            stepNote = note;
+    }
+
+    /// <summary>vr.266: graphics of the list drawn on the canvas but wholly outside its viewport.</summary>
+    int OutOfView(ScrollRect list, RectTransform viewport, Canvas root)
+    {
+        var space = (RectTransform)root.transform;
+        var view = CanvasRect(viewport, space);
+        int n = 0;
+        foreach (var g in list.content.GetComponentsInChildren<Graphic>(false))
+        {
+            if (g.color.a < 0.01f)
+                continue;
+            var r = CanvasRect(g.rectTransform, space);
+            if (!r.Overlaps(view) && r.Overlaps(space.rect))
+                n++;
+        }
+        return n;
+    }
+
+    Rect CanvasRect(RectTransform rt, RectTransform space)
+    {
+        rt.GetWorldCorners(edgeCorners);
+        Vector2 a = space.InverseTransformPoint(edgeCorners[0]);
+        Vector2 b = space.InverseTransformPoint(edgeCorners[2]);
+        return Rect.MinMaxRect(
+            Mathf.Min(a.x, b.x),
+            Mathf.Min(a.y, b.y),
+            Mathf.Max(a.x, b.x),
+            Mathf.Max(a.y, b.y)
+        );
     }
 
     /// <summary>Samples the next level load in the background for vr.05; its own coroutine, so 04-beach is untouched.</summary>
