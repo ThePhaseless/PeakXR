@@ -72,6 +72,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.54-mantle", 45f, MantleStep());
         yield return Restoring("vr.44b-handle-rest", 30f, HandleRestStep());
         yield return Restoring("vr.44d-hammer-spike", 40f, HammerSpikeStep());
+        yield return Restoring("vr.267-piton-close-wall", 40f, PitonCloseWallStep());
         yield return Restoring("vr.44f-spike-second-slot", 30f, SpikeSecondSlotStep());
         yield return Restoring("vr.44e-item-hand-no-hang", 35f, ItemHandNoHangStep());
         yield return Restoring("vr.55-handle-occupied", 30f, HandleOccupiedStep());
@@ -1875,8 +1876,8 @@ internal sealed partial class SelfTestRunner
             if (attempt == 1 && HeldRay(rig, holdLeft, out var from, out _))
                 face = FacePoint(from);
             // Aim the spike's blade, not the grip or the controller: interact.aim casts the spike along it (TryBarrel).
-            // At least 0.3 s and until the blade (the physics item, which trails its hold) points at the face within
-            // 2 deg, at most 0.8 s, as AimHeldAlong waits for a launcher.
+            // At least 0.3 s and until the blade (its hold's, or with Interaction.AimHoldAlignment off the physics
+            // item, which trails its hold) points at the face within 2 deg, at most 0.8 s, as AimHeldAlong waits.
             for (float settleFrom = Now; ; )
             {
                 AimHeldAt(rig, holdLeft, face);
@@ -2074,6 +2075,132 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
         else if (cast || spikesAfter != spikesBefore)
             Fail("the refused press still cast or spent a spike: " + note);
+        else
+            Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.267: a held piton set from close to a wall. The hold lays the blade along the aim
+    /// (<c>Interaction.AimHoldAlignment</c>) and its game-size collider reaches 0.66 m past the grip, so with the
+    /// controller 0.3 m from the face the blade's place lies about 0.35 m inside the wall, which pushes the physical
+    /// piton off it. The press must still go along the hold's blade (HandAim.HoldTarget), not the pushed one: the placed
+    /// piton, or the refusal ring, within 0.1 m of the controller's aim ray carried to the blade, that is the held ray
+    /// measured in the aim pose's frame with the blade pointing away from the wall.
+    /// </summary>
+    IEnumerator PitonCloseWallStep()
+    {
+        var c = Character.localCharacter;
+        if (!AvatarConfig.Instance.AimHoldAlignment)
+        {
+            stepSkip = "Interaction.AimHoldAlignment off";
+            yield break;
+        }
+        var spike = FindItemComponent<ClimbingSpikeComponent>();
+        if (spike == null)
+        {
+            stepSkip = "no climbing spike item";
+            yield break;
+        }
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        EmptyHotbar(c);
+        var spikeItem = spike.GetComponent<Item>();
+        yield return GiveAndHold(spikeItem);
+        if (!stepOk)
+            yield break;
+        yield return WaitFor(() => c.data.sinceItemAttach > 0.6f, 1f);
+        bool left = LocalHold.ItemInLeftHand;
+        var rig = VRRig.Instance;
+        var wallCollider = wallFace.collider;
+        var toWall = -Flat(wallFace.normal);
+        // Clear of the wall first: the hand at the chest, the blade up and back over the shoulder.
+        SetHand(left, rig.Origin.InverseTransformPoint(rig.Head.position + Vector3.down * 0.3f));
+        for (float until = Now + 0.6f; Now < until; )
+        {
+            AimHand(rig, left, rig.Head.position + (Vector3.up - toWall) * 10f);
+            yield return null;
+        }
+        var aim = rig.Aim(left);
+        var item = HeldItem();
+        if (aim == null || item == null || !HeldRay(rig, left, out var clearFrom, out var clearDir))
+        {
+            Fail("no held piton or aim pose");
+            yield break;
+        }
+        var inAim = Quaternion.Inverse(aim.rotation);
+        var rayFrom = inAim * (clearFrom - aim.position);
+        var rayDir = inAim * clearDir;
+        float clearOff = Vector3.Angle(item.transform.forward, clearDir);
+        // Then the controller 0.3 m from the face, aimed straight into it, long enough for the wall to push the piton.
+        float gap = wallCollider.Raycast(new Ray(rig.Head.position, toWall), out var headHit, 3f)
+            ? headHit.distance
+            : 0.6f;
+        var spot = rig.Head.position + toWall * Mathf.Max(gap - 0.3f, 0f) + Vector3.down * 0.15f;
+        yield return MoveTo(left, () => spot, 0.3f);
+        for (float until = Now + 0.6f; Now < until; )
+        {
+            AimHand(rig, left, spot + toWall * 10f);
+            yield return null;
+        }
+        var hand = rig.Hand(left);
+        float fromFace = wallCollider.Raycast(new Ray(hand.position, toWall), out var handHit, 3f)
+            ? handHit.distance
+            : -1f;
+        float pushed = Vector3.Angle(item.transform.forward, aim.forward);
+        var handlesBefore = new HashSet<int>();
+        foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
+            handlesBefore.Add(h.GetInstanceID());
+        int denials = Affordance.Count;
+        var from = aim.position + aim.rotation * rayFrom;
+        var dir = (aim.rotation * rayDir).normalized;
+        string press = SpikePressState(c, rig, left, spike, spot + toWall * 10f);
+        Script(left).TriggerTouch = true;
+        Script(left).Trigger = 1f;
+        Transform placed = null;
+        bool Done()
+        {
+            foreach (var h in FindObjectsByType<ClimbHandle>(FindObjectsSortMode.None))
+            {
+                if (handlesBefore.Contains(h.GetInstanceID()))
+                    continue;
+                var view = h.GetComponentInParent<PhotonView>();
+                placed = view != null ? view.transform : h.transform;
+                spawned.Add(placed.gameObject);
+                return true;
+            }
+            return Affordance.Count != denials;
+        }
+        yield return WaitFor(Done, spikeItem.usingTimePrimary + 2f);
+        Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
+        var setup = F(
+            $"controller {fromFace:0.00} m from the face, the physical piton {pushed:0.0} deg off the aim there ({clearOff:0.0} deg off its ray clear of the wall), ray from {from} along {dir}; {press}"
+        );
+        Vector3 point;
+        string what;
+        if (placed != null)
+        {
+            point = placed.position;
+            what = "placed piton";
+        }
+        else if (Affordance.Count != denials)
+        {
+            point = Affordance.LastPosition;
+            what = F($"{Affordance.LastReason} ring");
+        }
+        else
+        {
+            Fail("the press neither placed the piton nor was refused: " + setup);
+            yield return LetGoAll(c);
+            yield break;
+        }
+        float off = Vector3.Cross(point - from, dir).magnitude;
+        float ahead = Vector3.Dot(point - from, dir);
+        var note = F($"{what} {off:0.00} m off the aim ray, {ahead:0.00} m along it; ") + setup;
+        if (ahead < 0f || off > 0.1f)
+            Fail("the piton did not go along the controller's aim: " + note);
         else
             Note(note);
         yield return LetGoAll(c);

@@ -217,6 +217,7 @@ public static class SelfTestIds
         "vr.260-headset-off",
         "vr.265-hand-reticle",
         "vr.266-menu-plate-masks",
+        "vr.267-piton-close-wall",
         "vr.262-wear-sensor-off",
         "vr.261-vr-restart-mid-hang",
         "vr.25-cook-over-fire",

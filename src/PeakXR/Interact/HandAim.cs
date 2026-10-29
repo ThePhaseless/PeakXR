@@ -62,6 +62,9 @@ internal static class HandAim
 
     private static Item barrelItem;
     private static bool barrelIsLauncher;
+
+    /// <summary>A launcher (<c>ItemHoldInfo.Aimed</c>), which two hands lay along their axis; a piton is not.</summary>
+    private static bool barrelAimed;
     private static Transform barrelMuzzle;
 
     /// <summary>The barrel's far end in the item's frame when it has no muzzle transform (a piton's point).</summary>
@@ -76,7 +79,8 @@ internal static class HandAim
     /// along its +Z (tester: the piton "goes in not where I aim"; see <see cref="PointAlongZ"/>). The ray starts on
     /// that line level with the item pivot, near the hand, so a muzzle poking into a wall still finds it, and where
     /// that line is drawn (<see cref="HeldItemScale"/>). The hold lays that line along the aim pose
-    /// (<c>Interaction.AimHoldAlignment</c>, AvatarPoseDriver.ItemInController), so barrel and controller agree.
+    /// (<c>Interaction.AimHoldAlignment</c>, AvatarPoseDriver.ItemInController), so barrel and controller agree; with
+    /// it on, the line is the hold's own (<see cref="HoldTarget"/>), not the physical item's.
     /// </summary>
     private static bool TryBarrel(ref Vector3 origin, ref Quaternion rotation)
     {
@@ -88,6 +92,7 @@ internal static class HandAim
         {
             barrelItem = item;
             barrelMuzzle = Muzzle(item, out barrelIsLauncher);
+            barrelAimed = barrelIsLauncher;
             barrelTip = Vector3.zero;
             if (!barrelIsLauncher && item.TryGetComponent<ClimbingSpikeComponent>(out _))
                 barrelIsLauncher = PointAlongZ(item, out barrelTip);
@@ -103,6 +108,59 @@ internal static class HandAim
             muzzle - forward * Vector3.Dot(muzzle - pivot, forward)
         );
         rotation = t.rotation;
+        if (HoldTarget(c, out var pos, out var rot))
+        {
+            // ToVisual scales about a grip fixed on the item, so the drawn muzzle carried rigidly onto the target is
+            // the target pose's drawn muzzle.
+            origin = pos + rot * (Quaternion.Inverse(rotation) * (origin - pivot));
+            rotation = rot;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Where the local hold puts the held barrel item now, with <c>Interaction.AimHoldAlignment</c> on and the hold
+    /// driving it: its one-hand pose on the tracked hand (AvatarPoseDriver.ItemInController), a launcher turned onto
+    /// the two-hand axis while the free hand supports it, as AvatarPoseDriver.TryGetItemWorldPose puts it. The physical
+    /// item only follows that pose, and terrain pushes it off: a piton's game-size blade collider reaches 0.66 m past
+    /// its grip (Spike MeshCollider z 0.08-0.70, Hand_R z 0.04), so a piton set close to a wall was turned by it
+    /// (vr.44d run 4, the controller 0.5 m from the face: 39 deg off the aim, the hand 0.40 m from its controller) and
+    /// went in where the wall pushed it. The aim, its cues and the game's casts follow this pose; the item's physics,
+    /// which peers see, is left alone.
+    /// </summary>
+    private static bool HoldTarget(Character c, out Vector3 pos, out Quaternion rot)
+    {
+        pos = default;
+        rot = Quaternion.identity;
+        bool left = LocalHold.ItemInLeftHand;
+        var rig = VRRig.Instance;
+        var hand = rig.Hand(left);
+        var driver = AvatarPoseDriver.Of(c);
+        if (
+            !AvatarConfig.Instance.AimHoldAlignment
+            || hand == null
+            || driver == null
+            || !driver.ItemFrameOverridden
+            || !driver.HeldItemInController(left, out var xPos, out var xRot)
+        )
+            return false;
+        var at = hand.position;
+        rot = hand.rotation * xRot;
+        pos = at + hand.rotation * xPos;
+        var support = rig.Hand(!left);
+        if (!barrelAimed || !LocalHold.TwoHand || !VRInput.Hand(!left).Tracked || support == null)
+            return true;
+        var turned = GripMath
+            .TwoHandAim(
+                rot.N(),
+                (rot * Vector3.forward).N(),
+                at.N(),
+                support.position.N(),
+                TwoHandMinSeparation
+            )
+            .U();
+        pos = at + turned * (Quaternion.Inverse(rot) * (pos - at));
+        rot = turned;
         return true;
     }
 

@@ -2228,7 +2228,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Holds the held item's own ray (<see cref="HeldRay"/>) along the tracking-space <paramref name="dir"/>,
     /// its roll from <paramref name="thumb"/>, re-aimed every frame: at least 0.15 s and until that ray is within
-    /// 2 deg of it (the physics item trails its hand), at most 0.6 s. Not the fingers: with
+    /// 2 deg of it (with <c>Interaction.AimHoldAlignment</c> off the ray is the physics item's, which trails its hand),
+    /// at most 0.6 s. Not the fingers: with
     /// <c>Interaction.AimHoldAlignment</c> off a launcher's barrel and a piton's blade (HandAim.TryBarrel) sit tens of
     /// degrees off them (run 1: vr.44d's piton blade 43 deg off the aim pose).</summary>
     IEnumerator AimHeldAlong(VRRig rig, bool left, Vector3 dir, Vector3 thumb)
@@ -2253,11 +2254,12 @@ internal sealed partial class SelfTestRunner
     const float BarrelOnAimDegrees = 5f;
 
     /// <summary>With <c>Interaction.AimHoldAlignment</c> on, the hold lays a held launcher's barrel or a piton's blade
-    /// (the item's +Z, HandAim.TryBarrel) along the holding hand's aim pose, so a shot goes where the controller
-    /// points on any runtime: fails the step past <see cref="BarrelOnAimDegrees"/>. Logs the angle, how far the
-    /// grip leaves the fist, and the angle split into the hold's own barrel against the aim and the physics item
-    /// against its hold (a hold that misses the aim, or an item the world or a short arm keeps off it). Nothing for an
-    /// item without a barrel.</summary>
+    /// (the item's +Z) along the holding hand's aim pose, and the game's casts go along that hold's barrel
+    /// (HandAim.TryBarrel), so a shot goes where the controller points on any runtime: fails the step when that ray
+    /// (<see cref="HeldRay"/>) is past <see cref="BarrelOnAimDegrees"/> off the aim. Logs the angle, how far the grip
+    /// leaves the fist, the hold's own barrel against the aim and the physics item against its hold (an item the
+    /// world or a short arm keeps off it, which the ray no longer follows). Nothing for an item without a
+    /// barrel.</summary>
     void CheckBarrelOnAim(VRRig rig, bool left, string when)
     {
         var item = HeldItem();
@@ -2270,13 +2272,14 @@ internal sealed partial class SelfTestRunner
             || hand == null
             || driver == null
             || !driver.BarrelInController(left, out var held, out float tilt)
+            || !HeldRay(rig, left, out _, out var ray)
         )
             return;
         bool on = AvatarConfig.Instance.AimHoldAlignment;
-        float off = Vector3.Angle(item.transform.forward, aim.forward);
+        float off = Vector3.Angle(ray, aim.forward);
         var place = hand.rotation * held;
         string line = F(
-            $"{when}: {item.name} barrel {off:0.0} deg off the {(left ? "left" : "right")} aim pose (Interaction.AimHoldAlignment {on}), grip {tilt:0} deg out of the fist; the hold lays it {Vector3.Angle(place * Vector3.forward, aim.forward):0.0} deg off the aim, the item sits {Quaternion.Angle(item.transform.rotation, place):0.0} deg off its hold"
+            $"{when}: {item.name} aim ray {off:0.0} deg off the {(left ? "left" : "right")} aim pose (Interaction.AimHoldAlignment {on}), grip {tilt:0} deg out of the fist; the hold lays its barrel {Vector3.Angle(place * Vector3.forward, aim.forward):0.0} deg off the aim, the item sits {Quaternion.Angle(item.transform.rotation, place):0.0} deg off its hold"
         );
         Plugin.Log.LogInfo("[selftest] " + line);
         if (on && off > BarrelOnAimDegrees)
