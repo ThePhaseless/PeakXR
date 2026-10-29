@@ -300,11 +300,14 @@ internal sealed class AimReticle : MonoBehaviour
         return true;
     }
 
+    /// <summary>The aim line is drawn now (ui.world's hand reticle stands aside meanwhile).</summary>
+    public static bool Showing { get; private set; }
+
     private void Show(bool visible)
     {
         if (visible == shown || !built)
             return;
-        shown = visible;
+        Showing = shown = visible;
         line.enabled = visible;
         dot.gameObject.SetActive(visible);
     }
