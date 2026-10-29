@@ -33,6 +33,79 @@ internal sealed partial class SelfTestRunner
         yield return WithOn("ui.03-world-banner", 25f, BannerStep(), s.WorldBanners);
         yield return WithOn("ui.04-rope-gauge", 28f, RopeGaugeStep(), s.HeldItemGauges);
         yield return HandStep("ui.05-wrist-hud", 15f, WristHudStep());
+        yield return Restoring("ui.06-top-stamina", 15f, TopStaminaStep());
+    }
+
+    /// <summary>
+    /// ui.06: <c>UI.HUD.StaminaView</c> TopOfView moves the game's stamina bar to a small meter high in the view, drawn
+    /// on top, its plate as long as the bar's frame (not the frame's 1214 px stencil mask); Both keeps the bar on the
+    /// wrist and draws a copy at the top that tracks it.
+    /// </summary>
+    IEnumerator TopStaminaStep()
+    {
+        var cfg = UI.World.UIWorldFeature.Settings;
+        var head = VRRig.Instance.Head;
+        var was = cfg.StaminaView.Value;
+        bodyRestore += () => cfg.StaminaView.Value = was;
+        cfg.StaminaView.Value = UI.World.StaminaView.TopOfView;
+        yield return Wait(1f);
+        var root = UI.World.HudSplit.TopRoot;
+        var plate = UI.World.HudSplit.TopPlate;
+        var frame = GUIManager.instance.bar.staminaBarOutline;
+        var toTop = frame.TransformPoint(frame.rect.center) - head.position;
+        float off = Vector3.Angle(head.forward, toTop);
+        float above = Vector3.SignedAngle(head.forward, toTop, head.right) * -1f;
+        float degrees =
+            2f
+            * Mathf.Atan2(UI.World.HudSplit.TopWidthMeters * 0.5f, toTop.magnitude)
+            * Mathf.Rad2Deg;
+        bool onTop = UI.Common.OnTop.AllOnTop(root);
+        bool barThere = WristBarFrame(root, out float frameLo, out float frameHi, out var barNote);
+        bool plateShown = MeasureWristPlate(root, out var plateMin, out var plateMax, plate);
+        bool plateOnBar =
+            !barThere
+            || (
+                plateShown
+                && MenuBackplate.FitsSpan(
+                    plateMin.x,
+                    plateMax.x,
+                    frameLo,
+                    frameHi,
+                    UI.World.HudSplit.WristPlatePad,
+                    MenuBackplate.FoldPixels + 1f
+                )
+            );
+        yield return ShotAt("ui-06-top-stamina", head.position + toTop);
+
+        cfg.StaminaView.Value = UI.World.StaminaView.Both;
+        yield return Wait(1f);
+        var bothRoot = UI.World.HudSplit.TopRoot;
+        bool copyDrawn = MeasureWristDrawn(bothRoot, out _, out _, UI.World.HudSplit.TopPlate);
+        bool wristKept =
+            cfg.Hud.Value != UI.World.HudMode.Wrist
+            || (
+                UI.World.HudSplit.WristValid
+                && GUIManager.instance.bar.transform.IsChildOf(UI.World.HudSplit.WristRoot)
+            );
+        stepNote = F(
+            $"top meter {off:0} deg off the view centre, {above:0} deg above it, {degrees:0.0} deg wide, on top {onTop}; plate {plateMax.x - plateMin.x:0} px on bar frame {frameHi - frameLo:0} px{barNote}, fits {plateOnBar}; Both: copy drawn {copyDrawn}, bar kept on the wrist {wristKept}"
+        );
+        if (root == null)
+            Fail("top stamina meter not posed");
+        else if (above < 10f || off > 40f)
+            Fail("top stamina meter is not high in the view");
+        else if (degrees > 16f)
+            Fail("top stamina meter is not small");
+        else if (!onTop)
+            Fail("top stamina meter is depth tested");
+        else if (!barThere)
+            Fail("stamina bar frame not in the top meter" + barNote);
+        else if (!plateOnBar)
+            Fail("top meter plate is not as long as the stamina bar's frame");
+        else if (bothRoot == null || !copyDrawn)
+            Fail("Both: no stamina copy drawn at the top");
+        else if (!wristKept)
+            Fail("Both: the stamina bar left the wrist");
     }
 
     /// <summary>A hand step with <paramref name="on"/> turned on, as a player who uses the feature has it: a step that
@@ -362,13 +435,19 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Box-space bounds of every graphic under the wrist box that reaches the screen (active, enabled, visible
     /// alpha after canvas groups, not a stencil-only mask, not empty), the plate aside. The ui.05 oracle, apart from HudSplit's own fit.</summary>
-    static bool MeasureWristDrawn(RectTransform root, out Vector2 min, out Vector2 max)
+    static bool MeasureWristDrawn(
+        RectTransform root,
+        out Vector2 min,
+        out Vector2 max,
+        UnityEngine.UI.Graphic plate = null
+    )
     {
         min = new Vector2(float.MaxValue, float.MaxValue);
         max = new Vector2(float.MinValue, float.MinValue);
         if (root == null)
             return false;
-        var plate = UI.World.HudSplit.WristPlate;
+        if (plate == null)
+            plate = UI.World.HudSplit.WristPlate;
         var corners = new Vector3[4];
         bool any = false;
         foreach (var g in root.GetComponentsInChildren<UnityEngine.UI.Graphic>(false))
@@ -394,10 +473,16 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Box-space bounds of the wrist plate as drawn; false when it is missing or hidden.</summary>
-    static bool MeasureWristPlate(RectTransform root, out Vector2 min, out Vector2 max)
+    static bool MeasureWristPlate(
+        RectTransform root,
+        out Vector2 min,
+        out Vector2 max,
+        UnityEngine.UI.Graphic plate = null
+    )
     {
         min = max = default;
-        var plate = UI.World.HudSplit.WristPlate;
+        if (plate == null)
+            plate = UI.World.HudSplit.WristPlate;
         if (
             root == null
             || plate == null

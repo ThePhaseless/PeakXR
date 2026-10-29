@@ -101,6 +101,17 @@ internal sealed class TrackedCanvas
 
     /// <summary>The content was too scattered for a plate at the last fit (<see cref="BackplateView"/>).</summary>
     public bool PlateScattered;
+
+    /// <summary>A hidden opaque dimmer showing now, and the parts drawn before it that it covers
+    /// (<see cref="BackdropStrip.UpdateCover"/>).</summary>
+    public Graphic Cover;
+    public readonly List<CoveredPart> Covered = new();
+
+    /// <summary>Menus: lazy follow of the panel's heading (<c>UI.MenuFollow</c>).</summary>
+    public readonly LazyFollow Follow = new();
+
+    /// <summary>Menus: next wall test while the panel glides after the head.</summary>
+    public float FollowWallAt;
 }
 
 /// <summary>
@@ -129,6 +140,9 @@ internal static class WorldCanvases
 
     // Longest a page may take to scale in before its size counts as settled (ScaleOnEnable default 0.25 s).
     private const float SettleSeconds = 0.6f;
+
+    // Wait after a popup covers or uncovers the page before the plate refits to what is left.
+    private const float CoverMeasureSeconds = 0.05f;
 
     // A scrolled list is rescanned at most this often (a drag or fling reports every frame).
     private const float ScrollScanSeconds = 0.15f;
@@ -437,7 +451,13 @@ internal static class WorldCanvases
             if (!t.Converted)
                 continue;
             if (t.Strip)
+            {
                 WatchPages(t);
+                // A popup's opaque dimmer hides the page under it, so the plate refits to the popup alone, a few
+                // frames on: the covered graphics' inherited alpha updates when the canvases next render.
+                if (BackdropStrip.UpdateCover(t))
+                    t.NextMeasure = Time.unscaledTime + CoverMeasureSeconds;
+            }
             switch (t.Kind)
             {
                 case CanvasKind.Hud:
@@ -576,6 +596,7 @@ internal static class WorldCanvases
             var pick = PanelMath.PickOpenYaw(openDepths);
             t.Yaw = yaw + OpenYawSteps[pick];
             ClearWalls(t, cfg, OpenYawSteps[pick]);
+            t.Follow.Snap(t.Yaw);
             t.Retest = true;
             t.WasOpen = true;
             t.NextMeasure = 0f;
@@ -588,6 +609,8 @@ internal static class WorldCanvases
             t.Retest = !t.Settled;
             ClearWalls(t, cfg, null);
         }
+        if (cfg.MenuFollow.Value == MenuFollowMode.LazyFollow)
+            FollowHead(t, head, cfg);
 
         // Sized by what the menu draws, not the whole 1920x1080 canvas: a small menu (pause) grows to a
         // readable size, full-screen ones keep MenuWidth. Its content centre stays where it spawned.
@@ -595,6 +618,56 @@ internal static class WorldCanvases
         var position = t.Position - t.Rotation * (Vector3)(t.ContentCenter * mpp);
         Apply(t, position, t.Rotation, mpp * t.Size.x);
         return true;
+    }
+
+    // Seconds between wall tests while a menu glides after the head (the 15 rays need not run every frame).
+    private const float FollowWallSeconds = 0.1f;
+
+    /// <summary>
+    /// <c>UI.MenuFollow</c> LazyFollow: the menu stays put while the head looks around it; once the head has been
+    /// past <c>UI.MenuFollowAngle</c> (or a wide menu's edge) for a moment it glides back in front along its sight
+    /// lines (<see cref="LazyFollow"/>), its eye point easing to the head's, tested against walls as it goes. Never
+    /// while the laser is on a panel or a trigger is held (<see cref="LaserPointer.Engaged"/>), so nothing moves under
+    /// a press.
+    /// </summary>
+    private static void FollowHead(TrackedCanvas t, Transform head, UIWorldSettings cfg)
+    {
+        var dt = Time.unscaledDeltaTime;
+        var wanted = cfg.MenuDistanceWorld;
+        float halfSpan =
+            Mathf.Atan(0.5f * t.ContentSize.x * MenuMpp(t, cfg) / wanted) * Mathf.Rad2Deg;
+        t.Follow.Threshold = LazyFollow.ThresholdFor(cfg.MenuFollowAngle.Value, halfSpan);
+        var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
+        if (!t.Follow.Update(yaw, 0f, LaserPointer.Engaged, dt))
+            return;
+        t.Yaw = t.Follow.Yaw;
+        t.Eye = Vector3.Lerp(t.Eye, head.position, ExpSmooth.Factor(1f / t.Follow.SmoothTime, dt));
+        var now = Time.unscaledTime;
+        bool settled = !t.Follow.Gliding;
+        if (settled || now >= t.FollowWallAt)
+        {
+            t.FollowWallAt = now + FollowWallSeconds;
+            var (clear, onTop) = PanelMath.FitBeforeWall(
+                wanted,
+                PanelDepth(t, t.Yaw, cfg),
+                PanelMath.NearestMenuDistance
+            );
+            t.Scale = clear / wanted;
+            DrawOnTop(t, onTop, remark: settled);
+        }
+        var offset = PanelMath
+            .InFront(
+                t.Yaw,
+                Mathf.Max(PanelMath.ComfortFloor, t.Scale * wanted - t.Stack),
+                cfg.MenuTilt.Value
+            )
+            .ToUnity();
+        t.Position = t.Eye + offset;
+        t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
+        if (settled)
+            Plugin.Log.LogInfo(
+                $"[ui.world] menu '{t.Canvas.name}' followed the head to {t.Scale * wanted:0.00} m"
+            );
     }
 
     private static float MenuMpp(TrackedCanvas t, UIWorldSettings cfg) =>

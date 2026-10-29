@@ -116,6 +116,17 @@ public static class BackdropRules
         return BackdropRole.Content;
     }
 
+    /// <summary>Opacity at which a dimmer hides what is drawn before it on a monitor (a popup's blackout over the page
+    /// it opened on).</summary>
+    public const float CoverAlpha = 0.75f;
+
+    /// <summary>
+    /// A hidden dimmer showing at <paramref name="alpha"/> (its colour times its canvas groups) blacked out the page
+    /// under it on a monitor: in VR, where the dimmer is gone, that page is hidden instead, so a popup never draws
+    /// over live-looking buttons that the invisible dimmer still blocks.
+    /// </summary>
+    public static bool Covers(float alpha) => alpha >= CoverAlpha;
+
     /// <summary>Dark text that sat on a light panel gets a light halo once the panel is gone; light text a dark
     /// one. Rec. 601 luma, so saturated yellows and cyans count as light.</summary>
     public static bool NeedsLightHalo(float r, float g, float b) =>

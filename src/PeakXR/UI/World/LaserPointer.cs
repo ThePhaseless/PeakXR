@@ -65,6 +65,10 @@ internal sealed class LaserPointer
 
     public static bool OverLeft { get; private set; }
 
+    /// <summary>The laser is on a panel or its trigger is held (a slider drag can leave the panel): lazily following
+    /// menus stay put meanwhile (<see cref="Core.LazyFollow"/>).</summary>
+    public static bool Engaged { get; private set; }
+
     // A dim dot over a disabled control: it is there, but it will not take the press.
     private static readonly Color LockedColor = new(0.55f, 0.55f, 0.55f, 0.7f);
 
@@ -143,6 +147,7 @@ internal sealed class LaserPointer
     /// <summary>Hide the laser and release anything it was pressing.</summary>
     public void Hide()
     {
+        Engaged = false;
         SetBlocked(false);
         Cancel();
         SetVisible(false, false);
@@ -194,6 +199,7 @@ internal sealed class LaserPointer
 
         Over = over;
         OverLeft = hands.ActiveLeft;
+        Engaged = over != null || hands.Held;
         HandleEnterExit(over);
         TickOnHover(over, cfg.HoverHaptics.Value);
         SetHoverLook(hoverSelectable != null && !blocked);
@@ -354,7 +360,13 @@ internal sealed class LaserPointer
                 LockTint(lockedSelectable)
             );
         if (over == null)
+        {
+            // Evidence for presses that did nothing (a pause menu near a wall ignored two clicks): log the miss.
+            Plugin.Log.LogInfo(
+                $"[ui.world] laser press hit no panel (blocked {blocked}, aim {aim.position}, forward {aim.forward})"
+            );
             return;
+        }
 
         if (
             ExecuteEvents.GetEventHandler<ISelectHandler>(over) != system.currentSelectedGameObject
@@ -411,6 +423,12 @@ internal sealed class LaserPointer
         var click = ExecuteEvents.GetEventHandler<IPointerClickHandler>(over);
         if (data.pointerClick != null && data.pointerClick == click && data.eligibleForClick)
             ExecuteEvents.Execute(data.pointerClick, data, ExecuteEvents.pointerClickHandler);
+        else if (data.pointerClick != null)
+            Plugin.Log.LogInfo(
+                $"[ui.world] laser click dropped: pressed '{data.pointerClick.name}', released over "
+                    + $"'{(click != null ? click.name : "nothing")}', eligible {data.eligibleForClick}, dragging "
+                    + $"{data.dragging}, aim turned {Vector3.Angle(pressForward, EventCamera.transform.forward):0.0} deg"
+            );
         if (data.pointerDrag != null && data.dragging && over != null)
             ExecuteEvents.ExecuteHierarchy(over, data, ExecuteEvents.dropHandler);
 
