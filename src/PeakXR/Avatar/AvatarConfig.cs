@@ -17,7 +17,8 @@ internal sealed class AvatarConfig
         headLook,
         bodyLean,
         retargetItems,
-        reachGhostHand;
+        reachGhostHand,
+        aimHoldAlignment;
     private ConfigEntry<string> ownBody;
     private ConfigEntry<float> wristBack,
         wristSide,
@@ -34,6 +35,7 @@ internal sealed class AvatarConfig
     public bool BodyLean => bodyLean?.Value ?? true;
     public bool RetargetItems => retargetItems?.Value ?? true;
     public bool ReachGhostHand => reachGhostHand?.Value ?? true;
+    public bool AimHoldAlignment => aimHoldAlignment?.Value ?? true;
     public string OwnBody => ownBody?.Value ?? ShowArms;
     public ConfigEntry<string> OwnBodyEntry => ownBody;
     public float WristBack => wristBack?.Value ?? 0.07f;
@@ -178,6 +180,14 @@ internal sealed class AvatarConfig
                         + "Only what you see: its physics and what other players see keep the game's size. 1 = game size.",
                     new AcceptableValueRange<float>(0.4f, 1f)
                 )
+            ),
+            aimHoldAlignment = file.Bind(
+                "Interaction",
+                "AimHoldAlignment",
+                true,
+                "Turns a held launcher, blowgun or piton in your hand so its barrel or blade points where your "
+                    + "controller aims, so shots go there; its grip may stick out of the fist. Off: the game's own hold, "
+                    + "where shots follow the barrel as it lies in the hand. Also how you see other VR players hold them."
             ),
         };
         Instance = c;

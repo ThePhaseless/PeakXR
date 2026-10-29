@@ -19,6 +19,10 @@ internal sealed class ItemHoldInfo
     /// it along the two-hand axis (<see cref="GripMath.TwoHandAim"/>).</summary>
     public bool Aimed;
 
+    /// <summary>Its use goes along its own +Z, as HandAim.TryBarrel casts it: an <see cref="Aimed"/> launcher's barrel
+    /// or a piton's blade. The hold turns that axis onto the hand's aim (<c>Interaction.AimHoldAlignment</c>).</summary>
+    public bool Barrel;
+
     /// <summary>The side a person turns to their eyes to look at the item (a face, a dial, a cover), in the item's
     /// frame (Core <see cref="ItemFront"/>, docs/research/item-fronts.csv); false for an item whose use fixes how it
     /// is held, one with no such side, or one the table does not know.</summary>
@@ -145,6 +149,7 @@ internal sealed class ItemHoldInfo
         public HoldProfile Profile;
         public bool Edible;
         public bool Aimed;
+        public bool Barrel;
         public bool HasFront;
         public Vector3 Front;
         public Vector3 Min;
@@ -343,6 +348,7 @@ internal sealed class ItemHoldInfo
             bool any = LocalBounds(target, out entry.Min, out entry.Max);
             var traits = Traits(target, any, entry.Max - entry.Min, out entry.Edible);
             entry.Aimed = (traits & ItemTraits.Shooter) != 0;
+            entry.Barrel = entry.Aimed || target.GetComponent<ClimbingSpikeComponent>() != null;
             entry.HasFront = ItemFront.TryGet(target.name, out var front);
             entry.Front = front.U();
             entry.Profile = ItemHoldTable.Classify(
@@ -357,6 +363,7 @@ internal sealed class ItemHoldInfo
         Profile = entry.Profile;
         Edible = entry.Edible;
         Aimed = entry.Aimed;
+        Barrel = entry.Barrel;
         HasFront = entry.HasFront;
         Front = entry.Front;
         BoundsMin = entry.Min;

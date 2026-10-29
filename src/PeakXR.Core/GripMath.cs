@@ -110,6 +110,28 @@ public static class GripMath
         return Quaternion.Normalize(UnityQuat.Mul(FromTo(barrel, dir), rot));
     }
 
+    /// <summary>
+    /// An aimed item's pose in its controller's frame (<paramref name="pos"/>, <paramref name="rot"/>) turned about the
+    /// controller origin, the fist, so its barrel (+Z) runs along <paramref name="aim"/>, the controller's aim in that
+    /// frame: shots then go where the controller points on any runtime, the grip leaving the fist as it must. The
+    /// roll about the aim keeps the item's up nearest its old up; an up along the aim takes the least turn instead.
+    /// Returns the turn. No aim leaves the pose alone.
+    /// </summary>
+    public static Quaternion AlongAim(Vector3 aim, ref Vector3 pos, ref Quaternion rot)
+    {
+        if (aim.LengthSquared() < 1e-8f)
+            return Quaternion.Identity;
+        aim = Vector3.Normalize(aim);
+        var up = UnityQuat.Rotate(rot, Vector3.UnitY);
+        var turn =
+            Vector3.Cross(up, aim).LengthSquared() < 1e-6f
+                ? FromTo(UnityQuat.Rotate(rot, Vector3.UnitZ), aim)
+                : UnityQuat.Mul(UnityQuat.LookRotation(aim, up), Quaternion.Inverse(rot));
+        pos = UnityQuat.Rotate(turn, pos);
+        rot = Quaternion.Normalize(UnityQuat.Mul(turn, rot));
+        return turn;
+    }
+
     /// <summary>Same rotation axis, angle limited to <paramref name="maxDeg"/>.</summary>
     public static Quaternion LimitAngle(Quaternion q, float maxDeg)
     {

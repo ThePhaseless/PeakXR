@@ -2,6 +2,7 @@ using System.Collections;
 using PeakXR.Avatar;
 using PeakXR.Interact.Aim;
 using PeakXR.Rig;
+using PeakXR.UI.Affordances;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -83,6 +84,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
 
+        bool usableAtPress = held.CanUsePrimary();
+        int refusals = Affordance.Count;
         Script(left).Trigger = 1f;
         float fireBy = Now + GameTiming.Budget(GameTiming.UseSeconds(held), 1f);
         while (Now < fireBy && !OwnGrapple.Covers(c))
@@ -91,7 +94,7 @@ internal sealed partial class SelfTestRunner
         if (!OwnGrapple.Covers(c))
         {
             Fail(
-                $"the hook did not pull (cast {held.castProgress:0.00}, usable {held.CanUsePrimary()})"
+                $"the hook did not pull (cast {held.castProgress:0.00}, usable {held.CanUsePrimary()}, {usableAtPress} at the press, {Affordance.Count - refusals} refusal(s) since, last {Affordance.LastReason})"
             );
             yield break;
         }
