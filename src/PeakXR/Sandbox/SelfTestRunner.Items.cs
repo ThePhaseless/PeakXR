@@ -2185,13 +2185,14 @@ internal sealed partial class SelfTestRunner
     /// <summary>Set by <see cref="AimHeld"/>: an aim met its condition.</summary>
     bool aimFound;
 
-    /// <summary>Turns the held item's aim (the holding hand in VR, which interact.aim gives the game camera; the look
-    /// in flat play) through <paramref name="yaws"/> by <paramref name="pitches"/> until <paramref name="ok"/> holds
-    /// 0.15 s after the turn. Sets <see cref="aimFound"/>.</summary>
+    /// <summary>Turns the held item's aim (in VR the ray interact.aim gives the game camera, <see cref="HeldRay"/>; the
+    /// look in flat play) through <paramref name="yaws"/> by <paramref name="pitches"/> until <paramref name="ok"/>
+    /// holds 0.15 s after the turn. Sets <see cref="aimFound"/>.</summary>
     IEnumerator AimHeld(Character c, bool left, float[] pitches, float[] yaws, Func<bool> ok)
     {
         aimFound = false;
-        bool vr = VRSession.Active && VRRig.Instance != null;
+        var rig = VRRig.Instance;
+        bool vr = VRSession.Active && rig != null;
         HeadFrame(out _, out var forward, out _);
         float lookYaw = c.data.lookValues.x;
         foreach (float yaw in yaws)
@@ -2203,16 +2204,35 @@ internal sealed partial class SelfTestRunner
                 var axis = Vector3.Cross(Vector3.up, heading);
                 var dir = Quaternion.AngleAxis(down, axis) * heading;
                 if (vr)
-                    Script(left).Rotation = HandLook(dir, Vector3.Cross(dir, axis));
+                    yield return AimHeldAlong(rig, left, dir, Vector3.Cross(dir, axis));
                 else
+                {
                     c.data.lookValues = new Vector2(lookYaw + yaw, -down);
-                yield return Wait(0.15f);
+                    yield return Wait(0.15f);
+                }
                 if (ok())
                 {
                     aimFound = true;
                     yield break;
                 }
             }
+        }
+    }
+
+    /// <summary>Holds the held item's own ray (<see cref="HeldRay"/>) along the tracking-space <paramref name="dir"/>
+    /// for 0.15 s, its roll from <paramref name="thumb"/>, re-aimed every frame as the item settles. Not the fingers: a
+    /// launcher fires along its barrel and a piton along its blade (HandAim.TryBarrel), which the hold turns tens of
+    /// degrees off them (run 1: vr.44d's piton blade 43 deg off the aim pose; vr.251's hook, its fingers at the wall
+    /// 9 m ahead, never met it).</summary>
+    IEnumerator AimHeldAlong(VRRig rig, bool left, Vector3 dir, Vector3 thumb)
+    {
+        var along = rig.Origin.TransformDirection(dir);
+        var up = rig.Origin.TransformDirection(thumb);
+        for (float until = Now + 0.15f; Now < until; )
+        {
+            if (HeldRay(rig, left, out var start, out _))
+                AimHeldAt(rig, left, start + along * 10f, up);
+            yield return null;
         }
     }
 

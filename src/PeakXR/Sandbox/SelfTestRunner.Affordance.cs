@@ -583,7 +583,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The second half of vr.60: <paramref name="wall"/> moved so its face stands 1 m past the spike's
     /// grounded reach straight ahead of the hand, the hand aimed level at it, the press refused with the ring on the
-    /// wall (SpikeCue: the wall point, not the end of the reach).</summary>
+    /// wall where the blade's aim met it in the refused frame (SpikeCue: the wall point, not the end of the reach).</summary>
     IEnumerator PitonPastRange(ClimbingSpikeComponent spike, bool left, GameObject wall)
     {
         var rig = VRRig.Instance;
@@ -630,17 +630,55 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // The ring goes where the blade pointed as the press was refused: the game casts then (through interact.aim's
+        // camera swap) and SpikeCue places the ring from that same swap. The piton rides a hand short of its
+        // controller and still moves after the wall is measured (run 1: slid to 3.50 m, measured 3.42 m 0.15 s later,
+        // ring 0.71 m off that earlier point), so the check takes the aim of the refused frame too.
+        StartCoroutine(TrackPressAim(rig, left, Affordance.Count));
         yield return PressAndExpect(left, DenyReason.NoWall);
         if (!stepOk)
             yield break;
-        float off = Vector3.Distance(Affordance.LastPosition, face.point);
+        var moved = F(
+            $"the blade turned {Vector3.Angle(dir, pressDir):0.0} deg and its start moved {Vector3.Distance(from, pressFrom):0.00} m since the wall was measured at {face.distance:0.00} m"
+        );
+        if (
+            !Physics.Raycast(pressFrom, pressDir, out var pressed, range + 4f, mask)
+            || !OnWall(pressed)
+            || pressed.distance <= range
+        )
+        {
+            Fail(
+                F(
+                    $"at the press the blade's aim does not meet the test wall past the {range:0.00} m reach (hit {(pressed.collider != null ? pressed.collider.name : "nothing")} at {pressed.distance:0.00} m; {moved}): {stepNote}"
+                )
+            );
+            yield break;
+        }
+        float off = Vector3.Distance(Affordance.LastPosition, pressed.point);
         var note = F(
-            $"wall {face.distance:0.00} m away past the {range:0.00} m reach, ring {off:0.00} m from the wall point: {stepNote}"
+            $"wall {pressed.distance:0.00} m along the blade at the press, past the {range:0.00} m reach ({moved}), ring {off:0.00} m from where it met the wall: {stepNote}"
         );
         if (off > 0.3f)
-            Fail("the out-of-range ring is not on the wall: " + note);
+            Fail("the out-of-range ring is not where the blade met the wall: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>The held aim (<see cref="HeldRay"/>) in the frame vr.60's press was refused.</summary>
+    Vector3 pressFrom;
+    Vector3 pressDir;
+
+    /// <summary>Samples the held aim every frame after Update, where SpikeCue places a ring, until a denial past
+    /// <paramref name="denials"/> lands (that frame's sample is the refused press's aim) or 3 s pass.</summary>
+    IEnumerator TrackPressAim(VRRig rig, bool left, int denials)
+    {
+        for (float end = Now + 3f; Now < end; )
+        {
+            HeldRay(rig, left, out pressFrom, out pressDir);
+            if (Affordance.Count != denials)
+                yield break;
+            yield return null;
+        }
     }
 
     /// <summary>vr.61: a two-handed item (rescue hook, <see cref="ItemHoldTable"/>) held in one hand. interact.physical

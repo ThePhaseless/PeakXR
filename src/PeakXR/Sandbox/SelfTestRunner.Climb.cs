@@ -2076,7 +2076,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Turns the holding hand so the held item's aim (<see cref="HeldRay"/>) looks at a world point. A piton's
     /// blade starts 0.3 m from the controller, so the start moves as the hand turns: call it every frame to settle.</summary>
-    void AimHeldAt(VRRig rig, bool left, Vector3 world)
+    void AimHeldAt(VRRig rig, bool left, Vector3 world) => AimHeldAt(rig, left, world, Vector3.up);
+
+    /// <summary>As above, the aim's roll from <paramref name="up"/> (straight up needs one that is not up).</summary>
+    void AimHeldAt(VRRig rig, bool left, Vector3 world, Vector3 up)
     {
         var hand = rig.Hand(left);
         if (hand == null || !Interact.HandAim.TryHeld(out var origin, out var rotation))
@@ -2085,7 +2088,7 @@ internal sealed partial class SelfTestRunner
             return;
         }
         var offset = Quaternion.Inverse(hand.rotation) * rotation;
-        var want = Quaternion.LookRotation(world - origin, Vector3.up) * Quaternion.Inverse(offset);
+        var want = Quaternion.LookRotation(world - origin, up) * Quaternion.Inverse(offset);
         Script(left).Rotation = Quaternion.Inverse(rig.Origin.rotation) * want;
     }
 
