@@ -117,7 +117,7 @@ internal static class Haptics
             SentAt[(left ? 0 : 1) * ((int)HapticPriority.Alert + 1) + (int)priority] = now;
             float a = HapticScale.Felt(amplitude, cfg.HapticStrength, scale);
             // Under Unity OpenXR SendHapticImpulse returns false even when the runtime plays the impulse (VR run 30:
-            // the vr-test-mcp haptic log had the pulses), so a valid impulse-capable device that took the call counts
+            // the SteamVrMcp haptic log had the pulses), so a valid impulse-capable device that took the call counts
             // as delivered. The quirk is logged once.
             if (!device.SendHapticImpulse(0, a, seconds) && !loggedFalse)
             {
