@@ -55,7 +55,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.167-secondary-deny", 20f, SecondaryDenyStep());
         yield return ItemStep("vr.168-shoot-hand", "RopeShooter", 30f, ShootHandStep);
         yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
-        yield return ItemStep("vr.248-binocular-near-eye", "Binoculars", 20f, NearEyeLensStep);
+        yield return ItemStep("vr.250-binocular-near-eye", "Binoculars", 20f, NearEyeLensStep);
         // vr.169 and vr.248 raise the binoculars in Hold mode; a failed or timed-out step leaves it forced.
         BinocularsConfig.ForceHold = false;
         // A bandage's trigger cast (4 s): food no longer casts on the trigger.

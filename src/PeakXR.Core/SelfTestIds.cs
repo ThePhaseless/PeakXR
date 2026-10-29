@@ -210,7 +210,7 @@ public static class SelfTestIds
         "vr.245-item-front",
         "vr.246-walk-held-weld",
         "vr.247-own-head-mirror",
-        "vr.248-binocular-near-eye",
+        "vr.250-binocular-near-eye",
         "vr.249-button-throw-aim",
         "vr.25-cook-over-fire",
         "vr.25b-cook-danger",
