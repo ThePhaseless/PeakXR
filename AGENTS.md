@@ -30,9 +30,21 @@ mise provides everything, rootless: run `mise trust` once in a new worktree, the
 
 Run `mise run format` (CSharpier) before every commit; `mise run format-check` must be clean. Analyzers run in every build: CA rules at `latest-all`, enforced IDE style rules, Roslynator, SonarAnalyzer, Meziantou, and for the plugin Microsoft.Unity and BUTR.Harmony. With `CI=true` all warnings are errors: fix them, or turn a rule off in `.editorconfig` (grouped by analyzer) or with a `#pragma` around a false positive, each with a one-line reason. Test a `UnityEngine.Object` with `== null` / `!= null`, which see destroyed objects (UNT0007/0008/0023/0029 are errors). Never use default interface methods or `[ModuleInitializer]` (Unity Mono). `mise run coverage` writes cobertura XML to `TestResults/`.
 
+## Issues
+
+GitHub issues in `ThePhaseless/PeakXR` are the shared memory between sessions and agents: every bug, tester report, idea, design decision and open question lives in one, never only in chat or a report.
+
+- Before work, search them (`gh issue list --state all --search ...`) and read the comments: earlier findings, causes and decisions are there.
+- One issue per problem or idea. A new finding on a known problem is a comment on its issue; a problem seen again reopens its issue.
+- Comment what you learn as you learn it: root cause with file:line, decomp evidence, log lines, in-game results, rejected approaches and why. A decision the user makes goes in a comment too.
+- Labels: `bug`, `enhancement`, `vr`, `performance`, `regression`, `needs in-game check` (fix merged, not yet seen working in the headset).
+- Commits that fix an issue carry a `Fixes #N` trailer (`Refs #N` for partial work); the issue closes when it reaches `master`.
+- The repo is public: keep personal data, tester names and local absolute paths out.
+
 ## Done means
 
 1. `mise run build` reports 0 errors and 0 warnings in files you touched, and `mise run test` is green.
 2. Every patch target you use exists in the current decompile (cite file:line in the patch class comment).
 3. Work is committed on your branch with a Conventional Commits message.
 4. Your report lists: features and settings added, patch targets, contract changes, what needs in-game verification, and known gaps.
+5. Every finding, known gap and follow-up idea from the work is on its GitHub issue (see Issues).
