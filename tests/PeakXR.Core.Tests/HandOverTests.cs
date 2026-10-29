@@ -158,4 +158,60 @@ public class HandOverTests
         Assert.False(h.SuppressPrimary);
         Assert.Equal(HandOverState.None, h.Update(true, true, true));
     }
+
+    // Food at a friend's mouth feeds like food at your own mouth: held there, no trigger needed.
+    static HandOver Mouth() => new() { Dwell = 0.3f };
+
+    [Fact]
+    public void FoodHeldAtTheMouth_FeedsAfterTheDwell()
+    {
+        var h = Mouth();
+        for (float t = 0f; t < 0.25f; t += 0.05f)
+            Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.05f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.1f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.05f));
+        Assert.True(h.SuppressPrimary);
+    }
+
+    [Fact]
+    public void DwellFeed_IgnoresATriggerHeldOnArrival()
+    {
+        var h = Mouth();
+        h.Update(true, true, true, false, 0.2f);
+        Assert.Equal(HandOverState.Apply, h.Update(true, true, true, false, 0.2f));
+    }
+
+    [Fact]
+    public void DwellFeed_RidesOutAWobble_WithoutATrigger()
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.4f);
+        Assert.Equal(HandOverState.Apply, h.Update(false, false, true, false, 0.1f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.02f));
+        for (float t = 0f; t < h.Grace + 0.05f; t += 0.05f)
+            h.Update(false, false, true, false, 0.05f);
+        Assert.Equal(HandOverState.None, h.Update(false, false, true, false, 0.05f));
+        // Back in: the dwell starts over.
+        Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.05f));
+    }
+
+    [Fact]
+    public void DwellWithAnUnfeedableItem_RefusesOncePerVisit()
+    {
+        var h = Mouth();
+        Assert.Equal(HandOverState.None, h.Update(true, false, false, false, 0.2f));
+        Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.2f));
+        Assert.Equal(HandOverState.None, h.Update(true, false, false, false, 0.2f));
+        h.Update(false, false, false, false, 0.2f);
+        h.Update(true, false, false, false, 0.2f);
+        Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.2f));
+    }
+
+    [Fact]
+    public void DwellNeverTakesAnItemWithItsOwnUse()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, h.Update(true, false, false, true, 0.1f));
+    }
 }

@@ -54,8 +54,16 @@ public sealed class HandOver
     /// (MP run 15: a frame's wobble past the mouth ended the feed for good, the trigger never re-armed).</summary>
     public float Grace = 0.4f;
 
+    /// <summary>Seconds the item must stay in the zone to apply with no trigger (food at a friend's mouth, as at your
+    /// own); 0 needs the trigger.</summary>
+    public float Dwell;
+
     private bool applying;
     private float outFor;
+    private float inFor;
+
+    /// <summary>The dwell applied or refused on this visit to the zone.</summary>
+    private bool dwelt;
 
     /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
@@ -69,7 +77,7 @@ public sealed class HandOver
         float dt = 0f
     )
     {
-        if (!inZone && applying && trigger && usable && (outFor += dt) < Grace)
+        if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
             return HandOverState.Apply;
         outFor = 0f;
         if (!inZone || (!usable && ownUse))
@@ -78,8 +86,29 @@ public sealed class HandOver
             return HandOverState.None;
         }
         var state = Step(trigger, usable);
+        if (Dwell > 0f && state is HandOverState.None or HandOverState.Hint)
+            state = DwellStep(usable, state, dt);
         applying = state == HandOverState.Apply;
         return state;
+    }
+
+    /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
+    /// one they cannot is refused once per visit.</summary>
+    private HandOverState DwellStep(bool usable, HandOverState state, float dt)
+    {
+        inFor += dt;
+        if (inFor < Dwell)
+            return state;
+        if (usable)
+        {
+            dwelt = true;
+            SuppressPrimary = true;
+            return HandOverState.Apply;
+        }
+        if (dwelt)
+            return state;
+        dwelt = true;
+        return HandOverState.Refuse;
     }
 
     private HandOverState Step(bool trigger, bool usable)
@@ -143,6 +172,8 @@ public sealed class HandOver
         refused = false;
         applying = false;
         outFor = 0f;
+        inFor = 0f;
+        dwelt = false;
         SuppressPrimary = false;
     }
 }

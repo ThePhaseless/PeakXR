@@ -39,6 +39,8 @@ public sealed class InventoryFeature : Feature
         Patch(typeof(InventoryPatches.Sample));
         Patch(typeof(InventoryPatches.SelectSlot));
         GripHooks.Register(BodyInventory.Instance);
+        // After the body slots: a hand at your own shoulder stashes into your own pack.
+        GripHooks.Register(PackStash.Instance);
         // The 2D hotbar comes back as soon as VR stops; the Sample postfix only runs in VR.
         VRSession.Stopped += HotbarHider.Restore;
     }
