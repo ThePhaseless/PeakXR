@@ -244,6 +244,7 @@ internal static class PhysicalInteraction
                 hand.Use.Reset();
             }
             physicalClimb = false;
+            Climb.ClimbHands.Forget();
             climbInput = Vector2.zero;
             lastItem = null;
             LocalHold.Reset();
