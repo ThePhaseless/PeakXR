@@ -61,6 +61,19 @@ internal sealed class DesktopMirror
             || !HeadsetContext.Renders(cameras)
         )
             return;
+        // Headset off (session SYNCHRONIZED, STOPPING, IDLE): the runtime shows none of our frames, and once the session
+        // ends Unity's OpenXR provider still names the last frame's swapchain image, which belongs to the runtime
+        // again (UnityOpenXR.dll 1.16.1: the mirror query reads a frame cache that stops updating). Black instead.
+        if (
+            (VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState))
+            || display.GetRenderPassCount() == 0
+        )
+        {
+            RenderTexture.active = null;
+            GL.Clear(false, true, Color.black);
+            Note("none: the headset takes no frames");
+            return;
+        }
 
         int mode =
             eye == MirrorEye.Right ? XRMirrorViewBlitMode.RightEye : XRMirrorViewBlitMode.LeftEye;
