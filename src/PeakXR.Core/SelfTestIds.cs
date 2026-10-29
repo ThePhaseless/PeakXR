@@ -225,7 +225,7 @@ public static class SelfTestIds
         "vr.258-stick-lunge",
         "vr.259-god-off-clamp",
         "vr.253-climb-fist-no-piton",
-        "vr.254-climb-free-hand-piton",
+        "vr.268-climb-hand-piton",
         "vr.255-climb-grip-no-pickup",
         "vr.25b-cook-danger",
         "vr.26-light-with-flame",

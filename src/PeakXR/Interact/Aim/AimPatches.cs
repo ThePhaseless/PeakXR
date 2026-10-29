@@ -388,8 +388,9 @@ internal static class AimPatches
     /// CharacterItems.UpdateClimbingSpikeUse (CharacterItems.cs:981, private): the piton ray
     /// RaycastClimbingSpikeStart (:1072-1076, camera at :1075) and the preview range check
     /// WithinClimbingSpikePreviewRange (:971-979, camera at :976) are only called from here. A held spike aims
-    /// from the holding hand; a pocketed spike (secondary use while climbing, :1019) aims from the hand whose
-    /// trigger is secondary use in interact.physical: the free hand, or the left hand when empty-handed.
+    /// from the holding hand. A pocketed spike while climbing (secondary use, :1019-1025) goes in at a hand on the
+    /// wall that holds its trigger, from just outside the wall there (Tools.HandPiton), whatever
+    /// <c>Interaction.AimFromHand</c> says: that path is the climbing hand's, not an aim.
     /// </summary>
     [HarmonyPatch]
     internal static class ClimbingSpike
@@ -400,24 +401,30 @@ internal static class AimPatches
         private static void Prefix(Character ___character, out CameraSwap __state)
         {
             __state = default;
-            if (
-                !On
-                || ___character == null
-                || !___character.IsLocal
-                || ___character.data.climbingSpikeCount <= 0
-            )
+            if (___character == null || !___character.IsLocal)
                 return;
-            var held = ___character.data.currentItem;
-            if (held != null && IsSpike(held))
-                __state = HandAim.BeginHeld(held);
-            else
-                __state = HandAim.BeginHand(
-                    PhysicalInteraction.UseHandLeft(___character, secondary: true)
-                );
+            try
+            {
+                var held = ___character.data.currentItem;
+                if (held != null && IsSpike(held))
+                {
+                    if (On && ___character.data.climbingSpikeCount > 0)
+                        __state = HandAim.BeginHeld(held);
+                }
+                else
+                    __state = Tools.HandPiton.Begin(___character);
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<AimFeature>(e);
+            }
         }
 
-        private static Exception Finalizer(Exception __exception, CameraSwap __state) =>
-            CameraSwap.Restore(__exception, __state);
+        private static Exception Finalizer(Exception __exception, CameraSwap __state)
+        {
+            Tools.HandPiton.End();
+            return CameraSwap.Restore(__exception, __state);
+        }
 
         private static bool IsSpike(Item item)
         {
@@ -427,6 +434,28 @@ internal static class AimPatches
                 spikeCacheIsSpike = item.TryGetComponent<ClimbingSpikeComponent>(out _);
             }
             return spikeCacheIsSpike;
+        }
+    }
+
+    /// <summary>GUIManager.RefreshInteractablePrompt (GUIManager.cs:1045): while climbing with pitons it shows SETPITON
+    /// as the secondary prompt (:1080-1084), the free hand's piton. That piton now comes from holding the trigger of a
+    /// hand on the wall (Tools.HandPiton), so the prompt goes while that path is on.</summary>
+    [HarmonyPatch]
+    internal static class PitonPrompt
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(GUIManager), nameof(GUIManager.RefreshInteractablePrompt));
+
+        private static void Postfix(GUIManager __instance)
+        {
+            var c = Character.localCharacter;
+            if (
+                Tools.HandPiton.On(c)
+                && c.data.isClimbing
+                && c.data.climbingSpikeCount > 0
+                && __instance.interactPromptSecondary != null
+            )
+                __instance.interactPromptSecondary.SetActive(false);
         }
     }
 }

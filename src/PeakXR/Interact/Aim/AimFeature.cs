@@ -40,6 +40,7 @@ public sealed class AimFeature : Feature
         Patch(typeof(AimPatches.SpawnSomethingFire));
         Patch(typeof(AimPatches.CloneFire));
         Patch(typeof(AimPatches.ClimbingSpike));
+        Patch(typeof(AimPatches.PitonPrompt));
 
         var host = new GameObject("PeakXR.Aim") { hideFlags = HideFlags.HideAndDontSave };
         UnityEngine.Object.DontDestroyOnLoad(host);

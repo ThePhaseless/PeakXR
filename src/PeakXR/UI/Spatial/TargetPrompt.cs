@@ -399,9 +399,10 @@ internal sealed class TargetPrompt
         return true;
     }
 
-    /// <summary>The hand a prompt without a target belongs to. The piton prompt (SETPITON) goes to the hand whose
-    /// trigger sets the piton and aims it: the secondary use, which is the free hand while the other one climbs
-    /// (interact.aim casts from it). Any other prompt goes to the pointing hand, else the dominant one.</summary>
+    /// <summary>The hand a prompt without a target belongs to. The piton prompt (SETPITON), shown only while
+    /// Tools.HandPiton is off (one-handed, or <c>Interaction.TriggerUse</c> off; AimPatches.PitonPrompt hides it
+    /// otherwise), goes to the secondary-use hand. Any other prompt goes to the pointing hand, else the dominant
+    /// one.</summary>
     private static bool ActingLeft(bool piton)
     {
         var c = Character.localCharacter;

@@ -65,7 +65,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.51b-falling-catch", 30f, FallingCatchStep());
         yield return Restoring("vr.52-climb-empty", 40f, ClimbEmptyStep());
         yield return Restoring("vr.253-climb-fist-no-piton", 40f, ClimbFistNoPitonStep());
-        yield return Restoring("vr.254-climb-free-hand-piton", 40f, ClimbFreeHandPitonStep());
+        yield return Restoring("vr.268-climb-hand-piton", 40f, ClimbHandPitonStep());
         yield return Restoring("vr.255-climb-grip-no-pickup", 35f, ClimbGripNoPickupStep());
         yield return Restoring("vr.53-forced-detach", 30f, ForcedDetachStep());
         yield return Restoring("vr.237-grip-toggle-climb", 40f, GripToggleClimbStep());

@@ -10,8 +10,8 @@ namespace PeakXR.Sandbox;
 /// <summary>
 /// Which button does what while a hand climbs (tester, v0.1.1: "with the triggers my items get used, with the grips
 /// items sometimes get picked up"; "the piton goes in not where I aim, and while climbing it sometimes places itself").
-/// A climbing fist's trigger sets no piton (vr.253), the free hand's trigger sets one where it aims (vr.254), and a
-/// grip that misses the wall picks nothing up (vr.255).
+/// A climbing fist's trigger sets no piton (vr.253), a hand on the wall that holds its trigger sets one there and the
+/// free hand's trigger sets none (vr.268), and a grip that misses the wall picks nothing up (vr.255).
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -64,8 +64,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.253: pitons in the pockets, the off hand closes on the wall as a fist, trigger and grip together, and holds
     /// past the piton's use time. That trigger was the game's secondary use, which sets a piton while climbing
-    /// (CharacterItems.cs:1019-1025): the piton went in by itself. Now no cast starts, no piton is spent, and a
-    /// deliberate pull of that settled hand's trigger gets the UseOtherHand refusal at the hand.
+    /// (CharacterItems.cs:1019-1025): the piton went in by itself. A trigger squeezed with the closing grip is no
+    /// deliberate hold (UseTrigger.ClimbPress), so no cast starts and no piton is spent.
     /// </summary>
     IEnumerator ClimbFistNoPitonStep()
     {
@@ -101,32 +101,23 @@ internal sealed partial class SelfTestRunner
         }
         bool placed = NewHandle(handles) != null;
         Script(left).Trigger = 0f;
-        yield return Wait(0.3f);
-        UI.Affordances.Affordance.ResetGate();
-        LookAtHand(left);
-        float mark = CueMark();
-        Script(left).Trigger = 1f;
-        yield return ExpectCue(left, DenyReason.UseOtherHand, mark, false, 1f);
-        Script(left).Trigger = 0f;
         var note = F(
-            $"fist on the wall {useTime + 1f:0.0} s: cast up to {maxCast:0.00}, piton placed {placed}, pitons {spikes} then {c.data.climbingSpikeCount}, still climbing {c.data.isClimbing}; pull: {cueNote}"
+            $"fist on the wall {useTime + 1f:0.0} s: cast up to {maxCast:0.00}, piton placed {placed}, pitons {spikes} then {c.data.climbingSpikeCount}, still climbing {c.data.isClimbing}"
         );
         if (placed || maxCast > 0f || c.data.climbingSpikeCount != spikes)
             Fail("the climbing fist's trigger set a piton: " + note);
-        else if (!stepOk)
-            stepNote = note + "; " + stepNote;
         else
             Note(note);
         yield return LetGoAll(c);
     }
 
     /// <summary>
-    /// vr.254: pitons in the pockets, the off hand on the wall, the dominant hand free and aimed at the face beside it.
-    /// Its trigger was the primary use, which sets nothing while climbing, while the piton prompt sat above it: the
-    /// piton came only from the off hand, aimed wherever that fist pointed. Now the free hand's pull is the secondary
-    /// use: a cast starts and the piton goes in within 0.25 m of where that hand's aim met the wall.
+    /// vr.268: pitons in the pockets, one hand on the wall. The free hand, aimed at the face beside it, holds its trigger
+    /// past the piton's use time: that was the old free-hand piton, and now sets nothing. Then the hand on the wall
+    /// pulls its trigger and holds it (Tools.HandPiton): a cast starts and one piton goes in within 0.15 m of where that
+    /// hand meets the wall, along the climb's normal from the hand.
     /// </summary>
-    IEnumerator ClimbFreeHandPitonStep()
+    IEnumerator ClimbHandPitonStep()
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
@@ -141,6 +132,11 @@ internal sealed partial class SelfTestRunner
             yield return LetGoAll(c);
             yield break;
         }
+        float useTime = spike.GetComponent<Item>().usingTimePrimary;
+        var handles = HandleIds();
+        int spikes = c.data.climbingSpikeCount;
+
+        // The free hand's trigger, aimed at the face beside the climbing hand inside the 1 m climbing reach.
         var toWall = -Flat(wallFace.normal);
         var side = Vector3.Cross(Vector3.up, toWall) * (free ? -1f : 1f);
         float gap = wallFace.collider.Raycast(
@@ -150,66 +146,78 @@ internal sealed partial class SelfTestRunner
         )
             ? headHit.distance
             : 0.6f;
-        // The free hand out toward the wall but 0.35 m short of it, aimed at the face beside the climbing hand: well
-        // inside the piton's 1 m climbing reach (climbingSpikeStartDistance).
-        var handAt =
+        var freeAt =
             rig.Head.position
             + toWall * Mathf.Clamp(gap - 0.35f, 0.1f, 0.3f)
             + side * 0.2f
             + Vector3.down * 0.1f;
         var target = wallFace.point + side * 0.3f + Vector3.up * 0.15f;
-        if (Terrain(target - toWall * 0.5f, toWall, 1f, out var onFace))
-            target = onFace.point;
-        yield return MoveTo(free, () => handAt, 0.4f);
-        for (float until = Now + 0.3f; Now < until; )
+        yield return MoveTo(free, () => freeAt, 0.4f);
+        Script(free).TriggerTouch = true;
+        Script(free).Trigger = 1f;
+        float freeCast = 0f;
+        for (float until = Now + useTime + 0.5f; Now < until; )
         {
             AimHand(rig, free, target);
+            freeCast = Mathf.Max(freeCast, c.refs.items.climbingSpikeCastProgress);
             yield return null;
         }
-        var aim = rig.Aim(free);
-        if (
-            aim == null
-            || !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var aimed,
-                spike.climbingSpikeStartDistance,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
-            )
-        )
+        Script(free).Trigger = 0f;
+        Script(free).TriggerTouch = false;
+        bool freePlaced = NewHandle(handles) != null;
+        if (freeCast > 0f || freePlaced || c.data.climbingSpikeCount != spikes)
         {
             Fail(
                 F(
-                    $"the free hand's aim meets no wall within the {spike.climbingSpikeStartDistance:0.00} m climbing reach"
+                    $"the free hand's trigger still sets a piton while climbing: cast up to {freeCast:0.00}, placed {freePlaced}, pitons {spikes} then {c.data.climbingSpikeCount}"
                 )
             );
             yield return LetGoAll(c);
             yield break;
         }
-        var handles = HandleIds();
-        int spikes = c.data.climbingSpikeCount;
-        bool secondary = PhysicalInteraction.UseHandLeft(c, secondary: true) == free;
-        Script(free).TriggerTouch = true;
-        Script(free).Trigger = 1f;
-        yield return WaitFor(() => c.refs.items.climbingSpikeCastProgress > 0f, 1f);
-        bool cast = c.refs.items.climbingSpikeCastProgress > 0f;
-        float useTime = spike.GetComponent<Item>().usingTimePrimary;
+
+        // The climbing hand's trigger, pulled once the hand has settled on the wall and held.
+        var hand = rig.Hand(climbing);
+        var normal = c.data.climbNormal.normalized;
+        var grip = hand.position;
+        if (Terrain(hand.position + normal * 0.3f, -normal, 1f, out var onWall))
+            grip = onWall.point;
+        Script(climbing).TriggerTouch = true;
+        Script(climbing).Trigger = 1f;
+        bool placing = false;
+        float cast = 0f;
         ClimbHandle placed = null;
-        for (float until = Now + useTime + 1.5f; Now < until && placed == null; )
+        for (
+            float until = Now + UseTrigger.HoldSeconds + useTime + 1.5f;
+            Now < until && placed == null;
+
+        )
         {
             yield return null;
+            placing |= Interact.Tools.HandPiton.Placing;
+            cast = Mathf.Max(cast, c.refs.items.climbingSpikeCastProgress);
             placed = NewHandle(handles);
         }
-        Script(free).Trigger = 0f;
-        Script(free).TriggerTouch = false;
-        float off = placed != null ? Vector3.Distance(placed.transform.position, aimed.point) : -1f;
+        Script(climbing).Trigger = 0f;
+        Script(climbing).TriggerTouch = false;
+        // The game places the piton's root at its ray's hit (HammerClimbingSpike, CharacterItems.cs:1080).
+        var root = placed != null ? placed.GetComponentInParent<Photon.Pun.PhotonView>() : null;
+        float off =
+            placed == null
+                ? -1f
+                : Vector3.Distance(
+                    root != null ? root.transform.position : placed.transform.position,
+                    grip
+                );
         var note = F(
-            $"free {(free ? "left" : "right")} hand secondary use {secondary}, cast {cast}, piton {(placed != null ? $"{off:0.00} m from the aimed point" : "not placed")}, pitons {spikes} then {c.data.climbingSpikeCount}, wall {aimed.distance:0.00} m along the aim"
+            $"{(climbing ? "left" : "right")} hand on the wall: placing {placing}, cast up to {cast:0.00}, piton {(placed != null ? $"{off:0.00} m from the hand's wall point" : "not placed")}, pitons {spikes} then {c.data.climbingSpikeCount}, still climbing {c.data.isClimbing}"
         );
-        if (!cast || placed == null)
-            Fail("the free hand's trigger set no piton while climbing: " + note);
-        else if (off > 0.25f)
-            Fail("the piton went in away from the free hand's aim: " + note);
+        if (placed == null)
+            Fail("holding the climbing hand's trigger set no piton: " + note);
+        else if (off > 0.15f)
+            Fail("the piton went in away from the climbing hand: " + note);
+        else if (c.data.climbingSpikeCount != spikes - 1)
+            Fail("one hold spent other than one piton: " + note);
         else
             Note(note);
         yield return LetGoAll(c);
