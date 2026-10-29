@@ -3470,7 +3470,8 @@ internal sealed partial class SelfTestRunner
         {
             if (other != c && !other.data.dead && Vector3.Distance(c.Center, other.Center) > min)
             {
-                stepSkip = $"{other.characterName} is a warp target";
+                stepSkip =
+                    $"{BugReportText.PlayerLabel(other.photonView.OwnerActorNr)} is a warp target";
                 yield break;
             }
         }

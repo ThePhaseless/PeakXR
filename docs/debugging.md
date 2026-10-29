@@ -44,4 +44,4 @@ Each report is a folder in `BepInEx/PeakXR-reports/`, named for the time you sav
 
 Zip the report folder and attach it to your bug report with a sentence or two: what you did, what you expected and what happened instead. If the game crashed, also send `BepInEx/LogOutput.log` and, if debug mode was on, `BepInEx/PeakXR-trace.log`.
 
-Reports stay on your computer. PeakXR sends nothing over the network. Player names become "player 2" or "character 1", Steam IDs and the user name in folder paths are blanked, and only player counts are kept. The screenshot can still show names floating above other players, so check it before you share it.
+Reports stay on your computer. PeakXR sends nothing over the network. Player names become "player 2" or "character 1", Steam IDs and the user name in folder paths are blanked, and only player counts are kept. `PeakXR-trace.log` gets the same treatment line by line. The screenshot can still show names floating above other players, so check it before you share it.

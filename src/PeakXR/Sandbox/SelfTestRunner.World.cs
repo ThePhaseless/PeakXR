@@ -690,7 +690,7 @@ internal sealed partial class SelfTestRunner
                     ? $", {Vector3.Distance(p, entry.position):0.00} m from the cannon entry"
                     : ""
             )
-            + $", holder {(item.holderCharacter != null ? item.holderCharacter.name : "none")}";
+            + $", holder {(item.holderCharacter != null ? BugReportText.PlayerLabel(item.holderCharacter.photonView.OwnerActorNr) : "none")}";
     }
 
     /// <summary>The hand that held the torch in the last <see cref="FlameToFuse"/>, the cue mark taken just before its
