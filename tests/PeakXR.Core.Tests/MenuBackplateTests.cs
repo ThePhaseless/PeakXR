@@ -158,4 +158,40 @@ public class MenuBackplateTests
         // Too short also fails: the frame pokes out.
         Assert.False(MenuBackplate.FitsSpan(-21f, 590f, -7f, 607f, 14f, 5f));
     }
+
+    [Fact]
+    public void ClipTo_CutsAFillToTheMaskItOverflows()
+    {
+        // Infinite stamina past a full bar: the fill's rect runs 0..1824 px, its mask (the bar's back) shows 0..600.
+        var min = new Vector2(0, -16);
+        var max = new Vector2(1824, 16);
+        Assert.True(
+            MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, -16), new Vector2(600, 16))
+        );
+        Assert.Equal(new Vector2(0, -16), min);
+        Assert.Equal(new Vector2(600, 16), max);
+    }
+
+    [Fact]
+    public void ClipTo_InsideTheMask_Unchanged()
+    {
+        var min = new Vector2(10, -5);
+        var max = new Vector2(200, 5);
+        Assert.True(
+            MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, -16), new Vector2(600, 16))
+        );
+        Assert.Equal(new Vector2(10, -5), min);
+        Assert.Equal(new Vector2(200, 5), max);
+    }
+
+    [Fact]
+    public void ClipTo_OutsideTheMask_LeavesNothing()
+    {
+        // A list row scrolled out of its viewport.
+        var min = new Vector2(0, 300);
+        var max = new Vector2(600, 340);
+        Assert.False(
+            MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, 0), new Vector2(600, 280))
+        );
+    }
 }

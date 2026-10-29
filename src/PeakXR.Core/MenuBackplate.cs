@@ -41,6 +41,15 @@ public static class MenuBackplate
         return true;
     }
 
+    /// <summary>Cuts a part's <paramref name="min"/>..<paramref name="max"/> to a mask's rect above it: a Mask or
+    /// RectMask2D draws its children only inside itself, whatever their own rects. False when nothing is left.</summary>
+    public static bool ClipTo(ref Vector2 min, ref Vector2 max, Vector2 clipMin, Vector2 clipMax)
+    {
+        min = Vector2.Max(min, clipMin);
+        max = Vector2.Min(max, clipMax);
+        return max.X > min.X && max.Y > min.Y;
+    }
+
     /// <summary>Each plate edge lies <paramref name="margin"/> outside the content's, within
     /// <paramref name="tolerance"/>.</summary>
     public static bool FitsContent(

@@ -148,27 +148,24 @@ internal sealed class HudPlate
             return;
         signature = sig;
 
-        var min = new Vector2(float.MaxValue, float.MaxValue);
-        var max = new Vector2(float.MinValue, float.MinValue);
+        var min = new System.Numerics.Vector2(float.MaxValue);
+        var max = new System.Numerics.Vector2(float.MinValue);
         for (int i = 0; i < graphics.Count; i++)
         {
             var g = graphics[i];
-            if (!Drawn(g))
+            if (!Drawn(g) || !Visible(box, g, out var lo, out var hi))
                 continue;
-            g.rectTransform.GetWorldCorners(corners);
-            Vector2 a = box.InverseTransformPoint(corners[0]);
-            Vector2 b = box.InverseTransformPoint(corners[2]);
-            min = Vector2.Min(min, Vector2.Min(a, b));
-            max = Vector2.Max(max, Vector2.Max(a, b));
+            min = System.Numerics.Vector2.Min(min, lo);
+            max = System.Numerics.Vector2.Max(max, hi);
         }
-        bool any = MenuBackplate.Fit(min.N(), max.N(), Pad, out var center, out var size);
+        bool any = MenuBackplate.Fit(min, max, Pad, out var center, out var size);
         if (any)
         {
             var rt = Plate.rectTransform;
             rt.anchoredPosition = PlateCenter = new Vector2(center.X, center.Y);
             rt.sizeDelta = PlateSize = new Vector2(size.X, size.Y);
-            ContentMin = min;
-            ContentMax = max;
+            ContentMin = new Vector2(min.X, min.Y);
+            ContentMax = new Vector2(max.X, max.Y);
         }
         if (Plate.gameObject.activeSelf != any)
             Plate.gameObject.SetActive(any);
@@ -184,6 +181,47 @@ internal sealed class HudPlate
         && g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha() > 0.01f
         && g.rectTransform.rect.width > 0.5f
         && g.rectTransform.rect.height > 0.5f;
+
+    /// <summary>Box-space bounds of what <paramref name="g"/> can draw: its rect cut to every Mask and RectMask2D above
+    /// it. While stamina is infinite (god mode, a sugar rush) it keeps climbing past 1 (CharacterData.cs:449 refuses
+    /// the clamp), the fill's rect with it (A/StaminaBar.cs:112,126), and the plate ran several bar lengths past the
+    /// frame though the bar's back (MaxStamina/Back, a Mask) shows none of it. False when nothing is left.</summary>
+    internal static bool Visible(
+        RectTransform box,
+        Graphic g,
+        out System.Numerics.Vector2 min,
+        out System.Numerics.Vector2 max
+    )
+    {
+        BoxRect(box, g.rectTransform, out min, out max);
+        for (var p = g.rectTransform.parent; p != null && p != box; p = p.parent)
+        {
+            if (p is not RectTransform clip || !Clips(clip))
+                continue;
+            BoxRect(box, clip, out var lo, out var hi);
+            if (!MenuBackplate.ClipTo(ref min, ref max, lo, hi))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool Clips(RectTransform t) =>
+        (t.TryGetComponent<Mask>(out var mask) && mask.MaskEnabled())
+        || (t.TryGetComponent<RectMask2D>(out var rect) && rect.isActiveAndEnabled);
+
+    private static void BoxRect(
+        RectTransform box,
+        RectTransform rt,
+        out System.Numerics.Vector2 min,
+        out System.Numerics.Vector2 max
+    )
+    {
+        rt.GetWorldCorners(corners);
+        Vector2 a = box.InverseTransformPoint(corners[0]);
+        Vector2 b = box.InverseTransformPoint(corners[2]);
+        min = Vector2.Min(a, b).N();
+        max = Vector2.Max(a, b).N();
+    }
 
     private int ShownMask(RectTransform box)
     {
