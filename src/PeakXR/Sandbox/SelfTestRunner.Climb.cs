@@ -1816,7 +1816,12 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no climbing spike item";
             yield break;
         }
-        yield return ToWall();
+        // Stood back so the blade, laid along the aim (Interaction.AimHoldAlignment), ends short of the face: the
+        // spike's blade collider reaches 0.66 m past its grip along +Z (the ClimbingSpike prefab: Spike MeshCollider
+        // z 0.08-0.70, Hand_R z 0.04). From 0.6 m the controller sat 0.5 m from the face, the held blade's place lay
+        // inside the wall, and the wall turned the welded spike 39 deg off the aim with the hand 0.40 m back (run 4).
+        // The game starts a spike up to 2.5 m away (climbingSpikeStartDistanceGrounded).
+        yield return ToWall(back: 0.5f);
         if (!wallReady)
             yield break;
         // Only the first spike in the slots places with primary use (climbingSpikeSelected, CharacterItems.cs:102-112,
@@ -1870,10 +1875,22 @@ internal sealed partial class SelfTestRunner
             if (attempt == 1 && HeldRay(rig, holdLeft, out var from, out _))
                 face = FacePoint(from);
             // Aim the spike's blade, not the grip or the controller: interact.aim casts the spike along it (TryBarrel).
-            for (float until = Now + 0.3f; Now < until; )
+            // At least 0.3 s and until the blade (the physics item, which trails its hold) points at the face within
+            // 2 deg, at most 0.8 s, as AimHeldAlong waits for a launcher.
+            for (float settleFrom = Now; ; )
             {
                 AimHeldAt(rig, holdLeft, face);
                 yield return null;
+                float t = Now - settleFrom;
+                if (
+                    t >= 0.8f
+                    || (
+                        t >= 0.3f
+                        && HeldRay(rig, holdLeft, out var bladeFrom, out var blade)
+                        && Vector3.Angle(blade, face - bladeFrom) < 2f
+                    )
+                )
+                    break;
             }
             CheckBarrelOnAim(rig, holdLeft, F($"vr.44d press {attempt + 1}"));
             Script(holdLeft).Trigger = 1f;
