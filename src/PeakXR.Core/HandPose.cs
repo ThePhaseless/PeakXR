@@ -26,12 +26,12 @@ public static class HandPose
     static readonly FingerCurls FlatPalm = new FingerCurls(0.2f, 0.15f, 0.15f, 0.15f, 0.15f);
     static readonly FingerCurls Pole = new FingerCurls(0.7f, 0.85f, 0.9f, 0.9f, 0.9f);
 
-    // Maximum bend in degrees per joint (proximal, middle, distal). Thumb bends less. The scout's fingers are about
-    // twice its palm long (Character prefab: knuckle 0.063 m from the wrist, finger 0.134 m) and chunky, so a
-    // human fist's 70/95/65 folded the tips back into the palm (tester: "fingers go into the hand"). These close
-    // the fist on a controller-thick handle instead.
-    static readonly float[] FingerMax = { 65f, 90f, 50f };
-    static readonly float[] ThumbMax = { 30f, 45f, 40f };
+    // Bend in degrees per joint at curl 1, a natural fist, about each joint's bend axis (FingerJoints). The scout's
+    // fingers fan out of one point in the palm (joint 0), then bend at the knuckle (1) and once more (2): the game's
+    // own fist (A_Scout_Idle1, A_Scout_Emote_Fist) turns them 24/51/122 degrees. The thumb swings in front of the palm
+    // (0), then folds across it over the curled fingers (1, 2).
+    static readonly float[] FingerMax = { 24f, 51f, 122f };
+    static readonly float[] ThumbMax = { 25f, 55f, 50f };
 
     /// <summary>The scout's middle finger, knuckle to tip, metres (Character prefab, Middle_1_R to
     /// Middle_3_R_end).</summary>

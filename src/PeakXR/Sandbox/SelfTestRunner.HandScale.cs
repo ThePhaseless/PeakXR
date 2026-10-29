@@ -29,8 +29,8 @@ internal sealed partial class SelfTestRunner
     /// that stopped following them (a ratio near 1).</summary>
     const float MeshRatioSlack = 0.15f;
 
-    /// <summary>Game-size width of the open or curled scout hand: 0.18 (a fist) to 0.26 (open, outer joints
-    /// straight) from the prefab skinned offline in PeakXR's finger poses.</summary>
+    /// <summary>Game-size width of the open or curled scout hand: 0.19 open or as a fist (the fingers side by side as in
+    /// the bind pose) from the prefab skinned offline in PeakXR's finger poses.</summary>
     const float MinGameWidth = 0.12f;
     const float MaxGameWidth = 0.32f;
 

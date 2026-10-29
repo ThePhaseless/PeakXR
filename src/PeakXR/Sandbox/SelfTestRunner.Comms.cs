@@ -1053,7 +1053,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The hand onto the mouth (MouthGesture.DefaultOffset in head space): a closed fist, or with
-    /// <paramref name="palm"/> an open hand whose palm (+X left, -X right, HandRig.cs:62) faces the face.</summary>
+    /// <paramref name="palm"/> an open hand whose palm (+X left, -X right, GripFrame.Palm) faces the face.</summary>
     IEnumerator HandToMouth(bool left, bool palm)
     {
         var o = MouthGesture.DefaultOffset;

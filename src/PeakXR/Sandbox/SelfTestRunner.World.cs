@@ -2311,7 +2311,7 @@ internal sealed partial class SelfTestRunner
             var probe = head + Vector3.down * 0.35f + (left ? -right : right) * 0.2f;
             var surface = col.bounds.ClosestPoint(probe);
             var into = Flat(surface - head);
-            // Palm normal: +X of the left grip pose, -X of the right (HandRig.cs:62).
+            // Palm normal: +X of the left grip pose, -X of the right (GripFrame.Palm).
             var x = left ? into : -into;
             var world = HandLook(Vector3.Cross(x, Vector3.up), Vector3.up);
             Script(left).Grip = 0f;
