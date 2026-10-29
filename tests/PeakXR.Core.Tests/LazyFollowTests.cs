@@ -115,4 +115,77 @@ public class LazyFollowTests
         Assert.Equal(30f, LazyFollow.ThresholdFor(30f, 10f));
         Assert.Equal(29f + LazyFollow.EdgeMargin, LazyFollow.ThresholdFor(30f, 29f));
     }
+
+    [Fact]
+    public void OpenedTurnedTowardOpenSpace_LookingAtTheWallDoesNotPullItBack()
+    {
+        // The pause menu opened 45 degrees off the head because of a wall at the face: the head still facing that
+        // wall is where it was placed from, not a look away.
+        var f = new LazyFollow();
+        f.Snap(45f, 0f, offset: 45f);
+        Run(f, 0f, 0f, 5f);
+        Assert.Equal(45f, f.Yaw);
+        Assert.False(f.Gliding);
+    }
+
+    [Fact]
+    public void WithAnOffset_GlidesToTheHeadPlusTheOffset()
+    {
+        var f = new LazyFollow();
+        f.Snap(30f, 0f, offset: 30f);
+        Run(f, 90f, 0f, f.Dwell + 3f);
+        TestUtil.Near(120f, f.Yaw, f.Settle);
+    }
+
+    [Fact]
+    public void Started_OnlyOnTheFrameAGlideBegins()
+    {
+        var f = At(0f);
+        int starts = 0;
+        for (float t = 0f; t < f.Dwell + 3f; t += Frame)
+        {
+            f.Update(90f, 0f, false, Frame);
+            if (f.Started)
+            {
+                starts++;
+                Assert.True(f.Gliding);
+            }
+        }
+        Assert.Equal(1, starts);
+    }
+
+    [Fact]
+    public void AnOffsetChosenAtTheStart_RetargetsTheGlide()
+    {
+        var f = At(0f);
+        for (float t = 0f; t < f.Dwell + 3f; t += Frame)
+        {
+            f.Update(90f, 0f, false, Frame);
+            if (f.Started)
+                f.Offset = -30f;
+        }
+        TestUtil.Near(60f, f.Yaw, f.Settle);
+    }
+
+    [Fact]
+    public void Turn_GlidesAtOnceTowardTheNewOffset()
+    {
+        var f = At(0f);
+        f.Turn(40f);
+        Assert.True(f.Gliding);
+        Assert.True(f.Update(0f, 0f, false, Frame));
+        Run(f, 0f, 0f, 3f);
+        TestUtil.Near(40f, f.Yaw, f.Settle);
+        Assert.False(f.Gliding);
+        Assert.Equal(40f, f.Offset);
+    }
+
+    [Fact]
+    public void Snap_ClearsAnOldOffset()
+    {
+        var f = new LazyFollow();
+        f.Snap(45f, 0f, offset: 45f);
+        f.Snap(10f);
+        Assert.Equal(0f, f.Offset);
+    }
 }

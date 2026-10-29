@@ -19,7 +19,12 @@ public sealed class UIWorldFeature : Feature
     {
         Settings = UIWorldSettings.Bind(Plugin.Settings);
         Settings.MenuPanels.SettingChanged += (_, _) => WorldCanvases.OnMenuPanelsChanged();
-        Settings.MenuBackplate.SettingChanged += (_, _) => WorldCanvases.OnBackplateChanged();
+        Settings.MenuBackplate.SettingChanged += (_, _) =>
+        {
+            WorldCanvases.OnBackplateChanged();
+            // Text on a panel plate goes without a halo while plates show (BackdropStrip.OnKeptBacking): restrip.
+            WorldCanvases.OnMenuPanelsChanged();
+        };
         Settings.MenuBackplateOpacity.SettingChanged += (_, _) =>
             WorldCanvases.OnBackplateChanged();
         // Off, the plates must drop the last measured opacity and return to the fixed one.

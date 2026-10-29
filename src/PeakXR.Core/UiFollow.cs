@@ -157,13 +157,17 @@ public static class PanelMath
         int best = 0;
         for (int i = 0; i < wallDepths.Length; i++)
         {
-            if (wallDepths[i] - WallGap >= NearestMenuDistance)
+            if (HasRoom(wallDepths[i]))
                 return i;
             if (wallDepths[i] > wallDepths[best])
                 best = i;
         }
         return best;
     }
+
+    /// <summary>A wall <paramref name="wallDepth"/> metres ahead leaves room for a menu at
+    /// <see cref="NearestMenuDistance"/> or farther, its gap kept.</summary>
+    public static bool HasRoom(float wallDepth) => wallDepth - WallGap >= NearestMenuDistance;
 
     /// <summary>
     /// Depth along the panel's centre line of a wall hit <paramref name="hit"/> metres along the ray to a panel

@@ -20,9 +20,11 @@ Let go of the same gesture before 1.5 s, or press "Drop a marker" in the VR tab.
 
 `Debug.Mode` (off by default) records more for a bug that is hard to catch:
 
-- the detailed traces: leaning and room-scale walking, every grip decision, rope and vine grip checks, hammer swings, hand-aimed tools, items floating off the hand, refresh rate and adaptive quality changes, and a frame-time line every 10 s;
+- the detailed traces: leaning and room-scale walking, every grip decision, rope and vine grip checks, hammer swings, hand-aimed tools, items floating off the hand, refresh rate and adaptive quality changes, and the frame-time line at least every 10 s, even when `Render.FrameTimingLogSeconds` turns it off or spaces it further apart;
 - `BepInEx/PeakXR-trace.log`, written line by line, so it survives a crash;
 - the last 30 s of head and hand poses, buttons, triggers, grips, finger curls, body state and held item, sampled 10 times a second and saved as `poses.csv` in each report.
+
+The frame-time line (`[render.fixes] frames:`, with frame-time percentiles, GPU time and dropped frames) is written with debug mode off too, every `Render.FrameTimingLogSeconds` (10 s by default; 0 turns it off).
 
 `Debug.ShowFrameStats` (off) adds frames per second and frame time on your off-hand wrist while debug mode is on.
 

@@ -69,6 +69,10 @@ internal sealed class LaserPointer
     /// menus stay put meanwhile (<see cref="Core.LazyFollow"/>).</summary>
     public static bool Engaged { get; private set; }
 
+    /// <summary>Laser clicks dropped so far: released off the control they pressed while it was still shown
+    /// (self-test vr.19 checks its clicks drop none).</summary>
+    public static int DroppedClicks { get; private set; }
+
     // A dim dot over a disabled control: it is there, but it will not take the press.
     private static readonly Color LockedColor = new(0.55f, 0.55f, 0.55f, 0.7f);
 
@@ -378,6 +382,12 @@ internal sealed class LaserPointer
         var click = ExecuteEvents.GetEventHandler<IPointerClickHandler>(over);
         if (pressed == null)
             pressed = click;
+        // A press on a panel's background or a gap between controls does nothing in vanilla too: name what it hit,
+        // so a click that did nothing is told apart from a lost one.
+        if (pressed == null && !blocked)
+            Plugin.Log.LogInfo(
+                $"[ui.world] laser press on '{over.name}' found no control (aim {aim.position}, forward {aim.forward})"
+            );
 
         var now = Time.unscaledTime;
         data.clickCount =
@@ -423,12 +433,21 @@ internal sealed class LaserPointer
         var click = ExecuteEvents.GetEventHandler<IPointerClickHandler>(over);
         if (data.pointerClick != null && data.pointerClick == click && data.eligibleForClick)
             ExecuteEvents.Execute(data.pointerClick, data, ExecuteEvents.pointerClickHandler);
-        else if (data.pointerClick != null)
+        // Dropped only while the pressed control is still there to click. One hidden or disabled since the press (its
+        // page already switched, live run e7b3cd9: "pressed 'UI_MainMenuButton_Options', released over 'nothing'"
+        // right after the settings page opened) lost nothing, and the old line named those too.
+        else if (
+            data.pointerClick != null
+            && ExecuteEvents.CanHandleEvent<IPointerClickHandler>(data.pointerClick)
+        )
+        {
+            DroppedClicks++;
             Plugin.Log.LogInfo(
                 $"[ui.world] laser click dropped: pressed '{data.pointerClick.name}', released over "
                     + $"'{(click != null ? click.name : "nothing")}', eligible {data.eligibleForClick}, dragging "
                     + $"{data.dragging}, aim turned {Vector3.Angle(pressForward, EventCamera.transform.forward):0.0} deg"
             );
+        }
         if (data.pointerDrag != null && data.dragging && over != null)
             ExecuteEvents.ExecuteHierarchy(over, data, ExecuteEvents.dropHandler);
 

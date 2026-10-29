@@ -110,6 +110,10 @@ internal sealed class TrackedCanvas
     /// <summary>Menus: lazy follow of the panel's heading (<c>UI.MenuFollow</c>).</summary>
     public readonly LazyFollow Follow = new();
 
+    /// <summary>Menus: distance from the eye while following, eased and held against a wall's edge
+    /// (<see cref="FollowDistance"/>); synced with <see cref="Scale"/> whenever a wall test places the panel.</summary>
+    public readonly FollowDistance Distance = new();
+
     /// <summary>Menus: next wall test while the panel glides after the head.</summary>
     public float FollowWallAt;
 }
@@ -583,20 +587,10 @@ internal static class WorldCanvases
             t.Stack = 0.04f * openMenus;
             openMenus++;
             var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-            // With a wall at your face, turn toward the first heading within 45 degrees that has room.
-            for (int i = 0; i < OpenYawSteps.Length; i++)
-            {
-                openDepths[i] = PanelDepth(t, yaw + OpenYawSteps[i], cfg);
-                if (openDepths[i] - PanelMath.WallGap < PanelMath.NearestMenuDistance)
-                    continue;
-                for (int j = i + 1; j < OpenYawSteps.Length; j++)
-                    openDepths[j] = 0f;
-                break;
-            }
-            var pick = PanelMath.PickOpenYaw(openDepths);
-            t.Yaw = yaw + OpenYawSteps[pick];
-            ClearWalls(t, cfg, OpenYawSteps[pick]);
-            t.Follow.Snap(t.Yaw);
+            var turn = OpenTurn(t, t.Eye, yaw, cfg);
+            t.Yaw = yaw + turn;
+            ClearWalls(t, cfg, turn);
+            t.Follow.Snap(t.Yaw, 0f, turn);
             t.Retest = true;
             t.WasOpen = true;
             t.NextMeasure = 0f;
@@ -624,11 +618,32 @@ internal static class WorldCanvases
     private const float FollowWallSeconds = 0.1f;
 
     /// <summary>
+    /// With a wall at your face, the turn (degrees off <paramref name="yaw"/>) toward the first heading within 45
+    /// degrees that has room for the menu (<see cref="PanelMath.PickOpenYaw"/>); 0 when straight ahead has room. Up
+    /// to 7 headings of 15 rays each: on open and when a glide starts or ends at a wall, never per frame.
+    /// </summary>
+    private static float OpenTurn(TrackedCanvas t, Vector3 eye, float yaw, UIWorldSettings cfg)
+    {
+        for (int i = 0; i < OpenYawSteps.Length; i++)
+        {
+            openDepths[i] = PanelDepth(t, eye, yaw + OpenYawSteps[i], cfg);
+            if (!PanelMath.HasRoom(openDepths[i]))
+                continue;
+            for (int j = i + 1; j < OpenYawSteps.Length; j++)
+                openDepths[j] = 0f;
+            break;
+        }
+        return OpenYawSteps[PanelMath.PickOpenYaw(openDepths)];
+    }
+
+    /// <summary>
     /// <c>UI.MenuFollow</c> LazyFollow: the menu stays put while the head looks around it; once the head has been
     /// past <c>UI.MenuFollowAngle</c> (or a wide menu's edge) for a moment it glides back in front along its sight
-    /// lines (<see cref="LazyFollow"/>), its eye point easing to the head's, tested against walls as it goes. Never
-    /// while the laser is on a panel or a trigger is held (<see cref="LaserPointer.Engaged"/>), so nothing moves under
-    /// a press.
+    /// lines (<see cref="LazyFollow"/>), its eye point easing to the head's, tested against walls as it goes. Its
+    /// distance eases and holds at a wall's edge (<see cref="FollowDistance"/>). When the glide starts, or ends with a
+    /// wall at the face, it heads for open space the way a menu opens (<see cref="OpenTurn"/>) instead of being pulled
+    /// in to the 0.6 m minimum. Never while the laser is on a panel or a trigger is held
+    /// (<see cref="LaserPointer.Engaged"/>), so nothing moves under a press.
     /// </summary>
     private static void FollowHead(TrackedCanvas t, Transform head, UIWorldSettings cfg)
     {
@@ -638,27 +653,48 @@ internal static class WorldCanvases
             Mathf.Atan(0.5f * t.ContentSize.x * MenuMpp(t, cfg) / wanted) * Mathf.Rad2Deg;
         t.Follow.Threshold = LazyFollow.ThresholdFor(cfg.MenuFollowAngle.Value, halfSpan);
         var yaw = PanelMath.YawOf(head.forward.ToNumerics(), head.up.ToNumerics());
-        if (!t.Follow.Update(yaw, 0f, LaserPointer.Engaged, dt))
-            return;
-        t.Yaw = t.Follow.Yaw;
-        t.Eye = Vector3.Lerp(t.Eye, head.position, ExpSmooth.Factor(1f / t.Follow.SmoothTime, dt));
-        var now = Time.unscaledTime;
-        bool settled = !t.Follow.Gliding;
-        if (settled || now >= t.FollowWallAt)
+        bool hold = LaserPointer.Engaged;
+        bool glided = t.Follow.Update(yaw, 0f, hold, dt);
+        if (t.Follow.Started)
+            t.Follow.Offset = OpenTurn(t, head.position, yaw, cfg);
+        bool settled = false;
+        if (glided)
         {
-            t.FollowWallAt = now + FollowWallSeconds;
-            var (clear, onTop) = PanelMath.FitBeforeWall(
-                wanted,
-                PanelDepth(t, t.Yaw, cfg),
-                PanelMath.NearestMenuDistance
+            t.Yaw = t.Follow.Yaw;
+            t.Eye = Vector3.Lerp(
+                t.Eye,
+                head.position,
+                ExpSmooth.Factor(1f / t.Follow.SmoothTime, dt)
             );
-            t.Scale = clear / wanted;
-            DrawOnTop(t, onTop, remark: settled);
+            settled = !t.Follow.Gliding;
+            var now = Time.unscaledTime;
+            if (settled || now >= t.FollowWallAt)
+            {
+                t.FollowWallAt = now + FollowWallSeconds;
+                var depth = PanelDepth(t, t.Eye, t.Yaw, cfg);
+                t.Distance.Test(wanted, depth, FollowWallSeconds, settled);
+                if (settled && !PanelMath.HasRoom(depth))
+                {
+                    // The head turned into a wall during the glide: go on to open space if a turn finds some.
+                    var turn = OpenTurn(t, head.position, yaw, cfg);
+                    if (Mathf.Abs(Mathf.DeltaAngle(turn, t.Follow.Offset)) > t.Follow.Settle)
+                    {
+                        t.Follow.Turn(turn);
+                        settled = false;
+                    }
+                }
+            }
         }
+        else if (hold || !t.Distance.Easing)
+            return;
+        if (!hold)
+            t.Distance.Step(dt);
+        t.Scale = t.Distance.Distance / wanted;
+        DrawOnTop(t, t.Distance.OnTop, remark: settled);
         var offset = PanelMath
             .InFront(
                 t.Yaw,
-                Mathf.Max(PanelMath.ComfortFloor, t.Scale * wanted - t.Stack),
+                Mathf.Max(PanelMath.ComfortFloor, t.Distance.Distance - t.Stack),
                 cfg.MenuTilt.Value
             )
             .ToUnity();
@@ -666,7 +702,13 @@ internal static class WorldCanvases
         t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
         if (settled)
             Plugin.Log.LogInfo(
-                $"[ui.world] menu '{t.Canvas.name}' followed the head to {t.Scale * wanted:0.00} m"
+                $"[ui.world] menu '{t.Canvas.name}' followed the head to {t.Distance.Target:0.00} m"
+                    + (
+                        t.Follow.Offset != 0f
+                            ? $", turned {t.Follow.Offset:0} deg toward open space"
+                            : ""
+                    )
+                    + (t.Distance.OnTop ? ", drawn on top" : "")
             );
     }
 
@@ -688,7 +730,7 @@ internal static class WorldCanvases
     private static void ClearWalls(TrackedCanvas t, UIWorldSettings cfg, float? turned)
     {
         var wanted = cfg.MenuDistanceWorld;
-        var depth = PanelDepth(t, t.Yaw, cfg);
+        var depth = PanelDepth(t, t.Eye, t.Yaw, cfg);
         var (clear, onTop) = PanelMath.FitBeforeWall(wanted, depth, PanelMath.NearestMenuDistance);
         if (turned == null)
             clear = Mathf.Min(clear, t.Scale * wanted);
@@ -707,6 +749,7 @@ internal static class WorldCanvases
                 .ToUnity();
             t.Position = t.Eye + offset;
             t.Rotation = Quaternion.LookRotation(offset, Vector3.up);
+            t.Distance.Snap(clear, onTop);
         }
         // Re-marked on every test: a new page brings graphics the last mark never saw.
         DrawOnTop(t, onTop, remark: true);
@@ -752,14 +795,14 @@ internal static class WorldCanvases
     /// How far ahead along <paramref name="yaw"/> the nearest wall stands in front of any part of the menu, as a
     /// depth on its centre line (infinity for none), with the panel as drawn at <c>UI.MenuDistance</c>.
     /// </summary>
-    private static float PanelDepth(TrackedCanvas t, float yaw, UIWorldSettings cfg)
+    private static float PanelDepth(TrackedCanvas t, Vector3 eye, float yaw, UIWorldSettings cfg)
     {
         var wanted = cfg.MenuDistanceWorld;
         var size = t.ContentSize.x >= 1f && t.ContentSize.y >= 1f ? t.ContentSize : t.Size;
         var half =
             0.5f * PanelMath.MenuMetersPerPixel(size.x, size.y, cfg.MenuWidthWorld, wanted) * size;
         var offset = PanelMath.InFront(yaw, wanted, cfg.MenuTilt.Value).ToUnity();
-        return WallDepth(t.Eye, offset, Quaternion.LookRotation(offset, Vector3.up), half);
+        return WallDepth(eye, offset, Quaternion.LookRotation(offset, Vector3.up), half);
     }
 
     /// <summary>

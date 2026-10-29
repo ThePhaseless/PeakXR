@@ -26,6 +26,9 @@ internal struct HiddenBackdrop
 
     /// <summary>A list row's strip: hidden with its row, never a card whose overlapping fills go with it.</summary>
     public bool Row;
+
+    /// <summary>The zero-area mesh this hide added (null for a mask or one it already had).</summary>
+    public HiddenMesh Mesh;
 }
 
 /// <summary>
@@ -38,7 +41,8 @@ internal struct HiddenBackdrop
 /// <remarks>
 /// Raycasts stay vanilla: GraphicRaycaster skips a graphic whose <c>depth</c> is -1 (UnityEngine.UI
 /// GraphicRaycaster.Raycast), and a renderer with <c>cullTransparentMesh</c> drops its alpha-0 mesh from the batch,
-/// so a hidden graphic keeps its mesh in the batch (fully transparent) for as long as it is hidden.
+/// so a hidden graphic keeps its mesh in the batch (fully transparent) for as long as it is hidden, shrunk to a
+/// zero-area triangle (<see cref="HiddenMesh"/>) so it costs no fill.
 /// </remarks>
 internal static class BackdropStrip
 {
@@ -226,6 +230,7 @@ internal static class BackdropStrip
                     if (g.canvasRenderer.GetAlpha() <= 0f)
                         g.canvasRenderer.SetAlpha(h.Alpha);
                     g.canvasRenderer.cullTransparentMesh = h.Cull;
+                    HiddenMesh.Remove(h.Mesh);
                 }
             }
             t.Hidden.RemoveAt(i);
@@ -399,9 +404,11 @@ internal static class BackdropStrip
             if (h.Alpha <= 0f)
                 return false;
             h.Cull = cr.cullTransparentMesh;
-            // Keeps the invisible mesh batched, so it keeps its depth and blocks or catches raycasts as before.
+            // Keeps the invisible mesh batched, so it keeps its depth and blocks or catches raycasts as before; the
+            // mesh itself shrinks to nothing, so the GPU no longer blends a transparent quad over the view.
             cr.cullTransparentMesh = false;
             cr.SetAlpha(0f);
+            h.Mesh = HiddenMesh.Add(g);
         }
         t.Hidden.Add(h);
         return true;
@@ -432,6 +439,13 @@ internal static class BackdropStrip
     /// centre. Structural, so a closed page is judged the same as an open one.</summary>
     private static bool OnKeptBacking(TrackedCanvas t, TMP_Text text)
     {
+        // A VR panel plate (the VR tab's column and rail) is a sibling image drawn under the whole panel.
+        // Structural like the rest: the plate shows whenever UI.MenuBackplate is on, and a change restrips.
+        if (
+            UIWorldFeature.Settings.MenuBackplate.Value
+            && text.GetComponentInParent<PanelPlate>(true) != null
+        )
+            return true;
         var rt = text.rectTransform;
         var centre = rt.TransformPoint(rt.rect.center);
         for (var p = rt.parent; p != null && p != t.Rect; p = p.parent)
