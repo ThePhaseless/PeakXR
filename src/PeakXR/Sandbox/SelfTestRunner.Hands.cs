@@ -45,6 +45,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());
         yield return HandStep("vr.14-two-hand", 25f, TwoHandStep());
+        yield return HandStep("vr.14b-two-hand-between", 45f, TwoHandBetweenStep());
         yield return HandStep("vr.15-climb", 40f, ClimbStep());
         yield return HandStep("vr.16-snap-turn", 15f, SnapTurnStep());
         yield return HandStep("vr.17-move", 15f, MoveStep());

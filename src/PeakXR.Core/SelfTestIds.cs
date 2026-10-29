@@ -136,6 +136,7 @@ public static class SelfTestIds
         "vr.147-morale-glow",
         "vr.148-ragdoll-getup",
         "vr.149-knockback-side",
+        "vr.14b-two-hand-between",
         "vr.15-climb",
         "vr.150-pre-pass-out",
         "vr.151-wind-pressure",

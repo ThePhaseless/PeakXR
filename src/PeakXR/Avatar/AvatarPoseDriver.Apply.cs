@@ -497,6 +497,7 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
+                TwoHandGrip(true, ref p, ref r);
                 BlendTarget(refs.IKHandTargetLeft, Reach(true, refs.ikLeft, p + offset), r, w);
             }
             SetHint(true, pose.HasLeftHand, refs.IKHandTargetLeft.position, w);
@@ -508,6 +509,7 @@ public partial class AvatarPoseDriver
                     out var p,
                     out var r
                 );
+                TwoHandGrip(false, ref p, ref r);
                 BlendTarget(refs.IKHandTargetRight, Reach(false, refs.ikRight, p + offset), r, w);
             }
             SetHint(false, pose.HasRightHand, refs.IKHandTargetRight.position, w);
