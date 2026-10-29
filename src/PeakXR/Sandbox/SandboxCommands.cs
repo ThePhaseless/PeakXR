@@ -118,6 +118,14 @@ public static class SandboxCommands
             SandboxActions.Say(why);
     }
 
+    /// <summary>Stand in front of an item room table: <c>Sandbox.RoomTable Food</c>, <c>Dangerous</c>, <c>Goes off</c>.</summary>
+    [ConsoleCommand]
+    public static void RoomTable(string kind)
+    {
+        var why = ItemRoom.Current != null ? ItemRoom.Current.WarpTo(kind) : "No open item room.";
+        SandboxActions.Say(why ?? $"At the item room's {kind} table.");
+    }
+
     /// <summary>Add the commands above to the live console list. False until the console has initialised.</summary>
     internal static bool Register()
     {

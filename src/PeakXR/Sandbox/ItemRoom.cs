@@ -55,8 +55,10 @@ internal sealed class ItemRoom : MonoBehaviour
     private const int LightFire = -3;
 
     // A table's items are out only while you are near it (ShelfLoad); the fire only while you stay by it.
-    private const float LoadRadius = 6f;
-    private const float UnloadRadius = 10f;
+    // 4 m: at 6 m the first tables' lit lanterns, torches and particles all drew at once (VR run of 3a1b2f9: GPU p95
+    // 38-47 ms against 13.9 ms while facing them).
+    private const float LoadRadius = 4f;
+    private const float UnloadRadius = 7f;
     private const float LoadEvery = 0.25f;
     private const float FireKeep = 8f;
 
@@ -115,7 +117,13 @@ internal sealed class ItemRoom : MonoBehaviour
     private readonly List<Object> owned = new();
     private readonly Material[] groupMaterials = new Material[ShelfLayout.Buckets];
     private readonly List<Dynamite> wicks = new();
-    private readonly List<BananaPeel> peels = new();
+
+    /// <summary>Per item lying on its table, what was switched off until it is picked up (<see cref="Quiet"/>).</summary>
+    private readonly List<KeyValuePair<Item, Component[]>> quiet = new();
+    private readonly List<Component> quieting = new();
+    private int quietLights;
+    private int quietParticles;
+    private Vector3 roomOrigin;
     private readonly List<StatusChange> statuses = new();
     private readonly HashSet<string> afflictions = new(System.StringComparer.Ordinal);
     private readonly List<KeyValuePair<TouchOrb, int>> orbs = new();
@@ -503,6 +511,7 @@ internal sealed class ItemRoom : MonoBehaviour
         var right = Vector3.Cross(Vector3.up, forward);
         facing = Quaternion.LookRotation(forward);
         Vector3 At(float x, float z) => origin + right * x + forward * z;
+        roomOrigin = origin;
 
         slotAt = new Vector3[total];
         slotSpawned = new GameObject[total];
@@ -561,7 +570,38 @@ internal sealed class ItemRoom : MonoBehaviour
             );
             RoomNotice.Show(note);
         }
+        else
+            RoomNotice.Show(
+                $"Item room open: {total} items on {plan.Tables.Length} tables ahead. "
+                    + "The orbs in front of you light the fire, restock and leave."
+            );
         return null;
+    }
+
+    /// <summary><c>Sandbox.RoomTable</c>: puts you in the walkway in front of the first table whose area and kind
+    /// ("Dangerous Food", "Goes off", "Tools") contain <paramref name="kind"/>. Null when done, else why not.</summary>
+    public string WarpTo(string kind)
+    {
+        var c = Character.localCharacter;
+        if (phase != Phase.Open || plan == null || c == null)
+            return "The item room is not open.";
+        kind ??= "";
+        for (int t = 0; t < plan.Tables.Length; t++)
+        {
+            var table = plan.Tables[t];
+            var label =
+                (table.Zone == ItemZone.Volatile ? "Goes off by itself" : table.Zone.ToString())
+                + " "
+                + ItemShelf.Title(ShelfLayout.GroupOf(table.Group));
+            if (label.IndexOf(kind, System.StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            var f = table.Footprint;
+            var spot = roomOrigin + facing * new Vector3(f.CenterX, 0f, f.MinZ - 0.8f);
+            spot.y = tableCenter[t].y + 0.1f;
+            c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spot, false);
+            return null;
+        }
+        return $"No item room table matches \"{kind}\".";
     }
 
     /// <summary>Every database item by bucket (zone and table, <see cref="ShelfLayout.Bucket"/>); those that cannot
@@ -831,6 +871,12 @@ internal sealed class ItemRoom : MonoBehaviour
         AddOrb(LeaveRoom, cross: true, at + right * 0.22f);
         Label("Restock all", at - right * 0.22f + Vector3.up * 0.12f, facing, 40f, Color.white);
         Label("Leave", at + right * 0.22f + Vector3.up * 0.12f, facing, 40f, Color.white);
+        // Beside the other two, where you start: at the fire's own spot it was out of sight (VR run of 3a1b2f9).
+        if (firePrefab != null)
+        {
+            AddOrb(LightFire, cross: false, at - right * 0.66f);
+            Label("Light fire", at - right * 0.66f + Vector3.up * 0.12f, facing, 40f, Color.white);
+        }
     }
 
     /// <summary>The fire, the test wall with its target, and the eye chart, where the plan put them.</summary>
@@ -844,8 +890,7 @@ internal sealed class ItemRoom : MonoBehaviour
         {
             // Unlit until asked for: a lit campfire's particles, light and fog switch cost frames all the time.
             fireAt = Floor(at(plan.Fire.CenterX, plan.Fire.CenterZ), feet.y);
-            AddOrb(LightFire, cross: false, fireAt + Vector3.up * 1.1f);
-            Label("Light fire", fireAt + Vector3.up * 1.3f, facing, 40f, Color.white);
+            Label("Fire", fireAt + Vector3.up * 1.3f, facing, 40f, Color.white);
         }
 
         // The sandbox test wall past the last tables, its face toward them, a target painted on it.
@@ -1064,14 +1109,8 @@ internal sealed class ItemRoom : MonoBehaviour
                     var hive = go != null ? go.GetComponentInChildren<Beehive>(true) : null;
                     if (hive != null)
                         hive.spawnBees = false;
-                    // Its Update slips anyone moving within 1 m while it lies anywhere (BananaPeel.cs:17-27): off
-                    // until picked up (Rearm).
-                    var peel = go != null ? go.GetComponentInChildren<BananaPeel>(true) : null;
-                    if (peel != null)
-                    {
-                        peel.enabled = false;
-                        peels.Add(peel);
-                    }
+                    if (go != null)
+                        Quiet(go);
                     slotSpawned[i] = go;
                     if (go != null)
                         placed++;
@@ -1107,6 +1146,7 @@ internal sealed class ItemRoom : MonoBehaviour
             $"[sandbox.room] {placed} items placed, {failed} failed; slowest "
                 + $"{slowestTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:0.0} ms"
                 + (slowest >= 0 ? $" ({slotItems[slowest].name})" : "")
+                + $"; held off on the tables so far: {quietLights} lights, {quietParticles} particle systems"
         );
         if (failed > 0)
             SandboxActions.Say($"Item room: {failed} items did not spawn (see log).");
@@ -1146,17 +1186,57 @@ internal sealed class ItemRoom : MonoBehaviour
                 wicks.RemoveAt(i);
             }
         }
-        for (int i = peels.Count - 1; i >= 0; i--)
+        for (int i = quiet.Count - 1; i >= 0; i--)
         {
-            var peel = peels[i];
-            if (peel == null)
-                peels.RemoveAt(i);
-            else if (peel.TryGetComponent<Item>(out var item) && item.itemState != ItemState.Ground)
+            var item = quiet[i].Key;
+            if (item == null)
+                quiet.RemoveAt(i);
+            else if (item.itemState != ItemState.Ground)
             {
-                peel.enabled = true;
-                peels.RemoveAt(i);
+                foreach (var c in quiet[i].Value)
+                    if (c is Behaviour b && b != null)
+                        b.enabled = true;
+                    else if (c is Renderer r && r != null)
+                        r.enabled = true;
+                quiet.RemoveAt(i);
             }
         }
+    }
+
+    /// <summary>
+    /// Switches off, until the item is picked up (<see cref="Rearm"/>), what costs or hurts while it only lies on its
+    /// table: its real-time lights and particle renderers (each light draws the scene again for both eyes), and a
+    /// banana peel, whose Update slips anyone moving within 1 m (BananaPeel.cs:17-27). Item scripts switch their
+    /// light's object and play their particles (Lantern.cs:120-145, Candle.cs:89-110), never these components, and
+    /// a lantern lying kinematic skips even that (:122), so nothing turns them back on early.
+    /// </summary>
+    private void Quiet(GameObject go)
+    {
+        if (!go.TryGetComponent<Item>(out var item))
+            return;
+        quieting.Clear();
+        foreach (var light in go.GetComponentsInChildren<Light>(false))
+            if (light.enabled)
+            {
+                light.enabled = false;
+                quieting.Add(light);
+                quietLights++;
+            }
+        foreach (var particles in go.GetComponentsInChildren<ParticleSystemRenderer>(false))
+            if (particles.enabled)
+            {
+                particles.enabled = false;
+                quieting.Add(particles);
+                quietParticles++;
+            }
+        var peel = go.GetComponentInChildren<BananaPeel>(true);
+        if (peel != null && peel.enabled)
+        {
+            peel.enabled = false;
+            quieting.Add(peel);
+        }
+        if (quieting.Count > 0)
+            quiet.Add(new KeyValuePair<Item, Component[]>(item, quieting.ToArray()));
     }
 
     // ---- orbs, labels, rings ----

@@ -27,6 +27,7 @@ public sealed class ItemRoomFeature : Feature
         // The guards block only while armed, in a sandbox run, or while the room is open (SelfTestProgressGuard.Room).
         SelfTestProgressGuard.PatchOnce();
         Patch(typeof(ItemOptimizerNullItemPatch));
+        ItemRoomLaunch.Install();
         // Optional: without it the room still opens, with the airport's statuses switched off as usual.
         try
         {

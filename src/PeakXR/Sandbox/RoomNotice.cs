@@ -24,6 +24,7 @@ internal sealed class RoomNotice : MonoBehaviour
     private TextMeshProUGUI label;
     private Material onTop;
     private float until;
+    private bool reported;
 
     /// <summary>Shows <paramref name="text"/> in VR (replacing one on show); nothing in flat play.</summary>
     public static void Show(string text)
@@ -40,6 +41,7 @@ internal sealed class RoomNotice : MonoBehaviour
         }
         current.label.text = text;
         current.until = Time.unscaledTime + Seconds;
+        current.reported = false;
         current.Place(rig.Head, 1f);
     }
 
@@ -79,6 +81,23 @@ internal sealed class RoomNotice : MonoBehaviour
             return;
         }
         Place(rig.Head, 1f - Mathf.Exp(-Follow * Time.unscaledDeltaTime));
+        if (!reported)
+            Report(rig);
+    }
+
+    /// <summary>Once per notice, its first frame up: whether the head camera can see it, for the trace.</summary>
+    private void Report(VRRig rig)
+    {
+        reported = true;
+        var cam = rig.HeadCamera;
+        var toNotice = transform.position - rig.Head.position;
+        bool layer = cam != null && (cam.cullingMask & (1 << gameObject.layer)) != 0;
+        bool clip = cam != null && toNotice.magnitude > cam.nearClipPlane;
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[sandbox.room] notice up: {toNotice.magnitude:0.00} m ahead, {Vector3.Angle(rig.Head.forward, toNotice):0} deg off the view, layer {gameObject.layer} {(layer ? "drawn" : "CULLED")} by {(cam != null ? cam.name : "no head camera")}, {(clip ? "past" : "INSIDE")} the near clip, font {(label.font != null ? label.font.name : "none")}: {label.text}"
+            )
+        );
     }
 
     private void Place(Transform head, float t)
