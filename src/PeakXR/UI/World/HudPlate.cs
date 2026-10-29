@@ -77,8 +77,9 @@ internal sealed class HudPlate
         ShownMask(box) != measuredMask || box.childCount != measuredChildren;
 
     /// <summary>Measures the moved groups that are shown: the box itself is HUD-sized and would make the span the
-    /// whole HUD. Runs on apply and when a group shows or hides (the dying bar), not every frame.</summary>
-    public void Measure(RectTransform box, RectTransform frame)
+    /// whole HUD. Runs on apply and when a group shows or hides (the dying bar), not every frame.
+    /// <paramref name="restWidth"/> is the frame's sizeDelta width with no affliction overflow, 0 for as drawn.</summary>
+    public void Measure(RectTransform box, RectTransform frame, float restWidth)
     {
         measuredMask = ShownMask(box);
         bool any = false;
@@ -101,13 +102,19 @@ internal sealed class HudPlate
         // Layout and scale follow the stamina bar's frame (A/StaminaBar.cs:135), the bar the player reads, so the
         // width setting is its width and the anchor its centre, and nothing jumps when a part shows. The groups'
         // rects also hold the frame's 1214 px stencil mask (Bar/OutlineMask): the bar came out half as wide, off-centre.
-        // shortcut: a frame grown past 614 px by overflowing afflictions (statusSum > 1) when this runs shrinks the
-        // bar until the next measure; measure at statusSum 1 if that shows up in play.
+        // Measured at rest: afflictions past full (statusSum > 1) widen the frame (A/StaminaBar.cs:135), and a measure
+        // taken then kept the bar short and off the anchor once they ebbed (VR run 7: 614 px drawn on a 659 px scale).
         if (frame != null && frame.gameObject.activeInHierarchy && frame.IsChildOf(box))
         {
-            frame.GetWorldCorners(corners);
-            Vector2 a = box.InverseTransformPoint(corners[0]);
-            Vector2 b = box.InverseTransformPoint(corners[2]);
+            var r = frame.rect;
+            var (lo, hi) = WristHud.FrameAtRest(
+                r.xMin,
+                r.xMax,
+                frame.pivot.x,
+                restWidth > 0f ? frame.sizeDelta.x - restWidth : 0f
+            );
+            Vector2 a = box.InverseTransformPoint(frame.TransformPoint(new Vector3(lo, r.yMin)));
+            Vector2 b = box.InverseTransformPoint(frame.TransformPoint(new Vector3(hi, r.yMax)));
             Center = (a + b) * 0.5f;
             Span = Mathf.Max(1f, Mathf.Abs(b.x - a.x));
         }

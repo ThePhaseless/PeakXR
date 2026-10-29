@@ -25,6 +25,15 @@ public static class WristHud
     public static float ScaledWidth(float baseWidth, float textScale) =>
         MathF.Max(baseWidth, MathF.Min(baseWidth * ReadableText.Scale(textScale), MaxWidth));
 
+    /// <summary>A frame's local x span <paramref name="min"/>..<paramref name="max"/> without the
+    /// <paramref name="grown"/> px it was widened by (a size change keeps the pivot put): the stamina frame grows
+    /// as afflictions overflow, and a layout scaled on the grown frame drew the bar short once they ebbed.</summary>
+    public static (float Min, float Max) FrameAtRest(float min, float max, float pivot, float grown)
+    {
+        grown = MathF.Max(0f, grown);
+        return (min + grown * pivot, max - grown * (1f - pivot));
+    }
+
     /// <summary>Extra width at the peak of an alert pulse.</summary>
     public const float PulseGrow = 0.2f;
 
