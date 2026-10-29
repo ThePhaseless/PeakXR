@@ -167,6 +167,7 @@ public static class SelfTestIds
         "vr.173-reach-ghost",
         "vr.18-emote-wheel",
         "vr.185-menu-recenter",
+        "vr.248-menu-follow-text",
         "vr.186-cheer",
         "vr.187-passport-swipe",
         "vr.188-ptt-button",

@@ -29,10 +29,12 @@ public class LazyFollowTests
     [Fact]
     public void AGlancePastTheThresholdShorterThanTheDwell_PanelStaysPut()
     {
+        // Past the threshold, inside the urgent margin: the dwell filters a glance.
         var f = At(0f);
-        Run(f, 60f, 0f, f.Dwell * 0.8f);
+        float glance = f.Threshold + LazyFollow.UrgentMargin * 0.5f;
+        Run(f, glance, 0f, f.Dwell * 0.8f);
         Run(f, 10f, 0f, 1f);
-        Run(f, 60f, 0f, f.Dwell * 0.8f);
+        Run(f, glance, 0f, f.Dwell * 0.8f);
         Assert.Equal(0f, f.Yaw);
     }
 
@@ -49,15 +51,71 @@ public class LazyFollowTests
     public void TheGlide_StartsGentlyAndNeverOvershoots()
     {
         var f = At(0f);
-        Run(f, 60f, 0f, f.Dwell);
-        float before = f.Yaw;
         f.Update(60f, 0f, false, Frame);
-        Assert.InRange(f.Yaw - before, 0f, 1f);
+        Assert.True(f.Started);
+        Assert.InRange(f.Yaw, 0f, 1f);
         float last = f.Yaw;
         for (int i = 0; i < 400; i++)
         {
             f.Update(60f, 0f, false, Frame);
             Assert.InRange(f.Yaw, last, 60f);
+            last = f.Yaw;
+        }
+    }
+
+    /// <summary>Seconds from a head turn of <paramref name="degrees"/> (a step, the worst case) until the panel is
+    /// back in front and stopped.</summary>
+    private static float CatchUp(float degrees)
+    {
+        var f = At(0f);
+        float t = 0f;
+        do
+        {
+            f.Update(degrees, 0f, false, Frame);
+            t += Frame;
+        } while ((f.Gliding || MathF.Abs(f.Yaw - degrees) > f.Settle) && t < 10f);
+        return t;
+    }
+
+    [Theory]
+    [InlineData(45f)]
+    [InlineData(60f)]
+    [InlineData(90f)]
+    public void ATurnAway_IsBackInFrontWithinTheCatchUpBudget(float degrees)
+    {
+        Assert.InRange(CatchUp(degrees), 0f, LazyFollow.CatchUpBudget);
+    }
+
+    [Fact]
+    public void LeavingTheUrgentCone_StartsTheGlideAtOnce()
+    {
+        var f = At(0f);
+        f.Update(f.Threshold + LazyFollow.UrgentMargin + 1f, 0f, false, Frame);
+        Assert.True(f.Gliding);
+    }
+
+    [Fact]
+    public void HeadTremorAndSwayAroundTheMenu_NeverMovesIt()
+    {
+        // Reading a menu: a few degrees of sway at a few hertz, plus a slow look across a 40 degree wide panel.
+        var f = At(0f);
+        for (float t = 0f; t < 20f; t += Frame)
+        {
+            float yaw = 20f * MathF.Sin(t * 0.7f) + 4f * MathF.Sin(t * 19f);
+            float pitch = 8f * MathF.Sin(t * 1.3f) + 2f * MathF.Sin(t * 23f);
+            Assert.False(f.Update(yaw, pitch, false, Frame), $"moved at {t:0.00} s");
+        }
+    }
+
+    [Fact]
+    public void TheGlide_NeverTurnsFasterThanMaxSpeed()
+    {
+        var f = At(0f);
+        float last = 0f;
+        for (float t = 0f; t < 2f; t += Frame)
+        {
+            f.Update(170f, 0f, false, Frame);
+            Assert.InRange((f.Yaw - last) / Frame, 0f, f.MaxSpeed * 1.01f);
             last = f.Yaw;
         }
     }
@@ -87,8 +145,9 @@ public class LazyFollowTests
     public void ReleasedAfterAHold_WaitsTheDwellAgain()
     {
         var f = At(0f);
-        Run(f, 90f, 0f, 5f, hold: true);
-        Run(f, 90f, 0f, f.Dwell * 0.8f);
+        float away = f.Threshold + LazyFollow.UrgentMargin * 0.5f;
+        Run(f, away, 0f, 5f, hold: true);
+        Run(f, away, 0f, f.Dwell * 0.8f);
         Assert.Equal(0f, f.Yaw);
     }
 
