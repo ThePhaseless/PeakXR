@@ -5,6 +5,7 @@ using PeakXR.VR;
 using Unity.XR.OpenVR;
 using UnityEngine;
 using UnityEngine.XR.Management;
+using Valve.VR;
 
 namespace PeakXR.XR;
 
@@ -33,32 +34,42 @@ sealed class OpenVRBackend : ManagedXRBackend
         return ScriptableObject.CreateInstance<OpenVRLoader>();
     }
 
-    /// <summary>Dashboard and input-focus events drive <see cref="XRSessionState.OpenVRFocusLost"/>. The
-    /// plugin's own VREvent_Quit handler stays: SteamVR expects the app to exit when it quits.</summary>
+    /// <summary>Dashboard, input-focus and headset-idle events drive <see cref="XRSessionState"/>, each one logged so a
+    /// tester's log shows which ran (OpenVR has no session states to log). The plugin's own VREvent_Quit handler stays:
+    /// SteamVR expects the app to exit when it quits.</summary>
     public override void OnRunning()
     {
         try
         {
-            OpenVREvents.AddListener(
-                Valve.VR.EVREventType.VREvent_DashboardActivated,
+            Listen(
+                EVREventType.VREvent_DashboardActivated,
                 _ => XRSessionState.OpenVRFocusLost = true
             );
-            OpenVREvents.AddListener(
-                Valve.VR.EVREventType.VREvent_DashboardDeactivated,
+            Listen(
+                EVREventType.VREvent_DashboardDeactivated,
                 _ => XRSessionState.OpenVRFocusLost = false
             );
-            OpenVREvents.AddListener(
-                Valve.VR.EVREventType.VREvent_InputFocusCaptured,
+            Listen(
+                EVREventType.VREvent_InputFocusCaptured,
                 _ => XRSessionState.OpenVRFocusLost = true
             );
-            OpenVREvents.AddListener(
-                Valve.VR.EVREventType.VREvent_InputFocusReleased,
+            Listen(
+                EVREventType.VREvent_InputFocusReleased,
                 _ => XRSessionState.OpenVRFocusLost = false
             );
-            OpenVREvents.AddListener(
-                Valve.VR.EVREventType.VREvent_Quit,
-                _ => XRSessionState.ExitRequested = true
+            Listen(EVREventType.VREvent_Quit, _ => XRSessionState.ExitRequested = true);
+            // Proximity sensor: interaction ends when the headset comes off (only the HMD's counts) and starts again
+            // when it is worn; standby follows after SteamVR's idle timeout.
+            Listen(
+                EVREventType.VREvent_TrackedDeviceUserInteractionEnded,
+                e => XRSessionState.OpenVRIdle |= e.trackedDeviceIndex == Hmd
             );
+            Listen(
+                EVREventType.VREvent_TrackedDeviceUserInteractionStarted,
+                e => XRSessionState.OpenVRIdle &= e.trackedDeviceIndex != Hmd
+            );
+            Listen(EVREventType.VREvent_EnterStandbyMode, _ => XRSessionState.OpenVRIdle = true);
+            Listen(EVREventType.VREvent_LeaveStandbyMode, _ => XRSessionState.OpenVRIdle = false);
         }
         catch (Exception e)
         {
@@ -67,6 +78,21 @@ sealed class OpenVRBackend : ManagedXRBackend
             );
         }
     }
+
+    const uint Hmd = Valve.VR.OpenVR.k_unTrackedDeviceIndex_Hmd;
+
+    static void Listen(EVREventType type, Action<VREvent_t> apply) =>
+        OpenVREvents.AddListener(
+            type,
+            e =>
+            {
+                apply(e);
+                Plugin.Log.LogInfo(
+                    $"[xr.bootstrap] OpenVR {type} (device {e.trackedDeviceIndex}): focus lost {XRSessionState.OpenVRFocusLost}, "
+                        + $"headset idle {XRSessionState.OpenVRIdle}, exit requested {XRSessionState.ExitRequested}"
+                );
+            }
+        );
 
     /// <summary>Valve's display provider sets <c>framePresentCount</c> from the compositor's
     /// <c>GetFrameTiming</c> (<c>m_nNumFramePresents</c>, unity-xr-plugin Providers/Display/Display.cpp), so 1 or more

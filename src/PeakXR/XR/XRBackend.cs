@@ -110,10 +110,15 @@ static class XRSessionState
     /// <summary>OpenVR: dashboard open or another app holds input focus.</summary>
     public static bool OpenVRFocusLost;
 
+    /// <summary>OpenVR: the headset is idle (proximity sensor off: user interaction ended, or SteamVR standby), the
+    /// closest OpenVR has to an OpenXR session that is not shown.</summary>
+    public static bool OpenVRIdle;
+
     public static void Reset()
     {
         OpenXRState = 0;
         ExitRequested = false;
         OpenVRFocusLost = false;
+        OpenVRIdle = false;
     }
 }

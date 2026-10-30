@@ -305,7 +305,9 @@ internal sealed class RenderDriver : MonoBehaviour
         ApplyScene();
         // The load screen hides the reallocation, so a step still waiting for its fade lands now. The scale is kept:
         // run 57 reset it to full at each load and a slow GPU never stayed down.
-        if (adaptive.Scale != appliedAdaptive && urp != null)
+        // A friend may load the next level while the headset is off: the step waits for a fade once it shows again
+        // (see the quality change in Update).
+        if (adaptive.Scale != appliedAdaptive && urp != null && !IdlePacing)
             ApplyAdaptive("scene load");
         // Loading frames say nothing about the new scene.
         FrameClock.Adapt.Reset();
@@ -528,7 +530,10 @@ internal sealed class RenderDriver : MonoBehaviour
 
     private void Update()
     {
-        if (qualityDueAt >= 0f && Time.unscaledTime >= qualityDueAt)
+        // Not while the headset is off: render scale and MSAA make the provider recreate the eye swapchains, which a
+        // session past STOPPING may be losing (xrCreateSwapchain: XR_ERROR_SESSION_LOST) and which nothing would show
+        // anyway; the change lands once the headset shows frames again.
+        if (qualityDueAt >= 0f && Time.unscaledTime >= qualityDueAt && !IdlePacing)
         {
             qualityDueAt = -1f;
             if (applied)
@@ -555,9 +560,9 @@ internal sealed class RenderDriver : MonoBehaviour
     private long paceStamp;
 
     /// <summary>
-    /// Headset off (OpenXR SYNCHRONIZED, STOPPING, IDLE; <see cref="XRFocus.Shown"/>): the runtime stops pacing frames
-    /// once the session ends, and with the FPS cap and VSync off for VR (<see cref="Apply"/>) the game then runs as fast
-    /// as the GPU allows, behind a black mirror. Unity's own cap cannot help: "XR platforms ignore both
+    /// Headset off (OpenXR SYNCHRONIZED, STOPPING, IDLE; OpenVR proximity off or standby; <see cref="XRFocus.Hidden"/>):
+    /// the runtime stops pacing frames once the session ends (SteamVR in standby too), and with the FPS cap and VSync
+    /// off for VR (<see cref="Apply"/>) the game then runs as fast as the GPU allows, behind a flat desktop view. Unity's own cap cannot help: "XR platforms ignore both
     /// QualitySettings.vSyncCount and Application.targetFrameRate. Instead, the XR SDK controls the frame rate"
     /// (https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/application/targetframerate), so the
     /// frame sleeps out the rest of an idle-rate frame itself. Nothing is changed, so nothing waits to be restored.
@@ -565,8 +570,7 @@ internal sealed class RenderDriver : MonoBehaviour
     /// <returns>True while pacing: the frame-timing windows skip these frames.</returns>
     private bool PaceWhileHidden()
     {
-        bool hidden =
-            VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState);
+        bool hidden = XRBootstrapDriver.HeadsetHidden;
         if (hidden != IdlePacing)
         {
             IdlePacing = hidden;
@@ -574,7 +578,7 @@ internal sealed class RenderDriver : MonoBehaviour
             FrameClock.ResetAll();
             Plugin.Log.LogInfo(
                 hidden
-                    ? $"{Tag} headset shows no frames (OpenXR {XRFocus.Name(XRSessionState.OpenXRState)}): pacing at {XRFocus.IdleHz} fps"
+                    ? $"{Tag} headset shows no frames ({XRBootstrapDriver.FocusSource}): pacing at {XRFocus.IdleHz} fps"
                     : $"{Tag} headset shows frames again: the runtime paces"
             );
         }

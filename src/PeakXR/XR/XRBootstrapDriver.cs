@@ -361,6 +361,7 @@ sealed class XRBootstrapDriver : MonoBehaviour
             // A restarted session reads the sensor afresh: only a worn reading of its own can pause it.
             UserPresent = null;
             TakenOff = false;
+            XRSessionState.OpenVRIdle = false;
             VRSession.SetActive(false);
         }
         else if (!running)
@@ -415,10 +416,19 @@ sealed class XRBootstrapDriver : MonoBehaviour
         );
     }
 
+    /// <summary>The headset shows none of the game's frames (<see cref="XRFocus.Hidden"/>): the game paces itself and
+    /// the desktop gets a flat view. Under OpenVR the wear sensor counts too, as the runtime's idle report may lag.</summary>
+    internal static bool HeadsetHidden =>
+        XRFocus.Hidden(
+            VRSession.Running == VRRuntime.OpenXR,
+            XRSessionState.OpenXRState,
+            VRSession.Running == VRRuntime.OpenVR && (XRSessionState.OpenVRIdle || TakenOff)
+        );
+
     static bool ComputeFocus()
     {
         if (VRSession.Running == VRRuntime.OpenVR)
-            return !XRSessionState.OpenVRFocusLost;
+            return !XRSessionState.OpenVRFocusLost && !XRSessionState.OpenVRIdle;
         if (VRSession.Running != VRRuntime.OpenXR)
             return true;
         // VISIBLE (4) means the dashboard or another app has input.
@@ -432,7 +442,9 @@ sealed class XRBootstrapDriver : MonoBehaviour
             VRSession.Running == VRRuntime.OpenXR
                 ? "OpenXR " + XRFocus.Name(XRSessionState.OpenXRState)
             : VRSession.Running == VRRuntime.OpenVR
-                ? (XRSessionState.OpenVRFocusLost ? "OpenVR: dashboard or another app" : "OpenVR")
+                ? "OpenVR"
+                    + (XRSessionState.OpenVRFocusLost ? ": dashboard or another app" : "")
+                    + (XRSessionState.OpenVRIdle ? ": headset idle" : "")
             : "no runtime"
         );
 
