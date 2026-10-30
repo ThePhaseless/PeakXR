@@ -77,7 +77,7 @@ public sealed class ObserverPlugin : BaseUnityPlugin
 /// has already applied it. Decomp lines (Assembly-CSharp): CharacterAnimations.cs:417, PointPinger.cs:84,
 /// CharacterItems.cs:385 and :546, CharacterClimbing.cs:349, Item.cs:996 and :1096, Character.cs:993, :1646 and :1752,
 /// Luggage.cs:72, CharacterMovement.cs:626 (JumpRpc, true for a pal jump), CharacterCarrying.cs:56 and :92,
-/// Campfire.cs:462, TriggerRelay.cs:14.
+/// Campfire.cs:462, TriggerRelay.cs:14, CharacterBackpackHandler.cs:181.
 /// </summary>
 [HarmonyPatch]
 static class RpcProbe
@@ -103,6 +103,10 @@ static class RpcProbe
         yield return AccessTools.Method(typeof(CharacterCarrying), "RPCA_Drop");
         yield return AccessTools.Method(typeof(Campfire), "Light_Rpc");
         yield return AccessTools.Method(typeof(TriggerRelay), "RPCA_Trigger");
+        yield return AccessTools.Method(
+            typeof(CharacterBackpackHandler),
+            "RPCAddItemToCharacterBackpack"
+        );
     }
 
     static void Postfix(MethodBase __originalMethod, object __instance, object[] __args)

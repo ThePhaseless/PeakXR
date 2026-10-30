@@ -625,12 +625,15 @@ public static class GuideTable
         var shoulder = V(0.22f, -0.05f, -0.15f);
         var wheelAt = V(0.15f, -0.4f, 0.38f);
         var pocket = V(0.27f, -0.33f, 0.38f);
+        // Then an item let go into a friend's pack ahead (PackStash): the pin on the pocket nearest the hand.
+        var friendPack = V(0.05f, -0.3f, 0.65f);
+        var stashAt = friendPack + V(0.08f, 0.02f, -0.12f);
         Add(
             new GuideDemo(
                 GuideTopic.Backpack,
                 "Backpack",
-                "Grip over your shoulder, pull the pack round, pick a pocket.",
-                3.4f,
+                "Grip over your shoulder to pick a pocket. Let go in a pack.",
+                4.6f,
                 null,
                 restLeft,
                 T(
@@ -640,7 +643,11 @@ public static class GuideTable
                     K(1.6f, wheelAt, grip: 1f),
                     K(2.2f, pocket, grip: 1f),
                     K(2.4f, pocket),
-                    K(3.4f, RestR)
+                    K(2.8f, RestR),
+                    K(2.9f, RestR, grip: 1f),
+                    K(3.7f, stashAt, grip: 1f),
+                    K(3.9f, stashAt),
+                    K(4.6f, RestR)
                 ),
                 new[]
                 {
@@ -648,8 +655,22 @@ public static class GuideTable
                     P(GuideShape.Target, 0.12f, shoulder, 0f, 1f),
                     P(GuideShape.Wheel, 0.25f, wheelAt, 1.6f, 2.4f),
                     P(GuideShape.Notice, 0.08f, pocket, 1.9f, 2.4f),
+                    P(GuideShape.Box, 0.3f, friendPack, 2.8f, 4.6f),
+                    new GuideProp(
+                        GuideShape.Ball,
+                        0.08f,
+                        T(K(0f, Vector3.Zero, anchor: R)),
+                        2.9f,
+                        3.9f
+                    ),
+                    P(GuideShape.Notice, 0.08f, stashAt, 3.4f, 3.9f),
                 },
-                new[] { S(1.6f, CueSound.Notice, wheelAt), S(2.4f, CueSound.WouldWork, pocket) }
+                new[]
+                {
+                    S(1.6f, CueSound.Notice, wheelAt),
+                    S(2.4f, CueSound.WouldWork, pocket),
+                    S(3.9f, CueSound.WouldWork, stashAt),
+                }
             )
         );
 

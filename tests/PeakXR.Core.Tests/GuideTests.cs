@@ -287,4 +287,24 @@ public class GuideTests
         Assert.Contains(giveUp.Left.Keys, k => k.Grip > 0.5f && k.Trigger > 0.5f);
         Assert.Contains(giveUp.Right.Keys, k => k.Grip > 0.5f && k.Trigger > 0.5f);
     }
+
+    [Fact]
+    public void BackpackDemo_AlsoLetsAHeldItemGoIntoAPack()
+    {
+        // Issue #47: the demo showed only the wheel; an item opened into a pack goes in (PackStash).
+        var demo = GuideTable.Get(GuideTopic.Backpack);
+        var held = Array.Find(demo.Props, p => p.Track.Keys[0].Anchor == GuideAnchor.Right);
+        Assert.NotNull(held);
+        Assert.True(held.From > 0f && held.To > held.From, "the item shows only for the stash");
+        // The grip opens as the item leaves the hand, with the would-work note there.
+        Assert.Contains(
+            demo.Right.Keys,
+            k => k.Time >= held.To && k.Grip == 0f && k.Time <= held.To + 0.3f
+        );
+        Assert.Contains(
+            demo.Sounds,
+            s => s.Sound == CueSound.WouldWork && Math.Abs(s.Time - held.To) < 0.01f
+        );
+        Assert.Contains("pack", demo.Caption, StringComparison.Ordinal);
+    }
 }

@@ -231,6 +231,7 @@ public static class SelfTestIds
         "vr.283-feed-friend",
         "vr.284-ground-pack-stash",
         "vr.285-friend-pack-stash",
+        "vr.330-pack-stash",
         "vr.269-end-screen-head",
         "vr.270-banner-head-card",
         "vr.271-pause-head",
