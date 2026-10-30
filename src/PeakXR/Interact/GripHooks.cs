@@ -18,12 +18,16 @@ internal readonly struct GripHookContext
     /// <summary>This hand is the one holding <see cref="HeldItem"/>.</summary>
     public readonly bool ThisHandHolds;
 
+    /// <summary>Asked every frame for the open hand's glow, not for a press: no notes or logs.</summary>
+    public readonly bool Preview;
+
     public GripHookContext(
         Character character,
         bool left,
         Vector3 handPosition,
         Item heldItem,
-        bool thisHandHolds
+        bool thisHandHolds,
+        bool preview = false
     )
     {
         Character = character;
@@ -31,6 +35,7 @@ internal readonly struct GripHookContext
         HandPosition = handPosition;
         HeldItem = heldItem;
         ThisHandHolds = thisHandHolds;
+        Preview = preview;
     }
 }
 
@@ -42,7 +47,9 @@ internal readonly struct GripHookContext
 /// </summary>
 internal interface IGripExtension
 {
-    /// <summary>Grip closed: true when this extension wants it. Must not act yet (the second hand may still win).</summary>
+    /// <summary>Grip closed, or the open hand's glow asking what a grip would do (<see cref="GripHookContext.Preview"/>,
+    /// every frame): true when this extension wants it. Must not act yet (the second hand may still win), and must not
+    /// allocate.</summary>
     bool ClaimPress(in GripHookContext ctx);
 
     /// <summary>The claimed grip is now owned by this extension until it opens; run the action.</summary>

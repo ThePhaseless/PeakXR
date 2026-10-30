@@ -56,7 +56,7 @@ internal sealed class TraversalGrips : IGripExtension
             return false;
         try
         {
-            return Find(ctx.Character, ctx.HandPosition);
+            return Find(ctx.Character, ctx.HandPosition, note: !ctx.Preview);
         }
         catch (Exception e)
         {
@@ -87,7 +87,7 @@ internal sealed class TraversalGrips : IGripExtension
     public bool TryHeldRelease(in GripHookContext ctx) => false;
 
     /// <summary>A refused (or timed-out) line or handle under the hand; fills <see cref="reason"/>.</summary>
-    private bool Find(Character c, Vector3 pos)
+    private bool Find(Character c, Vector3 pos, bool note)
     {
         // Up to VineRise above the hand: a vine's trigger capsules sit colliderOffset above the drawn vine the hand
         // holds, more than SearchRadius on some vines (run 34's vr.59 found none).
@@ -135,6 +135,8 @@ internal sealed class TraversalGrips : IGripExtension
         }
         for (int i = 0; i < n; i++)
             hits[i] = null;
+        if (!note)
+            return found;
         LastNote = System.FormattableString.Invariant(
             $"grip check: {n} colliders, rope {ropes}, vine {vines} (capsule {vineCapsule}, hand {vineGap:0.00} m off it), handle {handles}; out of stamina {outOfStamina}; claimed {found} ({reason})"
         );

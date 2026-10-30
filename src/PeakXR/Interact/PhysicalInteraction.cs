@@ -704,10 +704,9 @@ internal static class PhysicalInteraction
     /// What a grip of this hand would do now: the one decision behind both its press and its glow
     /// (<see cref="GripPreview"/>), so a glowing target is what the grip takes (issue #13: the glow lit the hand's
     /// grab candidate while the press decided a climb). <paramref name="preview"/>: for the glow, which stops when no
-    /// grab target is in reach and asks no grip extension (their claim checks log and allocate; shortcut: a rope,
-    /// vine, friend or belt slot claiming a grip on an item can still glow that item, a per-frame claim check without
-    /// allocations would close it). The press falls back on the target that glowed last when the closing hand has
-    /// just left it (<see cref="GrabGrace"/>).
+    /// grab target is in reach. The grip extensions are asked in both (issue #49: a rope, vine, friend or belt slot
+    /// that took the grip left the item under the hand glowing). The press falls back on the target that glowed last
+    /// when the closing hand has just left it (<see cref="GrabGrace"/>).
     /// </summary>
     private static Decision Decide(
         Hand hand,
@@ -802,10 +801,10 @@ internal static class PhysicalInteraction
         }
         ctx.OneHanded = VRInput.OneHanded;
         d.Action = GripIntent.OnPress(ctx);
-        if (!preview && d.Action != GripPressAction.SecondHand)
+        if (d.Action != GripPressAction.SecondHand)
         {
             d.Extension = GripHooks.Claim(
-                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds)
+                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds, preview)
             );
             ctx.ExtensionClaim = d.Extension != null;
             d.Action = GripIntent.OnPress(ctx);
