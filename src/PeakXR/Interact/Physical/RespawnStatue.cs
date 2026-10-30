@@ -43,6 +43,9 @@ internal static class RespawnStatue
     /// <summary>The statue a hand is on this frame, for the self-test (vr.275).</summary>
     internal static RespawnChest Touched => Touch.Active ? statue : null;
 
+    /// <summary>The statue looked up near the body, touched or not (self-test diagnostics).</summary>
+    internal static RespawnChest Looked => statue;
+
     public static void Reset()
     {
         Touch.Reset();
@@ -179,7 +182,7 @@ internal static class RespawnStatue
     private static float Sq(float x) => x * x;
 
     /// <summary>The nearest point of the statue's solid colliders to <paramref name="p"/>; far away when none.</summary>
-    private static Vector3 Surface(Vector3 p)
+    internal static Vector3 Surface(Vector3 p)
     {
         var best = p + Vector3.up * 100f;
         float bestSq = float.MaxValue;

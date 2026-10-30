@@ -237,7 +237,8 @@ internal sealed partial class SelfTestRunner
         if (progress <= 0f)
         {
             Fail(
-                $"a palm on {statue.name} did not start its cast; touched {RespawnStatue.Touched != null}"
+                $"a palm on {statue.name} did not start its cast; touched {RespawnStatue.Touched != null}, "
+                    + PalmOnStatue(left, statue)
             );
             yield break;
         }
@@ -278,6 +279,22 @@ internal sealed partial class SelfTestRunner
                 $"{statue.name}: cast to {progress:0.00}, cancelled off the hand, finished on it; ramp {ramp}; spent: {cueNote}";
     }
 
+    /// <summary>What RespawnStatue's touch test sees of the scripted palm: the statue it looked up, and the palm's
+    /// distance to the statue's surface and facing toward it (RespawnStatue.On needs 0.06 m and 0.5).</summary>
+    static string PalmOnStatue(bool left, RespawnChest statue)
+    {
+        var looked = RespawnStatue.Looked;
+        var hand = VRRig.Instance.Hand(left);
+        if (hand == null)
+            return "no hand";
+        var to = RespawnStatue.Surface(hand.position) - hand.position;
+        var palm = left ? hand.right : -hand.right;
+        float facing = to.sqrMagnitude > 1e-8f ? Vector3.Dot(palm, to.normalized) : 1f;
+        return F(
+            $"looked up {(looked == null ? "none" : looked == statue ? "this statue" : looked.name)}, palm {to.magnitude:0.000} m from its surface facing it {facing:0.00}, grip action {PhysicalInteraction.HandAction(left)}"
+        );
+    }
+
     /// <summary>One scripted hand open, palm flat on the nearest of <paramref name="cols"/> at chest height on its
     /// side of the head.</summary>
     IEnumerator LayPalm(bool left, Collider[] cols)
@@ -300,8 +317,10 @@ internal sealed partial class SelfTestRunner
         var x = left ? into : -into;
         var up = Mathf.Abs(Vector3.Dot(into, Vector3.up)) > 0.9f ? Vector3.forward : Vector3.up;
         Script(left).Grip = 0f;
-        Script(left).Rotation =
-            Quaternion.Inverse(rig.Origin.rotation) * HandLook(Vector3.Cross(x, up), up);
+        HoldTurn(
+            left,
+            Quaternion.Inverse(rig.Origin.rotation) * HandLook(Vector3.Cross(x, up), up)
+        );
         yield return MoveTo(left, () => surface - into * 0.02f, 0.4f);
     }
 
@@ -310,6 +329,7 @@ internal sealed partial class SelfTestRunner
     {
         var rig = VRRig.Instance;
         HeadFrame(out var head, out var forward, out _);
+        FreeTurn(left);
         SetHand(
             left,
             rig.Origin.InverseTransformPoint(head - forward * 0.1f + Vector3.down * 0.4f)
@@ -808,7 +828,8 @@ internal sealed partial class SelfTestRunner
                 keep = turn;
             }
         }
-        Script(left).Rotation = keep;
+        // Kept through the reach below, whose moves re-aimed the hand from the head and lost the tip.
+        HoldTurn(left, keep);
         yield return null;
         yield return null;
         if (flame == null)
@@ -2289,7 +2310,7 @@ internal sealed partial class SelfTestRunner
             var x = left ? into : -into;
             var world = HandLook(Vector3.Cross(x, Vector3.up), Vector3.up);
             Script(left).Grip = 0f;
-            Script(left).Rotation = Quaternion.Inverse(rig.Origin.rotation) * world;
+            HoldTurn(left, Quaternion.Inverse(rig.Origin.rotation) * world);
             yield return MoveTo(left, () => surface - into * 0.02f, 0.4f);
         }
         float progress = 0f;
@@ -2301,6 +2322,8 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         HeadFrame(out var back, out var forward, out _);
+        FreeTurn(true);
+        FreeTurn(false);
         SetHand(
             true,
             rig.Origin.InverseTransformPoint(back - forward * 0.1f + Vector3.down * 0.4f)

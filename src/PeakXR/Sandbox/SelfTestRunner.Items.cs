@@ -2799,14 +2799,13 @@ internal sealed partial class SelfTestRunner
         // head flip frame to frame and swing the base and the mouth about (run 7: 0.14 m at best, hand 5 cm over the
         // eyes): the head looks ahead and the hand keeps the turn it starts with, so the goal holds still.
         EndGlance();
-        var baseTurn = Script(left).Rotation;
+        HoldTurn(left, Script(left).Rotation);
         while (Now < baseEnd && item != null && c.data.currentItem == item)
         {
             var hand = rig.Hand(left);
             var mouth = WorldMouth();
             var bottom = DrinkBase(item, hand, left);
             ApproachHand(left, MouthGoal(left, bottom));
-            Script(left).Rotation = baseTurn;
             float opening = RealScale.Real(
                 Vector3.Distance(HeldItemPoints.Opening(item, hand, left), mouth)
             );
@@ -2817,8 +2816,8 @@ internal sealed partial class SelfTestRunner
                 opening > MouthZone.ExitRadius && (item.isUsingPrimary || item.castProgress > 0f);
             yield return null;
         }
+        FreeTurn(left);
         PullAway(left);
-        LookAtHand(left);
         yield return Wait(0.5f);
         var baseNote =
             $"base at the mouth: nearest {baseGap:0.00} m, opening nearest {openingGap:0.00} m, cast {baseCast}";
@@ -2847,6 +2846,10 @@ internal sealed partial class SelfTestRunner
         float progress = 0f;
         bool drunk = false;
         float consumedBefore = c.data.lastConsumedItem;
+        // The opening at the lips as a player drinks: the bottle tipped so its opening points back and up at the
+        // mouth, the hand ahead of and under it, head level. Re-aimed from the head every frame, the opening swung
+        // about the mouth and never rested there (issue #16: cast False).
+        TipOpeningToMouth(item, left);
         // The item's own use time after up to 3 s bringing it to the mouth.
         float end = Now + GameTiming.Budget(useTime, 3f);
         while (Now < end)
@@ -2867,6 +2870,7 @@ internal sealed partial class SelfTestRunner
             progress = Mathf.Max(progress, item.castProgress);
             yield return null;
         }
+        FreeTurn(left);
         PullAway(left);
         yield return ExpectNoCue(left, quietFrom, 0f);
         yield return Wait(0.5f);
@@ -2886,6 +2890,24 @@ internal sealed partial class SelfTestRunner
             Fail($"drunk but {status} did not fall: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>Holds the drink hand turned so the held drink's opening (<see cref="HeldItemPoints.Opening"/>) points
+    /// from the hand back and up toward the face: the world turn that takes the opening's present direction there,
+    /// applied on top of the hand's turn.</summary>
+    void TipOpeningToMouth(Item item, bool left)
+    {
+        var rig = VRRig.Instance;
+        var hand = rig.Hand(left);
+        var lead = HeldItemPoints.Opening(item, hand, left) - hand.position;
+        HeadFrame(out _, out var ahead, out _);
+        var toLips = (Vector3.up * 0.5f - ahead).normalized;
+        var origin = rig.Origin.rotation;
+        var tip =
+            lead.sqrMagnitude > 1e-6f
+                ? Quaternion.FromToRotation(lead, toLips)
+                : Quaternion.identity;
+        HoldTurn(left, Quaternion.Inverse(origin) * tip * origin * Script(left).Rotation);
     }
 
     /// <summary>vr.162: a build item (Checkpoint Flag) held at the mouth for longer than its use time starts no cast

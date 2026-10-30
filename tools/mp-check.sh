@@ -121,7 +121,7 @@ def moddedb:
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
 def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
-  "kick-mode", "carry", "pack", "pal-jump", "campfire-far", "spectate", "save-untouched"];
+  "kick-mode", "carry", "pack", "vr.330-pack-stash", "pal-jump", "campfire-far", "spectate", "save-untouched"];
 ($b | map(select(.type == "checkpoint")) | sort_by(.t)) as $bcps
 | ($bcps | map({key: .name, value: .}) | from_entries) as $bcp
 | ($b | map(select(.type == "rpc") | .rpc)) as $rpcs
@@ -212,9 +212,14 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
       | (if $y.localPack == null then "FAIL pack: B logged no pack state (old observer?)"
          elif $p != null and $p.localPack == false then "FAIL pack: B wore no pack before the step, so A held nothing"
          elif ($y.localPack | not) then "FAIL pack: B lost its pack to the hold from A"
-         elif any(after($y)[]; .name == "PutInBackpackRPC" or .name == "RPCAddItemToBackpack")
+         # seen, not after: the window after pack holds the deliberate stash of vr.330-pack-stash.
+         elif any(seen($y)[]; .name == "RPCAddItemToCharacterBackpack")
          then "FAIL pack: an item went into the pack of B from a plain hold"
          else "PASS pack: B still wears its pack and nothing went in" end)
+    elif $x.name == "vr.330-pack-stash" then
+      (if any(seen($y)[]; .name == "RPCAddItemToCharacterBackpack")
+       then "PASS vr.330-pack-stash: B got RPCAddItemToCharacterBackpack, the item A let go went into its pack"
+       else "FAIL vr.330-pack-stash: B got no RPCAddItemToCharacterBackpack from the stash of A" end)
     elif $x.name == "kick-mode" then
       (if any(seen($y)[]; .name == "RPCA_Fall" and .local) then "PASS kick-mode: the shove knocked B down"
        else "FAIL kick-mode: B logged no RPCA_Fall from the shove" end)

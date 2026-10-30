@@ -97,9 +97,10 @@ internal sealed class InventoryConfig
                 s,
                 "StashIntoPacks",
                 true,
-                "Bring the held item into a backpack on the ground or on a friend's back and open the grip: it goes "
-                    + "into the first free pocket. A pin over the pack shows it would go in; a red ring says why not "
-                    + "(full, or an item packs refuse), and the item stays in your hand."
+                "Bring the held item into a backpack on the ground or on a friend's back (from behind them) and open "
+                    + "the grip: it goes into the free pocket nearest your hand. A pin on that pocket shows it would go "
+                    + "in; a red ring says why not (full, an item packs refuse, or their front), and the item stays in "
+                    + "your hand."
             ),
             ghosts = file.Bind(
                 s,

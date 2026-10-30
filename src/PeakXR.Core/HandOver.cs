@@ -37,8 +37,8 @@ public enum HandOverState : byte
 }
 
 /// <summary>
-/// Feeding or healing a friend as a hand-over, never by proximity alone: bring the item to their mouth (food) or
-/// chest (a bandage), then squeeze the trigger. A trigger already held when the item arrives (eating on the way,
+/// Feeding or healing a friend as a hand-over, never by passing close: the item rests at their mouth (food) or on
+/// their chest (a bandage) for <see cref="Dwell"/>, or the trigger is squeezed there. A trigger already held when the item arrives (eating on the way,
 /// another use) does not count until it is let go and pressed again in the zone. While armed in the zone the
 /// trigger belongs to the hand-over, so it must not also start the item's own use (<see cref="SuppressPrimary"/>).
 /// </summary>
@@ -57,6 +57,16 @@ public sealed class HandOver
     /// <summary>Seconds the item must stay in the zone to apply with no trigger (food at a friend's mouth, as at your
     /// own); 0 needs the trigger.</summary>
     public float Dwell;
+
+    /// <summary>Food rests this long at a friend's mouth before it feeds (issue #14: the squeeze it needed was the
+    /// hard part).</summary>
+    public const float MouthDwell = 0.3f;
+
+    /// <summary>A healing item rests this long on a friend's chest before it is used: as long as pressing it to your
+    /// own body (interact.items' body press), issue #45.</summary>
+    public const float ChestDwell = 0.35f;
+
+    public static float DwellAt(bool chest) => chest ? ChestDwell : MouthDwell;
 
     private bool applying;
     private float outFor;

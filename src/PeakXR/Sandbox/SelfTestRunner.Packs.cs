@@ -59,7 +59,7 @@ internal sealed partial class SelfTestRunner
         yield return MoveTo(left, () => head.position, 0.6f);
         yield return Until(
             () => HeldItem() == null || HeldItem().isUsingSecondary,
-            SocialHands.MouthDwell + 1f,
+            HandOver.MouthDwell + 1f,
             "the feed did not start with the food held at their mouth"
         );
         if (!stepOk)
