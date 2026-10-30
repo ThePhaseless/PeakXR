@@ -2085,6 +2085,11 @@ internal static class PhysicalInteraction
         hand.Catching = false;
         if (StartClimb(c, rig, t.position, cfg))
         {
+            // The hook hand drew its hook from a slot: that grip ends here, not at the release, or the slot's draw
+            // (BodyInventory.drawSlot) stays on the hand (#21). Not holding, so the extension never holsters for it.
+            if (hand.Action == GripPressAction.Extension && hand.Extension != null)
+                hand.Extension.EndPress(new GripHookContext(c, hand.Left, t.position, null, false));
+            hand.Extension = null;
             hand.Action = GripPressAction.Climb;
             CatchPulse(hand.Left, hold.Kind, recentFall, cfg);
         }
