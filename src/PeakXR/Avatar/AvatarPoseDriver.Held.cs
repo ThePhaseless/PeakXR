@@ -74,15 +74,24 @@ public partial class AvatarPoseDriver
 
     /// <summary>The weld's anchor on the <paramref name="left"/> hand body: the item's grip out along the shoulder
     /// to <paramref name="bone"/> line by what the arm cannot reach (Core <see cref="ArmReach.HeldShift"/>, #23), so the
-    /// item sits on its controller and the drawn arm stretched to it holds it (<see cref="DrawnHands"/>). None while
-    /// both hands hold it: it sits between them.</summary>
-    private Vector3 HeldShift(bool left, Vector3 bone) =>
-        !Pose.TwoHandHold && PhysicsShoulder(left, out var shoulder, out float arm)
+    /// item sits on its controller and the drawn arm stretched to it holds it (<see cref="DrawnHands"/>). Eased out
+    /// while both hands hold it (it sits between them) and back in when one lets go (Core
+    /// <see cref="ArmReach.HeldShiftWeight"/>).</summary>
+    private Vector3 HeldShift(bool left, Vector3 bone)
+    {
+        float weight = ArmReach.HeldShiftWeight(
+            twoHandOn,
+            twoWeight,
+            Pose.TwoHandHold,
+            HoldHands.Ease(Time.time - handoffAt, HoldHands.EaseSeconds)
+        );
+        return weight > 0f && PhysicsShoulder(left, out var shoulder, out float arm)
             ? HandBody(left)
                 .transform.InverseTransformVector(
-                    ArmReach.HeldShift(shoulder.N(), bone.N(), arm).U()
+                    ArmReach.HeldShift(shoulder.N(), bone.N(), arm).U() * weight
                 )
             : Vector3.zero;
+    }
 
     /// <summary>Where the <paramref name="left"/> hand bone sits on <paramref name="item"/> as it lies now: the
     /// controller-held grip, mapped back (bone = item * X^-1 * T).</summary>
@@ -250,8 +259,13 @@ public partial class AvatarPoseDriver
         {
             if (wasFree)
                 AttachToHoldingHand(item);
+            // Only on a real move: a write may rebuild the joint's frame from the bodies' poses now (#23).
             if (itemJoint != null && itemJointLeft == left)
-                itemJoint.anchor = HeldShift(left, ctrlBone);
+            {
+                var anchor = HeldShift(left, ctrlBone);
+                if (ArmReach.AnchorMoved(itemJoint.anchor.N(), anchor.N()))
+                    itemJoint.anchor = anchor;
+            }
             // Welded or free, the held item passes through its holder's body: crouched at a stoop, a welded apple
             // met the knees and held the hand 0.31 m off its controller while the free one, already passing the
             // body, let the same arm reach 0.12 m (vr65-66 vr.230).

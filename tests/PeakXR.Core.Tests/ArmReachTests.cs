@@ -311,4 +311,25 @@ public class ArmReachTests
         TestUtil.Near(ArmReach.DrawnReach(Avatar) - Avatar, far.Length(), 1e-5f);
         Assert.Equal(Vector3.Zero, ArmReach.HeldShift(shoulder, shoulder, Avatar));
     }
+
+    [Fact]
+    public void AnchorMoved_OnlyPastTwoMillimetres()
+    {
+        // #23: each anchor write may rebuild the joint's frame, so a hand held still writes nothing.
+        Assert.False(ArmReach.AnchorMoved(Vector3.Zero, new Vector3(0.0015f, 0f, 0f)));
+        Assert.True(ArmReach.AnchorMoved(Vector3.Zero, new Vector3(0f, 0.0025f, 0f)));
+    }
+
+    [Fact]
+    public void HeldShiftWeight_EasesAcrossATwoHandHold()
+    {
+        // Joined: the shift fades out as the two-hand pose fades in, not in one tick.
+        Assert.Equal(1f, ArmReach.HeldShiftWeight(true, 0f, true, 1f));
+        Assert.Equal(0.75f, ArmReach.HeldShiftWeight(true, 0.25f, true, 1f));
+        Assert.Equal(0f, ArmReach.HeldShiftWeight(true, 1f, true, 1f));
+        // Let go: it comes back with the handoff ease.
+        Assert.Equal(0.4f, ArmReach.HeldShiftWeight(false, 0f, false, 0.4f));
+        // Two hands held but not joined (an aimed launcher): none, as before.
+        Assert.Equal(0f, ArmReach.HeldShiftWeight(false, 0f, true, 1f));
+    }
 }
