@@ -109,6 +109,31 @@ public static class ArmReach
         return shift > 0f ? off * (shift / d) : Vector3.Zero;
     }
 
+    /// <summary>Metres a held item's weld anchor must move before it is written again: each write may rebuild the
+    /// joint's frame from where the bodies are now, so writing every tick let the item's rest rotation creep (#23).</summary>
+    public const float AnchorStep = 0.002f;
+
+    /// <summary>The weld anchor at <paramref name="next"/> is more than <see cref="AnchorStep"/> from
+    /// <paramref name="current"/>.</summary>
+    public static bool AnchorMoved(Vector3 current, Vector3 next) =>
+        Vector3.DistanceSquared(current, next) > AnchorStep * AnchorStep;
+
+    /// <summary>
+    /// How much of <see cref="HeldShift"/> applies: while both hands hold the item (<paramref name="joined"/>) it
+    /// fades out as the two-hand pose (<paramref name="twoWeight"/>) fades in, and after the second hand lets go it
+    /// comes back with the hold's <paramref name="handoff"/> ease, so neither edge snaps the item up to 0.3 m. None
+    /// while two hands hold it without that pose (<paramref name="twoHandHold"/>, an aimed launcher).
+    /// </summary>
+    public static float HeldShiftWeight(
+        bool joined,
+        float twoWeight,
+        bool twoHandHold,
+        float handoff
+    ) =>
+        joined ? 1f - Math.Clamp(twoWeight, 0f, 1f)
+        : twoHandHold ? 0f
+        : Math.Clamp(handoff, 0f, 1f);
+
     /// <summary><see cref="GhostReach"/> while the arm is drawn stretched: the ghost shows only past where the
     /// drawn hand can follow.</summary>
     public static float DrawnGhostReach(float avatarReach, float playerReach, float mapWeight) =>

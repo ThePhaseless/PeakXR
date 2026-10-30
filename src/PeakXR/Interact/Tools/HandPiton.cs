@@ -32,6 +32,14 @@ internal static class HandPiton
     /// <summary>A hand on the climb gives the cast its aim this frame (<see cref="origin"/>, <see cref="normal"/>).</summary>
     private static bool aiming;
     private static bool startFrame;
+
+    /// <summary>The frame <see cref="Update"/> last ran. Its hold and aim hold for that frame and the next: Update stops
+    /// while VR is off or input is inactive, and a stale aim swapped the camera to an old hand pose (#22).</summary>
+    private static int frame = -1;
+
+    // CharacterMovement.Update (which samples input) and CharacterItems.Update share the default execution order, so
+    // Unity may run the items first; the previous frame's aim still counts then.
+    private static bool Fresh => frame >= Time.frameCount - 1 && VRSession.Active;
     private static bool left;
     private static Vector3 origin;
     private static Vector3 normal;
@@ -49,7 +57,7 @@ internal static class HandPiton
     private static bool savedWasPressed;
 
     /// <summary>A hand on the wall holds its trigger for a piton this frame and the cast is driven from it.</summary>
-    internal static bool Placing => placing;
+    internal static bool Placing => placing && Fresh;
 
     internal static bool PlacingLeft => left;
 
@@ -81,8 +89,10 @@ internal static class HandPiton
         bool rightWall
     )
     {
-        bool was = placing;
+        // A hold carries over only from the frame before: one that ran while Update was off is a new hold.
+        bool was = placing && frame == Time.frameCount - 1;
         placing = startFrame = aiming = false;
+        frame = Time.frameCount;
         if (was && !holdDone && c != null && c.data.climbingSpikeCount < pitonsAtStart)
         {
             holdDone = true;
@@ -167,15 +177,16 @@ internal static class HandPiton
         if (!On(c))
             // The game's own press (one-handed play's chord, a button with Interaction.TriggerUse off) is aimed from
             // the hand on the climb too, not the head (#22).
-            return aiming ? Swap() : default;
+            return aiming && Fresh ? Swap() : default;
+        bool now = placing && Fresh;
         var input = c.input;
         inputSwapped = true;
         swapped = c;
         savedIsPressed = input.useSecondaryIsPressed;
         savedWasPressed = input.useSecondaryWasPressed;
-        input.useSecondaryIsPressed = placing;
-        input.useSecondaryWasPressed = startFrame;
-        return placing ? Swap() : default;
+        input.useSecondaryIsPressed = now;
+        input.useSecondaryWasPressed = now && startFrame;
+        return now ? Swap() : default;
     }
 
     private static CameraSwap Swap() =>
@@ -209,7 +220,7 @@ internal static class HandPiton
     /// </summary>
     public static void After(Character c, float tickAfter)
     {
-        if (!placing)
+        if (!Placing)
             return;
         if (tickAfter > 0f)
         {

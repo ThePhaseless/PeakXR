@@ -20,7 +20,7 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.350-antizooka-barrel", "AntiZooka", 30f, BarrelHoldStep);
         if (twoHands != null)
             twoHands.Value = required;
-        yield return ItemStep("vr.351-blowgun-barrel", "HealingDart", 25f, BarrelHoldStep);
+        yield return ItemStep("vr.351-blowgun-barrel", "HealingDart", 32f, BarrelHoldStep);
         yield return ItemStep("vr.352-held-at-controller", "Flare", 20f, HeldAtControllerStep);
     }
 
@@ -73,9 +73,13 @@ internal sealed partial class SelfTestRunner
             Fail($"no aim found for the {item.name}");
             yield break;
         }
-        if (!stepOk || spawner == null)
+        if (!stepOk)
+            yield break;
+        if (spawner == null)
         {
-            Note($"{item.name} held along the aim");
+            yield return BarrelCreepCheck(rig, item, left, head, forward);
+            if (stepOk)
+                Note($"{item.name} held along the aim");
             yield break;
         }
         string spawnName = spawner.prefabToSpawn.name + "(Clone)";
@@ -110,6 +114,47 @@ internal sealed partial class SelfTestRunner
             Fail("the AntiZooka's shot left its barrel's line: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>Most the physics barrel may turn off the aim over <see cref="CreepSeconds"/> held past reach, degrees.</summary>
+    const float MaxBarrelCreep = 3f;
+
+    const float CreepSeconds = 5f;
+
+    /// <summary>
+    /// vr.351 (#23): the aimed item held out past the arm's reach (0.55 m ahead of the eyes, 0.1 m down) for
+    /// <see cref="CreepSeconds"/>, the hand still: the physics barrel's angle off the aim pose must not move by more than
+    /// <see cref="MaxBarrelCreep"/>. A weld anchor written every tick could rebuild the joint's rest rotation from
+    /// where the item sagged, and the barrel crept.
+    /// </summary>
+    IEnumerator BarrelCreepCheck(VRRig rig, Item item, bool left, Vector3 head, Vector3 forward)
+    {
+        Script(left).Position = head + forward * 0.55f + Vector3.down * 0.1f;
+        yield return Wait(1f);
+        CheckBarrelOnAim(rig, left, "past reach, start");
+        float start = BarrelOffAim(rig, item, left);
+        yield return Wait(CreepSeconds);
+        CheckBarrelOnAim(rig, left, "past reach, end");
+        float end = BarrelOffAim(rig, item, left);
+        string note = F(
+            $"{(item != null ? item.name : "no item")} past reach: barrel {start:0.0} deg off the aim, {end:0.0} deg after {CreepSeconds:0} s"
+        );
+        if (start < 0f || end < 0f)
+            Fail("the item left the hand past reach: " + note);
+        else if (Mathf.Abs(end - start) > MaxBarrelCreep)
+            Fail("the held barrel crept off the aim: " + note);
+        else
+            Plugin.Log.LogInfo("[selftest] " + note);
+    }
+
+    /// <summary>The physics item's barrel (its +Z, as the hold lays it) against the hand's aim pose, degrees; -1 when
+    /// it is no longer held.</summary>
+    static float BarrelOffAim(VRRig rig, Item item, bool left)
+    {
+        var aim = rig.Aim(left);
+        return item == null || aim == null || item != Character.localCharacter.data.currentItem
+            ? -1f
+            : Vector3.Angle(item.transform.forward, aim.forward);
     }
 
     /// <summary>
