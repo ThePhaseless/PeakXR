@@ -20,18 +20,19 @@ internal sealed partial class SelfTestRunner
 {
     IEnumerator SpatialSteps()
     {
+        // Null in flat play (VR-only feature, never installed); WithOn skips a null setting and the steps skip flat.
         var s = SpatialFeature.Settings;
         // ui.01 reads the name: the label carries nothing else for a plain pickup (TargetPrompt.cs:25-29).
         yield return WithOn(
             "ui.01-target-prompt",
             20f,
             TargetPromptStep(),
-            s.TargetPrompt,
-            s.TargetNames
+            s?.TargetPrompt,
+            s?.TargetNames
         );
-        yield return WithOn("ui.02-button-labels", 20f, ButtonLabelStep(), s.ButtonLabels);
-        yield return WithOn("ui.03-world-banner", 25f, BannerStep(), s.WorldBanners);
-        yield return WithOn("ui.04-rope-gauge", 28f, RopeGaugeStep(), s.HeldItemGauges);
+        yield return WithOn("ui.02-button-labels", 20f, ButtonLabelStep(), s?.ButtonLabels);
+        yield return WithOn("ui.03-world-banner", 25f, BannerStep(), s?.WorldBanners);
+        yield return WithOn("ui.04-rope-gauge", 28f, RopeGaugeStep(), s?.HeldItemGauges);
         yield return Restoring("ui.05-wrist-hud", 15f, WristHudStep());
         yield return Restoring("ui.06-top-stamina", 15f, TopStaminaStep());
     }

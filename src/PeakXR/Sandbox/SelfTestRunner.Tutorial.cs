@@ -409,12 +409,13 @@ internal sealed partial class SelfTestRunner
     IEnumerator PromptGlyphSteps()
     {
         // Glyphs, names and the hold ring are drawn by the target prompt: run with it on, as a player has it.
-        var prompt = SpatialFeature.Settings.TargetPrompt;
+        // ui.spatial is VR-only: flat play never binds it, and every step here skips there (VRStepRuns).
+        var prompt = SpatialFeature.Settings?.TargetPrompt;
         yield return WithOn("vr.121-prompt-glyphs", 25f, PromptGlyphStep(), prompt);
         yield return WithOn("vr.125-hold-glyph", 40f, HoldGlyphStep(), prompt);
         yield return WithOn("vr.133-target-names", 25f, TargetNamesStep(false), prompt);
         yield return WithOn("vr.221-colorblind-names", 25f, TargetNamesStep(true), prompt);
-        var names = SpatialFeature.Settings.TargetNames;
+        var names = SpatialFeature.Settings?.TargetNames;
         yield return WithOn("vr.240-text-scale", 25f, TextScaleStep(), prompt, names);
         yield return WithOn("vr.242-prompt-occlusion", 25f, PromptOcclusionStep(), prompt, names);
         yield return WarpBack();
