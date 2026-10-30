@@ -160,7 +160,7 @@ public class HandOverTests
     }
 
     // Food at a friend's mouth feeds like food at your own mouth: held there, no trigger needed.
-    static HandOver Mouth() => new() { Dwell = 0.3f };
+    static HandOver Mouth() => new() { Dwell = HandOver.MouthDwell };
 
     [Fact]
     public void FoodHeldAtTheMouth_FeedsAfterTheDwell()
@@ -213,5 +213,22 @@ public class HandOverTests
         var h = Mouth();
         for (int i = 0; i < 20; i++)
             Assert.Equal(HandOverState.None, h.Update(true, false, false, true, 0.1f));
+    }
+
+    [Fact]
+    public void AHealingItemHeldOnTheChest_AppliesAfterTheDwell_NoTrigger()
+    {
+        // Issue #45: a bandage on a friend's chest works as pressing it to your own body does.
+        var h = new HandOver { Dwell = HandOver.DwellAt(chest: true) };
+        Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.2f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.2f));
+    }
+
+    [Fact]
+    public void BothZonesDwell_TheChestAsLongAsAPressToYourOwnBody()
+    {
+        Assert.Equal(HandOver.MouthDwell, HandOver.DwellAt(chest: false));
+        Assert.Equal(0.35f, HandOver.DwellAt(chest: true));
+        Assert.True(HandOver.DwellAt(chest: true) > 0f);
     }
 }

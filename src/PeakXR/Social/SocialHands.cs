@@ -927,10 +927,10 @@ internal sealed class SocialHands : IGripExtension
     }
 
     /// <summary>
-    /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item held at another player's mouth for
-    /// <see cref="MouthDwell"/>, or the holding hand's trigger squeezed there, holds the game's use-on-friend
-    /// (Item.StartUseSecondary, Item.cs:977, its cast and ring) while it stays. A healing item goes on their torso and
-    /// still needs the squeeze: standing close never spends a bandage (external review row 9). A teal ring marks the
+    /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item held at another player's mouth, or a
+    /// healing item on their torso, for the zone's dwell (<see cref="HandOver.DwellAt"/>), or the holding hand's
+    /// trigger squeezed there, holds the game's use-on-friend (Item.StartUseSecondary, Item.cs:977, its cast and ring)
+    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there. A teal ring marks the
     /// mouth or chest while in range and through the cast. An item they cannot take is refused at the mouth after the
     /// dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
     /// </summary>
@@ -978,8 +978,8 @@ internal sealed class SocialHands : IGripExtension
         // The game feeds no bot (CharacterInteractible.IsInteractible, CharacterInteractible.cs:128): refused, not silent.
         bool usable = item.canUseOnFriend && who.refs.interactible != null && !who.isBot;
         atFriendMouth = inZone && !usable;
-        // Food held at their mouth feeds as at your own; a bandage on their chest still waits for the trigger.
-        handOver.Dwell = part == BodypartType.Head ? MouthDwell : 0f;
+        // Food held at their mouth feeds as at your own, a bandage on their chest as on your own body.
+        handOver.Dwell = HandOver.DwellAt(chest: part == BodypartType.Torso);
         var state = handOver.Update(
             inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
@@ -1008,10 +1008,6 @@ internal sealed class SocialHands : IGripExtension
                 return false;
         }
     }
-
-    /// <summary>Seconds food stays at a friend's mouth before it feeds: deliberate, but no trigger (issue #14: players
-    /// held food there and waited; the squeeze it needed was the hard part).</summary>
-    internal const float MouthDwell = 0.3f;
 
     /// <summary>Trigger value that counts as the hand-over squeeze.</summary>
     private const float HandOverTrigger = 0.6f;
