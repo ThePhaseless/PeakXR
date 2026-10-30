@@ -33,11 +33,13 @@ internal static class HandPiton
     private static bool aiming;
     private static bool startFrame;
 
-    /// <summary>The frame <see cref="Update"/> last ran. Its hold and aim hold only for that frame: Update stops while
-    /// VR is off or input is inactive, and a stale aim swapped the camera to an old hand pose (#22).</summary>
+    /// <summary>The frame <see cref="Update"/> last ran. Its hold and aim hold for that frame and the next: Update stops
+    /// while VR is off or input is inactive, and a stale aim swapped the camera to an old hand pose (#22).</summary>
     private static int frame = -1;
 
-    private static bool Fresh => frame == Time.frameCount && VRSession.Active;
+    // CharacterMovement.Update (which samples input) and CharacterItems.Update share the default execution order, so
+    // Unity may run the items first; the previous frame's aim still counts then.
+    private static bool Fresh => frame >= Time.frameCount - 1 && VRSession.Active;
     private static bool left;
     private static Vector3 origin;
     private static Vector3 normal;
