@@ -1809,6 +1809,8 @@ internal sealed partial class SelfTestRunner
     {
         headDrop = 0f;
         EndGlance();
+        FreeTurn(true);
+        FreeTurn(false);
         HeadFrame(out var head, out var forward, out var right);
         scriptLeft = Rest(head, forward, -right);
         scriptRight = Rest(head, forward, right);
@@ -1822,6 +1824,8 @@ internal sealed partial class SelfTestRunner
     {
         headDrop = 0f;
         EndGlance();
+        FreeTurn(true);
+        FreeTurn(false);
         // No step inherits another's hand pose: buttons, touches (the thumb on the stick or a button), sticks and
         // skeletal curls back to the rest pose's, finger on the trigger and thumb lifted, as BeginHands starts.
         Neutral(ref scriptLeft);
@@ -1966,9 +1970,27 @@ internal sealed partial class SelfTestRunner
         ref var s = ref Script(left);
         s.Position = trackingPosition;
         var away = trackingPosition - VRInput.HeadPosition;
-        if (away.sqrMagnitude > 1e-4f)
+        if (heldTurn[left ? 0 : 1] is { } turn)
+            s.Rotation = turn;
+        else if (away.sqrMagnitude > 1e-4f)
             s.Rotation = HandLook(away, Vector3.up);
     }
+
+    /// <summary>Per hand, a turn the step chose (a palm laid flat, a torch tipped, a drink tipped to the lips) that
+    /// <see cref="SetHand"/> keeps instead of re-aiming the hand from the head. Re-aimed every frame, the turn was
+    /// lost on the way: vr.275's palm went edge-on to the statue (issue #4), vr.161's opening swung about the mouth
+    /// (issue #16).</summary>
+    readonly Quaternion?[] heldTurn = new Quaternion?[2];
+
+    /// <summary>Turns the scripted hand to <paramref name="tracking"/> and keeps it there through moves until
+    /// <see cref="FreeTurn"/> or the end of the step.</summary>
+    void HoldTurn(bool left, Quaternion tracking)
+    {
+        heldTurn[left ? 0 : 1] = tracking;
+        Script(left).Rotation = tracking;
+    }
+
+    void FreeTurn(bool left) => heldTurn[left ? 0 : 1] = null;
 
     static readonly Vector3 FingersLocal = new(
         Core.GripFrame.Fingers.X,

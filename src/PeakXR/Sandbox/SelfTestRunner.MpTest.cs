@@ -221,6 +221,8 @@ internal sealed partial class SelfTestRunner
         ClosePause();
         // No glance carried over from the step before (MP run 18: reach-deny's glance at the hand held into reach).
         EndGlance();
+        FreeTurn(true);
+        FreeTurn(false);
         Calm(ref scriptLeft);
         Calm(ref scriptRight);
         if (VRInput.TestOverride != null && VRInput.TestOverride != applyHands)
