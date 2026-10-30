@@ -7,7 +7,8 @@ namespace PeakXR.Core;
 /// Upper-body lean toward the tracked head. The avatar's spine swings about a pivot low in the back so the eyes
 /// move onto the line from the pivot to the head, as far as a natural bend allows. Leaning over a table then bends
 /// the avatar and carries its shoulders (and the arms' reach) with the head, instead of leaving the arms short of
-/// the controllers or walking the whole character (room-scale only follows past its lean radius).
+/// the controllers. The lean covers the head's offset while the stance walk (<see cref="StanceWalk"/>) waits out
+/// its delay or is on its way; a lean held longer, or past the lean limit, is stepped under.
 /// </summary>
 public static class BodyLean
 {
