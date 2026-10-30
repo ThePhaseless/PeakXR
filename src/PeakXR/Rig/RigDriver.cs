@@ -518,6 +518,13 @@ internal sealed class RigDriver : MonoBehaviour
 
         CheckHeadInWall(c, dt);
         DriveCamera();
+        mirror.FlatView(
+            VRSession.Active
+            && XRBootstrapDriver.HeadsetHidden
+            && CameraFeature.Mirror.Value != MirrorEye.Off
+                ? rig.HeadCamera
+                : null
+        );
         TraceTurn(c);
         TraceLeanView(c);
     }

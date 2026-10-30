@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using PeakXR.Core;
 using PeakXR.Interact.Climb;
 using PeakXR.Render;
+using PeakXR.Rig;
 using PeakXR.UI.Common;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace PeakXR.Sandbox;
 
@@ -56,6 +58,7 @@ internal sealed partial class SelfTestRunner
 
         int savedState = XRSessionState.OpenXRState;
         bool savedLost = XRSessionState.OpenVRFocusLost;
+        bool savedIdle = XRSessionState.OpenVRIdle;
         bool live = HeadsetOffLive;
         try
         {
@@ -121,6 +124,7 @@ internal sealed partial class SelfTestRunner
             {
                 XRSessionState.OpenXRState = savedState;
                 XRSessionState.OpenVRFocusLost = savedLost;
+                XRSessionState.OpenVRIdle = savedIdle;
             }
             ClosePause();
         }
@@ -143,11 +147,15 @@ internal sealed partial class SelfTestRunner
             null => "not reported",
         };
 
-    /// <summary>Simulated mode: the state the backend would write for this XrSessionState (OpenVR has one flag).</summary>
+    /// <summary>Simulated mode: the state the backend would write for this XrSessionState (OpenVR has two flags: focus,
+    /// and the headset idle for the states the headset does not show).</summary>
     static void Play(int state)
     {
         if (VRSession.Running == VRRuntime.OpenVR)
+        {
             XRSessionState.OpenVRFocusLost = state != 5;
+            XRSessionState.OpenVRIdle = !XRFocus.Shown(state);
+        }
         else
             XRSessionState.OpenXRState = state;
     }
@@ -245,12 +253,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The game paces itself (<see cref="RenderDriver.IdlePacing"/>, at most <see cref="XRFocus.IdleHz"/> fps
-    /// over 0.5 s) exactly while the OpenXR session shows none of its frames, and leaves pacing to the runtime
-    /// otherwise.</summary>
+    /// over 0.5 s) exactly while the headset shows none of its frames (<see cref="XRBootstrapDriver.HeadsetHidden"/>:
+    /// OpenXR state, OpenVR idle), and leaves pacing to the runtime otherwise.</summary>
     static IEnumerator JudgePacing(List<string> fails, List<string> notes)
     {
-        bool hidden =
-            VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState);
+        bool hidden = XRBootstrapDriver.HeadsetHidden;
         yield return null;
         int frames = 0;
         float start = Now;
@@ -412,6 +419,75 @@ internal sealed partial class SelfTestRunner
         yield return null;
         XRBootstrapDriver.SelfTestPresence = null;
         notes.Insert(0, string.Join(" > ", seen));
+        var all = string.Join("; ", notes);
+        if (fails.Count > 0)
+            Fail(string.Join("; ", fails) + " | " + all);
+        else
+            stepNote = all;
+    }
+
+    /// <summary>
+    /// vr.360: while the headset shows none of the game's frames (OpenXR SYNCHRONIZED; OpenVR headset idle, written
+    /// into <see cref="XRSessionState"/> as the backend would), the desktop gets a flat view: the rig's head camera
+    /// renders as a plain camera (<see cref="Rig.DesktopMirror.Flat"/>, eye mask None, URP XR rendering off) and the
+    /// game paces itself at the idle rate on either runtime. Shown again, the same camera is back in stereo with XR
+    /// rendering on and pacing off. Screenshot <c>vr-360-flat-view</c> is the window while off.
+    /// </summary>
+    IEnumerator FlatViewCheck()
+    {
+        var rig = VRRig.Instance;
+        var cam = rig != null ? rig.HeadCamera : null;
+        if (cam == null)
+        {
+            stepSkip = "no head camera";
+            yield break;
+        }
+        if (CameraFeature.Mirror.Value == MirrorEye.Off)
+        {
+            stepSkip = "Camera.DesktopMirror Off";
+            yield break;
+        }
+        var fails = new List<string>();
+        var notes = new List<string>();
+        int savedState = XRSessionState.OpenXRState;
+        bool savedLost = XRSessionState.OpenVRFocusLost;
+        bool savedIdle = XRSessionState.OpenVRIdle;
+        try
+        {
+            Play(3);
+            yield return Wait(0.3f);
+            var flat = Rig.DesktopMirror.Flat;
+            var data = cam.GetUniversalAdditionalCameraData();
+            if (!XRBootstrapDriver.HeadsetHidden)
+                fails.Add($"not hidden after the state change ({XRBootstrapDriver.FocusSource})");
+            if (flat != cam)
+                fails.Add(
+                    $"flat view on '{(flat != null ? flat.name : "nothing")}', not the head camera '{cam.name}'"
+                );
+            if (cam.stereoTargetEye != StereoTargetEyeMask.None || data.allowXRRendering)
+                fails.Add(
+                    $"head camera still stereo while off (eyes {cam.stereoTargetEye}, XR rendering {data.allowXRRendering})"
+                );
+            yield return Shot("vr-360-flat-view");
+            yield return JudgePacing(fails, notes);
+            Play(5);
+            yield return Wait(0.3f);
+            if (Rig.DesktopMirror.Flat != null)
+                fails.Add("flat view kept after the headset shows frames again");
+            if (cam.stereoTargetEye != StereoTargetEyeMask.Both || !data.allowXRRendering)
+                fails.Add(
+                    $"head camera not back in stereo (eyes {cam.stereoTargetEye}, XR rendering {data.allowXRRendering})"
+                );
+            yield return JudgePacing(fails, notes);
+        }
+        finally
+        {
+            XRSessionState.OpenXRState = savedState;
+            XRSessionState.OpenVRFocusLost = savedLost;
+            XRSessionState.OpenVRIdle = savedIdle;
+            ClosePause();
+        }
+        notes.Insert(0, $"{VRSession.Running}, head camera '{cam.name}'");
         var all = string.Join("; ", notes);
         if (fails.Count > 0)
             Fail(string.Join("; ", fails) + " | " + all);
