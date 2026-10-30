@@ -157,6 +157,17 @@ internal sealed class LocalAvatar : MonoBehaviour
             var target = HandPose.Fingers(ControllerCurls(false), Role(holding, false), grip, wrap);
             pose.RightFingers = rightSmoother.Update(target, dt);
         }
+        // Each controller's aim pose against its grip: a held barrel lies along it, here and on modded peers (#26).
+        var leftAim = rig.Aim(true);
+        var rightAim = rig.Aim(false);
+        if (rig.LeftHand != null && rig.RightHand != null && leftAim != null && rightAim != null)
+        {
+            pose.HasAim = true;
+            pose.LeftAimInGrip =
+                Quaternion.Inverse(rig.LeftHand.localRotation) * leftAim.localRotation;
+            pose.RightAimInGrip =
+                Quaternion.Inverse(rig.RightHand.localRotation) * rightAim.localRotation;
+        }
 
         if (!holding)
             pose.ItemInLeftHand = pose.TwoHandHold = false;

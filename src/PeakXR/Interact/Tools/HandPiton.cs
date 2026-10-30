@@ -6,14 +6,16 @@ using UnityEngine;
 namespace PeakXR.Interact.Tools;
 
 /// <summary>
-/// A piton from the pockets while wall climbing goes in at a hand on the wall. That hand's trigger, pulled once the hand
+/// A piton from the pockets while climbing goes in at a hand on the climb. That hand's trigger, pulled once the hand
 /// has settled on the rock and held for <see cref="UseTrigger.HoldSeconds"/> (<see cref="UseTrigger.Piton"/>), drives
 /// the game's own piton cast (CharacterItems.UpdateClimbingSpikeUse, CharacterItems.cs:981-1027, the secondary use
-/// while climbing at :1019-1025) for that call only, aimed from <see cref="Lift"/> outside the wall at the hand straight
-/// into it. Vanilla timing, preview ghost and placement RPC apply, and letting go before the cast ends cancels it as
-/// vanilla does. A fist closing with its trigger squeezed sets nothing, and the free hand's trigger no longer sets a
-/// piton: the cast sees only this hold as its secondary use. One piton per hold. Two-handed play with
-/// <c>Interaction.TriggerUse</c> on; otherwise the game's own aim from the head.
+/// while climbing at :1019-1025) for that call only, aimed on a wall from <see cref="Lift"/> outside it at the hand
+/// straight into it, on a rope or vine along that hand's aim. Vanilla timing, preview ghost and placement RPC apply,
+/// and letting go before the cast ends cancels it as vanilla does. A fist closing with its trigger squeezed sets
+/// nothing, and the free hand's trigger no longer sets a piton: the cast sees only this hold as its secondary use. One
+/// piton per hold. That is two-handed play with <c>Interaction.TriggerUse</c> on; otherwise the game's own press
+/// (one-handed play's stick chord, a button) sets it, aimed the same way from the one hand, or the dominant hand when
+/// it is on the climb (#22).
 /// </summary>
 internal static class HandPiton
 {
@@ -26,6 +28,9 @@ internal static class HandPiton
 
     // This frame's hold, from PhysicalInteraction's use pass (CharacterInput.Sample, before CharacterItems.Update).
     private static bool placing;
+
+    /// <summary>A hand on the climb gives the cast its aim this frame (<see cref="origin"/>, <see cref="normal"/>).</summary>
+    private static bool aiming;
     private static bool startFrame;
     private static bool left;
     private static Vector3 origin;
@@ -77,23 +82,32 @@ internal static class HandPiton
     )
     {
         bool was = placing;
-        placing = startFrame = false;
+        placing = startFrame = aiming = false;
         if (was && !holdDone && c != null && c.data.climbingSpikeCount < pitonsAtStart)
         {
             holdDone = true;
             Placed++;
             Haptics.Pulse(left, 0.8f, 0.06f);
         }
-        bool l = (left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold;
+        bool trigger = On(c);
+        // The trigger path takes the hand that holds its trigger; the game's own press (one-handed play's stick chord,
+        // a button with Interaction.TriggerUse off) the one hand, or the dominant hand when it is on the climb.
+        bool dominant = VRInput.LeftHanded;
+        bool l =
+            trigger ? ((left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold)
+            : VRInput.OneHanded ? dominant
+            : (dominant ? leftWall : rightWall) ? dominant
+            : !dominant;
         var use = l ? leftUse : rightUse;
         var hand = rig != null ? rig.Hand(l) : null;
         if (
-            !On(c)
-            || !c.data.isClimbing
-            || !use.ClimbHold
+            !VRSession.Active
+            || c == null
+            || !c.IsLocal
+            || !c.data.isClimbingAnything
+            || (trigger && !use.ClimbHold)
             || !(l ? leftWall : rightWall)
             || hand == null
-            || c.data.climbNormal.sqrMagnitude < 1e-4f
         )
         {
             if (was && castSeen && !holdDone)
@@ -102,8 +116,14 @@ internal static class HandPiton
             return;
         }
         left = l;
-        normal = c.data.climbNormal.normalized;
-        origin = hand.position + normal * Lift;
+        // On a wall the cast comes in along the climb's normal; on a rope or vine, along the hand's own aim (#22).
+        var aim = rig.Aim(l);
+        bool wall = c.data.isClimbing && c.data.climbNormal.sqrMagnitude > 1e-4f;
+        normal =
+            wall ? c.data.climbNormal.normalized
+            : aim != null ? -aim.forward
+            : -hand.forward;
+        origin = wall ? hand.position + normal * Lift : hand.position;
         point = Physics.Raycast(
             origin,
             -normal,
@@ -114,7 +134,8 @@ internal static class HandPiton
         )
             ? hit.point
             : hand.position;
-        if (!use.Piton || holdDone)
+        aiming = true;
+        if (!trigger || !use.Piton || holdDone)
             return;
         if (c.data.climbingSpikeCount <= 0)
         {
@@ -141,8 +162,12 @@ internal static class HandPiton
     /// </summary>
     public static CameraSwap Begin(Character c)
     {
-        if (!On(c) || !c.data.isClimbingAnything)
+        if (c == null || !c.data.isClimbingAnything)
             return default;
+        if (!On(c))
+            // The game's own press (one-handed play's chord, a button with Interaction.TriggerUse off) is aimed from
+            // the hand on the climb too, not the head (#22).
+            return aiming ? Swap() : default;
         var input = c.input;
         inputSwapped = true;
         swapped = c;
@@ -150,16 +175,17 @@ internal static class HandPiton
         savedWasPressed = input.useSecondaryWasPressed;
         input.useSecondaryIsPressed = placing;
         input.useSecondaryWasPressed = startFrame;
-        return placing
-            ? CameraSwap.Begin(
-                origin,
-                Quaternion.LookRotation(
-                    -normal,
-                    Mathf.Abs(normal.y) > 0.99f ? Vector3.forward : Vector3.up
-                )
-            )
-            : default;
+        return placing ? Swap() : default;
     }
+
+    private static CameraSwap Swap() =>
+        CameraSwap.Begin(
+            origin,
+            Quaternion.LookRotation(
+                -normal,
+                Mathf.Abs(normal.y) > 0.99f ? Vector3.forward : Vector3.up
+            )
+        );
 
     /// <summary>Finalizer side: the cast's input back to what the player pressed.</summary>
     public static void End()

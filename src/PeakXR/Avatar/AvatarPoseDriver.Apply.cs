@@ -81,7 +81,7 @@ public partial class AvatarPoseDriver
     private HandRig rightRig;
     private readonly ItemHoldInfo hold = new();
     private readonly ArmBlend armBlend = new();
-    private FixedJoint itemJoint;
+    private ConfigurableJoint itemJoint;
     private bool itemJointLeft;
 
     /// <summary>The item whose vanilla two-hand weld was last checked for replacement; one try per item.</summary>

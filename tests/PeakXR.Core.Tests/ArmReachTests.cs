@@ -284,4 +284,31 @@ public class ArmReachTests
         // A learned reach past the drawn one keeps the old, later ghost.
         TestUtil.Near(1.0f, ArmReach.DrawnGhostReach(Avatar, 1.0f, 1f));
     }
+
+    [Fact]
+    public void HeldShift_PutsTheItemOnAControllerTheArmCannotReach()
+    {
+        // #23: a controller 0.72 m out from the shoulder, the arm 0.605 m: the item rides 0.115 m past the hand, on
+        // the shoulder-to-controller line.
+        var shoulder = new Vector3(0f, 1.4f, 0f);
+        var bone = shoulder + new Vector3(0f, 0f, 0.72f);
+        TestUtil.Near(
+            new Vector3(0f, 0f, 0.72f - Avatar),
+            ArmReach.HeldShift(shoulder, bone, Avatar),
+            1e-5f
+        );
+    }
+
+    [Fact]
+    public void HeldShift_NoneWithinReach_AndNoFurtherThanTheDrawnArm()
+    {
+        var shoulder = Vector3.Zero;
+        Assert.Equal(
+            Vector3.Zero,
+            ArmReach.HeldShift(shoulder, new Vector3(0.3f, 0.2f, 0f), Avatar)
+        );
+        var far = ArmReach.HeldShift(shoulder, new Vector3(2f, 0f, 0f), Avatar);
+        TestUtil.Near(ArmReach.DrawnReach(Avatar) - Avatar, far.Length(), 1e-5f);
+        Assert.Equal(Vector3.Zero, ArmReach.HeldShift(shoulder, shoulder, Avatar));
+    }
 }

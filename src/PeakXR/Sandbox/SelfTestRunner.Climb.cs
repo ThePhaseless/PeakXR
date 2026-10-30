@@ -58,6 +58,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
         yield return Restoring("vr.251-hook-pull-first-person", 45f, HookPullStep());
         yield return WarpBack();
+        yield return Restoring("vr.353-hook-hand-catch", 45f, HookPullStep(hookHand: true));
+        yield return WarpBack();
         yield return Restoring("vr.48-climb-deny-steep", 30f, ClimbDenySteepStep());
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());

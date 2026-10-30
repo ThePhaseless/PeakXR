@@ -113,23 +113,51 @@ public static class GripMath
     /// <summary>
     /// An aimed item's pose in its controller's frame (<paramref name="pos"/>, <paramref name="rot"/>) turned about the
     /// controller origin, the fist, so its barrel (+Z) runs along <paramref name="aim"/>, the controller's aim in that
-    /// frame: shots then go where the controller points on any runtime, the grip leaving the fist as it must. The
-    /// roll about the aim keeps the item's up nearest its old up; an up along the aim takes the least turn instead.
-    /// Returns the turn. No aim leaves the pose alone.
+    /// frame: shots then go where the controller points on any runtime. Of every such turn it takes the one that
+    /// moves the fist's tube (the grip's +Z) least, its roll about the barrel free: keeping the item's up instead put
+    /// the grip 40-55 degrees out of the fist (#25). The fist holds its tube either way round, so an item whose barrel
+    /// leaves the bottom of the fist (the blowgun, about 100 degrees out) is held the other way round when that tilts
+    /// it less (<see cref="FistTilt"/>). Returns the turn. No aim leaves the pose alone.
     /// </summary>
     public static Quaternion AlongAim(Vector3 aim, ref Vector3 pos, ref Quaternion rot)
     {
         if (aim.LengthSquared() < 1e-8f)
             return Quaternion.Identity;
         aim = Vector3.Normalize(aim);
-        var up = UnityQuat.Rotate(rot, Vector3.UnitY);
-        var turn =
-            Vector3.Cross(up, aim).LengthSquared() < 1e-6f
-                ? FromTo(UnityQuat.Rotate(rot, Vector3.UnitZ), aim)
-                : UnityQuat.Mul(UnityQuat.LookRotation(aim, up), Quaternion.Inverse(rot));
+        var barrel = UnityQuat.Rotate(rot, Vector3.UnitZ);
+        var turn = LeastTilt(barrel, aim);
+        var flip = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+        var flipped = UnityQuat.Mul(LeastTilt(UnityQuat.Rotate(flip, barrel), aim), flip);
+        // A degree of preference keeps a near tie from flipping the item between frames.
+        if (FistTilt(flipped) < FistTilt(turn) - 1f)
+            turn = flipped;
         pos = UnityQuat.Rotate(turn, pos);
         rot = Quaternion.Normalize(UnityQuat.Mul(turn, rot));
         return turn;
+    }
+
+    /// <summary>Degrees a hold turn takes the fist's tube (the grip's +Z) off its line, either way round.</summary>
+    public static float FistTilt(Quaternion turn) =>
+        MathF.Acos(Math.Clamp(MathF.Abs(UnityQuat.Rotate(turn, Vector3.UnitZ).Z), 0f, 1f))
+        * UnityQuat.Rad2Deg;
+
+    /// <summary>The turn that puts <paramref name="barrel"/> on <paramref name="aim"/> (unit) and keeps +Z nearest
+    /// itself: the shortest swing, then the roll about the aim that brings +Z's part across the aim onto its own.</summary>
+    static Quaternion LeastTilt(Vector3 barrel, Vector3 aim)
+    {
+        var swing = FromTo(barrel, aim);
+        var w = UnityQuat.Rotate(swing, Vector3.UnitZ);
+        var across = w - Vector3.Dot(w, aim) * aim;
+        var want = Vector3.UnitZ - aim.Z * aim;
+        if (across.LengthSquared() < 1e-8f || want.LengthSquared() < 1e-8f)
+            return swing;
+        float angle = MathF.Atan2(
+            Vector3.Dot(Vector3.Cross(across, want), aim),
+            Vector3.Dot(across, want)
+        );
+        return Quaternion.Normalize(
+            UnityQuat.Mul(Quaternion.CreateFromAxisAngle(aim, angle), swing)
+        );
     }
 
     /// <summary>Same rotation axis, angle limited to <paramref name="maxDeg"/>.</summary>

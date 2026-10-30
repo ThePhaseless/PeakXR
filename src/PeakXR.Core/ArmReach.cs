@@ -95,6 +95,20 @@ public static class ArmReach
         return 1f + (k - 1f) * MathF.Min(weight, 1f);
     }
 
+    /// <summary>
+    /// How far a held item's grip rides out past the ragdoll hand it is welded to, world offset: an arm that cannot
+    /// reach its controller left the item that far short of it (#23: 0.12 m standing still, the arm 0.60 m). Out along
+    /// the shoulder-to-<paramref name="bone"/> line by the arm's shortfall, never past <see cref="DrawnReach"/>, so the
+    /// item sits on its controller and the drawn arm stretched to it holds it; zero within reach.
+    /// </summary>
+    public static Vector3 HeldShift(Vector3 shoulder, Vector3 bone, float avatarReach)
+    {
+        var off = bone - shoulder;
+        float d = off.Length();
+        float shift = Math.Clamp(d - avatarReach, 0f, DrawnReach(avatarReach) - avatarReach);
+        return shift > 0f ? off * (shift / d) : Vector3.Zero;
+    }
+
     /// <summary><see cref="GhostReach"/> while the arm is drawn stretched: the ghost shows only past where the
     /// drawn hand can follow.</summary>
     public static float DrawnGhostReach(float avatarReach, float playerReach, float mapWeight) =>

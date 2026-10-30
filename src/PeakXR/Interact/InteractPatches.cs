@@ -292,30 +292,49 @@ internal static class InteractPatches
             );
             var velocity =
                 body + (hand.sqrMagnitude > 1e-6f ? hand.normalized * speed : Vector3.zero);
+            float minCharge = sticky != null ? sticky.throwChargeRequirement : 0f;
             float charge = HandThrow.Charge(
                 speed,
                 __instance.minThrowForce,
                 __instance.maxThrowForce,
                 mult,
-                sticky != null ? sticky.throwChargeRequirement : 0f
+                minCharge
             );
-            var lookDir = ThrowAimCue.LookDirection(c);
-            item.rig.linearVelocity =
-                velocity
-                - lookDir
-                    * HandThrow.LookSpeed(
-                        charge,
-                        __instance.minThrowForce,
-                        __instance.maxThrowForce,
-                        mult
-                    );
-            __instance.throwChargeLevel = charge;
+            Send(c, __instance, item, velocity.N(), charge, minCharge);
+        }
+
+        /// <summary>Leaves the throw on the held item and in the charge vanilla's DropItemRpc sends (CharacterItems.cs:295):
+        /// no charge unless a sticky item needs one, so the master adds no force along its lagging copy of the look
+        /// (<see cref="HandThrow.Release"/>, #30). The throw animation vanilla starts from the charge (:283-284) is
+        /// started here instead.</summary>
+        private static void Send(
+            Character c,
+            CharacterItems items,
+            Item item,
+            System.Numerics.Vector3 launch,
+            float charge,
+            float minCharge
+        )
+        {
+            if (charge > 0.1f && c.refs.animations != null)
+                c.refs.animations.throwTime = 0.125f;
+            float lookSpeed = HandThrow.LookSpeed(
+                charge,
+                items.minThrowForce,
+                items.maxThrowForce,
+                item.throwForceMultiplier
+            );
+            float sent = charge;
+            item.rig.linearVelocity = HandThrow
+                .Release(launch, ThrowAimCue.LookDirection(c).N(), lookSpeed, ref sent, minCharge)
+                .U();
+            items.throwChargeLevel = sent;
         }
 
         /// <summary>A button throw (the drop button held to charge, CharacterItems.cs:299-306) flies along the
-        /// holding hand's aim, as <see cref="ThrowAimCue"/> draws it, not along the head's look (:414): the held item's
-        /// velocity, read into the RPC at :267, takes the swap (<see cref="HandThrow.Aimed"/>). A backpack is sent
-        /// still (:268-272), so it keeps the look.</summary>
+        /// holding hand's aim, as <see cref="ThrowAimCue"/> draws it, not along the head's look (:414): the charge's
+        /// force goes along the aim on the held item's velocity, read into the RPC at :267 (<see cref="Send"/>). A
+        /// backpack is sent still (:268-272), so it keeps the look.</summary>
         private static void AimButtonThrow(Character c, CharacterItems items)
         {
             var item = c.data.currentItem;
@@ -334,16 +353,17 @@ internal static class InteractPatches
                 items.maxThrowForce,
                 item.throwForceMultiplier
             );
-            item.rig.linearVelocity = HandThrow
-                .Aimed(
-                    item.rig.linearVelocity.N(),
-                    aim.N(),
-                    ThrowAimCue.LookDirection(c).N(),
-                    lookSpeed
-                )
-                .U();
+            var sticky = c.data.currentStickyItem;
+            Send(
+                c,
+                items,
+                item,
+                (item.rig.linearVelocity + aim.normalized * lookSpeed).N(),
+                charge,
+                sticky != null ? sticky.throwChargeRequirement : 0f
+            );
             Plugin.Log.LogInfo(
-                $"[interact] button throw along the hand: charge {charge:0.00}, {Vector3.Angle(aim, ThrowAimCue.LookDirection(c)):0} deg off the look"
+                $"[interact] button throw along the hand: charge {charge:0.00} (sent {items.throwChargeLevel:0.00}), {Vector3.Angle(aim, ThrowAimCue.LookDirection(c)):0} deg off the look"
             );
         }
     }

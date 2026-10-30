@@ -1044,10 +1044,17 @@ internal sealed partial class SelfTestRunner
     {
         var hand = c.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
         var found = new List<string>();
-        foreach (var joint in hand.GetComponents<FixedJoint>())
-            found.Add(
-                "weld to " + (joint.connectedBody != null ? joint.connectedBody.name : "the world")
-            );
+        var elbow = c.refs.ragdoll.partDict[left ? BodypartType.Elbow_L : BodypartType.Elbow_R].Rig;
+        foreach (var joint in hand.GetComponents<Joint>())
+        {
+            // The ragdoll's own joint ties the hand to its elbow (RigCreator.cs:160); every other one is a weld (the
+            // held item's is a ConfigurableJoint, AvatarPoseDriver.AttachToHoldingHand).
+            if (joint.connectedBody != elbow)
+                found.Add(
+                    "weld to "
+                        + (joint.connectedBody != null ? joint.connectedBody.name : "the world")
+                );
+        }
         foreach (
             var col in Physics.OverlapSphere(
                 hand.position,

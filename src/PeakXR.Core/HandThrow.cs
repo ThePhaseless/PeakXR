@@ -4,8 +4,8 @@ namespace PeakXR.Core;
 /// The throw charge a hand throw sends. Vanilla's <c>DropItemRpc</c> (CharacterItems.cs:385-428) adds
 /// <c>0.5 * multiplier * (minThrowForce + (maxThrowForce - minThrowForce) * charge)</c> along the look direction
 /// for any charge above 0. A hand throw sends the charge that force would have taken to reach the hand's own speed,
-/// so a hard swing is a charged throw (sticky items need one, :277-289), and the held item's velocity is reduced by
-/// the look force the master will add, so the item still leaves along the hand.
+/// so a hard swing is a charged throw (sticky items need one, :277-289). <see cref="Release"/> then sends the charge
+/// only where a sticky item needs it, so the item leaves along the hand.
 /// </summary>
 public static class HandThrow
 {
@@ -58,21 +58,28 @@ public static class HandThrow
     }
 
     /// <summary>
-    /// The velocity to leave on the held item for a button throw that should fly along <paramref name="aim"/>: the
-    /// master adds <paramref name="lookSpeed"/> along <paramref name="look"/> (vanilla's head-aimed force), so that
-    /// force is swapped for the same force along the aim. No aim or no charge keeps <paramref name="velocity"/>.
+    /// The velocity to leave on the held item, and the charge to send, so a throw leaves at <paramref name="launch"/>.
+    /// For any charge the master adds <paramref name="lookSpeed"/> along its own copy of the thrower's look
+    /// (CharacterItems.cs:391-395, :414, :426), which on a client lags the head, so taking that force off here left a
+    /// lean toward where the head turned (#30). With no charge it adds nothing: the whole launch rides the item's
+    /// velocity, exactly, on every client. Only a sticky item (<paramref name="minCharge"/> above 0) needs its charge
+    /// (:277-289) and keeps it, the look force taken off along <paramref name="look"/>.
     /// </summary>
-    public static System.Numerics.Vector3 Aimed(
-        System.Numerics.Vector3 velocity,
-        System.Numerics.Vector3 aim,
+    public static System.Numerics.Vector3 Release(
+        System.Numerics.Vector3 launch,
         System.Numerics.Vector3 look,
-        float lookSpeed
+        float lookSpeed,
+        ref float charge,
+        float minCharge
     )
     {
-        if (lookSpeed <= 0f || aim.LengthSquared() < 1e-8f || look.LengthSquared() < 1e-8f)
-            return velocity;
-        return velocity
-            + (System.Numerics.Vector3.Normalize(aim) - System.Numerics.Vector3.Normalize(look))
-                * lookSpeed;
+        if (minCharge <= 0f || charge <= 0f)
+        {
+            charge = 0f;
+            return launch;
+        }
+        return look.LengthSquared() < 1e-8f
+            ? launch
+            : launch - System.Numerics.Vector3.Normalize(look) * lookSpeed;
     }
 }

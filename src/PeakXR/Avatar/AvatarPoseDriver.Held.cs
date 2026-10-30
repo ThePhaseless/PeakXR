@@ -1,5 +1,4 @@
 using PeakXR.Core;
-using PeakXR.VR;
 using UnityEngine;
 
 namespace PeakXR.Avatar;
@@ -54,11 +53,36 @@ public partial class AvatarPoseDriver
         DestroyItemJoint();
         DestroyHandJoint(BodypartType.Hand_L, item.rig);
         DestroyHandJoint(BodypartType.Hand_R, item.rig);
-        itemJoint = handBody.gameObject.AddComponent<FixedJoint>();
-        itemJoint.connectedBody = item.rig;
+        // A weld whose anchor can move: the item rides out past an arm too short for its controller (HeldShift).
+        var joint = handBody.gameObject.AddComponent<ConfigurableJoint>();
+        joint.autoConfigureConnectedAnchor = false;
+        joint.connectedBody = item.rig;
+        joint.anchor = Vector3.zero;
+        joint.connectedAnchor = item.rig.transform.InverseTransformPoint(bonePos);
+        joint.xMotion = joint.yMotion = joint.zMotion = ConfigurableJointMotion.Locked;
+        joint.angularXMotion =
+            joint.angularYMotion =
+            joint.angularZMotion =
+                ConfigurableJointMotion.Locked;
+        itemJoint = joint;
         itemJointLeft = left;
         return true;
     }
+
+    /// <summary>This driver's own weld holds <paramref name="item"/> (the game's are FixedJoints on the hands).</summary>
+    internal bool Welds(Rigidbody item) => itemJoint != null && itemJoint.connectedBody == item;
+
+    /// <summary>The weld's anchor on the <paramref name="left"/> hand body: the item's grip out along the shoulder
+    /// to <paramref name="bone"/> line by what the arm cannot reach (Core <see cref="ArmReach.HeldShift"/>, #23), so the
+    /// item sits on its controller and the drawn arm stretched to it holds it (<see cref="DrawnHands"/>). None while
+    /// both hands hold it: it sits between them.</summary>
+    private Vector3 HeldShift(bool left, Vector3 bone) =>
+        !Pose.TwoHandHold && PhysicsShoulder(left, out var shoulder, out float arm)
+            ? HandBody(left)
+                .transform.InverseTransformVector(
+                    ArmReach.HeldShift(shoulder.N(), bone.N(), arm).U()
+                )
+            : Vector3.zero;
 
     /// <summary>Where the <paramref name="left"/> hand bone sits on <paramref name="item"/> as it lies now: the
     /// controller-held grip, mapped back (bone = item * X^-1 * T).</summary>
@@ -226,6 +250,8 @@ public partial class AvatarPoseDriver
         {
             if (wasFree)
                 AttachToHoldingHand(item);
+            if (itemJoint != null && itemJointLeft == left)
+                itemJoint.anchor = HeldShift(left, ctrlBone);
             // Welded or free, the held item passes through its holder's body: crouched at a stoop, a welded apple
             // met the knees and held the hand 0.31 m off its controller while the free one, already passing the
             // body, let the same arm reach 0.12 m (vr65-66 vr.230).
@@ -842,37 +868,35 @@ public partial class AvatarPoseDriver
         {
             // Its barrel or blade along the hand's aim, turned about the fist (Core GripMath.AlongAim): the game's
             // Hand_R puts it 54-109 degrees off a real controller's aim pose (offline, from the prefabs), and shots go
-            // along it (HandAim.TryBarrel), not where the controller points. The grip leaves the fist by what that
-            // takes (launchers and piton 26-67 degrees, the blowgun about 100).
+            // along it (HandAim.TryBarrel), not where the controller points. The turn moves the fist's tube least,
+            // the item held the other way round when that is less (the blowgun's barrel leaves the bottom of the fist).
             var p = pos.N();
             var r = rot.N();
-            var turn = GripMath.AlongAim(AimInGrip(rig.IsLeft).N(), ref p, ref r).U();
+            var turn = GripMath.AlongAim(AimInGrip(rig.IsLeft).N(), ref p, ref r);
             pos = p.U();
             rot = r.U();
-            lastAimTilt = Vector3.Angle(turn * Vector3.forward, Vector3.forward);
+            lastAimTilt = GripMath.FistTilt(turn);
         }
         return true;
     }
 
-    /// <summary>A modded peer's pose stream carries grips only: its VR players' aim is taken as the grip turned by
-    /// GripFrame.AimFromGrip, within about 15 degrees of a real controller's (40-60 degrees off the grip's +Z).</summary>
+    /// <summary>A peer whose pose carries no aim (a build before the aim offsets, #26): its aim is taken as the grip
+    /// turned by GripFrame.AimFromGrip, within about 15 degrees of a real controller's (40-60 degrees off the grip's
+    /// +Z).</summary>
     private static readonly Vector3 PeerAimInGrip = GripFrame.AimFromGrip.U() * Vector3.forward;
 
     /// <summary>Degrees the last <see cref="ItemInController"/> turned the grip out of the fist (its +Z, the fist's
     /// tube) to lay the barrel along the aim; 0 when it did not.</summary>
     private float lastAimTilt;
 
-    /// <summary>The <paramref name="left"/> hand's aim direction in its grip frame: the local player's tracked aim
-    /// pose against its grip (VRRig), a peer's from <see cref="PeerAimInGrip"/>.</summary>
+    /// <summary>The <paramref name="left"/> hand's aim direction in its grip frame, from the pose: the tracked aim pose
+    /// against its grip (<see cref="AvatarPose.HasAim"/>, the local player's and a modded peer's alike), else
+    /// <see cref="PeerAimInGrip"/>.</summary>
     private Vector3 AimInGrip(bool left)
     {
-        var rig = VRRig.Instance;
-        if (!Owner.IsLocal || !VRSession.Active || rig == null)
-            return PeerAimInGrip;
-        var grip = rig.Hand(left);
-        var aim = rig.Aim(left);
-        return grip != null && aim != null
-            ? Quaternion.Inverse(grip.localRotation) * (aim.localRotation * Vector3.forward)
+        var pose = Pose;
+        return pose.HasAim
+            ? (left ? pose.LeftAimInGrip : pose.RightAimInGrip) * Vector3.forward
             : PeerAimInGrip;
     }
 
