@@ -1648,7 +1648,7 @@ internal sealed partial class SelfTestRunner
     /// the head moves against the scripted, head-placed hands (issues #53-#56).</summary>
     static string StanceNote() =>
         F(
-            $"stance walking {Rig.RigDriver.StanceWalking}, debt {Rig.RigDriver.StanceDebt.magnitude:0.00} m"
+            $"stance walking {Rig.RigDriver.FollowWalking}, debt {Rig.RigDriver.StanceDebt.magnitude:0.00} m"
         );
 
     /// <summary>Rounding and float slack on <see cref="MaxHandFromEye"/>, so a pose built to the limit passes.</summary>
