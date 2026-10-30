@@ -935,11 +935,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.266: a menu's plate and placement count only what its scroll list shows. The longest game tab's list is
-    /// scrolled to its top, then its end. Rows out of the viewport sit under its Mask or RectMask2D and draw nothing,
-    /// so the plate's content bounds stay put within 4 px (WorldCanvases.Clip cuts each graphic to the masks above
-    /// it, the rule HudPlate.Visible uses). Counted whole, those rows grew the plate toward whichever end they hung
-    /// off and shifted the panel.
+    /// vr.266: a menu's plate and placement count only what its scroll list shows. The step builds its own list on
+    /// the open settings menu (a RectMask2D viewport near the canvas's bottom edge, rows four times its height), so it
+    /// runs on any rig, whether or not a game tab scrolls. The list is scrolled to its top, then its end. Rows out of
+    /// the viewport draw nothing, so the plate's content bounds stay put within 4 px (WorldCanvases.Clip cuts each
+    /// graphic to the masks above it, the rule HudPlate.Visible uses). Counted whole, the rows hanging below the view
+    /// at the top would stretch the plate to the canvas's bottom edge.
     /// </summary>
     IEnumerator PlateMaskCheck()
     {
@@ -952,78 +953,118 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var root = RootCanvasOf(FindAnyObjectByType<PauseMenuHandler>());
-        var menu = root != null ? root.GetComponentInChildren<SharedSettingsMenu>() : null;
-        var tabs = menu != null ? UISettingsFeature.TabsRef(menu) : null;
-        if (
-            tabs == null
-            || !LongestGameTab(tabs, out var longest, out _, out int most)
-            || longest == null
-        )
+        if (root == null)
         {
-            Fail("no settings menu or game tab");
+            Fail("no settings menu");
             yield break;
         }
-        tabs.Select(longest);
-        yield return Wait(0.8f);
-        if (!SettingsList(menu, out var list, out var viewport))
+        var list = BuildMaskList((RectTransform)root.transform, out var viewport);
+        try
         {
-            stepSkip =
-                $"the {longest.category} tab ({most} rows) fits its list, nothing scrolls out of view";
-            yield break;
-        }
-        if (!viewport.TryGetComponent<Mask>(out _) && !viewport.TryGetComponent<RectMask2D>(out _))
-        {
-            stepSkip =
-                $"the {longest.category} list's viewport has no Mask or RectMask2D: its rows draw outside it";
-            yield break;
-        }
-        // Past the scroll rescan and one slow re-measure (0.5 s) each.
-        list.verticalNormalizedPosition = 1f;
-        yield return Wait(1f);
-        bool atTop = WorldCanvases.TryBackplate(
-            root,
-            out _,
-            out var lo1,
-            out var hi1,
-            out _,
-            out _,
-            out _
-        );
-        int hiddenTop = OutOfView(list, viewport, root);
-        list.verticalNormalizedPosition = 0f;
-        yield return Wait(1f);
-        bool atEnd = WorldCanvases.TryBackplate(
-            root,
-            out _,
-            out var lo2,
-            out var hi2,
-            out _,
-            out _,
-            out _
-        );
-        int hiddenEnd = OutOfView(list, viewport, root);
-        yield return ShotAt("vr-266-menu-plate-masks", CentreOf(root.transform));
-        var d1 = lo1 - lo2;
-        var d2 = hi1 - hi2;
-        float drift = Mathf.Max(
-            Mathf.Max(Mathf.Abs(d1.x), Mathf.Abs(d1.y)),
-            Mathf.Max(Mathf.Abs(d2.x), Mathf.Abs(d2.y))
-        );
-        var note =
-            $"{longest.category} tab: plate content {lo1}..{hi1} at the top ({hiddenTop} graphics out of view on the "
-            + $"canvas), {lo2}..{hi2} at the end ({hiddenEnd}), {drift:0} px apart";
-        if (!atTop || !atEnd)
-            Fail("no menu backplate shown; " + note);
-        else if (hiddenTop + hiddenEnd == 0)
-            stepSkip =
-                "no row hung out of the list's view on the canvas, so masks change nothing; "
-                + note;
-        else if (drift > 4f)
-            Fail(
-                "the plate moved with the scroll: rows out of the list's view were counted; " + note
+            // Past the plate's slow re-measure (0.5 s) after each scroll.
+            list.verticalNormalizedPosition = 1f;
+            yield return Wait(1f);
+            bool atTop = WorldCanvases.TryBackplate(
+                root,
+                out _,
+                out var lo1,
+                out var hi1,
+                out _,
+                out _,
+                out _
             );
-        else
-            stepNote = note;
+            int hiddenTop = OutOfView(list, viewport, root);
+            list.verticalNormalizedPosition = 0f;
+            yield return Wait(1f);
+            bool atEnd = WorldCanvases.TryBackplate(
+                root,
+                out _,
+                out var lo2,
+                out var hi2,
+                out _,
+                out _,
+                out _
+            );
+            int hiddenEnd = OutOfView(list, viewport, root);
+            yield return ShotAt("vr-266-menu-plate-masks", CentreOf(root.transform));
+            var d1 = lo1 - lo2;
+            var d2 = hi1 - hi2;
+            float drift = Mathf.Max(
+                Mathf.Max(Mathf.Abs(d1.x), Mathf.Abs(d1.y)),
+                Mathf.Max(Mathf.Abs(d2.x), Mathf.Abs(d2.y))
+            );
+            var note =
+                $"test list: plate content {lo1}..{hi1} at the top ({hiddenTop} rows out of view on the canvas), "
+                + $"{lo2}..{hi2} at the end ({hiddenEnd}), {drift:0} px apart";
+            if (!atTop || !atEnd)
+                Fail("no menu backplate shown; " + note);
+            else if (hiddenTop == 0 || hiddenEnd == 0)
+                Fail("the test list hung no row out of its view on the canvas; " + note);
+            else if (drift > 4f)
+                Fail(
+                    "the plate moved with the scroll: rows out of the list's view were counted; "
+                        + note
+                );
+            else
+                stepNote = note;
+        }
+        finally
+        {
+            Destroy(list.gameObject);
+        }
+    }
+
+    /// <summary>
+    /// vr.266: a scroll list owned by the step, on <paramref name="canvas"/>: a 360x160 px RectMask2D viewport whose
+    /// bottom sits 200 px above the canvas's bottom edge, and 16 rows of 40 px. Scrolled to the top, rows hang below
+    /// the view down to the canvas's edge; scrolled to the end, they hang above it.
+    /// </summary>
+    static ScrollRect BuildMaskList(RectTransform canvas, out RectTransform viewport)
+    {
+        const float Width = 360f;
+        const float ViewHeight = 160f;
+        const float Row = 40f;
+        const int Rows = 16;
+        int layer = canvas.gameObject.layer;
+        RectTransform Child(string name, Transform parent)
+        {
+            var go = new GameObject(name, typeof(RectTransform)) { layer = layer };
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, false);
+            return rt;
+        }
+        var box = Child("PeakXR_SelfTestMaskList", canvas);
+        box.anchorMin = box.anchorMax = box.pivot = new Vector2(0.5f, 0f);
+        box.anchoredPosition = new Vector2(0f, 200f);
+        box.sizeDelta = new Vector2(Width, ViewHeight);
+        viewport = Child("Viewport", box);
+        viewport.anchorMin = Vector2.zero;
+        viewport.anchorMax = Vector2.one;
+        viewport.sizeDelta = Vector2.zero;
+        viewport.gameObject.AddComponent<RectMask2D>();
+        var content = Child("Content", viewport);
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = Vector2.one;
+        content.pivot = new Vector2(0.5f, 1f);
+        content.sizeDelta = new Vector2(0f, Rows * Row);
+        for (int i = 0; i < Rows; i++)
+        {
+            var row = Child("Row" + i, content);
+            row.anchorMin = new Vector2(0f, 1f);
+            row.anchorMax = Vector2.one;
+            row.pivot = new Vector2(0.5f, 1f);
+            row.anchoredPosition = new Vector2(0f, -i * Row);
+            row.sizeDelta = new Vector2(0f, Row - 6f);
+            row.gameObject.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.6f);
+        }
+        var list = box.gameObject.AddComponent<ScrollRect>();
+        list.viewport = viewport;
+        list.content = content;
+        list.horizontal = false;
+        list.movementType = ScrollRect.MovementType.Clamped;
+        list.inertia = false;
+        Canvas.ForceUpdateCanvases();
+        return list;
     }
 
     /// <summary>vr.266: graphics of the list drawn on the canvas but wholly outside its viewport.</summary>
