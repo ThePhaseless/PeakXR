@@ -26,7 +26,9 @@ public static class UseHands
 /// (CharacterItems.cs:1019), and while hanging the uses run the held item. A trigger squeezed into a climb, or held while
 /// its role (primary or secondary) changed, stays muted until it opens: no fresh press comes out of it. A press made
 /// after the hand settled on the climber (<see cref="ClimbPress"/>) and kept down for <see cref="HoldSeconds"/> sets a
-/// piton at that hand (<see cref="Piton"/>), so a closing fist never does.
+/// piton at that hand (<see cref="Piton"/>), so a closing fist never does. Any closing fist is the same: a trigger
+/// squeezed with its grip (<see cref="InFist"/>) is no use until it opens, so a fist closing on a pickup never starts
+/// using the item it took (issue #48).
 /// </summary>
 public sealed class UseTrigger
 {
@@ -62,7 +64,9 @@ public sealed class UseTrigger
     /// <param name="climbs">The hand's grip holds the climber.</param>
     /// <param name="primary">The hand's trigger is the primary use this frame (<see cref="UseHands"/>).</param>
     /// <param name="dt">Frame time.</param>
-    public void Update(bool trigger, bool climbs, bool primary, float dt)
+    /// <param name="fist">The hand's grip is still closing (<see cref="InFist"/>): a trigger held now is part of the
+    /// fist.</param>
+    public void Update(bool trigger, bool climbs, bool primary, float dt, bool fist = false)
     {
         bool pressed = trigger && !held;
         ClimbPress = pressed && climbs && climbing >= SettleSeconds;
@@ -72,15 +76,20 @@ public sealed class UseTrigger
             muted = false;
         else if (pressed)
         {
-            muted = climbs;
+            muted = climbs || fist;
             pressedPrimary = primary;
         }
-        else if (climbs || primary != pressedPrimary)
+        else if (climbs || fist || primary != pressedPrimary)
             muted = true;
         climbing = climbs ? climbing + dt : 0f;
         held = trigger;
         Down = trigger && !muted;
     }
+
+    /// <summary>A grip closed less than <see cref="SettleSeconds"/> ago is still closing: a full fist's index reaches
+    /// the trigger a few frames after the grip.</summary>
+    public static bool InFist(bool gripHeld, float gripClosedFor) =>
+        gripHeld && gripClosedFor < SettleSeconds;
 
     public void Reset()
     {

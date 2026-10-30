@@ -38,8 +38,12 @@ internal static class PhysicalInteraction
         public readonly AnalogButton Grip = new(0.6f, 0.4f);
         public readonly AnalogButton Trigger = new(0.6f, 0.4f);
 
-        /// <summary>The trigger as this hand's use button: muted while the hand holds the climber.</summary>
+        /// <summary>The trigger as this hand's use button: muted while the hand holds the climber, and when squeezed
+        /// with a closing fist.</summary>
         public readonly UseTrigger Use = new();
+
+        /// <summary>When the grip last closed (<see cref="UseTrigger.InFist"/>).</summary>
+        public float GripAt = -10f;
         public readonly ThrowEstimator Throw = new();
 
         /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
@@ -481,6 +485,8 @@ internal static class PhysicalInteraction
         );
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
+        if (hand.Grip.Pressed)
+            hand.GripAt = now;
         // The trigger squeeze of a finger-gun ping cancels the pointing grip's pending interact.
         if (
             hand.Action == GripPressAction.Interact
@@ -2901,10 +2907,18 @@ internal static class PhysicalInteraction
         bool chord = one && secondaryChord;
         // A hand on the wall, rope, vine or handle squeezes its trigger with the grip: no use, so a climbing fist never
         // sets a piton or runs the held item (UseTrigger). A deliberate press held on a wall grip sets a piton at that
-        // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item.
+        // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item. A full fist's
+        // trigger, squeezed with its grip, is no use either: a fist closed on a pickup started using the item it took
+        // (issue #48: an Apple started eating a frame after it landed).
         foreach (var hand in Hands)
         {
-            hand.Use.Update(hand.Trigger.Held, Climbs(hand), hand == primaryHand, dt);
+            hand.Use.Update(
+                hand.Trigger.Held,
+                Climbs(hand),
+                hand == primaryHand,
+                dt,
+                UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
+            );
             if (hand.Use.ClimbPress && cfg.TriggerUse && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,
