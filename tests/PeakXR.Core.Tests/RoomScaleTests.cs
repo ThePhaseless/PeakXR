@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
-
 namespace PeakXR.Core.Tests;
 
 public class RoomScaleTests
@@ -24,331 +21,48 @@ public class RoomScaleTests
     }
 
     [Fact]
-    public void LeaningInsideRadius_RequestsNothing()
+    public void Absorb_AWalkAndItsCoast_NeverMoveTheView()
     {
-        var f = new RoomScaleFollow { LeanRadius = 0.2f };
-        var move = f.Update(new Vector2(0.15f, 0f), Vector2.Zero, canFollow: true);
-        Assert.Equal(Vector2.Zero, move);
-    }
-
-    [Fact]
-    public void WalkingAway_RequestsMoveTowardHead()
-    {
-        // The walk ramps from the stop radius (half the lean radius), so it keeps going until the head is well inside.
-        var f = new RoomScaleFollow { LeanRadius = 0.2f, RampDistance = 0.3f };
-        var move = f.Update(new Vector2(0f, 0.35f), Vector2.Zero, canFollow: true);
-        TestUtil.Near(0f, move.X);
-        TestUtil.Near(0.25f / 0.3f, move.Y);
-        move = f.Update(new Vector2(0f, 2f), Vector2.Zero, canFollow: true);
-        TestUtil.Near(1f, move.Y);
-    }
-
-    /// <summary>
-    /// Runs the follow at 90 Hz against a body that walks after its request like the game's driven ragdoll (speed
-    /// eases toward input times 1.5 m/s with a 0.12 s time constant, CharacterMovement drag 0.85 per tick). Returns
-    /// the body's forward travel per frame.
-    /// </summary>
-    static List<float> Walk(
-        RoomScaleFollow f,
-        Func<float, Vector2> head,
-        float seconds,
-        float speed = 1.5f,
-        float tau = 0.12f
-    )
-    {
-        const float dt = 1f / 90f;
-        var travel = new List<float>();
-        float body = 0f;
-        var v = Vector2.Zero;
-        var delta = Vector2.Zero;
-        for (float t = 0f; t < seconds; t += dt)
-        {
-            var request = f.Update(head(t), delta, canFollow: true, dt);
-            v += (request * speed - v) * (1f - MathF.Exp(-dt / tau));
-            delta = v * dt;
-            body += delta.Y;
-            travel.Add(body);
-        }
-        return travel;
-    }
-
-    static Func<float, Vector2> Lean(float from, float to, float start, float seconds) =>
-        t => new Vector2(0f, from + (to - from) * Math.Clamp((t - start) / seconds, 0f, 1f));
-
-    [Fact]
-    public void NaturalLean_DoesNotWalkTheBody()
-    {
-        // Leaning 0.3 m over a table and back up is upper-body work: the avatar bends, the character stays put.
-        var f = new RoomScaleFollow();
-        var forward = Walk(f, Lean(0f, 0.3f, 0.2f, 0.5f), 2f);
-        var back = Walk(f, Lean(0.3f, 0f, 0f, 0.5f), 2f);
-        Assert.True(
-            forward.Max(MathF.Abs) < 0.005f,
-            $"walked {forward.Max(MathF.Abs):0.000} m leaning"
-        );
-        Assert.True(
-            back.Max(MathF.Abs) < 0.005f,
-            $"walked {back.Max(MathF.Abs):0.000} m standing up"
-        );
-    }
-
-    [Fact]
-    public void LeanPastTheLimit_WalksOnceAndNeverBackAfterStandingUp()
-    {
-        var f = new RoomScaleFollow();
-        var lean = Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
-        Assert.True(lean[^1] > 0.05f, $"walked only {lean[^1]:0.000} m after a 0.45 m lean");
-        // Standing up leaves the body ahead of the head, inside the limit. It stays put: a walk back after standing
-        // up is the forward-and-back motion players reported.
-        var up = Walk(f, Lean(0.45f, 0f, 0f, 0.5f), 5f);
-        Assert.True(
-            up.Max() - up.Min() < 0.005f,
-            $"body moved {up.Max() - up.Min():0.000} m standing up"
-        );
-        // Instead the avatar's own lean eases to neutral: the stance it stood back up into counts as upright.
-        TestUtil.Near(f.Offset.Y, f.Neutral.Y, 0.01f);
-        Assert.True(f.Offset.Y < -0.2f, $"offset {f.Offset.Y:0.000} m");
-    }
-
-    [Fact]
-    public void AbsorbInTheCameraFrame_SameAsInUpdate()
-    {
-        // The camera absorbs the body's travel the frame it moves the eye; the next Update then sees no delta.
-        var a = new RoomScaleFollow();
-        var b = new RoomScaleFollow();
-        var head = new Vector2(0f, 0.5f);
-        a.Update(head, Vector2.Zero, true, 0.01f);
-        b.Update(head, Vector2.Zero, true, 0.01f);
-        var step = new Vector2(0.01f, 0.03f);
-        var ra = a.Update(head, step, true, 0.01f);
-        b.Absorb(head, step);
-        var rb = b.Update(head, Vector2.Zero, true, 0.01f);
-        TestUtil.Near(a.Anchor.X, b.Anchor.X, 1e-6f);
-        TestUtil.Near(a.Anchor.Y, b.Anchor.Y, 1e-6f);
-        TestUtil.Near(ra.Y, rb.Y, 1e-6f);
-    }
-
-    [Fact]
-    public void FollowThatCoastsOntoTheHead_StillNeverWalksBack()
-    {
-        // Run 31: the far lean's walk coasted until the anchor reached the head (offset 0.007 m), so standing back
-        // up left the head 0.43 m behind, past the lean radius, and the body walked 0.44 m back.
-        var f = new RoomScaleFollow();
-        Walk(f, Lean(0f, 0.5f, 0f, 0.5f), 3f, speed: 3f, tau: 0.5f);
-        Assert.True(
-            f.Offset.Y < 0.1f,
-            $"the walk did not coast onto the head: offset {f.Offset.Y:0.000}"
-        );
-        var up = Walk(f, Lean(0.5f, 0f, 0f, 0.5f), 5f, speed: 3f, tau: 0.5f);
-        Assert.True(
-            up.Max() - up.Min() < 0.005f,
-            $"body walked {up.Max() - up.Min():0.000} m back after standing up"
-        );
-    }
-
-    [Fact]
-    public void AfterAFollow_AStepFarBehindIt_StillFollows()
-    {
-        // Only the stance the follow walked away from counts as a lean; stepping well behind it walks the body back.
-        var f = new RoomScaleFollow();
-        Walk(f, Lean(0f, 0.5f, 0f, 0.5f), 3f);
-        float before = f.Anchor.Y;
-        var back = Walk(f, Lean(0.5f, -1.0f, 0f, 1f), 4f);
-        Assert.True(back[^1] < -0.3f, $"walked only {back[^1]:0.000} m after stepping 1.5 m back");
-        Assert.True(f.Anchor.Y < before);
-    }
-
-    [Fact]
-    public void Neutral_EasesNeverJumps_AndOnlyAgainstTheFollow()
-    {
-        var f = new RoomScaleFollow();
-        Walk(f, Lean(0f, 0.45f, 0f, 0.5f), 3f);
-        float last = 0f;
-        float steepest = 0f;
-        for (int i = 0; i < 450; i++)
-        {
-            float t = i / 90f;
-            f.Update(Lean(0.45f, 0f, 0f, 0.5f)(t), Vector2.Zero, true, 1f / 90f);
-            steepest = MathF.Max(steepest, MathF.Abs(f.Neutral.Y - last) * 90f);
-            last = f.Neutral.Y;
-        }
-        Assert.True(steepest < 1f, $"neutral moved {steepest:0.00} m/s");
-
-        // Back over the body: neutral returns to zero. A lean the follow's way stays a lean.
-        float over = f.Anchor.Y;
-        Walk(f, Lean(0f, over + 0.3f, 0f, 0.5f), 4f);
-        Assert.True(MathF.Abs(f.Neutral.Y) < 0.01f, $"neutral {f.Neutral.Y:0.000} m");
-        Assert.True(f.Offset.Y > 0.25f);
-    }
-
-    [Fact]
-    public void HeldLeanInsideTheLimit_StaysALean()
-    {
-        var f = new RoomScaleFollow();
-        var held = Walk(f, Lean(0f, -0.3f, 0f, 0.5f), 6f);
-        Assert.True(held.Max(MathF.Abs) < 0.005f, $"walked {held.Max(MathF.Abs):0.000} m");
-        Assert.Equal(Vector2.Zero, f.Neutral);
-        Walk(f, Lean(0f, 0.7f, 0f, 0.4f), 4f);
-        var ahead = Walk(f, _ => new Vector2(0f, 0.7f), 4f);
-        Assert.True(ahead.Max() - ahead.Min() < 0.005f, "moved after a step ahead");
-        Assert.True(f.Neutral.Length() < 1e-4f, "a stance ahead, the follow's way, became neutral");
-    }
-
-    [Fact]
-    public void AfterAStep_HeadSwayDoesNotRockTheBody()
-    {
-        // The follow must stop well inside the lean radius: stopping on its edge let every breath of sway start
-        // another shuffle, and the character rocked forward and back while the player stood still.
-        var f = new RoomScaleFollow();
-        Walk(f, Lean(0f, 0.7f, 0f, 0.4f), 4f);
-        var sway = Walk(f, t => new Vector2(0f, 0.7f + 0.03f * MathF.Sin(MathF.PI * t)), 6f);
-        float peak = sway.Max() - sway.Min();
-        Assert.True(peak < 0.005f, $"body rocked {peak:0.000} m peak to peak");
-    }
-
-    [Fact]
-    public void BodyCatchingUp_ShiftsAnchorButNeverPastTheHead()
-    {
-        var f = new RoomScaleFollow();
-        var head = new Vector2(0f, 0.5f);
-        f.Update(head, Vector2.Zero, true);
-        f.Update(head, new Vector2(0.05f, 0.3f), true);
-        // 0.3 m in one update is a jump, not a walk's frame: only the part toward the head is taken.
-        TestUtil.Near(0f, f.Anchor.X);
-        TestUtil.Near(0.3f, f.Anchor.Y);
-        f.Update(head, new Vector2(0f, 1f), true);
-        TestUtil.Near(0.5f, f.Anchor.Y);
-    }
-
-    [Fact]
-    public void BodyPushedAway_KeepsAnchor()
-    {
-        var f = new RoomScaleFollow();
-        f.Update(new Vector2(0f, 0.5f), new Vector2(0f, -0.2f), true);
-        Assert.Equal(Vector2.Zero, f.Anchor);
-    }
-
-    [Fact]
-    public void SidewaysPush_Standing_StillMovesTheView()
-    {
-        // Not following: a push sideways is the world moving the body, and the view goes with it.
-        var f = new RoomScaleFollow();
-        f.Update(new Vector2(0f, 0.2f), Vector2.Zero, true, 0.01f);
-        f.Update(new Vector2(0f, 0.2f), new Vector2(0.1f, 0f), true, 0.01f);
-        Assert.Equal(0f, f.Anchor.X);
-    }
-
-    [Fact]
-    public void FollowWalk_GaitSwayAndSettle_NeverMoveTheView()
-    {
-        // Run 35: the far lean's walk swayed the body sideways (and it settled 0.12 m back and 0.02 m aside after),
-        // and the view rode the sideways part: 0.082 m peak to peak. While a follow walks and settles, the anchor
-        // takes all of the body's travel, so the view stays where the head is.
+        // While the stance walk walks and settles, the anchor takes all of the eye anchor's travel: its gait sway
+        // (run 35), its coast past the head and back (run 36). The view's world position moves by the anchor's
+        // travel less the room anchor's, which must stay zero.
         var f = new RoomScaleFollow();
         const float dt = 1f / 90f;
-        var head = new Vector2(0f, 0.5f);
         var view = Vector2.Zero;
-        float minX = 0f,
-            maxX = 0f,
-            minY = 0f,
-            maxY = 0f;
-        float body = 0f;
         var last = Vector2.Zero;
-        for (float t = 0f; t < 3f; t += dt)
+        float max = 0f;
+        for (float t = 0f; t < 2f; t += dt)
         {
-            float speed = t < 1.2f ? 0.3f : 0f;
-            var pos = new Vector2(0.04f * MathF.Sin(t * 9f) * (t < 1.5f ? 1f : 0f), body);
-            body += speed * dt;
+            float along =
+                t < 0.6f
+                    ? 0.48f * MathF.Sin(t / 0.6f * MathF.PI / 2f)
+                    : 0.48f - 0.08f * MathF.Min(1f, (t - 0.6f) / 0.6f);
+            var pos = new Vector2(0.04f * MathF.Sin(t * 9f), along);
             var delta = pos - last;
             last = pos;
             var before = f.Anchor;
-            f.Update(head, delta, true, dt);
-            // The view's world position moves by the body's travel minus the anchor's (tracking space).
+            f.Absorb(delta);
             view += delta - (f.Anchor - before);
-            minX = MathF.Min(minX, view.X);
-            maxX = MathF.Max(maxX, view.X);
-            minY = MathF.Min(minY, view.Y);
-            maxY = MathF.Max(maxY, view.Y);
+            max = MathF.Max(max, view.Length());
         }
-        Assert.True(maxX - minX < 0.005f, $"view swayed {maxX - minX:0.000} m sideways");
-        Assert.True(maxY - minY < 0.005f, $"view moved {maxY - minY:0.000} m along the walk");
+        Assert.True(max < 1e-4f, $"view moved {max:0.000} m");
     }
 
     [Fact]
-    public void FollowWalk_OvershootingTheHead_NeverMovesTheView()
+    public void Absorb_LeavesAJumpToTheView()
     {
-        // Run 36: the origin was the same at every trace sample, yet moved 0.077 m within the far lean: the walk
-        // coasted onto the head (head offset 0.027 m at 538.69) and past it, and the anchor stopped at the head, so the
-        // overshoot reached the view until the body settled back.
+        // A warp or a knock moves the body farther in one frame than a walk can: the view goes with it.
         var f = new RoomScaleFollow();
-        const float dt = 1f / 90f;
-        var head = new Vector2(0f, 0.4f);
-        float view = 0f,
-            min = 0f,
-            max = 0f,
-            last = 0f;
-        for (float t = 0f; t < 3f; t += dt)
-        {
-            // 0.48 m out (0.08 m past the head) by 0.6 s, then 0.08 m back by 1.2 s.
-            float pos =
-                t < 0.6f ? 0.48f * MathF.Sin(t / 0.6f * MathF.PI / 2f)
-                : t < 1.2f ? 0.48f - 0.08f * (t - 0.6f) / 0.6f
-                : 0.4f;
-            var delta = new Vector2(0f, pos - last);
-            last = pos;
-            float before = f.Anchor.Y;
-            f.Update(head, delta, true, dt);
-            view += delta.Y - (f.Anchor.Y - before);
-            min = MathF.Min(min, view);
-            max = MathF.Max(max, view);
-        }
-        Assert.True(max - min < 0.005f, $"view moved {max - min:0.000} m");
-    }
-
-    [Fact]
-    public void GaitSway_DoesNotRatchetTheAnchor()
-    {
-        // Each step swings the body forward and back; only its net travel may reach the anchor.
-        var f = new RoomScaleFollow();
-        var head = new Vector2(0f, 0.5f);
-        for (int i = 0; i < 20; i++)
-        {
-            f.Update(head, new Vector2(0f, 0.03f), true);
-            f.Update(head, new Vector2(0f, -0.03f), true);
-        }
-        TestUtil.Near(0f, f.Anchor.Y);
-    }
-
-    [Fact]
-    public void BackSwing_NeverPullsTheAnchorBehindItsStart()
-    {
-        var f = new RoomScaleFollow();
-        var head = new Vector2(0f, 0.5f);
-        f.Update(head, new Vector2(0f, 0.1f), true);
-        f.Update(head, new Vector2(0f, -0.3f), true);
-        TestUtil.Near(0f, f.Anchor.Y);
-    }
-
-    [Fact]
-    public void CannotFollow_NoRequestNoAbsorb()
-    {
-        var f = new RoomScaleFollow();
-        var move = f.Update(new Vector2(0f, 0.5f), new Vector2(0f, 0.3f), canFollow: false);
-        Assert.Equal(Vector2.Zero, move);
+        f.Absorb(new Vector2(0f, f.MaxFollowStep + 0.05f));
         Assert.Equal(Vector2.Zero, f.Anchor);
     }
 
     [Fact]
-    public void FarOffset_NeedsRecenter()
+    public void Recenter_PutsTheAnchorOnTheHead()
     {
-        var f = new RoomScaleFollow { RecenterDistance = 1f };
-        f.Update(new Vector2(0f, 0.9f), Vector2.Zero, false);
-        Assert.False(f.RecenterNeeded);
-        f.Update(new Vector2(0f, 1.1f), Vector2.Zero, false);
-        Assert.True(f.RecenterNeeded);
-        f.Recenter(new Vector2(0f, 1.1f));
-        Assert.Equal(new Vector2(0f, 1.1f), f.Anchor);
-        Assert.False(f.RecenterNeeded);
+        var f = new RoomScaleFollow { Anchor = new Vector2(0.3f, -0.2f) };
+        f.Recenter(new Vector2(1f, 2f));
+        Assert.Equal(new Vector2(1f, 2f), f.Anchor);
     }
 
     [Theory]

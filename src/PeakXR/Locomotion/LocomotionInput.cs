@@ -27,9 +27,9 @@ internal static class LocomotionInput
 
     /// <summary>Head-to-body gap, the stall, and frames the body could not follow while the head was past the lean
     /// (self-test: vr.140's stalled follow).</summary>
-    internal static float FollowGap => Follow.Offset.Length();
+    internal static float FollowGap { get; private set; }
 
-    internal static bool FollowStalled => Follow.Stalled;
+    internal static bool FollowStalled => Stance.Blocked;
     internal static int FollowDrops { get; private set; }
     private static readonly RecenterFade Fade = new();
     private static readonly object FadeOwner = new();
@@ -42,32 +42,32 @@ internal static class LocomotionInput
     private static bool wroteSticky;
     private static Vector3 lastBody;
     private static bool hadBody;
-    private static bool lastCanFollow;
+
+    /// <summary>The stance walk owned the body's travel at the last input update (walking or settling).</summary>
+    private static bool lastWalking;
     private static readonly System.Action<Vector3> AbsorbNowAction = AbsorbNow;
 
-    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: absorbs the eye anchor's travel into the room
-    /// anchor in the frame it moves, so the origin placed right after carries no frame of body motion (run 32: the
-    /// view moved 0.044 m at the end of a far-lean walk). The next <see cref="RoomScale"/> then sees no delta.</summary>
+    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: while the stance walk owns the body, absorbs
+    /// the eye anchor's travel into the room anchor in the frame it moves, so the origin placed right after carries no
+    /// frame of body motion (run 32: the view moved 0.044 m at the end of a far-lean walk). Outside forces (wind, a
+    /// push) outside a walk still move body and view, as in vanilla.</summary>
     private static void AbsorbNow(Vector3 anchor)
     {
         var rig = VRRig.Instance;
-        if (!hadBody || !lastCanFollow || rig == null || rig.Origin == null || !VRInput.HeadTracked)
+        if (!hadBody || rig == null || rig.Origin == null || !VRInput.HeadTracked)
             return;
         var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
         lastBody = anchor;
+        if (!lastWalking)
+            return;
         Follow.Anchor = rig.RoomAnchor;
-        Follow.Absorb(LeanHead(), new NVector2(delta.x, delta.z));
+        Follow.Absorb(new NVector2(delta.x, delta.z));
         rig.RoomAnchor = Follow.Anchor;
     }
 
+    /// <summary>The one walk that puts the body under the head (<see cref="RigDriver.StanceDebt"/>): turns of every
+    /// kind, steps and leans in the room, and the step back while looking down.</summary>
     private static readonly StanceWalk Stance = new();
-
-    /// <summary>The tracked head (x, z) less its eyes' swing round the neck (<see cref="BodyStance.NeckSwing"/>): a
-    /// head turned in the room is the stance walk's (<see cref="RigDriver.StanceDebt"/>), so the follow, like the
-    /// lean, sees only a real lean or step.</summary>
-    private static NVector2 LeanHead() =>
-        new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z)
-        - BodyStance.NeckSwing(LookMath.ToLookValues(VRInput.HeadRotation.N()).X);
 
     private static bool warnedFar;
     private static bool pointTriggerLeft;
@@ -349,10 +349,11 @@ internal static class LocomotionInput
     private static float HeadYaw() => MoveInput.Yaw((VRInput.HeadRotation * Vector3.forward).N());
 
     /// <summary>
-    /// Room-scale: the camera feature keeps <see cref="VRRig.RoomAnchor"/> over the body, so stepping moves the view
-    /// exactly like the real head. Past the lean radius the body is walked after the head with stick input, and the
-    /// anchor follows the body as it arrives, so the view never moves on its own. A blocked body (wall, ledge,
-    /// climbing) past 1 m gets one fade-out, recenter, fade-in. No teleport, no rig pulling.
+    /// Room-scale: the camera feature keeps <see cref="VRRig.RoomAnchor"/> over the body's eyes, so stepping moves the
+    /// view exactly like the real head. The stance walk (<see cref="RigDriver.StanceDebt"/>, measured from the view)
+    /// walks the body under the head with stick input, and the anchor takes that walk's travel, so the view never
+    /// moves on its own. A blocked walk past the lean limit, or a head 1 m from a body that cannot follow, gets one
+    /// fade-out, recenter, fade-in. No teleport, no rig pulling.
     /// </summary>
     private static NVector2 RoomScale(Character c, bool stickIdle, float dt)
     {
@@ -364,9 +365,9 @@ internal static class LocomotionInput
         if (rig == null || rig.Origin == null || !VRInput.HeadTracked)
         {
             hadBody = false;
-            RigDriver.LeanNeutral = NVector2.Zero;
             Stance.Reset();
-            RigDriver.StanceWalking = false;
+            lastWalking = false;
+            RigDriver.FollowWalking = false;
             return NVector2.Zero;
         }
 
@@ -383,50 +384,39 @@ internal static class LocomotionInput
             hadBody
             && LocomotionConfig.RoomScale
             && stickIdle
-            // A walking stride can leave the ground for a frame; that must not end a follow (and its settle) or
-            // drop what the anchor absorbed, which hands the walk's travel to the view.
+            // A walking stride can leave the ground for a frame; that must not end a walk (and its settle), which
+            // hands the walk's travel to the view.
             && (data.isGrounded || data.sinceGrounded < 0.25f)
             && data.fullyConscious
             && !data.isClimbingAnything
             && data.currentClimbHandle == null
-            // The top-out walk moves the body onto the ledge under its own input: a follow toward the head behind
-            // it fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
+            // The top-out walk moves the body onto the ledge under its own input: a walk toward the head behind it
+            // fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
             && !PhysicalInteraction.Mantling
             && data.carrier == null;
-        var head = LeanHead();
-        Follow.LeanRadius = LocomotionConfig.LeanRadius;
+        var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.Anchor = rig.RoomAnchor;
-        // No lean left to stand up from (RoomScaleFollow.Update): the head within 3 cm of the calibrated standing
-        // eye height and the avatar not bending into a lean. Run 56's held far lean sat only 6 cm low with a 16
-        // degree bend; read as standing, it lost the stand-up's exemption and standing up walked the body back.
-        var pose = AvatarPoseDriver.Of(c);
-        bool standingTall =
-            Mathf.Abs(VRInput.HeadPosition.y - RigMath.TrackedEyeHeight(rig.HeightOffset)) < 0.03f
-            && (pose == null || pose.LeanDegrees < 1f);
-        var request = Follow.Update(
-            head,
-            new NVector2(delta.x, delta.z),
-            canFollow,
-            dt,
-            standingTall
-        );
-        if (!canFollow && stickIdle && Follow.Offset.Length() > Follow.LeanRadius)
+        if (lastWalking && canFollow)
+            Follow.Absorb(new NVector2(delta.x, delta.z));
+        var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
+        var debt = new NVector2(debt3.x, debt3.z);
+        Stance.AtOnce = LocomotionConfig.LeanRadius;
+        var request = Stance.Update(debt, canFollow, dt);
+        lastWalking = canFollow && Stance.Walking;
+        RigDriver.FollowWalking = lastWalking;
+        FollowGap = NVector2.Distance(head, Follow.Anchor);
+        // A walk that cannot get the body within the lean limit (a wall, a ledge, a friend) ends in the recenter.
+        bool stalled = Stance.Blocked && debt.Length() > LocomotionConfig.LeanRadius;
+        if (!canFollow && stickIdle && FollowGap > LocomotionConfig.LeanRadius)
             FollowDrops++;
-        lastCanFollow = canFollow;
-        WarnFar(c, canFollow, stickIdle);
+        WarnFar(c, canFollow, stickIdle, stalled);
         Fade.DrawnFade = UI.Common.FadeView.Alpha;
-        if (Fade.Update(Follow.RecenterNeeded, dt))
+        if (Fade.Update(stalled || FollowGap > Follow.RecenterDistance, dt))
+        {
             Follow.Recenter(head);
+            Stance.Reset();
+        }
         rig.RoomAnchor = Follow.Anchor;
-        RigDriver.LeanNeutral = LocomotionConfig.RoomScale ? Follow.Neutral : NVector2.Zero;
-        RigDriver.FollowWalking = LocomotionConfig.RoomScale && canFollow && Follow.Walking;
-        // The stance walk (a head turned in the room, looking down) waits out a follow: each walk's travel is its own.
-        var debt = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
-        request = MoveInput.Combine(
-            request,
-            Stance.Update(new NVector2(debt.x, debt.z), canFollow && !Follow.Walking, dt)
-        );
-        RigDriver.StanceWalking = Stance.Walking;
         if (Fade.Target > 0f)
             VRFade.Set(FadeOwner, Fade.Target);
         else
@@ -435,7 +425,7 @@ internal static class LocomotionInput
         if (RigDriver.LeanTraceDue(ref nextLeanTrace))
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor ({Follow.Offset.X:0.000},{Follow.Offset.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} stick fwd {stick.Y:0.00} right {stick.X:0.00} neutral ({Follow.Neutral.X:0.000},{Follow.Neutral.Y:0.000}) head y {VRInput.HeadPosition.y:0.000} vs standing {RigMath.TrackedEyeHeight(rig.HeightOffset):0.000} lean {(pose != null ? pose.LeanDegrees : 0f):0.0} deg standing-tall {standingTall} stand-up travel {Follow.FollowTravel:0.000} stalled {Follow.Stalled}"
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} stick fwd {stick.Y:0.00} right {stick.X:0.00}"
                 )
             );
         return stick;
@@ -451,13 +441,12 @@ internal static class LocomotionInput
     /// follow walk stalled against something: before the recenter fade, a NotNow refusal on the dominant hand with a ring at the body's feet, the spot to come back to.
     /// Once per drift; armed again back inside half the distance.
     /// </summary>
-    private static void WarnFar(Character c, bool canFollow, bool stickIdle)
+    private static void WarnFar(Character c, bool canFollow, bool stickIdle, bool stalled)
     {
-        float far = Follow.Offset.Length();
+        float far = FollowGap;
         if (far < FarWarning * 0.5f)
             warnedFar = false;
-        // A follow the body could not finish (RoomScaleFollow.Stalled) also fades: it gets the same reason.
-        bool stalled = Follow.Stalled;
+        // A walk the body could not finish also fades: it gets the same reason.
         if (warnedFar || !stickIdle || (!stalled && (canFollow || far < FarWarning)))
             return;
         warnedFar = true;

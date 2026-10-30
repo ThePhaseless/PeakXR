@@ -65,8 +65,9 @@ internal static class LocomotionConfig
             s,
             "RoomScaleWalking",
             true,
-            "Walking around your play space walks your character after you, without moving your view. Off: your "
-                + "view can drift from your character; past 1 m it fades and re-centres on the character."
+            "Your character steps under your head when you walk around your play space, turn, lean or look down, "
+                + "without moving your view. Off: your character never walks by itself and your view can drift from "
+                + "it; past 1 m it fades and re-centres on the character."
         );
         // A new key, not LeanDistance: its saved 0.2 m walked the character on every lean and back on standing up.
         leanRadius = file.Bind(
@@ -74,8 +75,9 @@ internal static class LocomotionConfig
             "LeanLimit",
             0.35f,
             new ConfigDescription(
-                "How far (metres) you can lean before your character steps after your head. Inside it the "
-                    + "character's upper body leans with you and its feet stay put.",
+                "How far (metres) your head can move from your character before it steps after you at once. "
+                    + "Inside it the character's upper body leans with you, and it steps under your head only once "
+                    + "you hold still for a moment, so a glance or a quick lean does not move its feet.",
                 new AcceptableValueRange<float>(0.15f, 0.6f)
             )
         );

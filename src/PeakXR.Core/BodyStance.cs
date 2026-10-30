@@ -4,18 +4,16 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
-/// Where the local body should stand under the first-person view, apart from a lean. The game turns the body to the
-/// head's heading about its mass centre (Character.SetRotation, Character.cs:1539-1542), its eyes about 0.24 m ahead
-/// of it, while a real head turns about the neck with the eyes about <see cref="NeckToEyes"/> ahead: a head turned
-/// 180 degrees in the room left the body's eyes 0.27 m off the view. Looking down, the body stands back so the player
-/// sees the ground in front of its feet. The body closes the difference by walking (<see cref="StanceWalk"/>, vanilla
-/// movement input), and the view keeps the walk as a shift, so it never moves the view.
+/// Where the local body should stand under the first-person view. The view moves only with the head, and many things
+/// move the head off the body: a head turned in the room (the game turns the body about its mass centre,
+/// Character.SetRotation, Character.cs:1539-1542, its eyes about 0.24 m ahead, while a real head turns about the neck),
+/// a snap or smooth turn pivoting on the eye, a step or a lean in the room. <see cref="Debt"/> measures the one offset
+/// they all leave, from where the view is, so no source is missed; looking down, the body stands back so the player
+/// sees the ground in front of its feet. The body closes it by walking (<see cref="StanceWalk"/>, vanilla movement
+/// input), and the view keeps that walk out of itself, so it never moves the view.
 /// </summary>
 public static class BodyStance
 {
-    /// <summary>Real eyes ahead of the neck's turning axis (m, real): a head turned in place swings them round it.</summary>
-    public const float NeckToEyes = 0.1f;
-
     /// <summary>Look pitch (degrees, up positive) below which the body starts to step back.</summary>
     public const float StepBackFromPitch = -35f;
 
@@ -38,44 +36,45 @@ public static class BodyStance
     }
 
     /// <summary>
-    /// The level walk (world) that puts the body where it belongs under the view: the body's eyes at the rig heading
-    /// (<paramref name="rigEye"/>, the point the view anchor rides) less those at the body's own heading
-    /// (<paramref name="bodyEye"/>), plus the view's kept <paramref name="shift"/>, the real eyes' swing round the
-    /// <paramref name="neck"/> (world m) and the step back of <paramref name="back"/> away from the look.
+    /// The level walk (world) that puts the body where it belongs: the <paramref name="view"/> eye less the body's
+    /// unbent eyes at its own heading (<paramref name="bodyEye"/>), stood <paramref name="back"/> m behind it along
+    /// <paramref name="bodyForward"/>.
     /// </summary>
-    public static Vector3 Debt(
-        Vector3 rigEye,
-        Vector3 bodyEye,
-        Vector3 shift,
-        Vector3 rigForward,
-        Vector3 bodyForward,
-        float neck,
-        float back
-    )
+    public static Vector3 Debt(Vector3 view, Vector3 bodyEye, Vector3 bodyForward, float back)
     {
-        var d = rigEye - bodyEye + shift + (bodyForward - rigForward) * neck - bodyForward * back;
+        var d = view - bodyEye - bodyForward * back;
         return new Vector3(d.X, 0f, d.Z);
     }
 
-    /// <summary>The real eyes' swing (tracking x, z) for a head turned <paramref name="headYawDeg"/> in the room from
-    /// the rig's forward: room-scale reads a head offset less this as the lean.</summary>
-    public static Vector2 NeckSwing(float headYawDeg) =>
-        YawMath.Rotate(new Vector2(0f, NeckToEyes), headYawDeg) - new Vector2(0f, NeckToEyes);
+    /// <summary>
+    /// The part of the head's offset the lean leaves out, so the body never bends for its step back: the step back
+    /// (<paramref name="back"/> along <paramref name="forward"/>) less what of it the <paramref name="debt"/> still owes.
+    /// The lean bends for the rest of the debt, which keeps the eyes at the view while the body is on its way.
+    /// </summary>
+    public static Vector3 LeanSkip(Vector3 debt, Vector3 forward, float back) =>
+        forward * (back - Math.Clamp(-Vector3.Dot(debt, forward), 0f, back));
 }
 
 /// <summary>
-/// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/> it asks for move input along the
-/// debt until it is inside <see cref="Stop"/>, ramping down as it closes so the body does not overshoot. The caller
-/// pays the debt with the body's travel while <see cref="Walking"/> (the walk and a short settle for its coast). A
-/// walk that makes no headway (a wall, a friend) gives up quietly until the debt changes.
+/// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/>, once the debt has held still for
+/// <see cref="Delay"/> (a glance returns before the body moves) or at once past <see cref="AtOnce"/>, it asks for move
+/// input along the debt until it is inside <see cref="Stop"/>, ramping down as it closes so the body does not
+/// overshoot. The caller keeps the body's travel out of the view while <see cref="Walking"/> (the walk and a short
+/// settle for its coast). A walk that makes no headway (a wall, a friend) gives up until the debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
     /// <summary>Debt (m) that starts a walk: above the standing body's idle sway.</summary>
     public float Start = 0.05f;
 
-    /// <summary>A started walk ends this close (m).</summary>
-    public float Stop = 0.02f;
+    /// <summary>A started walk ends this close (m): all the way under the head, above the idle sway's noise.</summary>
+    public float Stop = 0.03f;
+
+    /// <summary>Seconds a debt must hold still (within <see cref="Start"/>) before it is walked.</summary>
+    public float Delay = 1.5f;
+
+    /// <summary>A debt past this (m, the lean limit) is walked at once.</summary>
+    public float AtOnce = 0.35f;
 
     /// <summary>Distance past <see cref="Stop"/> (m) over which the request ramps to full.</summary>
     public float Ramp = 0.2f;
@@ -93,6 +92,8 @@ public sealed class StanceWalk
     float _best;
     float _stallFor;
     Vector2 _blockedAt;
+    Vector2 _heldAt;
+    float _heldFor;
 
     /// <summary>The last walk stalled; it waits for the debt to change.</summary>
     public bool Blocked { get; private set; }
@@ -101,7 +102,7 @@ public sealed class StanceWalk
     public bool Walking { get; private set; }
 
     /// <param name="debt">What is owed, tracking x, z (m).</param>
-    /// <param name="canWalk">The body may be walked: grounded, free, the stick idle and no room-scale follow.</param>
+    /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
     /// <returns>Requested move input in tracking space, length 0..1.</returns>
     public Vector2 Update(Vector2 debt, bool canWalk, float dt)
     {
@@ -111,9 +112,16 @@ public sealed class StanceWalk
             Reset();
             return Vector2.Zero;
         }
+        if (Vector2.Distance(debt, _heldAt) > Start)
+        {
+            _heldAt = debt;
+            _heldFor = 0f;
+        }
+        else
+            _heldFor += dt;
         if (Blocked && Vector2.Distance(debt, _blockedAt) > Start)
             Blocked = false;
-        bool start = !_walking && !Blocked && dist > Start;
+        bool start = !_walking && !Blocked && dist > Start && (dist > AtOnce || _heldFor >= Delay);
         _walking = !Blocked && (_walking ? dist > Stop : start);
         if (start || (_walking && dist < _best - StallProgress))
         {
@@ -145,5 +153,6 @@ public sealed class StanceWalk
         _sinceWalk = float.MaxValue;
         Walking = false;
         Blocked = false;
+        _heldFor = 0f;
     }
 }

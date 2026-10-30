@@ -203,9 +203,9 @@ internal sealed partial class SelfTestRunner
 
     string stalledNote;
 
-    /// <summary>vr.140, the path a player meets: room-scale on, the head steps 0.7 m back (past the lean radius,
-    /// short of 1 m) toward a hip-high wall just behind the body. The follow walk stalls against it
-    /// (RoomScaleFollow.Stalled, after StallSeconds of no progress), which gives the same NotNow at the feet and the
+    /// <summary>vr.140, the path a player meets: room-scale on, the head steps 0.7 m back (past the lean limit,
+    /// short of 1 m) toward a hip-high wall just behind the body. The stance walk stalls against it
+    /// (StanceWalk.Blocked, after StallSeconds of no progress, with more than the lean limit left), which gives the same NotNow at the feet and the
     /// one recenter fade (LocomotionInput.WarnFar, RecenterFade); the body stays on its side of the wall. The head
     /// passes over the wall, so the eye guard stays out of it. Releasing the head afterwards walks the body forward
     /// onto open ground, which the next settle warps home from.</summary>

@@ -208,6 +208,11 @@ internal sealed class BodyInventory : IGripExtension
             dt
         );
         neck = BodySlotLayout.Neck(headPos, headRot);
+        // The slots sit on the body the player sees, which stands off the head while it steps back for a look down
+        // or has not yet stepped under a turn or a lean (rig.camera's stance): tracking space, level.
+        var rig = VRRig.Instance;
+        if (rig != null && rig.Origin != null)
+            neck += rig.Origin.InverseTransformVector(Rig.RigDriver.BodyFromView).N();
         for (int i = 0; i < slots.Length; i++)
             anchors[i] = BodySlotLayout.Anchor(neck, yaw, slots[i]);
     }
