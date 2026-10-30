@@ -716,12 +716,21 @@ internal sealed partial class SelfTestRunner
                 break;
             yield return null;
         }
-        NearestRopeSegment(rig.Hand(left).position, out float atGrip);
+        var nearest = NearestRopeSegment(rig.Hand(left).position, out float atGrip);
+        // Issue #53: what the grip decided and what the game thought of the segment then, so a refused or pushed
+        // rope, an extension's claim or a moving body shows in the failure.
+        var seg = nearest != null ? nearest.GetComponent<RopeSegment>() : null;
+        string state =
+            seg != null
+                ? F(
+                    $"segment {seg.GetAngle():0} deg from vertical (game limit {c.refs.ropeHandling.maxRopeAngle * 0.6f:0}), interactible {seg.IsInteractible(c)}"
+                )
+                : "no segment";
         yield return Until(
             () => c.data.isRopeClimbing,
             2f,
             FormattableString.Invariant(
-                $"grip on the rope did not grab it (first pick {Mathf.Sqrt(best):0.00} m from the reach point, {segment.position.y - reach.y:0.00} m above it; hand {off:0.00} m off the nearest segment after the reach, {atGrip:0.00} m at the grip)"
+                $"grip on the rope did not grab it (first pick {Mathf.Sqrt(best):0.00} m from the reach point, {segment.position.y - reach.y:0.00} m above it; hand {off:0.00} m off the nearest segment after the reach, {atGrip:0.00} m at the grip; {state}; {StanceNote()}; {Interact.PhysicalInteraction.LastGripNote}; {TraversalGrips.LastNote})"
             )
         );
     }
@@ -1475,6 +1484,8 @@ internal sealed partial class SelfTestRunner
         // sphere-cast fallback stop there (Interaction.cs:214-241). Once blocked, the hand rises 0.25 m and aims at
         // the upper half instead.
         var aim = CentreOf(item);
+        var firstAim = aim;
+        var originAtAim = rig.Origin.position;
         yield return PingCooldownOver(pinger);
         yield return FingerGunAim(left, aim, 1f);
         float raise = 0f;
@@ -1494,7 +1505,10 @@ internal sealed partial class SelfTestRunner
             if (again != null)
             {
                 Fail(
-                    $"the pointing hand's aim line never met the Apple (centre: {lineMeets}; raised, at its top: {again}): the step would prove nothing"
+                    // Issue #55: an Apple that rolled after it was aimed at, or a view that moved, shows here.
+                    F(
+                        $"the pointing hand's aim line never met the Apple (centre: {lineMeets}; raised, at its top: {again}; the Apple moved {Vector3.Distance(CentreOf(item), firstAim):0.00} m since first aimed at, the view {Vector3.Distance(rig.Origin.position, originAtAim):0.00} m, the aim line {Vector3.Angle(rig.Aim(left).forward, aim - rig.Aim(left).position):0.0} deg off the aim point; {StanceNote()}): the step would prove nothing"
+                    )
                 );
                 yield break;
             }

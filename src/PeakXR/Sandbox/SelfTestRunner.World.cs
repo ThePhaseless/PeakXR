@@ -1305,15 +1305,25 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.6f);
             stepNote += F($"; stepped in to sink the hand from {gap.magnitude:0.00} m");
         }
+        // Issue #54: where the rig and the hand were before the look and the grip, what the game hovered and what
+        // glowed just before it, so a view that moved under the hand or a hover lost to a pointing hand shows.
+        var originBefore = rig.Origin.position;
         LookAtHand(left);
         yield return Wait(0.2f);
+        var hoveredBefore =
+            Interaction.instance != null ? Interaction.instance.currentHovered : null;
+        var glowBefore = PhysicalInteraction.GripPreview(left);
+        float handIn = Gap(rig.Hand(left).position, lug);
+        float originMoved = Vector3.Distance(originBefore, rig.Origin.position);
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(
             () => ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen,
             1f
         );
         bool took = ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen;
-        var sunkNote = PhysicalInteraction.LastGripNote;
+        var sunkNote = F(
+            $"before the grip: hovered {Label(hoveredBefore)}, glow on {Label(glowBefore)}, hand {handIn:0.00} m from the case, view moved {originMoved:0.00} m through the look, aim hand {PhysicalInteraction.AimHand}, {StanceNote()}; {PhysicalInteraction.LastGripNote}"
+        );
         yield return GripTo(left, 0f, 0.1f);
         if (!took)
             Fail(

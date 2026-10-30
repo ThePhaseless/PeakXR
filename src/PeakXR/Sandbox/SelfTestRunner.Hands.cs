@@ -1626,10 +1626,30 @@ internal sealed partial class SelfTestRunner
         if (rig == null || rig.Origin == null || rig.Head == null)
             return "";
         var o = rig.Origin;
+        // What the body stands on, any layer (issue #56: terrain 1.3 m under the body and the tracked floor).
+        string standsOn =
+            c != null
+            && Physics.Raycast(
+                c.Center,
+                Vector3.down,
+                out var under,
+                3f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysicalExceptCharacter),
+                QueryTriggerInteraction.Ignore
+            )
+                ? F($"{under.collider.name} at {under.point.y:0.00}")
+                : "nothing";
         return F(
-            $" [world: eye {o.TransformPoint(ScriptedEye())}, hand {o.TransformPoint(Script(left).Position)}, head {rig.Head.position}, origin {o.position}, tracked floor {TrackedFloorY():0.00}, terrain under the body {(c != null ? Feet(c).y : float.NaN):0.00}, stooped {headDrop:0.00} from {stoopFrom:0.00}]"
+            $" [world: eye {o.TransformPoint(ScriptedEye())}, hand {o.TransformPoint(Script(left).Position)}, head {rig.Head.position}, origin {o.position}, tracked floor {TrackedFloorY():0.00}, terrain under the body {(c != null ? Feet(c).y : float.NaN):0.00}, body stands on {standsOn}, {StanceNote()}, stooped {headDrop:0.00} from {stoopFrom:0.00}]"
         );
     }
+
+    /// <summary>The body's stance walk (RigDriver.StanceDebt, issue #10) for failure notes: a body still walking under
+    /// the head moves against the scripted, head-placed hands (issues #53-#56).</summary>
+    static string StanceNote() =>
+        F(
+            $"stance walking {Rig.RigDriver.StanceWalking}, debt {Rig.RigDriver.StanceDebt.magnitude:0.00} m"
+        );
 
     /// <summary>Rounding and float slack on <see cref="MaxHandFromEye"/>, so a pose built to the limit passes.</summary>
     const float ReachSlack = 0.005f;
