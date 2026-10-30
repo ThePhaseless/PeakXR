@@ -123,7 +123,8 @@ internal sealed partial class SelfTestRunner
     /// drawn when it is on, not shadow-only or switched off, in the view, and neither hidden by the W/Character
     /// shader's ghost (<c>_VertexGhost</c> 1, every part within <see cref="Core.BodyGhost.Radius"/> flat) nor, for a
     /// face card the ghost does not reach (GD/Face Cards), seen from behind. In flat play (-peakxr-novr) the head must
-    /// be the game's own: PeakXR holds none of it hidden. The motions are the game's input (stick, sprint, jump), the
+    /// be the game's own: PeakXR holds none of it hidden, and in every frame each renderer keeps the game's hiding
+    /// (<see cref="NotGameHidden"/>). The motions are the game's input (stick, sprint, jump), the
     /// climb its own start (CharacterClimbing.TryToStartWallClimb, CharacterClimbing.cs:534).
     /// </summary>
     IEnumerator OwnHeadHiddenStep()
@@ -146,6 +147,11 @@ internal sealed partial class SelfTestRunner
         string phase = "stand";
         var planes = new Plane[6];
         var materials = new List<Material>();
+        // Flat: each renderer's state as the game left it, which must hold in every frame.
+        var gameState = new List<(ShadowCastingMode shadow, bool off)>(heads.Count);
+        foreach (var r in heads)
+            gameState.Add(r != null ? (r.shadowCastingMode, r.forceRenderingOff) : default);
+        bool flat = !VRSession.Active;
         float until = Now + 40f;
         Action<ScriptableRenderContext, Camera> check = null;
         check = (_, cam) =>
@@ -156,15 +162,21 @@ internal sealed partial class SelfTestRunner
                 RenderPipelineManager.beginCameraRendering -= check;
                 return;
             }
-            if (!EyeCamera(cam) || !OnOwnHead())
+            // The game shows the body itself while passed out or dead (HideTheBody.cs:41).
+            if (!EyeCamera(cam) || !OnOwnHead() || AvatarPatches.BodyShowing(hide))
                 return;
             phaseFrames[phase] = phaseFrames.TryGetValue(phase, out int f) ? f + 1 : 1;
             GeometryUtility.CalculateFrustumPlanes(cam, planes);
             var at = cam.transform.position;
             var centre = hide.headRend != null ? hide.headRend.bounds.center : c.Head;
-            foreach (var r in heads)
+            for (int i = 0; i < heads.Count; i++)
             {
-                if (!DrawnToEye(r, cam, at, centre, planes, materials))
+                var r = heads[i];
+                if (
+                    flat
+                        ? !NotGameHidden(r, gameState[i], materials)
+                        : !DrawnToEye(r, cam, at, centre, planes, materials)
+                )
                     continue;
                 string key = phase + ": " + r.name;
                 drawn[key] = drawn.TryGetValue(key, out int n) ? n + 1 : 1;
@@ -201,8 +213,9 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => !c.warping, 3f);
 
         var fails = new List<string>();
+        string verdict = flat ? "not as the game hid it" : "drawn by the eye camera";
         foreach (var kv in drawn)
-            fails.Add(F($"{kv.Key} drawn by the eye camera in {kv.Value} frames"));
+            fails.Add(F($"{kv.Key} {verdict} in {kv.Value} frames"));
         if (!VRSession.Active && OwnHead.Hidden.Count > 0)
             fails.Add(
                 F(
@@ -284,6 +297,30 @@ internal sealed partial class SelfTestRunner
             && !Rig.RigDriver.ViewDetached
             && UI.Common.FadeView.Alpha < 0.99f
         );
+
+    /// <summary>
+    /// Flat vr.274: whether <paramref name="r"/> left the game's first-person hiding: its shadow mode or render switch
+    /// changed from <paramref name="game"/>, or a material with <c>_VertexGhost</c> lost the 1 that
+    /// HideTheBody.Toggle(false) writes (HideTheBody.cs:57-104). Flat play judges no bounds: a renderer's world AABB is
+    /// far looser than its mesh (KnightHelmet's corner reaches 1 m flat from its centre at a diagonal heading), so it
+    /// named heads the shader's ghost hides.
+    /// </summary>
+    static bool NotGameHidden(
+        Renderer r,
+        (ShadowCastingMode shadow, bool off) game,
+        List<Material> materials
+    )
+    {
+        if (r == null)
+            return false;
+        if (r.shadowCastingMode != game.shadow || r.forceRenderingOff != game.off)
+            return true;
+        r.GetSharedMaterials(materials);
+        foreach (var m in materials)
+            if (m != null && m.HasProperty(VertexGhost) && m.GetFloat(VertexGhost) < 0.99f)
+                return true;
+        return false;
+    }
 
     /// <summary>Whether <paramref name="r"/> shows in <paramref name="cam"/>'s image (see vr.274).</summary>
     static bool DrawnToEye(
