@@ -59,8 +59,11 @@ internal sealed partial class SelfTestRunner
             rig.RoomAnchor = new System.Numerics.Vector2(spot.x, spot.z);
             ScriptHead(spot, Quaternion.Euler(0f, -90f, 0f));
             yield return Wait(0.5f);
+            // The head's pose in the play space, in tracking metres at any world scale (Flat() normalises, so it
+            // cannot measure the distance).
+            var local = rig.Origin.InverseTransformPoint(rig.Head.position);
+            float apart = new Vector2(local.x, local.z).magnitude;
             float turned = Vector3.Angle(Flat(rig.Origin.forward), Flat(rig.Head.forward));
-            float apart = Flat(rig.Head.position - rig.Origin.position).magnitude / rig.Scale;
             if (turned < 80f || apart < 1.8f)
             {
                 Fail(
