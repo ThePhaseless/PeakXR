@@ -38,6 +38,12 @@ public struct PosePacket
     public FingerCurls LeftFingers;
     public FingerCurls RightFingers;
 
+    /// <summary>Trailing extension (<see cref="PoseCodec.AimSize"/> bytes): each controller's aim pose relative to its
+    /// grip, so a peer lays a held barrel along the sender's real aim (#26).</summary>
+    public bool HasAim;
+    public Quaternion LeftAimInGrip;
+    public Quaternion RightAimInGrip;
+
     public bool HasHead => (Flags & PoseFlags.Head) != 0;
     public bool HasLeftHand => (Flags & PoseFlags.LeftHand) != 0;
     public bool HasRightHand => (Flags & PoseFlags.RightHand) != 0;
@@ -64,6 +70,9 @@ public struct PosePacket
 /// handshake minor version (<see cref="Handshake"/>): <see cref="Decode"/> reads only <see cref="SizeFor"/> bytes and
 /// ignores the rest, and receivers accept packets up to <see cref="MaxPacketSize"/>. Start such data with an
 /// extension flags byte so later additions can follow it.</para>
+/// <para>Extension byte bit 0 (<see cref="AimSize"/>): the left then right aim-in-grip rotations, 4 bytes each. Every
+/// released build (0.1.0 on) reads only the parts and accepts the longer packet, so no minor bump is needed: a
+/// minor bump would split this build from the released ones, which compare all 16 handshake bits.</para>
 /// </remarks>
 public static class PoseCodec
 {
@@ -72,6 +81,14 @@ public static class PoseCodec
     const int PartSize = 10;
     const int FingersSize = 2 * FingerCurls.Count;
     public const int MaxSize = HeaderSize + 3 * PartSize + FingersSize;
+
+    const byte AimBit = 1;
+
+    /// <summary>Trailing bytes the aim offsets take: the extension flags byte and two rotations.</summary>
+    public const int AimSize = 1 + 2 * 4;
+
+    /// <summary>Longest packet this build encodes: every part and the aim offsets.</summary>
+    public const int MaxEncodedSize = MaxSize + AimSize;
 
     /// <summary>Largest packet a receiver accepts: <see cref="MaxSize"/> plus room for trailing extension data.</summary>
     public const int MaxPacketSize = 128;
@@ -83,7 +100,7 @@ public static class PoseCodec
     /// <summary>Encodes into <paramref name="buffer"/> at index 0. Returns the length, or 0 if the buffer is too small.</summary>
     public static int Encode(in PosePacket p, byte[] buffer)
     {
-        int size = SizeFor(p.Flags);
+        int size = SizeFor(p.Flags) + (p.HasAim ? AimSize : 0);
         if (buffer == null || buffer.Length < size)
             return 0;
 
@@ -101,6 +118,13 @@ public static class PoseCodec
         {
             o = WriteFingers(buffer, o, p.LeftFingers);
             o = WriteFingers(buffer, o, p.RightFingers);
+        }
+        if (p.HasAim)
+        {
+            buffer[o] = AimBit;
+            WriteU32(buffer, o + 1, PackRotation(p.LeftAimInGrip));
+            WriteU32(buffer, o + 5, PackRotation(p.RightAimInGrip));
+            o += AimSize;
         }
         return o;
     }
@@ -136,8 +160,11 @@ public static class PoseCodec
         if (p.HasFingers)
         {
             o = ReadFingers(data, o, out p.LeftFingers);
-            ReadFingers(data, o, out p.RightFingers);
+            o = ReadFingers(data, o, out p.RightFingers);
         }
+        p.HasAim = length >= o + AimSize && (data[o] & AimBit) != 0;
+        p.LeftAimInGrip = p.HasAim ? UnpackRotation(ReadU32(data, o + 1)) : Quaternion.Identity;
+        p.RightAimInGrip = p.HasAim ? UnpackRotation(ReadU32(data, o + 5)) : Quaternion.Identity;
         return true;
     }
 

@@ -58,8 +58,8 @@ internal static class OwnGrapple
 
         private static void Postfix(RescueHook __instance)
         {
-            if (Mine(__instance))
-                Pull.LetGo(Time.time);
+            if (Mine(__instance) && Pull.LetGo(Time.time))
+                PhysicalInteraction.CatchWithHookHand(__instance.item.holderCharacter);
         }
     }
 }

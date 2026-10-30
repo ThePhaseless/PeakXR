@@ -272,3 +272,71 @@ public class PoseHoldFlagTests
         Assert.True(PoseBlend.Lerp(a, b, 0.6f).ItemInLeftHand);
     }
 }
+
+public class PoseAimTests
+{
+    static PosePacket WithAim() =>
+        new()
+        {
+            Flags = PoseFlags.LeftHand | PoseFlags.RightHand | PoseFlags.VrActive,
+            Sequence = 9,
+            LeftHandPosition = new Vector3(0.1f, 0.2f, 0.3f),
+            LeftHandRotation = Quaternion.Identity,
+            RightHandPosition = new Vector3(-0.1f, 0.2f, 0.3f),
+            RightHandRotation = Quaternion.Identity,
+            HasAim = true,
+            LeftAimInGrip = UnityQuat.Euler(52f, 3f, -1f),
+            RightAimInGrip = UnityQuat.Euler(41f, -2f, 4f),
+        };
+
+    [Fact]
+    public void TheAimOffsetsRideAfterTheParts()
+    {
+        // #26: a modded peer lays a VR player's barrel along that player's real aim, not the grip turned 45 degrees.
+        var p = WithAim();
+        var buf = new byte[PoseCodec.MaxEncodedSize];
+        int len = PoseCodec.Encode(p, buf);
+        Assert.Equal(PoseCodec.SizeFor(p.Flags) + PoseCodec.AimSize, len);
+        Assert.True(PoseCodec.Decode(buf, len, out var d));
+        Assert.True(d.HasAim);
+        TestUtil.SameRotation(p.LeftAimInGrip, d.LeftAimInGrip, 0.5f);
+        TestUtil.SameRotation(p.RightAimInGrip, d.RightAimInGrip, 0.5f);
+        Assert.Equal(p.RightHandPosition, d.RightHandPosition);
+    }
+
+    [Fact]
+    public void AnOlderReaderTakesThePartsAndSkipsTheAim()
+    {
+        // Released builds read SizeFor bytes and accept trailing data up to MaxPacketSize.
+        var p = WithAim();
+        var buf = new byte[PoseCodec.MaxEncodedSize];
+        int len = PoseCodec.Encode(p, buf);
+        Assert.True(len <= PoseCodec.MaxPacketSize);
+        Assert.True(PoseCodec.Decode(buf, PoseCodec.SizeFor(p.Flags), out var d));
+        Assert.False(d.HasAim);
+        Assert.Equal(p.LeftHandPosition, d.LeftHandPosition);
+    }
+
+    [Fact]
+    public void NoAimSendsNoExtraBytes()
+    {
+        var p = WithAim();
+        p.HasAim = false;
+        var buf = new byte[PoseCodec.MaxEncodedSize];
+        Assert.Equal(PoseCodec.SizeFor(p.Flags), PoseCodec.Encode(p, buf));
+    }
+
+    [Fact]
+    public void ACutShortAimIsIgnored()
+    {
+        var p = WithAim();
+        var buf = new byte[PoseCodec.MaxEncodedSize];
+        int len = PoseCodec.Encode(p, buf);
+        Assert.True(PoseCodec.Decode(buf, len - 1, out var d));
+        Assert.False(d.HasAim);
+    }
+
+    [Fact]
+    public void ABufferTooSmallForTheAimEncodesNothing() =>
+        Assert.Equal(0, PoseCodec.Encode(WithAim(), new byte[PoseCodec.SizeFor(WithAim().Flags)]));
+}

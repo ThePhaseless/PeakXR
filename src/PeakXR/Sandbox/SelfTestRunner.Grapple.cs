@@ -24,8 +24,10 @@ internal sealed partial class SelfTestRunner
     /// short of any climb reach), and the free hand closed on the wall once it is in reach starts a climb, waiting out
     /// the game's ragdoll recovery (CharacterClimbing.cs:146) instead of losing the grip.
     /// <c>Interaction.RequireTwoHands</c> is off for the step so the free hand is free for the wall.
+    /// vr.353 (<paramref name="hookHand"/>, #21): the hand still closed on the hook goes to the wall instead and must
+    /// climb without opening, the hook put away by the climb.
     /// </summary>
-    IEnumerator HookPullStep()
+    IEnumerator HookPullStep(bool hookHand = false)
     {
         var c = Character.localCharacter;
         var hook = FindItem(SandboxActions.Items, "RescueHook");
@@ -113,7 +115,7 @@ internal sealed partial class SelfTestRunner
         // which RigDriver moves in LateUpdate), as a player squeezes on the way in; run 5 did this by accident and its
         // grip fell back to interact. From then on the hand stays on the face where the eye meets it, as a player keeps
         // a hand on the wall while the body drifts in: a hand fixed in tracking space went 0.5 m into the rock.
-        bool free = !left;
+        bool free = hookHand ? left : !left;
         string pressNote = null;
         int detachedFrames = 0;
         int eventDetachFrames = 0;
@@ -172,6 +174,12 @@ internal sealed partial class SelfTestRunner
         var note = F(
             $"pull from 9 m: view off the body {detachedFrames} frames (launch chase {eventDetachFrames}), lowest ragdoll control {minControl:0.00}, longest fall {maxFall:0.00} s, eye {pulledTo:0.00} m from the wall when the pull ended, nearest wall {nearest:0.00} m, in reach {(reachedAt < 0f ? -1f : reachedAt - fired):0.00} s after the shot, climbing {(climbedAt < 0f ? -1f : climbedAt - reachedAt):0.00} s after the grip; {pressNote ?? Interact.PhysicalInteraction.LastGripNote}"
         );
+        // The hook hand's climb puts the hook away (into its pocket, as any climb does with a held item).
+        bool pocketed = false;
+        foreach (var slot in c.player.itemSlots)
+            pocketed |= !slot.IsEmpty() && slot.GetPrefabName().Contains("RescueHook");
+        if (hookHand)
+            note += F($"; hook in hand {HeldItem() != null}, in a pocket {pocketed}");
         Script(free).Grip = 0f;
         Script(move).Stick = Vector2.zero;
         if (detachedFrames > 0)
@@ -179,7 +187,13 @@ internal sealed partial class SelfTestRunner
         else if (reachedAt < 0f)
             Fail("the pull and the walk in never brought the wall within reach: " + note);
         else if (climbedAt < 0f)
-            Fail("the grip at the wall after the pull did not climb: " + note);
+            Fail(
+                (
+                    hookHand
+                        ? "the hand closed on the hook did not catch the wall: "
+                        : "the grip at the wall after the pull did not climb: "
+                ) + note
+            );
         else
             Note(note);
         yield return LetGoAll(c);

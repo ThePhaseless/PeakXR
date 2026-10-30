@@ -29,13 +29,15 @@ public sealed class GrapplePull
         _start = now;
     }
 
-    public void LetGo(float now)
+    /// <summary>The hook let go. True when that ended this player's own wall pull (not a friend pull).</summary>
+    public bool LetGo(float now)
     {
         if (!_pulling)
-            return;
+            return false;
         _pulling = false;
         _released = true;
         _letGo = now;
+        return true;
     }
 
     public void Reset() => _pulling = _released = false;

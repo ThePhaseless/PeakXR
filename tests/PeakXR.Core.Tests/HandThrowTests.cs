@@ -74,26 +74,37 @@ public class HandThrowTests
     public void Launch_IgnoresADegenerateRange() =>
         Assert.Equal(Full, HandThrow.LaunchSpeed(5f, 7f, 7f, Full), 4);
 
+    static readonly System.Numerics.Vector3 Launch = new(0.5f, 0f, 10f);
+    static readonly System.Numerics.Vector3 Look = new(0f, 3f, 0f);
+
     [Fact]
-    public void Aimed_TheMastersLookForceLandsAlongTheAim()
+    public void Release_SendsTheWholeLaunchAndNoCharge()
     {
-        // A button throw: the master adds look * lookSpeed to what the item carries, so the net force is the aim's.
-        var carried = new System.Numerics.Vector3(0.5f, 0f, 0f);
-        var aim = new System.Numerics.Vector3(0f, 0f, 2f);
-        var look = new System.Numerics.Vector3(0f, 3f, 0f);
-        var sent = HandThrow.Aimed(carried, aim, look, 10f);
-        var net = sent + System.Numerics.Vector3.Normalize(look) * 10f;
-        Assert.Equal(0.5f, net.X, 4);
-        Assert.Equal(0f, net.Y, 4);
-        Assert.Equal(10f, net.Z, 4);
+        // #30: the master adds the charge's force along its own, lagging copy of a client's look. With no charge it
+        // adds nothing (CharacterItems.cs:391-395), so the item leaves exactly as launched on every client.
+        float charge = 0.7f;
+        var sent = HandThrow.Release(Launch, Look, 10f, ref charge, 0f);
+        Assert.Equal(0f, charge);
+        Assert.Equal(Launch, sent);
     }
 
     [Fact]
-    public void Aimed_NoChargeOrNoAimKeepsTheVelocity()
+    public void Release_AStickyItemKeepsItsChargeAndTheLookForceIsTakenOff()
     {
-        var carried = new System.Numerics.Vector3(1f, 2f, 3f);
-        var look = System.Numerics.Vector3.UnitZ;
-        Assert.Equal(carried, HandThrow.Aimed(carried, System.Numerics.Vector3.UnitX, look, 0f));
-        Assert.Equal(carried, HandThrow.Aimed(carried, System.Numerics.Vector3.Zero, look, 10f));
+        // A sticky item needs its charge (CharacterItems.cs:277-289): the master's look force is taken off, as before.
+        float charge = 0.6f;
+        var sent = HandThrow.Release(Launch, Look, 10f, ref charge, 0.5f);
+        Assert.Equal(0.6f, charge);
+        var net = sent + System.Numerics.Vector3.Normalize(Look) * 10f;
+        Assert.Equal(Launch.X, net.X, 4);
+        Assert.Equal(Launch.Y, net.Y, 4);
+        Assert.Equal(Launch.Z, net.Z, 4);
+    }
+
+    [Fact]
+    public void Release_NoChargeKeepsTheLaunch()
+    {
+        float charge = 0f;
+        Assert.Equal(Launch, HandThrow.Release(Launch, Look, 0f, ref charge, 0.5f));
     }
 }

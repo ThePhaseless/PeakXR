@@ -31,4 +31,12 @@ public struct AvatarPose
 
     /// <summary>The free hand also grips the held item: the item is aimed between both hands.</summary>
     public bool TwoHandHold;
+
+    /// <summary>The controllers' aim poses relative to their grips are known (<see cref="LeftAimInGrip"/>,
+    /// <see cref="RightAimInGrip"/>): the local rig's, or a modded peer's from its pose stream. A held barrel lies
+    /// along that aim.</summary>
+    public bool HasAim;
+
+    public Quaternion LeftAimInGrip;
+    public Quaternion RightAimInGrip;
 }

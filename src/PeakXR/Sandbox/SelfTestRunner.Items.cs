@@ -55,6 +55,7 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.166-eat-cancel", AppleFragment, 20f, EatCancelStep);
         yield return HandStep("vr.167-secondary-deny", 20f, SecondaryDenyStep());
         yield return ItemStep("vr.168-shoot-hand", "RopeShooter", 30f, ShootHandStep);
+        yield return HoldAimSteps();
         yield return ItemStep("vr.169-zoom-endstop", "Binoculars", 20f, ZoomEndStopStep);
         yield return ItemStep("vr.250-binocular-near-eye", "Binoculars", 20f, NearEyeLensStep);
         // vr.169 and vr.248 raise the binoculars in Hold mode; a failed or timed-out step leaves it forced.
@@ -2284,7 +2285,14 @@ internal sealed partial class SelfTestRunner
         Plugin.Log.LogInfo("[selftest] " + line);
         if (on && off > BarrelOnAimDegrees)
             Fail(line);
+        else if (on && tilt > MaxGripTilt)
+            Fail("the grip sticks out of the fist: " + line);
     }
+
+    /// <summary>Most a barrel hold may turn the grip out of the fist, degrees (#25): the least turn onto the aim, the
+    /// item held either way round, leaves it at most the aim pose's own angle off the fist's tube (40-60 degrees on
+    /// real controllers).</summary>
+    const float MaxGripTilt = 60f;
 
     /// <summary>The held item's aim meets no terrain within 60 m (farther than any launcher or build reaches).</summary>
     static bool OpenSky(bool vr) =>

@@ -1700,7 +1700,9 @@ internal sealed class RigDriver : MonoBehaviour
         if (
             itemBody != null
             && (
-                Welded(c, BodypartType.Hand_L, itemBody) || Welded(c, BodypartType.Hand_R, itemBody)
+                Welded(c, BodypartType.Hand_L, itemBody)
+                || Welded(c, BodypartType.Hand_R, itemBody)
+                || AvatarPoseDriver.Of(c) is { } driver && driver.Welds(itemBody)
             )
         )
             centre.Add(itemBody.transform.TransformPoint(itemBody.centerOfMass).N(), itemBody.mass);

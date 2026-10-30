@@ -451,7 +451,7 @@ internal static class AimPatches
             var c = Character.localCharacter;
             if (
                 Tools.HandPiton.On(c)
-                && c.data.isClimbing
+                && c.data.isClimbingAnything
                 && c.data.climbingSpikeCount > 0
                 && __instance.interactPromptSecondary != null
             )

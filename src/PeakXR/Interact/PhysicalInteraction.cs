@@ -660,9 +660,11 @@ internal static class PhysicalInteraction
     /// button (<see cref="UseTrigger"/>). One-handed play keeps the one trigger live, as the flat game uses items while
     /// hanging (its secondary needs the stick chord, so a fist never sets a piton).
     /// </summary>
-    private static bool Climbs(Hand hand) =>
-        !VRInput.OneHanded
-        && (hand.Action == GripPressAction.Climb || Climb.ClimbHands.HandAnchored(hand.Left));
+    private static bool Climbs(Hand hand) => !VRInput.OneHanded && OnClimb(hand);
+
+    /// <summary>This hand's grip is on the wall, rope, vine or handle, whatever the play mode.</summary>
+    private static bool OnClimb(Hand hand) =>
+        hand.Action == GripPressAction.Climb || Climb.ClimbHands.HandAnchored(hand.Left);
 
     /// <summary>This hand's trigger is no use now: the hand holds the climber, or its trigger was squeezed into a hold
     /// and has not opened since. For cues that would otherwise read it as an aim or an attempt.</summary>
@@ -2003,21 +2005,49 @@ internal static class PhysicalInteraction
         return wait <= MaxRecoverWait ? wait : 0f;
     }
 
+    /// <summary>How long after a wall pull lets go the hand still closed on the hook keeps catching once the body is on
+    /// its feet: the pull stops about 1.4 m short of the face, and a player walks the rest (vr.251).</summary>
+    private const float HookCatchSeconds = 3f;
+
+    /// <summary>The local rescue-hook wall pull let go (OwnGrapple.LetGo): the hand still closed on the hook keeps
+    /// catching (<see cref="RetryClimb"/>) while the body flies and for <see cref="HookCatchSeconds"/>, so it takes the
+    /// wall it reaches without dropping the hook first (#21). The climb puts the hook away, as any climb does with a
+    /// held item.</summary>
+    internal static void CatchWithHookHand(Character c)
+    {
+        var hand = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
+        if (
+            c == null
+            || !InteractConfig.Instance.PhysicalClimb
+            || !hand.Grip.Held
+            || !Holding(c, out _)
+        )
+            return;
+        hand.Catching = true;
+        hand.ClimbRetryUntil = Time.time + HookCatchSeconds;
+    }
+
     /// <summary>
     /// A climb grip that met the regrab cooldown climbs once the cooldown is over, if it is still closed on a hold
     /// (probed again where the hand is now). Otherwise it gets the usual refusal. A grip closed in the air
     /// (<see cref="Hand.Catching"/>) probes every frame while it stays closed and the body flies, and climbs on the
-    /// first hold once the body can hold a climb.
+    /// first hold once the body can hold a climb. So does a hand still closed on its rescue hook when the pull lets go
+    /// (<see cref="CatchWithHookHand"/>): it keeps its grab until a climb starts, so a release short of one still drops.
     /// </summary>
     private static void RetryClimb(Hand hand, Character c, VRRig rig, InteractConfig cfg, float now)
     {
         if (hand.ClimbRetryUntil < 0f)
             return;
-        bool catching = hand.Catching && Airborne(c);
+        // The hook hand (still on its grab) catches on its feet too, until its window ends.
+        bool catching =
+            hand.Catching
+            && (
+                Airborne(c) || (hand.Action != GripPressAction.None && now <= hand.ClimbRetryUntil)
+            );
         var t = rig.Hand(hand.Left);
         if (
             !hand.Grip.Held
-            || hand.Action != GripPressAction.None
+            || (hand.Action != GripPressAction.None && !hand.Catching)
             || t == null
             || (now > hand.ClimbRetryUntil && !catching)
         )
@@ -2929,9 +2959,9 @@ internal static class PhysicalInteraction
             c,
             rig,
             LeftHand.Use,
-            LeftHand.Action == GripPressAction.Climb,
+            OnClimb(LeftHand),
             RightHand.Use,
-            RightHand.Action == GripPressAction.Climb
+            OnClimb(RightHand)
         );
         // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
         bool primaryDown =

@@ -70,10 +70,10 @@ internal sealed class NetPoseSync
     readonly HashSet<int> loggedMismatch = new();
     readonly PoseSendGate gate = new();
 
-    // One reused buffer per possible encoded size (4 + 10k bytes, k = 0..4): Photon sends a byte[]
-    // whole, so a single MaxSize buffer would pad short packets.
-    readonly byte[][] sendBuffers = new byte[5][];
-    readonly byte[] encodeScratch = new byte[PoseCodec.MaxSize];
+    // One reused buffer per encoded length (indexed by it): Photon sends a byte[] whole, so a single
+    // buffer would pad short packets.
+    readonly byte[][] sendBuffers = new byte[PoseCodec.MaxEncodedSize + 1][];
+    readonly byte[] encodeScratch = new byte[PoseCodec.MaxEncodedSize];
     readonly byte[] receiveScratch = new byte[PoseCodec.MaxPacketSize];
     readonly RaiseEventOptions sendOptions = new() { CachingOption = EventCaching.DoNotCache };
 
@@ -265,6 +265,8 @@ internal sealed class NetPoseSync
             return;
 
         var world = FromAvatarPose(localDriver.Pose);
+        // The aim offsets only matter to a held barrel: sent while something is in hand.
+        world.HasAim &= character.data.currentItem != null;
         var local = PoseFrame.ToLocal(world, root, yaw);
 
         gate.Rate = PoseRate.ForPeers(NetPoseFeature.SendRate.Value, peers.Count);
@@ -275,7 +277,7 @@ internal sealed class NetPoseSync
         int length = PoseCodec.Encode(local, encodeScratch);
         if (length == 0)
             return;
-        var payload = sendBuffers[(length - 4) / 10] ??= new byte[length];
+        var payload = sendBuffers[length] ??= new byte[length];
         Buffer.BlockCopy(encodeScratch, 0, payload, 0, length);
 
         sendOptions.TargetActors = peers.Targets;
@@ -318,6 +320,10 @@ internal sealed class NetPoseSync
             p.Flags |= PoseFlags.ItemInLeftHand;
         if (pose.TwoHandHold)
             p.Flags |= PoseFlags.TwoHandHold;
+        // Trailing data that released builds skip (PoseCodec remarks).
+        p.HasAim = pose.HasAim;
+        p.LeftAimInGrip = N(pose.LeftAimInGrip);
+        p.RightAimInGrip = N(pose.RightAimInGrip);
         return p;
     }
 
@@ -465,6 +471,9 @@ internal sealed class NetPoseSync
             Seated = p.Seated,
             ItemInLeftHand = p.ItemInLeftHand,
             TwoHandHold = p.TwoHandHold,
+            HasAim = p.HasAim,
+            LeftAimInGrip = U(p.LeftAimInGrip),
+            RightAimInGrip = U(p.RightAimInGrip),
         };
 
     /// <summary>

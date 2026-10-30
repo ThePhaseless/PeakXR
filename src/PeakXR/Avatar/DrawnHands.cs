@@ -18,8 +18,9 @@ namespace PeakXR.Avatar;
 /// with a 0.6 m arm, so the ragdoll hand stops short of a controller held in front of the face (the reach map holds
 /// it at the bent reach, a held or climbing arm locks straight). The whole drawn arm is scaled about its shoulder
 /// (<see cref="ArmReach.DrawnStretch"/>, up to 1.5x) until its hand meets the controller; past that the ghost hand
-/// shows the rest (<see cref="ReachGhost"/>). A hand holding an item or gripping a hold (a wall, rope, vine, handle or
-/// piton) is drawn on its ragdoll hand.
+/// shows the rest (<see cref="ReachGhost"/>). A hand holding an item alone stretches the same way, its item riding out
+/// to the controller with it; both hands on an item, or a grip on a hold (a wall, rope, vine, handle or piton), are
+/// drawn on the ragdoll hands.
 /// </summary>
 [DefaultExecutionOrder(32000)]
 internal sealed class DrawnHands : MonoBehaviour
@@ -148,12 +149,14 @@ internal sealed class DrawnHands : MonoBehaviour
         && AvatarConfig.Instance.ArmIK
         && !local.Holds(local.driver.Pose, isLeft);
 
-    /// <summary>The hand stays drawn on its ragdoll hand: it holds the item, or its grip holds the world (a wall
-    /// climb, a rope, vine, handle or piton, a carried friend: <see cref="Interact.PhysicalInteraction.GripHolds"/>).
-    /// A climbing controller runs up to 0.5 m ahead of the body while the game pays off the pull (ClimbDebt), and a
-    /// stretched hand would slide off the hold.</summary>
+    /// <summary>The hand stays drawn on its ragdoll hand: both hands hold the item (it sits between them), or its grip
+    /// holds the world (a wall climb, a rope, vine, handle or piton, a carried friend:
+    /// <see cref="Interact.PhysicalInteraction.GripHolds"/>). A climbing controller runs up to 0.5 m ahead of the body
+    /// while the game pays off the pull (ClimbDebt), and a stretched hand would slide off the hold. A hand holding the
+    /// item alone stretches like an empty one: its item rides out to the controller past an arm too short for it
+    /// (AvatarPoseDriver.HeldShift, #23).</summary>
     private bool Holds(AvatarPose pose, bool isLeft) =>
-        character.data.currentItem != null && (pose.TwoHandHold || pose.ItemInLeftHand == isLeft)
+        character.data.currentItem != null && pose.TwoHandHold
         || Interact.PhysicalInteraction.GripHolds(isLeft);
 
     /// <summary>The drawn arm's scale about its shoulder that puts an empty hand on its controller (1: as the
