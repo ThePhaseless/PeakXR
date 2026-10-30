@@ -196,9 +196,30 @@ sealed class PeakXRSessionFeature : OpenXRFeature
             XRSessionState.ExitRequested = true;
     }
 
-    protected override void OnInstanceLossPending(ulong xrInstance) =>
+    protected override void OnInstanceLossPending(ulong xrInstance)
+    {
+        Plugin.Log.LogWarning("[xr.bootstrap] OpenXR instance loss pending");
         XRSessionState.ExitRequested = true;
+    }
 
-    protected override void OnSessionBegin(ulong xrSession) => XRSessionState.ExitRequested = false;
+    // The provider's own lifecycle calls (xrBeginSession, xrEndSession, xrDestroySession), logged so a headset-off log
+    // shows which ran and in what order against the state changes above.
+    protected override void OnSessionBegin(ulong xrSession)
+    {
+        Plugin.Log.LogInfo("[xr.bootstrap] OpenXR session begun");
+        XRSessionState.ExitRequested = false;
+    }
+
+    protected override void OnSessionEnd(ulong xrSession) =>
+        Plugin.Log.LogInfo("[xr.bootstrap] OpenXR session ended");
+
+    protected override void OnSessionLossPending(ulong xrSession) =>
+        Plugin.Log.LogWarning("[xr.bootstrap] OpenXR session loss pending");
+
+    protected override void OnSessionDestroy(ulong xrSession) =>
+        Plugin.Log.LogInfo("[xr.bootstrap] OpenXR session destroyed");
+
+    protected override void OnSubsystemStop() =>
+        Plugin.Log.LogInfo("[xr.bootstrap] OpenXR subsystems stopping");
 }
 #endif

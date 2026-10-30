@@ -16,6 +16,12 @@ public static class XRFocus
     /// the runtime again.</summary>
     public static bool Shown(int state) => state is 0 or 4 or 5;
 
+    /// <summary>The headset shows none of the game's frames (headset off): under OpenXR a state other than VISIBLE or
+    /// FOCUSED (<see cref="Shown"/>); under OpenVR, which has no session states, the runtime's idle report (the
+    /// proximity sensor or SteamVR standby) passed in <paramref name="openVRIdle"/>.</summary>
+    public static bool Hidden(bool openXR, int openXRState, bool openVRIdle) =>
+        openXR ? !Shown(openXRState) : openVRIdle;
+
     /// <summary>
     /// The wear sensor says the headset came off: true from a worn to not-worn reading until it reads worn again (or
     /// stops reporting). Only a sensor that has read worn can pause, so a driver stuck at "not worn" never freezes play.
@@ -27,7 +33,7 @@ public static class XRFocus
         now == false && (paused || was == true);
 
     /// <summary>Frame rate the game paces itself to while the headset shows none of its frames (<see cref="Shown"/>
-    /// false): the runtime stops pacing then and the desktop mirror is black, so a low rate only saves the GPU.</summary>
+    /// false): the runtime stops pacing then and the desktop shows only a flat view, so a low rate only saves the GPU.</summary>
     public const int IdleHz = 30;
 
     /// <summary>Milliseconds to sleep so a frame that took <paramref name="elapsedSeconds"/> lasts 1/<see cref="IdleHz"/> s.</summary>

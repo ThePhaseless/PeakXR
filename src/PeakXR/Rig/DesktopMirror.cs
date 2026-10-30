@@ -4,6 +4,7 @@ using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.XR;
 
 namespace PeakXR.Rig;
@@ -26,6 +27,12 @@ internal sealed class DesktopMirror
     private string lastPath;
     private bool hooked;
 
+    /// <summary>The head camera drawing the flat view into the window while the headset is off (<see cref="FlatView"/>),
+    /// or null. Static for the self-test (vr.360); one mirror per process.</summary>
+    internal static Camera Flat { get; private set; }
+
+    private bool flatAllowedXR;
+
     public void Enable()
     {
         if (hooked)
@@ -40,6 +47,7 @@ internal sealed class DesktopMirror
             return;
         hooked = false;
         RenderPipelineManager.endContextRendering -= OnEndContextRendering;
+        FlatView(null);
         if (slice != null)
         {
             slice.Release();
@@ -48,8 +56,43 @@ internal sealed class DesktopMirror
         }
     }
 
+    /// <summary>
+    /// While the headset shows none of the game's frames, <paramref name="head"/> renders as a plain camera into the
+    /// window instead of the black mirror, so people next to the player still see the game; null puts the last one
+    /// back to the headset. URP picks XR per camera from <c>UniversalAdditionalCameraData.allowXRRendering</c>
+    /// (UniversalRenderPipeline.RenderCameraStack into XRLayout.AddCamera), not from the eye mask, so both change: the
+    /// mask for Unity's camera and <see cref="HeadsetContext"/>, the flag for URP. Called once a frame after the rig
+    /// picked its head camera.
+    /// </summary>
+    public void FlatView(Camera head)
+    {
+        if (head == Flat)
+            return;
+        if (Flat != null)
+        {
+            Flat.stereoTargetEye = StereoTargetEyeMask.Both;
+            Flat.GetUniversalAdditionalCameraData().allowXRRendering = flatAllowedXR;
+        }
+        Flat = head;
+        if (head != null)
+        {
+            var data = head.GetUniversalAdditionalCameraData();
+            flatAllowedXR = data.allowXRRendering;
+            data.allowXRRendering = false;
+            head.stereoTargetEye = StereoTargetEyeMask.None;
+        }
+        Plugin.Log.LogInfo(
+            head != null
+                ? $"[rig.camera] headset shows no frames ({XRBootstrapDriver.FocusSource}): desktop shows '{head.name}' flat"
+                : "[rig.camera] desktop mirrors the headset again"
+        );
+    }
+
     private void OnEndContextRendering(ScriptableRenderContext context, List<Camera> cameras)
     {
+        // The flat view drew the window itself; any other stereo camera in this context must not black it out.
+        if (Flat != null)
+            return;
         var eye = CameraFeature.Mirror.Value;
         var display = XRRuntimeInfo.Display;
         // Only after the headset render: manual camera renders (guidebook, title card) are contexts too.
@@ -61,9 +104,10 @@ internal sealed class DesktopMirror
             || !HeadsetContext.Renders(cameras)
         )
             return;
-        // Headset off (session SYNCHRONIZED, STOPPING, IDLE): the runtime shows none of our frames, and once the session
-        // ends Unity's OpenXR provider still names the last frame's swapchain image, which belongs to the runtime
-        // again (UnityOpenXR.dll 1.16.1: the mirror query reads a frame cache that stops updating). Black instead.
+        // Headset off (session SYNCHRONIZED, STOPPING, IDLE) with no flat view (no head camera yet): the runtime shows
+        // none of our frames, and once the session ends Unity's OpenXR provider still names the last frame's swapchain
+        // image, which belongs to the runtime again (UnityOpenXR.dll 1.16.1: the mirror query reads a frame cache that
+        // stops updating). Black instead.
         if (
             (VRSession.Running == VRRuntime.OpenXR && !XRFocus.Shown(XRSessionState.OpenXRState))
             || display.GetRenderPassCount() == 0

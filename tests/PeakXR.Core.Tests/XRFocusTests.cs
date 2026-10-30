@@ -54,4 +54,19 @@ public class XRFocusTests
     [InlineData(-1.0, 33)] // a clock that went back sleeps one frame, never longer
     public void IdlePacingSleepsTheRestOfAFrameAtIdleRate(double elapsed, int ms) =>
         Assert.Equal(ms, XRFocus.IdleSleepMs(elapsed));
+
+    [Theory]
+    [InlineData(true, 5, false, false)] // OpenXR FOCUSED
+    [InlineData(true, 4, false, false)] // OpenXR VISIBLE: the dashboard is over the game, still shown
+    [InlineData(true, 3, false, true)] // OpenXR SYNCHRONIZED: headset off
+    [InlineData(true, 1, true, true)] // OpenXR IDLE; the OpenVR flag is not read
+    [InlineData(true, 0, true, false)] // OpenXR not reported yet: assume shown
+    [InlineData(false, 3, false, false)] // OpenVR worn: the OpenXR state is not read
+    [InlineData(false, 0, true, true)] // OpenVR proximity off or standby
+    public void HiddenReadsTheRunningRuntimesSignal(
+        bool openXR,
+        int state,
+        bool openVRIdle,
+        bool hidden
+    ) => Assert.Equal(hidden, XRFocus.Hidden(openXR, state, openVRIdle));
 }
