@@ -245,6 +245,8 @@ public static class SelfTestIds
         "vr.286-quick-release",
         "vr.287-quick-release-fist",
         "vr.288-glow-grab",
+        "vr.320-fist-grab-no-use",
+        "vr.321-glow-yields-to-slot",
         "vr.273-look-down-step-back",
         "vr.274-own-head-hidden",
         "vr.255-climb-grip-no-pickup",

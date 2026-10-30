@@ -38,8 +38,12 @@ internal static class PhysicalInteraction
         public readonly AnalogButton Grip = new(0.6f, 0.4f);
         public readonly AnalogButton Trigger = new(0.6f, 0.4f);
 
-        /// <summary>The trigger as this hand's use button: muted while the hand holds the climber.</summary>
+        /// <summary>The trigger as this hand's use button: muted while the hand holds the climber, and when squeezed
+        /// with a closing fist.</summary>
         public readonly UseTrigger Use = new();
+
+        /// <summary>When the grip last closed (<see cref="UseTrigger.InFist"/>).</summary>
+        public float GripAt = -10f;
         public readonly ThrowEstimator Throw = new();
 
         /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
@@ -481,6 +485,8 @@ internal static class PhysicalInteraction
         );
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
+        if (hand.Grip.Pressed)
+            hand.GripAt = now;
         // The trigger squeeze of a finger-gun ping cancels the pointing grip's pending interact.
         if (
             hand.Action == GripPressAction.Interact
@@ -698,10 +704,9 @@ internal static class PhysicalInteraction
     /// What a grip of this hand would do now: the one decision behind both its press and its glow
     /// (<see cref="GripPreview"/>), so a glowing target is what the grip takes (issue #13: the glow lit the hand's
     /// grab candidate while the press decided a climb). <paramref name="preview"/>: for the glow, which stops when no
-    /// grab target is in reach and asks no grip extension (their claim checks log and allocate; shortcut: a rope,
-    /// vine, friend or belt slot claiming a grip on an item can still glow that item, a per-frame claim check without
-    /// allocations would close it). The press falls back on the target that glowed last when the closing hand has
-    /// just left it (<see cref="GrabGrace"/>).
+    /// grab target is in reach. The grip extensions are asked in both (issue #49: a rope, vine, friend or belt slot
+    /// that took the grip left the item under the hand glowing). The press falls back on the target that glowed last
+    /// when the closing hand has just left it (<see cref="GrabGrace"/>).
     /// </summary>
     private static Decision Decide(
         Hand hand,
@@ -796,10 +801,10 @@ internal static class PhysicalInteraction
         }
         ctx.OneHanded = VRInput.OneHanded;
         d.Action = GripIntent.OnPress(ctx);
-        if (!preview && d.Action != GripPressAction.SecondHand)
+        if (d.Action != GripPressAction.SecondHand)
         {
             d.Extension = GripHooks.Claim(
-                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds)
+                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds, preview)
             );
             ctx.ExtensionClaim = d.Extension != null;
             d.Action = GripIntent.OnPress(ctx);
@@ -2901,10 +2906,18 @@ internal static class PhysicalInteraction
         bool chord = one && secondaryChord;
         // A hand on the wall, rope, vine or handle squeezes its trigger with the grip: no use, so a climbing fist never
         // sets a piton or runs the held item (UseTrigger). A deliberate press held on a wall grip sets a piton at that
-        // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item.
+        // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item. A full fist's
+        // trigger, squeezed with its grip, is no use either: a fist closed on a pickup started using the item it took
+        // (issue #48: an Apple started eating a frame after it landed).
         foreach (var hand in Hands)
         {
-            hand.Use.Update(hand.Trigger.Held, Climbs(hand), hand == primaryHand, dt);
+            hand.Use.Update(
+                hand.Trigger.Held,
+                Climbs(hand),
+                hand == primaryHand,
+                dt,
+                UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
+            );
             if (hand.Use.ClimbPress && cfg.TriggerUse && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,

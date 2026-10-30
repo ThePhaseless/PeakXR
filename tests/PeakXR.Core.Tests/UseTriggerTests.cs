@@ -187,4 +187,40 @@ public class UseTriggerTests
             t.Update(false, true, false, Dt);
         return t;
     }
+
+    [Fact]
+    public void FistClosingOnAPickup_TriggerIsNoUseUntilPressedAgain()
+    {
+        // Issue #48: a full fist squeezes the trigger a couple of frames after the grip; the Apple then in hand
+        // started eating while the fist stayed closed.
+        var t = new UseTrigger();
+        t.Update(false, false, true, Dt, fist: true);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.Down);
+        // The item lands and the grip has been closed a while: the same squeeze is still part of the fist.
+        t.Update(true, false, true, Dt, fist: false);
+        Assert.False(t.Down);
+        t.Update(false, false, true, Dt);
+        t.Update(true, false, true, Dt);
+        Assert.True(t.Down);
+    }
+
+    [Fact]
+    public void TriggerHeldWhenTheGripCloses_IsMuted()
+    {
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt);
+        Assert.True(t.Down);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.Down);
+    }
+
+    [Fact]
+    public void FistWindow_HoldsForSettleSeconds()
+    {
+        Assert.True(UseTrigger.InFist(gripHeld: true, gripClosedFor: 0f));
+        Assert.True(UseTrigger.InFist(true, UseTrigger.SettleSeconds - 0.01f));
+        Assert.False(UseTrigger.InFist(true, UseTrigger.SettleSeconds));
+        Assert.False(UseTrigger.InFist(false, 0f));
+    }
 }

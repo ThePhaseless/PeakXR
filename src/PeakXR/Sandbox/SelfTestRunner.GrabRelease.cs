@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
+using PeakXR.Inventory;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PeakXR.Sandbox;
@@ -104,8 +106,8 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.287: the right hand closes on a glowing Apple as a fist, the trigger following the grip by two
-    /// frames, which starts eating it; both open 0.1 s after the press. The release must wait out the cast that the
-    /// opening ends and drop the Apple within 1 s (<see cref="ReleaseQueue"/>).</summary>
+    /// frames (part of the fist, so no use starts since issue #48); both open 0.1 s after the press. The Apple must
+    /// drop within 1 s; a release during a use waits out the cast the opening ends (<see cref="ReleaseQueue"/>).</summary>
     IEnumerator QuickReleaseFistStep()
     {
         if (!InteractConfig.Instance.ReleaseToDrop)
@@ -166,6 +168,143 @@ internal sealed partial class SelfTestRunner
             Fail("a release 0.1 s after the press kept the Apple: " + note);
         yield return DropHeld();
         yield return Wait(0.4f);
+    }
+
+    /// <summary>vr.320 (issue #48): the right hand closes on a glowing Apple as a fist, the trigger following the grip
+    /// by two frames, and stays closed 1 s: the Apple is in hand and its use never starts. The trigger then opens and
+    /// is squeezed again with the grip still closed: that fresh press starts eating it within 0.6 s.</summary>
+    IEnumerator FistGrabNoUseStep()
+    {
+        const bool left = false;
+        var world = SpawnTestItem(AppleFragment, HandSpot(left));
+        if (world == null)
+            yield break;
+        var prefab = FindItem(SandboxActions.Items, AppleFragment);
+        yield return Wait(0.2f);
+        yield return GlowAndPress(left, world, fist: true);
+        if (!stepOk)
+            yield break;
+        bool held = false,
+            used = false;
+        for (float until = Now + 1f; Now < until; )
+        {
+            held |= Holding(prefab);
+            var item = HeldItem();
+            used |= item != null && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        yield return Wait(0.15f);
+        Script(left).Trigger = 1f;
+        bool fresh = false;
+        for (float until = Now + 0.6f; Now < until && !fresh; )
+        {
+            var item = HeldItem();
+            fresh = item != null && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        Script(left).Grip = 0f;
+        var note = F(
+            $"held {held}, used while the fist stayed closed {used}, a fresh squeeze used it {fresh}"
+        );
+        if (!held)
+            Fail(
+                "the fist never took the glowing Apple: "
+                    + note
+                    + "; "
+                    + PhysicalInteraction.LastGripNote
+            );
+        else if (used)
+            Fail("the fist's own trigger started using the Apple it picked up: " + note);
+        else if (!fresh)
+            Fail("a fresh trigger press after the fist did not use the Apple: " + note);
+        else
+            Note(note);
+        yield return Wait(0.3f);
+        yield return DropHeld();
+    }
+
+    /// <summary>vr.321 (issue #49): a hotbar pocket holds Bandages and an Apple is held still at that pocket's belt
+    /// slot. The right hand on the slot is the slot's grip (a draw), so the Apple under it must not glow, and the grip
+    /// must be the slot's and draw the Bandages.</summary>
+    IEnumerator GlowYieldsToSlotStep()
+    {
+        var c = Character.localCharacter;
+        var inv = BodyInventory.Instance;
+        var bandages = FindItem(SandboxActions.Items, "Bandages");
+        if (!inv.Valid || bandages == null || !PhotonNetwork.IsMasterClient)
+        {
+            stepSkip =
+                !inv.Valid ? "body slots off"
+                : bandages == null ? "no Bandages item"
+                : "filling a pocket needs the master client";
+            yield break;
+        }
+        EmptyHotbar(c);
+        if (!c.player.AddItem(bandages.itemID, null, out var pocket) || pocket == null)
+        {
+            Fail("no free pocket for Bandages");
+            yield break;
+        }
+        int slot = -1;
+        for (int i = 0; i < inv.Count; i++)
+        {
+            if (inv.Slot(i).GameSlot == pocket.itemSlotID)
+                slot = i;
+        }
+        if (slot < 0)
+        {
+            Fail($"no body slot for pocket {pocket.itemSlotID}");
+            yield break;
+        }
+        const bool left = false;
+        var rig = VRRig.Instance;
+        var at = rig.Origin.TransformPoint(inv.Anchor(slot));
+        var apple = SpawnTestItem(AppleFragment, at);
+        if (apple == null)
+            yield break;
+        yield return Wait(0.2f);
+        yield return MoveTo(left, () => at, 0.4f);
+        if (OverReach(left) is { } far)
+        {
+            Fail(far);
+            yield break;
+        }
+        yield return Wait(0.3f);
+        var hand = rig.Hand(left).position;
+        float toApple = float.MaxValue;
+        foreach (var col in apple.colliders)
+        {
+            if (col != null && col.enabled && !col.isTrigger)
+                toApple = Mathf.Min(toApple, Vector3.Distance(col.ClosestPoint(hand), hand));
+        }
+        var glow = PhysicalInteraction.GripPreview(left);
+        Script(left).Grip = 1f;
+        yield return WaitFor(
+            () => PhysicalInteraction.HandAction(left) != GripPressAction.None,
+            0.3f
+        );
+        var action = PhysicalInteraction.HandAction(left);
+        yield return WaitFor(() => Holding(bandages), 2f);
+        bool drew = Holding(bandages);
+        Script(left).Grip = 0f;
+        var note = F(
+            $"Apple {toApple:0.00} m from the hand on slot {slot}, glow on {Label(glow)}, grip {action}, drew the Bandages {drew}"
+        );
+        if (toApple > InteractConfig.Instance.GrabRadius)
+            Fail("the Apple is out of the hand's grab reach, the step proves nothing: " + note);
+        else if (glow != null)
+            Fail("an item glowed under a hand whose grip the belt slot takes: " + note);
+        else if (action != GripPressAction.Extension || !drew)
+            Fail(
+                $"the grip at a filled belt slot did not draw from it: {note}; {PhysicalInteraction.LastGripNote}"
+            );
+        else
+            Note(note);
+        yield return Wait(0.3f);
+        yield return DropHeld();
+        EmptyHotbar(c);
     }
 
     /// <summary>vr.288: for each of <see cref="HighlightItems"/> and each hand, the hand moves onto the item held still
