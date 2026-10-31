@@ -9,6 +9,7 @@ using PeakXR.Interact.Binoculars;
 using PeakXR.Interact.Lights;
 using PeakXR.Interact.Physical;
 using PeakXR.Interact.Tools;
+using PeakXR.Locomotion;
 using PeakXR.Rig;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
@@ -1124,6 +1125,9 @@ internal sealed partial class SelfTestRunner
             Vector3.SignedAngle(Flat(rig.Head.forward), Flat(target - c.Center), Vector3.up)
         );
         yield return Wait(0.6f);
+        // The turn leaves the body off the view until the stance walk steps under it after its delay (#52); a step
+        // that measured the hold then, mid-walk, read a lead off by the turn's offset (#69: vr.83c, 0.26-0.40 m).
+        yield return WaitFor(() => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed, 5f);
     }
 
     /// <summary>Warps onto the ground under <paramref name="stand"/> and waits for the body to settle. Sets

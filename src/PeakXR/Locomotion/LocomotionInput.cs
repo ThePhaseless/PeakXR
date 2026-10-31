@@ -30,6 +30,10 @@ internal static class LocomotionInput
     internal static float FollowGap { get; private set; }
 
     internal static bool FollowStalled => Stance.Blocked;
+
+    /// <summary>The stance walk still owes a walk: the body can follow and is past the start distance, unblocked
+    /// (self-test: a step judges the stance once none is owed).</summary>
+    internal static bool StanceOwed { get; private set; }
     internal static int FollowDrops { get; private set; }
     private static readonly RecenterFade Fade = new();
     private static readonly object FadeOwner = new();
@@ -385,6 +389,7 @@ internal static class LocomotionInput
             lastOwn = false;
             Own.Reset();
             RigDriver.FollowWalking = false;
+            StanceOwed = false;
             return NVector2.Zero;
         }
 
@@ -431,8 +436,16 @@ internal static class LocomotionInput
         if (warped)
             Follow.Anchor += debt;
         Stance.AtOnce = LocomotionConfig.LeanRadius;
-        var request = Stance.Update(debt, canFollow && !outside, dt);
+        // The walk brakes on the body's speed: it coasts on after the request stops (cf6aa3e: 0.1-0.16 m past the view).
+        var velocity3 = rig.Origin.InverseTransformVector(data.avarageVelocity);
+        var request = Stance.Update(
+            debt,
+            new NVector2(velocity3.x, velocity3.z),
+            canFollow && !outside,
+            dt
+        );
         RigDriver.FollowWalking = canFollow && Stance.Walking;
+        StanceOwed = canFollow && !outside && !Stance.Blocked && debt.Length() > Stance.Start;
         var level = new NVector2(data.avarageVelocity.x, data.avarageVelocity.z);
         lastOwn =
             canFollow
