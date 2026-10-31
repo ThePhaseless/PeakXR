@@ -77,7 +77,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.219-spectate-comfort", Budget(18f), SpectateComfortStep());
         yield return Restoring("vr.156-head-near-wall", Budget(5f), HeadNearWallStep());
         yield return Restoring("vr.159-amulet-pips", Budget(7f), AmuletStep());
-        yield return Restoring("vr.210-heartbeat", Budget(11f), HeartbeatStep());
+        yield return Restoring("vr.210-heartbeat", Budget(12f), HeartbeatStep());
         yield return Restoring("vr.211-shiver", Budget(10f), ShiverStep());
         yield return Restoring("vr.151-wind-pressure", Budget(3f), WindPressureStep());
         yield return Restoring("vr.212-tornado-brace", Budget(5f), TornadoBraceStep());
@@ -1332,12 +1332,19 @@ internal sealed partial class SelfTestRunner
         string lightRun = null,
             heavyRun = null;
         bool ran = true;
+        // Issue #67: from wherever the last step left it, the sprint ran into the rocks (TooSteep at the hand), broke
+        // off and beat again on resuming. Start facing open ground, and sprint the second time back over the ground
+        // the first just crossed.
+        var rig = VRRig.Instance;
+        FaceOpenGround(c, rig);
         yield return Sprint(
             c,
             move,
             3f,
             (p, ok, run) => (light, ran, lightRun) = (p, ran && ok, run)
         );
+        rig.RotateYaw(180f);
+        yield return Wait(0.6f);
         SandboxActions.AddStatus(STATUS.Weight, 0.5f);
         // Weight lowers the max (1 minus the status sum, Character.cs:1613), and the beat slows as the bar's fraction
         // rises (BodyCues.Heartbeat): 0.25 of a 0.5 bar beat slower with no weight term at all. Same fraction, so
@@ -1362,12 +1369,17 @@ internal sealed partial class SelfTestRunner
     /// <summary>Sprints with the move stick and its click (as vr.142) until the second beat or
     /// <paramref name="seconds"/>, then stops and rests 1 s. Reports the first beat gap, which the first beat sets
     /// from the bar as the sprint starts (later gaps shorten as the sprint drains it, faster on a Weight-shrunk bar),
-    /// whether the body sprinted and spent stamina, and a note on the sprint.</summary>
+    /// whether the body sprinted and spent stamina, and a note on the sprint. Spent is counted from the first
+    /// sprinting frame: until then the bar regenerates (0.2 per s, Character.cs:1244, against the sprint's 0.025 per
+    /// s), which ate a whole second's drain and read -0.005 to 0.000 (issue #67). A sprint that stops for 0.4 s
+    /// between the two beats breaks the gap (the beat restarts when it resumes), so it does not count.</summary>
     IEnumerator Sprint(Character c, bool move, float seconds, Action<float, bool, string> result)
     {
         int beats = BodyFeedback.Beats;
-        float before = c.data.currentStamina;
-        bool sprinted = false;
+        float before = float.NaN;
+        float sprintFor = 0f,
+            stoppedFor = 0f,
+            longestStop = 0f;
         Script(move).Stick = new Vector2(0f, 1f);
         Script(move).StickClick = true;
         float start = Now;
@@ -1375,16 +1387,29 @@ internal sealed partial class SelfTestRunner
         {
             if (LocomotionConfig.SprintToggle && Now - start > 0.15f)
                 Script(move).StickClick = false;
-            sprinted |= c.data.isSprinting;
+            if (c.data.isSprinting)
+            {
+                if (float.IsNaN(before))
+                    before = c.data.currentStamina;
+                sprintFor += Time.deltaTime;
+                stoppedFor = 0f;
+            }
+            else if (!float.IsNaN(before))
+            {
+                stoppedFor += Time.deltaTime;
+                longestStop = Mathf.Max(longestStop, stoppedFor);
+            }
             yield return null;
         }
         Script(move).Stick = Vector2.zero;
         Script(move).StickClick = false;
-        float spent = before - c.data.currentStamina;
+        float spent = float.IsNaN(before) ? 0f : before - c.data.currentStamina;
         result(
             BodyFeedback.Beats - beats >= 2 ? BodyFeedback.LastBeatPeriod : 0f,
-            sprinted && spent > 0f,
-            F($"sprinting {sprinted} for {Now - start:0.0} s, spent {spent:0.000}")
+            sprintFor > 0f && spent > 0f && longestStop < 0.4f,
+            F(
+                $"sprinting {sprintFor:0.0} of {Now - start:0.0} s, longest stop {longestStop:0.0} s, spent {spent:0.000}"
+            )
         );
         yield return Wait(1f);
     }
