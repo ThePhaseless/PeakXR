@@ -27,10 +27,58 @@ internal sealed class PackStash : IGripExtension
     /// <summary>How near (m) the holding hand must come to a pack's middle: inside a pack about 0.5 m tall.</summary>
     private const float Reach = 0.3f;
 
+    // Scratch for one evaluation: every reader loads them first (Find or PointVerdictNow).
     private Backpack ground;
     private Character wearer;
     private Vector3 packAt;
     private bool wasOver;
+
+    /// <summary>A pack the free hand can point at: on the ground, or worn by <see cref="Wearer"/>. <see cref="Id"/> is
+    /// its PhotonView id (the item's, or the wearer's), unique in a room; -1 none.</summary>
+    private struct Pick
+    {
+        public Backpack Ground;
+        public Character Wearer;
+        public Vector3 At;
+        public int Id;
+    }
+
+    private static readonly Pick NoPick = new() { Id = -1 };
+
+    // Point to open (#71), per hand (0 left, 1 right).
+    private readonly ReachOutTracker[] point = { NewPoint(), NewPoint() };
+    private readonly Pick[] pointPick = { NoPick, NoPick };
+    private readonly bool[] pointArmed = new bool[2];
+    private bool pullPrevDown,
+        pullPrevLeft,
+        pullClaimed;
+    private int pullHand = -1;
+
+    // The walk's smallest-angle pack, and the tracker's current pick (which hysteresis may keep over a nearer angle).
+    private Pick walkBest,
+        walkHeld;
+    private float walkBestAngle;
+    private Collider rayCollider;
+    private IInteractible rayTarget;
+
+    private static ReachOutTracker NewPoint() =>
+        new(PackDrop.PointAcquire, PackDrop.PointHold, PackDrop.PointDwell, ReachOut.Grace);
+
+    /// <summary>The hand whose trigger a pointed-at pack owns: an armed pick, or the claimed pull until release; -1
+    /// none. The reach-out yields on it (SocialHands).</summary>
+    public int PointHand { get; private set; } = -1;
+
+    /// <summary>The armed pick's verdict this frame (self-test), None when the trigger would open it.</summary>
+    public DenyReason PointVerdict { get; private set; }
+
+    /// <summary>The pack <see cref="PointHand"/> points at (self-test): the ground <c>Backpack</c>, or the wearer's
+    /// <c>BackpackOnBackVisuals</c>; null none.</summary>
+    public Object PointPack =>
+        PointHand < 0 ? null
+        : pointPick[PointHand].Ground != null ? pointPick[PointHand].Ground
+        : pointPick[PointHand].Wearer != null
+            ? pointPick[PointHand].Wearer.refs.backpackHandler.activeBackpackVisuals
+        : null;
 
     /// <summary>The pocket the item would go into and its spot (the pack's middle when it has no pocket spots), or
     /// for WrongAngle the place behind the wearer to stand; set by <see cref="Refusal"/>.</summary>
@@ -95,6 +143,7 @@ internal sealed class PackStash : IGripExtension
             && hand != null
             && !c.data.usingBackpackWheel
             && Find(c, item, hand.position);
+        TickPoint(c, Over);
         if (!Over)
         {
             wasOver = false;
@@ -109,6 +158,311 @@ internal sealed class PackStash : IGripExtension
         if (!wasOver)
             Haptics.Pulse(left, 0.15f, 0.02f);
         wasOver = true;
+    }
+
+    // ------------------------------------------------------------------ point to open (#71)
+    //
+    // With an item in one hand, the other hand points at a ground pack or another player's worn pack and pulls its
+    // trigger: the pack's wheel opens through its own entry point (Backpack.Interact, Backpack.cs:32;
+    // BackpackOnBackVisuals.Interact_CastFinished, BackpackOnBackVisuals.cs:162, without the worn pack's 0.25 s cast,
+    // as the shoulder grip), which is local UI (GUIManager.OpenBackpackWheel, GUIManager.cs:546), so the stash that
+    // follows is the game's own (BackpackWheel.Choose/TryStash, BackpackWheel.cs:122-176). The trigger hand drives the
+    // wheel and its release commits (BodyInventory.HoldWheelByTrigger; BackpackWheel.cs:96). The pick is the pack the
+    // aim ray hits, else the smallest angle off it (Core ReachOutTracker, PackDrop.Point*), whatever its distance: past
+    // the game's 2 m interact reach (Interaction.cs:7) it shows OutOfReach. Occlusion as vanilla's (Interaction.cs:257).
+
+    /// <summary>Per frame, before <see cref="Tick"/>'s early return: the free hand's pick and its cue.</summary>
+    private void TickPoint(Character c, bool over)
+    {
+        // A pull whose release Inject never saw (a menu or the wheel was open) ends with the raw trigger.
+        if (VRInput.Hand(pullPrevLeft).Trigger < 0.4f)
+        {
+            pullPrevDown = pullClaimed = false;
+            pullHand = -1;
+        }
+        bool free = !LocalHold.ItemInLeftHand;
+        int h = free ? 0 : 1;
+        point[1 - h].Reset();
+        pointArmed[1 - h] = false;
+        var rig = VRRig.Instance;
+        var aim = rig != null ? rig.Aim(free) : null;
+        if (over || aim == null || !FreeHand(c, free))
+        {
+            point[h].Reset();
+            pointArmed[h] = false;
+            PointHand = pullHand;
+            return;
+        }
+        var t = point[h];
+        t.Begin();
+        WalkPoint(c, t, aim.position, aim.forward);
+        t.Step(1f, 0f, true, Time.time);
+
+        var pick =
+            t.Friend >= 0 && t.Friend == walkBest.Id ? walkBest
+            : t.Friend >= 0 && t.Friend == walkHeld.Id ? walkHeld
+            : NoPick;
+        // Armed now, not in the lost pick's grace: the ring and the claim follow one rule.
+        bool armed = pick.Id >= 0 && t.ArmedFriend == t.Friend;
+        pointArmed[h] = armed;
+        if (armed)
+        {
+            pointPick[h] = pick;
+            PointVerdict = PointVerdictNow(c, h);
+            if (PointVerdict == DenyReason.None)
+            {
+                if (Affordance.Hints)
+                    Affordance.Mark(
+                        free,
+                        packAt,
+                        DenyReason.HappenedHere,
+                        DenyHint.At(packAt),
+                        "Trigger to open"
+                    );
+            }
+            else
+                Affordance.Hover(free, packAt, PointVerdict, PointHint(c, PointVerdict));
+            // With hints off the tick is the only sign the pick is armed.
+            if (t.Acquired)
+                Haptics.Pulse(free, 0.15f, 0.02f);
+        }
+        PointHand =
+            pullHand >= 0 ? pullHand
+            : armed ? h
+            : -1;
+    }
+
+    /// <summary>The free hand may point: it is tracked and open (it holds nothing), holds no wall, rope or the item,
+    /// the other hand holds an item a pack can take, and nothing blocks input. Needs <c>Inventory.BodySlots</c>, whose
+    /// wheel hold (<see cref="BodyInventory.HoldWheelByTrigger"/>) commits the wheel.</summary>
+    private static bool FreeHand(Character c, bool left)
+    {
+        var item = c.data.currentItem;
+        ref var s = ref VRInput.Hand(left);
+        return InventoryConfig.Instance.PointToOpenPack
+            && VRSession.Active
+            && BodyInventory.Instance.Valid
+            && c == Character.localCharacter
+            && item != null
+            && item is not Backpack
+            && LocalHold.ItemInLeftHand != left
+            && s.Tracked
+            && s.Grip < ReachOut.OpenGrip
+            && !PhysicalInteraction.WorldGripHolds(left)
+            && !c.data.usingWheel
+            && BodyInventory.CanDoInput != null
+            && BodyInventory.CanDoInput(c);
+    }
+
+    /// <summary>Offers every pack within <see cref="PackDrop.PointSearch"/> of the eye and the hold angle of the aim,
+    /// not hidden behind terrain, to <paramref name="t"/>; keeps the smallest-angle one and the tracker's current
+    /// pick. Same packs as <see cref="Find"/>, plus the game's own interact gate for a ground pack.</summary>
+    private void WalkPoint(Character c, ReachOutTracker t, Vector3 from, Vector3 dir)
+    {
+        walkBest = walkHeld = NoPick;
+        walkBestAngle = float.MaxValue;
+        // shortcut: one ray against solid colliders; a worn pack with only trigger colliders falls back to its angle.
+        if (
+            Physics.Raycast(
+                from,
+                dir,
+                out var hit,
+                PackDrop.PointSearch + 1f,
+                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            if (!ReferenceEquals(hit.collider, rayCollider))
+            {
+                rayCollider = hit.collider;
+                rayTarget = hit.collider.GetComponentInParent<IInteractible>();
+            }
+        }
+        else
+        {
+            rayCollider = null;
+            rayTarget = null;
+        }
+        var eye = c.Head;
+        var items = Item.ALL_ITEMS;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (
+                items[i] is not Backpack pack
+                || pack == null
+                || pack.itemState != ItemState.Ground
+                || pack.backpackType == BackpackSlot.BackpackType.Rocketpack
+                || !pack.IsInteractible(c)
+            )
+                continue;
+            Offer(
+                t,
+                from,
+                dir,
+                eye,
+                pack,
+                new Pick
+                {
+                    Ground = pack,
+                    At = pack.Center(),
+                    Id = pack.photonView.ViewID,
+                }
+            );
+        }
+        var all = Character.AllCharacters;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var ch = all[i];
+            if (
+                ch == null
+                || ch == c
+                || ch.refs.backpackHandler == null
+                || !SocialHands.WearsPack(ch)
+                || ch.player.backpackSlot.backpackType == BackpackSlot.BackpackType.Rocketpack
+            )
+                continue;
+            var visuals = ch.refs.backpackHandler.activeBackpackVisuals;
+            if (visuals == null || !visuals.isActiveAndEnabled)
+                continue;
+            Offer(
+                t,
+                from,
+                dir,
+                eye,
+                visuals,
+                new Pick
+                {
+                    Wearer = ch,
+                    At = visuals.transform.position,
+                    Id = ch.refs.view.ViewID,
+                }
+            );
+        }
+    }
+
+    private void Offer(
+        ReachOutTracker t,
+        Vector3 from,
+        Vector3 dir,
+        Vector3 eye,
+        IInteractible target,
+        Pick pick
+    )
+    {
+        if ((pick.At - eye).sqrMagnitude > PackDrop.PointSearch * PackDrop.PointSearch)
+            return;
+        // The pack the ray hits is the pick whatever its centre's angle (a big pack seen close).
+        bool onRay = ReferenceEquals(rayTarget, target);
+        float angle = onRay ? 0f : ReachOut.AimDegrees(from.N(), (from + dir).N(), pick.At.N());
+        if (angle > PackDrop.PointHold || (!onRay && Occluded(from, pick.At, target)))
+            return;
+        // All in range: the aim picks, never the distance (OutOfReach shows on the aimed pack).
+        t.Offer(pick.Id, angle, true);
+        if (pick.Id == t.Friend)
+            walkHeld = pick;
+        if (angle < walkBestAngle)
+        {
+            walkBestAngle = angle;
+            walkBest = pick;
+        }
+    }
+
+    /// <summary>Vanilla's occlusion test (Interaction.cs:257): terrain or map between, unless the hit is the pack.</summary>
+    private static bool Occluded(Vector3 from, Vector3 to, IInteractible target)
+    {
+        var hit = HelperFunctions.LineCheck(
+            from,
+            to,
+            HelperFunctions.LayerType.TerrainMap,
+            0f,
+            QueryTriggerInteraction.Collide
+        );
+        return hit.collider != null
+            && !ReferenceEquals(hit.collider.GetComponentInParent<IInteractible>(), target);
+    }
+
+    /// <summary>The verdict for hand <paramref name="h"/>'s stored pick now, out of reach first.</summary>
+    private DenyReason PointVerdictNow(Character c, int h)
+    {
+        var p = pointPick[h];
+        ground = p.Ground;
+        wearer = p.Wearer;
+        packAt = p.At;
+        return PackDrop.PointRefusal(
+            Vector3.Distance(c.Head, packAt),
+            Refusal(c, c.data.currentItem, packAt, out _)
+        );
+    }
+
+    private DenyHint PointHint(Character c, DenyReason r) =>
+        r == DenyReason.OutOfReach ? DenyHint.Range(c.Head, packAt, PackDrop.PointReach) : Hint(r);
+
+    /// <summary>The stored pick is still a pack to open: a ground pack still lying there, a wearer still wearing one.</summary>
+    private static bool Live(Pick p) =>
+        p.Ground != null
+            ? p.Ground.itemState == ItemState.Ground
+            : p.Wearer != null
+                && p.Wearer.refs.backpackHandler != null
+                && SocialHands.WearsPack(p.Wearer)
+                && p.Wearer.refs.backpackHandler.activeBackpackVisuals != null;
+
+    /// <summary>
+    /// From <c>PhysicalInteraction.Inject</c> every frame it runs, with the free hand's trigger: true while this pull
+    /// belongs to the pack, so the held item's secondary use does not see it. Only a pull that starts on an armed pick
+    /// is taken, and it stays taken until release whatever happens to the wheel. Reads the pick <see cref="TickPoint"/>
+    /// armed in the previous frame's Inventory postfix, one frame behind Inject; fine at 90 Hz.
+    /// </summary>
+    public bool ClaimTrigger(Character c, bool left, bool down, bool holding)
+    {
+        bool active = holding && down;
+        bool edge = active && !pullPrevDown && left == pullPrevLeft;
+        if (left != pullPrevLeft)
+            pullClaimed = false;
+        pullPrevDown = active;
+        pullPrevLeft = left;
+        if (!active)
+        {
+            pullClaimed = false;
+            pullHand = -1;
+            return false;
+        }
+        if (edge)
+        {
+            pullClaimed = TryOpen(c, left);
+            pullHand = pullClaimed ? (left ? 0 : 1) : -1;
+        }
+        return pullClaimed;
+    }
+
+    /// <summary>The press on an armed pick: open its wheel, or say why not. False when nothing is armed on that hand,
+    /// so the pull stays the item's secondary use.</summary>
+    private bool TryOpen(Character c, bool left)
+    {
+        int h = left ? 0 : 1;
+        var p = pointPick[h];
+        if (!pointArmed[h] || !FreeHand(c, left) || !Live(p))
+            return false;
+        var reason = PointVerdictNow(c, h);
+        Component tint =
+            p.Ground != null ? p.Ground : p.Wearer.refs.backpackHandler.activeBackpackVisuals;
+        if (reason != DenyReason.None)
+        {
+            Affordance.DenyAtHand(left, reason, PointHint(c, reason), tint);
+            return true;
+        }
+        if (p.Ground != null)
+            p.Ground.Interact(c);
+        else
+            p.Wearer.refs.backpackHandler.activeBackpackVisuals.Interact_CastFinished(c);
+        if (c.data.usingBackpackWheel)
+        {
+            BodyInventory.Instance.HoldWheelByTrigger(left);
+            Haptics.Pulse(left, 0.5f, 0.05f);
+        }
+        else
+            Affordance.DenyAtHand(left, DenyReason.CantSwitch, default, tint);
+        return true;
     }
 
     /// <summary>The nearest ground pack or other player's worn pack within <see cref="Reach"/> of the hand. A held

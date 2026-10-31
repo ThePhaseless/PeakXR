@@ -13,7 +13,8 @@ internal sealed class InventoryConfig
         backpackOverShoulder,
         ghosts,
         wheelByHand,
-        stashIntoPacks;
+        stashIntoPacks,
+        pointToOpenPack;
     private ConfigEntry<string> layout;
     private ConfigEntry<float> radius,
         height;
@@ -24,6 +25,7 @@ internal sealed class InventoryConfig
     public bool Ghosts => ghosts?.Value ?? true;
     public bool WheelByHand => wheelByHand?.Value ?? true;
     public bool StashIntoPacks => stashIntoPacks?.Value ?? true;
+    public bool PointToOpenPack => pointToOpenPack?.Value ?? true;
     public string Layout => layout?.Value ?? BodySlotLayout.Belt;
     public float Radius => radius?.Value ?? 0.12f;
     public float Height => height?.Value ?? 0f;
@@ -101,6 +103,15 @@ internal sealed class InventoryConfig
                     + "the grip: it goes into the free pocket nearest your hand. A pin on that pocket shows it would go "
                     + "in; a red ring says why not (full, an item packs refuse, or their front), and the item stays in "
                     + "your hand."
+            ),
+            pointToOpenPack = file.Bind(
+                s,
+                "PointToOpenPack",
+                true,
+                "With an item in one hand, point the other hand at a backpack on the ground or on a friend's back "
+                    + "(from behind) within reach and pull that hand's trigger: the pack's wheel opens. Move that hand "
+                    + "toward a pocket and let go of the trigger to put the item in. A red ring says why not. Needs "
+                    + "Inventory.BodySlots."
             ),
             ghosts = file.Bind(
                 s,

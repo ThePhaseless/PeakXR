@@ -173,13 +173,19 @@ internal sealed class RadialWheels : MonoBehaviour
 
     /// <summary>
     /// The controller that opened a wheel. Emote comes from the binding table (Y hold by default). The backpack
-    /// wheel opens on interact, which physical interaction presses with a closed grip, so a single closed grip
-    /// names the hand; otherwise the Interact binding's hand.
+    /// wheel opens toward the hand that holds it (<c>BodyInventory.WheelHand</c>), else on interact, which physical
+    /// interaction presses with a closed grip, so a single closed grip names the hand; otherwise the Interact
+    /// binding's hand.
     /// </summary>
     public static bool OpeningHandLeft(VRAction action)
     {
         if (action == VRAction.Interact)
         {
+            // The hand holding the backpack wheel (the shoulder grip, or a trigger aimed at a pack): with an item in
+            // the other hand, that hand's closed grip would name the wrong side.
+            int held = PeakXR.Inventory.BodyInventory.Instance.WheelHand;
+            if (held >= 0)
+                return held == 0;
             bool leftGrip = VRInput.Left.Grip > 0.5f,
                 rightGrip = VRInput.Right.Grip > 0.5f;
             if (leftGrip != rightGrip)

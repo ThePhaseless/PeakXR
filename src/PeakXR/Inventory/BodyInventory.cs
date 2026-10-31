@@ -79,7 +79,22 @@ internal sealed class BodyInventory : IGripExtension
     private readonly NVector3[] wheelStart = new NVector3[2];
 
     private int wheelHand = -1;
+
+    /// <summary>The wheel <see cref="wheelHand"/> holds was opened by that hand's trigger, not its grip.</summary>
+    private bool wheelTrigger;
     private bool wheelWasOpen;
+
+    /// <summary>The hand holding the open backpack wheel (0 left, 1 right), -1 none: it places and drives it.</summary>
+    internal int WheelHand => wheelHand;
+
+    /// <summary>A pack pointed at opened its wheel with this hand's trigger (<see cref="PackStash"/>): the trigger holds
+    /// it, and its release commits the pocket.</summary>
+    internal void HoldWheelByTrigger(bool left)
+    {
+        wheelHand = HandIndex(left);
+        wheelTrigger = true;
+    }
+
     private float secondPulseAt = -1f;
     private bool secondPulseLeft;
 
@@ -140,6 +155,7 @@ internal sealed class BodyInventory : IGripExtension
         if (!Valid)
         {
             wheelHand = -1;
+            wheelTrigger = false;
             shoulderGrip[0] = shoulderGrip[1] = false;
             drawSlot[0] = drawSlot[1] = nearSlot[0] = nearSlot[1] = -1;
             bodyYaw.Reset();
@@ -154,10 +170,15 @@ internal sealed class BodyInventory : IGripExtension
         // hovered pocket when interact is released (BackpackWheel.Update, BackpackWheel.cs:92).
         if (wheelHand >= 0)
         {
-            if (c.data.usingBackpackWheel)
-                input.interactIsPressed = true;
-            else
+            if (!c.data.usingBackpackWheel)
+            {
                 wheelHand = -1;
+                wheelTrigger = false;
+            }
+            // A trigger-opened wheel (PackStash) commits when that trigger opens (AnalogButton(0.6f, 0.4f) release);
+            // wheelHand stays set through that frame, so DriveWheel below steers by the trigger hand.
+            else if (!wheelTrigger || VRInput.Hand(wheelHand == 0).Trigger >= 0.4f)
+                input.interactIsPressed = true;
         }
         DriveWheel(c, cfg);
     }
@@ -330,7 +351,10 @@ internal sealed class BodyInventory : IGripExtension
         {
             shoulderGrip[hand] = false;
             if (wheelHand == hand)
+            {
                 wheelHand = -1;
+                wheelTrigger = false;
+            }
             return true;
         }
         int drawn = drawSlot[hand];
@@ -471,6 +495,7 @@ internal sealed class BodyInventory : IGripExtension
         if (c.data.usingBackpackWheel)
         {
             wheelHand = hand;
+            wheelTrigger = false;
             Haptics.Pulse(left, 0.5f, 0.05f);
         }
     }
@@ -490,6 +515,7 @@ internal sealed class BodyInventory : IGripExtension
     private void TakePackOff(Character c, bool left)
     {
         wheelHand = -1;
+        wheelTrigger = false;
         if (c.data.usingBackpackWheel && GUIManager.instance != null)
             GUIManager.instance.CloseBackpackWheel();
         if (SwitchBlocked(c))

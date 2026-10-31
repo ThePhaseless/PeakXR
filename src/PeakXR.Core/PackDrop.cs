@@ -14,6 +14,24 @@ public static class PackDrop
     /// (<c>BackpackOnBackVisuals.IsInteractible</c>, BackpackOnBackVisuals.cs:99-104).</summary>
     public const float MaxBackAngle = 110f;
 
+    /// <summary>A pack pointed at by the free hand opens within the game's own interact distance from the eye
+    /// (<c>Interaction.distance</c>, Interaction.cs:7), metres.</summary>
+    public const float PointReach = 2f;
+
+    /// <summary>Packs up to here from the eye can be pointed at; past <see cref="PointReach"/> they show OutOfReach.</summary>
+    public const float PointSearch = 4f;
+
+    /// <summary>The pointing pick's angles off the aim ray (acquire, hold, degrees) and its dwell (s): tighter than
+    /// the reach-out's, as a pack is a small target and the pull it takes would otherwise be the item's.</summary>
+    public const float PointAcquire = 10f;
+    public const float PointHold = 15f;
+    public const float PointDwell = 0.1f;
+
+    /// <summary>Why a trigger pull at a pointed-at pack would not open it: out of reach first (walking closer is the
+    /// first fix), else the verdict a pack in reach gives (<see cref="Refusal"/>).</summary>
+    public static DenyReason PointRefusal(float eyeDistance, DenyReason inReach) =>
+        eyeDistance > PointReach ? DenyReason.OutOfReach : inReach;
+
     /// <summary>Why the item cannot go in, or None. A busy hand says why first (the switch gates), then a worn pack
     /// reached from its wearer's front (<paramref name="fromBehind"/> false), then an item the wheel refuses
     /// (<c>canBackpack</c>), then a pack with no free pocket (<paramref name="freePocket"/> below 0).</summary>

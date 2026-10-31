@@ -333,4 +333,45 @@ public class ReachOutTests
         Assert.Equal(-1, t.ArmedFriend);
         Assert.True(Hold(t, 7, 0.35f, 0.7f));
     }
+
+    static ReachOutTracker PackPoint() =>
+        new(PackDrop.PointAcquire, PackDrop.PointHold, PackDrop.PointDwell, ReachOut.Grace);
+
+    [Fact]
+    public void PackTracker_AcquiresInside10_HoldsTo15()
+    {
+        var t = PackPoint();
+        Frame(t, 0f, 1f, true, (7, 11f, true));
+        Assert.Equal(-1, t.Friend);
+        Frame(t, 0.01f, 1f, true, (7, 9f, true));
+        Assert.Equal(7, t.Friend);
+        Frame(t, 0.02f, 1f, true, (7, 14f, true));
+        Assert.Equal(7, t.Friend);
+        Frame(t, 0.03f, 1f, true, (7, 16f, true));
+        Assert.Equal(-1, t.Friend);
+    }
+
+    [Fact]
+    public void PackTracker_ArmsAfterItsOwnDwell()
+    {
+        var t = PackPoint();
+        Frame(t, 0f, 1f, true, (7, 5f, true));
+        Frame(t, 0.09f, 1f, true, (7, 5f, true));
+        Assert.Equal(-1, t.ArmedFriend);
+        Frame(t, 0.1f, 1f, true, (7, 5f, true));
+        Assert.Equal(7, t.ArmedFriend);
+    }
+
+    [Fact]
+    public void PackTracker_IsNotArmedNowDuringTheGrace()
+    {
+        // The pack claims a pull only on a pick armed this frame: a lost pick's grace keeps ArmedFriend, not the claim.
+        var t = PackPoint();
+        Frame(t, 0f, 1f, true, (7, 5f, true));
+        Frame(t, 0.2f, 1f, true, (7, 5f, true));
+        Assert.True(t.Friend >= 0 && t.ArmedFriend == t.Friend);
+        Frame(t, 0.3f, 1f, true);
+        Assert.Equal(7, t.ArmedFriend);
+        Assert.False(t.Friend >= 0 && t.ArmedFriend == t.Friend);
+    }
 }
