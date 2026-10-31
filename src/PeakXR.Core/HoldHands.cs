@@ -26,4 +26,14 @@ public static class HoldHands
         float t = since / seconds;
         return t * t * (3f - 2f * t);
     }
+
+    /// <summary>Most of a release's whole travel one frame may carry and still be an ease: the
+    /// <see cref="EaseSeconds"/> smoothstep carries about a quarter per 40 ms frame, a snap all of it.</summary>
+    public const float ReleaseJumpShare = 0.4f;
+
+    /// <summary>An item let go into its one-hand grip jumped: its <paramref name="largestStep"/> in one frame is more than
+    /// <paramref name="minJump"/> and more than <see cref="ReleaseJumpShare"/> of its whole <paramref name="travel"/>.
+    /// A fixed per-frame limit reads the ease itself as a jump at long frames (vr.14b, #15).</summary>
+    public static bool ReleaseJumped(float largestStep, float travel, float minJump) =>
+        largestStep > minJump && largestStep > ReleaseJumpShare * travel;
 }

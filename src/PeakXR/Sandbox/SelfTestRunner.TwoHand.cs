@@ -22,7 +22,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>The front of an item in both hands still faces the eyes this much (dot), the join keeping it.</summary>
     const float BetweenFrontFacing = 0.5f;
 
-    /// <summary>Largest jump (m) of the main grip against its hand in one frame while the second hand lets go.</summary>
+    /// <summary>Largest jump (m) of the main grip against its hand in one frame while the second hand lets go, once that
+    /// frame also carries most of the release (Core <see cref="Core.HoldHands.ReleaseJumped"/>): the 0.25 s ease back
+    /// onto the grip moves 0.03 m a frame by itself at this rig's 40 ms frames (#15).</summary>
     const float BetweenReleaseJump = 0.03f;
 
     /// <summary>
@@ -107,16 +109,19 @@ internal sealed partial class SelfTestRunner
         // Letting go: the main grip against its hand per frame.
         yield return GripTo(free, 0f, 0.05f);
         float jump = 0f;
+        float travel = 0f;
         var last = GripOffset();
         float end = Now + 0.5f;
         while (Now < end)
         {
             yield return null;
             var now = GripOffset();
-            jump = Mathf.Max(jump, Vector3.Distance(now, last));
+            float step = Vector3.Distance(now, last);
+            jump = Mathf.Max(jump, step);
+            travel += step;
             last = now;
         }
-        line += F($"; release jump {jump:0.000} m");
+        line += F($"; release jump {jump:0.000} m of {travel:0.000} m eased");
         Plugin.Log.LogInfo("[selftest] vr.14b " + line);
         notes.Add(line);
         if (mid > BetweenMidSlack || mid2 > BetweenMidSlack)
@@ -125,7 +130,7 @@ internal sealed partial class SelfTestRunner
             failures.Add("one hand carries the spacing: " + line);
         if (info.HasFront && facing < BetweenFrontFacing)
             failures.Add("front turned away: " + line);
-        if (jump > BetweenReleaseJump)
+        if (Core.HoldHands.ReleaseJumped(jump, travel, BetweenReleaseJump))
             failures.Add("jumped on release: " + line);
         yield return MoveTrack(free, rest, 0.3f);
 
