@@ -235,6 +235,7 @@ public static class SelfTestIds
         "vr.261-vr-restart-mid-hang",
         "vr.25-cook-over-fire",
         "vr.257-arm-swing-jump",
+        "vr.475-stick-sprint-jump",
         "vr.258-stick-lunge",
         "vr.259-god-off-clamp",
         "vr.253-climb-fist-no-piton",

@@ -31,6 +31,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.40-physical-crouch", 15f, CrouchStep());
         yield return Restoring("vr.41-arm-swing-sprint", 20f, ArmSwingStep());
         yield return Restoring("vr.257-arm-swing-jump", 20f, ArmSwingJumpStep());
+        yield return Restoring("vr.475-stick-sprint-jump", 20f, StickSprintJumpStep());
         yield return Restoring("vr.45-lean", 60f, LeanStep());
         yield return Restoring("vr.45b-head-turn", 35f, HeadTurnStep());
         yield return Restoring("vr.273-look-down-step-back", 25f, LookDownStep());
@@ -490,11 +491,30 @@ internal sealed partial class SelfTestRunner
     /// vr.257: a jump out of an arm-swing sprint stays a sprint jump. The hands swing until take-off and then hang
     /// still; the sprint holds while airborne, as a held sprint button does in vanilla (CharacterMovement.cs:275,
     /// air branch), so the jump keeps the sprint's speed and pays the sprint jump's cost (:670-671). Before the fix
-    /// the swing reset the frame the body left the ground.
+    /// the swing reset the frame the body left the ground. Run 9 (#42): the run-up along the home heading met the test
+    /// wall and the jump press started the game's jump-to-climb (CharacterClimbing.cs:72, :567), which ends any sprint
+    /// (Character.cs:1499); the step now turns to a clear run-up first and names a caught wall.
     /// </summary>
-    IEnumerator ArmSwingJumpStep()
+    IEnumerator ArmSwingJumpStep() => SprintJump(swing: true);
+
+    /// <summary>
+    /// vr.475 (#42): the stick sprint jump. The arm swing off, the move stick forward and its click as the sprint
+    /// (pressed once for <c>Locomotion.SprintMode</c> Toggle, held for Hold, as vr.142 does), then the jump press.
+    /// Every airborne frame keeps <c>isSprinting</c> (CharacterMovement.cs:275), so the sprint's movement force
+    /// (<c>sprintMultiplier</c>, :398-400) carries the jump forward as in vanilla, whose ground jump is only an upward
+    /// impulse (<c>JumpRpc</c>, :620-683).
+    /// </summary>
+    IEnumerator StickSprintJumpStep() => SprintJump(swing: false);
+
+    /// <summary>Clear run-up (m) the sprint jump steps turn toward: up to 3 s of running before the take-off.</summary>
+    const float SprintRunUp = 12f;
+
+    /// <summary>The body of vr.257 (<paramref name="swing"/>) and vr.475: a sprint, a jump press once sprinting, and
+    /// every airborne frame (up to 1.5 s) still sprinting.</summary>
+    IEnumerator SprintJump(bool swing)
     {
         var c = Character.localCharacter;
+        var rig = VRRig.Instance;
         var setting = BodyGestures.ArmSwingSetting;
         if (setting == null)
         {
@@ -502,21 +522,41 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         bool was = setting.Value;
-        bodyRestore = () => setting.Value = was;
-        setting.Value = true;
         bool moveLeft = !VRInput.LeftHanded;
+        bodyRestore = () =>
+        {
+            setting.Value = was;
+            Script(moveLeft).Stick = Vector2.zero;
+            Script(moveLeft).StickClick = false;
+        };
+        setting.Value = swing;
+        // A run-up into a face ends in the game's jump-to-climb, not a sprint jump (run 9).
+        float turn = RunwayTurn(c, rig, out float runway);
+        if (turn != 0f)
+        {
+            rig.RotateYaw(turn);
+            yield return Wait(0.6f);
+        }
+        SandboxActions.SetStamina(1f, 0f);
         HeadFrame(out var head, out var forward, out var right);
         var restLeft = Rest(head, forward, -right).Position;
         var restRight = Rest(head, forward, right).Position;
         Script(moveLeft).Stick = new Vector2(0f, 1f);
+        if (!swing)
+            Script(moveLeft).StickClick = true;
         float start = Now;
         bool pressed = false;
-        // Swing until the body is off the ground: 1.5 s to get the sprint going, then the jump press.
+        // Run until the body is off the ground: 1.5 s to get the sprint going, then the jump press.
         while (Now - start < 3f && (!pressed || c.data.isGrounded))
         {
-            float z = 0.25f * Mathf.Sin(2f * Mathf.PI * 1.6f * (Now - start));
-            SetHand(true, restLeft + forward * z);
-            SetHand(false, restRight - forward * z);
+            if (swing)
+            {
+                float z = 0.25f * Mathf.Sin(2f * Mathf.PI * 1.6f * (Now - start));
+                SetHand(true, restLeft + forward * z);
+                SetHand(false, restRight - forward * z);
+            }
+            else if (LocomotionConfig.SprintToggle && Now - start > 0.15f)
+                Script(moveLeft).StickClick = false;
             if (!pressed && Now - start > 1.5f && c.data.isSprinting)
             {
                 pressed = true;
@@ -530,25 +570,77 @@ internal sealed partial class SelfTestRunner
         SetHand(true, restLeft);
         SetHand(false, restRight);
         bool airborne = !c.data.isGrounded;
+        float takeOff = FlatSpeed(c.data.avarageVelocity);
         int airFrames = 0;
         int sprintFrames = 0;
+        int climbFrames = 0;
+        float airSpeed = 0f;
         float air = Now;
         while (Now - air < 1.5f && !c.data.isGrounded)
         {
             airFrames++;
             if (c.data.isSprinting)
                 sprintFrames++;
+            if (c.data.isClimbingAnything)
+                climbFrames++;
+            airSpeed += FlatSpeed(c.data.avarageVelocity);
             yield return null;
         }
         Script(moveLeft).Stick = Vector2.zero;
+        Script(moveLeft).StickClick = false;
         setting.Value = was;
+        if (c.data.isClimbing)
+            c.refs.climbing.StopClimbing();
         yield return Wait(0.5f);
-        var note =
-            $"jump pressed {pressed}, airborne {airborne}, sprinting {sprintFrames} of {airFrames} airborne frames";
-        if (!pressed || !airborne || airFrames == 0 || sprintFrames < airFrames)
+        var note = F(
+            $"{(swing ? "arm swing" : $"stick click ({(LocomotionConfig.SprintToggle ? "Toggle" : "Hold")})")}: jump pressed {pressed}, airborne {airborne}, sprinting {sprintFrames} of {airFrames} airborne frames, flat speed {takeOff:0.0} m/s at take-off, {(airFrames > 0 ? airSpeed / airFrames : 0f):0.0} m/s in the air; run-up turned {turn:0} deg, {runway:0.0} m clear"
+        );
+        if (climbFrames > 0)
+            Fail($"the jump caught a wall (climbing on {climbFrames} airborne frames): " + note);
+        else if (!pressed || !airborne || airFrames == 0 || sprintFrames < airFrames)
             Fail(note);
         else
             stepNote = note;
+    }
+
+    static float FlatSpeed(Vector3 v) => new Vector2(v.x, v.z).magnitude;
+
+    /// <summary>The yaw turn (degrees, smallest first, 16 headings) toward <see cref="SprintRunUp"/> m of open
+    /// ground ahead, probed with 0.3 m spheres at the knees, the torso and the head; else the most open heading.
+    /// <paramref name="clear"/> is that heading's free distance.</summary>
+    static float RunwayTurn(Character c, VRRig rig, out float clear)
+    {
+        var facing = Flat(rig.Head.forward);
+        float best = 0f;
+        clear = -1f;
+        for (int i = 0; i < 16 && clear < SprintRunUp; i++)
+        {
+            float turn = (i + 1) / 2 * 22.5f * (i % 2 == 0 ? 1f : -1f);
+            var f = Quaternion.Euler(0f, turn, 0f) * facing;
+            float free = Mathf.Min(
+                Free(c.Center + Vector3.down * 0.5f, f),
+                Mathf.Min(Free(c.Center, f), Free(c.Head, f))
+            );
+            if (free > clear)
+            {
+                clear = free;
+                best = turn;
+            }
+        }
+        return best;
+
+        static float Free(Vector3 from, Vector3 dir) =>
+            Physics.SphereCast(
+                from,
+                0.3f,
+                dir,
+                out var hit,
+                SprintRunUp,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Ignore
+            )
+                ? hit.distance
+                : SprintRunUp;
     }
 
     /// <summary>
