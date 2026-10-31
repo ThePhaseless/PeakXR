@@ -43,14 +43,20 @@ internal static class LocomotionInput
     private static Vector3 lastBody;
     private static bool hadBody;
 
-    /// <summary>The stance walk owned the body's travel at the last input update (walking or settling).</summary>
-    private static bool lastWalking;
+    /// <summary>The body was free at the last input update (<see cref="RoomScale"/>'s <c>canFollow</c>): the view
+    /// keeps its travel out.</summary>
+    private static bool lastFree;
+
+    /// <summary>Seconds after a warp (Character.WarpPlayer, Character.cs:1849-1898) the body is still being placed and
+    /// settling: no walk, and the view goes onto the body.</summary>
+    private const float WarpSettleSeconds = 1f;
     private static readonly System.Action<Vector3> AbsorbNowAction = AbsorbNow;
 
-    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: while the stance walk owns the body, absorbs
-    /// the eye anchor's travel into the room anchor in the frame it moves, so the origin placed right after carries no
-    /// frame of body motion (run 32: the view moved 0.044 m at the end of a far-lean walk). Outside forces (wind, a
-    /// push) outside a walk still move body and view, as in vanilla.</summary>
+    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: while the body is free, absorbs the eye
+    /// anchor's level travel into the room anchor in the frame it moves, so the origin placed right after carries no
+    /// frame of body motion. All of it, not only the walk's: run 9 moved the view 0.02-0.04 m as a walk's coast ended
+    /// after its settle, and with the body's swing under a turning head or a look down. The stance walk pays back
+    /// whatever the body drifted.</summary>
     private static void AbsorbNow(Vector3 anchor)
     {
         var rig = VRRig.Instance;
@@ -58,7 +64,7 @@ internal static class LocomotionInput
             return;
         var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
         lastBody = anchor;
-        if (!lastWalking)
+        if (!lastFree)
             return;
         Follow.Anchor = rig.RoomAnchor;
         Follow.Absorb(new NVector2(delta.x, delta.z));
@@ -366,7 +372,7 @@ internal static class LocomotionInput
         {
             hadBody = false;
             Stance.Reset();
-            lastWalking = false;
+            lastFree = false;
             RigDriver.FollowWalking = false;
             return NVector2.Zero;
         }
@@ -380,6 +386,8 @@ internal static class LocomotionInput
             lastBody = anchor.Value;
 
         var data = c.data;
+        // A warp places the body (respawns, segment jumps, scripted moves): nothing to walk, and the view goes with it.
+        bool warped = c.warping || Time.time - c.timeLastWarped < WarpSettleSeconds;
         bool canFollow =
             hadBody
             && LocomotionConfig.RoomScale
@@ -393,17 +401,22 @@ internal static class LocomotionInput
             // The top-out walk moves the body onto the ledge under its own input: a walk toward the head behind it
             // fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
             && !PhysicalInteraction.Mantling
-            && data.carrier == null;
+            && data.carrier == null
+            && !warped;
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.Anchor = rig.RoomAnchor;
-        if (lastWalking && canFollow)
+        if (lastFree && canFollow)
             Follow.Absorb(new NVector2(delta.x, delta.z));
         var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
         var debt = new NVector2(debt3.x, debt3.z);
+        // The view takes the body's place over a warp, so it leaves no debt (a turn just before it) to walk off at the
+        // spot it was put on (run 9, vr.44b: the walk took the body 2.3 m from the wall it was warped to).
+        if (warped)
+            Follow.Anchor += debt;
         Stance.AtOnce = LocomotionConfig.LeanRadius;
         var request = Stance.Update(debt, canFollow, dt);
-        lastWalking = canFollow && Stance.Walking;
-        RigDriver.FollowWalking = lastWalking;
+        lastFree = canFollow;
+        RigDriver.FollowWalking = canFollow && Stance.Walking;
         FollowGap = NVector2.Distance(head, Follow.Anchor);
         // A walk that cannot get the body within the lean limit (a wall, a ledge, a friend) ends in the recenter.
         bool stalled = Stance.Blocked && debt.Length() > LocomotionConfig.LeanRadius;

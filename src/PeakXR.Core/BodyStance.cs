@@ -58,9 +58,8 @@ public static class BodyStance
 /// <summary>
 /// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/>, once the debt has held still for
 /// <see cref="Delay"/> (a glance returns before the body moves) or at once past <see cref="AtOnce"/>, it asks for move
-/// input along the debt until it is inside <see cref="Stop"/>, ramping down as it closes so the body does not
-/// overshoot. The caller keeps the body's travel out of the view while <see cref="Walking"/> (the walk and a short
-/// settle for its coast). A walk that makes no headway (a wall, a friend) gives up until the debt changes.
+/// input along the debt until it is inside <see cref="Stop"/>, ramping down to <see cref="MinInput"/> as it closes so
+/// the body does not overshoot. A walk that makes no headway (a wall, a friend) gives up until the debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
@@ -78,6 +77,10 @@ public sealed class StanceWalk
 
     /// <summary>Distance past <see cref="Stop"/> (m) over which the request ramps to full.</summary>
     public float Ramp = 0.2f;
+
+    /// <summary>Least request while walking: a standing body does not move for less (run 9: 0.1 of the stick for
+    /// 1.6 s made no headway), and its coast at this pace stays inside the stop distance.</summary>
+    public float MinInput = 0.35f;
 
     /// <summary>Seconds after a walk during which the body's coast still belongs to it.</summary>
     public float SettleSeconds = 0.5f;
@@ -143,7 +146,7 @@ public sealed class StanceWalk
         if (!_walking)
             return Vector2.Zero;
         float amount = Ramp > 0f ? (dist - Stop) / Ramp : 1f;
-        return debt / dist * Math.Clamp(amount, 0f, 1f);
+        return debt / dist * Math.Clamp(amount, MinInput, 1f);
     }
 
     /// <summary>Forget the walk (the body cannot be walked, or the view was placed again).</summary>

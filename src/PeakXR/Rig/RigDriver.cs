@@ -82,8 +82,8 @@ internal sealed class RigDriver : MonoBehaviour
     /// elsewhere.</summary>
     internal static Vector3 ViewOffset;
 
-    /// <summary>player.locomotion's stance walk is walking the body under the head, or settling from it: its travel
-    /// goes into the room anchor, and the view's height holds (<see cref="RigMath.FollowVerticalRate"/>).</summary>
+    /// <summary>player.locomotion's stance walk is walking the body under the head, or settling from it: the view
+    /// hold treats it as a room walk and the view's height holds (<see cref="RigMath.FollowVerticalRate"/>).</summary>
     internal static bool FollowWalking;
 
     /// <summary>The local avatar's calibrated, unleaned eyes this frame (the point the first-person view rides before
@@ -531,9 +531,14 @@ internal sealed class RigDriver : MonoBehaviour
         var torso = c.Center;
         var origin = rig.Origin.position;
         var eyes = EyeOffsetNow;
+        // The avatar's eye renderers against the eye model the stance debt uses (run 9: up to 0.12 m apart after turns).
+        var seen =
+            LeanEye is { } model && TryEyeRenderers(c, out var drawn)
+                ? drawn - model
+                : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000}"
             )
         );
     }

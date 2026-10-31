@@ -197,6 +197,33 @@ public class StanceWalkTests
     }
 
     [Fact]
+    public void SmallHeldDebt_AsksForEnoughToMoveTheBody()
+    {
+        // Run 9: a 0.05 m debt asked for 0.1 of the stick, which never moved the standing body, and stalled.
+        var w = new StanceWalk();
+        var r = Hold(w, new Vector2(0.06f, 0f), w.Delay + 0.1f);
+        Assert.True(r.Length() >= w.MinInput - 1e-4f, $"{r.Length():0.00}");
+    }
+
+    [Fact]
+    public void WalkedBody_ThatIgnoresSmallInput_StillEndsUnderTheView()
+    {
+        // The standing body does not move for input under 0.25 (run 9, 0.1 of the stick for 1.6 s, no headway).
+        var w = new StanceWalk();
+        var debt = new Vector2(0.08f, 0f);
+        var v = Vector2.Zero;
+        for (float t = 0f; t < 4f; t += Dt)
+        {
+            var request = w.Update(debt, canWalk: true, Dt);
+            var drive = request.Length() < 0.25f ? Vector2.Zero : request;
+            v += (drive * 1.1f - v) * (1f - MathF.Exp(-Dt / 0.12f));
+            debt -= v * Dt;
+        }
+        Assert.True(debt.Length() < 0.05f, $"left {debt.Length():0.000} m off the view");
+        Assert.False(w.Blocked);
+    }
+
+    [Fact]
     public void Walk_StopsOnlyInsideTheStopDistance()
     {
         var w = new StanceWalk();
