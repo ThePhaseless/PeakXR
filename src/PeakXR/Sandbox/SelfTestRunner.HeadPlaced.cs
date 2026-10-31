@@ -97,6 +97,7 @@ internal sealed partial class SelfTestRunner
         }
         WorldCanvases.Track(root);
         EndScreenPlacement.SelfTestOpen = true;
+        var opened = new Pose(rig.Head.position, rig.Head.rotation);
         try
         {
             yield return Wait(0.5f);
@@ -105,7 +106,13 @@ internal sealed partial class SelfTestRunner
                 Fail("the end screen canvas was not placed in the world");
                 yield break;
             }
-            ConcludePanel("end screen", rig.Head, root.transform.position, root.transform.forward);
+            ConcludePanel(
+                "end screen",
+                opened,
+                rig.Head,
+                root.transform.position,
+                root.transform.forward
+            );
         }
         finally
         {
@@ -164,6 +171,7 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
             yield break;
+        var opened = new Pose(rig.Head.position, rig.Head.rotation);
         try
         {
             // Past the page's scale-in (ScaleOnEnable, 0.25 s) and the wall retest.
@@ -174,7 +182,7 @@ internal sealed partial class SelfTestRunner
                 Fail("the pause menu is not a placed menu");
                 yield break;
             }
-            ConcludePanel("pause menu", rig.Head, centre, root.transform.forward);
+            ConcludePanel("pause menu", opened, rig.Head, centre, root.transform.forward);
         }
         finally
         {
@@ -182,15 +190,20 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>A level panel at <paramref name="centre"/> must sit on the head's heading and face the eye (its
-    /// <paramref name="forward"/> along the line from the eye).</summary>
-    void ConcludePanel(string what, Transform head, Vector3 centre, Vector3 forward)
+    /// <summary>A level panel at <paramref name="centre"/> must sit on the heading of the head as it was when the panel
+    /// opened (<paramref name="opened"/>) and face that eye (its <paramref name="forward"/> along the line from it).
+    /// The panels are world-locked where they open and keep their eye point until the view is carried more than
+    /// 0.5 m (WorldCanvases.PlaceMenu, EyeFollow), so the head a second later is the wrong reference: in run 9 the
+    /// stance walk was still moving the body, and the view with it, as the pause menu opened 1.41 m out at the
+    /// ground, and the menu read 3.8 deg off the eye with the headset still (issue #8). The note gives how far the
+    /// view moved since.</summary>
+    void ConcludePanel(string what, Pose opened, Transform head, Vector3 centre, Vector3 forward)
     {
-        var to = centre - head.position;
-        float off = Vector3.Angle(Flat(head.forward), Flat(to));
+        var to = centre - opened.position;
+        float off = Vector3.Angle(Flat(opened.forward), Flat(to));
         float face = Vector3.Angle(forward, to);
         var note = F(
-            $"{what} {to.magnitude:0.00} m out, {off:0.0} deg off the head's heading, faces the eye to {face:0.0} deg"
+            $"{what} {to.magnitude:0.00} m out, {off:0.0} deg off the head's heading, faces the eye to {face:0.0} deg as it opened; the view moved {Vector3.Distance(head.position, opened.position):0.00} m since"
         );
         if (off > HeadPlacedSlack)
             Fail($"{note}: not in front of the head");
