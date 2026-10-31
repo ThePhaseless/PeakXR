@@ -858,6 +858,9 @@ public partial class AvatarPoseDriver
             GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm),
             DrawnHands.Miss(Owner, left)
         );
+        // A welded item the world holds back holds its hand off a controller within reach: ghost that too (#17).
+        if (left == heldBlockedLeft && Time.fixedTime - heldBlockedAt <= HeldBlockedFresh)
+            gap = Mathf.Max(gap, heldBlockedLag);
         return true;
     }
 

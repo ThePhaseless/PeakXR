@@ -183,6 +183,52 @@ public partial class AvatarPoseDriver
             QueryTriggerInteraction.Ignore
         );
 
+    /// <summary>The world holds <paramref name="item"/> back from moving <paramref name="toTarget"/> onto its
+    /// controller-held pose: its centre pressed into terrain or a map prop, or a sphere of its size swept that way meets
+    /// one. Held items collide with Map and Terrain (Item.cs:726), so a free carry would stop there too (#17).</summary>
+    private static bool ItemHeldBack(Item item, Vector3 toTarget)
+    {
+        float dist = toTarget.magnitude;
+        if (dist < 1e-3f)
+            return false;
+        var centre = item.Center();
+        var size = item.mainRenderer != null ? item.mainRenderer.bounds.extents : Vector3.zero;
+        // Just inside the item's narrowest half-width: a wall it only touches is met by the sweep, not skipped as an
+        // overlap at its start.
+        float radius = Mathf.Clamp(
+            0.9f * Mathf.Min(size.x, Mathf.Min(size.y, size.z)),
+            ItemProbeMin,
+            ItemProbeMax
+        );
+        return Physics.CheckSphere(
+                centre,
+                0.5f * radius,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+            || Physics.SphereCast(
+                centre,
+                radius,
+                toTarget / dist,
+                out _,
+                dist,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            );
+    }
+
+    private const float ItemProbeMin = 0.02f;
+    private const float ItemProbeMax = 0.15f;
+
+    /// <summary>How far the world holds the welded item's hand off its controller past the arm's reach, which hand, and
+    /// when (physics time) it last did: <see cref="ReachGap(bool, out float)"/> ghosts that hand for it.</summary>
+    private float heldBlockedLag;
+    private bool heldBlockedLeft;
+    private float heldBlockedAt = float.NegativeInfinity;
+
+    /// <summary>Seconds a held-back item's lag counts for the ghost after the last physics tick that saw it.</summary>
+    private const float HeldBlockedFresh = 0.1f;
+
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
 
@@ -259,6 +305,11 @@ public partial class AvatarPoseDriver
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
         // The local gate waits for the equip's own attach to settle (CharacterItems.cs:600-618, sinceItemAttach): at
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
+        // Cast only while the hand lags or the item is free: a wall the walk presses the item on (#17).
+        bool itemBlocked =
+            Owner.IsLocal
+            && (toController - shortfall > weldGate.Rejoin || weldGate.Released)
+            && ItemHeldBack(item, target - body.position);
         bool free =
             !Owner.IsLocal
             || (
@@ -268,16 +319,24 @@ public partial class AvatarPoseDriver
                     toItem,
                     dt,
                     shortfall,
-                    toController > weldGate.Release && ReachBlocked(left, ctrlBone)
+                    toController > weldGate.Release && ReachBlocked(left, ctrlBone),
+                    itemBlocked
                 )
             );
         remoteFree = !Owner.IsLocal;
+        if (itemBlocked && !free)
+        {
+            // The weld keeps the item on a hand the world holds back: the ghost shows where the controller is.
+            heldBlockedLag = toController - shortfall;
+            heldBlockedLeft = left;
+            heldBlockedAt = Time.fixedTime;
+        }
         if (free != wasFree && Owner.IsLocal)
         {
             // Rare edges, kept in the log: why a held item left or rejoined the hand.
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}"
+                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}, held back by the world {itemBlocked}"
                 )
             );
         }
