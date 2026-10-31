@@ -26,7 +26,7 @@ internal static class LidGesture
     private static readonly float[] StartY = new float[2];
 
     /// <summary>How far under the case's render centre a grip still takes the lid.</summary>
-    private const float LidGive = 0.05f;
+    internal const float LidGive = 0.05f;
 
     /// <summary>The last grab on a case: where the hand was and whether it took the lid, for the self-test.</summary>
     internal static string LastGrab { get; private set; } = "none";
