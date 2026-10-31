@@ -61,13 +61,32 @@ public static class PackDrop
         return MathF.Acos(cos) * (180f / MathF.PI) < MaxBackAngle;
     }
 
+    /// <summary>How much nearer (m) another free pocket must be before the shown one gives way.</summary>
+    public const float PocketKeepMargin = 0.05f;
+
     /// <summary>The free pocket (<paramref name="free"/>) whose spot (<paramref name="pockets"/>) is nearest the hand,
-    /// so the hand picks the pocket; -1 when none is free.</summary>
+    /// so the hand picks the pocket; -1 when none is free. A free <paramref name="keep"/> (the pocket shown last frame)
+    /// stays until another is <see cref="PocketKeepMargin"/> nearer, so a hand between two pockets does not flip the pin
+    /// each frame and the release goes where the pin showed (#105).</summary>
     public static int NearestFree(
         Vector3 hand,
         ReadOnlySpan<Vector3> pockets,
-        ReadOnlySpan<bool> free
+        ReadOnlySpan<bool> free,
+        int keep = -1
     )
+    {
+        int best = Nearest(hand, pockets, free);
+        if (best < 0 || keep < 0 || keep == best || keep >= Math.Min(pockets.Length, free.Length))
+            return best;
+        return
+            free[keep]
+            && Vector3.Distance(hand, pockets[keep])
+                <= Vector3.Distance(hand, pockets[best]) + PocketKeepMargin
+            ? keep
+            : best;
+    }
+
+    private static int Nearest(Vector3 hand, ReadOnlySpan<Vector3> pockets, ReadOnlySpan<bool> free)
     {
         int best = -1;
         float bestSq = float.MaxValue;

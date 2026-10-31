@@ -1250,7 +1250,7 @@ internal sealed partial class SelfTestRunner
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
-        var low = NearSide(lug, rig.Head.position, -0.08f);
+        var low = LowGripPoint(lug, rig.Head.position);
         // The level spot sits 0.45 m off the case's bounds along its heading, which on a diagonal or a long case
         // left the low grip 1.25 m out (run 50): step in until it is 0.5 m ahead of the eye, as a player would.
         // Up to twice, onto the floor under the new spot (WarpTo's ray from 3 m up can land on the case or a ledge;
@@ -1278,7 +1278,7 @@ internal sealed partial class SelfTestRunner
                 )
             );
             yield return Wait(0.6f);
-            low = NearSide(lug, rig.Head.position, -0.08f);
+            low = LowGripPoint(lug, rig.Head.position);
             stepped += F($"stepped in from {gap.magnitude:0.00} m; ");
         }
         yield return ReachDown(left, () => low, 0.5f);
@@ -1330,7 +1330,7 @@ internal sealed partial class SelfTestRunner
             yield return GripTo(left, 0f, 0.1f);
             Fail(
                 F(
-                    $"setup: the grip took {lug.name}'s lid half, so no low-grip hint is due ({LidGesture.LastGrab}); the body stood {TrackedFloorY() - low.y:0.00} m over the low grip point"
+                    $"setup: the grip took {lug.name}'s lid half, so no low-grip hint is due ({LidGesture.LastGrab}); aimed {lug.Center().y - low.y:0.00} m under the centre, the hand {rig.Hand(left).position.y - low.y:+0.00;-0.00} m off that height, stooped {headDrop:0.00} m; the body stood {TrackedFloorY() - low.y:0.00} m over the low grip point"
                 )
             );
             yield break;
@@ -1350,7 +1350,7 @@ internal sealed partial class SelfTestRunner
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
             yield break;
         }
-        stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m");
+        stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}");
         if (lug.IsOpen)
             yield break;
         // A tracked hand sunk into the case, which nothing stops: the grip still takes it (VR run 75's vr.82b met no
@@ -1421,6 +1421,24 @@ internal sealed partial class SelfTestRunner
         else
             stepNote += "; a hand sunk into it takes it too";
     }
+
+    /// <summary>
+    /// vr.82b's low grip: the case's near side at least <see cref="LidLowMargin"/> under the lid's give
+    /// (<see cref="LidGesture.LidGive"/>) below its centre. Run 14 (#54): aimed 0.08 m under the centre, the surface
+    /// point came out 0.04 m under it, inside the 0.05 m give, and the grip took the lid half. Lower probes are tried
+    /// until the surface point is that low.
+    /// </summary>
+    static Vector3 LowGripPoint(Luggage lug, Vector3 eye)
+    {
+        const float want = LidGesture.LidGive + LidLowMargin;
+        var p = NearSide(lug, eye, -want);
+        for (float up = -want - 0.05f; lug.Center().y - p.y < want && up >= -0.3f; up -= 0.05f)
+            p = NearSide(lug, eye, up);
+        return p;
+    }
+
+    /// <summary>How far (m) under the lid's give vr.82b's low grip aims, clear of the lid/base split.</summary>
+    const float LidLowMargin = 0.05f;
 
     /// <summary>The point of <paramref name="lug"/>'s solid colliders nearest a probe on the side toward
     /// <paramref name="from"/>, <paramref name="up"/> metres from its render centre, pulled 2 cm out.</summary>

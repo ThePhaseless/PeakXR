@@ -26,7 +26,6 @@ internal sealed partial class Observer : MonoBehaviour
     const float SampleInterval = 0.5f;
     const float PollInterval = 0.25f;
     const float JoinWaitMinutes = 10f;
-    const float RunMinutes = 15f;
     const int MaxLogLines = 300;
     const int MaxRpcsPerCheckpoint = 60;
 
@@ -43,6 +42,10 @@ internal sealed partial class Observer : MonoBehaviour
     readonly LogCursor checkpointLines = new();
     readonly LogCursor requestLines = new();
     int checkpoints;
+
+    /// <summary>When the last of A's checkpoints came in (our clock), -1 before any: B stays while they keep coming
+    /// (<see cref="MpRunLimit"/>).</summary>
+    float lastCheckpointAt = -1f;
     int samples;
     int exceptions;
     int errors;
@@ -194,7 +197,6 @@ internal sealed partial class Observer : MonoBehaviour
                 if (SampleAll() && joinedAt < 0f)
                 {
                     joinedAt = Now;
-                    end = Now + RunMinutes * 60f;
                 }
             }
             if (Now >= nextPoll)
@@ -208,6 +210,8 @@ internal sealed partial class Observer : MonoBehaviour
                     yield break;
                 }
             }
+            if (joinedAt >= 0f)
+                end = MpRunLimit.End(joinedAt, lastCheckpointAt);
             if (Now > end)
             {
                 Finish(joinedAt < 0f ? "nobody joined" : "time limit");
@@ -327,6 +331,7 @@ internal sealed partial class Observer : MonoBehaviour
     IEnumerator Checkpoint(string name, string aLine)
     {
         checkpoints++;
+        lastCheckpointAt = Now;
         var remote = FirstRemote();
         var local = Character.localCharacter;
         var j = new JsonLine().Str("type", "checkpoint").Str("name", name).Num("t", Unix);
@@ -525,6 +530,8 @@ internal sealed partial class Observer : MonoBehaviour
                 return StartClimb(c, out note);
             case MpRequest.WearPack:
                 return WearPack(c, out note);
+            case MpRequest.SpawnItem:
+                return SpawnItem(line, out note);
             default:
                 note = "unknown request";
                 return false;
@@ -847,6 +854,68 @@ internal sealed partial class Observer : MonoBehaviour
         }
         c.StartCoroutine(WearSoon(pack, c));
         note = "spawned " + prefab.name + ", wearing it";
+        return true;
+    }
+
+    /// <summary>
+    /// The named item on the ground about 0.7 m in front of the VR player along the request's direction, spawned by the
+    /// master with <c>PhotonNetwork.InstantiateItemRoom</c> as the game's spawners do (BerryBush.cs:31), dropped from
+    /// 0.3 m over the ground there so it settles where it lands (#103: the steps that need food or a small item get one
+    /// at hand instead of walking off to fetch one).
+    /// </summary>
+    static bool SpawnItem(string line, out string note)
+    {
+        var prefabName = MpRequest.ReadItem(line);
+        var vr = FirstRemote();
+        if (vr == null || string.IsNullOrEmpty(prefabName))
+        {
+            note = vr == null ? "no remote player" : "no item named";
+            return false;
+        }
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            note = "not the master client";
+            return false;
+        }
+        Item prefab = null;
+        foreach (var item in SingletonAsset<ItemDatabase>.Instance.Objects)
+        {
+            if (item != null && item.gameObject.name == prefabName)
+            {
+                prefab = item;
+                break;
+            }
+        }
+        if (prefab == null)
+        {
+            note = "no " + prefabName + " in the item database";
+            return false;
+        }
+        var dir = MpRequest.TryReadDirection(line, out double dx, out double dz)
+            ? new Vector3((float)dx, 0f, (float)dz)
+            : vr.data.lookDirection_Flat;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 1e-4f)
+            dir = Vector3.forward;
+        var at = vr.Center + dir.normalized * 0.7f;
+        if (
+            Physics.Raycast(
+                at + Vector3.up,
+                Vector3.down,
+                out var hit,
+                4f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+            at = hit.point + Vector3.up * 0.3f;
+        var go = PhotonNetwork.InstantiateItemRoom(prefab.gameObject.name, at, Quaternion.identity);
+        if (go == null)
+        {
+            note = "spawning " + prefabName + " failed";
+            return false;
+        }
+        note = "spawned " + prefabName + " in front of " + vr.characterName;
         return true;
     }
 

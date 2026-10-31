@@ -132,6 +132,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return ShotAt("vr-284-ground-pack-stash", pack.Center(), 1f);
+        // The pocket the pin shows, which the release must use (#105).
+        int shown = stash.Pocket;
         yield return GripTo(left, 0f, 0.3f);
         yield return Until(() => HeldItem() == null, 2f, "the Apple stayed in hand on release");
         if (!stepOk)
@@ -152,8 +154,10 @@ internal sealed partial class SelfTestRunner
                     ? "the Apple fell to the ground instead"
                     : "the Apple is not in the pack"
             );
+        else if (at != shown)
+            Fail($"the pin showed pocket {shown} and the Apple went into pocket {at}");
         else
-            stepNote = $"stashed into pocket {at} of the ground pack";
+            stepNote = $"stashed into pocket {at} of the ground pack, the one the pin showed";
     }
 
     /// <summary>

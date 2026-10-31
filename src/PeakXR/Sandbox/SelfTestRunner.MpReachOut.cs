@@ -52,19 +52,43 @@ internal sealed partial class SelfTestRunner
         }
         var c = Character.localCharacter;
         var host = Host();
+        if (host == null)
+        {
+            stepSkip = "no host";
+            yield break;
+        }
         var away = c.Center - host.Center;
         away.y = 0f;
         if (away.sqrMagnitude < 1e-4f)
             away = -host.data.lookDirection_Flat;
         away.y = 0f;
-        var goal = host.Center + away.normalized * 3f;
-        yield return WalkTo(() => goal, 0.3f, false);
+        // Up to three walks, the next turned 40 degrees either way when one ends outside the band (MP run 15b: one walk
+        // stopped at 2.45 m and vr.424 skipped).
+        float d = 0f;
+        for (int i = 0; i < ReachOutTurns.Length; i++)
+        {
+            var goal =
+                host.Center + Quaternion.Euler(0f, ReachOutTurns[i], 0f) * away.normalized * 3f;
+            yield return MpWalkBounded(() => goal, 0.2f, 8f);
+            d = FlatDistance(c.Center, host.Center);
+            if (d >= ReachOutNear && d <= ReachOutFar)
+                break;
+        }
         Face(host.Head);
         yield return Wait(0.3f);
-        float d = Vector3.Distance(c.Center, host.Center);
-        if (d < 2.5f || d > 3.5f)
-            stepSkip = F($"A stood {d:0.00} m from the host after the walk out, not 2.5-3.5 m");
+        d = FlatDistance(c.Center, host.Center);
+        if (d < ReachOutNear || d > ReachOutFar)
+            stepSkip = F(
+                $"A stood {d:0.00} m from the host after the walk out, not {ReachOutNear:0.0}-{ReachOutFar:0.0} m"
+            );
     }
+
+    /// <summary>The walk-out band (m, level, centre to centre): past touch range and the glow, inside the reach-out.</summary>
+    const float ReachOutNear = 2.4f;
+
+    const float ReachOutFar = 3.6f;
+
+    static readonly float[] ReachOutTurns = { 0f, 40f, -40f };
 
     /// <summary>The <paramref name="left"/> hand on the reach-out's arm line toward <paramref name="world"/>, at
     /// <paramref name="stretch"/> of the arm it judges by, turned <paramref name="yawOff"/> degrees about up.</summary>
@@ -277,7 +301,18 @@ internal sealed partial class SelfTestRunner
         yield return ReachOutWebbed();
         if (stepSkip != null)
             yield break;
-        yield return GrabNearest(false);
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        // Any item at hand, passing over one the walk cannot reach (MP run 15b: the walk to the nearest stuck 1.1 m short).
+        yield return GrabReachable(
+            _ => true,
+            null,
+            NearItems,
+            3,
+            nextOnMiss: true,
+            spawn: MpPlainItem
+        );
         if (!stepOk || stepSkip != null)
             yield break;
         var c = Character.localCharacter;

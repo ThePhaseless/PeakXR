@@ -52,5 +52,28 @@ public class MpRequestTests
         Assert.True(MpRequest.Known(MpRequest.HangBelow));
         Assert.True(MpRequest.Known(MpRequest.StartClimb));
         Assert.True(MpRequest.Known(MpRequest.WearPack));
+        Assert.True(MpRequest.Known(MpRequest.SpawnItem));
+    }
+
+    [Fact]
+    public void SpawnLine_CarriesTheItemAndDirection()
+    {
+        var line = MpRequest.Line(7, MpRequest.SpawnItem, 9.0, 0.6, -0.8, "TrailMix");
+        Assert.True(MpRequest.TryRead(line, out _, out string what, out _));
+        Assert.Equal(MpRequest.SpawnItem, what);
+        Assert.Equal("TrailMix", MpRequest.ReadItem(line));
+        Assert.True(MpRequest.TryReadDirection(line, out double x, out _));
+        Assert.Equal(0.6, x, 6);
+        Assert.Null(MpRequest.ReadItem(MpRequest.Line(8, MpRequest.Wake, 9.0)));
+    }
+
+    [Fact]
+    public void ObserverWaits_WhileCheckpointsKeepComing()
+    {
+        // Joined at 100 s: the base limit, unless a checkpoint came late enough to push it out.
+        Assert.Equal(100 + MpRunLimit.RunMinutes * 60, MpRunLimit.End(100, -1));
+        Assert.Equal(100 + MpRunLimit.RunMinutes * 60, MpRunLimit.End(100, 200));
+        float late = 100 + MpRunLimit.RunMinutes * 60 - 10;
+        Assert.Equal(late + MpRunLimit.IdleMinutes * 60, MpRunLimit.End(100, late));
     }
 }

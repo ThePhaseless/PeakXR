@@ -33,6 +33,10 @@ internal sealed class PackStash : IGripExtension
     private Vector3 packAt;
     private bool wasOver;
 
+    /// <summary>The pack <see cref="Pocket"/> was shown on (the ground pack or the wearer), so the next frame and the
+    /// release keep that pocket rather than re-picking it (#105).</summary>
+    private Object shownOn;
+
     /// <summary>A pack the free hand can point at: on the ground, or worn by <see cref="Wearer"/>. <see cref="Id"/> is
     /// its PhotonView id (the item's, or the wearer's), unique in a room; -1 none.</summary>
     private struct Pick
@@ -99,6 +103,9 @@ internal sealed class PackStash : IGripExtension
     /// <summary>The pocket the last verdict chose (self-test), -1 for none.</summary>
     public int Pocket { get; private set; } = -1;
 
+    /// <summary>The pocket the last release stashed into (self-test), -1 for none.</summary>
+    public int StashedPocket { get; private set; } = -1;
+
     /// <summary>This frame's verdict for the pack the hand is in (self-test), None when it would go in.</summary>
     public DenyReason Verdict { get; private set; }
 
@@ -122,6 +129,7 @@ internal sealed class PackStash : IGripExtension
             Affordance.Deny(ctx.Left, packAt, reason, Hint(reason), ctx.HeldItem);
             return true;
         }
+        StashedPocket = pocket;
         if (ground != null)
             ground.Stash(c, (byte)pocket);
         else
@@ -152,6 +160,7 @@ internal sealed class PackStash : IGripExtension
         }
         Verdict = Refusal(c, item, hand.position, out int pocket);
         Pocket = pocket;
+        shownOn = ground != null ? ground : wearer;
         if (Verdict == DenyReason.None)
             Affordance.Mark(left, cueAt, DenyReason.HappenedHere, DenyHint.At(cueAt));
         else
@@ -568,7 +577,10 @@ internal sealed class PackStash : IGripExtension
             data = BackpackReference.GetFromEquippedBackpack(wearer).GetData();
             slotCount = worn != null ? worn.slotCount : 0;
         }
-        pocket = PickPocket(data, slotCount, visuals, hand, out bool spotted);
+        // The pocket shown last frame on this same pack is kept (the release too), so it goes where the pin showed.
+        Object on = ground != null ? ground : wearer;
+        int keep = wasOver && shownOn == on ? Pocket : -1;
+        pocket = PickPocket(data, slotCount, visuals, hand, keep, out bool spotted);
         bool fromBehind =
             ground != null
             || visuals == null
@@ -607,6 +619,7 @@ internal sealed class PackStash : IGripExtension
         int slotCount,
         BackpackVisuals visuals,
         Vector3 hand,
+        int keep,
         out bool spotted
     )
     {
@@ -629,7 +642,8 @@ internal sealed class PackStash : IGripExtension
         return PackDrop.NearestFree(
             hand.N(),
             new System.ReadOnlySpan<System.Numerics.Vector3>(PocketPoints, 0, count),
-            new System.ReadOnlySpan<bool>(PocketFree, 0, count)
+            new System.ReadOnlySpan<bool>(PocketFree, 0, count),
+            keep
         );
     }
 
