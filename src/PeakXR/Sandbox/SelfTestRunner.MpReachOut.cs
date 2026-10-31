@@ -4,6 +4,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.Social;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
 using Vector3 = UnityEngine.Vector3;
@@ -198,9 +199,20 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         if (PhysicalInteraction.HandAction(false) != GripPressAction.Extension)
             Fail($"the grip was not the reach-out's: {PhysicalInteraction.HandAction(false)}");
+        // Polled every frame: a catch early in the wait would age past 0.3 s by its end.
+        bool caught = false;
+        while (
+            stepOk
+            && !CueLog.Capture.Fired(false, DenyReason.WrongAngle, mark, false, out _)
+            && CueLog.Now < mark + 2f
+        )
+        {
+            caught |= c.data.sinceGrabFriend < 0.3f;
+            yield return null;
+        }
         if (stepOk)
             yield return ExpectCue(false, DenyReason.WrongAngle, mark, false, 2f);
-        if (stepOk && c.data.sinceGrabFriend < 0.3f)
+        if (stepOk && (caught || c.data.sinceGrabFriend < 0.3f))
             Fail("the reach caught the host while A looked away");
         var cue = cueNote;
         yield return ReachOutOpen(false);
@@ -403,7 +415,10 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var c = Character.localCharacter;
-        if (!FindLedge(c, out var stand, out var outward))
+        yield return FindLedge(c);
+        var stand = ledgeStand;
+        var outward = ledgeOutward;
+        if (!ledgeFound)
         {
             stepSkip = "no walkable lip over a 2.3-3.2 m steep drop within 40 m";
             yield break;
@@ -418,25 +433,31 @@ internal sealed partial class SelfTestRunner
         }
         Face(stand + outward * 3f);
         yield return Wait(0.5f);
+        var host = Host();
         yield return Ask(MpRequest.HangBelow);
         if (stepSkip != null)
+        {
+            yield return BringHostBack(c, host);
             yield break;
+        }
         yield return Wait(0.3f);
         yield return Ask(MpRequest.StartClimb);
         if (stepSkip != null)
+        {
+            yield return BringHostBack(c, host);
             yield break;
-        var host = Host();
+        }
         yield return WaitFor(() => host.data.isClimbing, 2f);
         if (!host.data.isClimbing || !CharacterGrabbing.TargetCanBeHelped(host, c))
         {
             stepSkip = F(
                 $"the host is not climbing below (climbing {host.data.isClimbing}, {c.Center.y - host.Center.y:0.0} m below)"
             );
-            yield return BringHostBack(host);
+            yield return BringHostBack(c, host);
             yield break;
         }
         yield return LedgeReach(c, host);
-        yield return BringHostBack(host);
+        yield return BringHostBack(c, host);
     }
 
     /// <summary><see cref="MpReachOutLedge"/> from the lip, the host climbing below.</summary>
@@ -499,17 +520,19 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>A host left on the face is warped back onto A (<see cref="MpRequest.StandOn"/>) for the next steps.</summary>
-    IEnumerator BringHostBack(Character host)
+    /// <summary>After <see cref="MpRequest.HangBelow"/>, a host left on the face or below the lip is warped back onto
+    /// A (<see cref="MpRequest.StandOn"/>) for the next steps.</summary>
+    IEnumerator BringHostBack(Character c, Character host)
     {
-        if (host == null || !host.data.isClimbing)
+        if (host == null || (!host.data.isClimbing && c.Center.y - host.Center.y <= 1f))
             yield break;
         var skip = stepSkip;
         yield return Ask(MpRequest.StandOn);
         stepSkip = skip;
     }
 
-    /// <summary>The host's hand or centre with the smallest angle off this hand's arm line, as the reach-out picks.</summary>
+    /// <summary>The host's hand nearest this hand's shoulder by distance (the centre without a ragdoll): a target the
+    /// arm line can stretch to.</summary>
     static Vector3 NearestPart(Character host, bool left)
     {
         var shoulder = SocialHands.Instance.ReachOutShoulder(left);
@@ -530,10 +553,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The nearest walkable spot within 40 m with a lip in one of 8 headings over a 2.3-3.2 m steep drop:
-    /// down casts on a 2 m grid, in the style of <see cref="FindWall"/>.</summary>
-    static bool FindLedge(Character c, out Vector3 stand, out Vector3 outward)
+    /// down casts on a 2 m grid, in the style of <see cref="FindWall"/>, one grid row per frame. Sets
+    /// <see cref="ledgeFound"/>, <see cref="ledgeStand"/> and <see cref="ledgeOutward"/>.</summary>
+    IEnumerator FindLedge(Character c)
     {
-        stand = outward = default;
+        ledgeFound = false;
+        ledgeStand = ledgeOutward = default;
         float best = float.MaxValue;
         var home = c.Center;
         int mask = HelperFunctions.terrainMapMask;
@@ -562,14 +587,19 @@ internal sealed partial class SelfTestRunner
                     if (!Lip(ground.point, dir, mask))
                         continue;
                     best = sq;
-                    stand = ground.point;
-                    outward = dir;
+                    ledgeStand = ground.point;
+                    ledgeOutward = dir;
+                    ledgeFound = true;
                     break;
                 }
             }
+            yield return null;
         }
-        return best < float.MaxValue;
     }
+
+    bool ledgeFound;
+    Vector3 ledgeStand;
+    Vector3 ledgeOutward;
 
     /// <summary>Walkable ground behind <paramref name="ground"/>, and 0.7 m out along <paramref name="dir"/> a drop of
     /// 2.3-3.2 m whose middle is a steep face.</summary>

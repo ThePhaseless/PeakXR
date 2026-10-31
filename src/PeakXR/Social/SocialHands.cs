@@ -648,6 +648,9 @@ internal sealed class SocialHands : IGripExtension
     private readonly bool[] shown = new bool[2];
     private readonly bool[] reachOutGrip = new bool[2];
 
+    /// <summary>The pick armed but its tick has not played: arming under a refusal ticks once it clears.</summary>
+    private readonly bool[] tickDue = new bool[2];
+
     /// <summary>On a wall, rope, vine or hanging from a handle: the reach-out is off (the touch path still works).</summary>
     private static bool Climbing(Character c) =>
         c.data.isClimbing
@@ -679,6 +682,7 @@ internal sealed class SocialHands : IGripExtension
             reachArm[h].Sample(0f, 0f, ReachOut.NominalArm, false, 0f);
             shown[h] = false;
             reachOutGrip[h] = false;
+            tickDue[h] = false;
             reachOutWhy[h] = DenyReason.None;
             reachOutChar[h] = null;
         }
@@ -768,6 +772,7 @@ internal sealed class SocialHands : IGripExtension
                 now
             );
             int armedId = pick.ArmedFriend;
+            tickDue[h] = armedId >= 0 && (tickDue[h] || pick.Acquired);
             var friend = Resolve(armedId >= 0 ? armedId : pick.Friend);
             reachOutChar[h] = friend;
             reachOutWhy[h] =
@@ -780,7 +785,7 @@ internal sealed class SocialHands : IGripExtension
                     );
             // Ring only once armed, so a ring always means the grip reaches.
             if (friend != null && !holder && pick.Friend >= 0 && armedId == pick.Friend)
-                DrawReachOut(c, rig, h, friend, shoulder, hand, pick.Acquired);
+                DrawReachOut(c, rig, h, friend, shoulder, hand);
             // The holding hand never draws; its regrip is asked of no extension, so it would be silent.
             bool down = state.Grip > 0.6f;
             if (
@@ -885,8 +890,7 @@ internal sealed class SocialHands : IGripExtension
         int h,
         Character friend,
         System.Numerics.Vector3 shoulder,
-        System.Numerics.Vector3 hand,
-        bool acquired
+        System.Numerics.Vector3 hand
     )
     {
         bool left = h == 0;
@@ -906,8 +910,11 @@ internal sealed class SocialHands : IGripExtension
                 shown[h] = true;
             }
             // With hints off the tick is the only sign the reach is armed.
-            if (acquired)
+            if (tickDue[h])
+            {
                 Haptics.Pulse(left, 0.2f, 0.02f);
+                tickDue[h] = false;
+            }
             return;
         }
         var hint = why switch

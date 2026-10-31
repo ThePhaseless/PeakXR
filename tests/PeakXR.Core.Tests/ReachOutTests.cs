@@ -257,6 +257,19 @@ public class ReachOutTests
     }
 
     [Fact]
+    public void Tracker_BackToTheFirstFriendWithinGraceKeepsItsDwell()
+    {
+        var t = new ReachOutTracker();
+        Frame(t, 0f, 0.8f, true, (7, 5f, true));
+        Frame(t, 0.2f, 0.8f, true, (7, 5f, true));
+        Frame(t, 0.3f, 0.8f, true, (7, 30f, true), (8, 5f, true));
+        Assert.Equal(8, t.Friend);
+        Frame(t, 0.35f, 0.8f, true, (7, 5f, true), (8, 30f, true));
+        Assert.Equal(7, t.Friend);
+        Assert.Equal(7, t.ArmedFriend);
+    }
+
+    [Fact]
     public void Tracker_InRangeFriendsWin()
     {
         var t = new ReachOutTracker();
