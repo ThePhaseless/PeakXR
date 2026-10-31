@@ -58,6 +58,7 @@ internal sealed class PackStash : IGripExtension
     private Pick walkBest,
         walkHeld;
     private float walkBestAngle;
+    private int walkRayId;
     private Collider rayCollider;
     private IInteractible rayTarget;
 
@@ -196,6 +197,13 @@ internal sealed class PackStash : IGripExtension
         var t = point[h];
         t.Begin();
         WalkPoint(c, t, aim.position, aim.forward);
+        // Laser rule: the pack the ray hits wins over a held pick still inside its hold angle (re-dwells).
+        if (walkRayId >= 0 && walkRayId == walkBest.Id && walkRayId != t.Friend)
+        {
+            t.Reset();
+            t.Begin();
+            t.Offer(walkBest.Id, 0f, true);
+        }
         t.Step(1f, 0f, true, Time.time);
 
         var pick =
@@ -209,20 +217,17 @@ internal sealed class PackStash : IGripExtension
         {
             pointPick[h] = pick;
             PointVerdict = PointVerdictNow(c, h);
+            // Not gated on UI.ActionHints: the ring is the only sign the trigger is taken from the item.
             if (PointVerdict == DenyReason.None)
-            {
-                if (Affordance.Hints)
-                    Affordance.Mark(
-                        free,
-                        packAt,
-                        DenyReason.HappenedHere,
-                        DenyHint.At(packAt),
-                        "Trigger to open"
-                    );
-            }
+                Affordance.Mark(
+                    free,
+                    packAt,
+                    DenyReason.HappenedHere,
+                    DenyHint.At(packAt),
+                    "Trigger to open"
+                );
             else
                 Affordance.Hover(free, packAt, PointVerdict, PointHint(c, PointVerdict));
-            // With hints off the tick is the only sign the pick is armed.
             if (t.Acquired)
                 Haptics.Pulse(free, 0.15f, 0.02f);
         }
@@ -234,12 +239,14 @@ internal sealed class PackStash : IGripExtension
 
     /// <summary>The free hand may point: it is tracked and open (it holds nothing), holds no wall, rope or the item,
     /// the other hand holds an item a pack can take, and nothing blocks input. Needs <c>Inventory.BodySlots</c>, whose
-    /// wheel hold (<see cref="BodyInventory.HoldWheelByTrigger"/>) commits the wheel.</summary>
+    /// wheel hold (<see cref="BodyInventory.HoldWheelByTrigger"/>) commits the wheel, and <c>Inventory.WheelByHand</c>,
+    /// without which the trigger hand cannot pick a pocket.</summary>
     private static bool FreeHand(Character c, bool left)
     {
         var item = c.data.currentItem;
         ref var s = ref VRInput.Hand(left);
         return InventoryConfig.Instance.PointToOpenPack
+            && InventoryConfig.Instance.WheelByHand
             && VRSession.Active
             && BodyInventory.Instance.Valid
             && c == Character.localCharacter
@@ -261,6 +268,7 @@ internal sealed class PackStash : IGripExtension
     {
         walkBest = walkHeld = NoPick;
         walkBestAngle = float.MaxValue;
+        walkRayId = -1;
         // shortcut: one ray against solid colliders; a worn pack with only trigger colliders falls back to its angle.
         if (
             Physics.Raycast(
@@ -359,6 +367,8 @@ internal sealed class PackStash : IGripExtension
             return;
         // All in range: the aim picks, never the distance (OutOfReach shows on the aimed pack).
         t.Offer(pick.Id, angle, true);
+        if (onRay)
+            walkRayId = pick.Id;
         if (pick.Id == t.Friend)
             walkHeld = pick;
         if (angle < walkBestAngle)
@@ -418,7 +428,10 @@ internal sealed class PackStash : IGripExtension
         bool active = holding && down;
         bool edge = active && !pullPrevDown && left == pullPrevLeft;
         if (left != pullPrevLeft)
+        {
             pullClaimed = false;
+            pullHand = -1;
+        }
         pullPrevDown = active;
         pullPrevLeft = left;
         if (!active)

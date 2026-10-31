@@ -216,9 +216,59 @@ internal sealed partial class SelfTestRunner
             Fail("the holding hand picked a pocket of the wheel");
     }
 
+    /// <summary>The laser rule (vr.430): a pack 14 degrees beside the near one, inside its 15 degree hold. With the near
+    /// pack picked, aimed straight at the beside one the ray hits it and it must take the pick. Sets
+    /// <see cref="stepNote"/>; the check is reported, not failed, when the rig cannot pose it (the ray hits something
+    /// else, or the near pack is not inside the hold angle).</summary>
+    IEnumerator PointRayWins(bool free)
+    {
+        yield return SpawnPointPack(PointNear, 14f);
+        if (!stepOk)
+            yield break;
+        var beside = spawnedPack;
+        var s = PackStash.Instance;
+        PointAt(free, pointPack.Center());
+        yield return Until(
+            () => s.PointHand == HandIndex(free) && ReferenceEquals(s.PointPack, pointPack),
+            1f,
+            "the near pack aimed at was not the pick"
+        );
+        if (!stepOk)
+        {
+            stepNote = PointState();
+            yield break;
+        }
+        PointAt(free, beside.Center());
+        yield return null;
+        var aim = VRRig.Instance.Aim(free);
+        float held = ReachOut.AimDegrees(
+            aim.position.N(),
+            (aim.position + aim.forward).N(),
+            pointPack.Center().N()
+        );
+        bool rayOn =
+            Physics.Raycast(aim.position, aim.forward, out var hit, PackDrop.PointSearch + 1f)
+            && hit.collider.GetComponentInParent<Backpack>() == beside;
+        if (!rayOn || held > PackDrop.PointHold)
+        {
+            stepNote =
+                $"laser rule not posed (ray on the beside pack {rayOn}, near pack {held:0} deg off)";
+            yield break;
+        }
+        yield return Until(
+            () => s.PointHand == HandIndex(free) && ReferenceEquals(s.PointPack, beside),
+            1f,
+            $"the pack the ray hits lost to the held pick {held:0} deg off"
+        );
+        if (stepOk)
+            stepNote = $"the ray-hit pack took the pick from one {held:0} deg off";
+        else
+            stepNote = PointState();
+    }
+
     /// <summary>
     /// vr.430-point-pack-open: a pack 3 m away, aimed at, is the pick and shows OutOfReach (the aim picks, never the
-    /// distance); the near pack aimed at arms with nothing refusing (screenshot of the teal ring). The pull opens its
+    /// distance); the pack the ray hits wins over a held pick inside its hold angle (<see cref="PointRayWins"/>); the near pack aimed at arms with nothing refusing (screenshot of the teal ring). The pull opens its
     /// wheel on the free hand's side, held by that trigger, with no secondary use. The holding hand moving picks
     /// nothing; the free hand moved toward a pocket picks it, and the trigger's release puts the Apple into that
     /// pocket with the holding grip still closed. Then a pull aimed away from the pack is the secondary use again.
@@ -245,6 +295,10 @@ internal sealed partial class SelfTestRunner
             stepNote = PointState();
             yield break;
         }
+        yield return PointRayWins(free);
+        if (!stepOk)
+            yield break;
+        string laser = stepNote;
         PointAt(free, pointPack.Center());
         yield return Until(
             () => Points(free, pointPack, DenyReason.None),
@@ -320,7 +374,7 @@ internal sealed partial class SelfTestRunner
             Fail($"aimed away, the pull: secondary use {pointSawSecondary}, wheel {pointSawWheel}");
         else
             stepNote =
-                $"far pack OutOfReach, near pack opened by the trigger and the Apple went into pocket {pocket}; aimed away the trigger is the secondary use";
+                $"far pack OutOfReach, {laser}, near pack opened by the trigger and the Apple went into pocket {pocket}; aimed away the trigger is the secondary use";
 
         static bool StashSlice(BackpackWheel w) =>
             w.chosenSlice.IsSome && w.chosenSlice.Value.isStashSlice;

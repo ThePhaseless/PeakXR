@@ -350,7 +350,8 @@ internal sealed class BodyInventory : IGripExtension
         if (shoulderGrip[hand])
         {
             shoulderGrip[hand] = false;
-            if (wheelHand == hand)
+            // A trigger-held wheel (point to open) commits on its trigger's release, not this grip's.
+            if (wheelHand == hand && !wheelTrigger)
             {
                 wheelHand = -1;
                 wheelTrigger = false;

@@ -111,7 +111,7 @@ internal sealed class InventoryConfig
                 "With an item in one hand, point the other hand at a backpack on the ground or on a friend's back "
                     + "(from behind) within reach and pull that hand's trigger: the pack's wheel opens. Move that hand "
                     + "toward a pocket and let go of the trigger to put the item in. A red ring says why not. Needs "
-                    + "Inventory.BodySlots."
+                    + "Inventory.BodySlots and Inventory.WheelByHand."
             ),
             ghosts = file.Bind(
                 s,
