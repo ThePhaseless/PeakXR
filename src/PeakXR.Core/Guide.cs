@@ -30,7 +30,7 @@ public enum GuideTopic : byte
     Wrist,
     Refused,
 
-    /// <summary>Finger-gun ping: point, then squeeze the trigger.</summary>
+    /// <summary>Ping: tap the off hand's upper button where that hand points.</summary>
     Ping,
 
     /// <summary>Talk: a free hand at the mouth like a walkie-talkie.</summary>
@@ -1150,7 +1150,7 @@ public static class GuideTable
             )
         );
 
-        AddComms(Add, restLeft);
+        AddComms(Add, restLeft, restRight);
         AddNew(Add, restLeft);
 
         for (int i = 0; i < d.Length; i++)
@@ -1160,34 +1160,35 @@ public static class GuideTable
     }
 
     /// <summary>Ping, talk, mute and spectate: the communication mechanics, with the cues the game gives them.</summary>
-    static void AddComms(Action<GuideDemo> add, GuideTrack restLeft)
+    static void AddComms(Action<GuideDemo> add, GuideTrack restLeft, GuideTrack restRight)
     {
-        // Finger gun pitched down at the floor ahead: the aim line ends where the dot lands, then the squeeze pings.
-        var aim = RestR + V(0f, 0f, 0.02f);
-        var land = RestR + V(0f, -1.15f, 1.64f);
+        // The off hand pitched down at the floor ahead: the thumb on the upper button shows where the dot lands, the
+        // tap pings there.
+        var aim = RestL + V(0f, 0f, 0.02f);
+        var land = RestL + V(0f, -1.15f, 1.64f);
         add(
             new GuideDemo(
                 GuideTopic.Ping,
                 "Ping",
-                "Point, then squeeze the trigger to ping.",
+                "Point the hand, tap the upper button to ping.",
                 2.8f,
                 null,
-                restLeft,
                 T(
-                    K(0f, RestR),
-                    K(0.4f, aim, grip: 1f, pitch: 35f),
-                    K(1.3f, aim, grip: 1f, pitch: 35f),
-                    K(1.4f, aim, grip: 1f, trigger: 1f, button: GuideButton.Trigger, pitch: 35f),
-                    K(1.7f, aim, grip: 1f, pitch: 35f),
-                    K(2.3f, RestR),
-                    K(2.8f, RestR)
+                    K(0f, RestL),
+                    K(0.4f, aim, pitch: 35f),
+                    K(1.3f, aim, pitch: 35f),
+                    K(1.4f, aim, button: GuideButton.Upper, pitch: 35f),
+                    K(1.6f, aim, pitch: 35f),
+                    K(2.3f, RestL),
+                    K(2.8f, RestL)
                 ),
+                restRight,
                 new[]
                 {
                     new GuideProp(
                         GuideShape.Laser,
                         2f,
-                        T(K(0f, Vector3.Zero, anchor: R)),
+                        T(K(0f, Vector3.Zero, anchor: L)),
                         0.5f,
                         1.7f
                     ),

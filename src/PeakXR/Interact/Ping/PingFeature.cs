@@ -3,16 +3,16 @@ using PeakXR.Framework;
 namespace PeakXR.Interact.Ping;
 
 /// <summary>
-/// <c>interact.ping</c>: the game's ping, aimed by a hand instead of the flat camera, fired by a finger-gun
-/// gesture or a fallback button, with a marker sized for stereo viewing. The ping itself still goes through
-/// vanilla PointPinger and its ReceivePoint_Rpc, so flat players see VR pings normally. While the finger gun is
-/// held a local preview shows where it lands; a press the game would drop gets a refusal cue.
+/// <c>interact.ping</c>: the game's ping, aimed by a hand instead of the flat camera, fired by a button only (the
+/// layout's off-hand B/Y tap, whose hold is the emote wheel), with a marker sized for stereo viewing. The ping itself
+/// still goes through vanilla PointPinger and its ReceivePoint_Rpc, so flat players see VR pings normally. While the
+/// thumb rests on the button a local preview shows where it lands; a press the game would drop gets a refusal cue.
 /// </summary>
 public sealed class PingFeature : Feature
 {
     public override string Id => "interact.ping";
 
-    // After interact.physical (order 10): the Sample postfix edits the use input that feature injected.
+    // After player.locomotion and interact.physical: the Sample postfix reads the ping tap the layout wrote.
     public override int Order => 30;
 
     protected internal override void Install()

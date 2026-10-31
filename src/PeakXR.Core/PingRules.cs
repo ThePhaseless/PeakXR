@@ -40,8 +40,8 @@ public static class PingRules
         : PingVerdict.Fire;
 
     /// <summary>
-    /// The hand a button ping aims from: the fixed hand, else the one hand that points, else the off hand of the layout
-    /// (where the table's ping button sits).
+    /// The hand a button ping aims from: the fixed hand, else the one hand that points with the thumb up
+    /// (<see cref="GripIntent.IsThumbUpPoint"/>), else the off hand of the layout (where the table's ping button sits).
     /// </summary>
     public static bool ButtonHandLeft(
         PingAimHand setting,
@@ -55,13 +55,6 @@ public static class PingRules
             PingAimHand.Right => false,
             _ => leftPointing || (!rightPointing && !dominantLeft),
         };
-
-    /// <summary>
-    /// A holding hand made the finger gun, but only an empty hand pings: when its squeeze did nothing (the item has no
-    /// use) and the other hand is free, that free hand gets a notice so the next try goes there.
-    /// </summary>
-    public static bool UseFreeHand(bool gesture, bool itemHasUse, bool otherHandFree) =>
-        gesture && !itemHasUse && otherHandFree;
 
     /// <summary>
     /// The dotted aim ray: dots every <paramref name="spacing"/> metres (the first half a spacing out), at most

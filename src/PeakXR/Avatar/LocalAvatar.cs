@@ -62,7 +62,7 @@ internal sealed class LocalAvatar : MonoBehaviour
     {
         ref var h = ref VRInput.Hand(left);
         // The Touch thumbrest counts: a thumb resting there read as lifted, so every plain grip with the index off the
-        // trigger was a finger gun whose interact waited for a ping that never came.
+        // trigger read as a thumb-up point.
         bool thumb =
             h.PrimaryTouch
             || h.SecondaryTouch
@@ -70,8 +70,8 @@ internal sealed class LocalAvatar : MonoBehaviour
             || h.ThumbrestTouch
             || h.Primary
             || h.Secondary;
-        // Without a trigger touch sensor the index counts as resting on the trigger: a pointed grip or finger gun
-        // inferred from "not touched" made every grip a point on a Vive wand.
+        // Without a trigger touch sensor the index counts as resting on the trigger: a pointed grip inferred from
+        // "not touched" made every grip a point on a Vive wand.
         return FingerCurlMapper.Map(
             h.Trigger,
             h.TriggerTouch || h.NoTriggerTouch,

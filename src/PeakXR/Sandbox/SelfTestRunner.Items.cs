@@ -1013,7 +1013,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>vr.28: the hand holding an item with a trigger use (a bandage) points (grip closed, index off the
     /// trigger) at an Apple, then squeezes the trigger. That is the item's use (<c>Item.isUsingPrimary</c>), never a ping: a holding hand's
-    /// squeeze fired interact.ping's finger gun and swallowed the use (vr14, a held torch never lit).</summary>
+    /// squeeze fired interact.ping's old finger gun and swallowed the use (vr14, a held torch never lit).</summary>
     IEnumerator UsePointingStep(Item prefab)
     {
         var c = Character.localCharacter;

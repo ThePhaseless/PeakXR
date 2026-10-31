@@ -883,12 +883,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>What the ghost must show for a topic (<see cref="Wrong"/>), checked against the mechanic itself rather
-    /// than against GuideTable: the finger gun (grip and trigger lit together), a closed hand inside the talk gesture's
+    /// than against GuideTable: the upper button lit for the ping, a closed hand inside the talk gesture's
     /// mouth radius (MouthGesture), an open hand there for mute, and the stick lit on the hand the spectate binding
     /// reads (BindingTable.Default) and never on the other. Accumulates one loop's frames.</summary>
     sealed class GhostCheck
     {
-        public bool FingerGun,
+        public bool PingButton,
             FistAtMouth,
             OpenAtMouth,
             StickOnBound,
@@ -901,8 +901,8 @@ internal sealed partial class SelfTestRunner
             foreach (bool left in new[] { true, false })
             {
                 bool grip = demo.PadLit(left, GuideButton.Grip);
-                if (grip && demo.PadLit(left, GuideButton.Trigger))
-                    FingerGun = true;
+                if (demo.PadLit(left, GuideButton.Upper))
+                    PingButton = true;
                 if (Vector3.Distance(demo.PadPosition(left), mouth) <= radius)
                 {
                     FistAtMouth |= grip;
@@ -919,7 +919,7 @@ internal sealed partial class SelfTestRunner
         public string Wrong(GuideTopic topic) =>
             topic switch
             {
-                GuideTopic.Ping when !FingerGun => "no ghost hand squeezes the finger gun",
+                GuideTopic.Ping when !PingButton => "no ghost hand taps the upper button",
                 GuideTopic.Mic when !FistAtMouth => "no closed ghost hand at the mouth",
                 GuideTopic.Mute when !OpenAtMouth => "no open ghost hand over the mouth",
                 GuideTopic.Mute when FistAtMouth => "a closed hand at the mouth (that talks)",

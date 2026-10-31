@@ -8,8 +8,8 @@ using UnityEngine;
 namespace PeakXR.Interact.Ping;
 
 /// <summary>
-/// Where a ping would land, before the squeeze: while a hand holds the finger gun (<see cref="PingInput.Aiming"/>), or
-/// the thumb rests on or presses the layout's ping button (<see cref="PingInput.ButtonAiming"/>), a dotted line from
+/// Where a ping would land, before the tap: while the thumb rests on or presses the layout's ping button
+/// (<see cref="PingInput.ButtonAiming"/>), a dotted line from
 /// the aiming hand to a small dot on the ground the ping ray would hit (the same ray and TerrainMap mask as
 /// <see cref="PingPatches.PingHit"/>), like a laser pointer's spot. Where the ray finds nothing the dot sits red at a fixed distance
 /// inside the refused cue's "no" sign (a ring and its slash, <see cref="CueGlyph.Slash"/>), so shape and not only
@@ -150,12 +150,7 @@ internal sealed class PingPreview : MonoBehaviour
             Draw(false, refusedAt, refusedAt, true);
             return;
         }
-        bool left;
-        if (PingInput.Aiming(true))
-            left = true;
-        else if (PingInput.Aiming(false))
-            left = false;
-        else if (!PingInput.ButtonAiming(out left))
+        if (!PingInput.ButtonAiming(out bool left))
         {
             Hide();
             return;

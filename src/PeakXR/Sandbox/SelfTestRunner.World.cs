@@ -2174,8 +2174,7 @@ internal sealed partial class SelfTestRunner
                 Vector3.up
             );
         }
-        // A deliberate point: index off the trigger, thumb resting on the stick. A lifted thumb is the finger gun
-        // (GripIntent.IsFingerGun), whose interact waits for a possible ping.
+        // A deliberate point: index off the trigger, thumb resting on the stick.
         Script(free).TriggerTouch = false;
         Script(free).StickTouch = true;
         Script(free).Trigger = 0f;

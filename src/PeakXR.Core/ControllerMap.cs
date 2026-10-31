@@ -141,7 +141,7 @@ public static class ControllerMap
         b.NoTriggerTouch = !l.HasTriggerTouch;
         b.Stick = s.Stick;
         b.StickTouch = s.StickTouch;
-        // A thumb on the trackpad rests like one on the thumbrest: not lifted, so no finger gun.
+        // A thumb on the trackpad rests like one on the thumbrest: not lifted, so no thumb-up point.
         b.ThumbrestTouch = s.ThumbrestTouch || s.PadTouch;
         b.Menu =
             s.Menu

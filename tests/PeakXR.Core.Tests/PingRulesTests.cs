@@ -44,21 +44,6 @@ public class PingRulesTests
     }
 
     [Theory]
-    [InlineData(true, false, true, true)]
-    [InlineData(true, true, true, false)]
-    [InlineData(true, false, false, false)]
-    [InlineData(false, false, true, false)]
-    public void HoldingHand_GetsTheFreeHandNoticeOnlyWhenItsSqueezeDidNothing(
-        bool gesture,
-        bool itemHasUse,
-        bool otherHandFree,
-        bool notice
-    )
-    {
-        Assert.Equal(notice, PingRules.UseFreeHand(gesture, itemHasUse, otherHandFree));
-    }
-
-    [Theory]
     // Short ray: one dot per spacing, the first half a spacing out.
     [InlineData(1f, 0.1f, 40, 10, 0.1f)]
     // Long ray: capped, spread evenly over the whole length.

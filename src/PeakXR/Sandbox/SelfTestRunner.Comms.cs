@@ -11,7 +11,6 @@ using PeakXR.UI.Wheels;
 using PeakXR.Voice;
 using PeakXR.VR;
 using UnityEngine;
-using Zorro.Core;
 
 namespace PeakXR.Sandbox;
 
@@ -40,6 +39,7 @@ internal sealed partial class SelfTestRunner
         // ---- WP6 gap round: ping
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
         yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
+        yield return HandStep("vr.461-point-squeeze-no-ping", 20f, PointSqueezeNoPingStep());
         // ---- WP6 gap round: wheels
         yield return WheelGapSteps();
     }
@@ -50,11 +50,10 @@ internal sealed partial class SelfTestRunner
     const float StrayItemRadius = 3f;
 
     /// <summary>
-    /// The finger-gun pose is a pointing grip: held past its trigger window (FingerGun.DefaultWindow) it interacts
-    /// with what the hand points at, as interact.physical intends. vr37's vr.110 aimed at the ground where an earlier
-    /// step's Compass lay (dropped at the end of use.Compass and never swept), picked it up, and the squeeze used the
-    /// compass instead of pinging. The ping steps start from clear ground: world items near the body that no step
-    /// holds are removed, each one logged.
+    /// A pointing grip interacts with what the hand points at, as interact.physical intends. vr37's vr.110 aimed at the
+    /// ground where an earlier step's Compass lay (dropped at the end of use.Compass and never swept) and picked it
+    /// up. The ping steps start from clear ground: world items near the body that no step holds are removed, each one
+    /// logged.
     /// </summary>
     static void ClearStrayItems()
     {
@@ -78,18 +77,21 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.123: the finger gun aimed at the ground ahead draws its aim as a row of dots from the hand to the
-    /// landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone refuses nothing.</summary>
+    /// <summary>vr.123: the thumb resting on the ping button, its hand aimed at the ground ahead, draws the aim as a row
+    /// of dots from the hand to the landing dot (<see cref="PingPreview.RayDots"/>), not a solid line; aiming alone
+    /// refuses nothing.</summary>
     IEnumerator PingDottedStep()
     {
         ClearStrayItems();
-        bool left = false;
+        if (!PingButtonHand(out bool left))
+            yield break;
         var aim = PingGround();
         float mark = CueMark();
-        yield return FingerGunAim(left, aim, 0.5f);
+        yield return ButtonAim(left, aim, 0.5f);
         int dots = PingPreview.RayDots;
         bool landing = PingPreview.DotShown && !PingPreview.DotRed;
         yield return ShotAt("vr-123-ping-dotted", aim);
+        Script(left).SecondaryTouch = false;
         yield return ExpectNoCue(left, mark, 0f);
         if (!stepOk)
             yield break;
@@ -179,6 +181,8 @@ internal sealed partial class SelfTestRunner
         Script(button).Secondary = true;
         yield return Wait(new ActionMapper().LongPressSeconds + 0.2f);
         bool hiddenHeld = !PingInput.ButtonAiming(out _);
+        var gui = GUIManager.instance;
+        bool wheelOpened = gui != null && gui.emoteWheel != null && gui.emoteWheel.activeSelf;
         Script(button).Secondary = false;
         yield return Wait(0.2f);
         bool hiddenAfter = !PingInput.ButtonAiming(out _);
@@ -193,13 +197,50 @@ internal sealed partial class SelfTestRunner
 
         var note =
             $"preview {previewed} from the {(fromLeft ? "left" : "right")} hand ({dots} dots), pinged {landed:0.00} m from the aim; {feel}; "
-            + $"long press hid it {hiddenHeld}, still hidden after {hiddenAfter}";
+            + $"long press hid it {hiddenHeld}, still hidden after {hiddenAfter}, opened the emote wheel {wheelOpened}";
         if (!previewed || fromLeft != aimLeft)
             Fail(
                 "no aim preview from the tap's hand while the thumb rested on the button: " + note
             );
         else if (!hiddenHeld || !hiddenAfter)
             Fail("the preview stayed on through the emote long press: " + note);
+        else if (!wheelOpened)
+            Fail("the long press on the ping button did not open the emote wheel: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.461: the old finger gun (grip closed, index straight, thumb lifted) on an empty hand aimed at clear ground,
+    /// then a full trigger squeeze. Ping is a button only: no aim preview shows and no ping goes out
+    /// (<c>PointPinger._timeLastPinged</c> unchanged), and nothing is refused.
+    /// </summary>
+    IEnumerator PointSqueezeNoPingStep()
+    {
+        ClearStrayItems();
+        var pinger = LocalPinger();
+        if (pinger == null || PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        bool left = VRInput.LeftHanded;
+        var aim = PingGround();
+        yield return PingCooldownOver(pinger);
+        float before = PingInput.LastPinged(pinger);
+        float mark = CueMark();
+        yield return PointAim(left, aim, 0.5f);
+        bool preview = PingPreview.DotShown;
+        yield return PointSqueeze(left, aim);
+        yield return Wait(0.5f);
+        bool pinged = PingInput.LastPinged(pinger) != before;
+        yield return GripTo(left, 0f, 0.1f);
+        yield return ExpectNoCue(left, mark, 0f);
+        if (!stepOk)
+            yield break;
+        var note = $"aim preview {preview}, pinged {pinged}";
+        if (preview || pinged)
+            Fail("pointing and squeezing the trigger still pings: " + note);
         else
             stepNote = note;
     }
@@ -575,9 +616,10 @@ internal sealed partial class SelfTestRunner
     // ================================================================ WP6 slice A: ping and voice
 
     /// <summary>
-    /// vr.110: the finger gun on an empty hand aimed at the ground ahead. While the pose is held the aim preview draws
-    /// its dot near the aimed spot (<see cref="PingPreview"/>); the squeeze pings: PointPinger stamps
-    /// <c>_timeLastPinged</c> only on a hit (PointPinger.cs:68-71). A hit gets a contact tick and no refusal.
+    /// vr.110: the thumb resting on the layout's ping button (off-hand B/Y) with that hand aimed at the ground ahead.
+    /// The aim preview draws its dot near the aimed spot (<see cref="PingPreview"/>); the tap pings: PointPinger stamps
+    /// <c>_timeLastPinged</c> only on a hit (PointPinger.cs:68-71). A hit gets a contact tick and no refusal, and the
+    /// hand picks nothing up.
     /// </summary>
     IEnumerator PingAimStep()
     {
@@ -588,10 +630,11 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no PointPinger or interact.ping not installed";
             yield break;
         }
-        bool left = false;
+        if (!PingButtonHand(out bool left))
+            yield break;
         var aim = PingGround();
         yield return PingCooldownOver(pinger);
-        yield return FingerGunAim(left, aim, 0.5f);
+        yield return ButtonAim(left, aim, 0.5f);
         bool shown = PingPreview.DotShown && !PingPreview.DotRed;
         float off = Vector3.Distance(PingPreview.DotPosition, aim);
         yield return ShotAt("vr-110-ping", aim);
@@ -599,11 +642,11 @@ internal sealed partial class SelfTestRunner
         float mark = CueMark();
         float gameMark = Time.time;
         var oldMarker = PingMarker(pinger);
-        yield return FingerGunSqueeze(left, aim);
+        yield return ButtonTap(left, aim);
         yield return Until(
             () => PingInput.LastPinged(pinger) >= gameMark,
             2f,
-            "the squeeze did not ping (PointPinger._timeLastPinged unchanged)"
+            "the button tap did not ping (PointPinger._timeLastPinged unchanged)"
         );
         if (!stepOk)
             yield break;
@@ -615,13 +658,13 @@ internal sealed partial class SelfTestRunner
             yield break;
         var held = HeldItem();
         if (!shown)
-            Fail("no aim preview dot while the finger gun was held");
+            Fail("no aim preview dot while the thumb rested on the ping button");
         else if (off > PingLandRadius)
             Fail($"preview dot {off:0.00} m from the aimed spot");
         else if (landing != null)
             Fail(landing);
         else if (held != null)
-            Fail($"the finger-gun squeeze picked up {held.name} instead of only pinging");
+            Fail($"the ping tap picked up {held.name} instead of only pinging");
         else
             stepNote =
                 $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}";
@@ -630,7 +673,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.111: pings the game drops silently get a cue. The sky (TryGetPingHit misses, PointPinger.cs:68) gives NoWall
     /// at the ray end with the red marker; a second ping inside <c>PointPinger.coolDown</c> (a prefab value, read here)
-    /// gives TooSoon; the finger gun on a hand that holds an unusable item gives the free hand a UseOtherHand notice.
+    /// gives TooSoon. Both are button taps from the layout's ping hand.
     /// </summary>
     IEnumerator PingRefusedStep()
     {
@@ -641,22 +684,25 @@ internal sealed partial class SelfTestRunner
             stepSkip = "no PointPinger or interact.ping not installed";
             yield break;
         }
+        if (!PingButtonHand(out bool left))
+            yield break;
         var notes = new List<string>();
-        bool left = false;
         var rig = VRRig.Instance;
 
         // Sky: straight up from the hand.
         yield return PingCooldownOver(pinger);
         float before = PingInput.LastPinged(pinger);
+        HandBesideHead(left);
+        yield return null;
         var sky = rig.Hand(left).position + Vector3.up * 200f;
-        // The player looks along the finger gun at what they ping (run 48: the ring sat 89 deg off a level view).
+        // The player looks along the aimed hand at what they ping (run 48: the ring sat 89 deg off a level view).
         LookAtHand(left, along: true);
-        yield return FingerGunAim(left, sky, 0.3f);
+        yield return ButtonAim(left, sky, 0.3f);
         bool skyPreview = PingPreview.DotRed;
         bool skySign = PingPreview.DotSigned;
         Affordance.ResetGate();
         float mark = CueMark();
-        yield return FingerGunSqueeze(left, sky);
+        yield return ButtonTap(left, sky);
         yield return ExpectCue(left, DenyReason.NoWall, mark, tint: true);
         if (!stepOk)
             yield break;
@@ -677,8 +723,8 @@ internal sealed partial class SelfTestRunner
         var ground = PingGround();
         yield return PingCooldownOver(pinger);
         float gameMark = Time.time;
-        yield return FingerGunAim(left, ground, 0.3f);
-        yield return FingerGunSqueeze(left, ground);
+        yield return ButtonAim(left, ground, 0.3f);
+        yield return ButtonTap(left, ground);
         yield return Until(
             () => PingInput.LastPinged(pinger) >= gameMark,
             2f,
@@ -688,7 +734,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         Affordance.ResetGate();
         mark = CueMark();
-        yield return FingerGunAim(left, ground, 0.15f);
+        yield return ButtonAim(left, ground, 0.15f);
         // The prefab's coolDown is 0 (vr43), so no player meets TooSoon and this branch normally does not run.
         if (Time.time - PingInput.LastPinged(pinger) >= pinger.coolDown)
             notes.Add(
@@ -696,35 +742,13 @@ internal sealed partial class SelfTestRunner
             );
         else
         {
-            yield return FingerGunSqueeze(left, ground);
+            yield return ButtonTap(left, ground);
             yield return ExpectCue(left, DenyReason.TooSoon, mark);
             if (!stepOk)
                 yield break;
             notes.Add($"cooldown {pinger.coolDown:0.00} s: " + cueNote);
         }
-        yield return GripTo(left, 0f, 0.1f);
-
-        // A hand holding an item the game will not use (overrideUsability false, Item.cs:797-802).
-        var apple = FindItem(SandboxActions.Items, AppleFragment);
-        yield return GiveAndHold(apple);
-        if (!stepOk)
-            yield break;
-        var usability = GameMember.Field<Item, Optionable<bool>>("overrideUsability");
-        usability(HeldItem()) = Optionable<bool>.Some(false);
-        bool holdLeft = LocalHold.ItemInLeftHand;
-        Affordance.ResetGate();
-        mark = CueMark();
-        float heldBefore = PingInput.LastPinged(pinger);
-        yield return FingerGunAim(holdLeft, ground, 0.3f);
-        yield return FingerGunSqueeze(holdLeft, ground);
-        yield return ExpectCue(!holdLeft, DenyReason.UseOtherHand, mark);
-        if (HeldItem() != null)
-            usability(HeldItem()) = Optionable<bool>.None;
-        if (stepOk && PingInput.LastPinged(pinger) != heldBefore)
-            Fail("the holding hand's finger gun pinged");
-        if (!stepOk)
-            yield break;
-        notes.Add("holding: " + cueNote);
+        Script(left).SecondaryTouch = false;
         stepNote = string.Join("; ", notes);
     }
 
@@ -972,7 +996,7 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Ground about 4 m ahead, where a ping lands, that both hands can see: nothing on the ping's TerrainMap layer
-    /// between either finger-gun hand (as <see cref="FingerGunAim"/> places it) and the spot. vr54 aimed past a glass
+    /// between either hand (as <see cref="HandBesideHead"/> places it) and the spot. vr54 aimed past a glass
     /// crate beside the right hand; the preview dot and the ping both stopped on the crate, 1.46 m short, which was
     /// right, and the step failed on its own target. Turns up to 75 degrees off the facing to find a clear spot.
     /// </summary>
@@ -1021,13 +1045,19 @@ internal sealed partial class SelfTestRunner
             yield return Wait(GameTiming.Budget(left) + 0.1f);
     }
 
-    /// <summary>Grip closed, index straight (no trigger touch), aimed at <paramref name="world"/>.</summary>
-    IEnumerator FingerGunAim(bool left, Vector3 world, float seconds)
+    /// <summary>The hand in front of the head on its own side, where a player holds a hand to aim it.</summary>
+    void HandBesideHead(bool left)
     {
-        var rig = VRRig.Instance;
         HeadFrame(out var head, out var forward, out var right);
         Script(left).Position =
             head + (left ? -right : right) * 0.2f + Vector3.down * 0.2f + forward * 0.3f;
+    }
+
+    /// <summary>Grip closed, index straight (no trigger touch), thumb lifted, aimed at <paramref name="world"/>.</summary>
+    IEnumerator PointAim(bool left, Vector3 world, float seconds)
+    {
+        var rig = VRRig.Instance;
+        HandBesideHead(left);
         Script(left).TriggerTouch = false;
         Script(left).Trigger = 0f;
         yield return GripTo(left, 1f, 0.1f);
@@ -1039,7 +1069,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The index curls onto the trigger and squeezes, then lets go; the grip stays closed.</summary>
-    IEnumerator FingerGunSqueeze(bool left, Vector3 world)
+    IEnumerator PointSqueeze(bool left, Vector3 world)
     {
         var rig = VRRig.Instance;
         Script(left).TriggerTouch = true;
@@ -1050,6 +1080,55 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
+        yield return null;
+    }
+
+    /// <summary>The layout's ping button is the upper face button of <paramref name="left"/> (off-hand B/Y tap,
+    /// BindingTable.Default); otherwise the step skips.</summary>
+    bool PingButtonHand(out bool left)
+    {
+        if (
+            ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out left,
+                out var control
+            )
+            && control == VRControl.Secondary
+        )
+            return true;
+        stepSkip = "the layout's ping is not on an upper face button";
+        return false;
+    }
+
+    /// <summary>The open hand beside the head with its thumb resting on the ping button (the aim preview's cue),
+    /// aimed at <paramref name="world"/>.</summary>
+    IEnumerator ButtonAim(bool left, Vector3 world, float seconds)
+    {
+        var rig = VRRig.Instance;
+        HandBesideHead(left);
+        yield return GripTo(left, 0f, 0.1f);
+        Script(left).SecondaryTouch = true;
+        for (float until = Now + seconds; Now < until; )
+        {
+            AimHand(rig, left, world);
+            yield return null;
+        }
+    }
+
+    /// <summary>A short press of the ping button while aiming, under the long press that opens the emote wheel; the
+    /// thumb stays resting on it.</summary>
+    IEnumerator ButtonTap(bool left, Vector3 world)
+    {
+        var rig = VRRig.Instance;
+        Script(left).Secondary = true;
+        for (float until = Now + 0.15f; Now < until; )
+        {
+            AimHand(rig, left, world);
+            yield return null;
+        }
+        Script(left).Secondary = false;
         yield return null;
     }
 

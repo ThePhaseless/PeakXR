@@ -153,7 +153,7 @@ public class ControllerProfileTests
     [Fact]
     public void TouchThumbrest_PassesThrough()
     {
-        // A thumb on the Touch thumbrest rests: it is no lifted finger-gun thumb.
+        // A thumb on the Touch thumbrest rests: it is no lifted thumb.
         Assert.True(Map(Index, new ControllerSample { ThumbrestTouch = true }).ThumbrestTouch);
         Assert.False(Map(Index, new ControllerSample()).ThumbrestTouch);
     }
@@ -373,7 +373,7 @@ public class ControllerProfileTests
     [Fact]
     public void Index_ThumbOnTheTrackpadRests()
     {
-        // A thumb on the Index trackpad is not lifted: a pointed grip there must not read as a finger gun.
+        // A thumb on the Index trackpad is not lifted: a pointed grip there must not read as a thumb-up point.
         var b = Map(Index, new ControllerSample { PadTouch = true });
         Assert.True(b.ThumbrestTouch);
         Assert.False(b.Menu);
@@ -393,7 +393,7 @@ public class ControllerProfileTests
     public void ProfilesWithoutTriggerTouch_NeverReadAGripAsPointing()
     {
         // A Vive wand's finger off the trigger is unknown, not straight: every grip read as a point (and, thumb
-        // off the pad, a finger gun). Treated as resting on the trigger, a grip is a fist.
+        // off the pad, a thumb-up point). Treated as resting on the trigger, a grip is a fist.
         var b = Map(ViveWand, new ControllerSample { Grip = 1f });
         var curls = FingerCurlMapper.Map(
             b.Trigger,

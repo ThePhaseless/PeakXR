@@ -313,12 +313,22 @@ public class GripIntentTests
     [Fact]
     public void Pointing_NotWithTheFingerResting_OnTheTrigger()
     {
-        // A fist with the index on the trigger (touch, no pull) is a grip, not a finger gun: the thumbs-up pose
+        // A fist with the index on the trigger (touch, no pull) is a grip, not a point: the thumbs-up pose
         // (EmoteGestures.ThumbsUp) and a plain grip on Index or Touch controllers.
         var fist = FingerCurlMapper.Map(0f, true, 1f, false);
         Assert.False(GripIntent.IsPointing(fist));
-        Assert.False(GripIntent.IsFingerGun(fist));
+        Assert.False(GripIntent.IsThumbUpPoint(fist));
         Assert.True(GripIntent.IsPointing(FingerCurlMapper.Map(0f, false, 1f, false)));
+    }
+
+    [Fact]
+    public void ThumbUpPoint_NeedsTheThumbLifted()
+    {
+        // Only a lifted thumb makes a point aim the button ping (Interaction.Ping.Hand = Pointing); the thumb on the
+        // stick or face buttons is a plain pointed grip.
+        Assert.True(GripIntent.IsThumbUpPoint(new FingerCurls(0f, 0.1f, 0.9f, 0.9f, 0.9f)));
+        Assert.False(GripIntent.IsThumbUpPoint(new FingerCurls(1f, 0.1f, 0.9f, 0.9f, 0.9f)));
+        Assert.False(GripIntent.IsThumbUpPoint(new FingerCurls(0f, 0.9f, 0.9f, 0.9f, 0.9f)));
     }
 
     [Fact]
@@ -365,32 +375,6 @@ public class GripIntentTests
             GripReleaseAction.Keep,
             GripIntent.OnRelease(false, true, 9f, 2f, true, true, extensionClaims: true)
         );
-    }
-
-    [Fact]
-    public void PointedInteract_WaitsWhileTheFingerGunAims()
-    {
-        // A pointing hand is aiming a ping: however long it holds, the interact never comes due (WP6 found a held
-        // ping aim at an item picking it up after 0.35 s).
-        float at = 0.35f;
-        for (float now = 0f; now < 2f; now += 0.1f)
-        {
-            at = GripIntent.DeferPointedInteract(at, pointing: true, now, FingerGun.DefaultWindow);
-            Assert.True(at > now);
-        }
-    }
-
-    [Fact]
-    public void PointedInteract_ComesDueOneWindowAfterTheIndexCurls()
-    {
-        float at = GripIntent.DeferPointedInteract(
-            0.35f,
-            pointing: true,
-            1f,
-            FingerGun.DefaultWindow
-        );
-        at = GripIntent.DeferPointedInteract(at, pointing: false, 1.1f, FingerGun.DefaultWindow);
-        TestUtil.Near(1f + FingerGun.DefaultWindow, at);
     }
 
     [Theory]

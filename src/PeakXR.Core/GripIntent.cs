@@ -357,25 +357,13 @@ public static class GripIntent
             : DenyReason.None;
     }
 
-    /// <summary>
-    /// When a pointing grip's interact comes due. While the hand keeps pointing it is aiming a finger-gun ping, so
-    /// the interact keeps waiting; it comes due <paramref name="window"/> seconds after the index curls with no
-    /// trigger squeeze (the squeeze itself cancels it). Pinging never picks anything up.
-    /// </summary>
-    public static float DeferPointedInteract(
-        float interactAt,
-        bool pointing,
-        float now,
-        float window
-    ) => pointing && now + window > interactAt ? now + window : interactAt;
-
     /// <summary>How far a piton or handle stands out of the rock it is set in (metres): rock up to this much nearer
     /// than the handle's surface is the face it sits on, not a separate hold (VR run 60).</summary>
     public const float HandleDepth = 0.1f;
 
     /// <summary>Index straight, the other fingers closed: the hand aims instead of the head. A finger resting on the
     /// trigger (<see cref="FingerCurlMapper.TriggerTouchCurl"/>) is a fist, not a point: at 0.35 a touch-sensing
-    /// controller's plain grip read as a finger gun and its interact waited forever (VR run 59, vr.81).</summary>
+    /// controller's plain grip read as a point and its interact waited forever (VR run 59, vr.81).</summary>
     public static bool IsPointing(in FingerCurls c) =>
         c.Index < PointedIndex && c.Middle > 0.6f && c.Ring > 0.5f;
 
@@ -383,14 +371,9 @@ public static class GripIntent
     public const float PointedIndex = 0.2f;
 
     /// <summary>
-    /// The ping's finger gun: pointing with the thumb lifted off the stick and face buttons. A grip with the index
-    /// straight and the thumb resting is a common way to hold Index and Touch controllers, so that alone is a
-    /// pointed interact, never a ping aim (external review #13).
+    /// Pointing with the thumb lifted off the stick and face buttons: a button ping aims from this hand
+    /// (<c>Interaction.Ping.Hand = Pointing</c>). A point with the thumb resting is only a pointed grip (external review
+    /// #13); neither pings by itself, the ping is a button.
     /// </summary>
-    public static bool IsFingerGun(in FingerCurls c) => IsPointing(c) && c.Thumb < 0.5f;
-
-    /// <summary>A pointing grip's interact waits for a possible ping only for a finger gun while pinging is
-    /// live; any other pointing grip interacts at once, so neither steals the other.</summary>
-    public static bool PointedInteractWaits(in FingerCurls c, bool pingLive) =>
-        pingLive && IsFingerGun(c);
+    public static bool IsThumbUpPoint(in FingerCurls c) => IsPointing(c) && c.Thumb < 0.5f;
 }

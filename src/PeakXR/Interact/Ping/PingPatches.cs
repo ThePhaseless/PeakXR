@@ -12,9 +12,9 @@ namespace PeakXR.Interact.Ping;
 /// marker size applies to every marker the local VR viewer sees.</summary>
 internal static class PingPatches
 {
-    /// <summary>CharacterInput.Sample(bool) (CharacterInput.cs:212, internal; ping read at :258): injects the
-    /// finger-gun or button ping into <c>pingWasPressed</c>, which PointPinger reads (PointPinger.cs:32). Runs
-    /// after interact.physical so it can hold off the use press of the trigger that fired the finger gun.</summary>
+    /// <summary>CharacterInput.Sample(bool) (CharacterInput.cs:212, internal; ping read at :258): adds the optional
+    /// ping button to <c>pingWasPressed</c>, which PointPinger reads (PointPinger.cs:32), and picks the aiming hand for
+    /// the layout's tap. Runs late so the layout's tap is already written.</summary>
     [HarmonyPatch]
     internal static class Sample
     {
