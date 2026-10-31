@@ -21,7 +21,8 @@ internal sealed class SocialHands : IGripExtension
 {
     public static readonly SocialHands Instance = new();
 
-    private const float FeedRadius = 0.22f;
+    /// <summary>How near (m) the held item's nearest point must come to a friend's head to feed them.</summary>
+    internal const float FeedRadius = 0.22f;
     private const float FeedExitRadius = 0.3f;
     private const float GraspPulseInterval = 0.3f;
 

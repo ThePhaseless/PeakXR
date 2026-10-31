@@ -1607,9 +1607,21 @@ internal sealed partial class SelfTestRunner
             Fail(far);
             yield break;
         }
-        yield return Wait(0.3f);
-        yield return GripTo(left, 0f, 0.3f);
-        yield return Until(() => HeldItem() == null, 2f, "not holstered on release");
+        // The hand stays in the slot while it waits and opens, as a player's follows the ghost: the slots ride the
+        // body, which still settles under the head (MP run 16, #109: on a rock the release came after a 0.6 s pause
+        // and the item stayed in hand). How far the slot moved meanwhile goes in the note.
+        var arrived = inv.Anchor(slot);
+        for (float start = Now; Now - start < 0.6f; )
+        {
+            SetHand(left, inv.Anchor(slot));
+            Script(left).Grip = Mathf.Clamp01((0.6f - (Now - start)) / 0.3f);
+            yield return null;
+        }
+        Script(left).Grip = 0f;
+        string at = F(
+            $"hand {Vector3.Distance(VRInput.Hand(left).Position, inv.Anchor(slot)):0.00} m from body slot {slot} (radius {inv.Slot(slot).Radius:0.00}), the slot moved {Vector3.Distance(arrived, inv.Anchor(slot)):0.00} m since the hand arrived, in a pack {PackStash.Instance.Over}, grip {PhysicalInteraction.HandAction(left)}"
+        );
+        yield return Until(() => HeldItem() == null, 2f, "not holstered on release: " + at);
         if (!stepOk)
             yield break;
         var itemSlot = c.player.GetItemSlot(selected.Value);
@@ -1626,7 +1638,7 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         stepNote =
-            $"holstered into hotbar slot {selected.Value} (body slot {slot}), drawn into the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
+            $"holstered into hotbar slot {selected.Value} (body slot {slot}; {at}), drawn into the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
         if (LocalHold.ItemInLeftHand != left)
             Fail("drawn into the other hand");
     }

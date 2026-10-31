@@ -182,6 +182,10 @@ internal sealed partial class SelfTestRunner
         }
         yield return Run(id, timeout, vr && MpReady ? MpSettled(body) : body);
         var r = report.Steps[report.Steps.Count - 1];
+        // A step that did not pass lets go of what it holds before the hands move again: no later step carries it on
+        // (StepPassed), and food left in hand fed the host as the next step walked in (MP run 16, #100).
+        if ((!r.Passed || r.Skipped) && HeldItem() != null)
+            yield return Guard(TapDrop(), Now + 1f, _ => { });
         if (vr)
             yield return HoldingHandSettled();
         WriteCheckpoint(
@@ -1480,7 +1484,7 @@ internal sealed partial class SelfTestRunner
         string standNote = F(
             $"A's eye {holdFrom:0.00} m from the host's mouth ({FlatDistance(c.Center, host.Center):0.00} m level) at the hold"
         );
-        if (holdFrom > MpFeedStepIn + MpFeedReachSlack)
+        if (holdFrom > MpFeedReach)
         {
             Fail("not in reach for the mouth hold after stepping in: " + standNote);
             yield break;
@@ -1517,6 +1521,16 @@ internal sealed partial class SelfTestRunner
             );
             yield return null;
         }
+        // A feed the hold started near the end of the budget finishes its use (Item.FinishCastSecondary, Item.cs:1043)
+        // before the verdict, so the step sees the feed it caused.
+        if (c.data.lastConsumedItem == consumedBefore && item != null && item.isUsingSecondary)
+            yield return WaitFor(
+                () =>
+                    item == null
+                    || !item.isUsingSecondary
+                    || c.data.lastConsumedItem != consumedBefore,
+                GameTiming.FeedSeconds(item) + 0.5f
+            );
         // Fed: the game consumes the item and unequips it a few hundred ms later (Consume, then EquipSlotRpc on B 0.2 s
         // after GetFedItemRPC in MP run 17); the checkpoint waits for that, so it does not list an item B already saw
         // gone.
@@ -1896,9 +1910,11 @@ internal sealed partial class SelfTestRunner
     /// the capped hand left the held item about 0.3 m short of the mouth (MP run 35).</summary>
     const float MpFeedStepIn = 0.4f;
 
-    /// <summary>How far (m) past <see cref="MpFeedStepIn"/> the eye may stay from the mouth for the hold: the held item
-    /// reaches past the 0.6 m hand, so a mouth up to about 0.6 m from the eye is still fed.</summary>
-    const float MpFeedReachSlack = 0.2f;
+    /// <summary>How far (m) from the eye the host's mouth may be for the hold: the hand held out <see cref="MpFeedHold"/>
+    /// and the feed zone around the item (<see cref="Social.SocialHands.FeedRadius"/>). The item reaches past the hand
+    /// too, so this is the near edge of the real reach (MP run 16, #106: the 0.6 m gate gave up at 0.61 m and the host
+    /// was fed by the same hold 3.7 s later).</summary>
+    const float MpFeedReach = MpFeedHold + Social.SocialHands.FeedRadius;
 
     /// <summary>Steps in (up to three bounded steps) until the host's mouth is within <see cref="MpFeedStepIn"/> of A's
     /// eye and the hand that puts the held item on it (the item's offset from the controller taken off the mouth) is
@@ -2218,7 +2234,13 @@ internal sealed partial class SelfTestRunner
     /// non-zero <paramref name="dir"/> goes with the request as a level direction (hang-below's lip outward), and
     /// <paramref name="item"/> as the prefab to spawn (spawn-item).
     /// </summary>
-    IEnumerator Ask(string what, float seconds = 5f, Vector3 dir = default, string item = null)
+    IEnumerator Ask(
+        string what,
+        float seconds = 5f,
+        Vector3 dir = default,
+        string item = null,
+        Vector3? from = null
+    )
     {
         int id = ++mpRequestId;
         double asked = Unix;
@@ -2228,6 +2250,7 @@ internal sealed partial class SelfTestRunner
                 Path.Combine(MpDirectory, MpRequest.RequestFile),
                 (
                     item != null ? MpRequest.Line(id, what, asked, dir.x, dir.z, item)
+                    : from is { } p ? MpRequest.Line(id, what, asked, dir.x, dir.z, p.x, p.y, p.z)
                     : dir == Vector3.zero ? MpRequest.Line(id, what, asked)
                     : MpRequest.Line(id, what, asked, dir.x, dir.z)
                 ) + "\n"
@@ -2416,9 +2439,29 @@ internal sealed partial class SelfTestRunner
             stepSkip = $"the host's hand is {past:0.00} m past a real arm's reach";
             yield break;
         }
+        // On its feet and not sliding: a body sliding down ground too steep to stand carries the hand off the friend's
+        // before the grip closes, and the grip then catches the slope (MP run 16, #110: A on a 51 deg slope 0.28 m above
+        // the host slid with TooSteep, and the grip started a climb).
+        var c = Character.localCharacter;
+        bool Footed() =>
+            GripIntent.OnFeet(c.data.isGrounded, c.data.sinceGrounded)
+            && c.data.sinceFallSlide > 0.5f;
+        yield return WaitFor(Footed, 1.5f);
+        if (!Footed())
+        {
+            stepSkip = F(
+                $"A slides on ground too steep to stand, {c.Center.y - host.Center.y:0.00} m above the host"
+            );
+            yield break;
+        }
         yield return MoveTo(left, Part, 0.5f);
+        gripMark = CueMark();
         yield return GripTo(left, 1f, 0.1f);
     }
+
+    /// <summary>When <see cref="GripHostHand"/>'s grip started to close: a cue's window starts here, not before the
+    /// step-in (MP run 16, #110: a step-in on a slope spent the 1 s window before the grip closed).</summary>
+    float gripMark;
 
     /// <summary>
     /// feed-refuse: a non-food item (not <c>canUseOnFriend</c>) resting at the host's mouth, trigger up, is refused after
@@ -2537,11 +2580,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         LookAtHand(false);
-        float mark = CueMark();
         yield return GripHostHand(false);
         if (stepSkip != null)
             yield break;
-        yield return ExpectCue(false, DenyReason.NotInTrouble, mark, false);
+        yield return ExpectCue(false, DenyReason.NotInTrouble, gripMark, false);
         if (!stepOk)
             yield break;
         for (float end = Now + 0.5f; Now < end; )
@@ -2587,7 +2629,6 @@ internal sealed partial class SelfTestRunner
         // Turned 100 degrees left with the host on the right, the right hand reaching out to the side: the body and
         // the look turn together (MP run 24: a head glance alone left the look 21 degrees off, inside the cone; run 25:
         // an 80 degree turn left it 69 degrees off).
-        float mark = CueMark();
         yield return GripHostHand(false, -100f);
         if (stepSkip != null)
             yield break;
@@ -2600,7 +2641,7 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        yield return ExpectCue(false, DenyReason.WrongAngle, mark, false, 2f);
+        yield return ExpectCue(false, DenyReason.WrongAngle, gripMark, false, 2f);
         if (!stepOk)
         {
             // MP run 20 missed the cue with nothing to tell a look inside the cone from a reach the game caught.
@@ -3430,11 +3471,14 @@ internal sealed partial class SelfTestRunner
                     }
                     // On A's head and settled there (the warp drops B from 0.6 m above): B's own check needs B already
                     // standing on the crouched A when A's jump arrives, as JumpRpc ends A's crouch
-                    // (CharacterMovement.cs:646, :1006-1013, :1021).
+                    // (CharacterMovement.cs:646, :1006-1013, :1021). B's centre at least 0.45 m over A's crouched head:
+                    // a B standing on the ground beside A has its centre about 0.1 m over it (MP run 16, #108: B slid
+                    // off, stood 0.56 m from A, counted as on top, and the jump 2.36 s after the warp boosted nobody).
+                    // Standing on the head puts it about 0.85 m over; the stillness check keeps out a B still falling.
                     bool there =
                         flat.magnitude < 0.45f
-                        && host.Center.y > c.Head.y - 0.1f
-                        && host.Center.y < c.Head.y + 0.9f;
+                        && host.Center.y > c.Head.y + 0.45f
+                        && host.Center.y < c.Head.y + 1.2f;
                     onHeadFor = there && still ? onHeadFor + Time.unscaledDeltaTime : 0f;
                     onTop = onHeadFor >= 0.3f;
                 }
@@ -3454,8 +3498,19 @@ internal sealed partial class SelfTestRunner
             yield return Until(() => c.data.sinceJump < 1f, 1f, "A did not jump");
             if (!stepOk)
                 yield break;
-            yield return Wait(0.5f);
-            stepNote = $"crouched under the host and jumped; pressure felt on A: {felt}";
+            // B's boost is the step: B's own JumpRpc(true) reaches A too and stamps sincePalJump on A's copy of B
+            // (CharacterMovement.cs:625-629, Character.cs:1238).
+            yield return Until(
+                () => host.data.sincePalJump < 1f,
+                1.5f,
+                F(
+                    $"the host was not boosted: B {host.Center.y - c.Head.y:0.00} m over A's head and {FlatDistance(host.Center, c.Center):0.00} m off it at the jump; pressure felt on A: {felt}"
+                )
+            );
+            if (!stepOk)
+                yield break;
+            stepNote =
+                $"crouched under the host and jumped, the host was boosted; pressure felt on A: {felt}";
         }
         finally
         {
