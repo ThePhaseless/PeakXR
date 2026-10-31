@@ -704,14 +704,34 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float cast = GameTiming.InteractSeconds(kiosk, Character.localCharacter);
-        yield return GripTo(left, 1f, 0.1f);
-        yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
-        yield return GripTo(left, 0f, 0.1f);
+        // A second grip after a miss, the hand put back on the face, as a player tries again; the note says what the
+        // grip decided and what the game held (MP run 13: the grip at 1.0 m opened nothing and said nothing why).
+        string gripNote = null;
+        for (int attempt = 0; attempt < 2 && !pass.isOpen; attempt++)
+        {
+            if (attempt > 0)
+            {
+                yield return MpToKioskFace(kiosk, left, s => why = s);
+                if (why != null)
+                    break;
+            }
+            yield return GripTo(left, 1f, 0.1f);
+            yield return Wait(0.2f);
+            var interaction = Interaction.instance;
+            var hovered = interaction != null ? interaction.currentHovered : null;
+            bool held =
+                interaction != null && interaction.currentHeldInteractible is AirportCheckInKiosk;
+            gripNote = F(
+                $"{PeakXR.Interact.PhysicalInteraction.LastGripNote}; hovered {(hovered != null ? hovered.GetName() : "nothing")}, kiosk held {held}"
+            );
+            yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
+            yield return GripTo(left, 0f, 0.1f);
+        }
         if (!pass.isOpen)
         {
             failed(
                 F(
-                    $"the grip did not open the boarding pass ({Vector3.Distance(Character.localCharacter.Center, kiosk.Center()):0.0} m from the kiosk)"
+                    $"the grip did not open the boarding pass ({Vector3.Distance(Character.localCharacter.Center, kiosk.Center()):0.0} m from the kiosk; {why ?? gripNote})"
                 )
             );
             yield break;
@@ -1145,6 +1165,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         float side = 1f;
+        var shut = new List<Vector3>();
         for (int i = 0; ; i++)
         {
             yield return MpWalkBounded(target, stop, seconds);
@@ -1154,10 +1175,19 @@ internal sealed partial class SelfTestRunner
             to.y = 0f;
             if (to.sqrMagnitude < 1e-4f)
                 yield break;
-            if (ClearHeading(c, to.normalized, ref side) is not { } dir)
+            if (ClearHeading(c, to.normalized, ref side, shut) is not { } dir)
                 yield break;
-            var aside = c.Center + dir * MpDetourStep;
+            var from = c.Center;
+            var aside = from + dir * MpDetourStep;
             yield return MpWalkBounded(() => aside, 0.4f, 4f);
+            // The walk is the measure: a heading the cast called clear but the body could not walk is shut for the
+            // rest of this walk (MP run 13: the same 30 degree heading, blocked 0.3 m out by something the cast did not
+            // see, was tried six times and A stayed put for 220 s, 53 m from the kiosk).
+            if (FlatDistance(c.Center, from) < 1f)
+            {
+                shut.Add(dir);
+                side = -side;
+            }
         }
     }
 
@@ -1167,9 +1197,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// The heading nearest <paramref name="goal"/> (flat, normalised) that a body can walk <see cref="MpDetourStep"/>
     /// along: a capsule from knee to chest height swept 30 to 150 degrees off the goal, <paramref name="side"/> first at
-    /// each angle (+1 turns right). Sets <paramref name="side"/> to the side taken; null when every heading is shut.
+    /// each angle (+1 turns right), passing over a heading within 20 degrees of one in <paramref name="shut"/>. Sets
+    /// <paramref name="side"/> to the side taken; null when every heading is shut.
     /// </summary>
-    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side)
+    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side, List<Vector3> shut)
     {
         var top = c.Center + Vector3.up * 0.3f;
         var bottom = c.Center + Vector3.down * 0.4f;
@@ -1179,6 +1210,8 @@ internal sealed partial class SelfTestRunner
             {
                 float s = k == 0 ? side : -side;
                 var dir = Quaternion.Euler(0f, s * a, 0f) * goal;
+                if (Shut(shut, dir))
+                    continue;
                 if (
                     !Physics.CapsuleCast(
                         top,
@@ -1197,6 +1230,16 @@ internal sealed partial class SelfTestRunner
             }
         }
         return null;
+    }
+
+    static bool Shut(List<Vector3> shut, Vector3 dir)
+    {
+        foreach (var d in shut)
+        {
+            if (Vector3.Dot(d, dir) > 0.94f)
+                return true;
+        }
+        return false;
     }
 
     IEnumerator MpTwoHand()
