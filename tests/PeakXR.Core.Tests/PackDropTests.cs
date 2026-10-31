@@ -65,6 +65,23 @@ public class PackDropTests
     }
 
     [Fact]
+    public void TheShownPocket_HoldsUntilAnotherIsClearlyNearer()
+    {
+        // Two pockets 0.2 m apart and the hand about midway: the pin must not flip with every sway (MP run 15b, #105:
+        // the pin showed pocket 2 and the release, a frame later, chose pocket 3).
+        var pockets = new[] { Vector3.Zero, 0.2f * Vector3.UnitX };
+        var free = new[] { true, true };
+        var nearOne = new Vector3(0.11f, 0f, 0f);
+        Assert.Equal(1, PackDrop.NearestFree(nearOne, pockets, free));
+        Assert.Equal(0, PackDrop.NearestFree(nearOne, pockets, free, keep: 0));
+        // Past the margin the nearer pocket wins.
+        Assert.Equal(1, PackDrop.NearestFree(new Vector3(0.18f, 0f, 0f), pockets, free, keep: 0));
+        // A kept pocket that is taken, or out of range, is not kept.
+        Assert.Equal(1, PackDrop.NearestFree(nearOne, pockets, new[] { false, true }, keep: 0));
+        Assert.Equal(1, PackDrop.NearestFree(nearOne, pockets, free, keep: 5));
+    }
+
+    [Fact]
     public void NoFreePocket_PicksNone() =>
         Assert.Equal(
             -1,
