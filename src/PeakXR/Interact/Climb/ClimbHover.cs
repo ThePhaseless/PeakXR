@@ -43,6 +43,13 @@ internal static class ClimbHover
         return ring != null && ring.enabled && Ready[i];
     }
 
+    /// <summary>This hand's ring shows, solid or faint: it is reaching for a hold (gesture emotes stay off).</summary>
+    public static bool Shown(bool left)
+    {
+        var ring = Rings[left ? 0 : 1];
+        return ring != null && ring.enabled;
+    }
+
     /// <summary>Where the ring of this hand sits (self-test vr.50).</summary>
     public static Vector3 Position(bool left)
     {

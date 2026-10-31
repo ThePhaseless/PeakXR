@@ -213,5 +213,18 @@ public class EmoteGesturesTests
         Assert.True(EmoteGestures.Busy(climbingAnything: true, false, false));
         Assert.True(EmoteGestures.Busy(false, carrying: true, false));
         Assert.True(EmoteGestures.Busy(false, false, midGrab: true));
+        // Issue #84: shaking the hands free of a web or fly trap is no wave.
+        Assert.True(EmoteGestures.Busy(false, false, false, struggling: true));
+    }
+
+    [Fact]
+    public void HandBusy_AnyCueOnTheHandBlocksIt()
+    {
+        // Issue #84: reaching up for a rope, vine, handle or ledge with open hands is no cheer or wave.
+        Assert.False(EmoteGestures.HandBusy(false, false, false, false));
+        Assert.True(EmoteGestures.HandBusy(midGrab: true, false, false, false));
+        Assert.True(EmoteGestures.HandBusy(false, atRock: true, false, false));
+        Assert.True(EmoteGestures.HandBusy(false, false, climbRing: true, false));
+        Assert.True(EmoteGestures.HandBusy(false, false, false, grabGlow: true));
     }
 }

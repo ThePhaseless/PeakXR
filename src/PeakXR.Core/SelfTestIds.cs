@@ -244,6 +244,7 @@ public static class SelfTestIds
         "vr.424-reach-out-far",
         "vr.450-throw-over-slot",
         "vr.451-slot-yields-to-item",
+        "vr.452-no-cheer-reaching",
         "vr.269-end-screen-head",
         "vr.270-banner-head-card",
         "vr.271-pause-head",

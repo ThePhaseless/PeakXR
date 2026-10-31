@@ -45,11 +45,23 @@ public static class EmoteGestures
 
     /// <summary>
     /// The body is doing something with its hands (climbing, on a rope or vine, carrying a friend, a grip that took or
-    /// started something): any hand pose now is part of that, not an emote. Emotes are seen by every peer, so a false
-    /// one is broadcast.
+    /// started something, struggling free of a web or fly trap): any hand pose now is part of that, not an emote.
+    /// Emotes are seen by every peer, so a false one is broadcast.
     /// </summary>
-    public static bool Busy(bool climbingAnything, bool carrying, bool midGrab) =>
-        climbingAnything || carrying || midGrab;
+    public static bool Busy(
+        bool climbingAnything,
+        bool carrying,
+        bool midGrab,
+        bool struggling = false
+    ) => climbingAnything || carrying || midGrab || struggling;
+
+    /// <summary>
+    /// One hand is reaching for something, not gesturing: its grip took or started something, it is at rock it would
+    /// climb, the climb ring shows under it (a ledge in or just past reach), or the grab glow shows what it would take
+    /// (a rope, vine, handle or item in reach). Open hands raised for a rope overhead read as a cheer (issue #84).
+    /// </summary>
+    public static bool HandBusy(bool midGrab, bool atRock, bool climbRing, bool grabGlow) =>
+        midGrab || atRock || climbRing || grabGlow;
 
     /// <summary>
     /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose, on a controller that reports thumb touch

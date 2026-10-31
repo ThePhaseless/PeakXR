@@ -106,7 +106,12 @@ internal sealed class GestureEmotes : MonoBehaviour
             || c.data.fullyPassedOut
             // Airborne: a jump or a fall, where arms fly about and the ground-only emotes would only be refused.
             || !c.data.isGrounded
-            || EmoteGestures.Busy(c.data.isClimbingAnything, c.data.IsCarryingCharacter, false)
+            || EmoteGestures.Busy(
+                c.data.isClimbingAnything,
+                c.data.IsCarryingCharacter,
+                false,
+                c.refs.afflictions.isStruggling
+            )
             || c.refs.stats.won
             || current.wheelActive
             || current.windowBlockingInput
@@ -130,10 +135,11 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool holding = c.data.currentItem != null;
         bool leftFree = !holding || (!LocalHold.TwoHand && !LocalHold.ItemInLeftHand);
         bool rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
-        // A grip that took or started something (a handle, a friend, a lid), or a hand at a hold where it would
-        // climb (the climb ring shows), is busy, not gesturing: reaching up a rock face looks like a cheer.
-        bool leftBusy = MidGrab(true) || AtHold(rig.LeftHand.position);
-        bool rightBusy = MidGrab(false) || AtHold(rig.RightHand.position);
+        // A grip that took or started something (a handle, a friend, a lid), or a hand reaching for something (rock
+        // at it, the climb ring or the grab glow on it) is busy, not gesturing: reaching up a rock face or for a rope
+        // overhead looks like a cheer.
+        bool leftBusy = HandBusy(true, rig.LeftHand.position);
+        bool rightBusy = HandBusy(false, rig.RightHand.position);
         // The gesture thresholds (EmoteGestures, WaveGesture) are the player's real metres around the head.
         var l = Rig.RealScale.Real(rig.LeftHand.position, head);
         var r = Rig.RealScale.Real(rig.RightHand.position, head);
@@ -222,6 +228,14 @@ internal sealed class GestureEmotes : MonoBehaviour
             state.Velocity.magnitude
         );
     }
+
+    private static bool HandBusy(bool left, Vector3 hand) =>
+        EmoteGestures.HandBusy(
+            MidGrab(left),
+            AtHold(hand),
+            Interact.Climb.ClimbHover.Shown(left),
+            PhysicalInteraction.GripPreview(left) != null
+        );
 
     /// <summary>This hand's grip took or started something (PhysicalInteraction.HandAction: a grab, climb, second
     /// hand, extension), or holds a target. The fallback Interact of a grip on empty air is not busy.</summary>
