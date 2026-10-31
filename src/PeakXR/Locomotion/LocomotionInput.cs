@@ -34,6 +34,10 @@ internal static class LocomotionInput
     /// <summary>The stance walk still owes a walk: the body can follow and is past the start distance, unblocked
     /// (self-test: a step judges the stance once none is owed).</summary>
     internal static bool StanceOwed { get; private set; }
+
+    /// <summary><c>Time.realtimeSinceStartup</c> the last stance walk started (self-test: vr.45 checks a held lean
+    /// is stepped under only after the walk's delay).</summary>
+    internal static float StanceWalkStartedAt { get; private set; } = float.NegativeInfinity;
     internal static int FollowDrops { get; private set; }
     private static readonly RecenterFade Fade = new();
     private static readonly object FadeOwner = new();
@@ -436,17 +440,23 @@ internal static class LocomotionInput
         if (warped)
             Follow.Anchor += debt;
         Stance.AtOnce = LocomotionConfig.LeanRadius;
+        Stance.InputSlew = c.refs.movement.movementTurnSpeed;
         // The walk brakes on the body's speed: it coasts on after the request stops (cf6aa3e: 0.1-0.16 m past the view).
-        var velocity3 = rig.Origin.InverseTransformVector(data.avarageVelocity);
+        var bodyVelocity = BodyVelocity(c);
+        var velocity3 = rig.Origin.InverseTransformVector(bodyVelocity);
         var request = Stance.Update(
             debt,
             new NVector2(velocity3.x, velocity3.z),
+            data.worldMovementInput_Lerp.magnitude,
             canFollow && !outside,
             dt
         );
-        RigDriver.FollowWalking = canFollow && Stance.Walking;
+        bool following = canFollow && Stance.Walking;
+        if (following && !RigDriver.FollowWalking)
+            StanceWalkStartedAt = Time.realtimeSinceStartup;
+        RigDriver.FollowWalking = following;
         StanceOwed = canFollow && !outside && !Stance.Blocked && debt.Length() > Stance.Start;
-        var level = new NVector2(data.avarageVelocity.x, data.avarageVelocity.z);
+        var level = new NVector2(bodyVelocity.x, bodyVelocity.z);
         lastOwn =
             canFollow
             && Own.Update(
@@ -481,6 +491,26 @@ internal static class LocomotionInput
                 )
             );
         return stick;
+    }
+
+    /// <summary>The body's velocity (world): its parts' mass-weighted, the arms left out. The game's avarageVelocity
+    /// (CharacterMovement.cs:683-696) counts the six arm parts, which follow the controllers, so moving hands read as
+    /// the body running: a walk could not end, and the coast kept outside forces out of the view.</summary>
+    private static Vector3 BodyVelocity(Character c)
+    {
+        var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partList : null;
+        var sum = Vector3.zero;
+        float mass = 0f;
+        for (int i = 0; parts != null && i < parts.Count; i++)
+        {
+            var part = parts[i];
+            var body = part != null ? part.Rig : null;
+            if (body == null || part.partType is >= BodypartType.Arm_L and <= BodypartType.Hand_R)
+                continue;
+            sum += body.linearVelocity * body.mass;
+            mass += body.mass;
+        }
+        return mass > 0f ? sum / mass : c.data.avarageVelocity;
     }
 
     private static readonly RaycastHit[] groundHits = new RaycastHit[4];
