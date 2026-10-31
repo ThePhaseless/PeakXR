@@ -10,7 +10,7 @@ PeakXR always keeps a short history of what just happened: its last 500 log line
 
 You hear the notice bell and feel a tick, a ring appears at your hand and "Bug report saved" shows next to it. While one report is still being written, a second try gets the wait cue.
 
-The Menu gesture never pauses, recenters, sprints or crouches. Click the stick within a second of pressing Menu, though: once you have held Menu for a full second, the recenter has already happened. One-handed play has no gesture, so use the VR tab buttons there.
+The Menu gesture never pauses, recenters, sprints or crouches. Click the stick within a second of pressing Menu, though: once you have held Menu for a full second, the recenter has already happened.
 
 ## Drop a marker
 
@@ -36,7 +36,7 @@ Each report is a folder in `BepInEx/PeakXR-reports/`, named for the time you sav
 
 | File | What it holds |
 |---|---|
-| `report.txt` | Mod version and build, game and Unity versions, VR runtime, headset and controllers, refresh rate, render scale, frame times, scene, your position and state, multiplayer state, one-handed, seated and comfort settings, any features that failed to load, recent refusals, grip decisions and markers |
+| `report.txt` | Mod version and build, game and Unity versions, VR runtime, headset and controllers, refresh rate, render scale, frame times, scene, your position and state, multiplayer state, seated and comfort settings, any features that failed to load, recent refusals, grip decisions and markers |
 | `log.txt` | The last PeakXR log lines and game errors, in time order |
 | `poses.csv` | The pose recording (debug mode only) |
 | `config.cfg` | A copy of your PeakXR settings |

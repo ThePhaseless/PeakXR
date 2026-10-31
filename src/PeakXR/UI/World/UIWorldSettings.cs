@@ -106,11 +106,11 @@ internal sealed class UIWorldSettings
         WristWidth;
     public ConfigEntry<WristSide> WristHand;
 
-    /// <summary>The wrist HUD is on the left controller; one-handed (Accessibility.OneHanded), on the one there is.</summary>
+    /// <summary>The wrist HUD is on the left controller.</summary>
     public bool WristLeft =>
-        VRInput.OneHanded ? VRInput.LeftHanded
-        : WristHand.Value == WristSide.OffHand ? !VRInput.LeftHanded
-        : WristHand.Value == WristSide.Left;
+        WristHand.Value == WristSide.OffHand
+            ? !VRInput.LeftHanded
+            : WristHand.Value == WristSide.Left;
     public ConfigEntry<ReticleMode> Reticle;
     public ConfigEntry<PointerHandMode> PointerHand;
     public ConfigEntry<float> ScrollSpeed,

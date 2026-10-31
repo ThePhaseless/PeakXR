@@ -48,8 +48,7 @@ public struct HandState
     /// otherwise null and fingers are derived from the analog values.</summary>
     public float[] SkeletalCurls;
 
-    /// <summary>A Vive wand: its pad is the stick and it has no A or B (one-handed play picks
-    /// <c>BindingTable.OneHandedWand</c> for it).</summary>
+    /// <summary>A Vive wand: its pad is the stick and it has no A or B.</summary>
     public bool WandPad;
 
     /// <summary>This frame a Vive wand's centre click (its B/Y) slid out of the centre: B/Y ended without a tap, so
@@ -73,12 +72,8 @@ public static class VRInput
     /// <summary>The player chose the left hand as dominant (setting <c>Input.DominantHand</c>). Layouts mirror.</summary>
     public static bool LeftHanded;
 
-    /// <summary>One-handed play (setting <c>Accessibility.OneHanded</c>): only the <see cref="LeftHanded"/> controller
-    /// is read, the other is left untracked, and every two-hand action takes its one-hand path.</summary>
-    public static bool OneHanded;
-
-    /// <summary>The off-hand controller for cues and HUD, or the one controller in one-handed play.</summary>
-    public static bool OffHandLeft => OneHanded ? LeftHanded : !LeftHanded;
+    /// <summary>The off-hand controller for cues and HUD.</summary>
+    public static bool OffHandLeft => !LeftHanded;
 
     /// <summary>Self-test only: runs right after the sampler fills this frame's state, so scripted hands can stand in
     /// for the controllers (tracking-space poses, buttons, sticks). Null outside the self-test.</summary>

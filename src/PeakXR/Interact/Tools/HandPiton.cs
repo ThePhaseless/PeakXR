@@ -13,8 +13,7 @@ namespace PeakXR.Interact.Tools;
 /// straight into it, on a rope or vine along that hand's aim. Vanilla timing, preview ghost and placement RPC apply,
 /// and letting go before the cast ends cancels it as vanilla does. A fist closing with its trigger squeezed sets
 /// nothing, and the free hand's trigger no longer sets a piton: the cast sees only this hold as its secondary use. One
-/// piton per hold. That is two-handed play; one-handed, the game's own press (the stick chord, or a keyboard or
-/// gamepad) sets it, aimed the same way from the one hand (#22).
+/// piton per hold (#22).
 /// </summary>
 internal static class HandPiton
 {
@@ -28,8 +27,6 @@ internal static class HandPiton
     // This frame's hold, from PhysicalInteraction's use pass (CharacterInput.Sample, before CharacterItems.Update).
     private static bool placing;
 
-    /// <summary>A hand on the climb gives the cast its aim this frame (<see cref="origin"/>, <see cref="normal"/>).</summary>
-    private static bool aiming;
     private static bool startFrame;
 
     /// <summary>The frame <see cref="Update"/> last ran. Its hold and aim hold for that frame and the next: Update stops
@@ -66,9 +63,8 @@ internal static class HandPiton
     /// <summary>Pitons this path has placed, for the self-test.</summary>
     internal static int Placed { get; private set; }
 
-    /// <summary>This path drives the local climber's piton casts: VR, two-handed.</summary>
-    internal static bool On(Character c) =>
-        VRSession.Active && c != null && c.IsLocal && !VRInput.OneHanded;
+    /// <summary>This path drives the local climber's piton casts in VR.</summary>
+    internal static bool On(Character c) => VRSession.Active && c != null && c.IsLocal;
 
     /// <summary>
     /// Once a frame after the hands' use triggers updated: picks the hand whose deliberate trigger hold is on a wall
@@ -86,7 +82,7 @@ internal static class HandPiton
     {
         // A hold carries over only from the frame before: one that ran while Update was off is a new hold.
         bool was = placing && frame == Time.frameCount - 1;
-        placing = startFrame = aiming = false;
+        placing = startFrame = false;
         frame = Time.frameCount;
         if (was && !holdDone && c != null && c.data.climbingSpikeCount < pitonsAtStart)
         {
@@ -94,20 +90,14 @@ internal static class HandPiton
             Placed++;
             Haptics.Pulse(left, 0.8f, 0.06f);
         }
-        bool trigger = On(c);
-        // The trigger path takes the hand that holds its trigger; the game's own press (one-handed play's stick chord)
-        // the one hand.
-        bool l = trigger
-            ? ((left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold)
-            : VRInput.LeftHanded;
+        // The hand that holds its trigger.
+        bool l = (left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold;
         var use = l ? leftUse : rightUse;
         var hand = rig != null ? rig.Hand(l) : null;
         if (
-            !VRSession.Active
-            || c == null
-            || !c.IsLocal
+            !On(c)
             || !c.data.isClimbingAnything
-            || (trigger && !use.ClimbHold)
+            || !use.ClimbHold
             || !(l ? leftWall : rightWall)
             || hand == null
         )
@@ -136,8 +126,7 @@ internal static class HandPiton
         )
             ? hit.point
             : hand.position;
-        aiming = true;
-        if (!trigger || !use.Piton || holdDone)
+        if (!use.Piton || holdDone)
             return;
         if (c.data.climbingSpikeCount <= 0)
         {
@@ -167,9 +156,7 @@ internal static class HandPiton
         if (c == null || !c.data.isClimbingAnything)
             return default;
         if (!On(c))
-            // The game's own press (one-handed play's chord, a keyboard or gamepad) is aimed from
-            // the hand on the climb too, not the head (#22).
-            return aiming && Fresh ? Swap() : default;
+            return default;
         bool now = placing && Fresh;
         var input = c.input;
         inputSwapped = true;

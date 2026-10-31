@@ -512,14 +512,14 @@ public static class ControllerLabels
         }
     }
 
-    /// <summary>The first binding of <paramref name="action"/> in <see cref="BindingTable.Active"/>.</summary>
+    /// <summary>The first binding of <paramref name="action"/> in <see cref="BindingTable.Default"/>.</summary>
     public static bool ForAction(
         VRAction action,
         bool dominantLeft,
         bool itemInLeft,
         out bool left,
         out VRControl control
-    ) => ForAction(BindingTable.Active, action, dominantLeft, itemInLeft, out left, out control);
+    ) => ForAction(BindingTable.Default, action, dominantLeft, itemInLeft, out left, out control);
 
     /// <summary>The first binding of <paramref name="action"/> in <paramref name="table"/>.</summary>
     public static bool ForAction(

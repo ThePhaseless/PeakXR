@@ -46,8 +46,7 @@ public sealed class CameraFeature : Feature
     /// overlap and no hold length is dead.</summary>
     internal static float RecenterSeconds => RecenterHoldSeconds?.Value ?? 1f;
 
-    /// <summary>The VR tab's Recenter button: one-handed play's recenter where Menu never reaches the game (a Touch
-    /// controller under SteamVR), and anyone's who prefers it. The recenter blink confirms it; with no rig the click
+    /// <summary>The VR tab's Recenter button, for anyone who prefers it to the stick chord. The recenter blink confirms it; with no rig the click
     /// is refused out loud.</summary>
     private static void RecenterNow(UnityEngine.Vector3 at, bool left)
     {

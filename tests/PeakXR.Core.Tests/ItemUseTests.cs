@@ -149,7 +149,7 @@ public class ItemUseTests
         Assert.Equal(TriggerUse.Mouth, ItemUse.Trigger(g, triggerEats: false));
         // At the mouth it is eaten.
         Assert.True(ItemUse.AtMouth(g));
-        // Setting on (seated or one-handed play): the trigger eats too.
+        // Setting on (seated play): the trigger eats too.
         Assert.Equal(TriggerUse.Use, ItemUse.Trigger(g, triggerEats: true));
     }
 

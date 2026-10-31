@@ -2,7 +2,7 @@ namespace PeakXR.Avatar;
 
 /// <summary>
 /// How the local VR player holds the current item. Written by the physical interaction feature, read when the
-/// local pose is built. Defaults (right hand, one-handed) match vanilla when that feature is off.
+/// local pose is built. Defaults (right hand, no second hand) match vanilla when that feature is off.
 /// </summary>
 internal static class LocalHold
 {

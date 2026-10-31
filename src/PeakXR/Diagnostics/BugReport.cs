@@ -434,12 +434,6 @@ internal static class BugReport
     private static void Comfort(BugReportInfo info)
     {
         const string s = "Setup";
-        Try(
-            info,
-            s,
-            "one-handed",
-            () => $"{Cfg("Accessibility", "OneHanded")} (active {VRInput.OneHanded})"
-        );
         Try(info, s, "dominant hand", () => Cfg("Input", "DominantHand"));
         Try(
             info,

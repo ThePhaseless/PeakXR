@@ -1,5 +1,4 @@
 using BepInEx.Configuration;
-using PeakXR.VR;
 
 namespace PeakXR.Social;
 
@@ -24,8 +23,7 @@ internal sealed class SocialConfig
 
     public bool HandInteract => handInteract?.Value ?? true;
 
-    /// <summary>Off in one-handed play (Accessibility.OneHanded): one grip carries.</summary>
-    public bool CarryBothHands => (carryBothHands?.Value ?? true) && !VRInput.OneHanded;
+    public bool CarryBothHands => carryBothHands?.Value ?? true;
     public bool FeedAtMouth => feedAtMouth?.Value ?? true;
     public bool Struggle => struggle?.Value ?? true;
     public bool GiveUpGuard => giveUpGuard?.Value ?? true;

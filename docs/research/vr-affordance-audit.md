@@ -327,7 +327,7 @@ Cue: `TooSoon` only if the same attempt repeats within 1 s, not on first try.
 
 Rule: closed luggage is the only interactible one (`A/Luggage.cs:168-170`, `:209-211`). A respawn chest revives only when `Ascents.canReviveDead && Character.PlayerIsDeadOrDown()` and otherwise spawns items (`RespawnChest.cs:53-61`). PeakXR also needs both hands on a respawn chest lid (`src/PeakXR/Interact/Physical/LidGesture.cs`, `fraction = both ? ... : 0f`).
 
-VR: a one-handed lift on a respawn chest does not progress.
+VR: a lift with one hand on a respawn chest does not progress.
 
 Cue: `NeedsTwoHands` on the second lid grip when only one hand holds it. An opened case needs no cue.
 

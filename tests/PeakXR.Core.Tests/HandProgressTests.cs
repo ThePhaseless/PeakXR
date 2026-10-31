@@ -51,7 +51,7 @@ public class HandProgressTests
     [InlineData(false, false, 1, true, false)]
     // The free hand gripping while the other holds an item.
     [InlineData(true, false, 0, false, true)]
-    // No hand acting: the dominant hand (Input.DominantHand, or the one controller one-handed).
+    // No hand acting: the dominant hand (Input.DominantHand).
     [InlineData(false, false, -1, true, true)]
     [InlineData(false, false, -1, false, false)]
     public void PickLeft_InteractableHold_UsesTheGrippingHandThenTheDominant(

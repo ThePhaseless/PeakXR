@@ -18,7 +18,7 @@ public class ItemHoldTableTests
     }
 
     [Fact]
-    public void CheckpointFlag_PlantsOneHanded()
+    public void CheckpointFlag_PlantsWithOneHand()
     {
         var p = ItemHoldTable.Classify(
             "Checkpoint Flag Flag_Plantable_Checkpoint",
@@ -28,14 +28,14 @@ public class ItemHoldTableTests
     }
 
     [Fact]
-    public void UnknownName_RightHandOnly_IsOneHanded()
+    public void UnknownName_RightHandOnly_IsOneHand()
     {
         var p = ItemHoldTable.Classify("Some Future Gadget", ItemTraits.RightHandOnly);
-        Assert.Equal(Handedness.OneHanded, p.Handedness);
+        Assert.Equal(Handedness.OneHand, p.Handedness);
     }
 
     [Fact]
-    public void UnknownName_Long_IsAPoleUsableOneHanded()
+    public void UnknownName_Long_IsAPoleUsableWithOneHand()
     {
         // External review #19: the game needs no second hand for any item (it only joins one when the item is not
         // rightHandOnly, CharacterItems.cs:647-651), so an unknown long item takes both hands but works with one.
@@ -44,17 +44,17 @@ public class ItemHoldTableTests
     }
 
     [Fact]
-    public void RequireTwoHandsOff_LetsTwoHandedItemsWorkOneHanded()
+    public void RequireTwoHandsOff_LetsTwoHandedItemsWorkWithOneHand()
     {
         Assert.False(ItemHoldTable.CanUse(Handedness.TwoHanded, false, requireTwoHands: true));
         Assert.True(ItemHoldTable.CanUse(Handedness.TwoHanded, false, requireTwoHands: false));
     }
 
     [Fact]
-    public void UnknownName_SmallFood_IsOneHandedPinch()
+    public void UnknownName_SmallFood_IsOneHandPinch()
     {
         var p = ItemHoldTable.Classify("Strange Fruit", ItemTraits.Food | ItemTraits.Small);
-        Assert.Equal(new HoldProfile(Handedness.OneHanded, GripPreset.Pinch), p);
+        Assert.Equal(new HoldProfile(Handedness.OneHand, GripPreset.Pinch), p);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class ItemHoldTableTests
     public void NullName_UsesTraits()
     {
         var p = ItemHoldTable.Classify(null, ItemTraits.RightHandOnly);
-        Assert.Equal(Handedness.OneHanded, p.Handedness);
+        Assert.Equal(Handedness.OneHand, p.Handedness);
     }
 
     [Fact]
@@ -91,13 +91,13 @@ public class ItemHoldTableTests
         Assert.False(ItemHoldTable.CanUse(Handedness.TwoHanded, secondHandOnItem: false));
         Assert.True(ItemHoldTable.CanUse(Handedness.TwoHanded, secondHandOnItem: true));
         Assert.True(ItemHoldTable.CanUse(Handedness.OptionalTwoHand, secondHandOnItem: false));
-        Assert.True(ItemHoldTable.CanUse(Handedness.OneHanded, secondHandOnItem: false));
+        Assert.True(ItemHoldTable.CanUse(Handedness.OneHand, secondHandOnItem: false));
     }
 
     [Fact]
     public void SecondHand_OnlyForTwoHandCapableItems()
     {
-        Assert.False(ItemHoldTable.AcceptsSecondHand(Handedness.OneHanded));
+        Assert.False(ItemHoldTable.AcceptsSecondHand(Handedness.OneHand));
         Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.TwoHanded));
         Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.OptionalTwoHand));
     }
@@ -106,10 +106,8 @@ public class ItemHoldTableTests
     public void SecondHand_AlsoForAnyItemTheGameHoldsWithBothHands()
     {
         // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:647-651).
-        Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.OneHanded, vanillaBothHands: true));
-        Assert.False(
-            ItemHoldTable.AcceptsSecondHand(Handedness.OneHanded, vanillaBothHands: false)
-        );
+        Assert.True(ItemHoldTable.AcceptsSecondHand(Handedness.OneHand, vanillaBothHands: true));
+        Assert.False(ItemHoldTable.AcceptsSecondHand(Handedness.OneHand, vanillaBothHands: false));
     }
 
     [Fact]

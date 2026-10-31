@@ -173,7 +173,7 @@ internal sealed class DrawnHands : MonoBehaviour
     /// item alone stretches like an empty one: its item rides out to the controller past an arm too short for it
     /// (AvatarPoseDriver.HeldShift, #23). The item's own armed grip (for GripToggle) is no world grip
     /// (<see cref="Interact.PhysicalInteraction.WorldGripHolds"/>): it kept the hand short of its item (vr.352,
-    /// vr.244). In one-handed mode the item hand can hold a handle or piton too (ClimbHands.Adopt). With
+    /// vr.244). With
     /// <c>Avatar.RetargetItems</c> off the game's frame and two-hand weld hold the item (CharacterItems.AttachItem,
     /// decomp CharacterItems.cs:641-651): both hands stay on it (Core <see cref="ArmReach.DrawnOnRagdoll"/>).</summary>
     private bool Holds(AvatarPose pose, bool isLeft)

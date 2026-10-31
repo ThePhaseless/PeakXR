@@ -7,12 +7,12 @@ namespace PeakXR.Core;
 public enum Handedness
 {
     /// <summary>Held and used with either hand; the other hand stays free.</summary>
-    OneHanded,
+    OneHand,
 
     /// <summary>Carried in one hand, but only usable while the second hand also grips it (long or heavy items).</summary>
     TwoHanded,
 
-    /// <summary>Usable one-handed; a second hand steadies and aims it.</summary>
+    /// <summary>Usable with one hand; a second hand steadies and aims it.</summary>
     OptionalTwoHand,
 }
 
@@ -93,34 +93,34 @@ public static class ItemHoldTable
         ("backpack", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
         ("guidebook", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
         ("book", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
-        ("passport", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
+        ("passport", new HoldProfile(Handedness.OneHand, GripPreset.FlatPalm)),
         ("binocular", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder)),
         // A flag pole is planted with one hand; a second steadies it.
         ("checkpoint", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.TwoHandPole)),
-        ("compass", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
+        ("compass", new HoldProfile(Handedness.OneHand, GripPreset.FlatPalm)),
         ("firstaid", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
         ("medkit", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
-        ("bandage", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("parasol", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("torch", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("lantern", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("flare", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("bugle", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("piton", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("climbingspike", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("dynamite", new HoldProfile(Handedness.OneHanded, GripPreset.Cylinder)),
-        ("balloon", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("berry", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("mushroom", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("shroom", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("marshmallow", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("pill", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
-        ("egg", new HoldProfile(Handedness.OneHanded, GripPreset.Pinch)),
+        ("bandage", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("parasol", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("torch", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("lantern", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("flare", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("bugle", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("piton", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("climbingspike", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("dynamite", new HoldProfile(Handedness.OneHand, GripPreset.Cylinder)),
+        ("balloon", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("berry", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("mushroom", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("shroom", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("marshmallow", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("pill", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
+        ("egg", new HoldProfile(Handedness.OneHand, GripPreset.Pinch)),
         ("coconut", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
         ("conch", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.FlatPalm)),
         // A plush the size of a torso: the game holds it in both hands (not rightHandOnly).
         ("bingbong", new HoldProfile(Handedness.OptionalTwoHand, GripPreset.Cylinder)),
-        ("frisbee", new HoldProfile(Handedness.OneHanded, GripPreset.FlatPalm)),
+        ("frisbee", new HoldProfile(Handedness.OneHand, GripPreset.FlatPalm)),
     };
 
     /// <summary>Profile for an item: the name table first, then <see cref="Infer"/>.</summary>
@@ -159,13 +159,13 @@ public static class ItemHoldTable
             : GripPreset.Cylinder;
 
         if (has(ItemTraits.RightHandOnly) || has(ItemTraits.Food) || has(ItemTraits.Small))
-            return new HoldProfile(Handedness.OneHanded, grip);
+            return new HoldProfile(Handedness.OneHand, grip);
         // Vanilla holds everything else with both hands, so a second hand is welcome but not required.
         return new HoldProfile(Handedness.OptionalTwoHand, grip);
     }
 
     /// <summary>Whether primary/secondary use is allowed right now. <paramref name="requireTwoHands"/> off
-    /// (<c>Interaction.RequireTwoHands</c>) lets every item work one-handed, as in the flat game.</summary>
+    /// (<c>Interaction.RequireTwoHands</c>) lets every item work with one hand, as in the flat game.</summary>
     public static bool CanUse(
         Handedness handedness,
         bool secondHandOnItem,
@@ -176,7 +176,7 @@ public static class ItemHoldTable
     /// a second hand on, and any the game itself holds in both hands (<paramref name="vanillaBothHands"/>: not
     /// <c>rightHandOnly</c>, CharacterItems.cs:641-651), whatever the table says.</summary>
     public static bool AcceptsSecondHand(Handedness handedness, bool vanillaBothHands = false) =>
-        vanillaBothHands || handedness != Handedness.OneHanded;
+        vanillaBothHands || handedness != Handedness.OneHand;
 
     /// <summary>Lowercase letters and digits only, with a Unity "(Clone)" suffix removed.</summary>
     public static string Normalize(string name)

@@ -16,8 +16,7 @@ namespace PeakXR.Diagnostics;
 /// recenter time it recenters, held on past that it saves a report. That chord belongs to input
 /// (<see cref="StickChordInput"/>: sprint, crouch and the recenter never depend on this feature); this class only
 /// reads its report hold. The two chords never run together: the Menu one cannot start while the sticks are held,
-/// nor the sticks one while Menu holds a stick. One-handed play blanks the other controller, so it uses the VR tab
-/// buttons.
+/// nor the sticks one while Menu holds a stick.
 /// </summary>
 internal static class DebugGesture
 {

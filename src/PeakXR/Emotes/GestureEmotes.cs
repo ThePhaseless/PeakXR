@@ -42,7 +42,7 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     private readonly WaveGesture leftWave = new();
     private readonly WaveGesture rightWave = new();
-    private readonly DwellGesture cheer = new();
+    private readonly DwellGesture cheer = new() { Dwell = CheerDwell };
     private readonly DwellGesture leftThumb = new() { Dwell = EmoteGestures.ThumbDwell };
     private readonly DwellGesture rightThumb = new() { Dwell = EmoteGestures.ThumbDwell };
 
@@ -191,16 +191,11 @@ internal sealed class GestureEmotes : MonoBehaviour
         bool rightOpen =
             rightFree && !rightBusy && VRInput.Right.Tracked && VRInput.Right.Grip < OpenGrip;
 
-        // One-handed play (Accessibility.OneHanded): one open hand held still over the head cheers, held twice as long
-        // so a hand raised to wave is not taken for one.
-        cheer.Dwell = VRInput.OneHanded ? 2f * CheerDwell : CheerDwell;
         bool cheered = cheer.Update(
-            EmoteGestures.CheerPose(
-                VRInput.OneHanded,
-                leftOpen && EmoteGestures.Raised(l.y, head.y, CheerMargin),
-                rightOpen && EmoteGestures.Raised(r.y, head.y, CheerMargin),
-                VRInput.Hand(VRInput.LeftHanded).Velocity.magnitude
-            ),
+            leftOpen
+                && EmoteGestures.Raised(l.y, head.y, CheerMargin)
+                && rightOpen
+                && EmoteGestures.Raised(r.y, head.y, CheerMargin),
             dt
         );
         bool wavedLeft = leftWave.Update(

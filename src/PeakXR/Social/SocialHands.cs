@@ -753,11 +753,7 @@ internal sealed class SocialHands : IGripExtension
                         && ReachOut.Learns(shoulder, hand, yaw),
                     dt
                 );
-            bool skip =
-                !state.Tracked
-                || kinds[h] != SocialKind.None
-                || glowed[h]
-                || (holder && !VRInput.OneHanded);
+            bool skip = !state.Tracked || kinds[h] != SocialKind.None || glowed[h] || holder;
             // Offers only before the press (AnalogButton(0.6f, 0.4f), PhysicalInteraction.Hand.Grip). Something nearer
             // taking this grip reads as a lost pick, so Grace and ReTick apply to a hand flickering at a rock edge.
             if (
@@ -1265,10 +1261,8 @@ internal sealed class SocialHands : IGripExtension
         }
         var forward = VRInput.HeadRotation * Vector3.forward;
         forward.y = 0f;
-        // One-handed play (Accessibility.OneHanded): the one open palm pushed is the shove, fed in as both hands.
-        bool one = VRInput.OneHanded;
-        ref var l = ref VRInput.Hand(!one || VRInput.LeftHanded);
-        ref var r = ref VRInput.Hand(one && VRInput.LeftHanded);
+        ref var l = ref VRInput.Left;
+        ref var r = ref VRInput.Right;
         bool open = l.Grip < 0.3f && r.Grip < 0.3f;
         if (
             !l.Tracked

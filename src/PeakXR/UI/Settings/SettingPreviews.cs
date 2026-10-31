@@ -677,7 +677,7 @@ internal sealed class PreviewStage : MonoBehaviour
             == "Hand"
         )
         {
-            // The move stick is on the off hand (the one controller, one-handed).
+            // The move stick is on the off hand.
             var aim = rig.Aim(VRInput.OffHandLeft);
             if (aim != null)
                 dir = aim.forward;

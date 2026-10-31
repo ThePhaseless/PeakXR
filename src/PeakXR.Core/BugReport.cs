@@ -213,7 +213,7 @@ public enum BugChordEvent
 /// before <see cref="ReportSeconds"/> for a marker, hold on for a report. Menu acts only on release (pause) or after
 /// a 1 s hold (recenter), so once the chord starts both its controls are taken (<see cref="MenuTaken"/>,
 /// <see cref="StickTaken"/>) until each is released, its release frame included: no pause tap, recenter, sprint or
-/// crouch leaks to the game. Both thumbs, so it needs two controllers; one-handed play uses the VR tab buttons.
+/// crouch leaks to the game. Both thumbs.
 /// </summary>
 public sealed class BugChord
 {
@@ -550,7 +550,7 @@ public sealed class StickChord
     public float RecenterSeconds = 1f;
     public float ReportSeconds = 1.5f;
 
-    /// <summary>Seconds a lone stick click waits for the other one. 0 (one-handed play, one stick) passes at once.</summary>
+    /// <summary>Seconds a lone stick click waits for the other one. 0 passes at once.</summary>
     public float Window = 0.18f;
 
     private enum Phase : byte
