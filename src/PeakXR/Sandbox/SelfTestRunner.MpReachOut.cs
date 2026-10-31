@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
@@ -426,22 +427,39 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var c = Character.localCharacter;
-        yield return FindLedge(c);
-        var stand = ledgeStand;
-        var outward = ledgeOutward;
-        if (!ledgeFound)
+        // Up to three lips, the nearest first, each walked round what blocks it (MP run 13: the straight walk stopped
+        // 1.1 m short of the only one tried).
+        var tried = new List<Vector3>();
+        var stand = Vector3.zero;
+        var outward = Vector3.zero;
+        float missed = 0f;
+        for (int i = 0; i < 3; i++)
+        {
+            yield return FindLedge(c, tried);
+            if (!ledgeFound)
+                break;
+            stand = ledgeStand;
+            outward = ledgeOutward;
+            tried.Add(stand);
+            yield return MpWalkAround(() => stand, 0.3f, 15f);
+            var flat = c.Center - stand;
+            flat.y = 0f;
+            missed = flat.magnitude;
+            if (missed <= 0.6f)
+                break;
+        }
+        if (tried.Count == 0)
         {
             stepSkip = F(
                 $"no walkable lip over a {LedgeDropMin:0.0}-{LedgeDropMax:0.0} m steep drop within {LedgeRadius:0} m (1 m grid)"
             );
             yield break;
         }
-        yield return WalkTo(() => stand, 0.3f, false);
-        var flat = c.Center - stand;
-        flat.y = 0f;
-        if (flat.magnitude > 0.6f)
+        if (missed > 0.6f)
         {
-            stepSkip = F($"the walk stopped {flat.magnitude:0.0} m short of the lip");
+            stepSkip = F(
+                $"the walk stopped {missed:0.0} m short of the last of {tried.Count} lip(s) tried"
+            );
             yield break;
         }
         Face(stand + outward * 3f);
@@ -567,8 +585,9 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The nearest walkable spot within <see cref="LedgeRadius"/> with a lip in one of 8 headings over a steep drop:
     /// down casts on a 1 m grid, in the style of <see cref="FindWall"/>, one grid row per frame. Sets
-    /// <see cref="ledgeFound"/>, <see cref="ledgeStand"/> and <see cref="ledgeOutward"/>.</summary>
-    IEnumerator FindLedge(Character c)
+    /// <see cref="ledgeFound"/>, <see cref="ledgeStand"/> and <see cref="ledgeOutward"/>. A spot within 3 m of one in
+    /// <paramref name="tried"/> is passed over.</summary>
+    IEnumerator FindLedge(Character c, List<Vector3> tried)
     {
         ledgeFound = false;
         ledgeStand = ledgeOutward = default;
@@ -592,6 +611,7 @@ internal sealed partial class SelfTestRunner
                         QueryTriggerInteraction.Ignore
                     )
                     || ground.normal.y < 0.8f
+                    || Tried(tried, ground.point)
                 )
                     continue;
                 for (int o = 0; o < 8; o++)
@@ -608,6 +628,16 @@ internal sealed partial class SelfTestRunner
             }
             yield return null;
         }
+    }
+
+    static bool Tried(List<Vector3> tried, Vector3 at)
+    {
+        foreach (var t in tried)
+        {
+            if ((t - at).sqrMagnitude < 9f)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>How far from A the lip search looks (m), on a 1 m grid: a lip is within 0.7 m of a grid point, so the
