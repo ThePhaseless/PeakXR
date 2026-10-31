@@ -66,6 +66,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     string stepSkip;
     bool finished;
 
+    /// <summary>Puts back the player's settings that <see cref="PinScriptedInput"/> changed for the run.</summary>
+    Action runRestore;
+
     static float Now => Time.realtimeSinceStartup;
 
     // Offline only: the script never drives a character in an online room.
@@ -92,6 +95,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         SelfTestInputPatch.HoldPrimary = false;
         SelfTestInputPatch.DropOnce = false;
         Interact.Binoculars.BinocularsConfig.ForceHold = false;
+        RestoreScriptedInput();
         Application.logMessageReceived -= OnLog;
         PatchGuard.Caught -= OnGuarded;
         BepInEx.Logging.Logger.Listeners.Remove(bootstrapTail);
@@ -153,6 +157,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
 
     IEnumerator Script()
     {
+        PinScriptedInput();
         bool hold = SelfTestFeature.Hold;
         // Hold mode keeps the real controllers; otherwise idle hands stay in view until a hand step drives them.
         if (VRRun && !hold)
@@ -1278,12 +1283,45 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         Finish();
     }
 
+    /// <summary>
+    /// The scripted hands assume these defaults, which no step pins or skips on: a player's Toggle grip latches every
+    /// scripted release, hand-relative walking steers by wherever a step left the hand, and the Panel binoculars have
+    /// no eyepiece lens for vr.250. Pinned for the run and put back at its end (run 10: ui.05 read a player's
+    /// StaminaView, #18).
+    /// </summary>
+    void PinScriptedInput()
+    {
+        Pin("Interaction", "GripMode", GripMode.Hold);
+        Pin("Locomotion", "MoveRelativeTo", "Head");
+        Pin("Interaction.Binoculars", "Mode", "Lens");
+    }
+
+    void Pin<T>(string section, string key, T value)
+    {
+        if (!Plugin.Settings.TryGetEntry<T>(section, key, out var entry))
+            return;
+        var was = entry.Value;
+        if (EqualityComparer<T>.Default.Equals(was, value))
+            return;
+        Plugin.Log.LogInfo($"[selftest] {section}.{key} {was} -> {value} for the run");
+        entry.Value = value;
+        runRestore += () => entry.Value = was;
+    }
+
+    void RestoreScriptedInput()
+    {
+        var restore = runRestore;
+        runRestore = null;
+        restore?.Invoke();
+    }
+
     /// <summary>Rewrite the log with every step, the totals and the <c>[compat]</c> states, then quit.</summary>
     void Finish()
     {
         if (finished)
             return;
         finished = true;
+        RestoreScriptedInput();
         SelfTestInputPatch.HoldPrimary = false;
         // Hold mode keeps the offline sandbox for live-input tests; SandboxActions drops it once online.
         if (!SelfTestFeature.Hold)

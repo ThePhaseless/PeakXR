@@ -154,56 +154,72 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// The only thorn stuck in the local body, between <paramref name="minAngle"/> and <paramref name="maxAngle"/>
     /// from the camera's aim and within reach of the <paramref name="left"/> hand (<see cref="SelfReachable"/>).
-    /// Thorns are added (CharacterAfflictions.AddThorn, :1695, a random free spot) and any other stuck thorn is taken
-    /// out (RemoveThorn, :1771), so the hand's nearest-thorn pick (SocialHands.Find) cannot take a neighbour instead of
-    /// the one the step watches.
+    /// Every stuck thorn is taken out first (RemoveThorn, CharacterAfflictions.cs:1791), so the hand's nearest-thorn
+    /// pick (SocialHands.Find) cannot take a neighbour, then one free thorn spot that fits, picked at random among
+    /// those, is stuck in by its index (AddThorn, :1715). Random spots (AddThorn's own pick) missed the reachable few
+    /// 16 times running (run 10, vr.101). Null with <paramref name="why"/> when no spot fits or the game refuses it.
     /// </summary>
     static ThornOnMe OffViewThorn(
         Character c,
         float minAngle,
         float maxAngle,
         bool left,
-        out float angle
+        out float angle,
+        out string why
     )
     {
         angle = 0f;
+        why = null;
         var cam = MainCamera.instance != null ? MainCamera.instance.transform : null;
         if (cam == null)
-            return null;
-        var a = c.refs.afflictions;
-        var stuck = new List<ThornOnMe>();
-        for (int tries = 0; tries < 16; tries++)
         {
-            ThornOnMe pick = null;
-            stuck.Clear();
-            foreach (var thorn in a.physicalThorns)
-            {
-                if (thorn == null || !thorn.stuckIn)
-                    continue;
-                stuck.Add(thorn);
-                float off = Vector3.Angle(thorn.transform.position - cam.position, cam.forward);
-                if (
-                    pick == null
-                    && !thorn.isArrow
-                    && off > minAngle
-                    && off <= maxAngle
-                    && SelfReachable(c, thorn.transform.position, left, cam.position)
-                )
-                {
-                    pick = thorn;
-                    angle = off;
-                }
-            }
-            foreach (var thorn in stuck)
-            {
-                if (thorn != pick)
-                    a.RemoveThorn(thorn, removedByPlayer: false);
-            }
-            if (pick != null)
-                return pick;
-            a.AddThorn(0);
+            why = "no main camera";
+            return null;
         }
-        return null;
+        var a = c.refs.afflictions;
+        var thorns = a.physicalThorns;
+        foreach (var thorn in thorns)
+        {
+            if (thorn != null && thorn.stuckIn)
+                a.RemoveThorn(thorn, removedByPlayer: false);
+        }
+        int pick = -1;
+        int fits = 0;
+        int free = 0;
+        for (int i = 0; i < thorns.Count; i++)
+        {
+            var thorn = thorns[i];
+            if (thorn == null || thorn.stuckIn || thorn.type != 0)
+                continue;
+            free++;
+            float off = Vector3.Angle(thorn.transform.position - cam.position, cam.forward);
+            if (
+                off <= minAngle
+                || off > maxAngle
+                || !SelfReachable(c, thorn.transform.position, left, cam.position)
+            )
+                continue;
+            fits++;
+            if (Random.Range(0, fits) == 0)
+            {
+                pick = i;
+                angle = off;
+            }
+        }
+        if (pick < 0)
+        {
+            why = F(
+                $"none of {free} free thorn spots lies {minAngle:0}-{maxAngle:0} deg off the view within {MpArmReach:0.00} m of the eye, off that hand's arm (eye {Vector3.Distance(cam.position, c.Head):0.00} m from the head)"
+            );
+            return null;
+        }
+        a.AddThorn(0, (ushort)pick);
+        if (!thorns[pick].stuckIn)
+        {
+            why = "AddThorn did not stick that spot (" + BodyState(c) + ")";
+            return null;
+        }
+        return thorns[pick];
     }
 
     /// <summary>
@@ -217,11 +233,17 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         const bool left = false;
-        var thorn = OffViewThorn(c, OffViewDegrees, OffViewMaxDegrees, left, out float angle);
+        var thorn = OffViewThorn(
+            c,
+            OffViewDegrees,
+            OffViewMaxDegrees,
+            left,
+            out float angle,
+            out var why
+        );
         if (thorn == null)
         {
-            stepSkip =
-                "no thorn off the view within the right hand's reach (AddThorn refused: invincible or none free)";
+            stepSkip = "no thorn off the view within the right hand's reach: " + why;
             yield break;
         }
         yield return MoveTo(left, () => thorn.transform.position, 0.6f);
@@ -273,10 +295,10 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         const bool left = false;
         // Any angle a hand can reach, never behind the head.
-        var thorn = OffViewThorn(c, 0f, OffViewMaxDegrees, left, out _);
+        var thorn = OffViewThorn(c, 0f, OffViewMaxDegrees, left, out _, out var why);
         if (thorn == null)
         {
-            stepSkip = "no thorn within the right hand's reach could be added";
+            stepSkip = "no thorn within the right hand's reach could be added: " + why;
             yield break;
         }
         var stick = GameMember.Method(

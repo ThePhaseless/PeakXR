@@ -311,10 +311,20 @@ internal sealed partial class SelfTestRunner
         float start = Now;
         yield return WaitFor(() => c.data.isGrounded, wait);
         // Judged once the body has come to rest, not on a touch-down mid slide or tumble (run 61: grounded for a
-        // frame while falling 11 m/s, the view still in the fall view).
+        // frame while falling 11 m/s, the view still in the fall view), and has stayed at rest a moment: run 10's
+        // vr.86 read the touch-down frame of PeakGround's 0.9 m drop (moving -0.7 m/s, the head bone 0.9 m off the
+        // eye; every settled landing reads 0.45-0.5 m).
+        float restSince = float.PositiveInfinity;
         yield return WaitFor(
-            () => c.data.isGrounded && Mathf.Abs(c.data.avarageVelocity.y) < 1f,
-            2f
+            () =>
+            {
+                if (!c.data.isGrounded || Mathf.Abs(c.data.avarageVelocity.y) >= 1f)
+                    restSince = float.PositiveInfinity;
+                else if (float.IsPositiveInfinity(restSince))
+                    restSince = Now;
+                return Now - restSince >= LandingRestSeconds;
+            },
+            2f + LandingRestSeconds
         );
         float waited = Now - start;
         float ground = GroundBelow(c.Center, 200f);
@@ -345,6 +355,9 @@ internal sealed partial class SelfTestRunner
             Fail("view inside terrain: " + note);
         Note(note);
     }
+
+    /// <summary>How long (s) a landed body stays grounded and still before <see cref="Landing"/> judges it.</summary>
+    const float LandingRestSeconds = 0.5f;
 
     /// <summary>Distance from <paramref name="from"/> down to terrain or map geometry; -1 when none within
     /// <paramref name="range"/>.</summary>

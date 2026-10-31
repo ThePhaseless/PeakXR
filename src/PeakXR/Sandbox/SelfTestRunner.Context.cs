@@ -166,6 +166,9 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>Nearest aimed spot (m) the chain step shoots at: past the chain's start 1 m ahead, with room.</summary>
+    const float MinChainAim = 2f;
+
     IEnumerator ChainBody(bool vr)
     {
         var prefab = FirstItem(i =>
@@ -204,7 +207,9 @@ internal sealed partial class SelfTestRunner
                 Turn(c, i == 0 ? 0f : 15f, pitch);
                 yield return null;
                 yield return null;
-                aimed = shooter.WillAttach(out hit);
+                // The chain hangs from 1 m ahead of the camera (VineShooter.cs:52-57): a spot nearer than that has
+                // no path to it, and the cast ends with nothing (flat run 10: a LidCollider 0.9 m off).
+                aimed = shooter.WillAttach(out hit) && hit.distance >= MinChainAim;
             }
             if (aimed)
                 break;

@@ -225,9 +225,11 @@ internal static class PracticeLayout
 
     /// <summary>How far the floor-level view runs ahead of a spot before scenery, at chest height.</summary>
     public static float ClearAhead(PracticeSpot spot, float height) =>
-        NearestSolid(spot.Feet + Vector3.up * height, spot.Facing, 3f, out var hit)
-            ? hit.distance
-            : 3f;
+        ClearAlong(spot.Feet + Vector3.up * height, spot.Facing, 3f);
+
+    /// <summary>How far a line runs from <paramref name="from"/> before scenery, up to <paramref name="max"/>.</summary>
+    public static float ClearAlong(Vector3 from, Vector3 dir, float max) =>
+        NearestSolid(from, dir, max, out var hit) ? hit.distance : max;
 
     /// <summary>Floor under a point, for the start spot; the point itself when there is none in reach.</summary>
     public static Vector3 FloorUnder(Vector3 head) =>

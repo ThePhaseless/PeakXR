@@ -113,6 +113,23 @@ public class PracticeZoneTests
     }
 
     [Fact]
+    public void DemoOffset_WallCloserThanTheGap_KeepsTheGap()
+    {
+        // A cramped spawn corner (run 10, vr.31): 0.15 m ahead put the demo in a wall 0.3 m away.
+        var (ahead, _) = PracticeZones.DemoOffset(0.3f);
+        Assert.True(ahead <= 0.3f - PracticeZones.WallGap);
+    }
+
+    [Theory]
+    [InlineData(0.6f, 10f, 0.6f)]
+    [InlineData(0.6f, 0.5f, 0.25f)]
+    [InlineData(0.3f, 0.1f, 0f)]
+    public void DemoSide_KeepsTheGapToTheSideWall(float side, float clearSide, float want)
+    {
+        Assert.Equal(want, PracticeZones.DemoSide(side, clearSide), 3);
+    }
+
+    [Fact]
     public void NewZone_GoesToTravel_SameZoneDoesNot()
     {
         var flow = new PracticeFlow();

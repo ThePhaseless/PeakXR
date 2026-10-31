@@ -482,7 +482,12 @@ internal sealed partial class SelfTestRunner
     /// <summary>The game's warp (as its own segment jump sends it, MapHandler.cs:1094), then its end.</summary>
     static IEnumerator SettleWarp(Character c, Vector3 to)
     {
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, to + Vector3.up * 0.1f, false);
+        c.photonView.RPC(
+            "WarpPlayerRPC",
+            RpcTarget.All,
+            CentreOver(c, to + Vector3.up * 0.1f),
+            false
+        );
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
     }

@@ -205,6 +205,10 @@ internal sealed partial class SelfTestRunner
             stepSkip = "UI.HUD.HudMode is not Wrist";
             yield break;
         }
+        // The bar is on the wrist only in StaminaView Wrist (or Both); a player's TopOfView left it empty (run 10).
+        var view = cfg.StaminaView.Value;
+        cfg.StaminaView.Value = UI.World.StaminaView.Wrist;
+        OnRestore(() => cfg.StaminaView.Value = view);
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
         var head = rig.Head;
