@@ -188,10 +188,12 @@ public sealed class ReachOutTracker
         bool wasArmed = armed;
         if (canAcquire && (!holds || (!curInRange && bestInRange)))
         {
+            // Before Lose, which overwrites lost*: B to A to B within Grace keeps B's dwell.
+            float pick = best == lostFriend && now - lostAt <= ReachOut.Grace ? lostPickAt : now;
             if (Friend >= 0)
                 Lose(now);
             Friend = best;
-            pickAt = best == lostFriend && now - lostAt <= ReachOut.Grace ? lostPickAt : now;
+            pickAt = pick;
             wasArmed = false;
         }
         else if (!holds && Friend >= 0)
