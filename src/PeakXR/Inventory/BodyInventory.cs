@@ -318,8 +318,11 @@ internal sealed class BodyInventory : IGripExtension
         var look = Look(c, i);
         // Drawing needs a filled slot whose item is not already in a hand; reaching to an empty slot stays free for
         // grabbing or climbing. The game refuses switches while climbing (CharacterItems.cs:735), so a climbing
-        // hand over a slot catches the wall instead.
-        return look == SlotLook.Filled && !c.data.isClimbing;
+        // hand over a slot catches the wall instead. A free hand right on something to grab (its glow) takes that:
+        // the front slot sits where a waist-high table's edge is (issue #49).
+        return look == SlotLook.Filled
+            && !c.data.isClimbing
+            && !(ctx.TargetAtHand && !ctx.ThisHandHolds);
     }
 
     public void BeginPress(in GripHookContext ctx)

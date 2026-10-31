@@ -828,7 +828,8 @@ internal static class PhysicalInteraction
                     d.Held,
                     thisHolds,
                     preview,
-                    handBusy: candidate != GrabCandidate.None || ctx.NearClimbable || ctx.Airborne
+                    handBusy: candidate != GrabCandidate.None || ctx.NearClimbable || ctx.Airborne,
+                    targetAtHand: candidate != GrabCandidate.None
                 )
             );
             ctx.ExtensionClaim = d.Extension != null;

@@ -25,6 +25,10 @@ internal readonly struct GripHookContext
     /// that reaches past it (the fallback extensions).</summary>
     public readonly bool HandBusy;
 
+    /// <summary>A grab target (item or interactible) lies within the grab radius of this hand: the one its glow shows.
+    /// A belt slot draw yields to it (issue #49: a grip at a waist-high table drew the belt item).</summary>
+    public readonly bool TargetAtHand;
+
     public GripHookContext(
         Character character,
         bool left,
@@ -32,7 +36,8 @@ internal readonly struct GripHookContext
         Item heldItem,
         bool thisHandHolds,
         bool preview = false,
-        bool handBusy = false
+        bool handBusy = false,
+        bool targetAtHand = false
     )
     {
         Character = character;
@@ -42,6 +47,7 @@ internal readonly struct GripHookContext
         ThisHandHolds = thisHandHolds;
         Preview = preview;
         HandBusy = handBusy;
+        TargetAtHand = targetAtHand;
     }
 }
 
