@@ -249,7 +249,10 @@ public class GiveUpHoldTests
         g.Reset();
         Assert.False(Run(g, g.ArmSeconds * 3f, true));
         Assert.Equal(0f, g.Arming);
+        // The stuck ring is explained: the caller cues "open your hands" while this holds.
+        Assert.True(g.NeedsOpen);
         Run(g, Dt, false);
+        Assert.False(g.NeedsOpen);
         Assert.True(Run(g, g.ArmSeconds * 1.1f, true));
     }
 }

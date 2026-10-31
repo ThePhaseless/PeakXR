@@ -74,6 +74,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.48b-surface-texture", 30f, SurfaceTextureStep());
         yield return Restoring("vr.49-condor", 30f, CondorStep());
         yield return Restoring("vr.50-climb-hover", 30f, ClimbHoverStep());
+        yield return Restoring("vr.449-trigger-at-ring-hint", 30f, TriggerAtRingStep());
         yield return Restoring("vr.51-air-grip", 30f, AirGripStep());
         yield return Restoring("vr.51b-falling-catch", 30f, FallingCatchStep());
         yield return Restoring("vr.52-climb-empty", 40f, ClimbEmptyStep());
@@ -2972,6 +2973,62 @@ internal sealed partial class SelfTestRunner
             Fail("the ring stayed on the gripping hand: " + note);
         else
             Note(note);
+        yield return LetGoAll(c);
+    }
+
+    /// <summary>
+    /// vr.449 (issue #78): with empty hands, the dominant hand open at the wall shows the climb ring; pulling its
+    /// trigger climbs nothing (decision #31), and instead of silence the hand gets the light "Grip to climb" notice
+    /// (HappenedHere with the hint at the ring).
+    /// </summary>
+    IEnumerator TriggerAtRingStep()
+    {
+        var c = Character.localCharacter;
+        if (!Interact.InteractConfig.Instance.ClimbHoverRing)
+        {
+            stepSkip = "Interaction.ClimbHoverRing off";
+            yield break;
+        }
+        yield return DropHeld();
+        if (c.data.currentItem != null)
+        {
+            stepSkip = "an item stayed in hand";
+            yield break;
+        }
+        yield return ToWall();
+        if (!wallReady)
+            yield break;
+        bool left = VRInput.LeftHanded;
+        var hold = WallHold;
+        var off = hold + wallFace.normal * 0.35f;
+        yield return MoveTo(left, () => off, 0.3f);
+        yield return Wait(0.5f);
+        yield return MoveTo(left, () => hold, 0.5f);
+        yield return WaitFor(() => ClimbHover.Shown(left), 1f);
+        if (!ClimbHover.Shown(left))
+        {
+            Fail("no climb ring under the open hand, so the step proves nothing");
+            yield break;
+        }
+        Affordance.ResetGate();
+        float mark = CueMark();
+        bool climbed = false;
+        Script(left).Trigger = 1f;
+        for (float until = Now + 0.4f; Now < until; )
+        {
+            climbed |= c.data.isClimbing;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        if (climbed)
+        {
+            Fail("the empty trigger at the ring started a climb");
+            yield return LetGoAll(c);
+            yield break;
+        }
+        yield return ExpectCue(left, DenyReason.HappenedHere, mark, within: 0.5f);
+        if (stepOk)
+            Note("no climb; " + cueNote);
         yield return LetGoAll(c);
     }
 

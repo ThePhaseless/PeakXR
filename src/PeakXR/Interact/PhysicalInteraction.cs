@@ -59,6 +59,10 @@ internal static class PhysicalInteraction
         /// the press for a fist made for a gesture (<see cref="GripIntent.GestureInteractAt"/>).</summary>
         public float InteractAt;
 
+        /// <summary>A posed grip opened before its interact came due (<see cref="GripIntent.ReleaseTaps"/>): the next
+        /// <c>Inject</c> presses interact for one frame.</summary>
+        public bool TapPending;
+
         /// <summary>This Interact grip is a pointed aim at an item taker (<see cref="GripContext.PointedAtTaker"/>).</summary>
         public bool AimedTaker;
 
@@ -500,8 +504,14 @@ internal static class PhysicalInteraction
             hand.GripAt = now;
             hand.GripOnItem = Holding(c, out _) && LocalHold.ItemInLeftHand == hand.Left;
         }
-        // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75).
-        hand.GripAt = Mathf.Max(hand.GripAt, GripToggle.ClosedAt(hand.Left));
+        // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75). It lets
+        // go of the item, so its muted trigger is no lost use and gets no regrip tick (#48).
+        float unlatchAt = GripToggle.ClosedAt(hand.Left);
+        if (unlatchAt > hand.GripAt)
+        {
+            hand.GripAt = unlatchAt;
+            hand.GripOnItem = false;
+        }
         // A fist made for a gesture (a thumbs-up, the walkie-talkie hand at the mouth) is no interact: it waits while
         // the pose holds and is dropped once the gesture takes the hand (#82).
         if (hand.Action == GripPressAction.Interact && now < hand.InteractAt)
@@ -653,9 +663,10 @@ internal static class PhysicalInteraction
     private static bool GesturePosed(Hand hand) =>
         Emotes.GestureEmotes.ThumbPosed(hand.Left) || Voice.VoiceRuntime.AtMouth(hand.Left);
 
-    /// <summary>The gesture took this hand since its grip closed: the thumbs-up played on it, or it talks.</summary>
+    /// <summary>The gesture took this hand since its grip closed: the thumbs-up fired on it (played, or held back by
+    /// the emote cooldown), or it talks.</summary>
     private static bool GestureTook(Hand hand) =>
-        Emotes.GestureEmotes.PlayedAt(hand.Left) >= hand.GripAt
+        Emotes.GestureEmotes.TookAt(hand.Left) >= hand.GripAt
         || Voice.VoiceRuntime.Talking(hand.Left);
 
     /// <summary>This hand's trigger started a use press on the last use pass (<see cref="UseTrigger.Pressed"/>): never
@@ -1360,6 +1371,12 @@ internal static class PhysicalInteraction
         var action = hand.Action;
         var extension = hand.Extension;
         var wanted = hand.Target as Item;
+        // A quick tap in a gesture pose is a gaze grab whose wait had not run out: it presses interact once (#82),
+        // in this frame's Inject (which runs only while active, so a tap never fires late).
+        hand.TapPending =
+            active
+            && action == GripPressAction.Interact
+            && GripIntent.ReleaseTaps(hand.InteractAt, hand.GripAt, Time.time, GestureTook(hand));
         hand.Action = GripPressAction.None;
         hand.Target = null;
         hand.Extension = null;
@@ -2899,6 +2916,12 @@ internal static class PhysicalInteraction
         foreach (var hand in Hands)
         {
             hand.Injected = false;
+            if (hand.TapPending)
+            {
+                hand.TapPending = false;
+                interactDown = hand.Injected = true;
+                GripInteractActive = true;
+            }
             switch (hand.Action)
             {
                 case GripPressAction.GrabItem:
@@ -3000,6 +3023,22 @@ internal static class PhysicalInteraction
                 && !Physical.ItemGestures.TriggerRefused(c.data.currentItem)
             )
                 Affordance.Cancel(hand.Left);
+            // The empty trigger climbs nothing (#78, below): reaching for a hold, it says the grip climbs.
+            if (
+                hand.Use.Pressed
+                && !holding
+                && hand == primaryHand
+                && Climb.ClimbHover.Shown(hand.Left)
+                && rig.Hand(hand.Left) != null
+            )
+                Affordance.Inform(
+                    hand.Left,
+                    rig.Hand(hand.Left).position,
+                    DenyReason.HappenedHere,
+                    DenyHint.At(Climb.ClimbHover.Position(hand.Left)),
+                    "Grip to climb",
+                    forceText: true
+                );
             if (hand.Use.ClimbPress && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,
@@ -3021,7 +3060,7 @@ internal static class PhysicalInteraction
         bool primaryDown =
             holding
             && primaryHand.Use.Down
-            && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
+            && !Physical.ItemGestures.TriggerRefused(c.data.currentItem);
         bool secondaryDown = Other(primaryHand).Use.Down;
 
         bool atMouth = false;

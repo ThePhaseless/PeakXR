@@ -191,6 +191,10 @@ public sealed class GiveUpHold
     private float held;
     private bool needsOpen = true;
 
+    /// <summary>The fists were already closed when the body passed out and have not opened since: the chord does not
+    /// count yet, so the caller says "open your hands" instead of a ring stuck at 0.</summary>
+    public bool NeedsOpen => needsOpen;
+
     /// <summary>0..1 of the arming hold, for the ring.</summary>
     public float Arming => needsOpen ? 0f : Math.Min(1f, held / ArmSeconds);
 

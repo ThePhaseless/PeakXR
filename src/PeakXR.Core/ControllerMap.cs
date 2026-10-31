@@ -151,11 +151,10 @@ public static class ControllerMap
         bool padMenuPress =
             (l.PadMenuClick && s.PadClick) || (l.PadMenuForce && s.PadForce > PadMenuForce);
         bool gripping = b.Grip >= PadMenuGrip;
-        b.Menu =
-            s.Menu
-            || (
-                padMenu != null ? padMenu.Update(padMenuPress, gripping) : padMenuPress && !gripping
-            );
+        // Every frame, before the menu button can short-circuit it, so the latch never keeps a stale pad press.
+        bool padMenuDown =
+            padMenu != null ? padMenu.Update(padMenuPress, gripping) : padMenuPress && !gripping;
+        b.Menu = s.Menu || padMenuDown;
         b.PrimaryTouch = s.PrimaryTouch;
         b.SecondaryTouch = s.SecondaryTouch;
         b.StickClick = s.StickClick;

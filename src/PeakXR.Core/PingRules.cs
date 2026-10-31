@@ -40,8 +40,8 @@ public static class PingRules
         : PingVerdict.Fire;
 
     /// <summary>
-    /// The hand a button ping aims from: the fixed hand, else the one hand that points with the thumb up
-    /// (<see cref="GripIntent.IsThumbUpPoint"/>), else the off hand of the layout (where the table's ping button sits).
+    /// The hand a button ping aims from: the fixed hand, else the one hand in the ping-aim point, grip open
+    /// (<see cref="GripIntent.IsPingAimPoint"/>), else the off hand of the layout (where the table's ping button sits).
     /// </summary>
     public static bool ButtonHandLeft(
         PingAimHand setting,

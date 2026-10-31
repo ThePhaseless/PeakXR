@@ -317,18 +317,25 @@ public class GripIntentTests
         // (EmoteGestures.ThumbsUp) and a plain grip on Index or Touch controllers.
         var fist = FingerCurlMapper.Map(0f, true, 1f, false);
         Assert.False(GripIntent.IsPointing(fist));
-        Assert.False(GripIntent.IsThumbUpPoint(fist));
+        Assert.False(GripIntent.IsPingAimPoint(fist, 1f));
         Assert.True(GripIntent.IsPointing(FingerCurlMapper.Map(0f, false, 1f, false)));
     }
 
     [Fact]
-    public void ThumbUpPoint_NeedsTheThumbLifted()
+    public void PingAimPoint_IndexOutThumbLiftedGripOpen()
     {
-        // Only a lifted thumb makes a point aim the button ping (Interaction.Ping.Hand = Pointing); the thumb on the
-        // stick or face buttons is a plain pointed grip.
-        Assert.True(GripIntent.IsThumbUpPoint(new FingerCurls(0f, 0.1f, 0.9f, 0.9f, 0.9f)));
-        Assert.False(GripIntent.IsThumbUpPoint(new FingerCurls(1f, 0.1f, 0.9f, 0.9f, 0.9f)));
-        Assert.False(GripIntent.IsThumbUpPoint(new FingerCurls(0f, 0.9f, 0.9f, 0.9f, 0.9f)));
+        // Interaction.Ping.Hand = Pointing: the aiming point is made with the grip open, so it never makes a pointed
+        // grip that interacts with what it points at (#89). The thumb on the stick or face buttons is no aim.
+        var open = FingerCurlMapper.Map(0f, false, 0.1f, false);
+        Assert.True(GripIntent.IsPingAimPoint(open, 0.1f));
+        Assert.False(GripIntent.IsPingAimPoint(FingerCurlMapper.Map(0f, false, 0.1f, true), 0.1f));
+        Assert.False(GripIntent.IsPingAimPoint(FingerCurlMapper.Map(0f, true, 0.1f, false), 0.1f));
+        // The old finger gun (grip closed) is a pointed grip, not a ping aim.
+        var gun = FingerCurlMapper.Map(0f, false, 1f, false);
+        Assert.True(GripIntent.IsPointing(gun));
+        Assert.False(GripIntent.IsPingAimPoint(gun, 1f));
+        // A Vive wand (no trigger touch sensor, ControllerCurls counts the index as resting) never aims.
+        Assert.False(GripIntent.IsPingAimPoint(FingerCurlMapper.Map(0f, true, 0f, false), 0f));
     }
 
     [Fact]
@@ -673,5 +680,20 @@ public class GestureInteractTests
     public void Posed_NeverShortensALongerWait()
     {
         Assert.Equal(9f, GripIntent.GestureInteractAt(9f, posed: true, gripAt: 1f, now: 1f));
+    }
+
+    [Fact]
+    public void QuickPosedTap_InteractsAtTheRelease()
+    {
+        // Issue #82: a grip opened before its posed wait ran out pressed nothing at all.
+        float at = GripIntent.GestureInteractAt(1f, posed: true, gripAt: 1f, now: 1f);
+        Assert.True(GripIntent.ReleaseTaps(at, 1f, 1.1f, gestureTook: false));
+        // The gesture took the hand (the thumbs-up fired, the hand talks): nothing.
+        Assert.False(GripIntent.ReleaseTaps(at, 1f, 1.1f, gestureTook: true));
+        // The wait was over: the interact already pressed while the grip was closed.
+        Assert.False(GripIntent.ReleaseTaps(at, 1f, at + 0.01f, gestureTook: false));
+        // A thumbs-up held 0.5 s and given up before its dwell is no tap, though the pose kept the wait going.
+        at = GripIntent.GestureInteractAt(at, posed: true, gripAt: 1f, now: 1.5f);
+        Assert.False(GripIntent.ReleaseTaps(at, 1f, 1.5f, gestureTook: false));
     }
 }

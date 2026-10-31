@@ -1,5 +1,6 @@
 using BepInEx.Configuration;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.VR;
 
 namespace PeakXR.Interact.Ping;
@@ -63,6 +64,8 @@ internal sealed class PingConfig
 
     public static void Bind(ConfigFile file)
     {
+        // The finger-gun ping is gone (#89): the ping is a button. Drop the saved key so it does not linger.
+        ConfigMigration.Removed(file, Section, "FingerGunPing");
         Instance = new PingConfig
         {
             hand = file.Bind(
