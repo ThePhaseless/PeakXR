@@ -870,10 +870,24 @@ internal sealed partial class SelfTestRunner
         }
         float y0 = c.Center.y;
         yield return Shot("vr-15-climb");
-        yield return PullDown(left, 0.4f, 0.6f);
+        // Which stage lost a short rise (#60, run 9): the game's climb point against the body, stamina (out of it the
+        // up debt is dropped), the stick the game read, and the travel still owed.
+        float climb0 = c.data.climbPos.y;
+        float stamina0 = c.data.currentStamina;
+        float lowStick = float.PositiveInfinity;
+        var pull = PullDown(left, 0.4f, 0.6f);
+        while (pull.MoveNext())
+        {
+            lowStick = Mathf.Min(lowStick, c.input.movementInput.y);
+            yield return pull.Current;
+        }
         yield return Wait(0.4f);
         float rise = c.Center.y - y0;
         bool stillClimbing = c.data.isClimbing;
+        var owed = PeakXR.Interact.PhysicalInteraction.ClimbOwed;
+        string stages = F(
+            $"climb point rose {c.data.climbPos.y - climb0:0.00} m, stamina {stamina0:0.00} -> {c.data.currentStamina:0.00} (out for {c.data.outOfStaminaFor:0.00} s), lowest stick y {lowStick:0.00}, owed up {owed.y:0.00} m"
+        );
         handOverNote = "not tried (the first pull ended the climb)";
         handOverFail = false;
         if (stillClimbing)
@@ -886,7 +900,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
-            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m, climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
+            $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m ({stages}), climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
         if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
         else if (handOverFail)
