@@ -1230,6 +1230,20 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        bool left = LocalHold.ItemInLeftHand;
+        var c = Character.localCharacter;
+        // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
+        // lost grip also takes the item from the hand, and only this tells them apart.
+        float consumedBefore = c.data.lastConsumedItem;
+        // Carried low at the side on the walk in, as a player carries food they are not offering (MP run 13, #93:
+        // held at chest height it passed the host's mouth during a stop between stick pulses and fed them before the
+        // squeeze test began).
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            left,
+            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f + forward * 0.15f,
+            0.3f
+        );
         yield return WalkTo(HostCenter, 0.75f, true);
         if (!stepOk)
             yield break;
@@ -1238,11 +1252,15 @@ internal sealed partial class SelfTestRunner
         yield return MpStepToMouth(host);
         Face(host.Head);
         yield return Wait(0.3f);
-        bool left = LocalHold.ItemInLeftHand;
-        var c = Character.localCharacter;
-        // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
-        // lost grip also takes the item from the hand, and only this tells them apart.
-        float consumedBefore = c.data.lastConsumedItem;
+        if (item == null || HeldItem() != item)
+        {
+            Fail(
+                c.data.lastConsumedItem != consumedBefore
+                    ? "the host was fed on the walk in, before the squeeze beside the mouth"
+                    : "the food left the hand on the walk in"
+            );
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
         // mouth dwell. A hand-over (SocialHands.UpdateFeed, HandOver): food resting at the mouth feeds with the trigger
