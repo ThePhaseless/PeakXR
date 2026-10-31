@@ -269,6 +269,37 @@ public static class MpRequest
             .Num("dz", dirZ)
             .ToString();
 
+    /// <summary>A request with a level direction and a world point: hang-below takes the lip's ground point A measured,
+    /// so B searches from the lip rather than from where it sees A (MP run 16, #95).</summary>
+    public static string Line(
+        int id,
+        string what,
+        double t,
+        double dirX,
+        double dirZ,
+        double pointX,
+        double pointY,
+        double pointZ
+    ) =>
+        new JsonLine()
+            .Num("id", id)
+            .Str("do", what)
+            .Num("t", t)
+            .Num("dx", dirX)
+            .Num("dz", dirZ)
+            .Num("px", pointX)
+            .Num("py", pointY)
+            .Num("pz", pointZ)
+            .ToString();
+
+    public static bool TryReadPoint(string line, out double x, out double y, out double z)
+    {
+        y = z = 0;
+        return JsonLine.TryReadNumber(line, "px", out x)
+            && JsonLine.TryReadNumber(line, "py", out y)
+            && JsonLine.TryReadNumber(line, "pz", out z);
+    }
+
     /// <summary>A request with a level direction and an item prefab name (spawn-item).</summary>
     public static string Line(
         int id,

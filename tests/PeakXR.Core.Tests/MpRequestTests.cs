@@ -27,6 +27,27 @@ public class MpRequestTests
     }
 
     [Fact]
+    public void RequestLine_CarriesALipPoint()
+    {
+        var line = MpRequest.Line(5, MpRequest.HangBelow, 9.0, 0.0, -1.0, 12.5, 3.25, -370.75);
+        Assert.True(MpRequest.TryReadDirection(line, out double x, out double z));
+        Assert.Equal(0.0, x, 6);
+        Assert.Equal(-1.0, z, 6);
+        Assert.True(MpRequest.TryReadPoint(line, out double px, out double py, out double pz));
+        Assert.Equal(12.5, px, 6);
+        Assert.Equal(3.25, py, 6);
+        Assert.Equal(-370.75, pz, 6);
+        Assert.False(
+            MpRequest.TryReadPoint(
+                MpRequest.Line(6, MpRequest.HangBelow, 9.0, 0.6, -0.8),
+                out _,
+                out _,
+                out _
+            )
+        );
+    }
+
+    [Fact]
     public void AckLine_CarriesTheResult()
     {
         var line = MpRequest.Ack(4, MpRequest.Web, false, "airport", 7.0);

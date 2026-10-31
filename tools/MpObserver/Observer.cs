@@ -717,7 +717,8 @@ internal sealed partial class Observer : MonoBehaviour
     /// is inside the rock whenever A stands back from the edge or the face leans out (MP run 13, #95). Along the
     /// lip's outward direction when the request carries it (A measured it), else A's look: in MP run 14 the look
     /// found no drop below a lip A had found. Out to 4 m: A may stop up to 0.6 m back from its lip spot, itself 0.7 m
-    /// short of the drop.
+    /// short of the drop. From the lip's ground point when the request carries it (A measured it there), else from the
+    /// ground under A as seen here: in MP run 16 A stood 1.98 m from its lip and this search found no drop (#95).
     /// </summary>
     static bool HangBelow(Character c, string line, out string note)
     {
@@ -738,35 +739,52 @@ internal sealed partial class Observer : MonoBehaviour
         look.Normalize();
         int mask = HelperFunctions.terrainMapMask;
         const QueryTriggerInteraction ignore = QueryTriggerInteraction.Ignore;
-        if (!Physics.Raycast(vr.Center, Vector3.down, out var feet, 3f, mask, ignore))
+        bool fromLip = MpRequest.TryReadPoint(line, out double px, out double py, out double pz);
+        Vector3 ground;
+        if (fromLip)
+            ground = new Vector3((float)px, (float)py, (float)pz);
+        else if (Physics.Raycast(vr.Center, Vector3.down, out var feet, 3f, mask, ignore))
+            ground = feet.point;
+        else
         {
             note = "no ground under the remote player";
             return false;
         }
+        float deepest = 0f,
+            deepestAt = 0f;
+        int faceMissed = 0;
         for (float outBy = 0.25f; outBy <= 4f; outBy += 0.25f)
         {
-            var above = feet.point + look * outBy + Vector3.up * 0.5f;
+            var above = ground + look * outBy + Vector3.up * 0.5f;
             if (!Physics.Raycast(above, Vector3.down, out var low, 6f, mask, ignore))
                 continue;
-            float drop = feet.point.y - low.point.y;
+            float drop = ground.y - low.point.y;
+            if (drop > deepest)
+            {
+                deepest = drop;
+                deepestAt = outBy;
+            }
             if (drop > 5f)
                 break;
             // About 2.5 m under A's centre as before (inside the game's 4 m reach), never under the lower ground.
             var at = low.point;
-            at.y = Mathf.Max(low.point.y + 0.5f, feet.point.y - 1.5f);
-            if (
-                drop < 1.5f
-                || !Physics.Raycast(at, -look, out var face, outBy + 0.5f, mask, ignore)
-            )
+            at.y = Mathf.Max(low.point.y + 0.5f, ground.y - 1.5f);
+            if (drop < 1.5f)
                 continue;
+            if (!Physics.Raycast(at, -look, out var face, outBy + 0.5f, mask, ignore))
+            {
+                faceMissed++;
+                continue;
+            }
             c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, face.point + face.normal * 0.3f, false);
             note = FormattableString.Invariant(
                 $"warped below {vr.characterName}: {drop:0.0} m drop, face {outBy:0.00} m out"
             );
             return true;
         }
-        note =
-            $"no face below the remote player (no 1.5-5 m drop within 4 m out along {(given ? "the lip's outward" : "its look")})";
+        note = FormattableString.Invariant(
+            $"no face below the remote player (no 1.5-5 m drop within 4 m out along {(given ? "the lip's outward" : "its look")} from {(fromLip ? "the lip point" : "its ground")} {V(ground)}; deepest drop {deepest:0.0} m at {deepestAt:0.00} m out, {faceMissed} face cast(s) missed, the remote player at {V(vr.Center)})"
+        );
         return false;
     }
 

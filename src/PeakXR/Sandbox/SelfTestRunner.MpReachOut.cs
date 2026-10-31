@@ -499,14 +499,32 @@ internal sealed partial class SelfTestRunner
         }
         Face(stand + outward * 3f);
         yield return Wait(0.5f);
+        // At the lip when B is asked, not where the walk last stood (MP run 16, #95: A was 1.98 m from the lip it had
+        // measured when B searched below it): one more walk in, then a SKIP with the distance.
+        if (FlatDistance(c.Center, stand) > LedgeStandBy)
+        {
+            yield return MpWalkAround(() => stand, 0.3f, 10f);
+            Face(stand + outward * 3f);
+            yield return Wait(0.5f);
+        }
+        float atLip = FlatDistance(c.Center, stand);
+        // On the lip's own ground too: the torso stands about 1 m over the feet, so well above that is A on something
+        // higher next to it.
+        if (atLip > LedgeStandBy || c.Center.y - stand.y > 1.4f || c.Center.y < stand.y)
+        {
+            stepSkip = F(
+                $"A stands {atLip:0.00} m from the lip ({c.Center.y - stand.y:0.00} m over it), not at it"
+            );
+            yield break;
+        }
         var host = Host();
         // B looks for the face along the lip's own outward direction, not A's look (MP run 14, #95: along the look B
-        // found no drop below a lip A had measured).
-        yield return Ask(MpRequest.HangBelow, dir: outward);
+        // found no drop below a lip A had measured), and from the lip's own ground point, not from where B sees A.
+        yield return Ask(MpRequest.HangBelow, dir: outward, from: stand);
         if (stepSkip != null)
         {
             stepSkip += F(
-                $" (A's lip: {LipNote(stand, outward)}, A {Vector3.Distance(c.Center, stand):0.00} m from it, look {Vector3.Angle(Flat(c.data.lookDirection), outward):0} deg off its outward)"
+                $" (A's lip: {LipNote(stand, outward)} from ({stand.x:0.00}, {stand.y:0.00}, {stand.z:0.00}), A {atLip:0.00} m from it on the level, look {Vector3.Angle(Flat(c.data.lookDirection), outward):0} deg off its outward)"
             );
             yield return BringHostBack(c, host);
             yield break;
@@ -690,6 +708,9 @@ internal sealed partial class SelfTestRunner
     const float LedgeDropMin = 2.3f;
 
     const float LedgeDropMax = 4f;
+
+    /// <summary>How near (m, level) A stands to the lip's ground point when B is asked to hang below it.</summary>
+    const float LedgeStandBy = 0.5f;
 
     bool ledgeFound;
     Vector3 ledgeStand;

@@ -149,11 +149,16 @@ internal sealed partial class SelfTestRunner
     /// <summary>The hovered slice is a pocket, not Wear or jetpack fuel. A pocket's <c>isStashSlice</c> stays false:
     /// <c>stashSlice</c> belongs to <c>InitStashSlot</c>, which <c>BackpackWheel.InitWheel</c> never calls
     /// (BackpackWheel.cs:29-71); an empty pocket hovered with an item in hand is chosen through the item-slot path
-    /// (:219-240) and <c>Choose</c> stashes into it (:148-151). Issue #71, run 12: vr.430 waited for isStashSlice.</summary>
+    /// (:219-240) and <c>Choose</c> stashes into it (:148-151). Issue #71, run 12: vr.430 waited for isStashSlice.
+    /// The pocket must be empty: <c>Choose</c> hands a filled pocket's item to the player instead (:144-147; MP run 16,
+    /// #100: vr.434 chose the pocket vr.330 had filled, and A took that TrailMix out instead of stashing its own).</summary>
     static bool PocketChosen(BackpackWheel w) =>
         w.chosenSlice.IsSome
         && !w.chosenSlice.Value.isBackpackWear
-        && !w.chosenSlice.Value.isJetpackFuelSlice;
+        && !w.chosenSlice.Value.isJetpackFuelSlice
+        && w.chosenSlice.Value.backpackReference.GetData()
+            .itemSlots[w.chosenSlice.Value.slotID]
+            .IsEmpty();
 
     static int PackItems(Backpack pack, ushort itemID)
     {
