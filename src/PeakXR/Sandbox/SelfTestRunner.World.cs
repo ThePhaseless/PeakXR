@@ -1149,6 +1149,7 @@ internal sealed partial class SelfTestRunner
                 Terrain(probe, Vector3.down, box.size.y + 1.5f, out var ground)
                 && ground.collider.GetComponentInParent<Luggage>() == null
                 && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
+                && StandingRoom(ground.point)
             )
             {
                 spot = ground.point;
@@ -1157,6 +1158,19 @@ internal sealed partial class SelfTestRunner
         }
         return false;
     }
+
+    /// <summary>Room for a standing body on <paramref name="feet"/>: nothing solid but characters within 0.3 m of the
+    /// line from knee to eye height. Issue #54: a spot whose ray column was clear but had something solid beside it
+    /// took the warp, and the body was pushed up out of it, about 1 m over the case's base, out of a squat's
+    /// reach.</summary>
+    static bool StandingRoom(Vector3 feet) =>
+        !Physics.CheckCapsule(
+            feet + Vector3.up * 0.45f,
+            feet + Vector3.up * 1.6f,
+            0.3f,
+            HelperFunctions.AllPhysicalExceptCharacter,
+            QueryTriggerInteraction.Ignore
+        );
 
     /// <summary>vr.82b: a grip low on a closed slow suitcase (open time at least <see cref="LidGesture.LowGripMinOpen"/>)
     /// keeps the vanilla hold and, after 0.5 s, gets the "grab the lid" notice (AimHigher, ring on the lid edge above
@@ -1265,7 +1279,7 @@ internal sealed partial class SelfTestRunner
             Fail(
                 $"the low grip did not take {lug.name}: grip {PhysicalInteraction.HandAction(left)} on "
                     + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(rig.Hand(left).position, lug):0.00} m "
-                    + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, hovered "
+                    + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, the floor {F($"{TrackedFloorY() - low.y:0.00}")} m over it, hovered "
                     + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}; {PhysicalInteraction.LastGripNote}"
             );
             yield break;
