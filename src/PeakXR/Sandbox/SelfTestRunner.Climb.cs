@@ -3308,6 +3308,9 @@ internal sealed partial class SelfTestRunner
         yield return LetGoAll(c);
     }
 
+    /// <summary>Peak to peak (m) over a second under which a held rope counts as hanging calm (vr.42b).</summary>
+    const float RopeCalm = 0.03f;
+
     /// <summary>
     /// vr.42b (D7): on a rope the player put out, the head swaying along the swing at its own rate pumps it: the climb
     /// point swings farther than with a still head, and nothing refuses.
@@ -3346,6 +3349,28 @@ internal sealed partial class SelfTestRunner
             lo = Mathf.Min(lo, x);
             hi = Mathf.Max(hi, x);
         }
+        // Issue #53: the grab itself sets the rope swaying 0.15-0.25 m peak to peak (vr.42e's still sway, 1.1 m/s at
+        // its fastest), which dies down within seconds. Pumping only adds once the rope hangs calm, as a player
+        // pumps from a hang; started on the sway, the pumped swing read the same as the still one. Wait for a calm
+        // second (under RopeCalm peak to peak), up to 8 s.
+        float calmAfter = -1f;
+        for (float start = Now; Now - start < 8f && c.data.isRopeClimbing; )
+        {
+            lo = float.MaxValue;
+            hi = float.MinValue;
+            for (float end1 = Now + 1f; Now < end1; )
+            {
+                Track();
+                yield return null;
+            }
+            if (hi - lo < RopeCalm)
+            {
+                calmAfter = Now - start;
+                break;
+            }
+        }
+        lo = float.MaxValue;
+        hi = float.MinValue;
         float end = Now + 3f;
         while (Now < end)
         {
@@ -3405,7 +3430,7 @@ internal sealed partial class SelfTestRunner
         yield return ExpectNoCue(left, mark, 0f);
         bool owned = testRope.photonView != null && testRope.photonView.IsMine;
         var note = F(
-            $"swing peak to peak still {still:0.00} m, pumped {pumped:0.00} m (push up to {push:0.0} m/s²), rope owned {owned}"
+            $"calm after the grab {(calmAfter >= 0f ? F($"in {calmAfter:0} s") : "never in 8 s")}, swing peak to peak still {still:0.00} m, pumped {pumped:0.00} m (push up to {push:0.0} m/s²), rope owned {owned}"
         );
         if (push <= 0f)
             Fail("the head sway never pushed the rope: " + note);
