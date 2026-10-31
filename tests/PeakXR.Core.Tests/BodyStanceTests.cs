@@ -286,3 +286,69 @@ public class StanceWalkTests
         }
     }
 }
+
+public class OwnMotionTests
+{
+    const float Dt = 1f / 90f;
+
+    [Fact]
+    public void DriftWithNoWalk_IsNotAddedToTheDebtTheWalkerPays()
+    {
+        // A standing body pushed 0.3 m by wind over 2 s, no walk running and the head still: the view goes with it
+        // (the room anchor keeps none of it), so the debt (view less body) never grows and nothing walks it back.
+        var own = new OwnMotion();
+        var follow = new RoomScaleFollow();
+        var walk = new StanceWalk();
+        var head = Vector2.Zero;
+        for (float t = 0f; t < 2f; t += Dt)
+        {
+            var step = new Vector2(0.15f * Dt, 0f);
+            var debt = head - follow.Anchor; // view = body + (head - anchor); body eyes = body
+            Assert.Equal(Vector2.Zero, walk.Update(debt, canWalk: true, Dt));
+            if (own.Update(walk.Walking, 0.15f, new Vector2(30f, 0f), outside: false, Dt))
+                follow.Absorb(step);
+        }
+        Assert.Equal(Vector2.Zero, head - follow.Anchor);
+    }
+
+    [Fact]
+    public void AWalkAndItsCoast_AreKept_UntilTheBodyIsStill()
+    {
+        var own = new OwnMotion();
+        var look = new Vector2(10f, 0f);
+        for (float t = 0f; t < 0.5f; t += Dt)
+            Assert.True(own.Update(true, 0.4f, look, false, Dt));
+        // The coast: the walk is over, the body still sliding to a stop.
+        Assert.True(own.Update(false, 0.3f, look, false, Dt));
+        Assert.True(own.Update(false, 0.08f, look, false, Dt));
+        Assert.False(own.Update(false, 0.02f, look, false, Dt));
+        // A later drift is not the walk's.
+        Assert.False(own.Update(false, 0.2f, look, false, Dt));
+    }
+
+    [Fact]
+    public void AnOutsideForce_IsNeverKept_EvenInAWalk()
+    {
+        var own = new OwnMotion();
+        Assert.False(own.Update(true, 0.4f, Vector2.Zero, outside: true, Dt));
+        Assert.True(own.Update(true, 0.4f, Vector2.Zero, outside: false, Dt));
+    }
+
+    [Fact]
+    public void TheBodysShiftUnderATurningHead_IsKept_ThenNot()
+    {
+        var own = new OwnMotion();
+        var look = Vector2.Zero;
+        own.Update(false, 0f, look, false, Dt);
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            look.X = (look.X + 90f * Dt) % 360f; // wraps through 360
+            Assert.True(own.Update(false, 0.1f, look, false, Dt));
+        }
+        for (float t = 0f; t < own.PoseSeconds - 0.05f; t += Dt)
+            Assert.True(own.Update(false, 0.1f, look, false, Dt));
+        for (float t = 0f; t < 0.1f; t += Dt)
+            own.Update(false, 0.1f, look, false, Dt);
+        Assert.False(own.Update(false, 0.1f, look, false, Dt));
+    }
+}

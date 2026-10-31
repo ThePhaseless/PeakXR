@@ -38,6 +38,51 @@ internal static class LocomotionPatches
     }
 
     /// <summary>
+    /// Character.AddForce(Vector3, float, float) (Character.cs:1396, internal): the game's whole-body push, used by
+    /// AOE blasts, waterfalls, tornadoes, move zones, launches, knockback collisions, Bing Bong and lava
+    /// (AOE.cs:172, WaterfallPusher.cs:32, Tornado.cs:301, PlayerMoveZone.cs:44, CollisionModifier.cs:79). Marks an
+    /// outside force on the local body, which the stance walk never walks back.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class Push
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(Character),
+                "AddForce",
+                new[] { typeof(UnityEngine.Vector3), typeof(float), typeof(float) }
+            );
+
+        private static void Prefix(Character __instance)
+        {
+            if (__instance == Character.localCharacter)
+                LocomotionInput.OutsideForceAt = UnityEngine.Time.time;
+        }
+    }
+
+    /// <summary>
+    /// Character.RPCA_AddForceAtPosition(Vector3, Vector3, float) (Character.cs:458, [PunRPC]): impulses from wind
+    /// (WindChillZone.cs:250), mobs, bonks, arrows, axes and rollers (Beetle.cs:27, ArrowShooter.cs:128,
+    /// SwingingAxe.cs:161). Marks an outside force on the local body, as <see cref="Push"/>.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class Impulse
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(Character),
+                nameof(Character.RPCA_AddForceAtPosition),
+                new[] { typeof(UnityEngine.Vector3), typeof(UnityEngine.Vector3), typeof(float) }
+            );
+
+        private static void Prefix(Character __instance)
+        {
+            if (__instance == Character.localCharacter)
+                LocomotionInput.OutsideForceAt = UnityEngine.Time.time;
+        }
+    }
+
+    /// <summary>
     /// CharacterInput.HotbarKeyWasPressed(int) (CharacterInput.cs:186): reads the Hotbar actions directly, so the
     /// backpack slot (Player.cs:47, slot 3) is selected by answering true for that key once after the backpack
     /// press. CharacterItems.DoSwitching (CharacterItems.cs:729) then equips it through vanilla code.

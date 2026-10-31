@@ -24,6 +24,8 @@ public sealed class LocomotionFeature : Feature
         LocomotionInput.PhysicalOwnsHands = FeatureManager.IsActive<PhysicalInteractionFeature>();
         Patch(typeof(LocomotionPatches.Sample));
         Patch(typeof(LocomotionPatches.HotbarKey));
+        Patch(typeof(LocomotionPatches.Push));
+        Patch(typeof(LocomotionPatches.Impulse));
         BodyFeedback.Resolve();
         Patch(typeof(BodyFeedback.SprintState));
         Patch(typeof(BodyFeedback.JumpTry));
