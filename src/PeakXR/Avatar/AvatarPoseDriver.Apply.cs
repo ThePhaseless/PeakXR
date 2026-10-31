@@ -574,8 +574,10 @@ public partial class AvatarPoseDriver
         bool allowed = false;
         if (
             LeanGate == null
-            && BodyLean.TrySwing(
+            // Solved for the head joint: the head keeps its world rotation below, so the eyes move only as it does.
+            && BodyLean.TrySwingHeld(
                 spine.transform.position.N(),
+                head.transform.position.N(),
                 eye.N(),
                 // A still head bends nothing (BodyLean.WantDeadband), or the hip's own sway feeds back (MP run 9).
                 eye.N() + BodyLean.Deadband((target - eye).N(), Vector3.up.N()),

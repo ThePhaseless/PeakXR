@@ -66,6 +66,26 @@ public static class BodyStance
         float len = flat.Length();
         return len > limit ? flat * (1f - limit / len) : Vector3.Zero;
     }
+
+    /// <summary>Most the lean takes of the debt (m) while the stance walk steps under the head: the walk is already
+    /// closing it, and with the lean solved onto the eyes (<see cref="BodyLean.TrySwingHeld"/>) the 0.35 m lean limit
+    /// bends the spine about 40 degrees (a tester saw the scout bend walking; vr.396 allows 18).</summary>
+    public const float WalkLeanLimit = 0.12f;
+
+    /// <summary>How fast (m/s) <see cref="LeanLimit"/> eases between the limits, so a walk starting or ending does not
+    /// snap the bend.</summary>
+    public const float LeanLimitEase = 0.5f;
+
+    /// <summary>The <see cref="LeanBeyond"/> limit this frame: <paramref name="full"/> (the lean limit), eased down to
+    /// <see cref="WalkLeanLimit"/> while <paramref name="walking"/> and back after; a NaN <paramref name="now"/> starts on it.</summary>
+    public static float LeanLimit(float now, float full, bool walking, float dt)
+    {
+        float want = walking ? MathF.Min(full, WalkLeanLimit) : full;
+        if (float.IsNaN(now))
+            return want;
+        float step = LeanLimitEase * dt;
+        return MathF.Abs(want - now) <= step ? want : now + MathF.Sign(want - now) * step;
+    }
 }
 
 /// <summary>What a <see cref="StanceWalk"/> is doing.</summary>

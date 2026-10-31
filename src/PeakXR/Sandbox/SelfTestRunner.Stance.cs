@@ -384,7 +384,8 @@ internal sealed partial class SelfTestRunner
     const float MaxWalkLead = 0.15f;
 
     /// <summary>Most the spine may bend while walking forward (degrees): a stick walk asks for no lean; walking in the
-    /// room the lean bends toward the head until the stance walk steps under it (the 0.35 m lean limit is about 17).</summary>
+    /// room the lean bends toward the head until the stance walk steps under it, by at most
+    /// <see cref="BodyStance.WalkLeanLimit"/> meanwhile (about 13 degrees).</summary>
     static float MaxWalkBend(bool room) => room ? 18f : 5f;
 
     /// <summary>The animated legs' speed against the ground's (<see cref="WalkForwardStep"/>): 1 when the stance foot

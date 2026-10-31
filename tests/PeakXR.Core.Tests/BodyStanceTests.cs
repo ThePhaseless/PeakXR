@@ -90,6 +90,25 @@ public class BodyStanceTests
     }
 
     [Fact]
+    public void LeanLimit_WhileWalking_EasesDownAndBack()
+    {
+        // vr.396: with the lean solved onto the eyes, the 0.35 m limit bends about 40 degrees while the walk steps.
+        float limit = 0.35f;
+        for (int i = 0; i < 10; i++)
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
+        Assert.True(limit < 0.35f && limit > BodyStance.WalkLeanLimit, $"jumped to {limit:0.000}");
+        for (int i = 0; i < 100; i++)
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
+        Assert.Equal(BodyStance.WalkLeanLimit, limit);
+        for (int i = 0; i < 100; i++)
+            limit = BodyStance.LeanLimit(limit, 0.35f, false, 0.02f);
+        Assert.Equal(0.35f, limit);
+        // A lower setting stays the limit while walking.
+        Assert.Equal(0.1f, BodyStance.LeanLimit(0.1f, 0.1f, true, 0.02f));
+        Assert.Equal(0.35f, BodyStance.LeanLimit(float.NaN, 0.35f, false, 0.02f));
+    }
+
+    [Fact]
     public void LeanSkip_LookingDown_TheBodyNeverBendsForItsStepBack()
     {
         // Before the step (the whole step owed), halfway, and stepped back: no bend at any point.

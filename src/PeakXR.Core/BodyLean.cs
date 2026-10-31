@@ -81,6 +81,36 @@ public static class BodyLean
     }
 
     /// <summary>
+    /// <see cref="TrySwing"/> for a head that keeps its world rotation through the bend (the neck takes it), so its
+    /// <paramref name="eye"/> moves only as the head <paramref name="joint"/> does. Aimed at the eye itself, the swing
+    /// moved the scout's eyes (high in a big head, about twice the joint's distance from the pivot) half of the way
+    /// (run 14: 0.47-0.52). Solved instead so the joint carries the eye level onto <paramref name="head"/>, each axis
+    /// within its limit; the height is left to the tracked head (ducking is the crouch's).
+    /// </summary>
+    public static bool TrySwingHeld(
+        Vector3 pivot,
+        Vector3 joint,
+        Vector3 eye,
+        Vector3 head,
+        Vector3 forward,
+        Vector3 up,
+        out Quaternion swing
+    )
+    {
+        var from = joint - pivot;
+        float reach = from.Length();
+        // Where the joint goes for the eye to land on the head, level only, kept on the joint's own circle.
+        var want = head - (eye - joint) - pivot;
+        var level = want - up * Vector3.Dot(want, up);
+        float len = level.Length();
+        if (len > 0.99f * reach)
+            level *= 0.99f * reach / len;
+        var to = level + up * MathF.Sqrt(MathF.Max(reach * reach - level.LengthSquared(), 0f));
+        return TrySwing(pivot, joint, pivot + to, forward, up, out swing)
+            && Vector3.Dot(head - pivot, up) > 1e-4f;
+    }
+
+    /// <summary>
     /// Horizontal shift of the legs' animated pose (relative to the hip) that keeps the mass centre over the
     /// planted feet while the upper body bends. The ragdoll pulls every part toward hip + its animated offset
     /// (Bodypart.cs:193-207) and the feet grip, so a bend alone leaves the leg targets behind the feet: friction

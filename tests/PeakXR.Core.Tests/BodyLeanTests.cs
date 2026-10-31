@@ -211,3 +211,48 @@ public class BodyLeanHeadBiasTests
         Assert.True(Vector3.Distance(gap, hipStep + eyeFromHip - calibrated) > 0.09f);
     }
 }
+
+public class BodyLeanHeldHeadTests
+{
+    static readonly Vector3 Up = Vector3.UnitY;
+    static readonly Vector3 Forward = Vector3.UnitZ;
+
+    // The scout's head joint sits at the neck and its eyes high in a big head. The head keeps its world rotation
+    // through the bend (AvatarPoseDriver.ApplyLean), so the eyes move only as far as the joint does.
+    static readonly Vector3 Joint = new(0f, 0.55f, 0.08f);
+    static readonly Vector3 Eye = new(0f, 0.8f, 0.29f);
+
+    static Vector3 EyeAfter(Quaternion q) => Vector3.Transform(Joint, q) + (Eye - Joint);
+
+    static Vector3 Level(Vector3 v) => new(v.X, 0f, v.Z);
+
+    static Quaternion Swing(Vector3 head)
+    {
+        Assert.True(BodyLean.TrySwingHeld(Vector3.Zero, Joint, Eye, head, Forward, Up, out var q));
+        return q;
+    }
+
+    [Theory]
+    [InlineData(0f, 0.15f)]
+    [InlineData(0f, 0.3f)]
+    [InlineData(0f, -0.1f)]
+    [InlineData(0.15f, 0f)]
+    [InlineData(-0.12f, 0.08f)]
+    public void Lean_LandsTheEyesOnTheHead(float right, float forward)
+    {
+        // Run 14: the swing aimed at the eye itself moved it 0.47-0.52 of the want (vr.45: 0.161 of 0.311 m).
+        var head = Eye + new Vector3(right, -0.04f, forward);
+        TestUtil.Near(Level(head), Level(EyeAfter(Swing(head))), 2e-3f);
+    }
+
+    [Fact]
+    public void FarLean_StopsAtTheLimit()
+    {
+        var joint = Vector3.Transform(Joint, Swing(Eye + new Vector3(0f, 0f, 0.6f)));
+        float turned = MathF.Atan2(joint.Z, joint.Y) - MathF.Atan2(Joint.Z, Joint.Y);
+        TestUtil.Near(BodyLean.MaxForwardDeg, turned * 180f / MathF.PI, 0.05f);
+    }
+
+    [Fact]
+    public void HeadOnTheEyes_NoLean() => TestUtil.SameRotation(Quaternion.Identity, Swing(Eye));
+}
