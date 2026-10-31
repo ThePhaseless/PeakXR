@@ -23,7 +23,8 @@ public enum VRAntialiasing
 /// frames). Screen-space passes are kept: MultiPass renders each eye as an ordinary camera pass with that
 /// eye's matrices, so HBAO, edge detection, the fog pass and the full-screen passes see a normal mono view.
 /// What MultiPass would still do per eye is made the same for both: culling, and with it the shadow cascades
-/// (<see cref="EyeCulling"/>), and the post dither noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
+/// (<see cref="EyeCulling"/>, checked by <see cref="RenderPatches.EyeShadowCascades"/>), and the post dither
+/// noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
 /// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
 /// </summary>
 public sealed class RenderFixesFeature : Feature
@@ -236,6 +237,8 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.PostHandlerLateUpdate));
         Patch(typeof(RenderPatches.DisableIfPhotosensitiveStart));
         Patch(typeof(RenderPatches.DitherSameInBothEyes));
+        Patch(typeof(RenderPatches.XRShadowCull));
+        Patch(typeof(RenderPatches.EyeShadowCascades));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);

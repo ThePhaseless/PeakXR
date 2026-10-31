@@ -232,7 +232,9 @@ internal sealed class RigDriver : MonoBehaviour
     internal static HoldCue RecenterCue => instance != null ? instance.holdCue : null;
     private readonly SpectateFloor spectateFloor = new();
     private readonly DesktopMirror mirror = new();
-    private readonly List<Camera> silencedCameras = new();
+
+    // Cameras kept out of the headset while the fallback renders, with the eye mask each had.
+    private readonly List<(Camera Cam, StereoTargetEyeMask Eye)> silencedCameras = new();
     private readonly List<AudioListener> mutedListeners = new();
     private readonly object wallFadeOwner = new();
     private Camera[] cameraBuffer = new Camera[16];
@@ -1934,9 +1936,13 @@ internal sealed class RigDriver : MonoBehaviour
             return;
         }
 
-        for (int i = 0; i < silencedCameras.Count; i++)
-            if (silencedCameras[i] != null)
-                silencedCameras[i].stereoTargetEye = StereoTargetEyeMask.Both;
+        foreach (var (cam, eye) in silencedCameras)
+        {
+            if (cam == null)
+                continue;
+            cam.stereoTargetEye = eye;
+            cam.GetUniversalAdditionalCameraData().allowXRRendering = true;
+        }
         silencedCameras.Clear();
         for (int i = 0; i < mutedListeners.Count; i++)
             if (mutedListeners[i] != null)
@@ -1956,10 +1962,13 @@ internal sealed class RigDriver : MonoBehaviour
         {
             var cam = cameraBuffer[i];
             cameraBuffer[i] = null;
-            if (!IsSceneScreenCamera(cam) || cam.stereoTargetEye == StereoTargetEyeMask.None)
+            // URP draws a camera into the eyes by allowXRRendering, not by the eye mask (HeadsetContext.ToHeadset, #58);
+            // the mask is set too for Unity's own camera state.
+            if (!IsSceneScreenCamera(cam) || !HeadsetContext.ToHeadset(cam))
                 continue;
+            silencedCameras.Add((cam, cam.stereoTargetEye));
             cam.stereoTargetEye = StereoTargetEyeMask.None;
-            silencedCameras.Add(cam);
+            cam.GetUniversalAdditionalCameraData().allowXRRendering = false;
         }
 
         // Cutscene cameras switch on their own listeners by animation; check twice a second, not per frame. The

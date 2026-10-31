@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
 using UnityEngine;
@@ -171,6 +172,83 @@ internal static class RenderPatches
             Calls++;
             if (__result != First)
                 Mismatches++;
+        }
+    }
+
+    /// <summary>
+    /// UniversalRenderPipeline.CreateShadowAtlasAndCullShadowCasters (URP UniversalRenderPipeline.cs:720, private) runs
+    /// once per cull, called at :705 after the cull at :680, and is the only caller of ShadowCulling.CullShadowCasters (:732), which fits
+    /// the main light's cascades (ShadowCulling.cs:50). It marks the cascades that follow as an XR eye's, for
+    /// <see cref="EyeShadowCascades"/>: other cameras (binocular lens, backdrop probe) fit their own.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class XRShadowCull
+    {
+        internal static bool Eye;
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(UniversalRenderPipeline),
+                "CreateShadowAtlasAndCullShadowCasters"
+            );
+
+        private static void Prefix(UniversalCameraData cameraData)
+        {
+            Eye = VRSession.Active && cameraData != null && cameraData.xr.enabled;
+            if (Eye)
+                EyeShadowCascades.Match.BeginCull(Time.frameCount);
+        }
+
+        private static void Postfix() => Eye = false;
+    }
+
+    /// <summary>
+    /// ShadowUtils.ExtractDirectionalLightMatrix (URP ShadowUtils.cs:35, the UniversalShadowData overload, the one
+    /// ShadowCulling.cs:50 calls) fits one main-light cascade from the cull results. The postfix records each XR eye's
+    /// culling sphere and world-to-shadow matrix so self-test vr.470 can check both MultiPass eyes got the same shadows
+    /// (issue #5). Records only; changes nothing.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class EyeShadowCascades
+    {
+        internal static readonly EyeCascadeMatch Match = new();
+        private static readonly float[] values = new float[EyeCascadeMatch.Values];
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(
+                typeof(ShadowUtils),
+                nameof(ShadowUtils.ExtractDirectionalLightMatrix),
+                [
+                    typeof(CullingResults).MakeByRefType(),
+                    typeof(UniversalShadowData),
+                    typeof(int),
+                    typeof(int),
+                    typeof(int),
+                    typeof(int),
+                    typeof(int),
+                    typeof(float),
+                    typeof(Vector4).MakeByRefType(),
+                    typeof(ShadowSliceData).MakeByRefType(),
+                ]
+            );
+
+        private static void Postfix(
+            bool __result,
+            int cascadeIndex,
+            ref ShadowSliceData shadowSliceData
+        )
+        {
+            if (!XRShadowCull.Eye || !__result)
+                return;
+            var s = shadowSliceData.splitData.cullingSphere;
+            values[0] = s.x;
+            values[1] = s.y;
+            values[2] = s.z;
+            values[3] = s.w;
+            var m = shadowSliceData.shadowTransform;
+            for (int i = 0; i < 16; i++)
+                values[4 + i] = m[i];
+            Match.Cascade(cascadeIndex, values);
         }
     }
 
