@@ -159,6 +159,8 @@ internal sealed class SocialHands : IGripExtension
         FeedReady = false;
         Clear(0);
         Clear(1);
+        ResetReachOut();
+        glowed[0] = glowed[1] = false;
     }
 
     private void Clear(int h)
@@ -477,8 +479,9 @@ internal sealed class SocialHands : IGripExtension
         vanillaInteractPressed = input.interactWasPressed;
     }
 
-    /// <summary>Per-frame injection, after <c>interact.physical</c>'s grip edges.</summary>
-    public void Tick(Character c, CharacterInput input, float dt)
+    /// <summary>Per-frame injection, after <c>interact.physical</c>'s grip edges. <paramref name="inputActive"/>: the game
+    /// takes player input this frame (no menu or wheel), as interact.physical's glow reads it.</summary>
+    public void Tick(Character c, CharacterInput input, float dt, bool inputActive)
     {
         RaycastTarget = null;
         FeedTarget = null;
@@ -533,6 +536,7 @@ internal sealed class SocialHands : IGripExtension
         UpdateReachLook(c, 0, dt);
         UpdateReachLook(c, 1, dt);
         UpdateGlow(c, cfg);
+        UpdateReachOut(c, cfg, dt, inputActive);
         UpdateCarried(c, cfg, dt);
         UpdatePalJump(c, cfg);
     }
@@ -581,6 +585,7 @@ internal sealed class SocialHands : IGripExtension
     /// </summary>
     private void UpdateGlow(Character c, SocialConfig cfg)
     {
+        glowed[0] = glowed[1] = false;
         var rig = VRRig.Instance;
         var cd = c.data;
         if (
@@ -618,8 +623,390 @@ internal sealed class SocialHands : IGripExtension
                 found |= Closer(ch, BodypartType.Hand_R, hand.position, ref bestSq, ref best);
             }
             if (found && !KickMode)
+            {
                 Affordance.Mark(h == 0, best, DenyReason.NeedsFriend, DenyHint.At(best));
+                glowed[h] = true;
+            }
         }
+    }
+
+    // ------------------------------------------------------------------ reach out (#70)
+
+    /// <summary>interact.social's reach-out claim, registered after every other grip extension
+    /// (<see cref="GripHooks.Register"/> with <c>last</c>): a body slot or anything else at the hand comes first.</summary>
+    internal static readonly IGripExtension ReachOutExtension = new ReachOutGrip();
+
+    private readonly ReachOutTracker[] reachPick = { new(), new() };
+
+    /// <summary>One per hand: a learner fed by alternating hands would restart its span every frame.</summary>
+    private readonly ReachLearner[] reachArm = { new(), new() };
+    private readonly BodyYaw reachYaw = new();
+    private readonly DenyReason[] reachOutWhy = new DenyReason[2];
+    private readonly Vector3[] reachShoulder = new Vector3[2];
+    private readonly Character[] reachOutChar = new Character[2];
+    private readonly bool[] glowed = new bool[2];
+    private readonly bool[] shown = new bool[2];
+    private readonly bool[] reachOutGrip = new bool[2];
+
+    /// <summary>On a wall, rope, vine or hanging from a handle: the reach-out is off (the touch path still works).</summary>
+    private static bool Climbing(Character c) =>
+        c.data.isClimbing
+        || c.data.isRopeClimbing
+        || c.data.isVineClimbing
+        || c.data.currentClimbHandle != null;
+
+    /// <summary>The friend this hand's reach-out has armed, or else picked; null none.</summary>
+    internal Character ReachOutFriend(bool left) => reachOutChar[left ? 0 : 1];
+
+    /// <summary>Why the game's reach would not catch <see cref="ReachOutFriend"/>, or None.</summary>
+    internal DenyReason ReachOutWhy(bool left) => reachOutWhy[left ? 0 : 1];
+
+    /// <summary>The reach-out drew a ring or a refusal on this hand on its last tick.</summary>
+    internal bool ReachOutShown(bool left) => shown[left ? 0 : 1];
+
+    /// <summary>The estimated shoulder the arm line starts from (tracking space).</summary>
+    internal Vector3 ReachOutShoulder(bool left) => reachShoulder[left ? 0 : 1];
+
+    /// <summary>The arm length the stretch is judged by (m, tracking space).</summary>
+    internal float ReachOutArm => ReachOut.Arm(Mathf.Max(reachArm[0].Reach, reachArm[1].Reach));
+
+    private void ResetReachOut()
+    {
+        for (int h = 0; h < 2; h++)
+        {
+            reachPick[h].Reset();
+            // Restarts a held span; what was learned stays (same player, tracking space).
+            reachArm[h].Sample(0f, 0f, ReachOut.NominalArm, false, 0f);
+            shown[h] = false;
+            reachOutGrip[h] = false;
+            reachOutWhy[h] = DenyReason.None;
+            reachOutChar[h] = null;
+        }
+    }
+
+    /// <summary>
+    /// Reach out (#70): an open hand stretched toward a friend the game would let you help
+    /// (CharacterGrabbing.TargetCanBeHelped, :293) arms the game's reach, which catches them up to 4 m along the look
+    /// (CharacterGrabbing.Reach, :247-280). The arm line runs from a shoulder under the tracked head (Core
+    /// <see cref="ReachOut"/>), picked per hand with a dwell (<see cref="ReachOutTracker"/>). An armed pick gets the
+    /// teal ring (with hints) and a light tick; one the game would refuse gets the red ring and its reason. Never while
+    /// climbing, in kick mode, passed out or with input blocked; nothing new goes on the wire.
+    /// </summary>
+    private void UpdateReachOut(Character c, SocialConfig cfg, float dt, bool active)
+    {
+        shown[0] = shown[1] = false;
+        var rig = VRRig.Instance;
+        var d = c.data;
+        if (
+            !cfg.ReachOut
+            || !active
+            || !Ready(c)
+            || KickMode
+            || d.passedOut
+            || d.fullyPassedOut
+            || d.dead
+            || Climbing(c)
+            || rig == null
+            || rig.Origin == null
+        )
+        {
+            ResetReachOut();
+            return;
+        }
+        var headRot = VRInput.HeadRotation.N();
+        float yaw = reachYaw.Update(
+            BodySlotLayout.HeadYawDeg(headRot),
+            BodySlotLayout.HeadPitchDeg(headRot),
+            dt
+        );
+        var neck = BodySlotLayout.Neck(VRInput.HeadPosition.N(), headRot);
+        float arm = ReachOutArm;
+        float now = Time.time;
+        var item = d.currentItem;
+        for (int h = 0; h < 2; h++)
+        {
+            bool left = h == 0;
+            ref var state = ref VRInput.Hand(left);
+            var pick = reachPick[h];
+            pick.Begin();
+            var shoulder = ReachOut.Shoulder(neck, yaw, left);
+            reachShoulder[h] = shoulder.U();
+            var hand = state.Position.N();
+            bool holder = item != null && LocalHold.ItemInLeftHand == left;
+            // Every frame, before the skips below, so a stale or untracked hand restarts its span.
+            reachArm[h]
+                .Sample(
+                    System.Numerics.Vector3.Distance(hand, shoulder),
+                    hand.Y - shoulder.Y,
+                    ReachOut.NominalArm,
+                    state.Tracked
+                        && state.Grip < ReachOut.OpenGrip
+                        && !holder
+                        && kinds[h] == SocialKind.None
+                        && d.isGrounded
+                        && ReachOut.Learns(shoulder, hand, yaw),
+                    dt
+                );
+            bool skip =
+                !state.Tracked
+                || kinds[h] != SocialKind.None
+                || glowed[h]
+                || (holder && !VRInput.OneHanded);
+            // Offers only before the press (AnalogButton(0.6f, 0.4f), PhysicalInteraction.Hand.Grip). Something nearer
+            // taking this grip reads as a lost pick, so Grace and ReTick apply to a hand flickering at a rock edge.
+            if (
+                !skip
+                && state.Grip < 0.6f
+                && Offer(c, rig, pick, shoulder, hand)
+                && PhysicalInteraction.HandBusy(c, left, out _)
+            )
+                pick.Begin();
+            pick.Step(
+                ReachOut.Stretch(shoulder, hand, arm),
+                cfg.ReachOutStretch,
+                state.Grip < ReachOut.OpenGrip,
+                now
+            );
+            int armedId = pick.ArmedFriend;
+            var friend = Resolve(armedId >= 0 ? armedId : pick.Friend);
+            reachOutChar[h] = friend;
+            reachOutWhy[h] =
+                friend == null
+                    ? DenyReason.None
+                    : ReachOut.Verdict(
+                        item != null,
+                        d.lookDirection.N(),
+                        (friend.Center - c.Center).N()
+                    );
+            // Ring only once armed, so a ring always means the grip reaches.
+            if (friend != null && !holder && pick.Friend >= 0 && armedId == pick.Friend)
+                DrawReachOut(c, rig, h, friend, shoulder, hand, pick.Acquired);
+            // The holding hand never draws; its regrip is asked of no extension, so it would be silent.
+            bool down = state.Grip > 0.6f;
+            if (
+                holder
+                && down
+                && !reachOutGrip[h]
+                && armedId >= 0
+                && reachOutWhy[h] == DenyReason.HandsFull
+            )
+                Affordance.DenyAtHand(left, DenyReason.HandsFull);
+            reachOutGrip[h] = down;
+        }
+    }
+
+    /// <summary>Offers every helpable friend within <see cref="ReachOut.SearchRange"/> whose nearest part lies within
+    /// the hold angle of the arm line; true when any was offered.</summary>
+    private static bool Offer(
+        Character c,
+        VRRig rig,
+        ReachOutTracker pick,
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 hand
+    )
+    {
+        bool offered = false;
+        const float searchSq = ReachOut.SearchRange * ReachOut.SearchRange;
+        var all = Character.AllCharacters;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var ch = all[i];
+            if (
+                ch == null
+                || ch == c
+                || !ch.gameObject.activeInHierarchy
+                || ch.refs.ragdoll == null
+                || ch.refs.view == null
+            )
+                continue;
+            float sq = (ch.Center - c.Center).sqrMagnitude;
+            if (sq > searchSq || !CharacterGrabbing.TargetCanBeHelped(ch, c))
+                continue;
+            float angle = AimedPart(ch, rig, shoulder, hand, out _);
+            if (angle > ReachOut.HoldDegrees)
+                continue;
+            pick.Offer(
+                ch.refs.view.ViewID,
+                angle,
+                sq <= SocialIntent.ReachRange * SocialIntent.ReachRange
+            );
+            offered = true;
+        }
+        return offered;
+    }
+
+    /// <summary>The smallest angle between the arm line and the friend's hands or centre, and that point (world).</summary>
+    private static float AimedPart(
+        Character ch,
+        VRRig rig,
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 hand,
+        out Vector3 at
+    )
+    {
+        at = ch.Center;
+        float best = Aim(rig, shoulder, hand, at);
+        var parts = ch.refs.ragdoll.partDict;
+        if (parts.TryGetValue(BodypartType.Hand_L, out var l))
+            Better(rig, shoulder, hand, l.transform.position, ref best, ref at);
+        if (parts.TryGetValue(BodypartType.Hand_R, out var r))
+            Better(rig, shoulder, hand, r.transform.position, ref best, ref at);
+        return best;
+    }
+
+    private static void Better(
+        VRRig rig,
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 hand,
+        Vector3 world,
+        ref float best,
+        ref Vector3 at
+    )
+    {
+        float a = Aim(rig, shoulder, hand, world);
+        if (a >= best)
+            return;
+        best = a;
+        at = world;
+    }
+
+    private static float Aim(
+        VRRig rig,
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 hand,
+        Vector3 world
+    ) => ReachOut.AimDegrees(shoulder, hand, rig.Origin.InverseTransformPoint(world).N());
+
+    /// <summary>The armed pick on a free hand: the teal ring (with hints) and the tick once per friend, or the red
+    /// ring and its reason (whatever the hints setting) where the game would not catch them.</summary>
+    private void DrawReachOut(
+        Character c,
+        VRRig rig,
+        int h,
+        Character friend,
+        System.Numerics.Vector3 shoulder,
+        System.Numerics.Vector3 hand,
+        bool acquired
+    )
+    {
+        bool left = h == 0;
+        AimedPart(friend, rig, shoulder, hand, out var spot);
+        var why = reachOutWhy[h];
+        if (why == DenyReason.None)
+        {
+            if (Affordance.Hints)
+            {
+                Affordance.Mark(
+                    left,
+                    spot,
+                    DenyReason.NeedsFriend,
+                    DenyHint.At(spot),
+                    "Grip to help up"
+                );
+                shown[h] = true;
+            }
+            // With hints off the tick is the only sign the reach is armed.
+            if (acquired)
+                Haptics.Pulse(left, 0.2f, 0.02f);
+            return;
+        }
+        var hint = why switch
+        {
+            DenyReason.WrongAngle => DenyHint.At(friend.Center),
+            DenyReason.OutOfReach => DenyHint.Range(
+                c.Center,
+                friend.Center,
+                SocialIntent.ReachRange
+            ),
+            _ => default,
+        };
+        Affordance.Hover(left, spot, why, hint);
+        shown[h] = true;
+    }
+
+    /// <summary>The character with this PhotonView id, or null.</summary>
+    private static Character Resolve(int viewId)
+    {
+        if (viewId < 0)
+            return null;
+        var all = Character.AllCharacters;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var ch = all[i];
+            if (ch != null && ch.refs.view != null && ch.refs.view.ViewID == viewId)
+                return ch;
+        }
+        return null;
+    }
+
+    /// <summary>A grip closed on an armed reach-out: hold the game's reach on that friend, as a grip on their hand
+    /// does (the secondary edge in <see cref="Tick"/>). A look outside the cone still starts it: turning toward them
+    /// then catches without a regrip, and <see cref="UpdateReachLook"/> cues WrongAngle as on the touch path.</summary>
+    private void BeginReachOut(in GripHookContext ctx)
+    {
+        int h = ctx.Left ? 0 : 1;
+        var c = ctx.Character;
+        var friend = Resolve(reachPick[h].ArmedFriend);
+        if (
+            friend == null
+            || !friend.gameObject.activeInHierarchy
+            || !CharacterGrabbing.TargetCanBeHelped(friend, c)
+        )
+        {
+            // Freed or gone since the ring: not a refusal, but not silent either.
+            Affordance.Cancel(ctx.Left);
+            return;
+        }
+        var why = ReachOut.Verdict(
+            c.data.currentItem != null,
+            c.data.lookDirection.N(),
+            (friend.Center - c.Center).N()
+        );
+        if (why is DenyReason.HandsFull or DenyReason.OutOfReach)
+        {
+            // The game can never catch them from here; the grip stays owned and the friend is never tinted (D10).
+            Affordance.Deny(
+                ctx.Left,
+                ctx.HandPosition,
+                why,
+                why == DenyReason.OutOfReach
+                    ? DenyHint.Range(c.Center, friend.Center, SocialIntent.ReachRange)
+                    : default,
+                why == DenyReason.HandsFull ? ctx.HeldItem : null
+            );
+            return;
+        }
+        grasped[h] = false;
+        lookCued[h] = false;
+        lookOff[h] = 0f;
+        kinds[h] = SocialKind.Reach;
+        characters[h] = friend;
+        targets[h] = null;
+        Affordance.Contact(ctx.Left);
+    }
+
+    /// <summary>The reach-out as a fallback grip extension: claims only an armed pick on a free, idle hand.</summary>
+    private sealed class ReachOutGrip : IGripExtension
+    {
+        public bool ClaimPress(in GripHookContext ctx)
+        {
+            var c = ctx.Character;
+            return !ctx.Preview
+                && !ctx.ThisHandHolds
+                && !ctx.HandBusy
+                && Ready(c)
+                && SocialConfig.Instance.ReachOut
+                && !KickMode
+                // The press runs before this frame's Tick: repeat its gate.
+                && !Climbing(c)
+                && Instance.reachPick[ctx.Left ? 0 : 1].ArmedFriend >= 0;
+        }
+
+        public void BeginPress(in GripHookContext ctx) => Instance.BeginReachOut(ctx);
+
+        public bool EndPress(in GripHookContext ctx) => Instance.EndPress(ctx);
+
+        public bool TryHeldRelease(in GripHookContext ctx) => false;
     }
 
     private static bool Closer(

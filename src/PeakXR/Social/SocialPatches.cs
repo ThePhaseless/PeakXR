@@ -53,12 +53,12 @@ internal static class SocialPatches
         private static MethodBase TargetMethod() => SampleMethod();
 
         [HarmonyPriority(Priority.VeryLow)]
-        private static void Postfix(CharacterInput __instance)
+        private static void Postfix(CharacterInput __instance, bool playerMovementActive)
         {
             try
             {
                 if (IsLocal(__instance, out var c))
-                    SocialHands.Instance.Tick(c, __instance, Time.deltaTime);
+                    SocialHands.Instance.Tick(c, __instance, Time.deltaTime, playerMovementActive);
             }
             catch (System.Exception e)
             {

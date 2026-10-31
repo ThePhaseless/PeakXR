@@ -516,6 +516,10 @@ internal sealed partial class Observer : MonoBehaviour
                 c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, vr.Head + Vector3.up * 0.6f, false);
                 note = "warped onto " + vr.characterName;
                 return true;
+            case MpRequest.HangBelow:
+                return HangBelow(c, out note);
+            case MpRequest.StartClimb:
+                return StartClimb(c, out note);
             default:
                 note = "unknown request";
                 return false;
@@ -692,6 +696,76 @@ internal sealed partial class Observer : MonoBehaviour
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>The game's warp RPC on our view (Character.cs:1824) onto the face below the VR player's lip: a cast
+    /// from 2.5 m under A and 1 m out along A's look, back toward A.</summary>
+    static bool HangBelow(Character c, out string note)
+    {
+        var vr = FirstRemote();
+        if (vr == null)
+        {
+            note = "no remote player";
+            return false;
+        }
+        var look = vr.data.lookDirection_Flat;
+        look.y = 0f;
+        if (look.sqrMagnitude < 1e-4f)
+        {
+            note = "the remote player has no flat look";
+            return false;
+        }
+        look.Normalize();
+        var from = vr.Center - Vector3.up * 2.5f + look;
+        if (
+            !Physics.Raycast(
+                from,
+                -look,
+                out var hit,
+                2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            note = "no face below the remote player";
+            return false;
+        }
+        c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, hit.point + hit.normal * 0.3f, false);
+        note = "warped below " + vr.characterName;
+        return true;
+    }
+
+    /// <summary>The game's climb-start RPC on our view (CharacterClimbing.StartClimbRpc, :349), on the face between us
+    /// and the VR player.</summary>
+    static bool StartClimb(Character c, out string note)
+    {
+        var vr = FirstRemote();
+        if (vr == null)
+        {
+            note = "no remote player";
+            return false;
+        }
+        var to = vr.Center - c.Center;
+        to.y = 0f;
+        if (
+            to.sqrMagnitude < 1e-4f
+            || !Physics.Raycast(
+                c.Center,
+                to.normalized,
+                out var hit,
+                1.2f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            note = "no face toward the remote player";
+            return false;
+        }
+        c.refs.view.RPC("StartClimbRpc", RpcTarget.All, hit.point, hit.normal);
+        note = "climbing";
+        return true;
+    }
 
     static Character FirstRemote()
     {

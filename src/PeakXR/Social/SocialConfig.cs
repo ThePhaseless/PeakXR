@@ -17,8 +17,10 @@ internal sealed class SocialConfig
         pullToPluck,
         shoveKick,
         carriedSway,
-        palJumpFeel;
-    private ConfigEntry<float> reach;
+        palJumpFeel,
+        reachOut;
+    private ConfigEntry<float> reach,
+        reachOutStretch;
 
     public bool HandInteract => handInteract?.Value ?? true;
 
@@ -33,6 +35,8 @@ internal sealed class SocialConfig
     public bool CarriedSway => carriedSway?.Value ?? true;
     public bool PalJumpFeel => palJumpFeel?.Value ?? true;
     public float Reach => reach?.Value ?? 0.2f;
+    public bool ReachOut => reachOut?.Value ?? true;
+    public float ReachOutStretch => reachOutStretch?.Value ?? 0.75f;
 
     public static void Bind(ConfigFile file)
     {
@@ -56,6 +60,24 @@ internal sealed class SocialConfig
                     "How close (metres) a hand must be to a friend's body to grab it. Thorns and stuck items need "
                         + "about half of this.",
                     new AcceptableValueRange<float>(0.1f, 0.4f)
+                )
+            ),
+            reachOut = file.Bind(
+                s,
+                "ReachOut",
+                true,
+                "Stretch an open hand toward a friend who needs help, up to the game's 4 m and where you look. A ring "
+                    + "marks them; close the grip to pull them up. Not while climbing. Off: only a grip on their body "
+                    + "helps (or the off hand's trigger)."
+            ),
+            reachOutStretch = file.Bind(
+                s,
+                "ReachOutStretch",
+                0.75f,
+                new ConfigDescription(
+                    "How far the arm must be stretched, as a fraction of your measured reach. Higher means fewer "
+                        + "accidental reaches.",
+                    new AcceptableValueRange<float>(0.6f, 0.95f)
                 )
             ),
             carryBothHands = file.Bind(

@@ -121,7 +121,9 @@ def moddedb:
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
 def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
-  "kick-mode", "carry", "pack", "vr.330-pack-stash", "pal-jump", "campfire-far", "spectate", "save-untouched"];
+  "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
+  "kick-mode", "carry", "pack", "vr.330-pack-stash", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
+  "save-untouched"];
 ($b | map(select(.type == "checkpoint")) | sort_by(.t)) as $bcps
 | ($bcps | map({key: .name, value: .}) | from_entries) as $bcp
 | ($b | map(select(.type == "rpc") | .rpc)) as $rpcs
@@ -207,6 +209,20 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
        # CharacterGrabbing.Reach sets the helped client own sinceGrabFriend to 0 (:275); Web alone could be 0 untouched.
        elif $y.localSinceGrab > 5 then "FAIL reach: B was last grabbed \($y.localSinceGrab | r2) s before the checkpoint"
        else "PASS reach: the reach from A caught B \($y.localSinceGrab | r2) s before and freed it (Web \($y.localWeb | r2))" end)
+    # The no-catch reach-out steps: B stays webbed. Never an absolute localSinceGrab, which reads the earlier reach.
+    elif $x.name == "vr.421-reach-out-cone" or $x.name == "vr.422-reach-out-idle" or $x.name == "vr.423-reach-out-hands-full" then
+      (if $y.localWeb == null then "FAIL \($x.name): B logged no Web state (old observer?)"
+       elif $y.localWeb > 0.05 then "PASS \($x.name): B is still webbed (\($y.localWeb | r2)), nothing caught it"
+       else "FAIL \($x.name): B is no longer webbed (\($y.localWeb | r2)): something caught it" end)
+    elif $x.name == "vr.424-reach-out-far" then
+      (if $y.localWeb == null or $y.localSinceGrab == null then "FAIL \($x.name): B logged no Web or grab state (old observer?)"
+       elif $y.localWeb > 0.05 then "FAIL \($x.name): B still webbed (\($y.localWeb | r2)) after the reach-out from A"
+       elif $y.localSinceGrab > 5 then "FAIL \($x.name): B was last grabbed \($y.localSinceGrab | r2) s before the checkpoint"
+       else "PASS \($x.name): the reach-out from A caught B \($y.localSinceGrab | r2) s before and freed it" end)
+    elif $x.name == "vr.420-reach-out-ledge" then
+      (if $y.localSinceGrab == null then "FAIL \($x.name): B logged no grab state (old observer?)"
+       elif $y.localSinceGrab > 5 then "FAIL \($x.name): B was last grabbed \($y.localSinceGrab | r2) s before the checkpoint"
+       else "PASS \($x.name): the reach-out over the lip caught B \($y.localSinceGrab | r2) s before" end)
     elif $x.name == "pack" then
       prevcp($y) as $p
       | (if $y.localPack == null then "FAIL pack: B logged no pack state (old observer?)"
