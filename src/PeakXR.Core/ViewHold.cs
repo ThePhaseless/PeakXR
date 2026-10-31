@@ -138,6 +138,9 @@ public struct ViewHoldInputs
 
     /// <summary>Room-scale is walking the body under the head.</summary>
     public bool RoomWalking;
+
+    /// <summary>An outside force (a push, wind, a knockback) acted within <see cref="ViewHoldGate.OutsideSeconds"/>.</summary>
+    public bool Outside;
 }
 
 /// <summary>When <see cref="ViewHold"/> may hold: the body is only idling or holding a lean still. Anything that
@@ -151,6 +154,11 @@ public static class ViewHoldGate
 
     /// <summary>Faster than idle sway (0.07 m/s), slower than any walk, push or ride.</summary>
     public const float MaxSpeed = 0.3f;
+
+    /// <summary>Seconds after an outside force the body is still moving from it. Run 11, vr.304: a push slid the body
+    /// 0.18 m and it crept 0.13 m back over its planted feet for 2.5 s at 0.03-0.09 m/s, slow enough to pass for sway,
+    /// so the hold kept the view 0.05 m off it. Outside forces move body and view together.</summary>
+    public const float OutsideSeconds = 3f;
 
     /// <summary><see cref="Why"/> for a lean bending or straightening.</summary>
     public const string LeanReason = "lean";
@@ -173,6 +181,8 @@ public static class ViewHoldGate
             return "jump";
         if (i.RoomWalking)
             return "room walk";
+        if (i.Outside)
+            return "outside";
         if (!(i.LeanSpeed < MaxLeanSpeed))
             return LeanReason;
         if (!(i.Speed < MaxSpeed))

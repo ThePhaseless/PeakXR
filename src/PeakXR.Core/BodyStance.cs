@@ -70,9 +70,10 @@ public enum StanceWalkPhase
 /// <see cref="CoastSeconds"/> of drag and the game's eased input running down at <see cref="InputSlew"/>), ramping
 /// down to <see cref="MinInput"/> as it closes. A push holds for at least <see cref="MinPush"/> so the game's gait
 /// steps the feet, and ends once the body would come to rest under the view (or <see cref="Start"/> past it, sooner).
-/// Then the walk settles with no input until the body has been still for <see cref="StillSeconds"/> (at most
-/// <see cref="SettleMax"/>) and judges the debt: under <see cref="Start"/> the walk is done, otherwise the same walk
-/// pushes again, so a body that sprang back toward its planted feet is walked again without another delay. A head
+/// The request eases in and out at the game's own input rate (<see cref="InputSlew"/>), so the gait and the force agree.
+/// Then the walk settles until the body has been still for <see cref="StillSeconds"/> (at most <see cref="SettleMax"/>)
+/// and judges the debt: under <see cref="Again"/> the walk is done and the lean bends for the rest (<see cref="Rested"/>
+/// until the debt moves), otherwise the same walk pushes again without another delay. A head
 /// that moves on during the settle ends the walk (past <see cref="AtOnce"/> it pushes at once). A walk whose body
 /// makes no headway of its own (a wall, a friend, a body that keeps springing back), or that has pushed
 /// <see cref="MaxPushes"/> times, gives up until the debt changes.
@@ -131,6 +132,11 @@ public sealed class StanceWalk
 
     public float StallProgress = 0.03f;
 
+    /// <summary>A settled walk owing more than this (m) pushes again; less is left to the lean (inside its 0.35 m
+    /// limit, a few degrees). Run 11: a push from planted feet on what a walk left (0.07-0.2 m, median 0.13) moved the
+    /// body about 0.1 m and let it straight back in 16 of 23, a twitch for peers that closed nothing.</summary>
+    public float Again = 0.15f;
+
     /// <summary>Settled pushes in a row whose body walked less than <see cref="StallProgress"/> along the push before
     /// the walk gives up: a body that springs all the way back stops shuffling for peers. The body's own travel, not
     /// the debt, which a head moving meanwhile also changes.</summary>
@@ -163,12 +169,16 @@ public sealed class StanceWalk
     float _mostHeadway;
     Vector2 _settleDebt;
     Vector2 _settleTravel;
+    Vector2 _out;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
 
     /// <summary>The last walk stalled; it waits for the debt to change.</summary>
     public bool Blocked { get; private set; }
+
+    /// <summary>The last walk ended with what is left to the lean; the next waits for the debt to move.</summary>
+    public bool Rested { get; private set; }
 
     /// <summary>The body's travel is the walk's: pushing, or settling from a push.</summary>
     public bool Walking => State != StanceWalkPhase.Idle;
@@ -199,15 +209,17 @@ public sealed class StanceWalk
             Reset();
             return Vector2.Zero;
         }
-        if (Vector2.Distance(debt, _heldAt) > Start)
+        // The delay runs from when the debt is owed: time under Start does not count, or the first few cm of a new
+        // lean or turn read as held (run 11, vr.45: a 0.06 m debt walked 0.36 s before the lean's hold began).
+        if (dist <= Start || Vector2.Distance(debt, _heldAt) > Start)
         {
             _heldAt = debt;
             _heldFor = 0f;
         }
         else
             _heldFor += dt;
-        if (Blocked && Vector2.Distance(debt, _blockedAt) > Start)
-            Blocked = false;
+        if (Vector2.Distance(debt, _blockedAt) > Start)
+            Blocked = Rested = false;
         PhaseSeconds += dt;
         Closest = MathF.Min(Closest, dist);
         // The body's travel up to the debt's frame: the debt is a frame old (the rig measures it in LateUpdate), the
@@ -222,13 +234,18 @@ public sealed class StanceWalk
         switch (State)
         {
             case StanceWalkPhase.Idle:
-                if (!Blocked && dist > Start && (dist > AtOnce || _heldFor >= Delay))
+                if (
+                    !Blocked
+                    && (!Rested || dist > AtOnce)
+                    && dist > Start
+                    && (dist > AtOnce || _heldFor >= Delay)
+                )
                 {
                     _fruitless = 0;
                     Pushes = 0;
                     return BeginPush(debt, velocity, eased, dt);
                 }
-                return Vector2.Zero;
+                return Ease(Vector2.Zero, dt);
             case StanceWalkPhase.Settle:
                 _stallFor = velocity.Length() < StillSpeed ? _stallFor + dt : 0f;
                 Headway = _headway;
@@ -242,21 +259,24 @@ public sealed class StanceWalk
                         Enter(StanceWalkPhase.Idle);
                         _heldAt = debt;
                         _heldFor = 0f;
-                        return Vector2.Zero;
+                        return Ease(Vector2.Zero, dt);
                     }
                     if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
-                        return Vector2.Zero;
-                    if (dist <= Start)
+                        return Ease(Vector2.Zero, dt);
+                    if (dist <= Again)
                     {
+                        // Done; a body still creeping back over its feet is not a new debt to walk.
+                        Rested = true;
+                        _blockedAt = debt;
                         Enter(StanceWalkPhase.Idle);
-                        return Vector2.Zero;
+                        return Ease(Vector2.Zero, dt);
                     }
                 }
                 _fruitless = _headway < StallProgress ? _fruitless + 1 : 0;
                 if (_fruitless >= MaxFruitless || Pushes >= MaxPushes)
                 {
                     Block(debt);
-                    return Vector2.Zero;
+                    return Ease(Vector2.Zero, dt);
                 }
                 return BeginPush(debt, velocity, eased, dt);
             default:
@@ -293,7 +313,7 @@ public sealed class StanceWalk
             Enter(StanceWalkPhase.Settle);
             _settleDebt = debt;
             _settleTravel = _travel;
-            return Vector2.Zero;
+            return Ease(Vector2.Zero, dt);
         }
         if (dist < _best - StallProgress)
         {
@@ -303,11 +323,27 @@ public sealed class StanceWalk
         else if ((_stallFor += dt) >= StallSeconds)
         {
             Block(debt);
-            return Vector2.Zero;
+            return Ease(Vector2.Zero, dt);
         }
         var dir = along > 0f && restDist > Stop ? rest / restDist : _heading;
         float amount = Ramp > 0f ? (restDist - Stop) / Ramp : 1f;
-        return dir * Math.Clamp(amount, MinInput, 1f);
+        return Ease(dir * Math.Clamp(amount, MinInput, 1f), dt);
+    }
+
+    /// <summary>
+    /// The request moved toward <paramref name="target"/> at <see cref="InputSlew"/>, as the game eases the stick into
+    /// the force (Character.cs:1341, MoveTowards). The gait reads the raw input (CharacterAnimations.cs:185-196), the
+    /// force the eased one: a request cut to 0 stopped the legs while the eased force carried the body on over planted
+    /// feet, which then pulled it back (run 11: about 0.1 m after a push), and a full request at once ran the legs
+    /// ahead of a body still speeding up. Eased like the force, legs and body move together.
+    /// </summary>
+    Vector2 Ease(Vector2 target, float dt)
+    {
+        var step = target - _out;
+        float most = MathF.Max(InputSlew, 0.1f) * dt;
+        float len = step.Length();
+        _out = len > most ? _out + step * (most / len) : target;
+        return _out;
     }
 
     void Enter(StanceWalkPhase phase)
@@ -328,8 +364,9 @@ public sealed class StanceWalk
     public void Reset()
     {
         Enter(StanceWalkPhase.Idle);
-        Blocked = false;
+        Blocked = Rested = false;
         _heldFor = 0f;
+        _out = Vector2.Zero;
     }
 }
 

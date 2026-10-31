@@ -25,8 +25,8 @@ namespace PeakXR.Sandbox;
 /// from the scripted head) moves more than that over the leans, walks included (standing still, the view: <see cref="MaxStandViewDrift"/>); a lean bends
 /// the spine less than <see cref="MinLeanBend"/> or moves the ragdoll's shoulders less than
 /// <see cref="MinLeanShoulders"/> along it; the fast lean moves the rig origin more than <see cref="MaxLeanDrift"/>; the far lean does not walk the body at least 0.1 m forward or moves the rig origin,
-/// or 3.5 s after the head stands back up the avatar's eyes are more than <see cref="MaxStanceEyeOff"/> off the
-/// view (the body walks back under the head); or an arm fails the vr.08 judgement during a lean (hand more than
+/// or 3.5 s after the head stands back up the walk has left the eyes more than <see cref="MaxStanceLeftover"/> off the
+/// view or the drawn eyes are more than <see cref="MaxDrawnEyeOff"/> off it (the body walks back under the head); or an arm fails the vr.08 judgement during a lean (hand more than
 /// 0.15 m off its target, stretched, or an elbow pointing up or back). The hands (0.45 m ahead of and 0.3 m under the
 /// head, about 0.53 m from a person's shoulders) are out of the scout's reach, so the target is the controller
 /// mapped onto the avatar's reach (<see cref="ArmReach"/>); how far that holds each hand short is reported.
@@ -275,18 +275,12 @@ internal sealed partial class SelfTestRunner
         float offGround = Mathf.Abs(viewRise - groundRise);
         notes.Add(
             F(
-                $"far lean: walked {walked:0.000} m, back {walkedBack:0.000} m on standing up, eyes then {eyesOff:0.000} m off the view (renderers {upGap:0.000} m off the eye model), view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up), view rose {viewRise:0.000} m on ground rising {groundRise:0.000} m"
+                $"far lean: walked {walked:0.000} m, back {walkedBack:0.000} m on standing up, eyes then {eyesOff:0.000} m off the view (drawn {DrawnEyesOff(c):0.000} m, renderers {upGap:0.000} m off the eye model), view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up), view rose {viewRise:0.000} m on ground rising {groundRise:0.000} m"
             )
         );
         if (walked < 0.1f)
             fails.Add(F($"far lean walked only {walked:0.000} m while leaning past the limit"));
-        if (!(eyesOff <= MaxStanceEyeOff))
-            fails.Add(
-                F(
-                    $"standing up left the avatar's eyes {eyesOff:0.000} m off the view (walked back {walkedBack:0.000} m), want {MaxStanceEyeOff:0.00} m"
-                )
-            );
-        JudgeGap("standing up", upGap, fails);
+        JudgeSettled(c, "standing up", eyesOff, fails);
         if (origin > MaxLeanDrift)
             fails.Add(F($"far lean moved the view {origin:0.000} m"));
         if (!float.IsNaN(groundRise) && offGround > MaxLeanDrift)
@@ -308,9 +302,6 @@ internal sealed partial class SelfTestRunner
     /// <summary>How far the scripted eyes sit ahead of the head's turn axis (m): a person's neck.</summary>
     const float NeckSwing = 0.1f;
 
-    /// <summary>Most the avatar's eyes may end off the view (m, level) once the stance walk has settled.</summary>
-    const float MaxStanceEyeOff = 0.05f;
-
     /// <summary>Most the body may bend once it stands under a turned head (degrees): no lean is left to ask for, and
     /// the old lean-back peers saw was 16 degrees.</summary>
     const float MaxStanceLean = 8f;
@@ -322,8 +313,8 @@ internal sealed partial class SelfTestRunner
     /// ahead of it, so an unmoved body left them up to 0.27 m off the view; the stance walk
     /// (<see cref="BodyStance"/>, player.locomotion) steps the body under the head with the game's move input once the
     /// turn has held for its delay. After each turn has settled (the delay and the walk) it fails when the avatar's eyes
-    /// (the eye model, <see cref="ModelEyesOff"/>) are more than <see cref="MaxStanceEyeOff"/> off the view, the eye
-    /// renderers more than <see cref="MaxEyeModelGap"/> off that model, or the body bends more than
+    /// (the eye model, <see cref="ModelEyesOff"/>) are more than <see cref="MaxStanceLeftover"/> off the view, the
+    /// drawn eyes more than <see cref="MaxDrawnEyeOff"/> off it, or the body bends more than
     /// <see cref="MaxStanceLean"/>; over the whole step it fails when the view (the rig origin, which only the head may
     /// move) moves more than <see cref="MaxLeanDrift"/>.
     /// </summary>
@@ -387,16 +378,10 @@ internal sealed partial class SelfTestRunner
             string at = F($"head {Mathf.DeltaAngle(0f, yaw):+0;-0;0} deg");
             notes.Add(
                 F(
-                    $"{at}: eyes {off.magnitude:0.000} m off the view (renderers {gap:0.000} m off the eye model), body walked {walked.magnitude:0.000} m, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}), debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                    $"{at}: eyes {off.magnitude:0.000} m off the view (drawn {DrawnEyesOff(c):0.000} m, renderers {gap:0.000} m off the eye model), body walked {walked.magnitude:0.000} m, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}), debt {RigDriver.StanceDebt.magnitude:0.000} m"
                 )
             );
-            if (off.magnitude > MaxStanceEyeOff)
-                fails.Add(
-                    F(
-                        $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view, want {MaxStanceEyeOff:0.00} m"
-                    )
-                );
-            JudgeGap(at, gap, fails);
+            JudgeSettled(c, at, off.magnitude, fails);
             if (driver.LeanDegrees > MaxStanceLean)
                 fails.Add(
                     F($"{at}: the body bends {driver.LeanDegrees:0.0} deg under a turned head")
@@ -423,7 +408,7 @@ internal sealed partial class SelfTestRunner
     /// Below 35 degrees the body stands back away from the look (<see cref="BodyStance.StepBack"/>, 0.28 m at 60), so
     /// the player sees the ground before its feet. Once settled (the delay and the walk) the avatar's eyes must be
     /// at least <see cref="MinStepBack"/> behind the view along the look and the mass centre at least that far back
-    /// from where it stood; looking level again, the eyes must be back under the view (<see cref="MaxStanceEyeOff"/>).
+    /// from where it stood; looking level again, the eyes must be back under the view (<see cref="JudgeSettled"/>).
     /// Over the whole step the view (rig origin) may not move more than <see cref="MaxLeanDrift"/>.
     /// </summary>
     IEnumerator LookDownStep()
@@ -498,15 +483,9 @@ internal sealed partial class SelfTestRunner
                         $"{at}: the body stood {back:0.000} m back, its eyes {behind:0.000} m behind the view, want {MinStepBack:0.00} m"
                     )
                 );
-            if (pitch <= 0f && off.magnitude > MaxStanceEyeOff)
-                fails.Add(
-                    F(
-                        $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view looking level again, want {MaxStanceEyeOff:0.00} m"
-                    )
-                );
             // Looking down the head bone carries the renderers forward of the unbent model: judged level only.
             if (pitch <= 0f)
-                JudgeGap(at, gap, fails);
+                JudgeSettled(c, at + " looking level again", off.magnitude, fails);
         }
         ReleaseHead();
         float drift = origin.size.magnitude;
