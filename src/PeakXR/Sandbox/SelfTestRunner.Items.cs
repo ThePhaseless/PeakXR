@@ -27,6 +27,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator ItemGestureSteps()
     {
         yield return ItemStep("vr.21-bugle", "Bugle", 25f, BugleStep);
+        yield return ItemStep("vr.400-bugle-turned", "Bugle", 25f, BugleTurnedStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.22b-bandage-forearm", "Bandage", 30f, ForearmBandageStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
@@ -747,6 +748,15 @@ internal sealed partial class SelfTestRunner
     /// radius (0.22 m) plus the scripted approach's last frame.</summary>
     const float BugleMouthExit = 0.25f;
 
+    /// <summary>vr.400: vr.21 with the view turned 90 degrees off the home heading, so tracking and world axes
+    /// differ: the scripted approach must steer the mouthpiece to the mouth at any rig turn (#62).</summary>
+    IEnumerator BugleTurnedStep(Item prefab)
+    {
+        VRRig.Instance.RotateYaw(90f);
+        yield return Wait(0.5f);
+        yield return BugleStep(prefab);
+    }
+
     /// <summary>vr.21: the bugle's mouthpiece (<see cref="HeldGestures.BuglePoint"/>) brought to the mouth, tilted 30
     /// degrees up, starts the toot
     /// (<c>BugleSFX.hold</c>, BugleSFX.cs:76) with the bell's pitch (<c>currentPitch</c>, BugleSFX.cs:74);
@@ -767,13 +777,6 @@ internal sealed partial class SelfTestRunner
         bool left = LocalHold.ItemInLeftHand;
         yield return GripTo(left, 1f, 0.1f);
         HeadFrame(out _, out var forward, out _);
-        var goal = MouthGesture
-            .MouthPoint(
-                VRInput.HeadPosition.N(),
-                VRInput.HeadRotation.N(),
-                MouthGesture.DefaultOffset
-            )
-            .U();
         var tilt = HandLook(
             Quaternion.AngleAxis(-30f, Vector3.Cross(Vector3.up, forward)) * forward,
             Vector3.up
@@ -781,20 +784,12 @@ internal sealed partial class SelfTestRunner
         float end = Now + 5f;
         while (!sfx.hold && Now < end)
         {
-            // Steer the hand so the mouthpiece, not the hand, comes to the mouth.
+            // Steer the hand so the mouthpiece, not the hand, comes to the mouth. MouthGoal takes the world lead into
+            // tracking space: added as is, it was off by the rig's turn (#62: 0.22-0.43 m off with the view turned).
             var mouthpiece = HeldGestures.BuglePoint;
-            var lead =
-                mouthpiece != Vector3.zero ? mouthpiece - rig.Hand(left).position : Vector3.zero;
-            SetHand(
+            ApproachHand(
                 left,
-                HandScript
-                    .Approach(
-                        Script(left).Position.N(),
-                        (goal - lead).N(),
-                        1.5f,
-                        Time.unscaledDeltaTime
-                    )
-                    .U()
+                mouthpiece != Vector3.zero ? MouthGoal(left, mouthpiece) : MouthGoal()
             );
             Script(left).Rotation = tilt;
             yield return null;

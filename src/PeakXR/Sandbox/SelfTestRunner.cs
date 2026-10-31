@@ -205,6 +205,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield return VRStep("vr.05-loading-space", 5f, LoadingCheck());
         if (Ready && Singleton<MapHandler>.Instance != null)
         {
+            if (VRSession.Active && VRRig.Instance != null && VRRig.Instance.Head != null)
+                levelFacing = Flat(VRRig.Instance.Head.forward);
             SandboxActions.SetGodMode(true);
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
             yield return VRStep("vr.231-frame-budget", 15f, FrameBudgetCheck());
