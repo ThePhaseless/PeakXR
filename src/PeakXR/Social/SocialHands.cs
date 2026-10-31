@@ -23,7 +23,10 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>How near (m) the held item's nearest point must come to a friend's head to feed them.</summary>
     internal const float FeedRadius = 0.22f;
-    private const float FeedExitRadius = 0.3f;
+
+    /// <summary>A friend already in the feed zone stays in it out to this (m): a squeeze meant to be outside the zone
+    /// must be past this, not only past <see cref="FeedRadius"/>.</summary>
+    internal const float FeedExitRadius = 0.3f;
     private const float GraspPulseInterval = 0.3f;
 
     /// <summary>How far (m) the hand pulls away from a gripped thorn before the game's removal hold starts.</summary>
@@ -1475,7 +1478,7 @@ internal sealed class SocialHands : IGripExtension
     /// feed zone so a squeeze just off it still counts): the own-mouth eat refusal says "closer" at their mouth there.</summary>
     private bool nearFriendMouth;
 
-    private const float NearFriendRadius = 0.45f;
+    internal const float NearFriendRadius = 0.45f;
 
     private void ResetFeed()
     {
