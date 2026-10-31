@@ -177,3 +177,42 @@ public sealed class ShoveGesture
 
     public void Reset() => armed = true;
 }
+
+/// <summary>
+/// Giving up while passed out (holding interact, Character.cs:1177) on both grips and both triggers. A full fist
+/// squeezes grip and trigger together, so a tense player resting both fists closed made the chord without meaning it
+/// (issue #80): the chord now arms over <see cref="ArmSeconds"/> first (the hands' ring fills meanwhile, so letting
+/// go is a choice), and fists already closed when the body passed out count only after they open once.
+/// </summary>
+public sealed class GiveUpHold
+{
+    public float ArmSeconds = 1f;
+
+    private float held;
+    private bool needsOpen = true;
+
+    /// <summary>0..1 of the arming hold, for the ring.</summary>
+    public float Arming => needsOpen ? 0f : Math.Min(1f, held / ArmSeconds);
+
+    /// <returns>True while the chord gives up (interact held).</returns>
+    public bool Update(bool chord, float dt)
+    {
+        if (!chord)
+        {
+            needsOpen = false;
+            held = 0f;
+            return false;
+        }
+        if (needsOpen)
+            return false;
+        held += dt;
+        return held >= ArmSeconds;
+    }
+
+    /// <summary>Not passed out: the next chord must start from open hands.</summary>
+    public void Reset()
+    {
+        held = 0f;
+        needsOpen = true;
+    }
+}

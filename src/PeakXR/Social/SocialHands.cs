@@ -62,6 +62,8 @@ internal sealed class SocialHands : IGripExtension
     private readonly bool[] plucking = new bool[2];
     private readonly bool[] grasped = new bool[2];
     private readonly bool[] gripDown = new bool[2];
+    private readonly GiveUpHold giveUp = new();
+    private bool givingUp;
     private float shoveHold;
     private bool vanillaInteract;
     private bool vanillaInteractPressed;
@@ -1142,28 +1144,34 @@ internal sealed class SocialHands : IGripExtension
     }
 
     /// <summary>Last <c>CharacterInput.Sample</c> postfix: while passed out a grip must not count as holding interact,
-    /// which speeds up dying (Character.cs:1174). Both grips and both triggers give up on purpose; a single grip says
-    /// so, and holding all four ramps on both hands as the death timer fills.</summary>
+    /// which speeds up dying (Character.cs:1177). Both grips and both triggers, held through <see cref="GiveUpHold"/>'s
+    /// arming second, give up on purpose (issue #80: two resting fists did at once); a single grip says so. The ring
+    /// on both hands fills while the chord arms, then follows the death timer.</summary>
     public void GuardGiveUp(Character c, CharacterInput input)
     {
         if (!VRSession.Active || !SocialConfig.Instance.GiveUpGuard || !c.data.fullyPassedOut)
         {
             gripDown[0] = gripDown[1] = false;
+            giveUp.Reset();
+            givingUp = false;
             return;
         }
-        bool deliberate =
+        bool chord =
             VRInput.Left.Grip > 0.6f
             && VRInput.Right.Grip > 0.6f
             && VRInput.Left.Trigger > 0.6f
             && VRInput.Right.Trigger > 0.6f;
+        bool deliberate = giveUp.Update(chord, Time.deltaTime);
         input.interactIsPressed = vanillaInteract || deliberate;
-        input.interactWasPressed =
-            vanillaInteractPressed || (deliberate && input.interactWasPressed);
+        input.interactWasPressed = vanillaInteractPressed || (deliberate && !givingUp);
+        givingUp = deliberate;
         for (int h = 0; h < 2; h++)
         {
             bool down = VRInput.Hand(h == 0).Grip > 0.6f;
             if (deliberate)
                 Affordance.Progress(h == 0, Mathf.Clamp01(c.data.deathTimer));
+            else if (chord)
+                Affordance.Progress(h == 0, giveUp.Arming);
             else if (down && !gripDown[h])
                 Affordance.DenyAtHand(h == 0, DenyReason.NeedsTwoHands);
             gripDown[h] = down;

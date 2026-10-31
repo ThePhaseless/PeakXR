@@ -207,3 +207,49 @@ public class ShoveGestureTests
         Assert.False(g.Update(down, down, true, Forward, out _));
     }
 }
+
+/// <summary>Issue #80: two resting fists while passed out are not a choice to give up.</summary>
+public class GiveUpHoldTests
+{
+    const float Dt = 1f / 90f;
+
+    static bool Run(GiveUpHold g, float seconds, bool chord)
+    {
+        bool any = false;
+        for (float t = 0f; t < seconds - 1e-4f; t += Dt)
+            any |= g.Update(chord, Dt);
+        return any;
+    }
+
+    [Fact]
+    public void ChordGivesUpOnlyAfterTheArmingHold()
+    {
+        var g = new GiveUpHold();
+        Run(g, 0.1f, false);
+        Assert.False(Run(g, g.ArmSeconds * 0.9f, true));
+        Assert.InRange(g.Arming, 0.8f, 1f);
+        Assert.True(Run(g, g.ArmSeconds * 0.2f, true));
+    }
+
+    [Fact]
+    public void LettingGoStartsTheArmingOver()
+    {
+        var g = new GiveUpHold();
+        Run(g, 0.1f, false);
+        Run(g, g.ArmSeconds * 0.9f, true);
+        Run(g, Dt, false);
+        Assert.Equal(0f, g.Arming);
+        Assert.False(Run(g, g.ArmSeconds * 0.9f, true));
+    }
+
+    [Fact]
+    public void FistsAlreadyClosedWhenPassingOut_MustOpenFirst()
+    {
+        var g = new GiveUpHold();
+        g.Reset();
+        Assert.False(Run(g, g.ArmSeconds * 3f, true));
+        Assert.Equal(0f, g.Arming);
+        Run(g, Dt, false);
+        Assert.True(Run(g, g.ArmSeconds * 1.1f, true));
+    }
+}
