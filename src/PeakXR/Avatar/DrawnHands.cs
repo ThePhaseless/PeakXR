@@ -154,10 +154,13 @@ internal sealed class DrawnHands : MonoBehaviour
     /// <see cref="Interact.PhysicalInteraction.GripHolds"/>). A climbing controller runs up to 0.5 m ahead of the body
     /// while the game pays off the pull (ClimbDebt), and a stretched hand would slide off the hold. A hand holding the
     /// item alone stretches like an empty one: its item rides out to the controller past an arm too short for it
-    /// (AvatarPoseDriver.HeldShift, #23).</summary>
+    /// (AvatarPoseDriver.HeldShift, #23). GripHolds also counts that item's own armed grip (for GripToggle), which kept
+    /// the hand short of its item and showed the ghost (vr.352, vr.244).</summary>
     private bool Holds(AvatarPose pose, bool isLeft) =>
-        character.data.currentItem != null && pose.TwoHandHold
-        || Interact.PhysicalInteraction.GripHolds(isLeft);
+        character.data.currentItem != null
+            ? pose.TwoHandHold
+                || (pose.ItemInLeftHand != isLeft && Interact.PhysicalInteraction.GripHolds(isLeft))
+            : Interact.PhysicalInteraction.GripHolds(isLeft);
 
     /// <summary>The drawn arm's scale about its shoulder that puts an empty hand on its controller (1: as the
     /// ragdoll has it).</summary>
@@ -173,12 +176,15 @@ internal sealed class DrawnHands : MonoBehaviour
         var pose = driver.Pose;
         if (!(side.Left ? pose.HasLeftHand : pose.HasRightHand) || Holds(pose, side.Left))
             return 1f;
-        side.Rig.BoneFromController(
-            side.Left ? pose.LeftHandPosition : pose.RightHandPosition,
-            side.Left ? pose.LeftHandRotation : pose.RightHandRotation,
-            out var bone,
-            out _
-        );
+        // A hand holding the item alone reaches for the item's grip as it lies: on it through the weld's shift, a free
+        // carry, and the shift easing back in after a two-hand hold (#23, #66). An empty hand reaches for its controller.
+        if (!driver.HeldGripBone(side.Left, out var bone))
+            side.Rig.BoneFromController(
+                side.Left ? pose.LeftHandPosition : pose.RightHandPosition,
+                side.Left ? pose.LeftHandRotation : pose.RightHandRotation,
+                out bone,
+                out _
+            );
         var shoulder = side.Upper.position;
         var elbow = side.Fore.position;
         var hand = side.Hand.position;

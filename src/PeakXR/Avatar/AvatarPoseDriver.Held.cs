@@ -93,6 +93,22 @@ public partial class AvatarPoseDriver
             : Vector3.zero;
     }
 
+    /// <summary>Where the held item, as it lies now, puts the <paramref name="left"/> hand bone on its grip, while that
+    /// hand holds it alone: the drawn hand stretches to it (<see cref="DrawnHands"/>). False for the other hand, a
+    /// two-hand hold or no item.</summary>
+    internal bool HeldGripBone(bool left, out Vector3 bone)
+    {
+        bone = default;
+        var item = Owner.data.currentItem;
+        var pose = Pose;
+        return item != null
+            && !pose.TwoHandHold
+            && pose.ItemInLeftHand == left
+            && EnsureRig()
+            && hold.Bind(item)
+            && HandBoneOnItem(item, left, out bone, out _);
+    }
+
     /// <summary>Where the <paramref name="left"/> hand bone sits on <paramref name="item"/> as it lies now: the
     /// controller-held grip, mapped back (bone = item * X^-1 * T).</summary>
     private bool HandBoneOnItem(Item item, bool left, out Vector3 bonePos, out Quaternion boneRot)
