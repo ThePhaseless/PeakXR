@@ -2040,11 +2040,12 @@ internal sealed partial class SelfTestRunner
     IEnumerator Ask(string what, float seconds = 5f)
     {
         int id = ++mpRequestId;
+        double asked = Unix;
         try
         {
             File.AppendAllText(
                 Path.Combine(MpDirectory, MpRequest.RequestFile),
-                MpRequest.Line(id, what, Unix) + "\n"
+                MpRequest.Line(id, what, asked) + "\n"
             );
         }
         catch (IOException e)
@@ -2061,7 +2062,13 @@ internal sealed partial class SelfTestRunner
             {
                 foreach (var line in text.Split('\n'))
                 {
-                    if (!MpRequest.TryReadAck(line, out int got, out bool ok) || got != id)
+                    // An older ack with this id is the previous run's, left in a reused folder (#99).
+                    if (
+                        !MpRequest.TryReadAck(line, out int got, out bool ok)
+                        || got != id
+                        || !JsonLine.TryReadNumber(line, "t", out var at)
+                        || at < asked
+                    )
                         continue;
                     if (!ok)
                         stepSkip = $"observer refused {what}: {JsonLine.ReadString(line, "note")}";

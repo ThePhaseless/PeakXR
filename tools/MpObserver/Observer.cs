@@ -40,8 +40,8 @@ internal sealed partial class Observer : MonoBehaviour
 
     string outPath;
     double lobbyTime = double.MaxValue;
-    int checkpointLines;
-    int requestLines;
+    readonly LogCursor checkpointLines = new();
+    readonly LogCursor requestLines = new();
     int checkpoints;
     int samples;
     int exceptions;
@@ -313,9 +313,10 @@ internal sealed partial class Observer : MonoBehaviour
             yield break;
         }
         // The last element is the unfinished line (or empty after the final newline).
-        for (; checkpointLines < lines.Length - 1; checkpointLines++)
+        checkpointLines.Sync(lines);
+        for (; checkpointLines.Next < lines.Length - 1; checkpointLines.Next++)
         {
-            var line = lines[checkpointLines];
+            var line = lines[checkpointLines.Next];
             if (!JsonLine.TryReadNumber(line, "t", out var t) || t < lobbyTime)
                 continue;
             var id = JsonLine.ReadString(line, "name") ?? "unnamed";
@@ -417,10 +418,11 @@ internal sealed partial class Observer : MonoBehaviour
         {
             return;
         }
-        for (; requestLines < lines.Length - 1; requestLines++)
+        requestLines.Sync(lines);
+        for (; requestLines.Next < lines.Length - 1; requestLines.Next++)
         {
             if (
-                !MpRequest.TryRead(lines[requestLines], out int id, out var what, out double t)
+                !MpRequest.TryRead(lines[requestLines.Next], out int id, out var what, out double t)
                 || t < lobbyTime
             )
                 continue;
