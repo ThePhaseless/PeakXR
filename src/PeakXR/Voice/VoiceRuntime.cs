@@ -130,10 +130,15 @@ internal sealed class VoiceRuntime : MonoBehaviour
             return;
         }
 
-        // Only an empty hand talks or mutes: a held item at the mouth means eating (interact.physical).
+        // Only an empty hand talks or mutes: a held item at the mouth means eating (interact.physical), and a hand
+        // gripping a rope, vine, handle, the wall or a friend passes the face pulling, not talking (issue #85).
         var holding = local.data.currentItem != null;
-        var leftFree = !holding || (!LocalHold.TwoHand && !LocalHold.ItemInLeftHand);
-        var rightFree = !holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand);
+        var leftFree =
+            (!holding || (!LocalHold.TwoHand && !LocalHold.ItemInLeftHand))
+            && !Interact.PhysicalInteraction.WorldGripHolds(true);
+        var rightFree =
+            (!holding || (!LocalHold.TwoHand && LocalHold.ItemInLeftHand))
+            && !Interact.PhysicalInteraction.WorldGripHolds(false);
         var headPos = rig.Head.position.N();
         var headRot = rig.Head.rotation.N();
         bool talkOn = cfg.HandToMouthTalk.Value;

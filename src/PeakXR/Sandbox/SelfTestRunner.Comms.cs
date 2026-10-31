@@ -35,6 +35,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.248-menu-follow-text", 25f, MenuFollowTextStep());
         yield return HeadPlacedSteps();
         yield return HandStep("vr.186-cheer", 20f, CheerStep());
+        yield return HandStep("vr.452-no-cheer-reaching", 20f, NoCheerReachingStep());
         yield return PromptGlyphSteps();
         // ---- WP6 gap round: ping
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
@@ -532,6 +533,54 @@ internal sealed partial class SelfTestRunner
         yield return ExpectNoCue(!dominant, mark, 0f);
         if (stepOk)
             stepNote = $"cheered: played {GestureEmotes.LastPlayed}; confirmed: {confirmed}";
+    }
+
+    /// <summary>
+    /// vr.452 (issue #84): the cheer pose of vr.186, but with an Apple held still at the left hand overhead, as a
+    /// rope, vine or handle would hang there: the hand under the grab glow is reaching, so no gesture emote plays.
+    /// </summary>
+    IEnumerator NoCheerReachingStep()
+    {
+        if (!EmotesFeature.Gestures.Value || GestureEmotes.CheerAnim == null)
+        {
+            stepSkip = "no gesture cheer (Emotes.GestureEmotes off or no cheer emote)";
+            yield break;
+        }
+        // Past the 2 s cooldown after vr.186's cheer, so a quiet hand is the reach's doing.
+        yield return Wait(2.2f);
+        HeadFrame(out var head, out var forward, out var right);
+        foreach (bool left in new[] { true, false })
+        {
+            Script(left).Grip = 0f;
+            Script(left).TriggerTouch = false;
+        }
+        var up = head + forward * 0.1f + Vector3.up * 0.25f;
+        var apple = SpawnTestItem(
+            AppleFragment,
+            VRRig.Instance.Origin.TransformPoint(up - right * 0.2f)
+        );
+        if (apple == null)
+            yield break;
+        int before = GestureEmotes.PlayCount;
+        yield return MoveTrack(true, up - right * 0.2f, 0.3f);
+        yield return MoveTrack(false, up + right * 0.2f, 0.3f);
+        bool glowed = false;
+        for (float end = Now + 1.5f; Now < end; )
+        {
+            glowed |= Interact.PhysicalInteraction.GripPreview(true) != null;
+            yield return null;
+        }
+        var note = F(
+            $"hands overhead 1.5 s, the left under the glow {glowed}, gesture emotes played {GestureEmotes.PlayCount - before} (last '{GestureEmotes.LastPlayed}')"
+        );
+        if (!glowed)
+            Fail(
+                "the Apple at the raised left hand never glowed, the step proves nothing: " + note
+            );
+        else if (GestureEmotes.PlayCount != before)
+            Fail("a hand reaching for something overhead played a gesture emote: " + note);
+        else
+            stepNote = note;
     }
 
     /// <summary>

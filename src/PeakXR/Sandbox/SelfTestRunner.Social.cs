@@ -518,7 +518,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.105: passed out (sandbox PassOut, Character.PassOut), a single grip must not speed up dying
     /// (Character.cs:1174-1178): it is refused with NeedsTwoHands and interact stays up. Both grips and both triggers
-    /// give up on purpose: interact is held and the progress ramp follows the death timer.
+    /// give up on purpose once held through the arming second (issue #80): interact stays up for 0.7 s while the
+    /// ring fills, then is held, and the death timer runs at the give-up rate.
     /// </summary>
     IEnumerator GiveUpStep()
     {
@@ -560,11 +561,26 @@ internal sealed partial class SelfTestRunner
         float squeeze = CueMark();
         Script(true).Grip = 1f;
         Script(true).Trigger = Script(false).Trigger = 1f;
+        // Issue #80: two resting fists are not a choice, so the squeeze arms for a second (its ring fills) first.
+        float armStart = Now;
+        for (float end = Now + 0.7f; Now < end; )
+        {
+            if (c.input.interactIsPressed)
+            {
+                Fail($"the squeeze gave up {Now - armStart:0.00} s in, before its arming second");
+                yield break;
+            }
+            yield return null;
+        }
+        yield return ExpectFeel(true, CueFeel.Progress, squeeze);
+        if (!stepOk)
+            yield break;
         yield return Until(
             () => c.input.interactIsPressed,
             1f,
             "all four inputs did not hold interact"
         );
+        float armed = Now - armStart;
         float squeezeRate = 0f;
         if (stepOk)
         {
@@ -577,13 +593,11 @@ internal sealed partial class SelfTestRunner
                     $"the squeeze held interact but the death timer ran only {squeezeRate:0.00}/s (giving up runs {GiveUpRate:0.00}/s)"
                 );
         }
-        if (stepOk)
-            yield return ExpectFeel(true, CueFeel.Progress, squeeze);
         Script(true).Trigger = Script(false).Trigger = 0f;
         Script(true).Grip = Script(false).Grip = 0f;
         if (stepOk)
             stepNote =
-                $"single grip refused (death timer {gripRate:0.00}/s), squeeze gives up ({squeezeRate:0.00}/s, timer {c.data.deathTimer:0.00})";
+                $"single grip refused (death timer {gripRate:0.00}/s), squeeze armed {armed:0.00} s then gives up ({squeezeRate:0.00}/s, timer {c.data.deathTimer:0.00})";
     }
 
     /// <summary>Death timer per game second while a passed-out player holds interact (Character.cs:1177).</summary>

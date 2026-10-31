@@ -269,9 +269,22 @@ public static class GripIntent
             : GripPressAction.Interact;
     }
 
+    /// <summary>A release this fast is a throw the game takes (hand throws on, an item that may be dropped and
+    /// thrown): the extensions are not asked for it, since holstering or stashing is a slow, placed release (issue #83:
+    /// an underhand toss let go over the front belt slot was holstered). Their release hook acts as it claims, so the
+    /// caller checks this first and passes <see cref="OnRelease"/> no claim.</summary>
+    public static bool Throws(
+        bool canDrop,
+        bool canThrow,
+        float speed,
+        float throwSpeed,
+        bool throwEnabled
+    ) => canDrop && canThrow && throwEnabled && speed >= throwSpeed;
+
     /// <summary>
     /// Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).
-    /// An extension claim (holstering over a slot) wins over throw and drop for the holding hand.
+    /// An extension claim (holstering over a slot) wins over throw and drop for the holding hand; the caller asks
+    /// for one only when the release <see cref="Throws"/> nothing.
     /// </summary>
     public static GripReleaseAction OnRelease(
         bool thisHandHolds,

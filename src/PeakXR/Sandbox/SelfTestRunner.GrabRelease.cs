@@ -228,10 +228,10 @@ internal sealed partial class SelfTestRunner
         yield return DropHeld();
     }
 
-    /// <summary>vr.321 (issue #49): a hotbar pocket holds Bandages and an Apple is held still at that pocket's belt
-    /// slot. The right hand on the slot is the slot's grip (a draw), so the Apple under it must not glow, and the grip
-    /// must be the slot's and draw the Bandages.</summary>
-    IEnumerator GlowYieldsToSlotStep()
+    /// <summary>vr.451 (issue #49, after vr.321 proved the opposite): a hotbar pocket holds Bandages and an Apple is
+    /// held still at that pocket's belt slot, as on a waist-high table's edge. The free right hand right on the Apple
+    /// takes it: the Apple glows, the grip grabs it, and the Bandages stay in their pocket.</summary>
+    IEnumerator SlotYieldsToItemStep()
     {
         var c = Character.localCharacter;
         var inv = BodyInventory.Instance;
@@ -283,25 +283,29 @@ internal sealed partial class SelfTestRunner
                 toApple = Mathf.Min(toApple, Vector3.Distance(col.ClosestPoint(hand), hand));
         }
         var glow = PhysicalInteraction.GripPreview(left);
+        // The pickup replaces the world Apple with the held one (Item.Interact): compare by id.
+        ushort appleId = apple.itemID;
         Script(left).Grip = 1f;
         yield return WaitFor(
             () => PhysicalInteraction.HandAction(left) != GripPressAction.None,
             0.3f
         );
         var action = PhysicalInteraction.HandAction(left);
-        yield return WaitFor(() => Holding(bandages), 2f);
+        yield return WaitFor(() => HeldItem() != null, 2f);
+        var held = HeldItem();
+        bool tookApple = held != null && held.itemID == appleId;
         bool drew = Holding(bandages);
         Script(left).Grip = 0f;
         var note = F(
-            $"Apple {toApple:0.00} m from the hand on slot {slot}, glow on {Label(glow)}, grip {action}, drew the Bandages {drew}"
+            $"Apple {toApple:0.00} m from the hand on slot {slot}, glow on {Label(glow)}, grip {action}, in hand {Label(held)}, drew the Bandages {drew}"
         );
         if (toApple > InteractConfig.Instance.GrabRadius)
             Fail("the Apple is out of the hand's grab reach, the step proves nothing: " + note);
-        else if (glow != null)
-            Fail("an item glowed under a hand whose grip the belt slot takes: " + note);
-        else if (action != GripPressAction.Extension || !drew)
+        else if (!ReferenceEquals(glow, apple))
+            Fail("the Apple right at the hand did not glow over a filled belt slot: " + note);
+        else if (action != GripPressAction.GrabItem || !tookApple || drew)
             Fail(
-                $"the grip at a filled belt slot did not draw from it: {note}; {PhysicalInteraction.LastGripNote}"
+                $"the grip on an item at a filled belt slot did not take the item: {note}; {PhysicalInteraction.LastGripNote}"
             );
         else
             Note(note);

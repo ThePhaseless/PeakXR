@@ -46,7 +46,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.287-quick-release-fist", 20f, QuickReleaseFistStep());
         yield return HandStep("vr.288-glow-grab", 45f, HighlightGrabStep());
         yield return HandStep("vr.320-fist-grab-no-use", 25f, FistGrabNoUseStep());
-        yield return HandStep("vr.321-glow-yields-to-slot", 25f, GlowYieldsToSlotStep());
+        yield return HandStep("vr.451-slot-yields-to-item", 25f, SlotYieldsToItemStep());
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());
         yield return HandStep("vr.249-button-throw-aim", 25f, ButtonThrowAimStep());
@@ -59,6 +59,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.19-laser", 20f, LaserStep());
         yield return HandStep("vr.265-hand-reticle", 25f, HandReticleStep());
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
+        yield return HandStep("vr.450-throw-over-slot", 20f, ThrowOverSlotStep());
         yield return HandStep("vr.29-ground-backpack", 25f, GroundBackpackStep());
         yield return HandStep("vr.32-shoulder-stash", 30f, ShoulderStashStep());
         yield return HandStep("vr.283-feed-friend", 20f, FeedFriendStep());
@@ -1587,6 +1588,55 @@ internal sealed partial class SelfTestRunner
             $"holstered into hotbar slot {selected.Value} (body slot {slot}), drawn into the {(LocalHold.ItemInLeftHand ? "left" : "right")} hand";
         if (LocalHold.ItemInLeftHand != left)
             Fail("drawn into the other hand");
+    }
+
+    /// <summary>vr.450 (issue #83): an Apple swung forward through its own belt slot and let go there at throw speed
+    /// is thrown, not holstered: a holster is a slow, placed release.</summary>
+    IEnumerator ThrowOverSlotStep()
+    {
+        var c = Character.localCharacter;
+        var inv = BodyInventory.Instance;
+        if (!inv.Valid || !InventoryConfig.Instance.HolsterOnRelease)
+        {
+            stepSkip = "body slots or HolsterOnRelease off";
+            yield break;
+        }
+        yield return GiveAndHold(FindItem(SandboxActions.Items, AppleFragment));
+        if (!stepOk)
+            yield break;
+        var selected = c.refs.items.currentSelectedSlot;
+        int slot = -1;
+        for (int i = 0; selected.IsSome && i < inv.Count; i++)
+        {
+            if (inv.Slot(i).GameSlot == selected.Value)
+                slot = i;
+        }
+        if (slot < 0)
+        {
+            Fail("no body slot for the held Apple's hotbar slot");
+            yield break;
+        }
+        bool left = LocalHold.ItemInLeftHand;
+        HeadFrame(out _, out var forward, out _);
+        // SwingRelease opens the grip 70 % along its 0.9 m path: right at the slot, at 6 m/s.
+        var at = inv.Anchor(slot);
+        var windup = at - forward * 0.63f;
+        yield return GripTo(left, 1f, 0.1f);
+        yield return MoveTo(left, () => VRRig.Instance.Origin.TransformPoint(windup), 0.4f);
+        yield return Wait(0.2f);
+        yield return SwingRelease(left, windup, windup + forward * 0.9f);
+        yield return Until(() => HeldItem() == null, 1.5f, "the Apple stayed in hand");
+        if (!stepOk)
+            yield break;
+        var itemSlot = c.player.GetItemSlot(selected.Value);
+        bool holstered = itemSlot != null && !itemSlot.IsEmpty();
+        var note = F(
+            $"let go at body slot {slot} (hotbar {selected.Value}) at {InteractConfig.Instance.ThrowSpeed:0.0}+ m/s: holstered {holstered}"
+        );
+        if (holstered)
+            Fail("a throw let go over its belt slot was holstered: " + note);
+        else
+            stepNote = note;
     }
 
     // ---------------------------------------------------------------- scripted hands

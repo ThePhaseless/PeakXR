@@ -1748,7 +1748,7 @@ public static class GuideTable
             new GuideDemo(
                 GuideTopic.GiveUp,
                 "Give up",
-                "Passed out: hold both grips and triggers to give up.",
+                "Passed out: hold both grips and triggers 1 s to give up.",
                 3f,
                 T(K(0f, V(0f, -1.1f, 0f))),
                 T(
