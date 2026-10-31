@@ -785,11 +785,21 @@ internal sealed class PracticeRun : MonoBehaviour
     {
         var spot = zones[(int)Flow.Zone];
         float chest = eyeHeight - 0.15f;
-        var (ahead, side) = PracticeZones.DemoOffset(PracticeLayout.ClearAhead(spot, chest));
+        float clearAhead = PracticeLayout.ClearAhead(spot, chest);
+        var (ahead, side) = PracticeZones.DemoOffset(clearAhead);
         var offSide = Vector3.Cross(Vector3.up, spot.Facing) * (VRInput.LeftHanded ? 1f : -1f);
+        var front = spot.Feet + Vector3.up * chest + spot.Facing * ahead;
+        // The step aside is cleared too: in a cramped corner it alone can reach a side wall.
+        float clearSide = PracticeLayout.ClearAlong(front, offSide, side + PracticeZones.WallGap);
+        side = PracticeZones.DemoSide(side, clearSide);
         station.SetPositionAndRotation(
-            spot.Feet + Vector3.up * chest + spot.Facing * ahead + offSide * side,
+            front + offSide * side,
             Quaternion.LookRotation(spot.Facing, Vector3.up)
+        );
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[ui.guide] demo {ahead:0.00} m ahead, {side:0.00} m aside (clear {clearAhead:0.00} m ahead, {clearSide:0.00} m aside)"
+            )
         );
     }
 

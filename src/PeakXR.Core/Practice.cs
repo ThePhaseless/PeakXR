@@ -252,8 +252,14 @@ public static class PracticeZones
     public static (float Ahead, float Side) DemoOffset(float clearAhead)
     {
         float ahead = MathF.Min(1f, clearAhead - WallGap);
-        return ahead >= 0.75f ? (ahead, 0.3f) : (MathF.Max(0.15f, ahead), 0.6f);
+        // A wall nearer than the gap puts the demo beside you, never behind: a 0.15 m floor stood it in the wall.
+        return ahead >= 0.75f ? (ahead, 0.3f) : (MathF.Max(-0.3f, ahead), 0.6f);
     }
+
+    /// <summary>The demo's step aside, kept <see cref="WallGap"/> off scenery <paramref name="clearSide"/> metres to
+    /// that side (a cramped spawn corner); none when the wall is nearer than the gap.</summary>
+    public static float DemoSide(float side, float clearSide) =>
+        MathF.Max(0f, MathF.Min(side, clearSide - WallGap));
 }
 
 public enum PracticeEntry : byte
