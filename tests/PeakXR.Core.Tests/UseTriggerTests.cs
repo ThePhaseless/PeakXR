@@ -251,4 +251,19 @@ public class UseTriggerTests
         t.Update(true, false, true, Dt);
         Assert.True(t.Pressed);
     }
+
+    [Fact]
+    public void SettledClimbHand_FistPress_SetsNoPiton()
+    {
+        // Issue #75: a toggle-latched wall hand has held the climber for long; its unlatch squeeze closes the index on
+        // the trigger, which must not be a deliberate piton press.
+        var t = new UseTrigger();
+        for (int i = 0; i < 60; i++)
+            t.Update(false, true, false, Dt);
+        t.Update(true, true, false, Dt, fist: true);
+        Assert.False(t.ClimbPress);
+        for (int i = 0; i < 60; i++)
+            t.Update(true, true, false, Dt);
+        Assert.False(t.Piton);
+    }
 }

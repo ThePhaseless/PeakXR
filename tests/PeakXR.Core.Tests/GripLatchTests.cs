@@ -228,4 +228,28 @@ public class GripLatchTests
         Assert.Equal(GripLatchEvent.None, Step(l, 0f));
         Assert.Equal(0f, l.Grip);
     }
+
+    [Fact]
+    public void UnlatchSqueeze_IsAClosingGrip()
+    {
+        // Issue #75: the latch keeps Grip at 1, so the hands see no grip press when the player squeezes to let go;
+        // Closed is that press, for the fist's trigger mute.
+        var l = Latched();
+        Step(l, 0.2f);
+        Assert.False(l.Closed);
+        Step(l, 0.9f);
+        Assert.True(l.Closed);
+        Assert.Equal(1f, l.Grip);
+        Step(l, 0.9f);
+        Assert.False(l.Closed);
+    }
+
+    [Fact]
+    public void Closed_NotWhileUnlatched()
+    {
+        // An unlatched grip's press is the hands' own grip press.
+        var l = new GripLatch();
+        Step(l, 0.9f, engaged: false);
+        Assert.False(l.Closed);
+    }
 }

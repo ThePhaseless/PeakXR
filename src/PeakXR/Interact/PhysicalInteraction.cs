@@ -498,6 +498,8 @@ internal static class PhysicalInteraction
             hand.Throw.AddSample(state.Position.N(), now);
         if (hand.Grip.Pressed)
             hand.GripAt = now;
+        // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75).
+        hand.GripAt = Mathf.Max(hand.GripAt, GripToggle.ClosedAt(hand.Left));
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);

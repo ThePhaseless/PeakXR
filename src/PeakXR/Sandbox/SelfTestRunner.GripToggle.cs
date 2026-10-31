@@ -134,4 +134,75 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
     }
+
+    /// <summary>
+    /// vr.441 (issue #75): in Toggle the right hand latches given Bandages, then unlatches with a firm squeeze that
+    /// closes the index on the trigger two frames after the grip, and opens both slowly. That squeeze is a closing fist,
+    /// so the Bandages' cast never starts and they drop.
+    /// </summary>
+    IEnumerator GripToggleUnlatchNoUseStep()
+    {
+        if (!InteractConfig.Instance.ReleaseToDrop)
+        {
+            stepSkip = "Interaction.ReleaseToDrop off";
+            yield break;
+        }
+        var bandages = FindItem(SandboxActions.Items, "Bandages");
+        if (bandages == null)
+        {
+            stepSkip = "no Bandages item";
+            yield break;
+        }
+        if (!ToggleGrips())
+            yield break;
+        const bool left = false;
+        if (!SandboxActions.GiveItem(bandages, left))
+        {
+            stepSkip = SandboxActions.LastMessage;
+            yield break;
+        }
+        yield return Until(() => Holding(bandages), 5f, "given Bandages not in hand");
+        if (!stepOk)
+            yield break;
+        spawned.Add(HeldItem().gameObject);
+        yield return null;
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(0.3f);
+        yield return GripTo(left, 0f, 0.4f);
+        yield return Wait(0.3f);
+        bool latched = GripToggle.Latched(left) && Holding(bandages);
+        // The firm squeeze: grip first, the index on the trigger a couple of frames later, held past SqueezeSeconds.
+        Script(left).Grip = 1f;
+        yield return null;
+        yield return null;
+        Script(left).Trigger = 1f;
+        bool used = false;
+        for (float until = Now + 0.25f; Now < until; )
+        {
+            var item = HeldItem();
+            used |= item != null && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        yield return GripTo(left, 0f, 0.4f);
+        yield return WaitFor(
+            () =>
+            {
+                var item = HeldItem();
+                used |= item != null && (item.isUsingPrimary || item.castProgress > 0f);
+                return !Holding(bandages);
+            },
+            1.5f
+        );
+        bool dropped = !Holding(bandages);
+        var note = F($"latched {latched}, used by the unlatch squeeze {used}, dropped {dropped}");
+        if (!latched)
+            Fail("the grip never latched the Bandages: " + note);
+        else if (used)
+            Fail("the unlatch squeeze's trigger started the Bandages' cast: " + note);
+        else if (!dropped)
+            Fail("the unlatch did not drop the Bandages: " + note);
+        else
+            Note(note);
+    }
 }

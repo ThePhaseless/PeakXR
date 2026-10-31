@@ -73,7 +73,8 @@ public sealed class UseTrigger
     public void Update(bool trigger, bool climbs, bool primary, float dt, bool fist = false)
     {
         bool pressed = trigger && !held;
-        ClimbPress = pressed && climbs && climbing >= SettleSeconds;
+        // A fist's press is never deliberate, however long the hand has held on (a toggle grip's unlatch squeeze).
+        ClimbPress = pressed && climbs && !fist && climbing >= SettleSeconds;
         ClimbHold = ClimbPress || (ClimbHold && trigger && climbs);
         ClimbHeld = ClimbHold && !ClimbPress ? ClimbHeld + dt : 0f;
         if (!trigger)
