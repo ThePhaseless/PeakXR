@@ -1655,21 +1655,59 @@ internal sealed class RigDriver : MonoBehaviour
             if (body != null)
                 centre.Add(body.transform.TransformPoint(body.centerOfMass).N(), body.mass);
         }
+        var itemBody = WeldedItem(c);
+        if (itemBody != null)
+            centre.Add(itemBody.transform.TransformPoint(itemBody.centerOfMass).N(), itemBody.mass);
+        rootCharacter = c;
+        rootFrame = Time.frameCount;
+        rootCached = centre.Root(hip.transform.position.y).U() + (c.VirtualCenter - c.Center);
+        return rootCached;
+    }
+
+    /// <summary>
+    /// The velocity of the system <see cref="ViewRoot"/> follows: every ragdoll part plus the welded held item,
+    /// mass-weighted. The game moves a part with a pull answered on its parent and the hip (Bodypart.cs:193-205), so
+    /// moving hands leave it still while the rest of the body recoils; only outside forces and the walk change it.
+    /// </summary>
+    internal static Vector3 ViewVelocity(Character c)
+    {
+        var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partList : null;
+        if (parts == null)
+            return c.data.avarageVelocity;
+        var momentum = Vector3.zero;
+        float mass = 0f;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            var body = parts[i] != null ? parts[i].Rig : null;
+            if (body == null)
+                continue;
+            momentum += body.linearVelocity * body.mass;
+            mass += body.mass;
+        }
+        var itemBody = WeldedItem(c);
+        if (itemBody != null)
+        {
+            momentum += itemBody.linearVelocity * itemBody.mass;
+            mass += itemBody.mass;
+        }
+        return mass > 0f ? momentum / mass : c.data.avarageVelocity;
+    }
+
+    /// <summary>The held item's body when it is welded to a hand (CharacterItems.cs:647-650, or avatar.local's
+    /// one-hand weld), so it moves as part of the body; otherwise null.</summary>
+    private static Rigidbody WeldedItem(Character c)
+    {
         var item = c.data.currentItem;
         var itemBody = item != null ? item.rig : null;
-        if (
+        return
             itemBody != null
             && (
                 Welded(c, BodypartType.Hand_L, itemBody)
                 || Welded(c, BodypartType.Hand_R, itemBody)
                 || AvatarPoseDriver.Of(c) is { } driver && driver.Welds(itemBody)
             )
-        )
-            centre.Add(itemBody.transform.TransformPoint(itemBody.centerOfMass).N(), itemBody.mass);
-        rootCharacter = c;
-        rootFrame = Time.frameCount;
-        rootCached = centre.Root(hip.transform.position.y).U() + (c.VirtualCenter - c.Center);
-        return rootCached;
+            ? itemBody
+            : null;
     }
 
     private static bool Welded(Character c, BodypartType hand, Rigidbody item) =>

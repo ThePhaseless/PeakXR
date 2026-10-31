@@ -442,15 +442,26 @@ internal static class LocomotionInput
         Stance.AtOnce = LocomotionConfig.LeanRadius;
         Stance.InputSlew = c.refs.movement.movementTurnSpeed;
         // The walk brakes on the body's speed: it coasts on after the request stops (cf6aa3e: 0.1-0.16 m past the view).
-        var bodyVelocity = BodyVelocity(c);
-        var velocity3 = rig.Origin.InverseTransformVector(bodyVelocity);
-        var request = Stance.Update(
-            debt,
-            new NVector2(velocity3.x, velocity3.z),
+        // The whole body's velocity, as RigDriver.ViewRoot weighs it: the game moves a part with a pull answered on its
+        // parent and the hip (Bodypart.cs:193-205), so hand motion leaves this still where an arm-less sum reads the
+        // recoil as walking.
+        var bodyVelocity = RigDriver.ViewVelocity(c);
+        // World heading, tracking scale (the walk's tuned distances): a snap or smooth turn mid-walk would turn
+        // tracking-space debt against the walk's heading and use up its one walk back.
+        float toTracking = 1f / Mathf.Max(rig.Scale, 0.01f);
+        var worldDebt = RigDriver.StanceDebt * toTracking;
+        var levelVelocity = bodyVelocity * toTracking;
+        var worldRequest = Stance.Update(
+            new NVector2(worldDebt.x, worldDebt.z),
+            new NVector2(levelVelocity.x, levelVelocity.z),
             data.worldMovementInput_Lerp.magnitude,
             canFollow && !outside,
             dt
         );
+        var request3 =
+            Quaternion.Inverse(rig.Origin.rotation)
+            * new Vector3(worldRequest.X, 0f, worldRequest.Y);
+        var request = new NVector2(request3.x, request3.z);
         bool following = canFollow && Stance.Walking;
         if (following && !RigDriver.FollowWalking)
             StanceWalkStartedAt = Time.realtimeSinceStartup;
@@ -485,18 +496,20 @@ internal static class LocomotionInput
             VRFade.Clear(FadeOwner);
         var stick = MoveInput.TrackingToStick(request, HeadYaw());
         if (RigDriver.LeanTraceDue(ref nextLeanTrace))
+        {
+            var armless = ArmlessVelocity(c);
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} stick fwd {stick.Y:0.00} right {stick.X:0.00}"
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} stick fwd {stick.Y:0.00} right {stick.X:0.00} body-v ({bodyVelocity.x:0.000},{bodyVelocity.z:0.000}) armless-v ({armless.x:0.000},{armless.z:0.000})"
                 )
             );
+        }
         return stick;
     }
 
-    /// <summary>The body's velocity (world): its parts' mass-weighted, the arms left out. The game's avarageVelocity
-    /// (CharacterMovement.cs:683-696) counts the six arm parts, which follow the controllers, so moving hands read as
-    /// the body running: a walk could not end, and the coast kept outside forces out of the view.</summary>
-    private static Vector3 BodyVelocity(Character c)
+    /// <summary>Trace only: the parts' mass-weighted velocity with the arms left out (the walk's input before
+    /// <see cref="RigDriver.ViewVelocity"/>), logged beside it so a run shows the arms' recoil.</summary>
+    private static Vector3 ArmlessVelocity(Character c)
     {
         var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partList : null;
         var sum = Vector3.zero;
