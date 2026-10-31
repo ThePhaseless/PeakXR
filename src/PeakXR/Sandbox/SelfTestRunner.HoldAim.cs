@@ -157,11 +157,15 @@ internal sealed partial class SelfTestRunner
             : Vector3.Angle(item.transform.forward, aim.forward);
     }
 
+    /// <summary>Most the drawn hand may sit off a held item's grip (m), as vr.244 judges it.</summary>
+    const float DrawnGripTolerance = 0.04f;
+
     /// <summary>
     /// vr.352 (#23): a one-handed item held 0.5 m ahead of the eyes and 0.1 m down, past the arm's reach from the scout's
     /// low, set-back shoulder (about 0.79 m against 0.6 m): it must sit on its controller-held pose
-    /// (<see cref="AvatarPoseDriver.HeldTarget"/>) within 4 cm, still in its weld, and no ghost hand may show for that
-    /// hand. The item used to rest 0.12 m short of the controller, the ghost showing the rest.
+    /// (<see cref="AvatarPoseDriver.HeldTarget"/>) within 4 cm, still in its weld, the drawn hand within
+    /// <see cref="DrawnGripTolerance"/> of its grip, and no ghost hand may show for that hand. The item used to rest
+    /// 0.12 m short of the controller, the ghost showing the rest.
     /// </summary>
     IEnumerator HeldAtControllerStep(Item prefab)
     {
@@ -182,22 +186,39 @@ internal sealed partial class SelfTestRunner
         SetHand(left, head + forward * 0.5f + Vector3.down * 0.1f);
         yield return Wait(1.5f);
         float worst = 0f;
+        float drawnOff = 0f;
         float ghost = 0f;
         bool released = false;
+        var info = new ItemHoldInfo();
         for (float until = Now + 0.6f; Now < until; )
         {
             if (item != null && driver.HeldTarget(out var pos, out _))
                 worst = Mathf.Max(worst, Vector3.Distance(item.transform.position, pos));
+            // The hand as the player sees it, on the hold's grip as vr.244 judges it.
+            drawnOff =
+                item != null && info.Bind(item)
+                    ? Mathf.Max(
+                        drawnOff,
+                        Vector3.Distance(
+                            DrawnHandBone(c, left),
+                            item.transform.TransformPoint(
+                                info.HoldLocal(info.GripLocal, left, primaryGrip: true)
+                            )
+                        )
+                    )
+                    : float.PositiveInfinity;
             ghost = Mathf.Max(ghost, ReachGhost.Alpha(left));
             released |= driver.HeldReleased;
             yield return null;
         }
         driver.ReachGap(left, out float gap);
         string note = F(
-            $"{(item != null ? item.name : "no item")} {worst:0.000} m off its controller-held pose at most, ghost {ghost:0.00}, weld released {released}, the drawn arm's reach gap {gap:0.00} m"
+            $"{(item != null ? item.name : "no item")} {worst:0.000} m off its controller-held pose at most, the drawn hand {drawnOff:0.000} m off its grip, ghost {ghost:0.00}, weld released {released}, the drawn arm's reach gap {gap:0.00} m"
         );
         if (item == null || worst > 0.04f)
             Fail("the held item sits off its controller: " + note);
+        else if (!(drawnOff <= DrawnGripTolerance))
+            Fail("the drawn hand is off the held item's grip: " + note);
         else if (ghost > 0f)
             Fail("a ghost hand showed for a held item the drawn arm reaches: " + note);
         else if (released)

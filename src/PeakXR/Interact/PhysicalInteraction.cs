@@ -229,16 +229,26 @@ internal static class PhysicalInteraction
         if (c == null)
             return false;
         var hand = left ? LeftHand : RightHand;
+        return (
+                c.data.currentItem != null
+                && LocalHold.ItemInLeftHand == left
+                && hand.Armed
+                && InteractConfig.Instance.ReleaseToDrop
+            ) || WorldGripHolds(left);
+    }
+
+    /// <summary><see cref="GripHolds"/> without the held item's own armed grip: this hand holds the world (a wall
+    /// climb, rope, vine, handle or piton, a carried friend) or the item as its second hand. The avatar draws such a
+    /// hand on its ragdoll hand (DrawnHands).</summary>
+    internal static bool WorldGripHolds(bool left)
+    {
+        var c = Character.localCharacter;
+        if (c == null)
+            return false;
+        var hand = left ? LeftHand : RightHand;
         if (hand.Action == GripPressAction.Climb && (c.data.isClimbing || Mantling))
             return true;
         if (hand.Action == GripPressAction.SecondHand && LocalHold.TwoHand)
-            return true;
-        if (
-            c.data.currentItem != null
-            && LocalHold.ItemInLeftHand == left
-            && hand.Armed
-            && InteractConfig.Instance.ReleaseToDrop
-        )
             return true;
         return Climb.ClimbHands.HandAnchored(left) || Social.SocialHands.Instance.CarryGrip(left);
     }
