@@ -20,6 +20,8 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.126-wheel-climbing-refused", 40f, WheelClimbingStep());
         yield return HandStep("vr.127-thumbs-up", 20f, ThumbsUpStep());
         yield return HandStep("vr.443-thumbs-up-no-interact", 20f, ThumbsUpNoInteractStep());
+        yield return HandStep("vr.447-thumbs-up-cooldown", 20f, ThumbsUpCooldownStep());
+        yield return HandStep("vr.446-posed-tap-picks-up", 20f, PosedTapStep());
         yield return HandStep("vr.128-backpack-wheel-cancel", 30f, BackpackWheelCancelStep());
     }
 
@@ -238,6 +240,150 @@ internal sealed partial class SelfTestRunner
         else
             Note(note);
         yield return Wait(0.3f);
+    }
+
+    /// <summary>
+    /// vr.447 (issue #82): a thumbs-up made inside the 2 s emote cooldown plays nothing, so it never stamped the hand
+    /// and its fist pressed the head-aimed interact at GripAt + 1.2 s. One thumbs-up plays, the hand opens, a second
+    /// one is made at once and held past the 1.2 s cap: it must not play, the grip's interact
+    /// (PhysicalInteraction.GripInteractActive) must never press, and the hand gets the light TooSoon notice.
+    /// </summary>
+    IEnumerator ThumbsUpCooldownStep()
+    {
+        if (!EmotesFeature.Gestures.Value || GestureEmotes.ThumbsUpAnim == null)
+        {
+            stepSkip = "Emotes.GestureEmotes off or no thumbs-up emote";
+            yield break;
+        }
+        // Past the last step's emote cooldown (2 s).
+        yield return Wait(2.2f);
+        bool hand = !VRInput.LeftHanded;
+        HeadFrame(out var head, out var forward, out var right);
+        Script(hand).StickTouch = true;
+        yield return MoveTrack(
+            hand,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            0.3f
+        );
+        int before = GestureEmotes.PlayCount;
+        Fist(hand, forward);
+        yield return Until(
+            () => GestureEmotes.PlayCount != before,
+            2.5f,
+            "the first thumbs-up did not play"
+        );
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.15f);
+        int played = GestureEmotes.PlayCount;
+        Affordance.ResetGate();
+        float mark = CueMark();
+        bool pressed = false;
+        Fist(hand, forward);
+        for (float until = Now + GripIntent.GestureMaxWait + 0.5f; Now < until; )
+        {
+            pressed |= Interact.PhysicalInteraction.GripInteractActive;
+            yield return null;
+        }
+        bool took = GestureEmotes.TookAt(hand) > GestureEmotes.PlayedAt(hand);
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        var note = F(
+            $"second thumbs-up played {GestureEmotes.PlayCount != played}, took the hand {took}, grip interact pressed {pressed}"
+        );
+        if (GestureEmotes.PlayCount != played)
+            Fail("the thumbs-up inside the emote cooldown played: " + note);
+        else if (!took)
+            Fail("the second thumbs-up never fired, so the step proves nothing: " + note);
+        else if (pressed)
+            Fail("the cooldown-blocked thumbs-up's fist pressed the head-aimed interact: " + note);
+        if (!stepOk)
+            yield break;
+        yield return ExpectCue(hand, DenyReason.TooSoon, mark, within: 0f);
+        if (stepOk)
+            Note(note + "; " + cueNote);
+        yield return Wait(0.3f);
+    }
+
+    /// <summary>
+    /// vr.446 (issue #82): a quick grip tap in the thumbs-up pose, with an Apple on the head's interact ray, is a gaze
+    /// grab. The pose holds the interact back (Core <c>GripIntent.GestureInteractAt</c>, 0.25 s), and a grip opened
+    /// sooner pressed nothing; now the release presses it once (<c>GripIntent.ReleaseTaps</c>). The fist closes for
+    /// 0.1 s: the press frame must be posed (<c>GestureEmotes.ThumbPosed</c>), and the Apple must reach the hand.
+    /// </summary>
+    IEnumerator PosedTapStep()
+    {
+        if (!EmotesFeature.Gestures.Value)
+        {
+            stepSkip = "Emotes.GestureEmotes off";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        yield return DropHeld();
+        if (c.data.currentItem != null)
+        {
+            stepSkip = "an item stayed in hand";
+            yield break;
+        }
+        var headT = VRRig.Instance.Head;
+        var world = SpawnTestItem(
+            AppleFragment,
+            headT.position + Flat(headT.forward) * 0.8f + Vector3.down * 0.2f
+        );
+        if (world == null)
+            yield break;
+        bool hand = !VRInput.LeftHanded;
+        HeadFrame(out var head, out var forward, out var right);
+        Script(hand).StickTouch = true;
+        yield return MoveTrack(
+            hand,
+            head + forward * 0.3f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
+            0.3f
+        );
+        for (float until = Now + 3f; Now < until; )
+        {
+            HoldOnHeadRay(world, headT);
+            if (ReferenceEquals(Interaction.instance.currentHovered, world))
+                break;
+            yield return null;
+        }
+        if (!ReferenceEquals(Interaction.instance.currentHovered, world))
+        {
+            Fail("the Apple never became the hovered target");
+            yield break;
+        }
+        bool posed = false,
+            pressed = false;
+        Fist(hand, forward);
+        for (float until = Now + 0.1f; Now < until; )
+        {
+            HoldOnHeadRay(world, headT);
+            posed |= GestureEmotes.ThumbPosed(hand);
+            pressed |= Interact.PhysicalInteraction.GripInteractActive;
+            yield return null;
+        }
+        bool early = pressed;
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        for (float until = Now + 1.5f; Now < until && c.data.currentItem == null; )
+        {
+            HoldOnHeadRay(world, headT);
+            pressed |= Interact.PhysicalInteraction.GripInteractActive;
+            yield return null;
+        }
+        bool holding = c.data.currentItem != null;
+        var note = F(
+            $"posed {posed}, pressed while closed {early}, grip interact pressed {pressed}, holding {holding}"
+        );
+        if (!posed)
+            Fail("the tap was not in the thumbs-up pose, so the step proves nothing: " + note);
+        else if (!holding)
+            Fail("the quick posed tap picked nothing up: " + note);
+        else
+            Note(note);
+        yield return DropHeld();
     }
 
     /// <summary>A fist on <paramref name="left"/>: grip closed, finger on the trigger, the thumb off every button, the

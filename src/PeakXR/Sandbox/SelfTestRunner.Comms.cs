@@ -42,6 +42,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
         yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
         yield return HandStep("vr.461-point-squeeze-no-ping", 20f, PointSqueezeNoPingStep());
+        yield return HandStep("vr.448-ping-aim-open-point", 25f, PingAimOpenPointStep());
         // ---- WP6 gap round: wheels
         yield return WheelGapSteps();
     }
@@ -245,6 +246,83 @@ internal sealed partial class SelfTestRunner
             Fail("pointing and squeezing the trigger still pings: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.448 (decision on #89): with <c>Interaction.Ping.Hand = Pointing</c>, the other hand aims the ping in the
+    /// ping-aim point, made with the grip open (index straight off the trigger, thumb lifted; Core
+    /// <c>GripIntent.IsPingAimPoint</c>). The button hand taps its ping button: the ping must land where the pointing
+    /// hand aims, and that hand must make no grip (<c>PhysicalInteraction.HandAction</c> None) and press no interact
+    /// (<c>GripInteractActive</c>), so aiming a ping never touches what it points at.
+    /// </summary>
+    IEnumerator PingAimOpenPointStep()
+    {
+        ClearStrayItems();
+        var pinger = LocalPinger();
+        if (pinger == null || PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        if (PingConfig.Instance.Hand != PingAimHand.Pointing)
+        {
+            stepSkip = "Interaction.Ping.Hand is not Pointing";
+            yield break;
+        }
+        if (!PingButtonHand(out bool button))
+            yield break;
+        bool aimLeft = !button;
+        var rig = VRRig.Instance;
+        var aim = PingGround();
+        yield return PingCooldownOver(pinger);
+        HandBesideHead(aimLeft);
+        OpenPoint(aimLeft);
+        bool acted = false,
+            pressed = false;
+        for (float until = Now + 0.4f; Now < until; )
+        {
+            AimHand(rig, aimLeft, aim);
+            yield return null;
+        }
+        float gameMark = Time.time;
+        var oldMarker = PingMarker(pinger);
+        Script(button).Secondary = true;
+        for (float until = Now + 0.15f; Now < until; )
+        {
+            AimHand(rig, aimLeft, aim);
+            acted |= Interact.PhysicalInteraction.HandAction(aimLeft) != GripPressAction.None;
+            pressed |= Interact.PhysicalInteraction.GripInteractActive;
+            yield return null;
+        }
+        Script(button).Secondary = false;
+        yield return Until(
+            () => PingInput.LastPinged(pinger) >= gameMark,
+            2f,
+            "the button tap did not ping (PointPinger._timeLastPinged unchanged)"
+        );
+        if (!stepOk)
+            yield break;
+        var landing = PingLanding(pinger, oldMarker, aim, aimLeft, out float landed);
+        var note = F(
+            $"landed {landed:0.00} m from the aim, pointing hand gripped {acted}, grip interact pressed {pressed}"
+        );
+        if (landing != null)
+            Fail("the open pointing hand did not aim the ping: " + landing + "; " + note);
+        else if (acted || pressed)
+            Fail("aiming the ping made a grip or pressed interact: " + note);
+        else
+            stepNote = note;
+    }
+
+    /// <summary>The ping-aim point on <paramref name="left"/>: grip open, index off the trigger, thumb off every
+    /// button.</summary>
+    void OpenPoint(bool left)
+    {
+        ref var s = ref Script(left);
+        s.Grip = 0f;
+        s.Trigger = 0f;
+        s.TriggerTouch = false;
+        s.PrimaryTouch = s.SecondaryTouch = s.StickTouch = s.ThumbrestTouch = false;
     }
 
     // ================================================================ end WP6 gap round: ping
@@ -1183,7 +1261,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.444 (issue #82): with HandToMouthTalk on, the free hand closes 0.2 m under the mouth like a walkie-talkie and
+    /// vr.444 (issue #82): with HandToMouthTalk on and the mic on Push To Talk, the free hand closes 0.2 m under the mouth like a walkie-talkie and
     /// is held at the mouth 1 s. A grip on empty air falls back to the head-aimed interact; this one must wait and be
     /// dropped once the talk gesture takes the hand: the hand talks (VoiceRuntime.Talking) and the grip's interact
     /// (PhysicalInteraction.GripInteractActive) never presses.
@@ -1191,11 +1269,13 @@ internal sealed partial class SelfTestRunner
     IEnumerator TalkFistNoInteractStep()
     {
         var cfg = VoiceFeature.Settings;
-        if (cfg == null)
+        var setting = MicSetting();
+        if (cfg == null || setting == null)
         {
-            stepSkip = "voice not installed";
+            stepSkip = "voice not installed or no PushToTalkSetting";
             yield break;
         }
+        var mode = setting.Value;
         bool talk = cfg.HandToMouthTalk.Value;
         bool left = !VRInput.LeftHanded;
         bool pressed = false,
@@ -1203,6 +1283,8 @@ internal sealed partial class SelfTestRunner
         try
         {
             cfg.HandToMouthTalk.Value = true;
+            // The talk fist waits only where the gesture talks: the game's mic on Push To Talk.
+            SetMicMode(setting, PushToTalkSetting.PushToTalkType.PushToTalk);
             var o = MouthGesture.DefaultOffset;
             var mouth = VRInput.HeadPosition + VRInput.HeadRotation * new Vector3(o.X, o.Y, o.Z);
             Script(left).Grip = 0f;
@@ -1219,6 +1301,7 @@ internal sealed partial class SelfTestRunner
         }
         finally
         {
+            SetMicMode(setting, mode);
             cfg.HandToMouthTalk.Value = talk;
         }
         var note = F($"talked {talked}, grip interact pressed {pressed}");

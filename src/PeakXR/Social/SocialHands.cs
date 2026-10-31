@@ -64,6 +64,9 @@ internal sealed class SocialHands : IGripExtension
     private readonly bool[] gripDown = new bool[2];
     private readonly GiveUpHold giveUp = new();
     private bool givingUp;
+
+    /// <summary>The "open your hands" refusal for fists closed at pass-out was shown (once per pass-out).</summary>
+    private bool toldOpen;
     private float shoveHold;
     private bool vanillaInteract;
     private bool vanillaInteractPressed;
@@ -1154,6 +1157,7 @@ internal sealed class SocialHands : IGripExtension
             gripDown[0] = gripDown[1] = false;
             giveUp.Reset();
             givingUp = false;
+            toldOpen = false;
             return;
         }
         bool chord =
@@ -1170,12 +1174,24 @@ internal sealed class SocialHands : IGripExtension
             bool down = VRInput.Hand(h == 0).Grip > 0.6f;
             if (deliberate)
                 Affordance.Progress(h == 0, Mathf.Clamp01(c.data.deathTimer));
+            // Fists closed before passing out: the ring would sit at 0, so say once why the chord does not count.
+            else if (chord && giveUp.NeedsOpen)
+            {
+                if (!toldOpen)
+                    Affordance.DenyWithText(
+                        h == 0,
+                        HandAt(h == 0, c.Center),
+                        DenyReason.NotNow,
+                        "Open your hands first"
+                    );
+            }
             else if (chord)
                 Affordance.Progress(h == 0, giveUp.Arming);
             else if (down && !gripDown[h])
                 Affordance.DenyAtHand(h == 0, DenyReason.NeedsTwoHands);
             gripDown[h] = down;
         }
+        toldOpen |= chord && giveUp.NeedsOpen;
     }
 
     /// <summary>

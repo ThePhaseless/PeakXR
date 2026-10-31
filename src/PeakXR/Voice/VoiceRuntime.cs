@@ -51,13 +51,18 @@ internal sealed class VoiceRuntime : MonoBehaviour
         rightNear;
 
     /// <summary>Last frame this free, tracked hand was within <see cref="NearMouth"/> of the mouth with the talk gesture
-    /// on: a fist closed there may be the walkie-talkie hand, not a grab (interact.physical, #82).</summary>
+    /// on and the game's mic on Push To Talk: a fist closed there may be the walkie-talkie hand, not a grab
+    /// (interact.physical, #82). In the other mic modes the gesture opens nothing, so the fist is a grab.</summary>
     internal static bool AtMouth(bool left) =>
-        instance != null && (left ? instance.leftNear : instance.rightNear);
+        instance != null
+        && (left ? instance.leftNear : instance.rightNear)
+        && instance.ReadMode() == MicMode.PushToTalk;
 
-    /// <summary>This hand's talk gesture holds the mic open (dwelled at the mouth).</summary>
+    /// <summary>This hand's talk gesture holds the mic open (dwelled at the mouth), with the mic on Push To Talk.</summary>
     internal static bool Talking(bool left) =>
-        instance != null && (left ? instance.leftMouth : instance.rightMouth).Active;
+        instance != null
+        && (left ? instance.leftMouth : instance.rightMouth).Active
+        && instance.ReadMode() == MicMode.PushToTalk;
 
     /// <summary>The headset mic switch, for the self-test.</summary>
     internal static HeadsetMic Mic => instance != null ? instance.headsetMic : null;

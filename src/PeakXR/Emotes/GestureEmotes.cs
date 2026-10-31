@@ -54,6 +54,7 @@ internal sealed class GestureEmotes : MonoBehaviour
     private static bool tracking;
 
     private static readonly float[] playedAt = { float.NegativeInfinity, float.NegativeInfinity };
+    private static readonly float[] tookAt = { float.NegativeInfinity, float.NegativeInfinity };
 
     /// <summary>
     /// This empty hand's grip may be the thumbs-up's fist, not a grab (interact.physical, #82): gestures are tracked,
@@ -90,6 +91,10 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>When a gesture emote last played on this hand (<c>Time.time</c>).</summary>
     internal static float PlayedAt(bool left) => playedAt[left ? 0 : 1];
+
+    /// <summary>When the thumbs-up last fired on this hand (<c>Time.time</c>), played or held back by the cooldown: its
+    /// fist is the gesture's either way, so it presses no interact (interact.physical, #82).</summary>
+    internal static float TookAt(bool left) => tookAt[left ? 0 : 1];
 
     private GUIManager gui;
     private Emote wave,
@@ -222,8 +227,20 @@ internal sealed class GestureEmotes : MonoBehaviour
             Thumb(false, rig.RightHand, head, forward, holding, rightBusy),
             dt
         );
+        if (thumbLeft)
+            tookAt[0] = Time.time;
+        if (thumbRight)
+            tookAt[1] = Time.time;
         if (Time.time < nextAt)
+        {
+            // A dwell gesture fires once per hold: one light notice that the cooldown held it back, never silence.
+            if (cheered || thumbLeft || thumbRight)
+            {
+                bool left = cheered ? VRInput.OffHandLeft : thumbLeft;
+                Affordance.Inform(left, rig.Hand(left).position, DenyReason.TooSoon, default);
+            }
             return;
+        }
         if (cheered)
             Play(c, cheerEmote, VRInput.OffHandLeft, rig.Hand(VRInput.OffHandLeft));
         else if (wavedLeft || wavedRight)

@@ -94,18 +94,17 @@ internal static class PingInput
         buttonAimLeft = AimLeft(PingConfig.Instance.Hand);
     }
 
-    /// <summary>The hand a button ping aims from (<see cref="PingRules.ButtonHandLeft"/>): a hand pointing with the
-    /// thumb up wins over the button's own hand.</summary>
+    /// <summary>The hand a button ping aims from (<see cref="PingRules.ButtonHandLeft"/>): a hand in the ping-aim point
+    /// (grip open, so it never interacts with what it points at) wins over the button's own hand.</summary>
     private static bool AimLeft(PingAimHand setting) =>
-        PingRules.ButtonHandLeft(
-            setting,
-            ThumbUpPoint(true),
-            ThumbUpPoint(false),
-            VRInput.LeftHanded
-        );
+        PingRules.ButtonHandLeft(setting, AimPoint(true), AimPoint(false), VRInput.LeftHanded);
 
-    private static bool ThumbUpPoint(bool left) =>
-        VRInput.Hand(left).Tracked && GripIntent.IsThumbUpPoint(LocalAvatar.ControllerCurls(left));
+    private static bool AimPoint(bool left)
+    {
+        ref var state = ref VRInput.Hand(left);
+        return state.Tracked
+            && GripIntent.IsPingAimPoint(LocalAvatar.ControllerCurls(left), state.Grip);
+    }
 
     public static void Tick(Character c, CharacterInput input, bool playerMovementActive)
     {

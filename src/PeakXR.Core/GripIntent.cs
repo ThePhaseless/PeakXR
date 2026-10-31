@@ -303,6 +303,15 @@ public static class GripIntent
             : interactAt;
 
     /// <summary>
+    /// A posed grip (<see cref="GestureInteractAt"/>) opened before its interact came due, within
+    /// <see cref="GestureWindow"/> of closing: a quick tap is a gaze grab, so it presses interact once at the release,
+    /// unless the gesture took the hand (issue #82: it pressed nothing). A longer posed fist let go is a gesture given
+    /// up, and presses nothing.
+    /// </summary>
+    public static bool ReleaseTaps(float interactAt, float gripAt, float now, bool gestureTook) =>
+        now < interactAt && now - gripAt < GestureWindow && !gestureTook;
+
+    /// <summary>
     /// Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).
     /// An extension claim (holstering over a slot) wins over throw and drop for the holding hand; the caller asks
     /// for one only when the release <see cref="Throws"/> nothing.
@@ -405,9 +414,11 @@ public static class GripIntent
     public const float PointedIndex = 0.2f;
 
     /// <summary>
-    /// Pointing with the thumb lifted off the stick and face buttons: a button ping aims from this hand
-    /// (<c>Interaction.Ping.Hand = Pointing</c>). A point with the thumb resting is only a pointed grip (external review
-    /// #13); neither pings by itself, the ping is a button.
+    /// The ping-aim point (<c>Interaction.Ping.Hand = Pointing</c>): index straight off the trigger, thumb lifted off
+    /// the stick and face buttons, and the grip open (<paramref name="grip"/> under 0.3). Made without the grip, so
+    /// aiming a ping never makes a pointed grip that interacts with what it points at (decision on #89). It never
+    /// pings by itself: the ping is a button.
     /// </summary>
-    public static bool IsThumbUpPoint(in FingerCurls c) => IsPointing(c) && c.Thumb < 0.5f;
+    public static bool IsPingAimPoint(in FingerCurls c, float grip) =>
+        c.Index < PointedIndex && c.Thumb < 0.5f && grip < 0.3f;
 }
