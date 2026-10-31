@@ -47,6 +47,10 @@ public sealed class UseTrigger
     /// <summary>The trigger drives its hand's use this frame.</summary>
     public bool Down { get; private set; }
 
+    /// <summary><see cref="Down"/> started this frame: a press that counts as a use, so a muted trigger (in a fist or
+    /// on the climber) never gives one. For cues that answer a press (issue #74).</summary>
+    public bool Pressed { get; private set; }
+
     /// <summary>This frame's press was made deliberately by a hand that has held the climber for
     /// <see cref="SettleSeconds"/>: not part of a closing fist.</summary>
     public bool ClimbPress { get; private set; }
@@ -83,7 +87,9 @@ public sealed class UseTrigger
             muted = true;
         climbing = climbs ? climbing + dt : 0f;
         held = trigger;
+        bool was = Down;
         Down = trigger && !muted;
+        Pressed = Down && !was;
     }
 
     /// <summary>A grip closed less than <see cref="SettleSeconds"/> ago is still closing: a full fist's index reaches
@@ -95,7 +101,7 @@ public sealed class UseTrigger
     {
         held = muted = false;
         climbing = 0f;
-        Down = ClimbPress = ClimbHold = false;
+        Down = Pressed = ClimbPress = ClimbHold = false;
         ClimbHeld = 0f;
     }
 }

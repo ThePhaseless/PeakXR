@@ -4,6 +4,7 @@ using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Interact;
 using PeakXR.Inventory;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using Photon.Pun;
 using UnityEngine;
@@ -222,6 +223,55 @@ internal sealed partial class SelfTestRunner
             Fail("the fist's own trigger started using the Bandages it picked up: " + note);
         else if (!fresh)
             Fail("a fresh trigger press after the fist did not use the Bandages: " + note);
+        else
+            Note(note);
+        yield return Wait(0.3f);
+        yield return DropHeld();
+    }
+
+    /// <summary>vr.440 (issue #74): the right hand grips a glowing Apple and squeezes the trigger as soon as the Apple
+    /// is in hand, inside the fist's 0.3 s (<see cref="UseTrigger.InFist"/>), and stays closed 1 s. The fist's trigger
+    /// is no use, so no refusal may answer it either: no NotHere, ring or pulse on that hand, and the Apple uneaten.</summary>
+    IEnumerator FistFoodQuietStep()
+    {
+        const bool left = false;
+        var world = SpawnTestItem(AppleFragment, HandSpot(left));
+        if (world == null)
+            yield break;
+        var prefab = FindItem(SandboxActions.Items, AppleFragment);
+        yield return Wait(0.2f);
+        float since = CueLog.Now;
+        yield return GlowAndPress(left, world);
+        if (!stepOk)
+            yield break;
+        yield return WaitFor(() => Holding(prefab), 0.25f);
+        float landed = Now - grabPressAt;
+        if (!Holding(prefab))
+        {
+            stepSkip = F(
+                $"the Apple was not in hand {landed:0.00} s after the grip, past the fist's window"
+            );
+            Script(left).Grip = 0f;
+            yield break;
+        }
+        Script(left).Trigger = 1f;
+        bool used = false;
+        for (float until = Now + 1f; Now < until; )
+        {
+            var item = HeldItem();
+            used |= item != null && (item.isUsingPrimary || item.castProgress > 0f);
+            yield return null;
+        }
+        bool quiet = CueLog.Capture.Quiet(left, since, out string why);
+        Script(left).Trigger = 0f;
+        Script(left).Grip = 0f;
+        var note = F(
+            $"in hand {landed:0.00} s after the grip, used {used}, refusal cue {why ?? "none"}"
+        );
+        if (used)
+            Fail("the fist's trigger started eating the Apple: " + note);
+        else if (!quiet)
+            Fail("the fist's muted trigger got a refusal cue: " + note);
         else
             Note(note);
         yield return Wait(0.3f);

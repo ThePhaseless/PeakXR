@@ -259,6 +259,7 @@ public static class SelfTestIds
         "vr.287-quick-release-fist",
         "vr.288-glow-grab",
         "vr.320-fist-grab-no-use",
+        "vr.440-fist-food-quiet",
         "vr.273-look-down-step-back",
         "vr.300-snap-turn-step",
         "vr.301-room-step",

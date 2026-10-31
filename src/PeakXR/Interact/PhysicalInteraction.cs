@@ -639,6 +639,10 @@ internal static class PhysicalInteraction
         return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
 
+    /// <summary>This hand's trigger started a use press on the last use pass (<see cref="UseTrigger.Pressed"/>): never
+    /// one it squeezed with a closing fist or on the climber. For cues that answer a press.</summary>
+    internal static bool UsePressed(bool left) => (left ? LeftHand : RightHand).Use.Pressed;
+
     /// <summary>The body flies or falls free: not grounded, and not on a wall, rope, vine or handle.</summary>
     private static bool Airborne(Character c) =>
         !c.data.isGrounded
