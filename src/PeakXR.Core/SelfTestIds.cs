@@ -242,6 +242,7 @@ public static class SelfTestIds
         "vr.422-reach-out-idle",
         "vr.423-reach-out-hands-full",
         "vr.424-reach-out-far",
+        "vr.450-throw-over-slot",
         "vr.269-end-screen-head",
         "vr.270-banner-head-card",
         "vr.271-pause-head",

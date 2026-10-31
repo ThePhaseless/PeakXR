@@ -359,6 +359,26 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void Release_FastOverASlotOrPack_Throws()
+    {
+        // Issue #83: an underhand toss let go over the front belt slot or by a pack is a throw, not a holster: the
+        // extensions (whose release hook acts as it claims) are not asked, so no claim reaches OnRelease.
+        bool fast = GripIntent.Throws(true, true, 9f, 2f, true);
+        Assert.True(fast);
+        Assert.Equal(
+            GripReleaseAction.Throw,
+            GripIntent.OnRelease(true, true, 9f, 2f, true, false, extensionClaims: !fast)
+        );
+        // A placed, slow release there is still the holster.
+        Assert.False(GripIntent.Throws(true, true, 0.5f, 2f, true));
+        // No throw the game would take (hand throws off, an item that cannot be dropped or thrown): the slot keeps
+        // its chance, rather than a refusal.
+        Assert.False(GripIntent.Throws(true, true, 9f, 2f, false));
+        Assert.False(GripIntent.Throws(false, true, 9f, 2f, true));
+        Assert.False(GripIntent.Throws(true, false, 9f, 2f, true));
+    }
+
+    [Fact]
     public void Release_ExtensionClaim_IgnoredForEmptyHand()
     {
         Assert.Equal(

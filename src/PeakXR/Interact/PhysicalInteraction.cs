@@ -1473,6 +1473,17 @@ internal static class PhysicalInteraction
                     break;
                 // Body-relative speed decides a throw, so walking or falling does not turn a release into one.
                 var handVelocity = HandVelocity(hand, rig);
+                // A throw is never offered to the extensions: their release hook holsters or stashes as it claims
+                // (issue #83).
+                bool throws =
+                    hand.Armed
+                    && GripIntent.Throws(
+                        item.UIData.canDrop,
+                        item.UIData.canThrow,
+                        handVelocity.magnitude,
+                        cfg.ThrowSpeed,
+                        cfg.PhysicalThrow
+                    );
                 var result = GripIntent.OnRelease(
                     true,
                     item.UIData.canDrop,
@@ -1480,7 +1491,7 @@ internal static class PhysicalInteraction
                     cfg.ThrowSpeed,
                     cfg.PhysicalThrow,
                     cfg.ReleaseToDrop,
-                    action != GripPressAction.Extension && GripHooks.HeldRelease(hook),
+                    action != GripPressAction.Extension && !throws && GripHooks.HeldRelease(hook),
                     hand.Armed
                 );
                 // Mid-cast the game keeps the item (CharacterItems.DoDropping, CharacterItems.cs:254-258). A fist's
