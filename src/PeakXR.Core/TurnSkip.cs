@@ -27,11 +27,16 @@ public sealed class TurnSkip
     /// <summary>Rate (1/s) at which a released skip goes to the lean.</summary>
     public float ReleaseRate = 2f;
 
+    /// <summary>Most of a turn's leftover the lean takes (m, about 6 degrees): the rest stays skipped, so a walk that
+    /// left 0.10-0.14 m under a turned head no longer bends the body 7-12 degrees (run 15, vr.45b; want 8).</summary>
+    public float MaxLean = 0.09f;
+
     Vector3 _last;
     float _lastYaw;
     bool _have;
     bool _walked;
     float _since = float.MaxValue;
+    float _kept;
 
     /// <summary>The level offset the lean leaves out (world, m).</summary>
     public Vector3 Skip { get; private set; }
@@ -65,12 +70,18 @@ public sealed class TurnSkip
             Skip += share - _last;
         else if (_walked || _since > ReleaseAfter)
             Skip *= MathF.Max(0f, 1f - ReleaseRate * dt);
-        // Along the share and no longer than it: the lean then bends toward the view by at most the debt.
+        // Along the share and no longer than it: the lean then bends toward the view by at most the debt. Released,
+        // never shorter than the skip's own part of the share past MaxLean.
         float len2 = share.LengthSquared();
-        Skip =
-            len2 > 1e-8f
-                ? share * Math.Clamp(Vector3.Dot(Skip, share) / len2, 0f, 1f)
-                : Vector3.Zero;
+        float k = len2 > 1e-8f ? Math.Clamp(Vector3.Dot(Skip, share) / len2, 0f, 1f) : 0f;
+        if (_kept > 0f && len2 > 1e-8f)
+            k = MathF.Max(k, MathF.Min(_kept, MathF.Sqrt(len2) - MaxLean) / MathF.Sqrt(len2));
+        Skip = share * k;
+        // Kept from the turn and its walk; gone once the head is back within MaxLean of the body.
+        _kept =
+            len2 <= MaxLean * MaxLean ? 0f
+            : _since <= SwingSeconds || walking ? MathF.Max(0f, Skip.Length() - MaxLean)
+            : _kept;
         _last = share;
         _lastYaw = yaw;
         return Skip;
@@ -79,6 +90,7 @@ public sealed class TurnSkip
     public void Reset()
     {
         Skip = Vector3.Zero;
+        _kept = 0f;
         _have = false;
         _walked = false;
         _since = float.MaxValue;

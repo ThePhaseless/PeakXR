@@ -66,6 +66,33 @@ public class TurnSkipTests
     }
 
     [Fact]
+    public void ABigWalkLeftover_TheLeanTakesOnlyMaxLeanOfIt()
+    {
+        // vr.45b (run 15): the walk left 0.10-0.14 m under a turned head and the lean, solved onto the eyes, bent
+        // 7-12 degrees for it (want 8). The lean takes at most MaxLean of what a turn left; the body stays upright.
+        var s = new TurnSkip();
+        Lean(s, Vector3.Zero, 0f);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            Lean(s, TurnDebt(150f * t), 150f * t);
+        var debt = TurnDebt(90f);
+        for (float t = 0f; t < 1.5f; t += Dt)
+            Lean(s, debt, 90f);
+        for (float t = 0f; t < 0.3f; t += Dt)
+            Lean(s, debt, 90f, walking: true);
+        var left = Vector3.Normalize(debt) * 0.14f;
+        Vector3 lean = default;
+        for (float t = 0f; t < 3f; t += Dt)
+            lean = Lean(s, left, 90f);
+        TestUtil.Near(s.MaxLean, lean.Length(), 1e-3f);
+        Assert.True(Vector3.Dot(lean, left) > 0f);
+        // The head comes back toward the body: the leftover shrinks under MaxLean and the lean takes all of it.
+        var closer = Vector3.Normalize(debt) * 0.06f;
+        for (float t = 0f; t < 2f; t += Dt)
+            lean = Lean(s, closer, 90f);
+        TestUtil.Near(closer, lean, 1e-3f);
+    }
+
+    [Fact]
     public void AStaleSkip_NeverBendsTheLeanAwayFromTheView()
     {
         // vr.300 (run 13): after a snap turn the walk closed the debt to 0.015 m, but the turn's shift stayed at 0.155 m

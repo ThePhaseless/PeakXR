@@ -449,6 +449,8 @@ internal static class LocomotionInput
         float toTracking = 1f / Mathf.Max(rig.Scale, 0.01f);
         var worldDebt = RigDriver.StanceDebt * toTracking;
         var levelVelocity = bodyVelocity * toTracking;
+        // Where the feet stand against the body: a push that leaves them behind springs back onto them (#52).
+        var feet = (RigDriver.FeetMid(c) - RigDriver.ViewRoot(c)) * toTracking;
         var phase = Stance.State;
         float phaseFor = Stance.PhaseSeconds;
         var worldRequest = Stance.Update(
@@ -456,7 +458,8 @@ internal static class LocomotionInput
             new NVector2(levelVelocity.x, levelVelocity.z),
             data.worldMovementInput_Lerp.magnitude,
             canFollow && !outside,
-            dt
+            dt,
+            new NVector2(feet.x, feet.z)
         );
         if (Stance.State != phase)
             TraceStance(phase, phaseFor, debt.Length(), worldRequest.Length());
@@ -526,7 +529,7 @@ internal static class LocomotionInput
             return;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m, slew {Stance.InputSlew:0.0}/s"
+                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m, feet-behind {Stance.FeetBehind:0.000} m, slew {Stance.InputSlew:0.0}/s"
             )
         );
     }

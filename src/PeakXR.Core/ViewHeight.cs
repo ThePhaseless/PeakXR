@@ -3,7 +3,7 @@ using System;
 namespace PeakXR.Core;
 
 /// <summary>
-/// Keeps the first-person view's height over the ground under the body while only idling or PeakXR's own motion moves
+/// Keeps the first-person view's height over the ground under its feet while only idling or PeakXR's own motion moves
 /// the body (a lean, a head turn, the stance walk and its settle). The view rode the hip's height, which the game's
 /// stand force sets from the footing and the animation's head target: on level ground a bend, a turned head or a
 /// stance walk's new footing moved it 0.03-0.1 m (run 14: the view rose and fell 0.061 m in vr.45's slow leans,
@@ -38,7 +38,7 @@ public sealed class ViewHeight
     public float Offset => off;
 
     /// <param name="body">The view's height without the hold (the body's eye anchor).</param>
-    /// <param name="ground">Height of the ground under the body; NaN without ground.</param>
+    /// <param name="ground">Height of the ground under the feet (a lean leaves them planted, #107); NaN without ground.</param>
     /// <param name="open">Only idling or PeakXR's own motion moves the body.</param>
     /// <param name="dt">Seconds since the last update.</param>
     /// <returns>The view's height.</returns>

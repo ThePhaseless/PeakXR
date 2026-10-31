@@ -93,19 +93,42 @@ public class BodyStanceTests
     public void LeanLimit_WhileWalking_EasesDownAndBack()
     {
         // vr.396: with the lean solved onto the eyes, the 0.35 m limit bends about 40 degrees while the walk steps.
+        // A held lean bent for 0.3 m when the walk starts: it eases down, never snaps.
         float limit = 0.35f;
         for (int i = 0; i < 10; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
-        Assert.True(limit < 0.35f && limit > BodyStance.WalkLeanLimit, $"jumped to {limit:0.000}");
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.3f, 0.02f);
+        Assert.True(limit < 0.3f && limit > BodyStance.WalkLeanLimit, $"jumped to {limit:0.000}");
         for (int i = 0; i < 100; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.3f, 0.02f);
         Assert.Equal(BodyStance.WalkLeanLimit, limit);
         for (int i = 0; i < 100; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, false, 0.02f);
+            limit = BodyStance.LeanLimit(limit, 0.35f, false, 0.3f, 0.02f);
         Assert.Equal(0.35f, limit);
         // A lower setting stays the limit while walking.
-        Assert.Equal(0.1f, BodyStance.LeanLimit(0.1f, 0.1f, true, 0.02f));
-        Assert.Equal(0.35f, BodyStance.LeanLimit(float.NaN, 0.35f, false, 0.02f));
+        Assert.Equal(0.06f, BodyStance.LeanLimit(0.06f, 0.06f, true, 0.06f, 0.02f));
+        Assert.Equal(0.35f, BodyStance.LeanLimit(float.NaN, 0.35f, false, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void LeanLimit_AWalkStartingUpright_NeverBendsPastTheWalkLimit()
+    {
+        // vr.396 (run 15): the head walked away in the room and the lean took the full 0.35 m (28.6 degrees) before the
+        // first push; the cap only eased in after. Walking, the lean may shrink but never grow past what it bends now.
+        float limit = 0.35f;
+        float bent = 0f;
+        for (float share = 0f; share < 0.6f; share += 0.01f)
+        {
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, bent, 1f / 72f);
+            bent = MathF.Min(share, limit);
+            Assert.True(
+                bent <= BodyStance.WalkLeanLimit + 1e-6f,
+                $"share {share:0.00}: bent {bent:0.000}"
+            );
+        }
+        // Stood still again, the lean eases back to the full limit.
+        for (int i = 0; i < 200; i++)
+            limit = BodyStance.LeanLimit(limit, 0.35f, false, bent, 1f / 72f);
+        Assert.Equal(0.35f, limit);
     }
 
     [Fact]
@@ -747,6 +770,44 @@ public class StanceWalkTests
         }
         for (int i = 0; i < 500 && w.State == StanceWalkPhase.Settle; i++)
             w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt);
+    }
+
+    /// <summary>Holds the debt with the feet still under the body, then pushes the body along +x at 0.5 m/s, its
+    /// feet planted (<paramref name="planted"/>) or stepping along under it; the debt when the push ends.</summary>
+    static float PushOnFeet(bool planted, bool seen)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        var stand = new Vector2(0f, -0.04f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, seen ? stand : default);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        float travel = 0f;
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
+        {
+            var feet = stand - (planted ? new Vector2(travel, 0f) : Vector2.Zero);
+            w.Update(debt, new Vector2(0.5f, 0f), 0f, canWalk: true, Dt, seen ? feet : default);
+            debt.X -= 0.5f * Dt;
+            travel += 0.5f * Dt;
+        }
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        return debt.X;
+    }
+
+    [Fact]
+    public void FeetLeftBehind_ThePushWalksOnPastTheView_ByAtMostFeetLead()
+    {
+        // Run 15: follow-up and backward pushes closed to 0.04-0.07 m and sprang back 0.12-0.25 m, each time to the same
+        // spot (vr.273: the body back at -373.27, -373.23, -373.23 after three pushes): the feet, which never stepped,
+        // and the body settles over them. Walking on while they trail gives the gait time to step them.
+        var w = new StanceWalk();
+        float coast = 0.5f * (w.CoastSeconds + Dt);
+        float stepping = PushOnFeet(planted: false, seen: true);
+        Assert.True(stepping > coast - w.Stop - 0.01f, $"feet stepping: ended at {stepping:0.000}");
+        Assert.Equal(stepping, PushOnFeet(planted: false, seen: false), 3);
+        float behind = PushOnFeet(planted: true, seen: true);
+        Assert.True(behind < 0f, $"feet behind: ended at {behind:0.000}, before the view");
+        Assert.True(behind > coast - w.FeetLead - 0.01f, $"feet behind: ran on to {behind:0.000}");
     }
 
     [Fact]

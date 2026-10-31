@@ -255,4 +255,31 @@ public class BodyLeanHeldHeadTests
 
     [Fact]
     public void HeadOnTheEyes_NoLean() => TestUtil.SameRotation(Quaternion.Identity, Swing(Eye));
+
+    [Theory]
+    [InlineData(0.6f, -0.12f)]
+    [InlineData(-0.6f, -0.12f)]
+    [InlineData(0.6f, 0f)]
+    [InlineData(0.5f, 0.3f)]
+    public void SidewaysPart_BendsNoFurtherThanTheSideLimit(float right, float forward)
+    {
+        // vr.45 (run 15): the sideways lean, with the body's eyes 0.1 m ahead of the head, bent 26.7 degrees: 25
+        // sideways and 9 back at once. Each direction's limit bounds the whole bend toward it (an elliptic cone).
+        var q = Swing(Eye + new Vector3(right, -0.03f, forward));
+        float angle = 2f * MathF.Acos(MathF.Min(1f, MathF.Abs(q.W))) * 180f / MathF.PI;
+        var joint = Vector3.Transform(Joint, q);
+        float side = MathF.Atan2(joint.X, joint.Y) * 180f / MathF.PI;
+        float fwd =
+            (MathF.Atan2(joint.Z, joint.Y) - MathF.Atan2(Joint.Z, Joint.Y)) * 180f / MathF.PI;
+        float along = fwd >= 0f ? BodyLean.MaxForwardDeg : BodyLean.MaxBackDeg;
+        float e =
+            fwd / along * (fwd / along) + side / BodyLean.MaxSideDeg * (side / BodyLean.MaxSideDeg);
+        Assert.True(e <= 1.02f, $"side {side:0.0}, forward {fwd:0.0}: {e:0.00} of the cone");
+        Assert.True(
+            MathF.Abs(side) <= BodyLean.MaxSideDeg + 0.5f,
+            $"bent {angle:0.0}, side {side:0.0}"
+        );
+        if (forward <= 0f)
+            Assert.True(angle <= BodyLean.MaxSideDeg + 0.5f, $"bent {angle:0.0}");
+    }
 }
