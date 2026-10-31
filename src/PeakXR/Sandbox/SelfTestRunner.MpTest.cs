@@ -651,7 +651,7 @@ internal sealed partial class SelfTestRunner
         if (VRSession.Active)
         {
             // Inside the game's 2 m interact reach (Interaction.cs:7).
-            yield return MpWalkAround(() => kiosk.transform.position, 1.6f, 15f);
+            yield return MpWalkAround(() => kiosk.transform.position, 1.6f, 15f, 6);
             yield return BoardByHand(kiosk, s => shortcut = s);
         }
         if (!LoadingScreenHandler.loading)
@@ -763,7 +763,7 @@ internal sealed partial class SelfTestRunner
         {
             failed(
                 F(
-                    $"no spot at the kiosk reached on foot ({FlatDistance(c.Center, bounds.center):0.0} m from it)"
+                    $"no spot at the kiosk reached on foot ({FlatDistance(c.Center, bounds.center):0.0} m from it, stopped at {c.Center:F1}, kiosk at {bounds.center:F1})"
                 )
             );
             yield break;
@@ -1135,13 +1135,16 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// <see cref="MpWalkBounded"/> that walks around what blocks the straight line, as a player steps around a
-    /// stanchion or a bench (MP run 16: the walk to the kiosk stalled 12.5 m short every time). When a try ends short,
-    /// A sidesteps 2.5 m to a side whose chest-height line is clear, alternating sides, then tries again; at most
-    /// <paramref name="detours"/> times, each walk bounded by <paramref name="seconds"/>.
+    /// stanchion, a bench or along a wall. When a try ends short, A walks 3 m along the clear heading nearest the
+    /// goal's (<see cref="ClearHeading"/>), keeping to the side that last worked so it follows a wall instead of
+    /// pacing in front of it, then tries again; at most <paramref name="detours"/> times, each walk bounded by
+    /// <paramref name="seconds"/>. MP run 16 and 12: a 2.5 m sidestep that swapped sides every try, judged by one ray at
+    /// chest height, left A boxed in at the airport spawn for 75 s and pacing a wall 12 m short of the kiosk.
     /// </summary>
     IEnumerator MpWalkAround(Func<Vector3> target, float stop, float seconds, int detours = 3)
     {
         var c = Character.localCharacter;
+        float side = 1f;
         for (int i = 0; ; i++)
         {
             yield return MpWalkBounded(target, stop, seconds);
@@ -1151,21 +1154,49 @@ internal sealed partial class SelfTestRunner
             to.y = 0f;
             if (to.sqrMagnitude < 1e-4f)
                 yield break;
-            var side = Vector3.Cross(Vector3.up, to.normalized) * (i % 2 == 0 ? 1f : -1f);
-            var chest = c.Center + Vector3.up * 0.3f;
-            if (
-                Physics.Raycast(
-                    chest,
-                    side,
-                    2.5f,
-                    HelperFunctions.AllPhysicalExceptCharacter,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
-                side = -side;
-            var aside = c.Center + side * 2.5f;
+            if (ClearHeading(c, to.normalized, ref side) is not { } dir)
+                yield break;
+            var aside = c.Center + dir * MpDetourStep;
             yield return MpWalkBounded(() => aside, 0.4f, 4f);
         }
+    }
+
+    /// <summary>How far one detour walks (m).</summary>
+    const float MpDetourStep = 3f;
+
+    /// <summary>
+    /// The heading nearest <paramref name="goal"/> (flat, normalised) that a body can walk <see cref="MpDetourStep"/>
+    /// along: a capsule from knee to chest height swept 30 to 150 degrees off the goal, <paramref name="side"/> first at
+    /// each angle (+1 turns right). Sets <paramref name="side"/> to the side taken; null when every heading is shut.
+    /// </summary>
+    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side)
+    {
+        var top = c.Center + Vector3.up * 0.3f;
+        var bottom = c.Center + Vector3.down * 0.4f;
+        for (int a = 30; a <= 150; a += 30)
+        {
+            for (int k = 0; k < 2; k++)
+            {
+                float s = k == 0 ? side : -side;
+                var dir = Quaternion.Euler(0f, s * a, 0f) * goal;
+                if (
+                    !Physics.CapsuleCast(
+                        top,
+                        bottom,
+                        0.25f,
+                        dir,
+                        MpDetourStep,
+                        HelperFunctions.AllPhysicalExceptCharacter,
+                        QueryTriggerInteraction.Ignore
+                    )
+                )
+                {
+                    side = s;
+                    return dir;
+                }
+            }
+        }
+        return null;
     }
 
     IEnumerator MpTwoHand()
