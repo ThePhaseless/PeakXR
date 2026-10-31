@@ -1177,7 +1177,7 @@ internal sealed partial class SelfTestRunner
         // The nearest reachable one, walking around what blocks the way and passing over one it cannot reach (MP run
         // 23: the walk to the nearest stopped 0.7 m short against a blocker and the step failed).
         yield return GrabReachable(i =>
-            info.Bind(i) && info.Profile.Handedness != Handedness.OneHanded
+            info.Bind(i) && info.Profile.Handedness != Handedness.OneHand
         );
         if (!stepOk || stepSkip != null)
             yield break;
@@ -2126,7 +2126,7 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        // A small one-handed thing (MP run 7 took the two-hand step's Guidebook, whose two-hand hold kept it from the
+        // A small one-hand thing (MP run 7 took the two-hand step's Guidebook, whose two-hand hold kept it from the
         // host's mouth).
         var info = new ItemHoldInfo();
         // As far as food is fetched, five tries (MP run 14: three within 40 m were all out of reach).
@@ -2145,7 +2145,7 @@ internal sealed partial class SelfTestRunner
                 && !i.TryGetComponent<VineShooter>(out _)
                 && !i.TryGetComponent<Constructable>(out _)
                 && info.Bind(i)
-                && info.Profile.Handedness == Handedness.OneHanded,
+                && info.Profile.Handedness == Handedness.OneHand,
             null,
             FoodRange,
             5
@@ -2764,7 +2764,7 @@ internal sealed partial class SelfTestRunner
                 i.UIData.canBackpack
                 && i is not Backpack
                 && info.Bind(i)
-                && info.Profile.Handedness == Handedness.OneHanded,
+                && info.Profile.Handedness == Handedness.OneHand,
             null,
             FoodRange,
             5

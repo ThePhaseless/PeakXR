@@ -222,7 +222,7 @@ internal static class ClimbHands
             return;
 
         // With a menu or wheel open, or a controller in use lost, the hands' state is frozen: nobody falls off a rope
-        // because a menu ate the grip or tracking blinked. One-handed play's unused controller never freezes it.
+        // because a menu ate the grip or tracking blinked.
         bool frozen = !active || Lost(LeftHand) || Lost(RightHand);
         // Pump is skipped while frozen: its frame-to-frame samples restart afterwards, not span the gap.
         if (frozen)
@@ -352,7 +352,6 @@ internal static class ClimbHands
         // On a handle only the free hand holds on; the item hand keeps its item.
         if (
             mode == Mode.Handle
-            && !VRInput.OneHanded
             && c.data.currentItem != null
             && LocalHold.ItemInLeftHand == hand.Left
         )
@@ -390,15 +389,9 @@ internal static class ClimbHands
             hand.Grip.Update(0f, dt);
     }
 
-    /// <summary>A hang freezes while a hand in use is untracked, until that hand's blink hold runs out (the
+    /// <summary>A hang freezes while a hand is untracked, until that hand's blink hold runs out (the
     /// controller is gone).</summary>
-    private static bool Lost(Hand hand) =>
-        ClimbInput.FreezesHang(
-            VRInput.Hand(hand.Left).Tracked || hand.Blink.Expired,
-            hand.Anchored,
-            VRInput.OneHanded,
-            hand.Left == VRInput.LeftHanded
-        );
+    private static bool Lost(Hand hand) => !(VRInput.Hand(hand.Left).Tracked || hand.Blink.Expired);
 
     private static void Release(Hand hand)
     {
@@ -817,7 +810,7 @@ internal static class ClimbHands
             {
                 var next = Current(ctx.Character, out var obj);
                 // The hand that holds an item never holds the handle too (GripIntent: the free hand hangs).
-                if (next == Mode.Handle && ctx.ThisHandHolds && !VRInput.OneHanded)
+                if (next == Mode.Handle && ctx.ThisHandHolds)
                     return false;
                 return next != Mode.None
                     && next == mode

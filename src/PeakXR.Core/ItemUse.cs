@@ -173,7 +173,7 @@ public static class ItemUse
     public static bool NeedsGesture(UseGesture g) => g is UseGesture.Commune or UseGesture.Read;
 
     /// <summary>What the holding hand's trigger alone does with a use: eating and drinking go to the mouth unless
-    /// <paramref name="triggerEats"/> (seated or one-handed play); commune and read keep their gesture.</summary>
+    /// <paramref name="triggerEats"/> (seated play); commune and read keep their gesture.</summary>
     public static TriggerUse Trigger(UseGesture g, bool triggerEats) =>
         NeedsGesture(g) ? TriggerUse.Gesture
         : g is UseGesture.Eat or UseGesture.Drink && !triggerEats ? TriggerUse.Mouth

@@ -720,10 +720,10 @@ public partial class AvatarPoseDriver
         rot = br.U();
     }
 
-    /// <summary>The second hand has just closed on the item held one-handed at <paramref name="pos"/>/
+    /// <summary>The second hand has just closed on the item held in one hand at <paramref name="pos"/>/
     /// <paramref name="rot"/>: where it holds it, the up each hand carries (an item's front stays where the one-hand
     /// hold showed it, toward the eyes) and the hand's turn on the item. False when it closed on the main grip itself,
-    /// which gives no axis: the hold stays one-handed.</summary>
+    /// which gives no axis: the hold stays in one hand.</summary>
     private bool JoinTwoHand(
         Item item,
         bool left,

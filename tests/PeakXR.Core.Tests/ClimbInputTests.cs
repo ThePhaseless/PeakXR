@@ -47,24 +47,6 @@ public class ClimbInputTests
             ClimbInput.Smooth(Vector2.Zero, new Vector2(1, 0), 0f, 0.1f)
         );
     }
-
-    [Theory]
-    // Two hands: any lost controller freezes the hang, anchored or not.
-    [InlineData(false, false, false, false, true)]
-    [InlineData(true, false, false, false, false)]
-    // One-handed: the unused controller is always untracked and must not freeze it.
-    [InlineData(false, false, true, false, false)]
-    // One-handed: the one controller lost does.
-    [InlineData(false, false, true, true, true)]
-    // A hand still anchored when it blinks freezes it whatever the mode.
-    [InlineData(false, true, true, false, true)]
-    public void HangFreezes_OnlyForAHandInUse(
-        bool tracked,
-        bool anchored,
-        bool oneHanded,
-        bool theOneHand,
-        bool freezes
-    ) => Assert.Equal(freezes, ClimbInput.FreezesHang(tracked, anchored, oneHanded, theOneHand));
 }
 
 public class BlinkHoldTests

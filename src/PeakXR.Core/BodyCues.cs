@@ -251,7 +251,6 @@ public sealed class SlideCue
 /// Which hand shows a body refusal (a slide, a refused jump, out of breath). ui.affordance draws one refusal ring
 /// at a time, so the body's cue goes to a hand that is not busy (holding or gripping) and has no cue of its own up;
 /// with both hands busy it takes the preferred one only when that hand's own cue is not showing, else it yields.
-/// With the other controller switched off (one-handed play) the preferred hand is the only candidate.
 /// </summary>
 public static class BodyCueHand
 {
@@ -261,8 +260,7 @@ public static class BodyCueHand
         bool rightBusy,
         bool leftCueUp,
         bool rightCueUp,
-        out bool left,
-        bool otherOff = false
+        out bool left
     )
     {
         bool prefBusy = preferLeft ? leftBusy : rightBusy;
@@ -272,8 +270,7 @@ public static class BodyCueHand
         left = preferLeft;
         if (!prefBusy && !prefCue)
             return true;
-        // One-handed play: the other controller reads idle because nothing samples it, not because it is free.
-        if (!otherOff && !otherBusy && !otherCue)
+        if (!otherBusy && !otherCue)
         {
             left = !preferLeft;
             return true;

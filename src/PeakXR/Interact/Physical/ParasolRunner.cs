@@ -8,7 +8,7 @@ namespace PeakXR.Interact.Physical;
 /// Parasol runner (G12): the free hand grips a held parasol's shaft and slides up to open it or down to close it.
 /// Each stroke presses the parasol's own primary use once (<c>Action_Parasol</c>, Action_Parasol.cs:7 calls
 /// <c>Parasol.ToggleOpen</c>, Parasol.cs:23, which sends <c>ToggleOpenRPC</c>, Parasol.cs:56), so every client sees
-/// the vanilla toggle. The parasol is one-handed, so the grip arrives as an <see cref="IGripExtension"/> claim
+/// the vanilla toggle. The parasol is a one-hand item, so the grip arrives as an <see cref="IGripExtension"/> claim
 /// instead of a two-hand hold. Slide height is the free hand relative to the holding hand, so walking or raising
 /// both arms does not count.
 /// </summary>

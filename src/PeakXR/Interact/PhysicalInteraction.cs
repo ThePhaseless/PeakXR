@@ -474,21 +474,13 @@ internal static class PhysicalInteraction
         ref var state = ref VRInput.Hand(hand.Left);
         // Lost tracking keeps the last grip and trigger, as ClimbHands and BodyInventory do: opening the hand there
         // dropped or threw the item from stale throw samples, then the grip closing again regrabbed it. A latched
-        // Toggle grip already reads 1 through it (GripLatch keeps its latch untracked). One-handed play's unused
-        // controller is never tracked: it reads open. A controller that is gone (disconnected, or untracked past
-        // BlinkHold.MaxSeconds) must not hold forever: it reads open too, a release without a throw. Never while the
+        // Toggle grip already reads 1 through it (GripLatch keeps its latch untracked). A controller that is gone
+        // (disconnected, or untracked past BlinkHold.MaxSeconds) must not hold forever: it reads open, a release
+        // without a throw. Never while the
         // runtime has focus (dashboard open): multiplayer does not pause, and the player is not playing.
-        bool unused = VRInput.OneHanded && hand.Left != VRInput.LeftHanded;
-        if (
-            hand.Blink.Update(
-                state.Tracked || unused,
-                state.Disconnected && !unused,
-                !VRSession.HasFocus,
-                dt
-            )
-        )
+        if (hand.Blink.Update(state.Tracked, state.Disconnected, !VRSession.HasFocus, dt))
             LostForGood(hand, rig, state.Disconnected);
-        bool open = unused || hand.Blink.Expired;
+        bool open = hand.Blink.Expired;
         hand.Grip.Update(
             state.Tracked ? state.Grip
                 : open ? 0f
@@ -628,32 +620,23 @@ internal static class PhysicalInteraction
 
     /// <summary>
     /// The hand whose trigger drives the primary (or <paramref name="secondary"/>) use: the holding hand is primary,
-    /// the dominant hand when empty-handed (one-handed: the one controller), the other hand secondary; empty-handed
-    /// with one hand on the climb, the free hand is secondary (<see cref="UseHands"/>). One-handed, the
-    /// same hand does both (secondary is its trigger with the stick clicked in). The one rule for every reader of a
-    /// use's hand.
+    /// the dominant hand when empty-handed, the other hand secondary; empty-handed with one hand on the climb, the free
+    /// hand is secondary (<see cref="UseHands"/>). The one rule for every reader of a use's hand.
     /// </summary>
     internal static bool UseHandLeft(Character c, bool secondary)
     {
-        bool one = VRInput.OneHanded;
         bool primaryLeft = UseHands.PrimaryLeft(
             c != null && Holding(c, out _),
             LocalHold.ItemInLeftHand,
             VRInput.LeftHanded,
-            Climbs(LeftHand),
-            Climbs(RightHand)
+            OnClimb(LeftHand),
+            OnClimb(RightHand)
         );
-        return secondary && !one ? !primaryLeft : primaryLeft;
+        return secondary ? !primaryLeft : primaryLeft;
     }
 
-    /// <summary>
-    /// This hand's grip holds the climber: a wall climb, or the current rope, vine or handle. Its trigger is no use
-    /// button (<see cref="UseTrigger"/>). One-handed play keeps the one trigger live, as the flat game uses items while
-    /// hanging (its secondary needs the stick chord, so a fist never sets a piton).
-    /// </summary>
-    private static bool Climbs(Hand hand) => !VRInput.OneHanded && OnClimb(hand);
-
-    /// <summary>This hand's grip is on the wall, rope, vine or handle, whatever the play mode.</summary>
+    /// <summary>This hand's grip holds the climber: a wall climb, or the current rope, vine or handle. Its trigger is
+    /// no use button (<see cref="UseTrigger"/>).</summary>
     private static bool OnClimb(Hand hand) =>
         hand.Action == GripPressAction.Climb || Climb.ClimbHands.HandAnchored(hand.Left);
 
@@ -662,7 +645,7 @@ internal static class PhysicalInteraction
     internal static bool UseMuted(bool left)
     {
         var hand = left ? LeftHand : RightHand;
-        return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
+        return OnClimb(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
 
     /// <summary>This hand is posed for a gesture a fist belongs to: the thumbs-up's fist (emotes) or a hand at the
@@ -769,7 +752,7 @@ internal static class PhysicalInteraction
             Candidate = candidate,
             HoldingItem = holding,
             ThisHandHolds = thisHolds,
-            HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHanded,
+            HeldHandedness = holding ? Hold.Profile.Handedness : Handedness.OneHand,
             // Vanilla joins the left hand to every item that is not rightHandOnly (CharacterItems.cs:641-651), the
             // parasol too; with its runner on, the free hand on a held parasol is the runner's grip extension, which
             // a join here would pre-empt (extensions are never asked once the press is SecondHand). Only while the
@@ -806,7 +789,6 @@ internal static class PhysicalInteraction
                 ? Vector3.Distance(pos, d.Hold.Point)
                 : float.PositiveInfinity;
         }
-        ctx.OneHanded = VRInput.OneHanded;
         d.Action = GripIntent.OnPress(ctx);
         if (d.Action != GripPressAction.SecondHand)
         {
@@ -1631,7 +1613,7 @@ internal static class PhysicalInteraction
     /// </summary>
     private static void SecondGripCue(Character c, VRRig rig)
     {
-        if (VRInput.OneHanded || !Affordance.Hints || !Holding(c, out var item))
+        if (!Affordance.Hints || !Holding(c, out var item))
             return;
         var free = LocalHold.ItemInLeftHand ? RightHand : LeftHand;
         var t = rig.Hand(free.Left);
@@ -1663,12 +1645,8 @@ internal static class PhysicalInteraction
             );
     }
 
-    /// <summary>A two-handed item counts as held in both hands: the free hand joined it, or one-handed play has no
-    /// second hand to join it with (Accessibility.OneHanded), so its use is never refused for want of one.</summary>
-    private static bool SecondHand => LocalHold.TwoHand || VRInput.OneHanded;
-
-    /// <summary>One-handed: this trigger pull started with the stick clicked in, so it is the secondary use.</summary>
-    private static bool secondaryChord;
+    /// <summary>A two-handed item counts as held in both hands: the free hand joined it.</summary>
+    private static bool SecondHand => LocalHold.TwoHand;
 
     /// <summary>The tracked hand's fitted release velocity, rotated from tracking space to world: relative to the
     /// body, since the rig moves with it. Real metres per second (Camera.WorldScale): throw, lunge and push speeds
@@ -2996,14 +2974,7 @@ internal static class PhysicalInteraction
 
         // Use: the holding hand's trigger (right when empty-handed) is primary, the other trigger secondary.
         bool holding = Holding(c, out _);
-        // One-handed, an empty hand's trigger is that hand's (it climbs), and the trigger pulled with the stick
-        // clicked in is the secondary use (use on a friend, Item.cs:819; the empty-hand reach, Character.cs:1200),
-        // latched for the whole pull.
-        bool one = VRInput.OneHanded;
         var primaryHand = UseHandLeft(c, secondary: false) ? LeftHand : RightHand;
-        if (primaryHand.Trigger.Pressed)
-            secondaryChord = one && VRInput.Hand(primaryHand.Left).StickClick;
-        bool chord = one && secondaryChord;
         // A hand on the wall, rope, vine or handle squeezes its trigger with the grip: no use, so a climbing fist never
         // sets a piton or runs the held item (UseTrigger). A deliberate press held on a wall grip sets a piton at that
         // hand (Tools.HandPiton); with an item held and no pitons, it says the other hand runs the item. A full fist's
@@ -3013,7 +2984,7 @@ internal static class PhysicalInteraction
         {
             hand.Use.Update(
                 hand.Trigger.Held,
-                Climbs(hand),
+                OnClimb(hand),
                 hand == primaryHand,
                 dt,
                 UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
@@ -3050,9 +3021,8 @@ internal static class PhysicalInteraction
         bool primaryDown =
             holding
             && primaryHand.Use.Down
-            && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
-        bool secondaryDown = one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down;
+        bool secondaryDown = Other(primaryHand).Use.Down;
 
         bool atMouth = false;
         var mouthHand = rig.Hand(primaryHand.Left);
@@ -3110,8 +3080,8 @@ internal static class PhysicalInteraction
                 SecondHand,
                 cfg.RequireTwoHands
             );
-            // A press the game will not act on gets the denied cue instead of the success tick (a one-handed hold of
-            // a two-handed item is denied below).
+            // A press the game will not act on gets the denied cue instead of the success tick (a two-handed item
+            // held in one hand is denied below).
             if (!Affordance.Enabled)
                 Haptics.Pulse(primaryHand.Left, 0.3f, 0.03f);
             // Pitons are used through UpdateClimbingSpikeUse (CharacterItems.cs:981), which never reads

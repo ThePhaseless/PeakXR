@@ -95,9 +95,6 @@ public struct GripContext
     public float HandleDistance,
         RockDistance;
 
-    /// <summary>One-handed play (<c>Accessibility.OneHanded</c>): no free hand, so the item hand takes a climb
-    /// handle and keeps the item, as vanilla hangs.</summary>
-    public bool OneHanded;
     public Handedness HeldHandedness;
 
     /// <summary>The game holds the held item in both hands (it is not <c>rightHandOnly</c>), so a free hand may
@@ -229,7 +226,6 @@ public static class GripIntent
         if (
             c.ThisHandHolds
             && c.CandidateIsHandle
-            && !c.OneHanded
             && c.HandleDistance <= c.RockDistance + HandleDepth
         )
             return GripPressAction.Regrip;
@@ -251,7 +247,7 @@ public static class GripIntent
             // item while hanging, ClimbHandle.cs:54-67, CharacterClimbing.cs:640-647).
             if (
                 c.Candidate == GrabCandidate.Interactible
-                && !(c.ThisHandHolds && c.CandidateIsHandle && !c.OneHanded)
+                && !(c.ThisHandHolds && c.CandidateIsHandle)
             )
                 return GripPressAction.GrabInteractible;
         }

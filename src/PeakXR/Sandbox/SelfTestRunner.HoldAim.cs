@@ -12,7 +12,7 @@ internal sealed partial class SelfTestRunner
 {
     IEnumerator HoldAimSteps()
     {
-        // The AntiZooka is a two-handed tool: the step fires it one-handed, as the flat game allows.
+        // The AntiZooka is a two-handed tool: the step fires it from one hand, as the flat game allows.
         var twoHands = InteractConfig.Instance.RequireTwoHandsEntry;
         bool required = twoHands != null && twoHands.Value;
         if (twoHands != null)
@@ -161,7 +161,7 @@ internal sealed partial class SelfTestRunner
     const float DrawnGripTolerance = 0.04f;
 
     /// <summary>
-    /// vr.352 (#23): a one-handed item held 0.5 m ahead of the eyes and 0.1 m down, past the arm's reach from the scout's
+    /// vr.352 (#23): a one-hand item held 0.5 m ahead of the eyes and 0.1 m down, past the arm's reach from the scout's
     /// low, set-back shoulder (about 0.79 m against 0.6 m): it must sit on its controller-held pose
     /// (<see cref="AvatarPoseDriver.HeldTarget"/>) within 4 cm, still in its weld, the drawn hand within
     /// <see cref="DrawnGripTolerance"/> of its grip, and no ghost hand may show for that hand. The item used to rest

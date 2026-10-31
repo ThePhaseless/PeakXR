@@ -105,7 +105,7 @@ internal sealed class ItemGesturesConfig
                 s,
                 "TriggerEats",
                 false,
-                "Also eat and drink with the trigger, for seated or one-handed play. Off: food and drink are used "
+                "Also eat and drink with the trigger, for seated play. Off: food and drink are used "
                     + "by raising them to your mouth, and the trigger alone points you there."
             ),
             communeAtFace = file.Bind(

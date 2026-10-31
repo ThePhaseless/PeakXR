@@ -77,11 +77,8 @@ internal sealed class InteractConfig
     internal ConfigEntry<GripMode> GripModeEntry => gripMode;
 
     /// <summary>The configured drop button (<c>DominantSecondary</c>, <c>LeftPrimary</c> ... or <c>None</c>), so the
-    /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.
-    /// One-handed, B pauses and opens the emote wheel, and an opened grip drops: the button drops only with
-    /// <see cref="ReleaseToDrop"/> off (B then drops instead, and pause stays on the menu button).</summary>
-    public string DropButton =>
-        VRInput.OneHanded && ReleaseToDrop ? "None" : dropButton?.Value ?? DefaultDropButton;
+    /// locomotion layout can keep its own actions off it. Parse with <see cref="ButtonName.TryParse"/>.</summary>
+    public string DropButton => dropButton?.Value ?? DefaultDropButton;
 
     private const string DefaultDropButton = "DominantSecondary";
 
@@ -298,7 +295,7 @@ internal sealed class InteractConfig
                 "RequireTwoHands",
                 true,
                 "Two-handed tools (the rescue hook, the antizooka) need your other hand on them before they work. "
-                    + "Off: they work one-handed, as in the flat game."
+                    + "Off: they work in one hand, as in the flat game."
             ),
             haptics = file.Bind(
                 s,

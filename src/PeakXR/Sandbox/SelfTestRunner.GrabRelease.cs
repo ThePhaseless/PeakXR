@@ -18,7 +18,7 @@ namespace PeakXR.Sandbox;
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
-    /// <summary>Items vr.288 grabs: different shapes and kinds, all one-handed.</summary>
+    /// <summary>Items vr.288 grabs: different shapes and kinds, all one-hand items.</summary>
     static readonly string[] HighlightItems =
     {
         AppleFragment,

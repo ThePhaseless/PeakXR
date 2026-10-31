@@ -105,11 +105,7 @@ public static class WandPad
     /// <summary>Move-hand clicks closer to the middle than this are B/Y, not a walk.</summary>
     public const float MoveCentre = 0.3f;
 
-    /// <param name="oneHanded">Accessibility.OneHanded: the one wand's top and bottom clicks walk forward and back
-    /// (the stick Y one-handed walking reads) instead of being B and A, the top rim also sprints (stick click), the
-    /// bottom rim is B (pause, held: emote wheel), the sides still turn and the centre is A (with
-    /// <c>BindingTable.OneHandedWand</c>: tap jumps, hold crouches).</param>
-    public static WandPadState Map(Vector2 pad, bool clicked, bool moveHand, bool oneHanded = false)
+    public static WandPadState Map(Vector2 pad, bool clicked, bool moveHand)
     {
         var s = default(WandPadState);
         if (!clicked)
@@ -127,22 +123,8 @@ public static class WandPad
             s.StickClick = pad.Length() >= SprintRim;
             return s;
         }
-        bool rim = pad.Length() >= SprintRim;
         switch (TrackpadButtons.Zone(pad))
         {
-            case PadZone.Up when oneHanded:
-                s.Stick = new Vector2(0f, pad.Y);
-                s.StickClick = rim;
-                break;
-            case PadZone.Down when oneHanded && rim:
-                s.Secondary = true;
-                break;
-            case PadZone.Down when oneHanded:
-                s.Stick = new Vector2(0f, pad.Y);
-                break;
-            case PadZone.Center when oneHanded && MathF.Abs(pad.X) < TurnSide:
-                s.Primary = true;
-                break;
             case PadZone.Up:
                 s.Secondary = true;
                 break;
@@ -175,10 +157,10 @@ public sealed class WandPadLatch
     /// <summary>This frame the move hand's centre click slid out: the caller drops its B/Y without a tap.</summary>
     public bool Cancelled { get; private set; }
 
-    public WandPadState Map(Vector2 pad, bool clicked, bool moveHand, bool oneHanded = false)
+    public WandPadState Map(Vector2 pad, bool clicked, bool moveHand)
     {
         Cancelled = false;
-        var s = WandPad.Map(pad, clicked, moveHand, oneHanded);
+        var s = WandPad.Map(pad, clicked, moveHand);
         if (!clicked || !moveHand)
         {
             down = clicked;

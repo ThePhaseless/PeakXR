@@ -1,5 +1,4 @@
 using BepInEx.Configuration;
-using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.VR;
 
@@ -19,7 +18,6 @@ public sealed class XRInputFeature : Feature
     public override int Order => -100;
 
     internal static ConfigEntry<string> DominantHand;
-    internal static ConfigEntry<string> OneHanded;
 
     protected internal override void Install()
     {
@@ -33,31 +31,18 @@ public sealed class XRInputFeature : Feature
                 new AcceptableValueList<string>("Right", "Left")
             )
         );
-        OneHanded = Plugin.Settings.Bind(
-            "Accessibility",
-            "OneHanded",
-            "Off",
-            new ConfigDescription(
-                "Play with one controller, the Left or Right one: its stick walks forward and back and turns, A jumps, "
-                    + "the stick click sprints (hold it to crouch), B pauses (hold it for the emote wheel), and every "
-                    + "two-hand action (two-hand items, cheer, shove, soul pillar, carrying a "
-                    + "friend, taking the pack off) works with that hand alone. The other controller is ignored.",
-                new AcceptableValueList<string>("Off", "Left", "Right")
-            )
-        );
+        // One-handed play is gone (#87): two tracked controllers are always assumed. The key leaves the file either
+        // way; only a saved Left or Right is worth a line.
+        string oneHanded = ConfigMigration.Removed(Plugin.Settings, "Accessibility", "OneHanded");
+        if (oneHanded is "Left" or "Right")
+            Plugin.Log.LogInfo(
+                $"[config] Accessibility.OneHanded is removed and its saved {oneHanded} is ignored: both controllers are used"
+            );
         ApplyHands();
         DominantHand.SettingChanged += (_, _) => ApplyHands();
-        OneHanded.SettingChanged += (_, _) => ApplyHands();
         XRInputSampler.Install();
         GameInputIsolation.Install();
     }
 
-    /// <summary>One-handed play makes the one controller the dominant hand, so every Dominant row lands on it.</summary>
-    private static void ApplyHands()
-    {
-        string one = OneHanded.Value;
-        VRInput.OneHanded = one is "Left" or "Right";
-        VRInput.LeftHanded = VRInput.OneHanded ? one == "Left" : DominantHand.Value == "Left";
-        BindingTable.Active = VRInput.OneHanded ? BindingTable.OneHanded : BindingTable.Default;
-    }
+    private static void ApplyHands() => VRInput.LeftHanded = DominantHand.Value == "Left";
 }

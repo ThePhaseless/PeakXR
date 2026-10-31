@@ -39,8 +39,7 @@ internal static class StickChordInput
     internal static void Update()
     {
         Sticks.RecenterSeconds = Rig.CameraFeature.RecenterSeconds;
-        // One-handed play has one stick: nothing to wait for.
-        Sticks.Window = VRInput.OneHanded ? 0f : ChordWindow;
+        Sticks.Window = ChordWindow;
         ReportNow =
             Sticks.Update(
                 VRInput.Left.StickClick,

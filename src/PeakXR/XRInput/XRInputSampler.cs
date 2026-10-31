@@ -99,18 +99,6 @@ internal static class XRInputSampler
             SampledHeadRotation = VRInput.HeadRotation;
             LeftReader.Read(ref VRInput.Left, dt);
             RightReader.Read(ref VRInput.Right, dt);
-            // One-handed: the other controller may still be on (on a desk, in a lap); nothing reads it.
-            if (VRInput.OneHanded)
-                VRInput.Hand(!VRInput.LeftHanded) = new HandState
-                {
-                    Rotation = Quaternion.identity,
-                    AimRotation = Quaternion.identity,
-                };
-            // The one controller's own layout: a wand has no A or B.
-            BindingTable.Active =
-                !VRInput.OneHanded ? BindingTable.Default
-                : VRInput.Hand(VRInput.LeftHanded).WandPad ? BindingTable.OneHandedWand
-                : BindingTable.OneHanded;
         }
         catch (Exception e)
         {

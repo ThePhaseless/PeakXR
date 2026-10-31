@@ -96,23 +96,23 @@ public class GripIntentTests
     }
 
     [Fact]
-    public void OtherHandOnOneHandedItem_IsNotSecondHand()
+    public void OtherHandOnOneHandItem_IsNotSecondHand()
     {
         var c = Empty();
         c.HoldingItem = true;
         c.NearHeldItem = true;
-        c.HeldHandedness = Handedness.OneHanded;
+        c.HeldHandedness = Handedness.OneHand;
         Assert.NotEqual(GripPressAction.SecondHand, GripIntent.OnPress(c));
     }
 
     [Fact]
     public void OtherHandOnAnItemTheGameHoldsWithBothHands_BecomesSecondHand()
     {
-        // Bing Bong: one-handed in the table, but vanilla puts both hands on it (not rightHandOnly).
+        // Bing Bong: a one-hand item in the table, but vanilla puts both hands on it (not rightHandOnly).
         var c = Empty();
         c.HoldingItem = true;
         c.NearHeldItem = true;
-        c.HeldHandedness = Handedness.OneHanded;
+        c.HeldHandedness = Handedness.OneHand;
         c.HeldBothHandsInGame = true;
         Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
     }
@@ -569,19 +569,6 @@ public class GripIntentTests
         c.HoldingItem = true;
         c.ThisHandHolds = true;
         c.Candidate = GrabCandidate.Interactible;
-        Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
-    }
-
-    [Fact]
-    public void OneHanded_ItemHand_HangsAndKeepsItsItem()
-    {
-        // One-handed play has no free hand: the item hand takes the handle, and vanilla keeps the item while hanging.
-        var c = Empty();
-        c.HoldingItem = true;
-        c.ThisHandHolds = true;
-        c.Candidate = GrabCandidate.Interactible;
-        c.CandidateIsHandle = true;
-        c.OneHanded = true;
         Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
     }
 

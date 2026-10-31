@@ -160,32 +160,6 @@ internal sealed class BodyInventory : IGripExtension
                 wheelHand = -1;
         }
         DriveWheel(c, cfg);
-        PackOffOneHanded(c, dt);
-    }
-
-    /// <summary>Seconds the one-handed shoulder grip rests in the wheel's centre before the pack comes off.</summary>
-    private const float PackOffSeconds = 1f;
-
-    private readonly DwellGesture packOff = new() { Dwell = PackOffSeconds };
-
-    /// <summary>
-    /// One-handed play (Accessibility.OneHanded) has no second shoulder grip to take the pack off with: the grip that
-    /// opened the backpack wheel, held still in the wheel's centre (where it picks no pocket), takes it off instead.
-    /// </summary>
-    private void PackOffOneHanded(Character c, float dt)
-    {
-        int hand = wheelHand;
-        bool centred = false;
-        if (VRInput.OneHanded && hand >= 0)
-        {
-            ref var s = ref VRInput.Hand(hand == 0);
-            centred =
-                s.Tracked
-                && NVector3.DistanceSquared(s.Position.N(), wheelStart[hand])
-                    < WheelDeadzone * WheelDeadzone;
-        }
-        if (packOff.Update(centred, dt))
-            TakePackOff(c, hand == 0);
     }
 
     private void UpdateAnchors(Character c, InventoryConfig cfg, float dt)

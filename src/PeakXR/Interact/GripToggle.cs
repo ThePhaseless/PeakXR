@@ -45,12 +45,6 @@ internal static class GripToggle
         float dt
     )
     {
-        // One-handed play ignores the other controller: no grip there, latched or not.
-        if (VRInput.OneHanded && left != VRInput.LeftHanded)
-        {
-            latch.Reset();
-            return;
-        }
         var e = latch.Update(
             state.Grip,
             state.Tracked,

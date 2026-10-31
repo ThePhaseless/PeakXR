@@ -1680,7 +1680,7 @@ internal sealed partial class SelfTestRunner
             other = FindItem(items, "Granola");
         if (apple == null || other == null)
         {
-            stepSkip = "no Apple or second one-handed food item";
+            stepSkip = "no Apple or second one-hand food item";
             yield break;
         }
         const bool left = false;
@@ -2422,11 +2422,6 @@ internal sealed partial class SelfTestRunner
     IEnumerator StickLungeStep()
     {
         var c = Character.localCharacter;
-        if (VRInput.OneHanded)
-        {
-            stepSkip = "one-handed: the one stick also climbs the hold";
-            yield break;
-        }
         yield return ToWall(headroom: LungeHeadroom);
         if (!wallReady)
             yield break;
@@ -2496,9 +2491,9 @@ internal sealed partial class SelfTestRunner
         var h = CueLog.Capture.Hand(left);
         bool twoHandRefusal = h.Reason == DenyReason.NeedsTwoHands && h.ReasonAt >= mark;
         var note =
-            $"{Name(HeldItem())} one-handed: use reached the game {reached}, last cue {h.Reason}";
+            $"{Name(HeldItem())} in one hand: use reached the game {reached}, last cue {h.Reason}";
         if (!reached)
-            Fail("the use press of a two-handed tool held one-handed was blocked: " + note);
+            Fail("the use press of a two-handed tool held in one hand was blocked: " + note);
         else if (twoHandRefusal)
             Fail("NeedsTwoHands with Interaction.RequireTwoHands off: " + note);
         else

@@ -247,7 +247,7 @@ public class TwoHandPoseTests
     [Theory]
     // The free, open hand near a held item that takes a second hand: the ring shows where it grips.
     [InlineData(true, true, false, 0.3f, true)]
-    // Too far off, already joined, the hand busy or the item one-handed: nothing.
+    // Too far off, already joined, the hand busy or a one-hand item: nothing.
     [InlineData(true, true, false, 0.6f, false)]
     [InlineData(true, true, true, 0.1f, false)]
     [InlineData(true, false, false, 0.1f, false)]

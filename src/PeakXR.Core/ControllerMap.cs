@@ -124,7 +124,6 @@ public static class ControllerMap
     public const float TriggerTouchPull = 0.05f;
 
     /// <param name="moveHand">This hand walks (the off hand); only the Vive wand pad uses it.</param>
-    /// <param name="oneHanded">Accessibility.OneHanded; only the Vive wand pad uses it (<see cref="WandPad.Map"/>).</param>
     /// <param name="wand">The hand's click memory for a Vive wand pad (<see cref="WandPadLatch"/>); null maps each
     /// frame alone.</param>
     /// <param name="padMenu">The hand's pad menu memory (<see cref="PadMenuLatch"/>); null refuses the pad menu
@@ -133,7 +132,6 @@ public static class ControllerMap
         in ControllerLayout l,
         in ControllerSample s,
         bool moveHand,
-        bool oneHanded = false,
         WandPadLatch wand = null,
         PadMenuLatch padMenu = null
     )
@@ -167,8 +165,8 @@ public static class ControllerMap
             // Vive wand: the pad is the only stick and it reports a resting thumb, so everything takes a click.
             var pad =
                 wand != null
-                    ? wand.Map(s.Stick, s.StickClick, moveHand, oneHanded)
-                    : WandPad.Map(s.Stick, s.StickClick, moveHand, oneHanded);
+                    ? wand.Map(s.Stick, s.StickClick, moveHand)
+                    : WandPad.Map(s.Stick, s.StickClick, moveHand);
             b.Stick = pad.Stick;
             b.Primary = pad.Primary;
             b.Secondary = pad.Secondary;

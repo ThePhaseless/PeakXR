@@ -615,9 +615,9 @@ internal sealed partial class SelfTestRunner
         var held = HeldItem();
         var info = new ItemHoldInfo();
         info.Bind(held);
-        if (info.Profile.Handedness == Handedness.OneHanded)
+        if (info.Profile.Handedness == Handedness.OneHand)
         {
-            Fail($"{held.name} is one-handed ({info.Profile})");
+            Fail($"{held.name} is a one-hand item ({info.Profile})");
             yield break;
         }
         bool holdLeft = LocalHold.ItemInLeftHand;

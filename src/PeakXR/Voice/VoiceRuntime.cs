@@ -86,7 +86,7 @@ internal sealed class VoiceRuntime : MonoBehaviour
         if (
             ButtonName.TryParse(name, dominantLeft, out bool left, out var control)
             && BindingTable.Conflict(
-                BindingTable.Active,
+                BindingTable.Default,
                 left,
                 control,
                 dominantLeft,
