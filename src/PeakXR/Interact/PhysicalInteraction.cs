@@ -135,6 +135,9 @@ internal static class PhysicalInteraction
     private static readonly MouthGesture Mouth = new();
     private static readonly ArmLocomotion Arms = new();
     private static readonly ClimbDebt Debt = new();
+
+    /// <summary>Wall climb travel the arm pulls still owe (wall right, wall up; metres), for vr.15's note.</summary>
+    internal static Vector2 ClimbOwed => new(Debt.Owed.X, Debt.Owed.Y);
     private static readonly ItemHoldInfo Hold = new();
     private static readonly Collider[] Overlap = new Collider[32];
     private static readonly NVector3[] CandidatePositions = new NVector3[32];
