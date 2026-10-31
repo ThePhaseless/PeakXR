@@ -553,7 +553,7 @@ internal sealed partial class SelfTestRunner
         }
         if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
             LogStanceTimeout("settle");
-        // 1 s more: the lean trim (LeanTrim, #97) needs the want held 0.3 s, then about 0.5 s to bring the drawn eyes in.
+        // 1 s more: after a turn the lean takes the walk's leftover only once the walk is done (TurnSkip lets go at 2/s).
         float t1 = Now;
         while (Now - t1 < 1f)
         {

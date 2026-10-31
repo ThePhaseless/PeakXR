@@ -79,7 +79,7 @@ internal sealed partial class SelfTestRunner
         float off = ModelEyesOff(c, out float gap).magnitude;
         notes.Add(
             F(
-                $"{at}: eyes {off:0.000} m off the view, drawn eyes {DrawnEyesOff(c):0.000} m, renderers {gap:0.000} m off the eye model, debt {RigDriver.StanceDebt.magnitude:0.000} m, lean trim {LocalAvatar.LeanTrimNow.magnitude:0.000} m"
+                $"{at}: eyes {off:0.000} m off the view, drawn eyes {DrawnEyesOff(c):0.000} m, renderers {gap:0.000} m off the eye model, debt {RigDriver.StanceDebt.magnitude:0.000} m, turn skip {RigDriver.TurnSkipNow.magnitude:0.000} m"
             )
         );
         JudgeSettled(c, at, off, fails);

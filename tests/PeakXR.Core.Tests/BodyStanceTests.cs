@@ -182,26 +182,6 @@ public class StanceWalkTests
     }
 
     [Fact]
-    public void Request_EasesInAndOut_LikeTheGamesInput()
-    {
-        // The gait reads the raw request, the force the input eased at movementTurnSpeed (Character.cs:1341): a request
-        // that jumps runs the legs ahead of the body, and one cut to 0 stops them while the body coasts on (run 11).
-        var w = new StanceWalk();
-        float most = w.InputSlew * Dt + 1e-5f;
-        var last = Vector2.Zero;
-        for (float t = 0f; t < 1f; t += Dt)
-        {
-            var r = w.Update(new Vector2(0.6f, 0f), Vector2.Zero, last.Length(), true, Dt);
-            Assert.True((r - last).Length() <= most, $"t {t:0.00}: {last} -> {r}");
-            last = r;
-        }
-        // The push ends (the body arrives fast): the request runs down, it does not drop.
-        var end = w.Update(new Vector2(0.01f, 0f), new Vector2(2f, 0f), last.Length(), true, Dt);
-        Assert.Equal(StanceWalkPhase.Settle, w.State);
-        Assert.True(end.Length() >= last.Length() - most, $"{last} -> {end}");
-    }
-
-    [Fact]
     public void Glance_ReturnsBeforeTheBodyMoves()
     {
         // A look aside and back (the debt swings out to a turned head's 0.2 m and returns within a second): no step,
