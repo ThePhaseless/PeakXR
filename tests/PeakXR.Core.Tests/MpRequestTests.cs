@@ -13,6 +13,20 @@ public class MpRequestTests
     }
 
     [Fact]
+    public void RequestLine_CarriesALevelDirection()
+    {
+        var line = MpRequest.Line(5, MpRequest.HangBelow, 9.0, 0.6, -0.8);
+        Assert.True(MpRequest.TryRead(line, out _, out string what, out _));
+        Assert.Equal(MpRequest.HangBelow, what);
+        Assert.True(MpRequest.TryReadDirection(line, out double x, out double z));
+        Assert.Equal(0.6, x, 6);
+        Assert.Equal(-0.8, z, 6);
+        Assert.False(
+            MpRequest.TryReadDirection(MpRequest.Line(6, MpRequest.HangBelow, 9.0), out _, out _)
+        );
+    }
+
+    [Fact]
     public void AckLine_CarriesTheResult()
     {
         var line = MpRequest.Ack(4, MpRequest.Web, false, "airport", 7.0);

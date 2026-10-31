@@ -1906,6 +1906,7 @@ internal sealed partial class SelfTestRunner
             SandboxActions.AddStatus(status, Mathf.Min(0.5f, -change));
         float hungerBefore = food ? afflictions.GetCurrentStatus(status) : 0f;
         float consumedBefore = c.data.lastConsumedItem;
+        int usesBefore = UsesLeft(held);
         var lantern = held.GetComponent<Lantern>();
         var flare = held.GetComponent<Flare>();
         var ropeShooter = held.GetComponent<RopeShooter>();
@@ -1986,7 +1987,7 @@ internal sealed partial class SelfTestRunner
             yield return KeepRope(shot);
         }
         bool gone = held == null || HeldItem() != held;
-        bool consumed = c.data.lastConsumedItem != consumedBefore;
+        bool consumed = Bitten(c, held, consumedBefore, usesBefore);
         // Leaving the hand is a use only when the use spent the item: destroyed (eaten, used up, turned into another
         // item) or logged as consumed. A drop or a slip leaves it whole in the world.
         bool destroyed = held == null;
@@ -3228,6 +3229,7 @@ internal sealed partial class SelfTestRunner
         SandboxActions.AddStatus(STATUS.Hunger, 0.3f);
         float before = afflictions.GetCurrentStatus(STATUS.Hunger);
         float consumedBefore = c.data.lastConsumedItem;
+        int usesBefore = UsesLeft(item);
         float progress = 0f;
         float end = Now + GameTiming.Budget(useTime * 0.5f, 3f);
         while (Now < end && item != null && c.data.currentItem == item && item.castProgress < 0.5f)
@@ -3243,7 +3245,7 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(left, CueFeel.Cancel, cancelMark, 1f);
         yield return Wait(0.5f);
         float after = afflictions.GetCurrentStatus(STATUS.Hunger);
-        bool eaten = c.data.lastConsumedItem != consumedBefore;
+        bool eaten = Bitten(c, item, consumedBefore, usesBefore);
         bool kept = item != null && c.data.currentItem == item;
         var note =
             $"{prefab.name}: cast {progress:0.00} of {useTime:0.0} s at the mouth, pulled away: eaten {eaten}, still held {kept}, Hunger {before:0.00} -> {after:0.00}";

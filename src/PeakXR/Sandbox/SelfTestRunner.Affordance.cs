@@ -870,11 +870,22 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>The item's uses left (<c>DataEntryKey.ItemUses</c>, read by <c>CanUsePrimary</c>, Item.cs:797-813),
-    /// or -1 when it has no count; for "a refused use spent nothing".</summary>
-    static int UsesLeft(Item item)
+    /// or -1 when it has no count (or is gone); for "a refused use spent nothing" and a multi-use bite. TryGetDataEntry:
+    /// GetData registers a missing entry (Item.cs:1223-1239).</summary>
+    static int UsesLeft(Item item) =>
+        item != null
+        && item.data != null
+        && item.data.TryGetDataEntry<OptionableIntItemData>(DataEntryKey.ItemUses, out var uses)
+        && uses.HasData
+            ? uses.Value
+            : -1;
+
+    /// <summary>Eaten: the consume stamp moved (Item.Consume, Item.cs:1109), or a multi-use food spent a use, which
+    /// leaves the stamp alone until its last one (Action_ReduceUses.cs:7-17; #102: a ScoutCookies bite).</summary>
+    static bool Bitten(Character c, Item item, float consumedBefore, int usesBefore)
     {
-        var uses = item.GetData<OptionableIntItemData>(DataEntryKey.ItemUses);
-        return uses.HasData ? uses.Value : -1;
+        int left = UsesLeft(item);
+        return c.data.lastConsumedItem != consumedBefore || (left >= 0 && left < usesBefore);
     }
 
     /// <summary>Null when the red preview is up on every renderer it covers (the held item or a placement

@@ -538,6 +538,26 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void FreeHandNearAnOptionalJoin_OnAnInteractible_GrabsIt()
+    {
+        // MP run 14 (#96): the airport's passport in the right hand, the left hand on the kiosk within 0.25 m of the
+        // passport's second grip joined the passport, and the boarding pass never opened.
+        foreach (var handedness in new[] { Handedness.OneHand, Handedness.OptionalTwoHand })
+        {
+            var c = Empty();
+            c.HoldingItem = true;
+            c.HeldHandedness = handedness;
+            c.HeldBothHandsInGame = true;
+            c.AtSecondGrip = true;
+            c.Candidate = GrabCandidate.Interactible;
+            Assert.Equal(GripPressAction.GrabInteractible, GripIntent.OnPress(c));
+            // Right on the second grip, the join still wins.
+            c.AtSecondGripTight = true;
+            Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+        }
+    }
+
+    [Fact]
     public void FreeHandOnTheHeldItem_NothingElseThere_IsSecondHand()
     {
         var c = HoldingTwoHanded();

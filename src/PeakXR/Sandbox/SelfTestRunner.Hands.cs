@@ -403,6 +403,7 @@ internal sealed partial class SelfTestRunner
         }
         float before = afflictions.GetCurrentStatus(status);
         float consumedBefore = c.data.lastConsumedItem;
+        int usesBefore = UsesLeft(item);
         // The item's own use time after up to 3 s bringing it to the mouth.
         float useTime = GameTiming.UseSeconds(item);
         float end = Now + GameTiming.Budget(useTime, 3f);
@@ -417,7 +418,7 @@ internal sealed partial class SelfTestRunner
                 MouthGesture.DefaultOffset
             )
             .U();
-        while (c.data.lastConsumedItem == consumedBefore && Now < end)
+        while (!Bitten(c, item, consumedBefore, usesBefore) && Now < end)
         {
             if (item == null || c.data.currentItem != item)
                 break;
@@ -451,8 +452,9 @@ internal sealed partial class SelfTestRunner
         float room = change < 0f ? before : 1f - before;
         var note =
             $"grip closest {best:0.00} m to the mouth (item {bestItem:0.00} m), use progress {progress:0.00} of {useTime:0.0} s, "
-            + $"{status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})";
-        if (c.data.lastConsumedItem == consumedBefore)
+            + $"{status} {before:0.00} -> {after:0.00} (item changes it by {change:+0.00;-0.00})"
+            + (usesBefore > 0 ? $", uses {usesBefore} -> {UsesLeft(item)}" : "");
+        if (!Bitten(c, item, consumedBefore, usesBefore))
             Fail("not eaten: " + note);
         else if (!measured)
             Fail(

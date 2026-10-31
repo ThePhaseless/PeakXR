@@ -1278,15 +1278,10 @@ internal sealed partial class SelfTestRunner
         // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
         // lost grip also takes the item from the hand, and only this tells them apart.
         float consumedBefore = c.data.lastConsumedItem;
-        // Carried low at the side on the walk in, as a player carries food they are not offering (MP run 13, #93:
-        // held at chest height it passed the host's mouth during a stop between stick pulses and fed them before the
-        // squeeze test began).
-        HeadFrame(out var head, out var forward, out var right);
-        yield return MoveTrack(
-            left,
-            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f + forward * 0.15f,
-            0.3f
-        );
+        // Carried low at the side and a little back on the walk in, as a player carries food they are not offering
+        // (MP run 13, #93: held at chest height it passed the host's mouth during a stop between stick pulses; MP run
+        // 14: 0.15 m ahead it still met the mouth of a host standing lower on the slope and fed them in a pause).
+        yield return CarryFoodBack(left);
         yield return WalkTo(HostCenter, 0.75f, true);
         if (!stepOk)
             yield break;
@@ -1295,14 +1290,35 @@ internal sealed partial class SelfTestRunner
         yield return MpStepToMouth(host);
         Face(host.Head);
         yield return Wait(0.3f);
+        bool walkFed = c.data.lastConsumedItem != consumedBefore;
         if (item == null || HeldItem() != item)
         {
             Fail(
-                c.data.lastConsumedItem != consumedBefore
+                walkFed
                     ? "the host was fed on the walk in, before the squeeze beside the mouth"
                     : "the food left the hand on the walk in"
             );
             yield break;
+        }
+        // The squeeze starts with the game's use-on-friend released, so it tests the squeeze alone (MP run 14, #93: a
+        // pause on the walk in fed the multi-use ScoutCookies, which stays in hand, and the band only read that).
+        string walkNote = "";
+        if (walkFed || item.isUsingSecondary || c.input.useSecondaryIsPressed)
+        {
+            walkNote = F(
+                $"the walk in {(walkFed ? "fed the host" : "held use-on-friend")} (gap {Social.SocialHands.FeedGap(item, HostPart(host, BodypartType.Head)):0.00} m, hand-over feeding {Social.SocialHands.Instance.FeedReady}); "
+            );
+            yield return CarryFoodBack(left);
+            yield return WaitFor(
+                () => item == null || (!item.isUsingSecondary && !c.input.useSecondaryIsPressed),
+                2f
+            );
+            if (item == null || HeldItem() != item || item.isUsingSecondary)
+            {
+                Fail(walkNote + "use-on-friend did not let go with the food held back");
+                yield break;
+            }
+            consumedBefore = c.data.lastConsumedItem;
         }
         yield return GripTo(left, 1f, 0.1f);
         // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
@@ -1330,6 +1346,10 @@ internal sealed partial class SelfTestRunner
         var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
         float ownGap = 0f;
         string pressNote = null;
+        // The first frame the game's use-on-friend runs in the band: which path pressed it, and the gaps then.
+        string useNote = null;
+        float bandMin = float.MaxValue,
+            bandMax = 0f;
         while (Now < bandEnd && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
@@ -1368,6 +1388,15 @@ internal sealed partial class SelfTestRunner
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
             }
+            if (bandMark >= 0f)
+            {
+                bandMin = Mathf.Min(bandMin, d);
+                bandMax = Mathf.Max(bandMax, d);
+            }
+            if (useNote == null && (item.isUsingSecondary || c.input.useSecondaryIsPressed))
+                useNote = F(
+                    $"use-on-friend on {(bandMark >= 0f ? "after" : "before")} the squeeze at gap {d:0.00} m, hand-over feeding {Social.SocialHands.Instance.FeedReady}, hand-over owns the trigger {Social.SocialHands.Instance.HandOverOwnsTrigger}, trigger {VRInput.Hand(left).Trigger:0.00}"
+                );
             // What the refusal reads (HeldGestures.MouthHint), the frame after the press's use pass.
             if (
                 bandMark >= 0f
@@ -1393,7 +1422,11 @@ internal sealed partial class SelfTestRunner
         }
         if (item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
         {
-            Fail("a squeeze 0.32 m from the host's mouth fed them: outside the feed zone");
+            Fail(
+                F(
+                    $"{walkNote}a squeeze {bandMin:0.00}-{bandMax:0.00} m from the host's mouth fed them: outside the feed zone; {useNote ?? "no use-on-friend seen in the band"}; {pressNote ?? "the trigger made no use press"}"
+                )
+            );
             yield break;
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
@@ -1449,7 +1482,23 @@ internal sealed partial class SelfTestRunner
                     + note
             );
         else
-            stepNote = "beside the mouth: " + bandCue + "; fed by resting at the mouth; " + note;
+            stepNote =
+                walkNote
+                + "beside the mouth: "
+                + bandCue
+                + "; fed by resting at the mouth; "
+                + note;
+    }
+
+    /// <summary>The food low at the holding side and a little back, out of a host's mouth zone on the walk in.</summary>
+    IEnumerator CarryFoodBack(bool left)
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            left,
+            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f - forward * 0.1f,
+            0.3f
+        );
     }
 
     // ---------------------------------------------------------------- movement and hands
@@ -2108,9 +2157,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Asks the observer to do <paramref name="what"/> to its own character (<see cref="MpRequest"/>) and waits up to
-    /// <paramref name="seconds"/> for its answer. No answer (an older observer) or a refusal skips the step.
+    /// <paramref name="seconds"/> for its answer. No answer (an older observer) or a refusal skips the step. A
+    /// non-zero <paramref name="dir"/> goes with the request as a level direction (hang-below's lip outward).
     /// </summary>
-    IEnumerator Ask(string what, float seconds = 5f)
+    IEnumerator Ask(string what, float seconds = 5f, Vector3 dir = default)
     {
         int id = ++mpRequestId;
         double asked = Unix;
@@ -2118,7 +2168,11 @@ internal sealed partial class SelfTestRunner
         {
             File.AppendAllText(
                 Path.Combine(MpDirectory, MpRequest.RequestFile),
-                MpRequest.Line(id, what, asked) + "\n"
+                (
+                    dir == Vector3.zero
+                        ? MpRequest.Line(id, what, asked)
+                        : MpRequest.Line(id, what, asked, dir.x, dir.z)
+                ) + "\n"
             );
         }
         catch (IOException e)
@@ -2217,22 +2271,43 @@ internal sealed partial class SelfTestRunner
         return Vector3.Distance(shoulder, target) - SocialConfig.Instance.Reach - MpShoulderReach;
     }
 
-    /// <summary>Up to two steps in toward <paramref name="target"/> while it lies past a real arm's reach
-    /// (<see cref="PastArm"/>), as the solo steps do; each goes as far as it is past reach, bounded, then faces
-    /// <paramref name="face"/>.</summary>
+    /// <summary>Up to three steps in toward <paramref name="target"/> while it lies past a real arm's reach
+    /// (<see cref="PastArm"/>), as the solo steps do; each goes the level distance that brings it within reach
+    /// (<see cref="LevelStepIn"/>), bounded, then faces <paramref name="face"/>.</summary>
     IEnumerator StepInToReach(bool left, Func<Vector3> target, Func<Vector3> face)
     {
         var c = Character.localCharacter;
-        for (int i = 0; i < 2 && PastArm(left, target()) > 0f; i++)
+        for (int i = 0; i < 3 && PastArm(left, target()) > 0f; i++)
         {
             var toward = target() - c.Center;
             toward.y = 0f;
-            float step = PastArm(left, target()) + 0.1f;
+            float step = LevelStepIn(left, target()) + 0.1f;
             var to = c.Center + toward.normalized * Mathf.Min(step, toward.magnitude);
             yield return MpWalkBounded(() => to, 0.1f, 3f);
             Face(face());
             yield return Wait(0.3f);
         }
+    }
+
+    /// <summary>The level distance (m) to walk in so the shoulder comes within a real arm's reach of
+    /// <paramref name="world"/>. Part of the gap can be height, which a level step closes only by its cosine (MP run
+    /// 14, #100: two steps of the 3D excess left the host's pack 0.14 m past reach).</summary>
+    static float LevelStepIn(bool left, Vector3 world)
+    {
+        ShoulderGap(left, world, out float level, out float up);
+        float reach = SocialConfig.Instance.Reach + MpShoulderReach;
+        return Mathf.Max(0f, level - Mathf.Sqrt(Mathf.Max(0f, reach * reach - up * up)));
+    }
+
+    /// <summary>The shoulder's gap to <paramref name="world"/> on the level and in height (tracking space, as
+    /// <see cref="PastArm"/>).</summary>
+    static void ShoulderGap(bool left, Vector3 world, out float level, out float up)
+    {
+        HeadFrame(out var head, out _, out var right);
+        var shoulder = head + Vector3.down * 0.25f + (left ? -right : right) * 0.18f;
+        var to = VRRig.Instance.Origin.InverseTransformPoint(world) - shoulder;
+        level = new Vector2(to.x, to.z).magnitude;
+        up = to.y;
     }
 
     /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
@@ -2991,9 +3066,15 @@ internal sealed partial class SelfTestRunner
         float past = PastArm(left, visuals.transform.position);
         if (past > 0f)
         {
-            stepSkip = F($"the host's pack is {past:0.00} m past a real arm's reach");
+            ShoulderGap(left, visuals.transform.position, out float level, out float up);
+            stepSkip = F(
+                $"the host's pack is {past:0.00} m past a real arm's reach ({level:0.00} m out, {up:+0.00;-0.00} m up from the shoulder)"
+            );
             yield break;
         }
+        // The stash destroys the held instance, and a destroyed object's name throws (MP run 14, #100).
+        string itemName = item.name;
+        ushort itemId = item.itemID;
         var stash = Inventory.PackStash.Instance;
         yield return MoveTo(left, () => visuals.transform.position, 0.6f);
         yield return Until(
@@ -3018,12 +3099,12 @@ internal sealed partial class SelfTestRunner
             && pocket < slots.Length
             && slots[pocket] != null
             && !slots[pocket].IsEmpty()
-            && slots[pocket].prefab.itemID == item.itemID;
+            && slots[pocket].prefab.itemID == itemId;
         if (!inPocket)
-            Fail(F($"{item.name} is not in pocket {pocket} of the host's pack"));
+            Fail(F($"{itemName} is not in pocket {pocket} of the host's pack"));
         else
             stepNote = F(
-                $"{item.name} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
+                $"{itemName} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
             );
     }
 
@@ -3127,6 +3208,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         byte pocket = wheel.chosenSlice.Value.slotID;
+        // The stash destroys the held instance, and a destroyed object's name throws (MP run 14, #100).
+        string itemName = item.name;
+        ushort itemId = item.itemID;
         Script(free).Trigger = 0f;
         yield return Until(
             () => !c.data.usingBackpackWheel && HeldItem() == null,
@@ -3141,13 +3225,13 @@ internal sealed partial class SelfTestRunner
             pocket >= slots.Length
             || slots[pocket] == null
             || slots[pocket].IsEmpty()
-            || slots[pocket].prefab.itemID != item.itemID
+            || slots[pocket].prefab.itemID != itemId
         )
         {
-            Fail(F($"{item.name} is not in pocket {pocket} of the host's pack"));
+            Fail(F($"{itemName} is not in pocket {pocket} of the host's pack"));
             yield break;
         }
-        string stashed = F($"{item.name} went into pocket {pocket} of the host's pack");
+        string stashed = F($"{itemName} went into pocket {pocket} of the host's pack");
         // From the front: WrongAngle, and the pull opens nothing.
         yield return GrabReachable(
             i => i.UIData.canBackpack && i is not Backpack,

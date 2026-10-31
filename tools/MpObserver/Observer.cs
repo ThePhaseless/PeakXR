@@ -430,7 +430,7 @@ internal sealed partial class Observer : MonoBehaviour
             string note;
             try
             {
-                ok = Execute(what, out note);
+                ok = Execute(what, lines[requestLines.Next], out note);
             }
             catch (Exception e)
             {
@@ -450,7 +450,7 @@ internal sealed partial class Observer : MonoBehaviour
         }
     }
 
-    static bool Execute(string what, out string note)
+    static bool Execute(string what, string line, out string note)
     {
         var c = Character.localCharacter;
         note = "";
@@ -520,7 +520,7 @@ internal sealed partial class Observer : MonoBehaviour
                 note = "warped onto " + vr.characterName;
                 return true;
             case MpRequest.HangBelow:
-                return HangBelow(c, out note);
+                return HangBelow(c, line, out note);
             case MpRequest.StartClimb:
                 return StartClimb(c, out note);
             case MpRequest.WearPack:
@@ -707,9 +707,12 @@ internal sealed partial class Observer : MonoBehaviour
     /// lip search finds it (SelfTestRunner.MpReachOut.cs <c>Lip</c>): stepping out along A's look from A's ground, the
     /// first spot whose down cast drops 1.5-5 m, then from 1.5 m under A's ground (at least 0.5 m above the lower
     /// ground) a cast back toward A onto the face. Every cast starts in open air past the lip. The old cast started a fixed 2.5 m under A and 1 m out, which
-    /// is inside the rock whenever A stands back from the edge or the face leans out (MP run 13, #95).
+    /// is inside the rock whenever A stands back from the edge or the face leans out (MP run 13, #95). Along the
+    /// lip's outward direction when the request carries it (A measured it), else A's look: in MP run 14 the look
+    /// found no drop below a lip A had found. Out to 4 m: A may stop up to 0.6 m back from its lip spot, itself 0.7 m
+    /// short of the drop.
     /// </summary>
-    static bool HangBelow(Character c, out string note)
+    static bool HangBelow(Character c, string line, out string note)
     {
         var vr = FirstRemote();
         if (vr == null)
@@ -717,7 +720,8 @@ internal sealed partial class Observer : MonoBehaviour
             note = "no remote player";
             return false;
         }
-        var look = vr.data.lookDirection_Flat;
+        bool given = MpRequest.TryReadDirection(line, out double dx, out double dz);
+        var look = given ? new Vector3((float)dx, 0f, (float)dz) : vr.data.lookDirection_Flat;
         look.y = 0f;
         if (look.sqrMagnitude < 1e-4f)
         {
@@ -732,7 +736,7 @@ internal sealed partial class Observer : MonoBehaviour
             note = "no ground under the remote player";
             return false;
         }
-        for (float outBy = 0.25f; outBy <= 3f; outBy += 0.25f)
+        for (float outBy = 0.25f; outBy <= 4f; outBy += 0.25f)
         {
             var above = feet.point + look * outBy + Vector3.up * 0.5f;
             if (!Physics.Raycast(above, Vector3.down, out var low, 6f, mask, ignore))
@@ -754,7 +758,8 @@ internal sealed partial class Observer : MonoBehaviour
             );
             return true;
         }
-        note = "no face below the remote player (no 1.5-5 m drop within 3 m out along its look)";
+        note =
+            $"no face below the remote player (no 1.5-5 m drop within 4 m out along {(given ? "the lip's outward" : "its look")})";
         return false;
     }
 

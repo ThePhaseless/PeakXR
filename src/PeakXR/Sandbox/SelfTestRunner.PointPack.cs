@@ -530,8 +530,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.433-point-pack-secondary-kept: aimed 40 degrees off the pack, a pull is the secondary use; swung onto the
-    /// pack mid-pull it stays so, with no wheel. Armed on the pack and then aimed away for 0.1 s (inside the lost
-    /// pick's grace), a pull is still the secondary use. With empty hands the free trigger reaches and no pick arms.
+    /// pack mid-pull it stays so, with no wheel. Armed on the pack and then aimed away until the ring goes off (inside
+    /// the lost pick's grace), a pull is still the secondary use. With empty hands the free trigger reaches and no pick arms.
     /// </summary>
     IEnumerator PointPackSecondaryKeptStep()
     {
@@ -568,7 +568,24 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         PointAt(free, pointPack.Center(), 40f);
-        yield return Wait(0.1f);
+        // Pull on the first frame the ring is off, one frame into the grace. The new aim reaches TickPoint 2-3 frames
+        // after the script sets it (EarlyUpdate sample, RigDriver.UpdateHands in LateUpdate): run 13's fixed 0.1 s
+        // at 34 ms frames pulled while the pick was still armed, which the product rightly claims (#101).
+        float aimedAt = Now;
+        int aimedFrame = Time.frameCount;
+        while (stash.PointHand == HandIndex(free) && Now - aimedAt < 0.5f)
+            yield return null;
+        if (stash.PointHand == HandIndex(free))
+        {
+            Fail(
+                "the pick stayed armed 0.5 s after the hand aimed 40 deg off the pack: "
+                    + PointState()
+            );
+            yield break;
+        }
+        var offAim = VRRig.Instance.Aim(free);
+        string atPull =
+            $"ring off after {Time.frameCount - aimedFrame} frames ({Now - aimedAt:0.00} s), aim {ReachOut.AimDegrees(offAim.position.N(), (offAim.position + offAim.forward).N(), pointPack.Center().N()):0} deg off the pack";
         pointSawSecondary = pointSawWheel = false;
         Script(free).Trigger = 1f;
         yield return PointWait(0.4f);
@@ -577,7 +594,7 @@ internal sealed partial class SelfTestRunner
         if (!pointSawSecondary || pointSawWheel)
         {
             Fail(
-                $"a pull in the lost pick's grace: secondary {pointSawSecondary}, wheel {pointSawWheel}"
+                $"a pull in the lost pick's grace: secondary {pointSawSecondary}, wheel {pointSawWheel}; {atPull}"
             );
             yield break;
         }
@@ -601,6 +618,8 @@ internal sealed partial class SelfTestRunner
             );
         else
             stepNote =
-                "a pull not started on an armed pick stayed the secondary use (off the pack, swung on, in the grace); empty hands reach";
+                "a pull not started on an armed pick stayed the secondary use (off the pack, swung on, in the grace: "
+                + atPull
+                + "); empty hands reach";
     }
 }

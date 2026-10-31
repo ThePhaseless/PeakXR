@@ -185,12 +185,19 @@ public static class GripIntent
         // A pointing hand whose aim finds an interactible is aiming at it, not joining the item, unless it sits
         // right on the item's second grip (VR run 66: a hand pointing at the statue joined the held amulet).
         bool aimsElsewhere = c.Pointing && c.Aimed != AimedTarget.None && !c.AtSecondGripTight;
+        // An item that works one-handed is joined near its second grip only when no world interactible is at the
+        // hand, or right on the grip (MP run 14, #96: the airport passport's second grip, 0.25 m wide, took the left
+        // hand's grip on the kiosk). A two-handed item needs the join, so it keeps the wider grip.
+        bool interactibleWins =
+            c.Candidate == GrabCandidate.Interactible
+            && c.HeldHandedness != Handedness.TwoHanded
+            && !c.AtSecondGripTight;
         if (
             c.HoldingItem
             && !c.ThisHandHolds
             && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness, c.HeldBothHandsInGame)
             && (
-                (c.AtSecondGrip && !aimsElsewhere)
+                (c.AtSecondGrip && !aimsElsewhere && !interactibleWins)
                 // A hand closing on the item's body joins it unless it points at a taker: a scripted or relaxed
                 // grip reads as pointing, and whatever lies past the item must not steal the join (vr.14).
                 || (
