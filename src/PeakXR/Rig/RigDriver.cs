@@ -545,7 +545,7 @@ internal sealed class RigDriver : MonoBehaviour
                 : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000}"
             )
         );
     }
@@ -1178,17 +1178,20 @@ internal sealed class RigDriver : MonoBehaviour
             }
             else
                 heldSinceWalk = 0f;
-            viewGoal =
-                (
-                    Time.unscaledTime < turnHoldUntil ? viewHold.Carry(body)
-                    : ViewHoldGate.CarriesThrough(viewHoldWhy) ? viewHold.Lean(body, bleedLean)
-                    : viewHold.Update(body, viewHoldWhy == null, dt)
-                ).U() + extra;
+            var held = (
+                Time.unscaledTime < turnHoldUntil ? viewHold.Carry(body)
+                : ViewHoldGate.CarriesThrough(viewHoldWhy) ? viewHold.Lean(body, bleedLean)
+                : viewHold.Update(body, viewHoldWhy == null, dt)
+            ).U();
+            // The height rides the ground, not the hip, while only PeakXR moves the body (#10, run 14).
+            held.y = viewHeight.Update(held.y, GroundUnder(c), ViewHeightOpen(c), dt);
+            viewGoal = held + extra;
             ViewHeld = viewGoal - goal;
         }
         else
         {
             viewHold.Reset();
+            viewHeight.Reset();
             viewHoldWhy = "view";
             ViewHeld = Vector3.zero;
         }
@@ -1360,13 +1363,18 @@ internal sealed class RigDriver : MonoBehaviour
         ViewOffset = skip + TurnSkipNow;
         // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
         // further meanwhile (#97, vr.396: 0.41 m owed, 24 degrees).
-        ViewOffset += BodyStance
-            .LeanBeyond(
-                (view - ViewOffset - eye).N(),
-                Locomotion.LocomotionConfig.LeanRadius * rig.Scale
-            )
-            .U();
+        // Less while the walk steps, which closes the debt itself.
+        leanLimit = BodyStance.LeanLimit(
+            leanLimit,
+            Locomotion.LocomotionConfig.LeanRadius * rig.Scale,
+            FollowWalking,
+            Time.unscaledDeltaTime
+        );
+        ViewOffset += BodyStance.LeanBeyond((view - ViewOffset - eye).N(), leanLimit).U();
     }
+
+    /// <summary>The lean limit eased for the stance walk (<see cref="BodyStance.LeanLimit"/>).</summary>
+    private float leanLimit = float.NaN;
 
     /// <summary>Self-test (vr.16): one line per frame of eye, rig and body yaw, torso and turn shift.</summary>
     private void TraceTurn(Character c)
@@ -1589,6 +1597,40 @@ internal sealed class RigDriver : MonoBehaviour
     }
 
     private readonly ViewHold viewHold = new();
+    private readonly ViewHeight viewHeight = new();
+    private ViewHoldInputs viewHoldIn;
+    private float groundY = float.NaN;
+
+    /// <summary>The terrain under the view root (<see cref="ViewRoot"/>, which a bend cannot move), NaN without any
+    /// within reach: what <see cref="ViewHeight"/> keeps the view's height over. Traced.</summary>
+    private float GroundUnder(Character c)
+    {
+        groundY = Physics.Raycast(
+            ViewRoot(c) + Vector3.up * 0.3f,
+            Vector3.down,
+            out var hit,
+            3f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? hit.point.y
+            : float.NaN;
+        return groundY;
+    }
+
+    /// <summary><see cref="ViewHeight"/>'s gate: the body is free as for the lean (grounded, upright, not carried,
+    /// sliding, bouncing or in water), with no move input but the stance walk's, no jump, no outside force and no
+    /// crouch (the game's, or the physical crouch's lift): those move the body for real and the view goes with it.</summary>
+    private bool ViewHeightOpen(Character c)
+    {
+        var inputs = AvatarPoseDriver.GateInputs(c);
+        inputs.MoveInput &= !FollowWalking;
+        return HoldGate.Free(inputs)
+            && !viewHoldIn.Jumping
+            && !viewHoldIn.Outside
+            && !c.data.isCrouching
+            && rig.CrouchLift <= 0f;
+    }
 
     /// <summary>This frame's closed <see cref="ViewHoldGate"/>, or null while the view holds. Traced.</summary>
     private string viewHoldWhy;
@@ -1611,7 +1653,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         var d = c.data;
         var driver = AvatarPoseDriver.Of(c);
-        return new ViewHoldInputs
+        return viewHoldIn = new ViewHoldInputs
         {
             BodyFree = HoldGate.Free(AvatarPoseDriver.GateInputs(c)),
             LeanSpeed = leanMotion.Update(
@@ -1655,7 +1697,8 @@ internal sealed class RigDriver : MonoBehaviour
     /// pull pushed back onto the hip (Bodypart.cs:193-205), so bending forward (the game's look-down pose or
     /// avatar.local's lean) slides the hips back and the torso forward while this point stays: the view never moves
     /// unless the head or the whole body does. Height comes from the hip, which the stand force holds
-    /// (CharacterMovement.cs:711-720). Dead or warping characters keep the game's stand-in point
+    /// (CharacterMovement.cs:711-720); <see cref="ViewHeight"/> keeps the view's height on the ground instead while only
+    /// PeakXR moves the body. Dead or warping characters keep the game's stand-in point
     /// (<c>Character.VirtualCenter</c>, Character.cs:256). A held item welded to a hand (CharacterItems.cs:647-650,
     /// or avatar.local's one-hand weld) is part of the same system and counts. Outside forces do move it, as they
     /// should: walking, a push, or a wall or rock the body leans against; nothing here fights that contact.
