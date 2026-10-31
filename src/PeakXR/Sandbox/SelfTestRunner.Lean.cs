@@ -406,7 +406,7 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         float drift = origin.size.magnitude;
-        notes.Add(F($"view moved {drift:0.000} m"));
+        notes.Add("view moved " + ViewMoved(origin));
         if (drift > MaxLeanDrift)
             fails.Add(
                 F(
@@ -512,7 +512,7 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         float drift = origin.size.magnitude;
-        notes.Add(F($"view moved {drift:0.000} m"));
+        notes.Add("view moved " + ViewMoved(origin));
         if (drift > MaxLeanDrift)
             fails.Add(
                 F(
@@ -531,9 +531,17 @@ internal sealed partial class SelfTestRunner
 
     static readonly float StanceDelay = new StanceWalk().Delay;
 
-    /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot.</summary>
+    /// <summary>The view's range (m), with its level and vertical parts apart: the view's height rides the hip
+    /// (run 10, vr.45: the hip rose 0.037 m during the walks), its level place only the head and outside forces.</summary>
+    static string ViewMoved(Bounds b) =>
+        F($"{b.size.magnitude:0.000} m (level {FlatSize(b):0.000}, height {b.size.y:0.000})");
+
+    /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot, then
+    /// for a stance walk the setup's turn started to end (run 10, vr.302: a walk from the setup ran through the
+    /// glance). Turns the lean trace on for the stance step that follows (run 10 logged none in vr.45b or vr.300-304).</summary>
     static IEnumerator RecenterHead(VRRig rig)
     {
+        RigDriver.TraceLeanUntil = Time.unscaledTime + 40f;
         bool recentered = false;
         Action onRecenter = () => recentered = true;
         rig.Recentered += onRecenter;
@@ -541,6 +549,9 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => recentered, 3f);
         rig.Recentered -= onRecenter;
         yield return Wait(0.8f);
+        yield return WaitFor(() => !RigDriver.FollowWalking, 3f);
+        if (RigDriver.FollowWalking)
+            LogStanceTimeout("recenter");
     }
 
     /// <summary>Waits out the stance walk's delay (a held debt walks after <see cref="StanceWalk.Delay"/>), then while a
@@ -758,7 +769,7 @@ internal sealed partial class SelfTestRunner
         float view = leanOrigin.size.magnitude;
         notes.Add(
             F(
-                $"{phase}: body {body:0.000} m (height {leanRoot.size.y:0.000} m), view {view:0.000} m, hip {leanHip.size.magnitude:0.000} m peak to peak"
+                $"{phase}: body {body:0.000} m (height {leanRoot.size.y:0.000} m), view {ViewMoved(leanOrigin)}, hip {leanHip.size.magnitude:0.000} m peak to peak"
             )
         );
         if (body > MaxLeanDrift)
