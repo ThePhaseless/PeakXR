@@ -252,6 +252,24 @@ public static class MpRequest
     public static string Line(int id, string what, double t) =>
         new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();
 
+    /// <summary>A request with a level direction (x, z): hang-below takes the lip's outward direction A measured, as
+    /// A's look can be off it (MP run 14, #95).</summary>
+    public static string Line(int id, string what, double t, double dirX, double dirZ) =>
+        new JsonLine()
+            .Num("id", id)
+            .Str("do", what)
+            .Num("t", t)
+            .Num("dx", dirX)
+            .Num("dz", dirZ)
+            .ToString();
+
+    public static bool TryReadDirection(string line, out double x, out double z)
+    {
+        z = 0;
+        return JsonLine.TryReadNumber(line, "dx", out x)
+            && JsonLine.TryReadNumber(line, "dz", out z);
+    }
+
     public static bool TryRead(string line, out int id, out string what, out double t)
     {
         id = 0;

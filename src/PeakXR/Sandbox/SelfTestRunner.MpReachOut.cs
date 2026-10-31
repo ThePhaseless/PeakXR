@@ -465,9 +465,14 @@ internal sealed partial class SelfTestRunner
         Face(stand + outward * 3f);
         yield return Wait(0.5f);
         var host = Host();
-        yield return Ask(MpRequest.HangBelow);
+        // B looks for the face along the lip's own outward direction, not A's look (MP run 14, #95: along the look B
+        // found no drop below a lip A had measured).
+        yield return Ask(MpRequest.HangBelow, dir: outward);
         if (stepSkip != null)
         {
+            stepSkip += F(
+                $" (A's lip: {LipNote(stand, outward)}, A {Vector3.Distance(c.Center, stand):0.00} m from it, look {Vector3.Angle(Flat(c.data.lookDirection), outward):0} deg off its outward)"
+            );
             yield return BringHostBack(c, host);
             yield break;
         }
@@ -654,6 +659,23 @@ internal sealed partial class SelfTestRunner
     bool ledgeFound;
     Vector3 ledgeStand;
     Vector3 ledgeOutward;
+
+    /// <summary>What <see cref="Lip"/> measured at <paramref name="ground"/>: the drop 0.7 m out along
+    /// <paramref name="dir"/>, for a refused hang-below's note.</summary>
+    static string LipNote(Vector3 ground, Vector3 dir)
+    {
+        var past = ground + dir * 0.7f;
+        return Physics.Raycast(
+            past + Vector3.up * 0.5f,
+            Vector3.down,
+            out var low,
+            5f,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        )
+            ? F($"{ground.y - low.point.y:0.0} m drop 0.7 m out along ({dir.x:0.00}, {dir.z:0.00})")
+            : "no ground 0.7 m out";
+    }
 
     /// <summary>Walkable ground behind <paramref name="ground"/>, and 0.7 m out along <paramref name="dir"/> a drop of
     /// <see cref="LedgeDropMin"/>-<see cref="LedgeDropMax"/> m whose middle is a steep face.</summary>

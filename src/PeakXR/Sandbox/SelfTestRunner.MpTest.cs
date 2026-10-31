@@ -2157,9 +2157,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Asks the observer to do <paramref name="what"/> to its own character (<see cref="MpRequest"/>) and waits up to
-    /// <paramref name="seconds"/> for its answer. No answer (an older observer) or a refusal skips the step.
+    /// <paramref name="seconds"/> for its answer. No answer (an older observer) or a refusal skips the step. A
+    /// non-zero <paramref name="dir"/> goes with the request as a level direction (hang-below's lip outward).
     /// </summary>
-    IEnumerator Ask(string what, float seconds = 5f)
+    IEnumerator Ask(string what, float seconds = 5f, Vector3 dir = default)
     {
         int id = ++mpRequestId;
         double asked = Unix;
@@ -2167,7 +2168,11 @@ internal sealed partial class SelfTestRunner
         {
             File.AppendAllText(
                 Path.Combine(MpDirectory, MpRequest.RequestFile),
-                MpRequest.Line(id, what, asked) + "\n"
+                (
+                    dir == Vector3.zero
+                        ? MpRequest.Line(id, what, asked)
+                        : MpRequest.Line(id, what, asked, dir.x, dir.z)
+                ) + "\n"
             );
         }
         catch (IOException e)
