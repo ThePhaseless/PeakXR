@@ -169,7 +169,23 @@ internal static class HeldGestures
     private static bool TriggerPressed(bool left) => PhysicalInteraction.UsePressed(left);
 
     /// <summary>Clear of the mouth zone (interact.physical eats within its 0.12 m radius), metres.</summary>
-    private const float AwayFromMouth = 0.2f;
+    internal const float AwayFromMouth = 0.2f;
+
+    /// <summary>Your own mouth, in world space (the eat zone's point, placed in real metres around the eyes).</summary>
+    internal static Vector3 OwnMouth(Transform head) =>
+        RealScale.World(
+            MouthGesture
+                .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
+                .U(),
+            head.position
+        );
+
+    /// <summary>Real metres from the held item, as the tracked hand carries it, to <paramref name="mouth"/>: under
+    /// <see cref="AwayFromMouth"/> a trigger on food is an eat try at your own mouth, never refused.</summary>
+    internal static float OwnMouthGap(Transform hand, bool left, Vector3 mouth) =>
+        RealScale.Real(
+            Vector3.Distance(ItemGestures.MouthContact(ItemGestures.Held, hand, left, mouth), mouth)
+        );
 
     /// <summary>
     /// The trigger on food or drink held away from the mouth (Interaction.TriggerEats off): it is not eaten, so say
@@ -185,21 +201,8 @@ internal static class HeldGestures
             || !ItemGestures.TriggerRefused(ItemGestures.Held)
         )
             return;
-        var head = rig.Head;
-        var mouth = RealScale.World(
-            MouthGesture
-                .MouthPoint(head.position.N(), head.rotation.N(), MouthGesture.DefaultOffset)
-                .U(),
-            head.position
-        );
-        if (
-            RealScale.Real(
-                Vector3.Distance(
-                    ItemGestures.MouthContact(ItemGestures.Held, hand, left, mouth),
-                    mouth
-                )
-            ) < AwayFromMouth
-        )
+        var mouth = OwnMouth(rig.Head);
+        if (OwnMouthGap(hand, left, mouth) < AwayFromMouth)
             return;
         Affordance.DenyAtHand(left, DenyReason.NotHere, DenyHint.At(mouth), ItemGestures.Held);
     }

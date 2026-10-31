@@ -1223,22 +1223,32 @@ internal sealed partial class SelfTestRunner
         // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
         // rejoined, and the item left the mouth).
         var grip = HeldGrip.Of(rig, Script(left), item);
-        // First a squeeze just beside the mouth, 0.32 m out toward A, outside the feed zone: it must not feed and must
-        // say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
+        // First a squeeze just beside the mouth, 0.32 m out to the holding hand's side, outside the feed zone: it must
+        // not feed and must say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
+        // To the side, not toward A (MP run 12, #93): out toward A the item's offset put the hand in the host's face
+        // (its controller bone 0.15 m from their head), which held it 0.27 m off its controller until the weld let go,
+        // and the bag's near end came toward A's own mouth, where a squeeze is an eat try and stays quiet
+        // (HeldGestures.AwayFromMouth): the press counts only clear of it.
         float bandMark = -1f;
         float placedFor = 0f;
         float bandEnd = Now + 4f;
         // How far out the item's centre is held: adjusted so its nearest point (the zone's measure,
         // SocialHands.FeedGap) sits 0.26-0.42 m off the mouth whatever its length.
         float standoff = 0.32f;
+        var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
+        float ownGap = 0f;
+        string pressNote = null;
         while (Now < bandEnd && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
-            var towardA = rig.Head.position - mouthNow;
-            towardA.y = 0f;
-            var target =
-                mouthNow
-                + (towardA.sqrMagnitude > 1e-4f ? towardA.normalized : Vector3.forward) * standoff;
+            var toHost = mouthNow - rig.Head.position;
+            toHost.y = 0f;
+            var side =
+                Vector3.Cross(
+                    Vector3.up,
+                    toHost.sqrMagnitude > 1e-4f ? toHost.normalized : Vector3.forward
+                ) * (left ? -1f : 1f);
+            var target = mouthNow + side * standoff;
             var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
             bandGoal =
                 VRInput.HeadPosition
@@ -1249,12 +1259,32 @@ internal sealed partial class SelfTestRunner
                 standoff = Mathf.Min(0.6f, standoff + 0.01f);
             else if (d > 0.4f)
                 standoff = Mathf.Max(0.05f, standoff - 0.01f);
-            placedFor = d > 0.26f && d < 0.42f ? placedFor + Time.unscaledDeltaTime : 0f;
+            if (holdHand != null)
+                ownGap = PeakXR.Interact.Physical.HeldGestures.OwnMouthGap(
+                    holdHand,
+                    left,
+                    PeakXR.Interact.Physical.HeldGestures.OwnMouth(rig.Head)
+                );
+            placedFor =
+                d > 0.26f
+                && d < 0.42f
+                && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
+                    ? placedFor + Time.unscaledDeltaTime
+                    : 0f;
             if (bandMark < 0f && placedFor >= 0.5f)
             {
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
             }
+            // What the refusal reads (HeldGestures.MouthHint), the frame after the press's use pass.
+            if (
+                bandMark >= 0f
+                && pressNote == null
+                && PeakXR.Interact.PhysicalInteraction.UsePressed(left)
+            )
+                pressNote = F(
+                    $"at the press: gap {d:0.00} m to the host's mouth, {ownGap:0.00} m to A's own, hand-over owns the trigger {Social.SocialHands.Instance.HandOverOwnsTrigger}"
+                );
             if (bandMark >= 0f && CueMark() - bandMark >= 0.4f)
                 break;
             yield return null;
@@ -1263,7 +1293,9 @@ internal sealed partial class SelfTestRunner
         if (bandMark < 0f)
         {
             Fail(
-                "the food never rested 0.26-0.42 m from the host's mouth for the beside-the-mouth squeeze"
+                F(
+                    $"the food never rested 0.26-0.42 m from the host's mouth, clear of A's own ({ownGap:0.00} m), for the beside-the-mouth squeeze"
+                )
             );
             yield break;
         }
@@ -1274,7 +1306,10 @@ internal sealed partial class SelfTestRunner
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
         if (!stepOk)
+        {
+            failNote += "; " + (pressNote ?? "the trigger made no use press (muted)");
             yield break;
+        }
         var bandCue = cueNote;
         yield return Wait(0.3f);
         while (
