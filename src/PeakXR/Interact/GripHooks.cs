@@ -21,13 +21,18 @@ internal readonly struct GripHookContext
     /// <summary>Asked every frame for the open hand's glow, not for a press: no notes or logs.</summary>
     public readonly bool Preview;
 
+    /// <summary>A grab target, climbable rock or a free fall is at this hand: a near target wins over anything
+    /// that reaches past it (the fallback extensions).</summary>
+    public readonly bool HandBusy;
+
     public GripHookContext(
         Character character,
         bool left,
         Vector3 handPosition,
         Item heldItem,
         bool thisHandHolds,
-        bool preview = false
+        bool preview = false,
+        bool handBusy = false
     )
     {
         Character = character;
@@ -36,13 +41,14 @@ internal readonly struct GripHookContext
         HeldItem = heldItem;
         ThisHandHolds = thisHandHolds;
         Preview = preview;
+        HandBusy = handBusy;
     }
 }
 
 /// <summary>
 /// A feature that takes grips before <c>interact.physical</c>'s own grab, climb and interact logic. Priority follows
 /// <see cref="Core.GripIntent"/>: a free hand joining the held item comes first, then extensions (in registration
-/// order), then grab, climb and the interact fallback. Methods run on grip edges of the local VR player only and
+/// order), then fallback extensions, then grab, climb and the interact fallback. Methods run on grip edges of the local VR player only and
 /// must not allocate.
 /// </summary>
 internal interface IGripExtension
@@ -74,19 +80,30 @@ internal static class GripHooks
 {
     private static readonly List<IGripExtension> Extensions = new();
 
-    public static void Register(IGripExtension extension)
+    /// <summary>Asked after every other extension, whatever the feature order: a reach past the hand (interact.social's
+    /// reach-out) must not outrank a body slot at the hand (inventory.vr installs after interact.social).</summary>
+    private static readonly List<IGripExtension> Fallbacks = new();
+
+    public static void Register(IGripExtension extension, bool last = false)
     {
-        if (!Extensions.Contains(extension))
-            Extensions.Add(extension);
+        var list = last ? Fallbacks : Extensions;
+        if (!list.Contains(extension))
+            list.Add(extension);
     }
 
-    /// <summary>First extension claiming the press, or null.</summary>
-    public static IGripExtension Claim(in GripHookContext ctx)
+    /// <summary>First extension claiming the press, or null; the fallbacks only when <paramref name="fallbacks"/>.</summary>
+    public static IGripExtension Claim(in GripHookContext ctx, bool fallbacks = true)
     {
-        for (int i = 0; i < Extensions.Count; i++)
+        var hit = First(Extensions, ctx);
+        return hit == null && fallbacks ? First(Fallbacks, ctx) : hit;
+    }
+
+    private static IGripExtension First(List<IGripExtension> list, in GripHookContext ctx)
+    {
+        for (int i = 0; i < list.Count; i++)
         {
-            if (Extensions[i].ClaimPress(ctx))
-                return Extensions[i];
+            if (list[i].ClaimPress(ctx))
+                return list[i];
         }
         return null;
     }
@@ -97,6 +114,11 @@ internal static class GripHooks
         for (int i = 0; i < Extensions.Count; i++)
         {
             if (Extensions[i].TryHeldRelease(ctx))
+                return true;
+        }
+        for (int i = 0; i < Fallbacks.Count; i++)
+        {
+            if (Fallbacks[i].TryHeldRelease(ctx))
                 return true;
         }
         return false;

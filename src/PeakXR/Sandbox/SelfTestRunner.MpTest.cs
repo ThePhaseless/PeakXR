@@ -1947,6 +1947,11 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("reach-deny", 40f, true, ReachDeny());
         yield return MpStep("reach-look", 60f, true, MpReachLook());
         yield return MpStep("reach", 50f, true, MpReach());
+        // The reach-out (#70) from 3 m: the no-catch steps first, so one web lasts.
+        yield return MpStep("vr.421-reach-out-cone", 50f, true, MpReachOutCone());
+        yield return MpStep("vr.422-reach-out-idle", 50f, true, MpReachOutIdle());
+        yield return MpStep("vr.423-reach-out-hands-full", 120f, true, MpReachOutHandsFull());
+        yield return MpStep("vr.424-reach-out-far", 50f, true, MpReachOutFar());
         yield return HostWake();
         yield return MpStep("kick-mode", 40f, true, KickMode());
         yield return MpStep("carry", 90f, true, MpCarry());
@@ -1957,6 +1962,8 @@ internal sealed partial class SelfTestRunner
         // A timed-out step is dropped without its finally: put the head back from the crouch dip.
         if (VRSession.Active && VRInput.TestOverride != null)
             VRInput.TestOverride = applyHands;
+        // Its warp strands B on a face: after kick-mode, carry and pack, and after the crouch dip is put back.
+        yield return MpStep("vr.420-reach-out-ledge", 90f, true, MpReachOutLedge());
         yield return HostWake();
         yield return MpStep("campfire-far", 60f, true, CampfireFar());
         // Last: A passes out to spectate, then wakes.
@@ -2326,7 +2333,11 @@ internal sealed partial class SelfTestRunner
         );
         EndGlance();
         if (stepOk)
-            stepNote = "looking away: " + cue + "; looking at them: caught";
+            stepNote =
+                "looking away: "
+                + cue
+                + "; looking at them: caught"
+                + $"; reach-out {SocialHands.Instance.ReachOutFriend(false) != null}";
     }
 
     IEnumerator MpReach()
@@ -2382,7 +2393,7 @@ internal sealed partial class SelfTestRunner
             );
         else
             stepNote = F(
-                $"reached and caught the host; free of the web {Now - caughtAt:0.0} s later"
+                $"reached and caught the host; free of the web {Now - caughtAt:0.0} s later; reach-out {SocialHands.Instance.ReachOutFriend(false) != null}"
             );
     }
 

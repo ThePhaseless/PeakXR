@@ -92,6 +92,10 @@ internal static class PhysicalInteraction
         /// glowed, when and at which point, for <see cref="GrabGrace"/>.</summary>
         public IInteractible Preview;
         public int PreviewFrame = -10;
+
+        /// <summary>The glow's decision found a grab target at this hand on <see cref="PreviewFrame"/>, whatever the
+        /// grip would then do with it (<see cref="HandBusy"/>).</summary>
+        public bool PreviewAny;
         public IInteractible Shown;
         public float ShownAt = -10f;
         public Vector3 ShownPoint;
@@ -815,8 +819,17 @@ internal static class PhysicalInteraction
         d.Action = GripIntent.OnPress(ctx);
         if (d.Action != GripPressAction.SecondHand)
         {
+            // A target at the hand keeps a reach past it (the fallback extensions) out; airborne, the wall catch.
             d.Extension = GripHooks.Claim(
-                new GripHookContext(c, hand.Left, pos, d.Held, thisHolds, preview)
+                new GripHookContext(
+                    c,
+                    hand.Left,
+                    pos,
+                    d.Held,
+                    thisHolds,
+                    preview,
+                    handBusy: candidate != GrabCandidate.None || ctx.NearClimbable || ctx.Airborne
+                )
             );
             ctx.ExtensionClaim = d.Extension != null;
             d.Action = GripIntent.OnPress(ctx);
@@ -849,6 +862,7 @@ internal static class PhysicalInteraction
     )
     {
         hand.Preview = null;
+        hand.PreviewAny = false;
         hand.PreviewFrame = Time.frameCount;
         var t = rig.Hand(hand.Left);
         if (
@@ -863,6 +877,7 @@ internal static class PhysicalInteraction
         )
             return;
         var d = Decide(hand, c, rig, cfg, t, preview: true, now);
+        hand.PreviewAny = d.Target != null;
         if (d.Action is not (GripPressAction.GrabItem or GripPressAction.GrabInteractible))
             return;
         hand.Preview = hand.Shown = d.Target;
@@ -2266,6 +2281,46 @@ internal static class PhysicalInteraction
     }
 
     /// <summary>
+    /// Something nearer than a friend takes this hand's grip now, so interact.social's reach-out must neither ring
+    /// nor claim it: a grip already owned, a free fall (the wall catch), a grab target the glow found, a climbable
+    /// hold or rock at the hand (the press's NearClimbable terms), or an extension that claims with no grab target
+    /// (body slot, rope, vine or handle, a thorn, tick or worn pack, a body-part refusal). No rig hand reads as busy.
+    /// Callers ask only while a friend is offered: it casts and walks the extensions in preview, which never
+    /// allocates (#49). <paramref name="probe"/> is the hold verdict, for the self-test note.
+    /// </summary>
+    internal static bool HandBusy(Character c, bool left, out HoldVerdict probe)
+    {
+        probe = default;
+        var rig = VRRig.Instance;
+        var t = rig != null ? rig.Hand(left) : null;
+        if (t == null)
+            return true;
+        var hand = left ? LeftHand : RightHand;
+        if (hand.Action != GripPressAction.None || Airborne(c))
+            return true;
+        if (Time.frameCount - hand.PreviewFrame <= 1 && hand.PreviewAny)
+            return true;
+        var cfg = InteractConfig.Instance;
+        var item = c.data.currentItem;
+        var pos = t.position;
+        if (cfg.PhysicalClimb)
+        {
+            var hold = ProbeHold(c, rig, pos, t, cfg, item);
+            probe = hold.Verdict;
+            if (
+                hold.Verdict == HoldVerdict.Grab
+                || (!hold.Hit && NearRock(pos, cfg.ClimbRadius, item))
+            )
+                return true;
+        }
+        bool thisHolds = item != null && LocalHold.ItemInLeftHand == left;
+        return GripHooks.Claim(
+                new GripHookContext(c, left, pos, item, thisHolds, preview: true),
+                fallbacks: false
+            ) != null;
+    }
+
+    /// <summary>
     /// The "can grab here" cue that replaces the game's climb reticle (<c>sinceCanClimb</c>, CharacterClimbing.cs:566),
     /// from the same probe and verdict as the grip (<see cref="ProbeHold"/>): a solid chalk ring and one contact tick
     /// where a grip now would catch, a faint ring on climbable rock just past the reach, and the red refusal ring
@@ -2315,7 +2370,11 @@ internal static class PhysicalInteraction
         Climb.ClimbHover.Hide(hand.Left);
         // Rock the game will not take, under a hand held out for it: the refusal shows before the grip, not after.
         var eye = Eye(rig);
-        if (Vector3.Distance(eye, t.position) < ClimbReach.BentArm)
+        // The reach-out's ring or refusal owns this hand's hover slot (one writer per hand).
+        if (
+            Vector3.Distance(eye, t.position) < ClimbReach.BentArm
+            || Social.SocialHands.Instance.ReachOutShown(hand.Left)
+        )
             return;
         if (hold.Verdict == HoldVerdict.Overhang)
             Affordance.Hover(hand.Left, hold.Point, DenyReason.Overhang);

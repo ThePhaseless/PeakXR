@@ -32,6 +32,8 @@ public sealed class SocialFeature : Feature
         Patch(typeof(SocialPatches.Grasp));
         UI.Affordances.Affordance.ReasonContext = SocialHands.RefusalContext;
         GripHooks.Register(SocialHands.Instance);
+        // After every extension, whatever the feature order: a body slot at the hand outranks a reach past it.
+        GripHooks.Register(SocialHands.ReachOutExtension, last: true);
         // Tick only runs in VR (SocialPatches.IsLocal), so the grips it would clear are cleared when VR stops.
         VRSession.Stopped += SocialHands.Instance.Reset;
     }

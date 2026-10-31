@@ -35,5 +35,7 @@ public class MpRequestTests
         Assert.True(MpRequest.TryRead(MpRequest.Line(1, "dance", 1), out _, out var what, out _));
         Assert.False(MpRequest.Known(what));
         Assert.True(MpRequest.Known(MpRequest.Wake));
+        Assert.True(MpRequest.Known(MpRequest.HangBelow));
+        Assert.True(MpRequest.Known(MpRequest.StartClimb));
     }
 }

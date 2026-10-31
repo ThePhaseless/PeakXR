@@ -225,8 +225,16 @@ public static class MpRequest
     /// <summary>Warp B onto A's head (the game's WarpPlayerRPC), to stand on A for a pal jump.</summary>
     public const string StandOn = "stand-on";
 
+    /// <summary>Warp B onto the ground below and ahead of A's look, under a ledge A stands on (the game's
+    /// WarpPlayerRPC), for the reach-out over a ledge.</summary>
+    public const string HangBelow = "hang-below";
+
+    /// <summary>Start a wall climb on the face between B and A (the game's StartClimbRpc). Not A's <c>climb</c>
+    /// checkpoint.</summary>
+    public const string StartClimb = "start-climb";
+
     public static bool Known(string what) =>
-        what is PassOut or Web or Wake or Crouch or Stand or StandOn;
+        what is PassOut or Web or Wake or Crouch or Stand or StandOn or HangBelow or StartClimb;
 
     public static string Line(int id, string what, double t) =>
         new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();
