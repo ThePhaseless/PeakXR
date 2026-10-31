@@ -198,7 +198,7 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         float drift = FlatSize(origin);
-        notes.Add(F($"view moved {drift:0.000} m"));
+        notes.Add("view moved " + ViewMoved(origin));
         if (drift > MaxLeanDrift)
             fails.Add(
                 F(
@@ -262,9 +262,12 @@ internal sealed partial class SelfTestRunner
     /// the look, from the hip, may change by at most 0.1 m between the two: before, the slots stayed at the real body
     /// and floated 0.28 m ahead of the avatar's hips.
     /// </summary>
-    /// <summary>Impulse (per part, inside a 1 m radius) that slides a standing scout without knocking it down: a third
-    /// of vr.07's knockback.</summary>
-    const float StancePush = 20f;
+    /// <summary>Impulse (per part, inside a 1 m radius) sent every frame, as wind sends it (WindChillZone.cs:250), until
+    /// the body has moved <see cref="StancePushTravel"/>: run 10's single impulse of 20 moved it 0.004 m against its
+    /// planted feet. A steady push slides a standing scout without knocking it down.</summary>
+    const float StancePush = 6f;
+
+    const float StancePushTravel = 0.08f;
 
     /// <summary>
     /// <c>vr.304-push-moves-view</c>: a push on a standing body (the game's knockback RPC,
@@ -289,17 +292,24 @@ internal sealed partial class SelfTestRunner
         var right = Vector3.Cross(Vector3.up, Flat(rig.Head.forward));
         var body0 = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up);
         var origin0 = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up);
-        c.photonView.RPC(
-            "RPCA_AddForceAtPosition",
-            Photon.Pun.RpcTarget.All,
-            right * StancePush,
-            c.Center,
-            1f
-        );
         bool walked = false;
         float t0 = Now;
+        float pushed = 0f;
         while (Now - t0 < 2f)
         {
+            // Pushed for at most 1 s, until the body has moved far enough to judge.
+            var moved = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up) - body0;
+            if (Now - t0 < 1f && moved.magnitude < StancePushTravel)
+            {
+                c.photonView.RPC(
+                    "RPCA_AddForceAtPosition",
+                    Photon.Pun.RpcTarget.All,
+                    right * StancePush,
+                    c.Center,
+                    1f
+                );
+                pushed = Now - t0;
+            }
             yield return null;
             walked |= RigDriver.FollowWalking;
         }
@@ -308,7 +318,7 @@ internal sealed partial class SelfTestRunner
         var view = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up) - origin0;
         float apart = (view - body).magnitude;
         var note = F(
-            $"push: body {body.magnitude:0.000} m, view {view.magnitude:0.000} m ({apart:0.000} m apart), stance walk {(walked ? "started" : "never started")}"
+            $"push: {pushed:0.00} s, body {body.magnitude:0.000} m, view {view.magnitude:0.000} m ({apart:0.000} m apart), stance walk {(walked ? "started" : "never started")}{(c.data.fallSeconds > 0f ? ", knocked down" : "")}"
         );
         if (body.magnitude < 0.05f)
             Fail(note + "; the push did not move the body enough to judge");
