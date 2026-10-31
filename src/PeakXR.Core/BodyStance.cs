@@ -53,6 +53,19 @@ public static class BodyStance
     /// </summary>
     public static Vector3 LeanSkip(Vector3 debt, Vector3 forward, float back) =>
         forward * (back - Math.Clamp(-Vector3.Dot(debt, forward), 0f, back));
+
+    /// <summary>
+    /// The level part of what the lean would bend for (<paramref name="share"/>) past <paramref name="limit"/>, which
+    /// it leaves out: past the lean limit the stance walk steps under the head (<see cref="StanceWalk.AtOnce"/>), so a
+    /// head walking away in the room bends the spine no further than the limit while the body catches up (run 12,
+    /// vr.396: 0.41 m owed, 20.7 degrees, 24 at most).
+    /// </summary>
+    public static Vector3 LeanBeyond(Vector3 share, float limit)
+    {
+        var flat = new Vector3(share.X, 0f, share.Z);
+        float len = flat.Length();
+        return len > limit ? flat * (1f - limit / len) : Vector3.Zero;
+    }
 }
 
 /// <summary>What a <see cref="StanceWalk"/> is doing.</summary>

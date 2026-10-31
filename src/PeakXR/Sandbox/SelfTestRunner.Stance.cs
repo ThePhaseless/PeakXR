@@ -79,7 +79,7 @@ internal sealed partial class SelfTestRunner
         float off = ModelEyesOff(c, out float gap).magnitude;
         notes.Add(
             F(
-                $"{at}: eyes {off:0.000} m off the view, drawn eyes {DrawnEyesOff(c):0.000} m, renderers {gap:0.000} m off the eye model, debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                $"{at}: eyes {off:0.000} m off the view, drawn eyes {DrawnEyesOff(c):0.000} m, renderers {gap:0.000} m off the eye model, debt {RigDriver.StanceDebt.magnitude:0.000} m, lean trim {LocalAvatar.LeanTrimNow.magnitude:0.000} m"
             )
         );
         JudgeSettled(c, at, off, fails);
@@ -309,13 +309,16 @@ internal sealed partial class SelfTestRunner
     /// the look, from the hip, may change by at most 0.1 m between the two: before, the slots stayed at the real body
     /// and floated 0.28 m ahead of the avatar's hips.
     /// </summary>
-    /// <summary>Impulse (per part, inside a 1 m radius) sent every physics step, as wind sends it (WindChillZone.cs:250), until
-    /// the body has moved <see cref="StancePushTravel"/>: run 10's single impulse of 20 moved it 0.004 m against its
-    /// planted feet. A steady push slides a standing scout without knocking it down. 10 at 50 Hz is about the 6 a
-    /// frame at 90 Hz it was sent at before (unmeasured in game).</summary>
+    /// <summary>Impulse (per part, inside a 1 m radius) sent every physics step, as wind sends it (WindChillZone.cs:250), for
+    /// <see cref="StancePushSeconds"/>: run 10's single impulse of 20 moved it 0.004 m against its planted feet. A
+    /// steady push slides a standing scout without knocking it down. 10 at 50 Hz is about the 6 a frame at 90 Hz it
+    /// was sent at before.</summary>
     const float StancePush = 10f;
 
-    const float StancePushTravel = 0.08f;
+    /// <summary>How long the push lasts (s). Run 12 stopped it once the mass centre had moved 0.08 m, at 0.10 s: the
+    /// upper body rocks first, and the body came back to 0.033 m, too little to judge. Run 11's 0.11 s moved it
+    /// 0.106 m.</summary>
+    const float StancePushSeconds = 0.3f;
 
     /// <summary>
     /// <c>vr.304-push-moves-view</c>: a push on a standing body (the game's knockback RPC,
@@ -346,9 +349,7 @@ internal sealed partial class SelfTestRunner
         var tick = new WaitForFixedUpdate();
         while (Now - t0 < 2f)
         {
-            // Pushed for at most 1 s, until the body has moved far enough to judge.
-            var moved = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up) - body0;
-            if (Now - t0 < 1f && moved.magnitude < StancePushTravel)
+            if (Now - t0 < StancePushSeconds)
             {
                 c.photonView.RPC(
                     "RPCA_AddForceAtPosition",
@@ -394,12 +395,35 @@ internal sealed partial class SelfTestRunner
 
     static AccessTools.FieldRef<Bodypart, Vector3> animOffset;
 
+    bool walkSampling;
+    float walkLead;
+    float walkModelLead;
+
+    /// <summary>The leads of <see cref="WalkForwardStep"/>, at the end of each rendered frame, where the view, the eye
+    /// model and the eye renderers are the same frame's. Read after a physics step, the renderers were up to a frame
+    /// and a step ahead of the view (run 12, vr.395: 0.216 m against the model's 0.085 m at 2.5 m/s).</summary>
+    IEnumerator SampleWalkLead(Character c, VRRig rig, Vector3 along)
+    {
+        var end = new WaitForEndOfFrame();
+        float t0 = Now;
+        while (walkSampling && Now - t0 < 10f && c != null)
+        {
+            yield return end;
+            var view = rig.Head.position;
+            if (RigDriver.TryEyeRenderers(c, out var drawn))
+                walkLead = Mathf.Max(walkLead, Vector3.Dot(drawn - view, along));
+            if (RigDriver.LeanEye is { } model)
+                walkModelLead = Mathf.Max(walkModelLead, Vector3.Dot(model - view, along));
+        }
+    }
+
     /// <summary>
     /// <c>vr.395-walk-forward-stick</c> and <c>vr.396-walk-forward-room</c>: walking forward, the body stays with the
     /// head and the legs keep pace with it (a tester saw the scout bend and its legs outrun the body). Stick: the move
     /// stick held forward 1.2 s. Room: the scripted head walks 1.2 m forward in the room over 2 s, then holds until the
-    /// stance walk has settled. Every physics step it measures how far the drawn eyes (and the eye model) lead the
-    /// view along the walk, the spine's bend, and the animated legs' speed against the ground's: the stance foot (the
+    /// stance walk has settled. Every rendered frame it measures how far the drawn eyes (and the eye model) lead the
+    /// view along the walk (<see cref="SampleWalkLead"/>), and every physics step the spine's bend and the animated
+    /// legs' speed against the ground's (also split at 0.5 move input, in the note): the stance foot (the
     /// lower animated foot, <c>Bodypart.targetOffsetRelativeToHip</c>, Bodypart.cs:39, :130) moves back along the hip
     /// at the legs' speed, so its world travel is the slip. Fails when the eyes lead by more than
     /// <see cref="MaxWalkLead"/>, the spine bends more than <see cref="MaxWalkBend"/>, or the legs' ratio leaves
@@ -436,11 +460,15 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         var along = Flat(rig.Origin.rotation * forward).normalized;
         bool hand = !VRInput.LeftHanded;
-        float lead = float.NegativeInfinity;
-        float modelLead = float.NegativeInfinity;
+        walkLead = walkModelLead = float.NegativeInfinity;
+        walkSampling = true;
+        StartCoroutine(SampleWalkLead(c, rig, along));
         float bend = 0f;
         float legs = 0f;
         float ground = 0f;
+        // The legs' ratio at low and high move input apart (#97: the stance walk pushes mostly at 0.27-0.46).
+        float legsLow = 0f,
+            groundLow = 0f;
         int stance = -1;
         var lastFoot = Vector3.zero;
         var lastHip = Vector3.zero;
@@ -457,11 +485,6 @@ internal sealed partial class SelfTestRunner
                     level
                 );
             yield return tick;
-            var view = rig.Head.position;
-            if (RigDriver.TryEyeRenderers(c, out var drawn))
-                lead = Mathf.Max(lead, Vector3.Dot(drawn - view, along));
-            if (RigDriver.LeanEye is { } model)
-                modelLead = Mathf.Max(modelLead, Vector3.Dot(model - view, along));
             bend = Mathf.Max(bend, driver.LeanDegrees);
             // The stance foot's animated place in the world: the hip plus its animated offset (Bodypart.WorldTargetPos).
             var hip = c.refs.hip.transform.position;
@@ -473,20 +496,30 @@ internal sealed partial class SelfTestRunner
             // Walking pace only: the start and the stop are the gait blending in and out.
             if (now == stance && hipStep > 0.3f * Time.fixedDeltaTime)
             {
-                legs += hipStep - Vector3.Dot(foot - lastFoot, along);
+                float slip = hipStep - Vector3.Dot(foot - lastFoot, along);
+                legs += slip;
                 ground += hipStep;
+                if (c.input.movementInput.magnitude < 0.5f)
+                {
+                    legsLow += slip;
+                    groundLow += hipStep;
+                }
             }
             stance = now;
             lastFoot = foot;
             lastHip = hip;
         }
         Script(hand).Stick = Vector2.zero;
+        walkSampling = false;
+        float lead = walkLead;
+        float modelLead = walkModelLead;
         var fails = new List<string>();
         var notes = new List<string>();
         float ratio = ground > 0.05f ? legs / ground : float.NaN;
+        float groundHigh = ground - groundLow;
         notes.Add(
             F(
-                $"{(room ? "room" : "stick")} walk: drawn eyes led the view by {lead:0.000} m at most (eye model {modelLead:0.000} m), spine bent {bend:0.0} deg at most, legs {ratio:0.00} x the ground speed over {ground:0.00} m"
+                $"{(room ? "room" : "stick")} walk: drawn eyes led the view by {lead:0.000} m at most (eye model {modelLead:0.000} m), spine bent {bend:0.0} deg at most, legs {ratio:0.00} x the ground speed over {ground:0.00} m (input under 0.5: {(groundLow > 0.05f ? legsLow / groundLow : float.NaN):0.00} over {groundLow:0.00} m; 0.5 and over: {(groundHigh > 0.05f ? (legs - legsLow) / groundHigh : float.NaN):0.00} over {groundHigh:0.00} m)"
             )
         );
         if (!(lead <= MaxWalkLead))

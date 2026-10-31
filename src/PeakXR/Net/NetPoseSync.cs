@@ -450,7 +450,7 @@ internal sealed class NetPoseSync
             if (remote.Driver == null || remote.Driver.gameObject != character.gameObject)
                 remote.Driver = AvatarPoseDriver.For(character);
             var world = PoseFrame.ToWorld(local, root, playbackYaw);
-            remote.Driver.SetPose(ToAvatarPose(world));
+            remote.Driver.SetPose(ToAvatarPose(world), U(root));
         }
     }
 

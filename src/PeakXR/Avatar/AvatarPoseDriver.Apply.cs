@@ -250,7 +250,9 @@ public partial class AvatarPoseDriver
     /// <summary>The upper arms: their children carry the elbows and hands.</summary>
     private static readonly BodypartType[] ArmRoots = { BodypartType.Arm_L, BodypartType.Arm_R };
 
-    private Vector3 AnimatedOffset() => hip.transform.position - hip.Rig.position;
+    /// <summary>From the pose's world frame to the animated one: the animated hip less the physical hip the pose was
+    /// built on (<see cref="PoseHip"/>), or this step's when the writer gave none.</summary>
+    private Vector3 AnimatedOffset() => hip.transform.position - (PoseHip ?? hip.Rig.position);
 
     /// <summary>The parts the lean carries (under <see cref="spine"/>, minus the controller-driven elbows and hands),
     /// their masses, and their animated positions before this tick's bend.</summary>
