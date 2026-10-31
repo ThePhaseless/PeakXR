@@ -174,6 +174,43 @@ public class ControllerProfileTests
     }
 
     [Fact]
+    public void Index_PadSqueezeWhileGripping_IsNoMenu()
+    {
+        // Issue #86: a thumb pressed hard into the pad while the hand grips a hold or swings a throw is no pause.
+        var layout = ControllerLayout.From(Index);
+        var latch = new PadMenuLatch();
+        ControllerButtons Frame(float grip, float force) =>
+            ControllerMap.Map(
+                layout,
+                new ControllerSample { Grip = grip, PadForce = force },
+                false,
+                padMenu: latch
+            );
+
+        Assert.False(Frame(0.9f, 0.9f).Menu);
+        // The hand opens with the thumb still pressed: that press stays no menu until the pad lets go.
+        Assert.False(Frame(0f, 0.9f).Menu);
+        Assert.False(Frame(0f, 0f).Menu);
+        // A fresh squeeze with the hand open is the menu, and a grip closing during it keeps it.
+        Assert.True(Frame(0f, 0.9f).Menu);
+        Assert.True(Frame(0.9f, 0.9f).Menu);
+        // Without a latch the squeeze is refused for as long as the grip is closed.
+        Assert.False(Map(Index, new ControllerSample { Grip = 0.9f, PadForce = 0.9f }).Menu);
+        // A real menu button is never held back.
+        Assert.False(Frame(0.9f, 0f).Menu);
+        Assert.True(
+            ControllerMap
+                .Map(
+                    layout,
+                    new ControllerSample { Grip = 0.9f, Menu = true },
+                    false,
+                    padMenu: latch
+                )
+                .Menu
+        );
+    }
+
+    [Fact]
     public void Touch_ButtonsMenuAndTouches()
     {
         var b = Map(

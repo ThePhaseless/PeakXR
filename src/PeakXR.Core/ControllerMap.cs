@@ -116,6 +116,10 @@ public static class ControllerMap
     /// <summary>A firm trackpad squeeze, well above a resting thumb.</summary>
     public const float PadMenuForce = 0.6f;
 
+    /// <summary>Grip at or above which the hand is closed: a pad press starting then is the thumb bearing down with the
+    /// grip (a climb hold, a throw), not the menu (issue #86).</summary>
+    public const float PadMenuGrip = 0.5f;
+
     /// <summary>Trigger pull that counts as a touch on controllers without a trigger touch sensor.</summary>
     public const float TriggerTouchPull = 0.05f;
 
@@ -123,12 +127,15 @@ public static class ControllerMap
     /// <param name="oneHanded">Accessibility.OneHanded; only the Vive wand pad uses it (<see cref="WandPad.Map"/>).</param>
     /// <param name="wand">The hand's click memory for a Vive wand pad (<see cref="WandPadLatch"/>); null maps each
     /// frame alone.</param>
+    /// <param name="padMenu">The hand's pad menu memory (<see cref="PadMenuLatch"/>); null refuses the pad menu
+    /// whenever the grip is closed.</param>
     public static ControllerButtons Map(
         in ControllerLayout l,
         in ControllerSample s,
         bool moveHand,
         bool oneHanded = false,
-        WandPadLatch wand = null
+        WandPadLatch wand = null,
+        PadMenuLatch padMenu = null
     )
     {
         var b = default(ControllerButtons);
@@ -143,10 +150,14 @@ public static class ControllerMap
         b.StickTouch = s.StickTouch;
         // A thumb on the trackpad rests like one on the thumbrest: not lifted, so no finger gun.
         b.ThumbrestTouch = s.ThumbrestTouch || s.PadTouch;
+        bool padMenuPress =
+            (l.PadMenuClick && s.PadClick) || (l.PadMenuForce && s.PadForce > PadMenuForce);
+        bool gripping = b.Grip >= PadMenuGrip;
         b.Menu =
             s.Menu
-            || (l.PadMenuClick && s.PadClick)
-            || (l.PadMenuForce && s.PadForce > PadMenuForce);
+            || (
+                padMenu != null ? padMenu.Update(padMenuPress, gripping) : padMenuPress && !gripping
+            );
         b.PrimaryTouch = s.PrimaryTouch;
         b.SecondaryTouch = s.SecondaryTouch;
         b.StickClick = s.StickClick;
@@ -175,5 +186,26 @@ public static class ControllerMap
             b.Secondary = s.Secondary;
         }
         return b;
+    }
+}
+
+/// <summary>
+/// The trackpad stands in for the menu button next to real face buttons (the Index, whose system button SteamVR
+/// keeps). A thumb bears down on the pad as the hand grips hard on a climb or a throw, so a pad press that starts
+/// with the grip closed is no menu for as long as it lasts, even once the hand opens (issue #86: it paused or
+/// recentered mid-climb). One that starts with the hand open stays the menu if the grip then closes.
+/// </summary>
+public sealed class PadMenuLatch
+{
+    private bool down;
+    private bool refused;
+
+    /// <returns>The pad's menu press this frame.</returns>
+    public bool Update(bool pad, bool gripping)
+    {
+        if (pad && !down)
+            refused = gripping;
+        down = pad;
+        return pad && !refused;
     }
 }
