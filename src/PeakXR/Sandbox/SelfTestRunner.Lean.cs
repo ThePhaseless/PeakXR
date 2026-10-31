@@ -265,11 +265,7 @@ internal sealed partial class SelfTestRunner
         var upRoot = RigDriver.ViewRoot(c);
         yield return Track(c, rig, Vector3.zero, 0.6f, 3.5f);
         float walkedBack = -Vector3.Dot(RigDriver.ViewRoot(c) - upRoot, worldForward);
-        float eyesOff = RigDriver.TryEyeRenderers(c, out var upEye)
-            ? Vector3
-                .ProjectOnPlane(rig.Head.position - RigDriver.ViewHeld - upEye, Vector3.up)
-                .magnitude
-            : float.NaN;
+        float eyesOff = ModelEyesOff(c, out float upGap).magnitude;
         // Run 40: x/z of the view held to the millimetre while it rose 0.042 m with the hip (+0.127 m): the walk
         // went up the beach's slope, and the view must follow the ground the body stands on. So: the view's
         // horizontal range, and its height change against the ground's under the body.
@@ -279,7 +275,7 @@ internal sealed partial class SelfTestRunner
         float offGround = Mathf.Abs(viewRise - groundRise);
         notes.Add(
             F(
-                $"far lean: walked {walked:0.000} m, back {walkedBack:0.000} m on standing up, eyes then {eyesOff:0.000} m off the view, view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up), view rose {viewRise:0.000} m on ground rising {groundRise:0.000} m"
+                $"far lean: walked {walked:0.000} m, back {walkedBack:0.000} m on standing up, eyes then {eyesOff:0.000} m off the view (renderers {upGap:0.000} m off the eye model), view {origin:0.000} m (forward {viewLean:0.000} m leaning, {Vector3.Dot(rig.Origin.position - originUp, worldForward):0.000} m standing up), view rose {viewRise:0.000} m on ground rising {groundRise:0.000} m"
             )
         );
         if (walked < 0.1f)
@@ -290,6 +286,7 @@ internal sealed partial class SelfTestRunner
                     $"standing up left the avatar's eyes {eyesOff:0.000} m off the view (walked back {walkedBack:0.000} m), want {MaxStanceEyeOff:0.00} m"
                 )
             );
+        JudgeGap("standing up", upGap, fails);
         if (origin > MaxLeanDrift)
             fails.Add(F($"far lean moved the view {origin:0.000} m"));
         if (!float.IsNaN(groundRise) && offGround > MaxLeanDrift)
@@ -324,8 +321,9 @@ internal sealed partial class SelfTestRunner
     /// the head's heading about its mass centre (Character.SetRotation, Character.cs:1539-1542), its eyes about 0.24 m
     /// ahead of it, so an unmoved body left them up to 0.27 m off the view; the stance walk
     /// (<see cref="BodyStance"/>, player.locomotion) steps the body under the head with the game's move input once the
-    /// turn has held for its delay. After each turn has settled (the delay and the walk) it fails when the avatar's eyes (less the view hold's offset)
-    /// are more than <see cref="MaxStanceEyeOff"/> off the view or the body bends more than
+    /// turn has held for its delay. After each turn has settled (the delay and the walk) it fails when the avatar's eyes
+    /// (the eye model, <see cref="ModelEyesOff"/>) are more than <see cref="MaxStanceEyeOff"/> off the view, the eye
+    /// renderers more than <see cref="MaxEyeModelGap"/> off that model, or the body bends more than
     /// <see cref="MaxStanceLean"/>; over the whole step it fails when the view (the rig origin, which only the head may
     /// move) moves more than <see cref="MaxLeanDrift"/>.
     /// </summary>
@@ -379,18 +377,17 @@ internal sealed partial class SelfTestRunner
             var turned = Quaternion.Euler(0f, yaw, 0f);
             ScriptHead(home + (turned * forward - forward) * NeckSwing, turned * level);
             yield return Settle(rig, origin, b => origin = b);
-            var head = rig.Head;
-            if (head == null || !RigDriver.TryEyeRenderers(c, out var eye))
+            var off = ModelEyesOff(c, out float gap);
+            if (float.IsNaN(off.x))
             {
-                fails.Add("no view or avatar eyes to compare");
+                fails.Add("no view or eye model to compare");
                 break;
             }
-            var off = Vector3.ProjectOnPlane(head.position - RigDriver.ViewHeld - eye, Vector3.up);
             var walked = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c) - start, Vector3.up);
             string at = F($"head {Mathf.DeltaAngle(0f, yaw):+0;-0;0} deg");
             notes.Add(
                 F(
-                    $"{at}: eyes {off.magnitude:0.000} m off the view, body walked {walked.magnitude:0.000} m, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}), debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                    $"{at}: eyes {off.magnitude:0.000} m off the view (renderers {gap:0.000} m off the eye model), body walked {walked.magnitude:0.000} m, lean {driver.LeanDegrees:0.0} deg ({driver.LeanGate ?? "open"}), debt {RigDriver.StanceDebt.magnitude:0.000} m"
                 )
             );
             if (off.magnitude > MaxStanceEyeOff)
@@ -399,6 +396,7 @@ internal sealed partial class SelfTestRunner
                         $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view, want {MaxStanceEyeOff:0.00} m"
                     )
                 );
+            JudgeGap(at, gap, fails);
             if (driver.LeanDegrees > MaxStanceLean)
                 fails.Add(
                     F($"{at}: the body bends {driver.LeanDegrees:0.0} deg under a turned head")
@@ -476,25 +474,22 @@ internal sealed partial class SelfTestRunner
             }
             ScriptHead(home, to);
             yield return Settle(rig, origin, b => origin = b);
-            if (rig.Head == null || !RigDriver.TryEyeRenderers(c, out var eye))
+            var off = ModelEyesOff(c, out float gap);
+            if (float.IsNaN(off.x))
             {
-                fails.Add("no view or avatar eyes to compare");
+                fails.Add("no view or eye model to compare");
                 break;
             }
             var look = Flat(rig.Head.rotation * Vector3.forward);
             if (look.sqrMagnitude < 1e-4f)
                 look = Flat(rig.Head.rotation * Vector3.up);
             look.Normalize();
-            var off = Vector3.ProjectOnPlane(
-                rig.Head.position - RigDriver.ViewHeld - eye,
-                Vector3.up
-            );
             float behind = Vector3.Dot(off, look);
             float back = Vector3.Dot(start - RigDriver.ViewRoot(c), look);
             string at = F($"look {-pitch:0} deg");
             notes.Add(
                 F(
-                    $"{at}: eyes {behind:0.000} m behind the view ({off.magnitude:0.000} m off), mass centre {back:0.000} m back, lean {driver.LeanDegrees:0.0} deg, debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                    $"{at}: eyes {behind:0.000} m behind the view ({off.magnitude:0.000} m off; renderers {gap:0.000} m off the eye model), mass centre {back:0.000} m back, lean {driver.LeanDegrees:0.0} deg, debt {RigDriver.StanceDebt.magnitude:0.000} m"
                 )
             );
             if (pitch > 0f && (behind < MinStepBack || back < MinStepBack))
@@ -509,6 +504,9 @@ internal sealed partial class SelfTestRunner
                         $"{at}: the avatar's eyes {off.magnitude:0.000} m off the view looking level again, want {MaxStanceEyeOff:0.00} m"
                     )
                 );
+            // Looking down the head bone carries the renderers forward of the unbent model: judged level only.
+            if (pitch <= 0f)
+                JudgeGap(at, gap, fails);
         }
         ReleaseHead();
         float drift = origin.size.magnitude;
@@ -537,8 +535,8 @@ internal sealed partial class SelfTestRunner
         F($"{b.size.magnitude:0.000} m (level {FlatSize(b):0.000}, height {b.size.y:0.000})");
 
     /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot, then
-    /// for a stance walk the setup's turn started to end (run 10, vr.302: a walk from the setup ran through the
-    /// glance). Turns the lean trace on for the stance step that follows (run 10 logged none in vr.45b or vr.300-304).</summary>
+    /// for a stance walk the setup's turn started or still owes to end (run 10, vr.302: a walk from the setup ran
+    /// through the glance). Turns the lean trace on for the stance step that follows (run 10 logged none in vr.45b or vr.300-304).</summary>
     static IEnumerator RecenterHead(VRRig rig)
     {
         RigDriver.TraceLeanUntil = Time.unscaledTime + 40f;
@@ -549,8 +547,12 @@ internal sealed partial class SelfTestRunner
         yield return WaitFor(() => recentered, 3f);
         rig.Recentered -= onRecenter;
         yield return Wait(0.8f);
-        yield return WaitFor(() => !RigDriver.FollowWalking, 3f);
-        if (RigDriver.FollowWalking)
+        // As Settle: a debt the setup's turn left is walked only after the delay.
+        yield return WaitFor(
+            () => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed,
+            StanceDelay + 3f
+        );
+        if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
             LogStanceTimeout("recenter");
     }
 

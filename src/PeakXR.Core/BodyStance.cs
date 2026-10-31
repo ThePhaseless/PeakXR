@@ -69,11 +69,13 @@ public enum StanceWalkPhase
 /// or at once past <see cref="AtOnce"/>, it pushes toward where the body would come to rest (the debt less its coast:
 /// <see cref="CoastSeconds"/> of drag and the game's eased input running down at <see cref="InputSlew"/>), ramping
 /// down to <see cref="MinInput"/> as it closes. A push holds for at least <see cref="MinPush"/> so the game's gait
-/// steps the feet, and ends once the body would come to rest under the view (or <see cref="Stop"/> past it). Then the
-/// walk settles with no input until the body has been still for <see cref="StillSeconds"/> (at most
+/// steps the feet, and ends once the body would come to rest under the view (or <see cref="Start"/> past it, sooner).
+/// Then the walk settles with no input until the body has been still for <see cref="StillSeconds"/> (at most
 /// <see cref="SettleMax"/>) and judges the debt: under <see cref="Start"/> the walk is done, otherwise the same walk
-/// pushes again, so a body that sprang back toward its planted feet is walked again without another delay. A walk
-/// that makes no headway (a wall, a friend, a body that keeps springing back) gives up until the debt changes.
+/// pushes again, so a body that sprang back toward its planted feet is walked again without another delay. A head
+/// that moves on during the settle ends the walk (past <see cref="AtOnce"/> it pushes at once). A walk whose body
+/// makes no headway of its own (a wall, a friend, a body that keeps springing back), or that has pushed
+/// <see cref="MaxPushes"/> times, gives up until the debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
@@ -94,12 +96,14 @@ public sealed class StanceWalk
     public float Ramp = 0.2f;
 
     /// <summary>Least request while pushing: a standing body does not move for less (run 9: 0.1 of the stick for
-    /// 1.6 s made no headway).</summary>
+    /// 1.6 s made no headway). That 0.2 is enough to step the feet is an unmeasured assumption (#10): the stance
+    /// trace's push length, headway and spring-back measure it.</summary>
     public float MinInput = 0.2f;
 
     /// <summary>Least seconds a push holds its request. The game's gait reads the move input damped over 0.125 s and
     /// snapped to 0 under 0.125 (CharacterAnimations.cs:185-196), so a shorter push slides the body over planted
-    /// feet and it springs back (run 10, vr.45 t840.54-841.59: 0.154 m walked in a few frames, 0.128 m back).</summary>
+    /// feet and it springs back (run 10, vr.45 t840.54-841.59: 0.154 m walked in a few frames, 0.128 m back). How long
+    /// the gait needs is not measured (the Core tests assume 0.25 s, #10).</summary>
     public float MinPush = 0.3f;
 
     /// <summary>Seconds of travel the body coasts at its speed once its move input is gone: PEAK's drag of 0.85 a 50 Hz
@@ -127,9 +131,24 @@ public sealed class StanceWalk
 
     public float StallProgress = 0.03f;
 
-    /// <summary>Settled pushes in a row that each closed less than <see cref="StallProgress"/> before the walk gives
-    /// up: a body that springs all the way back, or swings past the view and back, stops shuffling for peers.</summary>
+    /// <summary>Settled pushes in a row whose body walked less than <see cref="StallProgress"/> along the push before
+    /// the walk gives up: a body that springs all the way back stops shuffling for peers. The body's own travel, not
+    /// the debt, which a head moving meanwhile also changes.</summary>
     public int MaxFruitless = 2;
+
+    /// <summary>Most pushes in one walk: a body that keeps swinging past the view, or a head that keeps drifting,
+    /// stops shuffling for peers.</summary>
+    public int MaxPushes = 6;
+
+    /// <summary>How long the last push held its request (s), for the trace.</summary>
+    public float PushSeconds { get; private set; }
+
+    /// <summary>The body's own travel (m) along the last settled push, from its start to the end of its settle (or
+    /// now, while settling), for the trace and the fruitless count.</summary>
+    public float Headway { get; private set; }
+
+    /// <summary>How far (m) the body came back over that settle from the most headway of its push.</summary>
+    public float SpringBack { get; private set; }
 
     Vector2 _blockedAt;
     Vector2 _heldAt;
@@ -138,6 +157,12 @@ public sealed class StanceWalk
     float _best;
     float _stallFor;
     int _fruitless;
+    Vector2 _travel;
+    Vector2 _step;
+    float _headway;
+    float _mostHeadway;
+    Vector2 _settleDebt;
+    Vector2 _settleTravel;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
@@ -185,6 +210,15 @@ public sealed class StanceWalk
             Blocked = false;
         PhaseSeconds += dt;
         Closest = MathF.Min(Closest, dist);
+        // The body's travel up to the debt's frame: the debt is a frame old (the rig measures it in LateUpdate), the
+        // velocity this frame's, so its step counts from the next update on.
+        if (State != StanceWalkPhase.Idle)
+        {
+            _travel += _step;
+            _headway = Vector2.Dot(_travel, _heading);
+            _mostHeadway = MathF.Max(_mostHeadway, _headway);
+        }
+        _step = velocity * dt;
         switch (State)
         {
             case StanceWalkPhase.Idle:
@@ -197,15 +231,29 @@ public sealed class StanceWalk
                 return Vector2.Zero;
             case StanceWalkPhase.Settle:
                 _stallFor = velocity.Length() < StillSpeed ? _stallFor + dt : 0f;
-                if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
-                    return Vector2.Zero;
-                if (dist <= Start)
+                Headway = _headway;
+                SpringBack = _mostHeadway - _headway;
+                if (dist <= AtOnce)
                 {
-                    Enter(StanceWalkPhase.Idle);
-                    return Vector2.Zero;
+                    // The view's own travel since the push ended: the debt's change plus the body's.
+                    if ((debt - _settleDebt + _travel - _settleTravel).Length() > Start)
+                    {
+                        // The head moved on, not the body back: a new debt, which waits its own delay.
+                        Enter(StanceWalkPhase.Idle);
+                        _heldAt = debt;
+                        _heldFor = 0f;
+                        return Vector2.Zero;
+                    }
+                    if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
+                        return Vector2.Zero;
+                    if (dist <= Start)
+                    {
+                        Enter(StanceWalkPhase.Idle);
+                        return Vector2.Zero;
+                    }
                 }
-                _fruitless = dist > PushFrom - StallProgress ? _fruitless + 1 : 0;
-                if (_fruitless >= MaxFruitless)
+                _fruitless = _headway < StallProgress ? _fruitless + 1 : 0;
+                if (_fruitless >= MaxFruitless || Pushes >= MaxPushes)
                 {
                     Block(debt);
                     return Vector2.Zero;
@@ -224,6 +272,8 @@ public sealed class StanceWalk
         PushFrom = Closest = _best = dist;
         _stallFor = 0f;
         _heading = debt / dist;
+        _travel = Vector2.Zero;
+        _headway = _mostHeadway = 0f;
         return Pushing(debt, velocity, eased, dt);
     }
 
@@ -235,11 +285,14 @@ public sealed class StanceWalk
             debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
         float restDist = rest.Length();
         float along = Vector2.Dot(rest, _heading);
-        // Done once the body would come to rest under the view, but not before the gait has stepped; never so long
-        // that it would end Stop past the view.
-        if (along < -Stop || PhaseSeconds >= MinPush && (along <= 0f || restDist <= Stop))
+        // Done once the body would come to rest under the view, but not before the gait has stepped; before that only
+        // once it would rest Start past the view (ending at Stop past gave small debts 0.25 s pushes that never stepped).
+        if (along < -Start || PhaseSeconds >= MinPush && (along <= 0f || restDist <= Stop))
         {
+            PushSeconds = PhaseSeconds;
             Enter(StanceWalkPhase.Settle);
+            _settleDebt = debt;
+            _settleTravel = _travel;
             return Vector2.Zero;
         }
         if (dist < _best - StallProgress)
@@ -282,7 +335,8 @@ public sealed class StanceWalk
 
 /// <summary>
 /// Which of a free body's level travel PeakXR itself caused, so the view keeps it out (the room anchor takes it): the
-/// stance walk, its coast until the body is nearly still, and the body's shift under the head's own turn or look down.
+/// stance walk, its coast until the body is nearly still (at most <see cref="MaxCoastSeconds"/>, and never through an
+/// outside force), and the body's shift under the head's own turn or look down.
 /// Outside forces (wind, a push, a knockback, a slide, a moving ground) are never kept out: they move body and view
 /// as in vanilla, so the walk never walks them back and the player is never immune to them.
 /// </summary>
@@ -300,7 +354,12 @@ public sealed class OwnMotion
     /// <summary>Seconds after the look stops moving during which the body still settles into the new pose.</summary>
     public float PoseSeconds = 0.6f;
 
+    /// <summary>Longest coast (s) after a walk ends: a walked body is still within a second (drag 0.11 s, the eased
+    /// input's run-down 0.5 s at most), so travel after that is something else's.</summary>
+    public float MaxCoastSeconds = 1f;
+
     bool _coasting;
+    float _coastFor;
     float _stillFor;
     float _poseFor;
     Vector2 _look;
@@ -316,9 +375,13 @@ public sealed class OwnMotion
         // Held still a while, not one slow update: a body springing back toward its planted feet passes through
         // zero at the turn and creeps at the end (run 10, vr.45 t837.25-837.85: the view followed that tail).
         _stillFor = walking || levelSpeed >= StillSpeed ? 0f : _stillFor + dt;
-        if (walking)
+        _coastFor = walking ? 0f : _coastFor + dt;
+        // An outside force takes the coast over: its tail is the force's, after OutsideSeconds too.
+        if (outside)
+            _coasting = false;
+        else if (walking)
             _coasting = true;
-        else if (_stillFor >= StillSeconds)
+        else if (_stillFor >= StillSeconds || _coastFor >= MaxCoastSeconds)
             _coasting = false;
         if (_haveLook && dt > 0f)
         {
@@ -338,6 +401,7 @@ public sealed class OwnMotion
     public void Reset()
     {
         _coasting = false;
+        _coastFor = 0f;
         _stillFor = 0f;
         _poseFor = 0f;
         _haveLook = false;

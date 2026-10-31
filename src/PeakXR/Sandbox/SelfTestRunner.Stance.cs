@@ -50,21 +50,44 @@ internal sealed partial class SelfTestRunner
         ready(c);
     }
 
-    /// <summary>The avatar's eyes (renderers) off the view less the view hold, level; NaN without them.</summary>
-    static float StanceEyesOff(Character c)
+    /// <summary>Most the eye renderers may sit off the eye model (m, level). Run 10 had them 0.02-0.045 m behind it
+    /// standing still (lean-view renderers-model, t681 and t832-835); 0.015 m more for the head's idle sway.</summary>
+    const float MaxEyeModelGap = 0.06f;
+
+    /// <summary>
+    /// The eye model's (<see cref="RigDriver.LeanEye"/>, what the stance debt measures from) level offset from the
+    /// view, NaN without a view or model; <paramref name="gap"/> is the eye renderers' level distance from the model
+    /// (NaN without them). The stance steps judge the walk by the model and the renderers apart: the model is learned
+    /// once and kept under lean (re-learning it moves the view, #10), so the renderers' gap is the model's error, not
+    /// the walk's.
+    /// </summary>
+    static Vector3 ModelEyesOff(Character c, out float gap)
     {
+        gap = float.NaN;
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
-        return head != null && RigDriver.TryEyeRenderers(c, out var eye)
-            ? Vector3.ProjectOnPlane(head.position - RigDriver.ViewHeld - eye, Vector3.up).magnitude
-            : float.NaN;
+        if (head == null || RigDriver.LeanEye is not { } model)
+            return new Vector3(float.NaN, 0f, float.NaN);
+        if (RigDriver.TryEyeRenderers(c, out var drawn))
+            gap = Vector3.ProjectOnPlane(drawn - model, Vector3.up).magnitude;
+        return Vector3.ProjectOnPlane(head.position - model, Vector3.up);
+    }
+
+    static void JudgeGap(string at, float gap, List<string> fails)
+    {
+        if (!(gap <= MaxEyeModelGap))
+            fails.Add(
+                F(
+                    $"{at}: the eye renderers {gap:0.000} m off the eye model, want {MaxEyeModelGap:0.00} m"
+                )
+            );
     }
 
     static void JudgeEyes(Character c, string at, List<string> fails, List<string> notes)
     {
-        float off = StanceEyesOff(c);
+        float off = ModelEyesOff(c, out float gap).magnitude;
         notes.Add(
             F(
-                $"{at}: eyes {off:0.000} m off the view, debt {RigDriver.StanceDebt.magnitude:0.000} m"
+                $"{at}: eyes {off:0.000} m off the view, renderers {gap:0.000} m off the eye model, debt {RigDriver.StanceDebt.magnitude:0.000} m"
             )
         );
         if (!(off <= MaxStanceEyeOff))
@@ -73,6 +96,7 @@ internal sealed partial class SelfTestRunner
                     $"{at}: the avatar's eyes {off:0.000} m off the view, want {MaxStanceEyeOff:0.00} m"
                 )
             );
+        JudgeGap(at, gap, fails);
     }
 
     void Verdict(List<string> fails, List<string> notes)
@@ -262,10 +286,11 @@ internal sealed partial class SelfTestRunner
     /// the look, from the hip, may change by at most 0.1 m between the two: before, the slots stayed at the real body
     /// and floated 0.28 m ahead of the avatar's hips.
     /// </summary>
-    /// <summary>Impulse (per part, inside a 1 m radius) sent every frame, as wind sends it (WindChillZone.cs:250), until
+    /// <summary>Impulse (per part, inside a 1 m radius) sent every physics step, as wind sends it (WindChillZone.cs:250), until
     /// the body has moved <see cref="StancePushTravel"/>: run 10's single impulse of 20 moved it 0.004 m against its
-    /// planted feet. A steady push slides a standing scout without knocking it down.</summary>
-    const float StancePush = 6f;
+    /// planted feet. A steady push slides a standing scout without knocking it down. 10 at 50 Hz is about the 6 a
+    /// frame at 90 Hz it was sent at before (unmeasured in game).</summary>
+    const float StancePush = 10f;
 
     const float StancePushTravel = 0.08f;
 
@@ -295,6 +320,7 @@ internal sealed partial class SelfTestRunner
         bool walked = false;
         float t0 = Now;
         float pushed = 0f;
+        var tick = new WaitForFixedUpdate();
         while (Now - t0 < 2f)
         {
             // Pushed for at most 1 s, until the body has moved far enough to judge.
@@ -310,7 +336,8 @@ internal sealed partial class SelfTestRunner
                 );
                 pushed = Now - t0;
             }
-            yield return null;
+            // Once a physics step, as wind pushes (WindChillZone.FixedUpdate, WindChillZone.cs:164, :250).
+            yield return tick;
             walked |= RigDriver.FollowWalking;
         }
         ReleaseHead();

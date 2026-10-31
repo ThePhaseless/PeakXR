@@ -469,6 +469,10 @@ internal static class LocomotionInput
         RigDriver.FollowWalking = following;
         StanceOwed = canFollow && !outside && !Stance.Blocked && debt.Length() > Stance.Start;
         var level = new NVector2(bodyVelocity.x, bodyVelocity.z);
+        // A body that cannot follow (stick walking, airborne, climbing, carried) is moved by something else: a coast
+        // kept over that would claim its travel once it can follow again.
+        if (!canFollow)
+            Own.Reset();
         lastOwn =
             canFollow
             && Own.Update(
@@ -516,7 +520,7 @@ internal static class LocomotionInput
             return;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}"
+                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m"
             )
         );
     }
