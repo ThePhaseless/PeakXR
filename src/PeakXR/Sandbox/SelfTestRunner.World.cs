@@ -296,12 +296,17 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>One scripted hand open, palm flat on the nearest of <paramref name="cols"/> at chest height on its
-    /// side of the head.</summary>
+    /// side of the head. <see cref="HeadFrame"/> is tracking space and the colliders world space, so the probe goes
+    /// into the world first (issue #4: read as a world point it sat by the map's origin, met no surface within
+    /// 100 m and sent the palm 203 m from the statue).</summary>
     IEnumerator LayPalm(bool left, Collider[] cols)
     {
         var rig = VRRig.Instance;
-        HeadFrame(out var head, out _, out var right);
-        var probe = head + Vector3.down * 0.35f + (left ? -right : right) * 0.15f;
+        HeadFrame(out var eye, out _, out var right);
+        var head = rig.Origin.TransformPoint(eye);
+        var probe = rig.Origin.TransformPoint(
+            eye + Vector3.down * 0.35f + (left ? -right : right) * 0.15f
+        );
         var surface = probe + Vector3.up * 100f;
         foreach (var col in cols)
         {
@@ -327,13 +332,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>The scripted hand back down by the body, off whatever it lay on.</summary>
     void LiftPalm(bool left)
     {
-        var rig = VRRig.Instance;
         HeadFrame(out var head, out var forward, out _);
         FreeTurn(left);
-        SetHand(
-            left,
-            rig.Origin.InverseTransformPoint(head - forward * 0.1f + Vector3.down * 0.4f)
-        );
+        // HeadFrame is tracking space already.
+        SetHand(left, head - forward * 0.1f + Vector3.down * 0.4f);
     }
 
     /// <summary>vr.82: lifting a suitcase lid (vr.24's motion, on the next closed case) is felt as the progress
@@ -2307,13 +2309,17 @@ internal sealed partial class SelfTestRunner
     IEnumerator PressPalms(Collider col, IInteractible target)
     {
         var rig = VRRig.Instance;
-        HeadFrame(out var head, out _, out var right);
+        // Tracking space, carried into the world for the collider (as LayPalm, issue #4).
+        HeadFrame(out var eye, out _, out var right);
+        var head = rig.Origin.TransformPoint(eye);
         var interaction = Interaction.instance;
         float mark = CueMark();
         for (int h = 0; h < 2; h++)
         {
             bool left = h == 0;
-            var probe = head + Vector3.down * 0.35f + (left ? -right : right) * 0.2f;
+            var probe = rig.Origin.TransformPoint(
+                eye + Vector3.down * 0.35f + (left ? -right : right) * 0.2f
+            );
             var surface = col.bounds.ClosestPoint(probe);
             var into = Flat(surface - head);
             // Palm normal: +X of the left grip pose, -X of the right (GripFrame.Palm).
@@ -2334,14 +2340,8 @@ internal sealed partial class SelfTestRunner
         HeadFrame(out var back, out var forward, out _);
         FreeTurn(true);
         FreeTurn(false);
-        SetHand(
-            true,
-            rig.Origin.InverseTransformPoint(back - forward * 0.1f + Vector3.down * 0.4f)
-        );
-        SetHand(
-            false,
-            rig.Origin.InverseTransformPoint(back - forward * 0.1f + Vector3.down * 0.4f)
-        );
+        SetHand(true, back - forward * 0.1f + Vector3.down * 0.4f);
+        SetHand(false, back - forward * 0.1f + Vector3.down * 0.4f);
         if (progress <= 0f)
         {
             Fail("palms on it did not start the hold");
@@ -2380,10 +2380,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         HeadFrame(out var head, out var forward, out _);
-        SetHand(
-            left,
-            rig().Origin.InverseTransformPoint(head - forward * 0.1f + Vector3.down * 0.4f)
-        );
+        SetHand(left, head - forward * 0.1f + Vector3.down * 0.4f);
         yield return Wait(0.5f);
         if (progress <= 0f)
         {
@@ -2398,8 +2395,6 @@ internal sealed partial class SelfTestRunner
         yield return ExpectFeel(left, CueFeel.Progress, mark, within: 0f);
         if (stepOk)
             stepNote = $"hold {progress:0.00}, fade peak {fade:0.00}; {cueNote}";
-
-        static VRRig rig() => VRRig.Instance;
     }
 
     /// <summary>
