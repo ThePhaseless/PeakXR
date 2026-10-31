@@ -126,3 +126,48 @@ public class MpDirTests
         Assert.Equal(@"C:\mp", MpDir.ToNative(@"C:\mp", windows: true));
     }
 }
+
+public class LogCursorTests
+{
+    static string[] Lines(params string[] complete) =>
+        (string.Join("\n", complete) + "\n").Split('\n');
+
+    [Fact]
+    public void ResumesAfterTheLinesAlreadyRead()
+    {
+        var cursor = new LogCursor();
+        cursor.Sync(Lines("a1", "a2"));
+        cursor.Next = 2;
+
+        cursor.Sync(Lines("a1", "a2", "a3"));
+
+        Assert.Equal(2, cursor.Next);
+    }
+
+    [Fact]
+    public void StartsOverWhenTheFileWasWrittenAfresh()
+    {
+        // The previous run's lines, then the new run's file, already longer than the old count (#99).
+        var cursor = new LogCursor();
+        cursor.Sync(Lines("old1", "old2", "old3"));
+        cursor.Next = 3;
+
+        cursor.Sync(Lines("new1", "new2", "new3", "new4"));
+
+        Assert.Equal(0, cursor.Next);
+    }
+
+    [Fact]
+    public void AnEmptyFileKeepsThePlaceUntilItsFirstLine()
+    {
+        var cursor = new LogCursor();
+        cursor.Sync(Lines("a1"));
+        cursor.Next = 1;
+
+        cursor.Sync([""]);
+        Assert.Equal(1, cursor.Next);
+
+        cursor.Sync(Lines("b1"));
+        Assert.Equal(0, cursor.Next);
+    }
+}

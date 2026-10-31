@@ -1347,7 +1347,8 @@ internal sealed class SocialHands : IGripExtension
     /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item held at another player's mouth, or a
     /// healing item on their torso, for the zone's dwell (<see cref="HandOver.DwellAt"/>), or the holding hand's
     /// trigger squeezed there, holds the game's use-on-friend (Item.StartUseSecondary, Item.cs:977, its cast and ring)
-    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there. A teal ring marks the
+    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there, and at the
+    /// mouth the feeder must stand nearly still for the dwell (#93: walking up with food at chest height fed them). A teal ring marks the
     /// mouth or chest while in range and through the cast. An item they cannot take is refused at the mouth after the
     /// dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
     /// </summary>
@@ -1397,12 +1398,16 @@ internal sealed class SocialHands : IGripExtension
         atFriendMouth = inZone && !usable;
         // Food held at their mouth feeds as at your own, a bandage on their chest as on your own body.
         handOver.Dwell = HandOver.DwellAt(chest: part == BodypartType.Torso);
+        var v = c.data.avarageVelocity;
+        // Food fed by the mouth dwell only when the feeder stands nearly still (#93): never on the walk up.
+        bool still = part == BodypartType.Torso || HandOver.Still(new Vector2(v.x, v.z).magnitude);
         var state = handOver.Update(
             inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
             usable,
             item.CanUsePrimary(),
-            dt
+            dt,
+            still
         );
         if (!inZone && state == HandOverState.Apply)
             feedCandidate = who;

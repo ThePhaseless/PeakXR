@@ -68,6 +68,12 @@ public sealed class HandOver
 
     public static float DwellAt(bool chest) => chest ? ChestDwell : MouthDwell;
 
+    /// <summary>The feeder's level speed (m/s) under which the dwell counts: walking up to a friend with food at chest
+    /// height must not feed them (#93, MP run 13); a squeeze still feeds at once.</summary>
+    public const float StillSpeed = 0.5f;
+
+    public static bool Still(float levelSpeed) => levelSpeed < StillSpeed;
+
     private bool applying;
     private float outFor;
     private float inFor;
@@ -79,12 +85,15 @@ public sealed class HandOver
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
     /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
     /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
+    /// <param name="still">The feeder's body is nearly still (<see cref="Still"/>): the <see cref="Dwell"/> only counts
+    /// then, and starts over when they move before it is done.</param>
     public HandOverState Update(
         bool inZone,
         bool trigger,
         bool usable,
         bool ownUse = false,
-        float dt = 0f
+        float dt = 0f,
+        bool still = true
     )
     {
         if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
@@ -97,16 +106,19 @@ public sealed class HandOver
         }
         var state = Step(trigger, usable);
         if (Dwell > 0f && state is HandOverState.None or HandOverState.Hint)
-            state = DwellStep(usable, state, dt);
+            state = DwellStep(usable, state, dt, still);
         applying = state == HandOverState.Apply;
         return state;
     }
 
     /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
-    /// one they cannot is refused once per visit.</summary>
-    private HandOverState DwellStep(bool usable, HandOverState state, float dt)
+    /// one they cannot is refused once per visit. The feeder moving restarts a dwell not yet done.</summary>
+    private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool still)
     {
-        inFor += dt;
+        if (still)
+            inFor += dt;
+        else if (inFor < Dwell)
+            inFor = 0f;
         if (inFor < Dwell)
             return state;
         if (usable)

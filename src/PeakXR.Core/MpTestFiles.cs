@@ -352,3 +352,25 @@ public static class MpDir
     public static string ToNative(string path, bool windows) =>
         windows && path.StartsWith('/') ? "Z:" + path.Replace('/', '\\') : path;
 }
+
+/// <summary>
+/// Where a reader of an append-only JSONL file resumes. A bare count of lines read carries over a file the writer
+/// deleted and began again, such as the previous run's in a reused folder, and then skips the new run's first
+/// lines (#99). A changed first line means a new file, so the count starts over.
+/// </summary>
+public sealed class LogCursor
+{
+    string head;
+
+    /// <summary>The index of the first line not yet read.</summary>
+    public int Next { get; set; }
+
+    /// <summary>Call before reading, with the file split on <c>'\n'</c> (the last element is the unfinished line).</summary>
+    public void Sync(string[] lines)
+    {
+        if (lines.Length < 2 || string.Equals(lines[0], head, StringComparison.Ordinal))
+            return;
+        head = lines[0];
+        Next = 0;
+    }
+}

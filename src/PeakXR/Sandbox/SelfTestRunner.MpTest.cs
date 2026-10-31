@@ -704,14 +704,34 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float cast = GameTiming.InteractSeconds(kiosk, Character.localCharacter);
-        yield return GripTo(left, 1f, 0.1f);
-        yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
-        yield return GripTo(left, 0f, 0.1f);
+        // A second grip after a miss, the hand put back on the face, as a player tries again; the note says what the
+        // grip decided and what the game held (MP run 13: the grip at 1.0 m opened nothing and said nothing why).
+        string gripNote = null;
+        for (int attempt = 0; attempt < 2 && !pass.isOpen; attempt++)
+        {
+            if (attempt > 0)
+            {
+                yield return MpToKioskFace(kiosk, left, s => why = s);
+                if (why != null)
+                    break;
+            }
+            yield return GripTo(left, 1f, 0.1f);
+            yield return Wait(0.2f);
+            var interaction = Interaction.instance;
+            var hovered = interaction != null ? interaction.currentHovered : null;
+            bool held =
+                interaction != null && interaction.currentHeldInteractible is AirportCheckInKiosk;
+            gripNote = F(
+                $"{PeakXR.Interact.PhysicalInteraction.LastGripNote}; hovered {(hovered != null ? hovered.GetName() : "nothing")}, kiosk held {held}"
+            );
+            yield return WaitFor(() => pass.isOpen, GameTiming.Budget(cast, 1f));
+            yield return GripTo(left, 0f, 0.1f);
+        }
         if (!pass.isOpen)
         {
             failed(
                 F(
-                    $"the grip did not open the boarding pass ({Vector3.Distance(Character.localCharacter.Center, kiosk.Center()):0.0} m from the kiosk)"
+                    $"the grip did not open the boarding pass ({Vector3.Distance(Character.localCharacter.Center, kiosk.Center()):0.0} m from the kiosk; {why ?? gripNote})"
                 )
             );
             yield break;
@@ -1145,6 +1165,7 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         float side = 1f;
+        var shut = new List<Vector3>();
         for (int i = 0; ; i++)
         {
             yield return MpWalkBounded(target, stop, seconds);
@@ -1154,10 +1175,19 @@ internal sealed partial class SelfTestRunner
             to.y = 0f;
             if (to.sqrMagnitude < 1e-4f)
                 yield break;
-            if (ClearHeading(c, to.normalized, ref side) is not { } dir)
+            if (ClearHeading(c, to.normalized, ref side, shut) is not { } dir)
                 yield break;
-            var aside = c.Center + dir * MpDetourStep;
+            var from = c.Center;
+            var aside = from + dir * MpDetourStep;
             yield return MpWalkBounded(() => aside, 0.4f, 4f);
+            // The walk is the measure: a heading the cast called clear but the body could not walk is shut for the
+            // rest of this walk (MP run 13: the same 30 degree heading, blocked 0.3 m out by something the cast did not
+            // see, was tried six times and A stayed put for 220 s, 53 m from the kiosk).
+            if (FlatDistance(c.Center, from) < 1f)
+            {
+                shut.Add(dir);
+                side = -side;
+            }
         }
     }
 
@@ -1167,9 +1197,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// The heading nearest <paramref name="goal"/> (flat, normalised) that a body can walk <see cref="MpDetourStep"/>
     /// along: a capsule from knee to chest height swept 30 to 150 degrees off the goal, <paramref name="side"/> first at
-    /// each angle (+1 turns right). Sets <paramref name="side"/> to the side taken; null when every heading is shut.
+    /// each angle (+1 turns right), passing over a heading within 20 degrees of one in <paramref name="shut"/>. Sets
+    /// <paramref name="side"/> to the side taken; null when every heading is shut.
     /// </summary>
-    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side)
+    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side, List<Vector3> shut)
     {
         var top = c.Center + Vector3.up * 0.3f;
         var bottom = c.Center + Vector3.down * 0.4f;
@@ -1179,6 +1210,8 @@ internal sealed partial class SelfTestRunner
             {
                 float s = k == 0 ? side : -side;
                 var dir = Quaternion.Euler(0f, s * a, 0f) * goal;
+                if (Shut(shut, dir))
+                    continue;
                 if (
                     !Physics.CapsuleCast(
                         top,
@@ -1197,6 +1230,16 @@ internal sealed partial class SelfTestRunner
             }
         }
         return null;
+    }
+
+    static bool Shut(List<Vector3> shut, Vector3 dir)
+    {
+        foreach (var d in shut)
+        {
+            if (Vector3.Dot(d, dir) > 0.94f)
+                return true;
+        }
+        return false;
     }
 
     IEnumerator MpTwoHand()
@@ -1230,6 +1273,20 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        bool left = LocalHold.ItemInLeftHand;
+        var c = Character.localCharacter;
+        // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
+        // lost grip also takes the item from the hand, and only this tells them apart.
+        float consumedBefore = c.data.lastConsumedItem;
+        // Carried low at the side on the walk in, as a player carries food they are not offering (MP run 13, #93:
+        // held at chest height it passed the host's mouth during a stop between stick pulses and fed them before the
+        // squeeze test began).
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            left,
+            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f + forward * 0.15f,
+            0.3f
+        );
         yield return WalkTo(HostCenter, 0.75f, true);
         if (!stepOk)
             yield break;
@@ -1238,11 +1295,15 @@ internal sealed partial class SelfTestRunner
         yield return MpStepToMouth(host);
         Face(host.Head);
         yield return Wait(0.3f);
-        bool left = LocalHold.ItemInLeftHand;
-        var c = Character.localCharacter;
-        // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
-        // lost grip also takes the item from the hand, and only this tells them apart.
-        float consumedBefore = c.data.lastConsumedItem;
+        if (item == null || HeldItem() != item)
+        {
+            Fail(
+                c.data.lastConsumedItem != consumedBefore
+                    ? "the host was fed on the walk in, before the squeeze beside the mouth"
+                    : "the food left the hand on the walk in"
+            );
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
         // mouth dwell. A hand-over (SocialHands.UpdateFeed, HandOver): food resting at the mouth feeds with the trigger
@@ -1445,14 +1506,19 @@ internal sealed partial class SelfTestRunner
     /// <paramref name="ok"/>) that the walk actually reaches; one on a ledge or behind rock is passed over (MP run 7:
     /// holster walked into rock 4.2 m short of the thrown drink). SKIP when none can be reached.
     /// </summary>
+    /// <remarks>With <paramref name="nextOnMiss"/> (a step whose subject is not the pickup), an item the grip closed on
+    /// and did not take is passed over for the next, and only the last miss fails (MP run 13, #100: a Bugle rolled
+    /// onto a 45 degree slope under the reaching hand and vr.434 never reached its pointing).</remarks>
     IEnumerator GrabReachable(
         Func<Item, bool> ok,
         Item first = null,
         float range = NearItems,
-        int tries = 3
+        int tries = 3,
+        bool nextOnMiss = false
     )
     {
         var tried = new HashSet<Item>();
+        string missed = null;
         for (int i = 0; i < tries; i++)
         {
             // Nearest first, and only one a player can pick up off the ground (OnReachableGround).
@@ -1479,9 +1545,16 @@ internal sealed partial class SelfTestRunner
             if (item == null || to.magnitude > 0.8f)
                 continue;
             yield return GrabWorld(item);
-            yield break;
+            if (stepOk || !nextOnMiss || HeldItem() != null)
+                yield break;
+            missed = failNote;
+            failNote = null;
+            stepOk = true;
         }
-        stepSkip = $"no reachable item among {tried.Count} tried within {range:0} m";
+        if (missed != null)
+            Fail(missed + $" (the last of {tried.Count} tried)");
+        else
+            stepSkip = $"no reachable item among {tried.Count} tried within {range:0} m";
     }
 
     /// <summary>How far (m) A goes for food: along the beach, as a player would.</summary>
@@ -1653,7 +1726,7 @@ internal sealed partial class SelfTestRunner
             () => HeldItem() != null && HeldItem().itemID == id,
             3f,
             F(
-                $"{label} not picked up ({Vector3.Distance(VRRig.Instance.Hand(left).position, at):0.00} m from the hand, stooped {headDrop:0.00} m; {GroundNote(world)}; {PeakXR.Interact.PhysicalInteraction.LastGripNote})"
+                $"{label} not picked up ({Vector3.Distance(VRRig.Instance.Hand(left).position, at):0.00} m from the hand to where it was aimed, the item now {(world != null ? PeakXR.Interact.ItemGrabShape.Distance(world, VRRig.Instance.Hand(left).position, out _) : -1f):0.00} m from it and {(world != null ? Vector3.Distance(world.Center(), lay) : -1f):0.00} m from where it lay, stooped {headDrop:0.00} m; {GroundNote(world)}; {PeakXR.Interact.PhysicalInteraction.LastGripNote})"
             )
         );
         headDrop = 0f;
@@ -2040,11 +2113,12 @@ internal sealed partial class SelfTestRunner
     IEnumerator Ask(string what, float seconds = 5f)
     {
         int id = ++mpRequestId;
+        double asked = Unix;
         try
         {
             File.AppendAllText(
                 Path.Combine(MpDirectory, MpRequest.RequestFile),
-                MpRequest.Line(id, what, Unix) + "\n"
+                MpRequest.Line(id, what, asked) + "\n"
             );
         }
         catch (IOException e)
@@ -2061,7 +2135,13 @@ internal sealed partial class SelfTestRunner
             {
                 foreach (var line in text.Split('\n'))
                 {
-                    if (!MpRequest.TryReadAck(line, out int got, out bool ok) || got != id)
+                    // An older ack with this id is the previous run's, left in a reused folder (#99).
+                    if (
+                        !MpRequest.TryReadAck(line, out int got, out bool ok)
+                        || got != id
+                        || !JsonLine.TryReadNumber(line, "t", out var at)
+                        || at < asked
+                    )
                         continue;
                     if (!ok)
                         stepSkip = $"observer refused {what}: {JsonLine.ReadString(line, "note")}";
@@ -2137,6 +2217,24 @@ internal sealed partial class SelfTestRunner
         return Vector3.Distance(shoulder, target) - SocialConfig.Instance.Reach - MpShoulderReach;
     }
 
+    /// <summary>Up to two steps in toward <paramref name="target"/> while it lies past a real arm's reach
+    /// (<see cref="PastArm"/>), as the solo steps do; each goes as far as it is past reach, bounded, then faces
+    /// <paramref name="face"/>.</summary>
+    IEnumerator StepInToReach(bool left, Func<Vector3> target, Func<Vector3> face)
+    {
+        var c = Character.localCharacter;
+        for (int i = 0; i < 2 && PastArm(left, target()) > 0f; i++)
+        {
+            var toward = target() - c.Center;
+            toward.y = 0f;
+            float step = PastArm(left, target()) + 0.1f;
+            var to = c.Center + toward.normalized * Mathf.Min(step, toward.magnitude);
+            yield return MpWalkBounded(() => to, 0.1f, 3f);
+            Face(face());
+            yield return Wait(0.3f);
+        }
+    }
+
     /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
     /// takes one more step in, then skips the step rather than stretch the scripted arm.</summary>
     IEnumerator GripHostHand(bool left, float turnAway = 0f)
@@ -2159,19 +2257,8 @@ internal sealed partial class SelfTestRunner
             var forearm = Nearer(BodypartType.Elbow_L, BodypartType.Elbow_R);
             return PastArm(left, forearm) < PastArm(left, hand) ? forearm : hand;
         }
-        // Up to two steps in toward that hand, as the solo steps do (MP run 15: the walk to the host stopped 0.27 m
-        // and 0.30 m short of reach). Each step goes as far as the hand is past reach, bounded.
-        for (int i = 0; i < 2 && PastArm(left, Part()) > 0f; i++)
-        {
-            var c = Character.localCharacter;
-            var toward = Part() - c.Center;
-            toward.y = 0f;
-            float step = PastArm(left, Part()) + 0.1f;
-            var to = c.Center + toward.normalized * Mathf.Min(step, toward.magnitude);
-            yield return MpWalkBounded(() => to, 0.1f, 3f);
-            Face(host.Head);
-            yield return Wait(0.3f);
-        }
+        // MP run 15: the walk to the host stopped 0.27 m and 0.30 m short of reach.
+        yield return StepInToReach(left, Part, () => host.Head);
         // Turned away first when asked: the body and the look turn, the hand still reaches to the side.
         if (turnAway != 0f)
         {
@@ -2220,7 +2307,8 @@ internal sealed partial class SelfTestRunner
                 && info.Profile.Handedness == Handedness.OneHand,
             null,
             FoodRange,
-            5
+            5,
+            nextOnMiss: true
         );
         if (!stepOk || stepSkip != null)
             yield break;
@@ -2743,6 +2831,12 @@ internal sealed partial class SelfTestRunner
         float turn = side >= 0f ? 1f : -1f;
         // Turning right puts the pack on the left.
         bool left = turn > 0f;
+        // MP run 13: the spot behind left the pack 0.06 m past reach (vr.330); step in before turning away.
+        yield return StepInToReach(
+            left,
+            () => visuals.transform.position,
+            () => visuals.transform.position
+        );
         VRRig.Instance.RotateYaw(turn * MpPackBodyTurn);
         var hands = applyHands;
         var neck = Quaternion.Euler(0f, turn * MpPackNeckTurn, 0f);
@@ -2804,9 +2898,22 @@ internal sealed partial class SelfTestRunner
         mpBehind = false;
         foreach (float yaw in new[] { 0f, 45f, -45f })
         {
-            var back = Quaternion.Euler(0f, yaw, 0f) * -host.data.lookDirection_Flat.normalized;
+            var facing = host.data.lookDirection_Flat.normalized;
+            var back = Quaternion.Euler(0f, yaw, 0f) * -facing;
             Vector3 Spot() => host.Center + back * 0.8f;
-            yield return MpWalkBounded(Spot, 0.3f, MpPackWalkSeconds);
+            // From the host's front the straight line to their back runs into them (MP run 13: no spot behind was
+            // reached): go round their nearer side first, walking round what blocks that too.
+            var from = c.Center - host.Center;
+            from.y = 0f;
+            if (Vector3.Dot(from, facing) > -0.3f)
+            {
+                var side = Vector3.Cross(Vector3.up, facing);
+                if (Vector3.Dot(side, from) < 0f)
+                    side = -side;
+                var round = host.Center + side * 1.2f;
+                yield return MpWalkAround(() => round, 0.4f, MpPackWalkSeconds, 2);
+            }
+            yield return MpWalkAround(Spot, 0.3f, MpPackWalkSeconds, 2);
             var miss = Spot() - c.Center;
             miss.y = 0f;
             if (
@@ -2858,7 +2965,8 @@ internal sealed partial class SelfTestRunner
                 && info.Profile.Handedness == Handedness.OneHand,
             null,
             FoodRange,
-            5
+            5,
+            nextOnMiss: true
         );
         if (!stepOk || stepSkip != null)
             yield break;
@@ -2872,6 +2980,12 @@ internal sealed partial class SelfTestRunner
         }
         Face(visuals.transform.position);
         bool left = LocalHold.ItemInLeftHand;
+        // MP run 13: the spot behind left the pack 0.06 m past reach.
+        yield return StepInToReach(
+            left,
+            () => visuals.transform.position,
+            () => visuals.transform.position
+        );
         LookAtHand(left);
         yield return Wait(0.3f);
         float past = PastArm(left, visuals.transform.position);
@@ -2956,7 +3070,8 @@ internal sealed partial class SelfTestRunner
                 && info.Profile.Handedness == Handedness.OneHand,
             null,
             FoodRange,
-            5
+            5,
+            nextOnMiss: true
         );
         if (!stepOk || stepSkip != null)
             yield break;

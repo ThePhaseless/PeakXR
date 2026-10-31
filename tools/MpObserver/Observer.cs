@@ -40,8 +40,8 @@ internal sealed partial class Observer : MonoBehaviour
 
     string outPath;
     double lobbyTime = double.MaxValue;
-    int checkpointLines;
-    int requestLines;
+    readonly LogCursor checkpointLines = new();
+    readonly LogCursor requestLines = new();
     int checkpoints;
     int samples;
     int exceptions;
@@ -313,9 +313,10 @@ internal sealed partial class Observer : MonoBehaviour
             yield break;
         }
         // The last element is the unfinished line (or empty after the final newline).
-        for (; checkpointLines < lines.Length - 1; checkpointLines++)
+        checkpointLines.Sync(lines);
+        for (; checkpointLines.Next < lines.Length - 1; checkpointLines.Next++)
         {
-            var line = lines[checkpointLines];
+            var line = lines[checkpointLines.Next];
             if (!JsonLine.TryReadNumber(line, "t", out var t) || t < lobbyTime)
                 continue;
             var id = JsonLine.ReadString(line, "name") ?? "unnamed";
@@ -417,10 +418,11 @@ internal sealed partial class Observer : MonoBehaviour
         {
             return;
         }
-        for (; requestLines < lines.Length - 1; requestLines++)
+        requestLines.Sync(lines);
+        for (; requestLines.Next < lines.Length - 1; requestLines.Next++)
         {
             if (
-                !MpRequest.TryRead(lines[requestLines], out int id, out var what, out double t)
+                !MpRequest.TryRead(lines[requestLines.Next], out int id, out var what, out double t)
                 || t < lobbyTime
             )
                 continue;
@@ -700,8 +702,13 @@ internal sealed partial class Observer : MonoBehaviour
 
     // ------------------------------------------------------------------ helpers
 
-    /// <summary>The game's warp RPC on our view (Character.cs:1824) onto the face below the VR player's lip: a cast
-    /// from 2.5 m under A and 1 m out along A's look, back toward A.</summary>
+    /// <summary>
+    /// The game's warp RPC on our view (Character.cs:1824) onto the face below the VR player's lip, found the way A's
+    /// lip search finds it (SelfTestRunner.MpReachOut.cs <c>Lip</c>): stepping out along A's look from A's ground, the
+    /// first spot whose down cast drops 1.5-5 m, then from 1.5 m under A's ground (at least 0.5 m above the lower
+    /// ground) a cast back toward A onto the face. Every cast starts in open air past the lip. The old cast started a fixed 2.5 m under A and 1 m out, which
+    /// is inside the rock whenever A stands back from the edge or the face leans out (MP run 13, #95).
+    /// </summary>
     static bool HangBelow(Character c, out string note)
     {
         var vr = FirstRemote();
@@ -718,24 +725,37 @@ internal sealed partial class Observer : MonoBehaviour
             return false;
         }
         look.Normalize();
-        var from = vr.Center - Vector3.up * 2.5f + look;
-        if (
-            !Physics.Raycast(
-                from,
-                -look,
-                out var hit,
-                2f,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
-        )
+        int mask = HelperFunctions.terrainMapMask;
+        const QueryTriggerInteraction ignore = QueryTriggerInteraction.Ignore;
+        if (!Physics.Raycast(vr.Center, Vector3.down, out var feet, 3f, mask, ignore))
         {
-            note = "no face below the remote player";
+            note = "no ground under the remote player";
             return false;
         }
-        c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, hit.point + hit.normal * 0.3f, false);
-        note = "warped below " + vr.characterName;
-        return true;
+        for (float outBy = 0.25f; outBy <= 3f; outBy += 0.25f)
+        {
+            var above = feet.point + look * outBy + Vector3.up * 0.5f;
+            if (!Physics.Raycast(above, Vector3.down, out var low, 6f, mask, ignore))
+                continue;
+            float drop = feet.point.y - low.point.y;
+            if (drop > 5f)
+                break;
+            // About 2.5 m under A's centre as before (inside the game's 4 m reach), never under the lower ground.
+            var at = low.point;
+            at.y = Mathf.Max(low.point.y + 0.5f, feet.point.y - 1.5f);
+            if (
+                drop < 1.5f
+                || !Physics.Raycast(at, -look, out var face, outBy + 0.5f, mask, ignore)
+            )
+                continue;
+            c.refs.view.RPC("WarpPlayerRPC", RpcTarget.All, face.point + face.normal * 0.3f, false);
+            note = FormattableString.Invariant(
+                $"warped below {vr.characterName}: {drop:0.0} m drop, face {outBy:0.00} m out"
+            );
+            return true;
+        }
+        note = "no face below the remote player (no 1.5-5 m drop within 3 m out along its look)";
+        return false;
     }
 
     /// <summary>The game's climb-start RPC on our view (CharacterClimbing.StartClimbRpc, :349), on the face between us

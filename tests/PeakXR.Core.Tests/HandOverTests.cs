@@ -174,6 +174,47 @@ public class HandOverTests
     }
 
     [Fact]
+    public void FoodCarriedPastTheMouthWhileWalking_NeverFeeds()
+    {
+        // MP run 13 (#93): walking up to the host with food at chest height fed them after the dwell.
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(
+                HandOverState.Hint,
+                h.Update(true, false, true, false, 0.05f, still: false)
+            );
+    }
+
+    [Fact]
+    public void TheDwellCountsFromWhenTheFeederStops()
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.25f, still: false);
+        Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.25f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.1f));
+        // Once it feeds, a step does not cut the feed short.
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.05f, still: false));
+    }
+
+    [Fact]
+    public void TheTriggerFeedsAtOnce_EvenWhileWalking()
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.05f, still: false);
+        Assert.Equal(HandOverState.Apply, h.Update(true, true, true, false, 0.05f, still: false));
+    }
+
+    [Theory]
+    [InlineData(0f, true)]
+    [InlineData(0.49f, true)]
+    [InlineData(0.5f, false)]
+    [InlineData(1.4f, false)]
+    public void StillMeansALevelSpeedUnderHalfAMetrePerSecond(float speed, bool still)
+    {
+        Assert.Equal(still, HandOver.Still(speed));
+    }
+
+    [Fact]
     public void DwellFeed_IgnoresATriggerHeldOnArrival()
     {
         var h = Mouth();
