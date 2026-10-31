@@ -44,6 +44,9 @@ internal static class PhysicalInteraction
 
         /// <summary>When the grip last closed (<see cref="UseTrigger.InFist"/>).</summary>
         public float GripAt = -10f;
+
+        /// <summary>The item was already in this hand when its grip last closed: a regrip, not a pickup.</summary>
+        public bool GripOnItem;
         public readonly ThrowEstimator Throw = new();
 
         /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
@@ -501,7 +504,10 @@ internal static class PhysicalInteraction
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
         if (hand.Grip.Pressed)
+        {
             hand.GripAt = now;
+            hand.GripOnItem = Holding(c, out _) && LocalHold.ItemInLeftHand == hand.Left;
+        }
         // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75).
         hand.GripAt = Mathf.Max(hand.GripAt, GripToggle.ClosedAt(hand.Left));
         // A fist made for a gesture (a thumbs-up, the walkie-talkie hand at the mouth) is no interact: it waits while
@@ -3012,6 +3018,17 @@ internal static class PhysicalInteraction
                 dt,
                 UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
             );
+            // A pull lost to the fist window on an item this hand already held when it closed (a regrip, not a
+            // pickup) gets a light tick, so a deliberate squeeze is not lost in silence; a fist on a pickup stays
+            // quiet (#48).
+            if (
+                hand.Use.FistPress
+                && hand.GripOnItem
+                && holding
+                && hand == primaryHand
+                && !Physical.ItemGestures.TriggerRefused(c.data.currentItem)
+            )
+                Affordance.Cancel(hand.Left);
             if (hand.Use.ClimbPress && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,

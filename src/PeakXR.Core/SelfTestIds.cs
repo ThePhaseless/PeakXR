@@ -263,6 +263,7 @@ public static class SelfTestIds
         "vr.288-glow-grab",
         "vr.320-fist-grab-no-use",
         "vr.440-fist-food-quiet",
+        "vr.445-regrip-fist-tick",
         "vr.441-grip-toggle-unlatch-no-use",
         "vr.273-look-down-step-back",
         "vr.300-snap-turn-step",

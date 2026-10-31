@@ -47,6 +47,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.288-glow-grab", 45f, HighlightGrabStep());
         yield return HandStep("vr.320-fist-grab-no-use", 25f, FistGrabNoUseStep());
         yield return HandStep("vr.440-fist-food-quiet", 20f, FistFoodQuietStep());
+        yield return Restoring("vr.445-regrip-fist-tick", 20f, RegripFistTickStep());
         yield return HandStep("vr.451-slot-yields-to-item", 25f, SlotYieldsToItemStep());
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());

@@ -68,6 +68,9 @@ internal sealed class InteractConfig
     /// <summary>The setting itself, for the self-test (vr.233).</summary>
     internal ConfigEntry<HapticDetail> HapticDetailEntry => hapticDetail;
 
+    /// <summary>The setting itself, for the self-test (vr.445).</summary>
+    internal ConfigEntry<bool> ReleaseToDropEntry => releaseToDrop;
+
     public GripMode GripMode => gripMode?.Value ?? GripMode.Hold;
 
     /// <summary>The setting itself, for the self-test (vr.237, vr.238).</summary>

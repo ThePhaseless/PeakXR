@@ -58,6 +58,10 @@ public sealed class UseTrigger
     /// <summary>A <see cref="ClimbPress"/> is still down and its hand still holds the climber.</summary>
     public bool ClimbHold { get; private set; }
 
+    /// <summary>This frame's press was muted by a closing fist (<see cref="InFist"/>), off the climber: a pull made
+    /// with the grip may have been meant, so the caller can say it did not count (issue #48).</summary>
+    public bool FistPress { get; private set; }
+
     /// <summary>Seconds the <see cref="ClimbHold"/> has lasted; 0 without one.</summary>
     public float ClimbHeld { get; private set; }
 
@@ -75,6 +79,7 @@ public sealed class UseTrigger
         bool pressed = trigger && !held;
         // A fist's press is never deliberate, however long the hand has held on (a toggle grip's unlatch squeeze).
         ClimbPress = pressed && climbs && !fist && climbing >= SettleSeconds;
+        FistPress = pressed && fist && !climbs;
         ClimbHold = ClimbPress || (ClimbHold && trigger && climbs);
         ClimbHeld = ClimbHold && !ClimbPress ? ClimbHeld + dt : 0f;
         if (!trigger)
@@ -102,7 +107,7 @@ public sealed class UseTrigger
     {
         held = muted = false;
         climbing = 0f;
-        Down = Pressed = ClimbPress = ClimbHold = false;
+        Down = Pressed = ClimbPress = ClimbHold = FistPress = false;
         ClimbHeld = 0f;
     }
 }

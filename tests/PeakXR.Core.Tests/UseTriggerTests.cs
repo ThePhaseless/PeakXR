@@ -266,4 +266,28 @@ public class UseTriggerTests
             t.Update(true, true, false, Dt);
         Assert.False(t.Piton);
     }
+
+    [Fact]
+    public void FistPress_IsThePressTheFistMuted()
+    {
+        // Issue #48's gap: a press lost to the fist window gets a light cue, so it must be told apart.
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.True(t.FistPress);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.FistPress);
+        t.Update(false, false, true, Dt);
+        t.Update(true, false, true, Dt);
+        Assert.False(t.FistPress);
+    }
+
+    [Fact]
+    public void FistPress_NotForATriggerHeldBeforeTheGrip()
+    {
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.FistPress);
+        Assert.False(t.Down);
+    }
 }
