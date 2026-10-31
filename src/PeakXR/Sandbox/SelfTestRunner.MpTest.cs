@@ -593,36 +593,23 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// Finger-gun ping (Interact/Ping/PingInput.cs, src/PeakXR.Core/FingerGun.cs): the right hand closes its grip
-    /// with the index straight, aims its aim pose at the ground in front of the host, then squeezes the trigger.
+    /// Button ping (Interact/Ping/PingInput.cs): the layout's ping hand (off-hand B/Y) aims its aim pose at the ground
+    /// in front of the host and taps the button.
     /// </summary>
     IEnumerator PingStep()
     {
         var c = Character.localCharacter;
         var host = Host();
-        var rig = VRRig.Instance;
-        // Only an empty hand fires (PingInput.cs:42-52) and the Airport puts a passport in the right hand.
-        bool left = HeldItem() != null && !LocalHold.ItemInLeftHand;
+        if (!PingButtonHand(out bool left))
+            yield break;
         var aim = host.Center + Flat(c.Center - host.Center) * 1.5f;
         if (Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground))
             aim = ground.point;
         MpPingProbe.Last = null;
-        HeadFrame(out var head, out var forward, out var right);
-        Script(left).Position = head + right * 0.2f + Vector3.down * 0.2f + forward * 0.3f;
-        Script(left).TriggerTouch = false;
-        Script(left).Trigger = 0f;
-        yield return GripTo(left, 1f, 0.1f);
-        for (float until = Now + 0.4f; Now < until; )
-        {
-            AimHand(rig, left, aim);
-            yield return null;
-        }
-        Script(left).TriggerTouch = true;
-        Script(left).Trigger = 1f;
-        yield return Wait(0.15f);
-        Script(left).Trigger = 0f;
+        yield return ButtonAim(left, aim, 0.4f);
+        yield return ButtonTap(left, aim);
+        Script(left).SecondaryTouch = false;
         yield return WaitFor(() => MpPingProbe.Last != null, 2f);
-        yield return GripTo(left, 0f, 0.1f);
         if (MpPingProbe.Last is not { } point)
         {
             Fail("no ping received");

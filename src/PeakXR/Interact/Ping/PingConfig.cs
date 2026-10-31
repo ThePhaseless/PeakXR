@@ -26,8 +26,7 @@ internal sealed class PingConfig
 
     private ConfigEntry<string> hand,
         pingButton;
-    private ConfigEntry<bool> fingerGun,
-        aimPreview;
+    private ConfigEntry<bool> aimPreview;
     private ConfigEntry<float> markerAngle;
 
     public PingAimHand Hand =>
@@ -37,7 +36,6 @@ internal sealed class PingConfig
             "Right" => PingAimHand.Right,
             _ => PingAimHand.Pointing,
         };
-    public bool FingerGun => fingerGun?.Value ?? true;
     public bool AimPreview => aimPreview?.Value ?? true;
     public float MarkerAngle => markerAngle?.Value ?? 8f;
 
@@ -72,36 +70,27 @@ internal sealed class PingConfig
                 "Hand",
                 "Pointing",
                 new ConfigDescription(
-                    "Which hand aims the ping. Pointing: the finger gun works on either hand and the ping goes where "
-                        + "that hand points; the button pings from whichever hand is pointing, else the right hand. "
-                        + "Right or Left: only that hand aims and fires the finger gun.",
+                    "Which hand aims the button ping. Pointing: a hand that points (index out, thumb lifted) aims it, "
+                        + "else the hand with the ping button (B/Y on the off hand). Right or Left: always that hand.",
                     new AcceptableValueList<string>(Hands)
                 )
-            ),
-            fingerGun = file.Bind(
-                Section,
-                "FingerGunPing",
-                true,
-                "Point (grip closed, index straight) with your thumb lifted off the stick, the buttons and the thumbrest, "
-                    + "then squeeze the trigger while the grip stays closed to ping. With the thumb resting, the point aims "
-                    + "interaction instead (Interaction.HandAimedInteract). "
-                    + "That trigger squeeze does not also use the held item."
             ),
             aimPreview = file.Bind(
                 Section,
                 "AimPreview",
                 true,
-                "While a hand makes the finger gun, a thin line runs from it to a small dot where the ping would land, "
-                    + "so you see the spot before you squeeze. The dot turns red where the ray finds no ground (the sky)."
+                "While your thumb rests on the ping button, a dotted line runs from that hand to a small dot where the "
+                    + "ping would land, so you see the spot before you tap. The dot turns red where the ray finds no "
+                    + "ground (the sky)."
             ),
             pingButton = file.Bind(
                 Section,
                 "PingButton",
                 "None",
                 new ConfigDescription(
-                    "Button fallback for the game's ping, aimed with the hand chosen in Hand. Off by default because "
-                        + "the face buttons and stick clicks already drive movement, drop and menus; pick one that "
-                        + "no other setting uses.",
+                    "An extra ping button besides the off hand's B/Y tap, aimed with the hand chosen in Hand. None by "
+                        + "default because the face buttons and stick clicks already drive movement, drop and menus; "
+                        + "pick one that no other setting uses.",
                     new AcceptableValueList<string>(Buttons)
                 )
             ),

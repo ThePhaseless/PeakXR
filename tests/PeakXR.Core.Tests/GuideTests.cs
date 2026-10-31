@@ -122,10 +122,10 @@ public class GuideTests
         bool Pressed(GuideTrack track, System.Func<GuideKey, bool> test) =>
             track != null && Array.Exists(track.Keys, k => test(k));
         var ping = GuideTable.Get(GuideTopic.Ping);
-        Assert.True(
-            Pressed(ping.Right, k => k.Grip > 0.5f && k.Trigger > 0.5f),
-            "finger gun squeeze"
-        );
+        // Ping is the off hand's upper button only; no hand squeezes a trigger for it.
+        Assert.True(Pressed(ping.Left, k => k.Button == GuideButton.Upper), "upper button tap");
+        Assert.False(Pressed(ping.Left, k => k.Trigger > 0.5f), "left trigger squeeze");
+        Assert.False(Pressed(ping.Right, k => k.Trigger > 0.5f), "right trigger squeeze");
         var spectate = GuideTable.Get(GuideTopic.Spectate);
         Assert.True(Pressed(spectate.Right, k => k.Stick.Y > 0.5f), "stick flick up");
         Assert.True(Pressed(spectate.Right, k => k.Stick.Y < -0.5f), "stick flick down");

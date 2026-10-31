@@ -128,6 +128,28 @@ public class BindingTests
     }
 
     [Fact]
+    public void LeftHanded_PingTapAndEmoteHold_MoveToTheRightUpperButton()
+    {
+        // The off hand is the right one: B taps ping, B held opens the emote wheel, and the hold never pings.
+        var m = new ActionMapper { DominantLeft = true, LongPressSeconds = 0.5f };
+        m.Update(Idle, Pressed(VRControl.Secondary), Dt);
+        m.Update(Idle, Idle, Dt);
+        Assert.True(m.Pressed(VRAction.Ping));
+        m.Update(Idle, Idle, Dt);
+        for (int i = 0; i < 50; i++)
+        {
+            m.Update(Idle, Pressed(VRControl.Secondary), Dt);
+            Assert.False(m.Pressed(VRAction.Ping));
+        }
+        Assert.True(m.Held(VRAction.Emote));
+        m.Update(Idle, Idle, Dt);
+        Assert.False(m.Pressed(VRAction.Ping));
+        m.Update(Pressed(VRControl.Secondary), Idle, Dt);
+        m.Update(Idle, Idle, Dt);
+        Assert.False(m.Pressed(VRAction.Ping));
+    }
+
+    [Fact]
     public void StickFlick_PressesOncePerFlickWithHysteresis()
     {
         var m = new ActionMapper();

@@ -158,7 +158,7 @@ Setup: client A is PeakXR in VR (SteamVR first, launch options from the README) 
 6. Social. A feeds B by holding food at B's mouth, from the front and then from the side. A heals B by pressing a bandage to B's torso. B passes out; A reaches and helps B up, carries B, drops B, and opens B's pack. B's stats and inventory match on both screens.
 7. Fire. A lights a campfire by hand and cooks food over it. B sees the fire lit and the item cooked.
 8. Beach wake-up. Start a run with VR Skip mode on. B sees A standing up without the fall, as with the game's SkipWakeup tag.
-9. Ping and bugle. A pings by pointing and plays the bugle at different pitches. B sees the ping in the same place and hears the pitch change.
+9. Ping and bugle. A pings with the off hand's B/Y tap and plays the bugle at different pitches. B sees the ping in the same place and hears the pitch change.
 10. Traffic. Repeat step 2 with a second PeakXR client C in VR and record Photon traffic stats (`PhotonNetwork.NetworkingClient.LoadBalancingPeer.TrafficStatsGameLevel`) on A for 60 s. Expect about 25 pose events/s while moving and about 4/s while still. With 4 PeakXR clients, expect about 15/s while moving.
 
 Pass: B shows no errors or desync in any step, and nothing differs between screens except arm pose and held-item hand (risk 7).

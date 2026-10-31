@@ -52,9 +52,6 @@ internal static class PhysicalInteraction
         public IInteractible Target;
         public IGripExtension Extension;
 
-        /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact.</summary>
-        public float InteractAt;
-
         /// <summary>This Interact grip is a pointed aim at an item taker (<see cref="GripContext.PointedAtTaker"/>).</summary>
         public bool AimedTaker;
 
@@ -501,31 +498,6 @@ internal static class PhysicalInteraction
             hand.Throw.AddSample(state.Position.N(), now);
         if (hand.Grip.Pressed)
             hand.GripAt = now;
-        // The trigger squeeze of a finger-gun ping cancels the pointing grip's pending interact.
-        if (
-            hand.Action == GripPressAction.Interact
-            && now < hand.InteractAt
-            && hand.Trigger.Pressed
-        )
-            hand.Action = GripPressAction.None;
-        // While the hand keeps pointing it is aiming a ping (the aim preview invites a long hold): the pending
-        // interact waits, so a ping aimed at an item never picks it up.
-        // A pointed aim at an item taker with its item in hand is the interact, not a ping: it waits only the
-        // finger-gun window (a trigger squeeze in it still pings), never longer.
-        else if (
-            hand.Action == GripPressAction.Interact
-            && !hand.AimedTaker
-            && now < hand.InteractAt
-            && PingAims()
-        )
-            hand.InteractAt = GripIntent.DeferPointedInteract(
-                hand.InteractAt,
-                // A light trigger pull keeps the ping aim up (FingerGun triggerResting), so it keeps waiting too.
-                GripIntent.IsFingerGun(LocalAvatar.ControllerCurls(hand.Left))
-                    || Ping.PingInput.Aiming(hand.Left),
-                now,
-                FingerGun.DefaultWindow
-            );
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);
@@ -555,27 +527,6 @@ internal static class PhysicalInteraction
                 rock = true;
         }
         return rock;
-    }
-
-    private static Framework.Feature pingFeature;
-    private static bool pingLooked;
-
-    /// <summary>The finger-gun ping is live (<c>interact.ping</c> active, <c>Ping.FingerGunPing</c> on), so a pointing
-    /// hand is aiming it. The feature is looked up once, not per frame.</summary>
-    private static bool PingAims()
-    {
-        if (!pingLooked)
-        {
-            pingLooked = true;
-            foreach (var f in Framework.FeatureManager.Features)
-            {
-                if (f.Id == "interact.ping")
-                    pingFeature = f;
-            }
-        }
-        return pingFeature != null
-            && pingFeature.State == Framework.FeatureState.Active
-            && Ping.PingConfig.Instance.FingerGun;
     }
 
     /// <summary>
@@ -910,7 +861,7 @@ internal static class PhysicalInteraction
         bool thisHolds = ctx.ThisHandHolds;
         var kind = d.Hold.Kind;
         var hook = new GripHookContext(c, hand.Left, pos, item, thisHolds);
-        // The curls the grip's intent read (finger gun, point), so a pose left over from another step shows.
+        // The curls the grip's intent read (point, thumb), so a pose left over from another step shows.
         var curls = LocalAvatar.ControllerCurls(hand.Left);
         LastGripNote = System.FormattableString.Invariant(
             $"{(hand.Left ? "L" : "R")} grip {action}: near climbable {ctx.NearClimbable} (probe {probeVerdict}, hit {probeHit}, {probeAngle:0} deg, allowance {probeAllowance:0.00} m), pointed at a taker {ctx.PointedAtTaker}, body climbing {ctx.BodyClimbing}, eye-hand {Vector3.Distance(Eye(rig), pos):0.00} m, candidate {ctx.Candidate} ({lastReachable} in reach, {lastHidden} out of sight), curls thumb {curls.Thumb:0.00} index {curls.Index:0.00} middle {curls.Middle:0.00}, pointing {ctx.Pointing}, second grip {(ctx.AtSecondGripTight ? "tight" : ctx.AtSecondGrip ? "loose" : "no")}, candidate aimed {ctx.CandidateIsAimed}{(ctx.CandidateIsHandle ? $", handle {ctx.HandleDistance:0.00} m vs rock {ctx.RockDistance:0.00} m" : "")}"
@@ -1003,16 +954,6 @@ internal static class PhysicalInteraction
                         DenyReason.HandsFull,
                         Affordance.Hints ? DenyHint.On(handle.transform) : default
                     );
-                break;
-            case GripPressAction.Interact:
-                // A finger gun (pointing, thumb up) may be the start of a ping: wait out its trigger window first.
-                // Pointing with the thumb resting is a pointed interact, at once (external review #13).
-                hand.InteractAt = GripIntent.PointedInteractWaits(
-                    LocalAvatar.ControllerCurls(hand.Left),
-                    PingAims()
-                )
-                    ? now + FingerGun.DefaultWindow
-                    : now;
                 break;
         }
         hand.Action = action;
@@ -2973,8 +2914,6 @@ internal static class PhysicalInteraction
                         GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
-                    if (now < hand.InteractAt)
-                        break;
                     interactDown = hand.Injected = true;
                     GripInteractActive = true;
                     break;

@@ -161,7 +161,7 @@ public static class BindingTable
     /// dominant hand. Its stick walks forward and back and turns (<see cref="StickAxes.MoveY"/>), so the hotbar and
     /// scroll flicks are gone (belt slots and wrist twist do those); A jumps, the stick click sprints and a long
     /// click crouches, B taps pause (a Touch right controller has no menu button) and a long B opens the emote
-    /// wheel. Put away, backpack and ping have hand paths only (belt, shoulder, finger gun). docs/controls.md.
+    /// wheel. Put away and backpack have hand paths only (belt, shoulder); there is no ping. docs/controls.md.
     /// </summary>
     public static readonly Binding[] OneHanded =
     {

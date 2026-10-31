@@ -56,7 +56,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.258-stick-lunge", 30f, StickLungeStep());
         yield return Restoring("vr.47-climb-deny-reach", 30f, ClimbDenyReachStep());
         yield return Restoring("vr.47b-free-hand-pocket", 25f, FreeHandPocketStep());
-        yield return Restoring("vr.47d-ping-at-item", 25f, PingAtItemStep());
+        yield return Restoring("vr.460-point-at-item", 25f, PointAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
         yield return Restoring("vr.238-grip-toggle-item", 25f, GripToggleItemStep());
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
@@ -1426,16 +1426,16 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>vr.47d's Apple, level metres out from the eye: past the grab radius, inside the pointed interact.</summary>
+    /// <summary>vr.460's Apple, level metres out from the eye: past the grab radius, inside the pointed interact.</summary>
     const float PingAppleOut = 1.2f;
 
     /// <summary>
-    /// vr.47d: the finger gun aimed at an Apple on the ground for 1 s (well past <c>FingerGun.DefaultWindow</c>), then
-    /// squeezed. A pointing hand is aiming a ping, so interact.physical's pointed interact keeps waiting
-    /// (<see cref="GripIntent.DeferPointedInteract"/>): the squeeze pings (<c>PointPinger._timeLastPinged</c>,
-    /// PointPinger.cs:68-71) and the Apple stays on the ground.
+    /// vr.460: a pointing grip with the thumb lifted (the old finger-gun pose) closed while the hand points at an Apple
+    /// on the ground, past the grab radius and inside the game's interact reach. Ping is a button now, so the pointed
+    /// interact runs at once (no wait for a trigger squeeze, <c>GripIntent.DeferPointedInteract</c> is gone): the hand
+    /// takes the Apple within 2 s and no ping goes out (<c>PointPinger._timeLastPinged</c>, PointPinger.cs:68-71).
     /// </summary>
-    IEnumerator PingAtItemStep()
+    IEnumerator PointAtItemStep()
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
@@ -1494,9 +1494,8 @@ internal sealed partial class SelfTestRunner
             Fail("spawned Apple has no Item");
             yield break;
         }
-        bool InWorld() => item != null && item.gameObject.activeInHierarchy;
         bool left = false;
-        // Aim at the Apple's collider centre, and check the hand's own aim line meets the Apple before any press: a
+        // Aim with the hand open first, then check the hand's own aim line meets the Apple before the grip closes: a
         // line that meets the ground first (run 58, runs 65-66 "meets Ground") makes the game's interact and its
         // sphere-cast fallback stop there (Interaction.cs:214-241). Once blocked, the hand rises 0.25 m and aims at
         // the upper half instead.
@@ -1504,14 +1503,20 @@ internal sealed partial class SelfTestRunner
         var firstAim = aim;
         var originAtAim = rig.Origin.position;
         yield return PingCooldownOver(pinger);
-        yield return FingerGunAim(left, aim, 1f);
+        Script(left).TriggerTouch = false;
+        Script(left).Trigger = 0f;
+        HandBesideHead(left);
+        for (float until = Now + 0.5f; Now < until; )
+        {
+            AimHand(rig, left, aim);
+            yield return null;
+        }
         float raise = 0f;
         string lineMeets = AimLineMeets(rig, left, item, aim);
         if (lineMeets != null)
         {
             aim = TopOf(item);
             raise = 0.25f;
-            yield return FingerGunAim(left, aim, 0.2f);
             Script(left).Position += Vector3.up * raise;
             for (float until = Now + 0.4f; Now < until; )
             {
@@ -1552,34 +1557,9 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        bool keptWhileAiming = InWorld() && HeldItem() == null;
-        float gameMark = Time.time;
-        yield return FingerGunSqueeze(left, aim);
-        yield return Until(
-            () => Interact.Ping.PingInput.LastPinged(pinger) >= gameMark,
-            2f,
-            "the squeeze did not ping"
-        );
-        yield return GripTo(left, 0f, 0.1f);
-        yield return Wait(0.5f);
-        bool kept = InWorld() && HeldItem() == null;
-        var note = F(
-            $"Apple {toApple:0.00} m from the pointing hand (ray {rayReach:0.00} m), on the ground after 1 s of aiming {keptWhileAiming}, after the ping {kept}; {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
-        );
-        if (!keptWhileAiming || !kept)
-        {
-            Fail("aiming a ping at an item picked it up: " + note);
-            yield break;
-        }
-        // External review #13: the same pointing grip with the thumb resting on the stick is a pointed interact, not
-        // a ping aim. It takes the Apple and pings nothing.
         float pingBefore = Interact.Ping.PingInput.LastPinged(pinger);
-        // The ping's marker stands on the Apple for 2 s (PointPinger.cs:97-104); let it go first.
-        yield return Wait(Mathf.Max(0f, pingBefore + 2.1f - Time.time));
-        Script(left).StickTouch = true;
-        OnRestore(() => Script(left).StickTouch = false);
-        yield return FingerGunAim(left, aim, 0.1f);
-        Script(left).Position += Vector3.up * raise;
+        float closedAt = Now;
+        yield return GripTo(left, 1f, 0.1f);
         // Still pointing at it while the interact lands, as a player does.
         for (float until = Now + 2f; Now < until && !Holding(apple); )
         {
@@ -1587,28 +1567,14 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         bool taken = Holding(apple);
+        float tookFor = Now - closedAt;
         bool pinged = Interact.Ping.PingInput.LastPinged(pinger) != pingBefore;
         var hovered = Interaction.instance != null ? Interaction.instance.currentHovered : null;
-        // What the hand's own aim line meets first, the way the game's interact line runs from it.
-        var aimPose = rig.Aim(left);
-        string first =
-            aimPose != null
-            && Physics.Raycast(
-                aimPose.position,
-                aimPose.forward,
-                out var firstHit,
-                4f,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
-            )
-                ? F($"{firstHit.collider.name} at {firstHit.distance:0.00} m")
-                : "nothing";
-        Script(left).StickTouch = false;
-        note += F(
-            $"; thumb on the stick: pointed interact took it {taken}, pinged {pinged}, hovered {(hovered is UnityEngine.Object o && o != null ? o.name : "nothing")}, aim line meets {first}, aim hand {PeakXR.Interact.PhysicalInteraction.AimHand}, {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
+        var note = F(
+            $"Apple {toApple:0.00} m from the pointing hand (ray {rayReach:0.00} m): taken {taken} {tookFor:0.00} s after the grip closed, pinged {pinged}, hovered {(hovered is UnityEngine.Object o && o != null ? o.name : "nothing")}, aim hand {PeakXR.Interact.PhysicalInteraction.AimHand}, {PeakXR.Interact.PhysicalInteraction.LastGripNote}"
         );
         if (!taken || pinged)
-            Fail("a pointed grip with the thumb resting did not interact cleanly: " + note);
+            Fail("a pointed grip with the thumb lifted did not interact cleanly: " + note);
         else
             Note(note);
     }

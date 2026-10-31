@@ -203,7 +203,7 @@ internal sealed partial class SelfTestRunner
     /// would step to it: the step is the grab, not a chase. Then it is held still (kinematic, named in the note) until
     /// the grab, so the stooping body cannot roll it on. Run 47-54: Apples that rolled 1.0-3.2 m away, under the toes
     /// or on during the stoop failed vr.10, vr.11, vr.32 and vr.47b. A step that wants the prop farther out passes its
-    /// own band and set-down distance (vr.47d, 1.2 m).
+    /// own band and set-down distance (vr.460, 1.2 m).
     /// </summary>
     IEnumerator RestWithinReach(
         Item world,
@@ -1775,7 +1775,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>The hand the scripted head looks toward (<see cref="LookAtHand"/>); null keeps the head as tracked.</summary>
     bool? glanceHand;
 
-    /// <summary>Look along the hand's pointing ray (a finger gun, an aimed item) rather than at the hand.</summary>
+    /// <summary>Look along the hand's pointing ray (a point, an aimed item) rather than at the hand.</summary>
     bool glanceAlong;
 
     /// <summary>The scripted head's view direction now, easing toward <see cref="glanceWant"/>.</summary>
