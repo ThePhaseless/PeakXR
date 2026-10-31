@@ -1227,7 +1227,7 @@ internal sealed partial class SelfTestRunner
                 new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
                 + gap.normalized * (gap.magnitude - 0.5f);
             warpedForProp = true;
-            c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, to, false);
+            c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, to), false);
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
             yield return Wait(1f);
@@ -1328,7 +1328,7 @@ internal sealed partial class SelfTestRunner
                 new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
                 + gap.normalized * (gap.magnitude - 0.5f);
             warpedForProp = true;
-            c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, to, false);
+            c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, to), false);
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
             yield return Wait(1f);

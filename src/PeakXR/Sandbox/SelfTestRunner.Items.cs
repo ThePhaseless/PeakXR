@@ -1149,7 +1149,9 @@ internal sealed partial class SelfTestRunner
             on = "on " + ground.collider.name;
         }
         warpedForProp = true;
-        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, stand, false);
+        // The warp moves the body's centre, not its feet: a centre at the feet sinks and pops up off the spot (run 10,
+        // vr.82b: onto a ledge 1 m over the case beside it).
+        c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, stand), false);
         yield return Wait(0.5f);
         yield return WaitFor(() => !c.warping, 3f);
         yield return Wait(1.5f);

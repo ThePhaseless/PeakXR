@@ -1131,7 +1131,7 @@ internal sealed partial class SelfTestRunner
             c.photonView.RPC(
                 "WarpPlayerRPC",
                 RpcTarget.All,
-                standBefore + gap.normalized * (gap.magnitude - 0.5f),
+                CentreOver(c, standBefore + gap.normalized * (gap.magnitude - 0.5f)),
                 false
             );
             yield return Wait(0.5f);
@@ -1147,7 +1147,7 @@ internal sealed partial class SelfTestRunner
                         $", slid {FlatDistance(landed, c.Center):0.00} m off the stepped-to spot, stepped back; "
                     )
                 );
-                c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, standBefore, false);
+                c.photonView.RPC("WarpPlayerRPC", RpcTarget.All, CentreOver(c, standBefore), false);
                 yield return Wait(0.5f);
                 yield return WaitFor(() => !c.warping, 3f);
                 yield return Wait(1f);
