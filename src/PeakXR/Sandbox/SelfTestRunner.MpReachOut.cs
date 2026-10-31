@@ -349,6 +349,9 @@ internal sealed partial class SelfTestRunner
             float start = Now;
             float pressAt = -1f;
             float reachAt = -1f;
+            // The catch lands during the squeeze: Reach resets sinceGrabFriend only while the host is helpable
+            // (CharacterGrabbing.cs:252-268), and its first tick clears the web, so by t = 1 it has grown past 0.3 s.
+            float caughtAt = -1f;
             while (true)
             {
                 float t = Mathf.Clamp01((Now - start) / 1.5f);
@@ -358,6 +361,8 @@ internal sealed partial class SelfTestRunner
                     pressAt = Now;
                 if (reachAt < 0f && c.data.isReaching)
                     reachAt = Now;
+                if (caughtAt < 0f && reachAt >= 0f && c.data.sinceGrabFriend < 0.3f)
+                    caughtAt = Now;
                 if (t >= 1f && (reachAt >= 0f || Now - pressAt > 0.5f))
                     break;
                 yield return null;
@@ -371,17 +376,23 @@ internal sealed partial class SelfTestRunner
                 );
                 yield break;
             }
-            yield return Until(
-                () => c.data.sinceGrabFriend < 0.3f,
-                3f,
-                F(
-                    $"the reach-out never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off)"
-                )
+            if (caughtAt < 0f)
+            {
+                yield return Until(
+                    () => c.data.sinceGrabFriend < 0.3f,
+                    3f,
+                    F(
+                        $"the reach-out never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off)"
+                    )
+                );
+                if (!stepOk)
+                    yield break;
+                caughtAt = Now;
+            }
+            yield return WaitFor(
+                () => !host.refs.afflictions.isStruggling,
+                Mathf.Max(0f, caughtAt + 3f - Now)
             );
-            if (!stepOk)
-                yield break;
-            float caughtAt = Now;
-            yield return WaitFor(() => !host.refs.afflictions.isStruggling, 3f);
             if (host.refs.afflictions.isStruggling)
             {
                 Fail("the reach-out caught the host, but the host was still webbed 3 s later");
@@ -404,7 +415,7 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.420-reach-out-ledge (the issue's pose): A stands at a lip over a 2.3-3.2 m steep drop, the host warped
+    /// vr.420-reach-out-ledge (the issue's pose): A stands at a lip over a 2.3-4 m steep drop, the host warped
     /// onto the face below (<see cref="MpRequest.HangBelow"/>) and climbing (<see cref="MpRequest.StartClimb"/>), so
     /// helpable (TargetCanBeHelped: climbing below, CharacterGrabbing.cs:304). A looks down at them and reaches; the
     /// grip holds the game's reach, which catches and drags them up (CharacterGrabbing.Reach, :269-275).
@@ -420,7 +431,9 @@ internal sealed partial class SelfTestRunner
         var outward = ledgeOutward;
         if (!ledgeFound)
         {
-            stepSkip = "no walkable lip over a 2.3-3.2 m steep drop within 40 m";
+            stepSkip = F(
+                $"no walkable lip over a {LedgeDropMin:0.0}-{LedgeDropMax:0.0} m steep drop within {LedgeRadius:0} m (1 m grid)"
+            );
             yield break;
         }
         yield return WalkTo(() => stand, 0.3f, false);
@@ -552,8 +565,8 @@ internal sealed partial class SelfTestRunner
         return best;
     }
 
-    /// <summary>The nearest walkable spot within 40 m with a lip in one of 8 headings over a 2.3-3.2 m steep drop:
-    /// down casts on a 2 m grid, in the style of <see cref="FindWall"/>, one grid row per frame. Sets
+    /// <summary>The nearest walkable spot within <see cref="LedgeRadius"/> with a lip in one of 8 headings over a steep drop:
+    /// down casts on a 1 m grid, in the style of <see cref="FindWall"/>, one grid row per frame. Sets
     /// <see cref="ledgeFound"/>, <see cref="ledgeStand"/> and <see cref="ledgeOutward"/>.</summary>
     IEnumerator FindLedge(Character c)
     {
@@ -562,12 +575,12 @@ internal sealed partial class SelfTestRunner
         float best = float.MaxValue;
         var home = c.Center;
         int mask = HelperFunctions.terrainMapMask;
-        for (float x = -40f; x <= 40f; x += 2f)
+        for (float x = -LedgeRadius; x <= LedgeRadius; x += 1f)
         {
-            for (float z = -40f; z <= 40f; z += 2f)
+            for (float z = -LedgeRadius; z <= LedgeRadius; z += 1f)
             {
                 float sq = x * x + z * z;
-                if (sq > 1600f || sq >= best)
+                if (sq > LedgeRadius * LedgeRadius || sq >= best)
                     continue;
                 if (
                     !Physics.Raycast(
@@ -597,12 +610,23 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>How far from A the lip search looks (m), on a 1 m grid: a lip is within 0.7 m of a grid point, so the
+    /// 2 m grid of MP run 12 stepped over most edges and found none within 40 m of the beach spawn.</summary>
+    const float LedgeRadius = 60f;
+
+    /// <summary>The drop under the lip (m): B is warped onto the face about 2.5 m under A's centre
+    /// (<see cref="MpRequest.HangBelow"/>), so a shallower drop leaves B standing; deeper keeps B 2.5 m from A, inside the
+    /// game's 4 m reach (CharacterGrabbing.cs:252), and is still found by the 4.5 m cast in <see cref="Lip"/>.</summary>
+    const float LedgeDropMin = 2.3f;
+
+    const float LedgeDropMax = 4f;
+
     bool ledgeFound;
     Vector3 ledgeStand;
     Vector3 ledgeOutward;
 
     /// <summary>Walkable ground behind <paramref name="ground"/>, and 0.7 m out along <paramref name="dir"/> a drop of
-    /// 2.3-3.2 m whose middle is a steep face.</summary>
+    /// <see cref="LedgeDropMin"/>-<see cref="LedgeDropMax"/> m whose middle is a steep face.</summary>
     static bool Lip(Vector3 ground, Vector3 dir, int mask)
     {
         const QueryTriggerInteraction ignore = QueryTriggerInteraction.Ignore;
@@ -623,7 +647,7 @@ internal sealed partial class SelfTestRunner
         if (!Physics.Raycast(past + Vector3.up * 0.5f, Vector3.down, out var low, 5f, mask, ignore))
             return false;
         float drop = ground.y - low.point.y;
-        if (drop < 2.3f || drop > 3.2f)
+        if (drop < LedgeDropMin || drop > LedgeDropMax)
             return false;
         var mid = past + Vector3.down * (drop * 0.5f);
         return Physics.Raycast(mid, -dir, out var face, 1f, mask, ignore)

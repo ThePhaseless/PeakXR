@@ -651,7 +651,7 @@ internal sealed partial class SelfTestRunner
         if (VRSession.Active)
         {
             // Inside the game's 2 m interact reach (Interaction.cs:7).
-            yield return MpWalkAround(() => kiosk.transform.position, 1.6f, 15f);
+            yield return MpWalkAround(() => kiosk.transform.position, 1.6f, 15f, 6);
             yield return BoardByHand(kiosk, s => shortcut = s);
         }
         if (!LoadingScreenHandler.loading)
@@ -763,7 +763,7 @@ internal sealed partial class SelfTestRunner
         {
             failed(
                 F(
-                    $"no spot at the kiosk reached on foot ({FlatDistance(c.Center, bounds.center):0.0} m from it)"
+                    $"no spot at the kiosk reached on foot ({FlatDistance(c.Center, bounds.center):0.0} m from it, stopped at {c.Center:F1}, kiosk at {bounds.center:F1})"
                 )
             );
             yield break;
@@ -1135,13 +1135,16 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// <see cref="MpWalkBounded"/> that walks around what blocks the straight line, as a player steps around a
-    /// stanchion or a bench (MP run 16: the walk to the kiosk stalled 12.5 m short every time). When a try ends short,
-    /// A sidesteps 2.5 m to a side whose chest-height line is clear, alternating sides, then tries again; at most
-    /// <paramref name="detours"/> times, each walk bounded by <paramref name="seconds"/>.
+    /// stanchion, a bench or along a wall. When a try ends short, A walks 3 m along the clear heading nearest the
+    /// goal's (<see cref="ClearHeading"/>), keeping to the side that last worked so it follows a wall instead of
+    /// pacing in front of it, then tries again; at most <paramref name="detours"/> times, each walk bounded by
+    /// <paramref name="seconds"/>. MP run 16 and 12: a 2.5 m sidestep that swapped sides every try, judged by one ray at
+    /// chest height, left A boxed in at the airport spawn for 75 s and pacing a wall 12 m short of the kiosk.
     /// </summary>
     IEnumerator MpWalkAround(Func<Vector3> target, float stop, float seconds, int detours = 3)
     {
         var c = Character.localCharacter;
+        float side = 1f;
         for (int i = 0; ; i++)
         {
             yield return MpWalkBounded(target, stop, seconds);
@@ -1151,21 +1154,49 @@ internal sealed partial class SelfTestRunner
             to.y = 0f;
             if (to.sqrMagnitude < 1e-4f)
                 yield break;
-            var side = Vector3.Cross(Vector3.up, to.normalized) * (i % 2 == 0 ? 1f : -1f);
-            var chest = c.Center + Vector3.up * 0.3f;
-            if (
-                Physics.Raycast(
-                    chest,
-                    side,
-                    2.5f,
-                    HelperFunctions.AllPhysicalExceptCharacter,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
-                side = -side;
-            var aside = c.Center + side * 2.5f;
+            if (ClearHeading(c, to.normalized, ref side) is not { } dir)
+                yield break;
+            var aside = c.Center + dir * MpDetourStep;
             yield return MpWalkBounded(() => aside, 0.4f, 4f);
         }
+    }
+
+    /// <summary>How far one detour walks (m).</summary>
+    const float MpDetourStep = 3f;
+
+    /// <summary>
+    /// The heading nearest <paramref name="goal"/> (flat, normalised) that a body can walk <see cref="MpDetourStep"/>
+    /// along: a capsule from knee to chest height swept 30 to 150 degrees off the goal, <paramref name="side"/> first at
+    /// each angle (+1 turns right). Sets <paramref name="side"/> to the side taken; null when every heading is shut.
+    /// </summary>
+    static Vector3? ClearHeading(Character c, Vector3 goal, ref float side)
+    {
+        var top = c.Center + Vector3.up * 0.3f;
+        var bottom = c.Center + Vector3.down * 0.4f;
+        for (int a = 30; a <= 150; a += 30)
+        {
+            for (int k = 0; k < 2; k++)
+            {
+                float s = k == 0 ? side : -side;
+                var dir = Quaternion.Euler(0f, s * a, 0f) * goal;
+                if (
+                    !Physics.CapsuleCast(
+                        top,
+                        bottom,
+                        0.25f,
+                        dir,
+                        MpDetourStep,
+                        HelperFunctions.AllPhysicalExceptCharacter,
+                        QueryTriggerInteraction.Ignore
+                    )
+                )
+                {
+                    side = s;
+                    return dir;
+                }
+            }
+        }
+        return null;
     }
 
     IEnumerator MpTwoHand()
@@ -1223,22 +1254,32 @@ internal sealed partial class SelfTestRunner
         // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
         // rejoined, and the item left the mouth).
         var grip = HeldGrip.Of(rig, Script(left), item);
-        // First a squeeze just beside the mouth, 0.32 m out toward A, outside the feed zone: it must not feed and must
-        // say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
+        // First a squeeze just beside the mouth, 0.32 m out to the holding hand's side, outside the feed zone: it must
+        // not feed and must say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
+        // To the side, not toward A (MP run 12, #93): out toward A the item's offset put the hand in the host's face
+        // (its controller bone 0.15 m from their head), which held it 0.27 m off its controller until the weld let go,
+        // and the bag's near end came toward A's own mouth, where a squeeze is an eat try and stays quiet
+        // (HeldGestures.AwayFromMouth): the press counts only clear of it.
         float bandMark = -1f;
         float placedFor = 0f;
         float bandEnd = Now + 4f;
         // How far out the item's centre is held: adjusted so its nearest point (the zone's measure,
         // SocialHands.FeedGap) sits 0.26-0.42 m off the mouth whatever its length.
         float standoff = 0.32f;
+        var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
+        float ownGap = 0f;
+        string pressNote = null;
         while (Now < bandEnd && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
-            var towardA = rig.Head.position - mouthNow;
-            towardA.y = 0f;
-            var target =
-                mouthNow
-                + (towardA.sqrMagnitude > 1e-4f ? towardA.normalized : Vector3.forward) * standoff;
+            var toHost = mouthNow - rig.Head.position;
+            toHost.y = 0f;
+            var side =
+                Vector3.Cross(
+                    Vector3.up,
+                    toHost.sqrMagnitude > 1e-4f ? toHost.normalized : Vector3.forward
+                ) * (left ? -1f : 1f);
+            var target = mouthNow + side * standoff;
             var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
             bandGoal =
                 VRInput.HeadPosition
@@ -1249,12 +1290,32 @@ internal sealed partial class SelfTestRunner
                 standoff = Mathf.Min(0.6f, standoff + 0.01f);
             else if (d > 0.4f)
                 standoff = Mathf.Max(0.05f, standoff - 0.01f);
-            placedFor = d > 0.26f && d < 0.42f ? placedFor + Time.unscaledDeltaTime : 0f;
+            if (holdHand != null)
+                ownGap = PeakXR.Interact.Physical.HeldGestures.OwnMouthGap(
+                    holdHand,
+                    left,
+                    PeakXR.Interact.Physical.HeldGestures.OwnMouth(rig.Head)
+                );
+            placedFor =
+                d > 0.26f
+                && d < 0.42f
+                && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
+                    ? placedFor + Time.unscaledDeltaTime
+                    : 0f;
             if (bandMark < 0f && placedFor >= 0.5f)
             {
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
             }
+            // What the refusal reads (HeldGestures.MouthHint), the frame after the press's use pass.
+            if (
+                bandMark >= 0f
+                && pressNote == null
+                && PeakXR.Interact.PhysicalInteraction.UsePressed(left)
+            )
+                pressNote = F(
+                    $"at the press: gap {d:0.00} m to the host's mouth, {ownGap:0.00} m to A's own, hand-over owns the trigger {Social.SocialHands.Instance.HandOverOwnsTrigger}"
+                );
             if (bandMark >= 0f && CueMark() - bandMark >= 0.4f)
                 break;
             yield return null;
@@ -1263,7 +1324,9 @@ internal sealed partial class SelfTestRunner
         if (bandMark < 0f)
         {
             Fail(
-                "the food never rested 0.26-0.42 m from the host's mouth for the beside-the-mouth squeeze"
+                F(
+                    $"the food never rested 0.26-0.42 m from the host's mouth, clear of A's own ({ownGap:0.00} m), for the beside-the-mouth squeeze"
+                )
             );
             yield break;
         }
@@ -1274,7 +1337,10 @@ internal sealed partial class SelfTestRunner
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
         if (!stepOk)
+        {
+            failNote += "; " + (pressNote ?? "the trigger made no use press (muted)");
             yield break;
+        }
         var bandCue = cueNote;
         yield return Wait(0.3f);
         while (
@@ -2616,15 +2682,32 @@ internal sealed partial class SelfTestRunner
     /// the step past 40 s).</summary>
     const float MpPackWalkSeconds = 8f;
 
-    /// <summary>The pack step's budget from its parts: the settle (recentre about 4 s, stillness up to 6 s, a slope
+    /// <summary>The pack step's budget from its parts: the host asked to wear a pack (an ack within 5 s, the slot within
+    /// 3 s), the settle (recentre about 4 s, stillness up to 6 s, a slope
     /// walk), freeing the hands (about 3 s), three bounded walks, turning and reaching (about 1 s) and the hold check
     /// (2 s), with a margin.</summary>
-    const float MpPackBudget = 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
+    const float MpPackBudget = 8f + 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
+
+    /// <summary>A vanilla host never wears a pack (MP run 12, #94): ask B to put one on (<see cref="MpRequest.WearPack"/>)
+    /// and wait until A's copy of B's backpack slot shows it (Player.AddItem syncs it, Player.cs:113-114).</summary>
+    IEnumerator HostWearsPack()
+    {
+        var host = Host();
+        if (host == null || SocialHands.WearsPack(host))
+            yield break;
+        yield return Ask(MpRequest.WearPack);
+        if (stepSkip != null)
+            yield break;
+        yield return WaitFor(() => host == null || SocialHands.WearsPack(host), 3f);
+    }
 
     /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
     /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
     IEnumerator MpPack()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null
@@ -2634,8 +2717,7 @@ internal sealed partial class SelfTestRunner
         // invisible pack on a host who had none).
         if (visuals == null || !SocialHands.WearsPack(host))
         {
-            stepSkip =
-                "the host wears no pack (vanilla B can only put one on by picking one up, which takes more than local input)";
+            stepSkip = "the host wears no pack";
             yield break;
         }
         yield return FreeHands();
@@ -2746,6 +2828,9 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator MpPackStash()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null
@@ -2838,6 +2923,9 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator MpPointFriendPack()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null

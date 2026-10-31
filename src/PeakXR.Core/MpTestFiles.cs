@@ -233,8 +233,21 @@ public static class MpRequest
     /// checkpoint.</summary>
     public const string StartClimb = "start-climb";
 
+    /// <summary>Put a backpack on B's back: one spawned at B's feet as the game's spawners do, then worn with the
+    /// backpack wheel's own Wear (a vanilla host never wears one otherwise).</summary>
+    public const string WearPack = "wear-pack";
+
     public static bool Known(string what) =>
-        what is PassOut or Web or Wake or Crouch or Stand or StandOn or HangBelow or StartClimb;
+        what
+            is PassOut
+                or Web
+                or Wake
+                or Crouch
+                or Stand
+                or StandOn
+                or HangBelow
+                or StartClimb
+                or WearPack;
 
     public static string Line(int id, string what, double t) =>
         new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();

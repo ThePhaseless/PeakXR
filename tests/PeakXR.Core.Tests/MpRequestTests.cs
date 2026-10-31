@@ -37,5 +37,6 @@ public class MpRequestTests
         Assert.True(MpRequest.Known(MpRequest.Wake));
         Assert.True(MpRequest.Known(MpRequest.HangBelow));
         Assert.True(MpRequest.Known(MpRequest.StartClimb));
+        Assert.True(MpRequest.Known(MpRequest.WearPack));
     }
 }
