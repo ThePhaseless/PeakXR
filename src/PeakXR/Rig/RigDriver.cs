@@ -1600,6 +1600,8 @@ internal sealed class RigDriver : MonoBehaviour
             Speed = d.avarageVelocity.magnitude,
             Jumping = d.isJumping || (c.input != null && c.input.jumpWasPressed),
             RoomWalking = FollowWalking,
+            Outside =
+                Time.time - Locomotion.LocomotionInput.OutsideForceAt < ViewHoldGate.OutsideSeconds,
         };
     }
 

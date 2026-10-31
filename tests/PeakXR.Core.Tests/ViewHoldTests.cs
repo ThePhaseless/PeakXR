@@ -224,6 +224,28 @@ public class ViewHoldTests
     }
 
     [Fact]
+    public void BodySpringingBackAfterAPush_TakesTheViewAlong()
+    {
+        // Run 11, vr.304: a push slid the standing body 0.18 m, and over the next 2.5 s it crept 0.13 m back toward its
+        // planted feet at 0.03-0.09 m/s, slower than idle sway closes the gate. The hold kept the view off it up to the
+        // deadband: view and body ended 0.051 m apart. Outside forces move body and view together, the tail too.
+        var hold = new ViewHold();
+        var body = Vector3.Zero;
+        float dt = 1f / 72f;
+        hold.Update(body, true, dt);
+        float worst = 0f;
+        for (float t = 0f; t < 2.6f; t += dt)
+        {
+            var i = Calm();
+            i.Outside = t < ViewHoldGate.OutsideSeconds;
+            body.X -= 0.05f * MathF.Exp(-t / 2f) * dt;
+            var view = hold.Update(body, ViewHoldGate.Why(i) == null, dt);
+            worst = MathF.Max(worst, (view - body).Length());
+        }
+        Assert.True(worst < 0.01f, $"view {worst:0.000} m off the body");
+    }
+
+    [Fact]
     public void Gate_SteadyHeldLean_Holds()
     {
         // A lean held still bends the body but moves nothing: the bend alone no longer closes the gate.
