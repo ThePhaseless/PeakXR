@@ -270,6 +270,7 @@ public static class SelfTestIds
         "vr.33-ragdoll-arms",
         "vr.34-blind",
         "vr.40-physical-crouch",
+        "vr.400-bugle-turned",
         "vr.41-arm-swing-sprint",
         "vr.42-rope-hand-over-hand",
         "vr.42b-rope-pump",
