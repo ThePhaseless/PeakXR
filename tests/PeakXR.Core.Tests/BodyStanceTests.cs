@@ -772,6 +772,44 @@ public class StanceWalkTests
             w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt);
     }
 
+    /// <summary>Holds the debt with the feet still under the body, then pushes the body along +x at 0.5 m/s, its
+    /// feet planted (<paramref name="planted"/>) or stepping along under it; the debt when the push ends.</summary>
+    static float PushOnFeet(bool planted, bool seen)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        var stand = new Vector2(0f, -0.04f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, seen ? stand : default);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        float travel = 0f;
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
+        {
+            var feet = stand - (planted ? new Vector2(travel, 0f) : Vector2.Zero);
+            w.Update(debt, new Vector2(0.5f, 0f), 0f, canWalk: true, Dt, seen ? feet : default);
+            debt.X -= 0.5f * Dt;
+            travel += 0.5f * Dt;
+        }
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        return debt.X;
+    }
+
+    [Fact]
+    public void FeetLeftBehind_ThePushWalksOnPastTheView_ByAtMostFeetLead()
+    {
+        // Run 15: follow-up and backward pushes closed to 0.04-0.07 m and sprang back 0.12-0.25 m, each time to the same
+        // spot (vr.273: the body back at -373.27, -373.23, -373.23 after three pushes): the feet, which never stepped,
+        // and the body settles over them. Walking on while they trail gives the gait time to step them.
+        var w = new StanceWalk();
+        float coast = 0.5f * (w.CoastSeconds + Dt);
+        float stepping = PushOnFeet(planted: false, seen: true);
+        Assert.True(stepping > coast - w.Stop - 0.01f, $"feet stepping: ended at {stepping:0.000}");
+        Assert.Equal(stepping, PushOnFeet(planted: false, seen: false), 3);
+        float behind = PushOnFeet(planted: true, seen: true);
+        Assert.True(behind < 0f, $"feet behind: ended at {behind:0.000}, before the view");
+        Assert.True(behind > coast - w.FeetLead - 0.01f, $"feet behind: ran on to {behind:0.000}");
+    }
+
     [Fact]
     public void BodyThatSpringsBack_WhileTheHeadDrifts_GivesUp()
     {

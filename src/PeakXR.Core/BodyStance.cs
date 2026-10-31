@@ -131,6 +131,12 @@ public sealed class StanceWalk
     /// <summary>A push aims to bring the body to rest this close (m) to the view.</summary>
     public float Stop = 0.03f;
 
+    /// <summary>Most (m) a push walks the body on past its coast while its feet trail it. A body settles over its feet, so
+    /// a push that slid it over planted feet sprang back onto them (run 15: follow-up and backward pushes closed to
+    /// 0.04-0.07 m and came back 0.12-0.25 m, each time to the same spot); walking on gives the gait time to step them.
+    /// That the spot is the feet is read from the trace, not measured (#52): the stance trace logs the feet's trail.</summary>
+    public float FeetLead = 0.1f;
+
     /// <summary>Seconds a debt must hold still (within <see cref="Start"/>) before it is walked.</summary>
     public float Delay = 1.5f;
 
@@ -202,6 +208,10 @@ public sealed class StanceWalk
     /// <summary>How far (m) the body came back over that settle from the most headway of its push.</summary>
     public float SpringBack { get; private set; }
 
+    /// <summary>How far (m) the feet trail the body along the current or last push, from where they stood under the
+    /// still body, for the trace.</summary>
+    public float FeetBehind { get; private set; }
+
     Vector2 _blockedAt;
     Vector2 _heldAt;
     float _heldFor;
@@ -215,6 +225,9 @@ public sealed class StanceWalk
     float _mostHeadway;
     Vector2 _settleDebt;
     Vector2 _settleTravel;
+    Vector2 _feet;
+    Vector2 _feetStand;
+    bool _haveStand;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
@@ -245,10 +258,25 @@ public sealed class StanceWalk
     /// <param name="velocity">The body's level velocity, in the frame of <paramref name="debt"/> (m/s).</param>
     /// <param name="eased">The game's eased move input, length 0..1 (worldMovementInput_Lerp).</param>
     /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
+    /// <param name="feet">The feet's level midpoint less the body's point, in the frame of <paramref name="debt"/> (m);
+    /// zero when unknown. Only its change from a still body counts.</param>
     /// <returns>Requested move input in the frame of <paramref name="debt"/>, length 0..1.</returns>
-    public Vector2 Update(Vector2 debt, Vector2 velocity, float eased, bool canWalk, float dt)
+    public Vector2 Update(
+        Vector2 debt,
+        Vector2 velocity,
+        float eased,
+        bool canWalk,
+        float dt,
+        Vector2 feet = default
+    )
     {
         float dist = debt.Length();
+        _feet = feet;
+        if (State == StanceWalkPhase.Idle && velocity.Length() < StillSpeed)
+        {
+            _feetStand = feet;
+            _haveStand = true;
+        }
         if (!canWalk)
         {
             // A moment the body can't be walked (a push, the stick, a mantle) keeps a rested leftover the lean's:
@@ -295,6 +323,7 @@ public sealed class StanceWalk
                 return Vector2.Zero;
             case StanceWalkPhase.Settle:
                 _stallFor = velocity.Length() < StillSpeed ? _stallFor + dt : 0f;
+                FeetBehind = -Vector2.Dot(_feet - _feetStand, _heading);
                 Headway = _headway;
                 SpringBack = _mostHeadway - _headway;
                 if (dist <= AtOnce)
@@ -339,6 +368,8 @@ public sealed class StanceWalk
         PushFrom = Closest = _best = dist;
         _stallFor = 0f;
         _heading = debt / dist;
+        if (!_haveStand)
+            _feetStand = _feet;
         _travel = Vector2.Zero;
         _headway = _mostHeadway = 0f;
         return Pushing(debt, velocity, eased, dt);
@@ -350,6 +381,9 @@ public sealed class StanceWalk
         // Where the body stops if the request ends now; the debt is a frame old (the rig measures it in LateUpdate).
         var rest =
             debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
+        // The body settles over its feet: feet trailing it pull it back after the coast, so walk on (FeetLead at most).
+        FeetBehind = -Vector2.Dot(_feet - _feetStand, _heading);
+        rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
         float restDist = rest.Length();
         float along = Vector2.Dot(rest, _heading);
         // Done once the body would come to rest under the view, but not before the gait has stepped; before that only
