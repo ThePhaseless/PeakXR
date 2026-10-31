@@ -451,6 +451,8 @@ internal static class LocomotionInput
         float toTracking = 1f / Mathf.Max(rig.Scale, 0.01f);
         var worldDebt = RigDriver.StanceDebt * toTracking;
         var levelVelocity = bodyVelocity * toTracking;
+        var phase = Stance.State;
+        float phaseFor = Stance.PhaseSeconds;
         var worldRequest = Stance.Update(
             new NVector2(worldDebt.x, worldDebt.z),
             new NVector2(levelVelocity.x, levelVelocity.z),
@@ -458,6 +460,8 @@ internal static class LocomotionInput
             canFollow && !outside,
             dt
         );
+        if (Stance.State != phase)
+            TraceStance(phase, phaseFor, debt.Length(), worldRequest.Length());
         var request3 =
             Quaternion.Inverse(rig.Origin.rotation)
             * new Vector3(worldRequest.X, 0f, worldRequest.Y);
@@ -505,6 +509,19 @@ internal static class LocomotionInput
             );
         }
         return stick;
+    }
+
+    /// <summary>Lean trace only: one line per stance walk phase change (push, settle, done, given up), so a run shows
+    /// each push's length and how far the body sprang back after it (run 10: walks of a few frames, 85 % back).</summary>
+    private static void TraceStance(StanceWalkPhase from, float seconds, float debt, float request)
+    {
+        if (Time.unscaledTime >= RigDriver.TraceLeanUntil && !Diagnostics.DebugLog.Verbose)
+            return;
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}"
+            )
+        );
     }
 
     /// <summary>Trace only: the parts' mass-weighted velocity with the arms left out (the walk's input before
