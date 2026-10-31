@@ -1613,12 +1613,13 @@ internal sealed class RigDriver : MonoBehaviour
     private ViewHoldInputs viewHoldIn;
     private float groundY = float.NaN;
 
-    /// <summary>The terrain under the view root (<see cref="ViewRoot"/>, which a bend cannot move), NaN without any
-    /// within reach: what <see cref="ViewHeight"/> keeps the view's height over. Traced.</summary>
+    /// <summary>The terrain under the feet (<see cref="FeetMid"/>), NaN without any within reach: what
+    /// <see cref="ViewHeight"/> keeps the view's height over. A lean leaves the feet planted; under the hip, which a
+    /// bend slides back, the ray read 0.127 m of sand in vr.45's leans and the view followed it (#107, run 15). Traced.</summary>
     private float GroundUnder(Character c)
     {
         groundY = Physics.Raycast(
-            ViewRoot(c) + Vector3.up * 0.3f,
+            FeetMid(c) + Vector3.up * 0.3f,
             Vector3.down,
             out var hit,
             3f,
@@ -1740,6 +1741,22 @@ internal sealed class RigDriver : MonoBehaviour
         rootFrame = Time.frameCount;
         rootCached = centre.Root(hip.transform.position.y).U() + (c.VirtualCenter - c.Center);
         return rootCached;
+    }
+
+    /// <summary>Midpoint of the feet as drawn (the interpolated pose, on <see cref="ViewRoot"/>'s virtual offset), or
+    /// <see cref="ViewRoot"/> without them: where the body stands, which a lean does not move.</summary>
+    internal static Vector3 FeetMid(Character c)
+    {
+        var parts = c.refs.ragdoll != null ? c.refs.ragdoll.partDict : null;
+        if (
+            parts == null
+            || !parts.TryGetValue(BodypartType.Foot_L, out var l)
+            || !parts.TryGetValue(BodypartType.Foot_R, out var r)
+            || l == null
+            || r == null
+        )
+            return ViewRoot(c);
+        return (l.transform.position + r.transform.position) * 0.5f + (c.VirtualCenter - c.Center);
     }
 
     /// <summary>
