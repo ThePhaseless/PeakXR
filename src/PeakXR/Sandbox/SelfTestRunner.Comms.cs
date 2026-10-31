@@ -232,16 +232,22 @@ internal sealed partial class SelfTestRunner
         yield return PingCooldownOver(pinger);
         float before = PingInput.LastPinged(pinger);
         float mark = CueMark();
+        int emotes = GestureEmotes.PlayCount;
         yield return PointAim(left, aim, 0.5f);
         bool preview = PingPreview.DotShown;
         yield return PointSqueeze(left, aim);
         yield return Wait(0.5f);
         bool pinged = PingInput.LastPinged(pinger) != before;
         yield return GripTo(left, 0f, 0.1f);
+        string emoted =
+            GestureEmotes.PlayCount != emotes ? $", emote {GestureEmotes.LastPlayed} played" : "";
         yield return ExpectNoCue(left, mark, 0f);
         if (!stepOk)
+        {
+            failNote += emoted;
             yield break;
-        var note = $"aim preview {preview}, pinged {pinged}";
+        }
+        var note = $"aim preview {preview}, pinged {pinged}{emoted}";
         if (preview || pinged)
             Fail("pointing and squeezing the trigger still pings: " + note);
         else
@@ -1196,7 +1202,9 @@ internal sealed partial class SelfTestRunner
         }
     }
 
-    /// <summary>The index curls onto the trigger and squeezes, then lets go; the grip stays closed.</summary>
+    /// <summary>The index curls onto the trigger and squeezes, then lifts back off it to point; the grip stays
+    /// closed. An index left resting on the trigger with the thumb lifted is the thumbs-up fist, and held still for
+    /// <c>EmoteGestures.ThumbDwell</c> it plays the emote (run 11's vr.461 got its HappenedHere).</summary>
     IEnumerator PointSqueeze(bool left, Vector3 world)
     {
         var rig = VRRig.Instance;
@@ -1208,6 +1216,7 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
+        Script(left).TriggerTouch = false;
         yield return null;
     }
 
