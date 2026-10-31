@@ -58,10 +58,12 @@ public static class BodyStance
 /// <summary>
 /// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/>, once the debt has held still for
 /// <see cref="Delay"/> (a glance returns before the body moves) or at once past <see cref="AtOnce"/>, it asks for move
-/// input toward where the body would come to rest (the debt less its coast, <see cref="CoastSeconds"/>) until that is
-/// inside <see cref="Stop"/>, ramping down to <see cref="MinInput"/> as it closes, and ends once the body is also nearly
-/// still, so it neither overshoots nor stops short. A walk that makes no headway (a wall, a friend) gives up until the
-/// debt changes.
+/// input toward where the body would come to rest (the debt less its coast: <see cref="CoastSeconds"/> of drag and the
+/// game's eased input running down at <see cref="InputSlew"/>) until that is inside <see cref="Stop"/>, ramping down to
+/// <see cref="MinInput"/> as it closes, and ends once the body is also nearly still, so a stop short of the view carries
+/// on. A body that still coasts past the view gets no input back against its run; once it has slowed, the same walk
+/// turns and walks back. A walk that makes no headway (a wall, a friend, a body that keeps swinging past) gives up until
+/// the debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
@@ -84,13 +86,18 @@ public sealed class StanceWalk
     /// 1.6 s made no headway), and its coast at this pace stays inside the stop distance.</summary>
     public float MinInput = 0.35f;
 
-    /// <summary>Seconds of travel the body coasts at its speed once the request stops: PEAK's drag of 0.85 a 50 Hz step
-    /// (CharacterMovement.cs:48, Bodypart.cs:214-225) leaves v x 0.11 s, plus the input's ease (Character.cs:1341).
-    /// cf6aa3e vr.45: walks stopped on the debt alone reached 2 m/s and coasted 0.1-0.16 m past the view.</summary>
-    public float CoastSeconds = 0.15f;
+    /// <summary>Seconds of travel the body coasts at its speed once its move input is gone: PEAK's drag of 0.85 a 50 Hz
+    /// step (CharacterMovement.cs:48, Bodypart.cs:214-225) leaves v x 0.11 s. cf6aa3e vr.45: walks stopped on the debt
+    /// alone reached 2 m/s and coasted 0.1-0.16 m past the view.</summary>
+    public float CoastSeconds = 0.11f;
 
     /// <summary>Level speed (m/s) under which a walk whose coast has closed the debt ends.</summary>
     public float StillSpeed = 0.1f;
+
+    /// <summary>How fast (a second) the game eases its move input toward the stick: movementTurnSpeed
+    /// (CharacterMovement.cs:50, Character.cs:1336-1341; set live). An eased input u runs down for u / slew seconds after
+    /// the request ends, still pushing, which adds v x u / (2 slew) to the coast: 0.25 s at full input.</summary>
+    public float InputSlew = 2f;
 
     /// <summary>Seconds after a walk during which the body's coast still belongs to it.</summary>
     public float SettleSeconds = 0.5f;
@@ -107,6 +114,8 @@ public sealed class StanceWalk
     Vector2 _blockedAt;
     Vector2 _heldAt;
     float _heldFor;
+    Vector2 _heading;
+    bool _turned;
 
     /// <summary>The last walk stalled; it waits for the debt to change.</summary>
     public bool Blocked { get; private set; }
@@ -116,9 +125,10 @@ public sealed class StanceWalk
 
     /// <param name="debt">What is owed, tracking x, z (m).</param>
     /// <param name="velocity">The body's level velocity, tracking x, z (m/s).</param>
+    /// <param name="eased">The game's eased move input, length 0..1 (worldMovementInput_Lerp).</param>
     /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
     /// <returns>Requested move input in tracking space, length 0..1.</returns>
-    public Vector2 Update(Vector2 debt, Vector2 velocity, bool canWalk, float dt)
+    public Vector2 Update(Vector2 debt, Vector2 velocity, float eased, bool canWalk, float dt)
     {
         float dist = debt.Length();
         if (!canWalk)
@@ -136,15 +146,29 @@ public sealed class StanceWalk
         if (Blocked && Vector2.Distance(debt, _blockedAt) > Start)
             Blocked = false;
         bool start = !_walking && !Blocked && dist > Start && (dist > AtOnce || _heldFor >= Delay);
-        // Where the body stops if the request ends now.
-        var rest = debt - velocity * CoastSeconds;
+        // Where the body stops if the request ends now; the debt is a frame old (the rig measures it in LateUpdate).
+        var rest =
+            debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
         float restDist = rest.Length();
-        _walking =
-            !Blocked && (_walking ? restDist > Stop || velocity.Length() > StillSpeed : start);
-        if (start || (_walking && dist < _best - StallProgress))
+        float speed = velocity.Length();
+        _walking = !Blocked && (_walking ? restDist > Stop || speed > StillSpeed : start);
+        if (start)
+        {
+            _heading = debt / dist;
+            _turned = false;
+        }
+        // Coasting past the debt: no input back against the body's run (peers would see it brake on the spot) until it
+        // has slowed, then the walk turns back.
+        bool back = Vector2.Dot(rest, _heading) < 0f;
+        bool ask = _walking && restDist > Stop && (!back || speed <= StillSpeed);
+        // The walk back's headway counts from where it turned. Only the first turn: a body that keeps swinging past
+        // the view stalls and gives up instead of shuffling back and forth.
+        bool turn = ask && back && !_turned;
+        if (start || turn || (_walking && dist < _best - StallProgress))
         {
             _best = dist;
             _stallFor = 0f;
+            _turned |= turn;
         }
         else if (_walking && (_stallFor += dt) >= StallSeconds)
         {
@@ -152,18 +176,18 @@ public sealed class StanceWalk
             _blockedAt = debt;
             _walking = false;
             _sinceWalk = float.MaxValue;
+            ask = false;
         }
         if (_walking)
             _sinceWalk = 0f;
         else if (_sinceWalk < float.MaxValue)
             _sinceWalk += dt;
         Walking = _walking || _sinceWalk < SettleSeconds;
-        // Coasting past the debt: no input back against the body's run (peers would see it brake on the spot); a
-        // stop that ends past it walks back once the body is still.
-        if (!_walking || restDist <= Stop || Vector2.Dot(rest, debt) < 0f)
+        if (!ask)
             return Vector2.Zero;
+        _heading = rest / restDist;
         float amount = Ramp > 0f ? (restDist - Stop) / Ramp : 1f;
-        return rest / restDist * Math.Clamp(amount, MinInput, 1f);
+        return _heading * Math.Clamp(amount, MinInput, 1f);
     }
 
     /// <summary>Forget the walk (the body cannot be walked, or the view was placed again).</summary>
