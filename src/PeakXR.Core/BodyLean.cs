@@ -61,20 +61,16 @@ public static class BodyLean
             return false;
         float pitch0 = MathF.Atan2(Vector3.Dot(from, forward), fu) * Rad2Deg;
         float roll0 = MathF.Atan2(Vector3.Dot(from, right), fu) * Rad2Deg;
-        float pitch =
-            pitch0
-            + Math.Clamp(
-                MathF.Atan2(Vector3.Dot(to, forward), tu) * Rad2Deg - pitch0,
-                -MaxBackDeg,
-                MaxForwardDeg
-            );
-        float roll =
-            roll0
-            + Math.Clamp(
-                MathF.Atan2(Vector3.Dot(to, right), tu) * Rad2Deg - roll0,
-                -MaxSideDeg,
-                MaxSideDeg
-            );
+        float dp = MathF.Atan2(Vector3.Dot(to, forward), tu) * Rad2Deg - pitch0;
+        float dr = MathF.Atan2(Vector3.Dot(to, right), tu) * Rad2Deg - roll0;
+        // Each direction's limit bounds the whole bend toward it (an elliptic cone): clamped apart, a sideways lean
+        // with the eyes ahead of the head bent 25 sideways and 9 back at once, 26.7 degrees (run 15, vr.45).
+        float e = MathF.Sqrt(
+            MathF.Pow(dp / (dp >= 0f ? MaxForwardDeg : MaxBackDeg), 2f)
+                + MathF.Pow(dr / MaxSideDeg, 2f)
+        );
+        float pitch = pitch0 + (e > 1f ? dp / e : dp);
+        float roll = roll0 + (e > 1f ? dr / e : dr);
         var dir = up + MathF.Tan(pitch * Deg2Rad) * forward + MathF.Tan(roll * Deg2Rad) * right;
         swing = GripMath.FromTo(from, dir);
         return true;
