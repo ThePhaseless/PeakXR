@@ -123,11 +123,12 @@ public sealed class StanceWalk
     /// <summary>The body's travel is the walk's: walking, or settling from it.</summary>
     public bool Walking { get; private set; }
 
-    /// <param name="debt">What is owed, tracking x, z (m).</param>
-    /// <param name="velocity">The body's level velocity, tracking x, z (m/s).</param>
+    /// <param name="debt">What is owed, world-heading x, z (m): a fixed frame, so a snap or smooth turn mid-walk leaves the
+    /// walk's heading valid.</param>
+    /// <param name="velocity">The body's level velocity, in the frame of <paramref name="debt"/> (m/s).</param>
     /// <param name="eased">The game's eased move input, length 0..1 (worldMovementInput_Lerp).</param>
     /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
-    /// <returns>Requested move input in tracking space, length 0..1.</returns>
+    /// <returns>Requested move input in the frame of <paramref name="debt"/>, length 0..1.</returns>
     public Vector2 Update(Vector2 debt, Vector2 velocity, float eased, bool canWalk, float dt)
     {
         float dist = debt.Length();

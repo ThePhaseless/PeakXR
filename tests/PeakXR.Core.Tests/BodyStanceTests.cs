@@ -420,6 +420,37 @@ public class StanceWalkTests
     }
 
     [Fact]
+    public void RigTurnedAroundMidWalk_KeepsWalking_AndStillWalksBackOnce()
+    {
+        // The walk is fed in the world frame (level), so a 180-degree snap or smooth turn of the tracking space mid-walk
+        // changes none of its inputs. Fed in tracking space, the turn flipped the debt against the walk's heading: it
+        // read as an overshoot, stopped asking and used up its one walk back, so the real overshoot later stalled.
+        // (Verified red by negating the debt and velocity after the turn, as the tracking-space feed did.)
+        var w = new StanceWalk();
+        var debt = new Vector2(0.6f, 0f);
+        for (float t = 0f; t < 2f && debt.X > 0.3f; t += Dt)
+        {
+            var request = w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt);
+            debt.X -= request.X * Dt;
+        }
+        // The rig turns 180 degrees here: the world-frame inputs carry on unchanged.
+        var turned = w.Update(debt, new Vector2(1f, 0f), 0f, canWalk: true, Dt);
+        Assert.True(turned.X > 0f, "walk stopped at the turn");
+        // Then the body coasts 0.15 m past the view for 1 s and is walked back slowly, as in OvershotWalk_WalksBack.
+        w.Update(Vector2.Zero, new Vector2(1f, 0f), 0f, canWalk: true, Dt);
+        for (float t = 0f; t < 1f; t += Dt)
+            w.Update(new Vector2(-0.15f, 0f), new Vector2(0.2f, 0f), 0f, canWalk: true, Dt);
+        debt = new Vector2(-0.15f, 0f);
+        while (debt.X < -w.Stop - 0.01f)
+        {
+            var request = w.Update(debt, new Vector2(-0.05f, 0f), 0f, canWalk: true, Dt);
+            Assert.True(request.X < 0f, $"no walk back at {debt.X:0.000} m");
+            Assert.False(w.Blocked);
+            debt.X += 0.05f * Dt;
+        }
+    }
+
+    [Fact]
     public void WalkThatKeepsOvershooting_GivesUp()
     {
         // Only the first turn starts the headway over: a body that keeps swinging past the view (a coast the walk
