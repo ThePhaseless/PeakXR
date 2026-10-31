@@ -2266,22 +2266,43 @@ internal sealed partial class SelfTestRunner
         return Vector3.Distance(shoulder, target) - SocialConfig.Instance.Reach - MpShoulderReach;
     }
 
-    /// <summary>Up to two steps in toward <paramref name="target"/> while it lies past a real arm's reach
-    /// (<see cref="PastArm"/>), as the solo steps do; each goes as far as it is past reach, bounded, then faces
-    /// <paramref name="face"/>.</summary>
+    /// <summary>Up to three steps in toward <paramref name="target"/> while it lies past a real arm's reach
+    /// (<see cref="PastArm"/>), as the solo steps do; each goes the level distance that brings it within reach
+    /// (<see cref="LevelStepIn"/>), bounded, then faces <paramref name="face"/>.</summary>
     IEnumerator StepInToReach(bool left, Func<Vector3> target, Func<Vector3> face)
     {
         var c = Character.localCharacter;
-        for (int i = 0; i < 2 && PastArm(left, target()) > 0f; i++)
+        for (int i = 0; i < 3 && PastArm(left, target()) > 0f; i++)
         {
             var toward = target() - c.Center;
             toward.y = 0f;
-            float step = PastArm(left, target()) + 0.1f;
+            float step = LevelStepIn(left, target()) + 0.1f;
             var to = c.Center + toward.normalized * Mathf.Min(step, toward.magnitude);
             yield return MpWalkBounded(() => to, 0.1f, 3f);
             Face(face());
             yield return Wait(0.3f);
         }
+    }
+
+    /// <summary>The level distance (m) to walk in so the shoulder comes within a real arm's reach of
+    /// <paramref name="world"/>. Part of the gap can be height, which a level step closes only by its cosine (MP run
+    /// 14, #100: two steps of the 3D excess left the host's pack 0.14 m past reach).</summary>
+    static float LevelStepIn(bool left, Vector3 world)
+    {
+        ShoulderGap(left, world, out float level, out float up);
+        float reach = SocialConfig.Instance.Reach + MpShoulderReach;
+        return Mathf.Max(0f, level - Mathf.Sqrt(Mathf.Max(0f, reach * reach - up * up)));
+    }
+
+    /// <summary>The shoulder's gap to <paramref name="world"/> on the level and in height (tracking space, as
+    /// <see cref="PastArm"/>).</summary>
+    static void ShoulderGap(bool left, Vector3 world, out float level, out float up)
+    {
+        HeadFrame(out var head, out _, out var right);
+        var shoulder = head + Vector3.down * 0.25f + (left ? -right : right) * 0.18f;
+        var to = VRRig.Instance.Origin.InverseTransformPoint(world) - shoulder;
+        level = new Vector2(to.x, to.z).magnitude;
+        up = to.y;
     }
 
     /// <summary>A grip closes on the host's right hand (where a helping hand goes). A hand out of a real arm's reach
@@ -3040,9 +3061,15 @@ internal sealed partial class SelfTestRunner
         float past = PastArm(left, visuals.transform.position);
         if (past > 0f)
         {
-            stepSkip = F($"the host's pack is {past:0.00} m past a real arm's reach");
+            ShoulderGap(left, visuals.transform.position, out float level, out float up);
+            stepSkip = F(
+                $"the host's pack is {past:0.00} m past a real arm's reach ({level:0.00} m out, {up:+0.00;-0.00} m up from the shoulder)"
+            );
             yield break;
         }
+        // The stash destroys the held instance, and a destroyed object's name throws (MP run 14, #100).
+        string itemName = item.name;
+        ushort itemId = item.itemID;
         var stash = Inventory.PackStash.Instance;
         yield return MoveTo(left, () => visuals.transform.position, 0.6f);
         yield return Until(
@@ -3067,12 +3094,12 @@ internal sealed partial class SelfTestRunner
             && pocket < slots.Length
             && slots[pocket] != null
             && !slots[pocket].IsEmpty()
-            && slots[pocket].prefab.itemID == item.itemID;
+            && slots[pocket].prefab.itemID == itemId;
         if (!inPocket)
-            Fail(F($"{item.name} is not in pocket {pocket} of the host's pack"));
+            Fail(F($"{itemName} is not in pocket {pocket} of the host's pack"));
         else
             stepNote = F(
-                $"{item.name} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
+                $"{itemName} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
             );
     }
 
@@ -3176,6 +3203,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         byte pocket = wheel.chosenSlice.Value.slotID;
+        // The stash destroys the held instance, and a destroyed object's name throws (MP run 14, #100).
+        string itemName = item.name;
+        ushort itemId = item.itemID;
         Script(free).Trigger = 0f;
         yield return Until(
             () => !c.data.usingBackpackWheel && HeldItem() == null,
@@ -3190,13 +3220,13 @@ internal sealed partial class SelfTestRunner
             pocket >= slots.Length
             || slots[pocket] == null
             || slots[pocket].IsEmpty()
-            || slots[pocket].prefab.itemID != item.itemID
+            || slots[pocket].prefab.itemID != itemId
         )
         {
-            Fail(F($"{item.name} is not in pocket {pocket} of the host's pack"));
+            Fail(F($"{itemName} is not in pocket {pocket} of the host's pack"));
             yield break;
         }
-        string stashed = F($"{item.name} went into pocket {pocket} of the host's pack");
+        string stashed = F($"{itemName} went into pocket {pocket} of the host's pack");
         // From the front: WrongAngle, and the pull opens nothing.
         yield return GrabReachable(
             i => i.UIData.canBackpack && i is not Backpack,
