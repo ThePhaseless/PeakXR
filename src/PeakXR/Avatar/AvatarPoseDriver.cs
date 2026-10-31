@@ -56,9 +56,18 @@ public partial class AvatarPoseDriver : MonoBehaviour
             ByCharacter.Remove(Character);
     }
 
-    public void SetPose(in AvatarPose pose)
+    /// <summary>The physical hip the world-space <see cref="Pose"/> was built against, if its writer gave one.</summary>
+    internal Vector3? PoseHip { get; private set; }
+
+    /// <param name="pose">The tracked pose, world space.</param>
+    /// <param name="builtOnHip">The physical hip the writer built <paramref name="pose"/> against (its frame's), so
+    /// the IK pass maps it onto the animated hip from the same point: a body moving between the writer's frame and
+    /// the physics step otherwise reads as a lean (run 12, vr.395: 0.05-0.1 m at 2.5 m/s, the spine bent 7.8 degrees
+    /// walking with the stick). Null uses the hip at the physics step.</param>
+    public void SetPose(in AvatarPose pose, Vector3? builtOnHip = null)
     {
         Pose = pose;
+        PoseHip = builtOnHip;
         LastPoseTime = Time.time;
     }
 }

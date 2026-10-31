@@ -77,6 +77,19 @@ public class BodyStanceTests
     }
 
     [Fact]
+    public void LeanBeyond_TheLeanBendsNoFurtherThanItsLimit()
+    {
+        // vr.396: a head walking away owed 0.41 m before the body caught up and the spine bent 20.7 degrees for it.
+        var share = new Vector3(0.3f, -0.05f, 0.4f);
+        var skip = BodyStance.LeanBeyond(share, 0.35f);
+        var bent = share - skip;
+        Assert.True(MathF.Abs(new Vector2(bent.X, bent.Z).Length() - 0.35f) < Tol);
+        Assert.Equal(0f, skip.Y);
+        Assert.True(Vector3.Dot(skip, share) > 0f);
+        Assert.Equal(Vector3.Zero, BodyStance.LeanBeyond(new Vector3(0.2f, 0f, 0.1f), 0.35f));
+    }
+
+    [Fact]
     public void LeanSkip_LookingDown_TheBodyNeverBendsForItsStepBack()
     {
         // Before the step (the whole step owed), halfway, and stepped back: no bend at any point.

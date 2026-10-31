@@ -526,7 +526,7 @@ internal static class LocomotionInput
             return;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m"
+                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m, slew {Stance.InputSlew:0.0}/s"
             )
         );
     }

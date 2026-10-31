@@ -76,8 +76,8 @@ internal sealed class RigDriver : MonoBehaviour
     internal static System.Action<Vector3> BodyAnchorMoved;
 
     /// <summary>World offset of the first-person view from the avatar's calibrated eyes that the lean leaves out:
-    /// follow lag and the view hold, a turn's shift, the crouch lift, and the step back while looking down
-    /// (<see cref="BodyStance.LeanSkip"/>). avatar.local leans the body from the head minus this, so the lean bends
+    /// follow lag and the view hold, a turn's shift, the crouch lift, the step back while looking down
+    /// (<see cref="BodyStance.LeanSkip"/>), and the head's offset past the lean limit (<see cref="BodyStance.LeanBeyond"/>). avatar.local leans the body from the head minus this, so the lean bends
     /// for the rest of <see cref="StanceDebt"/> while the stance walk is on its way. Zero while the view is
     /// elsewhere.</summary>
     internal static Vector3 ViewOffset;
@@ -1345,6 +1345,14 @@ internal sealed class RigDriver : MonoBehaviour
             + turnShift
             + Vector3.up * rig.CrouchLift
             + BodyStance.LeanSkip(StanceDebt.N(), bodyForward.N(), back).U();
+        // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
+        // further meanwhile (#97, vr.396: 0.41 m owed, 24 degrees).
+        ViewOffset += BodyStance
+            .LeanBeyond(
+                (view - ViewOffset - eye).N(),
+                Locomotion.LocomotionConfig.LeanRadius * rig.Scale
+            )
+            .U();
     }
 
     /// <summary>Self-test (vr.16): one line per frame of eye, rig and body yaw, torso and turn shift.</summary>
