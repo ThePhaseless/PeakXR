@@ -114,6 +114,24 @@ public static class ReachOut
 /// </summary>
 public sealed class ReachOutTracker
 {
+    readonly float acquireDegrees;
+    readonly float holdDegrees;
+    readonly float dwell;
+    readonly float grace;
+
+    /// <summary>The reach-out's own angles, dwell and grace (<see cref="ReachOut"/>).</summary>
+    public ReachOutTracker()
+        : this(ReachOut.AcquireDegrees, ReachOut.HoldDegrees, ReachOut.Dwell, ReachOut.Grace) { }
+
+    /// <summary>The same pick for another target (a pointed-at backpack, PackDrop.Point*).</summary>
+    public ReachOutTracker(float acquireDegrees, float holdDegrees, float dwell, float grace)
+    {
+        this.acquireDegrees = acquireDegrees;
+        this.holdDegrees = holdDegrees;
+        this.dwell = dwell;
+        this.grace = grace;
+    }
+
     /// <summary>The current pick (a friend id), -1 none.</summary>
     public int Friend { get; private set; } = -1;
 
@@ -181,15 +199,15 @@ public sealed class ReachOutTracker
         bool holds =
             Friend >= 0
             && curOffered
-            && curAngle <= ReachOut.HoldDegrees
+            && curAngle <= holdDegrees
             && stretch >= enterStretch - ReachOut.StretchExit;
         bool canAcquire =
-            open && stretch >= enterStretch && best >= 0 && bestAngle <= ReachOut.AcquireDegrees;
+            open && stretch >= enterStretch && best >= 0 && bestAngle <= acquireDegrees;
         bool wasArmed = armed;
         if (canAcquire && (!holds || (!curInRange && bestInRange)))
         {
             // Before Lose, which overwrites lost*: B to A to B within Grace keeps B's dwell.
-            float pick = best == lostFriend && now - lostAt <= ReachOut.Grace ? lostPickAt : now;
+            float pick = best == lostFriend && now - lostAt <= grace ? lostPickAt : now;
             if (Friend >= 0)
                 Lose(now);
             Friend = best;
@@ -202,7 +220,7 @@ public sealed class ReachOutTracker
             Friend = -1;
         }
 
-        armed = Friend >= 0 && now - pickAt >= ReachOut.Dwell;
+        armed = Friend >= 0 && now - pickAt >= dwell;
         Acquired =
             armed && !wasArmed && !(retickFriend == Friend && retickAt >= now - ReachOut.ReTick);
         if (armed)
@@ -212,7 +230,7 @@ public sealed class ReachOutTracker
         }
         if (armed)
             ArmedFriend = Friend;
-        else if (lostArmed && now - lostAt <= ReachOut.Grace)
+        else if (lostArmed && now - lostAt <= grace)
             ArmedFriend = lostFriend;
         else
             ArmedFriend = -1;

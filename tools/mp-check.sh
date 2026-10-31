@@ -122,7 +122,7 @@ def moddedb:
 def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
   "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
-  "kick-mode", "carry", "pack", "vr.330-pack-stash", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
+  "kick-mode", "carry", "pack", "vr.330-pack-stash", "vr.434-point-friend-pack", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
   "save-untouched"];
 ($b | map(select(.type == "checkpoint")) | sort_by(.t)) as $bcps
 | ($bcps | map({key: .name, value: .}) | from_entries) as $bcp
@@ -236,6 +236,10 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
       (if any(seen($y)[]; .name == "RPCAddItemToCharacterBackpack")
        then "PASS vr.330-pack-stash: B got RPCAddItemToCharacterBackpack, the item A let go went into its pack"
        else "FAIL vr.330-pack-stash: B got no RPCAddItemToCharacterBackpack from the stash of A" end)
+    elif $x.name == "vr.434-point-friend-pack" then
+      (if any(seen($y)[]; .name == "RPCAddItemToCharacterBackpack")
+       then "PASS vr.434-point-friend-pack: B got RPCAddItemToCharacterBackpack, the item A pointed in went into its pack"
+       else "FAIL vr.434-point-friend-pack: B got no RPCAddItemToCharacterBackpack from the trigger-opened wheel of A" end)
     elif $x.name == "kick-mode" then
       (if any(seen($y)[]; .name == "RPCA_Fall" and .local) then "PASS kick-mode: the shove knocked B down"
        else "FAIL kick-mode: B logged no RPCA_Fall from the shove" end)

@@ -658,6 +658,9 @@ internal static class PhysicalInteraction
         return OnClimb(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
 
+    /// <summary>A grip latch holds the open backpack wheel (self-test vr.430: a trigger-opened wheel needs none).</summary>
+    internal static bool WheelHeld => WheelHold.Holds;
+
     /// <summary>This hand is posed for a gesture a fist belongs to: the thumbs-up's fist (emotes) or a hand at the
     /// mouth for the talk gesture (voice). Last frame's poses: both run late.</summary>
     private static bool GesturePosed(Hand hand) =>
@@ -3110,6 +3113,13 @@ internal static class PhysicalInteraction
             Mouth.Reset();
         }
         PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
+        // An armed pack pick takes the free trigger's whole pull (#71); called every frame so its latch sees the release.
+        secondaryDown &= !Inventory.PackStash.Instance.ClaimTrigger(
+            c,
+            Other(primaryHand).Left,
+            Other(primaryHand).Use.Down,
+            holding
+        );
         SecondaryEdge.Update(secondaryDown, dt);
         if (PrimaryEdge.Pressed && holding)
         {

@@ -70,4 +70,23 @@ public class PackDropTests
             -1,
             PackDrop.NearestFree(Vector3.Zero, new[] { Vector3.UnitX }, new[] { false })
         );
+
+    [Theory]
+    [InlineData(DenyReason.PackFull)]
+    [InlineData(DenyReason.WrongAngle)]
+    [InlineData(DenyReason.None)]
+    public void APackAimedPastReach_IsOutOfReachFirst(DenyReason inReach) =>
+        Assert.Equal(DenyReason.OutOfReach, PackDrop.PointRefusal(2.01f, inReach));
+
+    [Theory]
+    [InlineData(DenyReason.None)]
+    [InlineData(DenyReason.WrongAngle)]
+    [InlineData(DenyReason.PackFull)]
+    [InlineData(DenyReason.CantHolster)]
+    public void APackAimedWithinReach_KeepsItsOwnVerdict(DenyReason inReach)
+    {
+        Assert.Equal(inReach, PackDrop.PointRefusal(1.99f, inReach));
+        // The game's interact distance itself is in reach (Interaction.distance, 2 m).
+        Assert.Equal(inReach, PackDrop.PointRefusal(PackDrop.PointReach, inReach));
+    }
 }

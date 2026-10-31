@@ -68,6 +68,14 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.283-feed-friend", 20f, FeedFriendStep());
         yield return HandStep("vr.284-ground-pack-stash", 30f, GroundPackStashStep());
         yield return HandStep("vr.285-friend-pack-stash", 20f, FriendPackStashStep());
+        yield return HandStep("vr.430-point-pack-open", 40f, PointPackOpenStep());
+        yield return HandStep("vr.431-point-pack-cancel", 25f, PointPackCancelStep());
+        yield return HandStep("vr.432-point-pack-refusals", 60f, PointPackRefusalsStep());
+        yield return HandStep(
+            "vr.433-point-pack-secondary-kept",
+            30f,
+            PointPackSecondaryKeptStep()
+        );
         // Later steps expect no worn pack (the over-the-shoulder slot would claim grips); Player.EmptySlot(3) takes
         // it off (Player.cs:215, GetItemSlot :254).
         Safe(

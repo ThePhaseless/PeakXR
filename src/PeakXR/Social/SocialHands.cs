@@ -756,7 +756,12 @@ internal sealed class SocialHands : IGripExtension
                         && ReachOut.Learns(shoulder, hand, yaw),
                     dt
                 );
-            bool skip = !state.Tracked || kinds[h] != SocialKind.None || glowed[h] || holder;
+            // A hand whose trigger a pointed-at pack owns yields, and drops its grace too (#71, #79).
+            bool packPoint = Inventory.PackStash.Instance.PointHand == h;
+            bool skip =
+                !state.Tracked || kinds[h] != SocialKind.None || glowed[h] || holder || packPoint;
+            if (packPoint)
+                pick.Reset();
             // Offers only before the press (AnalogButton(0.6f, 0.4f), PhysicalInteraction.Hand.Grip). Something nearer
             // taking this grip reads as a lost pick, so Grace and ReTick apply to a hand flickering at a rock edge.
             if (

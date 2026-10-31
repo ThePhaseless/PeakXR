@@ -1945,6 +1945,12 @@ internal sealed partial class SelfTestRunner
         yield return HostWake();
         yield return MpStep("pack", MpPackBudget, true, MpPack());
         yield return MpStep("vr.330-pack-stash", MpPackBudget + 60f, true, MpPackStash());
+        yield return MpStep(
+            "vr.434-point-friend-pack",
+            MpPackBudget + 2 * MpPackWalkSeconds + 30f,
+            true,
+            MpPointFriendPack()
+        );
         yield return MpStep("pal-jump", 40f, true, PalJump());
         // A timed-out step is dropped without its finally: put the head back from the crouch dip.
         if (VRSession.Active && VRInput.TestOverride != null)
@@ -2820,6 +2826,173 @@ internal sealed partial class SelfTestRunner
             stepNote = F(
                 $"{item.name} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
             );
+    }
+
+    /// <summary>
+    /// vr.434-point-friend-pack (#71): A holds a small item packs take and stands behind the host. The free hand points
+    /// at the host's worn pack: the pick arms with nothing refusing and A's reach-out shows nothing on that hand. The
+    /// trigger opens the pack's wheel (BackpackOnBackVisuals.Interact_CastFinished, :162), the free hand picks a
+    /// pocket and the release stashes into it (CharacterBackpackHandler.StashInBackpack). mp-check expects
+    /// RPCAddItemToCharacterBackpack on B. Then, from the host's front, the pick shows WrongAngle and the pull opens
+    /// no wheel.
+    /// </summary>
+    IEnumerator MpPointFriendPack()
+    {
+        var host = Host();
+        var visuals =
+            host != null && host.refs.backpackHandler != null
+                ? host.refs.backpackHandler.activeBackpackVisuals
+                : null;
+        if (visuals == null || !SocialHands.WearsPack(host))
+        {
+            stepSkip = "the host wears no pack";
+            yield break;
+        }
+        if (
+            !Inventory.InventoryConfig.Instance.PointToOpenPack
+            || !Inventory.BodyInventory.Instance.Valid
+        )
+        {
+            stepSkip = "Inventory.PointToOpenPack or Inventory.BodySlots is off";
+            yield break;
+        }
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        var info = new ItemHoldInfo();
+        yield return GrabReachable(
+            i =>
+                i.UIData.canBackpack
+                && i is not Backpack
+                && info.Bind(i)
+                && info.Profile.Handedness == Handedness.OneHand,
+            null,
+            FoodRange,
+            5
+        );
+        if (!stepOk || stepSkip != null)
+            yield break;
+        var item = HeldItem();
+        cpItemId = item.itemID;
+        yield return BehindHost(host);
+        if (!mpBehind)
+        {
+            stepSkip = "no reachable spot behind the host";
+            yield break;
+        }
+        var c = Character.localCharacter;
+        Face(visuals.transform.position);
+        bool free = !LocalHold.ItemInLeftHand;
+        yield return GripTo(!free, 1f, 0.1f);
+        PointAt(free, visuals.transform.position);
+        yield return Until(
+            () => Points(free, visuals, DenyReason.None),
+            1.5f,
+            "the host's pack pointed at from behind did not arm"
+        );
+        if (!stepOk)
+        {
+            stepNote = PointState();
+            yield break;
+        }
+        var social = SocialHands.Instance;
+        if (social.ReachOutFriend(free) != null || social.ReachOutShown(free))
+        {
+            Fail("the reach-out still picks or draws on the hand the pack owns");
+            yield break;
+        }
+        Script(free).Trigger = 1f;
+        yield return Until(
+            () => c.data.usingBackpackWheel,
+            0.5f,
+            "the trigger did not open the host's pack"
+        );
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.1f);
+        var wheel = GUIManager.instance.backpackWheel;
+        var start = Script(free).Position;
+        for (int deg = 0; deg < 360 && !Stash(wheel); deg += 30)
+        {
+            float a = deg * Mathf.Deg2Rad;
+            SetHand(
+                free,
+                start + VRInput.HeadRotation * new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.15f
+            );
+            yield return Wait(0.15f);
+        }
+        if (!Stash(wheel))
+        {
+            Script(free).Trigger = 0f;
+            Fail("no pocket of the host's pack offered the stash");
+            yield break;
+        }
+        byte pocket = wheel.chosenSlice.Value.slotID;
+        Script(free).Trigger = 0f;
+        yield return Until(
+            () => !c.data.usingBackpackWheel && HeldItem() == null,
+            2f,
+            "the trigger's release did not stash into the host's pack"
+        );
+        if (!stepOk)
+            yield break;
+        yield return Wait(0.5f);
+        var slots = BackpackReference.GetFromEquippedBackpack(host).GetData().itemSlots;
+        if (
+            pocket >= slots.Length
+            || slots[pocket] == null
+            || slots[pocket].IsEmpty()
+            || slots[pocket].prefab.itemID != item.itemID
+        )
+        {
+            Fail(F($"{item.name} is not in pocket {pocket} of the host's pack"));
+            yield break;
+        }
+        string stashed = F($"{item.name} went into pocket {pocket} of the host's pack");
+        // From the front: WrongAngle, and the pull opens nothing.
+        yield return GrabReachable(
+            i => i.UIData.canBackpack && i is not Backpack,
+            null,
+            FoodRange,
+            5
+        );
+        if (!stepOk || stepSkip != null)
+        {
+            stepSkip = null;
+            stepNote = stashed + "; no second item for the front check";
+            yield break;
+        }
+        var front = host.Center + host.data.lookDirection_Flat.normalized * 1f;
+        yield return MpWalkBounded(() => front, 0.3f, MpPackWalkSeconds);
+        Face(visuals.transform.position);
+        free = !LocalHold.ItemInLeftHand;
+        PointAt(free, visuals.transform.position);
+        yield return Until(
+            () => Points(free, visuals, DenyReason.WrongAngle),
+            1.5f,
+            "from the host's front the pack did not show WrongAngle"
+        );
+        if (!stepOk)
+        {
+            stepNote = stashed + "; " + PointState();
+            yield break;
+        }
+        LookAtHand(free);
+        yield return Wait(0.3f);
+        float mark = CueMark();
+        Script(free).Trigger = 1f;
+        yield return ExpectCue(free, DenyReason.WrongAngle, mark);
+        Script(free).Trigger = 0f;
+        EndGlance();
+        if (stepOk && c.data.usingBackpackWheel)
+            Fail("from the front the pull opened the wheel");
+        else if (stepOk)
+            stepNote = stashed + "; from the front WrongAngle refused the pull";
+        // The next steps start empty-handed, as vr.330 leaves A.
+        yield return DropHeld();
+
+        static bool Stash(BackpackWheel w) =>
+            w.chosenSlice.IsSome && w.chosenSlice.Value.isStashSlice;
     }
 
     /// <summary>Body and neck turn (degrees) of the pack step: 120° in all, past vanilla's 110° (BackpackOnBackVisuals.cs:102).</summary>
