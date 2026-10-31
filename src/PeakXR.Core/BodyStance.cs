@@ -58,8 +58,10 @@ public static class BodyStance
 /// <summary>
 /// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/>, once the debt has held still for
 /// <see cref="Delay"/> (a glance returns before the body moves) or at once past <see cref="AtOnce"/>, it asks for move
-/// input along the debt until it is inside <see cref="Stop"/>, ramping down to <see cref="MinInput"/> as it closes so
-/// the body does not overshoot. A walk that makes no headway (a wall, a friend) gives up until the debt changes.
+/// input toward where the body would come to rest (the debt less its coast, <see cref="CoastSeconds"/>) until that is
+/// inside <see cref="Stop"/>, ramping down to <see cref="MinInput"/> as it closes, and ends once the body is also nearly
+/// still, so it neither overshoots nor stops short. A walk that makes no headway (a wall, a friend) gives up until the
+/// debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
@@ -81,6 +83,14 @@ public sealed class StanceWalk
     /// <summary>Least request while walking: a standing body does not move for less (run 9: 0.1 of the stick for
     /// 1.6 s made no headway), and its coast at this pace stays inside the stop distance.</summary>
     public float MinInput = 0.35f;
+
+    /// <summary>Seconds of travel the body coasts at its speed once the request stops: PEAK's drag of 0.85 a 50 Hz step
+    /// (CharacterMovement.cs:48, Bodypart.cs:214-225) leaves v x 0.11 s, plus the input's ease (Character.cs:1341).
+    /// cf6aa3e vr.45: walks stopped on the debt alone reached 2 m/s and coasted 0.1-0.16 m past the view.</summary>
+    public float CoastSeconds = 0.15f;
+
+    /// <summary>Level speed (m/s) under which a walk whose coast has closed the debt ends.</summary>
+    public float StillSpeed = 0.1f;
 
     /// <summary>Seconds after a walk during which the body's coast still belongs to it.</summary>
     public float SettleSeconds = 0.5f;
@@ -105,9 +115,10 @@ public sealed class StanceWalk
     public bool Walking { get; private set; }
 
     /// <param name="debt">What is owed, tracking x, z (m).</param>
+    /// <param name="velocity">The body's level velocity, tracking x, z (m/s).</param>
     /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
     /// <returns>Requested move input in tracking space, length 0..1.</returns>
-    public Vector2 Update(Vector2 debt, bool canWalk, float dt)
+    public Vector2 Update(Vector2 debt, Vector2 velocity, bool canWalk, float dt)
     {
         float dist = debt.Length();
         if (!canWalk)
@@ -125,7 +136,11 @@ public sealed class StanceWalk
         if (Blocked && Vector2.Distance(debt, _blockedAt) > Start)
             Blocked = false;
         bool start = !_walking && !Blocked && dist > Start && (dist > AtOnce || _heldFor >= Delay);
-        _walking = !Blocked && (_walking ? dist > Stop : start);
+        // Where the body stops if the request ends now.
+        var rest = debt - velocity * CoastSeconds;
+        float restDist = rest.Length();
+        _walking =
+            !Blocked && (_walking ? restDist > Stop || velocity.Length() > StillSpeed : start);
         if (start || (_walking && dist < _best - StallProgress))
         {
             _best = dist;
@@ -143,10 +158,12 @@ public sealed class StanceWalk
         else if (_sinceWalk < float.MaxValue)
             _sinceWalk += dt;
         Walking = _walking || _sinceWalk < SettleSeconds;
-        if (!_walking)
+        // Coasting past the debt: no input back against the body's run (peers would see it brake on the spot); a
+        // stop that ends past it walks back once the body is still.
+        if (!_walking || restDist <= Stop || Vector2.Dot(rest, debt) < 0f)
             return Vector2.Zero;
-        float amount = Ramp > 0f ? (dist - Stop) / Ramp : 1f;
-        return debt / dist * Math.Clamp(amount, MinInput, 1f);
+        float amount = Ramp > 0f ? (restDist - Stop) / Ramp : 1f;
+        return rest / restDist * Math.Clamp(amount, MinInput, 1f);
     }
 
     /// <summary>Forget the walk (the body cannot be walked, or the view was placed again).</summary>

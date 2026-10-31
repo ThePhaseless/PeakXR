@@ -133,7 +133,7 @@ public class StanceWalkTests
     {
         var r = Vector2.Zero;
         for (float t = 0f; t < seconds; t += Dt)
-            r = w.Update(debt, canWalk: true, Dt);
+            r = w.Update(debt, Vector2.Zero, canWalk: true, Dt);
         return r;
     }
 
@@ -165,7 +165,10 @@ public class StanceWalkTests
         for (float t = 0f; t < 1.2f; t += Dt)
         {
             float k = MathF.Sin(MathF.PI * t / 1.2f);
-            Assert.Equal(Vector2.Zero, w.Update(new Vector2(0.2f * k, 0f), canWalk: true, Dt));
+            Assert.Equal(
+                Vector2.Zero,
+                w.Update(new Vector2(0.2f * k, 0f), Vector2.Zero, canWalk: true, Dt)
+            );
         }
         Assert.Equal(Vector2.Zero, Hold(w, Vector2.Zero, 1f));
         Assert.False(w.Walking);
@@ -179,7 +182,7 @@ public class StanceWalkTests
         for (float t = 0f; t < 4f; t += Dt)
         {
             var d = YawMath.Rotate(new Vector2(0f, 0.25f), 90f * t);
-            Assert.Equal(Vector2.Zero, w.Update(d, canWalk: true, Dt));
+            Assert.Equal(Vector2.Zero, w.Update(d, Vector2.Zero, canWalk: true, Dt));
         }
     }
 
@@ -187,11 +190,11 @@ public class StanceWalkTests
     public void FarDebt_WalksAtOnce()
     {
         var w = new StanceWalk();
-        var far = w.Update(new Vector2(0f, w.AtOnce + 0.5f), canWalk: true, Dt);
+        var far = w.Update(new Vector2(0f, w.AtOnce + 0.5f), Vector2.Zero, canWalk: true, Dt);
         Assert.True(Vector2.Distance(new Vector2(0f, 1f), far) < 1e-4f, $"{far}");
         Assert.True(w.Walking);
         // Ramps down as it closes.
-        var near = w.Update(new Vector2(0f, 0.1f), canWalk: true, Dt);
+        var near = w.Update(new Vector2(0f, 0.1f), Vector2.Zero, canWalk: true, Dt);
         Assert.True(MathF.Abs(near.X) < 1e-4f, $"{near}");
         Assert.InRange(near.Y, 0.05f, 0.9f);
     }
@@ -214,7 +217,7 @@ public class StanceWalkTests
         var v = Vector2.Zero;
         for (float t = 0f; t < 4f; t += Dt)
         {
-            var request = w.Update(debt, canWalk: true, Dt);
+            var request = w.Update(debt, v, canWalk: true, Dt);
             var drive = request.Length() < 0.25f ? Vector2.Zero : request;
             v += (drive * 1.1f - v) * (1f - MathF.Exp(-Dt / 0.12f));
             debt -= v * Dt;
@@ -227,10 +230,16 @@ public class StanceWalkTests
     public void Walk_StopsOnlyInsideTheStopDistance()
     {
         var w = new StanceWalk();
-        w.Update(new Vector2(1f, 0f), canWalk: true, Dt);
+        w.Update(new Vector2(1f, 0f), Vector2.Zero, canWalk: true, Dt);
         // Inside the start but outside the stop distance: a started walk carries on.
-        Assert.NotEqual(Vector2.Zero, w.Update(new Vector2(0.045f, 0f), canWalk: true, Dt));
-        Assert.Equal(Vector2.Zero, w.Update(new Vector2(0.01f, 0f), canWalk: true, Dt));
+        Assert.NotEqual(
+            Vector2.Zero,
+            w.Update(new Vector2(0.045f, 0f), Vector2.Zero, canWalk: true, Dt)
+        );
+        Assert.Equal(
+            Vector2.Zero,
+            w.Update(new Vector2(0.01f, 0f), Vector2.Zero, canWalk: true, Dt)
+        );
         // Settling: the body's coast still belongs to the walk.
         Assert.True(w.Walking);
         Hold(w, new Vector2(0.01f, 0f), w.SettleSeconds + Dt);
@@ -241,8 +250,8 @@ public class StanceWalkTests
     public void CannotWalk_RequestsNothingAndOwnsNoTravel()
     {
         var w = new StanceWalk();
-        w.Update(new Vector2(1f, 0f), canWalk: true, Dt);
-        Assert.Equal(Vector2.Zero, w.Update(new Vector2(1f, 0f), canWalk: false, Dt));
+        w.Update(new Vector2(1f, 0f), Vector2.Zero, canWalk: true, Dt);
+        Assert.Equal(Vector2.Zero, w.Update(new Vector2(1f, 0f), Vector2.Zero, canWalk: false, Dt));
         // Stick walking moves the view with the body: none of that travel is the stance walk's.
         Assert.False(w.Walking);
     }
@@ -254,10 +263,13 @@ public class StanceWalkTests
         var stuck = new Vector2(0.5f, 0f);
         Hold(w, stuck, w.StallSeconds + 0.1f);
         Assert.True(w.Blocked);
-        Assert.Equal(Vector2.Zero, w.Update(stuck, canWalk: true, Dt));
+        Assert.Equal(Vector2.Zero, w.Update(stuck, Vector2.Zero, canWalk: true, Dt));
         Assert.False(w.Walking);
         // The head moved on: try again.
-        Assert.NotEqual(Vector2.Zero, w.Update(new Vector2(0.5f, 0.1f), canWalk: true, Dt));
+        Assert.NotEqual(
+            Vector2.Zero,
+            w.Update(new Vector2(0.5f, 0.1f), Vector2.Zero, canWalk: true, Dt)
+        );
         Assert.False(w.Blocked);
     }
 
@@ -274,7 +286,7 @@ public class StanceWalkTests
             float maxAfter = 0f;
             for (float t = 0f; t < 5f; t += Dt)
             {
-                var request = w.Update(debt, canWalk: true, Dt);
+                var request = w.Update(debt, v, canWalk: true, Dt);
                 v += (request * 1.1f - v) * (1f - MathF.Exp(-Dt / 0.12f));
                 debt -= v * Dt;
                 if (t > 4f)
@@ -284,6 +296,59 @@ public class StanceWalkTests
             Assert.False(w.Walking);
             Assert.False(w.Blocked);
         }
+    }
+
+    [Fact]
+    public void FastBody_WalksOnce_AndStopsUnderTheView()
+    {
+        // cf6aa3e vr.45: the walked body reached about 2 m/s and coasted 0.1-0.16 m past the view after the request
+        // stopped, and each overshoot walked again after the delay. The body here: 2 m/s top speed, 0.12 s time
+        // constant, the request reaching it one update late, 33 updates a second (the rig's frame rate then).
+        const float dt = 1f / 33f;
+        foreach (float d0 in new[] { 0.08f, 0.3f, 0.6f })
+        {
+            var w = new StanceWalk();
+            var debt = new Vector2(0f, d0);
+            var v = Vector2.Zero;
+            var late = Vector2.Zero;
+            float past = 0f;
+            int walks = 0;
+            bool was = false;
+            for (float t = 0f; t < 6f; t += dt)
+            {
+                var request = w.Update(debt, v, canWalk: true, dt);
+                if (w.Walking && !was)
+                    walks++;
+                was = w.Walking;
+                for (int i = 0; i < 10; i++)
+                {
+                    v += (late * 2f - v) * (1f - MathF.Exp(-dt / 10f / 0.12f));
+                    debt -= v * dt / 10f;
+                }
+                late = request;
+                past = MathF.Max(past, -debt.Y);
+            }
+            Assert.True(past <= w.Stop, $"{d0}: coasted {past:0.000} m past the view");
+            Assert.Equal(1, walks);
+            Assert.True(debt.Length() < w.Start, $"{d0}: left {debt.Length():0.000} m");
+        }
+    }
+
+    [Fact]
+    public void CoastingBody_EndsTheRequestEarly_AndTheWalkOnceStill()
+    {
+        var w = new StanceWalk();
+        // 0.2 m to go at 2 m/s: the coast alone covers it.
+        w.Update(new Vector2(0.5f, 0f), Vector2.Zero, canWalk: true, Dt);
+        Assert.Equal(
+            Vector2.Zero,
+            w.Update(new Vector2(0.2f, 0f), new Vector2(2f, 0f), canWalk: true, Dt)
+        );
+        // Stopped short of the stop distance: the walk carries on.
+        Assert.NotEqual(
+            Vector2.Zero,
+            w.Update(new Vector2(0.1f, 0f), Vector2.Zero, canWalk: true, Dt)
+        );
     }
 }
 
@@ -304,7 +369,7 @@ public class OwnMotionTests
         {
             var step = new Vector2(0.15f * Dt, 0f);
             var debt = head - follow.Anchor; // view = body + (head - anchor); body eyes = body
-            Assert.Equal(Vector2.Zero, walk.Update(debt, canWalk: true, Dt));
+            Assert.Equal(Vector2.Zero, walk.Update(debt, Vector2.Zero, canWalk: true, Dt));
             if (own.Update(walk.Walking, 0.15f, new Vector2(30f, 0f), outside: false, Dt))
                 follow.Absorb(step);
         }
