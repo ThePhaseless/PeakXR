@@ -190,23 +190,28 @@ internal sealed partial class SelfTestRunner
         float ghost = 0f;
         bool released = false;
         var info = new ItemHoldInfo();
+        if (item != null && !info.Bind(item))
+        {
+            Fail(
+                $"no hold info for {item.name} (ItemHoldInfo.Bind failed): its grip, and the drawn hand on it, cannot be judged"
+            );
+            yield break;
+        }
         for (float until = Now + 0.6f; Now < until; )
         {
             if (item != null && driver.HeldTarget(out var pos, out _))
                 worst = Mathf.Max(worst, Vector3.Distance(item.transform.position, pos));
             // The hand as the player sees it, on the hold's grip as vr.244 judges it.
-            drawnOff =
-                item != null && info.Bind(item)
-                    ? Mathf.Max(
-                        drawnOff,
-                        Vector3.Distance(
-                            DrawnHandBone(c, left),
-                            item.transform.TransformPoint(
-                                info.HoldLocal(info.GripLocal, left, primaryGrip: true)
-                            )
+            if (item != null)
+                drawnOff = Mathf.Max(
+                    drawnOff,
+                    Vector3.Distance(
+                        DrawnHandBone(c, left),
+                        item.transform.TransformPoint(
+                            info.HoldLocal(info.GripLocal, left, primaryGrip: true)
                         )
                     )
-                    : float.PositiveInfinity;
+                );
             ghost = Mathf.Max(ghost, ReachGhost.Alpha(left));
             released |= driver.HeldReleased;
             yield return null;

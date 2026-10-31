@@ -44,8 +44,8 @@ internal sealed class DrawnHands : MonoBehaviour
         /// item's grip.</summary>
         public bool Aims;
 
-        /// <summary>The rest of the way onto that target past the stretch, world (Core
-        /// <see cref="ArmReach.DrawnNudge"/>).</summary>
+        /// <summary>The rest of the way onto the held item's grip past the stretch, world (Core
+        /// <see cref="ArmReach.DrawnNudge"/>); zero for an empty hand.</summary>
         public Vector3 Nudge;
 
         /// <summary>How far the drawn hand is still left off the held item's grip (0 for an empty hand).</summary>
@@ -173,10 +173,20 @@ internal sealed class DrawnHands : MonoBehaviour
     /// item alone stretches like an empty one: its item rides out to the controller past an arm too short for it
     /// (AvatarPoseDriver.HeldShift, #23). The item's own armed grip (for GripToggle) is no world grip
     /// (<see cref="Interact.PhysicalInteraction.WorldGripHolds"/>): it kept the hand short of its item (vr.352,
-    /// vr.244). In one-handed mode the item hand can hold a handle or piton too (ClimbHands.Adopt).</summary>
-    private bool Holds(AvatarPose pose, bool isLeft) =>
-        (character.data.currentItem != null && pose.TwoHandHold)
-        || Interact.PhysicalInteraction.WorldGripHolds(isLeft);
+    /// vr.244). In one-handed mode the item hand can hold a handle or piton too (ClimbHands.Adopt). With
+    /// <c>Avatar.RetargetItems</c> off the game's frame and two-hand weld hold the item (CharacterItems.AttachItem,
+    /// decomp CharacterItems.cs:641-651): both hands stay on it (Core <see cref="ArmReach.DrawnOnRagdoll"/>).</summary>
+    private bool Holds(AvatarPose pose, bool isLeft)
+    {
+        var item = character.data.currentItem;
+        return ArmReach.DrawnOnRagdoll(
+            item != null,
+            pose.TwoHandHold,
+            driver.ItemFrameOverridden,
+            item != null && (!isLeft || !item.rightHandOnly),
+            Interact.PhysicalInteraction.WorldGripHolds(isLeft)
+        );
+    }
 
     /// <summary>The drawn arm's scale about its shoulder that puts the hand at its target's distance (1: as the
     /// ragdoll has it), and the rest of the way onto it (<see cref="Side.Nudge"/>).</summary>
@@ -212,16 +222,21 @@ internal sealed class DrawnHands : MonoBehaviour
             Vector3.Distance(shoulder, elbow) + Vector3.Distance(elbow, hand),
             driver.ArmWeight
         );
-        // The stretch keeps the ragdoll arm's direction, which a free carry can point away from the item.
-        side.Nudge = ArmReach
-            .DrawnNudge(
-                (hand + (hand - shoulder) * (k - 1f)).N(),
-                bone.N(),
-                driver.ArmWeight,
-                out float miss
-            )
-            .U();
-        side.Miss = held ? miss : 0f;
+        // The stretch keeps the ragdoll arm's direction, which a free carry can point away from the item. Only the
+        // item hand: an empty one is short of its controller where the ragdoll hand is blocked (rock, a wall, a
+        // friend's hand it grasps, a rope), and the nudge drew it into that; the ghost shows the rest instead.
+        if (held)
+        {
+            side.Nudge = ArmReach
+                .DrawnNudge(
+                    (hand + (hand - shoulder) * (k - 1f)).N(),
+                    bone.N(),
+                    driver.ArmWeight,
+                    out float miss
+                )
+                .U();
+            side.Miss = miss;
+        }
         side.Aims = true;
         return k;
     }

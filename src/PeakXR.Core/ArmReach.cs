@@ -140,17 +140,37 @@ public static class ArmReach
     /// How much of <see cref="HeldShift"/> applies: while both hands hold the item (<paramref name="joined"/>) it
     /// fades out as the two-hand pose (<paramref name="twoWeight"/>) fades in, and after the second hand lets go it
     /// comes back with the hold's <paramref name="handoff"/> ease, so neither edge snaps the item up to 0.3 m. None
-    /// while two hands hold it without that pose (<paramref name="twoHandHold"/>, an aimed launcher).
+    /// while two hands hold it without that pose (<paramref name="twoHandHold"/>, an aimed launcher). It fades out the
+    /// same way as the item hand's grip on the world (a handle, rope or vine) eases in (<paramref name="anchored"/>):
+    /// that hand is drawn on its ragdoll hand, so the item must sit there too (#23).
     /// </summary>
     public static float HeldShiftWeight(
         bool joined,
         float twoWeight,
         bool twoHandHold,
-        float handoff
+        float handoff,
+        float anchored = 0f
     ) =>
-        joined ? 1f - Math.Clamp(twoWeight, 0f, 1f)
-        : twoHandHold ? 0f
-        : Math.Clamp(handoff, 0f, 1f);
+        (
+            joined ? 1f - Math.Clamp(twoWeight, 0f, 1f)
+            : twoHandHold ? 0f
+            : Math.Clamp(handoff, 0f, 1f)
+        ) * (1f - Math.Clamp(anchored, 0f, 1f));
+
+    /// <summary>
+    /// A drawn hand stays on its ragdoll hand instead of stretching to a target: its grip holds the world
+    /// (<paramref name="worldGrip"/>), both hands hold the item (<paramref name="twoHand"/>), or the item is held in the
+    /// game's own frame (not <paramref name="ourFrame"/>: <c>Avatar.RetargetItems</c> off), whose weld holds the hand on
+    /// it (<paramref name="gameWelds"/>: both hands, the left one not on a right-hand-only item). Only a hand holding
+    /// the item alone in our frame, or an empty one, stretches (#23).
+    /// </summary>
+    public static bool DrawnOnRagdoll(
+        bool item,
+        bool twoHand,
+        bool ourFrame,
+        bool gameWelds,
+        bool worldGrip
+    ) => worldGrip || (item && (twoHand || (!ourFrame && gameWelds)));
 
     /// <summary><see cref="GhostReach"/> while the arm is drawn stretched: the ghost shows only past where the
     /// drawn hand can follow.</summary>

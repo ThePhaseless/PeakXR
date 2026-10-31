@@ -333,6 +333,38 @@ public class ArmReachTests
         Assert.Equal(0f, ArmReach.HeldShiftWeight(false, 0f, true, 1f));
     }
 
+    [Fact]
+    public void HeldShiftWeight_EasesOutWhileTheItemHandHoldsTheWorld()
+    {
+        // The item hand anchored on a handle, rope or vine is drawn on its ragdoll hand: the item comes back onto it.
+        Assert.Equal(1f, ArmReach.HeldShiftWeight(false, 0f, false, 1f, 0f));
+        Assert.Equal(0.75f, ArmReach.HeldShiftWeight(false, 0f, false, 1f, 0.25f));
+        Assert.Equal(0f, ArmReach.HeldShiftWeight(false, 0f, false, 1f, 1f));
+        Assert.Equal(0f, ArmReach.HeldShiftWeight(true, 0f, true, 1f, 1f));
+    }
+
+    [Theory]
+    // Empty hand, no grip: drawn at its controller.
+    [InlineData(false, false, false, true, false, false)]
+    // The world holds it (a wall, rope, vine, handle, piton, a carried friend).
+    [InlineData(false, false, false, true, true, true)]
+    // Both hands on the item.
+    [InlineData(true, true, true, true, false, true)]
+    // The item alone in our frame: it stretches to the item's grip.
+    [InlineData(true, false, true, true, false, false)]
+    // Avatar.RetargetItems off (the game's frame): the game's two-hand weld holds both hands on the item.
+    [InlineData(true, false, false, true, false, true)]
+    // ... but not the left hand of a right-hand-only item, which the game leaves free.
+    [InlineData(true, false, false, false, false, false)]
+    public void DrawnOnRagdoll_StaysWhereTheHoldPutsTheHand(
+        bool item,
+        bool twoHand,
+        bool ourFrame,
+        bool gameWelds,
+        bool world,
+        bool expected
+    ) => Assert.Equal(expected, ArmReach.DrawnOnRagdoll(item, twoHand, ourFrame, gameWelds, world));
+
     // The stretch keeps the ragdoll arm's direction; a free carry's arm can point away from the item it holds (#23).
 
     [Fact]
