@@ -383,9 +383,9 @@ internal sealed partial class SelfTestRunner
     /// stick walk by at most the 0.1 m <c>Camera.BodySmoothing</c> lag, and room-scale's walk may coast a little past.</summary>
     const float MaxWalkLead = 0.15f;
 
-    /// <summary>Most the spine may bend while walking forward (degrees): a stick walk asks for no lean; walking in the
+    /// <summary>Most the spine may bend while walking forward (degrees): a stick walk has no lean (its gate); walking in the
     /// room the lean bends toward the head until the stance walk steps under it, by at most
-    /// <see cref="BodyStance.WalkLeanLimit"/> meanwhile (about 13 degrees).</summary>
+    /// <see cref="BodyStance.WalkLeanLimit"/> meanwhile from the first stride (about 6 degrees).</summary>
     static float MaxWalkBend(bool room) => room ? 18f : 5f;
 
     /// <summary>The animated legs' speed against the ground's (<see cref="WalkForwardStep"/>): 1 when the stance foot

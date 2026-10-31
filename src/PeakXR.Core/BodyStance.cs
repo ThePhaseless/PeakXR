@@ -67,22 +67,33 @@ public static class BodyStance
         return len > limit ? flat * (1f - limit / len) : Vector3.Zero;
     }
 
-    /// <summary>Most the lean takes of the debt (m) while the stance walk steps under the head: the walk is already
-    /// closing it, and with the lean solved onto the eyes (<see cref="BodyLean.TrySwingHeld"/>) the 0.35 m lean limit
-    /// bends the spine about 40 degrees (a tester saw the scout bend walking; vr.396 allows 18).</summary>
-    public const float WalkLeanLimit = 0.12f;
+    /// <summary>Most the lean takes of the debt (m) while the body walks under the head (the stance walk, or the head
+    /// walking away in the room): the walk is already closing it, and with the lean solved onto the eyes
+    /// (<see cref="BodyLean.TrySwingHeld"/>) the 0.35 m lean limit bends the spine about 40 degrees. A tester saw the
+    /// scout bend walking and wants it upright: 0.08 m bends about 6 degrees (run 15, vr.396: 0.12 m bent 9-13).</summary>
+    public const float WalkLeanLimit = 0.08f;
+
+    /// <summary>Level speed (m/s) of the tracked head in the room past which it walks away and the lean takes at most
+    /// <see cref="WalkLeanLimit"/>: vr.396's room walk passes it 0.1 s in (0.03 m out), a lean's motion passes it too,
+    /// and a held lean gets its full bend back at <see cref="LeanLimitEase"/> once the head holds.</summary>
+    public const float HeadWalkSpeed = 0.3f;
 
     /// <summary>How fast (m/s) <see cref="LeanLimit"/> eases between the limits, so a walk starting or ending does not
     /// snap the bend.</summary>
     public const float LeanLimitEase = 0.5f;
 
     /// <summary>The <see cref="LeanBeyond"/> limit this frame: <paramref name="full"/> (the lean limit), eased down to
-    /// <see cref="WalkLeanLimit"/> while <paramref name="walking"/> and back after; a NaN <paramref name="now"/> starts on it.</summary>
-    public static float LeanLimit(float now, float full, bool walking, float dt)
+    /// <see cref="WalkLeanLimit"/> while <paramref name="walking"/> and back after; a NaN <paramref name="now"/> starts on it.
+    /// Walking, the limit also drops at once to what the lean bends now (<paramref name="bent"/>, m, never under
+    /// <see cref="WalkLeanLimit"/>), so the lean only shrinks: a walk that starts upright stays upright (run 15, vr.396:
+    /// the lean took the full 0.35 m, 28.6 degrees, before the first push, and the ease only began then).</summary>
+    public static float LeanLimit(float now, float full, bool walking, float bent, float dt)
     {
         float want = walking ? MathF.Min(full, WalkLeanLimit) : full;
         if (float.IsNaN(now))
             return want;
+        if (walking)
+            now = MathF.Min(now, MathF.Max(bent, want));
         float step = LeanLimitEase * dt;
         return MathF.Abs(want - now) <= step ? want : now + MathF.Sign(want - now) * step;
     }

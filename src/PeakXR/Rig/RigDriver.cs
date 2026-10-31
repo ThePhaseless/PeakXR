@@ -545,7 +545,7 @@ internal sealed class RigDriver : MonoBehaviour
                 : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000} lean-limit {leanLimit:0.000}"
             )
         );
     }
@@ -1363,18 +1363,30 @@ internal sealed class RigDriver : MonoBehaviour
         ViewOffset = skip + TurnSkipNow;
         // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
         // further meanwhile (#97, vr.396: 0.41 m owed, 24 degrees).
-        // Less while the walk steps, which closes the debt itself.
+        // Less while the body walks under the head (the stance walk, or the head walking away in the room before the
+        // walk starts), which closes the debt itself; the lean only shrinks then.
+        float dt = Time.unscaledDeltaTime;
+        var tracked = VRInput.HeadPosition;
+        bool headWalks =
+            headMotion.Update(new System.Numerics.Vector3(tracked.x, 0f, tracked.z), dt)
+            > BodyStance.HeadWalkSpeed;
+        var share = (view - ViewOffset - eye).N();
+        float bent = new System.Numerics.Vector2(share.X, share.Z).Length();
         leanLimit = BodyStance.LeanLimit(
             leanLimit,
             Locomotion.LocomotionConfig.LeanRadius * rig.Scale,
-            FollowWalking,
-            Time.unscaledDeltaTime
+            FollowWalking || headWalks,
+            float.IsNaN(leanLimit) ? bent : Mathf.Min(bent, leanLimit),
+            dt
         );
-        ViewOffset += BodyStance.LeanBeyond((view - ViewOffset - eye).N(), leanLimit).U();
+        ViewOffset += BodyStance.LeanBeyond(share, leanLimit).U();
     }
 
-    /// <summary>The lean limit eased for the stance walk (<see cref="BodyStance.LeanLimit"/>).</summary>
+    /// <summary>The lean limit eased for walking (<see cref="BodyStance.LeanLimit"/>).</summary>
     private float leanLimit = float.NaN;
+
+    /// <summary>The tracked head's level speed in the room, for <see cref="BodyStance.HeadWalkSpeed"/>.</summary>
+    private readonly LeanMotion headMotion = new();
 
     /// <summary>Self-test (vr.16): one line per frame of eye, rig and body yaw, torso and turn shift.</summary>
     private void TraceTurn(Character c)

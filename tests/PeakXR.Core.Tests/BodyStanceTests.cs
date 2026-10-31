@@ -93,19 +93,42 @@ public class BodyStanceTests
     public void LeanLimit_WhileWalking_EasesDownAndBack()
     {
         // vr.396: with the lean solved onto the eyes, the 0.35 m limit bends about 40 degrees while the walk steps.
+        // A held lean bent for 0.3 m when the walk starts: it eases down, never snaps.
         float limit = 0.35f;
         for (int i = 0; i < 10; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
-        Assert.True(limit < 0.35f && limit > BodyStance.WalkLeanLimit, $"jumped to {limit:0.000}");
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.3f, 0.02f);
+        Assert.True(limit < 0.3f && limit > BodyStance.WalkLeanLimit, $"jumped to {limit:0.000}");
         for (int i = 0; i < 100; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.02f);
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, 0.3f, 0.02f);
         Assert.Equal(BodyStance.WalkLeanLimit, limit);
         for (int i = 0; i < 100; i++)
-            limit = BodyStance.LeanLimit(limit, 0.35f, false, 0.02f);
+            limit = BodyStance.LeanLimit(limit, 0.35f, false, 0.3f, 0.02f);
         Assert.Equal(0.35f, limit);
         // A lower setting stays the limit while walking.
-        Assert.Equal(0.1f, BodyStance.LeanLimit(0.1f, 0.1f, true, 0.02f));
-        Assert.Equal(0.35f, BodyStance.LeanLimit(float.NaN, 0.35f, false, 0.02f));
+        Assert.Equal(0.06f, BodyStance.LeanLimit(0.06f, 0.06f, true, 0.06f, 0.02f));
+        Assert.Equal(0.35f, BodyStance.LeanLimit(float.NaN, 0.35f, false, 0f, 0.02f));
+    }
+
+    [Fact]
+    public void LeanLimit_AWalkStartingUpright_NeverBendsPastTheWalkLimit()
+    {
+        // vr.396 (run 15): the head walked away in the room and the lean took the full 0.35 m (28.6 degrees) before the
+        // first push; the cap only eased in after. Walking, the lean may shrink but never grow past what it bends now.
+        float limit = 0.35f;
+        float bent = 0f;
+        for (float share = 0f; share < 0.6f; share += 0.01f)
+        {
+            limit = BodyStance.LeanLimit(limit, 0.35f, true, bent, 1f / 72f);
+            bent = MathF.Min(share, limit);
+            Assert.True(
+                bent <= BodyStance.WalkLeanLimit + 1e-6f,
+                $"share {share:0.00}: bent {bent:0.000}"
+            );
+        }
+        // Stood still again, the lean eases back to the full limit.
+        for (int i = 0; i < 200; i++)
+            limit = BodyStance.LeanLimit(limit, 0.35f, false, bent, 1f / 72f);
+        Assert.Equal(0.35f, limit);
     }
 
     [Fact]

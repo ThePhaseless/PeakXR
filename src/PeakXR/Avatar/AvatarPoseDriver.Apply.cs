@@ -640,6 +640,15 @@ public partial class AvatarPoseDriver
             return "not upright";
         if (c.IsLocal && !Rig.RigDriver.EyeCalibrated)
             return "eyes not calibrated";
+        // The stick walks the body away from the head: an upright walker, not a bend (run 15, vr.395: the head trailing
+        // the physics step read as a 0.12 m lean, 10.6 degrees). The stance walk's own input keeps its capped lean.
+        if (
+            c.IsLocal
+            && c.input != null
+            && c.input.movementInput.sqrMagnitude >= 1e-4f
+            && !Rig.RigDriver.FollowWalking
+        )
+            return "stick walk";
         return null;
     }
 
