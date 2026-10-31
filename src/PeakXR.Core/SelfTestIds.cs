@@ -317,6 +317,7 @@ public static class SelfTestIds
         "vr.48b-surface-texture",
         "vr.49-condor",
         "vr.50-climb-hover",
+        "vr.449-trigger-at-ring-hint",
         "vr.51-air-grip",
         "vr.51b-falling-catch",
         "vr.52-climb-empty",
