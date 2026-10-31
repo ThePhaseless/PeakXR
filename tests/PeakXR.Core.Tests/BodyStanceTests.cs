@@ -701,6 +701,20 @@ public class StanceWalkTests
         Assert.NotEqual(Vector2.Zero, Hold(w, new Vector2(0.12f, 0.2f), 0.2f));
     }
 
+    [Fact]
+    public void ARestedLeftover_StaysRested_ThroughAMomentTheBodyCannotWalk()
+    {
+        // A push, the stick touched or a mantle stops the walk for a moment: the leftover is still the lean's.
+        var w = new StanceWalk();
+        w.Update(new Vector2(0.5f, 0f), Vector2.Zero, 0f, canWalk: true, Dt);
+        w.Update(new Vector2(0.15f, 0f), new Vector2(2f, 0f), 0f, canWalk: true, Dt);
+        Hold(w, new Vector2(0.12f, 0f), w.SettleMax + Dt);
+        Assert.True(w.Rested);
+        w.Update(new Vector2(0.12f, 0f), Vector2.Zero, 0f, canWalk: false, Dt);
+        Assert.True(w.Rested);
+        Assert.Equal(Vector2.Zero, Hold(w, new Vector2(0.12f, 0f), w.Delay + 1f));
+    }
+
     /// <summary>The walk's push ends (the body walks along +x at 0.5 m/s, paying the debt), then the body springs
     /// <paramref name="back"/> of its travel back over 0.3 s while the view moves <paramref name="viewMoves"/> m along
     /// +x, then stands still until the settle is judged.</summary>

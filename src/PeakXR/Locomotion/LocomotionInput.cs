@@ -63,7 +63,8 @@ internal static class LocomotionInput
 
     /// <summary>Seconds after an outside force during which the body is still moving from it: none of its travel is
     /// kept out of the view, and no walk starts (a push is never walked back).</summary>
-    private const float OutsideSeconds = 1f;
+    // The view hold's window too: an outside force's slide and its creep back over the feet stay in the view.
+    private const float OutsideSeconds = ViewHoldGate.OutsideSeconds;
 
     /// <summary>Seconds after a warp (Character.WarpPlayer, Character.cs:1849-1898) the body is still being placed and
     /// settling: no walk, and the view goes onto the body.</summary>

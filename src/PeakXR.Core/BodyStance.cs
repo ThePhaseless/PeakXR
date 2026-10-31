@@ -206,7 +206,9 @@ public sealed class StanceWalk
         float dist = debt.Length();
         if (!canWalk)
         {
-            Reset();
+            // A moment the body can't be walked (a push, the stick, a mantle) keeps a rested leftover the lean's:
+            // only a debt that moves past Start, or Reset, gives it back to the walk.
+            Halt();
             return Vector2.Zero;
         }
         // The delay runs from when the debt is owed: time under Start does not count, or the first few cm of a new
@@ -363,8 +365,13 @@ public sealed class StanceWalk
     /// <summary>Forget the walk (the body cannot be walked, or the view was placed again).</summary>
     public void Reset()
     {
-        Enter(StanceWalkPhase.Idle);
+        Halt();
         Blocked = Rested = false;
+    }
+
+    void Halt()
+    {
+        Enter(StanceWalkPhase.Idle);
         _heldFor = 0f;
         _out = Vector2.Zero;
     }
