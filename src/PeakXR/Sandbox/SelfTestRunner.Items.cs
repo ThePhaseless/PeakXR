@@ -191,6 +191,24 @@ internal sealed partial class SelfTestRunner
     /// checks, never this one.</summary>
     const float GameGripTolerance = 0.04f;
 
+    /// <summary>The local player's <paramref name="left"/> hand bone as drawn (the <see cref="DrawnHands"/> proxy) at the
+    /// game's hand size: the proxy is scaled about the controller's point in the palm (DrawnHands.Pose), so only a
+    /// drawn proxy is moved back. Without the proxies, the ragdoll hand itself.</summary>
+    static Vector3 DrawnHandBone(Character c, bool left)
+    {
+        var body = c.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
+        var drawn = DrawnHands.DrawnBone(body.transform);
+        var driver = AvatarPoseDriver.Of(c);
+        var palmRig = DrawnHands.Drawn && driver != null ? driver.HandRigOf(left) : null;
+        var bone = drawn.position;
+        if (palmRig != null)
+        {
+            palmRig.ControllerToBone(out var lp, out var lr);
+            bone += drawn.rotation * (Quaternion.Inverse(lr) * lp) * (1f - DrawnHands.Factor);
+        }
+        return bone;
+    }
+
     /// <summary>
     /// vr.244: each item in the left hand, then the right (ItemHoldInfo.HoldLocal, Core LeftHold). The holding palm and
     /// the second hand's palm (the game's preview-hand centres under its grips) are as near the item's colliders on the
@@ -256,28 +274,15 @@ internal sealed partial class SelfTestRunner
                 // Toward the body's midline from this hand, along the face's right.
                 float inward = left ? 1f : -1f;
                 var driver = AvatarPoseDriver.Of(c);
-                var body = c.refs
-                    .ragdoll
-                    .partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R]
-                    .Rig;
                 var grip = item.transform.TransformPoint(
                     info.HoldLocal(info.GripLocal, left, primaryGrip: true)
                 );
                 // The game's own grip, read from the item itself (not ItemHoldInfo), for the right hand only.
                 var gameGrip = left ? null : item.transform.Find("Hand_R");
                 bool welded = driver != null && !driver.HeldReleased;
-                // The hand as the player sees it: the drawn proxy, which reaches past an arm too short for the
-                // hold's controller onto the item the weld carries out there (HeldShift, #66). At the game's hand
-                // size: the proxy is scaled about the controller's point in the palm (DrawnHands.Pose).
-                var drawn = DrawnHands.DrawnBone(body.transform);
-                var palmRig = driver != null ? driver.HandRigOf(left) : null;
-                var drawnBone = drawn.position;
-                if (palmRig != null)
-                {
-                    palmRig.ControllerToBone(out var lp, out var lr);
-                    drawnBone +=
-                        drawn.rotation * (Quaternion.Inverse(lr) * lp) * (1f - DrawnHands.Factor);
-                }
+                // The hand as the player sees it, which reaches past an arm too short for the hold's controller onto
+                // the item the weld carries out there (HeldShift, #66).
+                var drawnBone = DrawnHandBone(c, left);
                 side[h] = new Hold
                 {
                     Palm = info.HoldGap(left, true),
