@@ -202,15 +202,23 @@ internal sealed partial class SelfTestRunner
     /// <see cref="PropRestOut"/> out from the eye is set down on the ground <see cref="PropSetOut"/> ahead, as a player
     /// would step to it: the step is the grab, not a chase. Then it is held still (kinematic, named in the note) until
     /// the grab, so the stooping body cannot roll it on. Run 47-54: Apples that rolled 1.0-3.2 m away, under the toes
-    /// or on during the stoop failed vr.10, vr.11, vr.32 and vr.47b.
+    /// or on during the stoop failed vr.10, vr.11, vr.32 and vr.47b. A step that wants the prop farther out passes its
+    /// own band and set-down distance (vr.47d, 1.2 m).
     /// </summary>
-    IEnumerator RestWithinReach(Item world, Vector3 spot)
+    IEnumerator RestWithinReach(
+        Item world,
+        Vector3 spot,
+        float near = PropRestIn,
+        float far = PropRestOut,
+        float setOut = PropSetOut
+    )
     {
         if (world == null || world.rig == null)
             yield break;
-        for (float end = Now + 2f; Now < end && world != null && world.rig != null; )
+        // Past the PropDrop fall (0.23 s) first: just spawned, the prop is still at rest in the air.
+        for (float start = Now, end = Now + 2f; Now < end && world != null && world.rig != null; )
         {
-            if (world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
+            if (Now - start > 0.3f && world.rig.linearVelocity.sqrMagnitude < 0.05f * 0.05f)
                 break;
             yield return null;
         }
@@ -225,16 +233,16 @@ internal sealed partial class SelfTestRunner
         world.rig.linearVelocity = Vector3.zero;
         world.rig.angularVelocity = Vector3.zero;
         string how = F($"rested {outward.magnitude:0.00} m out, {-under:0.00} m over the floor");
-        if (outward.magnitude < PropRestIn || outward.magnitude > PropRestOut || under > 0.3f)
+        if (outward.magnitude < near || outward.magnitude > far || under > 0.3f)
         {
-            var ahead = head.position + Flat(head.forward) * PropSetOut;
+            var ahead = head.position + Flat(head.forward) * setOut;
             if (Terrain(ahead + Vector3.up * 0.5f, Vector3.down, 4f, out var ground))
                 ahead = ground.point + Vector3.up * PropDrop;
             else
                 ahead = spot;
             world.rig.position = ahead;
             world.transform.position = ahead;
-            how += F($", set down {PropSetOut:0.00} m ahead");
+            how += F($", set down {setOut:0.00} m ahead");
             yield return Wait(0.6f);
             if (world != null)
                 how += F($", now at {world.Center()}");
