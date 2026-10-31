@@ -2994,9 +2994,12 @@ internal static class PhysicalInteraction
             RightHand.Use,
             OnClimb(RightHand)
         );
-        // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
+        // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route). An empty
+        // hand's primary is no use: vanilla turns it into the head-aimed wall climb (sincePressClimb, Character.cs:1196;
+        // CharacterClimbing.cs:567), and in VR climbing is by grip, the trigger kept for the piton (decision #31, #78).
         bool primaryDown =
-            primaryHand.Use.Down
+            holding
+            && primaryHand.Use.Down
             && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
         bool secondaryDown = one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down;

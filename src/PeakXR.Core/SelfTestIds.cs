@@ -141,6 +141,7 @@ public static class SelfTestIds
         "vr.149-knockback-side",
         "vr.14b-two-hand-between",
         "vr.15-climb",
+        "vr.442-empty-trigger-no-climb",
         "vr.150-pre-pass-out",
         "vr.151-wind-pressure",
         "vr.152-bounce",
