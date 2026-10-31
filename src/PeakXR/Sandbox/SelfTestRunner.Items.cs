@@ -265,15 +265,27 @@ internal sealed partial class SelfTestRunner
                 // The game's own grip, read from the item itself (not ItemHoldInfo), for the right hand only.
                 var gameGrip = left ? null : item.transform.Find("Hand_R");
                 bool welded = driver != null && !driver.HeldReleased;
+                // The hand as the player sees it: the drawn proxy, which reaches past an arm too short for the
+                // hold's controller onto the item the weld carries out there (HeldShift, #66). At the game's hand
+                // size: the proxy is scaled about the controller's point in the palm (DrawnHands.Pose).
+                var drawn = DrawnHands.DrawnBone(body.transform);
+                var palmRig = driver != null ? driver.HandRigOf(left) : null;
+                var drawnBone = drawn.position;
+                if (palmRig != null)
+                {
+                    palmRig.ControllerToBone(out var lp, out var lr);
+                    drawnBone +=
+                        drawn.rotation * (Quaternion.Inverse(lr) * lp) * (1f - DrawnHands.Factor);
+                }
                 side[h] = new Hold
                 {
                     Palm = info.HoldGap(left, true),
                     Second = info.HoldGap(left, false),
-                    // Welded, the hand body is on the grip; free of the weld it follows the controller instead.
-                    HandOff = welded ? Vector3.Distance(body.position, grip) : float.NaN,
+                    // Welded, the drawn hand is on the grip; free of the weld it follows the controller instead.
+                    HandOff = welded ? Vector3.Distance(drawnBone, grip) : float.NaN,
                     GameGripOff =
                         welded && gameGrip != null
-                            ? Vector3.Distance(body.position, gameGrip.position)
+                            ? Vector3.Distance(drawnBone, gameGrip.position)
                             : float.NaN,
                     MidIn = Vector3.Dot(mid - hand.position, head.right) * inward,
                     EndIn = Vector3.Dot(end - hand.position, head.right) * inward,

@@ -66,6 +66,8 @@ internal sealed partial class SelfTestRunner
         var hand = c.refs.ragdoll.partDict[BodypartType.Hand_R].Rig;
         var wallCollider = wall.GetComponent<Collider>();
         float wallGap = float.PositiveInfinity;
+        float ctrlGap = float.PositiveInfinity;
+        float headGap = float.PositiveInfinity;
         var from = c.Center;
         float start = Now;
         Script(move).Stick = new Vector2(0f, 1f);
@@ -75,7 +77,20 @@ internal sealed partial class SelfTestRunner
                 Script(move).Stick = Vector2.zero;
             released |= driver.HeldReleased;
             if (driver.HandTarget(false, out var target))
+            {
                 worstHand = Mathf.Max(worstHand, Vector3.Distance(hand.position, target));
+                // 0 inside the wall: the controller, not the walk, pressed the apple on it (#17).
+                ctrlGap = Mathf.Min(
+                    ctrlGap,
+                    Vector3.Distance(wallCollider.ClosestPoint(target), target)
+                );
+            }
+            var eyes = VR.VRRig.Instance != null ? VR.VRRig.Instance.Head : null;
+            if (eyes != null)
+                headGap = Mathf.Min(
+                    headGap,
+                    Vector3.Distance(wallCollider.ClosestPoint(eyes.position), eyes.position)
+                );
             worstItem = Mathf.Max(worstItem, driver.HeldItemGap);
             if (c.data.currentItem != null)
             {
@@ -89,7 +104,7 @@ internal sealed partial class SelfTestRunner
         }
         Script(move).Stick = Vector2.zero;
         var note = F(
-            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, apple centre {wallGap:0.00} m from the wall, weld released {released}"
+            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, apple centre {wallGap:0.00} m from the wall (its controller-held hand {ctrlGap:0.00} m, the eyes {headGap:0.00} m), weld released {released}"
         );
         if (c.data.currentItem == null)
         {
