@@ -1426,6 +1426,9 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>vr.47d's Apple, level metres out from the eye: past the grab radius, inside the pointed interact.</summary>
+    const float PingAppleOut = 1.2f;
+
     /// <summary>
     /// vr.47d: the finger gun aimed at an Apple on the ground for 1 s (well past <c>FingerGun.DefaultWindow</c>), then
     /// squeezed. A pointing hand is aiming a ping, so interact.physical's pointed interact keeps waiting
@@ -1467,9 +1470,10 @@ internal sealed partial class SelfTestRunner
             }
         }
         yield return Wait(0.6f);
-        // Past the grab radius, inside the game's 2 m interact reach: only a pointed interact could take it.
-        var spot = Flat(rig.Head.forward) * 1.2f + rig.Head.position;
-        spot.y = c.Center.y;
+        // Past the grab radius, inside the game's 2 m interact reach: only a pointed interact could take it. Set
+        // on the ground, then held where it rests (issue #55: dropped from body height it rolled 1-3 m on before the
+        // aim, which then met the ground or the player's own body).
+        var spot = GroundAhead(PingAppleOut);
         if (!SandboxActions.SpawnItemAt(apple, spot))
         {
             Fail(SandboxActions.LastMessage);
@@ -1478,7 +1482,13 @@ internal sealed partial class SelfTestRunner
         var go = SandboxActions.LastSpawned;
         spawned.Add(go);
         var item = go != null ? go.GetComponent<Item>() : null;
-        yield return Wait(0.6f);
+        yield return RestWithinReach(
+            item,
+            spot,
+            PingAppleOut - 0.3f,
+            PingAppleOut + 0.3f,
+            PingAppleOut
+        );
         if (item == null)
         {
             Fail("spawned Apple has no Item");
