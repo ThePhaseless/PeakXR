@@ -1771,7 +1771,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         bool hand = LocalHold.ItemInLeftHand;
-        yield return GripTo(hand, 1f, 0.1f);
+        yield return GripForUse(hand);
         float since = CueMark();
         Script(hand).TriggerTouch = true;
         Script(hand).Trigger = 1f;

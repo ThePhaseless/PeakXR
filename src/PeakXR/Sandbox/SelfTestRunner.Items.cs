@@ -1358,7 +1358,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var torch = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         // A torch is handed over unlit (a Lantern, FlareActive false; vr13): light it as a player does, with the
         // holding hand's trigger (its primary use, Lantern.cs:193).
         float lightUse = GameTiming.Budget(GameTiming.UseSeconds(torch));
@@ -3399,7 +3399,7 @@ internal sealed partial class SelfTestRunner
             Fail(item.name + " has no binocular zoom (CameraOverride_Binoculars)");
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         HeadFrame(out var head, out var forward, out _);
         SetHand(left, head + forward * 0.25f + Vector3.down * 0.05f);
         BinocularsConfig.ForceHold = true;
@@ -3457,7 +3457,7 @@ internal sealed partial class SelfTestRunner
             Fail(item.name + " has no Action_ShowBinocularOverlay");
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         HeadFrame(out var head, out var forward, out _);
         SetHand(left, head + forward * 0.25f + Vector3.down * 0.05f);
         BinocularsConfig.ForceHold = true;
@@ -3644,7 +3644,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         var from = c.Center;
         int usesBefore = UsesLeft(item);
         Affordance.ResetGate();

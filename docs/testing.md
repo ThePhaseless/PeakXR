@@ -132,6 +132,8 @@ The `sandbox.selftest` feature plays the procedure above by itself, for runs whe
 
 A self-test run grants the player's profile nothing. `SelfTestProgressGuard` blocks the four `AchievementManager` calls every unlock goes through (achievements, stat sets, stat increments and ascent completion) for the whole run, the airport included, where the game's own custom-run guard does not apply. It also skips the quicksave write a campfire light makes and the delete at the end of a run, and logs each call it blocks. When armed it records the quicksave's fingerprint (presence, size, last write, SHA-256), and the last step, `99-save-untouched`, fails unless the file still matches. `sandbox.mptest` uses the same guard.
 
+A step that closes the grip on a held item and then uses it with the trigger waits out the closing fist first (`GripForUse`): a trigger squeezed within 0.3 s of its grip is part of the fist and no use until it opens (Core `UseTrigger.InFist`, issue #48), so a script squeezing it on the next frame never starts the use (issues #63, #64, #65, #68).
+
 Flat: add `-peakxr-novr -peakxr-selftest` to the launch options (after the usual `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
 
 VR: start SteamVR with a headset first (a virtual one such as ALVR works, nobody has to wear it), then launch with `-force-vulkan -peakxr-selftest` and without `-peakxr-novr` (on Windows, `-force-d3d11` in place of `-force-vulkan`; see the README). The run adds the `vr.*` steps below. If VR does not start, `vr.00-session` fails with the last `[xr.bootstrap]` line, the other `vr.*` steps are `SKIP` ("VR not active") and the rest of the script runs flat.
