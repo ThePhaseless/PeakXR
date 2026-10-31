@@ -22,6 +22,9 @@ internal static class LocomotionConfig
     /// <summary>The room-scale setting, so the self-test can hold the body still for its blocked step.</summary>
     internal static ConfigEntry<bool> RoomScaleSetting => roomScale;
 
+    /// <summary>The lean limit setting, so the self-test can lean against its default.</summary>
+    internal static ConfigEntry<float> LeanRadiusSetting => leanRadius;
+
     public static void Bind(ConfigFile file)
     {
         const string s = "Locomotion";

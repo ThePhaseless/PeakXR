@@ -1128,6 +1128,8 @@ internal sealed partial class SelfTestRunner
         // The turn leaves the body off the view until the stance walk steps under it after its delay (#52); a step
         // that measured the hold then, mid-walk, read a lead off by the turn's offset (#69: vr.83c, 0.26-0.40 m).
         yield return WaitFor(() => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed, 5f);
+        if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
+            LogStanceTimeout("warp facing");
     }
 
     /// <summary>Warps onto the ground under <paramref name="stand"/> and waits for the body to settle. Sets

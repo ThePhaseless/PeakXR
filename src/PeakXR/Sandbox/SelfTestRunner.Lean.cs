@@ -19,7 +19,9 @@ namespace PeakXR.Sandbox;
 /// upper body bends, which is only reported). Every frame, ramps and returns included, is tracked. Fails when: inside
 /// the limit, the body (horizontally: its height follows the bend) moves more than <see cref="MaxLeanDrift"/> peak to
 /// peak before the stance walk steps it under the held lean (each lean holds past <see cref="StanceWalk.Delay"/> for
-/// the arm samples, and the body settles back under the head before the next), or the rig origin (the view's offset
+/// the arm samples, and the body settles back under the head before the next), a lean is stepped under sooner than
+/// that delay from its hold (less 0.3 s) or a walk already runs as it begins (<c>LeanLimit</c> held at its default for
+/// the step), or the rig origin (the view's offset
 /// from the scripted head) moves more than that over the leans, walks included (standing still, the view: <see cref="MaxStandViewDrift"/>); a lean bends
 /// the spine less than <see cref="MinLeanBend"/> or moves the ragdoll's shoulders less than
 /// <see cref="MinLeanShoulders"/> along it; the fast lean moves the rig origin more than <see cref="MaxLeanDrift"/>; the far lean does not walk the body at least 0.1 m forward or moves the rig origin,
@@ -52,10 +54,34 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The body root is still the lean's to judge: no stance walk has run since the lean began.</summary>
     bool leanRootLive;
+
+    /// <summary><see cref="Now"/> the judged lean began (<see cref="leanRootLive"/>), and its first stance walk started
+    /// (NaN: none).</summary>
+    float leanRootSince;
+
+    float leanWalkAt;
     Bounds leanOrigin;
     Bounds leanHip;
 
     IEnumerator LeanStep()
+    {
+        // The leans are sized for the default limit (0.3 m inside 0.35 m): a lower one walks them at once.
+        var limit = LocomotionConfig.LeanRadiusSetting;
+        float saved = limit?.Value ?? 0f;
+        if (limit != null)
+            limit.Value = (float)limit.DefaultValue;
+        try
+        {
+            yield return LeanSteps();
+        }
+        finally
+        {
+            if (limit != null)
+                limit.Value = saved;
+        }
+    }
+
+    IEnumerator LeanSteps()
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
@@ -139,6 +165,10 @@ internal sealed partial class SelfTestRunner
             var standAnimShift = driver.LeanShoulderShift;
             leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
             leanRootLive = true;
+            leanRootSince = Now;
+            leanWalkAt = float.NaN;
+            if (RigDriver.FollowWalking)
+                fails.Add($"lean {name}: a stance walk already ran as the lean began");
             leanBend = 0f;
             leanAnimShoulders = 0f;
             // Each stage of the lean, so a failure names the one that did not happen: the gate, the bend applied
@@ -185,6 +215,15 @@ internal sealed partial class SelfTestRunner
             yield return Track(c, rig, Vector3.zero, 0.6f, 1f);
             leanBody = Mathf.Max(leanBody, FlatSize(leanRoot));
             leanWalked |= !leanRootLive;
+            // Held, the lean is stepped under only after the walk's delay from its hold (0.6 s into the lean; 0.3 s
+            // for the debt to stop moving inside the walk's start distance before the ramp ends).
+            float walkAt = leanWalkAt - (leanRootSince + 0.6f);
+            if (walkAt < StanceDelay - 0.3f)
+                fails.Add(
+                    F(
+                        $"lean {name} was stepped under {walkAt:0.00} s into its hold, before the {StanceDelay:0.0} s delay"
+                    )
+                );
             // The walk back under the head, the view still tracked: no walk may move it.
             yield return Settle(rig, leanOrigin, b => leanOrigin = b);
         }
@@ -490,6 +529,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>Least step back (m) vr.273 wants at a 60 degree look down.</summary>
     const float MinStepBack = 0.2f;
 
+    static readonly float StanceDelay = new StanceWalk().Delay;
+
     /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot.</summary>
     static IEnumerator RecenterHead(VRRig rig)
     {
@@ -509,7 +550,7 @@ internal sealed partial class SelfTestRunner
     static IEnumerator Settle(VRRig rig, Bounds origin, Action<Bounds> done)
     {
         float t0 = Now;
-        float delay = new StanceWalk().Delay;
+        float delay = StanceDelay;
         while (
             Now - t0 < delay + 0.5f
             || ((RigDriver.FollowWalking || LocomotionInput.StanceOwed) && Now - t0 < delay + 3f)
@@ -518,6 +559,8 @@ internal sealed partial class SelfTestRunner
             yield return null;
             origin.Encapsulate(rig.Origin.position);
         }
+        if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
+            LogStanceTimeout("settle");
         float t1 = Now;
         while (Now - t1 < 0.3f)
         {
@@ -527,9 +570,21 @@ internal sealed partial class SelfTestRunner
         done(origin);
     }
 
+    /// <summary>Logs the stance walk's state when a wait for it ran out, so a timeout is not silent.</summary>
+    static void LogStanceTimeout(string where)
+    {
+        var debt = RigDriver.StanceDebt;
+        Plugin.Log.LogInfo(
+            F(
+                $"[selftest] {where}: stance wait timed out, debt {new Vector2(debt.x, debt.z).magnitude:0.000} m, blocked {LocomotionInput.FollowStalled}, walking {RigDriver.FollowWalking}, owed {LocomotionInput.StanceOwed}"
+            )
+        );
+    }
+
     void StartTrack(Character c, VRRig rig)
     {
         leanRootLive = true;
+        leanRootSince = Now;
         leanRoot = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
         leanOrigin = new Bounds(rig.Origin.position, Vector3.zero);
         leanHip = new Bounds(c.refs.hip.Rig.position, Vector3.zero);
@@ -573,8 +628,13 @@ internal sealed partial class SelfTestRunner
             yield return null;
             float rootSize = leanRoot.size.magnitude;
             float originSize = leanOrigin.size.magnitude;
-            // The body is a lean's until the stance walk takes it (a lean held past its delay is stepped under).
-            leanRootLive &= !RigDriver.FollowWalking;
+            // The body is a lean's until the stance walk takes it (a lean held past its delay is stepped under), also
+            // when that walk ran between two tracks (the arm samples).
+            bool live =
+                !RigDriver.FollowWalking && LocomotionInput.StanceWalkStartedAt < leanRootSince;
+            if (leanRootLive && !live)
+                leanWalkAt = LocomotionInput.StanceWalkStartedAt;
+            leanRootLive &= live;
             if (leanRootLive)
                 leanRoot.Encapsulate(RigDriver.ViewRoot(c));
             leanOrigin.Encapsulate(rig.Origin.position);
