@@ -332,4 +332,40 @@ public class ArmReachTests
         // Two hands held but not joined (an aimed launcher): none, as before.
         Assert.Equal(0f, ArmReach.HeldShiftWeight(false, 0f, true, 1f));
     }
+
+    // The stretch keeps the ragdoll arm's direction; a free carry's arm can point away from the item it holds (#23).
+
+    [Fact]
+    public void DrawnNudge_PutsANearHandOnItsTarget()
+    {
+        var hand = new Vector3(0.1f, 1f, 0.5f);
+        var target = hand + new Vector3(0.03f, -0.02f, 0f);
+        TestUtil.Near(target - hand, ArmReach.DrawnNudge(hand, target, 1f, out float miss));
+        TestUtil.Near(0f, miss);
+    }
+
+    [Fact]
+    public void DrawnNudge_MovesAtMostItsLimitAndReportsTheRest()
+    {
+        var hand = new Vector3(0f, 1f, 0f);
+        var target = hand + new Vector3(0f, 0f, 0.2f);
+        var nudge = ArmReach.DrawnNudge(hand, target, 1f, out float miss);
+        TestUtil.Near(new Vector3(0f, 0f, ArmReach.MaxDrawnNudge), nudge);
+        TestUtil.Near(0.2f - ArmReach.MaxDrawnNudge, miss);
+    }
+
+    [Fact]
+    public void DrawnNudge_EasesInWithTheArms()
+    {
+        var hand = Vector3.Zero;
+        var target = new Vector3(0.04f, 0f, 0f);
+        TestUtil.Near(
+            new Vector3(0.02f, 0f, 0f),
+            ArmReach.DrawnNudge(hand, target, 0.5f, out float miss)
+        );
+        TestUtil.Near(0.02f, miss);
+        TestUtil.Near(Vector3.Zero, ArmReach.DrawnNudge(hand, target, 0f, out _));
+        TestUtil.Near(Vector3.Zero, ArmReach.DrawnNudge(hand, hand, 1f, out float none));
+        TestUtil.Near(0f, none);
+    }
 }

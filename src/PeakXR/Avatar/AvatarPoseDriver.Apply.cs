@@ -840,7 +840,11 @@ public partial class AvatarPoseDriver
         arm = DrawnHands.Stretches(Owner, left)
             ? ArmReach.DrawnGhostReach(arm, player, mapWeight)
             : ArmReach.GhostReach(arm, player, mapWeight);
-        gap = GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm);
+        // A drawn hand left off the item it holds alone shows the ghost too: never a silent miss (#23).
+        gap = Mathf.Max(
+            GhostFade.Shortfall(shoulder.N(), BodyToHead().N(), bone.N(), arm),
+            DrawnHands.Miss(Owner, left)
+        );
         return true;
     }
 

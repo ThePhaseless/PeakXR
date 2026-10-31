@@ -95,6 +95,24 @@ public static class ArmReach
         return 1f + (k - 1f) * MathF.Min(weight, 1f);
     }
 
+    /// <summary>Most the drawn hand moves off its stretched arm's line onto its target, metres: the stretch keeps the
+    /// ragdoll arm's direction, which a free carry can point away from the item it holds (#23).</summary>
+    public const float MaxDrawnNudge = 0.08f;
+
+    /// <summary>
+    /// The world offset that moves the drawn <paramref name="hand"/> (as stretched) onto its <paramref name="target"/>,
+    /// at most <see cref="MaxDrawnNudge"/> and eased in by <paramref name="weight"/> like the stretch;
+    /// <paramref name="miss"/> is how far it is still left off.
+    /// </summary>
+    public static Vector3 DrawnNudge(Vector3 hand, Vector3 target, float weight, out float miss)
+    {
+        var off = target - hand;
+        float d = off.Length();
+        float n = MathF.Min(d, MaxDrawnNudge) * Math.Clamp(weight, 0f, 1f);
+        miss = d - n;
+        return d > 1e-6f ? off * (n / d) : Vector3.Zero;
+    }
+
     /// <summary>
     /// How far a held item's grip rides out past the ragdoll hand it is welded to, world offset: an arm that cannot
     /// reach its controller left the item that far short of it (#23: 0.12 m standing still, the arm 0.60 m). Out along

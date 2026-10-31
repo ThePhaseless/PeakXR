@@ -40,6 +40,17 @@ internal sealed class DrawnHands : MonoBehaviour
         public Transform[] Parts = System.Array.Empty<Transform>();
         public Transform[] PartProxies = System.Array.Empty<Transform>();
 
+        /// <summary>This frame's drawn arm reaches for a target (<see cref="Stretch"/>): its controller, or the held
+        /// item's grip.</summary>
+        public bool Aims;
+
+        /// <summary>The rest of the way onto that target past the stretch, world (Core
+        /// <see cref="ArmReach.DrawnNudge"/>).</summary>
+        public Vector3 Nudge;
+
+        /// <summary>How far the drawn hand is still left off the held item's grip (0 for an empty hand).</summary>
+        public float Miss;
+
         public Side(bool left) => Left = left;
     }
 
@@ -139,46 +150,53 @@ internal sealed class DrawnHands : MonoBehaviour
         Pose(right, s, Stretch(right));
     }
 
-    /// <summary>Whether <paramref name="owner"/>'s <paramref name="isLeft"/> arm is drawn stretched to its controller
-    /// this frame (the local VR player's empty hand): the ghost hand then waits for the drawn reach.</summary>
+    /// <summary>Whether <paramref name="owner"/>'s <paramref name="isLeft"/> arm is drawn stretched to its target
+    /// (the local VR player's empty hand to its controller, a hand holding an item alone to the item's grip), as last
+    /// posed: the ghost hand then waits for the drawn reach.</summary>
     public static bool Stretches(Character owner, bool isLeft) =>
-        local != null
-        && local.swapped
-        && ReferenceEquals(owner, local.character)
-        && local.driver != null
-        && AvatarConfig.Instance.ArmIK
-        && !local.Holds(local.driver.Pose, isLeft);
+        SideOf(owner, isLeft)?.Aims == true;
+
+    /// <summary>How far <paramref name="owner"/>'s drawn <paramref name="isLeft"/> hand, as last posed, is left off the
+    /// item it holds alone (m): the ghost hand shows it, so a drawn hand that cannot reach its item never misses it
+    /// silently.</summary>
+    public static float Miss(Character owner, bool isLeft) => SideOf(owner, isLeft)?.Miss ?? 0f;
+
+    private static Side SideOf(Character owner, bool isLeft) =>
+        local != null && local.swapped && ReferenceEquals(owner, local.character)
+            ? (isLeft ? local.left : local.right)
+            : null;
 
     /// <summary>The hand stays drawn on its ragdoll hand: both hands hold the item (it sits between them), or its grip
     /// holds the world (a wall climb, a rope, vine, handle or piton, a carried friend:
     /// <see cref="Interact.PhysicalInteraction.GripHolds"/>). A climbing controller runs up to 0.5 m ahead of the body
     /// while the game pays off the pull (ClimbDebt), and a stretched hand would slide off the hold. A hand holding the
     /// item alone stretches like an empty one: its item rides out to the controller past an arm too short for it
-    /// (AvatarPoseDriver.HeldShift, #23). GripHolds also counts that item's own armed grip (for GripToggle), which kept
-    /// the hand short of its item and showed the ghost (vr.352, vr.244).</summary>
+    /// (AvatarPoseDriver.HeldShift, #23). The item's own armed grip (for GripToggle) is no world grip
+    /// (<see cref="Interact.PhysicalInteraction.WorldGripHolds"/>): it kept the hand short of its item (vr.352,
+    /// vr.244). In one-handed mode the item hand can hold a handle or piton too (ClimbHands.Adopt).</summary>
     private bool Holds(AvatarPose pose, bool isLeft) =>
-        character.data.currentItem != null
-            ? pose.TwoHandHold
-                || (pose.ItemInLeftHand != isLeft && Interact.PhysicalInteraction.GripHolds(isLeft))
-            : Interact.PhysicalInteraction.GripHolds(isLeft);
+        (character.data.currentItem != null && pose.TwoHandHold)
+        || Interact.PhysicalInteraction.WorldGripHolds(isLeft);
 
-    /// <summary>The drawn arm's scale about its shoulder that puts an empty hand on its controller (1: as the
-    /// ragdoll has it).</summary>
+    /// <summary>The drawn arm's scale about its shoulder that puts the hand at its target's distance (1: as the
+    /// ragdoll has it), and the rest of the way onto it (<see cref="Side.Nudge"/>).</summary>
     private float Stretch(Side side)
     {
-        if (
-            driver == null
-            || !driver.HasFreshPose
-            || driver.ArmsSuspended
-            || !AvatarConfig.Instance.ArmIK
-        )
+        side.Aims = false;
+        side.Nudge = Vector3.zero;
+        side.Miss = 0f;
+        if (driver == null || !driver.HasFreshPose || driver.ArmsSuspended)
             return 1f;
         var pose = driver.Pose;
         if (!(side.Left ? pose.HasLeftHand : pose.HasRightHand) || Holds(pose, side.Left))
             return 1f;
         // A hand holding the item alone reaches for the item's grip as it lies: on it through the weld's shift, a free
-        // carry, and the shift easing back in after a two-hand hold (#23, #66). An empty hand reaches for its controller.
-        if (!driver.HeldGripBone(side.Left, out var bone))
+        // carry, and the shift easing back in after a two-hand hold (#23, #66). That shift runs with Avatar.ArmIK off
+        // too. An empty hand reaches for its controller, only while its arm follows the controller (ArmIK).
+        bool held = driver.HeldGripBone(side.Left, out var bone);
+        if (!held && !AvatarConfig.Instance.ArmIK)
+            return 1f;
+        if (!held)
             side.Rig.BoneFromController(
                 side.Left ? pose.LeftHandPosition : pose.RightHandPosition,
                 side.Left ? pose.LeftHandRotation : pose.RightHandRotation,
@@ -188,12 +206,24 @@ internal sealed class DrawnHands : MonoBehaviour
         var shoulder = side.Upper.position;
         var elbow = side.Fore.position;
         var hand = side.Hand.position;
-        return ArmReach.DrawnStretch(
+        float k = ArmReach.DrawnStretch(
             Vector3.Distance(shoulder, hand),
             Vector3.Distance(shoulder, bone),
             Vector3.Distance(shoulder, elbow) + Vector3.Distance(elbow, hand),
             driver.ArmWeight
         );
+        // The stretch keeps the ragdoll arm's direction, which a free carry can point away from the item.
+        side.Nudge = ArmReach
+            .DrawnNudge(
+                (hand + (hand - shoulder) * (k - 1f)).N(),
+                bone.N(),
+                driver.ArmWeight,
+                out float miss
+            )
+            .U();
+        side.Miss = held ? miss : 0f;
+        side.Aims = true;
+        return k;
     }
 
     /// <summary>Poses one arm's proxies: the hand <paramref name="s"/> times smaller about its grip, the arm
@@ -205,7 +235,8 @@ internal sealed class DrawnHands : MonoBehaviour
         var rot = hand.rotation;
         var shoulder = side.Upper.position;
         // The stretch moves the elbow and hand out along their own lines from the shoulder: the arm keeps its shape.
-        var shift = (hand.position - shoulder) * (k - 1f);
+        // The hand then moves the rest of the way onto its target; the forearm below runs to it.
+        var shift = (hand.position - shoulder) * (k - 1f) + side.Nudge;
         var grip = hand.position + shift - rot * Quaternion.Inverse(lr) * lp;
         Place(side.HandProxy, hand, grip, shift, s);
         for (int i = 0; i < side.Parts.Length; i++)

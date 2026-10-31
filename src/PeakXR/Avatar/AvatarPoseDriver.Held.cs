@@ -95,13 +95,15 @@ public partial class AvatarPoseDriver
 
     /// <summary>Where the held item, as it lies now, puts the <paramref name="left"/> hand bone on its grip, while that
     /// hand holds it alone: the drawn hand stretches to it (<see cref="DrawnHands"/>). False for the other hand, a
-    /// two-hand hold or no item.</summary>
+    /// two-hand hold or no item, and while the hand does not carry the item (<see cref="ItemFrameOverridden"/> false:
+    /// <c>Avatar.RetargetItems</c> off, the arms released), its grip then lying where the game's own hold puts it.</summary>
     internal bool HeldGripBone(bool left, out Vector3 bone)
     {
         bone = default;
         var item = Owner.data.currentItem;
         var pose = Pose;
-        return item != null
+        return ItemFrameOverridden
+            && item != null
             && !pose.TwoHandHold
             && pose.ItemInLeftHand == left
             && EnsureRig()

@@ -22,11 +22,6 @@ internal sealed partial class SelfTestRunner
     /// <summary>The front of an item in both hands still faces the eyes this much (dot), the join keeping it.</summary>
     const float BetweenFrontFacing = 0.5f;
 
-    /// <summary>Largest jump (m) of the main grip against its hand in one frame while the second hand lets go, once that
-    /// frame also carries most of the release (Core <see cref="Core.HoldHands.ReleaseJumped"/>): the 0.25 s ease back
-    /// onto the grip moves 0.03 m a frame by itself at this rig's 40 ms frames (#15).</summary>
-    const float BetweenReleaseJump = 0.03f;
-
     /// <summary>
     /// vr.14b: with the main hand held naturally and the free hand closing on the item's drawn second grip, the item
     /// sits between the hands (its grips' middle on the hands' middle), the hands' gap to their grips is shared when
@@ -108,20 +103,40 @@ internal sealed partial class SelfTestRunner
         );
         // Letting go: the main grip against its hand per frame.
         yield return GripTo(free, 0f, 0.05f);
-        float jump = 0f;
-        float travel = 0f;
-        var last = GripOffset();
+        // Each frame against what the 0.25 s ease could move in it (Core HoldHands.ReleaseJumped, #15). The item moves
+        // only on a physics step, so a frame shorter than one may carry a whole step.
+        var steps = new List<Vector2>();
+        var start = GripOffset();
+        var last = start;
         float end = Now + 0.5f;
         while (Now < end)
         {
             yield return null;
             var now = GripOffset();
-            float step = Vector3.Distance(now, last);
-            jump = Mathf.Max(jump, step);
-            travel += step;
+            steps.Add(
+                new Vector2(
+                    Vector3.Distance(now, last),
+                    Mathf.Max(Time.deltaTime, Time.fixedDeltaTime)
+                )
+            );
             last = now;
         }
-        line += F($"; release jump {jump:0.000} m of {travel:0.000} m eased");
+        float net = Vector3.Distance(last, start);
+        float jump = 0f;
+        float jumpDt = 0f;
+        bool jumped = false;
+        foreach (var s in steps)
+        {
+            if (s.x > jump)
+            {
+                jump = s.x;
+                jumpDt = s.y;
+            }
+            jumped |= Core.HoldHands.ReleaseJumped(s.x, s.y, net);
+        }
+        line += F(
+            $"; release jump {jump:0.000} m in {jumpDt * 1000f:0} ms of {net:0.000} m net over {steps.Count} frames"
+        );
         Plugin.Log.LogInfo("[selftest] vr.14b " + line);
         notes.Add(line);
         if (mid > BetweenMidSlack || mid2 > BetweenMidSlack)
@@ -130,7 +145,7 @@ internal sealed partial class SelfTestRunner
             failures.Add("one hand carries the spacing: " + line);
         if (info.HasFront && facing < BetweenFrontFacing)
             failures.Add("front turned away: " + line);
-        if (Core.HoldHands.ReleaseJumped(jump, travel, BetweenReleaseJump))
+        if (jumped)
             failures.Add("jumped on release: " + line);
         yield return MoveTrack(free, rest, 0.3f);
 
