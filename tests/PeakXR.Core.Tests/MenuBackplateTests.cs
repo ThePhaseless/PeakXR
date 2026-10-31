@@ -194,4 +194,26 @@ public class MenuBackplateTests
             MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, 0), new Vector2(600, 280))
         );
     }
+
+    [Fact]
+    public void ClipTo_ARowTouchingTheMaskEdge_LeavesNothing()
+    {
+        // vr.266 (run 11): a row whose top meets the viewport's bottom edge overlaps it by float noise after the
+        // world-corner round trip; counted, it pulled the plate's lower edge 6 px down.
+        var min = new Vector2(0, 166);
+        var max = new Vector2(360, 200.0004f);
+        Assert.False(
+            MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, 200), new Vector2(360, 360))
+        );
+    }
+
+    [Fact]
+    public void ClipTo_AOnePixelLine_Kept()
+    {
+        var min = new Vector2(0, 250);
+        var max = new Vector2(360, 251);
+        Assert.True(
+            MenuBackplate.ClipTo(ref min, ref max, new Vector2(0, 200), new Vector2(360, 360))
+        );
+    }
 }

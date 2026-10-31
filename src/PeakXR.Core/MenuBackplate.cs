@@ -42,13 +42,18 @@ public static class MenuBackplate
     }
 
     /// <summary>Cuts a part's <paramref name="min"/>..<paramref name="max"/> to a mask's rect above it: a Mask or
-    /// RectMask2D draws its children only inside itself, whatever their own rects. False when nothing is left.</summary>
+    /// RectMask2D draws its children only inside itself, whatever their own rects. False when less than
+    /// <see cref="MinShown"/> is left either way: a row whose edge meets the mask's overlaps it by float noise.</summary>
     public static bool ClipTo(ref Vector2 min, ref Vector2 max, Vector2 clipMin, Vector2 clipMax)
     {
         min = Vector2.Max(min, clipMin);
         max = Vector2.Min(max, clipMax);
-        return max.X > min.X && max.Y > min.Y;
+        return max.X - min.X > MinShown && max.Y - min.Y > MinShown;
     }
+
+    /// <summary>Canvas pixels a clipped part must keep both ways to count as drawn: under half a pixel draws
+    /// nothing a player sees (issue #91).</summary>
+    public const float MinShown = 0.5f;
 
     /// <summary>Each plate edge lies <paramref name="margin"/> outside the content's, within
     /// <paramref name="tolerance"/>.</summary>
