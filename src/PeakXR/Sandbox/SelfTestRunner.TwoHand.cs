@@ -101,24 +101,23 @@ internal sealed partial class SelfTestRunner
         string line = F(
             $"{held.name} {hand}: grips' middle {mid:0.000} m off the hands', gaps {e1:0.000}/{e2:0.000} m; 0.12 m wider: middle {mid2:0.000} m, gaps {f1:0.000}/{f2:0.000} m; front to the eyes {(info.HasFront ? facing.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "n/a")}; item {lag:0.000} m off its hold"
         );
-        // Letting go: the main grip against its hand per frame.
-        yield return GripTo(free, 0f, 0.05f);
-        // Each frame against what the 0.25 s ease could move in it (Core HoldHands.ReleaseJumped, #15). The item moves
-        // only on a physics step, so a frame shorter than one may carry a whole step.
+        // Letting go: the main grip against its hand per frame, from before the grip opens, so a snap at the release
+        // itself counts. Each frame is judged against what the 0.25 s ease could move in its own time (Core
+        // HoldHands.ReleaseJumped, #15): the held item and the hands are interpolated (decomp Item.cs:771,
+        // RigCreator.cs:100), so a physics tick's move is spread over the render frames inside it.
         var steps = new List<Vector2>();
         var start = GripOffset();
         var last = start;
-        float end = Now + 0.5f;
+        // The grip opens over 0.05 s as GripTo does, recorded through the ramp and 0.5 s after it.
+        float from = Script(free).Grip;
+        float opening = Now;
+        float end = opening + 0.55f;
         while (Now < end)
         {
+            Script(free).Grip = Mathf.Lerp(from, 0f, Mathf.Clamp01((Now - opening) / 0.05f));
             yield return null;
             var now = GripOffset();
-            steps.Add(
-                new Vector2(
-                    Vector3.Distance(now, last),
-                    Mathf.Max(Time.deltaTime, Time.fixedDeltaTime)
-                )
-            );
+            steps.Add(new Vector2(Vector3.Distance(now, last), Time.deltaTime));
             last = now;
         }
         float net = Vector3.Distance(last, start);

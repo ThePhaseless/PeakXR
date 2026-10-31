@@ -92,4 +92,60 @@ public class HoldHandsTests
         // A small move is never a jump, however sudden.
         Assert.False(HoldHands.ReleaseJumped(0.01f, 0.011f, 0f));
     }
+
+    /// <summary>Physics step the item moves on (Unity's default 50 Hz).</summary>
+    const float Tick = 0.02f;
+
+    /// <summary>Whether the release eased <paramref name="distance"/> metres on physics ticks, with
+    /// <paramref name="snap"/> metres more in tick <paramref name="snapTick"/>, reads as a jump when rendered at
+    /// <paramref name="frame"/> seconds a frame: the held item and the hands are interpolated rigidbodies (decomp
+    /// Item.cs:771, RigCreator.cs:100), drawn between their last two ticks, so a tick's move is spread over the render
+    /// frames inside it. Each frame is judged with <paramref name="judgeDt"/> (its own time when null).</summary>
+    static bool InterpolatedJump(
+        float distance,
+        float frame,
+        int snapTick = -1,
+        float snap = 0f,
+        float? judgeDt = null
+    )
+    {
+        float net = distance + snap;
+        float At(int tick) =>
+            distance * HoldHands.Ease(tick * Tick, HoldHands.EaseSeconds)
+            + (snapTick >= 0 && tick >= snapTick ? snap : 0f);
+        float last = 0f;
+        bool jumped = false;
+        for (float t = frame; t < HoldHands.EaseSeconds + 0.1f; t += frame)
+        {
+            int n = (int)(t / Tick);
+            float now = At(n) + (At(n + 1) - At(n)) * (t / Tick - n);
+            jumped |= HoldHands.ReleaseJumped(now - last, judgeDt ?? frame, net);
+            last = now;
+        }
+        return jumped;
+    }
+
+    [Theory]
+    [InlineData(0.15f, 1f / 90f)]
+    [InlineData(0.15f, 1f / 144f)]
+    [InlineData(0.3f, 1f / 144f)]
+    public void ReleaseJumped_AnInterpolatedEaseIsNoJump(float distance, float frame) =>
+        Assert.False(InterpolatedJump(distance, frame));
+
+    [Theory]
+    [InlineData(1f / 90f, 2)]
+    [InlineData(1f / 144f, 2)]
+    [InlineData(1f / 144f, 7)]
+    public void ReleaseJumped_AnInterpolatedSnapIsAJump(float frame, int snapTick)
+    {
+        // 5f489a9's 0.095 m shift snap in one tick, drawn over the render frames of that tick.
+        Assert.True(InterpolatedJump(0.05f, frame, snapTick, 0.095f));
+        // 0.06 m of a 0.15 m release in one tick.
+        Assert.True(InterpolatedJump(0.09f, frame, snapTick, 0.06f));
+    }
+
+    [Fact]
+    public void ReleaseJumped_APhysicsStepPerFrameHidesAnInterpolatedSnapAt144Hz() =>
+        // vr.14b judged each frame as at least a physics step long: the spread snap fit that bound.
+        Assert.False(InterpolatedJump(0.09f, 1f / 144f, 2, 0.06f, judgeDt: Tick));
 }

@@ -76,14 +76,22 @@ public partial class AvatarPoseDriver
     /// to <paramref name="bone"/> line by what the arm cannot reach (Core <see cref="ArmReach.HeldShift"/>, #23), so the
     /// item sits on its controller and the drawn arm stretched to it holds it (<see cref="DrawnHands"/>). Eased out
     /// while both hands hold it (it sits between them) and back in when one lets go (Core
-    /// <see cref="ArmReach.HeldShiftWeight"/>).</summary>
+    /// <see cref="ArmReach.HeldShiftWeight"/>), and eased out while the local item hand grips the world (a handle,
+    /// piton, rope or vine: ClimbHands.Adopt), where it is drawn on its ragdoll hand.</summary>
     private Vector3 HeldShift(bool left, Vector3 bone)
     {
+        // shortcut: a peer's grip on the world is not sent, so its item keeps the shift; send a pose flag if one shows.
+        anchoredWeight = Mathf.MoveTowards(
+            anchoredWeight,
+            Owner.IsLocal && Interact.PhysicalInteraction.WorldGripHolds(left) ? 1f : 0f,
+            Time.fixedDeltaTime / HoldHands.EaseSeconds
+        );
         float weight = ArmReach.HeldShiftWeight(
             twoHandOn,
             twoWeight,
             Pose.TwoHandHold,
-            HoldHands.Ease(Time.time - handoffAt, HoldHands.EaseSeconds)
+            HoldHands.Ease(Time.time - handoffAt, HoldHands.EaseSeconds),
+            anchoredWeight
         );
         return weight > 0f && PhysicsShoulder(left, out var shoulder, out float arm)
             ? HandBody(left)
@@ -614,6 +622,9 @@ public partial class AvatarPoseDriver
         itemTargetRot = rot;
         return true;
     }
+
+    /// <summary>How far the item hand's grip on the world has eased the weld's shift out (<see cref="HeldShift"/>).</summary>
+    private float anchoredWeight;
 
     // The two-hand hold (Core TwoHandPose), set at the join from the one-hand pose and kept while both hands grip.
     private bool twoHandOn;
