@@ -267,7 +267,10 @@ internal sealed class NetPoseSync
         var world = FromAvatarPose(localDriver.Pose);
         // The aim offsets only matter to a held barrel: sent while something is in hand.
         world.HasAim &= character.data.currentItem != null;
-        var local = PoseFrame.ToLocal(world, root, yaw);
+        // The pose was built on the rendered (interpolated) hip: convert from that, or peers get its 0.05-0.1 m
+        // gap to the physics hip as a walking lean (#97).
+        var frame = localDriver.PoseHip is { } built ? N(built) : root;
+        var local = PoseFrame.ToLocal(world, frame, yaw);
 
         gate.Rate = PoseRate.ForPeers(NetPoseFeature.SendRate.Value, peers.Count);
         if (!gate.ShouldSend(now, local))

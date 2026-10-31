@@ -47,12 +47,20 @@ public sealed class LeanTrim
     /// <returns><see cref="Offset"/>.</returns>
     public Vector3 Update(Vector3 want, Vector3 miss, bool open, float dt)
     {
+        if (!open)
+        {
+            // A closed gate measures nothing: the goal must hold still again once it reopens.
+            _have = false;
+            _heldFor = 0f;
+            Offset *= MathF.Max(0f, 1f - Decay * dt);
+            return Offset;
+        }
         want.Y = 0f;
         bool still = _have && dt > 0f && Vector3.Distance(want, _lastWant) <= HeldSpeed * dt;
         _heldFor = still ? _heldFor + dt : 0f;
         _lastWant = want;
         _have = true;
-        if (!open || _heldFor < HeldSeconds)
+        if (_heldFor < HeldSeconds)
         {
             Offset *= MathF.Max(0f, 1f - Decay * dt);
             return Offset;

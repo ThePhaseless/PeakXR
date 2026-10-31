@@ -92,4 +92,15 @@ public class LeanTrimTests
         Assert.True(trim.Offset.Length() <= trim.Max + 1e-4f);
         Assert.Equal(0f, trim.Offset.Y);
     }
+
+    [Fact]
+    public void AGateThatReopens_WaitsItsHoldAgain()
+    {
+        // Run-12 review: a closed gate's zero want read as held, so a reopening trim integrated at once.
+        var trim = new LeanTrim();
+        for (int i = 0; i < 72; i++)
+            trim.Update(default, default, false, Dt);
+        trim.Update(Vector3.Zero, new Vector3(0.1f, 0f, 0f), true, Dt);
+        Assert.Equal(Vector3.Zero, trim.Offset);
+    }
 }
