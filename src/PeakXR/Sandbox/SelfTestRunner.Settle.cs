@@ -56,6 +56,9 @@ internal sealed partial class SelfTestRunner
                 + SelfTestChecks.GameMargin
             );
 
+    /// <summary>The view's level heading once the level loaded, before any step turned it: a new home spot faces it.</summary>
+    Vector3? levelFacing;
+
     /// <summary>Per segment: the flat, open ground spot hand steps start from, found by the first settle there.</summary>
     readonly Dictionary<Segment, (Vector3 Spot, Vector3 Facing)> settleHome = new();
 
@@ -104,8 +107,10 @@ internal sealed partial class SelfTestRunner
         ClearAround(c);
         // Recentre before waiting: a head off the avatar's eyes leans the body, and the lean's hold rocks it (run 32:
         // from vr.26 on, every settle saw the hip at 0.05-0.12 m/s on the home spot and never got to its recentre).
-        if (hasHome)
-            rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), saved.Facing, Vector3.up));
+        // A segment's first settle faces the level's start heading, not whatever an earlier step left: the mob scan's
+        // chain step turns the view to aim and kept it, and the beach home then faced the sea (#59, #62).
+        if ((hasHome ? saved.Facing : levelFacing) is { } facing)
+            rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), facing, Vector3.up));
         yield return SettleRecenter(rig);
         yield return StandStill(c);
         string why = SettleProblem(c, needSpot: !hasHome);
