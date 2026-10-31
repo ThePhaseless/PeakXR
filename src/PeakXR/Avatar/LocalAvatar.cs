@@ -108,8 +108,7 @@ internal sealed class LocalAvatar : MonoBehaviour
             pose.HasHead = true;
             // The head as it stands over the body: without the view's follow lag, turn shift, crouch lift and the
             // look-down step back, which are not the player leaning (peers get the same lean).
-            var goal = rig.Head.position - RigDriver.ViewOffset;
-            pose.HeadPosition = goal + Trim(goal);
+            pose.HeadPosition = rig.Head.position - RigDriver.ViewOffset;
             // The lean aims the animated eyes, which sit apart from the physical eyes the view is calibrated on
             // (run 28: 0.12 m, a 7.5 degree back bend standing on the spot). Send the head's offset from the
             // calibrated eyes applied to the animated ones, so the calibrated spot is upright here and for peers.
@@ -182,44 +181,6 @@ internal sealed class LocalAvatar : MonoBehaviour
                 ? hip.Rig.transform.position
                 : null
         );
-    }
-
-    private readonly LeanTrim leanTrim = new();
-
-    /// <summary>This frame's <see cref="Trim"/> (world, level). Read by the self-test's stance notes.</summary>
-    internal static Vector3 LeanTrimNow { get; private set; }
-
-    /// <summary>Most the look may pitch (degrees) for the drawn eyes to measure the lean: the head bone pitches with the
-    /// look and carries the eye renderers ahead of the unbent body (vr.273).</summary>
-    private const float TrimLevelLook = 20f;
-
-    /// <summary>Level body speed (m/s) under which the drawn eyes measure the lean: a walking body's gait and frame
-    /// timing would wind the trim up.</summary>
-    private const float TrimStillSpeed = 0.3f;
-
-    /// <summary>
-    /// <see cref="LeanTrim"/>: the extra head offset that brings the drawn eyes onto <paramref name="goal"/> (the head
-    /// less what the lean leaves out) once the head holds still, standing, with the lean open and the look level. The
-    /// open-loop bend falls short of it (#97: 0.55 of its want in the animated eye, less in the ragdoll).
-    /// </summary>
-    private Vector3 Trim(Vector3 goal)
-    {
-        if (
-            RigDriver.LeanEye is { } model
-            && RigDriver.ViewOnBody
-            && driver.LeanGate == null
-            && driver.LeanWeight >= 1f
-            && Mathf.Abs(character.data.lookValues.y) < TrimLevelLook
-            && Vector3.ProjectOnPlane(RigDriver.ViewVelocity(character), Vector3.up).magnitude
-                < TrimStillSpeed
-            && RigDriver.TryEyeRenderers(character, out var drawn)
-        )
-            LeanTrimNow = leanTrim
-                .Update((goal - model).N(), (goal - drawn).N(), true, Time.deltaTime)
-                .U();
-        else
-            LeanTrimNow = leanTrim.Update(default, default, false, Time.deltaTime).U();
-        return LeanTrimNow;
     }
 
     /// <summary>On the body: remember the head and hands in the body frame while the arms are fully tracked.

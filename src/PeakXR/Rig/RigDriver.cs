@@ -76,11 +76,15 @@ internal sealed class RigDriver : MonoBehaviour
     internal static System.Action<Vector3> BodyAnchorMoved;
 
     /// <summary>World offset of the first-person view from the avatar's calibrated eyes that the lean leaves out:
-    /// follow lag and the view hold, a turn's shift, the crouch lift, the step back while looking down
+    /// follow lag and the view hold, what a turn put on the debt (<see cref="TurnSkip"/>), the crouch lift, the step back while looking down
     /// (<see cref="BodyStance.LeanSkip"/>), and the head's offset past the lean limit (<see cref="BodyStance.LeanBeyond"/>). avatar.local leans the body from the head minus this, so the lean bends
     /// for the rest of <see cref="StanceDebt"/> while the stance walk is on its way. Zero while the view is
     /// elsewhere.</summary>
     internal static Vector3 ViewOffset;
+
+    /// <summary>The part of <see cref="ViewOffset"/> a turn put on the debt (<see cref="TurnSkip"/>). Self-test notes
+    /// and the lean-view trace.</summary>
+    internal static Vector3 TurnSkipNow;
 
     /// <summary>player.locomotion's stance walk is walking the body under the head, or settling from it: the view
     /// hold treats it as a room walk and the view's height holds (<see cref="RigMath.FollowVerticalRate"/>).</summary>
@@ -299,6 +303,9 @@ internal sealed class RigDriver : MonoBehaviour
     private bool snap = true;
     private Vector3 turnShift;
 
+    /// <summary>The lean's share of the debt a turn made (<see cref="ViewOffset"/>).</summary>
+    private readonly TurnSkip turnSkip = new();
+
     /// <summary>Eased push that keeps a spectate view out of the watched body (<see cref="RigMath.ClearOfBody"/>).</summary>
     private Vector3 clearShift,
         clearVelocity;
@@ -470,7 +477,7 @@ internal sealed class RigDriver : MonoBehaviour
         rootBlend = snap ? upright : Mathf.MoveTowards(rootBlend, upright, dt / RootBlendSeconds);
 
         BodyAnchor = null;
-        ViewOffset = Vector3.zero;
+        ViewOffset = TurnSkipNow = Vector3.zero;
         LeanEye = null;
         StanceDebt = Vector3.zero;
         BodyFromView = Vector3.zero;
@@ -538,7 +545,7 @@ internal sealed class RigDriver : MonoBehaviour
                 : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000}"
             )
         );
     }
@@ -1282,6 +1289,7 @@ internal sealed class RigDriver : MonoBehaviour
         {
             // The view is being placed anyway (recenter, new view) or nothing is seen: start on the avatar's eyes.
             turnShift = Vector3.zero;
+            turnSkip.Reset();
             turnYaw = yaw;
             turnHoldUntil = 0f;
             if (c != null)
@@ -1338,13 +1346,18 @@ internal sealed class RigDriver : MonoBehaviour
         StanceDebt = stands
             ? BodyStance.Debt(view.N(), eye.N(), bodyForward.N(), back).U()
             : Vector3.zero;
-        // A snap or smooth turn's shift stays out of the lean, as before: stick walking glides it away, and standing
-        // the walk steps under it, so it never shows peers a bend.
-        ViewOffset =
+        var skip =
             lag
-            + turnShift
             + Vector3.up * rig.CrouchLift
             + BodyStance.LeanSkip(StanceDebt.N(), bodyForward.N(), back).U();
+        // What any turn put on the debt (a glance, a turned head, a snap or smooth turn) is the walk's: the lean bends
+        // only for a held offset of the head (#50, #97; run 13: 9.5 degrees for a glance, 15-19 under a turned head).
+        // Measured on the debt, so the walk's progress takes it down (the old turnShift here outlived the walk and bent
+        // the lean away from the view, vr.300).
+        TurnSkipNow = turnSkip
+            .Update((view - skip - eye).N(), bodyYaw, FollowWalking, Time.unscaledDeltaTime)
+            .U();
+        ViewOffset = skip + TurnSkipNow;
         // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
         // further meanwhile (#97, vr.396: 0.41 m owed, 24 degrees).
         ViewOffset += BodyStance
