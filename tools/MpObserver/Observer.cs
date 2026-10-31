@@ -10,6 +10,7 @@ using Photon.Pun;
 using Steamworks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Zorro.Core;
 
 namespace MpObserver;
 
@@ -520,6 +521,8 @@ internal sealed partial class Observer : MonoBehaviour
                 return HangBelow(c, out note);
             case MpRequest.StartClimb:
                 return StartClimb(c, out note);
+            case MpRequest.WearPack:
+                return WearPack(c, out note);
             default:
                 note = "unknown request";
                 return false;
@@ -765,6 +768,68 @@ internal sealed partial class Observer : MonoBehaviour
         c.refs.view.RPC("StartClimbRpc", RpcTarget.All, hit.point, hit.normal);
         note = "climbing";
         return true;
+    }
+
+    /// <summary>
+    /// A backpack on B's back the way a player gets one: the master spawns it on the ground with
+    /// <c>PhotonNetwork.InstantiateItemRoom</c>, as the game's own spawners do (BerryBush.cs:31), and B wears it with the
+    /// backpack wheel's own call (<c>Backpack.Wear</c>, BackpackWheel.cs:133): <c>Item.Interact</c> (Item.cs:578) sends
+    /// <c>RequestPickup</c> to the master, whose <c>Player.AddItem</c> fills the backpack slot and syncs it
+    /// (Player.cs:91-115). The wear waits out the pickup guard after an equip (Item.cs:580).
+    /// </summary>
+    static bool WearPack(Character c, out string note)
+    {
+        if (c.player == null)
+        {
+            note = "no player";
+            return false;
+        }
+        if (!c.player.backpackSlot.IsEmpty())
+        {
+            note = "already wears a pack";
+            return true;
+        }
+        // Player.AddItem refuses off the master (Player.cs:98); the observer hosts.
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            note = "not the master client";
+            return false;
+        }
+        Backpack prefab = null;
+        foreach (var item in SingletonAsset<ItemDatabase>.Instance.Objects)
+        {
+            if (item is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+            {
+                prefab = b;
+                break;
+            }
+        }
+        if (prefab == null)
+        {
+            note = "no backpack in the item database";
+            return false;
+        }
+        var go = PhotonNetwork.InstantiateItemRoom(
+            prefab.gameObject.name,
+            c.Center + c.data.lookDirection_Flat * 0.6f,
+            Quaternion.identity
+        );
+        var pack = go != null ? go.GetComponent<Backpack>() : null;
+        if (pack == null)
+        {
+            note = "spawning " + prefab.name + " failed";
+            return false;
+        }
+        c.StartCoroutine(WearSoon(pack, c));
+        note = "spawned " + prefab.name + ", wearing it";
+        return true;
+    }
+
+    static IEnumerator WearSoon(Backpack pack, Character c)
+    {
+        yield return new WaitForSeconds(0.3f);
+        if (pack != null && c != null)
+            pack.Wear(c);
     }
 
     static Character FirstRemote()

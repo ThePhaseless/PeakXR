@@ -2651,15 +2651,32 @@ internal sealed partial class SelfTestRunner
     /// the step past 40 s).</summary>
     const float MpPackWalkSeconds = 8f;
 
-    /// <summary>The pack step's budget from its parts: the settle (recentre about 4 s, stillness up to 6 s, a slope
+    /// <summary>The pack step's budget from its parts: the host asked to wear a pack (an ack within 5 s, the slot within
+    /// 3 s), the settle (recentre about 4 s, stillness up to 6 s, a slope
     /// walk), freeing the hands (about 3 s), three bounded walks, turning and reaching (about 1 s) and the hold check
     /// (2 s), with a margin.</summary>
-    const float MpPackBudget = 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
+    const float MpPackBudget = 8f + 14f + 3f + 3 * (MpPackWalkSeconds + 0.3f) + 1f + 2f + 8f;
+
+    /// <summary>A vanilla host never wears a pack (MP run 12, #94): ask B to put one on (<see cref="MpRequest.WearPack"/>)
+    /// and wait until A's copy of B's backpack slot shows it (Player.AddItem syncs it, Player.cs:113-114).</summary>
+    IEnumerator HostWearsPack()
+    {
+        var host = Host();
+        if (host == null || SocialHands.WearsPack(host))
+            yield break;
+        yield return Ask(MpRequest.WearPack);
+        if (stepSkip != null)
+            yield break;
+        yield return WaitFor(() => host == null || SocialHands.WearsPack(host), 3f);
+    }
 
     /// <summary>pack: the host's worn pack, gripped from behind while A looks away; the hold starts
     /// (BackpackOnBackVisuals.IsConstantlyInteractable, :152) because the look check follows the hand.</summary>
     IEnumerator MpPack()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null
@@ -2669,8 +2686,7 @@ internal sealed partial class SelfTestRunner
         // invisible pack on a host who had none).
         if (visuals == null || !SocialHands.WearsPack(host))
         {
-            stepSkip =
-                "the host wears no pack (vanilla B can only put one on by picking one up, which takes more than local input)";
+            stepSkip = "the host wears no pack";
             yield break;
         }
         yield return FreeHands();
@@ -2781,6 +2797,9 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator MpPackStash()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null
@@ -2873,6 +2892,9 @@ internal sealed partial class SelfTestRunner
     /// </summary>
     IEnumerator MpPointFriendPack()
     {
+        yield return HostWearsPack();
+        if (stepSkip != null)
+            yield break;
         var host = Host();
         var visuals =
             host != null && host.refs.backpackHandler != null

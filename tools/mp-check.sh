@@ -226,7 +226,10 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
     elif $x.name == "pack" then
       prevcp($y) as $p
       | (if $y.localPack == null then "FAIL pack: B logged no pack state (old observer?)"
-         elif $p != null and $p.localPack == false then "FAIL pack: B wore no pack before the step, so A held nothing"
+         # A vanilla B only wears one when A asked for it (wear-pack, #94): its request line sits before the checkpoint.
+         elif $p != null and $p.localPack == false
+           and ([$b[] | select(.type == "request" and .t > $p.t and .t <= $y.t and .ack.do == "wear-pack" and .ack.ok)] | length) == 0
+         then "FAIL pack: B wore no pack before the step and was not asked to put one on, so A held nothing"
          elif ($y.localPack | not) then "FAIL pack: B lost its pack to the hold from A"
          # seen, not after: the window after pack holds the deliberate stash of vr.330-pack-stash.
          elif any(seen($y)[]; .name == "RPCAddItemToCharacterBackpack")
