@@ -31,6 +31,10 @@ internal static class LidGesture
     /// <summary>The last grab on a case: where the hand was and whether it took the lid, for the self-test.</summary>
     internal static string LastGrab { get; private set; } = "none";
 
+    /// <summary>This hand's grip on a case is on its lid half, not low (the self-test's setup check).</summary>
+    internal static bool GripOnLid(bool left) =>
+        Grabbed[left ? 0 : 1] != null && OnLid[left ? 0 : 1];
+
     /// <summary>Per hand: a low grip held long enough for the "grab the lid" hint.</summary>
     private static readonly ContactDwell[] Low =
     {
