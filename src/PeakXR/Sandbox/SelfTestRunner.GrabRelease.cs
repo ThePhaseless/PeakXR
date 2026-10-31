@@ -170,16 +170,19 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.4f);
     }
 
-    /// <summary>vr.320 (issue #48): the right hand closes on a glowing Apple as a fist, the trigger following the grip
-    /// by two frames, and stays closed 1 s: the Apple is in hand and its use never starts. The trigger then opens and
-    /// is squeezed again with the grip still closed: that fresh press starts eating it within 0.6 s.</summary>
+    /// <summary>vr.320 (issue #48): the right hand closes on glowing Bandages as a fist, the trigger following the
+    /// grip by two frames, and stays closed 1 s: the Bandages are in hand and their use never starts. The trigger then
+    /// opens and is squeezed again with the grip still closed: that fresh press starts the cast within 0.6 s.
+    /// Bandages, not food: food's bare trigger is refused by design (Interaction.TriggerEats off,
+    /// ItemGestures.TriggerRefused).</summary>
     IEnumerator FistGrabNoUseStep()
     {
         const bool left = false;
-        var world = SpawnTestItem(AppleFragment, HandSpot(left));
+        const string bandages = "Bandages";
+        var world = SpawnTestItem(bandages, HandSpot(left));
         if (world == null)
             yield break;
-        var prefab = FindItem(SandboxActions.Items, AppleFragment);
+        var prefab = FindItem(SandboxActions.Items, bandages);
         yield return Wait(0.2f);
         yield return GlowAndPress(left, world, fist: true);
         if (!stepOk)
@@ -210,15 +213,15 @@ internal sealed partial class SelfTestRunner
         );
         if (!held)
             Fail(
-                "the fist never took the glowing Apple: "
+                "the fist never took the glowing Bandages: "
                     + note
                     + "; "
                     + PhysicalInteraction.LastGripNote
             );
         else if (used)
-            Fail("the fist's own trigger started using the Apple it picked up: " + note);
+            Fail("the fist's own trigger started using the Bandages it picked up: " + note);
         else if (!fresh)
-            Fail("a fresh trigger press after the fist did not use the Apple: " + note);
+            Fail("a fresh trigger press after the fist did not use the Bandages: " + note);
         else
             Note(note);
         yield return Wait(0.3f);
