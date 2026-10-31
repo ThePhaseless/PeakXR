@@ -374,4 +374,29 @@ public class ReachOutTests
         Assert.Equal(7, t.ArmedFriend);
         Assert.False(t.Friend >= 0 && t.ArmedFriend == t.Friend);
     }
+
+    /// <summary>The point-to-open laser rule (#71) relies on this: a held pick inside its hold angle keeps the pick
+    /// over a 0-degree one, so PackStash resets the tracker and offers only the ray-hit pack, which re-dwells.</summary>
+    [Fact]
+    public void Tracker_HoldKeepsAHeldPick_AResetHandsItToTheRayHit()
+    {
+        var t = new ReachOutTracker(
+            PackDrop.PointAcquire,
+            PackDrop.PointHold,
+            PackDrop.PointDwell,
+            ReachOut.Grace
+        );
+        Frame(t, 0f, 1f, true, (1, 5f, true));
+        Frame(t, 0.2f, 1f, true, (1, 5f, true));
+        Assert.Equal(1, t.ArmedFriend);
+        Frame(t, 0.3f, 1f, true, (1, 11f, true), (2, 0f, true));
+        Assert.Equal(1, t.Friend);
+
+        t.Reset();
+        Frame(t, 0.4f, 1f, true, (2, 0f, true));
+        Assert.Equal(2, t.Friend);
+        Assert.Equal(-1, t.ArmedFriend);
+        Frame(t, 0.55f, 1f, true, (2, 0f, true), (1, 11f, true));
+        Assert.Equal(2, t.ArmedFriend);
+    }
 }
