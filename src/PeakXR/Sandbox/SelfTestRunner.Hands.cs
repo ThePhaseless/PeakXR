@@ -2082,6 +2082,16 @@ internal sealed partial class SelfTestRunner
         }
     }
 
+    /// <summary>Closes the grip on the held item and waits out the closing fist before a scripted trigger use: a
+    /// trigger squeezed within <see cref="UseTrigger.SettleSeconds"/> of its grip is part of the fist and no use until
+    /// it opens (<see cref="UseTrigger.InFist"/>, issue #48), which is not the deliberate squeeze these steps
+    /// play.</summary>
+    IEnumerator GripForUse(bool left)
+    {
+        yield return GripTo(left, 1f, 0.1f);
+        yield return Wait(UseTrigger.SettleSeconds);
+    }
+
     /// <summary>The head and its level forward and right in tracking space.</summary>
     static void HeadFrame(out Vector3 head, out Vector3 forward, out Vector3 right)
     {

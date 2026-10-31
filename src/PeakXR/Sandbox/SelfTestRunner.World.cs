@@ -740,7 +740,7 @@ internal sealed partial class SelfTestRunner
         var given = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
         torchLeft = left;
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         float lightUse = GameTiming.Budget(GameTiming.UseSeconds(given));
         Script(left).Trigger = 1f;
         // The torch in hand each time: a given trackable item can be swapped for its reconnected copy, which left
@@ -2432,7 +2432,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var held = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         int before = WorldHolds.Notices;
         float mark = CueMark();
         Script(left).Trigger = 1f;
