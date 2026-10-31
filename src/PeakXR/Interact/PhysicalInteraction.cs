@@ -2973,7 +2973,7 @@ internal static class PhysicalInteraction
                 dt,
                 UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
             );
-            if (hand.Use.ClimbPress && cfg.TriggerUse && holding && c.data.climbingSpikeCount <= 0)
+            if (hand.Use.ClimbPress && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,
                     DenyReason.UseOtherHand,
@@ -2990,12 +2990,10 @@ internal static class PhysicalInteraction
         );
         // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
         bool primaryDown =
-            cfg.TriggerUse
-            && primaryHand.Use.Down
+            primaryHand.Use.Down
             && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
-        bool secondaryDown =
-            cfg.TriggerUse && (one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down);
+        bool secondaryDown = one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down;
 
         bool atMouth = false;
         var mouthHand = rig.Hand(primaryHand.Left);

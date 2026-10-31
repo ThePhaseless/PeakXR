@@ -96,11 +96,7 @@ internal static class HeldGestures
             // No face to hold it to: a trigger refused for a face-only item (TriggerRefused) says so at the hand.
             bool left = ItemGestures.HoldLeft;
             Trigger.Update(VRInput.Hand(left).Trigger, dt);
-            if (
-                Trigger.Pressed
-                && InteractConfig.Instance.TriggerUse
-                && ItemGestures.TriggerRefused(ItemGestures.Held)
-            )
+            if (Trigger.Pressed && ItemGestures.TriggerRefused(ItemGestures.Held))
                 Affordance.DenyAtHand(left, DenyReason.NotNow, default, ItemGestures.Held);
             return;
         }
@@ -150,7 +146,7 @@ internal static class HeldGestures
             if (item != null)
                 Affordance.Progress(left, item.castProgress);
         }
-        else if (Trigger.Pressed && InteractConfig.Instance.TriggerUse)
+        else if (Trigger.Pressed)
         {
             // The trigger is refused for it: warn, and ring the face where it has to go.
             Affordance.DenyAtHand(
@@ -185,7 +181,6 @@ internal static class HeldGestures
         if (
             Social.SocialHands.Instance.HandOverOwnsTrigger
             || !Trigger.Pressed
-            || !InteractConfig.Instance.TriggerUse
             || (use != UseGesture.Eat && use != UseGesture.Drink)
             || !ItemGestures.TriggerRefused(ItemGestures.Held)
         )

@@ -13,9 +13,8 @@ namespace PeakXR.Interact.Tools;
 /// straight into it, on a rope or vine along that hand's aim. Vanilla timing, preview ghost and placement RPC apply,
 /// and letting go before the cast ends cancels it as vanilla does. A fist closing with its trigger squeezed sets
 /// nothing, and the free hand's trigger no longer sets a piton: the cast sees only this hold as its secondary use. One
-/// piton per hold. That is two-handed play with <c>Interaction.TriggerUse</c> on; otherwise the game's own press
-/// (one-handed play's stick chord, a button) sets it, aimed the same way from the one hand, or the dominant hand when
-/// it is on the climb (#22).
+/// piton per hold. That is two-handed play; one-handed, the game's own press (the stick chord, or a keyboard or
+/// gamepad) sets it, aimed the same way from the one hand (#22).
 /// </summary>
 internal static class HandPiton
 {
@@ -67,13 +66,9 @@ internal static class HandPiton
     /// <summary>Pitons this path has placed, for the self-test.</summary>
     internal static int Placed { get; private set; }
 
-    /// <summary>This path drives the local climber's piton casts: VR, two-handed, triggers as use buttons.</summary>
+    /// <summary>This path drives the local climber's piton casts: VR, two-handed.</summary>
     internal static bool On(Character c) =>
-        VRSession.Active
-        && c != null
-        && c.IsLocal
-        && !VRInput.OneHanded
-        && InteractConfig.Instance.TriggerUse;
+        VRSession.Active && c != null && c.IsLocal && !VRInput.OneHanded;
 
     /// <summary>
     /// Once a frame after the hands' use triggers updated: picks the hand whose deliberate trigger hold is on a wall
@@ -100,14 +95,11 @@ internal static class HandPiton
             Haptics.Pulse(left, 0.8f, 0.06f);
         }
         bool trigger = On(c);
-        // The trigger path takes the hand that holds its trigger; the game's own press (one-handed play's stick chord,
-        // a button with Interaction.TriggerUse off) the one hand, or the dominant hand when it is on the climb.
-        bool dominant = VRInput.LeftHanded;
-        bool l =
-            trigger ? ((left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold)
-            : VRInput.OneHanded ? dominant
-            : (dominant ? leftWall : rightWall) ? dominant
-            : !dominant;
+        // The trigger path takes the hand that holds its trigger; the game's own press (one-handed play's stick chord)
+        // the one hand.
+        bool l = trigger
+            ? ((left ? leftUse : rightUse).ClimbHold ? left : leftUse.ClimbHold)
+            : VRInput.LeftHanded;
         var use = l ? leftUse : rightUse;
         var hand = rig != null ? rig.Hand(l) : null;
         if (
@@ -175,7 +167,7 @@ internal static class HandPiton
         if (c == null || !c.data.isClimbingAnything)
             return default;
         if (!On(c))
-            // The game's own press (one-handed play's chord, a button with Interaction.TriggerUse off) is aimed from
+            // The game's own press (one-handed play's chord, a keyboard or gamepad) is aimed from
             // the hand on the climb too, not the head (#22).
             return aiming && Fresh ? Swap() : default;
         bool now = placing && Fresh;
