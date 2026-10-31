@@ -38,7 +38,7 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
-        yield return HandStep("vr.82b-lid-low-grip", 30f, LidLowGripStep());
+        yield return HandStep("vr.82b-lid-low-grip", 45f, LidLowGripStep());
         yield return WarpBack();
         yield return HandStep("vr.83-cook-cant-use", 40f, CookCantUseStep());
         yield return WarpBack();
@@ -1115,13 +1115,12 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// Ground 0.45 m out from <paramref name="lug"/>'s solid bounds, on the first of eight headings (from the body's
-    /// side round) whose floor lies within 0.25 m of the case's base and is not the case itself, so a squat reaches
-    /// low on it. False when none is.
+    /// Ground 0.45 m out from <paramref name="lug"/>'s solid bounds, on each of eight headings (from the body's side
+    /// round) whose floor lies within 0.25 m of the case's base and is not the case itself, so a squat reaches low on
+    /// it. Added to <paramref name="spots"/> in heading order.
     /// </summary>
-    static bool LevelSpotBeside(Luggage lug, out Vector3 spot)
+    static void LevelSpotsBeside(Luggage lug, List<Vector3> spots)
     {
-        spot = default;
         var c = Character.localCharacter;
         Bounds? solid = null;
         foreach (var col in lug.GetComponentsInChildren<Collider>())
@@ -1137,7 +1136,7 @@ internal sealed partial class SelfTestRunner
                 solid = col.bounds;
         }
         if (solid is not { } box || c == null)
-            return false;
+            return;
         var from = Flat(c.Center - box.center);
         for (int i = 0; i < 8; i++)
         {
@@ -1151,13 +1150,12 @@ internal sealed partial class SelfTestRunner
                 && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
                 && StandingRoom(ground.point)
             )
-            {
-                spot = ground.point;
-                return true;
-            }
+                spots.Add(ground.point);
         }
-        return false;
     }
+
+    /// <summary>vr.82b tries at most this many level spots: each warp costs about 2.5 s.</summary>
+    const int LevelSpotTries = 4;
 
     /// <summary>Room for a standing body on <paramref name="feet"/>: nothing solid but characters within 0.3 m of the
     /// line from knee to eye height. Issue #54: a spot whose ray column was clear but had something solid beside it
@@ -1197,9 +1195,23 @@ internal sealed partial class SelfTestRunner
         // height, 1.4 m under a standing eye.
         // Run 48 warped onto higher ground (or the case) 0.25 m from it, so even a full squat left the hand 1.03 m
         // down: stand on ground level with the case's base, as a player walks round to its open side.
-        if (LevelSpotBeside(lug, out var levelSpot))
+        // Issue #54 (runs 9-11): one spot passed every check, yet the body stood about 2.4 m over it once the warp
+        // ended, at either warp height. Rays and overlap tests that start inside a concave mesh report nothing, so
+        // the landing decides: off the spot's floor by more than 0.3 m, the next heading is tried.
+        var spots = new List<Vector3>();
+        LevelSpotsBeside(lug, spots);
+        bool placed = false;
+        string landings = "";
+        for (int i = 0; i < spots.Count && i < LevelSpotTries && !placed; i++)
         {
-            yield return WarpTo(levelSpot);
+            yield return WarpTo(spots[i]);
+            float rise = TrackedFloorY() - spots[i].y;
+            placed = Mathf.Abs(rise) <= 0.3f;
+            if (!placed)
+                landings += F($"spot {i + 1} of {spots.Count}: landed {rise:0.00} m over it; ");
+        }
+        if (placed)
+        {
             var r = VRRig.Instance;
             r.RotateYaw(
                 Vector3.SignedAngle(Flat(r.Head.forward), Flat(lug.Center() - c.Center), Vector3.up)
@@ -1207,7 +1219,12 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.6f);
         }
         else
+        {
+            landings += F($"no level spot held ({spots.Count} found), warped facing it; ");
             yield return WarpFacing(lug.Center(), 0.6f);
+        }
+        if (landings.Length > 0)
+            Note(landings);
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
