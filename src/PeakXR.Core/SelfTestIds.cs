@@ -279,6 +279,8 @@ public static class SelfTestIds
         "vr.302-glance-still",
         "vr.303-belt-look-down",
         "vr.304-push-moves-view",
+        "vr.395-walk-forward-stick",
+        "vr.396-walk-forward-room",
         "vr.274-own-head-hidden",
         "vr.255-climb-grip-no-pickup",
         "vr.25b-cook-danger",
