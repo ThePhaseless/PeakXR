@@ -653,3 +653,38 @@ public class PickupAnswerTests
     public void TheCueSaysWhatTheGameDid(byte slot, bool climbing, bool holding, PickupCue cue) =>
         Assert.Equal(cue, GripIntent.PickupAnswer(slot, climbing, holding));
 }
+
+public class GestureInteractTests
+{
+    [Fact]
+    public void NoPose_InteractStaysDue()
+    {
+        Assert.Equal(1f, GripIntent.GestureInteractAt(1f, posed: false, gripAt: 1f, now: 1f));
+    }
+
+    [Fact]
+    public void Posed_InteractWaitsWhileThePoseHolds()
+    {
+        // Issue #82: a thumbs-up fist or a fist at the mouth pressed the head-aimed interact at once.
+        float at = GripIntent.GestureInteractAt(1f, posed: true, gripAt: 1f, now: 1f);
+        Assert.Equal(1f + GripIntent.GestureWindow, at, 3);
+        at = GripIntent.GestureInteractAt(at, posed: true, gripAt: 1f, now: 1.2f);
+        Assert.Equal(1.2f + GripIntent.GestureWindow, at, 3);
+        // The pose ended: due a window later, not pushed on.
+        Assert.Equal(at, GripIntent.GestureInteractAt(at, posed: false, gripAt: 1f, now: 1.3f));
+    }
+
+    [Fact]
+    public void Posed_NeverWaitsPastTheCap()
+    {
+        // A gaze grab made with the thumb lifted comes late, never lost.
+        float at = GripIntent.GestureInteractAt(1f, posed: true, gripAt: 1f, now: 5f);
+        Assert.Equal(1f + GripIntent.GestureMaxWait, at, 3);
+    }
+
+    [Fact]
+    public void Posed_NeverShortensALongerWait()
+    {
+        Assert.Equal(9f, GripIntent.GestureInteractAt(9f, posed: true, gripAt: 1f, now: 1f));
+    }
+}

@@ -281,6 +281,27 @@ public static class GripIntent
         bool throwEnabled
     ) => canDrop && canThrow && throwEnabled && speed >= throwSpeed;
 
+    /// <summary>How long after a gesture pose ends a waiting fallback interact comes due (<see cref="GestureInteractAt"/>).</summary>
+    public const float GestureWindow = 0.25f;
+
+    /// <summary>The longest a gesture pose holds a fallback interact back from its grip: twice the thumbs-up's dwell
+    /// (<see cref="EmoteGestures.ThumbDwell"/>), so a gaze grab made with the thumb lifted comes late, never lost.</summary>
+    public const float GestureMaxWait = 2f * EmoteGestures.ThumbDwell;
+
+    /// <summary>
+    /// When a fallback interact (a grip on empty air, <see cref="GripPressAction.Interact"/>) comes due while its hand
+    /// is <paramref name="posed"/> for a gesture: a thumbs-up fist, or a fist at the mouth to talk. It waits while the
+    /// pose holds and <see cref="GestureWindow"/> after, at most <see cref="GestureMaxWait"/> from the grip; the
+    /// gesture taking the hand drops it (issue #82: the fist pressed interact on whatever the head looked at).
+    /// </summary>
+    public static float GestureInteractAt(float interactAt, bool posed, float gripAt, float now) =>
+        posed
+            ? System.Math.Max(
+                interactAt,
+                System.Math.Min(now + GestureWindow, gripAt + GestureMaxWait)
+            )
+            : interactAt;
+
     /// <summary>
     /// Throw when the holding hand lets go fast, otherwise keep the item (or drop it when configured).
     /// An extension claim (holstering over a slot) wins over throw and drop for the holding hand; the caller asks

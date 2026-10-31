@@ -44,6 +44,21 @@ internal sealed class VoiceRuntime : MonoBehaviour
     /// <summary>Lets the self-test see the Voice Activation notice again.</summary>
     public static void ResetNotice() => toldVoiceActivation = false;
 
+    /// <summary>A hand this near the mouth (real metres) may be on its way to the talk gesture.</summary>
+    private const float NearMouth = 0.3f;
+
+    private bool leftNear,
+        rightNear;
+
+    /// <summary>Last frame this free, tracked hand was within <see cref="NearMouth"/> of the mouth with the talk gesture
+    /// on: a fist closed there may be the walkie-talkie hand, not a grab (interact.physical, #82).</summary>
+    internal static bool AtMouth(bool left) =>
+        instance != null && (left ? instance.leftNear : instance.rightNear);
+
+    /// <summary>This hand's talk gesture holds the mic open (dwelled at the mouth).</summary>
+    internal static bool Talking(bool left) =>
+        instance != null && (left ? instance.leftMouth : instance.rightMouth).Active;
+
     /// <summary>The headset mic switch, for the self-test.</summary>
     internal static HeadsetMic Mic => instance != null ? instance.headsetMic : null;
 
@@ -143,6 +158,20 @@ internal sealed class VoiceRuntime : MonoBehaviour
         var headRot = rig.Head.rotation.N();
         bool talkOn = cfg.HandToMouthTalk.Value;
         bool muteOn = cfg.PalmMute.Value;
+        leftNear = Near(
+            talkOn && leftFree && VRInput.Left.Tracked,
+            rig.LeftHand,
+            rig,
+            headPos,
+            headRot
+        );
+        rightNear = Near(
+            talkOn && rightFree && VRInput.Right.Tracked,
+            rig.RightHand,
+            rig,
+            headPos,
+            headRot
+        );
         bool leftMute = Palm(leftPalm, muteOn && leftFree, true, rig, headPos, headRot, dt);
         bool rightMute = Palm(rightPalm, muteOn && rightFree, false, rig, headPos, headRot, dt);
         // An untracked hand keeps its last pose (RigDriver.UpdateHand): lost at the mouth, it would hold the mic open.
@@ -286,8 +315,22 @@ internal sealed class VoiceRuntime : MonoBehaviour
         return false;
     }
 
+    private bool Near(
+        bool on,
+        Transform hand,
+        VRRig rig,
+        System.Numerics.Vector3 headPos,
+        System.Numerics.Quaternion headRot
+    ) =>
+        on
+        && System.Numerics.Vector3.Distance(
+            Rig.RealScale.Real(hand.position, rig.Head.position).N(),
+            MouthGesture.MouthPoint(headPos, headRot, leftMouth.MouthOffset)
+        ) < NearMouth;
+
     private void ClearGesture()
     {
+        leftNear = rightNear = false;
         leftMouth.Reset();
         rightMouth.Reset();
         leftPalm.Reset();

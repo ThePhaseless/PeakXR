@@ -16,12 +16,16 @@ public static class EmoteGestures
     /// up) pointing up.
     /// </summary>
     public static bool ThumbsUp(in FingerCurls c, float thumbUp) =>
-        c.Thumb < 0.3f
+        ThumbLifted(c, thumbUp)
         && c.Index >= FingerCurlMapper.TriggerTouchCurl
         && c.Middle > 0.6f
         && c.Ring > 0.6f
-        && c.Pinky > 0.5f
-        && thumbUp > 0.7f;
+        && c.Pinky > 0.5f;
+
+    /// <summary>The thumbs-up's thumb: lifted off every button with the thumb side up. With the grip closing, the fist
+    /// may be a thumbs-up before its fingers have curled (issue #82).</summary>
+    public static bool ThumbLifted(in FingerCurls c, float thumbUp) =>
+        c.Thumb < 0.3f && thumbUp > 0.7f;
 
     /// <summary>A thumbs-up is held at least this far in front of the eyes (flat), clear of a fist at your side.</summary>
     public const float ThumbReach = 0.3f;
@@ -82,9 +86,13 @@ public static class EmoteGestures
         && thumbSensed
         && !holdingItem
         && !busy
-        && forward >= ThumbReach
-        && belowEyes <= ThumbDrop
+        && ThumbOutFront(forward, belowEyes)
         && speed <= StillSpeed;
+
+    /// <summary>Where a thumbs-up is held: <paramref name="forward"/> metres ahead of the eyes (flat) and
+    /// <paramref name="belowEyes"/> metres under them, out in front at chest height or above.</summary>
+    public static bool ThumbOutFront(float forward, float belowEyes) =>
+        forward >= ThumbReach && belowEyes <= ThumbDrop;
 
     /// <summary>
     /// Why the game will not open the emote wheel (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:561-569, and

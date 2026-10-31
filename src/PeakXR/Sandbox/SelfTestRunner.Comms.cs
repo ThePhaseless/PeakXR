@@ -24,6 +24,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.110-ping", 25f, PingAimStep());
         yield return HandStep("vr.111-ping-refused", 40f, PingRefusedStep());
         yield return HandStep("vr.112-ptt", 25f, PushToTalkStep());
+        yield return HandStep("vr.444-talk-fist-no-interact", 20f, TalkFistNoInteractStep());
         yield return HandStep("vr.113-mute", 25f, PalmMuteStep());
         yield return HandStep("vr.188-ptt-button", 20f, PushToTalkButtonStep());
         // ---- end WP6 slice A
@@ -1179,6 +1180,54 @@ internal sealed partial class SelfTestRunner
         }
         Script(left).Secondary = false;
         yield return null;
+    }
+
+    /// <summary>
+    /// vr.444 (issue #82): with HandToMouthTalk on, the free hand closes 0.2 m under the mouth like a walkie-talkie and
+    /// is held at the mouth 1 s. A grip on empty air falls back to the head-aimed interact; this one must wait and be
+    /// dropped once the talk gesture takes the hand: the hand talks (VoiceRuntime.Talking) and the grip's interact
+    /// (PhysicalInteraction.GripInteractActive) never presses.
+    /// </summary>
+    IEnumerator TalkFistNoInteractStep()
+    {
+        var cfg = VoiceFeature.Settings;
+        if (cfg == null)
+        {
+            stepSkip = "voice not installed";
+            yield break;
+        }
+        bool talk = cfg.HandToMouthTalk.Value;
+        bool left = !VRInput.LeftHanded;
+        bool pressed = false,
+            talked = false;
+        try
+        {
+            cfg.HandToMouthTalk.Value = true;
+            var o = MouthGesture.DefaultOffset;
+            var mouth = VRInput.HeadPosition + VRInput.HeadRotation * new Vector3(o.X, o.Y, o.Z);
+            Script(left).Grip = 0f;
+            yield return MoveTrack(left, mouth + Vector3.down * 0.2f, 0.3f);
+            yield return Wait(0.1f);
+            yield return HandToMouth(left, palm: false);
+            for (float until = Now + 1f; Now < until; )
+            {
+                pressed |= Interact.PhysicalInteraction.GripInteractActive;
+                talked |= VoiceRuntime.Talking(left);
+                yield return null;
+            }
+            yield return HandAway(left);
+        }
+        finally
+        {
+            cfg.HandToMouthTalk.Value = talk;
+        }
+        var note = F($"talked {talked}, grip interact pressed {pressed}");
+        if (!talked)
+            Fail("the closed hand at the mouth never talked: " + note);
+        else if (pressed)
+            Fail("the walkie-talkie fist pressed the head-aimed interact: " + note);
+        else
+            Note(note);
     }
 
     /// <summary>The hand onto the mouth (MouthGesture.DefaultOffset in head space): a closed fist, or with

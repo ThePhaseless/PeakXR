@@ -52,6 +52,10 @@ internal static class PhysicalInteraction
         public IInteractible Target;
         public IGripExtension Extension;
 
+        /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact: later than
+        /// the press for a fist made for a gesture (<see cref="GripIntent.GestureInteractAt"/>).</summary>
+        public float InteractAt;
+
         /// <summary>This Interact grip is a pointed aim at an item taker (<see cref="GripContext.PointedAtTaker"/>).</summary>
         public bool AimedTaker;
 
@@ -500,6 +504,20 @@ internal static class PhysicalInteraction
             hand.GripAt = now;
         // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75).
         hand.GripAt = Mathf.Max(hand.GripAt, GripToggle.ClosedAt(hand.Left));
+        // A fist made for a gesture (a thumbs-up, the walkie-talkie hand at the mouth) is no interact: it waits while
+        // the pose holds and is dropped once the gesture takes the hand (#82).
+        if (hand.Action == GripPressAction.Interact && now < hand.InteractAt)
+        {
+            if (GestureTook(hand))
+                hand.Action = GripPressAction.None;
+            else
+                hand.InteractAt = GripIntent.GestureInteractAt(
+                    hand.InteractAt,
+                    GesturePosed(hand),
+                    hand.GripAt,
+                    now
+                );
+        }
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);
@@ -640,6 +658,16 @@ internal static class PhysicalInteraction
         var hand = left ? LeftHand : RightHand;
         return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
+
+    /// <summary>This hand is posed for a gesture a fist belongs to: the thumbs-up's fist (emotes) or a hand at the
+    /// mouth for the talk gesture (voice). Last frame's poses: both run late.</summary>
+    private static bool GesturePosed(Hand hand) =>
+        Emotes.GestureEmotes.ThumbPosed(hand.Left) || Voice.VoiceRuntime.AtMouth(hand.Left);
+
+    /// <summary>The gesture took this hand since its grip closed: the thumbs-up played on it, or it talks.</summary>
+    private static bool GestureTook(Hand hand) =>
+        Emotes.GestureEmotes.PlayedAt(hand.Left) >= hand.GripAt
+        || Voice.VoiceRuntime.Talking(hand.Left);
 
     /// <summary>This hand's trigger started a use press on the last use pass (<see cref="UseTrigger.Pressed"/>): never
     /// one it squeezed with a closing fist or on the climber. For cues that answer a press.</summary>
@@ -961,6 +989,9 @@ internal static class PhysicalInteraction
                         DenyReason.HandsFull,
                         Affordance.Hints ? DenyHint.On(handle.transform) : default
                     );
+                break;
+            case GripPressAction.Interact:
+                hand.InteractAt = GripIntent.GestureInteractAt(now, GesturePosed(hand), now, now);
                 break;
         }
         hand.Action = action;
@@ -2932,6 +2963,8 @@ internal static class PhysicalInteraction
                         GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
+                    if (now < hand.InteractAt)
+                        break;
                     interactDown = hand.Injected = true;
                     GripInteractActive = true;
                     break;

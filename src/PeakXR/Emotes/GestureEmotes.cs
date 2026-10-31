@@ -48,7 +48,49 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>Per hand (left, right): the controller has reported a thumb touch or press at least once, so it has
     /// thumb sensors and a lifted thumb means something.</summary>
-    private readonly bool[] thumbSensed = new bool[2];
+    private static readonly bool[] thumbSensed = new bool[2];
+
+    /// <summary>Gestures were tracked last frame (none of the early outs in <see cref="LateUpdate"/>).</summary>
+    private static bool tracking;
+
+    private static readonly float[] playedAt = { float.NegativeInfinity, float.NegativeInfinity };
+
+    /// <summary>
+    /// This empty hand's grip may be the thumbs-up's fist, not a grab (interact.physical, #82): gestures are tracked,
+    /// nothing is held, the hand is out in front (<see cref="EmoteGestures.ThumbOutFront"/>) and the thumb is lifted
+    /// and up (<see cref="EmoteGestures.ThumbLifted"/>) on a controller that senses it. Read live, so it holds on the
+    /// frame the grip closes, still or not.
+    /// </summary>
+    internal static bool ThumbPosed(bool left)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        var hand = rig != null ? rig.Hand(left) : null;
+        if (
+            !tracking
+            || c == null
+            || c.data.currentItem != null
+            || hand == null
+            || rig.Head == null
+            || !thumbSensed[left ? 0 : 1]
+            || !VRInput.Hand(left).Tracked
+        )
+            return false;
+        var head = rig.Head.position;
+        var p = Rig.RealScale.Real(hand.position, head);
+        var flat = rig.Head.forward;
+        flat.y = 0f;
+        flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
+        return EmoteGestures.ThumbOutFront(Vector3.Dot(p - head, flat), head.y - p.y)
+            && EmoteGestures.ThumbLifted(
+                LocalAvatar.ControllerCurls(left),
+                Vector3.Dot(hand.ThumbSide(), Vector3.up)
+            );
+    }
+
+    /// <summary>When a gesture emote last played on this hand (<c>Time.time</c>).</summary>
+    internal static float PlayedAt(bool left) => playedAt[left ? 0 : 1];
+
     private GUIManager gui;
     private Emote wave,
         cheerEmote,
@@ -121,6 +163,7 @@ internal sealed class GestureEmotes : MonoBehaviour
             Reset();
             return;
         }
+        tracking = true;
         if (current != gui)
         {
             gui = current;
@@ -191,7 +234,7 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>A deliberate thumbs-up (EmoteGestures.ThumbIntent): a tracked fist, thumb lifted and up, held still out
     /// in front, empty-handed and not busy, on a controller that has shown it senses the thumb.</summary>
-    private bool Thumb(
+    private static bool Thumb(
         bool left,
         Transform hand,
         Vector3 head,
@@ -254,6 +297,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         if (emote.Anim == null)
             return;
         nextAt = Time.time + Cooldown;
+        playedAt[left ? 0 : 1] = Time.time;
         LastPlayed = emote.Anim;
         PlayCount++;
         playEmote(c.refs.animations, emote.Anim);
@@ -309,6 +353,7 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     private void Reset()
     {
+        tracking = false;
         leftWave.Reset();
         rightWave.Reset();
         cheer.Reset();
