@@ -2996,7 +2996,7 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.1f);
         var wheel = GUIManager.instance.backpackWheel;
         var start = Script(free).Position;
-        for (int deg = 0; deg < 360 && !Stash(wheel); deg += 30)
+        for (int deg = 0; deg < 360 && !PocketChosen(wheel); deg += 30)
         {
             float a = deg * Mathf.Deg2Rad;
             SetHand(
@@ -3005,7 +3005,7 @@ internal sealed partial class SelfTestRunner
             );
             yield return Wait(0.15f);
         }
-        if (!Stash(wheel))
+        if (!PocketChosen(wheel))
         {
             Script(free).Trigger = 0f;
             Fail("no pocket of the host's pack offered the stash");
@@ -3074,9 +3074,6 @@ internal sealed partial class SelfTestRunner
             stepNote = stashed + "; from the front WrongAngle refused the pull";
         // The next steps start empty-handed, as vr.330 leaves A.
         yield return DropHeld();
-
-        static bool Stash(BackpackWheel w) =>
-            w.chosenSlice.IsSome && w.chosenSlice.Value.isStashSlice;
     }
 
     /// <summary>Body and neck turn (degrees) of the pack step: 120° in all, past vanilla's 110° (BackpackOnBackVisuals.cs:102).</summary>

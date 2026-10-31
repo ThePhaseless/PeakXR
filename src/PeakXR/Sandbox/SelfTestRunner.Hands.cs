@@ -1266,7 +1266,7 @@ internal sealed partial class SelfTestRunner
         // Sweep the hand round the wheel (BodyInventory.DriveWheel reads it head-relative) until a pocket offers the stash.
         var wheel = gui.backpackWheel;
         var start = Script(reach).Position;
-        for (int deg = 0; deg < 360 && !Stashable(wheel); deg += 30)
+        for (int deg = 0; deg < 360 && !PocketChosen(wheel); deg += 30)
         {
             float a = deg * Mathf.Deg2Rad;
             SetHand(
@@ -1275,7 +1275,7 @@ internal sealed partial class SelfTestRunner
             );
             yield return Wait(0.15f);
         }
-        if (!Stashable(wheel))
+        if (!PocketChosen(wheel))
         {
             Fail("no wheel pocket offered the stash");
             yield break;
@@ -1301,11 +1301,6 @@ internal sealed partial class SelfTestRunner
             Fail(covered + ": " + note);
         else
             stepNote = note;
-
-        static bool Stashable(BackpackWheel w) =>
-            w.chosenSlice.IsSome
-            && !w.chosenSlice.Value.isBackpackWear
-            && !w.chosenSlice.Value.isJetpackFuelSlice;
     }
 
     /// <summary>

@@ -146,6 +146,15 @@ internal sealed partial class SelfTestRunner
         return $"point hand {s.PointHand}, pack {(s.PointPack != null ? s.PointPack.name : "none")}, verdict {s.PointVerdict}";
     }
 
+    /// <summary>The hovered slice is a pocket, not Wear or jetpack fuel. A pocket's <c>isStashSlice</c> stays false:
+    /// <c>stashSlice</c> belongs to <c>InitStashSlot</c>, which <c>BackpackWheel.InitWheel</c> never calls
+    /// (BackpackWheel.cs:29-71); an empty pocket hovered with an item in hand is chosen through the item-slot path
+    /// (:219-240) and <c>Choose</c> stashes into it (:148-151). Issue #71, run 12: vr.430 waited for isStashSlice.</summary>
+    static bool PocketChosen(BackpackWheel w) =>
+        w.chosenSlice.IsSome
+        && !w.chosenSlice.Value.isBackpackWear
+        && !w.chosenSlice.Value.isJetpackFuelSlice;
+
     static int PackItems(Backpack pack, ushort itemID)
     {
         int n = 0;
@@ -239,20 +248,27 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         PointAt(free, beside.Center());
-        yield return null;
+        // The rig poses the aim in LateUpdate (RigDriver.UpdateHands) from the next sample, after this coroutine
+        // resumes: one frame read the old aim still on the near pack (run 12: "near pack 2 deg off").
+        for (int f = 0; f < 3; f++)
+            yield return null;
         var aim = VRRig.Instance.Aim(free);
         float held = ReachOut.AimDegrees(
             aim.position.N(),
             (aim.position + aim.forward).N(),
             pointPack.Center().N()
         );
-        bool rayOn =
-            Physics.Raycast(aim.position, aim.forward, out var hit, PackDrop.PointSearch + 1f)
-            && hit.collider.GetComponentInParent<Backpack>() == beside;
+        bool rayHit = Physics.Raycast(
+            aim.position,
+            aim.forward,
+            out var hit,
+            PackDrop.PointSearch + 1f
+        );
+        bool rayOn = rayHit && hit.collider.GetComponentInParent<Backpack>() == beside;
         if (!rayOn || held > PackDrop.PointHold)
         {
             stepNote =
-                $"laser rule not posed (ray on the beside pack {rayOn}, near pack {held:0} deg off)";
+                $"laser rule not posed (ray on the beside pack {rayOn}, hit {(rayHit ? hit.collider.name : "nothing")}, near pack {held:0} deg off)";
             yield break;
         }
         yield return Until(
@@ -319,7 +335,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var wheel = GUIManager.instance.backpackWheel;
         var start = Script(free).Position;
-        for (int deg = 0; deg < 360 && !StashSlice(wheel); deg += 30)
+        for (int deg = 0; deg < 360 && !PocketChosen(wheel); deg += 30)
         {
             float a = deg * Mathf.Deg2Rad;
             SetHand(
@@ -328,7 +344,7 @@ internal sealed partial class SelfTestRunner
             );
             yield return PointWait(0.15f);
         }
-        if (!StashSlice(wheel))
+        if (!PocketChosen(wheel))
         {
             Fail("moving the trigger hand offered no pocket to stash in");
             yield break;
@@ -375,9 +391,6 @@ internal sealed partial class SelfTestRunner
         else
             stepNote =
                 $"far pack OutOfReach, {laser}, near pack opened by the trigger and the Apple went into pocket {pocket}; aimed away the trigger is the secondary use";
-
-        static bool StashSlice(BackpackWheel w) =>
-            w.chosenSlice.IsSome && w.chosenSlice.Value.isStashSlice;
     }
 
     /// <summary>
