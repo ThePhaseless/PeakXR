@@ -349,6 +349,9 @@ internal sealed partial class SelfTestRunner
             float start = Now;
             float pressAt = -1f;
             float reachAt = -1f;
+            // The catch lands during the squeeze: Reach resets sinceGrabFriend only while the host is helpable
+            // (CharacterGrabbing.cs:252-268), and its first tick clears the web, so by t = 1 it has grown past 0.3 s.
+            float caughtAt = -1f;
             while (true)
             {
                 float t = Mathf.Clamp01((Now - start) / 1.5f);
@@ -358,6 +361,8 @@ internal sealed partial class SelfTestRunner
                     pressAt = Now;
                 if (reachAt < 0f && c.data.isReaching)
                     reachAt = Now;
+                if (caughtAt < 0f && reachAt >= 0f && c.data.sinceGrabFriend < 0.3f)
+                    caughtAt = Now;
                 if (t >= 1f && (reachAt >= 0f || Now - pressAt > 0.5f))
                     break;
                 yield return null;
@@ -371,17 +376,23 @@ internal sealed partial class SelfTestRunner
                 );
                 yield break;
             }
-            yield return Until(
-                () => c.data.sinceGrabFriend < 0.3f,
-                3f,
-                F(
-                    $"the reach-out never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off)"
-                )
+            if (caughtAt < 0f)
+            {
+                yield return Until(
+                    () => c.data.sinceGrabFriend < 0.3f,
+                    3f,
+                    F(
+                        $"the reach-out never caught the host (look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off)"
+                    )
+                );
+                if (!stepOk)
+                    yield break;
+                caughtAt = Now;
+            }
+            yield return WaitFor(
+                () => !host.refs.afflictions.isStruggling,
+                Mathf.Max(0f, caughtAt + 3f - Now)
             );
-            if (!stepOk)
-                yield break;
-            float caughtAt = Now;
-            yield return WaitFor(() => !host.refs.afflictions.isStruggling, 3f);
             if (host.refs.afflictions.isStruggling)
             {
                 Fail("the reach-out caught the host, but the host was still webbed 3 s later");
