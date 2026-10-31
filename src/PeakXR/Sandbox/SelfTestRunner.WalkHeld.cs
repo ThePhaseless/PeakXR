@@ -4,14 +4,24 @@ using UnityEngine;
 
 namespace PeakXR.Sandbox;
 
-/// <summary>vr.246: a held item stays welded while the stick walks the body into a wall, and rejoins its hand after
-/// a reach into the wall let it go.</summary>
+/// <summary>vr.246: a held item stays welded while the stick walks the body into a wall, low at the hip or held out
+/// past the arm's reach, and the ghost hand shows a controller the wall holds the hand off.</summary>
 internal sealed partial class SelfTestRunner
 {
+    /// <summary>Ragdoll hand off its controller (m) that counts as held off by the wall: past the ghost's own
+    /// threshold (GhostFade.Enter) with room for the walk's lag.</summary>
+    const float HeldOffGhost = 0.1f;
+
+    /// <summary>Seconds held off past <see cref="HeldOffGhost"/> after which the ghost must have shown
+    /// (GhostFade.Persist is 0.15 s).</summary>
+    const float HeldOffGhostSeconds = 0.5f;
+
     /// <summary>
     /// vr.246: an apple carried low in the right hand, the move stick forward for 3 s toward a wall 1.2 m ahead, then
-    /// released: the apple never leaves its hand weld. Then the controller held out past the arm's reach walks into the
-    /// wall for 2 s; with the wall removed and the stick let go, the apple is back in its weld within 1.5 s. The game pushes the held item with the walk on its own
+    /// released: the apple never leaves its hand weld, and a hand the wall holds off its controller shows the ghost.
+    /// Then the controller held out past the arm's reach walks into the wall for 2 s: the weld still holds, and with the
+    /// wall removed and the stick let go the apple is in its weld within 1.5 s. The game pushes the held item with the
+    /// walk on its own
     /// (CharacterItems.AddMovementForce); with the body stopped by a wall that push held the welded hand 0.3 m off its
     /// controller and the weld let go on every walk (vr run of e7b3cd9, the airport's spawn corner).
     /// </summary>
@@ -68,6 +78,8 @@ internal sealed partial class SelfTestRunner
         float wallGap = float.PositiveInfinity;
         float ctrlGap = float.PositiveInfinity;
         float headGap = float.PositiveInfinity;
+        float heldOff = 0f;
+        float ghost = 0f;
         var from = c.Center;
         float start = Now;
         Script(move).Stick = new Vector2(0f, 1f);
@@ -78,7 +90,10 @@ internal sealed partial class SelfTestRunner
             released |= driver.HeldReleased;
             if (driver.HandTarget(false, out var target))
             {
-                worstHand = Mathf.Max(worstHand, Vector3.Distance(hand.position, target));
+                float off = Vector3.Distance(hand.position, target);
+                worstHand = Mathf.Max(worstHand, off);
+                if (off > HeldOffGhost)
+                    heldOff += Time.deltaTime;
                 // 0 inside the wall: the controller, not the walk, pressed the apple on it (#17).
                 ctrlGap = Mathf.Min(
                     ctrlGap,
@@ -92,6 +107,7 @@ internal sealed partial class SelfTestRunner
                     Vector3.Distance(wallCollider.ClosestPoint(eyes.position), eyes.position)
                 );
             worstItem = Mathf.Max(worstItem, driver.HeldItemGap);
+            ghost = Mathf.Max(ghost, ReachGhost.Alpha(false));
             if (c.data.currentItem != null)
             {
                 var middle = c.data.currentItem.Center();
@@ -104,7 +120,7 @@ internal sealed partial class SelfTestRunner
         }
         Script(move).Stick = Vector2.zero;
         var note = F(
-            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, apple centre {wallGap:0.00} m from the wall (its controller-held hand {ctrlGap:0.00} m, the eyes {headGap:0.00} m), weld released {released}"
+            $"walked {FlatDistance(c.Center, from):0.00} m toward a wall 1.2 m ahead, hand up to {worstHand:0.00} m from its controller, item {worstItem:0.00} m from its place, apple centre {wallGap:0.00} m from the wall (its controller-held hand {ctrlGap:0.00} m, the eyes {headGap:0.00} m), weld released {released}, hand over {HeldOffGhost:0.00} m off for {heldOff:0.00} s, ghost up to {ghost:0.00}"
         );
         if (c.data.currentItem == null)
         {
@@ -116,9 +132,16 @@ internal sealed partial class SelfTestRunner
             Fail("the apple left its hand weld during the walk: " + note);
             yield break;
         }
+        // A hand the wall holds off its controller is no silent miss: the ghost shows the controller (#17).
+        if (heldOff >= HeldOffGhostSeconds && ghost <= 0f)
+        {
+            Fail("the wall held the hand off its controller and no ghost hand showed: " + note);
+            yield break;
+        }
         // Then held out to read, past the arm's reach (vr.245's natural hold), and walked into the wall again: the
-        // hand meets the wall and the weld may let go. With the wall gone and the stick let go it must rejoin, the
-        // arm still short of its controller (live run of 0e8ad7e: free 22 s).
+        // apple meets the wall, which holds it and its hand back; the weld keeps it (#17: a free carry cannot pass
+        // the wall either, and its snap put the apple inside it). With the wall gone and the stick let go it must be
+        // in its weld, the arm still short of its controller (live run of 0e8ad7e: free 22 s).
         SetHand(false, head + ahead * 0.45f + right * 0.15f + Vector3.down * 0.15f);
         yield return Wait(0.5f);
         bool releasedAtWall = false;
@@ -138,6 +161,8 @@ internal sealed partial class SelfTestRunner
         );
         if (c.data.currentItem == null)
             Fail("the apple left the hand: " + note);
+        else if (releasedAtWall)
+            Fail("the apple left its hand weld against the wall: " + note);
         else if (driver.HeldReleased)
             Fail("the apple did not rejoin its hand after the wall: " + note);
         else

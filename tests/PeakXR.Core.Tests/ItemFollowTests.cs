@@ -69,6 +69,31 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AnItemHeldBackByTheWorldKeepsItsWeld()
+    {
+        // #17, vr.246: the walk presses the apple on a wall and the wall holds the hand 0.22-0.38 m off its controller.
+        // A free carry cannot get the item through the wall either; the weld holds, the arm stuck or not.
+        var g = new WeldGate();
+        for (int i = 0; i < 200; i++)
+            Assert.False(g.Update(0.38f, 0f, 0.02f, itemBlocked: true));
+        for (int i = 0; i < 200; i++)
+            Assert.False(g.Update(0.6f, 0f, 0.02f, blocked: true, itemBlocked: true));
+    }
+
+    [Fact]
+    public void AFreeItemHeldBackByTheWorldRejoinsItsHand()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            g.Update(0.6f, 0f, 0.02f);
+        Assert.True(g.Released);
+        bool released = true;
+        for (int i = 0; i < 6; i++)
+            released = g.Update(0.6f, 0.5f, 0.02f, itemBlocked: true);
+        Assert.False(released);
+    }
+
+    [Fact]
     public void AnArmThatCannotReachItsControllerKeepsItsWeldWithinItsShortfall()
     {
         // vr69 vr.230: crouched at a stoop the shoulder leaves the controller beyond the arm's length; the hand sits

@@ -13,7 +13,7 @@ namespace PeakXR.Sandbox;
 /// joint of both hands must stay inside its limits (<see cref="FingerJoints.Within"/>: never back past its rest pose,
 /// never past its fist, never turned sideways past its splay) and turn only about its own bend axis, at the angle its
 /// drawn curl asks for (curl 0 is the bind pose), each within <see cref="FingerSlack"/>. The note logs the worst turn
-/// off a bend axis. vr.282 takes a screenshot of both hands open and closed. With live controllers (hold mode) it
+/// off a bend axis. vr.282 takes a screenshot of both hands open, half curled and closed. With live controllers (hold mode) it
 /// judges the hands as they are.
 /// </summary>
 internal sealed partial class SelfTestRunner
@@ -59,9 +59,11 @@ internal sealed partial class SelfTestRunner
                     yield return Wait(0.5f);
                     JudgeFingers(leftRig, F($"curl {curl:0.0} L"), fails, ref worst);
                     JudgeFingers(rightRig, F($"curl {curl:0.0} R"), fails, ref worst);
-                    if (skeletal && curl != 0.5f)
+                    if (skeletal)
                         yield return ShotAt(
-                            curl > 0f ? "vr.282-fingers-closed" : "vr.282-fingers-open",
+                            curl >= 1f ? "vr.282-fingers-closed"
+                                : curl > 0f ? "vr.282-fingers-half"
+                                : "vr.282-fingers-open",
                             HandsMid()
                         );
                 }

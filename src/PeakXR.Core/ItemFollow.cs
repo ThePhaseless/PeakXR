@@ -12,7 +12,8 @@ namespace PeakXR.Core;
 /// It rejoins once the hand is within <see cref="Rejoin"/> of its controller and the free item is within
 /// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), or once the hand has stopped
 /// closing in short of <see cref="Release"/> (an arm out of reach, which a weld would keep), and a fresh weld stays for
-/// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back.
+/// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back. An item the world
+/// holds back (a wall the walk presses it on) never leaves the hand for it, as in vanilla (#17).
 /// </summary>
 public sealed class WeldGate
 {
@@ -59,12 +60,16 @@ public sealed class WeldGate
     /// release and rejoin are judged past it, so an arm that cannot physically get there keeps its weld
     /// (vr69 vr.230: crouched at a stoop the welded hand sat 0.33 m off).</param>
     /// <param name="blocked">Terrain between the shoulder and the controller (the hand cannot get through).</param>
+    /// <param name="itemBlocked">The world holds the item itself back from where its controller puts it (a wall the
+    /// walk presses it on, #17): a free carry could not get it there either, and a snap would put it inside the wall.
+    /// The weld never lets go of it, and a free item rejoins its hand; the ghost hand shows the controller.</param>
     public bool Update(
         float handToController,
         float handToItem,
         float dt,
         float shortfall = 0f,
-        bool blocked = false
+        bool blocked = false,
+        bool itemBlocked = false
     )
     {
         if (settle > 0f)
@@ -73,7 +78,9 @@ public sealed class WeldGate
         float lag = handToController - reach;
         // The item is judged past the shortfall too: free, it sits on the controller the arm cannot reach.
         float itemLag = handToItem - reach;
-        bool toward = Released ? lag < Rejoin && itemLag < Release : settle <= 0f && lag > Release;
+        bool toward = Released
+            ? itemBlocked || (lag < Rejoin && itemLag < Release)
+            : !itemBlocked && settle <= 0f && lag > Release;
         timer = toward ? timer + dt : 0f;
         if (Released && lag < Release && itemLag < Release)
         {
