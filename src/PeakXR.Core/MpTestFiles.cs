@@ -237,6 +237,11 @@ public static class MpRequest
     /// backpack wheel's own Wear (a vanilla host never wears one otherwise).</summary>
     public const string WearPack = "wear-pack";
 
+    /// <summary>Spawn the named item (<see cref="ReadItem"/>) on the ground in front of A, along the request's
+    /// direction, as the game's spawners do: the steps that need an item get one at hand instead of walking off to
+    /// fetch one (MP run 15, #103: a fetch walked 175 m and stranded A for the rest of the script).</summary>
+    public const string SpawnItem = "spawn-item";
+
     public static bool Known(string what) =>
         what
             is PassOut
@@ -247,7 +252,8 @@ public static class MpRequest
                 or StandOn
                 or HangBelow
                 or StartClimb
-                or WearPack;
+                or WearPack
+                or SpawnItem;
 
     public static string Line(int id, string what, double t) =>
         new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();
@@ -262,6 +268,27 @@ public static class MpRequest
             .Num("dx", dirX)
             .Num("dz", dirZ)
             .ToString();
+
+    /// <summary>A request with a level direction and an item prefab name (spawn-item).</summary>
+    public static string Line(
+        int id,
+        string what,
+        double t,
+        double dirX,
+        double dirZ,
+        string item
+    ) =>
+        new JsonLine()
+            .Num("id", id)
+            .Str("do", what)
+            .Num("t", t)
+            .Num("dx", dirX)
+            .Num("dz", dirZ)
+            .Str("item", item)
+            .ToString();
+
+    /// <summary>The item prefab name of a spawn-item request; null when it has none.</summary>
+    public static string ReadItem(string line) => JsonLine.ReadString(line, "item");
 
     public static bool TryReadDirection(string line, out double x, out double z)
     {
@@ -300,6 +327,24 @@ public static class MpRequest
         id = (int)n;
         return true;
     }
+}
+
+/// <summary>
+/// How long the observer (B) stays after A joins: <see cref="RunMinutes"/>, and while A keeps writing checkpoints,
+/// <see cref="IdleMinutes"/> past the last one. MP run 15: A's script ran about 1000 s and B left at a flat 15 minutes
+/// with 4 checkpoints to go (#103).
+/// </summary>
+public static class MpRunLimit
+{
+    public const float RunMinutes = 15f;
+    public const float IdleMinutes = 5f;
+
+    /// <summary>When B gives up, in its own clock: <paramref name="lastCheckpoint"/> is negative before any.</summary>
+    public static float End(float joinedAt, float lastCheckpoint) =>
+        Math.Max(
+            joinedAt + RunMinutes * 60f,
+            lastCheckpoint < 0f ? 0f : lastCheckpoint + IdleMinutes * 60f
+        );
 }
 
 /// <summary>
