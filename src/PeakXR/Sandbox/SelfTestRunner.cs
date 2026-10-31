@@ -1291,6 +1291,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// </summary>
     void PinScriptedInput()
     {
+        // Steps change settings in memory only: a run that crashes or is killed never leaves them in the player's file.
+        bool save = Plugin.Settings.SaveOnConfigSet;
+        Plugin.Settings.SaveOnConfigSet = false;
+        runRestore += () => Plugin.Settings.SaveOnConfigSet = save;
         Pin("Interaction", "GripMode", GripMode.Hold);
         Pin("Locomotion", "MoveRelativeTo", "Head");
         Pin("Interaction.Binoculars", "Mode", "Lens");
@@ -1312,6 +1316,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     {
         var restore = runRestore;
         runRestore = null;
+        // Pins restore after the save switch was set (multicast order), so the put-back values are saved too.
         restore?.Invoke();
     }
 
