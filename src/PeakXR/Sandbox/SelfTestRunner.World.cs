@@ -38,7 +38,7 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
-        yield return HandStep("vr.82b-lid-low-grip", 45f, LidLowGripStep());
+        yield return HandStep("vr.82b-lid-low-grip", 60f, LidLowGripStep());
         yield return WarpBack();
         yield return HandStep("vr.83-cook-cant-use", 40f, CookCantUseStep());
         yield return WarpBack();
@@ -1155,7 +1155,10 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>vr.82b tries at most this many level spots: each warp costs about 2.5 s.</summary>
-    const int LevelSpotTries = 4;
+    const int LevelSpotTries = 6;
+
+    /// <summary>vr.82b tries the level spots of at most this many slow cases, nearest first.</summary>
+    const int LidCaseTries = 3;
 
     /// <summary>Room for a standing body on <paramref name="feet"/>: nothing solid but characters within 0.3 m of the
     /// line from knee to eye height. Issue #54: a spot whose ray column was clear but had something solid beside it
@@ -1176,13 +1179,24 @@ internal sealed partial class SelfTestRunner
     IEnumerator LidLowGripStep()
     {
         var c = Character.localCharacter;
-        var lug = Nearest<Luggage>(
-            c.Center,
-            l =>
-                !l.IsOpen
+        var cases = new List<Luggage>();
+        foreach (var l in FindObjectsByType<Luggage>(FindObjectsSortMode.None))
+        {
+            if (
+                l != null
+                && !l.IsOpen
                 && l is not RespawnChest
                 && l.GetInteractTime(c) >= LidGesture.LowGripMinOpen
+            )
+                cases.Add(l);
+        }
+        cases.Sort(
+            (a, b) =>
+                (a.transform.position - c.Center).sqrMagnitude.CompareTo(
+                    (b.transform.position - c.Center).sqrMagnitude
+                )
         );
+        var lug = cases.Count > 0 ? cases[0] : null;
         if (lug == null || !Affordance.Hints || !Setting("Interaction", "LiftLidToOpen", true))
         {
             stepSkip =
@@ -1198,17 +1212,27 @@ internal sealed partial class SelfTestRunner
         // Issue #54 (runs 9-11): one spot passed every check, yet the body stood about 2.4 m over it once the warp
         // ended, at either warp height. Rays and overlap tests that start inside a concave mesh report nothing, so
         // the landing decides: off the spot's floor by more than 0.3 m, the next heading is tried.
+        // Run 12: every spot beside the nearest LuggageAncient landed about 2 m over it, and the fallback warp put
+        // the body over the case, so the grip took its lid half and no hint was due. The next nearest cases are tried.
         var spots = new List<Vector3>();
-        LevelSpotsBeside(lug, spots);
         bool placed = false;
         string landings = "";
-        for (int i = 0; i < spots.Count && i < LevelSpotTries && !placed; i++)
+        for (int k = 0, warps = 0; k < cases.Count && k < LidCaseTries && !placed; k++)
         {
-            yield return WarpTo(spots[i]);
-            float rise = TrackedFloorY() - spots[i].y;
-            placed = Mathf.Abs(rise) <= 0.3f;
-            if (!placed)
-                landings += F($"spot {i + 1} of {spots.Count}: landed {rise:0.00} m over it; ");
+            spots.Clear();
+            LevelSpotsBeside(cases[k], spots);
+            for (int i = 0; i < spots.Count && warps < LevelSpotTries && !placed; i++, warps++)
+            {
+                yield return WarpTo(spots[i]);
+                float rise = TrackedFloorY() - spots[i].y;
+                placed = Mathf.Abs(rise) <= 0.3f;
+                if (placed)
+                    lug = cases[k];
+                else
+                    landings += F(
+                        $"{cases[k].name} spot {i + 1} of {spots.Count}: landed {rise:0.00} m over it; "
+                    );
+            }
         }
         if (placed)
         {
@@ -1220,11 +1244,9 @@ internal sealed partial class SelfTestRunner
         }
         else
         {
-            landings += F($"no level spot held ({spots.Count} found), warped facing it; ");
+            landings += "no level spot held, warped facing the nearest case; ";
             yield return WarpFacing(lug.Center(), 0.6f);
         }
-        if (landings.Length > 0)
-            Note(landings);
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
@@ -1259,20 +1281,20 @@ internal sealed partial class SelfTestRunner
             low = NearSide(lug, rig.Head.position, -0.08f);
             stepped += F($"stepped in from {gap.magnitude:0.00} m; ");
         }
-        if (stepped.Length > 0)
-            Note(stepped);
         yield return ReachDown(left, () => low, 0.5f);
         // A player whose arm runs out stops at full reach: the hand is capped there, and the grip then takes the case
         // or the step says it did not.
+        string capped = "";
         if (OverReach(left) != null)
         {
-            Note(
-                F(
-                    $"hand capped at reach, {Vector3.Distance(Script(left).Position, ScriptedEye()):0.00} m from the eye before"
-                )
+            capped = F(
+                $"hand capped at reach, {Vector3.Distance(Script(left).Position, ScriptedEye()):0.00} m from the eye before"
             );
             SetHand(left, InReach(Script(left).Position));
         }
+        // One note: Note replaces a passing step's note, which lost run 12's landings.
+        if (landings.Length + stepped.Length + capped.Length > 0)
+            Note(landings + stepped + capped);
         if (OverReach(left) is { } far)
         {
             Fail(
@@ -1298,6 +1320,18 @@ internal sealed partial class SelfTestRunner
                     + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(rig.Hand(left).position, lug):0.00} m "
                     + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, the floor {F($"{TrackedFloorY() - low.y:0.00}")} m over it, hovered "
                     + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}; {PhysicalInteraction.LastGripNote}"
+            );
+            yield break;
+        }
+        // LidGesture.Track sorts the grab on its next tick.
+        yield return Wait(0.1f);
+        if (LidGesture.GripOnLid(left))
+        {
+            yield return GripTo(left, 0f, 0.1f);
+            Fail(
+                F(
+                    $"setup: the grip took {lug.name}'s lid half, so no low-grip hint is due ({LidGesture.LastGrab}); the body stood {TrackedFloorY() - low.y:0.00} m over the low grip point"
+                )
             );
             yield break;
         }
