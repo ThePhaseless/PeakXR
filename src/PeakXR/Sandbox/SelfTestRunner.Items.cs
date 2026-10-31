@@ -2811,7 +2811,7 @@ internal sealed partial class SelfTestRunner
             Fail($"{item.name} routes to {ItemGestures.UseOf(item)}, not to the mouth");
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         yield return TriggerAwayFromMouth(item, left);
         if (!stepOk)
             yield break;
@@ -3089,7 +3089,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to stop safely";
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
 
         // The bare trigger: refused at the hand, and released at once should a cast start anyway.
         Affordance.ResetGate();
@@ -3220,7 +3220,7 @@ internal sealed partial class SelfTestRunner
             stepSkip = $"{item.name}'s cast ({useTime:0.00} s) is too short to stop part way";
             yield break;
         }
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripForUse(left);
         yield return TriggerAwayFromMouth(item, left);
         if (!stepOk)
             yield break;
