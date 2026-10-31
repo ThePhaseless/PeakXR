@@ -22,8 +22,8 @@ public static class YawMath
 /// <summary>
 /// The tracking-space <see cref="Anchor"/> the camera feature keeps over the character's eyes, so physically moving
 /// in the room moves the view exactly like the real head (no artificial camera motion). The body walks after the head
-/// (<see cref="StanceWalk"/>, which owns when and how far); while it does, the anchor takes the eye anchor's travel
-/// (<see cref="Absorb"/>), so the view stays where the head is while the body arrives under it. When the head gets
+/// (<see cref="StanceWalk"/>, which owns when and how far); while that travel is its own (<see cref="OwnMotion"/>), the anchor takes the eye anchor's travel
+/// (<see cref="Absorb"/>), so the view stays where the head is while the body arrives under it; outside forces move both. When the head gets
 /// past <see cref="RecenterDistance"/> from a body that cannot follow (blocked, climbing, room-scale walking off), the
 /// caller fades out and calls <see cref="Recenter"/>.
 /// </summary>

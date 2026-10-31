@@ -43,14 +43,30 @@ internal static class LocomotionInput
     private static Vector3 lastBody;
     private static bool hadBody;
 
-    /// <summary>The stance walk owned the body's travel at the last input update (walking or settling).</summary>
-    private static bool lastWalking;
+    /// <summary>The body's travel at the last input update was PeakXR's own (<see cref="OwnMotion"/>): the view keeps
+    /// it out.</summary>
+    private static bool lastOwn;
+
+    private static readonly OwnMotion Own = new();
+
+    /// <summary><c>Time.time</c> of the last outside force on the local body (<see cref="LocomotionPatches.Push"/>,
+    /// <see cref="LocomotionPatches.Impulse"/>).</summary>
+    internal static float OutsideForceAt = float.NegativeInfinity;
+
+    /// <summary>Seconds after an outside force during which the body is still moving from it: none of its travel is
+    /// kept out of the view, and no walk starts (a push is never walked back).</summary>
+    private const float OutsideSeconds = 1f;
+
+    /// <summary>Seconds after a warp (Character.WarpPlayer, Character.cs:1849-1898) the body is still being placed and
+    /// settling: no walk, and the view goes onto the body.</summary>
+    private const float WarpSettleSeconds = 1f;
     private static readonly System.Action<Vector3> AbsorbNowAction = AbsorbNow;
 
-    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: while the stance walk owns the body, absorbs
-    /// the eye anchor's travel into the room anchor in the frame it moves, so the origin placed right after carries no
-    /// frame of body motion (run 32: the view moved 0.044 m at the end of a far-lean walk). Outside forces (wind, a
-    /// push) outside a walk still move body and view, as in vanilla.</summary>
+    /// <summary>rig.camera's <see cref="RigDriver.BodyAnchorMoved"/>: absorbs the eye anchor's level travel into the
+    /// room anchor in the frame it moves while that travel is PeakXR's own (<see cref="OwnMotion"/>: the walk, its
+    /// coast to a stop, the body's shift under the head's turn or look down), so the origin placed right after carries
+    /// no frame of it (run 9: 0.02-0.04 m as a coast outlived the walk's settle). An outside force in the same frame
+    /// keeps it all in the view.</summary>
     private static void AbsorbNow(Vector3 anchor)
     {
         var rig = VRRig.Instance;
@@ -58,7 +74,7 @@ internal static class LocomotionInput
             return;
         var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
         lastBody = anchor;
-        if (!lastWalking)
+        if (!lastOwn || Time.time - OutsideForceAt < OutsideSeconds)
             return;
         Follow.Anchor = rig.RoomAnchor;
         Follow.Absorb(new NVector2(delta.x, delta.z));
@@ -366,7 +382,8 @@ internal static class LocomotionInput
         {
             hadBody = false;
             Stance.Reset();
-            lastWalking = false;
+            lastOwn = false;
+            Own.Reset();
             RigDriver.FollowWalking = false;
             return NVector2.Zero;
         }
@@ -380,6 +397,8 @@ internal static class LocomotionInput
             lastBody = anchor.Value;
 
         var data = c.data;
+        // A warp places the body (respawns, segment jumps, scripted moves): nothing to walk, and the view goes with it.
+        bool warped = c.warping || Time.time - c.timeLastWarped < WarpSettleSeconds;
         bool canFollow =
             hadBody
             && LocomotionConfig.RoomScale
@@ -393,17 +412,37 @@ internal static class LocomotionInput
             // The top-out walk moves the body onto the ledge under its own input: a walk toward the head behind it
             // fought that walk, and its stall's recenter fade moved the gripping hands (vr.54, run 54).
             && !PhysicalInteraction.Mantling
-            && data.carrier == null;
+            && data.carrier == null
+            && !warped;
         var head = new NVector2(VRInput.HeadPosition.x, VRInput.HeadPosition.z);
         Follow.Anchor = rig.RoomAnchor;
-        if (lastWalking && canFollow)
+        // Wind, a push or knockback, a slide, steep ground or a moving surface under the feet: vanilla motion of body
+        // and view alike, never walked back.
+        bool outside =
+            Time.time - OutsideForceAt < OutsideSeconds
+            || data.sinceFallSlide < HoldGate.SlideCooldown
+            || data.isGrounded && OnMovingOrSteepGround(c);
+        if (lastOwn && canFollow && !outside)
             Follow.Absorb(new NVector2(delta.x, delta.z));
         var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
         var debt = new NVector2(debt3.x, debt3.z);
+        // The view takes the body's place over a warp, so it leaves no debt (a turn just before it) to walk off at the
+        // spot it was put on (run 9, vr.44b: the walk took the body 2.3 m from the wall it was warped to).
+        if (warped)
+            Follow.Anchor += debt;
         Stance.AtOnce = LocomotionConfig.LeanRadius;
-        var request = Stance.Update(debt, canFollow, dt);
-        lastWalking = canFollow && Stance.Walking;
-        RigDriver.FollowWalking = lastWalking;
+        var request = Stance.Update(debt, canFollow && !outside, dt);
+        RigDriver.FollowWalking = canFollow && Stance.Walking;
+        var level = new NVector2(data.avarageVelocity.x, data.avarageVelocity.z);
+        lastOwn =
+            canFollow
+            && Own.Update(
+                Stance.Walking,
+                level.Length(),
+                new NVector2(data.lookValues.x, data.lookValues.y),
+                outside,
+                dt
+            );
         FollowGap = NVector2.Distance(head, Follow.Anchor);
         // A walk that cannot get the body within the lean limit (a wall, a ledge, a friend) ends in the recenter.
         bool stalled = Stance.Blocked && debt.Length() > LocomotionConfig.LeanRadius;
@@ -429,6 +468,36 @@ internal static class LocomotionInput
                 )
             );
         return stick;
+    }
+
+    private static readonly RaycastHit[] groundHits = new RaycastHit[4];
+
+    /// <summary>The body stands on ground steeper than it can stand on (it slides, CharacterMovement's max angle) or on
+    /// a moving body (a rolling log, a falling rock): the game moves it, not PeakXR.</summary>
+    private static bool OnMovingOrSteepGround(Character c)
+    {
+        var d = c.data;
+        var gate = AvatarPoseDriver.GateInputs(c);
+        if (!(gate.SlopeDeg < gate.MaxSlopeDeg))
+            return true;
+        int n = Physics.RaycastNonAlloc(
+            d.groundPos + Vector3.up * 0.2f,
+            Vector3.down,
+            groundHits,
+            0.5f,
+            HelperFunctions.AllPhysicalExceptCharacter,
+            QueryTriggerInteraction.Ignore
+        );
+        for (int i = 0; i < n; i++)
+        {
+            var body = groundHits[i].rigidbody;
+            if (body == null)
+                continue;
+            var v = body.GetPointVelocity(groundHits[i].point);
+            if (v.x * v.x + v.z * v.z > 0.05f * 0.05f)
+                return true;
+        }
+        return false;
     }
 
     private static float nextLeanTrace;

@@ -262,6 +262,62 @@ internal sealed partial class SelfTestRunner
     /// the look, from the hip, may change by at most 0.1 m between the two: before, the slots stayed at the real body
     /// and floated 0.28 m ahead of the avatar's hips.
     /// </summary>
+    /// <summary>Impulse (per part, inside a 1 m radius) that slides a standing scout without knocking it down: a third
+    /// of vr.07's knockback.</summary>
+    const float StancePush = 20f;
+
+    /// <summary>
+    /// <c>vr.304-push-moves-view</c>: a push on a standing body (the game's knockback RPC,
+    /// <c>Character.RPCA_AddForceAtPosition</c>, Character.cs:458, as vr.07 sends it) is vanilla motion. The view must
+    /// go with the body (its level travel within 0.05 m of the body's after 2 s) and no stance walk may start in those
+    /// 2 s, so a push is never walked back and peers never see the scout resist it.
+    /// </summary>
+    IEnumerator PushMovesViewStep()
+    {
+        Character c = null;
+        yield return StanceSetup(x => c = x);
+        if (c == null)
+            yield break;
+        var rig = VRRig.Instance;
+        var home = new Vector3(
+            rig.RoomAnchor.X,
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.RoomAnchor.Y
+        );
+        ScriptHead(home, Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward)));
+        yield return Wait(0.5f);
+        var right = Vector3.Cross(Vector3.up, Flat(rig.Head.forward));
+        var body0 = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up);
+        var origin0 = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up);
+        c.photonView.RPC(
+            "RPCA_AddForceAtPosition",
+            Photon.Pun.RpcTarget.All,
+            right * StancePush,
+            c.Center,
+            1f
+        );
+        bool walked = false;
+        float t0 = Now;
+        while (Now - t0 < 2f)
+        {
+            yield return null;
+            walked |= RigDriver.FollowWalking;
+        }
+        ReleaseHead();
+        var body = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up) - body0;
+        var view = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up) - origin0;
+        float apart = (view - body).magnitude;
+        var note = F(
+            $"push: body {body.magnitude:0.000} m, view {view.magnitude:0.000} m ({apart:0.000} m apart), stance walk {(walked ? "started" : "never started")}"
+        );
+        if (body.magnitude < 0.05f)
+            Fail(note + "; the push did not move the body enough to judge");
+        else if (walked || apart > 0.05f)
+            Fail(note);
+        else
+            stepNote = note;
+    }
+
     IEnumerator BeltLookDownStep()
     {
         var inv = BodyInventory.Instance;

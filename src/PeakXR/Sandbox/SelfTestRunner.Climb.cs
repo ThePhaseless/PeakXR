@@ -38,6 +38,7 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.301-room-step", 40f, RoomStepStep());
         yield return Restoring("vr.302-glance-still", 15f, GlanceStillStep());
         yield return Restoring("vr.303-belt-look-down", 25f, BeltLookDownStep());
+        yield return Restoring("vr.304-push-moves-view", 20f, PushMovesViewStep());
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());

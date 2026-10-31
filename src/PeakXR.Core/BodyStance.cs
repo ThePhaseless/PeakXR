@@ -58,9 +58,8 @@ public static class BodyStance
 /// <summary>
 /// Walks the body off a <see cref="BodyStance.Debt"/>: past <see cref="Start"/>, once the debt has held still for
 /// <see cref="Delay"/> (a glance returns before the body moves) or at once past <see cref="AtOnce"/>, it asks for move
-/// input along the debt until it is inside <see cref="Stop"/>, ramping down as it closes so the body does not
-/// overshoot. The caller keeps the body's travel out of the view while <see cref="Walking"/> (the walk and a short
-/// settle for its coast). A walk that makes no headway (a wall, a friend) gives up until the debt changes.
+/// input along the debt until it is inside <see cref="Stop"/>, ramping down to <see cref="MinInput"/> as it closes so
+/// the body does not overshoot. A walk that makes no headway (a wall, a friend) gives up until the debt changes.
 /// </summary>
 public sealed class StanceWalk
 {
@@ -78,6 +77,10 @@ public sealed class StanceWalk
 
     /// <summary>Distance past <see cref="Stop"/> (m) over which the request ramps to full.</summary>
     public float Ramp = 0.2f;
+
+    /// <summary>Least request while walking: a standing body does not move for less (run 9: 0.1 of the stick for
+    /// 1.6 s made no headway), and its coast at this pace stays inside the stop distance.</summary>
+    public float MinInput = 0.35f;
 
     /// <summary>Seconds after a walk during which the body's coast still belongs to it.</summary>
     public float SettleSeconds = 0.5f;
@@ -143,7 +146,7 @@ public sealed class StanceWalk
         if (!_walking)
             return Vector2.Zero;
         float amount = Ramp > 0f ? (dist - Stop) / Ramp : 1f;
-        return debt / dist * Math.Clamp(amount, 0f, 1f);
+        return debt / dist * Math.Clamp(amount, MinInput, 1f);
     }
 
     /// <summary>Forget the walk (the body cannot be walked, or the view was placed again).</summary>
@@ -154,5 +157,61 @@ public sealed class StanceWalk
         Walking = false;
         Blocked = false;
         _heldFor = 0f;
+    }
+}
+
+/// <summary>
+/// Which of a free body's level travel PeakXR itself caused, so the view keeps it out (the room anchor takes it): the
+/// stance walk, its coast until the body is nearly still, and the body's shift under the head's own turn or look down.
+/// Outside forces (wind, a push, a knockback, a slide, a moving ground) are never kept out: they move body and view
+/// as in vanilla, so the walk never walks them back and the player is never immune to them.
+/// </summary>
+public sealed class OwnMotion
+{
+    /// <summary>Level body speed (m/s) under which a walk's coast has ended.</summary>
+    public float StillSpeed = 0.05f;
+
+    /// <summary>Look rate (degrees per second) that counts as the head turning or pitching.</summary>
+    public float LookRate = 10f;
+
+    /// <summary>Seconds after the look stops moving during which the body still settles into the new pose.</summary>
+    public float PoseSeconds = 0.6f;
+
+    bool _coasting;
+    float _poseFor;
+    Vector2 _look;
+    bool _haveLook;
+
+    /// <param name="walking">The stance walk is walking or settling.</param>
+    /// <param name="levelSpeed">The body's level speed (m/s).</param>
+    /// <param name="look">The character's look (yaw, pitch) in degrees, as the head drives it.</param>
+    /// <param name="outside">An outside force acts this update: wind, an impulse, a slide, a moving ground.</param>
+    /// <returns>This update's body travel is PeakXR's own.</returns>
+    public bool Update(bool walking, float levelSpeed, Vector2 look, bool outside, float dt)
+    {
+        if (walking)
+            _coasting = true;
+        else if (levelSpeed < StillSpeed)
+            _coasting = false;
+        if (_haveLook && dt > 0f)
+        {
+            float yaw = (look.X - _look.X) % 360f;
+            yaw =
+                yaw > 180f ? yaw - 360f
+                : yaw < -180f ? yaw + 360f
+                : yaw;
+            float rate = new Vector2(yaw, look.Y - _look.Y).Length() / dt;
+            _poseFor = rate > LookRate ? PoseSeconds : MathF.Max(0f, _poseFor - dt);
+        }
+        _look = look;
+        _haveLook = true;
+        return !outside && (walking || _coasting || _poseFor > 0f);
+    }
+
+    public void Reset()
+    {
+        _coasting = false;
+        _poseFor = 0f;
+        _haveLook = false;
     }
 }
