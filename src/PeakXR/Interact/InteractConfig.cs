@@ -12,7 +12,6 @@ internal sealed class InteractConfig
 
     private ConfigEntry<bool> physicalGrab,
         handAim,
-        triggerUse,
         eatAtMouth,
         physicalThrow,
         releaseToDrop,
@@ -40,7 +39,6 @@ internal sealed class InteractConfig
 
     public bool PhysicalGrab => physicalGrab?.Value ?? true;
     public bool HandAimedInteract => handAim?.Value ?? true;
-    public bool TriggerUse => triggerUse?.Value ?? true;
     public bool EatAtMouth => eatAtMouth?.Value ?? true;
     public bool PhysicalThrow => physicalThrow?.Value ?? true;
     public bool ReleaseToDrop => releaseToDrop?.Value ?? true;
@@ -69,6 +67,9 @@ internal sealed class InteractConfig
 
     /// <summary>The setting itself, for the self-test (vr.233).</summary>
     internal ConfigEntry<HapticDetail> HapticDetailEntry => hapticDetail;
+
+    /// <summary>The setting itself, for the self-test (vr.445).</summary>
+    internal ConfigEntry<bool> ReleaseToDropEntry => releaseToDrop;
 
     public GripMode GripMode => gripMode?.Value ?? GripMode.Hold;
 
@@ -104,6 +105,15 @@ internal sealed class InteractConfig
         const string s = "Interaction";
         // Read before Bind consumes it: was a strength saved on the old scale?
         string strengthSaved = ConfigMigration.SavedText(file, s, "HapticStrength");
+        // Interaction.TriggerUse is gone (#77): the trigger is the layout's only use control, and a fist's trigger is
+        // already no use (#48). A saved off would have left no way to use items.
+        if (
+            bool.TryParse(ConfigMigration.Removed(file, s, "TriggerUse"), out bool triggerUse)
+            && !triggerUse
+        )
+            Plugin.Log.LogInfo(
+                "[config] Interaction.TriggerUse is removed and its saved off is ignored: the trigger always uses items"
+            );
         Instance = new InteractConfig
         {
             physicalGrab = file.Bind(
@@ -127,13 +137,6 @@ internal sealed class InteractConfig
                 "HandAimedInteract",
                 true,
                 "Point (grip closed, index straight) to aim interaction with that hand instead of your head."
-            ),
-            triggerUse = file.Bind(
-                s,
-                "TriggerUse",
-                true,
-                "Trigger of the hand holding the item uses it (primary), the other trigger is secondary use. "
-                    + "Empty-handed: right trigger climbs like the game's button, left trigger reaches for friends."
             ),
             eatAtMouth = file.Bind(
                 s,

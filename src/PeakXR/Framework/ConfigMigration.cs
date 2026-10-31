@@ -165,4 +165,19 @@ internal static class ConfigMigration
             ? text
             : null;
     }
+
+    /// <summary>
+    /// A removed setting: the text <paramref name="file"/> still holds for it (<see cref="SavedText"/>), or null, and
+    /// the key leaves the file at its next save, so a note about it is logged once.
+    /// </summary>
+    public static string Removed(ConfigFile file, string section, string key)
+    {
+        string text = SavedText(file, section, key);
+        if (
+            text != null
+            && orphans.Invoke(file, null) is Dictionary<ConfigDefinition, string> entries
+        )
+            entries.Remove(new ConfigDefinition(section, key));
+        return text;
+    }
 }

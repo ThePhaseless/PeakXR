@@ -44,6 +44,11 @@ public sealed class GripLatch
     /// <summary>The grip value consumers read this frame.</summary>
     public float Grip { get; private set; }
 
+    /// <summary>While latched, the controller's grip closed this frame (crossed <see cref="PressThreshold"/>): the
+    /// unlatch squeeze starting. <see cref="Grip"/> stays 1, so the hands see no grip press; a trigger squeezed with it
+    /// is a closing fist's all the same (issue #75).</summary>
+    public bool Closed { get; private set; }
+
     /// <param name="raw">The controller's grip, 0..1.</param>
     /// <param name="tracked">The controller is tracked. While it is not, the latch is frozen: a tracking blink
     /// neither latches nor unlatches.</param>
@@ -51,6 +56,7 @@ public sealed class GripLatch
     /// drop by opening, a friend it lifts).</param>
     public GripLatchEvent Update(float raw, bool tracked, bool engaged, GripMode mode, float dt)
     {
+        Closed = false;
         if (!tracked)
         {
             Grip = Latched ? 1f : raw;
@@ -83,6 +89,7 @@ public sealed class GripLatch
         }
         else
         {
+            Closed = !wasDown && down;
             squeezeFor = raw >= SqueezeThreshold ? squeezeFor + dt : 0f;
             if (squeezeFor >= SqueezeSeconds)
                 squeezed = true;
@@ -98,7 +105,7 @@ public sealed class GripLatch
 
     public void Reset()
     {
-        down = squeezed = Latched = false;
+        down = squeezed = Latched = Closed = false;
         squeezeFor = 0f;
         Grip = 0f;
     }

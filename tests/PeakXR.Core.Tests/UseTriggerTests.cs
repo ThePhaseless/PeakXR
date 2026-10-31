@@ -223,4 +223,71 @@ public class UseTriggerTests
         Assert.False(UseTrigger.InFist(true, UseTrigger.SettleSeconds));
         Assert.False(UseTrigger.InFist(false, 0f));
     }
+
+    [Fact]
+    public void Pressed_OnlyOnTheFrameAUsePressStarts()
+    {
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt);
+        Assert.True(t.Pressed);
+        t.Update(true, false, true, Dt);
+        Assert.False(t.Pressed);
+        t.Update(false, false, true, Dt);
+        t.Update(true, false, true, Dt);
+        Assert.True(t.Pressed);
+    }
+
+    [Fact]
+    public void FistMutedTrigger_IsNoPress_UntilAFreshSqueeze()
+    {
+        // Issue #74: a fist closing on an Apple squeezes the trigger; the refusal cues read this edge, so a muted
+        // trigger must give none.
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.Pressed);
+        t.Update(true, false, true, Dt);
+        Assert.False(t.Pressed);
+        t.Update(false, false, true, Dt);
+        t.Update(true, false, true, Dt);
+        Assert.True(t.Pressed);
+    }
+
+    [Fact]
+    public void SettledClimbHand_FistPress_SetsNoPiton()
+    {
+        // Issue #75: a toggle-latched wall hand has held the climber for long; its unlatch squeeze closes the index on
+        // the trigger, which must not be a deliberate piton press.
+        var t = new UseTrigger();
+        for (int i = 0; i < 60; i++)
+            t.Update(false, true, false, Dt);
+        t.Update(true, true, false, Dt, fist: true);
+        Assert.False(t.ClimbPress);
+        for (int i = 0; i < 60; i++)
+            t.Update(true, true, false, Dt);
+        Assert.False(t.Piton);
+    }
+
+    [Fact]
+    public void FistPress_IsThePressTheFistMuted()
+    {
+        // Issue #48's gap: a press lost to the fist window gets a light cue, so it must be told apart.
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.True(t.FistPress);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.FistPress);
+        t.Update(false, false, true, Dt);
+        t.Update(true, false, true, Dt);
+        Assert.False(t.FistPress);
+    }
+
+    [Fact]
+    public void FistPress_NotForATriggerHeldBeforeTheGrip()
+    {
+        var t = new UseTrigger();
+        t.Update(true, false, true, Dt);
+        t.Update(true, false, true, Dt, fist: true);
+        Assert.False(t.FistPress);
+        Assert.False(t.Down);
+    }
 }

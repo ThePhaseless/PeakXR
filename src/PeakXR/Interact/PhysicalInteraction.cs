@@ -44,6 +44,9 @@ internal static class PhysicalInteraction
 
         /// <summary>When the grip last closed (<see cref="UseTrigger.InFist"/>).</summary>
         public float GripAt = -10f;
+
+        /// <summary>The item was already in this hand when its grip last closed: a regrip, not a pickup.</summary>
+        public bool GripOnItem;
         public readonly ThrowEstimator Throw = new();
 
         /// <summary>How long the last grip outlives lost tracking (<see cref="BlinkHold"/>).</summary>
@@ -51,6 +54,10 @@ internal static class PhysicalInteraction
         public GripPressAction Action;
         public IInteractible Target;
         public IGripExtension Extension;
+
+        /// <summary>When a grip <see cref="GripPressAction.Interact"/> starts pressing the game's interact: later than
+        /// the press for a fist made for a gesture (<see cref="GripIntent.GestureInteractAt"/>).</summary>
+        public float InteractAt;
 
         /// <summary>This Interact grip is a pointed aim at an item taker (<see cref="GripContext.PointedAtTaker"/>).</summary>
         public bool AimedTaker;
@@ -497,7 +504,26 @@ internal static class PhysicalInteraction
         if (state.Tracked)
             hand.Throw.AddSample(state.Position.N(), now);
         if (hand.Grip.Pressed)
+        {
             hand.GripAt = now;
+            hand.GripOnItem = Holding(c, out _) && LocalHold.ItemInLeftHand == hand.Left;
+        }
+        // A toggle grip's unlatch squeeze is a closing fist too, though the latched grip shows no press (#75).
+        hand.GripAt = Mathf.Max(hand.GripAt, GripToggle.ClosedAt(hand.Left));
+        // A fist made for a gesture (a thumbs-up, the walkie-talkie hand at the mouth) is no interact: it waits while
+        // the pose holds and is dropped once the gesture takes the hand (#82).
+        if (hand.Action == GripPressAction.Interact && now < hand.InteractAt)
+        {
+            if (GestureTook(hand))
+                hand.Action = GripPressAction.None;
+            else
+                hand.InteractAt = GripIntent.GestureInteractAt(
+                    hand.InteractAt,
+                    GesturePosed(hand),
+                    hand.GripAt,
+                    now
+                );
+        }
 
         if (hand.Grip.Pressed && active && rig.Hand(hand.Left) != null)
             OnGripPress(hand, c, rig, cfg, now);
@@ -638,6 +664,20 @@ internal static class PhysicalInteraction
         var hand = left ? LeftHand : RightHand;
         return Climbs(hand) || (hand.Trigger.Held && !hand.Use.Down);
     }
+
+    /// <summary>This hand is posed for a gesture a fist belongs to: the thumbs-up's fist (emotes) or a hand at the
+    /// mouth for the talk gesture (voice). Last frame's poses: both run late.</summary>
+    private static bool GesturePosed(Hand hand) =>
+        Emotes.GestureEmotes.ThumbPosed(hand.Left) || Voice.VoiceRuntime.AtMouth(hand.Left);
+
+    /// <summary>The gesture took this hand since its grip closed: the thumbs-up played on it, or it talks.</summary>
+    private static bool GestureTook(Hand hand) =>
+        Emotes.GestureEmotes.PlayedAt(hand.Left) >= hand.GripAt
+        || Voice.VoiceRuntime.Talking(hand.Left);
+
+    /// <summary>This hand's trigger started a use press on the last use pass (<see cref="UseTrigger.Pressed"/>): never
+    /// one it squeezed with a closing fist or on the climber. For cues that answer a press.</summary>
+    internal static bool UsePressed(bool left) => (left ? LeftHand : RightHand).Use.Pressed;
 
     /// <summary>The body flies or falls free: not grounded, and not on a wall, rope, vine or handle.</summary>
     private static bool Airborne(Character c) =>
@@ -955,6 +995,9 @@ internal static class PhysicalInteraction
                         DenyReason.HandsFull,
                         Affordance.Hints ? DenyHint.On(handle.transform) : default
                     );
+                break;
+            case GripPressAction.Interact:
+                hand.InteractAt = GripIntent.GestureInteractAt(now, GesturePosed(hand), now, now);
                 break;
         }
         hand.Action = action;
@@ -2926,6 +2969,8 @@ internal static class PhysicalInteraction
                         GrabTarget ??= hand.Target;
                     break;
                 case GripPressAction.Interact:
+                    if (now < hand.InteractAt)
+                        break;
                     interactDown = hand.Injected = true;
                     GripInteractActive = true;
                     break;
@@ -2973,7 +3018,18 @@ internal static class PhysicalInteraction
                 dt,
                 UseTrigger.InFist(hand.Grip.Held, now - hand.GripAt)
             );
-            if (hand.Use.ClimbPress && cfg.TriggerUse && holding && c.data.climbingSpikeCount <= 0)
+            // A pull lost to the fist window on an item this hand already held when it closed (a regrip, not a
+            // pickup) gets a light tick, so a deliberate squeeze is not lost in silence; a fist on a pickup stays
+            // quiet (#48).
+            if (
+                hand.Use.FistPress
+                && hand.GripOnItem
+                && holding
+                && hand == primaryHand
+                && !Physical.ItemGestures.TriggerRefused(c.data.currentItem)
+            )
+                Affordance.Cancel(hand.Left);
+            if (hand.Use.ClimbPress && holding && c.data.climbingSpikeCount <= 0)
                 Affordance.DenyAtHand(
                     hand.Left,
                     DenyReason.UseOtherHand,
@@ -2988,14 +3044,15 @@ internal static class PhysicalInteraction
             RightHand.Use,
             OnClimb(RightHand)
         );
-        // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route).
+        // A lethal or warping item takes its gesture, not a bare trigger (interact.items owns the route). An empty
+        // hand's primary is no use: vanilla turns it into the head-aimed wall climb (sincePressClimb, Character.cs:1196;
+        // CharacterClimbing.cs:567), and in VR climbing is by grip, the trigger kept for the piton (decision #31, #78).
         bool primaryDown =
-            cfg.TriggerUse
+            holding
             && primaryHand.Use.Down
             && !chord
             && !(holding && Physical.ItemGestures.TriggerRefused(c.data.currentItem));
-        bool secondaryDown =
-            cfg.TriggerUse && (one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down);
+        bool secondaryDown = one ? chord && primaryHand.Use.Down : Other(primaryHand).Use.Down;
 
         bool atMouth = false;
         var mouthHand = rig.Hand(primaryHand.Left);

@@ -20,6 +20,13 @@ internal static class GripToggle
     /// <summary>This hand's grip is latched (self-test vr.237, vr.238).</summary>
     internal static bool Latched(bool left) => (left ? LeftLatch : RightLatch).Latched;
 
+    private static float leftClosedAt = -10f,
+        rightClosedAt = -10f;
+
+    /// <summary>When this hand's controller grip last closed under a latch (<see cref="GripLatch.Closed"/>,
+    /// <c>Time.time</c>): a closing fist the latched grip hides from the hands (#75).</summary>
+    internal static float ClosedAt(bool left) => left ? leftClosedAt : rightClosedAt;
+
     public static void Install() => XRInput.XRInputSampler.AfterSample += Apply;
 
     private static void Apply()
@@ -52,6 +59,13 @@ internal static class GripToggle
             dt
         );
         state.Grip = latch.Grip;
+        if (latch.Closed)
+        {
+            if (left)
+                leftClosedAt = Time.time;
+            else
+                rightClosedAt = Time.time;
+        }
         if (e == GripLatchEvent.Latched)
             Affordance.Contact(left);
         else if (e == GripLatchEvent.Unlatched)

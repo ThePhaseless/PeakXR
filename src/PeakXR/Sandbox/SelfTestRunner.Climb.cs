@@ -59,6 +59,11 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.460-point-at-item", 25f, PointAtItemStep());
         yield return Restoring("vr.47e-arrive-in-closed-grip", 30f, ArriveInClosedGripStep());
         yield return Restoring("vr.238-grip-toggle-item", 25f, GripToggleItemStep());
+        yield return Restoring(
+            "vr.441-grip-toggle-unlatch-no-use",
+            25f,
+            GripToggleUnlatchNoUseStep()
+        );
         yield return Restoring("vr.47f-grab-on-slope", 30f, GrabOnSlopeStep());
         yield return Restoring("vr.61b-two-hands-optional", 25f, TwoHandsOptionalStep());
         yield return Restoring("vr.251-hook-pull-first-person", 45f, HookPullStep());

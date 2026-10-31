@@ -126,6 +126,18 @@ public class EmoteGesturesTests
     }
 
     [Fact]
+    public void ThumbLifted_AsTheFistStartsClosing()
+    {
+        // Issue #82: at the grip's press the other fingers are only just closing; the thumb already says thumbs-up.
+        var closing = new FingerCurls(0f, 0f, 0.6f, 0.6f, 0.5f);
+        Assert.False(EmoteGestures.ThumbsUp(closing, 0.9f));
+        Assert.True(EmoteGestures.ThumbLifted(closing, 0.9f));
+        closing.Thumb = FingerCurlMapper.ThumbTouchCurl;
+        Assert.False(EmoteGestures.ThumbLifted(closing, 0.9f));
+        Assert.False(EmoteGestures.ThumbLifted(Fist, 0.2f));
+    }
+
+    [Fact]
     public void ThumbsUp_ThumbOnAButton_IsNot()
     {
         var c = Fist;

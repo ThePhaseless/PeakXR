@@ -46,6 +46,8 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.287-quick-release-fist", 20f, QuickReleaseFistStep());
         yield return HandStep("vr.288-glow-grab", 45f, HighlightGrabStep());
         yield return HandStep("vr.320-fist-grab-no-use", 25f, FistGrabNoUseStep());
+        yield return HandStep("vr.440-fist-food-quiet", 20f, FistFoodQuietStep());
+        yield return Restoring("vr.445-regrip-fist-tick", 20f, RegripFistTickStep());
         yield return HandStep("vr.451-slot-yields-to-item", 25f, SlotYieldsToItemStep());
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());
@@ -53,6 +55,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.14-two-hand", 25f, TwoHandStep());
         yield return HandStep("vr.14b-two-hand-between", 45f, TwoHandBetweenStep());
         yield return HandStep("vr.15-climb", 40f, ClimbStep());
+        yield return HandStep("vr.442-empty-trigger-no-climb", 10f, EmptyTriggerNoClimbStep());
         yield return HandStep("vr.16-snap-turn", 15f, SnapTurnStep());
         yield return HandStep("vr.17-move", 15f, MoveStep());
         yield return HandStep("vr.18-emote-wheel", 20f, EmoteStep());
@@ -708,6 +711,39 @@ internal sealed partial class SelfTestRunner
             SandboxActions.WarpToSpawn();
             yield return Wait(2f);
         }
+    }
+
+    /// <summary>vr.442 (issue #78, decision #31): with empty hands the dominant trigger held 0.6 s never reaches the
+    /// game's head-aimed wall climb: <c>sincePressClimb</c> (Character.cs:1196) stays at or above 0.1 s and no climb
+    /// starts.</summary>
+    IEnumerator EmptyTriggerNoClimbStep()
+    {
+        var c = Character.localCharacter;
+        yield return DropHeld();
+        if (c.data.currentItem != null)
+        {
+            stepSkip = "an item stayed in hand";
+            yield break;
+        }
+        bool left = VRInput.LeftHanded;
+        float least = float.PositiveInfinity;
+        bool climbed = false;
+        Script(left).Trigger = 1f;
+        for (float until = Now + 0.6f; Now < until; )
+        {
+            least = Mathf.Min(least, c.data.sincePressClimb);
+            climbed |= c.data.isClimbing;
+            yield return null;
+        }
+        Script(left).Trigger = 0f;
+        var note = F($"least sincePressClimb {least:0.00} s, climbing {climbed}");
+        if (least < 0.1f || climbed)
+            Fail("the empty dominant trigger pressed the game's climb: " + note);
+        else
+            Note(note);
+        if (c.data.isClimbing)
+            c.refs.climbing.StopClimbing();
+        yield return Wait(0.3f);
     }
 
     /// <summary>The body of vr.15 once the character stands facing <paramref name="wall"/>; ends with the grip open.</summary>

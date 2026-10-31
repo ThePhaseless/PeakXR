@@ -19,6 +19,7 @@ internal sealed partial class SelfTestRunner
     {
         yield return HandStep("vr.126-wheel-climbing-refused", 40f, WheelClimbingStep());
         yield return HandStep("vr.127-thumbs-up", 20f, ThumbsUpStep());
+        yield return HandStep("vr.443-thumbs-up-no-interact", 20f, ThumbsUpNoInteractStep());
         yield return HandStep("vr.128-backpack-wheel-cancel", 30f, BackpackWheelCancelStep());
     }
 
@@ -190,6 +191,53 @@ internal sealed partial class SelfTestRunner
 
         Vector3 Out(bool left) =>
             head + forward * 0.4f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
+    }
+
+    /// <summary>
+    /// vr.443 (issue #82): the thumbs-up's fist, closed out in front with nothing at the hand, is a grip on empty air,
+    /// which falls back to the head-aimed interact. It must wait while the pose holds and be dropped once the emote
+    /// plays: the thumbs-up plays and the grip's interact (PhysicalInteraction.GripInteractActive) never presses.
+    /// </summary>
+    IEnumerator ThumbsUpNoInteractStep()
+    {
+        if (!EmotesFeature.Gestures.Value || GestureEmotes.ThumbsUpAnim == null)
+        {
+            stepSkip = "Emotes.GestureEmotes off or no thumbs-up emote";
+            yield break;
+        }
+        // Past vr.127's emote cooldown (2 s).
+        yield return Wait(2.2f);
+        bool hand = !VRInput.LeftHanded;
+        HeadFrame(out var head, out var forward, out var right);
+        Script(hand).StickTouch = true;
+        yield return MoveTrack(
+            hand,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            0.3f
+        );
+        int before = GestureEmotes.PlayCount;
+        bool pressed = false;
+        Fist(hand, forward);
+        float played = float.PositiveInfinity;
+        for (float until = Now + 2.5f; Now < until && Now < played + 0.5f; )
+        {
+            pressed |= Interact.PhysicalInteraction.GripInteractActive;
+            if (GestureEmotes.PlayCount != before && float.IsPositiveInfinity(played))
+                played = Now;
+            yield return null;
+        }
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        var note = F(
+            $"thumbs-up played {GestureEmotes.PlayCount != before} ('{GestureEmotes.LastPlayed}'), grip interact pressed {pressed}"
+        );
+        if (GestureEmotes.PlayCount == before)
+            Fail("no thumbs-up within 2.5 s: " + note);
+        else if (pressed)
+            Fail("the thumbs-up's fist pressed the head-aimed interact: " + note);
+        else
+            Note(note);
+        yield return Wait(0.3f);
     }
 
     /// <summary>A fist on <paramref name="left"/>: grip closed, finger on the trigger, the thumb off every button, the

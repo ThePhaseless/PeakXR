@@ -56,8 +56,6 @@ internal static class HeldGestures
     private const float CommuneAhead = 0.12f;
     private const float CommuneRadius = 0.14f;
 
-    private static readonly AnalogButton Trigger = new(0.6f, 0.4f);
-
     private static bool pressing;
     private static bool tooting;
     private static bool facing;
@@ -67,7 +65,6 @@ internal static class HeldGestures
         Mouth.Reset();
         Body.Reset();
         Face.Reset();
-        Trigger.Reset();
         pressing = false;
         tooting = false;
         facing = false;
@@ -95,12 +92,7 @@ internal static class HeldGestures
             pressing = tooting = facing = haveBodyHand = false;
             // No face to hold it to: a trigger refused for a face-only item (TriggerRefused) says so at the hand.
             bool left = ItemGestures.HoldLeft;
-            Trigger.Update(VRInput.Hand(left).Trigger, dt);
-            if (
-                Trigger.Pressed
-                && InteractConfig.Instance.TriggerUse
-                && ItemGestures.TriggerRefused(ItemGestures.Held)
-            )
+            if (TriggerPressed(left) && ItemGestures.TriggerRefused(ItemGestures.Held))
                 Affordance.DenyAtHand(left, DenyReason.NotNow, default, ItemGestures.Held);
             return;
         }
@@ -115,7 +107,6 @@ internal static class HeldGestures
         bool read = use == UseGesture.Read && cfg.ReadAtFace;
         bool commune = use == UseGesture.Commune && cfg.CommuneAtFace;
         bool left = ItemGestures.HoldLeft;
-        Trigger.Update(VRInput.Hand(left).Trigger, dt);
         if (!read && !commune)
         {
             Face.Reset();
@@ -150,7 +141,7 @@ internal static class HeldGestures
             if (item != null)
                 Affordance.Progress(left, item.castProgress);
         }
-        else if (Trigger.Pressed && InteractConfig.Instance.TriggerUse)
+        else if (TriggerPressed(left))
         {
             // The trigger is refused for it: warn, and ring the face where it has to go.
             Affordance.DenyAtHand(
@@ -172,6 +163,11 @@ internal static class HeldGestures
             head.position
         );
 
+    /// <summary>The holding hand's trigger made a use press: one squeezed with a closing fist or on the climber is
+    /// muted (Core <see cref="UseTrigger"/>) and must not be refused either (#74). Read before this frame's use pass
+    /// (CharacterInput.Sample runs this first), so it is last frame's press.</summary>
+    private static bool TriggerPressed(bool left) => PhysicalInteraction.UsePressed(left);
+
     /// <summary>Clear of the mouth zone (interact.physical eats within its 0.12 m radius), metres.</summary>
     private const float AwayFromMouth = 0.2f;
 
@@ -184,8 +180,7 @@ internal static class HeldGestures
         // At a friend's mouth the trigger is the hand-over's squeeze (interact.social), not a try at eating here.
         if (
             Social.SocialHands.Instance.HandOverOwnsTrigger
-            || !Trigger.Pressed
-            || !InteractConfig.Instance.TriggerUse
+            || !TriggerPressed(left)
             || (use != UseGesture.Eat && use != UseGesture.Drink)
             || !ItemGestures.TriggerRefused(ItemGestures.Held)
         )

@@ -400,7 +400,7 @@ internal sealed class TargetPrompt
     }
 
     /// <summary>The hand a prompt without a target belongs to. The piton prompt (SETPITON), shown only while
-    /// Tools.HandPiton is off (one-handed, or <c>Interaction.TriggerUse</c> off; AimPatches.PitonPrompt hides it
+    /// Tools.HandPiton is off (one-handed; AimPatches.PitonPrompt hides it
     /// otherwise), goes to the secondary-use hand. Any other prompt goes to the pointing hand, else the dominant
     /// one.</summary>
     private static bool ActingLeft(bool piton)
