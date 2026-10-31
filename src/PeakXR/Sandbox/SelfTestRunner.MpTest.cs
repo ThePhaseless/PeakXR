@@ -1380,8 +1380,13 @@ internal sealed partial class SelfTestRunner
         float placedFor = 0f;
         float bandEnd = Now + 4f;
         // How far out the item's centre is held: adjusted so its nearest point (the zone's measure,
-        // SocialHands.FeedGap) sits 0.26-0.42 m off the mouth whatever its length.
-        float standoff = 0.32f;
+        // SocialHands.FeedGap) sits in the band whatever its length. The band starts past the zone's exit radius, not
+        // its entry: an item that once came within FeedRadius stays in the zone out to FeedExitRadius, and a squeeze
+        // there feeds (MP run 17, #111: the band's 0.26 m floor sat inside the 0.30 m exit, and the host was fed).
+        // It ends inside NearFriendRadius, where the refusal says "closer".
+        const float bandLow = Social.SocialHands.FeedExitRadius + 0.02f;
+        const float bandHigh = Social.SocialHands.NearFriendRadius - 0.03f;
+        float standoff = 0.38f;
         var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
         float ownGap = 0f;
         string pressNote = null;
@@ -1389,7 +1394,13 @@ internal sealed partial class SelfTestRunner
         string useNote = null;
         float bandMin = float.MaxValue,
             bandMax = 0f;
-        while (Now < bandEnd && HeldItem() == item && host != null)
+        // The nearest the item came to the mouth before the squeeze, and whether the hand was held back by the arm's
+        // clamp: a clamped hand must not pull the standoff in (it would wind down to the mouth while the arm cannot
+        // follow, and the item then meets the mouth as the arm catches up).
+        float approachMin = float.MaxValue;
+        bool clamped = false;
+        // A destroyed item is == null, and so is HeldItem() once it is gone: test the item first (MP run 17, #111).
+        while (Now < bandEnd && item != null && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
             var toHost = mouthNow - rig.Head.position;
@@ -1401,14 +1412,17 @@ internal sealed partial class SelfTestRunner
                 ) * (left ? -1f : 1f);
             var target = mouthNow + side * standoff;
             var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
+            clamped = (bandGoal - VRInput.HeadPosition).magnitude > MpFeedHold;
             bandGoal =
                 VRInput.HeadPosition
                 + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpFeedHold);
             SetHand(left, bandGoal);
             float d = Social.SocialHands.FeedGap(item, mouthNow);
-            if (d < 0.28f)
+            if (bandMark < 0f)
+                approachMin = Mathf.Min(approachMin, d);
+            if (d < bandLow + 0.02f)
                 standoff = Mathf.Min(0.6f, standoff + 0.01f);
-            else if (d > 0.4f)
+            else if (d > bandHigh - 0.02f && !clamped)
                 standoff = Mathf.Max(0.05f, standoff - 0.01f);
             if (holdHand != null)
                 ownGap = PeakXR.Interact.Physical.HeldGestures.OwnMouthGap(
@@ -1417,8 +1431,8 @@ internal sealed partial class SelfTestRunner
                     PeakXR.Interact.Physical.HeldGestures.OwnMouth(rig.Head)
                 );
             placedFor =
-                d > 0.26f
-                && d < 0.42f
+                d > bandLow
+                && d < bandHigh
                 && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
                     ? placedFor + Time.unscaledDeltaTime
                     : 0f;
@@ -1450,20 +1464,25 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         Script(left).Trigger = 0f;
-        if (bandMark < 0f)
+        // What the zone saw before and during the squeeze, for every verdict below.
+        string bandGaps = F(
+            $"before the squeeze the food came within {approachMin:0.00} m of the host's mouth (zone in {Social.SocialHands.FeedRadius:0.00}, out {Social.SocialHands.FeedExitRadius:0.00}), {(bandMark >= 0f ? $"squeezed {bandMin:0.00}-{bandMax:0.00} m off" : "never squeezed")}, standoff {standoff:0.00} m, arm clamped {clamped}"
+        );
+        Plugin.Log.LogInfo("[mptest] feed band: " + bandGaps);
+        if (item == null || item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
         {
             Fail(
                 F(
-                    $"the food never rested 0.26-0.42 m from the host's mouth, clear of A's own ({ownGap:0.00} m), for the beside-the-mouth squeeze"
+                    $"{walkNote}the host was fed {(bandMark >= 0f ? "by the squeeze beside the mouth" : "before the squeeze, as the food came beside the mouth")}: {bandGaps}; {useNote ?? "no use-on-friend seen in the band"}; {pressNote ?? "the trigger made no use press"}"
                 )
             );
             yield break;
         }
-        if (item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
+        if (bandMark < 0f)
         {
             Fail(
                 F(
-                    $"{walkNote}a squeeze {bandMin:0.00}-{bandMax:0.00} m from the host's mouth fed them: outside the feed zone; {useNote ?? "no use-on-friend seen in the band"}; {pressNote ?? "the trigger made no use press"}"
+                    $"the food never rested {bandLow:0.00}-{bandHigh:0.00} m from the host's mouth, clear of A's own ({ownGap:0.00} m), for the beside-the-mouth squeeze: {bandGaps}"
                 )
             );
             yield break;
@@ -1486,7 +1505,12 @@ internal sealed partial class SelfTestRunner
         );
         if (holdFrom > MpFeedReach)
         {
-            Fail("not in reach for the mouth hold after stepping in: " + standNote);
+            Fail(
+                "not in reach for the mouth hold after stepping in: "
+                    + standNote
+                    + "; "
+                    + mouthStepNote
+            );
             yield break;
         }
         while (
@@ -1848,7 +1872,9 @@ internal sealed partial class SelfTestRunner
         headDrop = 0f;
         if (!stepOk)
             yield break;
-        stepNote = "holding " + label;
+        // What was fetched, not what is held: a later failure appends this note (MP run 17: "holding TrailMix" after
+        // the host had eaten it).
+        stepNote = "fetched " + label;
         HeadFrame(out var head, out var forward, out var right);
         yield return MoveTrack(left, Rest(head, forward, right).Position, 0.4f);
     }
@@ -1923,6 +1949,9 @@ internal sealed partial class SelfTestRunner
     {
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
+        float startEye = Vector3.Distance(rig.Head.position, HostPart(host, BodypartType.Head));
+        var startAt = c.Center;
+        mouthStepNote = F($"no step-in needed (eye {startEye:0.00} m from the mouth)");
         for (int i = 0; i < 3; i++)
         {
             var mouth = HostPart(host, BodypartType.Head);
@@ -1945,8 +1974,14 @@ internal sealed partial class SelfTestRunner
             yield return MpWalkBounded(() => to, 0.1f, 3f);
             Face(mouth);
             yield return Wait(0.3f);
+            mouthStepNote = F(
+                $"{i + 1} step-in(s) moved A {FlatDistance(c.Center, startAt):0.00} m, the eye from {startEye:0.00} to {Vector3.Distance(rig.Head.position, HostPart(host, BodypartType.Head)):0.00} m off the mouth (last aimed {FlatDistance(c.Center, to):0.00} m short)"
+            );
         }
     }
+
+    /// <summary>What the last <see cref="MpStepToMouth"/> did, for a reach failure's note.</summary>
+    string mouthStepNote = "";
 
     /// <summary>A held item's centre in the frame of the scripted controller holding it (clamped to 0.6 m).</summary>
     readonly struct HeldGrip
@@ -1967,6 +2002,9 @@ internal sealed partial class SelfTestRunner
         /// <summary>World offset from the controller to the item for the controller's pose now.</summary>
         public Vector3 World(VRRig rig, HandState hand) =>
             rig.Origin.rotation * hand.Rotation * local;
+
+        /// <summary>How far the item's centre sits from the controller (m).</summary>
+        public float Length => local.magnitude;
     }
 
     /// <summary>Steepest ground (deg from level) a fetched item may lie on, and how far above that ground its centre may
@@ -2022,15 +2060,22 @@ internal sealed partial class SelfTestRunner
         yield return null;
     }
 
-    /// <summary>Drops what is in hand and opens both grips, so a grip an earlier step left closed (a two-hand hold,
-    /// a grab) does not start this one already closed.</summary>
-    IEnumerator FreeHands()
+    /// <summary>Presses drop (the VR button, as a player does) until the hands are empty, three tries of 2 s at most: one
+    /// press can land while the item is busy (a wheel closing, a weld rejoining) and do nothing.</summary>
+    IEnumerator MpDropHeld()
     {
-        if (HeldItem() != null)
+        for (int i = 0; i < 3 && HeldItem() != null; i++)
         {
             yield return TapDrop();
             yield return WaitFor(() => HeldItem() == null, 2f);
         }
+    }
+
+    /// <summary>Drops what is in hand and opens both grips, so a grip an earlier step left closed (a two-hand hold,
+    /// a grab) does not start this one already closed.</summary>
+    IEnumerator FreeHands()
+    {
+        yield return MpDropHeld();
         if (HeldItem() != null)
         {
             Fail("could not drop " + HeldItem().name + " to free the hands");
@@ -2508,21 +2553,33 @@ internal sealed partial class SelfTestRunner
         yield return WalkTo(HostCenter, 0.45f, false);
         var host = Host();
         var rig = VRRig.Instance;
-        // The zone SocialHands.UpdateFeed tests: the item's centre within FeedRadius of the Head bodypart.
+        // The zone SocialHands.UpdateFeed tests: the item's nearest point within FeedRadius of the Head bodypart.
         Vector3 Mouth() => HostPart(host, BodypartType.Head);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
         // 1.4 m under the floor toward a host down the slope).
         yield return MpStepToMouth(host);
+        var c = Character.localCharacter;
         float gap = Vector3.Distance(rig.Head.position, Mouth());
-        // The item reaches past the hand, so a mouth up to a full arm plus the item away is in reach.
-        if (gap > MpArmReach + 0.1f)
+        // The feed reach, as feed: the hand held out MpFeedHold and the zone around the item. Farther, the clamped
+        // hand cannot bring the item to the mouth (MP run 17, #112: a host 0.2 m down the slope, A's eye 0.97 m from
+        // their mouth after the step-in, the item never counted a frame at the mouth).
+        if (gap > MpFeedReach)
         {
-            stepSkip = $"the host's head is {gap:0.00} m from A's, out of arm's reach";
+            Fail(
+                F(
+                    $"not in reach of the host's mouth after stepping in: A's eye {gap:0.00} m from it ({FlatDistance(c.Center, host.Center):0.00} m level, the mouth {Mouth().y - rig.Head.position.y:+0.00;-0.00} m from the eye's height), reach {MpFeedReach:0.00} m; {mouthStepNote}"
+                )
+            );
             yield break;
         }
         Face(Mouth());
         bool left = LocalHold.ItemInLeftHand;
-        LookAtHand(left);
+        // The look on the host's face, as a player feeding a friend looks at them: following a hand that hung low took
+        // the look 60 deg down (MP run 17).
+        LookAtPoint(Mouth());
+        // The item's place on the hand is taken once the hand holds it again: one taken while the weld lagged put the
+        // aim far off the item.
+        yield return HoldingHandSettled();
         float mark = CueMark();
         // A hand-over (HandOver): resting at the mouth with the trigger up is the try, as with food (issue #14), so
         // after the mouth dwell it is refused with no squeeze.
@@ -2533,11 +2590,23 @@ internal sealed partial class SelfTestRunner
         // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
         // rejoined, and the item left the mouth).
         var grip = HeldGrip.Of(rig, Script(left), item);
-        while (Now < end && HeldItem() == item)
+        // The hand keeps its turn through the hold: re-aimed from the head every frame, the turn moved the item's
+        // offset, which moved the aim, which turned the hand again (MP run 17: the hand swung 0.15 m every other frame).
+        HoldTurn(left, Script(left).Rotation);
+        var standAt = c.Center;
+        float shortMax = 0f;
+        var driver = AvatarPoseDriver.Of(c);
+        while (Now < end && item != null && HeldItem() == item)
         {
-            float gapNow = Vector3.Distance(item.Center(), Mouth());
+            // The zone's own measure (SocialHands.UpdateFeed): the item's nearest point, as feed counts it.
+            float gapNow = Social.SocialHands.FeedGap(item, Mouth());
             best = Mathf.Min(best, gapNow);
-            atMouth = gapNow <= 0.2f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            atMouth =
+                gapNow <= Social.SocialHands.FeedRadius
+                    ? atMouth + Time.unscaledDeltaTime
+                    : atMouth;
+            if (driver != null && driver.ReachGap(left, out float shortNow))
+                shortMax = Mathf.Max(shortMax, shortNow);
             // The item, not the hand, on the moving mouth every frame, as feed does (MP run 24: chasing the gap kept a
             // Frisbee at the mouth 0.4 s in all).
             var goal = rig.Origin.InverseTransformPoint(Mouth() - grip.World(rig, Script(left)));
@@ -2557,12 +2626,15 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0.5f);
+        string itemName = item != null ? item.name : "the item";
         if (stepOk)
             stepNote =
-                $"{item.name} resting at the host's mouth, trigger up, refused after {atMouth:0.0} s there (closest {best:0.00} m); {cueNote}";
+                $"{itemName} resting at the host's mouth, trigger up, refused after {atMouth:0.0} s there (closest {best:0.00} m); {cueNote}";
         else
             Note(
-                $"{item.name} came within {best:0.00} m of the host's head, {atMouth:0.0} s at the mouth"
+                F(
+                    $"{itemName} came within {best:0.00} m of the host's mouth (nearest point, zone {Social.SocialHands.FeedRadius:0.00}), {atMouth:0.0} s at the mouth; A's eye {gap:0.00} m from it at the start, the body moved {FlatDistance(c.Center, standAt):0.00} m during the hold, the drawn hand up to {shortMax:0.00} m short of its controller, the item {grip.Length:0.00} m from the controller"
+                )
             );
     }
 
@@ -2641,12 +2713,52 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // Held outside the cone through the cue window, as a player keeps looking away: whenever the look drifts back
+        // toward the host, the body turns away again, the hand kept where it holds them (MP run 17, #113: past 65 deg at
+        // the grip, 57 deg by the end of the window, and no cue).
+        float atGrip = off;
+        float minOff = off;
+        int turnsBack = 0;
+        float nextTurn = 0f;
+        var rig = VRRig.Instance;
+        for (
+            float end = gripMark + 2f;
+            Now < end && !CueLog.Capture.Fired(false, DenyReason.WrongAngle, gripMark, out _);
+
+        )
+        {
+            float now = Vector3.Angle(c.data.lookDirection, host.Center - c.Center);
+            minOff = Mathf.Min(minOff, now);
+            // The character's look follows the rig a frame or more late: one turn per 0.15 s, not one per stale frame.
+            if (now < atGrip - 2f && Now >= nextTurn)
+            {
+                var hand = rig.Origin.TransformPoint(Script(false).Position);
+                float side = Vector3.SignedAngle(
+                    Flat(host.Center - c.Center),
+                    Flat(c.data.lookDirection),
+                    Vector3.up
+                );
+                rig.RotateYaw((side >= 0f ? 1f : -1f) * (atGrip - now));
+                SetHand(false, rig.Origin.InverseTransformPoint(hand));
+                nextTurn = Now + 0.15f;
+                turnsBack++;
+            }
+            yield return null;
+        }
+        string lookNote = F(
+            $"look {atGrip:0} deg off the host at the grip, at least {minOff:0} deg through the window, {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg at its end, turned away again {turnsBack} time(s) (cone {SocialIntent.ReachConeDegrees:0})"
+        );
+        if (minOff <= SocialIntent.ReachConeDegrees)
+        {
+            Fail("the look drifted into the reach cone before the cue: " + lookNote);
+            yield break;
+        }
         yield return ExpectCue(false, DenyReason.WrongAngle, gripMark, false, 2f);
         if (!stepOk)
         {
             // MP run 20 missed the cue with nothing to tell a look inside the cone from a reach the game caught.
             stepNote = F(
-                $"look {Vector3.Angle(c.data.lookDirection, host.Center - c.Center):0} deg off the host (cone {SocialIntent.ReachConeDegrees:0}), caught {c.data.sinceGrabFriend < 0.3f}, grip {PeakXR.Interact.PhysicalInteraction.HandAction(false)}"
+                $"{lookNote}, caught {c.data.sinceGrabFriend < 0.3f}, grip {PeakXR.Interact.PhysicalInteraction.HandAction(false)}"
             );
             yield break;
         }
@@ -2668,7 +2780,9 @@ internal sealed partial class SelfTestRunner
         EndGlance();
         if (stepOk)
             stepNote =
-                "looking away: "
+                "looking away ("
+                + lookNote
+                + "): "
                 + cue
                 + "; looking at them: caught"
                 + $"; reach-out {SocialHands.Instance.ReachOutFriend(false) != null}";
@@ -3010,9 +3124,12 @@ internal sealed partial class SelfTestRunner
         // (BackpackOnBackVisuals.cs:99-104). The body turns 45° away from that facing, which leaves the pack ahead of the
         // hand on the near side, and the head alone 75° further, a neck's turn (MP run 13 turned the whole body 150° and
         // reached behind its own back).
+        // From the view Face just turned, not c.data.lookDirection: the character's look takes it up a frame or more
+        // later, so the side came from the walk's heading and the turn went back toward the pack's facing (MP run 17:
+        // about 123 deg off after facing the pack, 3 deg after turning 120 deg the wrong way).
         float side = Vector3.SignedAngle(
             HelperFunctions.ZeroY(visuals.transform.forward),
-            HelperFunctions.ZeroY(c.data.lookDirection),
+            HelperFunctions.ZeroY(VRRig.Instance.Head.forward),
             Vector3.up
         );
         float turn = side >= 0f ? 1f : -1f;
@@ -3043,7 +3160,7 @@ internal sealed partial class SelfTestRunner
             if (off < 110f)
             {
                 stepSkip = F(
-                    $"the look is only {off:0}° off the pack's facing, which vanilla accepts"
+                    $"the look is only {off:0}° off the pack's facing, which vanilla accepts ({Mathf.Abs(side):0}° off it facing the pack, then turned {turn * (MpPackBodyTurn + MpPackNeckTurn):+0;-0}°)"
                 );
                 yield break;
             }
@@ -3177,9 +3294,12 @@ internal sealed partial class SelfTestRunner
         LookAtHand(left);
         yield return Wait(0.3f);
         float past = PastArm(left, visuals.transform.position);
-        if (past > 0f)
+        ShoulderGap(left, visuals.transform.position, out float level, out float up);
+        // A pack below the shoulder is reached by bending, as a player does (ReachDown stoops): only one past reach on
+        // the level is out of reach (MP run 17: 0.65 m out and 0.69 m under the shoulder skipped as 0.00 m past).
+        float levelReach = SocialConfig.Instance.Reach + MpShoulderReach;
+        if (past > 0f && (up >= 0f || level > levelReach))
         {
-            ShoulderGap(left, visuals.transform.position, out float level, out float up);
             stepSkip = F(
                 $"the host's pack is {past:0.00} m past a real arm's reach ({level:0.00} m out, {up:+0.00;-0.00} m up from the shoulder)"
             );
@@ -3189,7 +3309,10 @@ internal sealed partial class SelfTestRunner
         string itemName = item.name;
         ushort itemId = item.itemID;
         var stash = Inventory.PackStash.Instance;
-        yield return MoveTo(left, () => visuals.transform.position, 0.6f);
+        if (past > 0f)
+            yield return ReachDown(left, () => visuals.transform.position, 0.6f);
+        else
+            yield return MoveTo(left, () => visuals.transform.position, 0.6f);
         yield return Until(
             () => stash.Over && stash.Verdict == DenyReason.None,
             1.5f,
@@ -3225,8 +3348,11 @@ internal sealed partial class SelfTestRunner
             Fail(F($"{itemName} is not in pocket {pocket} of the host's pack"));
         else
             stepNote = F(
-                $"{itemName} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand"
+                $"{itemName} let go in the host's pack from behind went into pocket {pocket}, the one nearest the hand{(headDrop > 0f ? F($", stooped {headDrop:0.00} m") : "")}"
             );
+        // Up again from a stoop to a low pack: a passed step's rest (MpRest) keeps the head where it is.
+        if (headDrop > 0f)
+            yield return StandUp(left);
     }
 
     /// <summary>
@@ -3394,8 +3520,12 @@ internal sealed partial class SelfTestRunner
             Fail("from the front the pull opened the wheel");
         else if (stepOk)
             stepNote = stashed + "; from the front WrongAngle refused the pull";
-        // The next steps start empty-handed, as vr.330 leaves A.
-        yield return DropHeld();
+        // The next steps start empty-handed, as vr.330 leaves A. Clean-up, not part of the verdict (MP run 17, #100:
+        // DropHeld's 3 s ran out on the front check's TrailMix, which left the hand later, and failed a step whose
+        // stash and refusal had both worked).
+        yield return MpDropHeld();
+        if (HeldItem() != null)
+            stepNote += "; still holding " + HeldItem().name + " after the clean-up drop";
     }
 
     /// <summary>Body and neck turn (degrees) of the pack step: 120° in all, past vanilla's 110° (BackpackOnBackVisuals.cs:102).</summary>

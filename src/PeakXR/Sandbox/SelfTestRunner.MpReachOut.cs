@@ -467,6 +467,9 @@ internal sealed partial class SelfTestRunner
         var tried = new List<Vector3>();
         var stand = Vector3.zero;
         var outward = Vector3.zero;
+        // Where A stops: on the level ground behind the lip's ground point that Lip checked, not on the point itself,
+        // which can be at the edge (MP run 17, #95: the walk to the point ended 2.29 m under it, off the lip).
+        var behind = Vector3.zero;
         float missed = 0f;
         for (int i = 0; i < 3; i++)
         {
@@ -475,11 +478,10 @@ internal sealed partial class SelfTestRunner
                 break;
             stand = ledgeStand;
             outward = ledgeOutward;
+            behind = stand - outward * LedgeBack;
             tried.Add(stand);
-            yield return MpWalkAround(() => stand, 0.3f, 15f);
-            var flat = c.Center - stand;
-            flat.y = 0f;
-            missed = flat.magnitude;
+            yield return MpWalkAround(() => behind, 0.2f, 15f);
+            missed = FlatDistance(c.Center, behind);
             if (missed <= 0.6f)
                 break;
         }
@@ -501,19 +503,19 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.5f);
         // At the lip when B is asked, not where the walk last stood (MP run 16, #95: A was 1.98 m from the lip it had
         // measured when B searched below it): one more walk in, then a SKIP with the distance.
-        if (FlatDistance(c.Center, stand) > LedgeStandBy)
+        if (FlatDistance(c.Center, behind) > LedgeStandBy)
         {
-            yield return MpWalkAround(() => stand, 0.3f, 10f);
+            yield return MpWalkAround(() => behind, 0.2f, 10f);
             Face(stand + outward * 3f);
             yield return Wait(0.5f);
         }
-        float atLip = FlatDistance(c.Center, stand);
+        float atLip = FlatDistance(c.Center, behind);
         // On the lip's own ground too: the torso stands about 1 m over the feet, so well above that is A on something
         // higher next to it.
         if (atLip > LedgeStandBy || c.Center.y - stand.y > 1.4f || c.Center.y < stand.y)
         {
             stepSkip = F(
-                $"A stands {atLip:0.00} m from the lip ({c.Center.y - stand.y:0.00} m over it), not at it"
+                $"A stands {atLip:0.00} m from the spot {LedgeBack:0.0} m behind the lip ({c.Center.y - stand.y:0.00} m over the lip's ground), not at it"
             );
             yield break;
         }
@@ -524,7 +526,7 @@ internal sealed partial class SelfTestRunner
         if (stepSkip != null)
         {
             stepSkip += F(
-                $" (A's lip: {LipNote(stand, outward)} from ({stand.x:0.00}, {stand.y:0.00}, {stand.z:0.00}), A {atLip:0.00} m from it on the level, look {Vector3.Angle(Flat(c.data.lookDirection), outward):0} deg off its outward)"
+                $" (A's lip: {LipNote(stand, outward)} from ({stand.x:0.00}, {stand.y:0.00}, {stand.z:0.00}), A {FlatDistance(c.Center, stand):0.00} m from it on the level, look {Vector3.Angle(Flat(c.data.lookDirection), outward):0} deg off its outward)"
             );
             yield return BringHostBack(c, host);
             yield break;
@@ -709,8 +711,13 @@ internal sealed partial class SelfTestRunner
 
     const float LedgeDropMax = 4f;
 
-    /// <summary>How near (m, level) A stands to the lip's ground point when B is asked to hang below it.</summary>
+    /// <summary>How near (m, level) A stands to its spot behind the lip when B is asked to hang below it.</summary>
     const float LedgeStandBy = 0.5f;
+
+    /// <summary>How far (m) behind the lip's ground point A stands: on the level ground <see cref="Lip"/> checked 0.6 m
+    /// back, so a walk that overshoots its stop still ends on top. The edge is 0.3-1.0 m ahead, the 2.3-4 m drop well
+    /// inside the game's 4 m reach.</summary>
+    const float LedgeBack = 0.3f;
 
     bool ledgeFound;
     Vector3 ledgeStand;
