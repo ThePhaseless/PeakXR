@@ -1278,15 +1278,10 @@ internal sealed partial class SelfTestRunner
         // The game's own mark of a finished feed on the feeder (Item.FinishCastSecondary, Item.cs:1043): a drop or a
         // lost grip also takes the item from the hand, and only this tells them apart.
         float consumedBefore = c.data.lastConsumedItem;
-        // Carried low at the side on the walk in, as a player carries food they are not offering (MP run 13, #93:
-        // held at chest height it passed the host's mouth during a stop between stick pulses and fed them before the
-        // squeeze test began).
-        HeadFrame(out var head, out var forward, out var right);
-        yield return MoveTrack(
-            left,
-            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f + forward * 0.15f,
-            0.3f
-        );
+        // Carried low at the side and a little back on the walk in, as a player carries food they are not offering
+        // (MP run 13, #93: held at chest height it passed the host's mouth during a stop between stick pulses; MP run
+        // 14: 0.15 m ahead it still met the mouth of a host standing lower on the slope and fed them in a pause).
+        yield return CarryFoodBack(left);
         yield return WalkTo(HostCenter, 0.75f, true);
         if (!stepOk)
             yield break;
@@ -1295,14 +1290,35 @@ internal sealed partial class SelfTestRunner
         yield return MpStepToMouth(host);
         Face(host.Head);
         yield return Wait(0.3f);
+        bool walkFed = c.data.lastConsumedItem != consumedBefore;
         if (item == null || HeldItem() != item)
         {
             Fail(
-                c.data.lastConsumedItem != consumedBefore
+                walkFed
                     ? "the host was fed on the walk in, before the squeeze beside the mouth"
                     : "the food left the hand on the walk in"
             );
             yield break;
+        }
+        // The squeeze starts with the game's use-on-friend released, so it tests the squeeze alone (MP run 14, #93: a
+        // pause on the walk in fed the multi-use ScoutCookies, which stays in hand, and the band only read that).
+        string walkNote = "";
+        if (walkFed || item.isUsingSecondary || c.input.useSecondaryIsPressed)
+        {
+            walkNote = F(
+                $"the walk in {(walkFed ? "fed the host" : "held use-on-friend")} (gap {Social.SocialHands.FeedGap(item, HostPart(host, BodypartType.Head)):0.00} m, hand-over feeding {Social.SocialHands.Instance.FeedReady}); "
+            );
+            yield return CarryFoodBack(left);
+            yield return WaitFor(
+                () => item == null || (!item.isUsingSecondary && !c.input.useSecondaryIsPressed),
+                2f
+            );
+            if (item == null || HeldItem() != item || item.isUsingSecondary)
+            {
+                Fail(walkNote + "use-on-friend did not let go with the food held back");
+                yield break;
+            }
+            consumedBefore = c.data.lastConsumedItem;
         }
         yield return GripTo(left, 1f, 0.1f);
         // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
@@ -1330,6 +1346,10 @@ internal sealed partial class SelfTestRunner
         var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
         float ownGap = 0f;
         string pressNote = null;
+        // The first frame the game's use-on-friend runs in the band: which path pressed it, and the gaps then.
+        string useNote = null;
+        float bandMin = float.MaxValue,
+            bandMax = 0f;
         while (Now < bandEnd && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
@@ -1368,6 +1388,15 @@ internal sealed partial class SelfTestRunner
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
             }
+            if (bandMark >= 0f)
+            {
+                bandMin = Mathf.Min(bandMin, d);
+                bandMax = Mathf.Max(bandMax, d);
+            }
+            if (useNote == null && (item.isUsingSecondary || c.input.useSecondaryIsPressed))
+                useNote = F(
+                    $"use-on-friend on {(bandMark >= 0f ? "after" : "before")} the squeeze at gap {d:0.00} m, hand-over feeding {Social.SocialHands.Instance.FeedReady}, hand-over owns the trigger {Social.SocialHands.Instance.HandOverOwnsTrigger}, trigger {VRInput.Hand(left).Trigger:0.00}"
+                );
             // What the refusal reads (HeldGestures.MouthHint), the frame after the press's use pass.
             if (
                 bandMark >= 0f
@@ -1393,7 +1422,11 @@ internal sealed partial class SelfTestRunner
         }
         if (item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
         {
-            Fail("a squeeze 0.32 m from the host's mouth fed them: outside the feed zone");
+            Fail(
+                F(
+                    $"{walkNote}a squeeze {bandMin:0.00}-{bandMax:0.00} m from the host's mouth fed them: outside the feed zone; {useNote ?? "no use-on-friend seen in the band"}; {pressNote ?? "the trigger made no use press"}"
+                )
+            );
             yield break;
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
@@ -1449,7 +1482,23 @@ internal sealed partial class SelfTestRunner
                     + note
             );
         else
-            stepNote = "beside the mouth: " + bandCue + "; fed by resting at the mouth; " + note;
+            stepNote =
+                walkNote
+                + "beside the mouth: "
+                + bandCue
+                + "; fed by resting at the mouth; "
+                + note;
+    }
+
+    /// <summary>The food low at the holding side and a little back, out of a host's mouth zone on the walk in.</summary>
+    IEnumerator CarryFoodBack(bool left)
+    {
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            left,
+            head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f - forward * 0.1f,
+            0.3f
+        );
     }
 
     // ---------------------------------------------------------------- movement and hands
