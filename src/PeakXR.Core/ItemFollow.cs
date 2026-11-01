@@ -13,8 +13,9 @@ namespace PeakXR.Core;
 /// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), or once the hand has stopped
 /// closing in short of <see cref="Release"/> (an arm out of reach, which a weld would keep), and a fresh weld stays for
 /// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back. An item the world
-/// holds back (a wall the walk or the hand presses it on) never leaves the hand for it, as in vanilla (#17); the arm
-/// then reaches no further than <see cref="ItemFollow.HeldBackReach"/>, so the kept item never pushes the body (#116).
+/// holds back (a wall the walk or the hand presses it on) stays in the hand for it, as in vanilla (#17), up to
+/// <see cref="KeepLag"/> or while its way is shut (#124); the arm then reaches no further than
+/// <see cref="ItemFollow.HeldBackReach"/>, so the kept item never pushes the body (#116).
 /// </summary>
 public sealed class WeldGate
 {
@@ -48,6 +49,12 @@ public sealed class WeldGate
     /// <summary>Closing in by less than this (m) over <see cref="SettledHold"/> counts as settled.</summary>
     public float SettledStep = 0.01f;
 
+    /// <summary>Hand lag past the arm's shortfall up to which whatever the probe meets keeps the weld, metres. Past it a
+    /// release can only jump (<see cref="Release"/> plus <see cref="ItemFollow.SnapGap"/>), so the keep needs a way that is
+    /// shut. Fitted: walls and props overlap in the data (run 22: a wall at 0.75 m, props at 0.63-1.15 m), and a wall past
+    /// the limit keeps through <c>blocked</c> (#124).</summary>
+    public float KeepLag => Release + ItemFollow.SnapGap;
+
     private float timer;
     private float settle;
     private float still;
@@ -63,14 +70,18 @@ public sealed class WeldGate
     /// <param name="blocked">Terrain between the shoulder and the controller (the hand cannot get through).</param>
     /// <param name="itemBlocked">The world holds the item itself back from where its controller puts it (a wall the
     /// walk presses it on, #17): a free carry could not get it there either, and a snap would put it inside the wall.
-    /// The weld never lets go of it, and a free item rejoins its hand; the ghost hand shows the controller.</param>
+    /// Up to <see cref="KeepLag"/>, or past it with <paramref name="blocked"/> or <paramref name="placeBlocked"/>, the
+    /// weld does not let go of it and a free item rejoins its hand; the ghost hand shows the controller.</param>
+    /// <param name="placeBlocked">Where the item goes is shut off: terrain between the shoulder and the item's place,
+    /// or another player's body in the sweep (#124, #119).</param>
     public bool Update(
         float handToController,
         float handToItem,
         float dt,
         float shortfall = 0f,
         bool blocked = false,
-        bool itemBlocked = false
+        bool itemBlocked = false,
+        bool placeBlocked = false
     )
     {
         if (settle > 0f)
@@ -79,9 +90,10 @@ public sealed class WeldGate
         float lag = handToController - reach;
         // The item is judged past the shortfall too: free, it sits on the controller the arm cannot reach.
         float itemLag = handToItem - reach;
+        bool kept = itemBlocked && (lag <= KeepLag || blocked || placeBlocked);
         bool toward = Released
-            ? itemBlocked || (lag < Rejoin && itemLag < Release)
-            : !itemBlocked && settle <= 0f && lag > Release;
+            ? kept || (lag < Rejoin && itemLag < Release)
+            : !kept && settle <= 0f && lag > Release;
         timer = toward ? timer + dt : 0f;
         if (Released && lag < Release && itemLag < Release)
         {

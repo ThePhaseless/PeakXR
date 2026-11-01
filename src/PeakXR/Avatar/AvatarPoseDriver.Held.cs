@@ -203,6 +203,11 @@ public partial class AvatarPoseDriver
             ItemProbeMax
         );
         heldBackBy = null;
+        // The body first: a prop behind a friend must not hide them, or an item pressed on them past the limit could
+        // let go and snap inside them (#119, #124); ReachBlocked sees no characters.
+        heldByBody = OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
+        if (heldByBody)
+            return true;
         if (
             Physics.CheckSphere(
                 centre,
@@ -227,40 +232,66 @@ public partial class AvatarPoseDriver
             heldBackBy = hit.collider;
             return true;
         }
-        return OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
+        return false;
     }
 
     /// <summary>What the last <see cref="ItemHeldBack"/> sweep met, for the log; null when the item's centre sits in
     /// terrain, which an overlap check cannot name.</summary>
     private Collider heldBackBy;
 
+    /// <summary>The last <see cref="ItemHeldBack"/> met another player's body.</summary>
+    private bool heldByBody;
+
+    /// <summary>The reasons this keep has printed past the limit (<see cref="LogKeptWeld"/>); -1 before its first line.</summary>
+    private int keptPastWhy = -1;
+
     /// <summary>A kept weld's start has been logged and its end not yet (<see cref="LogKeptWeld"/>).</summary>
     private bool keptWeldLogged;
 
     /// <summary>Rare edges, kept in the log: when a weld keeps an item held back and when it stops, ended only once
     /// the arm's limit has lapsed (<see cref="HeldBlockedFresh"/>), so a probe flickering along a wall logs once. The
-    /// numbers tell a real wall from a probe that read a settling item as held back (#121).</summary>
+    /// numbers tell a real wall from a probe that read a settling item as held back (#121). A keep past the limit
+    /// (<see cref="WeldGate.KeepLag"/>) prints why it keeps, since it usually starts under it (#124).</summary>
     private void LogKeptWeld(
         Item item,
         bool kept,
         float toController,
         float shortfall,
-        float toItem
+        float toItem,
+        bool armBlocked,
+        bool placeBlocked
     )
     {
         bool holding = kept || Time.fixedTime - heldBlockedAt <= HeldBlockedFresh;
-        if (holding == keptWeldLogged)
-            return;
-        keptWeldLogged = holding;
-        string state = holding
-            ? "kept in the hand, held back by "
-                + (heldBackBy != null ? heldBackBy.name : "terrain around its centre")
-            : "no longer held back";
-        Plugin.Log.LogInfo(
-            System.FormattableString.Invariant(
-                $"[avatar.local] {item.name} {state}: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, item {HeldItemGap:0.00} m from its place, {Owner.data.sinceItemAttach:0.00} s after its attach"
-            )
-        );
+        if (holding != keptWeldLogged)
+        {
+            keptWeldLogged = holding;
+            if (!holding)
+                keptPastWhy = -1;
+            string state = holding
+                ? "kept in the hand, held back by "
+                    + (heldBackBy != null ? heldBackBy.name : "terrain around its centre")
+                : "no longer held back";
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[avatar.local] {item.name} {state}: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, item {HeldItemGap:0.00} m from its place, {Owner.data.sinceItemAttach:0.00} s after its attach"
+                )
+            );
+        }
+        if (kept && toController - shortfall > weldGate.KeepLag)
+        {
+            int why = (armBlocked ? 1 : 0) | (placeBlocked ? 2 : 0) | (heldByBody ? 4 : 0);
+            // At most four lines a keep: its first tick past the limit, then each reason the first time it shows.
+            if (keptPastWhy < 0 || (why & ~keptPastWhy) != 0)
+            {
+                keptPastWhy = Mathf.Max(keptPastWhy, 0) | why;
+                Plugin.Log.LogInfo(
+                    System.FormattableString.Invariant(
+                        $"[avatar.local] {item.name} kept past the limit: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), arm path blocked {armBlocked}, place blocked {placeBlocked}, by a body {heldByBody}"
+                    )
+                );
+            }
+        }
     }
 
     /// <summary>The sweep meets a body <see cref="ItemFollow.BodyHoldsItemBack"/> counts. It also lists colliders it
@@ -404,11 +435,30 @@ public partial class AvatarPoseDriver
         // wall: run 18 let the apple go as the controller rose with the stick idle (vr.246, #17). Kept, the arm stops
         // pressing for the controller (heldBlockedHand, OnConfigureIK), so the item's contact never lifts the body:
         // the torch held on the cannon pushed the body up onto it (vr.87, #116). Not on a freshly given item, as the
-        // gate below waits: a hit would stop an arm still on its way to it (vr.244, #121).
+        // gate below waits: a hit would stop an arm still on its way to it (vr.244, #121). Past WeldGate.KeepLag the
+        // weld keeps only with the way shut (armBlocked, placeBlocked), else a reach past a prop leaves the item up to
+        // 1.3 m off its controller (#124). The arm's limit and the spring still read the probe's hit, so the arm does
+        // not press during the hold and the hand cannot close under the limit and reset it.
         bool itemBlocked =
             Owner.IsLocal
             && weldGate.ProbesHeldBack(toController - shortfall, EquipSettled)
             && ItemHeldBack(item, target - body.position);
+        bool armBlocked =
+            Owner.IsLocal && toController > weldGate.Release && ReachBlocked(left, ctrlBone);
+        // Where the item's centre goes: its pivot can sit far from it (the spike's collider runs 0.08-0.70 m ahead of its
+        // pivot, the apple's pivot is at its top). A line from the shoulder hits a wall whether the point is in it or behind it.
+        bool placeBlocked =
+            itemBlocked
+            && (
+                heldByBody
+                || ReachBlocked(
+                    left,
+                    target
+                        + targetRot
+                            * Quaternion.Inverse(body.rotation)
+                            * (item.Center() - body.position)
+                )
+            );
         bool free =
             !Owner.IsLocal
             || (
@@ -418,8 +468,9 @@ public partial class AvatarPoseDriver
                     toItem,
                     dt,
                     shortfall,
-                    toController > weldGate.Release && ReachBlocked(left, ctrlBone),
-                    itemBlocked
+                    armBlocked,
+                    itemBlocked,
+                    placeBlocked
                 )
             );
         remoteFree = !Owner.IsLocal;
@@ -432,7 +483,15 @@ public partial class AvatarPoseDriver
             heldBlockedHand = hand;
         }
         if (Owner.IsLocal)
-            LogKeptWeld(item, itemBlocked && !free, toController, shortfall, toItem);
+            LogKeptWeld(
+                item,
+                itemBlocked && !free,
+                toController,
+                shortfall,
+                toItem,
+                armBlocked,
+                placeBlocked
+            );
         if (free != wasFree && Owner.IsLocal)
         {
             // Rare edges, kept in the log: why a held item left or rejoined the hand.

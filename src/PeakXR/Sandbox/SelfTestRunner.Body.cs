@@ -2401,6 +2401,13 @@ internal sealed partial class SelfTestRunner
         var item = SpawnTestItem(AppleFragment, ground.point + Vector3.up * 0.05f);
         if (!stepOk)
             yield break;
+        // Rested on the ground: its pivot is at its top (collider y -0.376 to -0.022,
+        // docs/research/item-grab-shapes.csv), so a pivot 0.05 m up left 0.028 m of it showing and the ground's slope
+        // decided the step (#118). A thin item is #128.
+        Physics.SyncTransforms();
+        item.transform.position += Vector3.up * (ground.point.y - SolidBottom(item));
+        if (item.rig != null)
+            item.rig.position = item.transform.position;
         yield return Wait(0.3f);
         var hand = rig.RightHand.position;
         float reach = float.MaxValue;
@@ -2424,13 +2431,33 @@ internal sealed partial class SelfTestRunner
             new Vector3(controller.x, virtualFloor, controller.z)
         );
         var note = F(
-            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00}; {FlatDistance(nearest, hand):0.00} level, {hand.y - nearest.y:0.00} above), the ground there {ground.point.y - floorWorld.y:0.00} m over the virtual floor, the apple's centre {item.Center().y - ground.point.y:0.00} m over that ground, the hand {FlatDistance(hand, top):0.00} m level off where the apple was put under it, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
+            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00}; {FlatDistance(nearest, hand):0.00} level, {hand.y - nearest.y:0.00} above), the ground there {ground.point.y - floorWorld.y:0.00} m over the virtual floor, the apple's bottom {SolidBottom(item) - ground.point.y:0.00} m over that ground, the hand {hand.y - ground.point.y:0.00} m over the ground, {FlatDistance(hand, top):0.00} m level off where the apple was put under it, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
+        );
+        // A rested apple is tall enough to pass a hand the gain never lowered, on ground high under the body (#118).
+        float want = SeatedReach.Y(
+            controller.y,
+            seatedEye,
+            virtualFloor,
+            rig.SeatedReachGain,
+            true
         );
         if (local < virtualFloor - 0.01f)
             Fail("the hand went below the virtual floor: " + note);
+        else if (Mathf.Abs(local - want) > 0.05f)
+            Fail("the seated gain did not reach the hand: " + note);
         else if (reach > grab)
             Fail("a hand at the real floor cannot reach a ground item: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>The lowest point of <paramref name="item"/>'s enabled solid colliders.</summary>
+    static float SolidBottom(Item item)
+    {
+        float bottom = float.PositiveInfinity;
+        foreach (var col in item.GetComponentsInChildren<Collider>())
+            if (col.enabled && !col.isTrigger)
+                bottom = Mathf.Min(bottom, col.bounds.min.y);
+        return bottom;
     }
 }
