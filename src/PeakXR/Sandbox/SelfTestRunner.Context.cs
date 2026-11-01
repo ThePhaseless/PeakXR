@@ -169,6 +169,50 @@ internal sealed partial class SelfTestRunner
     /// <summary>Nearest aimed spot (m) the chain step shoots at: past the chain's start 1 m ahead, with room.</summary>
     const float MinChainAim = 2f;
 
+    /// <summary>Lowest the ground under the chain's start may lie under the feet (m): the chain hangs 1.5 m over it.</summary>
+    const float MaxChainDrop = 0.5f;
+
+    /// <summary>
+    /// The game's fire builds a chain to <paramref name="to"/> from here (VineShooter.cs:49-69): it hangs from 1.5 m
+    /// over the ground 1 m ahead of the aim (:52-57) and its last of ten tries hangs straight, so a clear straight path
+    /// (JungleVine.CheckVinePath, JungleVine.cs:234-247) always builds. That ground lies at the feet, not down a drop
+    /// a player cannot reach into. #56, run 17: flat aimed at a palm 15.7 m off with no clear path and built nothing;
+    /// VR's chain hung low ahead of the beach, its nearest point 1.30 m from the eye.
+    /// </summary>
+    static bool ChainBuilds(Character c, Vector3 to)
+    {
+        Vector3 at,
+            ahead;
+        if (VRSession.Active && Interact.HandAim.TryHeld(out var origin, out var rotation))
+        {
+            at = origin;
+            ahead = rotation * Vector3.forward;
+        }
+        else
+        {
+            var cam = MainCamera.instance.transform;
+            at = cam.position;
+            ahead = cam.forward;
+        }
+        var from = at - Vector3.up * 0.2f;
+        if (
+            Physics.Raycast(
+                at + ahead,
+                Vector3.down,
+                out var ground,
+                4f,
+                HelperFunctions.LayerType.TerrainMap.ToLayerMask(),
+                QueryTriggerInteraction.UseGlobal
+            )
+        )
+        {
+            if (ground.point.y < Feet(c).y - MaxChainDrop)
+                return false;
+            from = ground.point + Vector3.up * 1.5f;
+        }
+        return JungleVine.CheckVinePath(from, to, 0f, out _);
+    }
+
     IEnumerator ChainBody(bool vr)
     {
         var prefab = FirstItem(i =>
@@ -209,7 +253,10 @@ internal sealed partial class SelfTestRunner
                 yield return null;
                 // The chain hangs from 1 m ahead of the camera (VineShooter.cs:52-57): a spot nearer than that has
                 // no path to it, and the cast ends with nothing (flat run 10: a LidCollider 0.9 m off).
-                aimed = shooter.WillAttach(out hit) && hit.distance >= MinChainAim;
+                aimed =
+                    shooter.WillAttach(out hit)
+                    && hit.distance >= MinChainAim
+                    && ChainBuilds(c, hit.point);
             }
             if (aimed)
                 break;
@@ -217,7 +264,7 @@ internal sealed partial class SelfTestRunner
         if (!aimed)
         {
             stepSkip =
-                $"no terrain within the shooter's {shooter.maxLength:0} m and elevation window (VineShooter.cs:71-92) here";
+                $"no terrain within the shooter's {shooter.maxLength:0} m and elevation window (VineShooter.cs:71-92) with a clear chain path from ground at the feet here";
             yield break;
         }
 
@@ -265,6 +312,8 @@ internal sealed partial class SelfTestRunner
                         6f,
                         out var ground
                     )
+                    // Not down a drop either (#56): a player walks up on the ground they stand on.
+                    || ground.point.y < Feet(c).y - MaxChainDrop
                 )
                     break;
                 warpedForProp = true;
