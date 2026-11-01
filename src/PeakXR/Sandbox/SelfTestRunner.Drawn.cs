@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using PeakXR.Core;
+using PeakXR.Render;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using PeakXR.XR;
@@ -153,12 +154,21 @@ internal sealed partial class SelfTestRunner
     private sealed class EyeImages
     {
         public readonly byte[][] Pixels;
+        public readonly Matrix4x4[] Views;
+        public readonly Matrix4x4[] Projections;
+        public readonly Rect[] Viewports;
         public int Width;
         public int Height;
         public int Pending;
         public string Problem;
 
-        public EyeImages(int passes) => Pixels = new byte[passes][];
+        public EyeImages(int passes)
+        {
+            Pixels = new byte[passes][];
+            Views = new Matrix4x4[passes];
+            Projections = new Matrix4x4[passes];
+            Viewports = new Rect[passes];
+        }
     }
 
     /// <summary>One frame of every eye target, read when the render context ends: endCameraRendering fires after the
@@ -180,6 +190,10 @@ internal sealed partial class SelfTestRunner
             for (int i = 0; i < into.Pixels.Length; i++)
             {
                 int eye = i;
+                var record = EyeMatrixFeature.Eyes[eye & 1];
+                into.Views[eye] = record.View;
+                into.Projections[eye] = record.Proj;
+                into.Viewports[eye] = record.Viewport;
                 var target = display.GetRenderTextureForRenderPass(eye);
                 if (target == null)
                 {
@@ -224,12 +238,12 @@ internal sealed partial class SelfTestRunner
                 : "the head camera did not render";
     }
 
-    void SaveEye(EyeImages eyes, string shot)
+    void SaveEye(EyeImages eyes, string shot, int eye = 0)
     {
-        if (eyes.Pixels[0] == null)
+        if (eyes.Pixels[eye] == null)
             return;
         var png = ImageConversion.EncodeArrayToPNG(
-            eyes.Pixels[0],
+            eyes.Pixels[eye],
             GraphicsFormat.R8G8B8A8_UNorm,
             (uint)eyes.Width,
             (uint)eyes.Height

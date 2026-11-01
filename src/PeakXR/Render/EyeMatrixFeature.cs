@@ -14,10 +14,25 @@ namespace PeakXR.Render;
 /// (GD/ScreenFog, GD/SphereFog), SC Post Effects Fog, Cloud Shadows, Caustics and Sketch, FogOrb, DarkFade, FireHaze,
 /// LavaPost, RainPost, NickPost/Injury and Decal, and the forward one by SC Post Effects DepthNormals, which the outline
 /// pass reconstructs normals with (SerializedPass name tables read from the game data, 2026-10-29 scan). One pass per
-/// eye, after the camera setup and the prepasses, fixes all.
+/// eye, after the camera setup and the prepasses, fixes all. It also records what each eye rendered with, right before
+/// that eye's cull (<see cref="Eyes"/>, for self-tests vr.480 to vr.483).
 /// </summary>
 internal sealed class EyeMatrixFeature : ScriptableRendererFeature
 {
+    /// <summary>One MultiPass eye's last render: its matrices and viewport, the frame, and whether the depth-normal
+    /// prepass ran for it, which is what gives transparents that eye's own depth (issue #5).</summary>
+    internal struct EyeRecord
+    {
+        public Matrix4x4 View;
+        public Matrix4x4 Proj;
+        public Rect Viewport;
+        public int Frame;
+        public bool NormalsPrepass;
+    }
+
+    /// <summary>By multipass id: left, right.</summary>
+    internal static readonly EyeRecord[] Eyes = new EyeRecord[2];
+
     private static readonly int ProjectionId = Shader.PropertyToID("unity_CameraProjection");
     private static readonly int InvProjectionId = Shader.PropertyToID("unity_CameraInvProjection");
 
@@ -35,6 +50,22 @@ internal sealed class EyeMatrixFeature : ScriptableRendererFeature
             renderer.EnqueuePass(pass);
     }
 
+    /// <summary>Runs per XR pass with that eye's view already set (URP UniversalRenderPipeline.cs:818), right before its
+    /// cull (:639, ScriptableRenderer.cs:891-897).</summary>
+    public override void OnCameraPreCull(ScriptableRenderer renderer, in CameraData cameraData)
+    {
+        var xr = cameraData.xr;
+        if (!xr.enabled || xr.singlePassEnabled || xr.viewCount != 1)
+            return;
+        Eyes[xr.multipassId & 1] = new EyeRecord
+        {
+            View = xr.GetViewMatrix(0),
+            Proj = xr.GetProjMatrix(0),
+            Viewport = xr.GetViewport(0),
+            Frame = Time.frameCount,
+        };
+    }
+
     private sealed class EyeMatrixPass : ScriptableRenderPass
     {
         private sealed class PassData
@@ -48,6 +79,10 @@ internal sealed class EyeMatrixFeature : ScriptableRendererFeature
             var camera = frameData.Get<UniversalCameraData>();
             if (!camera.xr.enabled)
                 return;
+            // Only the depth-normal prepass creates this texture (URP UniversalRenderer.cs:2176), and it ran before this pass.
+            Eyes[camera.xr.multipassId & 1].NormalsPrepass = frameData
+                .Get<UniversalResourceData>()
+                .cameraNormalsTexture.IsValid();
             using var builder = renderGraph.AddUnsafePass<PassData>(
                 "PeakXR eye inverse projection",
                 out var data
