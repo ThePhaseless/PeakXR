@@ -95,6 +95,23 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void OnlyAnotherPlayersBodyHoldsAnItemBack()
+    {
+        // #119: a friend's body stops a held item as a wall does. The holder's own body never does (the item passes
+        // it, PassBody), and neither does a body riding with the holder, which is always in the way of its hands.
+        object holder = new(),
+            friend = new(),
+            carried = new(),
+            carrier = new();
+        Assert.True(ItemFollow.BodyHoldsItemBack(friend, holder, carried, carrier));
+        Assert.True(ItemFollow.BodyHoldsItemBack(friend, holder, null, null));
+        Assert.False(ItemFollow.BodyHoldsItemBack(holder, holder, carried, carrier));
+        Assert.False(ItemFollow.BodyHoldsItemBack(carried, holder, carried, carrier));
+        Assert.False(ItemFollow.BodyHoldsItemBack(carrier, holder, carried, carrier));
+        Assert.False(ItemFollow.BodyHoldsItemBack(null, holder, null, null));
+    }
+
+    [Fact]
     public void AFreeItemHeldBackByTheWorldRejoinsItsHand()
     {
         var g = new WeldGate();
