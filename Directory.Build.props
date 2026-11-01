@@ -31,7 +31,7 @@
 
   <!-- Analyzers for every project except the test project. -->
   <ItemGroup Condition="'$(IsTestProject)' != 'true'">
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.317" PrivateAssets="all" />
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.320" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Unity analyzers for the game-side plugins (PeakXR, the MpObserver test plugin); Harmony's for PeakXR's patches. -->
