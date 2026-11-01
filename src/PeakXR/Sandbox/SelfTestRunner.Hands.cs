@@ -502,7 +502,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>Where the last <see cref="ThrowHeld"/> came to rest; null when it did not land.</summary>
     Vector3? lastLanding;
 
-    /// <summary>The body of vr.13 for the item already in hand, thrown along the head's level forward.</summary>
+    /// <summary>The MP throw for the item already in hand: vr.13's swing along the head's level forward.</summary>
     IEnumerator ThrowHeld()
     {
         var c = Character.localCharacter;
@@ -523,29 +523,50 @@ internal sealed partial class SelfTestRunner
         float hipSpeed = c.refs.hip != null ? c.refs.hip.Rig.linearVelocity.magnitude : 0f;
         float clamp = hipSpeed + 0.5f * c.refs.items.maxThrowForce * multiplier;
         var from = c.Center;
-        yield return SwingRelease(left, windup, release);
-        yield return Until(() => HeldItem() == null, 1.5f, "item still in hand after the swing");
-        if (!stepOk)
-            yield break;
-
+        int launches = InteractPatches.Dropping.Launches;
+        // The swing, watching every frame for the thrown instance so the contact probe is on before it lands (vr.13).
         Item thrown = null;
-        yield return WaitFor(() => (thrown = NewItem(heldId)) != null, 1f);
+        ThrowProbe probe = null;
+        var swing = SwingRelease(left, windup, release);
+        float end = Now + 2.5f;
+        bool swinging = true;
+        while (Now < end && (swinging || thrown == null))
+        {
+            if (swinging)
+                swinging = swing.MoveNext();
+            if (thrown == null && (thrown = NewItem(heldId)) != null)
+            {
+                probe = (
+                    thrown.rig != null ? thrown.rig.gameObject : thrown.gameObject
+                ).AddComponent<ThrowProbe>();
+                probe.Thrower = c;
+                probe.Since = Now;
+            }
+            yield return null;
+        }
         if (thrown == null)
         {
-            Fail("no thrown " + held.name + " in the world");
+            Fail(
+                HeldItem() != null
+                    ? "item still in hand after the swing"
+                    : "no thrown " + held.name + " in the world"
+            );
             yield break;
         }
-        float launch = 0f;
+        float seen = 0f;
         for (int i = 0; i < 5 && thrown != null; i++)
         {
             if (thrown.rig != null)
-                launch = Mathf.Max(launch, thrown.rig.linearVelocity.magnitude);
+                seen = Mathf.Max(seen, thrown.rig.linearVelocity.magnitude);
             yield return null;
         }
+        // The launch this client sent (#117): online, A's copy of the item is the master's, whose speed comes late.
+        bool sent = InteractPatches.Dropping.Launches != launches;
+        float launch = sent ? InteractPatches.Dropping.LastLaunch.magnitude : seen;
         yield return Wait(0.25f);
         yield return ShotAt("vr-13-throw", thrown != null ? thrown.Center() : HandsMid());
         float still = 0f;
-        float end = Now + 5f;
+        end = Now + 5f;
         while (thrown != null && Now < end && still < 0.3f)
         {
             float speed = thrown.rig != null ? thrown.rig.linearVelocity.magnitude : 0f;
@@ -554,7 +575,7 @@ internal sealed partial class SelfTestRunner
         }
         if (thrown == null)
         {
-            Fail($"thrown Apple vanished (launch {launch:0.0} m/s)");
+            Fail($"thrown {held.name} vanished (launch {launch:0.0} m/s)");
             yield break;
         }
         var landed = thrown.Center();
@@ -563,16 +584,30 @@ internal sealed partial class SelfTestRunner
             new Vector2(from.x, from.z),
             new Vector2(landed.x, landed.z)
         );
+        // The clamp bounds the flight, which ends at the first contact; a roll down the slope after it is not the
+        // throw's (#117: a flag touched down and slid on to 46.6 m), as in vr.13's ThrowReport.
+        bool contact = probe != null && probe.Hit && !probe.OwnBody;
+        var flightEnd = contact ? probe.Point : landed;
+        float flight = Vector2.Distance(
+            new Vector2(from.x, from.z),
+            new Vector2(flightEnd.x, flightEnd.z)
+        );
         float range = SelfTestChecks.MaxThrowRange(
             clamp,
-            from.y - landed.y + 1f,
+            from.y - flightEnd.y + 1f,
             Physics.gravity.magnitude
         );
-        var note =
-            $"landed {distance:0.0} m away, launch {launch:0.0} m/s (clamp {clamp:0.0}), max range {range:0.0} m";
+        string firstContact = contact
+            ? F($"first contact {probe.Collider} {flight:0.0} m out")
+            : "no contact seen";
+        var note = F(
+            $"landed {distance:0.0} m away, flew {flight:0.0} m ({firstContact}), launch {launch:0.0} m/s {(sent ? "sent" : "seen")} ({seen:0.0} m/s seen on this copy, clamp {clamp:0.0}), max range {range:0.0} m"
+        );
+        if (probe != null)
+            Destroy(probe);
         if (distance < 2f)
             Fail("throw too short: " + note);
-        else if (launch > clamp * 1.1f + 0.5f || distance > range + 1f)
+        else if (launch > clamp * 1.1f + 0.5f || flight > range + 1f)
             Fail("throw beyond the vanilla clamp: " + note);
         else
             stepNote = note;
