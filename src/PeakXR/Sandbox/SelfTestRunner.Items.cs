@@ -1198,6 +1198,13 @@ internal sealed partial class SelfTestRunner
     const float CarryStallSeconds = 0.4f;
 
     float carryBest;
+
+    /// <summary>The last carry's closest approach, for a note; carryBest keeps its start value if none ran.</summary>
+    string CarryNote =>
+        carryBest < float.MaxValue
+            ? F($"closest {carryBest:0.00} m to the carry goal")
+            : "no carry on the last leg";
+
     float carryBestAt;
     Vector3 carryLead;
 
