@@ -921,7 +921,8 @@ internal sealed partial class SelfTestRunner
         BeginCarry();
         // The last leg ends on the fuse's own touch point, and once the flame is inside the light's touch distance
         // (FireGestures.TouchEnter, 0.12 m) the hand holds still for the light's hold: run 63 got the flame within
-        // 0.03 m and kept steering, and it ended 0.56 m off, unlit.
+        // 0.03 m and kept steering, and it ended 0.56 m off, unlit. Nor while the game holds the fuse, as a player holds
+        // still while the ring fills: run 22 steered through three holds of 0.62-0.86 s of the 1.0 s it needs (#124).
         float heldAt = -1f;
         while (Now < end && flame != null && !done())
         {
@@ -929,7 +930,10 @@ internal sealed partial class SelfTestRunner
                 fuseCol != null
                     ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                     : Vector3.Distance(Touch(), flame.position);
-            if (off <= FuseHold)
+            bool gameHolds =
+                Interaction.instance != null
+                && ReferenceEquals(Interaction.instance.currentHeldInteractible, fuse);
+            if (off <= FuseHold || gameHolds)
             {
                 if (heldAt < 0f)
                     heldAt = Now;
@@ -1656,7 +1660,13 @@ internal sealed partial class SelfTestRunner
             yield break;
         if (!cannon.lit)
         {
-            Fail("the flame did not light the fuse: " + flameNote);
+            Fail(
+                "the flame did not light the fuse: "
+                    + flameNote
+                    + F(
+                        $"; body {Vector3.Distance(c.Center, entry.position):0.00} m from the entry"
+                    )
+            );
             yield break;
         }
         float mark = CueMark();
@@ -2850,6 +2860,11 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
             yield return Wait(1.5f);
+            Plugin.Log.LogDebug(
+                F(
+                    $"[selftest] warp beside {target}: stand {stand}, {outBy:0.00} m out, body settled {FlatDistance(c.Center, stand):0.00} m away"
+                )
+            );
             var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
             if (!VRSession.Active || head == null || !Rig.RigDriver.EyeInside(head.position))
                 break;
