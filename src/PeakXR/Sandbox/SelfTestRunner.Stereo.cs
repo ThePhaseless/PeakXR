@@ -41,6 +41,15 @@ internal sealed partial class SelfTestRunner
         int frames = EyeCulling.MultiPassFrames - frames0;
         int matched = EyeCulling.MatchedFrames - matched0;
         stepNote = $"{matched} of {frames} MultiPass frames culled both eyes alike";
+        var rig = VRRig.Instance;
+        var eye = rig != null ? rig.HeadCamera : null;
+        var hidden = EyeCulling.HiddenCamera;
+        // What the shared CameraProperties take from the hidden camera, as far as Camera shows it: pixelRect stands in for
+        // screenRect; implicitProjection, projectionIsOblique and isImplicitProjectionMatrix have no public getter.
+        if (eye != null && hidden != null)
+            stepNote += FormattableString.Invariant(
+                $"; eye/hidden pixelRect {eye.pixelRect}/{hidden.pixelRect}, cameraType {eye.cameraType}/{hidden.cameraType}, cullingMask {eye.cullingMask}/{hidden.cullingMask}, velocity {eye.velocity}/{hidden.velocity}"
+            );
         if (!EyeCulling.Active || frames == 0)
             Fail(
                 $"shared eye culling not running: {EyeCulling.Problem ?? "no MultiPass frame reached the hook"}"

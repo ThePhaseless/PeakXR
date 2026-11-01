@@ -1,4 +1,5 @@
 using System;
+using System.Reflection.Emit;
 using HarmonyLib;
 using PeakXR.Core;
 using PeakXR.Framework;
@@ -21,7 +22,10 @@ namespace PeakXR.Render;
 /// snap to a different texel grid, and casters, LODs and lights are chosen per eye. This XR layout override (the hook
 /// <see cref="Rig.StereoWidth"/> also uses, chained after it so it sees the widened eyes) gives both passes the same
 /// culling parameters: each eye's own (mask, layer distances, options) with the geometry of a hidden camera fitted
-/// around both eyes. Rendering stays per eye; only culling is shared.
+/// around both eyes. Rendering stays per eye; only culling is shared. The geometry carries the eye camera's identity:
+/// a world-space canvas was observed to draw only for the camera named in the culling parameters
+/// (<c>CameraProperties.coreCameraValues.instanceID</c>; the native side is closed), so with the hidden camera's id no
+/// menu reached the headset (#131).
 /// </summary>
 internal static class EyeCulling
 {
@@ -29,6 +33,7 @@ internal static class EyeCulling
 
     private static AccessTools.FieldRef<Action<XRLayout, Camera>> layoutOverride;
     private static Action<XRPass, int, ScriptableCullingParameters> assign;
+    private static SetCameraId setCameraId;
     private static readonly Action<XRLayout, Camera> Hook = OnLayout;
     private static Action<XRLayout, Camera> previous;
     private static bool installed;
@@ -54,7 +59,12 @@ internal static class EyeCulling
     /// <summary>Why culling stays per eye, or null.</summary>
     internal static string Problem { get; private set; }
 
+    /// <summary>The camera the shared properties come from, or null before the first share (self-test vr.277's note).</summary>
+    internal static Camera HiddenCamera => cullCam;
+
     internal static bool Active => installed && !failed;
+
+    private delegate void SetCameraId(ref CameraProperties properties, int instanceId);
 
     /// <summary>Resolves the URP internals; called from <see cref="RenderFixesFeature.Install"/>. A URP update that drops
     /// one leaves the eyes culling separately and says so, without rolling the whole feature back.</summary>
@@ -75,6 +85,7 @@ internal static class EyeCulling
                 typeof(XRPass),
                 "AssignCullingParams"
             );
+            setCameraId = CameraIdSetter();
         }
         catch (Exception e)
         {
@@ -84,6 +95,38 @@ internal static class EyeCulling
                 $"{Tag} shared eye culling off: {Problem}; the eyes cull separately"
             );
         }
+    }
+
+    /// <summary>Writes the private <c>coreCameraValues.instanceID</c> of <see cref="CameraProperties"/> (UnityEngine.CoreModule;
+    /// <c>CoreCameraValues</c> is an internal struct) without boxing the struct: it runs once a frame.</summary>
+    private static SetCameraId CameraIdSetter()
+    {
+        var core =
+            AccessTools.Field(typeof(CameraProperties), "coreCameraValues")
+            ?? throw new MissingFieldException(
+                typeof(CameraProperties).FullName,
+                "coreCameraValues"
+            );
+        var id =
+            AccessTools.Field(core.FieldType, "instanceID")
+            ?? throw new MissingFieldException(core.FieldType.FullName, "instanceID");
+        // Stfld does no type check here: another type would write a wrong id and bring #131 back with no warning.
+        if (id.FieldType != typeof(int))
+            throw new MissingFieldException(core.FieldType.FullName, "instanceID");
+        var method = new DynamicMethod(
+            "PeakXR.EyeCulling.SetCameraId",
+            typeof(void),
+            new[] { typeof(CameraProperties).MakeByRefType(), typeof(int) },
+            typeof(EyeCulling),
+            skipVisibility: true
+        );
+        var il = method.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldflda, core);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Stfld, id);
+        il.Emit(OpCodes.Ret);
+        return (SetCameraId)method.CreateDelegate(typeof(SetCameraId));
     }
 
     /// <summary>Chains the hook after whatever override is set now; RenderDriver calls it once VR has started, so
@@ -208,9 +251,13 @@ internal static class EyeCulling
             Problem = "the cull camera gave no culling parameters";
             return false;
         }
-        // The eye's own parameters keep its mask, layer distances and options; only the geometry is the union's.
+        // The eye's own parameters keep its mask, layer distances and options, and the cull geometry below is the union's.
+        // cameraProperties is the hidden camera's whole (screenRect, stereo matrices, velocity, implicit projection and
+        // more), but for the id: told whose cull this is, or canvases were seen to draw for nobody (#131).
         var p = a.cullingParams;
-        p.cameraProperties = union.cameraProperties;
+        var properties = union.cameraProperties;
+        setCameraId(ref properties, camera.GetInstanceID());
+        p.cameraProperties = properties;
         p.cullingMatrix = union.cullingMatrix;
         p.cullingPlaneCount = union.cullingPlaneCount;
         for (int i = 0; i < union.cullingPlaneCount; i++)
