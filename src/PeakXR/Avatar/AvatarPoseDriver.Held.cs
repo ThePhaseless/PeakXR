@@ -305,9 +305,15 @@ public partial class AvatarPoseDriver
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
         // The local gate waits for the equip's own attach to settle (CharacterItems.cs:600-618, sinceItemAttach): at
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
-        // Cast only while the hand lags or the item is free: a wall the walk presses the item on (#17).
+        // Cast only while the hand lags or the item is free, and only while the stick walks the body on: a wall the
+        // walk presses the item on (#17). A hand that reaches the item into a prop with the body still lets go as
+        // before: kept, the torch held on the cannon held the hand 0.4-0.7 m off and the body rode up the cannon
+        // (vr.87, #116).
         bool itemBlocked =
             Owner.IsLocal
+            && Owner.input != null
+            && Owner.input.movementInput.sqrMagnitude >= 1e-4f
+            && !Rig.RigDriver.FollowWalking
             && (toController - shortfall > weldGate.Rejoin || weldGate.Released)
             && ItemHeldBack(item, target - body.position);
         bool free =

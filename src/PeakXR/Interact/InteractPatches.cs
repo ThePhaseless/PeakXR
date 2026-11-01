@@ -232,6 +232,13 @@ internal static class InteractPatches
         private static MethodBase TargetMethod() =>
             GameMember.Method(typeof(CharacterItems), "DoDropping");
 
+        /// <summary>The last hand throw's launch velocity as this client sent it. The self-test reads it: on a client
+        /// that is not the master, the thrown item is the master's copy and its speed arrives late (#117).</summary>
+        internal static Vector3 LastLaunch { get; private set; }
+
+        /// <summary>Hand throws sent since start; tells a fresh <see cref="LastLaunch"/> from an old one.</summary>
+        internal static int Launches { get; private set; }
+
         private static void Prefix(CharacterItems __instance)
         {
             // A throw here would skip the drop itself.
@@ -292,6 +299,8 @@ internal static class InteractPatches
             );
             var velocity =
                 body + (hand.sqrMagnitude > 1e-6f ? hand.normalized * speed : Vector3.zero);
+            LastLaunch = velocity;
+            Launches++;
             float minCharge = sticky != null ? sticky.throwChargeRequirement : 0f;
             float charge = HandThrow.Charge(
                 speed,

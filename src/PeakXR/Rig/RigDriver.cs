@@ -1834,11 +1834,13 @@ internal sealed class RigDriver : MonoBehaviour
         return found;
     }
 
-    /// <summary>A camera of the loaded level that renders to the screen (cutscene cameras). Cameras in
-    /// DontDestroyOnLoad or runtime scenes (build index -1) belong to PeakXR features (rig, loading space)
-    /// and are left alone.</summary>
-    private static bool IsSceneScreenCamera(Camera cam) =>
-        cam.targetTexture == null && cam.gameObject.scene.buildIndex >= 0;
+    /// <summary>A camera of the loaded level that renders to the screen (cutscene cameras). PeakXR's own cameras
+    /// (rig, loading space) all live in DontDestroyOnLoad, the rig's scene, and are left alone. Not the build index:
+    /// the islands load Level_N from asset bundles (LoadingScreenHandler.cs:188-216), which gives them -1 (#58).</summary>
+    private bool InLevel(GameObject go) => go.scene != gameObject.scene;
+
+    private bool IsSceneScreenCamera(Camera cam) =>
+        cam.targetTexture == null && InLevel(cam.gameObject);
 
     private void BindMainCamera()
     {
@@ -1988,7 +1990,7 @@ internal sealed class RigDriver : MonoBehaviour
         }
         foreach (var l in sceneListeners)
         {
-            if (l == null || !l.isActiveAndEnabled || l.gameObject.scene.buildIndex < 0)
+            if (l == null || !l.isActiveAndEnabled || !InLevel(l.gameObject))
                 continue;
             l.enabled = false;
             mutedListeners.Add(l);

@@ -1263,13 +1263,19 @@ internal sealed partial class SelfTestRunner
         }
         var touch = face.point + face.normal * 0.02f;
         // The stand-off is from the kiosk's bounds, which its top overhangs: at hand height the face can sit 0.96 m
-        // out (run 51, vr.116: 1.014 m from the eye). Step in until it is 0.5 m ahead, as a player does.
-        var gap = touch - eye;
-        gap.y = 0f;
-        if (gap.magnitude > 0.6f)
+        // out (run 51, vr.116: 1.014 m from the eye). Step in until it is 0.5 m ahead, as a player does. The gap is
+        // the eye's but the warp moves the body, and the view lands back on the body after it: run 17 (#114) stepped
+        // 0.13 m in and the eye ended 0.29 m from the face. So measure again and step once more, in or back out.
+        float stepped = 0f;
+        for (int tries = 0; tries < 2; tries++)
         {
+            var gap = touch - rig.Head.position;
+            gap.y = 0f;
+            float step = gap.magnitude - 0.5f;
+            if (tries == 0 ? step <= 0.1f : Mathf.Abs(step) <= 0.1f)
+                break;
             // Not WarpTo: its ground ray starts 3 m up, which can be above the airport roof (as ToKiosk).
-            var to = c.Center + gap.normalized * (gap.magnitude - 0.5f);
+            var to = c.Center + gap.normalized * step;
             if (Terrain(to, Vector3.down, 3f, out var floor))
                 to = floor.point;
             warpedForProp = true;
@@ -1282,9 +1288,18 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.5f);
             yield return WaitFor(() => !c.warping, 3f);
             yield return Wait(1f);
+            yield return WaitFor(() => RigDriver.ViewOnBody, 3f);
             rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), gap.normalized, Vector3.up));
             yield return Wait(0.6f);
-            kioskNote += F($", stepped {gap.magnitude - 0.5f:0.00} m in to reach the face");
+            stepped += step;
+        }
+        if (stepped != 0f)
+        {
+            var now = touch - rig.Head.position;
+            now.y = 0f;
+            kioskNote += F(
+                $", stepped {stepped:0.00} m in to reach the face (eye {now.magnitude:0.00} m from it)"
+            );
         }
         bool left = VRInput.LeftHanded;
         yield return MoveTo(left, () => touch, 0.5f);

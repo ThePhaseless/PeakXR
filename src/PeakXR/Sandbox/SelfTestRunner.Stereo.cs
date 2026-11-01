@@ -133,7 +133,7 @@ internal sealed partial class SelfTestRunner
         }
         var fails = new List<string>();
         var notes = new List<string>();
-        // Created in the active scene (build index >= 0) with no target texture: a screen camera like a cutscene's.
+        // Created in the active scene (the level, outside DontDestroyOnLoad) with no target texture: a screen camera like a cutscene's.
         var go = new GameObject("PeakXR.SelfTest.CutsceneCamera");
         var cam = go.AddComponent<Camera>();
         cam.cullingMask = 0;
