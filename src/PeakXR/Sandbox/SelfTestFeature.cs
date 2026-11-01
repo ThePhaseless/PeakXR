@@ -304,6 +304,9 @@ static class SelfTestInputPatch
     /// deadline, so a dropped step cannot leave the player running). vr.274.</summary>
     internal static float SprintUntil;
 
+    /// <summary>Until this <c>Time.realtimeSinceStartup</c>, the move stick is full forward. vr.390.</summary>
+    internal static float WalkUntil;
+
     /// <summary>One frame of the jump button. vr.274.</summary>
     internal static bool JumpOnce;
 
@@ -330,6 +333,8 @@ static class SelfTestInputPatch
             __instance.movementInput = Vector2.up;
             __instance.sprintIsPressed = true;
         }
+        if (Time.realtimeSinceStartup < WalkUntil)
+            __instance.movementInput = Vector2.up;
         if (JumpOnce)
         {
             JumpOnce = false;

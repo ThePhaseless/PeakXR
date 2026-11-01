@@ -41,7 +41,7 @@ public class RoomScaleTests
             var delta = pos - last;
             last = pos;
             var before = f.Anchor;
-            f.Absorb(delta);
+            f.Absorb(delta, 1f / 90f);
             view += delta - (f.Anchor - before);
             max = MathF.Max(max, view.Length());
         }
@@ -53,7 +53,26 @@ public class RoomScaleTests
     {
         // A warp or a knock moves the body farther in one frame than a walk can: the view goes with it.
         var f = new RoomScaleFollow();
-        f.Absorb(new Vector2(0f, f.MaxFollowStep + 0.05f));
+        Assert.False(f.Absorb(new Vector2(0f, f.MaxFollowStep + 0.05f), 1f / 90f));
+        Assert.Equal(Vector2.Zero, f.Anchor);
+    }
+
+    [Fact]
+    public void Absorb_AFrameHitchInAWalk_StaysOutOfTheView()
+    {
+        // Run 20, vr.45 t166.94: a 0.17 s frame at about 1.4 m/s moved the body 0.22 m in one update, past a limit
+        // sized for 20 updates a second, and the view took it all.
+        var f = new RoomScaleFollow();
+        Assert.True(f.Absorb(new Vector2(0f, 0.22f), 0.17f));
+        Assert.Equal(new Vector2(0f, 0.22f), f.Anchor);
+    }
+
+    [Fact]
+    public void Absorb_AJumpInAHitch_IsStillTheViews()
+    {
+        // The limit is a walk's top speed over the frame, so a warp stays a warp at any frame rate.
+        var f = new RoomScaleFollow();
+        Assert.False(f.Absorb(new Vector2(0f, f.MaxFollowSpeed * 0.17f + 0.05f), 0.17f));
         Assert.Equal(Vector2.Zero, f.Anchor);
     }
 

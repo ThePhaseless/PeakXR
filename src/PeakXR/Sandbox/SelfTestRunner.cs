@@ -213,6 +213,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             if (VRSession.Active && VRRig.Instance != null && VRRig.Instance.Head != null)
                 levelFacing = Flat(VRRig.Instance.Head.forward);
             SandboxActions.SetGodMode(true);
+            if (!VRSession.Active)
+                yield return Run("vr.390-walk-legs-flat", 15f, WalkLegsFlatStep());
             yield return VRStep("vr.06-features", 15f, FeaturesCheck());
             yield return VRStep("vr.231-frame-budget", 15f, FrameBudgetCheck());
             yield return VRStep("vr.277-shared-eye-culling", 5f, SharedCullingCheck());

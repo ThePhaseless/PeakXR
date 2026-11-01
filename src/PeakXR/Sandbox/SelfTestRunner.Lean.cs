@@ -148,6 +148,8 @@ internal sealed partial class SelfTestRunner
         Drift("standing", fails, notes, MaxStandViewDrift);
         float leanBody = 0f;
         bool leanWalked = false;
+        float leansViewY = rig.Origin.position.y;
+        float leansGround = RigDriver.GroundNow;
         foreach (
             var (name, offset) in new[]
             {
@@ -233,7 +235,8 @@ internal sealed partial class SelfTestRunner
                 : "leans: no stance walk"
         );
         Drift("leans", fails, notes, MaxLeanDrift, leanBody);
-        float slowView = leanOrigin.size.magnitude;
+        JudgeRise("leans", rig, leansViewY, leansGround, fails, notes);
+        float slowView = FlatSize(leanOrigin);
 
         // A fast lean: the view moves only with the scripted head, so the rig origin stays put. 0.25 s peaks at
         // 1.8 m/s, a quick dodge (0.15 s peaked at 3 m/s, past any real lean). The window is mostly its 1 s holds,
@@ -241,7 +244,7 @@ internal sealed partial class SelfTestRunner
         leanOrigin = new Bounds(rig.Origin.position, Vector3.zero);
         yield return Track(c, rig, forward * 0.3f + Vector3.down * 0.05f, 0.25f, 1f);
         yield return Track(c, rig, Vector3.zero, 0.25f, 1f);
-        float fast = leanOrigin.size.magnitude;
+        float fast = FlatSize(leanOrigin);
         notes.Add(
             F($"fast lean: view {fast:0.000} m off the head motion (slow leans {slowView:0.000} m)")
         );
@@ -253,7 +256,7 @@ internal sealed partial class SelfTestRunner
         StartTrack(c, rig);
         var start = RigDriver.ViewRoot(c);
         var originStart = rig.Origin.position;
-        float groundStart = GroundY(start);
+        float groundStart = RigDriver.GroundNow;
         // forward is tracking space (the scripted head); the body moves in the world, under the rig's yaw. Run 24
         // projected the world walk on the tracking axis and read a forward walk as "-0.287 m".
         var worldForward = rig.Origin.TransformDirection(forward);
@@ -270,7 +273,9 @@ internal sealed partial class SelfTestRunner
         // went up the beach's slope, and the view must follow the ground the body stands on. So: the view's
         // horizontal range, and its height change against the ground's under the body.
         float origin = FlatSize(leanOrigin);
-        float groundRise = GroundY(RigDriver.ViewRoot(c)) - groundStart;
+        // The ground the product rides, under the feet: the step's own ray under the view root read +0.010 m where the
+        // product's read +0.038 m (run 20).
+        float groundRise = RigDriver.GroundNow - groundStart;
         float viewRise = rig.Origin.position.y - originStart.y;
         float offGround = Mathf.Abs(viewRise - groundRise);
         notes.Add(
@@ -351,6 +356,9 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         var start = RigDriver.ViewRoot(c);
         var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        float viewY = rig.Origin.position.y;
+        float groundY = RigDriver.GroundNow;
+        var hands = HandsNow();
         float yaw = 0f;
         foreach (float to in new[] { 90f, 180f, 270f, 360f })
         {
@@ -361,12 +369,14 @@ internal sealed partial class SelfTestRunner
                 yaw = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - t0) / 0.6f));
                 var q = Quaternion.Euler(0f, yaw, 0f);
                 ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);
+                PlaceHands(hands, home, q, Vector3.zero);
                 yield return null;
                 origin.Encapsulate(rig.Origin.position);
             }
             yaw = to;
             var turned = Quaternion.Euler(0f, yaw, 0f);
             ScriptHead(home + (turned * forward - forward) * NeckSwing, turned * level);
+            PlaceHands(hands, home, turned, Vector3.zero);
             yield return Settle(rig, origin, b => origin = b);
             var off = ModelEyesOff(c, out float gap);
             if (float.IsNaN(off.x))
@@ -387,8 +397,9 @@ internal sealed partial class SelfTestRunner
                     F($"{at}: the body bends {driver.LeanDegrees:0.0} deg under a turned head")
                 );
         }
+        JudgeRise("over the turns", rig, viewY, groundY, fails, notes);
         ReleaseHead();
-        float drift = origin.size.magnitude;
+        float drift = FlatSize(origin);
         notes.Add("view moved " + ViewMoved(origin));
         if (drift > MaxLeanDrift)
             fails.Add(
@@ -443,6 +454,8 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         var start = RigDriver.ViewRoot(c);
         var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        float viewY = rig.Origin.position.y;
+        float groundY = RigDriver.GroundNow;
         foreach (float pitch in new[] { 60f, 0f })
         {
             var from = VRInput.HeadRotation;
@@ -487,8 +500,9 @@ internal sealed partial class SelfTestRunner
             if (pitch <= 0f)
                 JudgeSettled(c, at + " looking level again", off.magnitude, fails);
         }
+        JudgeRise("over the look", rig, viewY, groundY, fails, notes);
         ReleaseHead();
-        float drift = origin.size.magnitude;
+        float drift = FlatSize(origin);
         notes.Add("view moved " + ViewMoved(origin));
         if (drift > MaxLeanDrift)
             fails.Add(
@@ -734,6 +748,29 @@ internal sealed partial class SelfTestRunner
     /// <summary>Horizontal peak-to-peak size of a tracked range.</summary>
     static float FlatSize(Bounds b) => new Vector2(b.size.x, b.size.z).magnitude;
 
+    /// <summary>The view's height from a settled start to a settled end against the ground's under the feet, limit
+    /// <see cref="MaxLeanDrift"/>. The stance walk moves the body on the beach's slope and the view rides that ground
+    /// (run 20, vr.45b: ground-y 1.928 to 1.881), so the range of the view's height says nothing about the view.</summary>
+    static void JudgeRise(
+        string what,
+        VRRig rig,
+        float viewFrom,
+        float groundFrom,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        float view = rig.Origin.position.y - viewFrom;
+        float ground = RigDriver.GroundNow - groundFrom;
+        notes.Add(F($"{what}: view rose {view:0.000} m on ground rising {ground:0.000} m"));
+        if (!float.IsNaN(ground) && Mathf.Abs(view - ground) > MaxLeanDrift)
+            fails.Add(
+                F(
+                    $"{what}: view rose {view:0.000} m on ground rising {ground:0.000} m, want within {MaxLeanDrift:0.00} m"
+                )
+            );
+    }
+
     /// <summary>Ground height under <paramref name="at"/>, NaN without ground within 3 m.</summary>
     static float GroundY(Vector3 at) =>
         Terrain(at + Vector3.up * 1f, Vector3.down, 4f, out var hit) ? hit.point.y : float.NaN;
@@ -748,7 +785,7 @@ internal sealed partial class SelfTestRunner
     {
         if (float.IsNaN(body))
             body = FlatSize(leanRoot);
-        float view = leanOrigin.size.magnitude;
+        float view = FlatSize(leanOrigin);
         notes.Add(
             F(
                 $"{phase}: body {body:0.000} m (height {leanRoot.size.y:0.000} m), view {ViewMoved(leanOrigin)}, hip {leanHip.size.magnitude:0.000} m peak to peak"

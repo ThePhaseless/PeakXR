@@ -35,17 +35,24 @@ public sealed class RoomScaleFollow
     /// <summary>Tracking-space (x, z) point kept over the character's eyes.</summary>
     public Vector2 Anchor;
 
-    /// <summary>Largest body travel (m) in one update that the anchor takes (about 3 m/s at 20 updates a second);
-    /// a bigger step is a warp or a knock, and the view goes with it.</summary>
+    /// <summary>Largest body travel (m) in one update that the anchor always takes; a bigger step than this and
+    /// <see cref="MaxFollowSpeed"/> allow is a warp or a knock, and the view goes with it.</summary>
     public float MaxFollowStep = 0.15f;
+
+    /// <summary>Body speed (m/s) a walk cannot pass: over a long frame the anchor takes this much. Run 20, vr.45
+    /// t166.94: a 0.17 s frame at about 1.4 m/s moved the body 0.22 m past a fixed step limit, and the view jumped.</summary>
+    public float MaxFollowSpeed = 3f;
 
     /// <summary>Takes the eye anchor's travel (tracking space) into <see cref="Anchor"/>: all of it, gait sway and
     /// coast included (runs 35, 36), so the view stays put. The camera calls it in the frame it moves the eye anchor,
     /// so a walking body never shows as a frame of view motion (run 32).</summary>
-    public void Absorb(Vector2 bodyDelta)
+    /// <returns>False when the travel was too far for a walk and stays in the view.</returns>
+    public bool Absorb(Vector2 bodyDelta, float dt)
     {
-        if (bodyDelta.Length() <= MaxFollowStep)
-            Anchor += bodyDelta;
+        if (bodyDelta.Length() > MathF.Max(MaxFollowStep, MaxFollowSpeed * dt))
+            return false;
+        Anchor += bodyDelta;
+        return true;
     }
 
     public void Recenter(Vector2 head) => Anchor = head;

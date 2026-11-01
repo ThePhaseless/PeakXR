@@ -86,7 +86,12 @@ internal static class LocomotionInput
         if (!lastOwn || Time.time - OutsideForceAt < OutsideSeconds)
             return;
         Follow.Anchor = rig.RoomAnchor;
-        Follow.Absorb(new NVector2(delta.x, delta.z));
+        if (!Follow.Absorb(new NVector2(delta.x, delta.z), Time.unscaledDeltaTime))
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[player.locomotion] kept out of the room anchor: {delta.magnitude:0.000} m in {Time.unscaledDeltaTime * 1000f:0} ms, own motion, the view takes it"
+                )
+            );
         rig.RoomAnchor = Follow.Anchor;
     }
 
@@ -430,7 +435,7 @@ internal static class LocomotionInput
             || data.sinceFallSlide < HoldGate.SlideCooldown
             || data.isGrounded && OnMovingOrSteepGround(c);
         if (lastOwn && canFollow && !outside)
-            Follow.Absorb(new NVector2(delta.x, delta.z));
+            Follow.Absorb(new NVector2(delta.x, delta.z), dt);
         var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
         var debt = new NVector2(debt3.x, debt3.z);
         // The view takes the body's place over a warp, so it leaves no debt (a turn just before it) to walk off at the

@@ -14,6 +14,21 @@ public class ViewVerticalTests
     public void FollowWalk_HoldsTheViewsHeight() =>
         Assert.Equal(RigMath.FollowVerticalRate, RigMath.ViewVerticalRate(20f, true, true));
 
+    [Fact]
+    public void AfterAWalk_TheRateEasesUp()
+    {
+        // Run 20, vr.45 t183.74-184.05: the ground follow switched from 0.5/s to 5/s as the walk ended, 0.047 m in 0.3 s.
+        Assert.Equal(RigMath.FollowVerticalRate, RigMath.ViewVerticalRate(20f, true, false, 0f), 3);
+        float half = RigMath.ViewVerticalRate(20f, true, false, RigMath.WalkEaseSeconds / 2f);
+        Assert.True(half > RigMath.FollowVerticalRate && half < RigMath.GroundedVerticalRate);
+        Assert.Equal(
+            RigMath.GroundedVerticalRate,
+            RigMath.ViewVerticalRate(20f, true, false, RigMath.WalkEaseSeconds),
+            3
+        );
+        Assert.Equal(20f, RigMath.ViewVerticalRate(20f, false, false, 0f));
+    }
+
     /// <summary>The eye anchor's height through <see cref="RigMath.Follow"/> at 25 Hz (run 39's 40 ms frames) under a
     /// hip bobbing 3 cm at 2 Hz for a second, as a room-scale follow walks the body under a still head.</summary>
     static float Bob(float verticalRate)

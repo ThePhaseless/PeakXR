@@ -93,13 +93,37 @@ internal sealed partial class SelfTestRunner
     /// the walk left, so only the eye model's own error (<see cref="MaxEyeModelGap"/>) remains.</summary>
     const float MaxDrawnEyeOff = MaxEyeModelGap;
 
-    /// <summary>The eye renderers' level distance from the view (m), NaN without them.</summary>
+    /// <summary>The eye renderers' level distance from the view (m), NaN without them. Without the view hold's deliberate
+    /// offset, which the lean leaves out and the player cannot see with the head hidden, as vr.08 judges it (run 20,
+    /// vr.395: the hold's 0.05 m plus 0.021 m of the eye model's own read 0.070 m).</summary>
     static float DrawnEyesOff(Character c)
     {
         var head = VRRig.Instance != null ? VRRig.Instance.Head : null;
         return head != null && RigDriver.TryEyeRenderers(c, out var drawn)
-            ? Vector3.ProjectOnPlane(drawn - head.position, Vector3.up).magnitude
+            ? Vector3
+                .ProjectOnPlane(drawn - (head.position - RigDriver.ViewHeld), Vector3.up)
+                .magnitude
             : float.NaN;
+    }
+
+    /// <summary>The scripted hands' poses, for <see cref="PlaceHands"/>.</summary>
+    (Vector3 Left, Quaternion LeftTurn, Vector3 Right, Quaternion RightTurn) HandsNow() =>
+        (scriptLeft.Position, scriptLeft.Rotation, scriptRight.Position, scriptRight.Rotation);
+
+    /// <summary>Carries the scripted hands with a walking or turning player, from their poses in <paramref name="from"/>:
+    /// turned about <paramref name="pivot"/>, then moved. Left behind in the room they pull the mass centre the eye model
+    /// rides, which a player's never do this way: 0.10 m off after vr.396's 1.2 m walk, 0.07 m in vr.45b (run 20).</summary>
+    void PlaceHands(
+        in (Vector3 Left, Quaternion LeftTurn, Vector3 Right, Quaternion RightTurn) from,
+        Vector3 pivot,
+        Quaternion turn,
+        Vector3 move
+    )
+    {
+        scriptLeft.Position = pivot + turn * (from.Left - pivot) + move;
+        scriptLeft.Rotation = turn * from.LeftTurn;
+        scriptRight.Position = pivot + turn * (from.Right - pivot) + move;
+        scriptRight.Rotation = turn * from.RightTurn;
     }
 
     /// <summary>A settled stance: the walk left at most <see cref="MaxStanceLeftover"/> (<paramref name="off"/>, the
@@ -220,6 +244,7 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         var origin = new Bounds(rig.Origin.position, Vector3.zero);
         var at = Vector3.zero;
+        var hands = HandsNow();
         foreach (
             var (name, to) in new[]
             {
@@ -235,11 +260,13 @@ internal sealed partial class SelfTestRunner
             {
                 at = Vector3.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (Now - t0) / 0.8f));
                 ScriptHead(home + at, level);
+                PlaceHands(hands, home, Quaternion.identity, at);
                 yield return null;
                 origin.Encapsulate(rig.Origin.position);
             }
             at = to;
             ScriptHead(home + at, level);
+            PlaceHands(hands, home, Quaternion.identity, at);
             yield return Settle(rig, origin, b => origin = b);
             JudgeEyes(c, name, fails, notes);
         }
@@ -389,12 +416,128 @@ internal sealed partial class SelfTestRunner
     static float MaxWalkBend(bool room) => room ? 18f : 5f;
 
     /// <summary>The animated legs' speed against the ground's (<see cref="WalkForwardStep"/>): 1 when the stance foot
-    /// stays put. Outside this the legs visibly run ahead of, or drag behind, the body.</summary>
-    const float MinLegRatio = 0.6f;
+    /// stays put. Outside this the legs visibly run ahead of, or drag behind, the body. The floor sits under the game's
+    /// own full-stick walk: run 20 read 0.55, and PeakXR's only part in that gait is <c>input.movementInput</c>, what
+    /// the animator (CharacterAnimations.cs:186-187) and the force (Bodypart.cs:291-298) read in vanilla. By code
+    /// reading until <c>vr.390-walk-legs-flat</c> has measured it with VR off (#97).</summary>
+    const float MinLegRatio = 0.5f;
 
     const float MaxLegRatio = 1.6f;
 
     static AccessTools.FieldRef<Bodypart, Vector3> animOffset;
+
+    /// <summary>The animated legs' pace against the ground's over physics steps, all of it and under 0.5 move input
+    /// (#97: the stance walk pushes mostly at 0.27-0.46): the stance foot (the lower animated foot,
+    /// <c>Bodypart.targetOffsetRelativeToHip</c>, Bodypart.cs:39, :130) moves back along the hip at the legs' speed, so
+    /// its world travel is the slip. The animation runs on the physics step (CharacterRagdoll.cs:155-174), so the frame
+    /// rate does not change the reading.</summary>
+    sealed class LegMeter
+    {
+        readonly Character c;
+        readonly Bodypart left;
+        readonly Bodypart right;
+        readonly Vector3 along;
+        float legs;
+        float legsLow;
+        float groundLow;
+        int stance = -1;
+        Vector3 lastFoot;
+        Vector3 lastHip;
+
+        LegMeter(Character c, Bodypart left, Bodypart right, Vector3 along)
+        {
+            this.c = c;
+            this.left = left;
+            this.right = right;
+            this.along = along;
+        }
+
+        /// <summary>Metres the body walked at pace.</summary>
+        public float Ground { get; private set; }
+
+        /// <summary>The legs' pace over the ground's, NaN under 0.05 m of walking.</summary>
+        public float Ratio => Ground > 0.05f ? legs / Ground : float.NaN;
+
+        /// <summary>A meter for walking along <paramref name="along"/>, null without feet.</summary>
+        public static LegMeter For(Character c, Vector3 along)
+        {
+            animOffset ??= GameMember.Field<Bodypart, Vector3>("targetOffsetRelativeToHip");
+            var parts = c.refs.ragdoll.partDict;
+            return
+                parts.TryGetValue(BodypartType.Foot_L, out var l)
+                && parts.TryGetValue(BodypartType.Foot_R, out var r)
+                ? new LegMeter(c, l, r, along)
+                : null;
+        }
+
+        /// <summary>Once per physics step.</summary>
+        public void Tick()
+        {
+            // The stance foot's animated place in the world: the hip plus its animated offset (Bodypart.WorldTargetPos).
+            var hip = c.refs.hip.transform.position;
+            var l = hip + animOffset(left);
+            var r = hip + animOffset(right);
+            int now = l.y <= r.y ? 0 : 1;
+            var foot = now == 0 ? l : r;
+            float hipStep = Vector3.Dot(hip - lastHip, along);
+            // Walking pace only: the start and the stop are the gait blending in and out.
+            if (now == stance && hipStep > 0.3f * Time.fixedDeltaTime)
+            {
+                float slip = hipStep - Vector3.Dot(foot - lastFoot, along);
+                legs += slip;
+                Ground += hipStep;
+                if (c.input.movementInput.magnitude < 0.5f)
+                {
+                    legsLow += slip;
+                    groundLow += hipStep;
+                }
+            }
+            stance = now;
+            lastFoot = foot;
+            lastHip = hip;
+        }
+
+        /// <summary>The ratio, whole and split at 0.5 move input.</summary>
+        public string Note()
+        {
+            float groundHigh = Ground - groundLow;
+            return F(
+                $"legs {Ratio:0.00} x the ground speed over {Ground:0.00} m (input under 0.5: {(groundLow > 0.05f ? legsLow / groundLow : float.NaN):0.00} over {groundLow:0.00} m; 0.5 and over: {(groundHigh > 0.05f ? (legs - legsLow) / groundHigh : float.NaN):0.00} over {groundHigh:0.00} m)"
+            );
+        }
+    }
+
+    /// <summary>
+    /// <c>vr.390-walk-legs-flat</c>, flat runs only: the same reading as vr.395 with VR off, the move input held full
+    /// forward by the input patch (<see cref="SelfTestInputPatch.WalkUntil"/>) and nothing of PeakXR's in the gait, so
+    /// the note is the game's own baseline for <see cref="MinLegRatio"/> (#97). Fails outside the same limits; a walk
+    /// that something blocks is skipped.
+    /// </summary>
+    IEnumerator WalkLegsFlatStep()
+    {
+        var c = Character.localCharacter;
+        var meter = c != null ? LegMeter.For(c, c.data.lookDirection_Flat.normalized) : null;
+        if (meter == null)
+        {
+            Fail("no character or feet");
+            yield break;
+        }
+        var tick = new WaitForFixedUpdate();
+        float until = Now + 1.2f;
+        SelfTestInputPatch.WalkUntil = until;
+        while (Now < until)
+        {
+            yield return tick;
+            meter.Tick();
+        }
+        var note = "flat walk: " + meter.Note();
+        if (meter.Ground < 0.5f)
+            stepSkip = "the walk was blocked: " + note;
+        else if (meter.Ratio < MinLegRatio || meter.Ratio > MaxLegRatio)
+            Fail(note);
+        else
+            stepNote = note;
+    }
 
     bool walkSampling;
     float walkLead;
@@ -424,9 +567,7 @@ internal sealed partial class SelfTestRunner
     /// stick held forward 1.2 s. Room: the scripted head walks 1.2 m forward in the room over 2 s, then holds until the
     /// stance walk has settled. Every rendered frame it measures how far the drawn eyes (and the eye model) lead the
     /// view along the walk (<see cref="SampleWalkLead"/>), and every physics step the spine's bend and the animated
-    /// legs' speed against the ground's (also split at 0.5 move input, in the note): the stance foot (the
-    /// lower animated foot, <c>Bodypart.targetOffsetRelativeToHip</c>, Bodypart.cs:39, :130) moves back along the hip
-    /// at the legs' speed, so its world travel is the slip. Fails when the eyes lead by more than
+    /// legs' speed against the ground's (<see cref="LegMeter"/>). The hands walk with the head. Fails when the eyes lead by more than
     /// <see cref="MaxWalkLead"/>, the spine bends more than <see cref="MaxWalkBend"/>, or the legs' ratio leaves
     /// <see cref="MinLegRatio"/>..<see cref="MaxLegRatio"/>; the room walk then judges the settled stance as vr.301.
     /// </summary>
@@ -438,13 +579,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var rig = VRRig.Instance;
         var driver = AvatarPoseDriver.Of(c);
-        animOffset ??= GameMember.Field<Bodypart, Vector3>("targetOffsetRelativeToHip");
-        var parts = c.refs.ragdoll.partDict;
-        if (
-            driver == null
-            || !parts.TryGetValue(BodypartType.Foot_L, out var footL)
-            || !parts.TryGetValue(BodypartType.Foot_R, out var footR)
-        )
+        if (driver == null || LegMeter.For(c, Vector3.zero) == null)
         {
             ReleaseHead();
             Fail("no pose driver or feet");
@@ -465,14 +600,8 @@ internal sealed partial class SelfTestRunner
         walkSampling = true;
         StartCoroutine(SampleWalkLead(c, rig, along));
         float bend = 0f;
-        float legs = 0f;
-        float ground = 0f;
-        // The legs' ratio at low and high move input apart (#97: the stance walk pushes mostly at 0.27-0.46).
-        float legsLow = 0f,
-            groundLow = 0f;
-        int stance = -1;
-        var lastFoot = Vector3.zero;
-        var lastHip = Vector3.zero;
+        var meter = LegMeter.For(c, along);
+        var hands = HandsNow();
         var tick = new WaitForFixedUpdate();
         float seconds = room ? 2f : 1.2f;
         float t0 = Now;
@@ -481,34 +610,14 @@ internal sealed partial class SelfTestRunner
         while (Now - t0 < seconds)
         {
             if (room)
-                ScriptHead(
-                    home + forward * (1.2f * Mathf.SmoothStep(0f, 1f, (Now - t0) / seconds)),
-                    level
-                );
+            {
+                var walked = forward * (1.2f * Mathf.SmoothStep(0f, 1f, (Now - t0) / seconds));
+                ScriptHead(home + walked, level);
+                PlaceHands(hands, home, Quaternion.identity, walked);
+            }
             yield return tick;
             bend = Mathf.Max(bend, driver.LeanDegrees);
-            // The stance foot's animated place in the world: the hip plus its animated offset (Bodypart.WorldTargetPos).
-            var hip = c.refs.hip.transform.position;
-            var l = hip + animOffset(footL);
-            var r = hip + animOffset(footR);
-            int now = l.y <= r.y ? 0 : 1;
-            var foot = now == 0 ? l : r;
-            float hipStep = Vector3.Dot(hip - lastHip, along);
-            // Walking pace only: the start and the stop are the gait blending in and out.
-            if (now == stance && hipStep > 0.3f * Time.fixedDeltaTime)
-            {
-                float slip = hipStep - Vector3.Dot(foot - lastFoot, along);
-                legs += slip;
-                ground += hipStep;
-                if (c.input.movementInput.magnitude < 0.5f)
-                {
-                    legsLow += slip;
-                    groundLow += hipStep;
-                }
-            }
-            stance = now;
-            lastFoot = foot;
-            lastHip = hip;
+            meter.Tick();
         }
         Script(hand).Stick = Vector2.zero;
         walkSampling = false;
@@ -516,11 +625,10 @@ internal sealed partial class SelfTestRunner
         float modelLead = walkModelLead;
         var fails = new List<string>();
         var notes = new List<string>();
-        float ratio = ground > 0.05f ? legs / ground : float.NaN;
-        float groundHigh = ground - groundLow;
+        float ratio = meter.Ratio;
         notes.Add(
             F(
-                $"{(room ? "room" : "stick")} walk: drawn eyes led the view by {lead:0.000} m at most (eye model {modelLead:0.000} m), spine bent {bend:0.0} deg at most, legs {ratio:0.00} x the ground speed over {ground:0.00} m (input under 0.5: {(groundLow > 0.05f ? legsLow / groundLow : float.NaN):0.00} over {groundLow:0.00} m; 0.5 and over: {(groundHigh > 0.05f ? (legs - legsLow) / groundHigh : float.NaN):0.00} over {groundHigh:0.00} m)"
+                $"{(room ? "room" : "stick")} walk: drawn eyes led the view by {lead:0.000} m at most (eye model {modelLead:0.000} m), spine bent {bend:0.0} deg at most, {meter.Note()}"
             )
         );
         if (!(lead <= MaxWalkLead))
@@ -532,7 +640,7 @@ internal sealed partial class SelfTestRunner
         if (bend > MaxWalkBend(room))
             fails.Add(F($"the spine bent {bend:0.0} deg walking, want {MaxWalkBend(room):0} deg"));
         if (float.IsNaN(ratio))
-            fails.Add(F($"the body walked only {ground:0.000} m at pace: nothing to judge"));
+            fails.Add(F($"the body walked only {meter.Ground:0.000} m at pace: nothing to judge"));
         else if (ratio < MinLegRatio || ratio > MaxLegRatio)
             fails.Add(
                 F(
