@@ -93,6 +93,44 @@ public class TurnSkipTests
     }
 
     [Fact]
+    public void ASpringBackAfterATurnsWalk_TheLeanStillTakesOnlyMaxLean()
+    {
+        // Run 21: a push closed the debt under MaxLean, the settle sprang back to 0.104 m (vr.45b, 8.5 degrees) and 0.186 m
+        // (vr.300, 15.1 degrees), with nothing kept out of the lean.
+        var s = new TurnSkip();
+        Lean(s, Vector3.Zero, 0f);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            Lean(s, TurnDebt(150f * t), 150f * t);
+        var debt = TurnDebt(90f);
+        var along = Vector3.Normalize(debt);
+        for (float t = 0f; t < 1.5f; t += Dt)
+            Lean(s, debt, 90f);
+        for (float t = 0f; t < 0.3f; t += Dt)
+            Lean(s, along * 0.05f, 90f, walking: true);
+        for (float t = 0f; t < 1f; t += Dt)
+            Lean(s, along * MathF.Min(0.18f, 0.05f + 0.2f * t), 90f, walking: true);
+        Vector3 lean = default;
+        for (float t = 0f; t < 3f; t += Dt)
+            lean = Lean(s, along * 0.18f, 90f);
+        TestUtil.Near(s.MaxLean, lean.Length(), 1e-3f);
+        // Back within MaxLean, and it is all the lean's again.
+        for (float t = 0f; t < 3f; t += Dt)
+            lean = Lean(s, along * 0.06f, 90f);
+        TestUtil.Near(along * 0.06f, lean, 1e-3f);
+    }
+
+    [Fact]
+    public void AWalkWithNoTurnBeforeIt_KeepsNothingFromTheLean()
+    {
+        var s = new TurnSkip();
+        Lean(s, Vector3.Zero, 0f);
+        var share = new Vector3(0f, 0f, 0.18f);
+        for (float t = 0f; t < 1f; t += Dt)
+            Lean(s, share, 0f, walking: true);
+        TestUtil.Near(share, Lean(s, share, 0f), 1e-3f);
+    }
+
+    [Fact]
     public void AStaleSkip_NeverBendsTheLeanAwayFromTheView()
     {
         // vr.300 (run 13): after a snap turn the walk closed the debt to 0.015 m, but the turn's shift stayed at 0.155 m

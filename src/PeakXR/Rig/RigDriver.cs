@@ -1708,7 +1708,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>The heading the body faces (its flat look, Character.cs:1350, the frame the eyes are measured in,
     /// <see cref="UpdateEyeOffset"/>), or <paramref name="fallback"/> without one.</summary>
-    private static float BodyHeading(Character c, float fallback)
+    internal static float BodyHeading(Character c, float fallback)
     {
         var f = c.data.lookDirection_Flat;
         return f.sqrMagnitude > 1e-4f ? Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg : fallback;

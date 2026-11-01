@@ -157,6 +157,10 @@ public sealed class StanceWalk
     /// the gait needs is not measured (the Core tests assume 0.25 s, #10).</summary>
     public float MinPush = 0.3f;
 
+    /// <summary>Eased move input past which the game's gait steps the feet: the animator snaps its input to 0 under
+    /// 0.125 (CharacterAnimations.cs:190-197).</summary>
+    public float GaitInput = 0.125f;
+
     /// <summary>Seconds of travel the body coasts at its speed once its move input is gone: PEAK's drag of 0.85 a 50 Hz
     /// step (CharacterMovement.cs:48, Bodypart.cs:214-225) leaves v x 0.11 s. cf6aa3e vr.45: walks stopped on the debt
     /// alone reached 2 m/s and coasted 0.1-0.16 m past the view.</summary>
@@ -208,8 +212,8 @@ public sealed class StanceWalk
     /// <summary>How far (m) the body came back over that settle from the most headway of its push.</summary>
     public float SpringBack { get; private set; }
 
-    /// <summary>How far (m) the feet trail the body along the current or last push, from where they stood as the walk
-    /// started, for the trace.</summary>
+    /// <summary>How far (m) the feet trail the body along the current or last push, from where they would stand at its
+    /// heading, for the trace.</summary>
     public float FeetBehind { get; private set; }
 
     Vector2 _blockedAt;
@@ -227,6 +231,8 @@ public sealed class StanceWalk
     Vector2 _settleTravel;
     Vector2 _feet;
     Vector2 _feetStand;
+    float _yaw;
+    float _steppedYaw = float.NaN;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
@@ -258,7 +264,8 @@ public sealed class StanceWalk
     /// <param name="eased">The game's eased move input, length 0..1 (worldMovementInput_Lerp).</param>
     /// <param name="canWalk">The body may be walked: room-scale walking on, grounded, conscious, the stick idle.</param>
     /// <param name="feet">The feet's level midpoint less the body's point, in the frame of <paramref name="debt"/> (m);
-    /// zero when unknown. Only its change since the walk's first push counts.</param>
+    /// zero when unknown. Only its change from their stand counts.</param>
+    /// <param name="yaw">The body's heading in that frame (degrees, 0 along +y, 90 along +x).</param>
     /// <returns>Requested move input in the frame of <paramref name="debt"/>, length 0..1.</returns>
     public Vector2 Update(
         Vector2 debt,
@@ -266,11 +273,16 @@ public sealed class StanceWalk
         float eased,
         bool canWalk,
         float dt,
-        Vector2 feet = default
+        Vector2 feet = default,
+        float yaw = 0f
     )
     {
         float dist = debt.Length();
         _feet = feet;
+        _yaw = yaw;
+        // The gait has stepped the feet at this heading; a body that cannot be walked (the stick, a landing) gets new ones.
+        if (float.IsNaN(_steppedYaw) || !canWalk || eased > GaitInput)
+            _steppedYaw = yaw;
         if (!canWalk)
         {
             // A moment the body can't be walked (a push, the stick, a mantle) keeps a rested leftover the lean's:
@@ -320,13 +332,13 @@ public sealed class StanceWalk
                     Pushes = 0;
                     // The feet as the walk starts, not before: a stand read in world axes goes stale through a turn, and
                     // the lead clamped to 0 (run 20, vr.300: pushes kept nothing, on the same debt, until blocked).
-                    _feetStand = feet;
+                    ReadStand();
                     return BeginPush(debt, velocity, eased, dt);
                 }
                 return Vector2.Zero;
             case StanceWalkPhase.Settle:
                 _stallFor = velocity.Length() < StillSpeed ? _stallFor + dt : 0f;
-                FeetBehind = -Vector2.Dot(_feet - _feetStand, _heading);
+                FeetBehind = FeetTrail();
                 Headway = _headway;
                 SpringBack = _mostHeadway - _headway;
                 if (dist <= AtOnce)
@@ -357,11 +369,22 @@ public sealed class StanceWalk
                     Block(debt);
                     return Vector2.Zero;
                 }
+                // A settled body stands over its feet, whatever the first read said: the same debt no longer loops.
+                if (_stallFor >= StillSeconds || PhaseSeconds >= SettleMax)
+                    ReadStand();
                 return BeginPush(debt, velocity, eased, dt);
             default:
                 return Pushing(debt, velocity, eased, dt);
         }
     }
+
+    /// <summary>The feet's stand in body axes. They last stood for the heading they stepped at: a turn swings the body
+    /// over them, so after a smooth 180 they read about 0.14 m off their rest (the mass centre 0.07 m ahead of the hip)
+    /// with no trail to see (run 21, vr.300: 0 at each push's end, -0.12 m after each settle, 0.12-0.14 m of spring-back).</summary>
+    void ReadStand() => _feetStand = YawMath.Rotate(_feet, -_steppedYaw);
+
+    /// <summary>How far the feet trail where they would stand at the body's heading, along the push (m).</summary>
+    float FeetTrail() => -Vector2.Dot(_feet - YawMath.Rotate(_feetStand, _yaw), _heading);
 
     Vector2 BeginPush(Vector2 debt, Vector2 velocity, float eased, float dt)
     {
@@ -383,7 +406,7 @@ public sealed class StanceWalk
         var rest =
             debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
         // The body settles over its feet: feet trailing it pull it back after the coast, so walk on (FeetLead at most).
-        FeetBehind = -Vector2.Dot(_feet - _feetStand, _heading);
+        FeetBehind = FeetTrail();
         rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
         float restDist = rest.Length();
         float along = Vector2.Dot(rest, _heading);

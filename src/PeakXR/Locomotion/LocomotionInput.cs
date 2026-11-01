@@ -464,7 +464,8 @@ internal static class LocomotionInput
             data.worldMovementInput_Lerp.magnitude,
             canFollow && !outside,
             dt,
-            new NVector2(feet.x, feet.z)
+            new NVector2(feet.x, feet.z),
+            RigDriver.BodyHeading(c, rig.Origin.eulerAngles.y)
         );
         if (Stance.State != phase)
             TraceStance(phase, phaseFor, debt.Length(), worldRequest.Length());
