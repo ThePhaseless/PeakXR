@@ -142,7 +142,68 @@ public class ItemFollowTests
         Assert.True(g.Released);
         bool released = true;
         for (int i = 0; i < 6; i++)
-            released = g.Update(0.6f, 0.5f, 0.02f, itemBlocked: true);
+            released = g.Update(0.45f, 0.5f, 0.02f, itemBlocked: true);
+        Assert.False(released);
+    }
+
+    [Fact]
+    public void AReachPastAPropLetsGoAfterTheHold()
+    {
+        // #124 run 23 vr3: the probe still meets the prop, the hand 0.82 m past the arm's shortfall, the arm's way clear.
+        var g = new WeldGate();
+        for (int i = 0; i < 40; i++)
+            Assert.False(g.Update(1.11f, 0f, 0.02f, shortfall: 0.29f, itemBlocked: true));
+        bool released = false;
+        for (int i = 0; i < 10; i++)
+            released = g.Update(1.11f, 0f, 0.02f, shortfall: 0.29f, itemBlocked: true);
+        Assert.True(released);
+    }
+
+    [Fact]
+    public void AFreeItemPastTheLimitStaysFree()
+    {
+        // Rejoining would pull the item back behind the prop every time the probe met it.
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            g.Update(0.82f, 0f, 0.02f);
+        Assert.True(g.Released);
+        for (int i = 0; i < 10; i++)
+            Assert.True(g.Update(0.82f, 0.5f, 0.02f, itemBlocked: true));
+    }
+
+    [Fact]
+    public void AKeepUnderTheLimitIsJudgedPastTheShortfall()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 200; i++)
+            Assert.False(g.Update(0.88f, 0f, 0.02f, shortfall: 0.5f, itemBlocked: true));
+        for (int i = 0; i < 200; i++)
+            Assert.False(g.Update(0.49f, 0f, 0.02f, itemBlocked: true));
+    }
+
+    [Fact]
+    public void AShutWayKeepsTheWeldPastTheLimit()
+    {
+        // vr.246 phase 2 in run 22: a wall across the arm's path at lag 0.75 m.
+        var g = new WeldGate();
+        for (int i = 0; i < 200; i++)
+            Assert.False(
+                g.Update(0.88f, 0f, 0.02f, shortfall: 0.13f, blocked: true, itemBlocked: true)
+            );
+        for (int i = 0; i < 200; i++)
+            Assert.False(g.Update(0.82f, 0f, 0.02f, itemBlocked: true, placeBlocked: true));
+    }
+
+    [Fact]
+    public void AFreeItemWhosePlaceIsInTheWorldRejoins()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            g.Update(0.82f, 0f, 0.02f);
+        Assert.True(g.Released);
+        bool released = true;
+        for (int i = 0; i < 6; i++)
+            released = g.Update(0.82f, 0.5f, 0.02f, itemBlocked: true, placeBlocked: true);
         Assert.False(released);
     }
 
