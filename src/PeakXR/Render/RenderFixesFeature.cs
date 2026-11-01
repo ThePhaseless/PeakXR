@@ -250,6 +250,7 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.DitherSameInBothEyes));
         Patch(typeof(RenderPatches.XRShadowCull));
         Patch(typeof(RenderPatches.EyeShadowCascades));
+        Patch(typeof(RenderPatches.ScoutmasterGrain));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);
