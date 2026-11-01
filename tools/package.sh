@@ -77,16 +77,7 @@ PeakXR is MIT licensed. The bundled Unity XR assemblies and native plugins (Open
 the Unity Companion License and Valve's OpenVR plugin under BSD-3-Clause; see BepInEx/plugins/PeakXR/licenses/.
 EOF
 fi
-if [[ ! -f "$ROOT/assets/icon.png" ]]; then
-    log "assets/icon.png missing; generating it"
-    if command -v uv >/dev/null; then
-        uv run --quiet "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"
-    elif command -v python3 >/dev/null; then
-        python3 "$ROOT/tools/make-icon.py" "$ROOT/assets/icon.png"  # needs Pillow
-    else
-        die "no python to generate assets/icon.png; add a 256x256 PNG by hand"
-    fi
-fi
+[[ -f "$ROOT/assets/icon.png" ]] || die "assets/icon.png is missing; export a 256x256 PNG from assets/icon.svg"
 cp "$ROOT/assets/icon.png" "$STAGE/icon.png"
 
 cat >"$STAGE/manifest.json" <<EOF
