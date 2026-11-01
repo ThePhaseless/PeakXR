@@ -1,3 +1,4 @@
+using PeakXR.UI.World;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
@@ -14,8 +15,9 @@ namespace PeakXR.Render;
 /// (GD/ScreenFog, GD/SphereFog), SC Post Effects Fog, Cloud Shadows, Caustics and Sketch, FogOrb, DarkFade, FireHaze,
 /// LavaPost, RainPost, NickPost/Injury and Decal, and the forward one by SC Post Effects DepthNormals, which the outline
 /// pass reconstructs normals with (SerializedPass name tables read from the game data, 2026-10-29 scan). One pass per
-/// eye, after the camera setup and the prepasses, fixes all. It also records what each eye rendered with, right before
-/// that eye's cull (<see cref="Eyes"/>, for self-tests vr.480 to vr.483).
+/// eye, after the camera setup and the prepasses, fixes all. Right before each eye's cull it also records what that eye
+/// renders with (<see cref="Eyes"/>, for self-tests vr.480 to vr.483) and moves the head-locked overlays ahead of it
+/// (<see cref="StatusOverlays.PoseForEye"/>).
 /// </summary>
 internal sealed class EyeMatrixFeature : ScriptableRendererFeature
 {
@@ -57,13 +59,16 @@ internal sealed class EyeMatrixFeature : ScriptableRendererFeature
         var xr = cameraData.xr;
         if (!xr.enabled || xr.singlePassEnabled || xr.viewCount != 1)
             return;
+        var view = xr.GetViewMatrix(0);
         Eyes[xr.multipassId & 1] = new EyeRecord
         {
-            View = xr.GetViewMatrix(0),
+            View = view,
             Proj = xr.GetProjMatrix(0),
             Viewport = xr.GetViewport(0),
             Frame = Time.frameCount,
         };
+        if (RenderFixesFeature.EyeLockedOverlays.Value)
+            StatusOverlays.PoseForEye(view, cameraData.camera);
     }
 
     private sealed class EyeMatrixPass : ScriptableRenderPass

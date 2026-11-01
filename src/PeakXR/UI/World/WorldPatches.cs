@@ -48,7 +48,8 @@ internal static class EventCameraPatch
     }
 }
 
-/// <summary>Status-effect quads, made head-locked per eye. A/CameraQuad.cs:11 <c>private void LateUpdate()</c>.</summary>
+/// <summary>Status-effect quads, made head-locked; <see cref="StatusOverlays"/> then poses them per eye.
+/// A/CameraQuad.cs:11 <c>private void LateUpdate()</c>.</summary>
 [HarmonyPatch]
 internal static class CameraQuadPatch
 {

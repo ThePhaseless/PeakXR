@@ -25,7 +25,8 @@ public enum VRAntialiasing
 /// What MultiPass would still do per eye is made the same for both: culling, and with it the shadow cascades
 /// (<see cref="EyeCulling"/>, checked by <see cref="RenderPatches.EyeShadowCascades"/>), and the post dither
 /// noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
-/// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
+/// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed head-locked by ui.world and moved ahead
+/// of each eye by <see cref="EyeMatrixFeature"/> (<c>Render.EyeLockedOverlays</c>).
 /// </summary>
 public sealed class RenderFixesFeature : Feature
 {
