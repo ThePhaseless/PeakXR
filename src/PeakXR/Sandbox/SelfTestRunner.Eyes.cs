@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using Peak;
 using PeakXR.Core;
 using PeakXR.Render;
 using PeakXR.UI.Status;
@@ -14,11 +16,26 @@ namespace PeakXR.Sandbox;
 /// <summary>
 /// Whether anything differs between the eyes that should not (issue #5), from each eye's own pixels (<see cref="ReadEyes"/>)
 /// on the level. <c>vr.480</c> measures the head-locked overlays: the Peripheral hide, a control that shows it could fail,
-/// and the stereo offset of a real quad.
+/// and the stereo offset of a real quad. <c>vr.481</c> renders both eyes from one view and from swapped views.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
     private const int EyeLumaStep = 4;
+    private const int MonoDiffReads = 10;
+
+    /// <summary>Share of pixels that may move past <see cref="DrawnPixels.ChannelStep"/> between two images of one view:
+    /// a small leak an RMS over the whole eye dilutes.</summary>
+    private const float MonoDiffShare = 0.002f;
+
+    private static readonly string[] MonoDiffEffects =
+    {
+        "VFX_PoisonExplo",
+        "VFX_Smoke",
+        "vfx-fire",
+    };
+
+    /// <summary>Metres to the side of the spot, so one does not hide another.</summary>
+    private static readonly float[] MonoDiffSides = { 0f, -2f, 2f };
 
     private static readonly int PoisonIntensityId = Shader.PropertyToID("_Intensity");
     private static readonly int PoisonEdgeId = Shader.PropertyToID("_Edge");
@@ -350,11 +367,230 @@ internal sealed partial class SelfTestRunner
         return head.x / head.z;
     }
 
-    void SaveFlash(string shot)
+    void SaveFlash(string shot) => SavePair(flashOn, shot);
+
+    void SavePair(EyeImages image, string shot)
     {
-        if (flashOn.Problem != null)
+        if (image.Problem != null)
             return;
-        SaveEye(flashOn, shot + "-left", 0);
-        SaveEye(flashOn, shot + "-right", 1);
+        SaveEye(image, shot + "-left", 0);
+        SaveEye(image, shot + "-right", 1);
+    }
+
+    /// <summary>Prefabs loaded right now, by name; what a level has depends on what it refers to.</summary>
+    static Dictionary<string, GameObject> LoadedPrefabs()
+    {
+        var prefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+        foreach (var go in Resources.FindObjectsOfTypeAll<GameObject>())
+            if (!go.scene.IsValid())
+                prefabs.TryAdd(go.name, go);
+        return prefabs;
+    }
+
+    /// <summary>A copy of a game effect with what it does to players and what ends it on its own taken out, or null when
+    /// it is not loaded. Returns its holder, to destroy early; <see cref="OnRestore"/> destroys it otherwise.</summary>
+    GameObject SpawnEffect(Dictionary<string, GameObject> prefabs, string name, Vector3 position)
+    {
+        if (!prefabs.TryGetValue(name, out var prefab))
+            return null;
+        // Instantiate runs Awake and OnEnable at once, and an AOE can explode in OnEnable (AOE.cs:80): the copy only
+        // wakes under a holder once it is stripped.
+        var holder = new GameObject("PeakXR.SelfTest.Effect");
+        holder.SetActive(false);
+        OnRestore(() =>
+        {
+            if (holder != null)
+                Destroy(holder);
+        });
+        var copy = Instantiate(prefab, position, prefab.transform.rotation, holder.transform);
+        Strip<AOE>(copy);
+        Strip<AddScreenshake>(copy);
+        Strip<TimeEvent>(copy);
+        // VFX_PoisonExplo would end on its own while vr.482 holds it.
+        Strip<RemoveAfterSeconds>(copy);
+        // Gas. TrickLuggage goes first: its Update reaches for the field (Peak/TrickLuggage.cs:29).
+        Strip<TrickLuggage>(copy);
+        Strip<StatusFieldBase>(copy);
+        // Flare smoke. A copy tracks nothing: it logs an error and stops, or destroys itself (TrackNetworkedObject.cs:43,55).
+        Strip<TrackNetworkedObject>(copy);
+        copy.SetActive(true);
+        holder.SetActive(true);
+        foreach (var ps in copy.GetComponentsInChildren<ParticleSystem>())
+            if (!ps.isPlaying)
+                ps.Play(false);
+        return holder;
+    }
+
+    static void Strip<T>(GameObject root)
+        where T : Component
+    {
+        foreach (var part in root.GetComponentsInChildren<T>(true))
+            DestroyImmediate(part);
+    }
+
+    /// <summary>vr.481: looks for state that belongs to an eye, not to its view. On one view both eyes must match, and on
+    /// swapped views each eye must match the other's normal image; the phases are in docs/testing.md. A red stops the
+    /// near-fade work on #5: there is a stateful cause that reading the code missed.</summary>
+    IEnumerator EyeMonoDiffStep()
+    {
+        if (!EyesReady(out var cam, out var display))
+            yield break;
+        string missing = EyeViewOverride.Resolve();
+        if (missing != null)
+        {
+            stepSkip = missing;
+            yield break;
+        }
+        // First, so the views are real again before anything else goes back.
+        OnRestore(() => EyeViewOverride.Remove());
+
+        var prefabs = LoadedPrefabs();
+        var head = cam.transform;
+        var ahead = head.position + Flat(head.forward) * 6f;
+        var side = Flat(head.right);
+        var effects = new List<GameObject>();
+        var notes = new List<string>();
+        for (int i = 0; i < MonoDiffEffects.Length; i++)
+        {
+            var effect = SpawnEffect(prefabs, MonoDiffEffects[i], ahead + side * MonoDiffSides[i]);
+            if (effect != null)
+                effects.Add(effect);
+            notes.Add(MonoDiffEffects[i] + (effect != null ? " found" : " ABSENT"));
+        }
+        if (effects.Count == 0)
+        {
+            Fail("none of the effects is loaded on this level");
+            yield break;
+        }
+        if (!prefabs.ContainsKey(MonoDiffEffects[0]))
+            notes.Add($"{MonoDiffEffects[0]} was not measured in this run");
+        yield return Wait(1f);
+
+        var control = new EyeImages(2);
+        yield return ReadEyes(cam, display, control);
+        if (control.Problem != null)
+        {
+            Fail("control read: " + control.Problem);
+            yield break;
+        }
+        float controlRms = EyeImageMatch.Rms(EyeLuma(control, 0), EyeLuma(control, 1));
+
+        EyeViewOverride.Install(EyeViewOverride.Mode.Mono, cam);
+        yield return Frames(2);
+        float monoSum = 0f;
+        float monoWorst = 0f;
+        float monoShare = 0f;
+        EyeImages worst = null;
+        for (int i = 0; i < MonoDiffReads; i++)
+        {
+            var read = new EyeImages(2);
+            yield return ReadEyes(cam, display, read);
+            if (read.Problem != null)
+            {
+                EyeViewOverride.Remove();
+                Fail("mono read: " + read.Problem);
+                yield break;
+            }
+            float rms = EyeImageMatch.Rms(EyeLuma(read, 0), EyeLuma(read, 1));
+            monoSum += rms;
+            monoShare = Mathf.Max(
+                monoShare,
+                DrawnPixels.ChangedShare(read.Pixels[0], read.Pixels[1])
+            );
+            if (worst == null || rms > monoWorst)
+            {
+                monoWorst = rms;
+                worst = read;
+            }
+        }
+        if (!EyeViewOverride.Remove())
+        {
+            Fail("something chained above the view override during the mono phase");
+            yield break;
+        }
+        float monoMean = monoSum / MonoDiffReads;
+        notes.Add(
+            F(
+                $"control {controlRms:0.00}, mono mean {monoMean:0.00} worst {monoWorst:0.00} of 255, share {monoShare:0.0000}"
+            )
+        );
+        var fails = new List<string>();
+        bool swapSkipped = false;
+        // Real eyes must differ by parallax, or the two images are one eye read twice. The noise floor catches 5 x 0.
+        if (controlRms < Mathf.Max(5f * monoMean, 0.5f))
+            fails.Add("capture is not per eye");
+        if (monoMean > 1f || monoWorst > 2f || monoShare > MonoDiffShare)
+        {
+            fails.Add("the eyes differ on one view: state that belongs to an eye");
+            SavePair(worst, "vr-481-mono");
+        }
+
+        FreezeWorld();
+        foreach (var effect in effects)
+        foreach (var ps in effect.GetComponentsInChildren<ParticleSystem>())
+            ps.Pause(false);
+        yield return Frames(3);
+        var before = head.position;
+        var normal = new EyeImages(2);
+        var again = new EyeImages(2);
+        var swapped = new EyeImages(2);
+        yield return ReadEyes(cam, display, normal);
+        yield return ReadEyes(cam, display, again);
+        EyeViewOverride.Install(EyeViewOverride.Mode.Swap, cam);
+        yield return Frames(2);
+        yield return ReadEyes(cam, display, swapped);
+        if (!EyeViewOverride.Remove())
+            fails.Add("something chained above the view override during the swap phase");
+        string problem = normal.Problem ?? again.Problem ?? swapped.Problem;
+        if (problem != null)
+            fails.Add("swap read: " + problem);
+        else
+        {
+            float still = Mathf.Max(
+                EyeImageMatch.Rms(EyeLuma(normal, 0), EyeLuma(again, 0)),
+                EyeImageMatch.Rms(EyeLuma(normal, 1), EyeLuma(again, 1))
+            );
+            float moved = Vector3.Distance(before, head.position);
+            if (still > 1f || moved > 0.001f)
+            {
+                swapSkipped = true;
+                notes.Add(
+                    F(
+                        $"swap phase SKIPPED: the frozen view was not still ({still:0.00} of 255, head moved {moved * 1000f:0.0} mm), so this run did not prove it"
+                    )
+                );
+            }
+            else
+            {
+                float toLeft = EyeImageMatch.Rms(EyeLuma(swapped, 1), EyeLuma(normal, 0));
+                float toRight = EyeImageMatch.Rms(EyeLuma(swapped, 0), EyeLuma(normal, 1));
+                float shareLeft = DrawnPixels.ChangedShare(swapped.Pixels[1], normal.Pixels[0]);
+                float shareRight = DrawnPixels.ChangedShare(swapped.Pixels[0], normal.Pixels[1]);
+                notes.Add(
+                    F(
+                        $"swap right-as-left {toLeft:0.00} share {shareLeft:0.0000}, left-as-right {toRight:0.00} share {shareRight:0.0000}, still {still:0.00}"
+                    )
+                );
+                if (
+                    toLeft > 1f
+                    || toRight > 1f
+                    || shareLeft > MonoDiffShare
+                    || shareRight > MonoDiffShare
+                )
+                {
+                    fails.Add(
+                        "swapped eyes do not match the other eye's image: stale per-eye data"
+                    );
+                    SavePair(swapped, "vr-481-swapped");
+                    SavePair(normal, "vr-481-normal");
+                }
+            }
+        }
+
+        stepNote = string.Join("; ", notes);
+        if (fails.Count > 0)
+            Fail(string.Join("; ", fails));
+        else if (swapSkipped)
+            stepSkip = stepNote;
     }
 }

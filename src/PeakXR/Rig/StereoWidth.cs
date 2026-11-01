@@ -67,9 +67,22 @@ internal static class StereoWidth
         }
     }
 
+    /// <summary>(pass, index, view, projection) => pass.m_Views[index] = new XRView(projection, view, view, ...), every
+    /// other field kept; for a self-test that renders an eye from another view. Throws when URP's members are gone.</summary>
+    internal static Action<XRPass, int, Matrix4x4, Matrix4x4> BuildViewProjSetter() =>
+        BuildSetter(
+            typeof(XRPass).GetField("m_Views", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMemberException("XRPass.m_Views"),
+            writesProjection: true
+        );
+
     /// <summary>(pass, index, view, previous view) => pass.m_Views[index] = new XRView(..., view, previous, ...),
-    /// every other field kept.</summary>
-    private static Action<XRPass, int, Matrix4x4, Matrix4x4> BuildSetter(FieldInfo viewsField)
+    /// every other field kept; with <paramref name="writesProjection"/> the last parameter is the projection and the
+    /// previous view becomes the new view.</summary>
+    private static Action<XRPass, int, Matrix4x4, Matrix4x4> BuildSetter(
+        FieldInfo viewsField,
+        bool writesProjection = false
+    )
     {
         var listType = viewsField.FieldType;
         var viewType = listType.GetGenericArguments()[0];
@@ -116,9 +129,9 @@ internal static class StereoWidth
                 item,
                 Expression.New(
                     ctor,
-                    F("projMatrix"),
+                    writesProjection ? prev : F("projMatrix"),
                     view,
-                    prev,
+                    writesProjection ? view : prev,
                     F("isPrevViewMatrixValid"),
                     F("viewport"),
                     F("occlusionMesh"),

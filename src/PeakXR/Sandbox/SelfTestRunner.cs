@@ -224,6 +224,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             if (!hold)
             {
                 yield return EyeStep("vr.480-eye-overlays", 45f, EyeOverlaysStep());
+                yield return EyeStep("vr.481-eye-mono-diff", 45f, EyeMonoDiffStep());
             }
             yield return VRStep("vr.471-fallback-exclusive", 8f, FallbackExclusiveCheck());
             yield return VRStep("vr.279-perf-line", 65f, PerfProbeCheck());
