@@ -17,6 +17,7 @@ namespace PeakXR.Sandbox;
 /// Whether anything differs between the eyes that should not (issue #5), from each eye's own pixels (<see cref="ReadEyes"/>)
 /// on the level. <c>vr.480</c> measures the head-locked overlays: the Peripheral hide, a control that shows it could fail,
 /// and the stereo offset of a real quad. <c>vr.481</c> renders both eyes from one view and from swapped views.
+/// <c>vr.482</c> logs stereo metrics per effect.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -33,6 +34,28 @@ internal sealed partial class SelfTestRunner
         "VFX_Smoke",
         "vfx-fire",
     };
+
+    private static readonly string[] EyeEffects =
+    {
+        "VFX_PoisonExplo",
+        "VFX_SporeExplo",
+        "VFX_SporeExploExplo",
+        "Gas",
+        "VFX_FlareSmoke",
+        "VFX_DynamiteSmoke",
+        "vfx-fire",
+        "VFX_ExplosionGhost",
+        "BEES",
+        "AntiSphere",
+        "Particle_Ghost",
+        "Broad Wind",
+        "Steam",
+        "spores",
+    };
+
+    /// <summary>In <see cref="EyeEffects"/> with no prefab, only under a level's map. They carry nothing but particle
+    /// systems, so a copy is safe.</summary>
+    private static readonly string[] SceneEffects = { "Broad Wind", "spores" };
 
     /// <summary>Metres to the side of the spot, so one does not hide another.</summary>
     private static readonly float[] MonoDiffSides = { 0f, -2f, 2f };
@@ -377,12 +400,13 @@ internal sealed partial class SelfTestRunner
         SaveEye(image, shot + "-right", 1);
     }
 
-    /// <summary>Prefabs loaded right now, by name; what a level has depends on what it refers to.</summary>
+    /// <summary>Prefabs loaded right now, plus <see cref="SceneEffects"/>, by name; what a level has depends on what it
+    /// refers to.</summary>
     static Dictionary<string, GameObject> LoadedPrefabs()
     {
         var prefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
         foreach (var go in Resources.FindObjectsOfTypeAll<GameObject>())
-            if (!go.scene.IsValid())
+            if (!go.scene.IsValid() || Array.IndexOf(SceneEffects, go.name) >= 0)
                 prefabs.TryAdd(go.name, go);
         return prefabs;
     }
@@ -592,5 +616,159 @@ internal sealed partial class SelfTestRunner
             Fail(string.Join("; ", fails));
         else if (swapSkipped)
             stepSkip = stepNote;
+    }
+
+    /// <summary>Chosen alone, vr.482 holds the named effect for a compositor screenshot instead of measuring; a run that
+    /// lists it with others must not stop there.</summary>
+    bool EyeEffectsLive =>
+        filter != null
+        && filter.Patterns.Count == 1
+        && string.Equals(filter.Patterns[0], "vr.482-eye-effects", StringComparison.Ordinal);
+
+    /// <summary>vr.482: measure only, so nothing here fails the step. Logs stereo metrics per effect, or holds
+    /// <c>VFX_PoisonExplo</c> still in <see cref="EyeEffectsLive"/>.</summary>
+    IEnumerator EyeEffectsStep()
+    {
+        if (!EyesReady(out var cam, out var display))
+            yield break;
+        var prefabs = LoadedPrefabs();
+        var head = cam.transform;
+        var player = head.position;
+        var ahead = player + Flat(head.forward) * 6f;
+        if (EyeEffectsLive)
+        {
+            if (!prefabs.ContainsKey(MonoDiffEffects[0]))
+            {
+                stepSkip = $"{MonoDiffEffects[0]} is not loaded on this level";
+                yield break;
+            }
+            yield return EyeEffectHold(prefabs, ahead, "at 6 m");
+            yield return EyeEffectHold(prefabs, player, "at the player");
+            yield break;
+        }
+        var absent = new List<string>();
+        foreach (var effect in EyeEffects)
+        {
+            if (!prefabs.ContainsKey(effect))
+            {
+                absent.Add(effect);
+                continue;
+            }
+            yield return EyeEffectMetrics(cam, display, prefabs, effect, ahead, "at 6 m");
+            yield return EyeEffectMetrics(cam, display, prefabs, effect, player, "at the player");
+        }
+        stepNote = $"{EyeEffects.Length - absent.Count} effects measured (eye-effect log lines)";
+        if (absent.Count > 0)
+            stepNote += "; absent: " + string.Join(", ", absent);
+        if (absent.Contains(MonoDiffEffects[0]))
+            stepNote += $"; {MonoDiffEffects[0]} was not measured in this run";
+    }
+
+    IEnumerator EyeEffectHold(Dictionary<string, GameObject> prefabs, Vector3 spot, string where)
+    {
+        var holder = SpawnEffect(prefabs, MonoDiffEffects[0], spot);
+        yield return Wait(1f);
+        foreach (var ps in holder.GetComponentsInChildren<ParticleSystem>())
+            ps.Pause(false);
+        Plugin.Log.LogInfo($"[selftest] eye-hold ready {MonoDiffEffects[0]} {where}");
+        yield return Wait(30f);
+        Destroy(holder);
+        yield return Frames(2);
+    }
+
+    /// <summary>What the effect added to each eye, 1 s after it spawned, against a read before it: how much differs
+    /// between the eyes, the shift that best explains the rest, and what that shift leaves.</summary>
+    IEnumerator EyeEffectMetrics(
+        Camera cam,
+        XRDisplaySubsystem display,
+        Dictionary<string, GameObject> prefabs,
+        string effect,
+        Vector3 spot,
+        string where
+    )
+    {
+        var before = new EyeImages(2);
+        yield return ReadEyes(cam, display, before);
+        var holder = SpawnEffect(prefabs, effect, spot);
+        yield return Wait(1f);
+        var after = new EyeImages(2);
+        yield return ReadEyes(cam, display, after);
+        string problem = before.Problem ?? after.Problem;
+        if (problem != null)
+            Plugin.Log.LogWarning($"[selftest] eye-effect {effect} {where}: {problem}");
+        else
+            Plugin.Log.LogInfo(EyeEffectLine(cam, before, after, holder, effect, where));
+        Destroy(holder);
+        yield return Frames(2);
+    }
+
+    static string EyeEffectLine(
+        Camera cam,
+        EyeImages before,
+        EyeImages after,
+        GameObject holder,
+        string effect,
+        string where
+    )
+    {
+        var left = Added(EyeLuma(after, 0), EyeLuma(before, 0));
+        var right = Added(EyeLuma(after, 1), EyeLuma(before, 1));
+        int w = after.Width / EyeLumaStep;
+        int h = after.Height / EyeLumaStep;
+        float axis = EyeImageMatch.AxisShift(w, EyeTangents(after, 0), EyeTangents(after, 1));
+        // A near sheet can sit 370 px apart at full size.
+        int from = Mathf.Clamp(Mathf.RoundToInt(axis) - 100, 1 - w, w - 1);
+        int to = Mathf.Clamp(Mathf.RoundToInt(axis) + 100, 1 - w, w - 1);
+        int shift = EyeImageMatch.BestShift(left, right, w, h, from, to);
+        float residual = EyeImageMatch.Residual(left, right, w, h, shift);
+        float mass = EyeImageMatch.MassRatio(left, right);
+        float nearest = NearestSheet(holder, cam.transform);
+        return F(
+            $"[selftest] eye-effect {effect} {where}: mass {mass:0.000}, shift {shift} (axis {axis:0.0}), residual {residual:0.000}, nearest sheet {nearest:0.00} m"
+        );
+    }
+
+    static float[] Added(float[] after, float[] before)
+    {
+        var added = new float[after.Length];
+        for (int i = 0; i < added.Length; i++)
+            added[i] = after[i] - before[i];
+        return added;
+    }
+
+    static EyeView EyeTangents(EyeImages image, int eye)
+    {
+        var p = image.Projections[eye];
+        var (left, right, bottom, top) = StereoCull.Tangents(p.m00, p.m02, p.m11, p.m12);
+        return new EyeView(
+            System.Numerics.Vector3.Zero,
+            System.Numerics.Quaternion.Identity,
+            left,
+            right,
+            bottom,
+            top
+        );
+    }
+
+    /// <summary>The smallest distance ahead of the head, along its forward, of any live particle of the effect.</summary>
+    static float NearestSheet(GameObject holder, Transform head)
+    {
+        var buffer = new ParticleSystem.Particle[1000];
+        float nearest = float.PositiveInfinity;
+        foreach (var ps in holder.GetComponentsInChildren<ParticleSystem>())
+        {
+            bool world = ps.main.simulationSpace == ParticleSystemSimulationSpace.World;
+            int count = ps.GetParticles(buffer);
+            for (int i = 0; i < count; i++)
+            {
+                var at = world
+                    ? buffer[i].position
+                    : ps.transform.TransformPoint(buffer[i].position);
+                float z = Vector3.Dot(at - head.position, head.forward);
+                if (z > 0f && z < nearest)
+                    nearest = z;
+            }
+        }
+        return nearest;
     }
 }
