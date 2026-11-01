@@ -107,6 +107,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>The local avatar's eyes have been measured (avatar.local holds the lean until then).</summary>
     internal static bool EyeCalibrated => instance != null && instance.massEyes.Converged;
 
+    /// <summary>The eye model the view rides (forward, up of the mass centre, m), for self-test notes.</summary>
+    internal static System.Numerics.Vector2 EyeModel =>
+        instance != null ? instance.massEyes.Offset : default;
+
     /// <summary>The view rides the local body (first person). False while it is detached (third person, spectate,
     /// rocket, cutscene) or held by the title stage: the tracked hands are then near the view, not the body.</summary>
     internal static bool ViewOnBody = true;

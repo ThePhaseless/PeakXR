@@ -150,7 +150,7 @@ public partial class AvatarPoseDriver
 
     /// <summary>How far the <paramref name="left"/> arm (shoulder to wrist of its IK chain) cannot reach
     /// <paramref name="bone"/> right now, metres.</summary>
-    private float ArmShortfall(bool left, Vector3 bone) =>
+    internal float ArmShortfall(bool left, Vector3 bone) =>
         PhysicsShoulder(left, out var shoulder, out float arm)
             ? WeldGate.Shortfall(shoulder.N(), bone.N(), arm)
             : 0f;
