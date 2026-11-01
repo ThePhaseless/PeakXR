@@ -45,6 +45,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<bool> ComfortSettings;
     internal static ConfigEntry<bool> LensFlare;
     internal static ConfigEntry<bool> SharedEyeCulling;
+    internal static ConfigEntry<bool> EyeLockedOverlays;
     internal static ConfigEntry<float> PerfLogSeconds;
 
     public override string Id => "render.fixes";
@@ -212,6 +213,15 @@ public sealed class RenderFixesFeature : Feature
                     + "same in each eye. The eyes are drawn in two passes (MultiPass), and culled one by one each eye fits "
                     + "the sun's shadow cascades to itself, so shadow edges and detail differ between the eyes. Turn off "
                     + "only to compare."
+            )
+        );
+        EyeLockedOverlays = Plugin.Settings.Bind(
+            section,
+            "EyeLockedOverlays",
+            true,
+            new ConfigDescription(
+                "Draw head-locked effects (storm, rain, status flashes) once per eye so their pattern has no stereo "
+                    + "offset. Turn off only to compare."
             )
         );
         PerfLogSeconds = Plugin.Settings.Bind(

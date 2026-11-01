@@ -221,6 +221,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.277-shared-eye-culling", 5f, SharedCullingCheck());
             yield return VRStep("vr.278-eye-dither", 5f, EyeDitherCheck());
             yield return VRStep("vr.470-eye-shadow-cascades", 5f, EyeShadowCheck());
+            if (!hold)
+            {
+                yield return EyeStep("vr.480-eye-overlays", 45f, EyeOverlaysStep());
+            }
             yield return VRStep("vr.471-fallback-exclusive", 8f, FallbackExclusiveCheck());
             yield return VRStep("vr.279-perf-line", 65f, PerfProbeCheck());
             yield return Run("04b-bug-report", 30f, BugReportCheck());

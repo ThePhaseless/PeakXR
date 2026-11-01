@@ -269,6 +269,7 @@ public static class SelfTestIds
         "vr.278-eye-dither",
         "vr.470-eye-shadow-cascades",
         "vr.471-fallback-exclusive",
+        "vr.480-eye-overlays",
         "vr.279-perf-line",
         "vr.286-quick-release",
         "vr.287-quick-release-fist",
