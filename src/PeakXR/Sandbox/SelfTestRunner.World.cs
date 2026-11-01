@@ -1283,7 +1283,9 @@ internal sealed partial class SelfTestRunner
                 + gap.normalized * (gap.magnitude - 0.5f);
             if (!GroundAtStep(to))
             {
-                stepped += F($"step-in skipped: no ground within 0.5 m at {to}; ");
+                stepped += F(
+                    $"step-in skipped: no ground clear of the case within 0.5 m at {to}; "
+                );
                 break;
             }
             warpedForProp = true;
@@ -1313,7 +1315,7 @@ internal sealed partial class SelfTestRunner
         if (OverReach(left) != null)
         {
             capped = F(
-                $"hand capped at reach, {Vector3.Distance(Script(left).Position, ScriptedEye()):0.00} m from the eye before"
+                $"hand capped at reach, {Vector3.Distance(Script(left).Position, ScriptedEye()):0.00} m from the eye before; "
             );
             SetHand(left, InReach(Script(left).Position));
         }
@@ -1362,6 +1364,20 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // GripOnLid reads the centre, which on LuggageClown sits over the lid (#127), so it calls a capped hand on the
+        // lid low. The aim obeys the height rule; this is the hand.
+        float gripY = rig.Hand(left).position.y;
+        float lidLine = Mathf.Min(lug.Center().y, SolidTop(lug)) - LidGesture.LidGive;
+        if (gripY > lidLine)
+        {
+            yield return GripTo(left, 0f, 0.1f);
+            Fail(
+                F(
+                    $"setup: the hand gripped {lug.name} at y {gripY:0.00}, over the low grip's limit {lidLine:0.00}, so it was not low ({LidGesture.LastGrab}); grip point y {low.y:0.00}, stooped {headDrop:0.00} m"
+                )
+            );
+            yield break;
+        }
         yield return ExpectCue(left, DenyReason.AimHigher, mark, tint: false, within: 2f);
         var cue = cueNote;
         var interaction = Interaction.instance;
@@ -1377,11 +1393,18 @@ internal sealed partial class SelfTestRunner
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
             yield break;
         }
-        stepNote = F(
-            $"{lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}, grip point y {low.y:0.00} on {GripTouch(lug, low)}; {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}"
-        );
+        stepNote =
+            landings
+            + stepped
+            + capped
+            + F(
+                $"{lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}, grip point y {low.y:0.00} on {GripTouch(lug, low)}, hand y {gripY:0.00}; {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}"
+            );
         if (lug.IsOpen)
+        {
+            stepNote += "; sunk-in grip skipped: the low grip's hold opened the case";
             yield break;
+        }
         // A tracked hand sunk into the case, which nothing stops: the grip still takes it (VR run 75's vr.82b met no
         // triangle from inside a concave mesh and did "Interact on nothing").
         // The centre lies half the case further out than the low grip (run 76: past arm's reach), so step in and stoop
@@ -1411,7 +1434,9 @@ internal sealed partial class SelfTestRunner
                 + gap.normalized * (gap.magnitude - 0.5f);
             if (!GroundAtStep(to))
             {
-                stepNote += F($"; sunk-in grip skipped: no ground within 0.5 m at {to}");
+                stepNote += F(
+                    $"; sunk-in grip skipped: no ground clear of the case within 0.5 m at {to}"
+                );
                 yield break;
             }
             warpedForProp = true;
@@ -1549,9 +1574,11 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>Why a step-in may warp: ground within 0.5 m of the floor it stands on, <paramref name="to"/> being 0.1 m
-    /// over that floor. Run 23 vr3 stepped off a rock and fell 9.4 m beside the case (#54).</summary>
+    /// over that floor. Run 23 vr3 stepped off a rock and fell 9.4 m beside the case (#54). The terrain mask can hit the
+    /// case, and a step onto a long case would stand the body on it.</summary>
     static bool GroundAtStep(Vector3 to) =>
-        Terrain(to + Vector3.up * 0.4f, Vector3.down, 1f, out _);
+        Terrain(to + Vector3.up * 0.4f, Vector3.down, 1f, out var g)
+        && g.collider.GetComponentInParent<Luggage>() == null;
 
     /// <summary>The setup failure when <see cref="LowGripPoint"/> finds nothing, with what the case is made of.</summary>
     static string NoLowGrip(Luggage lug)
