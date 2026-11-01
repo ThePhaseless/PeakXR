@@ -1321,14 +1321,13 @@ internal sealed partial class SelfTestRunner
         // (MP run 13, #93: held at chest height it passed the host's mouth during a stop between stick pulses; MP run
         // 14: 0.15 m ahead it still met the mouth of a host standing lower on the slope and fed them in a pause).
         yield return CarryFoodBack(left);
-        yield return WalkTo(HostCenter, 0.75f, true);
+        // The walk's stop is on A's mass centre; its eye stands up to 0.28 m ahead of that (MP runs 18 and 19).
+        yield return WalkTo(HostCenter, MpSqueezeEye + 0.3f, true);
         if (!stepOk)
             yield break;
         var host = Host();
         var rig = VRRig.Instance;
-        yield return MpStepToMouth(host);
-        Face(host.Head);
-        yield return Wait(0.3f);
+        yield return MpStandOff(host);
         bool walkFed = c.data.lastConsumedItem != consumedBefore;
         if (item == null || HeldItem() != item)
         {
@@ -1360,33 +1359,25 @@ internal sealed partial class SelfTestRunner
             consumedBefore = c.data.lastConsumedItem;
         }
         yield return GripTo(left, 1f, 0.1f);
-        // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
-        // mouth dwell. A hand-over (SocialHands.UpdateFeed, HandOver): food resting at the mouth feeds with the trigger
-        // up, as at your own mouth.
-        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 8f);
         float best = float.MaxValue;
         float atMouth = 0f;
         // The item's place on the controller, taken once while it rests in the hand: reading it every frame from
         // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
         // rejoined, and the item left the mouth).
         var grip = HeldGrip.Of(rig, Script(left), item);
-        // First a squeeze just beside the mouth, 0.32 m out to the holding hand's side, outside the feed zone: it must
-        // not feed and must say "closer" (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context).
-        // To the side, not toward A (MP run 12, #93): out toward A the item's offset put the hand in the host's face
-        // (its controller bone 0.15 m from their head), which held it 0.27 m off its controller until the weld let go,
-        // and the bag's near end came toward A's own mouth, where a squeeze is an eat try and stays quiet
-        // (HeldGestures.AwayFromMouth): the press counts only clear of it.
+        // First a squeeze just short of the mouth, outside the feed zone: it must not feed and must say "closer"
+        // (OutOfReach) with the ring on the host's mouth, never nothing (HandOver.Context). Only the hand moves, from
+        // MpStandOff's stance: the bag's near end stays clear of A's own mouth, where a squeeze is an eat try and stays
+        // quiet (HeldGestures.AwayFromMouth), and the hand clear of the host's face (MP run 12, #93).
         float bandMark = -1f;
         float placedFor = 0f;
-        float bandEnd = Now + 4f;
-        // How far out the item's centre is held: adjusted so its nearest point (the zone's measure,
-        // SocialHands.FeedGap) sits in the band whatever its length. The band starts past the zone's exit radius, not
-        // its entry: an item that once came within FeedRadius stays in the zone out to FeedExitRadius, and a squeeze
-        // there feeds (MP run 17, #111: the band's 0.26 m floor sat inside the 0.30 m exit, and the host was fed).
-        // It ends inside NearFriendRadius, where the refusal says "closer".
+        float bandEnd = Now + MpBandBudget;
+        // The band is on the item's nearest point (the zone's measure, SocialHands.FeedGap), whatever its length. It
+        // starts past the zone's exit radius, not its entry: an item that once came within FeedRadius stays in the zone
+        // out to FeedExitRadius, and a squeeze there feeds (MP run 17, #111: the band's 0.26 m floor sat inside the 0.30 m
+        // exit, and the host was fed). It ends inside NearFriendRadius, where the refusal says "closer".
         const float bandLow = Social.SocialHands.FeedExitRadius + 0.02f;
         const float bandHigh = Social.SocialHands.NearFriendRadius - 0.03f;
-        float standoff = 0.38f;
         var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
         float ownGap = 0f;
         string pressNote = null;
@@ -1394,36 +1385,58 @@ internal sealed partial class SelfTestRunner
         string useNote = null;
         float bandMin = float.MaxValue,
             bandMax = 0f;
-        // The nearest the item came to the mouth before the squeeze, and whether the hand was held back by the arm's
-        // clamp: a clamped hand must not pull the standoff in (it would wind down to the mouth while the arm cannot
-        // follow, and the item then meets the mouth as the arm catches up).
+        // The nearest the item came to the mouth before the squeeze, A's eye from the mouth, the steps in and how long
+        // the hand has been out at its full hold and still short of the band.
         float approachMin = float.MaxValue;
-        bool clamped = false;
+        float bandEye = 0f;
+        int bandSteps = 0;
+        float shortFor = 0f;
         // A destroyed item is == null, and so is HeldItem() once it is gone: test the item first (MP run 17, #111).
         while (Now < bandEnd && item != null && HeldItem() == item && host != null)
         {
             var mouthNow = HostPart(host, BodypartType.Head);
-            var toHost = mouthNow - rig.Head.position;
-            toHost.y = 0f;
-            var side =
-                Vector3.Cross(
-                    Vector3.up,
-                    toHost.sqrMagnitude > 1e-4f ? toHost.normalized : Vector3.forward
-                ) * (left ? -1f : 1f);
-            var target = mouthNow + side * standoff;
-            var bandGoal = rig.Origin.InverseTransformPoint(target - grip.World(rig, Script(left)));
-            clamped = (bandGoal - VRInput.HeadPosition).magnitude > MpFeedHold;
-            bandGoal =
-                VRInput.HeadPosition
-                + Vector3.ClampMagnitude(bandGoal - VRInput.HeadPosition, MpFeedHold);
-            SetHand(left, bandGoal);
+            bandEye = Vector3.Distance(rig.Head.position, mouthNow);
             float d = Social.SocialHands.FeedGap(item, mouthNow);
             if (bandMark < 0f)
                 approachMin = Mathf.Min(approachMin, d);
-            if (d < bandLow + 0.02f)
-                standoff = Mathf.Min(0.6f, standoff + 0.01f);
-            else if (d > bandHigh - 0.02f && !clamped)
-                standoff = Mathf.Max(0.05f, standoff - 0.01f);
+            // The hand's speed comes from the real gap, so it never runs ahead of an arm still catching up (MP run 19,
+            // #119: a standoff wound 1 cm a frame while the food rose from the carry put the target on the mouth).
+            var fullHold =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(
+                    rig.Origin.InverseTransformPoint(mouthNow) - VRInput.HeadPosition,
+                    MpFeedHold
+                );
+            float speed = HandScript.BandSpeed(d, bandLow, bandHigh);
+            SetHand(
+                left,
+                HandScript
+                    .Approach(
+                        Script(left).Position.N(),
+                        (speed >= 0f ? fullHold : VRInput.HeadPosition).N(),
+                        Mathf.Abs(speed),
+                        Time.unscaledDeltaTime
+                    )
+                    .U()
+            );
+            shortFor =
+                d > bandHigh && Vector3.Distance(Script(left).Position, fullHold) < 0.02f
+                    ? shortFor + Time.unscaledDeltaTime
+                    : 0f;
+            // Too far off for the full hold: a short step with the food carried back, never walked in held out.
+            if (bandMark < 0f && shortFor >= 1f && bandSteps < 3)
+            {
+                bandSteps++;
+                shortFor = 0f;
+                yield return CarryFoodBack(left);
+                var toward = mouthNow - c.Center;
+                toward.y = 0f;
+                var to = c.Center + toward.normalized * (d - 0.5f * (bandLow + bandHigh) + 0.1f);
+                yield return MpWalkBounded(() => to, 0.1f, 3f);
+                Face(HostPart(host, BodypartType.Head));
+                bandEnd = Now + MpBandBudget;
+                continue;
+            }
             if (holdHand != null)
                 ownGap = PeakXR.Interact.Physical.HeldGestures.OwnMouthGap(
                     holdHand,
@@ -1466,7 +1479,7 @@ internal sealed partial class SelfTestRunner
         Script(left).Trigger = 0f;
         // What the zone saw before and during the squeeze, for every verdict below.
         string bandGaps = F(
-            $"before the squeeze the food came within {approachMin:0.00} m of the host's mouth (zone in {Social.SocialHands.FeedRadius:0.00}, out {Social.SocialHands.FeedExitRadius:0.00}), {(bandMark >= 0f ? $"squeezed {bandMin:0.00}-{bandMax:0.00} m off" : "never squeezed")}, standoff {standoff:0.00} m, arm clamped {clamped}"
+            $"before the squeeze the food came within {approachMin:0.00} m of the host's mouth (zone in {Social.SocialHands.FeedRadius:0.00}, out {Social.SocialHands.FeedExitRadius:0.00}), {(bandMark >= 0f ? $"squeezed {bandMin:0.00}-{bandMax:0.00} m off" : "never squeezed")}, A's eye {bandEye:0.00} m from the mouth, {bandSteps} step(s) in"
         );
         Plugin.Log.LogInfo("[mptest] feed band: " + bandGaps);
         if (item == null || item.isUsingSecondary || c.data.lastConsumedItem != consumedBefore)
@@ -1496,7 +1509,8 @@ internal sealed partial class SelfTestRunner
         var bandCue = cueNote;
         yield return Wait(0.3f);
         // Within arm's reach of the mouth again before the hold (MP run 15b, #106: A stood 1.09 m off and the 0.6 m hold
-        // kept the item 0.30 m from the host's head).
+        // kept the item 0.30 m from the host's head), the food carried back so the step does not bring it there.
+        yield return CarryFoodBack(left);
         yield return MpStepToMouth(host);
         Face(HostPart(host, BodypartType.Head));
         float holdFrom = Vector3.Distance(rig.Head.position, HostPart(host, BodypartType.Head));
@@ -1513,6 +1527,10 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
+        // Feeding a friend is the secondary use: its own hold time, after up to 6 s reaching the friend's head and the
+        // mouth dwell. A hand-over (SocialHands.UpdateFeed, HandOver): food resting at the mouth feeds with the trigger
+        // up, as at your own mouth.
+        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 8f);
         while (
             item != null
             && HeldItem() == item
@@ -1978,6 +1996,36 @@ internal sealed partial class SelfTestRunner
                 $"{i + 1} step-in(s) moved A {FlatDistance(c.Center, startAt):0.00} m, the eye from {startEye:0.00} to {Vector3.Distance(rig.Head.position, HostPart(host, BodypartType.Head)):0.00} m off the mouth (last aimed {FlatDistance(c.Center, to):0.00} m short)"
             );
         }
+    }
+
+    /// <summary>How far (m) A's eye stands from the host's mouth for the squeeze beside it: the hand at its full
+    /// <see cref="MpFeedHold"/> stops 0.4 m short, so only the hand brings the food to the band (#119).</summary>
+    const float MpSqueezeEye = 1f;
+
+    /// <summary>How long (s) the hand gets to bring the food to the band from the carry, from each stance.</summary>
+    const float MpBandBudget = 8f;
+
+    /// <summary>Backs A off (up to three bounded walks) until its eye is <see cref="MpSqueezeEye"/> from the host's mouth
+    /// on the level, then faces the host: the fetch often ends at the host's feet. A wall behind A leaves it nearer; the
+    /// hand still stops at the band.</summary>
+    IEnumerator MpStandOff(Character host)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        for (int i = 0; i < 3; i++)
+        {
+            Face(HostPart(host, BodypartType.Head));
+            yield return Wait(0.3f);
+            var away = rig.Head.position - HostPart(host, BodypartType.Head);
+            away.y = 0f;
+            float near = MpSqueezeEye - away.magnitude;
+            if (near <= 0f)
+                yield break;
+            var to = c.Center + away.normalized * (near + 0.1f);
+            yield return MpWalkBounded(() => to, 0.1f, 3f);
+        }
+        Face(HostPart(host, BodypartType.Head));
+        yield return Wait(0.3f);
     }
 
     /// <summary>What the last <see cref="MpStepToMouth"/> did, for a reach failure's note.</summary>
