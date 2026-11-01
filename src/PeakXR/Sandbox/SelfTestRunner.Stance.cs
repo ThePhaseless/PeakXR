@@ -417,9 +417,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The animated legs' speed against the ground's (<see cref="WalkForwardStep"/>): 1 when the stance foot
     /// stays put. Outside this the legs visibly run ahead of, or drag behind, the body. The floor sits under the game's
-    /// own full-stick walk: run 20 read 0.55, and PeakXR's only part in that gait is <c>input.movementInput</c>, what
-    /// the animator (CharacterAnimations.cs:186-187) and the force (Bodypart.cs:291-298) read in vanilla. By code
-    /// reading until <c>vr.390-walk-legs-flat</c> has measured it with VR off (#97).</summary>
+    /// own full-stick walk: <c>vr.390-walk-legs-flat</c> read 0.65 with VR off (run 21, one sample, all at input 0.5 and
+    /// over), and vr.395 read 0.55 and 0.71 across runs 20 and 21, with PeakXR's only part in that gait
+    /// <c>input.movementInput</c>, what the animator (CharacterAnimations.cs:186-187) and the force
+    /// (Bodypart.cs:291-298) read in vanilla. So the game's own value moves around that range (#97).</summary>
     const float MinLegRatio = 0.5f;
 
     const float MaxLegRatio = 1.6f;
