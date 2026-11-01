@@ -6,7 +6,8 @@ namespace PeakXR.Core;
 /// The avatar's eyes relative to the body root the view rides (forward, up), learned from the eye renderers. A
 /// sample is taken only while avatar.local's lean is fully off: the lean puts the avatar's eyes on the headset, so
 /// even a 2 cm held lean, sampled, would glide the offset (and the view) after the head. The first sample replaces
-/// the starting guess at once (the caller takes it only on a still stand); later samples glide at 1/s.
+/// the starting guess at once; later samples glide at 1/s. The caller samples only a still stand: a walk's eyes sit
+/// elsewhere on the body than the idle pose's, and with the lean on whenever the body stands they would be kept.
 /// <see cref="Converged"/> latches once the offset is within 1 cm of a sample; the lean waits for it, so the learning
 /// finishes on unleaned eyes.
 /// </summary>
