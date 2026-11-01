@@ -835,7 +835,7 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// mob.PetrifiedScout: petrify at 100 (the console <c>PetrifyFully</c>, CharacterAfflictions.cs:1348) and
     /// <c>Character.Die</c> (Character.cs:692): <c>RPCA_Die</c> (:733) takes <c>SpawnSkeletonOnDeath</c> (:763) to
-    /// <c>SpawnStatue</c> (:780-782). The game never removes a statue; the step does.
+    /// <c>SpawnStatue</c> (:780-782). Only a hard landing removes one (<c>PetrifiedScoutCollision</c>); else the step does.
     /// </summary>
     IEnumerator PetrifyStep(Vector3 home)
     {
@@ -851,6 +851,7 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var statue = Fresh<global::Peak.PetrifiedScout>(before);
+        string statueName = statue.name;
         spawned.Add(statue.gameObject);
         yield return Wait(3f);
         yield return Shot("05-mob-PetrifiedScout");
@@ -860,7 +861,12 @@ internal sealed partial class SelfTestRunner
             5f,
             "the player not revived and un-petrified"
         );
-        Note($"statue {statue.name} at {Vector3.Distance(statue.transform.position, home):0.0} m");
+        // Landing hard on terrain breaks a statue (PetrifiedScoutCollision.cs:19-20): the game working, nothing to judge.
+        Note(
+            statue != null
+                ? $"statue {statueName} at {Vector3.Distance(statue.transform.position, home):0.0} m"
+                : $"statue {statueName} broke on landing, as the game's own collision does"
+        );
     }
 
     /// <summary>
