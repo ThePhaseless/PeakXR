@@ -713,10 +713,14 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     IEnumerator Mobs()
     {
         yield return Run("05-mob-scan", 120f, ScanMobs());
+        var self = Character.localCharacter;
+        Vector3? home = self != null && self.data.isGrounded ? Feet(self) : null;
         foreach (var entry in mobs)
         {
             if (Filtered("mob." + entry.Name))
                 continue;
+            if (home is { } spot)
+                yield return BackOnMobGround(self, spot);
             if (entry.Style == SpawnStyle.Unsupported)
             {
                 if (Deferred(entry))
@@ -751,6 +755,28 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         yield break;
     }
 
+    /// <summary>
+    /// Back on the ground the mob steps started on, grounded, before the next one: a blast throws the body (run 18:
+    /// AntiSphere_CookingExplosion put it 3 m up, then in the sea), and the next steps found no ground ahead and no
+    /// chain spot from there.
+    /// </summary>
+    static IEnumerator BackOnMobGround(Character c, Vector3 home)
+    {
+        if (
+            c == null
+            || c.data.isGrounded
+                && FlatDistance(Feet(c), home) <= MobHomeRadius
+                && Mathf.Abs(Feet(c).y - home.y) <= MobHomeRadius
+        )
+            yield break;
+        Recover();
+        yield return SettleWarp(c, home);
+        yield return WaitFor(() => c.data.isGrounded, 3f);
+    }
+
+    /// <summary>How far (m) the body may end a mob step from where the mob steps started before the next is warped back.</summary>
+    const float MobHomeRadius = 1.5f;
+
     /// <summary>Fewest entities the deep scan may find: the VR run of 2026-10-28 found 43; the floor leaves room for a
     /// game update that drops a few, while a broken scan (nothing from Photon's cache or Resources) fails.</summary>
     const int MinMobEntities = 35;
@@ -763,6 +789,9 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// <summary>Where an approach mob starts: this far ahead of the player, over open ground.</summary>
     const float ApproachStart = 15f;
 
+    /// <summary>Headings round the player an approach mob's start is looked for in.</summary>
+    const int ApproachHeadings = 12;
+
     IEnumerator Mob(MobEntry entry)
     {
         if (Array.IndexOf(ApproachMobs, entry.Name) >= 0)
@@ -773,19 +802,33 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     ? c.data.lookDirection_Flat.normalized
                     : Vector3.forward;
             var eye = c.Head;
-            var ahead = c.Center + forward * ApproachStart;
-            if (
-                !Terrain(ahead + Vector3.up * 10f, Vector3.down, 30f, out var ground)
-                || Physics.Linecast(
-                    eye,
-                    ground.point + Vector3.up * 1.5f,
-                    HelperFunctions.terrainMapMask,
-                    QueryTriggerInteraction.Ignore
-                )
-            )
+            // Straight ahead first, then round the player both ways: run 18 faced a slope that hid the ground ahead.
+            RaycastHit ground = default;
+            bool open = false;
+            for (int i = 0; i < ApproachHeadings && !open; i++)
+            {
+                float yaw = (i + 1) / 2 * (360f / ApproachHeadings) * (i % 2 == 0 ? 1f : -1f);
+                var dir = Quaternion.Euler(0f, yaw, 0f) * forward;
+                open =
+                    Terrain(
+                        c.Center + dir * ApproachStart + Vector3.up * 10f,
+                        Vector3.down,
+                        30f,
+                        out ground
+                    )
+                    && !Physics.Linecast(
+                        eye,
+                        ground.point + Vector3.up * 1.5f,
+                        HelperFunctions.terrainMapMask,
+                        QueryTriggerInteraction.Ignore
+                    );
+                if (open)
+                    forward = dir;
+            }
+            if (!open)
             {
                 stepSkip = F(
-                    $"no open ground {ApproachStart:0} m ahead with a clear line from the player"
+                    $"no open ground {ApproachStart:0} m off in any of {ApproachHeadings} headings with a clear line from the player"
                 );
                 yield break;
             }
@@ -800,7 +843,11 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                 Fail(SandboxActions.LastMessage);
                 yield break;
             }
-            Note(F($"started {Vector3.Distance(c.Center, ground.point):0.0} m straight ahead"));
+            Note(
+                F(
+                    $"started {Vector3.Distance(c.Center, ground.point):0.0} m off, {Vector3.SignedAngle(c.data.lookDirection_Flat, forward, Vector3.up):0} deg from the look"
+                )
+            );
         }
         else if (!SandboxActions.SpawnMob(entry))
         {

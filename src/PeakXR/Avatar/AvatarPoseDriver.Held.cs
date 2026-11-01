@@ -150,7 +150,7 @@ public partial class AvatarPoseDriver
 
     /// <summary>How far the <paramref name="left"/> arm (shoulder to wrist of its IK chain) cannot reach
     /// <paramref name="bone"/> right now, metres.</summary>
-    private float ArmShortfall(bool left, Vector3 bone) =>
+    internal float ArmShortfall(bool left, Vector3 bone) =>
         PhysicsShoulder(left, out var shoulder, out float arm)
             ? WeldGate.Shortfall(shoulder.N(), bone.N(), arm)
             : 0f;
@@ -225,6 +225,17 @@ public partial class AvatarPoseDriver
     private float heldBlockedLag;
     private bool heldBlockedLeft;
     private float heldBlockedAt = float.NegativeInfinity;
+
+    /// <summary>Where that hand's ragdoll body was then (physics frame): its arm reaches no further past it
+    /// (<see cref="HeldBackReach"/>).</summary>
+    private Vector3 heldBlockedHand;
+
+    /// <summary><paramref name="bone"/> (the controller's hand bone, physics frame) held to
+    /// <see cref="ItemFollow.HeldBackReach"/> while the weld keeps this hand's item against the world.</summary>
+    private Vector3 HeldBackReach(bool left, Vector3 bone) =>
+        left == heldBlockedLeft && Time.fixedTime - heldBlockedAt <= HeldBlockedFresh
+            ? ItemFollow.HeldBackReach(heldBlockedHand.N(), bone.N()).U()
+            : bone;
 
     /// <summary>Seconds a held-back item's lag counts for the ghost after the last physics tick that saw it.</summary>
     private const float HeldBlockedFresh = 0.1f;
@@ -305,15 +316,12 @@ public partial class AvatarPoseDriver
         // weld dragged the hand 0.3 m under where the holder shows it (MP run 17, pickup).
         // The local gate waits for the equip's own attach to settle (CharacterItems.cs:600-618, sinceItemAttach): at
         // spawn the arm is still on its way and was 0.71 m off, which let the passport go (MP run 20).
-        // Cast only while the hand lags or the item is free, and only while the stick walks the body on: a wall the
-        // walk presses the item on (#17). A hand that reaches the item into a prop with the body still lets go as
-        // before: kept, the torch held on the cannon held the hand 0.4-0.7 m off and the body rode up the cannon
-        // (vr.87, #116).
+        // Cast only while the hand lags or the item is free. Walking or not, as vanilla keeps a held item against a
+        // wall: run 18 let the apple go as the controller rose with the stick idle (vr.246, #17). Kept, the arm stops
+        // pressing for the controller (heldBlockedHand, OnConfigureIK), so the item's contact never lifts the body:
+        // the torch held on the cannon pushed the body up onto it (vr.87, #116).
         bool itemBlocked =
             Owner.IsLocal
-            && Owner.input != null
-            && Owner.input.movementInput.sqrMagnitude >= 1e-4f
-            && !Rig.RigDriver.FollowWalking
             && (toController - shortfall > weldGate.Rejoin || weldGate.Released)
             && ItemHeldBack(item, target - body.position);
         bool free =
@@ -336,6 +344,7 @@ public partial class AvatarPoseDriver
             heldBlockedLag = toController - shortfall;
             heldBlockedLeft = left;
             heldBlockedAt = Time.fixedTime;
+            heldBlockedHand = hand;
         }
         if (free != wasFree && Owner.IsLocal)
         {
@@ -379,7 +388,8 @@ public partial class AvatarPoseDriver
             // Vanilla's spring is an outside force on the item (CharacterItems.cs:172). Toward a controller the arm
             // cannot reach, the weld hands it to the arm and the whole body: a held item lifted its holder toward the
             // raised hand, taller than standing (tester, OpenXR Touch). Out of reach the arm alone carries the item.
-            return Owner.IsLocal && shortfall > SpringReachSlack;
+            // Held back by the world, nothing presses it on what holds it (#116).
+            return Owner.IsLocal && (shortfall > SpringReachSlack || itemBlocked);
         }
         // Free: no joint may hold it, whoever made it.
         if (!wasFree || itemJoint != null)

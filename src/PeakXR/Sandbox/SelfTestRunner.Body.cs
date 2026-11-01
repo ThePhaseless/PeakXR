@@ -2289,15 +2289,42 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         yield return Wait(1.2f);
-        float worst = 0f;
+        float worst = 0f,
+            worstPast = 0f,
+            itemGap = 0f;
         bool released = false,
             crouched = true;
+        // At the worst frame: the shoulder to the controller against the reach, and how far the body lags the head
+        // (#118: run 18 missed by 0.13 m more than run 17, with the eye model 0.11 m further ahead).
+        string at = "";
         start = Now;
         var hand = c.refs.ragdoll.partDict[BodypartType.Hand_R].Rig;
         while (Now - start < 0.6f)
         {
             if (driver.HandTarget(false, out var target))
-                worst = Mathf.Max(worst, Vector3.Distance(hand.position, target));
+            {
+                float off = Vector3.Distance(hand.position, target);
+                // Judged past what the arm cannot reach from its shoulder, as the weld is (WeldGate): there the item
+                // sits on the controller and the drawn arm stretches to it (ArmReach.HeldShift, #23).
+                worstPast = Mathf.Max(worstPast, off - driver.ArmShortfall(false, target));
+                itemGap = Mathf.Max(itemGap, driver.HeldItemGap);
+                if (off >= worst)
+                {
+                    worst = off;
+                    var lag = driver.BodyToHead();
+                    at = driver.ReachGap(
+                        false,
+                        out float gap,
+                        out var shoulder,
+                        out var bone,
+                        out float arm
+                    )
+                        ? F(
+                            $"; shoulder {Vector3.Distance(shoulder, bone):0.00} m from the controller (reach {arm:0.00}, ghost gap {gap:0.00}), body to head {Flat(lag).magnitude:0.00} m level {lag.y:0.00} up, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
+                        )
+                        : "";
+                }
+            }
             released |= driver.HeldReleased;
             crouched &= c.data.isCrouching;
             yield return null;
@@ -2312,12 +2339,14 @@ internal sealed partial class SelfTestRunner
         }
         ReleaseHead();
         var note = F(
-            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller (0.35 above the game floor, {ScaleNote()}), weld released {released}"
+            $"stooped 0.47 m, crouched {crouched}, hand {worst:0.00} m from the controller, {worstPast:0.00} past the arm's reach, the apple {itemGap:0.00} m off its place (0.35 above the game floor, {ScaleNote()}), weld released {released}{at}"
         );
         if (!crouched)
             Fail("the avatar did not crouch for the stoop: " + note);
-        else if (worst > 0.15f)
+        else if (worstPast > 0.15f)
             Fail("the avatar hand did not reach the low controller: " + note);
+        else if (itemGap > 0.15f)
+            Fail("the apple stayed off the low controller: " + note);
         else if (released)
             Fail("the apple left its hand weld: " + note);
         else
@@ -2377,15 +2406,27 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.3f);
         var hand = rig.RightHand.position;
         float reach = float.MaxValue;
+        var nearest = hand;
         foreach (var col in item.GetComponentsInChildren<Collider>())
         {
             if (col.enabled && !col.isTrigger)
-                reach = Mathf.Min(reach, Vector3.Distance(hand, col.ClosestPoint(hand)));
+            {
+                var p = col.ClosestPoint(hand);
+                if (Vector3.Distance(hand, p) < reach)
+                {
+                    reach = Vector3.Distance(hand, p);
+                    nearest = p;
+                }
+            }
         }
         float local = rig.RightHand.localPosition.y;
         float grab = Interact.InteractConfig.Instance.GrabRadius;
+        // Which way the miss lies, and whether the hand moved off the spot the apple was put under (#118).
+        var floorWorld = rig.Origin.TransformPoint(
+            new Vector3(controller.x, virtualFloor, controller.z)
+        );
         var note = F(
-            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00})"
+            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00}; {Flat(nearest - hand).magnitude:0.00} level, {hand.y - nearest.y:0.00} above), the ground there {ground.point.y - floorWorld.y:0.00} m over the virtual floor, the hand {Flat(hand - top).magnitude:0.00} m level off where the apple was put under it, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
         );
         if (local < virtualFloor - 0.01f)
             Fail("the hand went below the virtual floor: " + note);

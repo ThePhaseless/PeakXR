@@ -81,6 +81,20 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AHandOnAHeldBackItemReachesOnlyALittlePastWhereItIs()
+    {
+        // #116, vr.87: the torch kept on the cannon held the hand 0.4-0.7 m off its controller; the arm's muscles
+        // pressed for all of it, and half of each push lands on the hip (Bodypart.cs:193-205), so the body rode up.
+        var hand = new Vector3(1f, 1f, 0f);
+        var reach = ItemFollow.HeldBackReach(hand, new Vector3(1f, 0.4f, 0f));
+        Assert.Equal(ItemFollow.HeldBackPress, Vector3.Distance(hand, reach), 4);
+        Assert.True(reach.Y < hand.Y);
+        // Within the press it reaches the controller as ever, so a hand sliding along the wall keeps up.
+        var near = new Vector3(1.02f, 1f, 0.01f);
+        Assert.Equal(near, ItemFollow.HeldBackReach(hand, near));
+    }
+
+    [Fact]
     public void AFreeItemHeldBackByTheWorldRejoinsItsHand()
     {
         var g = new WeldGate();

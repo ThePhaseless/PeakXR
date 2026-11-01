@@ -244,27 +244,38 @@ internal sealed partial class SelfTestRunner
         bool aimed = false;
         RaycastHit hit = default;
         float[] pitches = VRSession.Active ? new[] { 0f } : new[] { 0f, 12f, -12f, 25f };
-        foreach (var pitch in pitches)
+        // Here, then once on open ground nearby: the beach can slope away round the whole turn (run 18).
+        for (int spot = 0; spot < 2 && !aimed; spot++)
         {
-            for (int i = 0; i < 24 && !aimed; i++)
+            if (spot > 0)
             {
-                Turn(c, i == 0 ? 0f : 15f, pitch);
-                yield return null;
-                yield return null;
-                // The chain hangs from 1 m ahead of the camera (VineShooter.cs:52-57): a spot nearer than that has
-                // no path to it, and the cast ends with nothing (flat run 10: a LidCollider 0.9 m off).
-                aimed =
-                    shooter.WillAttach(out hit)
-                    && hit.distance >= MinChainAim
-                    && ChainBuilds(c, hit.point);
+                if (OpenSpotNear(Feet(c)) is not { } open)
+                    break;
+                yield return SettleWarp(c, open);
+                yield return WaitFor(() => c.data.isGrounded, 3f);
             }
-            if (aimed)
-                break;
+            foreach (var pitch in pitches)
+            {
+                for (int i = 0; i < 24 && !aimed; i++)
+                {
+                    Turn(c, i == 0 ? 0f : 15f, pitch);
+                    yield return null;
+                    yield return null;
+                    // The chain hangs from 1 m ahead of the camera (VineShooter.cs:52-57): a spot nearer than that
+                    // has no path to it, and the cast ends with nothing (flat run 10: a LidCollider 0.9 m off).
+                    aimed =
+                        shooter.WillAttach(out hit)
+                        && hit.distance >= MinChainAim
+                        && ChainBuilds(c, hit.point);
+                }
+                if (aimed)
+                    break;
+            }
         }
         if (!aimed)
         {
             stepSkip =
-                $"no terrain within the shooter's {shooter.maxLength:0} m and elevation window (VineShooter.cs:71-92) with a clear chain path from ground at the feet here";
+                $"no terrain within the shooter's {shooter.maxLength:0} m and elevation window (VineShooter.cs:71-92) with a clear chain path from ground at the feet, here or on open ground nearby (grounded {c.data.isGrounded})";
             yield break;
         }
 

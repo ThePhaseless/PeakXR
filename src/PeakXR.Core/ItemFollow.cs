@@ -13,7 +13,8 @@ namespace PeakXR.Core;
 /// <see cref="Release"/> of the hand (the rejoin puts the hand on the item's grip), or once the hand has stopped
 /// closing in short of <see cref="Release"/> (an arm out of reach, which a weld would keep), and a fresh weld stays for
 /// <see cref="Settle"/> before it may let go again, so the rejoin's own jolt never flips it back. An item the world
-/// holds back (a wall the walk presses it on) never leaves the hand for it, as in vanilla (#17).
+/// holds back (a wall the walk or the hand presses it on) never leaves the hand for it, as in vanilla (#17); the arm
+/// then reaches no further than <see cref="ItemFollow.HeldBackReach"/>, so the kept item never pushes the body (#116).
 /// </summary>
 public sealed class WeldGate
 {
@@ -150,6 +151,24 @@ public static class ItemFollow
     public const float SnapGap = 0.3f;
 
     public static bool Snaps(float gap) => gap > SnapGap;
+
+    /// <summary>Farthest (m) the arm reaches past its ragdoll hand while the weld keeps an item the world holds back
+    /// (<see cref="HeldBackReach"/>).</summary>
+    public const float HeldBackPress = 0.05f;
+
+    /// <summary>
+    /// Where the arm reaches while the world holds its welded item back: <paramref name="target"/> (the controller's
+    /// hand bone), but never more than <see cref="HeldBackPress"/> past the ragdoll <paramref name="hand"/>. The arm's
+    /// muscles push on the hip by half of each pull (Bodypart.cs:193-205), so reaching for a controller the item
+    /// cannot get to pushed the body off the item's contact: a torch kept on the scout cannon lifted the body onto it
+    /// (#116, vr.87). The item stays in the hand as in vanilla; the ghost hand shows the controller.
+    /// </summary>
+    public static Vector3 HeldBackReach(Vector3 hand, Vector3 target)
+    {
+        var d = target - hand;
+        float len = d.Length();
+        return len > HeldBackPress ? hand + d * (HeldBackPress / len) : target;
+    }
 
     public static Vector3 Velocity(Vector3 position, Vector3 target, Vector3 handVelocity, float dt)
     {
