@@ -797,6 +797,139 @@ public class StanceWalkTests
         Assert.Equal(PushAfter(Vector2.Zero), PushAfter(new Vector2(0.15f, 0f)), 3);
     }
 
+    /// <summary>Feet at rest under the hip, 0.07 m behind the mass centre along the body's heading (root-hip, run 21).</summary>
+    static Vector2 RestFeet(float yaw) => YawMath.Rotate(new Vector2(0f, -0.07f), yaw);
+
+    /// <summary>A walk that stood at yaw 0 and has turned to <paramref name="yaw"/> on those feet, its debt now past
+    /// AtOnce along +z, so it pushes at once.</summary>
+    static StanceWalk TurnedAndPushing(float yaw, Vector2 feet, bool stepped = false)
+    {
+        var w = new StanceWalk();
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, RestFeet(0f), 0f);
+        if (stepped)
+            w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: false, Dt, feet, yaw);
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, feet, yaw);
+        w.Update(new Vector2(0f, 0.36f), Vector2.Zero, 0f, canWalk: true, Dt, feet, yaw);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        return w;
+    }
+
+    [Fact]
+    public void AFullTurnOnPlantedFeet_ReadsTheFeetsTrailAtTheFirstPush()
+    {
+        // Run 21, vr.300: after a smooth 180 the feet still stood for the old heading, read 0 at every push and -0.12 m
+        // after every settle: 0.351 -> 0.187 -> 0.188 m, blocked at 0.181 m.
+        var w = TurnedAndPushing(180f, RestFeet(0f));
+        TestUtil.Near(0.14f, w.FeetBehind, 1e-3f);
+    }
+
+    [Fact]
+    public void NoTurn_ReadsNoTrail_AtAnyHeading()
+    {
+        foreach (float yaw in new[] { 0f, 37f, -120f })
+        {
+            var w = new StanceWalk();
+            w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, RestFeet(yaw), yaw);
+            w.Update(
+                new Vector2(0f, 0.36f),
+                Vector2.Zero,
+                0f,
+                canWalk: true,
+                Dt,
+                RestFeet(yaw),
+                yaw
+            );
+            TestUtil.Near(0f, w.FeetBehind, 1e-4f);
+        }
+    }
+
+    [Fact]
+    public void ABodyThatCouldNotBeWalkedThroughTheTurn_HasNewFeet()
+    {
+        // The stick walked it there, or it landed there: the feet stand for this heading.
+        var w = TurnedAndPushing(180f, RestFeet(180f), stepped: true);
+        TestUtil.Near(0f, w.FeetBehind, 1e-4f);
+    }
+
+    [Fact]
+    public void TheGaitsInput_StepsTheFeetToTheHeading()
+    {
+        var w = new StanceWalk();
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, RestFeet(0f), 0f);
+        w.Update(
+            Vector2.Zero,
+            Vector2.Zero,
+            w.GaitInput + 0.1f,
+            canWalk: true,
+            Dt,
+            RestFeet(90f),
+            90f
+        );
+        w.Update(new Vector2(0f, 0.36f), Vector2.Zero, 0f, canWalk: true, Dt, RestFeet(90f), 90f);
+        TestUtil.Near(0f, w.FeetBehind, 1e-4f);
+    }
+
+    [Fact]
+    public void AfterATurn_ThePushWalksOnPastWhereTheStaleReadStopped()
+    {
+        // The feet step along under the body, keeping their offset: the turn's stale read alone holds the push on.
+        static (float Debt, float Seconds) Push(float turnedFrom)
+        {
+            var w = new StanceWalk();
+            var feet = RestFeet(turnedFrom);
+            w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, feet, turnedFrom);
+            w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, feet, 180f);
+            var debt = new Vector2(0f, 0.36f);
+            for (int i = 0; i < 500; i++)
+            {
+                w.Update(debt, new Vector2(0f, 1.2f), 0f, canWalk: true, Dt, feet, 180f);
+                if (i > 0 && w.State != StanceWalkPhase.Push)
+                    break;
+                debt.Y -= 1.2f * Dt;
+            }
+            return (debt.Y, w.PushSeconds);
+        }
+        var turned = Push(0f);
+        var straight = Push(180f);
+        Assert.True(
+            turned.Seconds > straight.Seconds + 0.05f,
+            $"{turned.Seconds:0.00} s against {straight.Seconds:0.00} s"
+        );
+        Assert.True(
+            turned.Debt < straight.Debt - 0.08f,
+            $"{turned.Debt:0.000} m against {straight.Debt:0.000} m"
+        );
+    }
+
+    [Fact]
+    public void AFollowUpPush_ReadsTheFeetItJustSettledOn()
+    {
+        // However wrong the first read, a settled body stands over its feet: that is the zero, or the same debt loops.
+        var w = new StanceWalk();
+        var stand = new Vector2(0f, -0.07f);
+        var debt = new Vector2(0f, 0.36f);
+        w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, stand);
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
+        {
+            w.Update(debt, new Vector2(0f, 1.2f), 0f, canWalk: true, Dt, stand);
+            debt.Y -= 1.2f * Dt;
+        }
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        // The body springs back over its feet, the debt with it, and rests 0.12 m off where the walk read its stand.
+        var back = new Vector2(0f, -0.8f);
+        for (float t = 0f; t < 0.15f; t += Dt)
+        {
+            w.Update(debt, back, 0f, canWalk: true, Dt, stand);
+            debt -= back * Dt;
+        }
+        var settled = stand + new Vector2(0f, 0.12f);
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Settle; i++)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, settled);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        Assert.Equal(2, w.Pushes);
+        TestUtil.Near(0f, w.FeetBehind, 1e-4f);
+    }
+
     /// <summary>The walk's push ends (the body walks along +x at 0.5 m/s, paying the debt), then the body springs
     /// <paramref name="back"/> of its travel back over 0.3 s while the view moves <paramref name="viewMoves"/> m along
     /// +x, then stands still until the settle is judged.</summary>

@@ -35,6 +35,7 @@ public sealed class TurnSkip
     float _lastYaw;
     bool _have;
     bool _walked;
+    bool _turnWalk;
     float _since = float.MaxValue;
     float _kept;
 
@@ -64,6 +65,7 @@ public sealed class TurnSkip
         }
         else if (_since < float.MaxValue)
             _since += dt;
+        _turnWalk = walking && (_turnWalk || _since <= ReleaseAfter);
         if (walking)
             _walked = true;
         else if (_since <= SwingSeconds)
@@ -77,9 +79,11 @@ public sealed class TurnSkip
         if (_kept > 0f && len2 > 1e-8f)
             k = MathF.Max(k, MathF.Min(_kept, MathF.Sqrt(len2) - MaxLean) / MathF.Sqrt(len2));
         Skip = share * k;
-        // Kept from the turn and its walk; gone once the head is back within MaxLean of the body.
+        // Kept from the turn and its walk; gone once the head is back within MaxLean of the body. A turn's walk keeps all
+        // past MaxLean: its settle springs back with nothing skipped (run 21: vr.45b 8.5 degrees, vr.300 15.1).
         _kept =
             len2 <= MaxLean * MaxLean ? 0f
+            : _turnWalk ? MathF.Sqrt(len2) - MaxLean
             : _since <= SwingSeconds || walking ? MathF.Max(0f, Skip.Length() - MaxLean)
             : _kept;
         _last = share;
@@ -93,6 +97,7 @@ public sealed class TurnSkip
         _kept = 0f;
         _have = false;
         _walked = false;
+        _turnWalk = false;
         _since = float.MaxValue;
     }
 }
