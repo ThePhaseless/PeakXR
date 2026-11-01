@@ -319,8 +319,10 @@ public partial class AvatarPoseDriver
             ? ItemFollow.HeldBackReach(heldBlockedHand.N(), bone.N()).U()
             : bone;
 
-    /// <summary>Seconds a held-back item's lag counts for the ghost after the last physics tick that saw it.</summary>
-    private const float HeldBlockedFresh = 0.1f;
+    /// <summary>Seconds a held-back item stays kept after the last physics tick that saw it, for the arm's limit, the
+    /// ghost and the log: past the probe's gaps along a surface (run 21, vr.87: 0.10-0.16 s, the arm pressing again in
+    /// each and 5 lines in 0.45 s, #121).</summary>
+    private const float HeldBlockedFresh = 0.3f;
 
     private Rigidbody HandBody(bool left) =>
         Owner.refs.ragdoll.partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R].Rig;
