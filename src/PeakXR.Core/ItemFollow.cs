@@ -156,6 +156,20 @@ public static class ItemFollow
     /// (<see cref="HeldBackReach"/>).</summary>
     public const float HeldBackPress = 0.05f;
 
+    /// <summary>A character's <paramref name="body"/> stops the <paramref name="holder"/>'s held item as a wall does:
+    /// any body but the holder's own, which the item passes, and the one riding with the holder, always in the way of
+    /// its hands (#119).</summary>
+    public static bool BodyHoldsItemBack(
+        object body,
+        object holder,
+        object carried,
+        object carrier
+    ) =>
+        body != null
+        && !ReferenceEquals(body, holder)
+        && !ReferenceEquals(body, carried)
+        && !ReferenceEquals(body, carrier);
+
     /// <summary>
     /// Where the arm reaches while the world holds its welded item back: <paramref name="target"/> (the controller's
     /// hand bone), but never more than <see cref="HeldBackPress"/> past the ragdoll <paramref name="hand"/>. The arm's

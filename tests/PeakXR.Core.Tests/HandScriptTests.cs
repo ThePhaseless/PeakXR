@@ -23,6 +23,37 @@ public class HandScriptTests
         Assert.True(HandScript.Along(A, B, 0.9f).Z > 1.8f);
     }
 
+    [Theory]
+    [InlineData(1f / 72f)]
+    [InlineData(1f / 144f)]
+    public void BandSpeed_BringsALaggingItemIntoTheBandFromFarWithoutPassingIt(float dt)
+    {
+        // #119, MP run 19: a standoff wound 1 cm a frame on the measured gap ran ahead of the arm, and the food met the
+        // mouth. The hand's speed comes from the gap, so an item slower than any seen arm settles inside the band.
+        const float low = 0.32f;
+        const float high = 0.42f;
+        const float armLag = 0.4f;
+        float hand = 0.9f;
+        float item = hand;
+        float nearest = item;
+        for (float t = 0f; t < 6f; t += dt)
+        {
+            hand -= HandScript.BandSpeed(item, low, high) * dt;
+            item += (hand - item) * (dt / armLag);
+            nearest = MathF.Min(nearest, item);
+        }
+        Assert.True(nearest > low, $"came within {nearest:0.000} m");
+        Assert.InRange(item, low, high);
+    }
+
+    [Fact]
+    public void BandSpeed_BacksOutOfAGapInsideTheBand()
+    {
+        Assert.True(HandScript.BandSpeed(0.2f, 0.32f, 0.42f) < 0f);
+        Assert.True(HandScript.BandSpeed(0.9f, 0.32f, 0.42f) > 0f);
+        Assert.Equal(0f, HandScript.BandSpeed(0.37f, 0.32f, 0.42f), 4);
+    }
+
     [Fact]
     public void Approach_MovesThePointOntoTheTargetWithoutOvershoot()
     {

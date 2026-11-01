@@ -196,6 +196,12 @@ public static class HandScript
         float d = to.Length();
         return d <= step || d < 1e-6f ? target : current + to * (step / d);
     }
+
+    /// <summary>How fast (m/s) a scripted hand moves to bring an item that lags it to the middle of a band of gaps
+    /// from a target: positive toward the target, negative away. It slows as the item nears the band, so an arm catching
+    /// up does not carry the item through it (#119).</summary>
+    public static float BandSpeed(float gap, float low, float high) =>
+        Math.Clamp((gap - 0.5f * (low + high)) * 1.2f, -0.5f, 0.5f);
 }
 
 /// <summary>vr.13's verdict on a throw (<see cref="SelfTestChecks.JudgeThrow"/>).</summary>

@@ -185,8 +185,10 @@ public partial class AvatarPoseDriver
 
     /// <summary>The world holds <paramref name="item"/> back from moving <paramref name="toTarget"/> onto its
     /// controller-held pose: its centre pressed into terrain or a map prop, or a sphere of its size swept that way meets
-    /// one. Held items collide with Map and Terrain (Item.cs:726), so a free carry would stop there too (#17).</summary>
-    private static bool ItemHeldBack(Item item, Vector3 toTarget)
+    /// one, or the sweep meets another character's body. Held items collide with all of these (Item.cs:726), so a free
+    /// carry would stop there too, and past <see cref="ItemFollow.SnapGap"/> it would jump inside what stopped it (#17,
+    /// #119).</summary>
+    private bool ItemHeldBack(Item item, Vector3 toTarget)
     {
         float dist = toTarget.magnitude;
         if (dist < 1e-3f)
@@ -214,8 +216,42 @@ public partial class AvatarPoseDriver
                 dist,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
-            );
+            )
+            || OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
     }
+
+    /// <summary>The sweep meets a body <see cref="ItemFollow.BodyHoldsItemBack"/> counts. It also lists colliders it
+    /// starts inside; the holder's own body is nearly always among them.</summary>
+    private bool OtherBodyInTheWay(Vector3 centre, float radius, Vector3 direction, float dist)
+    {
+        int hits = Physics.SphereCastNonAlloc(
+            centre,
+            radius,
+            direction,
+            BodyHits,
+            dist,
+            HelperFunctions.CharacterMask,
+            QueryTriggerInteraction.Ignore
+        );
+        for (int i = 0; i < hits; i++)
+        {
+            var body = BodyHits[i].collider.GetComponentInParent<Character>();
+            if (
+                body != null
+                && ItemFollow.BodyHoldsItemBack(
+                    body,
+                    Owner,
+                    Owner.data.carriedPlayer,
+                    Owner.data.carrier
+                )
+            )
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Room for the parts of a few bodies around a held item.</summary>
+    private static readonly RaycastHit[] BodyHits = new RaycastHit[32];
 
     private const float ItemProbeMin = 0.02f;
     private const float ItemProbeMax = 0.15f;
@@ -351,7 +387,7 @@ public partial class AvatarPoseDriver
             // Rare edges, kept in the log: why a held item left or rejoined the hand.
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}, held back by the world {itemBlocked}"
+                    $"[avatar.local] {item.name} {(free ? "left" : "rejoined")} the hand weld: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, crouching {Owner.data.isCrouching}, held back by the world or a body {itemBlocked}"
                 )
             );
         }
